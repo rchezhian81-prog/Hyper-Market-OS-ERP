@@ -33,7 +33,12 @@ Store-Core scope (roadmap §21 Stage 2): **M01–M15, M23, M29, M30, M32–M35 �
 Each module doc marks store-fact-dependent fields `⟳ AVR-##` (confirmed in Stage 1),
 so nothing is guessed.
 
-Not yet expanded (post-Store-Core, later releases R4–R8): M16–M22, M24–M28, M31,
+**Design-ahead requirement expansion (R4 Customer commerce):** M16 (Customer 360),
+M17 (Loyalty), M20 (Customer app/web) and M21 (CRM/Service) are now expanded to
+Appendix-B detail (`docs/requirements/`, 16 requirements, traced to R4), from the
+roadmap §5 FR lines — nothing invented.
+
+Not yet expanded (later releases): M18–M19 (R5 fulfilment), M22, M24–M28 (R6), M31,
 M36, and the cross-cutting sets SEC/PRV/NFR/AI-NFR/MG — expanded when their
 release/stage is reached.
 
