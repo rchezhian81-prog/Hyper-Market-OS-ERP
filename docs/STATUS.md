@@ -40,10 +40,14 @@ instruction ("continue always" / "you carry on").
     with runtime guards (5 tests).
   - `DomainEvent` envelope (§30.2 / §31.1) — validated, idempotency-keyed (6 tests).
   - `Quantity` value primitive (UOM-aware, exact, never a float) — 9 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **54 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **59 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
-  - Next: shared branded ids, then IaC in `infra/`, then the base platform (identity/config/
-    append-only data layer) — each with tests.
+  - **Base-platform layer begun:** the **append-only ledger engine** (`packages/ledger/`,
+    hard rule #2 / M08-FR-01 / §31.1) — idempotent append, balances projected from events
+    (never stored), corrections as compensating entries, storage-agnostic with an in-memory
+    store; 5 tests. The `ledger-append-only` guardrail still passes (genuinely append-only).
+  - Next: a database-backed `LedgerStore` + persistence/migrations (needs the IaC/DB from
+    `infra/`), then identity/config services — each with tests.
 
 Store-Core scope (roadmap §21 Stage 2): **M01–M15, M23, M29, M30, M32–M35 — all done.**
 Each module doc marks store-fact-dependent fields `⟳ AVR-##` (confirmed in Stage 1),

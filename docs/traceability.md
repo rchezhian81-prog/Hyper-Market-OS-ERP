@@ -55,6 +55,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | `Quantity` value primitive | data dictionary (UOM-aware, exact) | `packages/contracts/src/quantity.ts` | `tests/unit/quantity.test.ts` (9 tests) |
 | Domain vocabularies & §27.1 states | data dictionary / §27.1 (tender, sale, stock, approval, lifecycle, connection) | `packages/contracts/src/enums.ts` | `tests/unit/enums.test.ts` (5 tests) |
 | `DomainEvent` envelope | §30.2 (event backbone) / §31.1 (idempotency) | `packages/contracts/src/event.ts` | `tests/unit/domain-event.test.ts` (6 tests) |
+| Append-only ledger engine | hard rule #2 / M08-FR-01 (append-only, projected balance) / §31.1 (idempotent) | `packages/ledger/src/ledger.ts` | `tests/unit/ledger.test.ts` (5 tests) |
 
 ## Individual requirement trace (expanded in Stage 2)
 
