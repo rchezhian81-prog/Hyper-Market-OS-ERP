@@ -58,4 +58,20 @@ requirement may reach **Done** without a complete individual row.
 | M07-FR-02 | 2 | `docs/requirements/M07.md` | — | — | R2 | In design |
 | M07-FR-03 | 2 | `docs/requirements/M07.md` | — | — | R2 | In design |
 | M07-FR-04 | 2 | `docs/requirements/M07.md` | — | — | R2 | In design |
+| M08-FR-01 | 2 | `docs/requirements/M08.md` | — | — | R2 | In design |
+| M08-FR-02 | 2 | `docs/requirements/M08.md` | — | — | R2 | In design |
+| M08-FR-03 | 2 | `docs/requirements/M08.md` | — | — | R2 | In design |
+| M08-FR-04 | 2 | `docs/requirements/M08.md` | — | — | R2 | In design |
+| M09-FR-01 | 2 | `docs/requirements/M09.md` | — | — | R2 | In design |
+| M09-FR-02 | 2 | `docs/requirements/M09.md` | — | — | R2 | In design |
+| M09-FR-03 | 2 | `docs/requirements/M09.md` | — | — | R2 | In design |
+| M09-FR-04 | 2 | `docs/requirements/M09.md` | — | — | R2 | In design |
+| M10-FR-01 | 2 | `docs/requirements/M10.md` | — | — | R2 | In design |
+| M10-FR-02 | 2 | `docs/requirements/M10.md` | — | — | R2 | In design |
+| M10-FR-03 | 2 | `docs/requirements/M10.md` | — | — | R2 | In design |
+| M10-FR-04 | 2 | `docs/requirements/M10.md` | — | — | R2 | In design |
+| M11-FR-01 | 2 | `docs/requirements/M11.md` | — | — | R2 | In design |
+| M11-FR-02 | 2 | `docs/requirements/M11.md` | — | — | R2 | In design |
+| M11-FR-03 | 2 | `docs/requirements/M11.md` | — | — | R2 | In design |
+| M11-FR-04 | 2 | `docs/requirements/M11.md` | — | — | R2 | In design |
 | _(remaining FR/NFR/SEC/PRV/AI-NFR/MG rows added as each module is expanded)_ | | | | | | |
