@@ -14,10 +14,11 @@ built (roadmap §27, QG-02). No application code yet — coding stays on HOLD un
 owner closes D3/D4/D5/D8 (§38). Running autonomously per owner instruction
 ("continue always"), producing all design/specification work up to that coding line.
 
-- **Stage 3 done so far:** `docs/design/design-system.md`, `usability-test-script.md`,
-  `docs/design/screens/pos-cashier.md`.
-- **Stage 3 next:** owner, manager, purchase/receiving, warehouse, customer, picker,
-  delivery, CRM, admin, migration and AI-control screen specs.
+- **Stage 3 done so far:** design system, usability test script, and screen specs
+  for cashier POS, owner command centre, store/manager, purchase/receiving,
+  inventory/warehouse handheld.
+- **Stage 3 next:** customer app/web, picker, delivery, CRM/service, admin/security,
+  migration, AI-control screen specs. Then Stage 4 (architecture).
 
 Store-Core scope (roadmap §21 Stage 2): **M01–M15, M23, M29, M30, M32–M35 — all done.**
 Each module doc marks store-fact-dependent fields `⟳ AVR-##` (confirmed in Stage 1),
