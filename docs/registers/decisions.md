@@ -30,12 +30,12 @@ Status legend: **Accepted** · **Open — blocking** (holds coding / a gate) ·
 | --- | --- | --- | --- |
 | D1 | Indicative programme budget | ₹5–10 lakh | Recorded; commercial validation required |
 | D2 | Owner review capacity | ≥ 30 hours/week | Recorded |
-| D3 | Monthly post-go-live running-cost ceiling | **OWNER VALUE REQUIRED** | **Open — blocking** before hosting/vendor commitment |
-| D4 | Second technical custodian | **NAME REQUIRED** | **Open — blocking** before production. Still blank in the roadmap — fill first. |
-| D5 | Formal GO date | **DATE/SIGNATURE REQUIRED** | **Open — blocking** before coding |
+| D3 | Monthly post-go-live running-cost ceiling | **₹20,000 / month** (owner, 2 Aug 2026) | Recorded; commercial validation vs real vendor quotes required before hosting commitment |
+| D4 | Second technical custodian | **Mr Sivakumar** (owner, 2 Aug 2026) | Recorded. Must hold custody (OD-09) and demonstrate a quarterly rebuild/deploy (AID-10); onboarding + runbooks/training to be produced before production |
+| D5 | Formal GO date | **2 August 2026** — owner GO given in session | Recorded; a signed GO record to be filed for the audit trail |
 | D6 | Initial online catalogue | 300–600 fast-moving products | Recorded; SKU list required |
 | D7 | Migration history | Full usable history | Recorded; exceptions only by owner approval |
-| D8 | Cutover targets | Store Core **1 April 2027** target; full-product completion date **OWNER VALUE REQUIRED** | Store Core scope & final date must be signed |
+| D8 | Cutover targets | Store Core **1 April 2027** (confirmed, 2 Aug 2026); full-product completion **phased release-by-release** — each later release's date set as it approaches | Recorded |
 
 > The budget (D1) is a planning envelope, not permission to weaken scope,
 > security, migration, testing, documentation or ownership (roadmap §25).
@@ -61,7 +61,7 @@ Status legend: **Accepted** · **Open — blocking** (holds coding / a gate) ·
 | --- | --- |
 | Business owner — final scope | Mr. Elanchezhian |
 | Product owner | Name required |
-| Second technical custodian | Name required (= D4) |
+| Second technical custodian | **Mr Sivakumar** (= D4, recorded 2 Aug 2026) |
 | Store operations lead | Name required |
 | Finance/CA reviewer | Name required |
 | Security/architecture reviewer | Name required |

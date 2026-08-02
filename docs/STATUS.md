@@ -8,10 +8,14 @@ Last updated: 2 August 2026
 ---
 
 ## Current stage
-**Stage 4 — Architecture (core design documents complete).** Stage 3 (UX & design system)
-is done. Stage 4 has now produced the core architecture design for Store-Core (R2). No
-application code yet — coding stays on HOLD until the owner closes D3/D4/D5/D8 (§38).
-Running autonomously per owner instruction ("continue always" / "you carry on").
+**Stage 4 — Architecture (core design documents complete); owner-closure gate now CLOSED.**
+Stage 3 (UX & design system) is done and Stage 4 has produced the core architecture design
+for Store-Core (R2). **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
+`docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
+lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
+spec-freeze / store-specific build are the Stage 1 store facts (the 20 AVR items) and the
+trading-day cut-off — gathered in the store (finding A-11). Running autonomously per owner
+instruction ("continue always" / "you carry on").
 
 - **Stage 3 done:** design system, usability test script, and screen specs for **all 14
   §27 role surfaces** (`docs/design/`).
@@ -25,9 +29,10 @@ Running autonomously per owner instruction ("continue always" / "you carry on").
 - **Open gate:** QG-02 human usability testing with real staff
   (`docs/design/usability-test-script.md`) still needs the store — it runs whenever staff
   are available.
-- **Stage 4 next:** contract/event schemas (`packages/contracts/`) and
-  **infrastructure/CI-CD design** (`infra/`) — the latter needs owner field **D3** (monthly
-  running-cost ceiling) before any hosting/vendor shape is committed.
+- **Stage 4 next / Stage 5 start:** **infrastructure & CI-CD design** to the **₹20,000/month
+  (D3)** envelope (`infra/`, with a hosting ADR), then contract/event schemas
+  (`packages/contracts/`) and the Stage 5 foundation scaffolding with tests — now unblocked
+  by the closed gate.
 
 Store-Core scope (roadmap §21 Stage 2): **M01–M15, M23, M29, M30, M32–M35 — all done.**
 Each module doc marks store-fact-dependent fields `⟳ AVR-##` (confirmed in Stage 1),
@@ -61,28 +66,33 @@ sets SEC/PRV/NFR/AI-NFR/MG — expanded when their release/stage is reached.
 ## In progress
 - Nothing active. Clean stopping point.
 
-## Blocked / needs owner input (recorded, not stalling further prep)
-- **D3, D4, D5, D8** — the four owner-closure fields that hold the M0 gate. The
-  roadmap itself still shows D4 (second custodian) as "NAME REQUIRED". Fill D4
-  first. Tracked in `docs/registers/decisions.md`.
-- **The 20 AVR facts (Stage 1)** — store-specific facts (volumes, departments,
-  legacy export rights, etc.) in `docs/discovery/avr-closure.md`, each needing a
-  named person. These are gathered in the store during Stage 1.
+## Blocked / needs owner input
+- **D3/D4/D5/D8 — CLOSED (2 Aug 2026).** D3 = ₹20,000/month; D4 = **Mr Sivakumar**
+  (second technical custodian); D5 = GO given today; D8 = Store-Core 1 April 2027, full
+  completion phased. Recorded in `docs/registers/decisions.md` and ADR-0001. The coding
+  HOLD that depended on these is lifted. (D3 still wants a commercial check vs real vendor
+  quotes; a signed GO record should be filed for the audit trail.)
+- **The 20 AVR facts (Stage 1) + the trading-day cut-off time** — store-specific inputs in
+  `docs/discovery/avr-closure.md`, each needing a named person; gathered in the store.
+  These still gate the M1 spec-freeze and store-specific build (finding A-11).
+- **D4 onboarding** — Mr Sivakumar needs a custody handover (OD-09) and a demonstrated
+  quarterly rebuild/deploy path (AID-10); runbooks/training produced during Stage 5.
+- **Other named approvals still open** (`decisions.md` → Named approvals): product owner,
+  store operations lead, finance/CA reviewer, security/architecture reviewer.
 
 ## Next session should start with
-Stage 4 core architecture is documented (overview, data model, APIs/events, offline-sync,
-migration design, threat/privacy). Options for the next step:
-1. **Deepen Stage 4 for the build** — the data dictionary (`db/data-dictionary/`) is done;
-   next are contract/event schemas (`packages/contracts/`) and infrastructure/CI-CD design
-   (`infra/`, which needs owner field D3); **or**
-2. **QG-02 usability test** — run `docs/design/usability-test-script.md` with real staff
-   in the store (needs store access), recording every hesitation; **or**
-3. **Expand the remaining modules** (M16–M22, M24–M28, M31, M36) and the cross-cutting
-   sets (SEC/PRV/NFR/AI-NFR/MG) to full row-level traceability.
-(Stage 1 discovery + owner fields D3/D4/D5/D8 remain the gating inputs for the M0/M1
-gates and block the start of coding.)
+The owner-closure gate is closed (D3/D4/D5/D8), so the next roadmap step is **Stage 5 — the
+technical foundation** (platform, identity/config service, base data layer, CI/CD). It does
+**not** depend on the store facts and is now unblocked:
+1. **Infrastructure & CI-CD design** to the ₹20,000/month (D3) envelope (`infra/`, with a
+   hosting ADR) — now unblocked; **then**
+2. **Stage 5 foundation scaffolding** with tests (per AID-03/AID-07 and the Definition of
+   Done) — the first real application code.
 
-In parallel (owner/store): fill D3/D4/D5/D8; gather the 20 AVR facts
-(`docs/discovery/avr-closure.md`); measure the six baselines
-(`docs/discovery/baseline.md`); send the ERP-vendor letter
-(`docs/discovery/legacy-data-access.md`).
+In parallel (owner/store, still gating store-specific build per A-11): gather the 20 AVR
+facts (`docs/discovery/avr-closure.md`) and the **trading-day cut-off time**; measure the
+six baselines (`docs/discovery/baseline.md`); send the ERP-vendor letter
+(`docs/discovery/legacy-data-access.md`); begin D4 custody onboarding for Mr Sivakumar.
+
+Also still open (design, not gating): QG-02 usability test in the store; expanding the
+remaining later-release modules (M22, M24–M28, M31, M36) and the SEC/PRV/NFR/AI-NFR/MG sets.
