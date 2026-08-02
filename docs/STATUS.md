@@ -26,10 +26,12 @@ routine progress.
 value is hard-coded** (all per-tenant configuration); **SRE is tenant #1**. The Stage-5
 foundation already works this way (parameterised trading-day/tax rules, versioned config,
 configurable roles/numbering/currency), so this is mostly formalisation, not rework.
-Done so far: the `Tenant` entity + `tenant_id` scoping in the data dictionary, a per-tenant
-entitlements engine (choose-able modules) and a per-tenant settings catalogue (`packages/tenant`).
-Still to do: update the threat model (cross-tenant access = critical) and thread `tenant_id`
-through the remaining data-dictionary domains. The questionnaire is the **tenant Store Setup Profile**.
+The ADR-0003 follow-ups are **done**: the `Tenant` entity + `tenant_id` scoping (data-model
+standard column, so it covers every table), the per-tenant **entitlements** engine
+(choose-able modules) and per-tenant **settings** catalogue (`packages/tenant`), and the
+**threat model** now treats cross-tenant access as a critical defect. The full commercial-
+SaaS features (subscription/billing, white-label branding, self-serve signup) remain **M36
+(R8)** unless prioritised. The questionnaire is the **tenant Store Setup Profile**.
 
 - **Stage 3 done:** design system, usability test script, and screen specs for **all 14
   §27 role surfaces** (`docs/design/`).

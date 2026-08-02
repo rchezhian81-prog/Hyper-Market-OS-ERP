@@ -9,6 +9,7 @@
 ## 1. Trust boundaries
 | Boundary | Control |
 | --- | --- |
+| **Tenant ↔ tenant** (ADR-0003) | **Hard isolation** — every record and query is `tenant_id`-scoped; **cross-tenant access is a critical defect**, tested and denied by default |
 | Client ↔ edge (LAN) | Device-authenticated; individual named users; **no shared logins** (#4) |
 | Edge ↔ cloud (internet) | Authenticated/encrypted sync; **signed config packs** |
 | Cloud service ↔ data | Least-privilege service identities |
@@ -32,7 +33,7 @@
 | **Spoofing** | OIDC auth, device identity, no shared/generic logins |
 | **Tampering** | Append-only ledgers, signed config packs, integrity checks |
 | **Repudiation** | Immutable audit (M34), traceable approvals (§28) |
-| **Information disclosure** | Encryption in transit & at rest, PII minimization, tokenized payments, least privilege |
+| **Information disclosure** | Encryption in transit & at rest, PII minimization, tokenized payments, least privilege; **tenant isolation** — no query returns another tenant's data (ADR-0003) |
 | **Denial of service** | **Offline-first keeps the store trading** (P-01); rate limits; edge autonomy |
 | **Elevation of privilege** | Least-privilege RBAC; maker-checker; a privilege change is itself approved & audited; **AI cannot change privileges** (#5) |
 
