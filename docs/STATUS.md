@@ -32,13 +32,15 @@ instruction ("continue always" / "you carry on").
 - **Stage 4 also done:** **infrastructure & deployment design** to the **₹20,000/month (D3)**
   envelope (`docs/architecture/infrastructure.md`) with hosting **ADR-0002** (Proposed,
   pending owner vendor/commercial validation).
-- **Stage 5 (foundation) — BEGUN.** First real application code landed: the **`Money`
-  value primitive** (`packages/contracts/src/money.ts`, §29.1 / M01-FR-02) — exact integer
-  minor units, explicit currency, never a float, exact splits with no lost paise; **21
-  tests** (`tests/unit/money.test.ts`), full `pnpm check` green (typecheck + lint +
-  secret-scan + 34 tests). Next foundation pieces: shared ids/enums/event types in
-  `packages/contracts/`, then IaC in `infra/`, then the base platform (identity/config/
-  append-only data layer) — each with tests.
+- **Stage 5 (foundation) — BEGUN** (`packages/contracts/`, all with tests; full `pnpm
+  check` green — typecheck + lint + secret-scan + **45 tests**):
+  - `Money` value primitive (§29.1 / M01-FR-02) — exact minor units, never a float, exact
+    splits with no lost paise (21 tests).
+  - Shared vocabularies & §27.1 states — tender/sale/stock/approval/lifecycle/connection
+    with runtime guards (5 tests).
+  - `DomainEvent` envelope (§30.2 / §31.1) — validated, idempotency-keyed (6 tests).
+  - Next: shared branded ids + a quantity/UOM primitive, then IaC in `infra/`, then the
+    base platform (identity/config/append-only data layer) — each with tests.
 
 Store-Core scope (roadmap §21 Stage 2): **M01–M15, M23, M29, M30, M32–M35 — all done.**
 Each module doc marks store-fact-dependent fields `⟳ AVR-##` (confirmed in Stage 1),

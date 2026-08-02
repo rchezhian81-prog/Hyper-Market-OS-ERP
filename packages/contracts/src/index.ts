@@ -3,3 +3,5 @@
 // reviewed, tested unit at a time.
 
 export * from './money';
+export * from './enums';
+export * from './event';

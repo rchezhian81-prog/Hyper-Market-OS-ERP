@@ -7,6 +7,12 @@ app, service and edge component must honour). Roadmap §30, P-06.
   integer minor units + explicit currency, **never a float**; add/subtract/negate/compare,
   exact `allocate` / `allocateByRatios` (**no lost paise**), and locale-neutral formatting.
   Tested in `tests/unit/money.test.ts`.
+- **`src/enums.ts`** — shared domain vocabularies and §27.1 universal states (tender kind/
+  status, sale status, stock state, approval decision, record lifecycle, connection state),
+  each with a runtime guard. Tested in `tests/unit/enums.test.ts`.
+- **`src/event.ts`** — the `DomainEvent` envelope (§30.2 / §31.1): id, type, UTC timestamp,
+  **idempotency key**, source, version, payload; `makeEvent` validates every field so a
+  malformed event can't be published. Tested in `tests/unit/domain-event.test.ts`.
 - **`src/index.ts`** — the package's public surface; grows one reviewed, tested unit at a time.
 
 > Source lives in `src/`; tests live in `tests/` (the repo's test layout). Consumed by edge
