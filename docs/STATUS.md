@@ -8,17 +8,22 @@ Last updated: 2 August 2026
 ---
 
 ## Current stage
-**Stage 3 — UX & design system (in progress).** Store-Core Stage 2 is complete
-(22 modules, 88 requirements traced). Now designing the interfaces before they are
-built (roadmap §27, QG-02). No application code yet — coding stays on HOLD until the
+**Stage 3 — UX & design system (screen inventory complete).** Store-Core Stage 2 is
+complete (22 modules, 88 requirements traced). The interfaces are designed before they
+are built (roadmap §27, QG-02). No application code yet — coding stays on HOLD until the
 owner closes D3/D4/D5/D8 (§38). Running autonomously per owner instruction
 ("continue always"), producing all design/specification work up to that coding line.
 
-- **Stage 3 done so far:** design system, usability test script, and screen specs
-  for cashier POS, owner command centre, store/manager, purchase/receiving,
-  inventory/warehouse handheld.
-- **Stage 3 next:** customer app/web, picker, delivery, CRM/service, admin/security,
-  migration, AI-control screen specs. Then Stage 4 (architecture).
+- **Stage 3 done:** design system, usability test script, and screen specs for **all 14
+  §27 role surfaces** — cashier POS, owner command centre, store/manager,
+  purchase/receiving, inventory/warehouse handheld, product/merchandising, finance,
+  customer app/web, picker/packer, delivery, CRM/service, admin/security, migration,
+  and AI control (in `docs/design/screens/`). (The two surfaces the previous "next" note
+  had omitted — product/merchandising and finance — are included, per §8 of the design
+  system; nothing dropped.)
+- **Stage 3 next:** QG-02 human usability testing with real staff
+  (`usability-test-script.md`) when the store is available. Then **Stage 4 —
+  architecture**.
 
 Store-Core scope (roadmap §21 Stage 2): **M01–M15, M23, M29, M30, M32–M35 — all done.**
 Each module doc marks store-fact-dependent fields `⟳ AVR-##` (confirmed in Stage 1),
@@ -56,16 +61,17 @@ release/stage is reached.
   named person. These are gathered in the store during Stage 1.
 
 ## Next session should start with
-Store-Core Stage 2 is complete. Options for the next step:
-1. **Stage 3 — UX & design system** for the Store-Core surfaces (cashier POS,
-   owner, manager, purchase, warehouse), per roadmap §27/§27.1 and QG-02, with the
-   printable staff test script; **or**
-2. **Expand the remaining modules** (M16–M22, M24–M28, M31, M36) and the
-   cross-cutting sets (SEC/PRV/NFR/AI-NFR/MG) to full row-level traceability; **or**
-3. **Architecture (Stage 4)** — data model (§29), API catalogue (§30), offline-sync
-   design (§31), threat/privacy model (§35), migration design (§34).
-   (Roadmap sequence is Stage 3 → Stage 4; Stage 1 discovery + owner fields
-   D3/D4/D5/D8 remain the gating inputs for the M0/M1 gates.)
+Stage 3 screen inventory is complete (all 14 §27 surfaces + design system + usability
+script). Options for the next step:
+1. **Stage 4 — Architecture** — data model (§29), API catalogue (§30), offline-sync
+   design (§31), threat/privacy model (§35), migration design (§34). This is the roadmap
+   sequence after Stage 3; **or**
+2. **QG-02 usability test** — run `docs/design/usability-test-script.md` with real staff
+   in the store (needs store access), recording every hesitation; **or**
+3. **Expand the remaining modules** (M16–M22, M24–M28, M31, M36) and the cross-cutting
+   sets (SEC/PRV/NFR/AI-NFR/MG) to full row-level traceability.
+(Stage 1 discovery + owner fields D3/D4/D5/D8 remain the gating inputs for the M0/M1
+gates and block the start of coding.)
 
 In parallel (owner/store): fill D3/D4/D5/D8; gather the 20 AVR facts
 (`docs/discovery/avr-closure.md`); measure the six baselines
