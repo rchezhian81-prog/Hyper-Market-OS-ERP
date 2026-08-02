@@ -44,6 +44,15 @@ references those rows resolve to:
 | Threat & privacy model (§35) | `docs/security/threat-privacy-model.md` | trust boundaries, STRIDE, PRV, QG-06 |
 | Field-level data dictionary | `db/data-dictionary/` | six Store-Core domains, field level |
 
+## Foundation code (Stage 5 — build begun)
+
+The first real application code. These units are store-fact-independent; store-specific
+modules still wait on the Stage 1 facts (finding A-11).
+
+| Unit | Requirement | Code | Tests |
+| --- | --- | --- | --- |
+| `Money` value primitive | §29.1 (exact money, no float) / M01-FR-02 (currency & precision) | `packages/contracts/src/money.ts` | `tests/unit/money.test.ts` (21 tests) |
+
 ## Individual requirement trace (expanded in Stage 2)
 
 | Requirement ID | Stage | Design | Code | Tests | Release | Status |

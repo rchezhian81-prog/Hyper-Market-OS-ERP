@@ -32,9 +32,13 @@ instruction ("continue always" / "you carry on").
 - **Stage 4 also done:** **infrastructure & deployment design** to the **₹20,000/month (D3)**
   envelope (`docs/architecture/infrastructure.md`) with hosting **ADR-0002** (Proposed,
   pending owner vendor/commercial validation).
-- **Stage 5 start (next):** the technical foundation — contract/event schemas
-  (`packages/contracts/`), IaC in `infra/`, and the base platform (identity/config/data)
-  with tests. The first real application code; unblocked by the closed gate.
+- **Stage 5 (foundation) — BEGUN.** First real application code landed: the **`Money`
+  value primitive** (`packages/contracts/src/money.ts`, §29.1 / M01-FR-02) — exact integer
+  minor units, explicit currency, never a float, exact splits with no lost paise; **21
+  tests** (`tests/unit/money.test.ts`), full `pnpm check` green (typecheck + lint +
+  secret-scan + 34 tests). Next foundation pieces: shared ids/enums/event types in
+  `packages/contracts/`, then IaC in `infra/`, then the base platform (identity/config/
+  append-only data layer) — each with tests.
 
 Store-Core scope (roadmap §21 Stage 2): **M01–M15, M23, M29, M30, M32–M35 — all done.**
 Each module doc marks store-fact-dependent fields `⟳ AVR-##` (confirmed in Stage 1),
@@ -66,7 +70,9 @@ sets SEC/PRV/NFR/AI-NFR/MG — expanded when their release/stage is reached.
   family-level baseline.
 
 ## In progress
-- Nothing active. Clean stopping point.
+- **Stage 5 foundation build** — started with the `Money` primitive (done, tested). Next:
+  shared ids/enums/event types, then IaC, then the base platform. Store-fact-independent
+  foundation work proceeds; store-specific modules wait on the Stage 1 facts (A-11).
 
 ## Blocked / needs owner input
 - **D3/D4/D5/D8 — CLOSED (2 Aug 2026).** D3 = ₹20,000/month; D4 = **Mr Sivakumar**
