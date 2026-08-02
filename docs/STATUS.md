@@ -8,11 +8,16 @@ Last updated: 2 August 2026
 ---
 
 ## Current stage
-**Stage 2 — detailed requirements: Store-Core scope COMPLETE.** All 22 Store-Core
-modules are expanded into the Appendix B requirement-record format, one file per
-module in `docs/requirements/`, with every FR traced in `docs/traceability.md`
-(88 individual requirement rows). No application code yet. The **M0 (Formal GO)
-gate** remains held only by the four owner fields D3/D4/D5/D8.
+**Stage 3 — UX & design system (in progress).** Store-Core Stage 2 is complete
+(22 modules, 88 requirements traced). Now designing the interfaces before they are
+built (roadmap §27, QG-02). No application code yet — coding stays on HOLD until the
+owner closes D3/D4/D5/D8 (§38). Running autonomously per owner instruction
+("continue always"), producing all design/specification work up to that coding line.
+
+- **Stage 3 done so far:** `docs/design/design-system.md`, `usability-test-script.md`,
+  `docs/design/screens/pos-cashier.md`.
+- **Stage 3 next:** owner, manager, purchase/receiving, warehouse, customer, picker,
+  delivery, CRM, admin, migration and AI-control screen specs.
 
 Store-Core scope (roadmap §21 Stage 2): **M01–M15, M23, M29, M30, M32–M35 — all done.**
 Each module doc marks store-fact-dependent fields `⟳ AVR-##` (confirmed in Stage 1),
