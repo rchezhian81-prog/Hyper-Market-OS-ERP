@@ -124,9 +124,11 @@ depend on the store facts and is unblocked:
    full tests (AID-03/AID-07 and the Definition of Done) — the first real application code.
 
 In parallel (owner/store, still gating store-specific build per A-11): gather the 20 AVR
-facts (`docs/discovery/avr-closure.md`) and the **trading-day cut-off time**; measure the
-six baselines (`docs/discovery/baseline.md`); send the ERP-vendor letter
-(`docs/discovery/legacy-data-access.md`); begin D4 custody onboarding for Mr Sivakumar.
+facts using the new plain-language **`docs/discovery/store-facts-questionnaire.md`** (grouped
+by who answers: owner / floor manager / accounts / IT / payments / privacy) — it includes
+the **trading-day cut-off**; measure the six baselines (`docs/discovery/baseline.md`); send
+the ERP-vendor letter (`docs/discovery/legacy-data-access.md`); begin D4 custody onboarding
+for Mr Sivakumar.
 
 Also still open (design, not gating): QG-02 usability test in the store; expanding the
 remaining later-release modules (M22, M24–M28, M31, M36) and the SEC/PRV/NFR/AI-NFR/MG sets.
