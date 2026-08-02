@@ -17,14 +17,17 @@ Running autonomously per owner instruction ("continue always" / "you carry on").
   §27 role surfaces** (`docs/design/`).
 - **Stage 4 done:** architecture overview, data model (§29), API & event catalogue (§30),
   offline-sync design (§31), migration/cutover design (§34), and threat & privacy model
-  (§35) — in `docs/architecture/`, `docs/api/catalogue.md` and `docs/security/`. All apply
-  the §19 baseline (ADR-0001); nothing invented beyond Store-Core.
+  (§35) — in `docs/architecture/`, `docs/api/catalogue.md` and `docs/security/`; **plus the
+  field-level data dictionary** for all six Store-Core domains (`db/data-dictionary/`:
+  identity-platform, catalogue-pricing, inventory, purchase-supplier, pos-cash, finance).
+  All apply the §19 baseline (ADR-0001); nothing invented beyond Store-Core. All 13 tests
+  pass; the guardrails scope to code, not docs.
 - **Open gate:** QG-02 human usability testing with real staff
   (`docs/design/usability-test-script.md`) still needs the store — it runs whenever staff
   are available.
-- **Stage 4 next:** deepen where the build will need it — per-domain data dictionary
-  (`db/data-dictionary/`), contract/event schemas (`packages/contracts/`), and
-  infrastructure/CI-CD design (`infra/`).
+- **Stage 4 next:** contract/event schemas (`packages/contracts/`) and
+  **infrastructure/CI-CD design** (`infra/`) — the latter needs owner field **D3** (monthly
+  running-cost ceiling) before any hosting/vendor shape is committed.
 
 Store-Core scope (roadmap §21 Stage 2): **M01–M15, M23, M29, M30, M32–M35 — all done.**
 Each module doc marks store-fact-dependent fields `⟳ AVR-##` (confirmed in Stage 1),
@@ -64,9 +67,9 @@ release/stage is reached.
 ## Next session should start with
 Stage 4 core architecture is documented (overview, data model, APIs/events, offline-sync,
 migration design, threat/privacy). Options for the next step:
-1. **Deepen Stage 4 for the build** — per-domain data dictionary (`db/data-dictionary/`),
-   contract/event schemas (`packages/contracts/`), and infrastructure/CI-CD design
-   (`infra/`); **or**
+1. **Deepen Stage 4 for the build** — the data dictionary (`db/data-dictionary/`) is done;
+   next are contract/event schemas (`packages/contracts/`) and infrastructure/CI-CD design
+   (`infra/`, which needs owner field D3); **or**
 2. **QG-02 usability test** — run `docs/design/usability-test-script.md` with real staff
    in the store (needs store access), recording every hesitation; **or**
 3. **Expand the remaining modules** (M16–M22, M24–M28, M31, M36) and the cross-cutting
