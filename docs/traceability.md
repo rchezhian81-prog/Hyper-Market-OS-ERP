@@ -116,6 +116,14 @@ references those rows resolve to:
 | M17-FR-02 | 2 | `docs/requirements/M17.md` | — | — | R4 | In design |
 | M17-FR-03 | 2 | `docs/requirements/M17.md` | — | — | R4 | In design |
 | M17-FR-04 | 2 | `docs/requirements/M17.md` | — | — | R4 | In design |
+| M18-FR-01 | 2 | `docs/requirements/M18.md` | — | — | R5 | In design |
+| M18-FR-02 | 2 | `docs/requirements/M18.md` | — | — | R5 | In design |
+| M18-FR-03 | 2 | `docs/requirements/M18.md` | — | — | R5 | In design |
+| M18-FR-04 | 2 | `docs/requirements/M18.md` | — | — | R5 | In design |
+| M19-FR-01 | 2 | `docs/requirements/M19.md` | — | — | R5 | In design |
+| M19-FR-02 | 2 | `docs/requirements/M19.md` | — | — | R5 | In design |
+| M19-FR-03 | 2 | `docs/requirements/M19.md` | — | — | R5 | In design |
+| M19-FR-04 | 2 | `docs/requirements/M19.md` | — | — | R5 | In design |
 | M20-FR-01 | 2 | `docs/requirements/M20.md` | — | — | R4 | In design |
 | M20-FR-02 | 2 | `docs/requirements/M20.md` | — | — | R4 | In design |
 | M20-FR-03 | 2 | `docs/requirements/M20.md` | — | — | R4 | In design |
