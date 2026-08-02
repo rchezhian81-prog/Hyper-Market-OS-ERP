@@ -14,8 +14,11 @@ for Store-Core (R2). **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
 spec-freeze / store-specific build are the Stage 1 store facts (the 20 AVR items) and the
-trading-day cut-off — gathered in the store (finding A-11). Running autonomously per owner
-instruction ("continue always" / "you carry on").
+trading-day cut-off — gathered in the store (finding A-11). Running autonomously per
+**standing owner instruction (2 Aug 2026): "carry on always, don't wait for my approval
+unnecessarily."** Keep building and pushing tested work; stop only for genuine blockers that
+truly need the owner or the store (the Stage 1 facts, a hosting-vendor commitment) — not for
+routine progress.
 
 - **Stage 3 done:** design system, usability test script, and screen specs for **all 14
   §27 role surfaces** (`docs/design/`).
