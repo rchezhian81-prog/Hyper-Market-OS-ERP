@@ -8,9 +8,19 @@ Last updated: 2 August 2026
 ---
 
 ## Current stage
-**Stage 0/1 groundwork complete; roadmap now in the repository.** No application
-code yet, by design. The **M0 (Formal GO) gate** is held only by the four owner
-fields D3/D4/D5/D8 — everything that can be prepared without them is done.
+**Stage 2 — detailed requirements (in progress).** Expanding each Store-Core
+module's roadmap FR lines into the Appendix B requirement-record format, module by
+module. No application code yet. The **M0 (Formal GO) gate** remains held only by
+the four owner fields D3/D4/D5/D8.
+
+Store-Core modules to expand (roadmap §21 Stage 2 scope): M01–M15, M23, M29, M30,
+M32–M35.
+- **Done:** M01, M02.
+- **Next:** M03 (product & master data), then M04, M05 …
+
+Each module doc marks store-fact-dependent fields `⟳ AVR-##` (confirmed in Stage 1),
+so nothing is guessed. Individual FR rows are added to `docs/traceability.md` as
+each module is expanded.
 
 ## Last completed
 - **Setup 1/3/4** — repository, `CLAUDE.md`, safety net (tests, guardrails, secret
@@ -39,13 +49,10 @@ fields D3/D4/D5/D8 — everything that can be prepared without them is done.
   legacy export rights, etc.) in `docs/discovery/avr-closure.md`, each needing a
   named person. These are gathered in the store during Stage 1.
 
-## Next session should start with (Stage 2, per roadmap §21)
-1. **Stage 2 — detailed requirements**, module by module, for the Store Core scope
-   (M01–M15, M23, M29, M30, M32–M35). For each module expand every `M##-FR-##` into
-   the Appendix B requirement record (testable "system shall", actors, flows,
-   rules, permissions, offline behaviour, audit, acceptance) in
-   `docs/requirements/<module>.md`, and expand `docs/traceability.md` to one row
-   per requirement. Stop after each module for a plain-English owner summary
-   (roadmap says: do not do all modules in one response).
+## Next session should start with
+1. **Continue Stage 2 with M03** (product & master data), then M04, M05 … through
+   the Store-Core scope. Same method: expand every `M##-FR-##` into the Appendix B
+   record in `docs/requirements/<module>.md`, add its rows to
+   `docs/traceability.md`, and give a plain-English summary after each module.
 2. In parallel: owner fills D3/D4/D5/D8; Stage 1 store facts (AVR) are gathered and
    the six baseline numbers measured (`docs/discovery/baseline.md`).

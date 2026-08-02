@@ -30,4 +30,12 @@ requirement may reach **Done** without a complete individual row.
 
 | Requirement ID | Stage | Design | Code | Tests | Release | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| _(one row per FR/NFR/SEC/PRV/AI-NFR/MG requirement — populated from Stage 2)_ | | | | | | |
+| M01-FR-01 | 2 | `docs/requirements/M01.md` | — | — | R1 | In design |
+| M01-FR-02 | 2 | `docs/requirements/M01.md` | — | — | R1 | In design |
+| M01-FR-03 | 2 | `docs/requirements/M01.md` | — | — | R1 | In design |
+| M01-FR-04 | 2 | `docs/requirements/M01.md` | — | — | R1 | In design |
+| M02-FR-01 | 2 | `docs/requirements/M02.md` | — | — | R1 | In design |
+| M02-FR-02 | 2 | `docs/requirements/M02.md` | — | — | R1 | In design |
+| M02-FR-03 | 2 | `docs/requirements/M02.md` | — | — | R1 | In design |
+| M02-FR-04 | 2 | `docs/requirements/M02.md` | — | — | R1 | In design |
+| _(remaining FR/NFR/SEC/PRV/AI-NFR/MG rows added as each module is expanded)_ | | | | | | |
