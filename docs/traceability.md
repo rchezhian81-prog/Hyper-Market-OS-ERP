@@ -58,6 +58,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Append-only ledger engine | hard rule #2 / M08-FR-01 (append-only, projected balance) / §31.1 (idempotent) | `packages/ledger/src/ledger.ts` | `tests/unit/ledger.test.ts` (5 tests) |
 | Maker-checker approval engine | §28 (separation of duties) / M02 (maker-checker, value-limit routing) | `packages/approvals/src/approvals.ts` | `tests/unit/approvals.test.ts` (10 tests) |
 | RBAC access-control engine | P-04 (least privilege) / M02-FR-02 (role/branch/permission authz) | `packages/rbac/src/rbac.ts` | `tests/unit/rbac.test.ts` (7 tests) |
+| Offline sync outbox | P-01 (offline first) / §31 (durable outbox, idempotent) / hard rule #6 (dead-letter never dropped) | `packages/sync/src/outbox.ts` | `tests/unit/outbox.test.ts` (5 tests) |
 
 ## Individual requirement trace (expanded in Stage 2)
 
