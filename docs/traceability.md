@@ -64,6 +64,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Trading-day calculator | M01-FR-02 (trading-day rule) / A-13 | `packages/calendar/src/trading-day.ts` | `tests/unit/trading-day.test.ts` (6 tests) |
 | Line & bill pricing (composition) | M12 (POS) / M05 (pricing) / M23 (tax) — Money × Quantity × Rate | `packages/pricing/src/pricing.ts` | `tests/unit/pricing.test.ts` (7 tests) |
 | Tender settlement | M12-FR-03 (split tenders balance; no fake approval) | `packages/tender/src/tender.ts` | `tests/unit/tender.test.ts` (7 tests) |
+| Versioned config + rollback | M01-FR-03 (append-only versions, non-destructive rollback) | `packages/config/src/config.ts` | `tests/unit/config.test.ts` (5 tests) |
 
 ## Individual requirement trace (expanded in Stage 2)
 
