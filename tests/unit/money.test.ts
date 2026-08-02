@@ -18,7 +18,7 @@ import {
   precisionOf,
   isCurrencyCode,
   type CurrencyCode,
-} from '../../packages/contracts/src/index';
+} from '../../packages/contracts/src/money';
 
 // Money is the foundation of every price, tender, ledger entry and total.
 // These tests pin the §29.1 rule: exact integer minor units, explicit currency,

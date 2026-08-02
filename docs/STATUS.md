@@ -39,8 +39,11 @@ instruction ("continue always" / "you carry on").
   - Shared vocabularies & §27.1 states — tender/sale/stock/approval/lifecycle/connection
     with runtime guards (5 tests).
   - `DomainEvent` envelope (§30.2 / §31.1) — validated, idempotency-keyed (6 tests).
-  - Next: shared branded ids + a quantity/UOM primitive, then IaC in `infra/`, then the
-    base platform (identity/config/append-only data layer) — each with tests.
+  - `Quantity` value primitive (UOM-aware, exact, never a float) — 9 tests.
+  - `pnpm check` green: typecheck + lint + secret-scan + **54 tests**. Value-object
+    operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
+  - Next: shared branded ids, then IaC in `infra/`, then the base platform (identity/config/
+    append-only data layer) — each with tests.
 
 Store-Core scope (roadmap §21 Stage 2): **M01–M15, M23, M29, M30, M32–M35 — all done.**
 Each module doc marks store-fact-dependent fields `⟳ AVR-##` (confirmed in Stage 1),
