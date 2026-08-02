@@ -1,24 +1,19 @@
 # `docs/roadmap/`
 
-## ⛔ The controlling document goes here
+## The controlling document
 
-Place the **Final Master Roadmap & Developer Requirements v2.0** in this folder,
-named exactly:
+`roadmap-v2.0.docx` — the **Final Master Roadmap & Developer Requirements v2.0**
+(39 sections) — is present here and is the **single source of truth** for the whole
+project (`CLAUDE.md`).
 
-```
-docs/roadmap/roadmap-v2.0.docx
-```
+It defines: 36 modules (M01–M36), 14 developer extensions (D01–D14), 20 workflows
+(WF-01–WF-20), 12 quality gates (QG-01–QG-12), 10 AI agents (A01–A10), 12 migration
+controls (MG-01–MG-12), releases R0–R8, execution stages 0–19, milestones M0–M8,
+owner decisions OD-01–OD-10 and decision fields D1–D8.
 
-`CLAUDE.md` names this file as the **single source of truth** for the whole
-project. Until it is present:
+- The navigable index of all of the above is in `docs/requirements/index.md`.
+- The decisions, risks and compliance obligations are in `docs/registers/`.
 
-- **Setup 2** (the requirement index) cannot be completed — see
-  `docs/requirements/index.md`.
-- The roadmap-sourced parts of **Stage 0** and of `docs/adr/0001-baseline-decisions.md`
-  cannot be filled in verbatim.
-
-Once it is here, run the Setup 2 prompt from Annexure H.
-
-> The document is intentionally **not** committed by the setup process, because
-> it was not provided to this session. Add it yourself, then commit it (it is a
-> `.docx`, so it is safe to track; it is not matched by `.gitignore`).
+> Change control: this document supersedes conflicting earlier statements. No
+> requirement may be removed or deferred except through a written, owner-approved
+> change (`docs/registers/changes.md`) with a named target release (OD-02, §14, §25).

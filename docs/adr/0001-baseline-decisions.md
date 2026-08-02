@@ -1,46 +1,54 @@
 # ADR 0001 — Baseline decisions and the rules the machine enforces
 
-- **Status:** Accepted (baseline). Owner-decision fields marked ⛔ remain open.
-- **Date:** 2 August 2026
-- **Context:** Recorded during Setup 4 of the Claude Code Build Pack (Annexure H),
-  before any application code exists.
+- **Status:** Accepted (baseline). Owner-closure fields D3/D4/D5/D8 remain open.
+- **Date:** 2 August 2026 (updated when the roadmap was added to the repository)
+- **Context:** Recorded during Setup 4 of the Claude Code Build Pack (Annexure H);
+  completed from the roadmap decision register when `docs/roadmap/roadmap-v2.0.docx`
+  was placed in the repository. No application code exists.
 
 An Architecture Decision Record captures a decision, why it was made, and what it
 commits us to. This first record fixes the technology baseline and the
 non-negotiable rules so they are visible and, where possible, checked by the
 machine rather than by memory.
 
-> **Source-of-truth note.** The authoritative text of owner decisions OD-01 to
-> OD-10 and the developer decisions D1–D8 lives in the roadmap decision register
-> (roadmap §25). That document (`docs/roadmap/roadmap-v2.0.docx`) is **not yet in
-> the repository**. The entries below marked ⛔ are recorded from the Annexure G
-> audit and Annexure H build pack only, or are still blank owner fields. When the
-> roadmap is added, this ADR must be completed verbatim from §25 — nothing here
-> is invented, and gaps are left as gaps.
+> **Source of truth.** Owner decisions OD-01…OD-10 and decision fields D1–D8 below
+> are recorded **verbatim from roadmap §14 and §25**. The full register is also in
+> `docs/registers/decisions.md`.
 
 ---
 
-## Part A — Owner decisions (OD-01 to OD-10)
+## Part A — Owner decisions OD-01 to OD-10 (roadmap §14)
 
-| ID | Decision (as known) | Source | Consequence |
+| ID | Decision | Binding requirement |
+| --- | --- | --- |
+| OD-01 | Product | Build a completely new, independently owned SRE Retail OS. |
+| OD-02 | Scope | All approved modules, channels, controls and AI agents remain in final scope; nothing is silently removed. |
+| OD-03 | Hybrid | Store operations and POS continue safely without internet; cloud provides central truth, control and omnichannel services. |
+| OD-04 | POS | Build the new SRE standalone POS as an independent product. This architecture decision is final. |
+| OD-05 | Migration | All usable previous-system data is migrated, reconciled and evidenced. Exceptions require owner approval. |
+| OD-06 | Legacy | Any legacy adapter is temporary, preferably read-only, and retired after accepted cutover. |
+| OD-07 | Commerce | Customer Android/iOS app, web store, online payment, pickup and delivery are committed scope. |
+| OD-08 | AI | AI assists development and product operation; critical business actions remain governed and auditable. |
+| OD-09 | Ownership | SRE owns source code, repositories, databases, documentation, deployment assets, backups and credentials. |
+| OD-10 | Sequence | Phasing controls risk and adoption; it never reduces final scope. |
+
+**Consequence for the build:** OD-04 makes the POS the critical path to the
+1 April 2027 Store Core target (M5); OD-09 + AID-10 require the second custodian
+(D4) to rebuild the system quarterly; OD-02 + OD-10 mean deferral is only ever via
+a written change (`docs/registers/changes.md`), never a silent drop.
+
+## Part B — Decision fields D1 to D8 (roadmap §25)
+
+| ID | Field | Value | Status |
 | --- | --- | --- | --- |
-| OD-02 | Scope ratchet: nothing in scope is silently dropped; "not included is unacceptable" (§24). Deferral must be explicit, in writing, with a named target release. | Annexure G | The missing control becomes a schedule trigger, not a scope gate. |
-| OD-04 | Build the SRE standalone POS as an independent product. Stated as final. | Annexure G | The POS is the critical path to the 1 April 2027 Store Core target: checkout speed, tender handling, peripheral certification and 72-hour offline resilience are all ours to prove. |
-| OD-05 | Migrate **all usable history** (§34). | Annexure G | "Usable" must be defined before the migration rehearsal (see Stage 11 / finding A-08): a dataset is usable if it can be extracted, has an identifiable key, and its totals reconcile. |
-| OD-09 | Source-code ownership: the owner owns the product outright. | Annexure G | Reinforced by the quarterly rebuild-by-second-custodian discipline (AID-10). |
-| OD-01, OD-03, OD-06, OD-07, OD-08, OD-10 | ⛔ Pending roadmap §25. | — | Record verbatim when the roadmap is added. |
-
-## Part B — Developer / owner decision fields (D1–D8)
-
-| ID | Field | Value (as known) | Status |
-| --- | --- | --- | --- |
-| D1 | Budget | ₹5–10 lakh planning envelope (not permission to weaken scope, security, migration, testing, documentation or ownership) | Recorded (Annexure G) |
-| D2 | Owner capacity | 30 hours / week | Recorded (Annexure G) |
-| D3 | Running-cost ceiling | ⛔ blank | **Blocking** before production |
-| D4 | Second technical custodian | ⛔ blank | **Blocking** — Annexure H: the one field it would refuse to start without. Fill first. |
-| D5 | GO date | ⛔ blank | **Blocking** before coding |
-| D6, D7 | ⛔ Pending roadmap §25 | — | Record when roadmap added |
-| D8 | Completion date | ⛔ blank | **Blocking**; M5 currently the only dated milestone (1 April 2027) |
+| D1 | Indicative programme budget | ₹5–10 lakh (planning envelope only) | Recorded; commercial validation required |
+| D2 | Owner review capacity | ≥ 30 hours/week | Recorded |
+| D3 | Monthly running-cost ceiling | OWNER VALUE REQUIRED | **Open — blocking** before hosting/vendor commitment |
+| D4 | Second technical custodian | NAME REQUIRED | **Open — blocking** before production. Fill first. |
+| D5 | Formal GO date | DATE/SIGNATURE REQUIRED | **Open — blocking** before coding |
+| D6 | Initial online catalogue | 300–600 fast-moving products | Recorded; SKU list required |
+| D7 | Migration history | Full usable history | Recorded; exceptions only by owner approval |
+| D8 | Cutover targets | Store Core 1 April 2027; full completion date OWNER VALUE REQUIRED | Store Core scope & final date must be signed |
 
 ## Part C — Technology baseline (roadmap §19)
 
