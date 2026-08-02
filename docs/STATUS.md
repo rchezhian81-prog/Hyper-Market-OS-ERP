@@ -8,20 +8,19 @@ Last updated: 2 August 2026
 ---
 
 ## Current stage
-**Stage 2 — detailed requirements (in progress).** Expanding each Store-Core
-module's roadmap FR lines into the Appendix B requirement-record format, module by
-module. No application code yet. The **M0 (Formal GO) gate** remains held only by
-the four owner fields D3/D4/D5/D8.
+**Stage 2 — detailed requirements: Store-Core scope COMPLETE.** All 22 Store-Core
+modules are expanded into the Appendix B requirement-record format, one file per
+module in `docs/requirements/`, with every FR traced in `docs/traceability.md`
+(88 individual requirement rows). No application code yet. The **M0 (Formal GO)
+gate** remains held only by the four owner fields D3/D4/D5/D8.
 
-Store-Core modules to expand (roadmap §21 Stage 2 scope): M01–M15, M23, M29, M30,
-M32–M35.
-- **Done:** M01–M15 (15 of 21).
-- **Next (final batch):** M23, M29, M30, M32–M35 (finance, owner BI, import/export,
-  integration platform, admin/support, audit, backup/DR).
-
+Store-Core scope (roadmap §21 Stage 2): **M01–M15, M23, M29, M30, M32–M35 — all done.**
 Each module doc marks store-fact-dependent fields `⟳ AVR-##` (confirmed in Stage 1),
-so nothing is guessed. Individual FR rows are added to `docs/traceability.md` as
-each module is expanded.
+so nothing is guessed.
+
+Not yet expanded (post-Store-Core, later releases R4–R8): M16–M22, M24–M28, M31,
+M36, and the cross-cutting sets SEC/PRV/NFR/AI-NFR/MG — expanded when their
+release/stage is reached.
 
 ## Last completed
 - **Setup 1/3/4** — repository, `CLAUDE.md`, safety net (tests, guardrails, secret
@@ -51,10 +50,18 @@ each module is expanded.
   named person. These are gathered in the store during Stage 1.
 
 ## Next session should start with
-1. **Continue Stage 2 with the final batch** M23, M29, M30, M32–M35 (finance,
-   owner BI, import/export, platform, admin, audit, backup/DR), completing the
-   Store-Core scope. Same method: expand every `M##-FR-##` into the Appendix B
-   record in `docs/requirements/<module>.md`, add its rows to
-   `docs/traceability.md`, and give a plain-English summary after each batch.
-2. In parallel: owner fills D3/D4/D5/D8; Stage 1 store facts (AVR) are gathered and
-   the six baseline numbers measured (`docs/discovery/baseline.md`).
+Store-Core Stage 2 is complete. Options for the next step:
+1. **Stage 3 — UX & design system** for the Store-Core surfaces (cashier POS,
+   owner, manager, purchase, warehouse), per roadmap §27/§27.1 and QG-02, with the
+   printable staff test script; **or**
+2. **Expand the remaining modules** (M16–M22, M24–M28, M31, M36) and the
+   cross-cutting sets (SEC/PRV/NFR/AI-NFR/MG) to full row-level traceability; **or**
+3. **Architecture (Stage 4)** — data model (§29), API catalogue (§30), offline-sync
+   design (§31), threat/privacy model (§35), migration design (§34).
+   (Roadmap sequence is Stage 3 → Stage 4; Stage 1 discovery + owner fields
+   D3/D4/D5/D8 remain the gating inputs for the M0/M1 gates.)
+
+In parallel (owner/store): fill D3/D4/D5/D8; gather the 20 AVR facts
+(`docs/discovery/avr-closure.md`); measure the six baselines
+(`docs/discovery/baseline.md`); send the ERP-vendor letter
+(`docs/discovery/legacy-data-access.md`).
