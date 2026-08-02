@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# SRE Retail OS pre-commit hook.
+#
+# Blocks any commit that contains a secret, password, API key or connection
+# string (CLAUDE.md hard rule #4). This hook is wired up automatically by
+# `pnpm install` (the "prepare" script sets core.hooksPath to .githooks).
+# To enable it by hand:  git config core.hooksPath .githooks
+#
+# To bypass in a genuine emergency:  git commit --no-verify  (avoid this).
+
+set -euo pipefail
+
+echo "pre-commit: scanning staged changes for secrets..."
+
+if command -v node >/dev/null 2>&1; then
+  node "$(git rev-parse --show-toplevel)/scripts/secret-scan.mjs" --staged
+else
+  echo "pre-commit: node not found — cannot run the secret scan. Install Node 22+." >&2
+  exit 1
+fi
+
+echo "pre-commit: OK."
