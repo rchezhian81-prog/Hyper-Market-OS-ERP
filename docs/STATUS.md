@@ -40,7 +40,9 @@ instruction ("continue always" / "you carry on").
     with runtime guards (5 tests).
   - `DomainEvent` envelope (§30.2 / §31.1) — validated, idempotency-keyed (6 tests).
   - `Quantity` value primitive (UOM-aware, exact, never a float) — 9 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **81 tests**. Value-object
+  - `Rate` value primitive (exact basis points; applies to Money with explicit rounding via
+    BigInt) — the exact %-maths for pricing (M05) and tax (M23) — 9 tests.
+  - `pnpm check` green: typecheck + lint + secret-scan + **90 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **Base-platform layer begun:** the **append-only ledger engine** (`packages/ledger/`,
     hard rule #2 / M08-FR-01 / §31.1) — idempotent append, balances projected from events

@@ -10,7 +10,9 @@
 
 export type { Money, CurrencyCode } from './money';
 export type { Quantity, Uom } from './quantity';
+export type { Rate, Rounding } from './rate';
 export * as MoneyOps from './money';
 export * as QuantityOps from './quantity';
+export * as RateOps from './rate';
 export * from './enums';
 export * from './event';

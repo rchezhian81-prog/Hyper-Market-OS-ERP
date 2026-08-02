@@ -11,6 +11,10 @@ app, service and edge component must honour). Roadmap §30, P-06.
   exact integer counts of a UOM's smallest unit (grams for kg, ml for L), **never a float**;
   parse/add/subtract/negate/multiply/compare and locale-neutral formatting. Tested in
   `tests/unit/quantity.test.ts`.
+- **`src/rate.ts`** — the `Rate` primitive (M05 pricing / M23 tax): a proportional rate in
+  exact integer **basis points** (18% = 1800 bp); `applyRate` applies it to Money rounding
+  to whole minor units with an explicit mode (half-up / half-even / down), using BigInt so
+  it's exact and overflow-proof. Tested in `tests/unit/rate.test.ts`.
 - **`src/enums.ts`** — shared domain vocabularies and §27.1 universal states (tender kind/
   status, sale status, stock state, approval decision, record lifecycle, connection state),
   each with a runtime guard. Tested in `tests/unit/enums.test.ts`.
