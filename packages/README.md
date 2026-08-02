@@ -1,0 +1,73 @@
+# `packages/` — the SRE Retail OS foundation
+
+The shared, **storage-agnostic, fully-tested** building blocks (Stage 5). Every
+non-negotiable rule in `CLAUDE.md` is enforced *here*, in code, so the layers above (a
+database-backed persistence layer, the domain services, the apps) inherit the guarantees
+instead of re-implementing them. Each package is pure domain logic — no I/O; where an engine
+needs storage or a clock, it is **injected**, which is why everything is deterministic and
+testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
+
+> Onboarding note for the second custodian (D4, AID-10): this file is the map. Read a
+> package's `README.md`, then its one source file and its test — each is small and self-
+> contained. The offline-sale example below shows how they fit together.
+
+## Layers
+
+```
+  Compositions   pricing · tender · sale        (real domain operations)
+       ▲
+  Engines        ledger · approvals · rbac ·     (one invariant each)
+                 sync · numbering · calendar · config
+       ▲
+  Contracts      money · quantity · rate ·       (the shared vocabulary & shapes)
+                 enums · event
+```
+
+## The packages
+
+| Package | Concern | Key rule it enforces |
+| --- | --- | --- |
+| `contracts` | Value primitives & shared shapes | Exact money/quantity/rate (never a float, §29.1); de-duplicated events (§30.2/§31.1) |
+| `ledger` | Append-only event ledger | Balances are projected from events, never overwritten (hard rule #2) |
+| `approvals` | Maker-checker | The maker can never decide their own request (§28) |
+| `rbac` | Access control | Default-deny; least privilege (P-04, M02-FR-02) |
+| `sync` | Offline outbox | Idempotent sync; dead-letter never dropped (P-01, §31, hard rule #6) |
+| `numbering` | Document numbers | Gap-free & unique per type; offline reserved ranges (M01-FR-02) |
+| `calendar` | Trading-day rule | Consistent business day for close/GST (M01-FR-02, A-13) |
+| `config` | Versioned config | Every change is a new version; rollback is non-destructive (M01-FR-03) |
+| `pricing` | Line & bill pricing | Exact gross/discount/net/tax/total (M12/M05/M23) |
+| `tender` | Tender settlement | Split tenders balance; never a fake approval (M12-FR-03) |
+| `sale` | Local sale commit | Commit locally first, sync idempotently (hard rule #1, M12) |
+
+## How they compose — the offline sale
+
+`packages/sale`'s `commitSale(input, stockLedger, outbox)` is the worked example (see
+`sale/src/sale.ts`):
+
+1. **`tender.settle`** confirms the sale is fully paid — a pending card tender does **not**
+   count, so a sale can't be committed on a fake approval.
+2. Stock movements are appended to the **`ledger`** (the local stock ledger) — append-only,
+   so the balance is always the sum of events.
+3. The sale is enqueued to the **`sync`** outbox for the cloud — the till keeps trading with
+   the network cable out (hard rule #1), and the sale syncs **exactly once** later (§31.1).
+
+Everything is exact `money`, every event carries an idempotency key, and a retried commit
+collapses to one effect. That is the whole offline-first POS transaction, in tested code.
+
+## Conventions
+
+- **Value types export flat, operations as namespaces.** `import { Money } from
+  '@sre/contracts'` for the type; `MoneyOps.add(a, b)` / `QuantityOps.add(a, b)` for the
+  maths (they share operation names). `RateOps` likewise.
+- **Pure + injected dependencies.** No package does I/O. Ledgers, outboxes, timestamps and
+  ids are passed in — a database-backed store or a real clock slots in without touching the
+  logic.
+- **Tests live in `tests/`** (the repo's layout), one file per package, importing the
+  specific source module.
+
+## What builds on this next (needs the outside world)
+
+- A **database-backed** persistence layer (the `LedgerStore`/outbox/config stores backed by
+  PostgreSQL) — needs the hosting environment (ADR-0002 + the vendor pick, D3).
+- The **store-specific modules** (billing, stock, pricing, GST wired to real data) — need
+  the Stage 1 store facts (`docs/discovery/store-facts-questionnaire.md`, finding A-11).
