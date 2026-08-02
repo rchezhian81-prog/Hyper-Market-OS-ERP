@@ -8,49 +8,53 @@ Last updated: 2 August 2026
 ---
 
 ## Current stage
-**Setup (Part 1 of the Build Pack).** No application code exists yet, by design.
-The next stage is **Stage 0 — Owner approval and governance**, which is blocked
-until the owner decisions below are made.
+**Stage 0 — Owner approval and governance (work complete; gate not yet signed).**
+No application code exists yet, by design. The governance registers are built and
+populated from every source available. The Stage 0 **gate** cannot be signed until
+the owner fills the **D4 second-custodian name** (the one field Annexure H will not
+start without). Setup 2 is partially done and can be finished when the roadmap file
+is added.
 
 ## Last completed
-- **Setup 1 — Project and rules.** Repository folder structure, `CLAUDE.md`,
-  `docs/STATUS.md`, `docs/traceability.md`, `.gitignore` and the first commit.
-- **Setup 3 — Safety net.** Test runner with a single command, continuous
-  integration on every pull request (type check, lint, tests, secret scan,
-  dependency vulnerability scan), a pre-commit secret block, a demonstrated
-  failing-then-passing test, and `docs/runbooks/how-to-check-tests.md`.
+- **Setup 1 — Project and rules.** Folder structure, `CLAUDE.md`, `STATUS.md`,
+  `traceability.md`, `.gitignore`, first commit.
+- **Setup 3 — Safety net.** One-command test runner, CI (type check, lint, tests,
+  secret scan, dependency scan), pre-commit secret block, demonstrated
+  failing-then-passing test, `docs/runbooks/how-to-check-tests.md`.
 - **Setup 4 — Decisions and guardrails.** `docs/adr/0001-baseline-decisions.md`
-  and machine-checkable guardrail tests in `tests/guardrails/` for the six
-  hard rules from roadmap sections 18 and 20.
+  and six machine-checkable guardrail tests for the hard rules.
+- **Stage 0 — Governance registers.** `docs/registers/`: `decisions.md`,
+  `risks.md` (the 17 Annexure G findings + structural risks), `compliance.md`
+  (GST, FSSAI, Legal Metrology, DPDP incl. both fixed dates, CERT-In, consumer,
+  RBI payment), `issues.md`, `changes.md`, `requirements.md`.
+- **Setup 2 (partial) — Requirement index.** `docs/requirements/index.md` upgraded
+  from a blank scaffold to a real module/extension/gate/agent/control map sourced
+  from Annexure H, with every roadmap-only detail marked `⛔ roadmap`.
 
 ## In progress
-- Nothing. Setup is at a clean stopping point.
+- Nothing active. Clean stopping point.
 
-## Blocked
-- **Setup 2 — Requirement index — needs the roadmap.** The controlling document
-  `docs/roadmap/roadmap-v2.0.docx` (Final Master Roadmap & Developer
-  Requirements v2.0) is **not yet in the repository**. Setup 2, and the
-  roadmap-sourced parts of Stage 0 and the ADR, cannot be completed until it is
-  placed at `docs/roadmap/roadmap-v2.0.docx`. A structured, clearly-marked
-  placeholder index has been created at `docs/requirements/index.md`.
+## Blocked (inputs I cannot supply — not decisions I'm waiting on)
+- **The roadmap file itself.** `docs/roadmap/roadmap-v2.0.docx` was never provided
+  to this session (only Annexures G and H were). Everything marked `⛔ roadmap` in
+  the index and registers needs it to be completed verbatim. I have built
+  everything that can be built correctly without it; I will not invent its
+  contents (`CLAUDE.md` rule #1).
+- **Real-world facts only the owner holds:** the D4 custodian's name, the D3/D5/D8
+  values, which conditional departments the store operates (Stage 16). These are
+  recorded as **open** in `docs/registers/decisions.md` — which is the correct
+  place for them; the register tracks them, the project is not stalled on them.
 
-## Needs owner decision
-Before Stage 0 can pass its gate (see Annexure G and Annexure H), the owner must:
-- **D4 — Second technical custodian.** Write the name into the roadmap.
-  Annexure H: _"the only one I would refuse to start without."_ Fill this first.
-- **A-01 to A-05 (Annexure G, HIGH).** Close these five findings — about half a
-  day's work between them, none needs a feature:
-  - A-01 Put target months against M0–M8.
-  - A-02 Write the four M5 feasibility checkpoints into §36.1.
-  - A-03 Add the read-only supplier-invoice import slice after stage 5.
-  - A-04 Add six business measures to §2.3, each with a Stage 1 baseline.
-  - A-05 Allocate a named person and funded help to run the parallel period.
-- **D3 running-cost ceiling, D5 GO date, D8 completion date** — the three
-  remaining blank blocking owner fields (may close together at GO).
+## Needs owner decision (recorded, not blocking further build)
+Tracked in `docs/registers/decisions.md` and `risks.md`:
+- **D4 second technical custodian** — fill first (blocks only the Stage 0 gate).
+- **A-01…A-05** (HIGH) and **D3 / D5 / D8** — close before the formal GO.
 
 ## Next session should start with
-1. Place `docs/roadmap/roadmap-v2.0.docx` in the repository, then run **Setup 2**
-   to build the requirement index and open-questions list.
-2. In parallel, the owner closes D4 and findings A-01 to A-05.
-3. Then run the **Stage 0** prompt to create and populate the governance
-   registers, and check it against the Stage 0 acceptance list in Annexure H.
+1. If the roadmap `.docx` is available, place it at `docs/roadmap/roadmap-v2.0.docx`
+   and finish Setup 2 (complete every `⛔ roadmap` cell) and the roadmap-sourced
+   rows of the registers and ADR.
+2. Otherwise continue with what does **not** need the roadmap: Stage 5 engineering
+   foundation planning, and Stage 1 discovery *templates* (as-is/to-be/baseline
+   forms) ready for the owner's store measurements.
+3. Owner fills D4 to allow the Stage 0 gate to be signed.

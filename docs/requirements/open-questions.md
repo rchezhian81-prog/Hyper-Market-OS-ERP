@@ -12,7 +12,7 @@ to a specific audit finding.
 | --- | --- | --- | --- |
 | Q1 | What does **"usable history"** mean for migration? | (a) Extractable + identifiable key + totals reconcile (proposed default; anything failing one of the three goes to the exception register with a value and owner). (b) A different, owner-specified definition. | A-08 |
 | Q2 | What are the **six business measures** and their Stage 1 baselines? | Proposed: minutes per supplier invoice · staff hours/week on data entry · expiry & wastage as % of sales · stock variance at count · days from month-end to owner seeing store P&L · Annexure C benchmark score. Confirm or amend, and confirm each baseline is **measured**, not estimated. | A-04 |
-| Q3 | How is the **trading day** defined for a store trading past midnight? | Owner must state the cut-off; it then applies consistently to day-close, reporting and GST periods. | A-12 |
+| Q3 | How is the **trading day** defined for a store trading past midnight? | Owner must state the cut-off; it then applies consistently to day-close, reporting and GST periods. | A-13 |
 | Q4 | Who **runs the parallel period** — named person, funded hours/day, for how many weeks, with what temporary help — and the maximum duration before escalation to the owner? | Owner decision, written into §36 before GO. | A-05 |
 | Q5 | What are the **M0–M8 target months**? | Ranges are acceptable; the point is that a date which cannot be met becomes visible early. | A-01 |
 | Q6 | Are the **four M5 feasibility checkpoints** accepted, and written into §36.1? | Hardware certification by Nov 2026 · offline+POS slice by Dec 2026 · first full-volume migration rehearsal by Jan 2027 · parallel run started by mid-Feb 2027. | A-02 |
