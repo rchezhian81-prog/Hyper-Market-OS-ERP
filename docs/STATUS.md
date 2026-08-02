@@ -15,8 +15,9 @@ the four owner fields D3/D4/D5/D8.
 
 Store-Core modules to expand (roadmap §21 Stage 2 scope): M01–M15, M23, M29, M30,
 M32–M35.
-- **Done:** M01–M11 (11 of 21).
-- **Next:** M12–M15 (POS/returns/cash), then M23, M29, M30, M32–M35.
+- **Done:** M01–M15 (15 of 21).
+- **Next (final batch):** M23, M29, M30, M32–M35 (finance, owner BI, import/export,
+  integration platform, admin/support, audit, backup/DR).
 
 Each module doc marks store-fact-dependent fields `⟳ AVR-##` (confirmed in Stage 1),
 so nothing is guessed. Individual FR rows are added to `docs/traceability.md` as
@@ -50,8 +51,9 @@ each module is expanded.
   named person. These are gathered in the store during Stage 1.
 
 ## Next session should start with
-1. **Continue Stage 2 with M12** (POS sales), then M13–M15, and
-   M23/M29/M30/M32–M35. Same method: expand every `M##-FR-##` into the Appendix B
+1. **Continue Stage 2 with the final batch** M23, M29, M30, M32–M35 (finance,
+   owner BI, import/export, platform, admin, audit, backup/DR), completing the
+   Store-Core scope. Same method: expand every `M##-FR-##` into the Appendix B
    record in `docs/requirements/<module>.md`, add its rows to
    `docs/traceability.md`, and give a plain-English summary after each batch.
 2. In parallel: owner fills D3/D4/D5/D8; Stage 1 store facts (AVR) are gathered and
