@@ -1,0 +1,53 @@
+name: CI
+
+# Runs on every pull request and on pushes to main. Main is protected: it can
+# only change through a pull request whose checks are green (see
+# docs/runbooks/branch-protection.md).
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Type check, lint, tests, secret & dependency scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm run typecheck
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Secret scan (whole repository)
+        run: pnpm run secret-scan
+
+      - name: Tests
+        run: pnpm run test
+
+      - name: Dependency vulnerability scan
+        run: pnpm audit --audit-level=high

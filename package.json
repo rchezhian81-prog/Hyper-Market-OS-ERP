@@ -1,0 +1,29 @@
+{
+  "name": "sre-retail-os",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SRE Retail OS — a hybrid offline-first + cloud retail operating system for SRE Hyper Market. Built from the Final Master Roadmap & Developer Requirements v2.0.",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "secret-scan": "node scripts/secret-scan.mjs",
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run secret-scan && pnpm run test",
+    "prepare": "git config core.hooksPath .githooks || true"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.13.0",
+    "@types/node": "^22.8.1",
+    "eslint": "^9.13.0",
+    "globals": "^15.11.0",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.11.0",
+    "vitest": "^2.1.4"
+  }
+}

@@ -1,0 +1,8 @@
+# Monorepo workspaces. Each app, service, edge component and shared package
+# becomes its own workspace once it has a package.json. Until then these globs
+# simply match nothing, which is fine — no application code exists during setup.
+packages:
+  - "apps/*"
+  - "services/*"
+  - "packages/*"
+  - "edge/*"
