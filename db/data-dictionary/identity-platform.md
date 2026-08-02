@@ -7,7 +7,21 @@
 
 ## Organizational hierarchy (M01-FR-01)
 
-### Company — legal entity, root of scope
+The hierarchy is **Tenant → Company → Branch/Store → Warehouse/Department**. `tenant` is the
+top isolation boundary of the commercial multi-tenant product (ADR-0003).
+
+### Tenant — a retail business (a customer of the product); top isolation boundary
+| Field | Type | Key | Notes |
+| --- | --- | --- | --- |
+| `name` | text | | the retail business |
+| `status` | enum{active,suspended,closed} | | (ADR-0003; `packages/tenant`) |
+| `plan` | text null | | subscription plan (M36; future SaaS) |
+
+_Every other entity carries `tenant_id`. Optional modules/departments are per-tenant
+**entitlements** and settings are **per-tenant config** (`packages/tenant`, `packages/config`).
+SRE Hyper Market is tenant #1._
+
+### Company — legal entity within a tenant, root of accounting scope
 | Field | Type | Key | Notes |
 | --- | --- | --- | --- |
 | `legal_name` | text | UQ | ⟳ AVR-01 |

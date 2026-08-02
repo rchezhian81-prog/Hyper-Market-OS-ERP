@@ -15,10 +15,17 @@ The canonical data model: entities, fields, types, precision, retention and audi
 | Column | Type | Notes |
 | --- | --- | --- |
 | `id` | uuid | PK; minted at creation; **offline-safe (globally unique)** |
-| `company_id` | uuid | Scope (M01-FR-01); FK → Company |
+| `tenant_id` | uuid | **Top isolation boundary** (ADR-0003); FK → Tenant; **every record and query is tenant-scoped** |
+| `company_id` | uuid | Scope within the tenant (M01-FR-01); FK → Company |
 | `branch_id` | uuid null | Branch scope; null = company-wide |
 | `created_at` / `updated_at` | timestamptz | **UTC** (§29.1) |
 | `created_by` / `updated_by` | uuid | User ref (audit, M34) |
+
+**Tenant isolation (ADR-0003).** SRE Retail OS is a commercial multi-tenant product: a
+`tenant` is a retail business (a customer). Every table carries `tenant_id`, every query
+filters by it, and **cross-tenant access is a critical security threat** (§35). SRE Hyper
+Market is tenant #1. Store-specific values are **per-tenant configuration** (see
+`packages/tenant` settings + `packages/config`), never hard-coded.
 
 Mutable master records also carry `version int` and a `status` enum.
 

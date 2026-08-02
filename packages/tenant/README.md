@@ -11,6 +11,12 @@ departments it runs. This is how "make everything choose-able" is enforced for m
   tenant gets only what it enables (the "conditional departments", AVR-12, become per-tenant
   toggles), and tenants are isolated from one another. Tested in `tests/unit/tenant.test.ts`.
 
+- **`src/settings.ts`** — `TenantSettings` over the versioned config engine: a `SETTINGS`
+  catalogue (trading-day cut-off, base currency, languages, default GST, delivery radius, …)
+  each with a stable key and a **sensible default**; `get` returns the tenant's chosen value
+  or the default, `set` records an audited, reversible version. Per-tenant and isolated.
+  Tested in `tests/unit/tenant-settings.test.ts`.
+
 > Core features are always on; only *optional* modules are entitlement-gated. Per-tenant
-> *settings* (trading day, tax, currencies, …) use `packages/config` keyed by tenant. Part
-> of the repository layout in `CLAUDE.md`.
+> *settings* build on `packages/config` (keyed per tenant). Part of the repository layout in
+> `CLAUDE.md`.

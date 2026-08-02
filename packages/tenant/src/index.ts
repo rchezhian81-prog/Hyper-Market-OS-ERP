@@ -3,3 +3,4 @@
 // it runs; optional features are default-off. Grows one reviewed, tested unit at a time.
 
 export * from './tenant';
+export * from './settings';
