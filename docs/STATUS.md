@@ -10,7 +10,7 @@ Last updated: 2 August 2026
 ## Current stage
 **Stage 5 — Foundation build (in progress). Stage 4 complete; owner-closure gate CLOSED.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
-done for Store-Core (R2); Stage 5 has built 14 tested foundation units (123 tests). **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
+done for Store-Core (R2); Stage 5 has built 15 tested foundation units (127 tests). **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
 spec-freeze / store-specific build are the Stage 1 store facts (the 20 AVR items) and the
@@ -49,7 +49,7 @@ routine progress.
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **123 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **127 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **Base-platform layer begun:** the **append-only ledger engine** (`packages/ledger/`,
     hard rule #2 / M08-FR-01 / §31.1) — idempotent append, balances projected from events
@@ -66,7 +66,7 @@ routine progress.
     never drops a poison item; 5 tests.
   - **Foundation engines now cover the core invariants** (exact money/quantity, append-only
     ledger, maker-checker, RBAC, offline outbox, gap-free document numbering, trading-day
-    rule) plus compositions (line/bill pricing, tender settlement) — 14 tested units, 123 tests.
+    rule) plus compositions (line/bill pricing, tender settlement, and the end-to-end offline sale commit) — 15 tested units, 127 tests.
   - Next needs the outside world: the **database-backed** persistence layer needs the
     IaC/DB from `infra/` (→ hosting-vendor pick, D3 commercial validation); the
     **store-specific** modules need the Stage 1 facts + trading-day cut-off (A-11).
@@ -101,13 +101,13 @@ sets SEC/PRV/NFR/AI-NFR/MG — expanded when their release/stage is reached.
   family-level baseline.
 
 ## In progress
-- **Stage 5 foundation build** — 14 tested units done (`packages/` contracts, ledger,
-  approvals, rbac, sync, numbering, calendar, pricing, tender, config; 123 tests, `pnpm check` green). The
-  store-fact-independent foundation is now broad; what remains genuinely needs the outside
-  world (a database via the hosting-vendor pick; store-specific modules via the Stage 1
-  facts). The pure, store-fact-independent foundation is now comprehensive; any further
-  pure engines are increasingly marginal versus the two real-world unblocks (hosting-vendor
-  pick → database; Stage 1 facts → store-specific modules).
+- **Stage 5 foundation build** — 15 tested units done (`packages/` contracts, ledger,
+  approvals, rbac, sync, numbering, calendar, pricing, tender, config, sale; 127 tests, `pnpm check` green). The
+  pure, store-fact-independent foundation is now comprehensive — it even composes into the
+  end-to-end offline sale commit (hard rule #1). What remains genuinely needs the outside
+  world: a **database** (via the hosting-vendor pick, D3 commercial validation) and the
+  **store-specific modules** (via the Stage 1 facts, A-11). Further pure engines would be
+  increasingly marginal versus those two unblocks.
 
 ## Blocked / needs owner input
 - **D3/D4/D5/D8 — CLOSED (2 Aug 2026).** D3 = ₹20,000/month; D4 = **Mr Sivakumar**
