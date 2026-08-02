@@ -90,4 +90,32 @@ requirement may reach **Done** without a complete individual row.
 | M15-FR-02 | 2 | `docs/requirements/M15.md` | — | — | R2 | In design |
 | M15-FR-03 | 2 | `docs/requirements/M15.md` | — | — | R2 | In design |
 | M15-FR-04 | 2 | `docs/requirements/M15.md` | — | — | R2 | In design |
-| _(remaining FR/NFR/SEC/PRV/AI-NFR/MG rows added as each module is expanded)_ | | | | | | |
+| M23-FR-01 | 2 | `docs/requirements/M23.md` | — | — | R2 | In design |
+| M23-FR-02 | 2 | `docs/requirements/M23.md` | — | — | R2 | In design |
+| M23-FR-03 | 2 | `docs/requirements/M23.md` | — | — | R2 | In design |
+| M23-FR-04 | 2 | `docs/requirements/M23.md` | — | — | R2 | In design |
+| M29-FR-01 | 2 | `docs/requirements/M29.md` | — | — | R2 | In design |
+| M29-FR-02 | 2 | `docs/requirements/M29.md` | — | — | R2 | In design |
+| M29-FR-03 | 2 | `docs/requirements/M29.md` | — | — | R2 | In design |
+| M29-FR-04 | 2 | `docs/requirements/M29.md` | — | — | R2 | In design |
+| M30-FR-01 | 2 | `docs/requirements/M30.md` | — | — | R2 | In design |
+| M30-FR-02 | 2 | `docs/requirements/M30.md` | — | — | R2 | In design |
+| M30-FR-03 | 2 | `docs/requirements/M30.md` | — | — | R2 | In design |
+| M30-FR-04 | 2 | `docs/requirements/M30.md` | — | — | R2 | In design |
+| M32-FR-01 | 2 | `docs/requirements/M32.md` | — | — | R1 | In design |
+| M32-FR-02 | 2 | `docs/requirements/M32.md` | — | — | R1 | In design |
+| M32-FR-03 | 2 | `docs/requirements/M32.md` | — | — | R1 | In design |
+| M32-FR-04 | 2 | `docs/requirements/M32.md` | — | — | R1 | In design |
+| M33-FR-01 | 2 | `docs/requirements/M33.md` | — | — | R1 | In design |
+| M33-FR-02 | 2 | `docs/requirements/M33.md` | — | — | R1 | In design |
+| M33-FR-03 | 2 | `docs/requirements/M33.md` | — | — | R1 | In design |
+| M33-FR-04 | 2 | `docs/requirements/M33.md` | — | — | R1 | In design |
+| M34-FR-01 | 2 | `docs/requirements/M34.md` | — | — | R1 | In design |
+| M34-FR-02 | 2 | `docs/requirements/M34.md` | — | — | R1 | In design |
+| M34-FR-03 | 2 | `docs/requirements/M34.md` | — | — | R1 | In design |
+| M34-FR-04 | 2 | `docs/requirements/M34.md` | — | — | R1 | In design |
+| M35-FR-01 | 2 | `docs/requirements/M35.md` | — | — | R1 | In design |
+| M35-FR-02 | 2 | `docs/requirements/M35.md` | — | — | R1 | In design |
+| M35-FR-03 | 2 | `docs/requirements/M35.md` | — | — | R1 | In design |
+| M35-FR-04 | 2 | `docs/requirements/M35.md` | — | — | R1 | In design |
+| _(non-module requirement sets — SEC-01…12, PRV-01…10, NFR-01…15, AI-NFR-01…12, MG-01…12 — traced during their build stages)_ | | | | | | |
