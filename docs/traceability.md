@@ -60,6 +60,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Maker-checker approval engine | §28 (separation of duties) / M02 (maker-checker, value-limit routing) | `packages/approvals/src/approvals.ts` | `tests/unit/approvals.test.ts` (10 tests) |
 | RBAC access-control engine | P-04 (least privilege) / M02-FR-02 (role/branch/permission authz) | `packages/rbac/src/rbac.ts` | `tests/unit/rbac.test.ts` (7 tests) |
 | Offline sync outbox | P-01 (offline first) / §31 (durable outbox, idempotent) / hard rule #6 (dead-letter never dropped) | `packages/sync/src/outbox.ts` | `tests/unit/outbox.test.ts` (5 tests) |
+| Gap-free number series | M01-FR-02 (gap-free, unique per type, offline reserved ranges) | `packages/numbering/src/numbering.ts` | `tests/unit/numbering.test.ts` (6 tests) |
 
 ## Individual requirement trace (expanded in Stage 2)
 
