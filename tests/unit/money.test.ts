@@ -17,6 +17,7 @@ import {
   toDecimalString,
   precisionOf,
   isCurrencyCode,
+  scaleMoney,
   type CurrencyCode,
 } from '../../packages/contracts/src/money';
 
@@ -144,6 +145,23 @@ describe('allocateByRatios (weighted split, no lost paise)', () => {
     expect(() => allocateByRatios(money(-100, 'INR'), [1, 1])).toThrow(RangeError);
     expect(() => allocateByRatios(money(100, 'INR'), [])).toThrow(RangeError);
     expect(() => allocateByRatios(money(100, 'INR'), [0, 0])).toThrow(RangeError);
+  });
+});
+
+describe('scaleMoney (exact fractional multiply)', () => {
+  it('scales by a fraction with rounding', () => {
+    // ₹100.00 × 333/1000 = ₹33.30
+    expect(scaleMoney(money(100_00, 'INR'), 333, 1000).minor).toBe(33_30);
+    // exact .5 boundary: 5 × 1/10 = 0.5 → half_up 1, half_even 0, down 0
+    expect(scaleMoney(money(5, 'INR'), 1, 10, 'half_up').minor).toBe(1);
+    expect(scaleMoney(money(5, 'INR'), 1, 10, 'half_even').minor).toBe(0);
+    expect(scaleMoney(money(5, 'INR'), 1, 10, 'down').minor).toBe(0);
+  });
+
+  it('rejects a bad numerator or denominator', () => {
+    expect(() => scaleMoney(money(100, 'INR'), 1.5, 10)).toThrow(RangeError);
+    expect(() => scaleMoney(money(100, 'INR'), 1, 0)).toThrow(RangeError);
+    expect(() => scaleMoney(money(100, 'INR'), 1, -10)).toThrow(RangeError);
   });
 });
 

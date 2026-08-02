@@ -7,15 +7,12 @@
 // explicit rounding mode (default: half-up, i.e. .5 rounds away from zero). This
 // realises the exact fractional maths deliberately kept out of `money.ts`.
 
-import { money, type Money } from './money';
+import { scaleMoney, type Money, type Rounding } from './money';
 
 /** A proportional rate in integer basis points (1% = 100 bp; 1800 = 18%). */
 export interface Rate {
   readonly bps: number;
 }
-
-/** How to round a rate application to whole minor units. */
-export type Rounding = 'half_up' | 'half_even' | 'down';
 
 /** Construct a Rate from integer basis points. */
 export function rate(bps: number): Rate {
@@ -44,35 +41,12 @@ export function parseRatePercent(percent: string): Rate {
   return rate((sign * magnitude) || 0);
 }
 
-function divideRounded(numerator: bigint, denominator: bigint, rounding: Rounding): number {
-  const quotient = numerator / denominator; // truncates toward zero
-  const remainder = numerator - quotient * denominator;
-  let result = quotient;
-  if (remainder !== 0n) {
-    const sign = numerator < 0n ? -1n : 1n;
-    const twiceRem = (remainder < 0n ? -remainder : remainder) * 2n;
-    if (rounding === 'half_up') {
-      if (twiceRem >= denominator) result = quotient + sign;
-    } else if (rounding === 'half_even') {
-      if (twiceRem > denominator) result = quotient + sign;
-      else if (twiceRem === denominator && quotient % 2n !== 0n) result = quotient + sign;
-    }
-    // 'down' truncates toward zero — quotient is already that.
-  }
-  const asNumber = Number(result);
-  if (!Number.isSafeInteger(asNumber)) {
-    throw new RangeError('Rate application result is too large to represent exactly.');
-  }
-  return asNumber;
-}
-
 /**
- * Apply a rate to a Money amount, rounding to whole minor units. Uses BigInt
- * internally so it is exact and cannot overflow. Default rounding is half-up.
+ * Apply a rate to a Money amount (bps / 10000), rounding to whole minor units.
+ * Exact and overflow-proof via `scaleMoney`. Default rounding is half-up.
  */
 export function applyRate(amount: Money, r: Rate, rounding: Rounding = 'half_up'): Money {
-  const numerator = BigInt(amount.minor) * BigInt(r.bps);
-  return money(divideRounded(numerator, 10000n, rounding), amount.currency);
+  return scaleMoney(amount, r.bps, 10000, rounding);
 }
 
 /** Format as a percentage string with two decimals (e.g. "18.00", "2.50"). */

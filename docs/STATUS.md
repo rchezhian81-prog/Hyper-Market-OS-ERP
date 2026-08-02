@@ -45,7 +45,11 @@ routine progress.
   - `Quantity` value primitive (UOM-aware, exact, never a float) — 9 tests.
   - `Rate` value primitive (exact basis points; applies to Money with explicit rounding via
     BigInt) — the exact %-maths for pricing (M05) and tax (M23) — 9 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **102 tests**. Value-object
+  - **First composition brick:** line pricing (`packages/pricing/`, M12/M05/M23) —
+    `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
+    the paisa (weighed goods included); backed by a new shared `scaleMoney` primitive in
+    `contracts` (exact BigInt fractional multiply, used by rate application too). 4 tests.
+  - `pnpm check` green: typecheck + lint + secret-scan + **108 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **Base-platform layer begun:** the **append-only ledger engine** (`packages/ledger/`,
     hard rule #2 / M08-FR-01 / §31.1) — idempotent append, balances projected from events
@@ -62,7 +66,7 @@ routine progress.
     never drops a poison item; 5 tests.
   - **Foundation engines now cover the core invariants** (exact money/quantity, append-only
     ledger, maker-checker, RBAC, offline outbox, gap-free document numbering, trading-day
-    rule) — 11 tested units, 102 tests.
+    rule) plus the first composition (line pricing) — 12 tested units, 108 tests.
   - Next needs the outside world: the **database-backed** persistence layer needs the
     IaC/DB from `infra/` (→ hosting-vendor pick, D3 commercial validation); the
     **store-specific** modules need the Stage 1 facts + trading-day cut-off (A-11).

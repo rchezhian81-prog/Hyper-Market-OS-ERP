@@ -8,9 +8,9 @@
 // Enums and event helpers have unique names and are exported flat. Grows one
 // reviewed, tested unit at a time.
 
-export type { Money, CurrencyCode } from './money';
+export type { Money, CurrencyCode, Rounding } from './money';
 export type { Quantity, Uom } from './quantity';
-export type { Rate, Rounding } from './rate';
+export type { Rate } from './rate';
 export * as MoneyOps from './money';
 export * as QuantityOps from './quantity';
 export * as RateOps from './rate';

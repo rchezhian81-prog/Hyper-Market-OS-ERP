@@ -225,3 +225,54 @@ export function toDecimalString(a: Money): string {
   const frac = String(magnitude % scale).padStart(precision, '0');
   return `${sign}${whole}.${frac}`;
 }
+
+/** How to round a fractional money result to whole minor units. */
+export type Rounding = 'half_up' | 'half_even' | 'down';
+
+function divideRounded(numerator: bigint, denominator: bigint, rounding: Rounding): number {
+  const quotient = numerator / denominator; // truncates toward zero
+  const remainder = numerator - quotient * denominator;
+  let result = quotient;
+  if (remainder !== 0n) {
+    const sign = numerator < 0n ? -1n : 1n;
+    const twiceRem = (remainder < 0n ? -remainder : remainder) * 2n;
+    if (rounding === 'half_up') {
+      if (twiceRem >= denominator) result = quotient + sign;
+    } else if (rounding === 'half_even') {
+      if (twiceRem > denominator) result = quotient + sign;
+      else if (twiceRem === denominator && quotient % 2n !== 0n) result = quotient + sign;
+    }
+    // 'down' truncates toward zero — quotient already is that.
+  }
+  const asNumber = Number(result);
+  if (!Number.isSafeInteger(asNumber)) {
+    throw new RangeError('Scaled money result is too large to represent exactly.');
+  }
+  return asNumber;
+}
+
+/**
+ * Multiply a Money amount by the exact fraction numerator/denominator, rounding
+ * to whole minor units. Uses BigInt so it is exact and cannot overflow — the
+ * shared fractional maths behind rate application (rate.ts) and quantity-based
+ * line pricing. `denominator` must be a positive integer.
+ */
+export function scaleMoney(
+  amount: Money,
+  numerator: number,
+  denominator: number,
+  rounding: Rounding = 'half_up',
+): Money {
+  if (!Number.isSafeInteger(numerator)) {
+    throw new RangeError(`scaleMoney numerator must be a safe integer, got ${numerator}.`);
+  }
+  if (!Number.isSafeInteger(denominator) || denominator <= 0) {
+    throw new RangeError(`scaleMoney denominator must be a positive integer, got ${denominator}.`);
+  }
+  const scaled = divideRounded(
+    BigInt(amount.minor) * BigInt(numerator),
+    BigInt(denominator),
+    rounding,
+  );
+  return money(scaled, amount.currency);
+}
