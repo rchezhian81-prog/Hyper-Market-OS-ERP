@@ -29,10 +29,12 @@ instruction ("continue always" / "you carry on").
 - **Open gate:** QG-02 human usability testing with real staff
   (`docs/design/usability-test-script.md`) still needs the store — it runs whenever staff
   are available.
-- **Stage 4 next / Stage 5 start:** **infrastructure & CI-CD design** to the **₹20,000/month
-  (D3)** envelope (`infra/`, with a hosting ADR), then contract/event schemas
-  (`packages/contracts/`) and the Stage 5 foundation scaffolding with tests — now unblocked
-  by the closed gate.
+- **Stage 4 also done:** **infrastructure & deployment design** to the **₹20,000/month (D3)**
+  envelope (`docs/architecture/infrastructure.md`) with hosting **ADR-0002** (Proposed,
+  pending owner vendor/commercial validation).
+- **Stage 5 start (next):** the technical foundation — contract/event schemas
+  (`packages/contracts/`), IaC in `infra/`, and the base platform (identity/config/data)
+  with tests. The first real application code; unblocked by the closed gate.
 
 Store-Core scope (roadmap §21 Stage 2): **M01–M15, M23, M29, M30, M32–M35 — all done.**
 Each module doc marks store-fact-dependent fields `⟳ AVR-##` (confirmed in Stage 1),
@@ -81,13 +83,16 @@ sets SEC/PRV/NFR/AI-NFR/MG — expanded when their release/stage is reached.
   store operations lead, finance/CA reviewer, security/architecture reviewer.
 
 ## Next session should start with
-The owner-closure gate is closed (D3/D4/D5/D8), so the next roadmap step is **Stage 5 — the
-technical foundation** (platform, identity/config service, base data layer, CI/CD). It does
-**not** depend on the store facts and is now unblocked:
-1. **Infrastructure & CI-CD design** to the ₹20,000/month (D3) envelope (`infra/`, with a
-   hosting ADR) — now unblocked; **then**
-2. **Stage 5 foundation scaffolding** with tests (per AID-03/AID-07 and the Definition of
-   Done) — the first real application code.
+The owner-closure gate is closed (D3/D4/D5/D8) and the infrastructure/deployment design +
+hosting ADR-0002 are done, so the next roadmap step is **Stage 5 — the technical
+foundation** (platform, identity/config service, base data layer, CI/CD). It does **not**
+depend on the store facts and is unblocked:
+1. **Contract & event schemas** in `packages/contracts/` (from the API catalogue & data
+   dictionary) — the shared types both edge and cloud build against; **then**
+2. **IaC in `infra/`** (network/db/compute/storage/secrets, dev/test/staging/prod) to
+   ADR-0002; **then**
+3. **Base platform** (identity/RBAC, config/number-series, the append-only data layer) with
+   full tests (AID-03/AID-07 and the Definition of Done) — the first real application code.
 
 In parallel (owner/store, still gating store-specific build per A-11): gather the 20 AVR
 facts (`docs/discovery/avr-closure.md`) and the **trading-day cut-off time**; measure the
