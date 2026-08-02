@@ -40,6 +40,12 @@ Status legend: **Accepted** · **Open — blocking** (holds coding / a gate) ·
 > The budget (D1) is a planning envelope, not permission to weaken scope,
 > security, migration, testing, documentation or ownership (roadmap §25).
 
+## Owner decisions made during the build (post-roadmap, dated)
+
+| ID | Decision | Consequence | Status |
+| --- | --- | --- | --- |
+| OB-01 | **Commercial, multi-tenant product** (owner, 2 Aug 2026): SRE Retail OS is built to be **sold to other retailers**, not only for SRE's own use. **"Make everything choose-able"** — no store-specific value is hard-coded; all are per-tenant configuration. **SRE Hyper Market is the first tenant / pilot.** | Elevates the roadmap's tenant/white-label readiness (M33/D12/M36) to first-class from the start. `tenant` becomes the top isolation boundary; onboarding is configuration, not code. Full SaaS billing/white-label stays M36 (R8) unless prioritised sooner. See **ADR-0003**. | Accepted |
+
 ## AI-assisted development governance — AID-01 to AID-10 (roadmap §18)
 
 | ID | Developer SHALL | Developer SHALL NOT |

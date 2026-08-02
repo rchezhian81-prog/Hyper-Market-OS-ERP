@@ -7,10 +7,14 @@ enter GO while an AVR item mapped to it remains open**.
 Each AVR needs a **named person who will answer it** (Stage 1 acceptance) plus the
 finding and its status. Fill the right-hand columns during Stage 1.
 
-> **Owner-friendly version:** `store-facts-questionnaire.md` turns every item below into a
-> plain-language question grouped by who answers it (owner / floor manager / accounts / IT /
-> payments / privacy), plus the trading-day cut-off. Fill that in the store; the answers
-> feed straight into this table.
+> **Owner-friendly version:** `store-facts-questionnaire.md` (the **Store Setup Profile**)
+> turns every item below into a plain-language, choose-able setting grouped by who answers it
+> (owner / floor manager / accounts / IT / payments / privacy), plus the trading-day cut-off.
+>
+> **Per ADR-0003 (commercial, multi-tenant product):** these items are **per-tenant
+> configuration**, not product constants. The answers below configure **SRE Hyper Market as
+> tenant #1** (the pilot); every future retail tenant supplies its own the same way, at
+> onboarding. Nothing here is hard-coded into the product.
 
 Status legend: **Open** · **In progress** · **Closed**.
 

@@ -1,17 +1,20 @@
-# SRE Hyper Market — Store Facts Questionnaire (Stage 1)
+# Store Setup Profile — tenant configuration (Stage 1)
 
-_A plain-language companion to `avr-closure.md`. Answering these unlocks the
-store-specific build (billing, stock, pricing, GST). No computer knowledge needed._
+_SRE Retail OS is a **commercial, multi-tenant product**: every store (tenant) that uses it
+**chooses its own settings** — nothing is hard-coded. This profile is that set of choose-able
+settings. **SRE Hyper Market fills it first, as the pilot tenant**; every future retail
+customer fills their own the same way, at onboarding. No computer knowledge needed._
 
 **How to use this**
 1. Each section says **who is best placed to answer** — hand that section to that person.
-2. Write the answer on the **Answer** line, plus **who answered** and the **date**.
-3. Rough numbers and "we don't do this yet" are fine answers — honesty beats guessing.
-4. Return it to me and I load the answers into the plan and start building those features.
+2. Write your **choice** on the **Answer** line, plus **who answered** and the **date**.
+3. Rough numbers and "we don't do this yet" are fine — honesty beats guessing.
+4. Return it and I load SRE's settings, then build the features that read them.
 5. The little tag like `[AVR-02]` is just for our tracking — you can ignore it.
 
-> Nothing here is built on a guess. Until an answer is filled in, the feature that
-> depends on it waits. That is deliberate (your rule: never invent a requirement).
+> These are **settings the software offers**, not facts baked into the product. SRE's
+> answers configure SRE's tenant; they never limit what another store can choose later.
+> (Owner decision OB-01 / ADR-0003 — commercial, multi-tenant, "make everything choose-able".)
 
 ---
 

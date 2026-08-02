@@ -90,8 +90,14 @@ Stage 5 within the §19 baseline — a commitment that deviates would be recorde
 
 ## 5. Cross-cutting concerns
 
-- **Identity & RBAC (M01/M02):** every call scoped to company/branch; maker-checker and
-  separation of duties; **no shared logins** (hard rule #4).
+- **Multi-tenancy & configuration (ADR-0003, M33/D12/M36):** SRE Retail OS is a **commercial,
+  multi-tenant product** — `tenant` is the **top isolation boundary** (above company/branch),
+  every record and query is tenant-scoped, and **no store-specific value is hard-coded** —
+  trading day, tax, departments, currencies, languages, number formats, roles and branding
+  are all **per-tenant configuration** (the config engine + feature entitlements). SRE is
+  tenant #1. Cross-tenant access is a critical threat (§35).
+- **Identity & RBAC (M01/M02):** every call scoped to tenant/company/branch; maker-checker
+  and separation of duties; **no shared logins** (hard rule #4).
 - **Messaging (§30.2):** durable broker; idempotency keys; retry with **dead-letter that
   is never dropped** (hard rule #6); consumers idempotent.
 - **AI gateway (A01–A10):** scoped tools, evidence + confidence, budget cap, kill switch;

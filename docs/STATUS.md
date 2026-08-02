@@ -20,6 +20,16 @@ unnecessarily."** Keep building and pushing tested work; stop only for genuine b
 truly need the owner or the store (the Stage 1 facts, a hosting-vendor commitment) — not for
 routine progress.
 
+**Product direction (owner, 2 Aug 2026 — OB-01 / ADR-0003):** SRE Retail OS is a
+**commercial, multi-tenant product** sold to many retailers, not only for SRE's own use —
+"make everything choose-able". `tenant` is the top isolation boundary; **no store-specific
+value is hard-coded** (all per-tenant configuration); **SRE is tenant #1**. The Stage-5
+foundation already works this way (parameterised trading-day/tax rules, versioned config,
+configurable roles/numbering/currency), so this is mostly formalisation, not rework.
+Follow-up: add the `Tenant` entity + tenant scoping to the data model & `db/data-dictionary/`;
+a per-tenant settings/entitlements catalogue; update the threat model (cross-tenant access =
+critical). The store-facts questionnaire is reframed as the **tenant Store Setup Profile**.
+
 - **Stage 3 done:** design system, usability test script, and screen specs for **all 14
   §27 role surfaces** (`docs/design/`).
 - **Stage 4 done:** architecture overview, data model (§29), API & event catalogue (§30),
