@@ -26,6 +26,24 @@ requirement may reach **Done** without a complete individual row.
 | A01–A10 | All governed | AI control + role surfaces | API-13 | AI + authorized domains | Evaluation/injection/authority/cost/kill switch | R7 | Not started |
 | M36/innovation | Controlled extension | Admin/selected | Versioned APIs/events | Tenant/config | Isolation/upgrade/rollback | R8 | Not started |
 
+## Design artifacts (Stage 3–4)
+
+Store-Core requirements are now covered at **design level** by the artifacts below; the
+individual rows keep `Design → docs/requirements/M##.md` as their requirement anchor and
+stay **In design** until code + tests exist (Definition of Done). These are the design
+references those rows resolve to:
+
+| Artifact | Location | Covers |
+| --- | --- | --- |
+| Screen specs (all 14 §27 surfaces) | `docs/design/screens/` + `docs/design/design-system.md` | UX/QG-02 for every role surface |
+| Architecture overview | `docs/architecture/README.md` | §19 planes, bounded contexts → API-01…13 |
+| Data model (§29) | `docs/architecture/data-model.md` | entity/rule model, one-commerce-truth |
+| API & event catalogue (§30) | `docs/api/catalogue.md` | API-01…13, conventions, §30.2 events |
+| Offline-sync design (§31) | `docs/architecture/offline-sync.md` | P-01 detail, sync protocol, conflicts |
+| Migration design (§34) | `docs/architecture/migration-design.md` | MG-01…12 pipeline, QG-07 control totals |
+| Threat & privacy model (§35) | `docs/security/threat-privacy-model.md` | trust boundaries, STRIDE, PRV, QG-06 |
+| Field-level data dictionary | `db/data-dictionary/` | six Store-Core domains, field level |
+
 ## Individual requirement trace (expanded in Stage 2)
 
 | Requirement ID | Stage | Design | Code | Tests | Release | Status |
