@@ -8,22 +8,23 @@ Last updated: 2 August 2026
 ---
 
 ## Current stage
-**Stage 3 — UX & design system (screen inventory complete).** Store-Core Stage 2 is
-complete (22 modules, 88 requirements traced). The interfaces are designed before they
-are built (roadmap §27, QG-02). No application code yet — coding stays on HOLD until the
-owner closes D3/D4/D5/D8 (§38). Running autonomously per owner instruction
-("continue always"), producing all design/specification work up to that coding line.
+**Stage 4 — Architecture (core design documents complete).** Stage 3 (UX & design system)
+is done. Stage 4 has now produced the core architecture design for Store-Core (R2). No
+application code yet — coding stays on HOLD until the owner closes D3/D4/D5/D8 (§38).
+Running autonomously per owner instruction ("continue always" / "you carry on").
 
 - **Stage 3 done:** design system, usability test script, and screen specs for **all 14
-  §27 role surfaces** — cashier POS, owner command centre, store/manager,
-  purchase/receiving, inventory/warehouse handheld, product/merchandising, finance,
-  customer app/web, picker/packer, delivery, CRM/service, admin/security, migration,
-  and AI control (in `docs/design/screens/`). (The two surfaces the previous "next" note
-  had omitted — product/merchandising and finance — are included, per §8 of the design
-  system; nothing dropped.)
-- **Stage 3 next:** QG-02 human usability testing with real staff
-  (`usability-test-script.md`) when the store is available. Then **Stage 4 —
-  architecture**.
+  §27 role surfaces** (`docs/design/`).
+- **Stage 4 done:** architecture overview, data model (§29), API & event catalogue (§30),
+  offline-sync design (§31), migration/cutover design (§34), and threat & privacy model
+  (§35) — in `docs/architecture/`, `docs/api/catalogue.md` and `docs/security/`. All apply
+  the §19 baseline (ADR-0001); nothing invented beyond Store-Core.
+- **Open gate:** QG-02 human usability testing with real staff
+  (`docs/design/usability-test-script.md`) still needs the store — it runs whenever staff
+  are available.
+- **Stage 4 next:** deepen where the build will need it — per-domain data dictionary
+  (`db/data-dictionary/`), contract/event schemas (`packages/contracts/`), and
+  infrastructure/CI-CD design (`infra/`).
 
 Store-Core scope (roadmap §21 Stage 2): **M01–M15, M23, M29, M30, M32–M35 — all done.**
 Each module doc marks store-fact-dependent fields `⟳ AVR-##` (confirmed in Stage 1),
@@ -61,11 +62,11 @@ release/stage is reached.
   named person. These are gathered in the store during Stage 1.
 
 ## Next session should start with
-Stage 3 screen inventory is complete (all 14 §27 surfaces + design system + usability
-script). Options for the next step:
-1. **Stage 4 — Architecture** — data model (§29), API catalogue (§30), offline-sync
-   design (§31), threat/privacy model (§35), migration design (§34). This is the roadmap
-   sequence after Stage 3; **or**
+Stage 4 core architecture is documented (overview, data model, APIs/events, offline-sync,
+migration design, threat/privacy). Options for the next step:
+1. **Deepen Stage 4 for the build** — per-domain data dictionary (`db/data-dictionary/`),
+   contract/event schemas (`packages/contracts/`), and infrastructure/CI-CD design
+   (`infra/`); **or**
 2. **QG-02 usability test** — run `docs/design/usability-test-script.md` with real staff
    in the store (needs store access), recording every hesitation; **or**
 3. **Expand the remaining modules** (M16–M22, M24–M28, M31, M36) and the cross-cutting

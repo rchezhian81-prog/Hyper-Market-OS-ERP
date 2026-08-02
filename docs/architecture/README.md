@@ -107,5 +107,5 @@ Stage 5 within the §19 baseline — a commitment that deviates would be recorde
 - `data-model.md` — §29 logical data model and the rules every entity obeys.
 - `../api/catalogue.md` — §30 API and event catalogue.
 - `offline-sync.md` — §31 offline-first and sync design (the P-01 detail).
+- `migration-design.md` — §34 migration/cutover design (the Stage 13 runbook lives in `../cutover/`).
 - `../security/threat-privacy-model.md` — §35 threat and privacy model.
-- `../cutover/migration-design.md` — §34 migration/cutover design.
