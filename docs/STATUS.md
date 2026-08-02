@@ -40,14 +40,18 @@ instruction ("continue always" / "you carry on").
     with runtime guards (5 tests).
   - `DomainEvent` envelope (§30.2 / §31.1) — validated, idempotency-keyed (6 tests).
   - `Quantity` value primitive (UOM-aware, exact, never a float) — 9 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **59 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **69 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **Base-platform layer begun:** the **append-only ledger engine** (`packages/ledger/`,
     hard rule #2 / M08-FR-01 / §31.1) — idempotent append, balances projected from events
     (never stored), corrections as compensating entries, storage-agnostic with an in-memory
     store; 5 tests. The `ledger-append-only` guardrail still passes (genuinely append-only).
-  - Next: a database-backed `LedgerStore` + persistence/migrations (needs the IaC/DB from
-    `infra/`), then identity/config services — each with tests.
+  - **Maker-checker approval engine** (`packages/approvals/`, §28 / M02) — the maker can
+    never decide their own request; mandatory reason, branch scope, and value-limit routing
+    (approve needs authority, reject needs only scope); 10 tests.
+  - Next (pure/testable now): RBAC permission checks, then the offline sync outbox. The
+    database-backed `LedgerStore` + persistence/migrations needs the IaC/DB from `infra/`,
+    which needs the hosting-vendor pick (D3 commercial validation).
 
 Store-Core scope (roadmap §21 Stage 2): **M01–M15, M23, M29, M30, M32–M35 — all done.**
 Each module doc marks store-fact-dependent fields `⟳ AVR-##` (confirmed in Stage 1),
