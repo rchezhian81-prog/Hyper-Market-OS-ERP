@@ -62,7 +62,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Offline sync outbox | P-01 (offline first) / §31 (durable outbox, idempotent) / hard rule #6 (dead-letter never dropped) | `packages/sync/src/outbox.ts` | `tests/unit/outbox.test.ts` (5 tests) |
 | Gap-free number series | M01-FR-02 (gap-free, unique per type, offline reserved ranges) | `packages/numbering/src/numbering.ts` | `tests/unit/numbering.test.ts` (6 tests) |
 | Trading-day calculator | M01-FR-02 (trading-day rule) / A-13 | `packages/calendar/src/trading-day.ts` | `tests/unit/trading-day.test.ts` (6 tests) |
-| Line pricing (composition) | M12 (POS) / M05 (pricing) / M23 (tax) — Money × Quantity × Rate | `packages/pricing/src/pricing.ts` | `tests/unit/pricing.test.ts` (4 tests) |
+| Line & bill pricing (composition) | M12 (POS) / M05 (pricing) / M23 (tax) — Money × Quantity × Rate | `packages/pricing/src/pricing.ts` | `tests/unit/pricing.test.ts` (7 tests) |
 
 ## Individual requirement trace (expanded in Stage 2)
 

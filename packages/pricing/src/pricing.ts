@@ -9,7 +9,15 @@
 //   tax      = net × tax rate
 //   total    = net + tax
 
-import { scaleMoney, add, subtract, zero, type Money, type Rounding } from '../../contracts/src/money';
+import {
+  scaleMoney,
+  add,
+  subtract,
+  zero,
+  type Money,
+  type Rounding,
+  type CurrencyCode,
+} from '../../contracts/src/money';
 import { applyRate, type Rate } from '../../contracts/src/rate';
 import { precisionOf, type Quantity } from '../../contracts/src/quantity';
 
@@ -48,5 +56,34 @@ export function priceLine(input: LinePricingInput): LinePricing {
   const net = subtract(gross, discount);
   const tax = applyRate(net, input.taxRate, rounding);
   const total = add(net, tax);
+  return { gross, discount, net, tax, total };
+}
+
+/** Bill-level totals across many priced lines. */
+export interface BillTotals {
+  readonly gross: Money;
+  readonly discount: Money;
+  readonly net: Money;
+  readonly tax: Money;
+  readonly total: Money;
+}
+
+/**
+ * Sum priced lines into bill totals. Single-currency by construction (`add`
+ * rejects a line in a different currency); an empty bill totals to zero.
+ */
+export function sumLines(lines: readonly LinePricing[], currency: CurrencyCode): BillTotals {
+  let gross = zero(currency);
+  let discount = zero(currency);
+  let net = zero(currency);
+  let tax = zero(currency);
+  let total = zero(currency);
+  for (const line of lines) {
+    gross = add(gross, line.gross);
+    discount = add(discount, line.discount);
+    net = add(net, line.net);
+    tax = add(tax, line.tax);
+    total = add(total, line.total);
+  }
   return { gross, discount, net, tax, total };
 }

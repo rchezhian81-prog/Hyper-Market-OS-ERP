@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { priceLine } from '../../packages/pricing/src/index';
+import { priceLine, sumLines } from '../../packages/pricing/src/index';
 import { money } from '../../packages/contracts/src/money';
 import { quantity } from '../../packages/contracts/src/quantity';
 import { rate } from '../../packages/contracts/src/rate';
@@ -56,5 +56,27 @@ describe('priceLine', () => {
     expect(line.net.minor + line.discount.minor).toBe(line.gross.minor);
     expect(line.net.minor + line.tax.minor).toBe(line.total.minor);
     expect(line.total.currency).toBe('INR');
+  });
+});
+
+describe('sumLines (bill totals)', () => {
+  it('sums priced lines into bill totals', () => {
+    const a = priceLine({ unitPrice: money(10_00, 'INR'), quantity: quantity(2, 'ea'), taxRate: rate(1800) });
+    const b = priceLine({ unitPrice: money(5_00, 'INR'), quantity: quantity(1, 'ea'), taxRate: rate(1800) });
+    const bill = sumLines([a, b], 'INR');
+    expect(bill.net.minor).toBe(25_00); // 20.00 + 5.00
+    expect(bill.tax.minor).toBe(4_50); // 3.60 + 0.90
+    expect(bill.total.minor).toBe(29_50);
+  });
+
+  it('an empty bill totals to zero in the given currency', () => {
+    const bill = sumLines([], 'INR');
+    expect(bill.total.minor).toBe(0);
+    expect(bill.total.currency).toBe('INR');
+  });
+
+  it('rejects mixing currencies in one bill', () => {
+    const inr = priceLine({ unitPrice: money(10_00, 'INR'), quantity: quantity(1, 'ea'), taxRate: rate(0) });
+    expect(() => sumLines([inr], 'USD')).toThrow(TypeError);
   });
 });
