@@ -17,7 +17,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
   Compositions   pricing · tender · sale        (real domain operations)
        ▲
   Engines        ledger · approvals · rbac ·     (one invariant each)
-                 sync · numbering · calendar · config
+                 sync · numbering · calendar · config · tenant
        ▲
   Contracts      money · quantity · rate ·       (the shared vocabulary & shapes)
                  enums · event
@@ -35,6 +35,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 | `numbering` | Document numbers | Gap-free & unique per type; offline reserved ranges (M01-FR-02) |
 | `calendar` | Trading-day rule | Consistent business day for close/GST (M01-FR-02, A-13) |
 | `config` | Versioned config | Every change is a new version; rollback is non-destructive (M01-FR-03) |
+| `tenant` | Multi-tenant entitlements | Each tenant chooses its optional modules; default-off, isolated (ADR-0003, M36) |
 | `pricing` | Line & bill pricing | Exact gross/discount/net/tax/total (M12/M05/M23) |
 | `tender` | Tender settlement | Split tenders balance; never a fake approval (M12-FR-03) |
 | `sale` | Local sale commit | Commit locally first, sync idempotently (hard rule #1, M12) |

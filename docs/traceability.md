@@ -66,6 +66,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Tender settlement | M12-FR-03 (split tenders balance; no fake approval) | `packages/tender/src/tender.ts` | `tests/unit/tender.test.ts` (7 tests) |
 | Versioned config + rollback | M01-FR-03 (append-only versions, non-destructive rollback) | `packages/config/src/config.ts` | `tests/unit/config.test.ts` (5 tests) |
 | Local sale commit (integration) | hard rule #1 (commit local, sync idempotently) / M12 | `packages/sale/src/sale.ts` | `tests/unit/sale.test.ts` (4 tests) |
+| Tenant feature entitlements | ADR-0003 / M33·D12·M36 (multi-tenant; choose-able modules) | `packages/tenant/src/tenant.ts` | `tests/unit/tenant.test.ts` (6 tests) |
 
 ## Individual requirement trace (expanded in Stage 2)
 
