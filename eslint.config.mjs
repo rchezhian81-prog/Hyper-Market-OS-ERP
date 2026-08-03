@@ -23,4 +23,12 @@ export default tseslint.config(
       globals: { ...globals.node },
     },
   },
+  {
+    // App front-ends run in the browser (and, for a service worker, in the SW
+    // scope) — not in Node. Give those files the right globals.
+    files: ['apps/**/web/**/*.js'],
+    languageOptions: {
+      globals: { ...globals.browser, ...globals.serviceworker },
+    },
+  },
 );

@@ -10,9 +10,9 @@ Last updated: 3 August 2026
 ## Current stage
 **Stage 5 — Foundation build (in progress). Stage 4 complete; owner-closure gate CLOSED.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
-done for Store-Core (R2); Stage 5 has built 43 tested foundation units plus five
-**persistence-layer** units incl. the PostgreSQL connector + migration runner (393 tests).
-**D3/D4/D5/D8 were answered on 2 Aug 2026** (see
+done for Store-Core (R2); Stage 5 has built 43 tested foundation units, five
+**persistence-layer** units incl. the PostgreSQL connector + migration runner, and the **first
+app shell (POS)** — 406 tests. **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
 spec-freeze / store-specific build are the Stage 1 store facts (the 20 AVR items) and the
@@ -64,8 +64,22 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **393 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **406 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
+  - **First app shell — POS (owner asked, 3 Aug 2026):** `apps/pos/` is the cashier till, built
+    to the Stage 3 spec (`docs/design/screens/pos-cashier.md`). Two parts: **`src/session.ts`,
+    the tested model** — `PosSession` holds the basket and composes the engines (pricing,
+    promotions, tender, sale commit), **synchronously by construction** so a sale never awaits
+    I/O (hard rule #1); a **voided line is marked and kept** with its reason (visible to loss
+    prevention), a **pending card is shown honestly** and never counts as paid, the **sync badge**
+    reports connection + unsent count (P-08), and a **double-tap on Tender is refused** rather
+    than double-billing. And **`web/`, the PWA shell** — framework-free per the §19 baseline: the
+    Sale screen laid out per spec (running total the largest element, one dominant Tender action,
+    permanent sync badge), with a **service worker that pre-caches the shell so the lane opens
+    and bills during an outage**. 13 tests, covering the spec's acceptance (tax-exact totals,
+    weighed goods, promotions, offline commit + unsent count, suspend/recall). The `web/` view is
+    a runnable static scaffold for QG-02 usability testing; attaching the bundled model lands
+    with the build pipeline.
   - **Persistence layer — BEGUN (owner asked, 3 Aug 2026):** the core durable stores, all
     **portable and testable without a live database** via a driver-agnostic **`SqlClient` port**
     (no concrete driver imported anywhere), each with an **in-memory reference that defines the

@@ -97,6 +97,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Durable versioned config (persistence) | M01-FR-03 / ADR-0003 — append-only versions per (tenant,key); rollback as a new version; `config_versions` DDL | `packages/persistence/src/config-store.ts`, `db/migrations/0003_config_versions.sql` | `tests/unit/persistence-config-store.test.ts` (7 tests) |
 | Projection read-models (persistence) | §29 (read models derived from events) / P-08 — incremental fold with watermark + freshness time; rebuildable | `packages/persistence/src/projection.ts` | `tests/unit/persistence-projection.test.ts` (6 tests) |
 | PostgreSQL connector + migration runner | §19 baseline (PostgreSQL) / P-06 — `pg`→`SqlClient` adapter (structural, portable); idempotent migration runner + runnable CLI | `packages/persistence/src/pg-client.ts`, `packages/persistence/src/migrations.ts`, `scripts/migrate.mjs` | `tests/unit/persistence-pg-connector.test.ts` (5 tests) |
+| **POS app shell** (first app) | M12–M15 / D04 / hard rule #1 / §27.1 — Sale-screen session composing pricing·promotions·tender·sale; offline PWA shell to the Stage 3 spec | `apps/pos/src/session.ts`, `apps/pos/web/` | `tests/unit/pos-session.test.ts` (13 tests) |
 | Tenant feature entitlements | ADR-0003 / M33·D12·M36 (multi-tenant; choose-able modules) | `packages/tenant/src/tenant.ts` | `tests/unit/tenant.test.ts` (6 tests) |
 | Per-tenant settings | ADR-0003 (choose-able settings, defaults, per-tenant, versioned) | `packages/tenant/src/settings.ts` | `tests/unit/tenant-settings.test.ts` (5 tests) |
 
