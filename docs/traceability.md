@@ -92,6 +92,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | B2B credit & commission | M22-FR-01 (credit-limit block pending approval; contract expiry) + M22-FR-03 (exact commission) / §28 | `packages/b2b/src/` | `tests/unit/b2b.test.ts` (10 tests) |
 | Notifications (guard + queue) | M31-FR-03 (consent-safe send, blocked on breach) + M31-FR-04 (retry/dead-letter, suppression, template approval) / hard rule #6 | `packages/notifications/src/` | `tests/unit/notifications.test.ts` (9 tests) |
 | Owner KPIs & freshness | M29-FR-01 / D13 (exact sales/margin/basket/tender aggregation; stale/missing never shown as fresh) / P-08 | `packages/reporting/src/` | `tests/unit/reporting.test.ts` (7 tests) |
+| Durable event store (persistence) | §30.2 / §31.1 / hard rule #2 / ADR-0003 — append-only, tenant-scoped, idempotent; SqlClient port + `event_ledger` DDL | `packages/persistence/src/`, `db/migrations/0001_event_ledger.sql` | `tests/unit/persistence-event-store.test.ts` (8 tests) |
 | Tenant feature entitlements | ADR-0003 / M33·D12·M36 (multi-tenant; choose-able modules) | `packages/tenant/src/tenant.ts` | `tests/unit/tenant.test.ts` (6 tests) |
 | Per-tenant settings | ADR-0003 (choose-able settings, defaults, per-tenant, versioned) | `packages/tenant/src/settings.ts` | `tests/unit/tenant-settings.test.ts` (5 tests) |
 
