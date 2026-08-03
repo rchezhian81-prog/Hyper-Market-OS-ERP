@@ -16,8 +16,8 @@ app shells (POS + Owner + Web ERP + Picker + Delivery)** with the build pipeline
 scanning, the catalogue snapshot builder, receipt printing, template-driven import, domain
 export, tamper-evident audit evidence, goods-in with the three-way match, state-aware stock
 availability, the M03 product master, the compliance registers, the org hierarchy and branch
-lifecycle, named accounts with the access lifecycle, the POS lane guards, cafe production,
-and the store-edge sync agent — 791 tests.
+lifecycle, named accounts with the access lifecycle, the POS lane guards, in-store
+production, and the store-edge sync agent — 806 tests.
 **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
@@ -70,7 +70,7 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **791 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **806 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **Template-driven import — DONE (3 Aug 2026). This is the roadmap's own top priority
     (audit A-03: the store's #1 daily pain — the 80+ line supplier invoice typed by hand).**
@@ -325,14 +325,21 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     per-tenant settings (`pos.age_restricted.minimum_age` = 18,
     `pos.licence_hours.enabled` = false), so a tenant in a state with different rules
     changes a setting, not code. The till still **blocks** rather than warns.
-  - **OB-04 — fresh/production departments: the cafe, and nothing else.** This **closes
-    AVR-12**, which gated the whole of M11. Bakery, deli, meat/fish, cut fruit, pharmacy and
-    concession are **not built and not enabled** (roadmap §2.2: never build a module for a
-    department the store does not have). Adding one later is a change record with a target
-    release, never a silent gap (OD-02). Cold-chain scope (M10) and the FSSAI obligations
-    (M34-FR-03) are sized to a cafe.
+  - **OB-04 — SRE operates a cafe.** This **closes AVR-12**, which gated M11. SRE's setting
+    is `production.departments = ['cafe']`, so only the cafe appears in SRE's screens,
+    cold-chain scope and FSSAI obligations.
+  - **OB-05 — product scope is never narrowed to SRE's own footprint** (owner: *"everything
+    will be there, remember this software is not only for us, it's for multi tenant — so
+    think for that"*). This **corrects an over-narrow reading of roadmap §2.2** on my part.
+    That rule governs **what a tenant is shown**, not **what the product contains**: the
+    product builds every capability, and a tenant sees only what it switches on. So a shop
+    with no meat counter never meets one, *and* a tenant with three counters is not told to
+    wait for a release. Concretely, **all M11 departments are built** — cafe, bakery, deli,
+    meat/fish, central kitchen — **including the full weighed path**, even though SRE runs
+    none of it. **This applies to every module from here on**: an SRE answer configures SRE,
+    it never trims the build (OB-01, OD-02).
 
-  - **In-store production — DONE (3 Aug 2026). M11 is complete for the cafe.**
+  - **In-store production — DONE (3 Aug 2026). M11 is complete, for every department.**
     `packages/production/` treats a production run as exactly two things: **ingredients
     consumed (stock out) → a finished batch created (stock in)**, both on the **same ledger**
     the till and the goods-in door use. Without that, the system believes you still have
@@ -357,7 +364,25 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
       department: a cafe needs allergens, only a weighed counter needs a weight;
     - **a repack inherits its source's expiry** — a fresh wrapper does not make food younger
       — and records where it came from, so a recall reaches everything made out of it.
-    23 tests.
+
+    **The weighed counters are built too** (OB-05), for the tenants that run them:
+    - **the bin was paid for.** A butcher takes in 12.4 kg, bins bone and trim, and puts out
+      8.9 kg. **₹600/kg of carcass becomes ₹835.96/kg of curry cut** — price the shelf off
+      the input figure and the counter loses money on every kilo. Cost lands only on what can
+      be sold (loading it onto bone would understate the meat), and a carcass splits between
+      prime and secondary cuts **by value**, with the remainder distributed so the parts sum
+      to the whole;
+    - **yield against the department's standard**: too low means a poor delivery, a heavy
+      hand, or stock leaving another way; **too high** means the standard or the scale is
+      wrong, which costs just as much. More coming out than went in is flagged as what it is;
+    - **the sticker and the till agree by construction.** Scale labels are generated from the
+      **same per-tenant barcode rule the catalogue parses with** — one definition, both
+      directions — and the acceptance test **prints a label and scans it through the real
+      catalogue**, weight-embedded and price-embedded, rather than asserting the format
+      twice. The check digit is computed (verified against a published barcode), and a value
+      that will not fit is **refused rather than truncated**, because truncating charges the
+      wrong amount.
+    38 tests.
   - **Receipt printing — DONE (owner asked, 3 Aug 2026):** `packages/receipt/` builds the
     receipt **from the committed sale** (never a draft, M31-FR-02) with its gap-free number, and
     **refuses to issue a wrong one**: a **PAN-like tender reference** (hard rule #3), **totals

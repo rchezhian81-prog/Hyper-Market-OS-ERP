@@ -6,3 +6,5 @@
 export * from './departments';
 export * from './recipe';
 export * from './packing';
+export * from './catch-weight';
+export * from './scale-label';

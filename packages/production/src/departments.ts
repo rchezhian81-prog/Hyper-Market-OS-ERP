@@ -1,23 +1,24 @@
-// Production department enablement (M11-FR-04 / roadmap §2.2 / OB-04).
+// Production department enablement (M11-FR-04 / roadmap §2.2 / OB-04 / OB-05).
 //
-// The roadmap's rule here is blunt and worth keeping blunt:
+// The roadmap says: do not build a module for a department you do not have. That
+// rule governs **what a tenant is shown**, not **what the product contains**
+// (OB-05) — and the distinction matters in both directions:
 //
-//     DO NOT BUILD A MODULE FOR A DEPARTMENT YOU DO NOT HAVE.
+//   • A meat-counter screen in a shop with no meat counter is not harmless. It is a
+//     menu item staff learn to ignore, a form nobody fills in, a report with a
+//     permanently empty section, and a compliance obligation (cold chain,
+//     metrology) the system believes applies and the shop does not.
 //
-// A meat-counter screen in a shop with no meat counter is not harmless. It is a
-// menu item staff have to learn to ignore, a set of fields on a form that nobody
-// fills in, a report with a permanently empty section, and a compliance obligation
-// (cold chain, metrology) that the system believes applies and the shop does not.
+//   • But this is a commercial multi-tenant product (OB-01). A tenant that runs a
+//     butcher's counter must not be told to wait for a release. So EVERY department
+//     the roadmap names is BUILT — cafe, bakery, deli, meat/fish, central kitchen —
+//     with the full weighed-output path (catch-weight costing, scale labels), and
+//     each tenant ENABLES only its own.
 //
-// SRE Hyper Market operates a **cafe** and nothing else (owner, 3 Aug 2026 — OB-04,
-// closing AVR-12). So the cafe is defined here and enabled; bakery, deli,
-// meat/fish, cut fruit, pharmacy and concession are **not enabled**. They are named
-// in the catalogue below only so that a *different tenant* can switch one on — this
-// is a commercial multi-tenant product (OB-01), and one shop's answer is never
-// hard-coded as everyone's.
-//
-// Adding a department later is a change record with a target release, never a
-// silent gap (OD-02).
+// SRE Hyper Market enables the cafe (OB-04, closing AVR-12). That configures SRE;
+// it does not trim the build. Enabling a department later is configuration, and
+// adding a *new kind* of department is a change record with a target release,
+// never a silent gap (OD-02).
 //
 // Pure and deterministic: no clock, no I/O.
 
@@ -39,9 +40,9 @@ export interface ProductionDepartment {
 }
 
 /**
- * The catalogue of departments a tenant MAY operate. Being listed here is not
- * being enabled — enablement is per-tenant configuration
- * (`SETTINGS.PRODUCTION_DEPARTMENTS`).
+ * Every production department the product supports, fully built. Being listed here
+ * is not being enabled — enablement is per-tenant configuration
+ * (`SETTINGS.PRODUCTION_DEPARTMENTS`), and a tenant only ever sees its own.
  */
 export const DEPARTMENT_CATALOGUE: Readonly<Record<string, ProductionDepartment>> = {
   cafe: {
