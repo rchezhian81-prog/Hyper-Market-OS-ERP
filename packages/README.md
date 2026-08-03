@@ -14,10 +14,10 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 ## Layers
 
 ```
-  Compositions   pricing · promotions · tender ·   (real domain operations)
-                 sale · receiving · adjustment ·
-                 counts · returns · cash · till ·
-                 day-close
+  Compositions   price-list · pricing · promotions · (real domain operations)
+                 tender · sale · receiving ·
+                 adjustment · counts · returns ·
+                 cash · till · day-close
        ▲
   Engines        ledger · approvals · rbac ·     (one invariant each)
                  sync · numbering · calendar · config ·
@@ -42,6 +42,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 | `tenant` | Multi-tenant entitlements | Each tenant chooses its optional modules; default-off, isolated (ADR-0003, M36) |
 | `loss-prevention` | Anomaly detection | Configurable void/refund/discount/no-sale/cash rules → linked exceptions; detect-only (M15-FR-01, P-03) |
 | `price-guard` | Margin-floor / MRP controls | Reject above MRP; below floor/cost blocked pending a separate approver + reason (M05-FR-02, §28) |
+| `price-list` | Effective-dated prices | Resolve by precedence (customer>channel>zone>store); no early activation; append-only history (M05-FR-01, P-02) |
 | `pricing` | Line & bill pricing | Exact gross/discount/net/tax/total (M12/M05/M23) |
 | `promotions` | Best-price engine | Deterministic best price (BOGO/multibuy/coupon/member); no expired/unpublished; stacking/exclusion (M05-FR-03, P-02) |
 | `tender` | Tender settlement | Split tenders balance; never a fake approval (M12-FR-03) |

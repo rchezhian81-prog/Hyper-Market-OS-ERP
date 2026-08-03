@@ -76,6 +76,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Loss-prevention anomaly rules | M15-FR-01 / P-03 (configurable void/refund/discount/no-sale/cash rules; linked exceptions; detect-only) | `packages/loss-prevention/src/loss-prevention.ts` | `tests/unit/loss-prevention.test.ts` (9 tests) |
 | Promotions best-price engine | M05-FR-03 (deterministic best price; BOGO/multibuy/coupon/member; no expired/unpublished; stacking/exclusion) / P-02 | `packages/promotions/src/promotions.ts` | `tests/unit/promotions.test.ts` (11 tests) |
 | Margin-floor / MRP price controls | M05-FR-02 (reject above MRP; below floor/cost blocked pending approval + reason) / §28 | `packages/price-guard/src/price-guard.ts` | `tests/unit/price-guard.test.ts` (10 tests) |
+| Effective-dated price resolution | M05-FR-01 / P-02 (precedence customer>channel>zone>store; no early activation; append-only history; version lock) | `packages/price-list/src/price-list.ts` | `tests/unit/price-list.test.ts` (10 tests) |
 | Tenant feature entitlements | ADR-0003 / M33·D12·M36 (multi-tenant; choose-able modules) | `packages/tenant/src/tenant.ts` | `tests/unit/tenant.test.ts` (6 tests) |
 | Per-tenant settings | ADR-0003 (choose-able settings, defaults, per-tenant, versioned) | `packages/tenant/src/settings.ts` | `tests/unit/tenant-settings.test.ts` (5 tests) |
 
@@ -99,7 +100,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M04-FR-02 | 2 | `docs/requirements/M04.md` | — | — | R2 | In design |
 | M04-FR-03 | 2 | `docs/requirements/M04.md` | — | — | R2 | In design |
 | M04-FR-04 | 2 | `docs/requirements/M04.md` | — | — | R2 | In design |
-| M05-FR-01 | 2 | `docs/requirements/M05.md` | — | — | R2 | In design |
+| M05-FR-01 | 2 | `docs/requirements/M05.md` | `packages/price-list/src/price-list.ts` | `tests/unit/price-list.test.ts` | R2 | Foundation built (precedence resolution; effective-dated; append-only history; version lock) |
 | M05-FR-02 | 2 | `docs/requirements/M05.md` | `packages/price-guard/src/price-guard.ts` | `tests/unit/price-guard.test.ts` | R2 | Foundation built (MRP ceiling; below floor/cost needs a separate approver + reason) |
 | M05-FR-03 | 2 | `docs/requirements/M05.md` | `packages/promotions/src/promotions.ts` | `tests/unit/promotions.test.ts` | R2 | Foundation built (deterministic best price; BOGO/multibuy/coupon/member; expired/unpublished never apply) |
 | M05-FR-04 | 2 | `docs/requirements/M05.md` | — | — | R2 | In design |
