@@ -19,7 +19,8 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
                  returns · cash · till · day-close
        ▲
   Engines        ledger · approvals · rbac ·     (one invariant each)
-                 sync · numbering · calendar · config · tenant
+                 sync · numbering · calendar · config ·
+                 tenant · loss-prevention
        ▲
   Contracts      money · quantity · rate ·       (the shared vocabulary & shapes)
                  enums · event
@@ -38,6 +39,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 | `calendar` | Trading-day rule | Consistent business day for close/GST (M01-FR-02, A-13) |
 | `config` | Versioned config | Every change is a new version; rollback is non-destructive (M01-FR-03) |
 | `tenant` | Multi-tenant entitlements | Each tenant chooses its optional modules; default-off, isolated (ADR-0003, M36) |
+| `loss-prevention` | Anomaly detection | Configurable void/refund/discount/no-sale/cash rules → linked exceptions; detect-only (M15-FR-01, P-03) |
 | `pricing` | Line & bill pricing | Exact gross/discount/net/tax/total (M12/M05/M23) |
 | `tender` | Tender settlement | Split tenders balance; never a fake approval (M12-FR-03) |
 | `sale` | Local sale commit | Commit locally first, sync idempotently (hard rule #1, M12) |
