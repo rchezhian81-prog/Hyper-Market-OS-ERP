@@ -69,6 +69,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 | `notifications` | Consent-safe sends | Send blocked on any breach (template/suppression/consent/budget); retry + visible dead-letter (M31-FR-03/04, hard rule #6) |
 | `reporting` | Owner KPIs & freshness | Exact sales/margin/basket/tender aggregation; stale/missing never shown as fresh (M29-FR-01, P-08) |
 | `receipt` | Receipt build / render / print | From the committed sale; totals must balance; PAN refused; reprint stamped + reasoned; ESC/POS; printer failure never costs the sale (M31-FR-02, M12-FR-02) |
+| `product` | Product master (write side) | An incomplete product is a draft, never publishable: no category/tax class/allergen declaration/Legal-Metrology field and it cannot reach the shelf; recall block stops sale and purchase; pack conversions exact and reversible; one barcode maps to exactly one item; duplicates reviewed with evidence and merged only by a second person, reversibly (M03-FR-01/02/03/04, P-02, §9.3, §28) |
 | `catalogue` | Lane catalogue, barcode scan & snapshot builder | O(1) offline lookup from a versioned snapshot; weight/price-embedded barcodes; recalled/non-sellable refused at the scan; builder resolves prices by precedence and excludes anything it can't price safely (M03, M05, M12, §31, §32) |
 | `price-list` | Effective-dated prices | Resolve by precedence (customer>channel>zone>store); no early activation; append-only history (M05-FR-01, P-02) |
 | `pricing` | Line & bill pricing | Exact gross/discount/net/tax/total (M12/M05/M23) |

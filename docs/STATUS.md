@@ -10,12 +10,13 @@ Last updated: 3 August 2026
 ## Current stage
 **Stage 5 — Foundation build (in progress). Stage 4 complete; owner-closure gate CLOSED.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
-done for Store-Core (R2); Stage 5 has built 48 tested foundation units, five
+done for Store-Core (R2); Stage 5 has built 51 tested foundation units, five
 **persistence-layer** units incl. the PostgreSQL connector + migration runner, and the **first
 app shells (POS + Owner + Web ERP + Picker + Delivery)** with the build pipeline, barcode
 scanning, the catalogue snapshot builder, receipt printing, template-driven import, domain
 export, tamper-evident audit evidence, goods-in with the three-way match, state-aware stock
-availability and the store-edge sync agent — 619 tests. **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
+availability, the M03 product master and the store-edge sync agent — 660 tests.
+**D3/D4/D5/D8 were answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
 spec-freeze / store-specific build are the Stage 1 store facts (the 20 AVR items) and the
@@ -67,7 +68,7 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **619 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **660 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **Template-driven import — DONE (3 Aug 2026). This is the roadmap's own top priority
     (audit A-03: the store's #1 daily pain — the 80+ line supplier invoice typed by hand).**
@@ -179,6 +180,38 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
       the sale never happened, reported explicitly as an **estimate**.
     All ratios are exact BigInt basis points, and a ratio that cannot be computed returns
     **"not meaningful", with the reason** — never `Infinity`, `NaN` or a silent zero. 27 tests.
+  - **Product master — DONE (3 Aug 2026). M03 is complete.** `packages/product/` is the
+    write side of the product truth (`packages/catalogue` is the read side the till holds
+    offline). A wrong product record does not stay wrong in one place — it multiplies into
+    every sale, order, report and tax return, and it is found months later at stock-take.
+    So the package is built to be **hard to publish something wrong through**:
+    - **an incomplete product is a draft, not an error.** You can always save what you know;
+      the system lists **what is still missing in plain English** and refuses to publish
+      until it is there — naming **every** reason at once, not one per attempt;
+    - **cannot reach the shelf without**: a category, an HSN/tax class, an **allergen
+      declaration** on a food item (an empty list means "declared: none" and passes —
+      **silence is not a declaration**), country of origin, the **Legal Metrology** net
+      quantity and packer details on packed or weighed goods, and a minimum age on an
+      age-restricted item so the till knows when to ask for proof;
+    - **attributes belong to the tenant's own departments**, typed and validated — a fish
+      counter and an electronics aisle do not need the same fields, and neither list is in
+      our code;
+    - **a recall block stops sale *and* purchase**, offline included, and **MRP is
+      effective-dated** so last month's bill can still be explained;
+    - **a case of 24 becomes exactly 24.** Pack conversions are exact integers and
+      reversible; a pack that could never be exact is refused at definition time rather than
+      corrupting stock at the first delivery. Converting down gives **whole packs and a
+      remainder** — half a case is not something you can shelve or return;
+    - **one barcode maps to exactly one item.** The register refuses a second claim and
+      **names the product that already owns the code**; re-registering the same code to the
+      same product is a no-op, so an import can be re-run safely;
+    - **duplicates are reviewed, never auto-merged.** "Aashirvaad Atta 5kg" and "AASHIRVAAD
+      ATTA 5 KG" are caught (the normaliser splits "5kg" into "5 kg", which is where the
+      commonest real duplicate hides), graded with the evidence — a shared barcode is
+      near-certain, same name+brand with a different pack size is only possible. A merge
+      needs a **second person** and is a **reversible link, never a deletion**, because a
+      wrong merge with nothing left to compare against is unrecoverable.
+    41 tests.
   - **Receipt printing — DONE (owner asked, 3 Aug 2026):** `packages/receipt/` builds the
     receipt **from the committed sale** (never a draft, M31-FR-02) with its gap-free number, and
     **refuses to issue a wrong one**: a **PAN-like tender reference** (hard rule #3), **totals
