@@ -103,6 +103,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Catalogue snapshot builder | M03 → M05-FR-01 → §31 / P-08 / M05-FR-02 — price resolved by precedence at build time; unpriced/above-MRP/untaxed excluded with reasons; deterministic | `packages/catalogue/src/snapshot-builder.ts` | `tests/unit/catalogue-snapshot-builder.test.ts` (10 tests) |
 | **Store-edge sync agent** | P-01 / §31 / §31.1 / hard rules #6 & #10 — ordered idempotent drain, retry + backoff, visible dead-letter, conflict→exception, honest health | `edge/sync-agent/src/` | `tests/unit/sync-agent.test.ts` (12 tests) |
 | **Owner app shell** (2nd app) | M29 / M29-FR-01/02/03 / D13 / P-03 / P-08 — executive brief: KPIs, top-3 attention, grouped drillable alerts, approvals inbox, freshness; works with AI off | `apps/owner-app/src/brief.ts`, `apps/owner-app/web/` | `tests/unit/owner-brief.test.ts` (9 tests) |
+| **Web ERP shell** (3rd app) | §27 role surfaces / P-07 / P-04 / M02 / §28 — permission-derived navigation (default-deny, branch-scoped) and the approvals workbench (SoD visible, escalation not a failing button) | `apps/web-erp/src/` | `tests/unit/web-erp-shell.test.ts` (14 tests) |
 | Tenant feature entitlements | ADR-0003 / M33·D12·M36 (multi-tenant; choose-able modules) | `packages/tenant/src/tenant.ts` | `tests/unit/tenant.test.ts` (6 tests) |
 | Per-tenant settings | ADR-0003 (choose-able settings, defaults, per-tenant, versioned) | `packages/tenant/src/settings.ts` | `tests/unit/tenant-settings.test.ts` (5 tests) |
 
