@@ -18,7 +18,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
                  tender · sale · receiving ·
                  adjustment · counts · returns ·
                  cash · till · day-close · loyalty ·
-                 reconciliation
+                 reconciliation · purchasing
        ▲
   Engines        ledger · approvals · rbac ·     (one invariant each)
                  sync · numbering · calendar · config ·
@@ -49,6 +49,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 | `finance` | Ledger→journal posting | Mapping-driven balanced double-entry (GST included); unmapped→visible exception (M23-FR-01/02, P-08) |
 | `reconciliation` | Payment reconciliation | Match tenders↔settlements by token/amount; valued exceptions; never a card PAN (M23-FR-03, hard rule #3) |
 | `loyalty` | Loyalty points | Money-like append-only earn/burn/reverse; projected balance; offline cap; never negative (M17-FR-01) |
+| `purchasing` | Purchase orders | Issue with a separate approver + value limit; open commitment = ordered−received−cancelled (M06-FR-02/04, §28) |
 | `price-list` | Effective-dated prices | Resolve by precedence (customer>channel>zone>store); no early activation; append-only history (M05-FR-01, P-02) |
 | `pricing` | Line & bill pricing | Exact gross/discount/net/tax/total (M12/M05/M23) |
 | `promotions` | Best-price engine | Deterministic best price (BOGO/multibuy/coupon/member); no expired/unpublished; stacking/exclusion (M05-FR-03, P-02) |
