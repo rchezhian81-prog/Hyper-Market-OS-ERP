@@ -10,7 +10,7 @@ Last updated: 3 August 2026
 ## Current stage
 **Stage 5 — Foundation build (in progress). Stage 4 complete; owner-closure gate CLOSED.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
-done for Store-Core (R2); Stage 5 has built 39 tested foundation units (325 tests). **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
+done for Store-Core (R2); Stage 5 has built 40 tested foundation units (333 tests). **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
 spec-freeze / store-specific build are the Stage 1 store facts (the 20 AVR items) and the
@@ -62,7 +62,7 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **325 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **333 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **Base-platform layer begun:** the **append-only ledger engine** (`packages/ledger/`,
     hard rule #2 / M08-FR-01 / §31.1) — idempotent append, balances projected from events
@@ -106,6 +106,13 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     escalation) and get back the risky patterns as **exceptions that link to the underlying
     transactions** — surfaced to the owner, **never acted on automatically** (AI-NFR-12). Pure,
     deterministic detection over synced data — 9 tests.
+  - **Losses recorded honestly** — **waste / write-off** (`packages/waste/`, M28-FR-01, R6
+    design-ahead): records what leaves as loss — **wastage, damage, expiry, donation,
+    destruction** — as a **reason-coded compensating stock movement** (a loss removes stock,
+    never an edit — hard rule #2), valued for finance (M23). A **material** loss needs **captured
+    evidence** (photo/witness) **and** a separate approver (§28). It **reuses the adjustment
+    engine** — the same way stock counts do — so the disposal side of FEFO (expired → dispose)
+    has a controlled home. Pure — 8 tests.
   - **One customer truth, consent respected** — **customer 360** (`packages/customer/`,
     M16-FR-01/02, R4 design-ahead): **duplicate detection** that **never auto-merges** — a shared
     *verified* phone/email is a high-confidence merge candidate, anything softer (unverified
@@ -218,9 +225,9 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     line/bill pricing, the deterministic promotions best-price engine, tender settlement, the
     end-to-end offline sale commit, purchase-order issue & open commitment, goods receiving,
     approved stock adjustment, cycle/blind count reconciliation, the order lifecycle & stock
-    reservation, fulfilment (delivery/substitution/COD), customer dedup & consent, return/refund
-    commit, till cash movements, loyalty points, the cashier shift/till close, and the store/day
-    close + controlled reopen) — 39 tested units, 325 tests.
+    reservation, fulfilment (delivery/substitution/COD), customer dedup & consent, waste
+    write-off, return/refund commit, till cash movements, loyalty points, the cashier shift/till
+    close, and the store/day close + controlled reopen) — 40 tested units, 333 tests.
   - **Owner-deferred (OB-02, 2 Aug 2026):** the database-backed persistence layer + hosting/
     deployment, and gathering the Stage-1 store facts, are **planned later by the owner** —
     not an active ask or a blocker on design/foundation work. They slot onto this tenant-ready
@@ -269,7 +276,8 @@ plus all five cross-cutting sets.**
   approvals, rbac, sync, numbering, calendar, price-list, pricing, promotions, price-guard,
   tender, config, sale, tenant, receiving, purchasing, bank-controls, adjustment, counts,
   replenishment, fefo, traceability, finance, reconciliation, orders, fulfilment, customer,
-  returns, cash, till, day-close, loyalty, loss-prevention; 325 tests, `pnpm check` green). The
+  waste, returns, cash, till, day-close, loyalty, loss-prevention; 333 tests, `pnpm check`
+  green). The
   pure, store-fact-independent foundation is now comprehensive — it even composes into the
   end-to-end offline sale commit (hard rule #1). What remains genuinely needs the outside
   world: a **database** (via the hosting-vendor pick, D3 commercial validation) and the

@@ -19,7 +19,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
                  adjustment · counts · returns ·
                  cash · till · day-close · loyalty ·
                  reconciliation · purchasing · orders ·
-                 fulfilment · customer
+                 fulfilment · customer · waste
        ▲
   Engines        ledger · approvals · rbac ·     (one invariant each)
                  sync · numbering · calendar · config ·
@@ -57,6 +57,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 | `orders` | Order lifecycle & reservation | Auditable order state machine; reserve stock with no oversell (available-to-promise) (M18-FR-01/02, §6.2) |
 | `fulfilment` | Delivery / substitution / COD | Delivery state machine + proof; customer-confirmed substitution; COD reconciliation cash/UPI only (M19-FR-01/03/04) |
 | `customer` | Dedup & consent | Duplicate detection (uncertain→review, never auto-merge); consent-scoped send blocked on breach (M16-FR-01/02, PRV) |
+| `waste` | Write-off | Reason-coded compensating loss; material needs a separate approver + evidence (M28-FR-01, §28) |
 | `price-list` | Effective-dated prices | Resolve by precedence (customer>channel>zone>store); no early activation; append-only history (M05-FR-01, P-02) |
 | `pricing` | Line & bill pricing | Exact gross/discount/net/tax/total (M12/M05/M23) |
 | `promotions` | Best-price engine | Deterministic best price (BOGO/multibuy/coupon/member); no expired/unpublished; stacking/exclusion (M05-FR-03, P-02) |

@@ -88,6 +88,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Order lifecycle & reservation | M18-FR-01/02 (auditable state machine; reserve stock; no oversell) / §6.2 | `packages/orders/src/` | `tests/unit/orders.test.ts` (10 tests) |
 | Fulfilment (delivery/substitution/COD) | M19-FR-01/03/04 (delivery state machine + proof; customer-confirmed substitution; COD recon, cash/UPI only) / A04 / hard rule #3 | `packages/fulfilment/src/` | `tests/unit/fulfilment.test.ts` (10 tests) |
 | Customer dedup & consent | M16-FR-01 (duplicate detection, no auto-merge; uncertain→review) + M16-FR-02 (consent-scoped send, breach blocked) / P-08 / PRV | `packages/customer/src/` | `tests/unit/customer.test.ts` (9 tests) |
+| Waste / write-off | M28-FR-01 (reason-coded compensating loss; material needs separate approver + evidence) / §28 / hard rule #2 | `packages/waste/src/waste.ts` | `tests/unit/waste.test.ts` (8 tests) |
 | Tenant feature entitlements | ADR-0003 / M33·D12·M36 (multi-tenant; choose-able modules) | `packages/tenant/src/tenant.ts` | `tests/unit/tenant.test.ts` (6 tests) |
 | Per-tenant settings | ADR-0003 (choose-able settings, defaults, per-tenant, versioned) | `packages/tenant/src/settings.ts` | `tests/unit/tenant-settings.test.ts` (5 tests) |
 
@@ -203,7 +204,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M27-FR-02 | 2 | `docs/requirements/M27.md` | — | — | R6 | In design |
 | M27-FR-03 | 2 | `docs/requirements/M27.md` | — | — | R6 | In design |
 | M27-FR-04 | 2 | `docs/requirements/M27.md` | — | — | R6 | In design |
-| M28-FR-01 | 2 | `docs/requirements/M28.md` | — | — | R6 | In design |
+| M28-FR-01 | 2 | `docs/requirements/M28.md` | `packages/waste/src/waste.ts` | `tests/unit/waste.test.ts` | R6 | Foundation built (reason-coded compensating write-off; material needs separate approver + evidence) |
 | M28-FR-02 | 2 | `docs/requirements/M28.md` | — | — | R6 | In design |
 | M28-FR-03 | 2 | `docs/requirements/M28.md` | — | — | R6 | In design |
 | M28-FR-04 | 2 | `docs/requirements/M28.md` | — | — | R6 | In design |
