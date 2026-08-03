@@ -43,14 +43,37 @@ agent drains into.
 - **Append-only** — the store exposes **no** update/delete (hard rule #2); a correction is a new
   compensating event.
 
-## Wiring at deployment (when the DB host is chosen)
+## The PostgreSQL connector & migration runner (built)
 
-1. Implement `SqlClient` with a thin adapter over `pg` (cloud) / an embedded engine (edge):
-   `query(sql, params) => pool.query(sql, params).then(r => r.rows)`. Configure the driver to
-   return `timestamptz` as ISO-8601 strings.
-2. Run the `db/migrations/` scripts in order via the (deployment-time) migration runner.
-3. Harden the ledger at the database: `REVOKE UPDATE, DELETE ON event_ledger FROM <app_role>;`
-   — defence-in-depth on top of the code guardrail (`tests/guardrails/ledger-append-only`).
+- **`src/pg-client.ts`** — `pgClient(pool)` adapts a node-postgres `Pool`/`PoolClient` to
+  `SqlClient`. It is written against a **structural** `PgQueryable` interface, so this package
+  never imports `pg` and stays portable; the deployment creates the real pool:
+
+  ```ts
+  import { Pool } from 'pg';
+  import { pgClient, SqlEventStore } from '@sre/persistence';
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  const events = new SqlEventStore(pgClient(pool));   // now durable on PostgreSQL
+  ```
+
+- **`src/migrations.ts`** — `runMigrations(client, migrations)` applies ordered forward-only
+  migrations against any `SqlClient`, tracking them in a `schema_migrations` table so it is
+  **idempotent** (a re-run applies nothing new). Unit-tested.
+- **`scripts/migrate.mjs`** — the runnable CLI (loads `pg` at runtime): reads `db/migrations/`
+  and applies pending scripts against `DATABASE_URL`.
+
+  ```
+  DATABASE_URL=…  pnpm db:migrate
+  ```
+
+## Remaining deployment steps (need a live database)
+
+1. Provision a PostgreSQL instance and set `DATABASE_URL`, then run `pnpm db:migrate`.
+2. Configure the driver to return `timestamptz` as ISO-8601 strings (or the store coerces a
+   `Date` for you).
+3. Harden the ledger at the database — revoke the app role's mutation privileges on
+   `event_ledger` (defence-in-depth on top of the code guardrail
+   `tests/guardrails/ledger-append-only`).
 
 Tested in `tests/unit/persistence-event-store.test.ts`. Part of the repository layout in
 `CLAUDE.md`.

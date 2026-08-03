@@ -42,7 +42,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 | Package | Concern | Key rule it enforces |
 | --- | --- | --- |
 | `contracts` | Value primitives & shared shapes | Exact money/quantity/rate (never a float, §29.1); de-duplicated events (§30.2/§31.1) |
-| `persistence` | Durable stores + projections | Tenant-scoped event log (append-only), retry/dead-letter sync outbox, versioned config, and read-model projections (watermark + freshness); driver-agnostic `SqlClient` port + DDL 0001–3 (§30.2/§31.1/§31, M01-FR-03, §29, ADR-0003) |
+| `persistence` | Durable stores + projections + Postgres | Tenant-scoped event log (append-only), retry/dead-letter sync outbox, versioned config, read-model projections; driver-agnostic `SqlClient` port + DDL 0001–3 + **`pgClient` connector** and **migration runner** (`pnpm db:migrate`) (§30.2/§31.1/§31, M01-FR-03, §29, §19, ADR-0003) |
 | `ledger` | Append-only event ledger | Balances are projected from events, never overwritten (hard rule #2) |
 | `approvals` | Maker-checker | The maker can never decide their own request (§28) |
 | `rbac` | Access control | Default-deny; least privilege (P-04, M02-FR-02) |

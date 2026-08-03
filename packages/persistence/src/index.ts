@@ -7,3 +7,5 @@ export * from './event-store';
 export * from './outbox-store';
 export * from './config-store';
 export * from './projection';
+export * from './pg-client';
+export * from './migrations';

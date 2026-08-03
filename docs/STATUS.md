@@ -10,8 +10,9 @@ Last updated: 3 August 2026
 ## Current stage
 **Stage 5 — Foundation build (in progress). Stage 4 complete; owner-closure gate CLOSED.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
-done for Store-Core (R2); Stage 5 has built 43 tested foundation units plus four
-**persistence-layer** units (388 tests). **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
+done for Store-Core (R2); Stage 5 has built 43 tested foundation units plus five
+**persistence-layer** units incl. the PostgreSQL connector + migration runner (393 tests).
+**D3/D4/D5/D8 were answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
 spec-freeze / store-specific build are the Stage 1 store facts (the 20 AVR items) and the
@@ -63,7 +64,7 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **388 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **393 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **Persistence layer — BEGUN (owner asked, 3 Aug 2026):** the core durable stores, all
     **portable and testable without a live database** via a driver-agnostic **`SqlClient` port**
@@ -85,7 +86,15 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
       owns no source tables: a read model is **derived by folding the event ledger** and is
       **rebuildable**. Each projection tracks a **watermark** (highest seq folded) so it resumes
       incrementally without double-counting, and the **last-event time** that feeds the freshness
-      indicator (`packages/reporting`) — 6 tests.
+      indicator (`packages/reporting`) — 6 tests;
+    - the **PostgreSQL connector + migration runner** (owner asked, 3 Aug 2026; §19 baseline) —
+      `pgClient(pool)` adapts a node-postgres `Pool` to `SqlClient` via a **structural** interface
+      (so `packages/persistence` still imports no driver — portable, P-06); `runMigrations` applies
+      ordered forward-only migrations idempotently (tracked in `schema_migrations`); and the
+      runnable CLI **`pnpm db:migrate`** (`scripts/migrate.mjs`) applies `db/migrations/` against
+      `DATABASE_URL`. `pg` added as a devDependency; the CLI is verified runnable (it connects and
+      errors cleanly without a database). 5 tests. **The only thing left is a live PostgreSQL +
+      `DATABASE_URL`** — then `pnpm db:migrate` creates the tables and every SQL store is durable.
     The domain hot path stays synchronous (a sale never awaits I/O, hard rule #1); these async
     stores are the durable log events are written through and the sync agent drains into. The real
     `pg` wiring is a thin `SqlClient` adapter that must pass the same contract tests — a deployment
