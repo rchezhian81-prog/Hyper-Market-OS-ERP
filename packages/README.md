@@ -85,6 +85,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 | `till` | Cashier shift / till close | Blind count → over/short; material variance is a reason-coded valued exception; fully offline (M14-FR-02) |
 | `day-close` | Store/day close + reopen | Locks a day only once its trading-day cut-off has passed and it is fully reconciled; reopen needs a separate approver (M14-FR-04) |
 | `import` | Template-driven data in | RFC-4180 parse; per-row errors with line numbers; duplicates→review (never auto-merge); control totals must reconcile; separate approver; all-or-nothing commit (M30-FR-01/03/04, §28) |
+| `compliance` | Licence, risk & incident registers | Every obligation names a person, not a role; alerts escalate and an expired licence keeps shouting; obligations are closed with a reason, never deleted; an incident must name the control it defeated and remediation an owner; an open critical risk blocks its quality gate (M34-FR-03/04, §9.3, hard rule #6) |
 | `audit` | Audit & compliance evidence | Tamper-evident hash-chained trail with no edit/delete in the API; action reconstructable from evidence alone; retention *plans*, never deletes; legal hold beats retention (M34-FR-01/02, NFR-15, hard rule #6) |
 | `export` | Domain data out | Your data is yours — open CSV + machine-readable schema; permission default-deny, branch scope enforced, PII redacted (not dropped), every export audited (M30-FR-02, NFR-12, OD-09) |
 

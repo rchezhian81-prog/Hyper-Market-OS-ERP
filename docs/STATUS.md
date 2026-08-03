@@ -10,12 +10,13 @@ Last updated: 3 August 2026
 ## Current stage
 **Stage 5 — Foundation build (in progress). Stage 4 complete; owner-closure gate CLOSED.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
-done for Store-Core (R2); Stage 5 has built 51 tested foundation units, five
+done for Store-Core (R2); Stage 5 has built 53 tested foundation units, five
 **persistence-layer** units incl. the PostgreSQL connector + migration runner, and the **first
 app shells (POS + Owner + Web ERP + Picker + Delivery)** with the build pipeline, barcode
 scanning, the catalogue snapshot builder, receipt printing, template-driven import, domain
 export, tamper-evident audit evidence, goods-in with the three-way match, state-aware stock
-availability, the M03 product master and the store-edge sync agent — 660 tests.
+availability, the M03 product master, the compliance registers and the store-edge sync agent
+— 688 tests.
 **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
@@ -68,7 +69,7 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **660 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **688 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **Template-driven import — DONE (3 Aug 2026). This is the roadmap's own top priority
     (audit A-03: the store's #1 daily pain — the 80+ line supplier invoice typed by hand).**
@@ -212,6 +213,32 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
       needs a **second person** and is a **reversible link, never a deletion**, because a
       wrong merge with nothing left to compare against is unrecoverable.
     41 tests.
+  - **Licence, risk and incident registers — DONE (3 Aug 2026). M34 is now complete.**
+    `packages/compliance/` covers the paper the shop did not write — the FSSAI food
+    licence, the Legal Metrology stamping certificate for every scale, the trade licence,
+    the fire NOC. Any one of them expiring quietly can close the shop for a day, and the
+    way they expire is always the same: **nobody owned the date**. So:
+    - **every obligation names a person, not a role.** An obligation that names nobody is
+      refused outright — an alert that reaches "compliance" reaches nobody;
+    - **alerts escalate and an expired licence keeps shouting**: notice → warning →
+      critical as the date nears, escalation to a named deputy inside the final window, and
+      an expired one **stays at the top of the list** instead of dropping off — which is
+      exactly when most systems go quiet. The message names the person: *"FSSAI food
+      licence EXPIRED 33 days ago — Priya must renew it now"*;
+    - **having a licence and being able to produce it are different things**, so an
+      obligation with no evidence on file is flagged separately from its expiry date;
+    - **nothing is deleted** — an obligation that no longer applies is **closed with a
+      reason** and keeps its whole record, because an inspector's question is usually about
+      the period you no longer operate in;
+    - the **risk, control, incident, remediation and attestation** registers exist to answer
+      three questions instantly: which control failed, who is fixing it by when, and did
+      anyone ever check the control works. An incident must **name the control it defeated**,
+      remediation must have an **owner and a date**, and a control **nobody has ever
+      attested** is reported as such — an untested control is an assumption;
+    - an **open critical risk blocks its quality gate**. Accepting a risk unblocks it, but
+      only **in someone's name with a written rationale** — accepting a risk is a decision,
+      and decisions have authors.
+    28 tests.
   - **Receipt printing — DONE (owner asked, 3 Aug 2026):** `packages/receipt/` builds the
     receipt **from the committed sale** (never a draft, M31-FR-02) with its gap-free number, and
     **refuses to issue a wrong one**: a **PAN-like tender reference** (hard rule #3), **totals
