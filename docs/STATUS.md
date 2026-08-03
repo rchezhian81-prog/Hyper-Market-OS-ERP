@@ -10,7 +10,7 @@ Last updated: 3 August 2026
 ## Current stage
 **Stage 5 — Foundation build (in progress). Stage 4 complete; owner-closure gate CLOSED.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
-done for Store-Core (R2); Stage 5 has built 38 tested foundation units (320 tests). **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
+done for Store-Core (R2); Stage 5 has built 39 tested foundation units (325 tests). **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
 spec-freeze / store-specific build are the Stage 1 store facts (the 20 AVR items) and the
@@ -62,7 +62,7 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **320 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **325 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **Base-platform layer begun:** the **append-only ledger engine** (`packages/ledger/`,
     hard rule #2 / M08-FR-01 / §31.1) — idempotent append, balances projected from events
@@ -162,6 +162,14 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     a **visible exception** — never silently unposted. `postBatch` posts the good entries and
     surfaces the bad ones for review. Finance only reads operational data and posts; it never
     edits the operational ledger (§28) — 7 tests.
+  - **Trace a batch, stop a recall** — **lot traceability & recall**
+    (`packages/traceability/`, M10-FR-03/04): `traceBatch` **projects the ledger** to show a
+    batch's whole chain of custody — inbound (supplier/GRN) and outbound (sales, and the
+    customers where captured), backwards and forwards, with received-vs-issued totals so a gap is
+    visible. And a **recall** that **blocks a batch's sale at the POS even offline** (from the
+    cached open-recall set) and **closes only with retained evidence** that is never deleted (hard
+    rule #6). Pure — 5 tests. *(Full forward-trace to customers completes when sales tag their
+    FEFO-allocated batch — a later wiring step.)*
   - **No money lost to expiry** — **FEFO allocation & expiry action list**
     (`packages/fefo/`, M10-FR-01): allocates stock **First-Expiry-First-Out** (earliest expiry
     sells first), **never** allocating expired, recall-blocked or quarantined stock (the recall
@@ -204,14 +212,15 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
   - **Foundation engines now cover the core invariants** (exact money/quantity, append-only
     ledger, maker-checker, RBAC, offline outbox, gap-free document numbering, trading-day
     rule, loss-prevention anomaly rules, margin-floor/MRP price controls, replenishment
-    suggestions, FEFO allocation & expiry list, finance ledger→journal posting, payment
-    reconciliation, bank fraud controls) plus compositions (effective-dated price resolution,
+    suggestions, FEFO allocation & expiry list, lot traceability & recall, finance ledger→journal
+    posting, payment reconciliation, bank fraud controls) plus compositions (effective-dated
+    price resolution,
     line/bill pricing, the deterministic promotions best-price engine, tender settlement, the
     end-to-end offline sale commit, purchase-order issue & open commitment, goods receiving,
     approved stock adjustment, cycle/blind count reconciliation, the order lifecycle & stock
     reservation, fulfilment (delivery/substitution/COD), customer dedup & consent, return/refund
     commit, till cash movements, loyalty points, the cashier shift/till close, and the store/day
-    close + controlled reopen) — 38 tested units, 320 tests.
+    close + controlled reopen) — 39 tested units, 325 tests.
   - **Owner-deferred (OB-02, 2 Aug 2026):** the database-backed persistence layer + hosting/
     deployment, and gathering the Stage-1 store facts, are **planned later by the owner** —
     not an active ask or a blocker on design/foundation work. They slot onto this tenant-ready
@@ -259,8 +268,8 @@ plus all five cross-cutting sets.**
 - **Stage 5 foundation build** — 36 tested units done (`packages/` contracts, ledger,
   approvals, rbac, sync, numbering, calendar, price-list, pricing, promotions, price-guard,
   tender, config, sale, tenant, receiving, purchasing, bank-controls, adjustment, counts,
-  replenishment, fefo, finance, reconciliation, orders, fulfilment, customer, returns, cash,
-  till, day-close, loyalty, loss-prevention; 320 tests, `pnpm check` green). The
+  replenishment, fefo, traceability, finance, reconciliation, orders, fulfilment, customer,
+  returns, cash, till, day-close, loyalty, loss-prevention; 325 tests, `pnpm check` green). The
   pure, store-fact-independent foundation is now comprehensive — it even composes into the
   end-to-end offline sale commit (hard rule #1). What remains genuinely needs the outside
   world: a **database** (via the hosting-vendor pick, D3 commercial validation) and the

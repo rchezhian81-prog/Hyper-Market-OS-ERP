@@ -24,7 +24,8 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
   Engines        ledger · approvals · rbac ·     (one invariant each)
                  sync · numbering · calendar · config ·
                  tenant · loss-prevention · price-guard ·
-                 replenishment · fefo · finance · bank-controls
+                 replenishment · fefo · finance · bank-controls ·
+                 traceability
        ▲
   Contracts      money · quantity · rate ·       (the shared vocabulary & shapes)
                  enums · event
@@ -48,6 +49,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 | `price-guard` | Margin-floor / MRP controls | Reject above MRP; below floor/cost blocked pending a separate approver + reason (M05-FR-02, §28) |
 | `replenishment` | Reorder suggestions | What/how much to reorder from parameters (reorder point/safety/max, demand×lead); advisory only, buyer approves (M09-FR-02, hard rule #5) |
 | `fefo` | FEFO & expiry list | Allocate earliest-expiry first; never expired/recalled; near-expiry→markdown, expired→dispose (M10-FR-01) |
+| `traceability` | Lot trace & recall | Trace a batch supplier↔customer over the ledger; recall blocks sale offline, closes with retained evidence (M10-FR-03/04) |
 | `finance` | Ledger→journal posting | Mapping-driven balanced double-entry (GST included); unmapped→visible exception (M23-FR-01/02, P-08) |
 | `reconciliation` | Payment reconciliation | Match tenders↔settlements by token/amount; valued exceptions; never a card PAN (M23-FR-03, hard rule #3) |
 | `loyalty` | Loyalty points | Money-like append-only earn/burn/reverse; projected balance; offline cap; never negative (M17-FR-01) |
