@@ -71,6 +71,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Return & refund commit (integration) | M13-FR-01/02/03 (at-most-once, disposition, approval/cap; never invent reversal) / §28 | `packages/returns/src/returns.ts` | `tests/unit/returns.test.ts` (15 tests) |
 | Cashier shift / till close | M14-FR-02 (blind count, over/short, valued exception) — fully offline | `packages/till/src/till.ts` | `tests/unit/till.test.ts` (6 tests) |
 | Store/day close + controlled reopen | M14-FR-04 (trading-day-aligned lock; block on open exceptions/unsent; approved reopen) | `packages/day-close/src/day-close.ts` | `tests/unit/day-close.test.ts` (8 tests) |
+| Till cash movements | M14-FR-01 (float/loan/pickup/safe-drop; one custodian per till; no overdraw; append-only) | `packages/cash/src/cash.ts` | `tests/unit/cash.test.ts` (8 tests) |
 | Tenant feature entitlements | ADR-0003 / M33·D12·M36 (multi-tenant; choose-able modules) | `packages/tenant/src/tenant.ts` | `tests/unit/tenant.test.ts` (6 tests) |
 | Per-tenant settings | ADR-0003 (choose-able settings, defaults, per-tenant, versioned) | `packages/tenant/src/settings.ts` | `tests/unit/tenant-settings.test.ts` (5 tests) |
 
@@ -130,7 +131,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M13-FR-02 | 2 | `docs/requirements/M13.md` | `packages/returns/src/returns.ts` | `tests/unit/returns.test.ts` | R2 | Foundation built (disposition → availability) |
 | M13-FR-03 | 2 | `docs/requirements/M13.md` | `packages/returns/src/returns.ts` | `tests/unit/returns.test.ts` | R2 | Foundation built (refund cap + separate-approver threshold) |
 | M13-FR-04 | 2 | `docs/requirements/M13.md` | `packages/returns/src/returns.ts` | `tests/unit/returns.test.ts` | R2 | Partial — domain honoured (card/UPI refund stays pending, never invented); provider reversal deferred |
-| M14-FR-01 | 2 | `docs/requirements/M14.md` | — | — | R2 | In design |
+| M14-FR-01 | 2 | `docs/requirements/M14.md` | `packages/cash/src/cash.ts` | `tests/unit/cash.test.ts` | R2 | Foundation built (float/loan/pickup/safe-drop; one custodian; no overdraw) |
 | M14-FR-02 | 2 | `docs/requirements/M14.md` | `packages/till/src/till.ts` | `tests/unit/till.test.ts` | R2 | Foundation built (blind count, over/short, valued exception) |
 | M14-FR-03 | 2 | `docs/requirements/M14.md` | — | — | R2 | In design |
 | M14-FR-04 | 2 | `docs/requirements/M14.md` | `packages/day-close/src/day-close.ts` | `tests/unit/day-close.test.ts` | R2 | Foundation built (trading-day lock; block on open exceptions/unsent; approved reopen) |

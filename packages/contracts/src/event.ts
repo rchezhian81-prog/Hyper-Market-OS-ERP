@@ -36,6 +36,7 @@ export const KNOWN_EVENT_TYPES = [
   'GoodsReceived',
   'InventoryMoved',
   'InventoryAdjusted',
+  'CashMovement',
   'TillClosed',
   'ReconciliationExceptionRaised',
   'ReconciliationExceptionResolved',

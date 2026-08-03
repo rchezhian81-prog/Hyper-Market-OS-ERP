@@ -10,7 +10,7 @@ Last updated: 3 August 2026
 ## Current stage
 **Stage 5 — Foundation build (in progress). Stage 4 complete; owner-closure gate CLOSED.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
-done for Store-Core (R2); Stage 5 has built 22 tested foundation units (176 tests). **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
+done for Store-Core (R2); Stage 5 has built 23 tested foundation units (184 tests). **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
 spec-freeze / store-specific build are the Stage 1 store facts (the 20 AVR items) and the
@@ -62,7 +62,7 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **176 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **184 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **Base-platform layer begun:** the **append-only ledger engine** (`packages/ledger/`,
     hard rule #2 / M08-FR-01 / §31.1) — idempotent append, balances projected from events
@@ -77,6 +77,12 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
   - **Offline sync outbox** (`packages/sync/`, P-01 / §31 / hard rule #6) — idempotent
     enqueue, visible unsent count, acknowledge/watermark, and a dead-letter queue that
     never drops a poison item; 5 tests.
+  - **Cash office now composed** — **till cash movements** (`packages/cash/`, M14-FR-01):
+    float issue, loans, pickups and safe drops as an **append-only cash chain** (hard rule #2),
+    with **one custodian per till at a time** (a till can't be issued to two cashiers), **no
+    overdraw** (you can't remove more than the drawer holds), and the till balance + current
+    custodian always **projected** from the events — the pickups/float that feed the shift
+    close's expected cash. Fully offline — 8 tests.
   - **Shop-floor money-out operations now composed** — **returns & refunds**
     (`packages/returns/`, M13): a line is returned at most once (no double refund), the
     disposition decides whether stock re-enters *sellable* availability (only `resell` does),
@@ -91,8 +97,9 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
   - **Foundation engines now cover the core invariants** (exact money/quantity, append-only
     ledger, maker-checker, RBAC, offline outbox, gap-free document numbering, trading-day
     rule) plus compositions (line/bill pricing, tender settlement, the end-to-end offline sale
-    commit, goods receiving, approved stock adjustment, return/refund commit, the cashier
-    shift/till close, and the store/day close + controlled reopen) — 22 tested units, 176 tests.
+    commit, goods receiving, approved stock adjustment, return/refund commit, till cash
+    movements, the cashier shift/till close, and the store/day close + controlled reopen) —
+    23 tested units, 184 tests.
   - **Owner-deferred (OB-02, 2 Aug 2026):** the database-backed persistence layer + hosting/
     deployment, and gathering the Stage-1 store facts, are **planned later by the owner** —
     not an active ask or a blocker on design/foundation work. They slot onto this tenant-ready
@@ -137,9 +144,9 @@ plus all five cross-cutting sets.**
   family-level baseline.
 
 ## In progress
-- **Stage 5 foundation build** — 22 tested units done (`packages/` contracts, ledger,
+- **Stage 5 foundation build** — 23 tested units done (`packages/` contracts, ledger,
   approvals, rbac, sync, numbering, calendar, pricing, tender, config, sale, tenant, receiving,
-  adjustment, returns, till, day-close; 176 tests, `pnpm check` green). The
+  adjustment, returns, cash, till, day-close; 184 tests, `pnpm check` green). The
   pure, store-fact-independent foundation is now comprehensive — it even composes into the
   end-to-end offline sale commit (hard rule #1). What remains genuinely needs the outside
   world: a **database** (via the hosting-vendor pick, D3 commercial validation) and the
