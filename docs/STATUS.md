@@ -10,13 +10,14 @@ Last updated: 3 August 2026
 ## Current stage
 **Stage 5 — Foundation build (in progress). Stage 4 complete; owner-closure gate CLOSED.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
-done for Store-Core (R2); Stage 5 has built 55 tested foundation units, five
+done for Store-Core (R2); Stage 5 has built 57 tested foundation units, five
 **persistence-layer** units incl. the PostgreSQL connector + migration runner, and the **first
 app shells (POS + Owner + Web ERP + Picker + Delivery)** with the build pipeline, barcode
 scanning, the catalogue snapshot builder, receipt printing, template-driven import, domain
 export, tamper-evident audit evidence, goods-in with the three-way match, state-aware stock
 availability, the M03 product master, the compliance registers, the org hierarchy and branch
-lifecycle, and the store-edge sync agent — 718 tests.
+lifecycle, named accounts with the access lifecycle, and the store-edge sync agent —
+752 tests.
 **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
@@ -69,7 +70,7 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **718 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **752 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **Template-driven import — DONE (3 Aug 2026). This is the roadmap's own top priority
     (audit A-03: the store's #1 daily pain — the 80+ line supplier invoice typed by hand).**
@@ -268,6 +269,37 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
       stays in history, and the audit trail and closure evidence pack are kept in full.
       "Closed" is a state, not an erasure.
     30 tests.
+  - **Named accounts, sessions and the access lifecycle — DONE (3 Aug 2026).**
+    `packages/identity/` closes M02 alongside `rbac` and `approvals`. It **holds no
+    credentials at all** — no password field, no hash, no token. Credential storage belongs
+    to the identity provider chosen at deployment, and **a password that never enters this
+    codebase can never be logged by it** (hard rule #4).
+    - **a shared or generic account cannot be created.** Shared logins are the top audit
+      finding in retail and they never arrive as a decision — they arrive as a convenience:
+      one account for the evening shift, one for the new starter "until IT sets them up",
+      one called "manager" nobody wants to be the one to remove. So `cashier`, `manager`,
+      `till2`, `temp` and their kind are **refused with the reason**, and **two accounts
+      cannot share one personal contact** — that is a shared login wearing two names;
+    - a **privileged account cannot go live without a second factor**; sessions expire on
+      inactivity **and** on an absolute limit, **bind to their terminal**, and an offline
+      cached identity at the lane is trusted only for a **bounded window** — the lane keeps
+      trading with the cable out without leaving a permanent hole;
+    - the **access review** flags the two things that actually get exploited: privileged
+      accounts with no second factor, and dormant accounts nobody closed;
+    - **the mover who accumulates** is the quiet one. Someone moves from the Fresh counter
+      to the cash office and keeps both, and six months later can raise a stock adjustment
+      *and* settle the till it hides in — a combination nobody granted; it assembled itself.
+      A move now **replaces** scope and closes their sessions so it applies at once;
+    - **the leaver who lingers** is the other. Revocation and session closure are **one
+      act**, and it is **blocked until owned open items are reassigned**, naming them — an
+      unapproved purchase order owned by nobody never gets approved. Revocation is a
+      **priority sync item**: an ex-employee's access must not queue behind the day's sales;
+    - **emergency access** is real, necessary, and the one that quietly becomes permanent.
+      It is **time-bound at the moment it is granted**, expires by itself with nobody
+      needing to remember, needs a specific reason and a separate approver, and **cannot be
+      extended in place** — an extension is a new grant with a new approval, which is what
+      stops "temporary" becoming permanent through a series of quiet nudges.
+    34 tests.
   - **Receipt printing — DONE (owner asked, 3 Aug 2026):** `packages/receipt/` builds the
     receipt **from the committed sale** (never a draft, M31-FR-02) with its gap-free number, and
     **refuses to issue a wrong one**: a **PAN-like tender reference** (hard rule #3), **totals

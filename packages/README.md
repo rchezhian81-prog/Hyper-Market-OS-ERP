@@ -45,6 +45,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 | `persistence` | Durable stores + projections + Postgres | Tenant-scoped event log (append-only), retry/dead-letter sync outbox, versioned config, read-model projections; driver-agnostic `SqlClient` port + DDL 0001–3 + **`pgClient` connector** and **migration runner** (`pnpm db:migrate`) (§30.2/§31.1/§31, M01-FR-03, §29, §19, ADR-0003) |
 | `ledger` | Append-only event ledger | Balances are projected from events, never overwritten (hard rule #2) |
 | `approvals` | Maker-checker | The maker can never decide their own request (§28) |
+| `identity` | Named accounts, sessions & JML | Holds no credentials at all; a generic/shared account cannot be created; privileged accounts need a second factor; sessions expire on idle and absolutely, bind to their terminal, and an offline cached identity is time-bounded; a mover's scope is replaced never accumulated; a leaver is revoked with sessions closed and blocked until owned items are reassigned; emergency access expires by itself and can never be extended in place (M02-FR-01/04, SEC-03, SEC-11, hard rule #4) |
 | `rbac` | Access control | Default-deny; least privilege (P-04, M02-FR-02) |
 | `sync` | Offline outbox | Idempotent sync; dead-letter never dropped (P-01, §31, hard rule #6) |
 | `numbering` | Document numbers | Gap-free & unique per type; offline reserved ranges (M01-FR-02) |
