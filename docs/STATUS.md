@@ -197,6 +197,18 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     being **per-tenant configuration** (D09). **PII is minimised** — stops carry the order
     reference and a coarse area label, never customer name/phone/email (tested). 15 tests.
     **All five app shells in the roadmap's §27 surfaces are now modelled and tested.**
+  - **Pilot stack + deployment runbook — DONE (3 Aug 2026).** `infra/compose/` brings the whole
+    system up on **one machine** with one command — PostgreSQL, the schema migrations (one-shot
+    and **idempotent**, safe on every deploy), and the app shells served over HTTP. It is
+    deliberately **vendor-neutral**: it runs on a shop back-office PC, a laptop, or any cloud VM,
+    so **standing up a pilot does not pre-empt the cloud-vendor decision** (ADR-0002 item 4 stays
+    open) — the same containers are what the managed tier runs later. The database port is bound
+    to **localhost only** and every secret comes from a **git-ignored `.env`** (the secret scan
+    enforces it — it caught and rejected a connection string during this build). Compose config
+    validated. **`docs/runbooks/pilot-deployment.md`** is the plain-English walkthrough for the
+    owner or Mr Sivakumar: what you need (just Docker), the five steps, how to check it worked,
+    backups, and **how to prove the offline promise by pulling the network cable mid-sale** —
+    plus an honest list of what the pilot does *not* yet include.
   - **Open architecture decision — the ERP's SSR framework (needs the owner's hosting call).**
     §19's baseline for this app is "TypeScript + modern SSR web framework". **Which** framework is
     **coupled to hosting (OB-02)**: SSR needs a server, and the framework's deployment shape (Node

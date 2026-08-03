@@ -1,0 +1,81 @@
+# SRE Retail OS — pilot / store-edge stack (ADR-0002, §19 "containers, IaC, CI/CD").
+#
+# This brings the whole system up on ONE machine with one command: PostgreSQL, the
+# schema migrations, and the app shells served over HTTP. It is deliberately
+# VENDOR-NEUTRAL — it runs on a shop back-office PC, a laptop, or any cloud VM — so
+# standing up a pilot does NOT pre-empt the owner's cloud-vendor decision (ADR-0002
+# item 4 stays open). The same containers are what the managed cloud tier runs later.
+#
+# Usage (see docs/runbooks/pilot-deployment.md for the plain-English guide):
+#   cp .env.example .env      # then edit .env and set a real database password
+#   docker compose up -d
+#
+# No credential is stored in this file or in git — every secret comes from .env,
+# which is git-ignored (hard rule #4).
+
+name: sre-retail-os
+
+services:
+  # ---------------------------------------------------------------------------
+  # The database. Managed PostgreSQL replaces this service in the cloud tier; the
+  # schema and the application are identical either way (P-06 portability).
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Deterministic collation, so ordering is identical on every machine.
+      LANG: C.UTF-8
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      # Bound to localhost only — the database is never exposed to the network.
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # ---------------------------------------------------------------------------
+  # One-shot: create the schema by running db/migrations in order. Idempotent —
+  # re-running applies only what is new (scripts/migrate.mjs), so it is safe to
+  # run on every deploy.
+  # ---------------------------------------------------------------------------
+  migrate:
+    image: node:22-alpine
+    depends_on:
+      db:
+        condition: service_healthy
+    working_dir: /app
+    volumes:
+      - ../..:/app:ro
+    environment:
+      # Comes from the git-ignored .env — the same way the cloud tier injects it,
+      # so no connection string is ever written into a committed file.
+      DATABASE_URL: ${DATABASE_URL}
+    command: ['node', 'scripts/migrate.mjs']
+    restart: 'no'
+
+  # ---------------------------------------------------------------------------
+  # The app shells (POS, owner, ERP) served as static files. Each shell is
+  # offline-capable via its service worker, so a lane keeps working if this
+  # container or the network goes away (hard rule #1).
+  # ---------------------------------------------------------------------------
+  web:
+    image: nginx:alpine
+    restart: unless-stopped
+    depends_on:
+      - migrate
+    volumes:
+      - ../../apps/pos/web:/usr/share/nginx/html/pos:ro
+      - ../../apps/owner-app/web:/usr/share/nginx/html/owner:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - '${WEB_PORT:-8080}:80'
+
+volumes:
+  db-data:
