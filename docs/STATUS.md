@@ -94,12 +94,15 @@ plus M18 (Order management) and M19 (Picking/packing/delivery) for R5 — all ex
 to Appendix-B detail (`docs/requirements/`, 24 requirements traced), from the roadmap
 §5 FR lines — nothing invented.
 
-**Also expanded (commercial direction, OB-01/ADR-0003):** M36 (multi-tenant platform /
-white-label / developer ecosystem, R8) and M22 (B2B & institutional sales, R6) — to
-Appendix-B detail, from the roadmap §5 FR lines.
+**All 36 modules (M01–M36) are now expanded to Appendix-B requirements** in
+`docs/requirements/` — Store-Core (Stage 2) plus the design-ahead expansion of every
+later-release module: customer/fulfilment (M16–M21, R4–R5), B2B (M22, R6), supplier
+portals / workforce / facilities / concession / waste (M24–M28, R6), documents &
+notifications (M31), and the multi-tenant platform (M36, R8). All from the roadmap §5 FR
+lines — nothing invented.
 
-Not yet expanded (later releases): M24–M28 (R6 operations), M31 (documents/notifications),
-and the cross-cutting sets SEC/PRV/NFR/AI-NFR/MG — expanded when their release/stage is reached.
+Not yet expanded: the **cross-cutting requirement sets** (SEC-01…12, PRV-01…10, NFR-01…15,
+AI-NFR-01…12, MG-01…12) — expanded when their build stage is reached.
 
 ## Last completed
 - **Setup 1/3/4** — repository, `CLAUDE.md`, safety net (tests, guardrails, secret
