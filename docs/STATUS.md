@@ -10,12 +10,12 @@ Last updated: 3 August 2026
 ## Current stage
 **Stage 5 — Foundation build (in progress). Stage 4 complete; owner-closure gate CLOSED.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
-done for Store-Core (R2); Stage 5 has built 46 tested foundation units, five
+done for Store-Core (R2); Stage 5 has built 48 tested foundation units, five
 **persistence-layer** units incl. the PostgreSQL connector + migration runner, and the **first
 app shells (POS + Owner + Web ERP + Picker + Delivery)** with the build pipeline, barcode
 scanning, the catalogue snapshot builder, receipt printing, template-driven import, domain
-export, tamper-evident audit evidence, goods-in with the three-way match and the store-edge
-sync agent — 592 tests. **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
+export, tamper-evident audit evidence, goods-in with the three-way match, state-aware stock
+availability and the store-edge sync agent — 619 tests. **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
 spec-freeze / store-specific build are the Stage 1 store facts (the 20 AVR items) and the
@@ -67,7 +67,7 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **592 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **619 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **Template-driven import — DONE (3 Aug 2026). This is the roadmap's own top priority
     (audit A-03: the store's #1 daily pain — the 80+ line supplier invoice typed by hand).**
@@ -152,6 +152,33 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
       remainder distributed, not dropped. Valuation that ignores freight understates cost and
       overstates margin — the shop then believes it is making money it is not.
     23 tests.
+  - **Stock states, availability and stock health — DONE (3 Aug 2026).** `packages/stock/`
+    kills the single most expensive lie in retail software: **one "quantity on hand"
+    number**. The stock is in the building so the report says **12** — but 4 are reserved
+    for an online order, 3 are quarantined from a damaged delivery, 2 expired yesterday and
+    3 are still on a van from the other branch. The honest answer is **0**, and a system
+    that says 12 oversells, disappoints a customer and hides a loss.
+    - stock is held **by state**, and availability is derived from it. `explainAvailability`
+      says it in words: *"0 available — 4 reserved, 3 quarantine, 3 damaged, 2 expired not
+      sellable"*;
+    - a movement is a **transfer between states**, so the model checks itself — quantity is
+      conserved everywhere except where it enters (a supplier receipt) or leaves (a sale or
+      write-off) the business. The position is **projected, never stored**, so it cannot
+      drift and replaying gives the same answer;
+    - **two rules no tenant can switch off**: expired and quarantined stock are never
+      sellable. Everything else is choose-able — a damaged-goods clearance bin can be made
+      sellable, and negative stock is either **blocked** (default) or allowed but raised as a
+      **visible exception**, never silent;
+    - tracked per **product × location × batch**, because that is the level a recall, an
+      expiry and a branch transfer actually work at;
+    - **stock health** answers the owner's real question — is the money working or dying?
+      **Ageing** (how long the cash has been asleep, valued, with each bucket's share),
+      **turns** and days of cover, **GMROI** (rupees of margin per rupee of stock — below
+      1.00× a line consumes more cash than it returns, however good its margin percentage
+      looks), and **stockout impact** — the loss that never reaches a sales report because
+      the sale never happened, reported explicitly as an **estimate**.
+    All ratios are exact BigInt basis points, and a ratio that cannot be computed returns
+    **"not meaningful", with the reason** — never `Infinity`, `NaN` or a silent zero. 27 tests.
   - **Receipt printing — DONE (owner asked, 3 Aug 2026):** `packages/receipt/` builds the
     receipt **from the committed sale** (never a draft, M31-FR-02) with its gap-free number, and
     **refuses to issue a wrong one**: a **PAN-like tender reference** (hard rule #3), **totals
