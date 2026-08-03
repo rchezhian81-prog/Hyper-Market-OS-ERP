@@ -74,6 +74,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Till cash movements | M14-FR-01 (float/loan/pickup/safe-drop; one custodian per till; no overdraw; append-only) | `packages/cash/src/cash.ts` | `tests/unit/cash.test.ts` (8 tests) |
 | Cycle/blind count reconciliation | M09-FR-04 (blind count vs projected ledger; valued variance → approved compensating adjustment) / §28 | `packages/counts/src/counts.ts` | `tests/unit/counts.test.ts` (8 tests) |
 | Loss-prevention anomaly rules | M15-FR-01 / P-03 (configurable void/refund/discount/no-sale/cash rules; linked exceptions; detect-only) | `packages/loss-prevention/src/loss-prevention.ts` | `tests/unit/loss-prevention.test.ts` (9 tests) |
+| Promotions best-price engine | M05-FR-03 (deterministic best price; BOGO/multibuy/coupon/member; no expired/unpublished; stacking/exclusion) / P-02 | `packages/promotions/src/promotions.ts` | `tests/unit/promotions.test.ts` (11 tests) |
 | Tenant feature entitlements | ADR-0003 / M33·D12·M36 (multi-tenant; choose-able modules) | `packages/tenant/src/tenant.ts` | `tests/unit/tenant.test.ts` (6 tests) |
 | Per-tenant settings | ADR-0003 (choose-able settings, defaults, per-tenant, versioned) | `packages/tenant/src/settings.ts` | `tests/unit/tenant-settings.test.ts` (5 tests) |
 
@@ -99,7 +100,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M04-FR-04 | 2 | `docs/requirements/M04.md` | — | — | R2 | In design |
 | M05-FR-01 | 2 | `docs/requirements/M05.md` | — | — | R2 | In design |
 | M05-FR-02 | 2 | `docs/requirements/M05.md` | — | — | R2 | In design |
-| M05-FR-03 | 2 | `docs/requirements/M05.md` | — | — | R2 | In design |
+| M05-FR-03 | 2 | `docs/requirements/M05.md` | `packages/promotions/src/promotions.ts` | `tests/unit/promotions.test.ts` | R2 | Foundation built (deterministic best price; BOGO/multibuy/coupon/member; expired/unpublished never apply) |
 | M05-FR-04 | 2 | `docs/requirements/M05.md` | — | — | R2 | In design |
 | M06-FR-01 | 2 | `docs/requirements/M06.md` | — | — | R2 | In design |
 | M06-FR-02 | 2 | `docs/requirements/M06.md` | — | — | R2 | In design |
