@@ -41,6 +41,36 @@ export const SETTINGS = {
     label: 'Delivery serviceability radius (km)',
     defaultValue: 0,
   } as TenantSetting<number>,
+  /**
+   * The age the till asks about on a flagged item (OB-03: SRE is 18). It is a
+   * setting because the number differs by state and by country — a tenant
+   * elsewhere changes this, not our code.
+   */
+  AGE_RESTRICTED_MINIMUM_AGE: {
+    key: 'pos.age_restricted.minimum_age',
+    label: 'Minimum age for age-restricted items (years)',
+    defaultValue: 18,
+  } as TenantSetting<number>,
+  /**
+   * Whether a licence restricts the HOURS certain items may be sold in. Off for
+   * SRE (OB-03); a tenant under a licence-hours rule turns it on and sets the
+   * window on the product's restriction (M12-FR-04).
+   */
+  LICENCE_HOURS_ENABLED: {
+    key: 'pos.licence_hours.enabled',
+    label: 'Restrict certain items to licensed selling hours',
+    defaultValue: false,
+  } as TenantSetting<boolean>,
+  /**
+   * The in-store production departments this tenant actually operates
+   * (OB-04 / AVR-12). Empty by default: the roadmap's rule is that a module is
+   * never built or enabled for a department the store does not have (§2.2).
+   */
+  PRODUCTION_DEPARTMENTS: {
+    key: 'production.departments',
+    label: 'In-store production departments operated',
+    defaultValue: [] as readonly string[],
+  } as TenantSetting<readonly string[]>,
 };
 
 /**

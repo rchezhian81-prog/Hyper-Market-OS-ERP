@@ -31,7 +31,7 @@ Status legend: **Open** · **In progress** · **Closed**.
 | AVR-09 | Tally version/company structure and current accounting workflow | | | Open |
 | AVR-10 | Payment providers, terminals, settlement and refund processes | | | Open |
 | AVR-11 | FSSAI, Legal Metrology and local licences/registrations | | | Open |
-| AVR-12 | Fresh production, pharmacy, food court, concession or regulated departments (**conditional module trigger**) | | | Open |
+| AVR-12 | Fresh production, pharmacy, food court, concession or regulated departments (**conditional module trigger**) | Owner | **Cafe only** (owner, 3 Aug 2026). No bakery, deli, meat/fish, cut fruit, pharmacy or concession. M11 is therefore built as the shared production foundation **plus the cafe department only** — no other department is enabled (roadmap §2.2: do not build a module for a department you do not have). If a department is added later it is a change record, never a silent gap (OD-02). | **Closed** |
 | AVR-13 | Delivery radius, model, capacity, slots, fleet and partner strategy | | | Open |
 | AVR-14 | Customer app launch geography, payments, loyalty and service policy | | | Open |
 | AVR-15 | Data retention, privacy notice, consent and grievance practices | | | Open |

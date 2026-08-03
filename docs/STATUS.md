@@ -10,19 +10,19 @@ Last updated: 3 August 2026
 ## Current stage
 **Stage 5 — Foundation build (in progress). Stage 4 complete; owner-closure gate CLOSED.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
-done for Store-Core (R2); Stage 5 has built 58 tested foundation units, five
+done for Store-Core (R2); Stage 5 has built 59 tested foundation units, five
 **persistence-layer** units incl. the PostgreSQL connector + migration runner, and the **first
 app shells (POS + Owner + Web ERP + Picker + Delivery)** with the build pipeline, barcode
 scanning, the catalogue snapshot builder, receipt printing, template-driven import, domain
 export, tamper-evident audit evidence, goods-in with the three-way match, state-aware stock
 availability, the M03 product master, the compliance registers, the org hierarchy and branch
-lifecycle, named accounts with the access lifecycle, the POS lane guards, and the store-edge
-sync agent — 768 tests.
+lifecycle, named accounts with the access lifecycle, the POS lane guards, cafe production,
+and the store-edge sync agent — 791 tests.
 **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
-spec-freeze / store-specific build are the Stage 1 store facts (the 20 AVR items) and the
-trading-day cut-off — gathered in the store (finding A-11). Running autonomously per
+spec-freeze / store-specific build are the remaining Stage 1 store facts (**AVR-12 is now
+closed — cafe only, OB-04**) and the trading-day cut-off — gathered in the store (A-11). Running autonomously per
 **standing owner instruction (2 Aug 2026): "carry on always, don't wait for my approval
 unnecessarily."** Keep building and pushing tested work; stop only for genuine blockers that
 truly need the owner or the store (the Stage 1 facts, a hosting-vendor commitment) — not for
@@ -70,7 +70,7 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **768 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **791 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **Template-driven import — DONE (3 Aug 2026). This is the roadmap's own top priority
     (audit A-03: the store's #1 daily pain — the 80+ line supplier invoice typed by hand).**
@@ -319,6 +319,45 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
       "online" while holding 37 unsent sales is how a day's takings go missing at close;
       `lanesNeedingAttention` sorts the shop's lanes worst-first for the manager.
     16 tests.
+
+- **Owner answers (3 Aug 2026) — two open items closed, both now recorded:**
+  - **OB-03 — age-restricted sales: minimum age 18, no licence-hour restriction.** Both are
+    per-tenant settings (`pos.age_restricted.minimum_age` = 18,
+    `pos.licence_hours.enabled` = false), so a tenant in a state with different rules
+    changes a setting, not code. The till still **blocks** rather than warns.
+  - **OB-04 — fresh/production departments: the cafe, and nothing else.** This **closes
+    AVR-12**, which gated the whole of M11. Bakery, deli, meat/fish, cut fruit, pharmacy and
+    concession are **not built and not enabled** (roadmap §2.2: never build a module for a
+    department the store does not have). Adding one later is a change record with a target
+    release, never a silent gap (OD-02). Cold-chain scope (M10) and the FSSAI obligations
+    (M34-FR-03) are sized to a cafe.
+
+  - **In-store production — DONE (3 Aug 2026). M11 is complete for the cafe.**
+    `packages/production/` treats a production run as exactly two things: **ingredients
+    consumed (stock out) → a finished batch created (stock in)**, both on the **same ledger**
+    the till and the goods-in door use. Without that, the system believes you still have
+    twelve litres of milk that were drunk as coffee this morning.
+    - **you cannot issue more than you have** — every ingredient is checked *before*
+      anything is consumed, so a half-finished run never leaves the shelf and the system
+      disagreeing;
+    - **output lands in quarantine, not on the shelf.** Freshly made food is sellable only
+      after a **named** quality release — and because the stock model treats quarantine as
+      never-sellable, that is enforced by the model rather than by anyone remembering. A
+      release is refused for a failed check, an unnamed releaser, or an **expired batch**:
+      you cannot release your way past a use-by date;
+    - **cost follows the food that survived.** Spill 6 cups out of 40 and the same ₹860 of
+      ingredients now sits on 34 cups — the cup cost moves ₹21.50 → ₹25.29. That is the only
+      way a cafe's real margin is ever visible; loss written off separately hides it;
+    - **yield drift is a valued exception, high or low.** Too many cups means the recipe or
+      the portioning is wrong, which costs just as much as too few. Inputs in and nothing
+      out always demands an explanation;
+    - **a label will not print** without a use-by date, the net quantity, the packer's
+      details or an **allergen declaration** — where, as in the product master, an empty list
+      means "declared: none" and passes but silence does not. What is mandatory follows the
+      department: a cafe needs allergens, only a weighed counter needs a weight;
+    - **a repack inherits its source's expiry** — a fresh wrapper does not make food younger
+      — and records where it came from, so a recall reaches everything made out of it.
+    23 tests.
   - **Receipt printing — DONE (owner asked, 3 Aug 2026):** `packages/receipt/` builds the
     receipt **from the committed sale** (never a draft, M31-FR-02) with its gap-free number, and
     **refuses to issue a wrong one**: a **PAN-like tender reference** (hard rule #3), **totals
