@@ -89,6 +89,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Fulfilment (delivery/substitution/COD) | M19-FR-01/03/04 (delivery state machine + proof; customer-confirmed substitution; COD recon, cash/UPI only) / A04 / hard rule #3 | `packages/fulfilment/src/` | `tests/unit/fulfilment.test.ts` (10 tests) |
 | Customer dedup & consent | M16-FR-01 (duplicate detection, no auto-merge; uncertain→review) + M16-FR-02 (consent-scoped send, breach blocked) / P-08 / PRV | `packages/customer/src/` | `tests/unit/customer.test.ts` (9 tests) |
 | Waste / write-off | M28-FR-01 (reason-coded compensating loss; material needs separate approver + evidence) / §28 / hard rule #2 | `packages/waste/src/waste.ts` | `tests/unit/waste.test.ts` (8 tests) |
+| B2B credit & commission | M22-FR-01 (credit-limit block pending approval; contract expiry) + M22-FR-03 (exact commission) / §28 | `packages/b2b/src/` | `tests/unit/b2b.test.ts` (10 tests) |
 | Tenant feature entitlements | ADR-0003 / M33·D12·M36 (multi-tenant; choose-able modules) | `packages/tenant/src/tenant.ts` | `tests/unit/tenant.test.ts` (6 tests) |
 | Per-tenant settings | ADR-0003 (choose-able settings, defaults, per-tenant, versioned) | `packages/tenant/src/settings.ts` | `tests/unit/tenant-settings.test.ts` (5 tests) |
 
@@ -180,9 +181,9 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M21-FR-02 | 2 | `docs/requirements/M21.md` | — | — | R4 | In design |
 | M21-FR-03 | 2 | `docs/requirements/M21.md` | — | — | R4 | In design |
 | M21-FR-04 | 2 | `docs/requirements/M21.md` | — | — | R4 | In design |
-| M22-FR-01 | 2 | `docs/requirements/M22.md` | — | — | R6 | In design |
+| M22-FR-01 | 2 | `docs/requirements/M22.md` | `packages/b2b/src/credit.ts` | `tests/unit/b2b.test.ts` | R6 | Foundation built (credit-limit block pending approval; contract-expiry policy) |
 | M22-FR-02 | 2 | `docs/requirements/M22.md` | — | — | R6 | In design |
-| M22-FR-03 | 2 | `docs/requirements/M22.md` | — | — | R6 | In design |
+| M22-FR-03 | 2 | `docs/requirements/M22.md` | `packages/b2b/src/commission.ts` | `tests/unit/b2b.test.ts` | R6 | Foundation built (exact salesperson commission with cap) |
 | M22-FR-04 | 2 | `docs/requirements/M22.md` | — | — | R6 | In design |
 | M23-FR-01 | 2 | `docs/requirements/M23.md` | `packages/finance/src/posting.ts` | `tests/unit/finance-posting.test.ts` | R2 | Foundation built (mapping-driven balanced double-entry; unmapped→exception) |
 | M23-FR-02 | 2 | `docs/requirements/M23.md` | `packages/finance/src/posting.ts` | `tests/unit/finance-posting.test.ts` | R2 | Partial — GST posts as a mapped component; credit/debit notes & returns reports pending |
