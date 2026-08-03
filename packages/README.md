@@ -22,7 +22,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
   Engines        ledger · approvals · rbac ·     (one invariant each)
                  sync · numbering · calendar · config ·
                  tenant · loss-prevention · price-guard ·
-                 replenishment
+                 replenishment · fefo
        ▲
   Contracts      money · quantity · rate ·       (the shared vocabulary & shapes)
                  enums · event
@@ -44,6 +44,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 | `loss-prevention` | Anomaly detection | Configurable void/refund/discount/no-sale/cash rules → linked exceptions; detect-only (M15-FR-01, P-03) |
 | `price-guard` | Margin-floor / MRP controls | Reject above MRP; below floor/cost blocked pending a separate approver + reason (M05-FR-02, §28) |
 | `replenishment` | Reorder suggestions | What/how much to reorder from parameters (reorder point/safety/max, demand×lead); advisory only, buyer approves (M09-FR-02, hard rule #5) |
+| `fefo` | FEFO & expiry list | Allocate earliest-expiry first; never expired/recalled; near-expiry→markdown, expired→dispose (M10-FR-01) |
 | `price-list` | Effective-dated prices | Resolve by precedence (customer>channel>zone>store); no early activation; append-only history (M05-FR-01, P-02) |
 | `pricing` | Line & bill pricing | Exact gross/discount/net/tax/total (M12/M05/M23) |
 | `promotions` | Best-price engine | Deterministic best price (BOGO/multibuy/coupon/member); no expired/unpublished; stacking/exclusion (M05-FR-03, P-02) |

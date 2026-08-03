@@ -74,6 +74,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Till cash movements | M14-FR-01 (float/loan/pickup/safe-drop; one custodian per till; no overdraw; append-only) | `packages/cash/src/cash.ts` | `tests/unit/cash.test.ts` (8 tests) |
 | Cycle/blind count reconciliation | M09-FR-04 (blind count vs projected ledger; valued variance → approved compensating adjustment) / §28 | `packages/counts/src/counts.ts` | `tests/unit/counts.test.ts` (8 tests) |
 | Replenishment suggestions | M09-FR-02 (reorder point/safety/max; demand×lead; advisory only, buyer approves) / hard rule #5 / AI-NFR-12 | `packages/replenishment/src/replenishment.ts` | `tests/unit/replenishment.test.ts` (12 tests) |
+| FEFO allocation & expiry list | M10-FR-01 (sell earliest-expiry first; never expired/recalled; markdown/dispose list) | `packages/fefo/src/fefo.ts` | `tests/unit/fefo.test.ts` (9 tests) |
 | Loss-prevention anomaly rules | M15-FR-01 / P-03 (configurable void/refund/discount/no-sale/cash rules; linked exceptions; detect-only) | `packages/loss-prevention/src/loss-prevention.ts` | `tests/unit/loss-prevention.test.ts` (9 tests) |
 | Promotions best-price engine | M05-FR-03 (deterministic best price; BOGO/multibuy/coupon/member; no expired/unpublished; stacking/exclusion) / P-02 | `packages/promotions/src/promotions.ts` | `tests/unit/promotions.test.ts` (11 tests) |
 | Margin-floor / MRP price controls | M05-FR-02 (reject above MRP; below floor/cost blocked pending approval + reason) / §28 | `packages/price-guard/src/price-guard.ts` | `tests/unit/price-guard.test.ts` (10 tests) |
@@ -121,7 +122,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M09-FR-02 | 2 | `docs/requirements/M09.md` | `packages/replenishment/src/replenishment.ts` | `tests/unit/replenishment.test.ts` | R2 | Foundation built (reorder point/safety/max; demand×lead; advisory only) |
 | M09-FR-03 | 2 | `docs/requirements/M09.md` | — | — | R2 | In design |
 | M09-FR-04 | 2 | `docs/requirements/M09.md` | `packages/counts/src/counts.ts` | `tests/unit/counts.test.ts` | R2 | Foundation built (blind count → valued variance → approved compensating adjustment) |
-| M10-FR-01 | 2 | `docs/requirements/M10.md` | — | — | R2 | In design |
+| M10-FR-01 | 2 | `docs/requirements/M10.md` | `packages/fefo/src/fefo.ts` | `tests/unit/fefo.test.ts` | R2 | Foundation built (FEFO allocation; expired/recalled never sold; expiry action list) |
 | M10-FR-02 | 2 | `docs/requirements/M10.md` | — | — | R2 | In design |
 | M10-FR-03 | 2 | `docs/requirements/M10.md` | — | — | R2 | In design |
 | M10-FR-04 | 2 | `docs/requirements/M10.md` | — | — | R2 | In design |
