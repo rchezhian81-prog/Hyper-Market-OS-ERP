@@ -23,7 +23,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
   Engines        ledger · approvals · rbac ·     (one invariant each)
                  sync · numbering · calendar · config ·
                  tenant · loss-prevention · price-guard ·
-                 replenishment · fefo · finance
+                 replenishment · fefo · finance · bank-controls
        ▲
   Contracts      money · quantity · rate ·       (the shared vocabulary & shapes)
                  enums · event
@@ -43,6 +43,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 | `config` | Versioned config | Every change is a new version; rollback is non-destructive (M01-FR-03) |
 | `tenant` | Multi-tenant entitlements | Each tenant chooses its optional modules; default-off, isolated (ADR-0003, M36) |
 | `loss-prevention` | Anomaly detection | Configurable void/refund/discount/no-sale/cash rules → linked exceptions; detect-only (M15-FR-01, P-03) |
+| `bank-controls` | Bank fraud controls | Bank-change verification (maker≠approver); duplicate bank-account → block payment (M06-FR-01, M15-FR-03, §28) |
 | `price-guard` | Margin-floor / MRP controls | Reject above MRP; below floor/cost blocked pending a separate approver + reason (M05-FR-02, §28) |
 | `replenishment` | Reorder suggestions | What/how much to reorder from parameters (reorder point/safety/max, demand×lead); advisory only, buyer approves (M09-FR-02, hard rule #5) |
 | `fefo` | FEFO & expiry list | Allocate earliest-expiry first; never expired/recalled; near-expiry→markdown, expired→dispose (M10-FR-01) |

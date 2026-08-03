@@ -83,6 +83,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Payment reconciliation | M23-FR-03 (match tenders↔settlements by token/amount; valued exceptions; no card PAN) / hard rule #3 | `packages/reconciliation/src/reconciliation.ts` | `tests/unit/reconciliation.test.ts` (7 tests) |
 | Loyalty points (earn/burn/reverse) | M17-FR-01 (money-like append-only; projected balance; offline cap; never negative) / §31 | `packages/loyalty/src/loyalty.ts` | `tests/unit/loyalty.test.ts` (8 tests) |
 | Purchase orders & open commitment | M06-FR-02/04 (issue with separate approver + value limit; open = ordered−received−cancelled) / §28 | `packages/purchasing/src/purchasing.ts` | `tests/unit/purchasing.test.ts` (8 tests) |
+| Bank fraud controls | M06-FR-01 (bank-change verification, maker≠approver) + M15-FR-03 (duplicate bank-account → block) / §28 | `packages/bank-controls/src/` | `tests/unit/bank-controls.test.ts` (8 tests) |
 | Tenant feature entitlements | ADR-0003 / M33·D12·M36 (multi-tenant; choose-able modules) | `packages/tenant/src/tenant.ts` | `tests/unit/tenant.test.ts` (6 tests) |
 | Per-tenant settings | ADR-0003 (choose-able settings, defaults, per-tenant, versioned) | `packages/tenant/src/settings.ts` | `tests/unit/tenant-settings.test.ts` (5 tests) |
 
@@ -110,7 +111,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M05-FR-02 | 2 | `docs/requirements/M05.md` | `packages/price-guard/src/price-guard.ts` | `tests/unit/price-guard.test.ts` | R2 | Foundation built (MRP ceiling; below floor/cost needs a separate approver + reason) |
 | M05-FR-03 | 2 | `docs/requirements/M05.md` | `packages/promotions/src/promotions.ts` | `tests/unit/promotions.test.ts` | R2 | Foundation built (deterministic best price; BOGO/multibuy/coupon/member; expired/unpublished never apply) |
 | M05-FR-04 | 2 | `docs/requirements/M05.md` | — | — | R2 | In design |
-| M06-FR-01 | 2 | `docs/requirements/M06.md` | — | — | R2 | In design |
+| M06-FR-01 | 2 | `docs/requirements/M06.md` | `packages/bank-controls/src/bank-verification.ts` | `tests/unit/bank-controls.test.ts` | R2 | Foundation built (bank-change verification, maker≠approver; unverified blocks payment) |
 | M06-FR-02 | 2 | `docs/requirements/M06.md` | `packages/purchasing/src/purchasing.ts` | `tests/unit/purchasing.test.ts` | R2 | Foundation built (issue with separate approver; value limit via approvals; SoD) |
 | M06-FR-03 | 2 | `docs/requirements/M06.md` | — | — | R2 | In design |
 | M06-FR-04 | 2 | `docs/requirements/M06.md` | `packages/purchasing/src/purchasing.ts` | `tests/unit/purchasing.test.ts` | R2 | Foundation built (open commitment = ordered−received−cancelled; over-receipt signalled) |
@@ -148,7 +149,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M14-FR-04 | 2 | `docs/requirements/M14.md` | `packages/day-close/src/day-close.ts` | `tests/unit/day-close.test.ts` | R2 | Foundation built (trading-day lock; block on open exceptions/unsent; approved reopen) |
 | M15-FR-01 | 2 | `docs/requirements/M15.md` | `packages/loss-prevention/src/loss-prevention.ts` | `tests/unit/loss-prevention.test.ts` | R2 | Foundation built (configurable rules → linked exceptions; detect-only) |
 | M15-FR-02 | 2 | `docs/requirements/M15.md` | — | — | R2 | In design |
-| M15-FR-03 | 2 | `docs/requirements/M15.md` | — | — | R2 | In design |
+| M15-FR-03 | 2 | `docs/requirements/M15.md` | `packages/bank-controls/src/duplicate-bank.ts` | `tests/unit/bank-controls.test.ts` | R2 | Foundation built (duplicate bank-account detection → block pending review) |
 | M15-FR-04 | 2 | `docs/requirements/M15.md` | — | — | R2 | In design |
 | M16-FR-01 | 2 | `docs/requirements/M16.md` | — | — | R4 | In design |
 | M16-FR-02 | 2 | `docs/requirements/M16.md` | — | — | R4 | In design |

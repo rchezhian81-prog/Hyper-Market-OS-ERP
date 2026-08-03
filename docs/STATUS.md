@@ -10,7 +10,7 @@ Last updated: 3 August 2026
 ## Current stage
 **Stage 5 — Foundation build (in progress). Stage 4 complete; owner-closure gate CLOSED.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
-done for Store-Core (R2); Stage 5 has built 34 tested foundation units (283 tests). **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
+done for Store-Core (R2); Stage 5 has built 35 tested foundation units (291 tests). **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
 spec-freeze / store-specific build are the Stage 1 store facts (the 20 AVR items) and the
@@ -62,7 +62,7 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **283 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **291 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **Base-platform layer begun:** the **append-only ledger engine** (`packages/ledger/`,
     hard rule #2 / M08-FR-01 / §31.1) — idempotent append, balances projected from events
@@ -106,6 +106,12 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     escalation) and get back the risky patterns as **exceptions that link to the underlying
     transactions** — surfaced to the owner, **never acted on automatically** (AI-NFR-12). Pure,
     deterministic detection over synced data — 9 tests.
+  - **Bank-fraud safeguards** — **bank controls** (`packages/bank-controls/`, M06-FR-01 +
+    M15-FR-03): a supplier's **bank-detail change** can be verified only by an **independent
+    approver** (the person who requested it can never approve it, §28) — an unverified change
+    **blocks payment**. And **duplicate bank-account detection** flags any account shared by two
+    or more distinct holders (supplier–supplier or supplier–employee related-party risk) and
+    **blocks their payment pending review**. Account references are masked (PRV). Pure — 8 tests.
   - **Buy safely, track commitments** — **purchase orders**
     (`packages/purchasing/`, M06-FR-02/04): a PO can be **issued only with an approval by
     someone other than the person who raised it** (§28), the approver's value authority checked
@@ -176,12 +182,12 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     ledger, maker-checker, RBAC, offline outbox, gap-free document numbering, trading-day
     rule, loss-prevention anomaly rules, margin-floor/MRP price controls, replenishment
     suggestions, FEFO allocation & expiry list, finance ledger→journal posting, payment
-    reconciliation) plus compositions (effective-dated price resolution, line/bill pricing, the
-    deterministic promotions best-price engine, tender settlement, the end-to-end offline sale
-    commit, purchase-order issue & open commitment, goods receiving, approved stock adjustment,
-    cycle/blind count reconciliation, return/refund commit, till cash movements, loyalty points,
-    the cashier shift/till close, and the store/day close + controlled reopen) — 34 tested
-    units, 283 tests.
+    reconciliation, bank fraud controls) plus compositions (effective-dated price resolution,
+    line/bill pricing, the deterministic promotions best-price engine, tender settlement, the
+    end-to-end offline sale commit, purchase-order issue & open commitment, goods receiving,
+    approved stock adjustment, cycle/blind count reconciliation, return/refund commit, till cash
+    movements, loyalty points, the cashier shift/till close, and the store/day close +
+    controlled reopen) — 35 tested units, 291 tests.
   - **Owner-deferred (OB-02, 2 Aug 2026):** the database-backed persistence layer + hosting/
     deployment, and gathering the Stage-1 store facts, are **planned later by the owner** —
     not an active ask or a blocker on design/foundation work. They slot onto this tenant-ready
@@ -226,11 +232,11 @@ plus all five cross-cutting sets.**
   family-level baseline.
 
 ## In progress
-- **Stage 5 foundation build** — 34 tested units done (`packages/` contracts, ledger,
+- **Stage 5 foundation build** — 35 tested units done (`packages/` contracts, ledger,
   approvals, rbac, sync, numbering, calendar, price-list, pricing, promotions, price-guard,
-  tender, config, sale, tenant, receiving, purchasing, adjustment, counts, replenishment, fefo,
-  finance, reconciliation, returns, cash, till, day-close, loyalty, loss-prevention; 283 tests,
-  `pnpm check` green). The
+  tender, config, sale, tenant, receiving, purchasing, bank-controls, adjustment, counts,
+  replenishment, fefo, finance, reconciliation, returns, cash, till, day-close, loyalty,
+  loss-prevention; 291 tests, `pnpm check` green). The
   pure, store-fact-independent foundation is now comprehensive — it even composes into the
   end-to-end offline sale commit (hard rule #1). What remains genuinely needs the outside
   world: a **database** (via the hosting-vendor pick, D3 commercial validation) and the
