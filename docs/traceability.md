@@ -94,6 +94,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Owner KPIs & freshness | M29-FR-01 / D13 (exact sales/margin/basket/tender aggregation; stale/missing never shown as fresh) / P-08 | `packages/reporting/src/` | `tests/unit/reporting.test.ts` (7 tests) |
 | Durable event store (persistence) | §30.2 / §31.1 / hard rule #2 / ADR-0003 — append-only, tenant-scoped, idempotent; SqlClient port + `event_ledger` DDL | `packages/persistence/src/`, `db/migrations/0001_event_ledger.sql` | `tests/unit/persistence-event-store.test.ts` (8 tests) |
 | Durable sync outbox (persistence) | P-01 / §31 / hard rule #6 — tenant-scoped, idempotent enqueue, retry, visible dead-letter; `sync_outbox` DDL | `packages/persistence/src/outbox-store.ts`, `db/migrations/0002_sync_outbox.sql` | `tests/unit/persistence-outbox-store.test.ts` (8 tests) |
+| Durable versioned config (persistence) | M01-FR-03 / ADR-0003 — append-only versions per (tenant,key); rollback as a new version; `config_versions` DDL | `packages/persistence/src/config-store.ts`, `db/migrations/0003_config_versions.sql` | `tests/unit/persistence-config-store.test.ts` (7 tests) |
 | Tenant feature entitlements | ADR-0003 / M33·D12·M36 (multi-tenant; choose-able modules) | `packages/tenant/src/tenant.ts` | `tests/unit/tenant.test.ts` (6 tests) |
 | Per-tenant settings | ADR-0003 (choose-able settings, defaults, per-tenant, versioned) | `packages/tenant/src/settings.ts` | `tests/unit/tenant-settings.test.ts` (5 tests) |
 

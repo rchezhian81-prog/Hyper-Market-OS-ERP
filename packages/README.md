@@ -33,7 +33,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
        ▲
   Persistence    persistence (SqlClient port ·   (durable, tenant-scoped storage;
                  EventStore · OutboxStore ·       in-memory ref + SQL adapter)
-                 event_ledger + sync_outbox DDL)
+                 ConfigVersionStore · DDL 0001-3)
 ```
 
 ## The packages
@@ -41,7 +41,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 | Package | Concern | Key rule it enforces |
 | --- | --- | --- |
 | `contracts` | Value primitives & shared shapes | Exact money/quantity/rate (never a float, §29.1); de-duplicated events (§30.2/§31.1) |
-| `persistence` | Durable event store + outbox | Tenant-scoped, append-only, idempotent event log + retry/dead-letter sync outbox; driver-agnostic `SqlClient` port + `event_ledger`/`sync_outbox` DDL (§30.2/§31.1/§31, ADR-0003) |
+| `persistence` | Durable stores | Tenant-scoped event log (append-only), retry/dead-letter sync outbox, and versioned config; driver-agnostic `SqlClient` port + DDL 0001–3 (§30.2/§31.1/§31, M01-FR-03, ADR-0003) |
 | `ledger` | Append-only event ledger | Balances are projected from events, never overwritten (hard rule #2) |
 | `approvals` | Maker-checker | The maker can never decide their own request (§28) |
 | `rbac` | Access control | Default-deny; least privilege (P-04, M02-FR-02) |
