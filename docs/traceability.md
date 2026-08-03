@@ -106,6 +106,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | **Web ERP shell** (3rd app) | §27 role surfaces / P-07 / P-04 / M02 / §28 — permission-derived navigation (default-deny, branch-scoped) and the approvals workbench (SoD visible, escalation not a failing button) | `apps/web-erp/src/` | `tests/unit/web-erp-shell.test.ts` (14 tests) |
 | **Picker/packer app shell** (4th app) | M19-FR-01/02 / M18 / D09 / A04 / §31 — scan-ordered picking, customer-confirmed substitution, weighed final price at pick, manifest derived from what was packed, PII minimised | `apps/picker-app/src/pick-session.ts` | `tests/unit/picker-session.test.ts` (17 tests) |
 | **Delivery app shell** (5th app) | M19-FR-03/04 / D09 / §31 / hard rule #3 — proof-gated delivery, COD to the paisa + end-of-shift settlement, failure→reattempt/RTO, geofence flag, contribution stop rules, PII minimised | `apps/delivery-app/src/route-session.ts` | `tests/unit/delivery-route.test.ts` (15 tests) |
+| Receipt printing | M31-FR-02 / M12-FR-02 / hard rules #1 & #3 — built from the committed sale, balancing totals enforced, PAN refused, reprint stamped + reasoned, ESC/POS, printer failure never costs the sale | `packages/receipt/src/` | `tests/unit/receipt.test.ts` (14 tests) |
 | Tenant feature entitlements | ADR-0003 / M33·D12·M36 (multi-tenant; choose-able modules) | `packages/tenant/src/tenant.ts` | `tests/unit/tenant.test.ts` (6 tests) |
 | Per-tenant settings | ADR-0003 (choose-able settings, defaults, per-tenant, versioned) | `packages/tenant/src/settings.ts` | `tests/unit/tenant-settings.test.ts` (5 tests) |
 
@@ -234,7 +235,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M30-FR-03 | 2 | `docs/requirements/M30.md` | — | — | R2 | In design |
 | M30-FR-04 | 2 | `docs/requirements/M30.md` | — | — | R2 | In design |
 | M31-FR-01 | 2 | `docs/requirements/M31.md` | — | — | R2 | In design |
-| M31-FR-02 | 2 | `docs/requirements/M31.md` | — | — | R2 | In design |
+| M31-FR-02 | 2 | `docs/requirements/M31.md` | `packages/receipt/src/` | `tests/unit/receipt.test.ts` | R2 | Foundation built (receipt from committed sale, gap-free number, offline print, audited reprint) |
 | M31-FR-03 | 2 | `docs/requirements/M31.md` | `packages/notifications/src/guard.ts` | `tests/unit/notifications.test.ts` | R4 | Foundation built (consent-safe send guard; blocked on breach) |
 | M31-FR-04 | 2 | `docs/requirements/M31.md` | `packages/notifications/src/queue.ts` | `tests/unit/notifications.test.ts` | R4 | Foundation built (retry + visible dead-letter; suppression; template approval) |
 | M32-FR-01 | 2 | `docs/requirements/M32.md` | — | — | R1 | In design |

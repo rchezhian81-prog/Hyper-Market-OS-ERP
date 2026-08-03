@@ -13,8 +13,8 @@ Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra
 done for Store-Core (R2); Stage 5 has built 43 tested foundation units, five
 **persistence-layer** units incl. the PostgreSQL connector + migration runner, and the **first
 app shells (POS + Owner + Web ERP + Picker + Delivery)** with the build pipeline, barcode
-scanning, the catalogue snapshot builder and the store-edge sync agent — 506 tests. **D3/D4/D5/D8
-were answered on 2 Aug 2026** (see
+scanning, the catalogue snapshot builder, receipt printing and the store-edge sync agent —
+520 tests. **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
 spec-freeze / store-specific build are the Stage 1 store facts (the 20 AVR items) and the
@@ -66,8 +66,19 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **506 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **520 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
+  - **Receipt printing — DONE (owner asked, 3 Aug 2026):** `packages/receipt/` builds the
+    receipt **from the committed sale** (never a draft, M31-FR-02) with its gap-free number, and
+    **refuses to issue a wrong one**: a **PAN-like tender reference** (hard rule #3), **totals
+    that don't balance**, or a **reprint with no reason** are all rejected. It renders to thermal
+    paper (32/42/48 chars) with each line's **true weight and unit price** (`1.234 kg x 80.00`),
+    GST bands and change; a long name **wraps rather than truncating**; and a **reprint is
+    stamped `*** REPRINT ***` with its reason** so a copy can't pass as an original (M12-FR-02).
+    Encoding is **ESC/POS** (vendor-independent, P-06) via a `PrinterPort`, and a **printer
+    failure is returned, never thrown into the sale path** — the sale stays committed (hard rule
+    #1) and the lane offers a reprint. Building/rendering are pure, so a receipt prints offline.
+    Header/footer are per-tenant configuration. 14 tests.
   - **First app shell — POS (owner asked, 3 Aug 2026):** `apps/pos/` is the cashier till, built
     to the Stage 3 spec (`docs/design/screens/pos-cashier.md`). Two parts: **`src/session.ts`,
     the tested model** — `PosSession` holds the basket and composes the engines (pricing,
