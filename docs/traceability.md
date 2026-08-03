@@ -72,6 +72,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Cashier shift / till close | M14-FR-02 (blind count, over/short, valued exception) — fully offline | `packages/till/src/till.ts` | `tests/unit/till.test.ts` (6 tests) |
 | Store/day close + controlled reopen | M14-FR-04 (trading-day-aligned lock; block on open exceptions/unsent; approved reopen) | `packages/day-close/src/day-close.ts` | `tests/unit/day-close.test.ts` (8 tests) |
 | Till cash movements | M14-FR-01 (float/loan/pickup/safe-drop; one custodian per till; no overdraw; append-only) | `packages/cash/src/cash.ts` | `tests/unit/cash.test.ts` (8 tests) |
+| Cycle/blind count reconciliation | M09-FR-04 (blind count vs projected ledger; valued variance → approved compensating adjustment) / §28 | `packages/counts/src/counts.ts` | `tests/unit/counts.test.ts` (8 tests) |
 | Tenant feature entitlements | ADR-0003 / M33·D12·M36 (multi-tenant; choose-able modules) | `packages/tenant/src/tenant.ts` | `tests/unit/tenant.test.ts` (6 tests) |
 | Per-tenant settings | ADR-0003 (choose-able settings, defaults, per-tenant, versioned) | `packages/tenant/src/settings.ts` | `tests/unit/tenant-settings.test.ts` (5 tests) |
 
@@ -114,7 +115,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M09-FR-01 | 2 | `docs/requirements/M09.md` | — | — | R2 | In design |
 | M09-FR-02 | 2 | `docs/requirements/M09.md` | — | — | R2 | In design |
 | M09-FR-03 | 2 | `docs/requirements/M09.md` | — | — | R2 | In design |
-| M09-FR-04 | 2 | `docs/requirements/M09.md` | — | — | R2 | In design |
+| M09-FR-04 | 2 | `docs/requirements/M09.md` | `packages/counts/src/counts.ts` | `tests/unit/counts.test.ts` | R2 | Foundation built (blind count → valued variance → approved compensating adjustment) |
 | M10-FR-01 | 2 | `docs/requirements/M10.md` | — | — | R2 | In design |
 | M10-FR-02 | 2 | `docs/requirements/M10.md` | — | — | R2 | In design |
 | M10-FR-03 | 2 | `docs/requirements/M10.md` | — | — | R2 | In design |

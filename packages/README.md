@@ -15,8 +15,8 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 
 ```
   Compositions   pricing · tender · sale ·        (real domain operations)
-                 receiving · adjustment · returns ·
-                 cash · till · day-close
+                 receiving · adjustment · counts ·
+                 returns · cash · till · day-close
        ▲
   Engines        ledger · approvals · rbac ·     (one invariant each)
                  sync · numbering · calendar · config · tenant
@@ -43,6 +43,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 | `sale` | Local sale commit | Commit locally first, sync idempotently (hard rule #1, M12) |
 | `receiving` | Goods-receipt commit | Inbound stock to the ledger, queued for sync, idempotent (M07) |
 | `adjustment` | Stock adjustment | Reason-coded compensating move; material ones need a separate approver (M08-FR-03, §28) |
+| `counts` | Cycle/blind count | Blind count vs projected ledger; a variance becomes a valued, approved compensating adjustment (M09-FR-04, §28) |
 | `returns` | Return & refund commit | Line returned at most once; disposition decides availability; material/no-receipt refund needs a separate approver; card/UPI reversal stays pending (M13, §28) |
 | `cash` | Till cash movements | Float/loan/pickup/safe-drop as an append-only chain; one custodian per till; no overdraw (M14-FR-01) |
 | `till` | Cashier shift / till close | Blind count → over/short; material variance is a reason-coded valued exception; fully offline (M14-FR-02) |
