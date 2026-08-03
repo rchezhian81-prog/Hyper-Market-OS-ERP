@@ -10,13 +10,13 @@ Last updated: 3 August 2026
 ## Current stage
 **Stage 5 — Foundation build (in progress). Stage 4 complete; owner-closure gate CLOSED.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
-done for Store-Core (R2); Stage 5 has built 53 tested foundation units, five
+done for Store-Core (R2); Stage 5 has built 55 tested foundation units, five
 **persistence-layer** units incl. the PostgreSQL connector + migration runner, and the **first
 app shells (POS + Owner + Web ERP + Picker + Delivery)** with the build pipeline, barcode
 scanning, the catalogue snapshot builder, receipt printing, template-driven import, domain
 export, tamper-evident audit evidence, goods-in with the three-way match, state-aware stock
-availability, the M03 product master, the compliance registers and the store-edge sync agent
-— 688 tests.
+availability, the M03 product master, the compliance registers, the org hierarchy and branch
+lifecycle, and the store-edge sync agent — 718 tests.
 **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
@@ -69,7 +69,7 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **688 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **718 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **Template-driven import — DONE (3 Aug 2026). This is the roadmap's own top priority
     (audit A-03: the store's #1 daily pain — the 80+ line supplier invoice typed by hand).**
@@ -239,6 +239,35 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
       only **in someone's name with a written rationale** — accepting a risk is a decision,
       and decisions have authors.
     28 tests.
+  - **Org hierarchy and branch lifecycle — DONE (3 Aug 2026). M01 is now complete.**
+    `packages/org/` is the skeleton the rest of the system hangs on —
+    **company → GST registration → branch → warehouse → department**. Get it wrong and
+    the symptoms appear everywhere at once: GST filed against the wrong registration, a
+    manager able to see another branch's takings, a report that quietly double-counts a
+    warehouse.
+    - **the GSTIN checksum is verified, not just its shape** — a single mistyped digit is
+      caught the moment it is typed, rather than at the first return;
+    - a **duplicate GSTIN is rejected naming who already holds it**, because the second
+      entry is almost always a typo of the first;
+    - a branch **cannot be activated without a company and its own registration** (its
+      sales would be unattributable) — but it can still be **saved as a draft**, because
+      incomplete is not invalid;
+    - a node whose parent belongs to **another tenant** is refused outright — cross-tenant
+      structure is a defect, not a setting (ADR-0003);
+    - **branch closure is where stock, cash, staff access and reporting all leak at once**
+      if it is done ad-hoc. So permanent closure is **blocked while anything is left
+      behind** — stock (valued in the message: *"812 units worth ₹24,500.00"*), cash, open
+      documents, **unsent sync items** (closing over them would destroy sales that were
+      legitimately made), or unresolved exceptions — and **every blocking reason comes back
+      at once**, so the manager can plan the day instead of meeting the next obstacle one
+      attempt at a time;
+    - a **temporary** closure deliberately blocks on none of that: it preserves stock,
+      cash, reservations and unsent items, and they resume on reopen;
+    - closure is **owner-approved with the executor never the approver** (§28), and it
+      **deletes nothing** — access is revoked, the branch leaves the *live* reports but
+      stays in history, and the audit trail and closure evidence pack are kept in full.
+      "Closed" is a state, not an erasure.
+    30 tests.
   - **Receipt printing — DONE (owner asked, 3 Aug 2026):** `packages/receipt/` builds the
     receipt **from the committed sale** (never a draft, M31-FR-02) with its gap-free number, and
     **refuses to issue a wrong one**: a **PAN-like tender reference** (hard rule #3), **totals

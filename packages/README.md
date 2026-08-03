@@ -48,6 +48,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 | `rbac` | Access control | Default-deny; least privilege (P-04, M02-FR-02) |
 | `sync` | Offline outbox | Idempotent sync; dead-letter never dropped (P-01, §31, hard rule #6) |
 | `numbering` | Document numbers | Gap-free & unique per type; offline reserved ranges (M01-FR-02) |
+| `org` | Org hierarchy & branch lifecycle | GSTIN unique and checksum-validated; a branch cannot activate without a company and its own registration; cross-tenant parents refused; permanent closure blocked while stock, cash, open documents, **unsent sync items** or exceptions remain, and closure never deletes — access revoked, history retained (M01-FR-01/04, §28, §31, hard rule #6) |
 | `calendar` | Trading-day rule | Consistent business day for close/GST (M01-FR-02, A-13) |
 | `config` | Versioned config | Every change is a new version; rollback is non-destructive (M01-FR-03) |
 | `tenant` | Multi-tenant entitlements | Each tenant chooses its optional modules; default-off, isolated (ADR-0003, M36) |
