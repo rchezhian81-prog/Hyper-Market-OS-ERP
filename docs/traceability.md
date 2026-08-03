@@ -79,6 +79,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Promotions best-price engine | M05-FR-03 (deterministic best price; BOGO/multibuy/coupon/member; no expired/unpublished; stacking/exclusion) / P-02 | `packages/promotions/src/promotions.ts` | `tests/unit/promotions.test.ts` (11 tests) |
 | Margin-floor / MRP price controls | M05-FR-02 (reject above MRP; below floor/cost blocked pending approval + reason) / §28 | `packages/price-guard/src/price-guard.ts` | `tests/unit/price-guard.test.ts` (10 tests) |
 | Effective-dated price resolution | M05-FR-01 / P-02 (precedence customer>channel>zone>store; no early activation; append-only history; version lock) | `packages/price-list/src/price-list.ts` | `tests/unit/price-list.test.ts` (10 tests) |
+| Finance posting (ledger→journals) | M23-FR-01/02 (mapping-driven balanced double-entry; GST component; unmapped→exception) / P-08 / §28 | `packages/finance/src/posting.ts` | `tests/unit/finance-posting.test.ts` (7 tests) |
 | Tenant feature entitlements | ADR-0003 / M33·D12·M36 (multi-tenant; choose-able modules) | `packages/tenant/src/tenant.ts` | `tests/unit/tenant.test.ts` (6 tests) |
 | Per-tenant settings | ADR-0003 (choose-able settings, defaults, per-tenant, versioned) | `packages/tenant/src/settings.ts` | `tests/unit/tenant-settings.test.ts` (5 tests) |
 
@@ -174,8 +175,8 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M22-FR-02 | 2 | `docs/requirements/M22.md` | — | — | R6 | In design |
 | M22-FR-03 | 2 | `docs/requirements/M22.md` | — | — | R6 | In design |
 | M22-FR-04 | 2 | `docs/requirements/M22.md` | — | — | R6 | In design |
-| M23-FR-01 | 2 | `docs/requirements/M23.md` | — | — | R2 | In design |
-| M23-FR-02 | 2 | `docs/requirements/M23.md` | — | — | R2 | In design |
+| M23-FR-01 | 2 | `docs/requirements/M23.md` | `packages/finance/src/posting.ts` | `tests/unit/finance-posting.test.ts` | R2 | Foundation built (mapping-driven balanced double-entry; unmapped→exception) |
+| M23-FR-02 | 2 | `docs/requirements/M23.md` | `packages/finance/src/posting.ts` | `tests/unit/finance-posting.test.ts` | R2 | Partial — GST posts as a mapped component; credit/debit notes & returns reports pending |
 | M23-FR-03 | 2 | `docs/requirements/M23.md` | — | — | R2 | In design |
 | M23-FR-04 | 2 | `docs/requirements/M23.md` | — | — | R2 | In design |
 | M24-FR-01 | 2 | `docs/requirements/M24.md` | — | — | R6 | In design |
