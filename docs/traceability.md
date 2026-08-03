@@ -91,6 +91,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Waste / write-off | M28-FR-01 (reason-coded compensating loss; material needs separate approver + evidence) / §28 / hard rule #2 | `packages/waste/src/waste.ts` | `tests/unit/waste.test.ts` (8 tests) |
 | B2B credit & commission | M22-FR-01 (credit-limit block pending approval; contract expiry) + M22-FR-03 (exact commission) / §28 | `packages/b2b/src/` | `tests/unit/b2b.test.ts` (10 tests) |
 | Notifications (guard + queue) | M31-FR-03 (consent-safe send, blocked on breach) + M31-FR-04 (retry/dead-letter, suppression, template approval) / hard rule #6 | `packages/notifications/src/` | `tests/unit/notifications.test.ts` (9 tests) |
+| Owner KPIs & freshness | M29-FR-01 / D13 (exact sales/margin/basket/tender aggregation; stale/missing never shown as fresh) / P-08 | `packages/reporting/src/` | `tests/unit/reporting.test.ts` (7 tests) |
 | Tenant feature entitlements | ADR-0003 / M33·D12·M36 (multi-tenant; choose-able modules) | `packages/tenant/src/tenant.ts` | `tests/unit/tenant.test.ts` (6 tests) |
 | Per-tenant settings | ADR-0003 (choose-able settings, defaults, per-tenant, versioned) | `packages/tenant/src/settings.ts` | `tests/unit/tenant-settings.test.ts` (5 tests) |
 
@@ -210,7 +211,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M28-FR-02 | 2 | `docs/requirements/M28.md` | — | — | R6 | In design |
 | M28-FR-03 | 2 | `docs/requirements/M28.md` | — | — | R6 | In design |
 | M28-FR-04 | 2 | `docs/requirements/M28.md` | — | — | R6 | In design |
-| M29-FR-01 | 2 | `docs/requirements/M29.md` | — | — | R2 | In design |
+| M29-FR-01 | 2 | `docs/requirements/M29.md` | `packages/reporting/src/` | `tests/unit/reporting.test.ts` | R2 | Foundation built (exact sales/margin/basket/tender KPIs; freshness fresh/stale/missing) |
 | M29-FR-02 | 2 | `docs/requirements/M29.md` | — | — | R2 | In design |
 | M29-FR-03 | 2 | `docs/requirements/M29.md` | — | — | R2 | In design |
 | M29-FR-04 | 2 | `docs/requirements/M29.md` | — | — | R2 | In design |

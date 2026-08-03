@@ -10,7 +10,7 @@ Last updated: 3 August 2026
 ## Current stage
 **Stage 5 — Foundation build (in progress). Stage 4 complete; owner-closure gate CLOSED.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
-done for Store-Core (R2); Stage 5 has built 42 tested foundation units (352 tests). **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
+done for Store-Core (R2); Stage 5 has built 43 tested foundation units (359 tests). **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
 spec-freeze / store-specific build are the Stage 1 store facts (the 20 AVR items) and the
@@ -62,7 +62,7 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **352 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **359 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **Base-platform layer begun:** the **append-only ledger engine** (`packages/ledger/`,
     hard rule #2 / M08-FR-01 / §31.1) — idempotent append, balances projected from events
@@ -106,6 +106,13 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     escalation) and get back the risky patterns as **exceptions that link to the underlying
     transactions** — surfaced to the owner, **never acted on automatically** (AI-NFR-12). Pure,
     deterministic detection over synced data — 9 tests.
+  - **The owner's numbers, honestly dated** — **owner KPIs & freshness**
+    (`packages/reporting/`, M29-FR-01 / D13): aggregates committed sales into the core KPIs —
+    **gross / net / tax / COGS / margin, margin %, basket count, units, average basket, tender
+    mix** — with **exact** money sums (never a float) and **governed definitions** so a figure
+    means the same everywhere; it refuses to blend currencies. And a **freshness indicator** that
+    marks data **fresh / stale / missing** so lagging or offline data is **never shown as fresh**
+    (P-08). Pure — 7 tests.
   - **Messages only where allowed** — **notifications** (`packages/notifications/`,
     M31-FR-03/04, R4 design-ahead): a notification is **consent-safe by construction** — before
     anything is sent, every gate must pass (**approved template → do-not-contact suppression →
@@ -234,15 +241,15 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     ledger, maker-checker, RBAC, offline outbox, gap-free document numbering, trading-day
     rule, loss-prevention anomaly rules, margin-floor/MRP price controls, replenishment
     suggestions, FEFO allocation & expiry list, lot traceability & recall, finance ledger→journal
-    posting, payment reconciliation, bank fraud controls, notification guard & dead-letter queue)
-    plus compositions (effective-dated price resolution,
+    posting, payment reconciliation, bank fraud controls, notification guard & dead-letter queue,
+    owner KPIs & freshness) plus compositions (effective-dated price resolution,
     line/bill pricing, the deterministic promotions best-price engine, tender settlement, the
     end-to-end offline sale commit, purchase-order issue & open commitment, goods receiving,
     approved stock adjustment, cycle/blind count reconciliation, the order lifecycle & stock
     reservation, fulfilment (delivery/substitution/COD), customer dedup & consent, waste
-    write-off, B2B credit & commission, notification guard & dead-letter queue, return/refund
-    commit, till cash movements, loyalty points, the cashier shift/till close, and the store/day
-    close + controlled reopen) — 42 tested units, 352 tests.
+    write-off, B2B credit & commission, notification guard & dead-letter queue, owner KPIs &
+    freshness, return/refund commit, till cash movements, loyalty points, the cashier shift/till
+    close, and the store/day close + controlled reopen) — 43 tested units, 359 tests.
   - **Owner-deferred (OB-02, 2 Aug 2026):** the database-backed persistence layer + hosting/
     deployment, and gathering the Stage-1 store facts, are **planned later by the owner** —
     not an active ask or a blocker on design/foundation work. They slot onto this tenant-ready
@@ -291,8 +298,8 @@ plus all five cross-cutting sets.**
   approvals, rbac, sync, numbering, calendar, price-list, pricing, promotions, price-guard,
   tender, config, sale, tenant, receiving, purchasing, bank-controls, adjustment, counts,
   replenishment, fefo, traceability, finance, reconciliation, orders, fulfilment, customer,
-  waste, b2b, notifications, returns, cash, till, day-close, loyalty, loss-prevention; 352 tests,
-  `pnpm check` green). The
+  waste, b2b, notifications, reporting, returns, cash, till, day-close, loyalty, loss-prevention;
+  359 tests, `pnpm check` green). The
   pure, store-fact-independent foundation is now comprehensive — it even composes into the
   end-to-end offline sale commit (hard rule #1). What remains genuinely needs the outside
   world: a **database** (via the hosting-vendor pick, D3 commercial validation) and the
