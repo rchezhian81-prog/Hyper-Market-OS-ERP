@@ -104,6 +104,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | **Store-edge sync agent** | P-01 / §31 / §31.1 / hard rules #6 & #10 — ordered idempotent drain, retry + backoff, visible dead-letter, conflict→exception, honest health | `edge/sync-agent/src/` | `tests/unit/sync-agent.test.ts` (12 tests) |
 | **Owner app shell** (2nd app) | M29 / M29-FR-01/02/03 / D13 / P-03 / P-08 — executive brief: KPIs, top-3 attention, grouped drillable alerts, approvals inbox, freshness; works with AI off | `apps/owner-app/src/brief.ts`, `apps/owner-app/web/` | `tests/unit/owner-brief.test.ts` (9 tests) |
 | **Web ERP shell** (3rd app) | §27 role surfaces / P-07 / P-04 / M02 / §28 — permission-derived navigation (default-deny, branch-scoped) and the approvals workbench (SoD visible, escalation not a failing button) | `apps/web-erp/src/` | `tests/unit/web-erp-shell.test.ts` (14 tests) |
+| **Picker/packer app shell** (4th app) | M19-FR-01/02 / M18 / D09 / A04 / §31 — scan-ordered picking, customer-confirmed substitution, weighed final price at pick, manifest derived from what was packed, PII minimised | `apps/picker-app/src/pick-session.ts` | `tests/unit/picker-session.test.ts` (17 tests) |
 | Tenant feature entitlements | ADR-0003 / M33·D12·M36 (multi-tenant; choose-able modules) | `packages/tenant/src/tenant.ts` | `tests/unit/tenant.test.ts` (6 tests) |
 | Per-tenant settings | ADR-0003 (choose-able settings, defaults, per-tenant, versioned) | `packages/tenant/src/settings.ts` | `tests/unit/tenant-settings.test.ts` (5 tests) |
 

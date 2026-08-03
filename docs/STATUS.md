@@ -12,9 +12,9 @@ Last updated: 3 August 2026
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
 done for Store-Core (R2); Stage 5 has built 43 tested foundation units, five
 **persistence-layer** units incl. the PostgreSQL connector + migration runner, and the **first
-app shells (POS + Owner + Web ERP)** with the build pipeline, barcode scanning, the catalogue
-snapshot builder and the store-edge sync agent — 474 tests. **D3/D4/D5/D8 were answered on
-2 Aug 2026** (see
+app shells (POS + Owner + Web ERP + Picker)** with the build pipeline, barcode scanning, the
+catalogue snapshot builder and the store-edge sync agent — 491 tests. **D3/D4/D5/D8 were
+answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
 spec-freeze / store-specific build are the Stage 1 store facts (the 20 AVR items) and the
@@ -66,7 +66,7 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **474 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **491 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **First app shell — POS (owner asked, 3 Aug 2026):** `apps/pos/` is the cashier till, built
     to the Stage 3 spec (`docs/design/screens/pos-cashier.md`). Two parts: **`src/session.ts`,
@@ -158,6 +158,19 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     the queue is ordered by value, a reason is mandatory, and every real decision is delegated to
     the approval engine — proven by a test that the engine still refuses a self-approval if the
     screen were bypassed. 14 tests.
+  - **Fourth app shell — Picker/packer handheld (owner asked, 3 Aug 2026):** `apps/picker-app/`,
+    built to the Stage 3 spec for a low-spec Android handheld in the aisles — **synchronous and
+    local**, so a picker completes a wave with no signal. It **enforces** the rules rather than
+    trusting the picker: **every pick is a scan, in order** (scan bin → scan item → confirm; the
+    wrong bin or wrong item is refused); **a short pick is honest** (fewer than required marks the
+    line short, never a silent complete; more than required is refused); **a substitution is never
+    the picker's silent choice** — it delegates to the fulfilment engine, which **refuses an
+    unconfirmed swap** (A04); **a weighed line captures its final price at pick** (1.234 kg at
+    ₹80/kg = **₹98.72**, exact — D09); quality failures and shorts **need a reason**; and the
+    **dispatch manifest is derived from what was actually packed** (quality fails and zero-pick
+    shorts excluded, substitutes flagged), with packing **blocked while any line is unresolved**
+    and cold-chain/tamper evidence recorded. **PII is minimised** — lines carry the order
+    reference only, never customer details (tested). 17 tests.
   - **Open architecture decision — the ERP's SSR framework (needs the owner's hosting call).**
     §19's baseline for this app is "TypeScript + modern SSR web framework". **Which** framework is
     **coupled to hosting (OB-02)**: SSR needs a server, and the framework's deployment shape (Node
