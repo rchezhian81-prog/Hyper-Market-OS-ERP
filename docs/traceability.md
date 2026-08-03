@@ -84,6 +84,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Loyalty points (earn/burn/reverse) | M17-FR-01 (money-like append-only; projected balance; offline cap; never negative) / §31 | `packages/loyalty/src/loyalty.ts` | `tests/unit/loyalty.test.ts` (8 tests) |
 | Purchase orders & open commitment | M06-FR-02/04 (issue with separate approver + value limit; open = ordered−received−cancelled) / §28 | `packages/purchasing/src/purchasing.ts` | `tests/unit/purchasing.test.ts` (8 tests) |
 | Bank fraud controls | M06-FR-01 (bank-change verification, maker≠approver) + M15-FR-03 (duplicate bank-account → block) / §28 | `packages/bank-controls/src/` | `tests/unit/bank-controls.test.ts` (8 tests) |
+| Order lifecycle & reservation | M18-FR-01/02 (auditable state machine; reserve stock; no oversell) / §6.2 | `packages/orders/src/` | `tests/unit/orders.test.ts` (10 tests) |
 | Tenant feature entitlements | ADR-0003 / M33·D12·M36 (multi-tenant; choose-able modules) | `packages/tenant/src/tenant.ts` | `tests/unit/tenant.test.ts` (6 tests) |
 | Per-tenant settings | ADR-0003 (choose-able settings, defaults, per-tenant, versioned) | `packages/tenant/src/settings.ts` | `tests/unit/tenant-settings.test.ts` (5 tests) |
 
@@ -159,8 +160,8 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M17-FR-02 | 2 | `docs/requirements/M17.md` | — | — | R4 | In design |
 | M17-FR-03 | 2 | `docs/requirements/M17.md` | — | — | R4 | In design |
 | M17-FR-04 | 2 | `docs/requirements/M17.md` | — | — | R4 | In design |
-| M18-FR-01 | 2 | `docs/requirements/M18.md` | — | — | R5 | In design |
-| M18-FR-02 | 2 | `docs/requirements/M18.md` | — | — | R5 | In design |
+| M18-FR-01 | 2 | `docs/requirements/M18.md` | `packages/orders/src/lifecycle.ts` | `tests/unit/orders.test.ts` | R5 | Foundation built (auditable order lifecycle state machine) |
+| M18-FR-02 | 2 | `docs/requirements/M18.md` | `packages/orders/src/reservation.ts` | `tests/unit/orders.test.ts` | R5 | Foundation built (stock reservation; available-to-promise; no oversell) |
 | M18-FR-03 | 2 | `docs/requirements/M18.md` | — | — | R5 | In design |
 | M18-FR-04 | 2 | `docs/requirements/M18.md` | — | — | R5 | In design |
 | M19-FR-01 | 2 | `docs/requirements/M19.md` | — | — | R5 | In design |

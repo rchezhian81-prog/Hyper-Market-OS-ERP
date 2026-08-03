@@ -36,6 +36,8 @@ export const KNOWN_EVENT_TYPES = [
   'GoodsReceived',
   'InventoryMoved',
   'InventoryAdjusted',
+  'StockReserved',
+  'ReservationReleased',
   'CashMovement',
   'PointsMovement',
   'TillClosed',
