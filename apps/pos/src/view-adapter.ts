@@ -7,7 +7,9 @@
 
 import { money, type CurrencyCode } from '../../../packages/contracts/src/money';
 import type { Uom } from '../../../packages/contracts/src/quantity';
+import { rate } from '../../../packages/contracts/src/rate';
 import type { Tender } from '../../../packages/tender/src/tender';
+import type { CatalogueCache } from '../../../packages/catalogue/src/catalogue';
 import type { PosSession, SyncBadge } from './session';
 
 /** A basket line as the view renders it — display primitives only. */
@@ -31,9 +33,27 @@ export interface ViewScan {
   readonly uom?: string;
 }
 
+/** What a barcode scan produced, for the view to show (or announce). */
+export interface ScanOutcome {
+  readonly lineId: string;
+  readonly description: string;
+  readonly qty: number;
+  readonly amountMinor: number;
+  /** The lane must prompt for age before completing this sale (M12-FR-04). */
+  readonly requiresAgeCheck: boolean;
+}
+
 /** The surface `web/app.js` binds to (attached as `window.posSession`). */
 export interface PosView {
   scan(input: ViewScan): void;
+  /**
+   * Scan a barcode: resolve it in the local catalogue and add the priced line.
+   * Throws a clear error the lane can show if the code is unknown, the item is not
+   * sellable, or it is under recall (offline included).
+   */
+  scanBarcode(code: string): ScanOutcome;
+  /** True when no catalogue is loaded on this lane (the view hides scanning). */
+  hasCatalogue(): boolean;
   setQuantity(lineId: string, qty: number): void;
   voidLine(lineId: string, reason: string): void;
   basket(): ViewLine[];
@@ -46,9 +66,14 @@ export interface PosView {
 
 /**
  * Wrap a `PosSession` in the display-primitive surface the view binds to. Every
- * call delegates to the tested model — this adapter only converts types.
+ * call delegates to the tested model — this adapter only converts types. Pass the
+ * lane's `CatalogueCache` to enable barcode scanning.
  */
-export function createPosView(session: PosSession, currency: CurrencyCode = 'INR'): PosView {
+export function createPosView(
+  session: PosSession,
+  currency: CurrencyCode = 'INR',
+  catalogue?: CatalogueCache,
+): PosView {
   return {
     scan(input: ViewScan): void {
       session.scan({
@@ -58,6 +83,37 @@ export function createPosView(session: PosSession, currency: CurrencyCode = 'INR
         quantityMinor: input.qty,
         uom: (input.uom ?? 'ea') as Uom,
       });
+    },
+
+    hasCatalogue(): boolean {
+      return catalogue !== undefined;
+    },
+
+    scanBarcode(code: string): ScanOutcome {
+      if (catalogue === undefined) {
+        throw new Error('No catalogue loaded on this lane.');
+      }
+      // The catalogue refuses an unknown code, a non-sellable status, or a recalled
+      // item (offline included) — the error surfaces to the cashier unchanged.
+      const hit = catalogue.scan(code);
+      // A price-embedded barcode carries the line price for one unit; otherwise the
+      // catalogue's unit price applies to the scanned quantity.
+      const unitPriceMinor = hit.priceOverrideMinor ?? hit.product.unitPriceMinor;
+      const entry = session.scan({
+        productId: hit.product.productId,
+        description: hit.product.name,
+        unitPrice: money(unitPriceMinor, currency),
+        quantityMinor: hit.quantityMinor,
+        uom: hit.product.baseUom as Uom,
+        taxRate: rate(hit.product.taxBps),
+      });
+      return {
+        lineId: entry.lineId,
+        description: entry.description,
+        qty: entry.quantityMinor,
+        amountMinor: unitPriceMinor,
+        requiresAgeCheck: hit.requiresAgeCheck,
+      };
     },
 
     setQuantity(lineId: string, qty: number): void {

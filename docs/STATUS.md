@@ -12,8 +12,8 @@ Last updated: 3 August 2026
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
 done for Store-Core (R2); Stage 5 has built 43 tested foundation units, five
 **persistence-layer** units incl. the PostgreSQL connector + migration runner, and the **first
-app shell (POS) with its build pipeline** — 412 tests. **D3/D4/D5/D8 were answered on 2 Aug
-2026** (see
+app shell (POS) with its build pipeline and barcode scanning** — 429 tests. **D3/D4/D5/D8 were
+answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
 spec-freeze / store-specific build are the Stage 1 store facts (the 20 AVR items) and the
@@ -65,7 +65,7 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **412 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **429 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **First app shell — POS (owner asked, 3 Aug 2026):** `apps/pos/` is the cashier till, built
     to the Stage 3 spec (`docs/design/screens/pos-cashier.md`). Two parts: **`src/session.ts`,
@@ -88,8 +88,22 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     scanned lines total **₹295.00** with 18% tax, a void stays on the bill and drops it to
     **₹236.00**, and cash tender commits stock to the lane ledger leaving **unsent = 1** queued
     for sync. The artifact is git-ignored and the shell still opens (on the stand-in) if it
-    hasn't been built. Remaining for the store: serving `web/` on the lane device, barcode→price
-    lookup from the local catalogue cache, and receipt printing.
+    hasn't been built.
+  - **Barcode scanning + local catalogue cache — DONE (owner asked, 3 Aug 2026):**
+    `packages/catalogue/` is the lane's offline catalogue (M03 / M12 / §31 / §32). Built once
+    from a **versioned snapshot** the lane holds locally, so every scan is an **O(1)** map
+    lookup — measured **360 µs for two scans** through the built bundle, far inside the
+    sub-second target. It handles **variable-weight and price-embedded barcodes** (M03-FR-02)
+    via **per-tenant rules** (prefix / item-code / value positions — choose-able, never
+    hard-coded), and it is **safe at the scan**: a **recalled item is refused even offline**
+    (M10-FR-04), a draft/discontinued item is refused, an unknown code is refused — and on any
+    refusal **nothing reaches the bill**. Age-restricted items are flagged so the lane prompts
+    (M12-FR-04), and the cache exposes its `version`/`builtAt` so **staleness is visible**
+    (P-08). Wired into the POS (`scanBarcode`) and into the shell's scanner-keystroke handling.
+    Verified end to end on the built bundle: scanning a plain barcode and a 1.234 kg weighed
+    barcode totals **₹216.72**, a recalled code is refused, and cash completes locally with
+    **unsent = 1**. 17 tests. Remaining for the store: serving `web/` on the lane device,
+    receipt printing, and feeding the snapshot from the product master.
   - **Persistence layer — BEGUN (owner asked, 3 Aug 2026):** the core durable stores, all
     **portable and testable without a live database** via a driver-agnostic **`SqlClient` port**
     (no concrete driver imported anywhere), each with an **in-memory reference that defines the

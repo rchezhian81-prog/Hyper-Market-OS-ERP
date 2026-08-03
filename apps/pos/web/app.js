@@ -143,12 +143,42 @@ el('lang').addEventListener('click', () => {
 window.addEventListener('online', render);
 window.addEventListener('offline', render);
 
-// Demo scan input so the layout can be exercised before the bundler lands.
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'F2') {
-    session.scan({ productId: 'p1', description: 'Demo item', unitPriceMinor: 4500, qty: 1 });
-    render();
+// --- barcode scanner input ---
+// A hand scanner behaves as a keyboard: it types the code fast and ends with Enter.
+// We buffer keystrokes and submit on Enter, so no focused input field is needed and
+// the cashier never has to click anywhere first (1 interaction: scan).
+let scanBuffer = '';
+
+function handleScan(code) {
+  if (!code) return;
+  if (!session.scanBarcode) {
+    // No catalogue bundle loaded — fall back to the stand-in demo item.
+    session.scan({ productId: 'demo', description: 'Demo item', unitPriceMinor: 4500, qty: 1 });
+    return render();
   }
+  try {
+    const outcome = session.scanBarcode(code);
+    if (outcome.requiresAgeCheck) {
+      // Age check is a deliberate extra step (legal) — see the spec's exceptions.
+      if (!window.confirm(outcome.description + ' — customer looks of age?')) {
+        session.voidLine(outcome.lineId, 'age check failed');
+      }
+    }
+    render();
+  } catch (err) {
+    // States what happened and the next safe action; the bill is untouched.
+    window.alert((err?.message ?? String(err)) + '\nNothing was added to the bill.');
+  }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    handleScan(scanBuffer.trim());
+    scanBuffer = '';
+    return;
+  }
+  if (e.key === 'F2') return handleScan(''); // demo item, for layout testing
+  if (e.key.length === 1) scanBuffer += e.key; // accumulate the scanned digits
 });
 
 if ('serviceWorker' in navigator) {

@@ -7,12 +7,15 @@
 
 import { InMemoryLedgerStore, Ledger } from '../../../packages/ledger/src/ledger';
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
+import { CatalogueCache, type CatalogueSnapshot } from '../../../packages/catalogue/src/catalogue';
 import { PosSession, taxRateFromPercent } from './session';
 import { createPosView, type PosView } from './view-adapter';
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
 interface PosWindow {
   posSession?: PosView;
+  /** The lane's cached catalogue snapshot, injected by the edge before boot (§31). */
+  posCatalogue?: CatalogueSnapshot;
 }
 
 /**
@@ -25,6 +28,8 @@ export function bootPos(config?: {
   cashierId?: string;
   tradingDay?: string;
   taxPercent?: number;
+  /** The lane's cached catalogue snapshot; without it, barcode scanning is off. */
+  catalogue?: CatalogueSnapshot;
 }): PosView {
   const session = new PosSession(
     {
@@ -37,7 +42,9 @@ export function bootPos(config?: {
     new Ledger(new InMemoryLedgerStore()),
     new SyncOutbox(),
   );
-  return createPosView(session);
+  // Indexing happens once at boot, so every subsequent scan is O(1) (§32).
+  const catalogue = config?.catalogue ? new CatalogueCache(config.catalogue) : undefined;
+  return createPosView(session, 'INR', catalogue);
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls
@@ -45,5 +52,5 @@ export function bootPos(config?: {
 // `globalThis.window` IS the window, so this needs no DOM types.
 const browserWindow = (globalThis as { window?: PosWindow }).window;
 if (browserWindow !== undefined) {
-  browserWindow.posSession = bootPos();
+  browserWindow.posSession = bootPos({ catalogue: browserWindow.posCatalogue });
 }
