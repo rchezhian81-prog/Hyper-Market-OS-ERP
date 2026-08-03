@@ -80,9 +80,10 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
   - **Foundation engines now cover the core invariants** (exact money/quantity, append-only
     ledger, maker-checker, RBAC, offline outbox, gap-free document numbering, trading-day
     rule) plus compositions (line/bill pricing, tender settlement, and the end-to-end offline sale commit) — 17 tested units, 138 tests.
-  - Next needs the outside world: the **database-backed** persistence layer needs the
-    IaC/DB from `infra/` (→ hosting-vendor pick, D3 commercial validation); the
-    **store-specific** modules need the Stage 1 facts + trading-day cut-off (A-11).
+  - **Owner-deferred (OB-02, 2 Aug 2026):** the database-backed persistence layer + hosting/
+    deployment, and gathering the Stage-1 store facts, are **planned later by the owner** —
+    not an active ask or a blocker on design/foundation work. They slot onto this tenant-ready
+    foundation when the owner is ready.
 
 Store-Core scope (roadmap §21 Stage 2): **M01–M15, M23, M29, M30, M32–M35 — all done.**
 Each module doc marks store-fact-dependent fields `⟳ AVR-##` (confirmed in Stage 1),
@@ -101,8 +102,10 @@ portals / workforce / facilities / concession / waste (M24–M28, R6), documents
 notifications (M31), and the multi-tenant platform (M36, R8). All from the roadmap §5 FR
 lines — nothing invented.
 
-Not yet expanded: the **cross-cutting requirement sets** (SEC-01…12, PRV-01…10, NFR-01…15,
-AI-NFR-01…12, MG-01…12) — expanded when their build stage is reached.
+**Cross-cutting sets mapped:** SEC/PRV/NFR/AI-NFR/MG are in `docs/requirements/cross-cutting.md`,
+each tied to the guardrail / foundation package / ADR that addresses it (verified per item at
+its build stage / quality gate). **Requirement expansion is now complete — all 36 modules
+plus all five cross-cutting sets.**
 
 ## Last completed
 - **Setup 1/3/4** — repository, `CLAUDE.md`, safety net (tests, guardrails, secret
@@ -135,9 +138,11 @@ AI-NFR-01…12, MG-01…12) — expanded when their build stage is reached.
   completion phased. Recorded in `docs/registers/decisions.md` and ADR-0001. The coding
   HOLD that depended on these is lifted. (D3 still wants a commercial check vs real vendor
   quotes; a signed GO record should be filed for the audit trail.)
-- **The 20 AVR facts (Stage 1) + the trading-day cut-off time** — store-specific inputs in
-  `docs/discovery/avr-closure.md`, each needing a named person; gathered in the store.
-  These still gate the M1 spec-freeze and store-specific build (finding A-11).
+- **Infrastructure / live database / hosting / environment setup + the Stage-1 store facts —
+  OWNER-DEFERRED (OB-02, 2 Aug 2026):** "live database, hosting and any type of setups we
+  will plan later." Recorded, **not an active ask and not surfaced each turn**. The Store
+  Setup Profile (`docs/discovery/store-facts-questionnaire.md`) and the tenant-ready
+  foundation are ready whenever the owner picks these up.
 - **D4 onboarding** — Mr Sivakumar needs a custody handover (OD-09) and a demonstrated
   quarterly rebuild/deploy path (AID-10); runbooks/training produced during Stage 5.
 - **Other named approvals still open** (`decisions.md` → Named approvals): product owner,

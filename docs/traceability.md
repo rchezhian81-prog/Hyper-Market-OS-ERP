@@ -217,4 +217,4 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M36-FR-02 | 2 | `docs/requirements/M36.md` | — | — | R8 | In design |
 | M36-FR-03 | 2 | `docs/requirements/M36.md` | — | — | R8 | In design |
 | M36-FR-04 | 2 | `docs/requirements/M36.md` | — | — | R8 | In design |
-| _(non-module requirement sets — SEC-01…12, PRV-01…10, NFR-01…15, AI-NFR-01…12, MG-01…12 — traced during their build stages)_ | | | | | | |
+| _Cross-cutting sets — SEC-01…12, PRV-01…10, NFR-01…15, AI-NFR-01…12, MG-01…12 — mapped in_ `docs/requirements/cross-cutting.md` _(each tied to the guardrail/package/ADR that addresses it); verified per item at its build stage / quality gate._ | | | | | | |

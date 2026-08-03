@@ -45,6 +45,7 @@ Status legend: **Accepted** · **Open — blocking** (holds coding / a gate) ·
 | ID | Decision | Consequence | Status |
 | --- | --- | --- | --- |
 | OB-01 | **Commercial, multi-tenant product** (owner, 2 Aug 2026): SRE Retail OS is built to be **sold to other retailers**, not only for SRE's own use. **"Make everything choose-able"** — no store-specific value is hard-coded; all are per-tenant configuration. **SRE Hyper Market is the first tenant / pilot.** | Elevates the roadmap's tenant/white-label readiness (M33/D12/M36) to first-class from the start. `tenant` becomes the top isolation boundary; onboarding is configuration, not code. Full SaaS billing/white-label stays M36 (R8) unless prioritised sooner. See **ADR-0003**. | Accepted |
+| OB-02 | **Infrastructure, live database, hosting and environment setup are deferred** (owner, 2 Aug 2026): "we will plan later". | Do **not** treat these as an active ask or a blocker on design/foundation work; keep building everything that does not require them. When the owner is ready, the DB-backed persistence layer + deployment proceed on the tenant-ready foundation (ADR-0002/0003). | Accepted |
 
 ## AI-assisted development governance — AID-01 to AID-10 (roadmap §18)
 
