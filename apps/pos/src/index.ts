@@ -3,3 +3,4 @@
 // construction: a sale never awaits the network (hard rule #1).
 
 export * from './session';
+export * from './view-adapter';

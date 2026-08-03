@@ -40,6 +40,11 @@ function demoSession() {
     payableMinor: () =>
       lines.filter((l) => !l.voided).reduce((sum, l) => sum + l.unitPriceMinor * l.qty, 0),
     syncBadge: () => ({ connection: navigator.onLine ? 'online' : 'offline', unsentCount: 0 }),
+    tenderCash: (_saleId, receiptNumber) => receiptNumber, // stand-in: no real commit
+    newSale: () => {
+      lines.length = 0;
+      seq = 0;
+    },
   };
 }
 
@@ -111,9 +116,23 @@ el('void').addEventListener('click', () => {
 });
 
 el('tender').addEventListener('click', () => {
-  if (session.payableMinor() <= 0) return window.alert('Scan an item first.');
-  // The tender screen commits locally and prints — it never waits on the network.
-  window.alert('Tender ' + inr(session.payableMinor()) + ' — cash completes offline.');
+  const payable = session.payableMinor();
+  if (payable <= 0) return window.alert('Scan an item first.');
+  // Cash completes LOCALLY and prints — it never waits on the network (hard rule
+  // #1). The model commits stock to the local ledger and queues the sale for sync.
+  if (!window.confirm('Take ' + inr(payable) + ' cash?')) return;
+  const saleId = crypto.randomUUID();
+  const receiptNumber = 'S-' + saleId.slice(0, 8).toUpperCase();
+  try {
+    const number = session.tenderCash(saleId, receiptNumber, new Date().toISOString());
+    window.alert('Paid ' + inr(payable) + '\nReceipt ' + number + '\nSale saved on this lane.');
+    session.newSale();
+    selectedLineId = null;
+    render();
+  } catch (err) {
+    // Errors state what happened, whether the sale was saved, and the next step.
+    window.alert('Payment not completed. Sale NOT saved.\n' + (err?.message ?? String(err)));
+  }
 });
 
 el('lang').addEventListener('click', () => {
