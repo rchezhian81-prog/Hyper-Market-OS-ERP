@@ -13,8 +13,8 @@ Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra
 done for Store-Core (R2); Stage 5 has built 43 tested foundation units, five
 **persistence-layer** units incl. the PostgreSQL connector + migration runner, and the **first
 app shells (POS + Owner + Web ERP + Picker + Delivery)** with the build pipeline, barcode
-scanning, the catalogue snapshot builder, receipt printing, template-driven import and the
-store-edge sync agent — 542 tests. **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
+scanning, the catalogue snapshot builder, receipt printing, template-driven import, domain
+export and the store-edge sync agent — 550 tests. **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
 spec-freeze / store-specific build are the Stage 1 store facts (the 20 AVR items) and the
@@ -66,7 +66,7 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **542 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **550 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **Template-driven import — DONE (3 Aug 2026). This is the roadmap's own top priority
     (audit A-03: the store's #1 daily pain — the 80+ line supplier invoice typed by hand).**
@@ -87,6 +87,20 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     **Acceptance proven:** a generated **80-line supplier invoice** (with commas inside product
     names) parses, validates and reconciles **in one go**; move the declared total by ₹1 and it
     is refused. 22 tests.
+  - **Domain export — DONE (3 Aug 2026). The other half of "your data is yours".**
+    `packages/export/` gets **any authorised domain out** in an **open format** — CSV plus a
+    **machine-readable schema**, so the file explains itself to a spreadsheet or to whatever
+    system comes next (NFR-12 / OD-09 / P-06: **no proprietary-only route to your own data**).
+    Three controls stop an export from becoming a leak:
+    - **permission** — the same default-deny RBAC check that guards the action guards its
+      export; a user without it gets **nothing** (P-04);
+    - **branch scope** — a branch manager exports **their** branch, never another's (§28);
+    - **classification** — personal/payment columns are **redacted, not dropped** (the column
+      stays, so the file's shape never lies), unless the user also holds `export.sensitive`;
+    and every export returns an **audit record** — who, what, when, how many rows, and exactly
+    which columns were redacted. **Proven, not asserted:** an export is fed **back through our
+    own importer** and comes out identical — headers, rows, and a customer name containing a
+    comma all intact. 8 tests.
   - **Receipt printing — DONE (owner asked, 3 Aug 2026):** `packages/receipt/` builds the
     receipt **from the committed sale** (never a draft, M31-FR-02) with its gap-free number, and
     **refuses to issue a wrong one**: a **PAN-like tender reference** (hard rule #3), **totals

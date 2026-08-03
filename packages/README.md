@@ -82,6 +82,8 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 | `cash` | Till cash movements | Float/loan/pickup/safe-drop as an append-only chain; one custodian per till; no overdraw (M14-FR-01) |
 | `till` | Cashier shift / till close | Blind count → over/short; material variance is a reason-coded valued exception; fully offline (M14-FR-02) |
 | `day-close` | Store/day close + reopen | Locks a day only once its trading-day cut-off has passed and it is fully reconciled; reopen needs a separate approver (M14-FR-04) |
+| `import` | Template-driven data in | RFC-4180 parse; per-row errors with line numbers; duplicates→review (never auto-merge); control totals must reconcile; separate approver; all-or-nothing commit (M30-FR-01/03/04, §28) |
+| `export` | Domain data out | Your data is yours — open CSV + machine-readable schema; permission default-deny, branch scope enforced, PII redacted (not dropped), every export audited (M30-FR-02, NFR-12, OD-09) |
 
 ## How they compose — the offline sale
 

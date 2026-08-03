@@ -108,6 +108,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | **Delivery app shell** (5th app) | M19-FR-03/04 / D09 / §31 / hard rule #3 — proof-gated delivery, COD to the paisa + end-of-shift settlement, failure→reattempt/RTO, geofence flag, contribution stop rules, PII minimised | `apps/delivery-app/src/route-session.ts` | `tests/unit/delivery-route.test.ts` (15 tests) |
 | Receipt printing | M31-FR-02 / M12-FR-02 / hard rules #1 & #3 — built from the committed sale, balancing totals enforced, PAN refused, reprint stamped + reasoned, ESC/POS, printer failure never costs the sale | `packages/receipt/src/` | `tests/unit/receipt.test.ts` (14 tests) |
 | **Template-driven import** (audit A-03) | M30-FR-01/03/04 / §28 — RFC-4180 parser, per-row errors with line numbers, duplicates to review (never auto-merge), referential integrity, control-total reconciliation, separate approver, atomic commit | `packages/import/src/` | `tests/unit/import.test.ts` (22 tests, incl. the 80-line invoice) |
+| Domain export (no lock-in) | M30-FR-02 / NFR-12 / OD-09 / P-06 / P-04 / §28 / PRV — open CSV + machine-readable schema; permission default-deny, branch scope enforced, sensitive columns redacted not dropped; audit record per export; round-trip through our own importer proven | `packages/export/src/` | `tests/unit/export.test.ts` (8 tests) |
 | Tenant feature entitlements | ADR-0003 / M33·D12·M36 (multi-tenant; choose-able modules) | `packages/tenant/src/tenant.ts` | `tests/unit/tenant.test.ts` (6 tests) |
 | Per-tenant settings | ADR-0003 (choose-able settings, defaults, per-tenant, versioned) | `packages/tenant/src/settings.ts` | `tests/unit/tenant-settings.test.ts` (5 tests) |
 
@@ -232,7 +233,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M29-FR-03 | 2 | `docs/requirements/M29.md` | — | — | R2 | In design |
 | M29-FR-04 | 2 | `docs/requirements/M29.md` | — | — | R2 | In design |
 | M30-FR-01 | 2 | `docs/requirements/M30.md` | `packages/import/src/` | `tests/unit/import.test.ts` | R2 | Foundation built (validate→preview→approve→commit; atomic; 80-line invoice proven) |
-| M30-FR-02 | 2 | `docs/requirements/M30.md` | — | — | R2 | In design |
+| M30-FR-02 | 2 | `docs/requirements/M30.md` | `packages/export/src/` | `tests/unit/export.test.ts` | R2 | Foundation built (open CSV + schema; permission, branch scope, PII redaction; audited; round-trip proven) |
 | M30-FR-03 | 2 | `docs/requirements/M30.md` | `packages/import/src/import-job.ts` | `tests/unit/import.test.ts` | R2 | Foundation built (duplicates→review, mandatory, referential integrity, control-total reconciliation) |
 | M30-FR-04 | 2 | `docs/requirements/M30.md` | `packages/import/src/import-job.ts` | `tests/unit/import.test.ts` | R2 | Partial — per-row errors with line numbers and all-or-nothing commit; job history/DQ score pending persistence |
 | M31-FR-01 | 2 | `docs/requirements/M31.md` | — | — | R2 | In design |
