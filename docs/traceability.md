@@ -90,6 +90,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Customer dedup & consent | M16-FR-01 (duplicate detection, no auto-merge; uncertain→review) + M16-FR-02 (consent-scoped send, breach blocked) / P-08 / PRV | `packages/customer/src/` | `tests/unit/customer.test.ts` (9 tests) |
 | Waste / write-off | M28-FR-01 (reason-coded compensating loss; material needs separate approver + evidence) / §28 / hard rule #2 | `packages/waste/src/waste.ts` | `tests/unit/waste.test.ts` (8 tests) |
 | B2B credit & commission | M22-FR-01 (credit-limit block pending approval; contract expiry) + M22-FR-03 (exact commission) / §28 | `packages/b2b/src/` | `tests/unit/b2b.test.ts` (10 tests) |
+| Notifications (guard + queue) | M31-FR-03 (consent-safe send, blocked on breach) + M31-FR-04 (retry/dead-letter, suppression, template approval) / hard rule #6 | `packages/notifications/src/` | `tests/unit/notifications.test.ts` (9 tests) |
 | Tenant feature entitlements | ADR-0003 / M33·D12·M36 (multi-tenant; choose-able modules) | `packages/tenant/src/tenant.ts` | `tests/unit/tenant.test.ts` (6 tests) |
 | Per-tenant settings | ADR-0003 (choose-able settings, defaults, per-tenant, versioned) | `packages/tenant/src/settings.ts` | `tests/unit/tenant-settings.test.ts` (5 tests) |
 
@@ -219,8 +220,8 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M30-FR-04 | 2 | `docs/requirements/M30.md` | — | — | R2 | In design |
 | M31-FR-01 | 2 | `docs/requirements/M31.md` | — | — | R2 | In design |
 | M31-FR-02 | 2 | `docs/requirements/M31.md` | — | — | R2 | In design |
-| M31-FR-03 | 2 | `docs/requirements/M31.md` | — | — | R4 | In design |
-| M31-FR-04 | 2 | `docs/requirements/M31.md` | — | — | R4 | In design |
+| M31-FR-03 | 2 | `docs/requirements/M31.md` | `packages/notifications/src/guard.ts` | `tests/unit/notifications.test.ts` | R4 | Foundation built (consent-safe send guard; blocked on breach) |
+| M31-FR-04 | 2 | `docs/requirements/M31.md` | `packages/notifications/src/queue.ts` | `tests/unit/notifications.test.ts` | R4 | Foundation built (retry + visible dead-letter; suppression; template approval) |
 | M32-FR-01 | 2 | `docs/requirements/M32.md` | — | — | R1 | In design |
 | M32-FR-02 | 2 | `docs/requirements/M32.md` | — | — | R1 | In design |
 | M32-FR-03 | 2 | `docs/requirements/M32.md` | — | — | R1 | In design |

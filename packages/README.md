@@ -19,7 +19,8 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
                  adjustment · counts · returns ·
                  cash · till · day-close · loyalty ·
                  reconciliation · purchasing · orders ·
-                 fulfilment · customer · waste · b2b
+                 fulfilment · customer · waste · b2b ·
+                 notifications
        ▲
   Engines        ledger · approvals · rbac ·     (one invariant each)
                  sync · numbering · calendar · config ·
@@ -59,6 +60,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 | `customer` | Dedup & consent | Duplicate detection (uncertain→review, never auto-merge); consent-scoped send blocked on breach (M16-FR-01/02, PRV) |
 | `waste` | Write-off | Reason-coded compensating loss; material needs a separate approver + evidence (M28-FR-01, §28) |
 | `b2b` | B2B credit & commission | Credit-limit block pending approval; contract-expiry policy; exact commission (M22-FR-01/03, §28) |
+| `notifications` | Consent-safe sends | Send blocked on any breach (template/suppression/consent/budget); retry + visible dead-letter (M31-FR-03/04, hard rule #6) |
 | `price-list` | Effective-dated prices | Resolve by precedence (customer>channel>zone>store); no early activation; append-only history (M05-FR-01, P-02) |
 | `pricing` | Line & bill pricing | Exact gross/discount/net/tax/total (M12/M05/M23) |
 | `promotions` | Best-price engine | Deterministic best price (BOGO/multibuy/coupon/member); no expired/unpublished; stacking/exclusion (M05-FR-03, P-02) |
