@@ -157,6 +157,10 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M21-FR-02 | 2 | `docs/requirements/M21.md` | — | — | R4 | In design |
 | M21-FR-03 | 2 | `docs/requirements/M21.md` | — | — | R4 | In design |
 | M21-FR-04 | 2 | `docs/requirements/M21.md` | — | — | R4 | In design |
+| M22-FR-01 | 2 | `docs/requirements/M22.md` | — | — | R6 | In design |
+| M22-FR-02 | 2 | `docs/requirements/M22.md` | — | — | R6 | In design |
+| M22-FR-03 | 2 | `docs/requirements/M22.md` | — | — | R6 | In design |
+| M22-FR-04 | 2 | `docs/requirements/M22.md` | — | — | R6 | In design |
 | M23-FR-01 | 2 | `docs/requirements/M23.md` | — | — | R2 | In design |
 | M23-FR-02 | 2 | `docs/requirements/M23.md` | — | — | R2 | In design |
 | M23-FR-03 | 2 | `docs/requirements/M23.md` | — | — | R2 | In design |
@@ -185,4 +189,8 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M35-FR-02 | 2 | `docs/requirements/M35.md` | — | — | R1 | In design |
 | M35-FR-03 | 2 | `docs/requirements/M35.md` | — | — | R1 | In design |
 | M35-FR-04 | 2 | `docs/requirements/M35.md` | — | — | R1 | In design |
+| M36-FR-01 | 2 | `docs/requirements/M36.md` | — | — | R8 | In design |
+| M36-FR-02 | 2 | `docs/requirements/M36.md` | — | — | R8 | In design |
+| M36-FR-03 | 2 | `docs/requirements/M36.md` | — | — | R8 | In design |
+| M36-FR-04 | 2 | `docs/requirements/M36.md` | — | — | R8 | In design |
 | _(non-module requirement sets — SEC-01…12, PRV-01…10, NFR-01…15, AI-NFR-01…12, MG-01…12 — traced during their build stages)_ | | | | | | |

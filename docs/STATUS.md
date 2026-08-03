@@ -94,8 +94,12 @@ plus M18 (Order management) and M19 (Picking/packing/delivery) for R5 — all ex
 to Appendix-B detail (`docs/requirements/`, 24 requirements traced), from the roadmap
 §5 FR lines — nothing invented.
 
-Not yet expanded (later releases): M22, M24–M28 (R6), M31, M36, and the cross-cutting
-sets SEC/PRV/NFR/AI-NFR/MG — expanded when their release/stage is reached.
+**Also expanded (commercial direction, OB-01/ADR-0003):** M36 (multi-tenant platform /
+white-label / developer ecosystem, R8) and M22 (B2B & institutional sales, R6) — to
+Appendix-B detail, from the roadmap §5 FR lines.
+
+Not yet expanded (later releases): M24–M28 (R6 operations), M31 (documents/notifications),
+and the cross-cutting sets SEC/PRV/NFR/AI-NFR/MG — expanded when their release/stage is reached.
 
 ## Last completed
 - **Setup 1/3/4** — repository, `CLAUDE.md`, safety net (tests, guardrails, secret
