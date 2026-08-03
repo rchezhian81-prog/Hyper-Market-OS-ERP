@@ -3,3 +3,5 @@
 // idempotent. Grows one reviewed, tested unit at a time.
 
 export * from './receiving';
+export * from './capture';
+export * from './three-way-match';

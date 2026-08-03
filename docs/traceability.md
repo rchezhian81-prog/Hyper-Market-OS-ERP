@@ -67,6 +67,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Versioned config + rollback | M01-FR-03 (append-only versions, non-destructive rollback) | `packages/config/src/config.ts` | `tests/unit/config.test.ts` (5 tests) |
 | Local sale commit (integration) | hard rule #1 (commit local, sync idempotently) / M12 | `packages/sale/src/sale.ts` | `tests/unit/sale.test.ts` (4 tests) |
 | Goods receiving (integration) | M07 (receiving/GRN) — inbound stock, offline, idempotent | `packages/receiving/src/receiving.ts` | `tests/unit/receiving.test.ts` (3 tests) |
+| Goods-in capture, discrepancy & three-way match | M07-FR-02/03/04 / D03-FR-05 / §28 / P-03 / P-08 — batch/expiry/temperature mandatory where the master requires; expired refused, damaged/QC-failed/breached quarantined (not sellable); short/excess/MRP valued and owned; PO↔GRN↔invoice match blocks payment out of tolerance with receiver ≠ approver; landed cost apportioned by value to the paisa | `packages/receiving/src/capture.ts`, `packages/receiving/src/three-way-match.ts` | `tests/unit/goods-in.test.ts` (23 tests) |
 | Stock adjustment (integration) | M08-FR-03 (reason-coded, approved compensating) / §28 | `packages/adjustment/src/adjustment.ts` | `tests/unit/adjustment.test.ts` (6 tests) |
 | Return & refund commit (integration) | M13-FR-01/02/03 (at-most-once, disposition, approval/cap; never invent reversal) / §28 | `packages/returns/src/returns.ts` | `tests/unit/returns.test.ts` (15 tests) |
 | Cashier shift / till close | M14-FR-02 (blind count, over/short, valued exception) — fully offline | `packages/till/src/till.ts` | `tests/unit/till.test.ts` (6 tests) |
@@ -142,9 +143,9 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M06-FR-03 | 2 | `docs/requirements/M06.md` | — | — | R2 | In design |
 | M06-FR-04 | 2 | `docs/requirements/M06.md` | `packages/purchasing/src/purchasing.ts` | `tests/unit/purchasing.test.ts` | R2 | Foundation built (open commitment = ordered−received−cancelled; over-receipt signalled) |
 | M07-FR-01 | 2 | `docs/requirements/M07.md` | `packages/receiving/src/` | `tests/unit/receiving.test.ts` | R2 | Partial — offline, idempotent goods receipt appending inbound movements per line; ASN and dock scheduling pending |
-| M07-FR-02 | 2 | `docs/requirements/M07.md` | — | — | R2 | In design |
-| M07-FR-03 | 2 | `docs/requirements/M07.md` | — | — | R2 | In design |
-| M07-FR-04 | 2 | `docs/requirements/M07.md` | — | — | R2 | In design |
+| M07-FR-02 | 2 | `docs/requirements/M07.md` | `packages/receiving/src/capture.ts` | `tests/unit/goods-in.test.ts` | R2 | Foundation built (count/batch/expiry/MRP/cost/condition/QC captured; batch+expiry mandatory for tracked items; near-expiry and MRP mismatch flagged; cold-chain evidence required) |
+| M07-FR-03 | 2 | `docs/requirements/M07.md` | `packages/receiving/src/capture.ts` | `tests/unit/goods-in.test.ts` | R2 | Foundation built (short/excess/rejected; quarantine excluded from availability; over-tolerance excess needs approval; every discrepancy valued and owned) |
+| M07-FR-04 | 2 | `docs/requirements/M07.md` | `packages/receiving/src/three-way-match.ts` | `tests/unit/goods-in.test.ts` | R2 | Foundation built (PO↔GRN↔invoice with valued variances; out-of-tolerance blocks payment, receiver ≠ approver; landed cost apportioned exactly) — OCR/e-invoice ingestion and AP posting pending D03/M23 wiring |
 | M08-FR-01 | 2 | `docs/requirements/M08.md` | `packages/ledger/src/` | `tests/unit/ledger.test.ts` | R2 | Foundation built (immutable movement ledger; balances projected from events, never overwritten; idempotent replay) |
 | M08-FR-02 | 2 | `docs/requirements/M08.md` | — | — | R2 | In design |
 | M08-FR-03 | 2 | `docs/requirements/M08.md` | `packages/adjustment/src/`, `packages/waste/src/` | `tests/unit/adjustment.test.ts`, `tests/unit/waste.test.ts` | R2 | Foundation built (reason-coded compensating moves; material ones need a separate approver) — negative-stock policy pending the M08 stock service |

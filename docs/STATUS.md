@@ -10,11 +10,12 @@ Last updated: 3 August 2026
 ## Current stage
 **Stage 5 — Foundation build (in progress). Stage 4 complete; owner-closure gate CLOSED.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
-done for Store-Core (R2); Stage 5 has built 43 tested foundation units, five
+done for Store-Core (R2); Stage 5 has built 46 tested foundation units, five
 **persistence-layer** units incl. the PostgreSQL connector + migration runner, and the **first
 app shells (POS + Owner + Web ERP + Picker + Delivery)** with the build pipeline, barcode
 scanning, the catalogue snapshot builder, receipt printing, template-driven import, domain
-export, tamper-evident audit evidence and the store-edge sync agent — 569 tests. **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
+export, tamper-evident audit evidence, goods-in with the three-way match and the store-edge
+sync agent — 592 tests. **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
 spec-freeze / store-specific build are the Stage 1 store facts (the 20 AVR items) and the
@@ -66,7 +67,7 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **569 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **592 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **Template-driven import — DONE (3 Aug 2026). This is the roadmap's own top priority
     (audit A-03: the store's #1 daily pain — the 80+ line supplier invoice typed by hand).**
@@ -126,6 +127,31 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     The built-in hash is dependency-free and honest about itself: it catches corruption and
     casual editing but is **not** a cryptographic seal — a deployment injects SHA-256 through
     the `Hasher` port without the engine changing. 19 tests.
+  - **Goods-in: capture, discrepancy and three-way match — DONE (3 Aug 2026).** The back
+    door of the shop is where most of the money is actually lost, not the till, so nothing
+    now becomes sellable stock until it has been checked (`packages/receiving/`):
+    - **it refuses what cannot be trusted**: a batch-tracked item with no batch or no expiry
+      (you cannot recall what you cannot identify), a cold-chain item with no recorded
+      temperature, and **already-expired stock is rejected at the door** — not written off
+      three weeks later;
+    - **damaged, QC-failed or warm-on-arrival stock goes to quarantine** — counted and
+      present, but **not available to sell**. That is the acceptance test the roadmap asks
+      for, and it is asserted directly;
+    - **short, excess and MRP differences become valued, owned exceptions** — "10 units short,
+      ₹500.00, credit note due" rather than a mystery in the stock count. A small
+      over-delivery passes; **beyond tolerance it needs a second person** (§28). Every
+      tolerance is per-tenant configuration, never a hard-coded number;
+    - **the three-way match** (purchase order ↔ goods receipt ↔ supplier invoice) keeps the
+      roadmap's blunt rule blunt: **no payment on an unmatched or out-of-tolerance invoice
+      without approval, and the person who received the goods can never approve the variance
+      on them**. Charged above the agreed cost, invoiced for more than arrived, invoiced for
+      something never ordered, invoiced for goods that never came — **payment blocked**, with
+      the variance valued and the worst one named. Goods received but not yet invoiced are
+      reported without blocking, so the period does not close understating cost;
+    - **landed cost** spreads freight and duty across the lines **by value, to the paisa**,
+      remainder distributed, not dropped. Valuation that ignores freight understates cost and
+      overstates margin — the shop then believes it is making money it is not.
+    23 tests.
   - **Receipt printing — DONE (owner asked, 3 Aug 2026):** `packages/receipt/` builds the
     receipt **from the committed sale** (never a draft, M31-FR-02) with its gap-free number, and
     **refuses to issue a wrong one**: a **PAN-like tender reference** (hard rule #3), **totals

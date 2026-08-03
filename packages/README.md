@@ -75,7 +75,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 | `promotions` | Best-price engine | Deterministic best price (BOGO/multibuy/coupon/member); no expired/unpublished; stacking/exclusion (M05-FR-03, P-02) |
 | `tender` | Tender settlement | Split tenders balance; never a fake approval (M12-FR-03) |
 | `sale` | Local sale commit | Commit locally first, sync idempotently (hard rule #1, M12) |
-| `receiving` | Goods-receipt commit | Inbound stock to the ledger, queued for sync, idempotent (M07) |
+| `receiving` | Goods-in: receipt, capture, three-way match | Inbound stock to the ledger, offline and idempotent; batch/expiry/temperature mandatory where the master says so; damaged/QC-failed/breached stock quarantined (not sellable); short/excess valued and owned; **no payment on an unmatched or out-of-tolerance invoice**, receiver ≠ approver; landed cost apportioned to the paisa (M07-FR-01/02/03/04, §28) |
 | `adjustment` | Stock adjustment | Reason-coded compensating move; material ones need a separate approver (M08-FR-03, §28) |
 | `counts` | Cycle/blind count | Blind count vs projected ledger; a variance becomes a valued, approved compensating adjustment (M09-FR-04, §28) |
 | `returns` | Return & refund commit | Line returned at most once; disposition decides availability; material/no-receipt refund needs a separate approver; card/UPI reversal stays pending (M13, §28) |
