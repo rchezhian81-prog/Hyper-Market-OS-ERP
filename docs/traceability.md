@@ -118,15 +118,15 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Requirement ID | Stage | Design | Code | Tests | Release | Status |
 | --- | --- | --- | --- | --- | --- | --- |
 | M01-FR-01 | 2 | `docs/requirements/M01.md` | — | — | R1 | In design |
-| M01-FR-02 | 2 | `docs/requirements/M01.md` | — | — | R1 | In design |
-| M01-FR-03 | 2 | `docs/requirements/M01.md` | — | — | R1 | In design |
+| M01-FR-02 | 2 | `docs/requirements/M01.md` | `packages/calendar/src/`, `packages/numbering/src/` | `tests/unit/trading-day.test.ts`, `tests/unit/numbering.test.ts` | R1 | Foundation built (trading-day calendar; gap-free per-type number series with offline reserved ranges; exact currency in `contracts`) — document templates via `packages/receipt` |
+| M01-FR-03 | 2 | `docs/requirements/M01.md` | `packages/config/src/`, `packages/tenant/src/`, `packages/persistence/src/config-store.ts` | `tests/unit/config.test.ts`, `tests/unit/tenant.test.ts`, `tests/unit/persistence-config-store.test.ts` | R1 | Foundation built (append-only config versions, non-destructive rollback, per-tenant feature flags default-off) |
 | M01-FR-04 | 2 | `docs/requirements/M01.md` | — | — | R1 | In design |
 | M02-FR-01 | 2 | `docs/requirements/M02.md` | — | — | R1 | In design |
-| M02-FR-02 | 2 | `docs/requirements/M02.md` | — | — | R1 | In design |
-| M02-FR-03 | 2 | `docs/requirements/M02.md` | — | — | R1 | In design |
+| M02-FR-02 | 2 | `docs/requirements/M02.md` | `packages/rbac/src/` | `tests/unit/rbac.test.ts`, `tests/unit/web-erp-shell.test.ts` | R1 | Foundation built (default-deny role/branch/permission authz; value limits via `packages/approvals`; permission-derived navigation) |
+| M02-FR-03 | 2 | `docs/requirements/M02.md` | `packages/approvals/src/`, `apps/web-erp/src/approvals-workbench.ts` | `tests/unit/approvals.test.ts`, `tests/unit/web-erp-shell.test.ts` | R1 | Partial — maker≠checker, value-limit routing and escalation on exceeded authority built; **delegation** pending |
 | M02-FR-04 | 2 | `docs/requirements/M02.md` | — | — | R1 | In design |
 | M03-FR-01 | 2 | `docs/requirements/M03.md` | — | — | R2 | In design |
-| M03-FR-02 | 2 | `docs/requirements/M03.md` | — | — | R2 | In design |
+| M03-FR-02 | 2 | `docs/requirements/M03.md` | `packages/catalogue/src/catalogue.ts` | `tests/unit/catalogue.test.ts`, `tests/unit/pos-barcode-scan.test.ts` | R2 | Partial — barcodes incl. embedded weight/price (per-tenant rules) and UOM resolved at the scan; case-pack conversions pending the M03 product master |
 | M03-FR-03 | 2 | `docs/requirements/M03.md` | — | — | R2 | In design |
 | M03-FR-04 | 2 | `docs/requirements/M03.md` | — | — | R2 | In design |
 | M04-FR-01 | 2 | `docs/requirements/M04.md` | — | — | R2 | In design |
@@ -141,13 +141,13 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M06-FR-02 | 2 | `docs/requirements/M06.md` | `packages/purchasing/src/purchasing.ts` | `tests/unit/purchasing.test.ts` | R2 | Foundation built (issue with separate approver; value limit via approvals; SoD) |
 | M06-FR-03 | 2 | `docs/requirements/M06.md` | — | — | R2 | In design |
 | M06-FR-04 | 2 | `docs/requirements/M06.md` | `packages/purchasing/src/purchasing.ts` | `tests/unit/purchasing.test.ts` | R2 | Foundation built (open commitment = ordered−received−cancelled; over-receipt signalled) |
-| M07-FR-01 | 2 | `docs/requirements/M07.md` | — | — | R2 | In design |
+| M07-FR-01 | 2 | `docs/requirements/M07.md` | `packages/receiving/src/` | `tests/unit/receiving.test.ts` | R2 | Partial — offline, idempotent goods receipt appending inbound movements per line; ASN and dock scheduling pending |
 | M07-FR-02 | 2 | `docs/requirements/M07.md` | — | — | R2 | In design |
 | M07-FR-03 | 2 | `docs/requirements/M07.md` | — | — | R2 | In design |
 | M07-FR-04 | 2 | `docs/requirements/M07.md` | — | — | R2 | In design |
-| M08-FR-01 | 2 | `docs/requirements/M08.md` | — | — | R2 | In design |
+| M08-FR-01 | 2 | `docs/requirements/M08.md` | `packages/ledger/src/` | `tests/unit/ledger.test.ts` | R2 | Foundation built (immutable movement ledger; balances projected from events, never overwritten; idempotent replay) |
 | M08-FR-02 | 2 | `docs/requirements/M08.md` | — | — | R2 | In design |
-| M08-FR-03 | 2 | `docs/requirements/M08.md` | — | — | R2 | In design |
+| M08-FR-03 | 2 | `docs/requirements/M08.md` | `packages/adjustment/src/`, `packages/waste/src/` | `tests/unit/adjustment.test.ts`, `tests/unit/waste.test.ts` | R2 | Foundation built (reason-coded compensating moves; material ones need a separate approver) — negative-stock policy pending the M08 stock service |
 | M08-FR-04 | 2 | `docs/requirements/M08.md` | — | — | R2 | In design |
 | M09-FR-01 | 2 | `docs/requirements/M09.md` | — | — | R2 | In design |
 | M09-FR-02 | 2 | `docs/requirements/M09.md` | `packages/replenishment/src/replenishment.ts` | `tests/unit/replenishment.test.ts` | R2 | Foundation built (reorder point/safety/max; demand×lead; advisory only) |
@@ -161,9 +161,9 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M11-FR-02 | 2 | `docs/requirements/M11.md` | — | — | R2 | In design |
 | M11-FR-03 | 2 | `docs/requirements/M11.md` | — | — | R2 | In design |
 | M11-FR-04 | 2 | `docs/requirements/M11.md` | — | — | R2 | In design |
-| M12-FR-01 | 2 | `docs/requirements/M12.md` | — | — | R2 | In design |
-| M12-FR-02 | 2 | `docs/requirements/M12.md` | — | — | R2 | In design |
-| M12-FR-03 | 2 | `docs/requirements/M12.md` | — | — | R2 | In design |
+| M12-FR-01 | 2 | `docs/requirements/M12.md` | `apps/pos/src/session.ts`, `packages/catalogue/src/` | `tests/unit/pos-session.test.ts`, `tests/unit/pos-barcode-scan.test.ts` | R2 | Foundation built (O(1) offline scan, quantity and weighed lines, price enquiry) — customer display pending the certified hardware matrix (§33) |
+| M12-FR-02 | 2 | `docs/requirements/M12.md` | `apps/pos/src/session.ts`, `packages/receipt/src/` | `tests/unit/pos-session.test.ts`, `tests/unit/receipt.test.ts` | R2 | Partial — suspend/recall and receipts (build, render, ESC/POS, audited reprint) built; quotations and delivery sales pending M18/M19 wiring |
+| M12-FR-03 | 2 | `docs/requirements/M12.md` | `packages/tender/src/` | `tests/unit/tender.test.ts` | R2 | Foundation built (cash/card/UPI/store-credit split tenders must balance; a pending card tender never counts as paid) |
 | M12-FR-04 | 2 | `docs/requirements/M12.md` | — | — | R2 | In design |
 | M13-FR-01 | 2 | `docs/requirements/M13.md` | `packages/returns/src/returns.ts` | `tests/unit/returns.test.ts` | R2 | Foundation built (at-most-once, offline receipted return) |
 | M13-FR-02 | 2 | `docs/requirements/M13.md` | `packages/returns/src/returns.ts` | `tests/unit/returns.test.ts` | R2 | Foundation built (disposition → availability) |
