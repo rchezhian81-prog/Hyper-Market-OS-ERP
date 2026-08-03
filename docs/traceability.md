@@ -80,6 +80,8 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Margin-floor / MRP price controls | M05-FR-02 (reject above MRP; below floor/cost blocked pending approval + reason) / §28 | `packages/price-guard/src/price-guard.ts` | `tests/unit/price-guard.test.ts` (10 tests) |
 | Effective-dated price resolution | M05-FR-01 / P-02 (precedence customer>channel>zone>store; no early activation; append-only history; version lock) | `packages/price-list/src/price-list.ts` | `tests/unit/price-list.test.ts` (10 tests) |
 | Finance posting (ledger→journals) | M23-FR-01/02 (mapping-driven balanced double-entry; GST component; unmapped→exception) / P-08 / §28 | `packages/finance/src/posting.ts` | `tests/unit/finance-posting.test.ts` (7 tests) |
+| Payment reconciliation | M23-FR-03 (match tenders↔settlements by token/amount; valued exceptions; no card PAN) / hard rule #3 | `packages/reconciliation/src/reconciliation.ts` | `tests/unit/reconciliation.test.ts` (7 tests) |
+| Loyalty points (earn/burn/reverse) | M17-FR-01 (money-like append-only; projected balance; offline cap; never negative) / §31 | `packages/loyalty/src/loyalty.ts` | `tests/unit/loyalty.test.ts` (8 tests) |
 | Tenant feature entitlements | ADR-0003 / M33·D12·M36 (multi-tenant; choose-able modules) | `packages/tenant/src/tenant.ts` | `tests/unit/tenant.test.ts` (6 tests) |
 | Per-tenant settings | ADR-0003 (choose-able settings, defaults, per-tenant, versioned) | `packages/tenant/src/settings.ts` | `tests/unit/tenant-settings.test.ts` (5 tests) |
 
@@ -151,7 +153,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M16-FR-02 | 2 | `docs/requirements/M16.md` | — | — | R4 | In design |
 | M16-FR-03 | 2 | `docs/requirements/M16.md` | — | — | R4 | In design |
 | M16-FR-04 | 2 | `docs/requirements/M16.md` | — | — | R4 | In design |
-| M17-FR-01 | 2 | `docs/requirements/M17.md` | — | — | R4 | In design |
+| M17-FR-01 | 2 | `docs/requirements/M17.md` | `packages/loyalty/src/loyalty.ts` | `tests/unit/loyalty.test.ts` | R4 | Foundation built (money-like append-only points; projected balance; offline cap; never negative) |
 | M17-FR-02 | 2 | `docs/requirements/M17.md` | — | — | R4 | In design |
 | M17-FR-03 | 2 | `docs/requirements/M17.md` | — | — | R4 | In design |
 | M17-FR-04 | 2 | `docs/requirements/M17.md` | — | — | R4 | In design |
@@ -177,7 +179,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M22-FR-04 | 2 | `docs/requirements/M22.md` | — | — | R6 | In design |
 | M23-FR-01 | 2 | `docs/requirements/M23.md` | `packages/finance/src/posting.ts` | `tests/unit/finance-posting.test.ts` | R2 | Foundation built (mapping-driven balanced double-entry; unmapped→exception) |
 | M23-FR-02 | 2 | `docs/requirements/M23.md` | `packages/finance/src/posting.ts` | `tests/unit/finance-posting.test.ts` | R2 | Partial — GST posts as a mapped component; credit/debit notes & returns reports pending |
-| M23-FR-03 | 2 | `docs/requirements/M23.md` | — | — | R2 | In design |
+| M23-FR-03 | 2 | `docs/requirements/M23.md` | `packages/reconciliation/src/reconciliation.ts` | `tests/unit/reconciliation.test.ts` | R2 | Foundation built (tender↔settlement match; valued exceptions; no card PAN) |
 | M23-FR-04 | 2 | `docs/requirements/M23.md` | — | — | R2 | In design |
 | M24-FR-01 | 2 | `docs/requirements/M24.md` | — | — | R6 | In design |
 | M24-FR-02 | 2 | `docs/requirements/M24.md` | — | — | R6 | In design |
