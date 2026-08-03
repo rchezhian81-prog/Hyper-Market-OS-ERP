@@ -15,7 +15,8 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 
 ```
   Compositions   pricing · tender · sale ·        (real domain operations)
-                 receiving · adjustment
+                 receiving · adjustment · returns ·
+                 till · day-close
        ▲
   Engines        ledger · approvals · rbac ·     (one invariant each)
                  sync · numbering · calendar · config · tenant
@@ -42,6 +43,9 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 | `sale` | Local sale commit | Commit locally first, sync idempotently (hard rule #1, M12) |
 | `receiving` | Goods-receipt commit | Inbound stock to the ledger, queued for sync, idempotent (M07) |
 | `adjustment` | Stock adjustment | Reason-coded compensating move; material ones need a separate approver (M08-FR-03, §28) |
+| `returns` | Return & refund commit | Line returned at most once; disposition decides availability; material/no-receipt refund needs a separate approver; card/UPI reversal stays pending (M13, §28) |
+| `till` | Cashier shift / till close | Blind count → over/short; material variance is a reason-coded valued exception; fully offline (M14-FR-02) |
+| `day-close` | Store/day close + reopen | Locks a day only once its trading-day cut-off has passed and it is fully reconciled; reopen needs a separate approver (M14-FR-04) |
 
 ## How they compose — the offline sale
 

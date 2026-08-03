@@ -68,6 +68,9 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Local sale commit (integration) | hard rule #1 (commit local, sync idempotently) / M12 | `packages/sale/src/sale.ts` | `tests/unit/sale.test.ts` (4 tests) |
 | Goods receiving (integration) | M07 (receiving/GRN) — inbound stock, offline, idempotent | `packages/receiving/src/receiving.ts` | `tests/unit/receiving.test.ts` (3 tests) |
 | Stock adjustment (integration) | M08-FR-03 (reason-coded, approved compensating) / §28 | `packages/adjustment/src/adjustment.ts` | `tests/unit/adjustment.test.ts` (6 tests) |
+| Return & refund commit (integration) | M13-FR-01/02/03 (at-most-once, disposition, approval/cap; never invent reversal) / §28 | `packages/returns/src/returns.ts` | `tests/unit/returns.test.ts` (15 tests) |
+| Cashier shift / till close | M14-FR-02 (blind count, over/short, valued exception) — fully offline | `packages/till/src/till.ts` | `tests/unit/till.test.ts` (6 tests) |
+| Store/day close + controlled reopen | M14-FR-04 (trading-day-aligned lock; block on open exceptions/unsent; approved reopen) | `packages/day-close/src/day-close.ts` | `tests/unit/day-close.test.ts` (8 tests) |
 | Tenant feature entitlements | ADR-0003 / M33·D12·M36 (multi-tenant; choose-able modules) | `packages/tenant/src/tenant.ts` | `tests/unit/tenant.test.ts` (6 tests) |
 | Per-tenant settings | ADR-0003 (choose-able settings, defaults, per-tenant, versioned) | `packages/tenant/src/settings.ts` | `tests/unit/tenant-settings.test.ts` (5 tests) |
 
@@ -123,14 +126,14 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M12-FR-02 | 2 | `docs/requirements/M12.md` | — | — | R2 | In design |
 | M12-FR-03 | 2 | `docs/requirements/M12.md` | — | — | R2 | In design |
 | M12-FR-04 | 2 | `docs/requirements/M12.md` | — | — | R2 | In design |
-| M13-FR-01 | 2 | `docs/requirements/M13.md` | — | — | R2 | In design |
-| M13-FR-02 | 2 | `docs/requirements/M13.md` | — | — | R2 | In design |
-| M13-FR-03 | 2 | `docs/requirements/M13.md` | — | — | R2 | In design |
-| M13-FR-04 | 2 | `docs/requirements/M13.md` | — | — | R2 | In design |
+| M13-FR-01 | 2 | `docs/requirements/M13.md` | `packages/returns/src/returns.ts` | `tests/unit/returns.test.ts` | R2 | Foundation built (at-most-once, offline receipted return) |
+| M13-FR-02 | 2 | `docs/requirements/M13.md` | `packages/returns/src/returns.ts` | `tests/unit/returns.test.ts` | R2 | Foundation built (disposition → availability) |
+| M13-FR-03 | 2 | `docs/requirements/M13.md` | `packages/returns/src/returns.ts` | `tests/unit/returns.test.ts` | R2 | Foundation built (refund cap + separate-approver threshold) |
+| M13-FR-04 | 2 | `docs/requirements/M13.md` | `packages/returns/src/returns.ts` | `tests/unit/returns.test.ts` | R2 | Partial — domain honoured (card/UPI refund stays pending, never invented); provider reversal deferred |
 | M14-FR-01 | 2 | `docs/requirements/M14.md` | — | — | R2 | In design |
-| M14-FR-02 | 2 | `docs/requirements/M14.md` | — | — | R2 | In design |
+| M14-FR-02 | 2 | `docs/requirements/M14.md` | `packages/till/src/till.ts` | `tests/unit/till.test.ts` | R2 | Foundation built (blind count, over/short, valued exception) |
 | M14-FR-03 | 2 | `docs/requirements/M14.md` | — | — | R2 | In design |
-| M14-FR-04 | 2 | `docs/requirements/M14.md` | — | — | R2 | In design |
+| M14-FR-04 | 2 | `docs/requirements/M14.md` | `packages/day-close/src/day-close.ts` | `tests/unit/day-close.test.ts` | R2 | Foundation built (trading-day lock; block on open exceptions/unsent; approved reopen) |
 | M15-FR-01 | 2 | `docs/requirements/M15.md` | — | — | R2 | In design |
 | M15-FR-02 | 2 | `docs/requirements/M15.md` | — | — | R2 | In design |
 | M15-FR-03 | 2 | `docs/requirements/M15.md` | — | — | R2 | In design |
