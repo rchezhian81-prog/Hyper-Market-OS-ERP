@@ -15,7 +15,8 @@
     "lint": "eslint .",
     "secret-scan": "node scripts/secret-scan.mjs",
     "db:migrate": "node scripts/migrate.mjs",
-    "build:pos": "node scripts/build-pos.mjs",
+    "build:pos": "node scripts/build-app.mjs pos",
+    "build:owner": "node scripts/build-app.mjs owner-app",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run secret-scan && pnpm run test",
     "prepare": "git config core.hooksPath .githooks || true"
   },

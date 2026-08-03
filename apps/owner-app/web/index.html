@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Owner — Today</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      Owner command centre (docs/design/screens/owner-command-centre.md). Phone-first
+      and glanceable: the daily brief in plain sentences with the numbers beside the
+      words, the THREE things needing attention dominant, and a persistent freshness
+      indicator. Framework-free and static, so it opens on a low-spec Android phone
+      and still shows the last-synced numbers with no signal.
+    -->
+    <style>
+      :root {
+        --bg: #0f172a; --panel: #1e293b; --ink: #f8fafc; --muted: #94a3b8;
+        --good: #22c55e; --warn: #f59e0b; --danger: #ef4444; --tap: 48px;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--ink);
+        font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        padding-bottom: 32px;
+      }
+      header { padding: 16px; background: var(--panel); position: sticky; top: 0; }
+      .title { font-size: 14px; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+      /* Freshness is persistent and prominent — never implied (P-08). */
+      .freshness { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 14px; }
+      .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--good); }
+      .dot.stale { background: var(--warn); }
+      .dot.missing { background: var(--danger); }
+      main { padding: 0 16px; }
+      section { margin-top: 24px; }
+      h2 { font-size: 13px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; margin: 0 0 8px; }
+      /* The brief reads as sentences; numbers sit beside the words. */
+      .headline { font-size: 20px; line-height: 1.45; margin: 16px 0 0; }
+      .attention { display: grid; gap: 10px; }
+      .card {
+        background: var(--panel); border-radius: 14px; padding: 14px 16px;
+        border-left: 4px solid var(--warn); min-height: var(--tap);
+      }
+      .card.urgent { border-left-color: var(--danger); }
+      .card.approval { border-left-color: #38bdf8; }
+      .rank { font-size: 12px; color: var(--muted); }
+      .kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .kpi { background: var(--panel); border-radius: 14px; padding: 12px 14px; }
+      .kpi .label { font-size: 12px; color: var(--muted); }
+      .kpi .value { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .alert { padding: 12px 0; border-top: 1px solid #334155; font-size: 15px; }
+      .alert .drill { color: #7dd3fc; font-size: 13px; }
+      .empty { color: var(--muted); font-size: 15px; }
+      .lang { background: transparent; border: 0; color: var(--muted); font-size: 14px; min-height: 36px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="title">Today · SRE Hyper Market</div>
+      <div class="freshness">
+        <span class="dot" id="fresh-dot"></span>
+        <span id="fresh-text">Checking data…</span>
+        <button class="lang" id="lang" type="button">EN / த</button>
+      </div>
+    </header>
+
+    <main>
+      <p class="headline" id="headline">Loading the brief…</p>
+
+      <section>
+        <h2>Needs your attention</h2>
+        <div class="attention" id="attention"></div>
+      </section>
+
+      <section>
+        <h2>Today's numbers</h2>
+        <div class="kpis" id="kpis"></div>
+      </section>
+
+      <section>
+        <h2>Alerts</h2>
+        <div id="alerts"></div>
+      </section>
+    </main>
+
+    <script type="module" src="./owner-app.bundle.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
