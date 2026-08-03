@@ -10,8 +10,8 @@ Last updated: 3 August 2026
 ## Current stage
 **Stage 5 — Foundation build (in progress). Stage 4 complete; owner-closure gate CLOSED.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
-done for Store-Core (R2); Stage 5 has built 43 tested foundation units plus the first
-**persistence-layer** unit (367 tests). **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
+done for Store-Core (R2); Stage 5 has built 43 tested foundation units plus the first two
+**persistence-layer** units (375 tests). **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
 spec-freeze / store-specific build are the Stage 1 store facts (the 20 AVR items) and the
@@ -63,17 +63,24 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **367 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **375 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
-  - **Persistence layer — BEGUN (owner asked, 3 Aug 2026):** the durable **event store**
-    (`packages/persistence/` + `db/migrations/0001_event_ledger.sql`) — the async, **tenant-
-    scoped, append-only** log behind hard rule #2 / §30.2 / §31.1. It is **portable and testable
-    without a live database**: a driver-agnostic **`SqlClient` port**, an **`InMemoryEventStore`
-    reference** that defines the behavioural contract, and a **`SqlEventStore`** adapter over the
-    `event_ledger` table (INSERT … ON CONFLICT DO NOTHING — never a mutating upsert; idempotent
-    per tenant; same key under two tenants = two events). The real `pg` wiring is a thin
-    deployment step against the same contract — 8 tests. This is the first step of connecting the
-    43 engines to a database; the DB **host** decision stays with the owner (OB-02).
+  - **Persistence layer — BEGUN (owner asked, 3 Aug 2026):** the two core durable stores, both
+    **portable and testable without a live database** via a driver-agnostic **`SqlClient` port**
+    (no concrete driver imported anywhere), each with an **in-memory reference that defines the
+    behavioural contract** and a **SQL adapter** over real DDL:
+    - the **event store** (`packages/persistence/` + `db/migrations/0001_event_ledger.sql`) — the
+      async, **tenant-scoped, append-only** log behind hard rule #2 / §30.2 / §31.1: INSERT …
+      ON CONFLICT DO NOTHING (never a mutating upsert), idempotent per tenant, same key under two
+      tenants = two events (ADR-0003 isolation) — 8 tests;
+    - the **sync outbox** (`+ db/migrations/0002_sync_outbox.sql`) — the durable offline→cloud
+      queue (P-01 / §31): idempotent enqueue, acknowledge, retry, and a **visible dead-letter**
+      that is never dropped (hard rule #6); state advances bind the target state as a **parameter**
+      (never a SQL literal) — 8 tests.
+    The domain hot path stays synchronous (a sale never awaits I/O, hard rule #1); these async
+    stores are the durable log events are written through and the sync agent drains into. The real
+    `pg` wiring is a thin `SqlClient` adapter that must pass the same contract tests — a deployment
+    step. The DB **host** decision stays with the owner (OB-02).
   - **Base-platform layer begun:** the **append-only ledger engine** (`packages/ledger/`,
     hard rule #2 / M08-FR-01 / §31.1) — idempotent append, balances projected from events
     (never stored), corrections as compensating entries, storage-agnostic with an in-memory

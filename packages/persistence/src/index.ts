@@ -4,3 +4,4 @@
 
 export * from './sql-client';
 export * from './event-store';
+export * from './outbox-store';
