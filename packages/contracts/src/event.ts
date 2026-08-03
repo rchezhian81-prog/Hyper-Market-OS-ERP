@@ -27,11 +27,14 @@ export interface DomainEvent<TType extends string = string, TPayload = unknown> 
 /** §30.2 domain events confirmed in the Store-Core specs (grows per module). */
 export const KNOWN_EVENT_TYPES = [
   'SaleCommitted',
+  'SaleReturned',
   'TenderAuthorized',
   'TenderUncertain',
   'TenderSettled',
+  'GoodsReceived',
   'InventoryMoved',
   'InventoryAdjusted',
+  'TillClosed',
   'ReconciliationExceptionRaised',
   'ReconciliationExceptionResolved',
   'PeriodClosed',

@@ -14,7 +14,8 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 ## Layers
 
 ```
-  Compositions   pricing · tender · sale        (real domain operations)
+  Compositions   pricing · tender · sale ·        (real domain operations)
+                 receiving · adjustment
        ▲
   Engines        ledger · approvals · rbac ·     (one invariant each)
                  sync · numbering · calendar · config · tenant
@@ -39,6 +40,8 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 | `pricing` | Line & bill pricing | Exact gross/discount/net/tax/total (M12/M05/M23) |
 | `tender` | Tender settlement | Split tenders balance; never a fake approval (M12-FR-03) |
 | `sale` | Local sale commit | Commit locally first, sync idempotently (hard rule #1, M12) |
+| `receiving` | Goods-receipt commit | Inbound stock to the ledger, queued for sync, idempotent (M07) |
+| `adjustment` | Stock adjustment | Reason-coded compensating move; material ones need a separate approver (M08-FR-03, §28) |
 
 ## How they compose — the offline sale
 

@@ -10,7 +10,7 @@ Last updated: 2 August 2026
 ## Current stage
 **Stage 5 — Foundation build (in progress). Stage 4 complete; owner-closure gate CLOSED.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
-done for Store-Core (R2); Stage 5 has built 17 tested foundation units (138 tests). **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
+done for Store-Core (R2); Stage 5 has built 19 tested foundation units (147 tests). **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
 spec-freeze / store-specific build are the Stage 1 store facts (the 20 AVR items) and the
@@ -62,7 +62,7 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **138 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **147 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **Base-platform layer begun:** the **append-only ledger engine** (`packages/ledger/`,
     hard rule #2 / M08-FR-01 / §31.1) — idempotent append, balances projected from events
@@ -79,7 +79,7 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     never drops a poison item; 5 tests.
   - **Foundation engines now cover the core invariants** (exact money/quantity, append-only
     ledger, maker-checker, RBAC, offline outbox, gap-free document numbering, trading-day
-    rule) plus compositions (line/bill pricing, tender settlement, and the end-to-end offline sale commit) — 17 tested units, 138 tests.
+    rule) plus compositions (line/bill pricing, tender settlement, and the end-to-end offline sale commit, goods receiving, and approved stock adjustment) — 19 tested units, 147 tests.
   - **Owner-deferred (OB-02, 2 Aug 2026):** the database-backed persistence layer + hosting/
     deployment, and gathering the Stage-1 store facts, are **planned later by the owner** —
     not an active ask or a blocker on design/foundation work. They slot onto this tenant-ready
@@ -124,8 +124,8 @@ plus all five cross-cutting sets.**
   family-level baseline.
 
 ## In progress
-- **Stage 5 foundation build** — 17 tested units done (`packages/` contracts, ledger,
-  approvals, rbac, sync, numbering, calendar, pricing, tender, config, sale, tenant; 138 tests, `pnpm check` green). The
+- **Stage 5 foundation build** — 19 tested units done (`packages/` contracts, ledger,
+  approvals, rbac, sync, numbering, calendar, pricing, tender, config, sale, tenant, receiving, adjustment; 147 tests, `pnpm check` green). The
   pure, store-fact-independent foundation is now comprehensive — it even composes into the
   end-to-end offline sale commit (hard rule #1). What remains genuinely needs the outside
   world: a **database** (via the hosting-vendor pick, D3 commercial validation) and the
