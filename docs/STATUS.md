@@ -14,7 +14,7 @@ done for Store-Core (R2); Stage 5 has built 43 tested foundation units, five
 **persistence-layer** units incl. the PostgreSQL connector + migration runner, and the **first
 app shells (POS + Owner + Web ERP + Picker + Delivery)** with the build pipeline, barcode
 scanning, the catalogue snapshot builder, receipt printing, template-driven import, domain
-export and the store-edge sync agent — 550 tests. **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
+export, tamper-evident audit evidence and the store-edge sync agent — 569 tests. **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
 spec-freeze / store-specific build are the Stage 1 store facts (the 20 AVR items) and the
@@ -66,7 +66,7 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **550 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **569 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **Template-driven import — DONE (3 Aug 2026). This is the roadmap's own top priority
     (audit A-03: the store's #1 daily pain — the 80+ line supplier invoice typed by hand).**
@@ -101,6 +101,31 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     which columns were redacted. **Proven, not asserted:** an export is fed **back through our
     own importer** and comes out identical — headers, rows, and a customer name containing a
     comma all intact. 8 tests.
+  - **Audit & compliance evidence — DONE (3 Aug 2026). M34 is an R1 requirement and was
+    the largest unbuilt one.** `packages/audit/` is the tamper-evident memory of the
+    system — the thing you reach for on the one evening it matters:
+    - every sensitive action records **who, what, when, where, before and after**, plus the
+      reason and the approval that authorised it, and whether it was **captured offline**;
+    - **no one can edit or delete the log — not an administrator, not the owner.** The API
+      has no update, no delete, no clear. That absence *is* the control, and a test asserts
+      the absence rather than trusting a comment;
+    - **each record is sealed to the one before it.** Edit a record straight in the database,
+      behind the code, and `verify()` names the exact record where the chain breaks — and
+      reports **every** break, not just the first. Remove one from the middle and it reports
+      the gap. We do not claim tampering is impossible; we guarantee it is **detectable**;
+    - **an action is reconstructable from evidence alone** (NFR-15) — "how did this price get
+      here?" is answered from the trail, never from a screen someone can change;
+    - **retention plans, it never deletes** (hard rule #6). Privacy says don't keep personal
+      data for ever; evidence says never destroy what an audit may need. So the module
+      produces a **list for a human to decide on**, with the reason every other record stays.
+      A **legal hold beats the retention date**, statutory (GST/company-law) records are never
+      proposed, and anything with **no policy is kept** — silence never means discard;
+    - an **evidence pack** for an auditor or inspector names who took it and when, carries the
+      chain hash so they can prove it matches the trail, and states plainly whether the source
+      verified at export time.
+    The built-in hash is dependency-free and honest about itself: it catches corruption and
+    casual editing but is **not** a cryptographic seal — a deployment injects SHA-256 through
+    the `Hasher` port without the engine changing. 19 tests.
   - **Receipt printing — DONE (owner asked, 3 Aug 2026):** `packages/receipt/` builds the
     receipt **from the committed sale** (never a draft, M31-FR-02) with its gap-free number, and
     **refuses to issue a wrong one**: a **PAN-like tender reference** (hard rule #3), **totals
