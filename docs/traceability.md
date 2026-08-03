@@ -86,6 +86,7 @@ modules still wait on the Stage 1 facts (finding A-11).
 | Bank fraud controls | M06-FR-01 (bank-change verification, maker≠approver) + M15-FR-03 (duplicate bank-account → block) / §28 | `packages/bank-controls/src/` | `tests/unit/bank-controls.test.ts` (8 tests) |
 | Order lifecycle & reservation | M18-FR-01/02 (auditable state machine; reserve stock; no oversell) / §6.2 | `packages/orders/src/` | `tests/unit/orders.test.ts` (10 tests) |
 | Fulfilment (delivery/substitution/COD) | M19-FR-01/03/04 (delivery state machine + proof; customer-confirmed substitution; COD recon, cash/UPI only) / A04 / hard rule #3 | `packages/fulfilment/src/` | `tests/unit/fulfilment.test.ts` (10 tests) |
+| Customer dedup & consent | M16-FR-01 (duplicate detection, no auto-merge; uncertain→review) + M16-FR-02 (consent-scoped send, breach blocked) / P-08 / PRV | `packages/customer/src/` | `tests/unit/customer.test.ts` (9 tests) |
 | Tenant feature entitlements | ADR-0003 / M33·D12·M36 (multi-tenant; choose-able modules) | `packages/tenant/src/tenant.ts` | `tests/unit/tenant.test.ts` (6 tests) |
 | Per-tenant settings | ADR-0003 (choose-able settings, defaults, per-tenant, versioned) | `packages/tenant/src/settings.ts` | `tests/unit/tenant-settings.test.ts` (5 tests) |
 
@@ -153,8 +154,8 @@ modules still wait on the Stage 1 facts (finding A-11).
 | M15-FR-02 | 2 | `docs/requirements/M15.md` | — | — | R2 | In design |
 | M15-FR-03 | 2 | `docs/requirements/M15.md` | `packages/bank-controls/src/duplicate-bank.ts` | `tests/unit/bank-controls.test.ts` | R2 | Foundation built (duplicate bank-account detection → block pending review) |
 | M15-FR-04 | 2 | `docs/requirements/M15.md` | — | — | R2 | In design |
-| M16-FR-01 | 2 | `docs/requirements/M16.md` | — | — | R4 | In design |
-| M16-FR-02 | 2 | `docs/requirements/M16.md` | — | — | R4 | In design |
+| M16-FR-01 | 2 | `docs/requirements/M16.md` | `packages/customer/src/matching.ts` | `tests/unit/customer.test.ts` | R4 | Foundation built (duplicate detection; uncertain→review; never auto-merge) |
+| M16-FR-02 | 2 | `docs/requirements/M16.md` | `packages/customer/src/consent.ts` | `tests/unit/customer.test.ts` | R4 | Foundation built (consent-scoped send; breach blocked; immediate withdrawal) |
 | M16-FR-03 | 2 | `docs/requirements/M16.md` | — | — | R4 | In design |
 | M16-FR-04 | 2 | `docs/requirements/M16.md` | — | — | R4 | In design |
 | M17-FR-01 | 2 | `docs/requirements/M17.md` | `packages/loyalty/src/loyalty.ts` | `tests/unit/loyalty.test.ts` | R4 | Foundation built (money-like append-only points; projected balance; offline cap; never negative) |
