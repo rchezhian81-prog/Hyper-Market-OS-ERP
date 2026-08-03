@@ -68,7 +68,7 @@ testable. `pnpm check` runs typecheck + lint + secret-scan + the whole suite.
 | `b2b` | B2B credit & commission | Credit-limit block pending approval; contract-expiry policy; exact commission (M22-FR-01/03, §28) |
 | `notifications` | Consent-safe sends | Send blocked on any breach (template/suppression/consent/budget); retry + visible dead-letter (M31-FR-03/04, hard rule #6) |
 | `reporting` | Owner KPIs & freshness | Exact sales/margin/basket/tender aggregation; stale/missing never shown as fresh (M29-FR-01, P-08) |
-| `catalogue` | Lane catalogue & barcode scan | O(1) offline lookup from a versioned snapshot; weight/price-embedded barcodes; recalled/non-sellable refused at the scan (M03, M12, §31, §32) |
+| `catalogue` | Lane catalogue, barcode scan & snapshot builder | O(1) offline lookup from a versioned snapshot; weight/price-embedded barcodes; recalled/non-sellable refused at the scan; builder resolves prices by precedence and excludes anything it can't price safely (M03, M05, M12, §31, §32) |
 | `price-list` | Effective-dated prices | Resolve by precedence (customer>channel>zone>store); no early activation; append-only history (M05-FR-01, P-02) |
 | `pricing` | Line & bill pricing | Exact gross/discount/net/tax/total (M12/M05/M23) |
 | `promotions` | Best-price engine | Deterministic best price (BOGO/multibuy/coupon/member); no expired/unpublished; stacking/exclusion (M05-FR-03, P-02) |

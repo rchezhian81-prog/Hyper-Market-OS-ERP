@@ -22,7 +22,23 @@ priced line, with no network.
     **price** (becomes the line price). Never hard-coded.
   - `findBySku` supports manual keyed entry when a barcode won't scan.
 
-> The snapshot is produced from the product master (M03) with prices already resolved for the
-> lane (M05) — the cache is a read model, not a source of truth. Wired into the POS via
-> `apps/pos/src/view-adapter.ts` (`scanBarcode`). Tested in `tests/unit/catalogue.test.ts` and
-> `tests/unit/pos-barcode-scan.test.ts`. Part of the repository layout in `CLAUDE.md`.
+- **`src/snapshot-builder.ts`** — `buildCatalogueSnapshot(input)` produces that snapshot from the
+  master data, closing the loop **M03 → M05 → the lane**:
+  - Resolves each product's price through the **same effective-dated precedence engine** the rest
+    of the system uses (`packages/price-list`: customer > channel > zone > store) at `asOf`, so a
+    **future price never ships early** and the lane charges what the ERP says.
+  - Attaches the **tax-class rate**, and carries **status**, **recall block** and **age
+    restriction** through so the lane can refuse a scan safely offline.
+  - **Never ships a product it cannot price safely** (P-08): one with **no effective price**, an
+    **unknown tax class**, or a **price above its MRP** (M05-FR-02) is **excluded and reported
+    with a reason** — never zero-priced or guessed. Barcodes for excluded products are **dropped**,
+    so a lane can't scan into a product it doesn't hold.
+  - **Draft/discontinued products are included (marked)**, so scanning one says *"not sellable"*
+    rather than the misleading *"unknown barcode"*.
+  - **Deterministic** — the caller supplies `version` and `asOf`, so the same inputs always build
+    the same snapshot (rebuildable and auditable).
+
+> The cache is a **read model, not a source of truth**. Wired into the POS via
+> `apps/pos/src/view-adapter.ts` (`scanBarcode`). Tested in `tests/unit/catalogue.test.ts`,
+> `tests/unit/catalogue-snapshot-builder.test.ts` and `tests/unit/pos-barcode-scan.test.ts`.
+> Part of the repository layout in `CLAUDE.md`.

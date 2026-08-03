@@ -4,3 +4,4 @@
 // at the scan. Grows one reviewed, tested unit at a time.
 
 export * from './catalogue';
+export * from './snapshot-builder';
