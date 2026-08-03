@@ -10,14 +10,14 @@ Last updated: 3 August 2026
 ## Current stage
 **Stage 5 — Foundation build (in progress). Stage 4 complete; owner-closure gate CLOSED.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
-done for Store-Core (R2); Stage 5 has built 57 tested foundation units, five
+done for Store-Core (R2); Stage 5 has built 58 tested foundation units, five
 **persistence-layer** units incl. the PostgreSQL connector + migration runner, and the **first
 app shells (POS + Owner + Web ERP + Picker + Delivery)** with the build pipeline, barcode
 scanning, the catalogue snapshot builder, receipt printing, template-driven import, domain
 export, tamper-evident audit evidence, goods-in with the three-way match, state-aware stock
 availability, the M03 product master, the compliance registers, the org hierarchy and branch
-lifecycle, named accounts with the access lifecycle, and the store-edge sync agent —
-752 tests.
+lifecycle, named accounts with the access lifecycle, the POS lane guards, and the store-edge
+sync agent — 768 tests.
 **D3/D4/D5/D8 were answered on 2 Aug 2026** (see
 `docs/registers/decisions.md` / ADR-0001), so the coding HOLD that depended on them is
 lifted and **Stage 5 (foundation) can begin**. The remaining inputs before the M1
@@ -70,7 +70,7 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
     `priceLine` composes Money × Quantity × Rate into gross/discount/net/tax/total, exact to
     the paisa (weighed goods included), plus `sumLines` for whole-bill totals; backed by a
     new shared `scaleMoney` primitive in `contracts` (exact BigInt fractional multiply). 7 tests.
-  - `pnpm check` green: typecheck + lint + secret-scan + **752 tests**. Value-object
+  - `pnpm check` green: typecheck + lint + secret-scan + **768 tests**. Value-object
     operations are namespaced in the barrel (`MoneyOps`/`QuantityOps`); types export flat.
   - **Template-driven import — DONE (3 Aug 2026). This is the roadmap's own top priority
     (audit A-03: the store's #1 daily pain — the 80+ line supplier invoice typed by hand).**
@@ -300,6 +300,25 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
       extended in place** — an extension is a new grant with a new approval, which is what
       stops "temporary" becoming permanent through a series of quiet nudges.
     34 tests.
+  - **POS lane guards — DONE (3 Aug 2026). M12 is now complete.** `apps/pos/src/lane-guards.ts`
+    adds the three lane controls that all fail the same way if they are advisory:
+    - **an age prompt that blocks, not warns.** A flagged item does **not** join the basket
+      until the question is answered — *"Beer 650ml is age restricted — check identification.
+      Is the customer 21 or over?"* Answer no and the sale is refused. **"Warned and sold" is
+      the outcome this exists to prevent**, because selling to a minor is a personal
+      prosecution for the cashier and a licence risk for the shop. Licence-hour windows and
+      per-customer quantity limits work the same way;
+    - **an override the cashier cannot give themselves.** Self-approval is refused outright,
+      every override needs a **reason** (*"manager approved" explains nothing three months
+      later*), and one beyond a supervisor's limit **escalates to a named person** instead of
+      failing silently — a button that just says no teaches the lane to work around it. Every
+      decision produces an audit entry that the loss-prevention rules read for patterns;
+    - **a lane that never lies about its state.** Online / degraded / offline, the **unsent
+      sale count**, prices old enough to be wrong, and failed peripherals — all visible, and
+      the lane **keeps trading** through every one of them (hard rule #1). A till showing
+      "online" while holding 37 unsent sales is how a day's takings go missing at close;
+      `lanesNeedingAttention` sorts the shop's lanes worst-first for the manager.
+    16 tests.
   - **Receipt printing — DONE (owner asked, 3 Aug 2026):** `packages/receipt/` builds the
     receipt **from the committed sale** (never a draft, M31-FR-02) with its gap-free number, and
     **refuses to issue a wrong one**: a **PAN-like tender reference** (hard rule #3), **totals

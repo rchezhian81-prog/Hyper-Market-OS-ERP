@@ -44,6 +44,21 @@ stand-in and the shell still opens.
   `setQuantity` · `voidLine` · `basket` · `payableMinor` · `syncBadge` · `tenderCash` ·
   `newSale`.
 
+- **`src/lane-guards.ts`** (M12-FR-04) — the three lane controls that all fail the same way
+  if they are advisory:
+  - **the age prompt that blocks.** A flagged item does not join the basket until the
+    question is answered; "warned and sold" is the outcome this prevents. Licence-hour and
+    per-customer-quantity restrictions work the same way.
+  - **an override you cannot give yourself.** A cashier can never approve their own basket,
+    every override needs a **reason** ("manager approved" explains nothing later), and one
+    beyond a supervisor's limit **escalates to a named person** rather than failing silently
+    — a button that just says no teaches the lane to work around it. Every decision produces
+    an audit entry that `packages/loss-prevention` reads for patterns.
+  - **a lane that never lies.** `laneHealth` reports online / degraded / offline, the
+    **unsent-sale count**, stale prices and failed peripherals — and `canTrade` stays true,
+    because offline is not a stop (hard rule #1). `lanesNeedingAttention` sorts the shop's
+    lanes worst-first for the manager.
+
 ## Status
 
 **End-to-end working.** The model and adapter are complete and tested (19 tests, covering the
