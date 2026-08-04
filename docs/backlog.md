@@ -6,7 +6,7 @@ time, each ending in a gate**. Nothing here is optional — "deferred" means a l
 release, never removed (OD-02).
 
 Regenerate the status counts with the parser in `docs/traceability.md`'s own table; last
-counted **4 August 2026** (Stage 19 complete).
+counted **5 August 2026** (Stage 11 rehearsal complete).
 
 ## Where the build actually stands
 
@@ -70,11 +70,11 @@ written evidence in `docs/evidence/` — the gates are about proof, not code, an
 was executed against a real PostgreSQL rather than asserted. That is why M01–M15 plus
 M33–M35 are fully green: **the store-facing core of the product is built and proven.**
 
-**Stages 5 to 10, 14 and 15 have all passed their gates.** Stage 11 is blocked on the
-previous system's export rights (EX-02), which is a letter to send rather than code to
-write; Stages 12–13 need the store and an owner GO. **Stage 16 (enterprise modules) is the
-largest remaining block** — 16 requirement rows across M22, M24–M28 with almost nothing
-built.
+**Every code stage has now passed its gate: 5–11 and 14–19.** Stage 11 has been rehearsed
+end to end against a **synthetic** legacy dataset (`docs/evidence/stage-11-the-old-shop-arrives-whole.md`)
+— the engine, reconciliation and exception handling are proven; only the **real-data**
+migration still waits on EX-02, which is a letter to send rather than code to write.
+**Stages 12–13 are the only ones left, and both need the store and an owner GO.**
 
 ## Stage 5 — Engineering foundation — ✅ **COMPLETE, GATE PASSED**
 
@@ -155,19 +155,38 @@ Gate: *the books reconcile and the owner can see why.*
 **M29 is now complete.** M23-FR-02 (GST returns) remains partial pending the filing-format
 confirmation in AVR-09.
 
-## Stage 11 — Migration rehearsal ← **ACTIVE (blocked on EX-02)**
+## Stage 11 — Migration rehearsal — ✅ **COMPLETE, GATE PASSED** (synthetic dataset)
 
-MG-01…09 full-volume trials. **Blocked on EX-02** (previous-system export rights) — the
-letter to the incumbent ERP vendor is drafted in `docs/discovery/legacy-data-access.md` and
-needs sending. The migration engine and controls (MG-01…12) are designed in
-`docs/architecture/migration-design.md`; nothing can be *rehearsed* until real export data
-exists.
+Gate: *the old shop arrives whole, or it does not arrive — and the store opens the next
+morning either way.*
+
+Rehearsed end to end against a **generated legacy dataset with ten kinds of realistic damage
+planted in it**, by the owner's instruction of 4 August 2026 that EX-02 blocks real-data
+extraction and **does not block synthetic migration testing**.
+
+| # | Work | Requirement | State |
+| --- | --- | --- | --- |
+| 11.1 | Synthetic legacy dataset — deterministic, ten planted fault kinds, faults identified by id | MG-01…12 fixture | ✅ done |
+| 11.2 | Discovery and preservation — unowned sources kept, seal at extraction, verify at load | MG-01, MG-02 | ✅ done |
+| 11.3 | Mapping — approval, conflict refusal, coverage against the extract, **no fallback parameter** | MG-03 | ✅ done |
+| 11.4 | Cleaning — ten detectors, kept exceptions, merge as redirection | MG-04 | ✅ done |
+| 11.5 | Trial load and delta — non-production guard first, repeatable, applied exactly once | MG-05, MG-09 | ✅ done |
+| 11.6 | Control totals and opening state — derivation independence, signing, append-only events | MG-06, MG-08, **QG-07** | ✅ done |
+| 11.7 | History and archive — owner-only exclusions, retention from the latest record | MG-07, MG-12 | ✅ done |
+| 11.8 | Parallel run and cutover — same-day ownership, consecutive clean days, demonstrated rollback | MG-10, MG-11 | ✅ done |
+| 11.9 | Stage 11 rehearsal gate evidence — the old shop arrives whole | QG-07 | ✅ **PASSED** — `docs/evidence/stage-11-the-old-shop-arrives-whole.md` |
+
+**Still waiting on EX-02:** the real legacy data, and therefore the real fault profile, the
+real volume and the real control-total figures. The pipeline is built to surface an unknown
+fault kind as an **exception rather than a silent default**, which is the property that
+matters — but the profile itself cannot be known until the extract exists. The **real-data
+migration gate** remains open.
 
 ## Stage 12 — Store Core pilot · Stage 13 — Parallel run and cutover
 Owner GO gates; need the store.
 
 ## Stage 14 — Customer commerce — ✅ **COMPLETE, GATE PASSED**
-(taken out of order; Stage 11 is blocked on EX-02)
+(taken out of order; Stage 11 has since been rehearsed against a synthetic dataset)
 Gate: *one customer, end to end.*
 
 | # | Work | Requirement | State |
@@ -201,7 +220,7 @@ Gate: *pick to doorstep.*
 tracking view (Stage 14).
 
 ## Stage 16 — Enterprise modules — ✅ **COMPLETE, GATE PASSED**
-(taken out of order with Stages 14 and 15; Stage 11 is blocked on EX-02)
+(taken out of order with Stages 14 and 15; Stage 11 has since been rehearsed against a synthetic dataset)
 Gate: *beyond the till — everything the shop does that is not a walk-in sale still tells
 the truth.*
 

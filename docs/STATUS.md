@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 4 August 2026
+Last updated: 5 August 2026
 
 ---
 
@@ -27,18 +27,35 @@ built, 1 partial, and NONE unstarted**, with **1,867 automated tests** plus **11
 tests** against real PostgreSQL 16.13 and written evidence for all eleven gates. The single
 remaining partial (M02-FR-01) is partial **on purpose**: credential storage and MFA enrolment
 belong to the deployment identity provider, and closing the row would mean holding credentials
-in this codebase, which hard rule #4 forbids. **Stage 17 (governed AI agents) is now complete too**, built entirely
-against a provider-neutral simulator by owner decision of 4 August 2026 — so **every code stage
-in the roadmap is finished.** What remains is EX-02 (the ERP-vendor letter that unblocks Stage
-11), the hosting decision (OB-02, owner-deferred), the pre-pilot integration gate where a live
-AI provider is chosen, and the in-store activities that need the store itself.
+in this codebase, which hard rule #4 forbids. **Stage 17 (governed AI agents) is complete too**, built entirely
+against a provider-neutral simulator by owner decision of 4 August 2026. And **Stage 11
+(migration) has now been rehearsed end to end against a synthetic legacy dataset** — MG-01…MG-12,
+ten kinds of realistic damage planted and every one found by identity, with zero findings on
+clean data — so **every code stage in the roadmap is finished, Stage 11 included.** What remains
+is EX-02 (the ERP-vendor letter, which now gates only the **real-data** migration, not the
+engine), the hosting decision (OB-02, owner-deferred), the pre-pilot integration gate where a
+live AI provider is chosen, and the in-store activities that need the store itself.
 
 ---
 
 ## Current stage
-**EVERY CODE STAGE IS COMPLETE. Stages 0–10, 14, 15, 16, 17, 18 and 19 all passed their gates.**
+**EVERY CODE STAGE IS COMPLETE. Stages 0–11 and 14–19 all passed their gates.**
 
-**Stage 17 passed today** on `tests/integration/ai-proposes-people-decide.test.ts` (12
+**Stage 11 passed today** on `tests/integration/the-old-shop-arrives-whole.test.ts` (23
+assertions, 53 controls, real PostgreSQL 16.13, three runs green) — the whole MG-01…MG-12
+pipeline rehearsed against a **generated legacy dataset with ten kinds of realistic damage
+planted in it**. Every planted fault found **by identity, in exactly the planted quantity**, and
+**zero findings on clean data** — the control that makes the rest mean anything. Opening state
+banked as append-only events in a real database; the cutover refused GO on a rollback that was
+designed but never performed. Evidence in
+`docs/evidence/stage-11-the-old-shop-arrives-whole.md`.
+
+Building it caught a real defect in itself: the duplicate detector first reported **195 findings
+against 14 planted, and 182 on a dataset generated clean.** Two separate causes — a degenerate
+name generator, and a detector treating an identical name alone as certainty in a hypermarket
+that also runs a cafe. Both fixed; both numbers are now exact.
+
+**Stage 17 passed yesterday** on `tests/integration/ai-proposes-people-decide.test.ts` (12
 assertions, 32 controls, real PostgreSQL 16.13, three runs green) — built entirely on a
 **provider-neutral simulator with no AI account**, per the owner's binding decision of 4 August
 2026. The hardest case in the suite: a customer message steers the model into proposing a
@@ -48,7 +65,7 @@ because neither tool was ever granted. Evidence in
 
 **What is left is not code.** EX-02 (a letter), OB-02 (hosting), the pre-pilot integration gate
 where a live AI provider is chosen and the 8 `liveProviderGate()` questions are answered, EX-13
-(a penetration test), and the 49 store activities in `docs/registers/uat-calendar.md`.
+(a penetration test), and the 55 store activities in `docs/registers/uat-calendar.md`.
 
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
 done for Store-Core (R2); Stage 5 has built 59 tested foundation units, five
@@ -94,8 +111,11 @@ SaaS features (subscription/billing, white-label branding, self-serve signup) re
 - **Open gate:** QG-02 human usability testing with real staff
   (`docs/design/usability-test-script.md`) still needs the store — it runs whenever staff
   are available.
-- **Stage 4 also done:** **infrastructure & deployment design** to the **₹20,000/month (D3)**
-  envelope (`docs/architecture/infrastructure.md`) with hosting **ADR-0002** (Proposed,
+- **Stage 4 also done:** **infrastructure & deployment design**, originally drawn to a
+  ₹20,000/month envelope and now **re-based on the owner's binding decision of 4 August 2026:
+  D3 = ₹15,000/month platform runtime** (hosting, storage, backups, messaging, monitoring and
+  normal AI usage; external developer/support retainers shown separately and never silently
+  included) (`docs/architecture/infrastructure.md`) with hosting **ADR-0002** (Proposed,
   pending owner vendor/commercial validation).
 - **Stage 5 (foundation) — BEGUN** (`packages/contracts/`, all with tests; full `pnpm
   check` green — typecheck + lint + secret-scan + **45 tests**):
@@ -1640,6 +1660,81 @@ honest rather than being marked complete.
 
 ---
 
+## Stage 11 — Migration rehearsal — ✅ COMPLETE, GATE PASSED (5 August 2026)
+
+Gate: *the old shop arrives whole* — `docs/evidence/stage-11-the-old-shop-arrives-whole.md`.
+**MG-01…MG-12 built and gate-proven against a synthetic legacy dataset**, per the owner's
+instruction of 4 August 2026 that EX-02 blocks real-data extraction and **does not** block
+synthetic migration testing.
+
+The premise: **a migration rehearsal that only handles good data rehearses nothing.** The entire
+cost and risk of a migration lives in the mess, so the fixture is built to contain it — ten kinds
+of damage drawn from what a fifteen-year-old standalone retail ERP actually holds, with
+`plantedIds` recording **which** records were broken rather than how many. A count lets a test
+claim *"found 14 duplicates"* while having found fourteen different ones.
+
+- **Discovery and preservation (MG-01, MG-02)** — discovery is not a technical task. The
+  incumbent database is the least dangerous source because everyone knows it exists; the
+  migration that goes wrong is the one where somebody mentions three weeks later that the
+  loyalty points were on a spreadsheet on a laptop. **A source nobody claims stays named and
+  unowned**, and discovery is not complete while one stands. Sealing refuses without a
+  **verified backup restore** — a backup job that reports success and a backup that restores
+  differ only at the moment it matters. Verification checks the digest **and** the row count,
+  because a truncated extract loads perfectly and reconciles a smaller, entirely self-consistent
+  shop. 10 tests.
+- **Mapping (MG-03)** — the step where a migration quietly acquires a tax bill. Legacy code `TX`
+  is on fourteen products and meant something in 2014 to somebody who has left; the convenient
+  line is `taxCode ?? 'T0'`, it works, no error appears, and fourteen products are zero-rated
+  until an assessment. So **`mapValue` has no fallback parameter** — a caller wanting a default
+  must write it in the open where a reviewer sees it. One legacy value mapping to two targets is
+  refused **at approval**, not resolved at load. 13 tests.
+- **Cleaning (MG-04)** — defined mostly by what it may not do. **Cleaning proposes; it never
+  decides.** Nothing merges, nothing is corrected, nothing is dropped — two products that look
+  identical are sometimes two products, and an auto-merge loses one silently at 3am. **A merge is
+  a redirection, not a delete.** Every finding is kept, resolved or not (hard rule #6); there is
+  no `discardException` and no `clearExceptions`, asserted by test. A blocking exception is
+  cleared by a **decision**, including *"migrate as is"* — the owner may knowingly accept a
+  valuation error, nobody may accidentally inherit one. 19 tests.
+- **Trial load and delta (MG-05, MG-09)** — `assertNonProduction` is deliberately a separate,
+  callable, testable function rather than an `if` inside the loader: it is the one control whose
+  failure is unrecoverable, and the realistic accident is a copied connection string at eleven at
+  night. It runs **first**, ahead of the operator's name — every other refusal costs an evening,
+  this one costs the shop. A delta re-send is a **success**, because one that errors cannot be
+  resumed at midnight. 14 tests.
+- **Control totals and opening state (MG-06, MG-08, QG-07)** — one check matters more than all
+  the rest: **a total that reconciles because both sides were computed the same way reconciles
+  nothing.** The report is green, the CA signs it, and it proves that addition is commutative.
+  Identical derivations are refused. The person who ran the load cannot sign its totals — not
+  because they would lie, but because they already believe it worked. Finance and tax are the
+  CA's. **There is no provisional signature.** And opening balances are **events, never
+  balances**: the migration is the one moment when one `UPDATE` would be defensible, which is
+  exactly why it must not be — an opening quantity with no event behind it is the one number in
+  the shop that can never be explained. 23 tests.
+- **History and archive (MG-07, MG-12)** — **age alone is refused as a reason** to leave data
+  behind; it is the reason offered ninety per cent of the time and never true. Only an
+  owner-approved exclusion may explain a control-total difference. And **retiring the legacy
+  system and destroying the legacy data are different acts** — the licence renewal is the
+  pressure, switching the server off is the action, and deleting the archive is what quietly
+  happens alongside it. 18 tests.
+- **Parallel run and cutover (MG-10, MG-11)** — the parallel run is the only step that tests the
+  new system against **reality** rather than against itself. *"The new system is probably right"*
+  is refused by name: that is last-write-wins with a sentence in front of it (hard rule #10), and
+  the stock error it hides surfaces at a count six weeks later. Clean days are **consecutive**.
+  And **the rollback is the deliverable, not the cutover** — GO is refused until a rollback has
+  been *demonstrated*, because the decision to use it gets made at 6am by a tired person. 20 tests.
+
+**A defect the rehearsal caught in itself.** The duplicate detector first reported **195 findings
+against 14 planted, and 182 on a dataset generated clean.** Two causes, neither visible from a
+passing test: the generator drew names from ten words and six sizes, so 240 products collided by
+construction and a finding could not be told from an accident; and the detector treated an
+identical name alone as certainty, which it is not in a hypermarket that also runs a cafe — the
+same line legitimately exists as a grocery product and a kitchen ingredient. After both fixes,
+**every one of the ten detectors matches its planted count exactly and a clean dataset yields
+zero findings.** The second number is the one that matters: a detector that always fires detects
+nothing. Three further defects were in the gate test itself, including append-only assertions
+that named a table which does not exist — they were passing because a missing relation also
+throws.
+
 ## Stage 17 — Governed AI agents — ✅ COMPLETE, GATE PASSED (5 August 2026)
 
 Gate: *the AI proposes, people decide* — `docs/evidence/stage-17-ai-proposes-people-decide.md`.
@@ -1737,22 +1832,27 @@ tests** against real PostgreSQL 16.13.
   family-level baseline.
 
 ## In progress
-- **Stage 11 — Migration rehearsal. BLOCKED ON EX-02**, and the block is not technical:
-  the migration engine, controls MG-01…12 and reconciliation design are complete
-  (`docs/architecture/migration-design.md`, `packages/import`), but a *rehearsal* needs
-  **real export data from the incumbent ERP**, and the letter requesting it
-  (`docs/discovery/legacy-data-access.md`) has not been sent. This is the first point in
-  the whole roadmap where building further in sequence is genuinely impossible.
 - **Nothing.** Every code stage in the roadmap is complete with written gate evidence in
-  `docs/evidence/` — stages 0–10, 14, 15, 16, 17, 18 and 19. Every module M01–M36 and all ten
-  agents A01–A10 are built and tested. Nothing has been silently dropped.
-- What remains needs the owner or the store: **EX-02** (a letter, unblocks Stage 11), **OB-02**
-  (hosting), the **pre-pilot integration gate** (a live AI provider, then UAT-49), **EX-13** (a
-  penetration test), and the 49 store activities in `docs/registers/uat-calendar.md`. Nothing has been silently dropped — `docs/backlog.md`
-  schedules every remaining requirement row to a named stage.
+  `docs/evidence/` — stages 0–11 and 14–19. Every module M01–M36, all ten agents A01–A10 and
+  all twelve migration controls MG-01…MG-12 are built and tested. Nothing has been silently
+  dropped.
+- **Stage 11 is no longer blocked on EX-02.** The migration engine, its twelve controls and the
+  whole reconciliation and exception path are built and gate-proven against a **synthetic**
+  legacy dataset (`packages/migration/`, `docs/evidence/stage-11-the-old-shop-arrives-whole.md`).
+  EX-02 now gates only the **real-data** migration: the real fault profile, the real volume and
+  therefore the true cutover window, and the real control-total figures for the CA to sign. The
+  pipeline is built to surface an unforeseen fault kind as an **exception rather than a silent
+  default**, which is the property that had to be settled before the data arrives.
+- What remains needs the owner or the store: **EX-02** (a letter, unblocks the real-data
+  migration gate), **OB-02** (hosting), the **pre-pilot integration gate** (a live AI provider,
+  then UAT-49), **EX-13** (a penetration test), and the 55 store activities in
+  `docs/registers/uat-calendar.md`. `docs/backlog.md` schedules every remaining requirement row
+  to a named stage.
 
 ## Blocked / needs owner input
-- **D3/D4/D5/D8 — CLOSED (2 Aug 2026).** D3 = ₹20,000/month; D4 = **Mr Sivakumar**
+- **D3/D4/D5/D8 — CLOSED (2 Aug 2026), D3 SUPERSEDED (4 Aug 2026).** D3 is now
+  **₹15,000/month maximum post-go-live platform runtime** by binding owner decision —
+  ₹20,000 is expressly *not* an approved value. D4 = **Mr Sivakumar**
   (second technical custodian); D5 = GO given today; D8 = Store-Core 1 April 2027, full
   completion phased. Recorded in `docs/registers/decisions.md` and ADR-0001. The coding
   HOLD that depended on these is lifted. (D3 still wants a commercial check vs real vendor

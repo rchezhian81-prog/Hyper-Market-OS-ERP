@@ -41,6 +41,7 @@ references those rows resolve to:
 | API & event catalogue (§30) | `docs/api/catalogue.md` | API-01…13, conventions, §30.2 events |
 | Offline-sync design (§31) | `docs/architecture/offline-sync.md` | P-01 detail, sync protocol, conflicts |
 | Migration design (§34) | `docs/architecture/migration-design.md` | MG-01…12 pipeline, QG-07 control totals |
+| Migration engine (§34) | `packages/migration/` (`synthetic`, `discovery`, `mapping`, `cleaning`, `trial`, `reconcile`, `history`, `cutover`) | **MG-01…12 built and gated** — Stage 11 rehearsal against a synthetic legacy dataset with ten planted fault kinds, all found by identity; `docs/evidence/stage-11-the-old-shop-arrives-whole.md` |
 | Threat & privacy model (§35) | `docs/security/threat-privacy-model.md` | trust boundaries, STRIDE, PRV, QG-06 |
 | Field-level data dictionary | `db/data-dictionary/` | six Store-Core domains, field level |
 

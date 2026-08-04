@@ -80,18 +80,18 @@
 
 | ID | Requirement | Addressed by |
 | --- | --- | --- |
-| MG-01 | Discovery: inventory every DB/file/report/volume/owner/retention | `docs/architecture/migration-design.md`; Stage-1 (AVR-03/04) |
-| MG-02 | Preservation: verified source backups, immutable raw extracts + hashes | migration-design; hard rule #6 |
-| MG-03 | Mapping: approve field/code/UOM/tax/branch/account/identity mappings | migration-design |
-| MG-04 | Cleaning: dedupe products/barcodes/suppliers/customers; fix tax/stock/batches | migration-design; kept exceptions (#6) |
-| MG-05 | Trial loads: repeatable full-volume in non-production | migration-design; hard rule #7 |
-| MG-06 | Reconciliation: prove counts/quantities/values/balances/taxes/loyalty | migration-design; QG-07 control totals |
-| MG-07 | History: migrate usable history; exclusions need owner approval | migration-design; OD-05 |
-| MG-08 | Opening state: load & sign off stock/orders/outstanding/balances | migration-design; `packages/ledger` opening events |
-| MG-09 | Delta: capture changes after final extract; load once | migration-design; idempotency (§31.1) |
-| MG-10 | Parallel run: operate old & new, reconcile daily | migration-design; §34.1 |
-| MG-11 | Cutover: rehearsed checklist, go/no-go, rollback, named team | migration-design; `docs/cutover/` (Stage 13) |
-| MG-12 | Archive/retire: legacy read-only until retention met, then retire | migration-design; OD-06; hard rule #6 |
+| MG-01 | Discovery: inventory every DB/file/report/volume/owner/retention | `packages/migration/src/discovery.ts` `inventorySources` — an unowned source stays named in the inventory; estimated volume is a gap. **Stage 11 rehearsal** |
+| MG-02 | Preservation: verified source backups, immutable raw extracts + hashes | `discovery.ts` `sealExtract`/`verifyExtract` — sealed at extraction, verified at load; refused without a *verified* backup restore; digest AND row count. No edit/delete function exists (test-asserted) |
+| MG-03 | Mapping: approve field/code/UOM/tax/branch/account/identity mappings | `packages/migration/src/mapping.ts` `approveMapping`/`mapValue`/`assessCoverage` — no fallback parameter; one legacy value → two targets refused at approval; coverage measured against the extract |
+| MG-04 | Cleaning: dedupe products/barcodes/suppliers/customers; fix tax/stock/batches | `packages/migration/src/cleaning.ts` `detectExceptions`/`resolveException`/`buildMergeMap` — proposes only, merge is a redirection, every finding kept (#6). All ten planted fault kinds found by identity |
+| MG-05 | Trial loads: repeatable full-volume in non-production | `packages/migration/src/trial.ts` `assertNonProduction`/`runTrialLoad` — production refused first, before every other check (#7); full volume; timing projected |
+| MG-06 | Reconciliation: prove counts/quantities/values/balances/taxes/loyalty | `packages/migration/src/reconcile.ts` `recordControlTotal`/`assessReconciliation`/`signControlTotal` — identical derivations refused; `explained` closes to the rupee; loader cannot sign; CA signs finance/tax; **QG-07** |
+| MG-07 | History: migrate usable history; exclusions need owner approval | `packages/migration/src/history.ts` `proposeExclusion`/`approveExclusion` — age alone refused; owner-only approval (OD-05); only approved exclusions explain a total |
+| MG-08 | Opening state: load & sign off stock/orders/outstanding/balances | `reconcile.ts` `buildOpeningEvents` — opening EVENTS, never balances (#2); refused before QG-07; every figure traces to a signature. Banked in real PostgreSQL |
+| MG-09 | Delta: capture changes after final extract; load once | `trial.ts` `applyDelta` — applied exactly once (§31.1); a re-send is a success; pre-cutoff changes refused as already loaded |
+| MG-10 | Parallel run: operate old & new, reconcile daily | `packages/migration/src/cutover.ts` `compareParallelDay`/`ownDifference`/`parallelRunPosition` — same-day owner, last-write-wins phrasings refused (#10), clean days consecutive (§34.1) |
+| MG-11 | Cutover: rehearsed checklist, go/no-go, rollback, named team | `cutover.ts` `decideCutover`/`performRollback` — GO refused on a *designed* rollback; all eight failures named at once; rollback needs no committee; `shopKeepsTrading: true` (P-01) |
+| MG-12 | Archive/retire: legacy read-only until retention met, then retire | `history.ts` `assessRetirement` — retention from the latest record; untested restore blocks; `dataIsNeverDeleted: true`; no delete function exists (#6, test-asserted) |
 
 > Full verification is per item at its build stage / quality gate (QG-01…12). Where a
 > guardrail or foundation package already enforces an item, that is noted above so the
