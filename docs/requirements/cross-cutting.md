@@ -20,7 +20,7 @@
 | SEC-07 | Tamper-evident audit logs & centralized security monitoring | M34 (append-only audit); `ledger-append-only` guardrail; NFR-09 |
 | SEC-08 | Immutable/off-site backup, restore proof, ransomware isolation | M35; ADR-0002; hard rule #6 |
 | SEC-09 | Secure SDLC, code review, automated tests, penetration testing | AID-02/03/07; QG-06; the test suite |
-| SEC-10 | Incident response, breach assessment, communication, evidence preservation | Runbook (to write, `docs/runbooks/`); M34 |
+| SEC-10 | Incident response, breach assessment, communication, evidence preservation | `docs/runbooks/security-incident.md` — the six-hour CERT-In clock starts at NOTICE not at understanding; contain without destroying evidence; ransomware handled before containment; evidence retained permanently (#6); M34-FR-04 registers |
 | SEC-11 | Production access approval, session recording/logging, time limits | M33 support access (time-bound, audited); hard rule #7 |
 | SEC-12 | PCI-scope minimization; never store prohibited card data | **hard rule #3**; `card-data` guardrail; `packages/tender` (tokens only); `tests/security/data-protection.test.ts` — `PERMITTED_PAYMENT_RETENTION` is a closed allowlist and the tender surface has nowhere to put a card number |
 
@@ -36,7 +36,7 @@
 | PRV-06 | Processor/subprocessor register & contractual controls | To record; M32 connectors / M36 partners |
 | PRV-07 | Children/minor handling policy | Owner policy; M16 |
 | PRV-08 | Retention schedule & defensible deletion (statutory exceptions) | M16-FR-03; `packages/config`; hard rule #6 (never delete audit); `planErasure` MINIMISES where a record must survive but the person need not — the resolution of the erasure/retention tension |
-| PRV-09 | Breach detection, notification readiness, remediation | SEC-10; incident runbook |
+| PRV-09 | Breach detection, notification readiness, remediation | SEC-10; `docs/runbooks/security-incident.md` — DPDP breach notification and the customer-notification decision reserved to the owner, with the words approved by them |
 | PRV-10 | Cross-border/data-location decisions recorded & configurable | ADR-0003 (India residency default; per-tenant); ADR-0002 |
 
 ## NFR — Non-functional (§10)

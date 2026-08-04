@@ -1660,6 +1660,44 @@ honest rather than being marked complete.
 
 ---
 
+## Incident runbook and traceability integrity (7 August 2026)
+
+**SEC-10 / PRV-09 / C-05 — the incident runbook was explicitly "to write" and now exists**
+(`docs/runbooks/security-incident.md`), with a legal clock attached: CERT-In requires reporting
+within **six hours**. The rule the whole document is built around is the one everybody gets
+wrong: **the clock starts when you NOTICE, not when you understand.** The universal mistake is to
+spend five hours working out what happened, so the report is late and the lateness becomes a
+second problem on top of the first. An incomplete report at hour two is correct procedure; a
+complete one at hour nine is a breach of the rules about breaches.
+
+Written for 9pm, for somebody who is not a programmer: the first ninety seconds (write down the
+time, touch nothing, call two people), containment that does not destroy evidence (**unplug the
+network cable, never the power** — a machine switched off to be safe loses the record of what
+happened on it), ransomware handled *before* containment because the damage is still spreading,
+and the four things that are the owner's personally and cannot be delegated. C-05 moves from
+"Not started" to workflow-written; what remains is owner action — the CERT-In contact details
+recorded **off-system**, and a named security lead. Three UAT items added (UAT-56…58).
+
+**Traceability integrity is now a test, not a ritual.** After every stage I had been checking by
+hand that the traceability counts matched the backlog and that the paths existed. A ritual
+somebody performs is one somebody eventually skips, on the stage where they are in a hurry —
+which is the stage where it matters. `tests/guardrails/traceability-integrity.test.ts` checks
+498 referenced paths exist, that every built row names both an implementation and a test, that
+the per-module counts and the headline agree, that no requirement id is duplicated, and that
+every gate claiming PASSED has evidence on disk which states a verdict.
+
+**It caught a real defect the day it was written:** `scripts/build-pos.mjs`, renamed to
+`build-app.mjs` and never updated — a row certifying a file that does not exist. Five further
+paths were written unqualified (`stock/position.ts` rather than `packages/stock/src/position.ts`),
+which is exactly how the stale one hid: an unverifiable path cannot be checked. All fixed, and
+seven tripwires added proving each check fires on a deliberately broken document — including the
+M22-FR-02 trap, where the prose *"a partial delivery bills partially"* reads as a partial row to
+any naive substring search.
+
+Also verified while there: **all 498 referenced paths exist**, every package with source code has
+tests (the three without any are empty layout placeholders), and **all eight existing guardrails
+carry a tripwire** proving they can fire.
+
 ## Consolidated cost forecast against D3 (7 August 2026)
 
 `docs/registers/cost-forecast.md` — the record the owner's binding decision of 4 August asked

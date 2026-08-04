@@ -44,3 +44,16 @@ data.
 included — in the pre-commit hook and in CI.
 
 > Part of the SRE Retail OS repository layout defined in `CLAUDE.md`.
+
+- **`traceability-integrity.test.ts`** — the Definition of Done requires a traceability row for
+  every item, which makes `docs/traceability.md` load-bearing: it is what an auditor is handed at
+  a quality gate. **A traceability document nobody checks is one that drifts**, always in the
+  same direction — a file is renamed, the row still names the old path, nothing fails, and the
+  claim stands for a year. This replaces the counting and path-checking that used to be done by
+  hand after every stage; a ritual somebody performs is one somebody eventually skips, on the
+  stage where they are in a hurry.
+
+  It caught a real defect the day it was written: `scripts/build-pos.mjs`, renamed to
+  `build-app.mjs` and never updated in the document. Five further paths were written unqualified
+  (`stock/position.ts` rather than `packages/stock/src/position.ts`) — which is exactly how the
+  stale one hid, since an unverifiable path cannot be checked.

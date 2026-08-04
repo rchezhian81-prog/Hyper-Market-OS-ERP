@@ -66,6 +66,9 @@ Status: **Scheduled** · **Done** · **Waived with reason**.
 | UAT-53 | **Watch the rollback performed** — not the plan, the actual thing, done, with a date. If the answer is "it is documented", the cutover is not ready. | MG-11 · Stage 13 | **Before cutover GO** | Store + rehearsal window | Scheduled |
 | UAT-54 | **Old-system retirement answer** — right answer: "it stays, read-only, until retention ends, and the data is never deleted." Not "we can cancel the licence next month." | MG-12 · OD-06 · hard rule #6 | Post-cutover | Not yet required | Scheduled |
 | UAT-55 | **Approve what we leave behind** — anything not migrated needs your written approval and a number attached. If the reason offered is "it is old", say no. | MG-07 · OD-05 | Real-data migration gate | **Legacy extract (EX-02)** | Blocked on EX-02 |
+| UAT-56 | **Incident drill** — walk the first ninety seconds of `security-incident.md` without reading it: note the time, touch nothing, call the second custodian. If it needs reading, it is not usable at 9pm. | SEC-10 · C-05 | Before pilot | Second custodian available | Scheduled |
+| UAT-57 | **Off-system contact list** — CERT-In and the payment provider's numbers written somewhere that is not the system. A contact list stored inside the thing that is down is not a contact list. | SEC-10 · C-05 | Before pilot | **Owner action** | Scheduled |
+| UAT-58 | **Name the security lead** — C-05 needs a named person accountable for the six-hour report, not a department. | C-05 · M34-FR-04 | Before pilot | **Owner decision** | Scheduled |
 
 ## How UAT-01 runs when we reach it
 
