@@ -17,17 +17,18 @@ and recall proof; Stage 9 (POS, returns, cash office) on end-of-day and refund c
 **M01–M15, M29 and M33–M35 — the entire store-facing core plus the owner's control
 surface**: 94 of the 144 requirement rows built, **1,209 automated tests** plus **35
 integration tests against real PostgreSQL 16.13**, and written evidence for every gate in
-`docs/evidence/`. **Stage 11 (migration rehearsal) is the next stage and is blocked on
-EX-02** — the previous system's export rights — which is a letter to send, not code to
-write. The other outstanding externals are the hosting/live-database decision (OB-02,
+`docs/evidence/`. **Stage 11 (migration rehearsal) is blocked on EX-02** — the previous
+system's export rights — which is a letter to send, not code to write, so the build has
+moved to **Stage 14 (customer commerce)**, where **M16 and M17 are now complete**: 99 of
+the 144 requirement rows built, **1,271 automated tests**. The other outstanding externals are the hosting/live-database decision (OB-02,
 owner-deferred) and the in-store activities that need the store itself (QG-02 usability
 testing, the owner-witnessed restore in UAT-01).
 
 ---
 
 ## Current stage
-**Stage 11 — Migration rehearsal (blocked on EX-02). Stages 0–10 complete, all gates
-passed.**
+**Stage 14 — Customer commerce (active; taken out of order because Stage 11 is blocked on
+EX-02). Stages 0–10 complete, all gates passed.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
 done for Store-Core (R2); Stage 5 has built 59 tested foundation units, five
 **persistence-layer** units incl. the PostgreSQL connector + migration runner, and the **first
@@ -1054,6 +1055,63 @@ build therefore continues at **Stage 14 (customer commerce)**, which depends on 
 
 ---
 
+## Stage 14 (part 1) — Customer and loyalty complete (4 August 2026)
+
+Taken out of roadmap order because **Stage 11 is blocked on EX-02** and everything here
+depends on none of it. **M16 and M17 are now complete.**
+
+- **Data-subject rights (M16-FR-03)** — the module where two laws point in opposite
+  directions. A customer has a right to erasure; income-tax, GST and company law require
+  the shop to keep its invoices for years. **Both are true.** Systems handle this three
+  ways and two are wrong: delete everything, which is illegal and the customer's request
+  caused it; or delete nothing and say nothing, which is the worse betrayal because the
+  customer stops worrying about it. This one **erases what it can, keeps what the law
+  demands, and tells the customer exactly which is which and why** — naming the statute
+  and the date each record can finally go. Audit evidence is **never** deleted (hard rule
+  #6); the person becomes a pseudonym and the trail survives. And verification is checked
+  **before anything else**, because an unverified erasure deletes someone else's account
+  and an unverified access request hands over their shopping history. 12 tests.
+- **Segments and lifetime value (M16-FR-04)** — everything here is a **derived opinion
+  about a person**, not a fact, and acting on it changes how the shop treats them. So: no
+  profiling without a lawful basis, and a non-consenting customer comes back as
+  `not_profiled` **with the reason** rather than vanishing — a campaign whose reach
+  shrinks for no visible reason gets "fixed" by someone removing the consent check.
+  Service is kept distinct from marketing, so the desk can still answer a customer's own
+  complaint. And **value is margin, not revenue**: a ₹50,000 cigarette customer at 4% is
+  worth less than a ₹20,000 fresh customer at 30%, and the ranking states both so the
+  difference is visible. Historic only — a projected lifetime value is a guess dressed as
+  a figure, and shops make real decisions on it. 15 tests.
+- **Coupons, offers and referrals (M17-FR-02)** — everything that goes wrong with coupons
+  goes wrong the same way: **checked once at issue, never again at the moment it costs
+  money.** So expiry, eligibility and both limits are validated **at redemption**, offline,
+  against the lane's cached redemption set — and when that cache is stale the lane is
+  **told**, because a code used on lane 3 and again on lane 5 ninety seconds later is the
+  commonest coupon fraud there is. A referral pays only once the referred person has
+  actually bought (paying on sign-up funds an afternoon of fake accounts), and refuses a
+  self-referral including the disguised kind where two accounts share a verified contact.
+  19 tests.
+- **Gift cards, store credit and household pooling (M17-FR-03/04)** — a gift card is **the
+  shop's money held on the customer's behalf**, so every issued rupee is a liability that
+  must reconcile to what finance posted; a balance that drifts is not a reporting bug, it
+  is unrecorded debt. Balances are **projected from append-only movements**, never stored
+  and decremented — a stored balance is a number two lanes can race on. Offline redemption
+  is **capped, not forbidden**: forbid it and the shop cannot honour its own gift cards
+  when the internet is down, which is exactly when a customer is most annoyed. And
+  household pooling makes the cross-channel race a **normal Tuesday** — a mother at the
+  till and a son on the app spending the same ₹500 — so a double-spend surfaces as a
+  valued exception with **both movements kept and both channels named**. Nothing is
+  silently reversed (hard rule #10): two people genuinely received goods, and the shop
+  decides. 16 tests.
+
+`pnpm check` green: typecheck + lint + secret-scan + **1,271 tests**.
+
+**Still to do in Stage 14:** M20 (customer app and web), M21 (CRM and service desk),
+M31-FR-01 with D07–D08, then the gate. EX-04/05 and EX-11 gate delivery and publication,
+not the build; **EX-13, an independent penetration test, is a real gate before customer
+launch** and needs a paid engagement.
+
+---
+
 ## Last completed
 - **Setup 1/3/4** — repository, `CLAUDE.md`, safety net (tests, guardrails, secret
   scan, CI), and baseline ADR. (Merged to `main` via PR #1.)
@@ -1077,10 +1135,13 @@ build therefore continues at **Stage 14 (customer commerce)**, which depends on 
   **real export data from the incumbent ERP**, and the letter requesting it
   (`docs/discovery/legacy-data-access.md`) has not been sent. This is the first point in
   the whole roadmap where building further in sequence is genuinely impossible.
-- Because of that, the next code stages taken out of order are **Stage 14 (customer
-  commerce: M16/M17/M20/M21)** and **Stage 16 (enterprise modules: M24–M28)**, neither of
-  which depends on migration data. Stage 12/13 (pilot, parallel run, cutover) need the
-  store and an owner GO.
+- **Stage 14 — Customer commerce, taken out of order.** **M16 and M17 are complete**
+  (data-subject rights, segments and lifetime value, coupons and referrals, gift cards and
+  store credit, household pooling). What remains is **M20** (customer app and web),
+  **M21** (CRM and service desk) and **M31-FR-01** with D07–D08, then the Stage 14 gate.
+  EX-04/05 (messaging providers) and EX-11 (app-store accounts) gate *delivery and
+  publication*, not the build; **EX-13, an independent penetration test, is a genuine gate
+  before customer launch** and needs a paid engagement.
 - Everything earlier is **finished, not paused**: stages 0–10 complete with written gate
   evidence in `docs/evidence/`. Nothing has been silently dropped — `docs/backlog.md`
   schedules every remaining requirement row to a named stage.
@@ -1102,13 +1163,14 @@ build therefore continues at **Stage 14 (customer commerce)**, which depends on 
   store operations lead, finance/CA reviewer, security/architecture reviewer.
 
 ## Next session should start with
-Stage 11 cannot start without EX-02, so the sequence continues at the next stage that is
-genuinely unblocked — **Stage 14, customer commerce**, which needs no migration data:
-1. **M16-FR-03/04** — customer profile, preferences and the privacy/consent surface.
-2. **M17-FR-02/03/04** — loyalty tiers, rewards catalogue and redemption at the lane.
-3. **M20 (all four)** — the customer app and web storefront on the same commerce truth.
-4. **M21 (all four)** — CRM and the service desk.
-5. **M31-FR-01**, D07/D08, and the Stage 14 gate evidence.
+**Stage 14 continued** — M16 and M17 are done; the customer-facing surfaces remain:
+1. **M20 (all four)** — the customer app and web storefront, on the same commerce truth as
+   the till (P-02): one product, one price, one stock, one loyalty balance.
+2. **M21 (all four)** — CRM and the service desk, composing the M16 profile and the M15
+   case discipline.
+3. **M31-FR-01** and D07–D08 — customer notifications through the existing consent-gated
+   engine and its dead-letter queue.
+4. **Stage 14 gate evidence** — one customer walked end to end, against real PostgreSQL.
 
 **The one thing that would genuinely help from outside:** send the ERP-vendor letter in
 `docs/discovery/legacy-data-access.md`. It unblocks EX-02 and therefore Stage 11, which is

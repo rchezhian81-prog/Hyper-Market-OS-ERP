@@ -6,11 +6,11 @@ time, each ending in a gate**. Nothing here is optional — "deferred" means a l
 release, never removed (OD-02).
 
 Regenerate the status counts with the parser in `docs/traceability.md`'s own table; last
-counted **4 August 2026** (Stage 10).
+counted **4 August 2026** (Stage 14, part 1).
 
 ## Where the build actually stands
 
-**144 individual requirement rows: 94 built · 4 partial · 46 not started.**
+**144 individual requirement rows: 99 built · 4 partial · 41 not started.**
 
 | Module | Release | Built | Partial | Not started |
 | --- | --- | --- | --- | --- |
@@ -29,8 +29,8 @@ counted **4 August 2026** (Stage 10).
 | M13 Returns & refunds | R2 | 4 | 0 | 0 |
 | M14 Cash office & close | R2 | 4 | 0 | 0 |
 | M15 Loss prevention | R2 | 4 | 0 | 0 |
-| M16 Customer & consent | R4 | 2 | 0 | 2 |
-| M17 Loyalty | R4 | 1 | 0 | 3 |
+| M16 Customer & consent | R4 | 4 | 0 | 0 |
+| M17 Loyalty | R4 | 4 | 0 | 0 |
 | M18 Orders | R5 | 2 | 0 | 2 |
 | M19 Fulfilment & delivery | R5 | 3 | 0 | 1 |
 | M20 Customer app & web | R4 | 0 | 0 | **4** |
@@ -155,9 +155,23 @@ exists.
 ## Stage 12 — Store Core pilot · Stage 13 — Parallel run and cutover
 Owner GO gates; need the store.
 
-## Stage 14 — Customer commerce
-M16-FR-03/04, M17-FR-02/03/04, M20 (all 4), M21 (all 4), M31-FR-01, D07–D08.
-Needs EX-03/04/11/13.
+## Stage 14 — Customer commerce ← **ACTIVE** (taken out of order; Stage 11 is blocked on EX-02)
+
+| # | Work | Requirement | State |
+| --- | --- | --- | --- |
+| 14.1 | Data-subject rights and retention handling | M16-FR-03 | ✅ done |
+| 14.2 | Segments, lifetime value, engagement history | M16-FR-04 | ✅ done |
+| 14.3 | Coupons, referrals, memberships, personalised offers | M17-FR-02 | ✅ done |
+| 14.4 | Gift cards, store credit, fraud limits, liability reconciliation | M17-FR-03 | ✅ done |
+| 14.5 | Household pooling and omnichannel balance consistency | M17-FR-04 | ✅ done |
+| 14.6 | Customer app and web storefront | M20 (all 4) | ⬜ next |
+| 14.7 | CRM and service desk | M21 (all 4) | ⬜ next |
+| 14.8 | Customer notifications | M31-FR-01, D07–D08 | ⬜ next |
+| 14.9 | Stage 14 gate evidence | QG-06 | ⬜ after 14.6–14.8 |
+
+**M16 and M17 are now complete.** EX-04/05 (messaging providers) and EX-11 (app-store
+accounts) gate *delivery and publication*, not the build; **EX-13 (independent penetration
+test) is a genuine gate before customer launch** and needs a paid engagement.
 
 ## Stage 15 — Fulfilment and delivery
 M18-FR-03/04, M19-FR-02, M20 delivery surfaces, D09.
