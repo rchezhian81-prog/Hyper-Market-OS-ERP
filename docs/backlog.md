@@ -76,11 +76,11 @@ Gate: **reproducible deploy and restore proof.**
 | 5.4 | Immutable audit + compliance registers | M34 | ✅ done |
 | 5.5 | Versioned config + per-tenant settings | M01-FR-03 | ✅ done |
 | 5.6 | Local environment (Compose: Postgres + migrate + proxy) | §19 | ✅ done |
-| 5.7 | **Observability** — health probes, structured redacted logging, metrics | **M35-FR-03** | ▶ in progress |
-| 5.8 | **Backup & restore** — scripted, verified, retention | **M35-FR-01** | ▶ next |
-| 5.9 | **Disaster recovery** — RTO/RPO, rollback, rehearsal runbook | **M35-FR-02** | ▶ next |
+| 5.7 | **Observability** — health probes, structured redacted logging, metrics | **M35-FR-03** | ✅ done |
+| 5.8 | **Backup & restore** — scripted, verified, retention | **M35-FR-01** | ✅ done (proven against real PostgreSQL) |
+| 5.9 | **Disaster recovery** — RTO/RPO, rollback, rehearsal runbook | **M35-FR-02** | ✅ done |
 | 5.10 | **SBOM + dependency/vulnerability evidence** | QG-03 / M32-FR-03 | ▶ next |
-| 5.11 | **Reproducible deploy + restore proof** (the gate itself) | QG-08 | ▶ next |
+| 5.11 | **Reproducible deploy + restore proof** (the gate itself) | QG-08 | ✅ **PASSED** — `docs/evidence/stage-5-recovery-proof.md` |
 | 5.12 | Environment inventory & secrets ownership | §23 | ▶ next |
 | 5.13 | Platform admin & support tooling | M33 | ▶ next |
 
