@@ -19,16 +19,17 @@ surface**: 94 of the 144 requirement rows built, **1,209 automated tests** plus 
 integration tests against real PostgreSQL 16.13**, and written evidence for every gate in
 `docs/evidence/`. **Stage 11 (migration rehearsal) is blocked on EX-02** — the previous
 system's export rights — which is a letter to send, not code to write, so the build has
-moved to **Stage 14 (customer commerce)**, where **M16, M17, M20 and M21 are now
-complete**: 107 of the 144 requirement rows built, **1,353 automated tests**. The other outstanding externals are the hosting/live-database decision (OB-02,
+moved to **Stage 14 (customer commerce)**, which is now **COMPLETE with its gate passed** —
+M16, M17, M20, M21 and M31 all done: 108 of the 144 requirement rows built, **1,370
+automated tests** plus **48 integration tests** against real PostgreSQL. The other outstanding externals are the hosting/live-database decision (OB-02,
 owner-deferred) and the in-store activities that need the store itself (QG-02 usability
 testing, the owner-witnessed restore in UAT-01).
 
 ---
 
 ## Current stage
-**Stage 14 — Customer commerce (active; taken out of order because Stage 11 is blocked on
-EX-02). Stages 0–10 complete, all gates passed.**
+**Stage 15 — Fulfilment and delivery (next). Stages 0–10 and Stage 14 complete, all gates
+passed.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
 done for Store-Core (R2); Stage 5 has built 59 tested foundation units, five
 **persistence-layer** units incl. the PostgreSQL connector + migration runner, and the **first
@@ -1171,6 +1172,60 @@ a paid engagement — it will come to the owner as a decision when the stage clo
 
 ---
 
+## Stage 14 — Customer commerce — ✅ COMPLETE, GATE PASSED (4 August 2026)
+
+Gate: *one customer, end to end* — `docs/evidence/stage-14-one-customer.md`.
+**M16, M17, M20, M21 and M31 are all complete.**
+
+Part 3 added the last requirement and the gate.
+
+- **Versioned templates and immutable documents (M31-FR-01)** — `packages/documents/`.
+  The rule is one sentence in the roadmap and one of the most commonly broken things in
+  retail software: *a template change is a new version, never overwriting issued
+  documents.* It breaks because the wrong design is the obvious one — store the template,
+  render the invoice whenever someone asks. Then in August the shop changes its address on
+  the template, and **every invoice it has ever issued silently changes address too**.
+  July's invoice now shows an address the shop did not have in July, and the customer's
+  copy and the shop's copy are no longer the same document — which for a tax record is not
+  a cosmetic problem. So an issued document is **frozen at issue**: the rendered content is
+  stored, the exact version is recorded, reproduction returns the stored bytes, and a
+  version any document depends on can never be removed. There is no edit, overwrite or
+  delete anywhere in the module, and a test asserts that absence. 17 tests.
+
+**The gate** (`tests/integration/one-customer.test.ts`, 13 assertions, 29 controls) follows
+**one person** through the whole customer-facing product against real PostgreSQL: a
+misspelled search that still finds the product while the recalled one never appears · a
+cart corrected before the payment screen · suggestions withheld for consent **with the
+omission stated** · a coupon redeemed offline on a 90-minute-old list that says so, and
+refused on the second lane · a household gift card spent at the till and on the app twenty
+seconds apart, with **both movements kept and both channels named** · her mother's address
+35 km away refused at the start · the delivery fee stated up front · a full slot offering
+alternatives · **her bank not answering, so the order stays unconfirmed and unpicked and
+she is told not to pay again** · her invoice still showing the old address after the shop
+moves · the service desk allowed to look her up to answer her own complaint while the
+marketing lookup is refused · a **first-response** breach escalating while resolution is
+still comfortably within target · compensation needing a second name · an AI reply nobody
+sends · exclusion from the Diwali campaign with the count reported, while her order
+confirmation still reaches her · and finally an erasure that names the **Income Tax Act**,
+the eight-year period and the **2034-03-31** release date, and says the audit trail *"can
+never be deleted by anyone, including us"*.
+
+**The three places this stage refuses to lie:** *"in stock"* that isn't (an unknown
+availability age counts as stale, not fresh); *"paid"* that isn't (the `unknown` payment
+branch confirms nothing and picks nothing); and *"erased"* that isn't (the letter names the
+statute, the period and the release date for every record that survives).
+
+`pnpm check` green: typecheck + lint + secret-scan + **1,370 tests**, plus **48 integration
+tests** against real PostgreSQL 16.13.
+
+### The one item left on this stage, and it is the owner's
+
+**EX-13 — an independent penetration test — is a genuine gate before the customer app goes
+live to the public.** It is a paid outside engagement, not something that can be built. It
+will be brought as a decision with options; nothing else on Stage 14 is outstanding.
+
+---
+
 ## Last completed
 - **Setup 1/3/4** — repository, `CLAUDE.md`, safety net (tests, guardrails, secret
   scan, CI), and baseline ADR. (Merged to `main` via PR #1.)
@@ -1194,13 +1249,14 @@ a paid engagement — it will come to the owner as a decision when the stage clo
   **real export data from the incumbent ERP**, and the letter requesting it
   (`docs/discovery/legacy-data-access.md`) has not been sent. This is the first point in
   the whole roadmap where building further in sequence is genuinely impossible.
-- **Stage 14 — Customer commerce, taken out of order.** **M16, M17, M20 and M21 are
-  complete** (data-subject rights, segments and lifetime value, coupons and referrals,
-  gift cards and store credit, household pooling, the customer storefront, and CRM plus
-  the service desk). What remains is **M31-FR-01** with D07–D08, then the Stage 14 gate.
-  EX-04/05 (messaging providers) and EX-11 (app-store accounts) gate *delivery and
-  publication*, not the build; **EX-13, an independent penetration test, is a genuine gate
-  before customer launch** and needs a paid engagement.
+- **Stage 15 — Fulfilment and delivery.** M18-FR-03/04, M19-FR-02, the M20 delivery
+  surfaces and D09. `packages/orders`, `packages/fulfilment`, `apps/picker-app` and
+  `apps/delivery-app` are built and tested; Stage 15 completes the order lifecycle and
+  proves a pick-to-doorstep run end to end.
+- Then **Stage 16 — Enterprise modules**: M22-FR-02/04, M24 (supplier portals), M25
+  (workforce), M26 (facilities and assets), M27 (concession), M28-FR-02/03/04. These are
+  the largest remaining block: **16 requirement rows across five modules with nothing
+  built yet.**
 - Everything earlier is **finished, not paused**: stages 0–10 complete with written gate
   evidence in `docs/evidence/`. Nothing has been silently dropped — `docs/backlog.md`
   schedules every remaining requirement row to a named stage.
@@ -1222,15 +1278,15 @@ a paid engagement — it will come to the owner as a decision when the stage clo
   store operations lead, finance/CA reviewer, security/architecture reviewer.
 
 ## Next session should start with
-**Stage 14, finishing** — M16, M17, M20 and M21 are done:
-1. **M31-FR-01** and D07–D08 — customer notifications through the existing consent-gated
-   engine and its dead-letter queue, composing the M21 campaign planner.
-2. **Stage 14 gate evidence** — one customer walked end to end against real PostgreSQL:
-   browse → cart → an out-of-area refusal → a slot → an uncertain payment that confirms
-   nothing → a complaint → compensation needing a second signature → an erasure request
-   that keeps the invoices and says so.
-3. Then **Stage 15** (fulfilment and delivery: M18-FR-03/04, M19-FR-02, D09) or **Stage 16**
-   (enterprise modules: M22, M24–M28), both of which are unblocked.
+**Stage 15 — Fulfilment and delivery**, which is unblocked:
+1. **M18-FR-03/04** — order amendment and cancellation, and the order-to-cash close.
+2. **M19-FR-02** — route planning and driver assignment.
+3. **D09** — the delivery-economics rules already partly modelled in `apps/delivery-app`.
+4. **Stage 15 gate evidence** — one order picked, packed, driven and delivered against
+   real PostgreSQL, with a substitution the customer confirmed and COD reconciled.
+
+Then **Stage 16 (enterprise modules)** — the largest remaining block, 16 requirement rows
+across M24–M28 with nothing built yet.
 
 **The one thing that would genuinely help from outside:** send the ERP-vendor letter in
 `docs/discovery/legacy-data-access.md`. It unblocks EX-02 and therefore Stage 11, which is

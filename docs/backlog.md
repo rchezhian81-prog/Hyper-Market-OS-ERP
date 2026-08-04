@@ -6,11 +6,11 @@ time, each ending in a gate**. Nothing here is optional — "deferred" means a l
 release, never removed (OD-02).
 
 Regenerate the status counts with the parser in `docs/traceability.md`'s own table; last
-counted **4 August 2026** (Stage 14, parts 1–2).
+counted **4 August 2026** (Stage 14 complete).
 
 ## Where the build actually stands
 
-**144 individual requirement rows: 107 built · 4 partial · 33 not started.**
+**144 individual requirement rows: 108 built · 4 partial · 32 not started.**
 
 | Module | Release | Built | Partial | Not started |
 | --- | --- | --- | --- | --- |
@@ -44,7 +44,7 @@ counted **4 August 2026** (Stage 14, parts 1–2).
 | M28 Waste & sustainability | R6 | 1 | 0 | 3 |
 | M29 Owner intelligence | R2 | 4 | 0 | 0 |
 | M30 Import & export | R2 | 3 | 1 | 0 |
-| M31 Notifications & receipts | R2/R4 | 3 | 0 | 1 |
+| M31 Notifications & receipts | R2/R4 | 4 | 0 | 0 |
 | M32 Integration platform | R1 | 0 | 0 | **4** |
 | M33 Platform administration | R1 | 4 | 0 | 0 |
 | M34 Audit & compliance | R1 | 4 | 0 | 0 |
@@ -62,8 +62,10 @@ written evidence in `docs/evidence/` — the gates are about proof, not code, an
 was executed against a real PostgreSQL rather than asserted. That is why M01–M15 plus
 M33–M35 are fully green: **the store-facing core of the product is built and proven.**
 
-**Stages 5 to 10 have all passed their gates. The earliest stage with an open gate is
-Stage 11 — which is blocked on the previous system's export rights (EX-02), not on us.**
+**Stages 5 to 10 and Stage 14 have all passed their gates.** Stage 11 is blocked on the
+previous system's export rights (EX-02), which is a letter to send rather than code to
+write; Stages 12–13 need the store and an owner GO. The next unblocked build stages are
+**15 (fulfilment and delivery)** and **16 (enterprise modules)**.
 
 ## Stage 5 — Engineering foundation — ✅ **COMPLETE, GATE PASSED**
 
@@ -155,7 +157,9 @@ exists.
 ## Stage 12 — Store Core pilot · Stage 13 — Parallel run and cutover
 Owner GO gates; need the store.
 
-## Stage 14 — Customer commerce ← **ACTIVE** (taken out of order; Stage 11 is blocked on EX-02)
+## Stage 14 — Customer commerce — ✅ **COMPLETE, GATE PASSED**
+(taken out of order; Stage 11 is blocked on EX-02)
+Gate: *one customer, end to end.*
 
 | # | Work | Requirement | State |
 | --- | --- | --- | --- |
@@ -166,12 +170,13 @@ Owner GO gates; need the store.
 | 14.5 | Household pooling and omnichannel balance consistency | M17-FR-04 | ✅ done |
 | 14.6 | Customer app and web storefront | M20 (all 4) | ✅ done |
 | 14.7 | CRM and service desk | M21 (all 4) | ✅ done |
-| 14.8 | Customer notifications | M31-FR-01, D07–D08 | ⬜ next |
-| 14.9 | Stage 14 gate evidence | QG-06 | ⬜ after 14.8 |
+| 14.8 | Versioned templates and immutable documents | M31-FR-01, D07–D08 | ✅ done |
+| 14.9 | Stage 14 gate evidence — one customer, end to end | QG-06 | ✅ **PASSED** — `docs/evidence/stage-14-one-customer.md` |
 
-**M16, M17, M20 and M21 are now complete.** EX-04/05 (messaging providers) and EX-11 (app-store
-accounts) gate *delivery and publication*, not the build; **EX-13 (independent penetration
-test) is a genuine gate before customer launch** and needs a paid engagement.
+**M16, M17, M20, M21 and M31 are now complete.** EX-04/05 (messaging providers) and EX-11
+(app-store accounts) gate *delivery and publication*, not the build. **EX-13 — an
+independent penetration test — is the one genuine gate before customer launch** and needs a
+paid engagement; it is the only outstanding item on this stage and belongs to the owner.
 
 ## Stage 15 — Fulfilment and delivery
 M18-FR-03/04, M19-FR-02, M20 delivery surfaces, D09.
