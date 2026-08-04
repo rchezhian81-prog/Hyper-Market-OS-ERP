@@ -226,11 +226,31 @@ persistence and lane layers; live IoT sensor ingestion (D14) is a deployment ste
 build one. **Only M32 (integration platform) and M36 (multi-tenant platform) remain
 unstarted**, in Stages 19 and 18 respectively.
 
-## Stage 17 — Governed AI agents
-A01–A10 in authority order, with evaluation sets, budgets, kill switches. Needs EX-12.
+## Stage 17 — Governed AI agents — ✅ **COMPLETE, GATE PASSED**
+(built entirely on a provider-neutral simulator — owner decision, 4 Aug 2026, Option A)
+Gate: *the AI proposes and people decide — and when the AI is compromised, broke or switched
+off, the shop does not notice.*
+
+| # | Work | Requirement | State |
+| --- | --- | --- | --- |
+| 17.1 | Provider-neutral model gateway + deterministic simulator | A01–A10 · AI-NFR-01/02 | ✅ done |
+| 17.2 | Agent authority boundaries, forbidden tools, human approval | AI-NFR-12 (absolute) | ✅ done |
+| 17.3 | Per-agent budgets, metering, tier downgrade, kill switches | D3 · AI-NFR-09/10 | ✅ done |
+| 17.4 | Prompt-injection fencing, secret redaction, PII minimisation | AI-NFR-05/06/07 · §35 | ✅ done |
+| 17.5 | Evaluation datasets, scoring, regression gating | AI-NFR-03/04/11 | ✅ done |
+| 17.6 | Provider-neutrality guardrail (build fails on a provider name) | P-06 · owner condition | ✅ done |
+| 17.7 | Stage 17 gate evidence — the AI proposes, people decide | QG-06 | ✅ **PASSED** — `docs/evidence/stage-17-ai-proposes-people-decide.md` |
+
+**All ten agents A01–A10 are built and gate-proven.** Every control is settled with no AI
+account: authority, forbidden tools, human approval, budgets, kill switches, injection
+resistance, redaction, PII minimisation, grounding rules and regression gating.
+
+**EX-12 does NOT block this stage.** `liveProviderGate()` records the 8 questions that
+genuinely need a live model — every one about what a model *says*, none about what the system
+*permits*. They are scheduled to the **pre-pilot integration gate**.
 
 ## Stage 18 — Multi-branch and innovation — ✅ **COMPLETE, GATE PASSED**
-(taken ahead of Stage 17, which is blocked on EX-12 — a paid model-gateway account)
+(taken ahead of Stage 17; Stage 17 has since been completed against a simulator)
 Gate: *two shops, one system — and neither can see the other.*
 
 | # | Work | Requirement | State |

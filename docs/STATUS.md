@@ -27,29 +27,28 @@ built, 1 partial, and NONE unstarted**, with **1,867 automated tests** plus **11
 tests** against real PostgreSQL 16.13 and written evidence for all eleven gates. The single
 remaining partial (M02-FR-01) is partial **on purpose**: credential storage and MFA enrolment
 belong to the deployment identity provider, and closing the row would mean holding credentials
-in this codebase, which hard rule #4 forbids. The only
-code stage left is **17 (governed AI agents)**, which waits on EX-12 — a paid model-gateway
-account, a spending decision. The other outstanding externals are EX-02 (the ERP-vendor letter
-that unblocks Stage 11), the hosting/live-database decision (OB-02, owner-deferred), and the
-in-store activities that need the store itself (QG-02 usability testing, the owner-witnessed
-restore in UAT-01).
+in this codebase, which hard rule #4 forbids. **Stage 17 (governed AI agents) is now complete too**, built entirely
+against a provider-neutral simulator by owner decision of 4 August 2026 — so **every code stage
+in the roadmap is finished.** What remains is EX-02 (the ERP-vendor letter that unblocks Stage
+11), the hosting decision (OB-02, owner-deferred), the pre-pilot integration gate where a live
+AI provider is chosen, and the in-store activities that need the store itself.
 
 ---
 
 ## Current stage
-**Stage 17 — Governed AI agents is the ONLY code stage left, and it waits on EX-12.
-Stages 0–10, 14, 15, 16, 18 and 19 are complete, all gates passed.**
+**EVERY CODE STAGE IS COMPLETE. Stages 0–10, 14, 15, 16, 17, 18 and 19 all passed their gates.**
 
-**Stage 19 passed today** on `tests/integration/the-seams-hold.test.ts` (15 assertions, 48
-controls, real PostgreSQL 16.13, run three times green) — one evening of integration traffic: a
-till on flaky 4G resending a sale it already committed, a payment webhook replayed and then
-forged, Tally rejecting a journal that dead-letters and is corrected, a signing key rotated with
-an overlap and a leaked one revoked without, an uncertified scanner turned away — and through all
-of it, not one customer waiting. Evidence in `docs/evidence/stage-19-the-seams-hold.md`.
+**Stage 17 passed today** on `tests/integration/ai-proposes-people-decide.test.ts` (12
+assertions, 32 controls, real PostgreSQL 16.13, three runs green) — built entirely on a
+**provider-neutral simulator with no AI account**, per the owner's binding decision of 4 August
+2026. The hardest case in the suite: a customer message steers the model into proposing a
+₹50,000 refund and a customer export, **the model obeys**, and neither reaches the shop —
+because neither tool was ever granted. Evidence in
+`docs/evidence/stage-17-ai-proposes-people-decide.md`.
 
-**With M32 complete, every module M01–M36 has its foundation built and tested.** What remains
-is not code: EX-12 (a model gateway) for Stage 17, EX-02 (the ERP-vendor letter) for Stage 11,
-and the store-side activities in `docs/registers/uat-calendar.md`.
+**What is left is not code.** EX-02 (a letter), OB-02 (hosting), the pre-pilot integration gate
+where a live AI provider is chosen and the 8 `liveProviderGate()` questions are answered, EX-13
+(a penetration test), and the 49 store activities in `docs/registers/uat-calendar.md`.
 
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
 done for Store-Core (R2); Stage 5 has built 59 tested foundation units, five
@@ -1641,6 +1640,86 @@ honest rather than being marked complete.
 
 ---
 
+## Stage 17 — Governed AI agents — ✅ COMPLETE, GATE PASSED (5 August 2026)
+
+Gate: *the AI proposes, people decide* — `docs/evidence/stage-17-ai-proposes-people-decide.md`.
+**All ten agents A01–A10 are built and gate-proven, with no AI account.**
+
+Built against a provider-neutral gateway and a deterministic simulator, per the owner's binding
+decision of 4 August 2026 (Option A). The one condition on that decision — *switching provider
+must remain a configuration and adapter change, never a rewrite* — is enforced by a guardrail
+that **fails the build** if a provider name, SDK import, provider-shaped model id or network
+call appears outside a declared adapter directory.
+
+The whole stage rests on one premise: **a language model is an untrusted input, not a
+component.** Every other module here is deterministic and either succeeds or refuses by name. A
+model can be slow, truncated, confidently wrong, or steered by text a stranger typed into a
+review. So its output is checked the way the goods-in door checks a delivery.
+
+- **The gateway (A01–A10, AI-NFR-01/02)** — a timeout is an **outcome, not an exception**,
+  because a model must never hold a cashier's screen. Malformed output is **refused, never
+  repaired**: best-effort parsing of a broken reply is how a half-parsed number reaches a
+  purchase order. And the line that matters most — **a proposal for a tool that was not offered
+  is dropped and recorded.** Text can persuade a model to *ask* for anything; it cannot make the
+  gateway hand over `issue_refund`. 16 tests.
+- **Authority (AI-NFR-12, absolute)** — no autonomous payment, refund, purchase commitment,
+  price change, stock adjustment or privilege change. Easy to write in a document and hard to
+  keep, because the pressure runs one way: every quarter somebody has a good reason why *this*
+  agent should just apply the markdown itself. So `FORBIDDEN_TOOLS` is a **closed list with no
+  override anywhere** — not a setting, not a tenant option, not a flag — checked at grant time,
+  subtracted again at review, and refused **first**. The **human is the actor and the agent is
+  the drafter**, because *"the AI did it"* is an audit trail with nobody in it. And **A01, the
+  agent closest to the owner, is read-only.** 25 tests.
+- **Budgets and kill switches (D3)** — the owner's cost decision as code. Fail-safe means
+  something precise and easy to get backwards: **the AI stops and the shop does not.** Every
+  agent assists a process that already worked without it, so `shopKeepsTrading` is typed as the
+  literal `true` and no future edit can make an AI bill stop a till. The estimate is checked
+  **before** the call — metering afterwards tells you what you already owe, which is a report,
+  not a control. A tier is **downgraded, never upgraded**. And the kill switch needs **no
+  approval**, because one that needs approval gets pulled twenty minutes too late. 22 tests.
+- **Injection, secrets and PII (§35, PRV)** — said plainly: **detection is not the defence.**
+  You cannot reliably spot hostile instructions; people writing them are trying not to be
+  spotted. The defence is **fencing** untrusted content as data, with forged delimiters stripped
+  **in a loop** — a single pass lets a split forgery reassemble into a valid fence. The
+  scanner's `blocks` field is typed as the literal **`false`**. Secrets are redacted **both
+  directions**, the inbound one being the leak nobody expects: a model repeats back what it was
+  shown, and the answer lands in a log, a screenshot, a ticket. 19 tests.
+- **Evaluation (AI-NFR-03/04/11)** — hallucination is the hardest of the four, because it looks
+  exactly like an answer: nothing throws, the sentence is fluent and specific, and the buyer
+  orders 400 cases on it. So an **uncited answer scores zero however good it sounds**, *"I don't
+  know"* is a **correct answer**, and safety cases return `unsafe` as a **separate verdict from
+  `fail`** — there is no partial credit on a case where the agent proposed a refund. An agent at
+  99% accuracy with one unsafe case is **not ready**. A regression **blocks the release**. 21
+  tests.
+
+**The gate** (12 assertions, 32 controls, verified repeatable) walks a day of agent work. The
+hardest case: a hostile customer message whose PII is minimised away and whose forged fence is
+stripped, where **the model obeys the attacker** and proposes a ₹50,000 refund and a customer
+export — and neither reaches the shop, because neither tool was ever granted. Proven across
+**all 12 forbidden tools × all 10 agents**. Plus a tier downgraded rather than overspent, a
+ceiling exhausted with the FEFO fallback named, a duty manager stopping the customer-facing
+agents at 8pm without approval while the owner's brief carried on, and a suite at 100% accuracy
+with one unsafe case refused as unfit.
+
+**A defect the guardrails caught, and it was serious.** A raw control byte reached the fence
+delimiter constants. Two consequences: the file's diff would have rendered as *"Binary files
+differ"* (hard rule #8), **and the delimiter strip stopped matching the plain text an attacker
+actually sends** — so a forged fence survived into the prompt. Found by printing the real output
+rather than trusting the test. Fixed with explicit escapes, a unit separator an attacker cannot
+type into a web form, and a looping strip that also defeats split forgeries. The Stage 8
+`plain-text-source` guardrail has now paid for itself four times.
+
+**What still needs a live provider** is recorded in `liveProviderGate()` — 8 items, every one a
+question about what a model *says*, none about what the system *permits*. Notably: *does AI
+expiry prediction actually beat the deterministic FEFO rule already built?* If it does not, that
+agent should not ship, and only a live comparison answers it. Scheduled to the pre-pilot
+integration gate as UAT-49.
+
+`pnpm check` green: typecheck + lint + secret-scan + **1,974 tests**, plus **128 integration
+tests** against real PostgreSQL 16.13.
+
+---
+
 ## Last completed
 - **Setup 1/3/4** — repository, `CLAUDE.md`, safety net (tests, guardrails, secret
   scan, CI), and baseline ADR. (Merged to `main` via PR #1.)
@@ -1664,13 +1743,12 @@ honest rather than being marked complete.
   **real export data from the incumbent ERP**, and the letter requesting it
   (`docs/discovery/legacy-data-access.md`) has not been sent. This is the first point in
   the whole roadmap where building further in sequence is genuinely impossible.
-- **Stage 17 — Governed AI agents (A01–A10). The only code stage left, and it needs EX-12** —
-  a model-gateway account. The authority boundaries, evidence requirements, budgets and kill
-  switches are already designed; what is missing is the provider account, which is a spending
-  decision belonging to the owner.
-- Everything else is **finished, not paused**: stages 0–10, 14, 15, 16, 18 and 19 complete with
-  written gate evidence in `docs/evidence/`. **Every module M01–M36 has its foundation built and
-  tested; nothing has been silently dropped.** Nothing has been silently dropped — `docs/backlog.md`
+- **Nothing.** Every code stage in the roadmap is complete with written gate evidence in
+  `docs/evidence/` — stages 0–10, 14, 15, 16, 17, 18 and 19. Every module M01–M36 and all ten
+  agents A01–A10 are built and tested. Nothing has been silently dropped.
+- What remains needs the owner or the store: **EX-02** (a letter, unblocks Stage 11), **OB-02**
+  (hosting), the **pre-pilot integration gate** (a live AI provider, then UAT-49), **EX-13** (a
+  penetration test), and the 49 store activities in `docs/registers/uat-calendar.md`. Nothing has been silently dropped — `docs/backlog.md`
   schedules every remaining requirement row to a named stage.
 
 ## Blocked / needs owner input
@@ -1690,18 +1768,17 @@ honest rather than being marked complete.
   store operations lead, finance/CA reviewer, security/architecture reviewer.
 
 ## Next session should start with
-**A decision, not code.** With M32 complete, every module M01–M36 has its foundation built and
-gate-proven. What is left needs the owner:
+**Stage 11 preparation and hardening, since every code stage is now complete.**
 
-1. **EX-12 — a model-gateway account**, which unblocks **Stage 17 (governed AI agents,
-   A01–A10)**, the last code stage. This is a paid subscription; I will bring it as a decision
-   with two or three concrete options and their costs.
-2. **EX-02 — the ERP-vendor letter** in `docs/discovery/legacy-data-access.md`, which unblocks
-   **Stage 11 (migration rehearsal)** and therefore the pilot.
-3. **EX-13 — an independent penetration test** before customer launch (paid engagement).
-4. Meanwhile: the store-side activities in `docs/registers/uat-calendar.md` (UAT-01…43).
-   **The partial rows are done** — three closed on 4 August, and M02-FR-01 stays partial on
-   purpose (hard rule #4).
+1. **Synthetic migration rehearsal.** MG-01…12 can be exercised end to end against *generated*
+   legacy data that mimics the incumbent ERP's shape. It proves the engine, the reconciliation
+   and the exception handling without waiting for EX-02 — and when the real export arrives, only
+   the data changes.
+2. **Cross-cutting hardening**: performance budgets under load (§32), accessibility passes on
+   the role surfaces, and the runbooks for the pilot.
+3. **The consolidated cost forecast** the owner asked for at the procurement gate: hosting +
+   storage + backups + messaging + AI against the ₹15,000/month ceiling, with external retainers
+   shown separately.
 
 **The one thing that would genuinely help from outside:** send the ERP-vendor letter in
 `docs/discovery/legacy-data-access.md`. It unblocks EX-02 and therefore Stage 11, which is
