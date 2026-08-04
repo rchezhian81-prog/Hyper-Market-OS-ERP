@@ -12,7 +12,11 @@ An ADR captures a decision, why it was made, and what it commits us to.
 ## Context
 The technology baseline (ADR-0001, §19) fixes containers + PostgreSQL + Redis + object
 storage + a durable broker + a central AI gateway, delivered via containers/IaC/CI-CD, with
-an **offline-first store edge**. **D3 sets a ₹20,000/month cloud running-cost ceiling.**
+an **offline-first store edge**. **D3 sets a ₹15,000/month platform runtime ceiling** (owner,
+4 Aug 2026, superseding the ₹20,000 of 2 Aug). The all-managed shape this ADR assumed reaches
+₹24,500 at its upper bound and therefore **breaches that ceiling**; the consolidated forecast
+in `../registers/cost-forecast.md` costs a single-VM alternative at ₹6,465–12,500 and
+recommends it, with the operational trade stated.
 OD-09 requires SRE to own everything; AID-10 requires a **quarterly rebuild** by the second
 custodian. This ADR records **how and where the cloud tier is hosted and deployed** — the
 hosting shape *within* the baseline, not a change to it. Design detail:
@@ -20,7 +24,7 @@ hosting shape *within* the baseline, not a change to it. Design detail:
 
 ## Decision (proposed)
 1. **Two tiers:** an on-prem **store edge** (capex) + a **cloud central tier** (the
-   ₹20k/month D3 ceiling).
+   ₹15k/month D3 ceiling).
 2. **India region** for the cloud tier — data residency (DPDP Act 2023) and GST/tax-evidence
    locality.
 3. **Portable, container-first hosting:** managed PostgreSQL + Redis + object storage + a

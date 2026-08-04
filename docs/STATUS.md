@@ -1660,6 +1660,35 @@ honest rather than being marked complete.
 
 ---
 
+## Consolidated cost forecast against D3 (7 August 2026)
+
+`docs/registers/cost-forecast.md` — the record the owner's binding decision of 4 August asked
+for: *"if the platform cannot remain within ₹15,000/month, do not stop development — record the
+forecast and present one consolidated cost decision at the hosting/procurement gate."*
+**Nothing here needs a decision today.**
+
+**The finding is real, not a rounding difference.** `infrastructure.md` was sized to the
+superseded ₹20,000 and its range topped out at exactly ₹20,000. Costed properly against the
+current ceiling and including the metered lines, the all-managed shape reaches **₹24,500 at its
+upper bound — a breach.** Managed PostgreSQL alone is ₹6,000–8,000 and does not shrink.
+
+A single India-region VM running Postgres, Redis and the containers — with object storage and
+off-site backups deliberately kept managed, because a backup you also host is not an off-site
+backup — costs **₹6,465–12,500 and fits with headroom**, including AI at full R7 usage. That is
+the recommendation, and **what it actually costs is not money**: database patching, failover and
+restore rehearsal move to D4, the second custodian, whose quarterly rebuild (AID-10) stops being
+a drill and becomes the real recovery path. Stated in the decision, not buried in a footnote.
+
+The AI line is the only one with a **measured** basis: 120 calls cost ₹164.40 at the Stage 17
+gate, so ~1,200 calls/month at R2 launch is **₹165 (1.1% of the ceiling)** and all ten agents at
+R7 is **₹2,470 (16.5%)** — bounded by per-agent ceilings, checked before the call rather than
+metered after, and failing safe so the AI stops and the shop does not.
+
+Also corrected: **six documents still carried the superseded ₹20,000** — the infrastructure
+design, ADR-0002, the architecture README, the pilot runbook, the store-facts questionnaire and
+STATUS itself. A ceiling that appears as two different numbers across the documentation is a
+ceiling nobody can hold anyone to.
+
 ## Cross-cutting hardening — the deny path (7 August 2026)
 
 Evidence: `docs/evidence/cross-cutting-security.md`. SEC-02/03/12, PRV-03/05/08, §28, hard rules

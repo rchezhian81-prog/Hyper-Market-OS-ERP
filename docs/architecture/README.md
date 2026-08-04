@@ -114,5 +114,5 @@ Stage 5 within the §19 baseline — a commitment that deviates would be recorde
 - `../api/catalogue.md` — §30 API and event catalogue.
 - `offline-sync.md` — §31 offline-first and sync design (the P-01 detail).
 - `migration-design.md` — §34 migration/cutover design (the Stage 13 runbook lives in `../cutover/`).
-- `infrastructure.md` — §19/§20 hosting & deployment design to the ₹20,000/month (D3) envelope (decision: `../adr/0002-hosting-and-deployment.md`).
+- `infrastructure.md` — §19/§20 hosting & deployment design to the **₹15,000/month** (D3, revised 4 Aug 2026) envelope; consolidated forecast in `../registers/cost-forecast.md` (decision: `../adr/0002-hosting-and-deployment.md`).
 - `../security/threat-privacy-model.md` — §35 threat and privacy model.

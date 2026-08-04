@@ -42,7 +42,9 @@ which payment methods online? Any loyalty/points scheme you want from day one? _
 fine — Store-Core comes first._ **[AVR-14]**
 - Answer: __________________________  Answered by: ____________  Date: ________
 
-**A5. Hosting & support.** Budget ceiling is already set at **₹20,000/month** (D3). Do you
+**A5. Hosting & support.** Budget ceiling is **₹15,000/month platform runtime** (D3, owner
+4 Aug 2026, superseding the ₹20,000 of 2 Aug; external developer/support retainers are shown
+separately and never folded in). Do you
 have a preferred internet/hosting company, and who will be the day-to-day support contact
 besides you and Mr Sivakumar? **[AVR-20]**
 - Answer: __________________________  Answered by: ____________  Date: ________

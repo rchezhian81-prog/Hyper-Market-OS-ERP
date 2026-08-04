@@ -154,7 +154,8 @@ Being straight about the boundaries:
 The same containers move there — nothing is rewritten. What changes is: a **managed PostgreSQL**
 replaces the `db` service, the app containers run on the provider's container service, and
 `DATABASE_URL` points at the managed database. That is ADR-0002 item 4, and it needs your
-commercial choice on real quotes against the ₹20,000/month ceiling (D3).
+commercial choice on real quotes against the ₹15,000/month ceiling (D3, as revised 4 Aug 2026).
+The consolidated forecast is `../registers/cost-forecast.md`.
 
 ---
 

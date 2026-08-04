@@ -1,37 +1,45 @@
 # SRE Retail OS — Infrastructure & deployment design (Stage 4→5)
 
-- **Roadmap:** §19 (baseline), §20 (delivery/CI-CD), §31 (offline/edge), §35 (security), NFR. **Decisions:** D3 (**₹20,000/month** cloud ceiling), OD-09 (SRE owns everything), AID-02/06/08 (branches / env separation / signed releases). **ADR:** `../adr/0002-hosting-and-deployment.md`.
-- **Purpose:** How the system is hosted, deployed and operated — sized to the **₹20,000/month cloud running-cost ceiling (D3)** — while the store keeps trading offline (P-01) and the whole stack stays portable and owned (P-06, OD-09).
+- **Roadmap:** §19 (baseline), §20 (delivery/CI-CD), §31 (offline/edge), §35 (security), NFR. **Decisions:** D3 (**₹15,000/month** platform runtime ceiling — owner, 4 Aug 2026, superseding the ₹20,000 of 2 Aug), OD-09 (SRE owns everything), AID-02/06/08 (branches / env separation / signed releases). **ADR:** `../adr/0002-hosting-and-deployment.md`.
+- **Purpose:** How the system is hosted, deployed and operated — sized to the **₹15,000/month platform runtime ceiling (D3)** — while the store keeps trading offline (P-01) and the whole stack stays portable and owned (P-06, OD-09).
 
 > Design only. The infrastructure-as-code that implements this lands in `../../infra/` from
 > Stage 5. The **specific cloud vendor is a Proposed recommendation** pending owner
 > commercial validation against real quotes (ADR-0002; D3 note in the decision register).
 
 ## 1. Two tiers: store edge (on-prem) + cloud (central)
-- **Store edge — on-prem hardware in the store (capex, NOT part of the ₹20k/month cloud
+- **Store edge — on-prem hardware in the store (capex, NOT part of the ₹15k/month runtime
   ceiling):** a small fanless mini-server on a UPS, running the containerised edge stack +
   local PostgreSQL. This keeps the till trading with the internet cut (P-01, hard rule #1).
   Spec confirmed against the store's hardware inventory (`⟳ AVR-06`).
 - **Cloud — the central services, data, broker, AI gateway and admin/web app (the
-  ₹20k/month tier).** Hosted in an **India region** for data residency (DPDP Act 2023) and
+  ₹15k/month tier).** Hosted in an **India region** for data residency (DPDP Act 2023) and
   GST/tax-evidence locality (`⟳ AVR-14 / AVR-20` confirm region & support model).
 
-## 2. Monthly cloud cost model (to D3 = ₹20,000/month)
-Single-store scale (one store; 300–600 online SKUs at launch, D6). **Indicative envelope,
-not a quote:**
+## 2. Monthly cost model (to D3 = ₹15,000/month)
 
-| Component | Indicative /month | Note |
+**This section was re-based on 7 August 2026.** It was sized to the superseded ₹20,000, and its
+upper bound was ₹20,000 — which **breaches the current ceiling outright**. That is a real
+finding, not a rounding issue: the managed-service shape this design assumed does not fit
+₹15,000/month at its upper bound, and pretending otherwise would surface at the first invoice.
+
+The full consolidated forecast — every component, both shapes, against the ceiling, with the
+external retainers shown separately as the owner required — is
+**`../registers/cost-forecast.md`**. It is the single document to read at the procurement gate.
+Summary of what it concludes:
+
+| Shape | Indicative /month | Fits ₹15,000? |
 | --- | --- | --- |
-| Managed PostgreSQL (small, backups) | ₹6,000–8,000 | primary system of record |
-| Container compute (domain services + web/admin) | ₹4,000–6,000 | small; scales with load |
-| Redis (cache / queue support) | ₹1,500–2,000 | small managed or co-hosted |
-| Object storage + off-site backups | ₹1,000–2,000 | documents, backups (M35) |
-| Network / DNS / TLS / monitoring | ₹1,000–2,000 | |
-| **Subtotal** | **~₹14,000–20,000** | headroom retained |
-| AI model-gateway usage | metered, **capped** | separate; Store-Core (R2) AI is light (owner narrative A01); budget caps (AI-NFR); revisit at R7 |
+| **A — all-managed** (managed Postgres + managed Redis + container platform) | ₹14,000–20,500 | **Only at the bottom of the range.** Breaches at the top |
+| **B — single VM, self-managed** (one India-region VM running Postgres, Redis and the containers; managed object storage and backups) | ₹6,300–9,200 | **Yes, with headroom** |
 
-The **store edge hardware** and the **customer-app store/push** costs are separate from this
-cloud ceiling. Validate against **real vendor quotes** before any commitment (D3).
+Shape B is the recommendation, and the trade is stated plainly rather than buried: it moves
+database patching, failover and restore rehearsal onto us (D4, the second custodian) instead of
+the provider. `../adr/0002-hosting-and-deployment.md` carries the decision.
+
+The **store edge hardware** (capex), the **customer-app store/push** fees and any **external
+developer or support retainer** are separate from this ceiling and are never folded into it
+(owner, 4 Aug 2026). Validate against **real vendor quotes** before any commitment (D3).
 
 ## 3. Environments (AID-06 / hard rule #7)
 Four separated environments — **dev · test · staging · production**. Production data is
