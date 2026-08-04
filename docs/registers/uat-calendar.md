@@ -27,6 +27,9 @@ Status: **Scheduled** · **Done** · **Waived with reason**.
 | UAT-14 | **Parked-bill power-cut test** — park a bill, pull the lane's power, restart it: the bill comes back with every line. Then try to recall the same bill on a second lane and confirm it refuses. | M12-FR-02 · Stage 9 gate | Stage 12 pilot | Not yet required | Scheduled |
 | UAT-15 | **Settlement list walkthrough** — confirm the cash office sees *two* separate figures (not due yet vs genuinely late), and that every late one has a named owner and a date. | M14-FR-03 · Stage 9 gate | UAT-02 session | Not yet required | Scheduled |
 | UAT-16 | **Refund-uncertainty drill** — ask what happens when the card machine does not answer during a refund. Confirm nobody can mark it refunded by hand, and that the customer is told the true state. | M13-FR-04 · §4.3 · Stage 9 gate | Stage 12 pilot | Not yet required | Scheduled |
+| UAT-17 | **CA control-total sign-off rehearsal** — walk the month's evidence pack with the CA. Confirm they see *both* sides of every figure (our ledger and what Tally received) plus how each was derived, and that a pack which does not reconcile refuses to present itself as signable. | M23-FR-04 · QG-07 · Stage 10 gate | Stage 12 pilot preparation | **CA attendance required** | Scheduled |
+| UAT-18 | **Owner drill-through check** — tap any figure on the phone and confirm it lands on the actual bills behind it, and that they add up to the figure tapped. | M29-FR-02 · Stage 10 gate | Stage 12 pilot | Not yet required | Scheduled |
+| UAT-19 | **Brief-without-AI test** — turn the internet off overnight and confirm the morning brief still arrives with sales, margin, baskets and cash, stating only that the written summary was unavailable. | M29-FR-04 · AI-NFR-04 · Stage 10 gate | Stage 12 pilot | Not yet required | Scheduled |
 
 ## How UAT-01 runs when we reach it
 

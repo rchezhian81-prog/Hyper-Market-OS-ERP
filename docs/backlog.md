@@ -6,11 +6,11 @@ time, each ending in a gate**. Nothing here is optional — "deferred" means a l
 release, never removed (OD-02).
 
 Regenerate the status counts with the parser in `docs/traceability.md`'s own table; last
-counted **4 August 2026** (Stage 9).
+counted **4 August 2026** (Stage 10).
 
 ## Where the build actually stands
 
-**144 individual requirement rows: 90 built · 4 partial · 50 not started.**
+**144 individual requirement rows: 94 built · 4 partial · 46 not started.**
 
 | Module | Release | Built | Partial | Not started |
 | --- | --- | --- | --- | --- |
@@ -36,13 +36,13 @@ counted **4 August 2026** (Stage 9).
 | M20 Customer app & web | R4 | 0 | 0 | **4** |
 | M21 CRM & service desk | R4 | 0 | 0 | **4** |
 | M22 B2B | R6 | 2 | 0 | 2 |
-| M23 Finance & Tally | R2 | 2 | 1 | 1 |
+| M23 Finance & Tally | R2 | 3 | 1 | 0 |
 | M24 Supplier portals | R6 | 0 | 0 | **4** |
 | M25 Workforce | R6 | 0 | 0 | **4** |
 | M26 Facilities & assets | R6 | 0 | 0 | **4** |
 | M27 Concession | R6 | 0 | 0 | **4** |
 | M28 Waste & sustainability | R6 | 1 | 0 | 3 |
-| M29 Owner intelligence | R2 | 1 | 0 | 3 |
+| M29 Owner intelligence | R2 | 4 | 0 | 0 |
 | M30 Import & export | R2 | 3 | 1 | 0 |
 | M31 Notifications & receipts | R2/R4 | 3 | 0 | 1 |
 | M32 Integration platform | R1 | 0 | 0 | **4** |
@@ -62,8 +62,8 @@ written evidence in `docs/evidence/` — the gates are about proof, not code, an
 was executed against a real PostgreSQL rather than asserted. That is why M01–M15 plus
 M33–M35 are fully green: **the store-facing core of the product is built and proven.**
 
-**Stages 5, 6, 7, 8 and 9 have all passed their gates. The earliest stage with an open gate
-is Stage 10.**
+**Stages 5 to 10 have all passed their gates. The earliest stage with an open gate is
+Stage 11 — which is blocked on the previous system's export rights (EX-02), not on us.**
 
 ## Stage 5 — Engineering foundation — ✅ **COMPLETE, GATE PASSED**
 
@@ -130,11 +130,27 @@ Gate: *end-of-day and refund controls prove out.*
 
 **M12, M13, M14 and M15 are now complete.**
 
-## Stage 10 — Finance, Tally, owner control ← **ACTIVE**
-M23-FR-04, M29-FR-02/03/04, D10/D13.
+## Stage 10 — Finance, Tally, owner control — ✅ **COMPLETE, GATE PASSED**
+Gate: *the books reconcile and the owner can see why.*
 
-## Stage 11 — Migration rehearsal
-MG-01…09 full-volume trials. **Blocked on EX-02** (previous-system export rights).
+| # | Work | Requirement | State |
+| --- | --- | --- | --- |
+| 10.1 | Tally connector, retry, dead-letter, period close, control totals | M23-FR-04 | ✅ done |
+| 10.2 | KPI comparisons and drill-through to the immutable source | M29-FR-02 | ✅ done |
+| 10.3 | Owner thresholds, grouped exception alerts, approval inbox | M29-FR-03 | ✅ done |
+| 10.4 | Scheduled reports and the self-sending daily brief | M29-FR-04 / D13 | ✅ done |
+| 10.5 | Stage 10 gate evidence — the books reconcile | QG-07 | ✅ **PASSED** — `docs/evidence/stage-10-books-reconcile.md` |
+
+**M29 is now complete.** M23-FR-02 (GST returns) remains partial pending the filing-format
+confirmation in AVR-09.
+
+## Stage 11 — Migration rehearsal ← **ACTIVE (blocked on EX-02)**
+
+MG-01…09 full-volume trials. **Blocked on EX-02** (previous-system export rights) — the
+letter to the incumbent ERP vendor is drafted in `docs/discovery/legacy-data-access.md` and
+needs sending. The migration engine and controls (MG-01…12) are designed in
+`docs/architecture/migration-design.md`; nothing can be *rehearsed* until real export data
+exists.
 
 ## Stage 12 — Store Core pilot · Stage 13 — Parallel run and cutover
 Owner GO gates; need the store.

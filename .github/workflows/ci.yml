@@ -104,7 +104,8 @@ jobs:
       #   Stage 7 — purchase → GRN → invoice → payment
       #   Stage 8 — physical-to-system reconciliation and recall
       #   Stage 9 — end-of-day and refund controls
-      - name: Stage 6, 7, 8 and 9 gate suites
+      #   Stage 10 — the books reconcile and the owner can see why
+      - name: Stage 6 to 10 gate suites
         env:
           DATABASE_URL: postgres://sre@localhost:5432/sre_core
         run: pnpm run test:integration

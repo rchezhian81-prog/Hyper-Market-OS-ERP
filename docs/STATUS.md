@@ -8,24 +8,25 @@ Last updated: 4 August 2026
 ---
 
 ## Where we are, in one paragraph
-**Stages 0–9 are complete and their gates are passed.** Stage 5 (engineering foundation)
+**Stages 0–10 are complete and their gates are passed.** Stage 5 (engineering foundation)
 passed on a real destroy-and-restore; Stage 6 (offline/sync slice) on internet-off,
 duplicate, reorder and recovery tests; Stage 7 (product/pricing/purchase) on one delivery
 walked from dock to payment; Stage 8 (inventory, warehouse, quality) on physical-to-system
-and recall proof; and **Stage 9 (POS, returns, cash office) passed today on end-of-day and
-refund controls**. That completes **M01–M15 and M33–M35 — the entire store-facing core**:
-90 of the 144 requirement rows built, **1,140 automated tests** plus **25 integration tests
-against real PostgreSQL 16.13**, and written evidence for every gate in `docs/evidence/`.
-**Stage 10 — finance, Tally and owner control — is now active.** The only things still
-waiting on the outside world are the hosting/live-database decision (OB-02,
-owner-deferred), the previous system's export rights (EX-02, which gates the Stage 11
-migration rehearsal), and the in-store activities that need the store itself (QG-02
-usability testing, the owner-witnessed restore in UAT-01).
+and recall proof; Stage 9 (POS, returns, cash office) on end-of-day and refund controls; and **Stage 10
+(finance, Tally, owner control) passed today on the books reconciling**. That completes
+**M01–M15, M29 and M33–M35 — the entire store-facing core plus the owner's control
+surface**: 94 of the 144 requirement rows built, **1,209 automated tests** plus **35
+integration tests against real PostgreSQL 16.13**, and written evidence for every gate in
+`docs/evidence/`. **Stage 11 (migration rehearsal) is the next stage and is blocked on
+EX-02** — the previous system's export rights — which is a letter to send, not code to
+write. The other outstanding externals are the hosting/live-database decision (OB-02,
+owner-deferred) and the in-store activities that need the store itself (QG-02 usability
+testing, the owner-witnessed restore in UAT-01).
 
 ---
 
 ## Current stage
-**Stage 10 — Finance, Tally, owner control (active). Stages 0–9 complete, all gates
+**Stage 11 — Migration rehearsal (blocked on EX-02). Stages 0–10 complete, all gates
 passed.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
 done for Store-Core (R2); Stage 5 has built 59 tested foundation units, five
@@ -964,6 +965,95 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## Stage 10 — Finance, Tally, owner control — ✅ COMPLETE, GATE PASSED (4 August 2026)
+
+Gate: *the books reconcile and the owner can see why* —
+`docs/evidence/stage-10-books-reconcile.md`. **This completes M29** and takes M23 to three
+of four.
+
+- **Tally connector, dead-letter queue and period close (M23-FR-04)** —
+  `packages/period-close/`. The most important thing about this package is what it is
+  **not**: Tally is a **destination, not the book of record.** Our append-only ledger is
+  the truth; Tally is where a copy goes so the CA can work in software they already know.
+  The failure people actually hit is the reverse assumption — a posting fails, somebody
+  "fixes it in Tally", and now two systems disagree and neither knows it. So a failed
+  posting **never changes our numbers**: it queues, retries with computed backoff, and if
+  it keeps failing it sits in a **visible** dead-letter queue that is read rather than
+  drained by deletion. A `duplicate` from Tally counts as accepted — that is the payoff of
+  idempotency and it is the case that actually occurs after a timeout. A **rejection**
+  dead-letters immediately instead of burning five retries, because a voucher Tally will
+  never accept does not become acceptable on the fifth attempt, and retrying it buries the
+  one item a human needs to see. A correction is a **new** posting with a **new** key that
+  keeps the original failure on file — a dead-letter that vanishes when it is fixed leaves
+  no evidence the month was ever wrong. 27 tests.
+- **Control totals and the CA's pack** — a period close is the moment the shop says in
+  writing what happened last month, and an accountant puts their name to it, so it cannot
+  be a button that sets a flag. **Every total is stated twice, from two independent
+  sides** — what our ledger holds and what the accounts received — and they must agree
+  **exactly**. A close that tolerates a small difference tolerates any difference, because
+  nobody ever tightens the tolerance afterwards. The close returns **every blocker at
+  once**, because a finance team meeting obstacles one at a time on the last day of the
+  month starts looking for a way round the system and finds one. A signed period is
+  **never edited**: a reopen needs a separate approver, and a late correction posts into
+  the open period as a compensating entry. The evidence pack prints both sides and the
+  derivation method for each figure, so the CA signs something re-derivable rather than
+  our word — and a pack that does not reconcile is still produced, marked **not signable**,
+  saying *"Do not sign them until the differences above are explained."*
+- **Owner drill-through (M29-FR-02)** — `packages/owner-control/`. The owner sees "margin
+  down 4%" and asks the only question worth asking: *show me.* A drill-through that looks
+  right and is wrong is worse than none, because the owner **acts** on it. So the drill
+  reaches the **immutable events**, not a summary that can drift; and if the transactions
+  do not add up to the number that was clicked, it says so in capital letters instead of
+  showing a plausible list. Scope is enforced **and the number changes with it** — a branch
+  manager sees a recomputed total plus a line saying what was withheld, because showing a
+  company total over a filtered list is how someone concludes their branch is losing money
+  another branch actually made. 10 tests.
+- **Alerts and the approval inbox (M29-FR-03)** — the failure mode is not too little
+  information, it is **too much**: an owner who gets forty alerts a day stops reading
+  alerts, and the one that mattered arrives into a habit of ignoring them. Six voided bills
+  on one lane is **one** alert with a count and a value, keeping every transaction id for
+  the drill. Every threshold is the owner's. The inbox **flags an approval the world has
+  overtaken** rather than offering to commit a stale review, and explains every
+  non-actionable item instead of showing a button that fails. 17 tests.
+- **The daily brief that sends itself (M29-FR-04)** — the roadmap's acceptance is concrete
+  and it is the right test: *three days running without anyone sending it*, and *if AI is
+  off, the numbers still arrive.* The second half is what systems get wrong, so the
+  architecture is inverted: **the numbers ARE the brief; the narrative is a decoration.**
+  The figures are composed first and always sendable; the narrative is dropped without
+  ceremony if it is absent, unconfident, in the wrong language, or carries no evidence for
+  what it claims — and the omission is stated in the brief itself. Tamil and English
+  throughout. A missed morning is **carried and labelled late**, never skipped: a brief
+  that silently does not arrive is indistinguishable from a quiet day, which is exactly the
+  morning you needed it. 15 tests.
+
+**The gate** (`tests/integration/books-reconcile.test.ts`, 10 assertions, 21 controls)
+closes one month against real PostgreSQL: totals projected from the database → Tally
+accepts one journal and **rejects** another → the close refused **on both blockers at
+once** → an unsignable pack → a corrected requeue that keeps the failure on file → a
+`duplicate` retry landing **one** voucher → the close, and a **signable** pack → a reopen
+refused twice → a correction routed forward → an owner drill reaching the events, a scoped
+drill stating what it withheld, and a mismatched headline called out → grouped alerts with
+the unvalued one first → a superseded approval → three mornings of brief sent **with no AI
+at all** → and the database refusing to delete any of it.
+
+**A defect the gate caught:** alerts sorted by severity then by *value*, so a zero-value
+alert always sank. *"Someone signed in at 02:15"* — the most important line on the list —
+ranked underneath ₹3,000.00 of voided bills. Ranking within a severity now puts **unvalued
+alerts first**, because an alert with no rupee figure is not one worth nothing; it is one
+whose risk is not money, and those are precisely the alerts nobody else is watching for.
+
+`pnpm check` green: typecheck + lint + secret-scan + **1,209 tests**, plus **35 integration
+tests** against real PostgreSQL 16.13.
+
+### Where this leaves the build
+
+Ten stages, ten gates, all passed, every one proven against a real database rather than
+asserted. **Stage 11 is the first genuine stop**: a migration rehearsal needs real export
+data from the incumbent ERP (EX-02), and that is a letter to send, not code to write. The
+build therefore continues at **Stage 14 (customer commerce)**, which depends on none of it.
+
+---
+
 ## Last completed
 - **Setup 1/3/4** — repository, `CLAUDE.md`, safety net (tests, guardrails, secret
   scan, CI), and baseline ADR. (Merged to `main` via PR #1.)
@@ -981,12 +1071,17 @@ tests** against real PostgreSQL 16.13.
   family-level baseline.
 
 ## In progress
-- **Stage 10 — Finance, Tally, owner control.** M23-FR-04 (Tally/accounting export and
-  period control), M29-FR-02/03/04 (owner drill-through, alerts and the decision log),
-  D10/D13. `packages/finance` (posting) and `packages/reporting` (KPIs and freshness) are
-  built and tested; Stage 10 adds the accounting hand-off the CA actually signs, and the
-  owner's control surface on top of it.
-- Everything earlier is **finished, not paused**: stages 0–9 complete with written gate
+- **Stage 11 — Migration rehearsal. BLOCKED ON EX-02**, and the block is not technical:
+  the migration engine, controls MG-01…12 and reconciliation design are complete
+  (`docs/architecture/migration-design.md`, `packages/import`), but a *rehearsal* needs
+  **real export data from the incumbent ERP**, and the letter requesting it
+  (`docs/discovery/legacy-data-access.md`) has not been sent. This is the first point in
+  the whole roadmap where building further in sequence is genuinely impossible.
+- Because of that, the next code stages taken out of order are **Stage 14 (customer
+  commerce: M16/M17/M20/M21)** and **Stage 16 (enterprise modules: M24–M28)**, neither of
+  which depends on migration data. Stage 12/13 (pilot, parallel run, cutover) need the
+  store and an owner GO.
+- Everything earlier is **finished, not paused**: stages 0–10 complete with written gate
   evidence in `docs/evidence/`. Nothing has been silently dropped — `docs/backlog.md`
   schedules every remaining requirement row to a named stage.
 
@@ -1007,14 +1102,17 @@ tests** against real PostgreSQL 16.13.
   store operations lead, finance/CA reviewer, security/architecture reviewer.
 
 ## Next session should start with
-**Stage 10 — Finance, Tally and owner control**, in the roadmap's own order:
-1. **M23-FR-04** — the accounting hand-off: Tally-compatible export, period locking, and a
-   trial balance the CA can sign without re-keying anything.
-2. **M29-FR-02** — owner drill-through from a KPI to the transactions behind it.
-3. **M29-FR-03/04** — owner alerts and the decision log.
-4. **D10 / D13** — the owner intelligence and reporting extensions.
-5. **Stage 10 gate evidence** — the books reconcile end to end against real PostgreSQL,
-   written up in `docs/evidence/`.
+Stage 11 cannot start without EX-02, so the sequence continues at the next stage that is
+genuinely unblocked — **Stage 14, customer commerce**, which needs no migration data:
+1. **M16-FR-03/04** — customer profile, preferences and the privacy/consent surface.
+2. **M17-FR-02/03/04** — loyalty tiers, rewards catalogue and redemption at the lane.
+3. **M20 (all four)** — the customer app and web storefront on the same commerce truth.
+4. **M21 (all four)** — CRM and the service desk.
+5. **M31-FR-01**, D07/D08, and the Stage 14 gate evidence.
+
+**The one thing that would genuinely help from outside:** send the ERP-vendor letter in
+`docs/discovery/legacy-data-access.md`. It unblocks EX-02 and therefore Stage 11, which is
+the only stage now standing between the build and the pilot.
 
 In parallel (owner/store, not gating the build): gather the remaining Stage-1 store facts
 using **`docs/discovery/store-facts-questionnaire.md`** (it includes the **trading-day
