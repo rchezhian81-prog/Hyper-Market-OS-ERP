@@ -52,3 +52,13 @@ jobs:
 
       - name: Dependency vulnerability scan
         run: pnpm audit --audit-level=high
+
+      - name: Software bill of materials (QG-03)
+        # Regenerated from the installed tree on every run. The check below fails if
+        # the committed SBOM has drifted from what is actually installed — an SBOM
+        # that is merely present, and stale, is worse than none.
+        run: |
+          pnpm run sbom
+          git diff --exit-code --stat docs/evidence/sbom.json \
+            || (echo "::error::SBOM is out of date — run 'pnpm run sbom' and commit the result" && exit 1)
+

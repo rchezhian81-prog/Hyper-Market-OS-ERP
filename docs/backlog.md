@@ -10,7 +10,7 @@ counted **3 August 2026**.
 
 ## Where the build actually stands
 
-**144 individual requirement rows: 67 built · 7 partial · 70 not started.**
+**144 individual requirement rows: 75 built · 7 partial · 62 not started.**
 
 | Module | Release | Built | Partial | Not started |
 | --- | --- | --- | --- | --- |
@@ -46,9 +46,9 @@ counted **3 August 2026**.
 | M30 Import & export | R2 | 3 | 1 | 0 |
 | M31 Notifications & receipts | R2/R4 | 3 | 0 | 1 |
 | M32 Integration platform | R1 | 0 | 0 | **4** |
-| M33 Platform administration | R1 | 0 | 0 | **4** |
+| M33 Platform administration | R1 | 4 | 0 | 0 |
 | M34 Audit & compliance | R1 | 4 | 0 | 0 |
-| M35 Backup, DR, observability | R1 | 0 | 0 | **4** |
+| M35 Backup, DR, observability | R1 | 4 | 0 | 0 |
 | M36 Multi-tenant platform | R8 | 0 | 0 | **4** |
 
 **Nothing has been silently omitted.** Every row above traces to a requirement ID in
@@ -63,7 +63,7 @@ because the gates are about proof, not code.
 
 **The earliest stage with an open gate is Stage 5.**
 
-## Stage 5 — Engineering foundation ← **ACTIVE**
+## Stage 5 — Engineering foundation — ✅ **COMPLETE, GATE PASSED**
 
 Roadmap output: *repos, CI/CD, environments, IAM, audit, config, monitoring and backups.*
 Gate: **reproducible deploy and restore proof.**
@@ -79,12 +79,12 @@ Gate: **reproducible deploy and restore proof.**
 | 5.7 | **Observability** — health probes, structured redacted logging, metrics | **M35-FR-03** | ✅ done |
 | 5.8 | **Backup & restore** — scripted, verified, retention | **M35-FR-01** | ✅ done (proven against real PostgreSQL) |
 | 5.9 | **Disaster recovery** — RTO/RPO, rollback, rehearsal runbook | **M35-FR-02** | ✅ done |
-| 5.10 | **SBOM + dependency/vulnerability evidence** | QG-03 / M32-FR-03 | ▶ next |
+| 5.10 | **SBOM + dependency/vulnerability evidence** | QG-03 / M32-FR-03 | ✅ done (216 components, 0 runtime deps, 0 vulnerabilities; CI fails on drift) |
 | 5.11 | **Reproducible deploy + restore proof** (the gate itself) | QG-08 | ✅ **PASSED** — `docs/evidence/stage-5-recovery-proof.md` |
-| 5.12 | Environment inventory & secrets ownership | §23 | ▶ next |
-| 5.13 | Platform admin & support tooling | M33 | ▶ next |
+| 5.12 | Environment inventory & secrets ownership | §23 | ✅ done |
+| 5.13 | Platform admin & support tooling | M33 | ✅ done (M33-FR-02/03/04; FR-01 via tenant+config) |
 
-## Stage 6 — Offline/sync vertical slice
+## Stage 6 — Offline/sync vertical slice ← **ACTIVE**
 Gate: *internet-off, duplicate, reorder and recovery tests pass.*
 Product/price → local POS sale → cloud ledger → reconciliation, proven end to end as one
 runnable scenario. Engines exist; the **slice test** does not.
