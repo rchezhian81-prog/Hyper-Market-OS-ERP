@@ -20,29 +20,34 @@ integration tests against real PostgreSQL 16.13**, and written evidence for ever
 `docs/evidence/`. **Stage 11 (migration rehearsal) is blocked on EX-02** — the previous
 system's export rights — which is a letter to send, not code to write, so the build has
 moved to **Stage 14 (customer commerce)**, then **Stage 15 (fulfilment and delivery)**, and
-then **Stage 16 (enterprise modules)**, and now **Stage 18 (multi-tenant platform and the
-innovation wave)** — all four **COMPLETE with their gates passed**. M16–M22, M24–M28, M31 and
-M36 are all done: **136 of the 144 requirement rows built**, **1,709 automated tests** plus
-**101 integration tests** against real PostgreSQL 16.13. **M32 (integration platform, Stage
-19) is now the only module with no rows built at all**, and Stage 17 (governed AI agents)
-waits on EX-12 — a paid model-gateway account, which is a spending decision. The other
-outstanding externals are the hosting/live-database decision (OB-02, owner-deferred) and the
+then **Stage 16 (enterprise modules)**, **Stage 18 (multi-tenant platform and the innovation
+wave)**, and now **Stage 19 (operate and improve)** — all five **COMPLETE with their gates
+passed**. **Every module M01–M36 now has its foundation built: 140 of the 144 requirement rows
+built, 4 partial, and NONE unstarted**, with **1,802 automated tests** plus **116 integration
+tests** against real PostgreSQL 16.13 and written evidence for all eleven gates. The only
+code stage left is **17 (governed AI agents)**, which waits on EX-12 — a paid model-gateway
+account, a spending decision. The other outstanding externals are EX-02 (the ERP-vendor letter
+that unblocks Stage 11), the hosting/live-database decision (OB-02, owner-deferred), and the
 in-store activities that need the store itself (QG-02 usability testing, the owner-witnessed
 restore in UAT-01).
 
 ---
 
 ## Current stage
-**Stage 19 — Operate and improve (next: M32, the last unbuilt module). Stages 0–10, 14, 15,
-16 and 18 complete, all gates passed. Stage 17 waits on EX-12.**
+**Stage 17 — Governed AI agents is the ONLY code stage left, and it waits on EX-12.
+Stages 0–10, 14, 15, 16, 18 and 19 are complete, all gates passed.**
 
-**Stage 18 passed today** on `tests/integration/two-shops-one-system.test.ts` (20 assertions,
-57 controls, real PostgreSQL 16.13, run three times green) — SRE Hyper Market and Kumar
-Stores trading on one deployment, one binary and one database, seeing different brands and
-different modules, neither able to see the other, and neither stoppable by us. Plus the R8
-innovation wave: self-checkout that helps rather than accuses, scan-and-go, a price kiosk
-that admits its own staleness, and electronic shelf labels that must confirm a price before
-the till may charge it. Evidence in `docs/evidence/stage-18-two-shops-one-system.md`.
+**Stage 19 passed today** on `tests/integration/the-seams-hold.test.ts` (15 assertions, 48
+controls, real PostgreSQL 16.13, run three times green) — one evening of integration traffic: a
+till on flaky 4G resending a sale it already committed, a payment webhook replayed and then
+forged, Tally rejecting a journal that dead-letters and is corrected, a signing key rotated with
+an overlap and a leaked one revoked without, an uncertified scanner turned away — and through all
+of it, not one customer waiting. Evidence in `docs/evidence/stage-19-the-seams-hold.md`.
+
+**With M32 complete, every module M01–M36 has its foundation built and tested.** What remains
+is not code: EX-12 (a model gateway) for Stage 17, EX-02 (the ERP-vendor letter) for Stage 11,
+and the store-side activities in `docs/registers/uat-calendar.md`.
+
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
 done for Store-Core (R2); Stage 5 has built 59 tested foundation units, five
 **persistence-layer** units incl. the PostgreSQL connector + migration runner, and the **first
@@ -1506,6 +1511,84 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## Stage 19 — Operate and improve — ✅ COMPLETE, GATE PASSED (4 August 2026)
+
+Gate: *the seams hold* — `docs/evidence/stage-19-the-seams-hold.md`.
+**M32 is now complete — and with it EVERY module M01–M36 has its foundation built.**
+
+M32 is the safe seams between us and everything outside, and the whole module exists because of
+one fact: **at-least-once delivery means every caller will eventually send the same request
+twice.** A till on flaky 4G retries a sale it already committed; a payment provider retries a
+webhook because our acknowledgement was lost; a partner's cron overlaps itself. None of those
+are bugs at the other end — they are the correct behaviour of a network. The bug is ours if the
+second copy has a second effect.
+
+- **Versioned APIs and idempotency (M32-FR-01)** — a replay returns **the first answer**, not a
+  fresh empty 200. That distinction is the module: an empty 200 leaves the till unable to tell
+  whether it worked, so it retries again, which is exactly how a duplicate sale reaches a
+  ledger. The digest is over a **key-sorted** body, so a different field order is still the same
+  request; the same key with a *different* body is a **conflict**, because silently returning
+  the first answer would hide a genuinely lost transaction; and a write with no key is refused
+  outright. Webhooks carry **the timestamp inside the signature** — a signature over the body
+  alone is valid forever, so a captured "payment succeeded" can be posted back at will. 24 tests.
+- **The connector SDK (M32-FR-02)** — the shape the Stage 10 Tally connector proved, extracted
+  so every future integration inherits it. What makes integrations rot is not any single failure
+  but that failures become **invisible**: an unbounded retry loop looks healthy while nothing
+  moves, a dead-letter queue somebody clears on Mondays looks empty, and a mapping that drops
+  what it does not recognise looks like a clean run. So an unmapped field is an **exception**, a
+  `permanent` error dead-letters on attempt one rather than burning nine retries and burying the
+  message that mattered, a `duplicate` counts as delivered, a rate limit **waits**, and **a dead
+  letter is read but never deleted** — there is no purge, clear, remove or drop anywhere in the
+  package, and a test reads the module's own exports to prove it. 24 tests.
+- **Managed secrets (M32-FR-03)** — **no secret ever exists in this module**, and that is a
+  property of the types rather than a policy: they carry a vault *reference*, and there is no
+  field, parameter or return value anywhere that could hold a value. The reason is the shape of
+  every credential leak: nobody commits one on purpose, they add a field "temporarily" or log a
+  config object while debugging — and once a secret *can* sit in a variable it will eventually
+  sit in a log line, and a log line is copied into a ticket, a screenshot, a chat. **Rotation
+  overlaps and revocation does not**, which is why they are two functions rather than one with a
+  flag: a hard cut fails every edge device that has not synced, while a compromise accepts that
+  breakage and **names its casualties before they happen**. 20 tests.
+- **The certified adapter matrix (M32-FR-04)** — an uncertified combination is **refused**
+  rather than merely undocumented, and the refusal **names a working alternative**, because one
+  that does not is overridden on a Sunday when the shop needs a printer. A payment adapter
+  declaring it retains anything outside an **allowlist** cannot be registered at all — an
+  allowlist rather than a list of forbidden card fields, so a provider that invents a new one
+  next year is refused too. And health is **when it last actually worked**: an adapter failing
+  quietly for nine days is enabled and green on any dashboard that reports configuration, and
+  that is the normal way an integration dies. 26 tests.
+
+**The gate** (`tests/integration/the-seams-hold.test.ts`, 15 assertions, 48 controls, verified
+repeatable — three runs, three green) follows one evening of integration traffic against real
+PostgreSQL: a ₹4,120 sale sent three times, the last in a different field order, landing as
+**one row** with the first answer returned each time · the same key reused for a different ₹990
+sale called a conflict · a retired lane version refused naming where to go · two callers on the
+deprecated version **named** · a payment webhook accepted once, its provider retry *not* treated
+as an attack, the same delivery captured and posted back six hours later refused as a security
+event, and an edited amount refused on signature · a Tally journal refused for an unmapped cess
+line and again for an unknown ledger code · a rejection dead-lettered on attempt **one** · a
+correction refused for reusing the key and then accepted with a new one while the original
+failure stays on file · a queue flagged by **age**, not depth · a payment key 216 days unrotated
+reported as *"the key protecting card payments at every till"* · a zero-grace rotation refused ·
+a leaked signing key revoked with its two casualties named in advance · a silent shelf-label feed
+surfaced · an uncertified scanner turned away **with alternatives** · a payment adapter refused
+for keeping card digits · and Tally silent five hours while `canTrade` stays true and
+`posUnaffected` is typed `true`.
+
+**Two defects the guardrails caught, both real.** A raw `0x1F` byte got into `api-gateway.ts`,
+which would have rendered that file's diff as *"Binary files differ"* in a pull request — a hole
+straight through hard rule #8. The Stage 8 `plain-text-source` guardrail caught it, and fixing
+it exposed a **worse** problem underneath: the webhook signature was **concatenating** its
+fields, which makes it ambiguous and forgeable without the key. Both fixed. Separately, the
+card-data guardrail fired on a type that listed forbidden card fields by name; the fix was
+better than the original — a **default-deny allowlist** that refuses field names nobody has
+thought of yet.
+
+`pnpm check` green: typecheck + lint + secret-scan + **1,802 tests**, plus **116 integration
+tests** against real PostgreSQL 16.13.
+
+---
+
 ## Last completed
 - **Setup 1/3/4** — repository, `CLAUDE.md`, safety net (tests, guardrails, secret
   scan, CI), and baseline ADR. (Merged to `main` via PR #1.)
@@ -1529,13 +1612,13 @@ tests** against real PostgreSQL 16.13.
   **real export data from the incumbent ERP**, and the letter requesting it
   (`docs/discovery/legacy-data-access.md`) has not been sent. This is the first point in
   the whole roadmap where building further in sequence is genuinely impossible.
-- **Stage 19 — Operate and improve.** M32 (integration platform) is **the last module with no
-  rows built**, plus the M33/M35 remainder and SLA/support operations.
-- **Stage 17 — Governed AI agents (A01–A10), needs EX-12** (a model-gateway account). The
-  authority boundaries, evidence requirements, budgets and kill switches are already
-  designed; what is missing is the provider account, which is a spending decision.
-- Everything earlier is **finished, not paused**: stages 0–10, 14, 15, 16 and 18 complete with
-  written gate evidence in `docs/evidence/`. Nothing has been silently dropped — `docs/backlog.md`
+- **Stage 17 — Governed AI agents (A01–A10). The only code stage left, and it needs EX-12** —
+  a model-gateway account. The authority boundaries, evidence requirements, budgets and kill
+  switches are already designed; what is missing is the provider account, which is a spending
+  decision belonging to the owner.
+- Everything else is **finished, not paused**: stages 0–10, 14, 15, 16, 18 and 19 complete with
+  written gate evidence in `docs/evidence/`. **Every module M01–M36 has its foundation built and
+  tested; nothing has been silently dropped.** Nothing has been silently dropped — `docs/backlog.md`
   schedules every remaining requirement row to a named stage.
 
 ## Blocked / needs owner input
@@ -1555,18 +1638,17 @@ tests** against real PostgreSQL 16.13.
   store operations lead, finance/CA reviewer, security/architecture reviewer.
 
 ## Next session should start with
-**Stage 19 — Operate and improve**, and specifically **M32, the last module with nothing
-built**:
+**A decision, not code.** With M32 complete, every module M01–M36 has its foundation built and
+gate-proven. What is left needs the owner:
 
-1. **M32-FR-01/02/04** — the integration platform: the versioned public API surface itself,
-   webhooks with delivery guarantees and replay, connector configuration and the integration
-   monitoring plane. The *contracts* already exist (`docs/api/catalogue.md`) and the partner
-   access controls landed in Stage 18; M32 is the runtime that serves them.
-2. **M33 and M35 remainder** — SLA definitions, support operations and the runbooks that go
-   with them.
-3. **Stage 19 gate evidence.**
-4. Then **Stage 17** (governed AI agents) whenever EX-12 is settled, and **Stage 11**
-   (migration rehearsal) whenever EX-02 is.
+1. **EX-12 — a model-gateway account**, which unblocks **Stage 17 (governed AI agents,
+   A01–A10)**, the last code stage. This is a paid subscription; I will bring it as a decision
+   with two or three concrete options and their costs.
+2. **EX-02 — the ERP-vendor letter** in `docs/discovery/legacy-data-access.md`, which unblocks
+   **Stage 11 (migration rehearsal)** and therefore the pilot.
+3. **EX-13 — an independent penetration test** before customer launch (paid engagement).
+4. Meanwhile: the four **partial** rows (M02-FR-02/03 hardening, M23-FR-02 GST filing formats,
+   M30-FR-04) and the store-side activities in `docs/registers/uat-calendar.md` (UAT-01…39).
 
 **The one thing that would genuinely help from outside:** send the ERP-vendor letter in
 `docs/discovery/legacy-data-access.md`. It unblocks EX-02 and therefore Stage 11, which is

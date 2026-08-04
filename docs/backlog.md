@@ -6,11 +6,11 @@ time, each ending in a gate**. Nothing here is optional — "deferred" means a l
 release, never removed (OD-02).
 
 Regenerate the status counts with the parser in `docs/traceability.md`'s own table; last
-counted **4 August 2026** (Stage 18 complete).
+counted **4 August 2026** (Stage 19 complete).
 
 ## Where the build actually stands
 
-**144 individual requirement rows: 136 built · 4 partial · 4 not started.**
+**144 individual requirement rows: 140 built · 4 partial · 0 not started.**
 
 | Module | Release | Built | Partial | Not started |
 | --- | --- | --- | --- | --- |
@@ -45,7 +45,7 @@ counted **4 August 2026** (Stage 18 complete).
 | M29 Owner intelligence | R2 | 4 | 0 | 0 |
 | M30 Import & export | R2 | 3 | 1 | 0 |
 | M31 Notifications & receipts | R2/R4 | 4 | 0 | 0 |
-| M32 Integration platform | R1 | 0 | 0 | **4** |
+| M32 Integration platform | R1 | 4 | 0 | 0 |
 | M33 Platform administration | R1 | 4 | 0 | 0 |
 | M34 Audit & compliance | R1 | 4 | 0 | 0 |
 | M35 Backup, DR, observability | R1 | 4 | 0 | 0 |
@@ -243,8 +243,29 @@ branch-scoped controls proven in Stages 8–16.
 
 **M32 (integration platform) is now the only module with no rows built**, in Stage 19.
 
-## Stage 19 — Operate and improve
-M32-FR-01/02/04, M33 remainder, M35 remainder, SLA and support operations.
+## Stage 19 — Operate and improve — ✅ **COMPLETE, GATE PASSED**
+Gate: *the seams hold, and the till never notices.*
+
+| # | Work | Requirement | State |
+| --- | --- | --- | --- |
+| 19.1 | Versioned APIs, service identities, idempotency, signed webhooks | M32-FR-01 | ✅ done |
+| 19.2 | Connector SDK — mapping, throttling, bounded retry, non-deletable dead letter | M32-FR-02 | ✅ done |
+| 19.3 | Managed secrets, rotation, revocation, usage monitoring | M32-FR-03 | ✅ done |
+| 19.4 | Certified adapter/device matrix and integration health | M32-FR-04 | ✅ done |
+| 19.5 | M33 remainder (config, device fleet, support access, status centre) | M33 (all 4) | ✅ done in Stage 5/7 |
+| 19.6 | M35 remainder (backup, DR drills, observability, alerts) | M35 (all 4) | ✅ done in Stage 5 |
+| 19.7 | Stage 19 gate evidence — the seams hold | QG-06 | ✅ **PASSED** — `docs/evidence/stage-19-the-seams-hold.md` |
+
+**M32 is now complete, and with it EVERY module M01–M36 has its foundation built.** The
+remaining provider-specific wire formats (Tally XML, the payment gateway, the GST e-invoice
+portal, WhatsApp, a logistics partner) are **provider-account work**, not build work — they
+need AVR-10/AVR-14 and EX-04/05, which are the owner's commercial onboarding steps. The
+adapter contracts, certification matrix, retry/dead-letter behaviour and health surface they
+plug into are built and tested.
+
+**SLA and support operations** are carried by M33-FR-03/04 (time-boxed audited support access,
+status centre) and M35-FR-03/04 (health from evidence, owned alerts with an acknowledgement
+deadline), all built and gate-proven in Stages 5 and 7.
 
 ## Cross-cutting, continuous
 M30 (import/export) ✅ · security (SEC), privacy (PRV) and audit evidence maintained every
