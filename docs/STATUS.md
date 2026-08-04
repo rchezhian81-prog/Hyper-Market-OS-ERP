@@ -20,26 +20,29 @@ integration tests against real PostgreSQL 16.13**, and written evidence for ever
 `docs/evidence/`. **Stage 11 (migration rehearsal) is blocked on EX-02** — the previous
 system's export rights — which is a letter to send, not code to write, so the build has
 moved to **Stage 14 (customer commerce)**, then **Stage 15 (fulfilment and delivery)**, and
-now **Stage 16 (enterprise modules)** — all three **COMPLETE with their gates passed**.
-M16–M22, M24–M28 and M31 are all done: **132 of the 144 requirement rows built**, **1,609
-automated tests** plus **81 integration tests** against real PostgreSQL 16.13. **Only M32
-(integration platform, Stage 19) and M36 (multi-tenant platform, Stage 18) remain
-unstarted.** The other outstanding externals are the hosting/live-database decision (OB-02,
-owner-deferred) and the in-store activities that need the store itself (QG-02 usability
-testing, the owner-witnessed restore in UAT-01).
+then **Stage 16 (enterprise modules)**, and now **Stage 18 (multi-tenant platform and the
+innovation wave)** — all four **COMPLETE with their gates passed**. M16–M22, M24–M28, M31 and
+M36 are all done: **136 of the 144 requirement rows built**, **1,709 automated tests** plus
+**101 integration tests** against real PostgreSQL 16.13. **M32 (integration platform, Stage
+19) is now the only module with no rows built at all**, and Stage 17 (governed AI agents)
+waits on EX-12 — a paid model-gateway account, which is a spending decision. The other
+outstanding externals are the hosting/live-database decision (OB-02, owner-deferred) and the
+in-store activities that need the store itself (QG-02 usability testing, the owner-witnessed
+restore in UAT-01).
 
 ---
 
 ## Current stage
-**Stage 17 — Governed AI agents (next, needs EX-12). Stages 0–10, 14, 15 and 16 complete,
-all gates passed.**
+**Stage 19 — Operate and improve (next: M32, the last unbuilt module). Stages 0–10, 14, 15,
+16 and 18 complete, all gates passed. Stage 17 waits on EX-12.**
 
-**Stage 16 passed today** on `tests/integration/beyond-the-till.test.ts` (22 assertions,
-real PostgreSQL 16.13, run three times green) — one trading day followed through the six
-things a hypermarket does besides selling at a till: a school ordering on account, a
-supplier logging in from outside, a jeweller's concession counter, the cold room and the
-power, the morning roster and the fire check, and what leaves as waste. Evidence in
-`docs/evidence/stage-16-beyond-the-till.md`.
+**Stage 18 passed today** on `tests/integration/two-shops-one-system.test.ts` (20 assertions,
+57 controls, real PostgreSQL 16.13, run three times green) — SRE Hyper Market and Kumar
+Stores trading on one deployment, one binary and one database, seeing different brands and
+different modules, neither able to see the other, and neither stoppable by us. Plus the R8
+innovation wave: self-checkout that helps rather than accuses, scan-and-go, a price kiosk
+that admits its own staleness, and electronic shelf labels that must confirm a price before
+the till may charge it. Evidence in `docs/evidence/stage-18-two-shops-one-system.md`.
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
 done for Store-Core (R2); Stage 5 has built 59 tested foundation units, five
 **persistence-layer** units incl. the PostgreSQL connector + migration runner, and the **first
@@ -1411,6 +1414,98 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## Stage 18 — Multi-tenant platform and the innovation wave — ✅ COMPLETE, GATE PASSED (4 August 2026)
+
+Gate: *two shops, one system* — `docs/evidence/stage-18-two-shops-one-system.md`.
+**M36 is now complete**, and with it the whole commercial-SaaS layer that OB-01 and ADR-0003
+asked for two days ago.
+
+Taken **ahead of Stage 17** for the same reason Stages 14–16 were taken ahead of Stage 11:
+Stage 17 needs **EX-12**, a paid model-gateway account, which is a spending decision belonging
+to the owner rather than code to write.
+
+- **Plans, entitlements and metering (M36-FR-01)** — the commercial layer on the tenant
+  foundation that has been in the code since Stage 5. The design decision that matters is
+  about **the edge of the plan**, because that is where a product like this earns a bad
+  reputation, and it always happens the same way: a shop hits its lane limit on the Saturday
+  before Diwali and the tills stop. That is "upgrade or stop trading" — a commercial decision
+  taken automatically, at the worst possible moment, by code with no idea what is happening in
+  the shop. So **`mayContinueTrading` is typed as the literal `true`**, not a boolean that
+  happens to be true: no code path here, and no future edit to the file, can return false. A
+  vendor may withdraw a service; a vendor's software may not close a hypermarket. There is no
+  `suspendTrading`, `enforceLimit` or `lockTenant` anywhere in the package, and a test asserts
+  that absence. 20 tests.
+- **White-label branding (M36-FR-02)** — **one codebase, one deployment, many brands.** The
+  moment a customer's branding comes from a code fork the product is finished: every fix
+  applies N times, one tenant's urgent patch waits behind another's release, and within
+  eighteen months nobody can say which customer runs which version. An unset brand falls back
+  to **neutral, never to another tenant's** — a missing logo showing the *previous* tenant's
+  mark is a retailer invoicing under a competitor's name, and the neutral default is rebuilt
+  fresh on every call so there is no shared object to leak through. Contrast is **blocking**,
+  not a note. And a tenant may call a branch a showroom but may **not** rename "tax invoice",
+  "GST" or "credit note", because a document that calls a tax invoice something else is not a
+  tax invoice — refused at publish *and* again at render, since the two paths are separated by
+  a database and a year. 16 tests.
+- **Export, closure and upgrades (M36-FR-03)** — this one answers a single question honestly:
+  **what happens when a customer wants to leave?** Every vendor says the data belongs to the
+  customer; the test of it is what the export actually contains. So an export is **complete or
+  it is not an export**, checked against the platform's own declared domain list — which means
+  adding a domain to the product without adding it to the exporter turns every subsequent
+  export into a *failure* rather than a quietly smaller file. That pressure is deliberate.
+  Closure revokes access immediately but mostly deletes nothing, because Indian tax retention
+  outlives the commercial relationship, and **audit evidence is never in scope** (#6). An
+  upgrade is judged against **who is still calling**, named rather than counted, because "3
+  tenants affected" gets deployed on a Friday and "Sri Lakshmi Stores and two others" does
+  not. 19 tests.
+- **Partner ecosystem (M36-FR-04)** — an ecosystem is **people we do not employ holding
+  credentials to systems we are responsible for**, and every rule follows from that. A sandbox
+  credential presented against production is refused *and recorded as a security event*,
+  whether it was a mistake or not; a production credential in the sandbox is stopped but
+  deliberately **not** called an attack, because calling every mix-up an attack trains people
+  to ignore the alerts. A partner is scoped to the tenants that engaged them, and an empty
+  scope list means **none**, never all. An unversioned call is **refused, not defaulted to the
+  latest** — defaulting is what silently breaks a partner on the morning we ship. And
+  production data offered as a sandbox seed refuses the whole seed: the temptation always
+  arrives with a good reason, and the result is a retailer's customer list on a developer's
+  laptop. 17 tests.
+- **The innovation wave (D04, D06, D14)** — self-checkout is the one place in a shop where
+  **the customer operates the till**, and it sits between two failures. Too suspicious and the
+  lane sits empty while the staffed one queues; too trusting and it is a shrinkage hole. So
+  every intervention carries **two messages**: a neutral one for the customer in public
+  (*"a colleague will be with you"*) and a specific one for the attendant (*"usually a bag or a
+  hand on the platform — check, do not accuse"*). Basket-level patterns — five loose-produce
+  lines, the banana trick — are scored for the office and **never shown at the lane**. Age
+  verification is always a human, with no setting that changes it. And **price integrity**
+  across shelf, POS, app and ESL is asymmetric on purpose: a shelf showing *less* than the till
+  charges is a **legal** exposure ranked first whatever it is worth, because the displayed
+  price is what the customer was offered; a shelf showing more is margin, ranked by value. An
+  ESL price push **waits for every label to confirm** before the till may charge the new price
+  — fire-and-forget would *create* the exact overcharge risk the audit exists to catch. 28
+  tests.
+
+**The gate** (`tests/integration/two-shops-one-system.test.ts`, 20 assertions, 57 controls,
+verified repeatable — three runs, three green) puts SRE Hyper Market and Kumar Stores on one
+deployment, one binary and one PostgreSQL database: both days banked in **one append-only
+ledger under the same stream name**, with only the tenant column separating them · a
+cross-tenant row refusing the *whole* result set as a critical defect · the concession module
+entitled for one shop, a sales conversation for the other, and a *third* answer for
+suspended-for-billing · Kumar's Diwali week at 7 lanes on a 4-lane plan metered at its **peak**
+and **invoiced ₹24,000** while `mayContinueTrading` stays `true` · two brands from one binary,
+a cross-tenant brand ignored, a new tenant falling to neutral, "tax invoice" refused as a
+rename twice over · an export failing on one missing domain and refused entirely on one foreign
+file · closure refused before the export and before a name, then retaining tax records to 2034
+and audit evidence indefinitely · an API removal **still** breaking after a 14-month window
+because SRE is named as still calling it · a partner's sandbox call running **unchanged**
+against a real shop · a self-checkout that says *"a colleague will be with you"* while telling
+the attendant *"check, do not accuse"* · a ₹4 shelf understatement ranked above a ₹5,000 margin
+leak · an ESL silent nine days named by device and shelf · and the database refusing DELETE and
+UPDATE on either tenant's rows.
+
+`pnpm check` green: typecheck + lint + secret-scan + **1,709 tests**, plus **101 integration
+tests** against real PostgreSQL 16.13.
+
+---
+
 ## Last completed
 - **Setup 1/3/4** — repository, `CLAUDE.md`, safety net (tests, guardrails, secret
   scan, CI), and baseline ADR. (Merged to `main` via PR #1.)
@@ -1434,12 +1529,12 @@ tests** against real PostgreSQL 16.13.
   **real export data from the incumbent ERP**, and the letter requesting it
   (`docs/discovery/legacy-data-access.md`) has not been sent. This is the first point in
   the whole roadmap where building further in sequence is genuinely impossible.
+- **Stage 19 — Operate and improve.** M32 (integration platform) is **the last module with no
+  rows built**, plus the M33/M35 remainder and SLA/support operations.
 - **Stage 17 — Governed AI agents (A01–A10), needs EX-12** (a model-gateway account). The
   authority boundaries, evidence requirements, budgets and kill switches are already
   designed; what is missing is the provider account, which is a spending decision.
-- After that the only code stages left are **18 (multi-branch and M36)** and **19 (operate
-  and improve, M32)** — **M32 and M36 are the only two modules with no rows built at all.**
-- Everything earlier is **finished, not paused**: stages 0–10, 14, 15 and 16 complete with
+- Everything earlier is **finished, not paused**: stages 0–10, 14, 15, 16 and 18 complete with
   written gate evidence in `docs/evidence/`. Nothing has been silently dropped — `docs/backlog.md`
   schedules every remaining requirement row to a named stage.
 
@@ -1460,20 +1555,18 @@ tests** against real PostgreSQL 16.13.
   store operations lead, finance/CA reviewer, security/architecture reviewer.
 
 ## Next session should start with
-**Stage 18 — Multi-branch and M36**, taken ahead of Stage 17 for the same reason Stages 14–16
-were taken ahead of Stage 11: **Stage 17 needs EX-12**, a paid model-gateway account, and
-that is a spending decision belonging to the owner rather than code to write.
+**Stage 19 — Operate and improve**, and specifically **M32, the last module with nothing
+built**:
 
-1. **M36-FR-01…04** — the multi-tenant platform: tenant provisioning and lifecycle,
-   per-tenant branding and configuration, isolated upgrade and rollback, and the
-   subscription/entitlement surface. The foundation (`packages/tenant`, `tenant_id` on every
-   table, the entitlements engine) is already built and tested; M36 is the *management* layer
-   on top of it.
-2. **Multi-branch operations** — branch-to-branch transfers, consolidated reporting and the
-   branch-level variants of the controls already built for one store.
-3. **Stage 18 gate evidence.**
-4. Then **Stage 19** (M32 integration platform, M33/M35 remainder, SLA and support
-   operations), and **Stage 17** whenever EX-12 is settled.
+1. **M32-FR-01/02/04** — the integration platform: the versioned public API surface itself,
+   webhooks with delivery guarantees and replay, connector configuration and the integration
+   monitoring plane. The *contracts* already exist (`docs/api/catalogue.md`) and the partner
+   access controls landed in Stage 18; M32 is the runtime that serves them.
+2. **M33 and M35 remainder** — SLA definitions, support operations and the runbooks that go
+   with them.
+3. **Stage 19 gate evidence.**
+4. Then **Stage 17** (governed AI agents) whenever EX-12 is settled, and **Stage 11**
+   (migration rehearsal) whenever EX-02 is.
 
 **The one thing that would genuinely help from outside:** send the ERP-vendor letter in
 `docs/discovery/legacy-data-access.md`. It unblocks EX-02 and therefore Stage 11, which is

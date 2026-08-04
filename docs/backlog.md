@@ -6,11 +6,11 @@ time, each ending in a gate**. Nothing here is optional — "deferred" means a l
 release, never removed (OD-02).
 
 Regenerate the status counts with the parser in `docs/traceability.md`'s own table; last
-counted **4 August 2026** (Stage 16 complete).
+counted **4 August 2026** (Stage 18 complete).
 
 ## Where the build actually stands
 
-**144 individual requirement rows: 132 built · 4 partial · 8 not started.**
+**144 individual requirement rows: 136 built · 4 partial · 4 not started.**
 
 | Module | Release | Built | Partial | Not started |
 | --- | --- | --- | --- | --- |
@@ -49,7 +49,7 @@ counted **4 August 2026** (Stage 16 complete).
 | M33 Platform administration | R1 | 4 | 0 | 0 |
 | M34 Audit & compliance | R1 | 4 | 0 | 0 |
 | M35 Backup, DR, observability | R1 | 4 | 0 | 0 |
-| M36 Multi-tenant platform | R8 | 0 | 0 | **4** |
+| M36 Multi-tenant platform | R8 | 4 | 0 | 0 |
 
 **Nothing has been silently omitted.** Every row above traces to a requirement ID in
 `docs/traceability.md`, and every "not started" row is scheduled to a stage below.
@@ -221,8 +221,27 @@ unstarted**, in Stages 19 and 18 respectively.
 ## Stage 17 — Governed AI agents
 A01–A10 in authority order, with evaluation sets, budgets, kill switches. Needs EX-12.
 
-## Stage 18 — Multi-branch and innovation
-M36 (all 4), self-checkout, ESL/RFID/IoT per approved wave.
+## Stage 18 — Multi-branch and innovation — ✅ **COMPLETE, GATE PASSED**
+(taken ahead of Stage 17, which is blocked on EX-12 — a paid model-gateway account)
+Gate: *two shops, one system — and neither can see the other.*
+
+| # | Work | Requirement | State |
+| --- | --- | --- | --- |
+| 18.1 | Tenant isolation, plans, entitlements, metering | M36-FR-01 | ✅ done |
+| 18.2 | White-label branding and terminology without code forks | M36-FR-02 | ✅ done |
+| 18.3 | Tenant export, closure, retention, upgrade compatibility | M36-FR-03 | ✅ done |
+| 18.4 | Partner ecosystem, sandbox, versioned APIs, certification | M36-FR-04 | ✅ done |
+| 18.5 | Self-checkout, scan-and-go, price kiosk | D04 | ✅ done |
+| 18.6 | Shelf/POS/app/ESL price integrity and ESL push | D06, D14 | ✅ done |
+| 18.7 | Stage 18 gate evidence — two shops, one system | QG-06 | ✅ **PASSED** — `docs/evidence/stage-18-two-shops-one-system.md` |
+
+**M36 is now complete.** Subscription *billing* itself (a payment-provider integration) and the
+published SDK / docs site / partner portal are commercial and packaging steps on top of this
+surface, not build steps — they belong with OB-01. Multi-branch operations are already covered
+by `packages/org` (hierarchy, branch lifecycle, GST-per-branch, built in Stage 5) and the
+branch-scoped controls proven in Stages 8–16.
+
+**M32 (integration platform) is now the only module with no rows built**, in Stage 19.
 
 ## Stage 19 — Operate and improve
 M32-FR-01/02/04, M33 remainder, M35 remainder, SLA and support operations.
