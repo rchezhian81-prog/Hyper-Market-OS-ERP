@@ -10,7 +10,7 @@ counted **3 August 2026**.
 
 ## Where the build actually stands
 
-**144 individual requirement rows: 81 built · 7 partial · 56 not started.**
+**144 individual requirement rows: 82 built · 6 partial · 56 not started.**
 
 | Module | Release | Built | Partial | Not started |
 | --- | --- | --- | --- | --- |
@@ -20,7 +20,7 @@ counted **3 August 2026**.
 | M04 Merchandising & space | R2 | 4 | 0 | 0 |
 | M05 Pricing & promotions | R2 | 4 | 0 | 0 |
 | M06 Suppliers & procurement | R2 | 4 | 0 | 0 |
-| M07 Receiving & matching | R2 | 3 | 1 | 0 |
+| M07 Receiving & matching | R2 | 4 | 0 | 0 |
 | M08 Inventory ledger | R2 | 4 | 0 | 0 |
 | M09 Stock operations | R2 | 2 | 0 | 2 |
 | M10 Batch, expiry, recall | R2 | 3 | 0 | 1 |
@@ -89,7 +89,7 @@ Gate: *internet-off, duplicate, reorder and recovery tests pass.*
 Product/price → local POS sale → cloud ledger → reconciliation, proven end to end as one
 runnable scenario. Engines exist; the **slice test** does not.
 
-## Stage 7 — Product, pricing, purchase ← **ACTIVE**
+## Stage 7 — Product, pricing, purchase — ✅ **COMPLETE, GATE PASSED**
 Gate: *purchase/GRN/invoice controls pass.*
 
 | # | Work | Requirement | State |
@@ -97,10 +97,11 @@ Gate: *purchase/GRN/invoice controls pass.*
 | 7.1 | Merchandising, space, planograms | M04-FR-01/02/03/04 | ✅ done |
 | 7.2 | Promotion simulation, abuse caps, vendor funding | M05-FR-04 | ✅ done |
 | 7.3 | Supplier scorecards, rebates, contracts | M06-FR-03 | ✅ done |
-| 7.4 | ASN / dock scheduling (completes M07-FR-01) | M07-FR-01 | ▶ next |
-| 7.5 | Stage 7 gate evidence — purchase/GRN/invoice controls | QG-01/QG-03 | ▶ next |
+| 7.4 | ASN / DSD / dock scheduling / handheld (completes M07-FR-01) | M07-FR-01 | ✅ done |
+| 7.5 | Stage 7 gate evidence — purchase/GRN/invoice controls | QG-01/QG-03 | ✅ **PASSED** — `docs/evidence/stage-7-purchase-controls.md` |
 
-## Stage 8 — Inventory, warehouse, quality
+## Stage 8 — Inventory, warehouse, quality ← **ACTIVE**
+Gate: *physical-to-system and recall proof.*
 M09-FR-01/03, M10-FR-02, D05. (M08, M11 built.)
 
 ## Stage 9 — POS, returns, cash office
