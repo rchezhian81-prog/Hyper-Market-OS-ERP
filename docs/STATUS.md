@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 5 August 2026
+Last updated: 7 August 2026
 
 ---
 
@@ -1659,6 +1659,60 @@ honest rather than being marked complete.
 `pnpm check` green: **1,867 tests**, plus **116 integration tests** against real PostgreSQL.
 
 ---
+
+## Cross-cutting hardening — the deny path (7 August 2026)
+
+Evidence: `docs/evidence/cross-cutting-security.md`. SEC-02/03/12, PRV-03/05/08, §28, hard rules
+#3, #5, #6.
+
+`tests/security/` was the last empty folder in the repository layout. Filling it found **two
+defects**, both of which had survived because the existing tests checked the reachable path
+rather than the refused one.
+
+**A test that proves a manager CAN approve proves nothing about whether a cashier cannot.** That
+is the shape of every access-control bug: the allow path is exercised all day by everyone using
+the product and is correct; the deny path is exercised by an attacker, once, in production. So
+these tests sweep the **complement** — 5 users × 12 permissions × 4 scopes = 240 decisions,
+checked against an oracle computed from the role tables **independently of the implementation**,
+because an oracle that asks the thing under test is 240 assertions that the code agrees with
+itself. Plus the escalations somebody actually attempts: a deleted role, an empty `[]` scope that
+must never read as `'all'`, a branch grant reaching a company-wide action, near-miss and
+prefix-matched permission strings, and mutating the tables after construction.
+
+**Defect 1 — `minimisePii` was a blocklist wearing an allowlist's name (high).** The module's own
+doc-comment and README claimed it minimised *"against an allowlist, so a field invented later is
+minimised by default"*. It held a fixed set of seven known PII fields and **passed everything
+else straight through** — so `aadhaar_number`, `pan`, `gstin` and `bank_account` reached the
+model untouched. Aadhaar is the most sensitive identifier in India. The existing unit test was
+titled *"is an ALLOWLIST, so a field invented later is minimised by default"* and asserted only
+that the table held arrays: **it named the property and never checked it**, which is precisely
+how the blocklist underneath survived review. Fixed by inverting to a genuine default-deny with
+business fields opt-in — real friction on callers, and the point: forgetting now loses a field,
+which is a visible bug in your own feature, where before it leaked PII invisibly.
+
+**Defect 2 — role permission lists held live by reference (low).** `AccessControl` copied the
+assignments array but held roles by reference, so mutating a role's permissions afterwards
+widened access. `readonly` stops that in TypeScript and nothing at a JSON boundary, which is
+where role configuration arrives from. Two structures where one is defended and the other is not
+is worse than either.
+
+**Separation of duties is now swept product-wide.** Every module had its own
+maker-cannot-be-checker test, and each proved the rule in one place; none proved it holds
+everywhere, which is the only interesting claim. Every self-authorisation point in the product is
+now in one list, each run **twice** — allowed with two people, refused with one — because without
+the first half a module that simply refuses everything would pass, and a control that blocks the
+legitimate path gets switched off within a fortnight. Including the three that get argued about:
+the owner approving their own delegation, the owner signing a tax total, and a delegation used to
+launder a self-approval.
+
+**Erasure resolves the PRV-05 / hard-rule-#6 tension** per category with the actual statute
+named: marketing preferences erased, invoices **minimised** (lines and totals survive, the name
+becomes a pseudonym), audit trail retained and stated without hedging. Partial is declared, not
+hidden — and where nothing is legally held, everything is erased.
+
+**EX-13 (independent penetration test) is unchanged.** Nothing here substitutes for it: these
+tests prove the controls the code implements behave as designed, and cannot find a class of
+attack nobody here thought of.
 
 ## Cross-cutting hardening — performance shape and accessibility (5 August 2026)
 

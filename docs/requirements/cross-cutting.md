@@ -12,8 +12,8 @@
 | ID | Requirement | Addressed by |
 | --- | --- | --- |
 | SEC-01 | Threat modelling before build and material architecture changes | `docs/security/threat-privacy-model.md`; ADR-0001/0003; re-run per change |
-| SEC-02 | Zero-trust identities for users, devices and services | M01/M02; `packages/rbac`; §35 trust boundaries |
-| SEC-03 | Least privilege, MFA, privileged access, separation of duties | `packages/rbac` (default-deny), `packages/approvals` (§28); `shared-login` guardrail; M33 |
+| SEC-02 | Zero-trust identities for users, devices and services | M01/M02; `packages/rbac` (default-deny, tables COPIED at construction so a held reference cannot widen a grant); `tests/security/access-control-sweep.test.ts` — the full 240-combination deny matrix against an independent oracle |
+| SEC-03 | Least privilege, MFA, privileged access, separation of duties | `packages/rbac` (default-deny), `packages/approvals` (§28); `shared-login` guardrail; M33; `tests/security/separation-of-duties.test.ts` — every place in the product where one person could self-authorise, swept in one list, each proven to ALLOW with two people and REFUSE with one |
 | SEC-04 | Encryption in transit & at rest; centralized secrets & key rotation | Threat model §5; ADR-0002 (infra); `secrets` guardrail |
 | SEC-05 | Signed apps/updates, dependency scanning, SBOM, patch SLAs | AID-04/05; CI; ADR-0002 |
 | SEC-06 | API gateway, rate limits, WAF, mobile hardening, secure local storage | `docs/api/catalogue.md` conventions; ADR-0002 |
@@ -22,7 +22,7 @@
 | SEC-09 | Secure SDLC, code review, automated tests, penetration testing | AID-02/03/07; QG-06; the test suite |
 | SEC-10 | Incident response, breach assessment, communication, evidence preservation | Runbook (to write, `docs/runbooks/`); M34 |
 | SEC-11 | Production access approval, session recording/logging, time limits | M33 support access (time-bound, audited); hard rule #7 |
-| SEC-12 | PCI-scope minimization; never store prohibited card data | **hard rule #3**; `card-data` guardrail; `packages/tender` (tokens only) |
+| SEC-12 | PCI-scope minimization; never store prohibited card data | **hard rule #3**; `card-data` guardrail; `packages/tender` (tokens only); `tests/security/data-protection.test.ts` — `PERMITTED_PAYMENT_RETENTION` is a closed allowlist and the tender surface has nowhere to put a card number |
 
 ## PRV — Privacy (§9.2)
 
@@ -30,12 +30,12 @@
 | --- | --- | --- |
 | PRV-01 | Data inventory, purpose & lawful-processing register | Threat model data classification; M16; register (to record) |
 | PRV-02 | Clear multilingual notices & consent evidence | M16-FR-02; customer-app privacy centre; NFR-08 (En/Ta) |
-| PRV-03 | Purpose limitation & collection minimization | M16; threat model (PII minimized) |
+| PRV-03 | Purpose limitation & collection minimization | M16; threat model (PII minimized); `packages/ai/src/safety.ts` `minimisePii` — **default-deny**: business fields are opt-in and anything else is removed, so a field added to a customer record next year (aadhaar, PAN, bank account) is minimised by default. `tests/security/data-protection.test.ts` |
 | PRV-04 | Consent withdrawal as easy as giving it | M16-FR-02; M21 respects consent |
-| PRV-05 | Access, correction, erasure & grievance workflows | M16-FR-03; customer-app |
+| PRV-05 | Access, correction, erasure & grievance workflows | M16-FR-03; customer-app; `packages/customer/src/data-rights.ts` `planErasure` — per category, with the actual statute named, honest about being partial; erases fully where nothing is legally held; deletes nothing itself |
 | PRV-06 | Processor/subprocessor register & contractual controls | To record; M32 connectors / M36 partners |
 | PRV-07 | Children/minor handling policy | Owner policy; M16 |
-| PRV-08 | Retention schedule & defensible deletion (statutory exceptions) | M16-FR-03; `packages/config`; hard rule #6 (never delete audit) |
+| PRV-08 | Retention schedule & defensible deletion (statutory exceptions) | M16-FR-03; `packages/config`; hard rule #6 (never delete audit); `planErasure` MINIMISES where a record must survive but the person need not — the resolution of the erasure/retention tension |
 | PRV-09 | Breach detection, notification readiness, remediation | SEC-10; incident runbook |
 | PRV-10 | Cross-border/data-location decisions recorded & configurable | ADR-0003 (India residency default; per-tenant); ADR-0002 |
 

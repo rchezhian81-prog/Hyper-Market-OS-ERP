@@ -139,7 +139,9 @@ describe('PII is minimised BY PURPOSE, against an allowlist', () => {
   };
 
   it('sends NOTHING personal to an agent answering a stock question', () => {
-    const r = minimisePii({ purpose: 'stock_question', record: customer });
+    const r = minimisePii({
+      purpose: 'stock_question', record: customer, businessFields: ['productId', 'qty'],
+    });
     expect(r.record).toEqual({ productId: 'p-rice', qty: 2 });
     expect(r.removed).toContain('name');
     // The safest customer data is the data that was never sent.
@@ -147,22 +149,47 @@ describe('PII is minimised BY PURPOSE, against an allowlist', () => {
   });
 
   it('gives the service agent only what the conversation needs', () => {
-    const r = minimisePii({ purpose: 'customer_service', record: customer });
+    const r = minimisePii({
+      purpose: 'customer_service', record: customer, businessFields: ['productId', 'qty'],
+    });
     expect(Object.keys(r.record).sort()).toEqual(['customer_id', 'name', 'productId', 'qty']);
     expect(r.removed).toEqual(['address', 'dob', 'email', 'phone']);
   });
 
   it('is an ALLOWLIST, so a field invented later is minimised by default', () => {
-    // Every purpose lists what it MAY see; nothing lists what it may not.
-    for (const fields of Object.values(PII_BY_PURPOSE)) {
-      expect(Array.isArray(fields)).toBe(true);
+    // This test previously asserted only that PII_BY_PURPOSE held arrays — it named the property
+    // and never checked it, which is exactly how the blocklist underneath survived: an
+    // `aadhaar_number` added to a customer record reached the model untouched.
+    const withNewFields = {
+      ...customer,
+      aadhaar_number: '1234 5678 9012',
+      pan: 'ABCDE1234F',
+      bank_account: '00112233445566',
+    };
+    const r = minimisePii({
+      purpose: 'customer_service', record: withNewFields, businessFields: ['productId', 'qty'],
+    });
+    for (const invented of ['aadhaar_number', 'pan', 'bank_account']) {
+      expect(Object.keys(r.record), invented).not.toContain(invented);
+      expect(r.removed).toContain(invented);
     }
+    // Every purpose lists what it MAY see; nothing lists what it may not.
     expect(PII_BY_PURPOSE.owner_brief).toEqual([]);
     expect(PII_BY_PURPOSE.purchase_question).toEqual([]);
   });
 
+  it('removes an UNDECLARED business field too — opting in is the control', () => {
+    // Friction on purpose. A caller who forgets to declare a field loses it, which is a visible
+    // bug in their own feature; a caller who forgets under the old behaviour leaked PII, which
+    // is invisible until it is a breach.
+    const r = minimisePii({ purpose: 'stock_question', record: customer });
+    expect(Object.keys(r.record)).toHaveLength(0);
+  });
+
   it('gives marketing an id but never a name', () => {
-    const r = minimisePii({ purpose: 'marketing_segment', record: customer });
+    const r = minimisePii({
+      purpose: 'marketing_segment', record: customer, businessFields: ['productId', 'qty'],
+    });
     expect(r.record['customer_id']).toBe('c-1');
     expect(r.record['name']).toBeUndefined();
   });

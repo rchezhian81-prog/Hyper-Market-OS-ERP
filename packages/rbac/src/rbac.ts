@@ -59,7 +59,16 @@ export class AccessControl {
   private readonly assignmentsByUser: Map<string, RoleAssignment[]>;
 
   constructor(roles: readonly Role[], assignments: readonly RoleAssignment[]) {
-    this.rolesById = new Map(roles.map((r): [string, Role] => [r.id, r]));
+    // Both tables are COPIED, permission lists included. The assignments were already copied;
+    // the roles were held by reference, so a caller who kept the array it passed in could widen
+    // its own permissions after construction. `readonly` stops that in TypeScript and stops
+    // nothing at all at a JSON boundary, which is where configuration actually arrives from.
+    // Two structures where one is defended and the other is not is worse than either, because a
+    // reader reasonably assumes the defence is uniform.
+    this.rolesById = new Map(roles.map((r): [string, Role] => [
+      r.id,
+      Object.freeze({ ...r, permissions: Object.freeze([...r.permissions]) }),
+    ]));
     this.assignmentsByUser = new Map();
     for (const a of assignments) {
       const list = this.assignmentsByUser.get(a.userId) ?? [];

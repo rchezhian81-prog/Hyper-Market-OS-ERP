@@ -284,19 +284,34 @@ export interface MinimisationResult {
 export function minimisePii(input: {
   readonly purpose: AgentPurpose;
   readonly record: Readonly<Record<string, unknown>>;
+  /**
+   * Non-personal fields this call genuinely needs — a product id, a quantity, a date.
+   *
+   * **Opt-in, and that is the entire control.** Everything not named here and not permitted by
+   * the purpose is removed. Listing the business fields is real friction; it is also the only
+   * version of this function that is true to its own name.
+   */
+  readonly businessFields?: readonly string[];
 }): MinimisationResult {
   const permitted = new Set<string>(PII_BY_PURPOSE[input.purpose]);
-  const known = new Set<string>(['name', 'phone', 'email', 'address', 'customer_id', 'loyalty_id', 'dob']);
+  const business = new Set<string>(input.businessFields ?? []);
 
   const record: Record<string, unknown> = {};
   const removed: PiiField[] = [];
 
+  // DEFAULT DENY. This was previously a blocklist wearing an allowlist's name: it checked each
+  // key against a fixed list of seven known PII fields and passed anything else straight
+  // through. `aadhaar_number`, `pan`, `gstin`, `bank_account`, `passport_number` — none of them
+  // were on that list, so all of them reached the model untouched. The failure mode is precisely
+  // the one every blocklist has: it is a list of what somebody already thought of, and the field
+  // that leaks is the one added to a customer record next year by somebody who never read this
+  // file.
   for (const [key, value] of Object.entries(input.record)) {
-    if (known.has(key) && !permitted.has(key)) {
-      removed.push(key as PiiField);
+    if (permitted.has(key) || business.has(key)) {
+      record[key] = value;
       continue;
     }
-    record[key] = value;
+    removed.push(key as PiiField);
   }
 
   return {

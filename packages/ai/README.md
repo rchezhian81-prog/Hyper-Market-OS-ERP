@@ -88,8 +88,17 @@ one" provider check inside an agent and there is nobody left who remembers why n
     that leaks: a model repeats back what it was shown, and the answer lands in a log, a
     screenshot, a ticket. Even a `vault://` reference is redacted — it is not a secret, but it
     names exactly which one to steal.
-  - `minimisePii(…)` — by **purpose**, against an allowlist, so a field invented later is
-    minimised by default. An agent answering a stock question gets no customer names at all.
+  - `minimisePii(…)` — by **purpose**, **default-deny**: business fields are opt-in and anything
+    not permitted by the purpose is removed, so a field invented later is minimised by default.
+    An agent answering a stock question gets no customer names at all.
+    - This was **wrong until 7 August 2026**, and the comment claiming otherwise is why it
+      survived. The implementation held a fixed set of seven known PII fields and passed
+      everything else straight through — so `aadhaar_number`, `pan` and `bank_account` reached
+      the model untouched. The unit test was titled *"is an ALLOWLIST, so a field invented later
+      is minimised by default"* and asserted only that the table held arrays: **it named the
+      property and never checked it.** Opting business fields in is real friction, and it is the
+      point — a caller who forgets now loses a field, which is a visible bug in their own
+      feature, where before they leaked PII, which is invisible until it is a breach.
   - `prepareCall(…)` — minimise, redact, fence, **then** scan. Scanning is last and changes
     nothing, because putting it first invites somebody to treat it as the gate.
 
