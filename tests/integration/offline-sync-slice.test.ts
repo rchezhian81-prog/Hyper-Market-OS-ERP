@@ -87,6 +87,20 @@ describe.skipIf(!DATABASE_URL)('Stage 6 — offline/sync vertical slice (real Po
     await client.end();
   });
 
+  /**
+   * Read back several events one at a time. A single `pg` client executes one query
+   * at a time, so firing them concurrently relies on driver-side queueing that pg is
+   * removing — and a test that depends on deprecated plumbing is a test that will
+   * fail for a reason that has nothing to do with the guarantee it checks.
+   */
+  async function readEachInTurn(keys: readonly string[]) {
+    const results = [];
+    for (const key of keys) {
+      results.push(await store.findByIdempotencyKey(TENANT, key));
+    }
+    return results;
+  }
+
   /** Step 1 of the slice: product + price become a lane catalogue. */
   function buildLaneCatalogue(): CatalogueCache {
     const snapshot = buildCatalogueSnapshot({
@@ -223,9 +237,7 @@ describe.skipIf(!DATABASE_URL)('Stage 6 — offline/sync vertical slice (real Po
     // ...and the cloud's own sequence records the order it RECEIVED them, while each
     // event keeps the time it actually HAPPENED. Both facts are needed: one to replay
     // deterministically, the other to report the day correctly.
-    const found = await Promise.all(
-      transport.delivered.map((key) => store.findByIdempotencyKey(TENANT, key)),
-    );
+    const found = await readEachInTurn(transport.delivered);
     const mine = found.filter((r): r is NonNullable<typeof r> => r !== undefined);
     expect(mine).toHaveLength(3);
     // Received back-to-front, so the cloud sequence runs opposite to the sale order —
@@ -283,9 +295,7 @@ describe.skipIf(!DATABASE_URL)('Stage 6 — offline/sync vertical slice (real Po
 
     // The reconciliation that matters: sum the cloud ledger and compare it with what
     // the tills actually took. Not "about the same" — the same, to the paisa.
-    const banked = await Promise.all(
-      transport.delivered.map((key) => store.findByIdempotencyKey(TENANT, key)),
-    );
+    const banked = await readEachInTurn(transport.delivered);
     const cloudTotalMinor = banked
       .filter((r): r is NonNullable<typeof r> => r !== undefined)
       .reduce((sum, r) => {

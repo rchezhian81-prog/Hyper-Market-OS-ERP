@@ -22,6 +22,8 @@ Status: **Scheduled** · **Done** · **Waived with reason**.
 | UAT-09 | Migration reconciliation sign-off — control totals for stock, financial, tax and loyalty signed by the owner and the CA. | QG-07 · MG-06 | Stage 13 cutover | **Owner + CA signature required** | Scheduled |
 | UAT-10 | Independent penetration test before customer launch. | QG-06 · EX-13 | Stage 14 | **Paid engagement — owner decision** | Scheduled |
 | UAT-11 | Formal GO for production cutover. | QG-12 · OD-10 | Stage 13 | **Owner GO required** | Scheduled |
+| UAT-12 | **Live recall drill** — pick a real batch, recall it, and time how long it takes the manager to say how much went out and which customers can be telephoned. The lane must refuse it with the network cable out. | M10-FR-02/04 · QG-07 · Stage 8 gate | Stage 12 pilot | Not yet required | Scheduled |
+| UAT-13 | **Blind stock count walkthrough** — count one product without looking at the screen; confirm the system refuses to correct itself until a second, more senior person approves the difference with a reason, and that the corrected figure equals what was physically counted. | M09-FR-04 · M08-FR-03 · §28 · Stage 8 gate | UAT-02 session | Not yet required | Scheduled |
 
 ## How UAT-01 runs when we reach it
 

@@ -6,11 +6,11 @@ time, each ending in a gate**. Nothing here is optional — "deferred" means a l
 release, never removed (OD-02).
 
 Regenerate the status counts with the parser in `docs/traceability.md`'s own table; last
-counted **3 August 2026**.
+counted **4 August 2026**.
 
 ## Where the build actually stands
 
-**144 individual requirement rows: 82 built · 6 partial · 56 not started.**
+**144 individual requirement rows: 85 built · 6 partial · 53 not started.**
 
 | Module | Release | Built | Partial | Not started |
 | --- | --- | --- | --- | --- |
@@ -22,8 +22,8 @@ counted **3 August 2026**.
 | M06 Suppliers & procurement | R2 | 4 | 0 | 0 |
 | M07 Receiving & matching | R2 | 4 | 0 | 0 |
 | M08 Inventory ledger | R2 | 4 | 0 | 0 |
-| M09 Stock operations | R2 | 2 | 0 | 2 |
-| M10 Batch, expiry, recall | R2 | 3 | 0 | 1 |
+| M09 Stock operations | R2 | 4 | 0 | 0 |
+| M10 Batch, expiry, recall | R2 | 4 | 0 | 0 |
 | M11 In-store production | R2 | 4 | 0 | 0 |
 | M12 POS | R2 | 3 | 1 | 0 |
 | M13 Returns & refunds | R2 | 3 | 1 | 0 |
@@ -61,7 +61,8 @@ architecture/data/security). Domain engines for stages 7–9 have been built ahe
 stages, which is why so much of M03–M15 is green — but **their stage gates are not passed**,
 because the gates are about proof, not code.
 
-**The earliest stage with an open gate is Stage 5.**
+**Stages 5, 6, 7 and 8 have all passed their gates. The earliest stage with an open gate is
+Stage 9.**
 
 ## Stage 5 — Engineering foundation — ✅ **COMPLETE, GATE PASSED**
 
@@ -100,11 +101,20 @@ Gate: *purchase/GRN/invoice controls pass.*
 | 7.4 | ASN / DSD / dock scheduling / handheld (completes M07-FR-01) | M07-FR-01 | ✅ done |
 | 7.5 | Stage 7 gate evidence — purchase/GRN/invoice controls | QG-01/QG-03 | ✅ **PASSED** — `docs/evidence/stage-7-purchase-controls.md` |
 
-## Stage 8 — Inventory, warehouse, quality ← **ACTIVE**
+## Stage 8 — Inventory, warehouse, quality — ✅ **COMPLETE, GATE PASSED**
 Gate: *physical-to-system and recall proof.*
-M09-FR-01/03, M10-FR-02, D05. (M08, M11 built.)
 
-## Stage 9 — POS, returns, cash office
+| # | Work | Requirement | State |
+| --- | --- | --- | --- |
+| 8.1 | Put-away, bins, handheld scanning | M09-FR-01 | ✅ done |
+| 8.2 | Allocation and inter-store transfers | M09-FR-03 | ✅ done |
+| 8.3 | Cold chain, sampling and quality release | M10-FR-02 / D05-FR-04 | ✅ done |
+| 8.4 | **Reviewable-diff guardrail** (defect found during the gate) | hard rule #8 / QG-03 | ✅ done |
+| 8.5 | Stage 8 gate evidence — physical-to-system and recall | QG-07 | ✅ **PASSED** — `docs/evidence/stage-8-inventory-recall.md` |
+
+(M08 and M11 were already built; D05's quality-status thread lands with M10-FR-02 above.)
+
+## Stage 9 — POS, returns, cash office ← **ACTIVE**
 M12-FR-02 completion, M13-FR-04, M14-FR-03, M15-FR-02/04, D04.
 
 ## Stage 10 — Finance, Tally, owner control

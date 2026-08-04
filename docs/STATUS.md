@@ -3,12 +3,27 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 3 August 2026
+Last updated: 4 August 2026
+
+---
+
+## Where we are, in one paragraph
+**Stages 0–8 are complete and their gates are passed.** Stage 5 (engineering foundation)
+passed on a real destroy-and-restore; Stage 6 (offline/sync slice) on internet-off,
+duplicate, reorder and recovery tests; Stage 7 (product/pricing/purchase) on one delivery
+walked from dock to payment; and **Stage 8 (inventory, warehouse, quality) passed today on
+physical-to-system and recall proof**. 85 of the 144 requirement rows are built, **1,005
+automated tests** pass plus **16 integration tests against real PostgreSQL 16.13**, and
+every gate has written evidence in `docs/evidence/`. **Stage 9 — POS, returns and cash
+office — is now active.** The only things still waiting on the outside world are the
+hosting/live-database decision (OB-02, owner-deferred), the previous system's export rights
+(EX-02, which gates the Stage 11 migration rehearsal), and the in-store activities that need
+the store itself (QG-02 usability testing, the owner-witnessed restore in UAT-01).
 
 ---
 
 ## Current stage
-**Stage 5 — Foundation build (in progress). Stage 4 complete; owner-closure gate CLOSED.**
+**Stage 9 — POS, returns, cash office (active). Stages 0–8 complete, all gates passed.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
 done for Store-Core (R2); Stage 5 has built 59 tested foundation units, five
 **persistence-layer** units incl. the PostgreSQL connector + migration runner, and the **first
@@ -784,6 +799,84 @@ each tied to the guardrail / foundation package / ADR that addresses it (verifie
 its build stage / quality gate). **Requirement expansion is now complete — all 36 modules
 plus all five cross-cutting sets.**
 
+---
+
+## Stage 8 — Inventory, warehouse, quality — ✅ COMPLETE, GATE PASSED (4 August 2026)
+
+Gate: *physical-to-system and recall proof* — `docs/evidence/stage-8-inventory-recall.md`.
+
+Three modules were built and then put on trial together, following **one batch of chicken
+from the supplier's van to a recall** against real PostgreSQL.
+
+- **Warehouse put-away, bins and handheld scanning (M09-FR-01)** — `packages/warehouse/`.
+  The handheld's failure shape is the same one the receiving door has: *a movement command
+  that is not uniquely identified is a movement that can happen twice.* Stock moved twice
+  from a bin that only held it once produces a negative bin, and negative bins are how a
+  warehouse stops believing its own numbers. So the duplicate check runs **first**, and
+  three refusals follow, each protecting something no later report can reconstruct: an
+  **unknown bin is queued, never invented** (*"somewhere near aisle 4" is how stock becomes
+  unfindable*), a **full bin is blocked** (the overflow ends up on the floor), and **moving
+  more than a bin holds is refused** rather than going negative. Plus one that protects the
+  business rather than the data: **quarantined, expired or damaged stock can never be put
+  away into a pickable bin** — the commonest route by which bad stock reaches a customer is
+  not a decision, it is a put-away. 16 tests.
+- **Allocation and inter-store transfers (M09-FR-03)** — a transfer is the one stock movement
+  that is in two places at once, and that is exactly where shops lose it. Deduct at dispatch
+  and add at receipt with nothing in between and the stock exists **nowhere** for two days;
+  deduct only on receipt and it exists **twice**. So it moves through an explicit
+  **in-transit state held at the destination**: visible to the receiving branch, owned, and
+  deliberately not sellable. **The van is a place.** A **shortfall on arrival is a valued
+  exception with a name against it**, never a silent adjustment — stock that left one place
+  and never arrived at another is a miscount or a theft, and both need an owner. Scarce stock
+  is shared by **days of cover**, not raw shortfall, because 100 units to a shop selling 5 a
+  day while a shop selling 50 gets nothing is how one branch drowns while another runs dry.
+  Advisory until a person approves it. 12 tests.
+- **Cold chain, sampling and quality release (M10-FR-02)** — `packages/quality/`. Cold chain
+  is the one control where the damage is **invisible**: frozen goods that sat at 9 °C for
+  three hours look exactly like frozen goods that did not. So the evidence decides, not an
+  opinion at the counter. An excursion is judged on **duration as well as peak** (a freezer
+  door open for ninety seconds is not a breach; four hours is), a breach **quarantines the
+  batch automatically** rather than warning someone unloading a van in the rain, the readings
+  are **retained for an inspection** because "we checked it" is not evidence, and a
+  **missing reading is treated as a failed reading** — a cold-chain item nobody measured is
+  not "probably fine". Temperatures are integer tenths of a degree for the same reason money
+  is integer paise. 14 tests.
+
+**The gate itself** (`tests/integration/physical-to-system.test.ts`, 10 assertions) proves
+both halves against real PostgreSQL:
+
+- **Physical to system.** 240 kg received → put away (with a duplicate scan, a typo'd bin
+  and a quarantine refusal all handled) → 60 kg transferred with a **5 kg shortfall valued at
+  ₹900.00** → 120 kg sold → a **blind** count returns 57 kg → the counter's self-approval is
+  **refused** → the store manager approves with a reason → a compensating adjustment lands
+  and the system figure becomes **exactly 57**. And the arithmetic closes:
+  **240 = 57 on the shelf + 55 at the branch + 0 in transit + 120 sold + 5 lost + 3
+  shrinkage.** Every kilo is somewhere, or it is someone's problem.
+- **Recall.** A second batch with **no temperature reading at all** is quarantined
+  automatically; the recall then blocks it **at the lane** (from the cached recall set, with
+  the network out), **on a transfer** (*"sending it to another branch moves the problem, it
+  does not solve it"*) and **in a put-away**; the trace says **48 kg received, 12 kg issued,
+  36 kg still in the building**, and names the **one customer who can be telephoned** while
+  saying plainly that two were walk-ins who cannot. The recall closes **only with evidence**,
+  the record is retained, and the **database itself refuses** the `DELETE` and the `UPDATE`
+  that would tidy the events away.
+
+**A defect was found and fixed while building this.** Three shipped source files
+(`packages/stock/src/position.ts`, `packages/persistence/src/event-store.ts`,
+`packages/import/src/import-job.ts`) contained a **raw NUL byte** used as a key separator.
+The code ran correctly and the scanners were never blinded — but git, ripgrep and GitHub all
+classify such a file as *binary*, so a change inside `position.ts` (the module that decides
+what is sellable) would appear in a pull request as **"Binary files differ", with not one
+line shown to a reviewer**. That is a silent hole straight through the review gate in hard
+rule #8, and it is invisible precisely because every check stays green. All three now use the
+escape, and a **new guardrail** (`tests/guardrails/plain-text-source.test.ts`) fails the
+build if any shipped **or test** source ever regains one.
+
+`pnpm check` green: typecheck + lint + secret-scan + **1,005 tests**, plus **16 integration
+tests** against real PostgreSQL 16.13.
+
+---
+
 ## Last completed
 - **Setup 1/3/4** — repository, `CLAUDE.md`, safety net (tests, guardrails, secret
   scan, CI), and baseline ADR. (Merged to `main` via PR #1.)
@@ -801,17 +894,16 @@ plus all five cross-cutting sets.**
   family-level baseline.
 
 ## In progress
-- **Stage 5 foundation build** — 36 tested units done (`packages/` contracts, ledger,
-  approvals, rbac, sync, numbering, calendar, price-list, pricing, promotions, price-guard,
-  tender, config, sale, tenant, receiving, purchasing, bank-controls, adjustment, counts,
-  replenishment, fefo, traceability, finance, reconciliation, orders, fulfilment, customer,
-  waste, b2b, notifications, reporting, returns, cash, till, day-close, loyalty, loss-prevention;
-  359 tests, `pnpm check` green). The
-  pure, store-fact-independent foundation is now comprehensive — it even composes into the
-  end-to-end offline sale commit (hard rule #1). What remains genuinely needs the outside
-  world: a **database** (via the hosting-vendor pick, D3 commercial validation) and the
-  **store-specific modules** (via the Stage 1 facts, A-11). Further pure engines would be
-  increasingly marginal versus those two unblocks.
+- **Stage 9 — POS, returns, cash office.** M12-FR-02 completion, M13-FR-04, M14-FR-03,
+  M15-FR-02/04, D04. The gate is *end-of-day and refund controls prove out*. The engines for
+  most of this exist and are tested (`packages/returns`, `packages/till`,
+  `packages/day-close`, `packages/cash`, `packages/loss-prevention`, `apps/pos`); what Stage
+  9 adds is the missing requirements plus the **proof that the day closes honestly** —
+  drawer to declaration to banking, with a refund that cannot be invented and a shift that
+  cannot be closed over an unsent sale.
+- Everything earlier is **finished, not paused**: stages 0–8 complete with written gate
+  evidence in `docs/evidence/`. Nothing has been silently dropped — `docs/backlog.md`
+  schedules every remaining requirement row to a named stage.
 
 ## Blocked / needs owner input
 - **D3/D4/D5/D8 — CLOSED (2 Aug 2026).** D3 = ₹20,000/month; D4 = **Mr Sivakumar**
@@ -830,23 +922,23 @@ plus all five cross-cutting sets.**
   store operations lead, finance/CA reviewer, security/architecture reviewer.
 
 ## Next session should start with
-The owner-closure gate is closed (D3/D4/D5/D8) and the infrastructure/deployment design +
-hosting ADR-0002 are done, so the next roadmap step is **Stage 5 — the technical
-foundation** (platform, identity/config service, base data layer, CI/CD). It does **not**
-depend on the store facts and is unblocked:
-1. **Contract & event schemas** in `packages/contracts/` (from the API catalogue & data
-   dictionary) — the shared types both edge and cloud build against; **then**
-2. **IaC in `infra/`** (network/db/compute/storage/secrets, dev/test/staging/prod) to
-   ADR-0002; **then**
-3. **Base platform** (identity/RBAC, config/number-series, the append-only data layer) with
-   full tests (AID-03/AID-07 and the Definition of Done) — the first real application code.
+**Stage 9 — POS, returns and cash office**, in the roadmap's own order, one stage at a time:
+1. **M12-FR-02** — complete the POS transaction record (suspend/resume across a lane
+   restart, the exchange path, and the offline reprint trail).
+2. **M13-FR-04** — refund controls: refund method policy, per-role caps, and a refund that
+   can never be created without the sale it reverses.
+3. **M14-FR-03** — cash declaration, banking and the safe/float chain end to end.
+4. **M15-FR-02/04** — CCTV/transaction linking references and the loss-prevention case file.
+5. **D04** — the queue/checkout experience requirements.
+6. **Stage 9 gate evidence** — the day closed honestly, end to end, against real PostgreSQL,
+   written up in `docs/evidence/`.
 
-In parallel (owner/store, still gating store-specific build per A-11): gather the 20 AVR
-facts using the new plain-language **`docs/discovery/store-facts-questionnaire.md`** (grouped
-by who answers: owner / floor manager / accounts / IT / payments / privacy) — it includes
-the **trading-day cut-off**; measure the six baselines (`docs/discovery/baseline.md`); send
-the ERP-vendor letter (`docs/discovery/legacy-data-access.md`); begin D4 custody onboarding
-for Mr Sivakumar.
+In parallel (owner/store, not gating the build): gather the remaining Stage-1 store facts
+using **`docs/discovery/store-facts-questionnaire.md`** (it includes the **trading-day
+cut-off**); measure the six baselines (`docs/discovery/baseline.md`); send the ERP-vendor
+letter (`docs/discovery/legacy-data-access.md`, which unblocks EX-02 and therefore the Stage
+11 migration rehearsal); begin D4 custody onboarding for Mr Sivakumar.
 
-Also still open (design, not gating): QG-02 usability test in the store; expanding the
-remaining later-release modules (M22, M24–M28, M31, M36) and the SEC/PRV/NFR/AI-NFR/MG sets.
+Still scheduled and still not forgotten: QG-02 usability testing with real staff, and the
+**owner-witnessed restore demonstration (UAT-01)**, both of which need the store and are
+recorded in `docs/registers/uat-calendar.md`.

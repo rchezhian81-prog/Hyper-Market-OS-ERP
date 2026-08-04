@@ -63,7 +63,7 @@ jobs:
             || (echo "::error::SBOM is out of date — run 'pnpm run sbom' and commit the result" && exit 1)
 
   integration:
-    name: Offline/sync vertical slice (real PostgreSQL)
+    name: Stage gate suites (real PostgreSQL)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -98,7 +98,12 @@ jobs:
           pnpm db:migrate
           pnpm db:migrate
 
-      - name: Offline / duplicate / reorder / recovery / reconciliation (Stage 6 gate)
+      # Every passed stage gate re-runs on every push. A gate that was proven once and
+      # never checked again is a claim, not a control.
+      #   Stage 6 — offline / duplicate / reorder / recovery / reconciliation
+      #   Stage 7 — purchase → GRN → invoice → payment
+      #   Stage 8 — physical-to-system reconciliation and recall
+      - name: Stage 6, 7 and 8 gate suites
         env:
           DATABASE_URL: postgres://sre@localhost:5432/sre_core
         run: pnpm run test:integration
