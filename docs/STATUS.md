@@ -19,17 +19,27 @@ surface**: 94 of the 144 requirement rows built, **1,209 automated tests** plus 
 integration tests against real PostgreSQL 16.13**, and written evidence for every gate in
 `docs/evidence/`. **Stage 11 (migration rehearsal) is blocked on EX-02** — the previous
 system's export rights — which is a letter to send, not code to write, so the build has
-moved to **Stage 14 (customer commerce)**, and then **Stage 15**, both now **COMPLETE
-with their gates passed** — M16–M21 and M31 all done: 111 of the 144 requirement rows
-built, **1,413 automated tests** plus **59 integration tests** against real PostgreSQL. The other outstanding externals are the hosting/live-database decision (OB-02,
+moved to **Stage 14 (customer commerce)**, then **Stage 15 (fulfilment and delivery)**, and
+now **Stage 16 (enterprise modules)** — all three **COMPLETE with their gates passed**.
+M16–M22, M24–M28 and M31 are all done: **132 of the 144 requirement rows built**, **1,609
+automated tests** plus **81 integration tests** against real PostgreSQL 16.13. **Only M32
+(integration platform, Stage 19) and M36 (multi-tenant platform, Stage 18) remain
+unstarted.** The other outstanding externals are the hosting/live-database decision (OB-02,
 owner-deferred) and the in-store activities that need the store itself (QG-02 usability
 testing, the owner-witnessed restore in UAT-01).
 
 ---
 
 ## Current stage
-**Stage 16 — Enterprise modules (next). Stages 0–10, 14 and 15 complete, all gates
-passed.**
+**Stage 17 — Governed AI agents (next, needs EX-12). Stages 0–10, 14, 15 and 16 complete,
+all gates passed.**
+
+**Stage 16 passed today** on `tests/integration/beyond-the-till.test.ts` (22 assertions,
+real PostgreSQL 16.13, run three times green) — one trading day followed through the six
+things a hypermarket does besides selling at a till: a school ordering on account, a
+supplier logging in from outside, a jeweller's concession counter, the cold room and the
+power, the morning roster and the fire check, and what leaves as waste. Evidence in
+`docs/evidence/stage-16-beyond-the-till.md`.
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
 done for Store-Core (R2); Stage 5 has built 59 tested foundation units, five
 **persistence-layer** units incl. the PostgreSQL connector + migration runner, and the **first
@@ -1285,6 +1295,122 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## Stage 16 — Enterprise modules — ✅ COMPLETE, GATE PASSED (4 August 2026)
+
+Gate: *beyond the till* — `docs/evidence/stage-16-beyond-the-till.md`.
+**M22, M24, M25, M26, M27 and M28 are now complete.**
+
+This is the largest single block in the roadmap — 21 requirement rows across six modules,
+four of them entirely unbuilt at the start of the session — and it is the point where the
+product stops being "a very good till system" and starts being the thing a hypermarket
+actually runs on. Six themes, and one idea running through all of them: **the parts of the
+business that nobody watches are the parts that quietly go wrong.**
+
+- **The B2B document chain (M22-FR-02)** — quote → sales order → proforma → challan → tax
+  invoice, where **each document is derived from the one before it, never from the one two
+  steps back**. The failure everybody has seen is the chain drifting: an invoice for 40 cases
+  when 38 were delivered, because the invoice was built from the *order* instead of from the
+  *challan*. So the tax invoice follows what was **delivered** — bill the ordered quantity
+  and the customer is overcharged with a tax document to prove it; bill less and the shop has
+  given away goods it will never be paid for. A quotation **draws no number when it refuses**,
+  because a gap in a tax-invoice series is a question from an assessing officer with no good
+  answer. A proforma carries `taxClaimable: false`, the single most important field on the
+  document. 21 tests.
+- **B2B collections (M22-FR-04)** — three things a retail ERP usually gets quietly wrong.
+  **Ageing runs from the due date, not the invoice date**: an invoice on 30-day terms issued
+  40 days ago is 10 days overdue, not 40, and ageing from issue makes every account on terms
+  look delinquent — so the report gets ignored, and the genuinely overdue account is ignored
+  with it. **A payment is allocated, not absorbed**: ₹50,000 against three open invoices has
+  to land somewhere specific, or the shop's "outstanding" and the customer's "what I have
+  paid" are both right and they disagree. And **a disputed invoice never becomes a dunning
+  letter** — chasing a customer for an invoice they already queried is how a good account is
+  lost over ₹4,000. Stopping supply is **recommended, never automatic**: it ends a
+  relationship, and date arithmetic must not cut off a school on the morning of a function.
+  20 tests.
+- **The supplier portal (M24)** — the only place in the whole product where **somebody
+  outside the business logs in**, which makes it the highest-risk surface in the repository.
+  The risk is not exotic: it is one supplier seeing another supplier's prices. So the partner
+  id is taken from the **authenticated session and never from the request**, a request naming
+  another partner returns a recorded security event rather than an empty list, and **no
+  function in the module accepts a partner id from a payload at all** — asserted by a test
+  that reads the module's own exports. Compliance is checked **at the action**, not on a
+  nightly sweep, because that gap is exactly where an expired supplier gets a purchase order
+  and the shop inherits their non-compliance. Nothing a supplier submits takes effect on its
+  own: *the portal is a door, not an authority*. 26 tests.
+- **Workforce (M25)** — this module governs people, which changes what "correct" means. A
+  roster gap is **named, with the hour** — *"Sunday 06:00 has NOBODY rostered as opener"* —
+  rather than averaged into a coverage percentage nobody acts on, and **a leaver still in the
+  grid counts as no cover**. A lapsed certification blocks the **task, not the person**:
+  someone whose food-handling certificate expired cannot work the deli and can absolutely
+  still stack shelves, because blocking the person is how a shop routes around the system on
+  a busy Saturday, and **a control people route around is not a control**. A missed target
+  pays **nothing** — paying 96% for 96% has redefined the target. And the deliberate
+  exception: **labour cost is reported, never enforced**, because a system that refuses a
+  fourth cashier creates queues at Diwali. There is no function in the module that could
+  refuse a roster on cost, and a test asserts that absence. 31 tests.
+- **Facilities and assets (M26)** — a hypermarket is a building full of machines that lose
+  money quietly. **Criticality is a property of the asset, not of the alert**, so critical
+  assets come back in their own list: a list where the cold room sits beside the shelf trolley
+  at the same weight is a list where the cold room gets missed. An expired AMC is reported
+  against **what it protects** — *"AMC-14 expired"* gets ignored; *"the cold room has no
+  maintenance contract and ₹80,000 of stock sits in it"* gets renewed. M10 assesses the
+  **batch**; this assesses the **equipment**, and that difference matters: the store's habit
+  is to probe a few batches, and the room is what actually fails — so a breach holds
+  everything in it, *including the batches nobody probed*. **A silent probe is a fault, not a
+  pass.** Downtime runs from when it **broke**, not from when it was reported. And a missed
+  compliance task **escalates by itself**, while cleaning deliberately does not, because
+  burying the fire check among forty mop-the-aisle alerts is the same failure by another
+  route. 39 tests.
+- **Concession and shop-in-shop (M27)** — a counter inside the shop that is **not the shop's
+  business**. The mistake that costs real money is boring and universal: concession stock ends
+  up in the store's valuation. It is on the store's shelves and moves through the store's POS,
+  and one day somebody values the stock for the accountant and ₹40,00,000 of somebody else's
+  gold is in it — the balance sheet, the insurance schedule and the tax position all wrong at
+  once, and nobody notices because the number *looks about right*. So **ownership is a
+  property of the stock and the valuation asks**, and what was excluded is named and valued.
+  The money a concession sale takes was **never the shop's revenue**; the deposit is a
+  liability projected from movements, with an unapproved forfeit **still a liability**. 30
+  tests.
+- **Scrap, packaging and sustainability (M28-FR-02/03/04)** — scrap is the one revenue stream
+  in most shops with no paperwork and no controls, and because nobody knows what a month of
+  cardboard is *worth*, nobody can tell ₹4,000 from ₹12,000. **The control is not suspicion —
+  it is making the number exist**, with rate drift measured against the shop's own running
+  average and the finding asking about the **rate**, not the person. A carry-bag charge is a
+  **visible priced line or it does not exist**. A reusable crate is an asset **in circulation**,
+  not a consumable — 118 crates unaccounted for is a number instead of a feeling. And the one
+  that matters most: **a fall in recorded waste is not a fall in waste.** A store reports
+  "waste down 18%" when the one manager who logged every damaged crate went on leave; six
+  months later it believes it controls a problem it has stopped measuring. So every figure
+  **carries its coverage on the face of the report**, and a comparison across moved coverage
+  says *"we cannot tell"* rather than flattering itself. 29 tests.
+
+**The gate** (`tests/integration/beyond-the-till.test.ts`, 22 assertions, 53 controls,
+verified repeatable — run three times, green three times) follows one trading day against
+real PostgreSQL through the six things a hypermarket does besides selling at a till: a school
+quoted, converted at the quoted price and refused a late re-price, with an invoice that
+follows the **van** (₹38,062.50) and not the order (₹82,950) · a 40-day-old invoice aged as 10
+days overdue and a queried one never chased · a supplier shown only their own rows with a
+rival request refused **and recorded**, an expired licence stopping an ASN at the door · a
+statement that reconciles with its dispute separate · ₹4,00,000 of a jeweller's gold kept out
+of our valuation and our own manager refused a write-off on it · a cold room holding ₹1,840 of
+stock *including what nobody probed* · 47 unprotected minutes counted from the mains failure ·
+*"Sunday 06:00 has NOBODY rostered as opener"* · the deli counter blocked but not Raj · one
+fire check escalated above 40 mop-the-aisle tasks · a reportable injury refused closure three
+times · 118 crates never returned · an 18% "improvement" in waste reported as
+`not_comparable` · and the database refusing to delete any of it.
+
+**Two defects found and fixed while building:** `auditPartnerAction` mixed `??` with `||`
+without parentheses, which is a **syntax error** in JavaScript, not a precedence subtlety —
+the typechecker caught it before a single test ran. And `buildStatement` had a `reconciles`
+check that was algebraically always true; it now cross-checks named buckets against the raw
+line amounts, so a document kind added later and left uncategorised turns it **false** instead
+of vanishing from a supplier's balance.
+
+`pnpm check` green: typecheck + lint + secret-scan + **1,609 tests**, plus **81 integration
+tests** against real PostgreSQL 16.13.
+
+---
+
 ## Last completed
 - **Setup 1/3/4** — repository, `CLAUDE.md`, safety net (tests, guardrails, secret
   scan, CI), and baseline ADR. (Merged to `main` via PR #1.)
@@ -1308,14 +1434,13 @@ tests** against real PostgreSQL 16.13.
   **real export data from the incumbent ERP**, and the letter requesting it
   (`docs/discovery/legacy-data-access.md`) has not been sent. This is the first point in
   the whole roadmap where building further in sequence is genuinely impossible.
-- **Stage 16 — Enterprise modules.** M22-FR-02/04 (B2B), M24 (supplier portals), M25
-  (workforce), M26 (facilities and assets), M27 (concession), M28-FR-02/03/04 (waste and
-  sustainability). **The largest remaining block: 16 requirement rows across six modules,
-  four of them entirely unbuilt.**
-- After that the only code stages left are **17 (governed AI agents, needs EX-12)**,
-  **18 (multi-branch and M36)** and **19 (operate and improve)**.
-- Everything earlier is **finished, not paused**: stages 0–10 complete with written gate
-  evidence in `docs/evidence/`. Nothing has been silently dropped — `docs/backlog.md`
+- **Stage 17 — Governed AI agents (A01–A10), needs EX-12** (a model-gateway account). The
+  authority boundaries, evidence requirements, budgets and kill switches are already
+  designed; what is missing is the provider account, which is a spending decision.
+- After that the only code stages left are **18 (multi-branch and M36)** and **19 (operate
+  and improve, M32)** — **M32 and M36 are the only two modules with no rows built at all.**
+- Everything earlier is **finished, not paused**: stages 0–10, 14, 15 and 16 complete with
+  written gate evidence in `docs/evidence/`. Nothing has been silently dropped — `docs/backlog.md`
   schedules every remaining requirement row to a named stage.
 
 ## Blocked / needs owner input
@@ -1335,15 +1460,20 @@ tests** against real PostgreSQL 16.13.
   store operations lead, finance/CA reviewer, security/architecture reviewer.
 
 ## Next session should start with
-**Stage 16 — Enterprise modules**, the largest remaining block:
-1. **M24** — supplier portals (self-service ASN, invoice status, performance visibility).
-2. **M25** — workforce (rosters, attendance, labour cost against sales).
-3. **M26** — facilities and assets (equipment, maintenance, the cold-chain assets M10
-   already depends on).
-4. **M27** — concession and shop-in-shop settlement.
-5. **M28-FR-02/03/04** — waste analytics, donation and sustainability reporting.
-6. **M22-FR-02/04** — the remaining B2B requirements.
-7. **Stage 16 gate evidence.**
+**Stage 18 — Multi-branch and M36**, taken ahead of Stage 17 for the same reason Stages 14–16
+were taken ahead of Stage 11: **Stage 17 needs EX-12**, a paid model-gateway account, and
+that is a spending decision belonging to the owner rather than code to write.
+
+1. **M36-FR-01…04** — the multi-tenant platform: tenant provisioning and lifecycle,
+   per-tenant branding and configuration, isolated upgrade and rollback, and the
+   subscription/entitlement surface. The foundation (`packages/tenant`, `tenant_id` on every
+   table, the entitlements engine) is already built and tested; M36 is the *management* layer
+   on top of it.
+2. **Multi-branch operations** — branch-to-branch transfers, consolidated reporting and the
+   branch-level variants of the controls already built for one store.
+3. **Stage 18 gate evidence.**
+4. Then **Stage 19** (M32 integration platform, M33/M35 remainder, SLA and support
+   operations), and **Stage 17** whenever EX-12 is settled.
 
 **The one thing that would genuinely help from outside:** send the ERP-vendor letter in
 `docs/discovery/legacy-data-access.md`. It unblocks EX-02 and therefore Stage 11, which is

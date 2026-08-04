@@ -6,11 +6,11 @@ time, each ending in a gate**. Nothing here is optional — "deferred" means a l
 release, never removed (OD-02).
 
 Regenerate the status counts with the parser in `docs/traceability.md`'s own table; last
-counted **4 August 2026** (Stage 15 complete).
+counted **4 August 2026** (Stage 16 complete).
 
 ## Where the build actually stands
 
-**144 individual requirement rows: 111 built · 4 partial · 29 not started.**
+**144 individual requirement rows: 132 built · 4 partial · 8 not started.**
 
 | Module | Release | Built | Partial | Not started |
 | --- | --- | --- | --- | --- |
@@ -35,13 +35,13 @@ counted **4 August 2026** (Stage 15 complete).
 | M19 Fulfilment & delivery | R5 | 4 | 0 | 0 |
 | M20 Customer app & web | R4 | 4 | 0 | 0 |
 | M21 CRM & service desk | R4 | 4 | 0 | 0 |
-| M22 B2B | R6 | 2 | 0 | 2 |
+| M22 B2B | R6 | 4 | 0 | 0 |
 | M23 Finance & Tally | R2 | 3 | 1 | 0 |
-| M24 Supplier portals | R6 | 0 | 0 | **4** |
-| M25 Workforce | R6 | 0 | 0 | **4** |
-| M26 Facilities & assets | R6 | 0 | 0 | **4** |
-| M27 Concession | R6 | 0 | 0 | **4** |
-| M28 Waste & sustainability | R6 | 1 | 0 | 3 |
+| M24 Supplier portals | R6 | 4 | 0 | 0 |
+| M25 Workforce | R6 | 4 | 0 | 0 |
+| M26 Facilities & assets | R6 | 4 | 0 | 0 |
+| M27 Concession | R6 | 4 | 0 | 0 |
+| M28 Waste & sustainability | R6 | 4 | 0 | 0 |
 | M29 Owner intelligence | R2 | 4 | 0 | 0 |
 | M30 Import & export | R2 | 3 | 1 | 0 |
 | M31 Notifications & receipts | R2/R4 | 4 | 0 | 0 |
@@ -192,8 +192,31 @@ Gate: *pick to doorstep.*
 **M18 and M19 are now complete.** The M20 delivery surfaces are covered by the storefront's
 tracking view (Stage 14).
 
-## Stage 16 — Enterprise modules
-M22-FR-02/04, M24, M25, M26, M27, M28-FR-02/03/04.
+## Stage 16 — Enterprise modules — ✅ **COMPLETE, GATE PASSED**
+(taken out of order with Stages 14 and 15; Stage 11 is blocked on EX-02)
+Gate: *beyond the till — everything the shop does that is not a walk-in sale still tells
+the truth.*
+
+| # | Work | Requirement | State |
+| --- | --- | --- | --- |
+| 16.1 | Quote → order → proforma → challan → tax invoice | M22-FR-02 | ✅ done |
+| 16.2 | B2B portal, due-date ageing, allocated payments, collections | M22-FR-04 | ✅ done |
+| 16.3 | Supplier portal — isolation, compliance at the action, submissions, statements | M24 (all 4) | ✅ done |
+| 16.4 | Rosters, gated tasks, checklists, incentives, SOPs | M25 (all 4) | ✅ done |
+| 16.5 | Assets, AMC, downtime, energy | M26-FR-01/04 | ✅ done |
+| 16.6 | Cold room and power monitoring, IoT readiness | M26-FR-02 | ✅ done |
+| 16.7 | Cleaning, pest, fire, safety schedules and incidents | M26-FR-03 | ✅ done |
+| 16.8 | Concession contracts, stock ownership, settlement, expiry | M27 (all 4) | ✅ done |
+| 16.9 | Scrap and recycling sales | M28-FR-02 | ✅ done |
+| 16.10 | Carry bags, reusable packaging, packaging stock | M28-FR-03 | ✅ done |
+| 16.11 | Waste, energy and sustainability reporting | M28-FR-04 | ✅ done |
+| 16.12 | Stage 16 gate evidence — beyond the till | QG-06 | ✅ **PASSED** — `docs/evidence/stage-16-beyond-the-till.md` |
+
+**M22, M24, M25, M26, M27 and M28 are now complete.** M27 and M28's `ownership` column on the
+shared stock ledger and the POS concession attribution are additive wiring steps at the
+persistence and lane layers; live IoT sensor ingestion (D14) is a deployment step, not a
+build one. **Only M32 (integration platform) and M36 (multi-tenant platform) remain
+unstarted**, in Stages 19 and 18 respectively.
 
 ## Stage 17 — Governed AI agents
 A01–A10 in authority order, with evaluation sets, budgets, kill switches. Needs EX-12.
