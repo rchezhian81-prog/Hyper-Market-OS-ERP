@@ -10,14 +10,14 @@ counted **3 August 2026**.
 
 ## Where the build actually stands
 
-**144 individual requirement rows: 75 built · 7 partial · 62 not started.**
+**144 individual requirement rows: 79 built · 7 partial · 58 not started.**
 
 | Module | Release | Built | Partial | Not started |
 | --- | --- | --- | --- | --- |
 | M01 Foundation & config | R1 | 4 | 0 | 0 |
 | M02 Identity & access | R1 | 2 | 2 | 0 |
 | M03 Product master | R2 | 4 | 0 | 0 |
-| M04 Merchandising & space | R2 | 0 | 0 | **4** |
+| M04 Merchandising & space | R2 | 4 | 0 | 0 |
 | M05 Pricing & promotions | R2 | 3 | 0 | 1 |
 | M06 Suppliers & procurement | R2 | 3 | 0 | 1 |
 | M07 Receiving & matching | R2 | 3 | 1 | 0 |
@@ -84,13 +84,21 @@ Gate: **reproducible deploy and restore proof.**
 | 5.12 | Environment inventory & secrets ownership | §23 | ✅ done |
 | 5.13 | Platform admin & support tooling | M33 | ✅ done (M33-FR-02/03/04; FR-01 via tenant+config) |
 
-## Stage 6 — Offline/sync vertical slice ← **ACTIVE**
+## Stage 6 — Offline/sync vertical slice — ✅ **COMPLETE, GATE PASSED** (`docs/evidence/stage-6-offline-slice.md`)
 Gate: *internet-off, duplicate, reorder and recovery tests pass.*
 Product/price → local POS sale → cloud ledger → reconciliation, proven end to end as one
 runnable scenario. Engines exist; the **slice test** does not.
 
-## Stage 7 — Product, pricing, purchase
-M04 (all 4), M05-FR-04, M06-FR-03, M07-FR-01 completion, D01–D03/D06.
+## Stage 7 — Product, pricing, purchase ← **ACTIVE**
+Gate: *purchase/GRN/invoice controls pass.*
+
+| # | Work | Requirement | State |
+| --- | --- | --- | --- |
+| 7.1 | Merchandising, space, planograms | M04-FR-01/02/03/04 | ✅ done |
+| 7.2 | Markdown / clearance ladder | M05-FR-04 | ▶ next |
+| 7.3 | Supplier performance & scorecard | M06-FR-03 | ▶ next |
+| 7.4 | ASN / dock scheduling (completes M07-FR-01) | M07-FR-01 | ▶ next |
+| 7.5 | Stage 7 gate evidence — purchase/GRN/invoice controls | QG-01/QG-03 | ▶ next |
 
 ## Stage 8 — Inventory, warehouse, quality
 M09-FR-01/03, M10-FR-02, D05. (M08, M11 built.)
