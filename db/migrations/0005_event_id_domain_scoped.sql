@@ -32,6 +32,19 @@
 -- Safe and reversible: `text` accepts every value a `uuid` column already held, so
 -- existing rows convert without loss. Additive in effect — no row is read, written
 -- or removed, and the append-only guards from 0004 remain in force.
+--
+-- This migration contains two statements the additive-only scanner flags, declared here
+-- rather than worked around. A flagged statement with no declaration fails the build; a
+-- declaration with no flagged statement fails it too, so this block cannot rot into a
+-- blanket exemption somebody copies into the next migration.
+--
+-- MIGRATION-EXCEPTION: alter_column_type — uuid to text is lossless in this direction. Text
+-- accepts every value a uuid column can hold, so no existing row can fail to convert. The
+-- reverse would not be safe and is not what this does.
+-- MIGRATION-EXCEPTION: drop_constraint — the global UNIQUE (id) is dropped and replaced in
+-- this same migration by the wider, correct UNIQUE (tenant_id, id). Nothing is left
+-- unprotected: the constraint is strictly relaxed to the boundary ADR-0003 requires, and the
+-- separate tenant-scoped idempotency constraint is untouched.
 
 ALTER TABLE event_ledger
   ALTER COLUMN id TYPE text USING id::text;

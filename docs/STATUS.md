@@ -1660,6 +1660,46 @@ honest rather than being marked complete.
 
 ---
 
+## Migration and contract tests — the last two empty folders (7 August 2026)
+
+`tests/migration/` and `tests/contract/` were the last two empty folders in the repository
+layout. Both found something.
+
+**Migration safety (hard rules #2, #6, #7).** The standing rule — *additive, reversible,
+versioned migrations only* — was enforced by discipline, which means it was enforced until the
+first evening somebody needed a column gone and the change looked obviously safe. A destructive
+migration is not like other bad code: **it runs once, it succeeds, and the data it removed is not
+in the diff.** You cannot review your way back to it.
+
+The scanner flagged **migration 0005**, and correctly: it retypes a column and drops a
+constraint. Both are actually safe — `uuid → text` is lossless, and the global `UNIQUE (id)` it
+drops is replaced in the same file by the wider `UNIQUE (tenant_id, id)` that ADR-0003 requires.
+The right answer was neither to weaken the scanner nor to block the work, but the pattern used
+everywhere else in this product: a **declared exception with a reason**, kept in the migration's
+own header where a reviewer sees it. Two rules keep it honest, and the second is the one that
+matters — a flagged statement with no declaration fails, **and a declaration with no flagged
+statement fails too**, so the block cannot rot into a blanket exemption somebody copies forward
+into a migration that genuinely does drop a column.
+
+The set is applied three times against real PostgreSQL, and the append-only guards are verified
+**in the database** rather than trusted because migration 0004 says it installs them.
+
+**Contract tests (P-06, §30.2, §31.1).** The catalogue's conventions were sentences. The one
+that earns a test is backward compatibility, because the edge and the cloud are *different
+deployments on different upgrade cycles*: **a till offline for three days is running Tuesday's
+code, and its sales must still arrive.** A v1 envelope is written out literally — not built by
+today's code — and read back; an envelope carrying a field this version has never heard of is
+carried, not rejected. Plus: money stays integer minor units on the wire (§29.1), UTC only, and
+the catalogue and the code are checked to agree on the named event types.
+
+**A defect in my own test, caught by repeatability.** The first version of the
+apply-a-new-migration test used a timestamped probe name, so every run added a row to
+`schema_migrations` and the run after it failed. That is exactly the interrupted-deploy failure
+the file exists to catch, reproduced in the test that checks for it. Fixed with a fixed probe
+name and subset assertions; verified green three runs running.
+
+Full suite **2,411**. Every folder in the `CLAUDE.md` layout now has content.
+
 ## Incident runbook and traceability integrity (7 August 2026)
 
 **SEC-10 / PRV-09 / C-05 — the incident runbook was explicitly "to write" and now exists**

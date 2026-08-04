@@ -54,7 +54,7 @@
 | NFR-09 | Observability: metrics, logs, traces, freshness, queue indicators | M35; sync unsent-count; DLQ visibility |
 | NFR-10 | Recoverability: audited RPO/RTO; restore & failover drills | M35; ADR-0002; the quarterly rebuild (AID-10) |
 | NFR-11 | Maintainability: modular domains, versioned contracts, tests | `packages/` (one concern each); `packages/contracts`; the suite |
-| NFR-12 | Portability: documented exports/APIs/backup; no lock-in | P-06; `docs/api/catalogue.md`; ADR-0002/0003 |
+| NFR-12 | Portability: documented exports/APIs/backup; no lock-in | P-06; `docs/api/catalogue.md`; ADR-0002/0003; `tests/contract/` — a v1 envelope written out literally and read by today's code (the till offline for three days), unknown fields carried not rejected, money as integer minor units on the wire, catalogue and code agreeing on event types |
 | NFR-13 | Usability: role task-completion targets; minimal cashier clicks | `packages/a11y/src/signals.ts` `checkInteractionBudget` — the ≤3-interaction bar as an assertable number, with the steps named rather than counted |
 | NFR-14 | Compatibility: certified OS/browser/device/peripheral matrix | ADR-0002; AVR-06; M33 device control |
 | NFR-15 | Auditability: every sensitive mutation reconstructable from evidence | `packages/ledger` (projected balances); M34; append-only |
