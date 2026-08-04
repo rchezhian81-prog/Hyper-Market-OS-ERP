@@ -19,8 +19,8 @@ surface**: 94 of the 144 requirement rows built, **1,209 automated tests** plus 
 integration tests against real PostgreSQL 16.13**, and written evidence for every gate in
 `docs/evidence/`. **Stage 11 (migration rehearsal) is blocked on EX-02** — the previous
 system's export rights — which is a letter to send, not code to write, so the build has
-moved to **Stage 14 (customer commerce)**, where **M16 and M17 are now complete**: 99 of
-the 144 requirement rows built, **1,271 automated tests**. The other outstanding externals are the hosting/live-database decision (OB-02,
+moved to **Stage 14 (customer commerce)**, where **M16, M17, M20 and M21 are now
+complete**: 107 of the 144 requirement rows built, **1,353 automated tests**. The other outstanding externals are the hosting/live-database decision (OB-02,
 owner-deferred) and the in-store activities that need the store itself (QG-02 usability
 testing, the owner-witnessed restore in UAT-01).
 
@@ -1112,6 +1112,65 @@ launch** and needs a paid engagement.
 
 ---
 
+## Stage 14 (part 2) — the customer storefront and the service desk (4 August 2026)
+
+**M20 and M21 are now complete.** With M16 and M17 from part 1, the whole customer-facing
+side of the product is built.
+
+- **The storefront (M20)** — `packages/storefront/`. The app and the till must sell **the
+  same shop** (P-02), and that breaks the same way every time: the storefront gets its own
+  product list, its own prices and its own idea of stock, because that was easier than
+  reaching into the real one. Six weeks later it is selling something the shop
+  discontinued, at last month's price. So this package **holds no catalogue of its own**;
+  it applies the lane's own order of checks (recall first), labels stock with its age —
+  and treats an **unknown** age as stale, because "we don't know how old this is" is not
+  "fresh". Search is typo-tolerant, because a customer who types "aashirwad" and gets
+  nothing concludes the shop does not stock it. The cart is reviewed **before checkout**,
+  not at the door. An out-of-area address is refused **at the start**, naming the distance
+  and the limit, and the delivery fee is stated up front — a charge that appears on the
+  confirmation screen is the commonest self-inflicted reason a grocery basket is
+  abandoned. And the payment branch that matters is `unknown`: **an uncertain payment
+  leaves the order pending, releases nothing for picking, and tells the customer plainly
+  not to pay again.** Confirming against money that may not exist means the shop picks,
+  packs and delivers goods it was never paid for. 42 tests.
+- **The privacy centre** lists **every** category the shop holds, including the invoices it
+  cannot erase — a privacy centre showing only the convenient data tells the customer a
+  comforting and untrue story about how much is known. A consent switched off applies to
+  the **very next message**, not the next batch: "it applies from tomorrow" is how someone
+  who just opted out receives one more message and complains to a regulator rather than to
+  the shop.
+- **Campaigns (M21-FR-01/02)** — the one place a shop can do real damage at scale in a
+  single click. Consent is checked **per recipient at the send**, because a list is a
+  property of a spreadsheet and consent is a property of a person. The **excluded count is
+  always reported**: a campaign that quietly drops 400 people looks like a campaign to
+  1,600, and when the reach keeps shrinking somebody "fixes" it by loosening the check.
+  A promotion hidden inside a transactional message blocks the whole campaign, because
+  "your order is out for delivery" rides the contract rather than consent and is therefore
+  the obvious way round it. Journeys wait a quiet period — an abandoned-cart message four
+  minutes after someone puts their phone down is not a nudge, it is surveillance.
+  Attribution reports the **control group** beside the result: a win-back that "recovered"
+  18% when 15% came back anyway cost money to achieve 3%.
+- **The service desk (M21-FR-03/04)** — compensation is **money leaving the business,
+  handed out by the person the customer is currently shouting at**, so above the agent's
+  authority it needs a second signature, below it still needs a reason, and a tenant
+  ceiling makes large amounts a management decision. **AI drafts; a named human sends** —
+  `approveDraft` is the only route, there is no send function anywhere in the module, and
+  a test asserts that absence. Two SLA clocks, deliberately separate: resolution **pauses**
+  while the shop waits on the customer (otherwise every slow photo reads as our failure and
+  within a month nobody reads the report), while first response does **not**, because a
+  desk that resolves everything on time while nobody replies for two days is failing in the
+  way customers actually notice. CSAT is reported with its **response rate**: 4.8 from six
+  replies out of four hundred cases is six people, and the six who reply are rarely the ones
+  who left quietly. 40 tests.
+
+`pnpm check` green: typecheck + lint + secret-scan + **1,353 tests**.
+
+**Still to do in Stage 14:** M31-FR-01 with D07–D08 (customer notifications), then the gate.
+**EX-13, an independent penetration test, is a real gate before customer launch** and needs
+a paid engagement — it will come to the owner as a decision when the stage closes.
+
+---
+
 ## Last completed
 - **Setup 1/3/4** — repository, `CLAUDE.md`, safety net (tests, guardrails, secret
   scan, CI), and baseline ADR. (Merged to `main` via PR #1.)
@@ -1135,10 +1194,10 @@ launch** and needs a paid engagement.
   **real export data from the incumbent ERP**, and the letter requesting it
   (`docs/discovery/legacy-data-access.md`) has not been sent. This is the first point in
   the whole roadmap where building further in sequence is genuinely impossible.
-- **Stage 14 — Customer commerce, taken out of order.** **M16 and M17 are complete**
-  (data-subject rights, segments and lifetime value, coupons and referrals, gift cards and
-  store credit, household pooling). What remains is **M20** (customer app and web),
-  **M21** (CRM and service desk) and **M31-FR-01** with D07–D08, then the Stage 14 gate.
+- **Stage 14 — Customer commerce, taken out of order.** **M16, M17, M20 and M21 are
+  complete** (data-subject rights, segments and lifetime value, coupons and referrals,
+  gift cards and store credit, household pooling, the customer storefront, and CRM plus
+  the service desk). What remains is **M31-FR-01** with D07–D08, then the Stage 14 gate.
   EX-04/05 (messaging providers) and EX-11 (app-store accounts) gate *delivery and
   publication*, not the build; **EX-13, an independent penetration test, is a genuine gate
   before customer launch** and needs a paid engagement.
@@ -1163,14 +1222,15 @@ launch** and needs a paid engagement.
   store operations lead, finance/CA reviewer, security/architecture reviewer.
 
 ## Next session should start with
-**Stage 14 continued** — M16 and M17 are done; the customer-facing surfaces remain:
-1. **M20 (all four)** — the customer app and web storefront, on the same commerce truth as
-   the till (P-02): one product, one price, one stock, one loyalty balance.
-2. **M21 (all four)** — CRM and the service desk, composing the M16 profile and the M15
-   case discipline.
-3. **M31-FR-01** and D07–D08 — customer notifications through the existing consent-gated
-   engine and its dead-letter queue.
-4. **Stage 14 gate evidence** — one customer walked end to end, against real PostgreSQL.
+**Stage 14, finishing** — M16, M17, M20 and M21 are done:
+1. **M31-FR-01** and D07–D08 — customer notifications through the existing consent-gated
+   engine and its dead-letter queue, composing the M21 campaign planner.
+2. **Stage 14 gate evidence** — one customer walked end to end against real PostgreSQL:
+   browse → cart → an out-of-area refusal → a slot → an uncertain payment that confirms
+   nothing → a complaint → compensation needing a second signature → an erasure request
+   that keeps the invoices and says so.
+3. Then **Stage 15** (fulfilment and delivery: M18-FR-03/04, M19-FR-02, D09) or **Stage 16**
+   (enterprise modules: M22, M24–M28), both of which are unblocked.
 
 **The one thing that would genuinely help from outside:** send the ERP-vendor letter in
 `docs/discovery/legacy-data-access.md`. It unblocks EX-02 and therefore Stage 11, which is

@@ -6,11 +6,11 @@ time, each ending in a gate**. Nothing here is optional — "deferred" means a l
 release, never removed (OD-02).
 
 Regenerate the status counts with the parser in `docs/traceability.md`'s own table; last
-counted **4 August 2026** (Stage 14, part 1).
+counted **4 August 2026** (Stage 14, parts 1–2).
 
 ## Where the build actually stands
 
-**144 individual requirement rows: 99 built · 4 partial · 41 not started.**
+**144 individual requirement rows: 107 built · 4 partial · 33 not started.**
 
 | Module | Release | Built | Partial | Not started |
 | --- | --- | --- | --- | --- |
@@ -33,8 +33,8 @@ counted **4 August 2026** (Stage 14, part 1).
 | M17 Loyalty | R4 | 4 | 0 | 0 |
 | M18 Orders | R5 | 2 | 0 | 2 |
 | M19 Fulfilment & delivery | R5 | 3 | 0 | 1 |
-| M20 Customer app & web | R4 | 0 | 0 | **4** |
-| M21 CRM & service desk | R4 | 0 | 0 | **4** |
+| M20 Customer app & web | R4 | 4 | 0 | 0 |
+| M21 CRM & service desk | R4 | 4 | 0 | 0 |
 | M22 B2B | R6 | 2 | 0 | 2 |
 | M23 Finance & Tally | R2 | 3 | 1 | 0 |
 | M24 Supplier portals | R6 | 0 | 0 | **4** |
@@ -164,12 +164,12 @@ Owner GO gates; need the store.
 | 14.3 | Coupons, referrals, memberships, personalised offers | M17-FR-02 | ✅ done |
 | 14.4 | Gift cards, store credit, fraud limits, liability reconciliation | M17-FR-03 | ✅ done |
 | 14.5 | Household pooling and omnichannel balance consistency | M17-FR-04 | ✅ done |
-| 14.6 | Customer app and web storefront | M20 (all 4) | ⬜ next |
-| 14.7 | CRM and service desk | M21 (all 4) | ⬜ next |
+| 14.6 | Customer app and web storefront | M20 (all 4) | ✅ done |
+| 14.7 | CRM and service desk | M21 (all 4) | ✅ done |
 | 14.8 | Customer notifications | M31-FR-01, D07–D08 | ⬜ next |
-| 14.9 | Stage 14 gate evidence | QG-06 | ⬜ after 14.6–14.8 |
+| 14.9 | Stage 14 gate evidence | QG-06 | ⬜ after 14.8 |
 
-**M16 and M17 are now complete.** EX-04/05 (messaging providers) and EX-11 (app-store
+**M16, M17, M20 and M21 are now complete.** EX-04/05 (messaging providers) and EX-11 (app-store
 accounts) gate *delivery and publication*, not the build; **EX-13 (independent penetration
 test) is a genuine gate before customer launch** and needs a paid engagement.
 
