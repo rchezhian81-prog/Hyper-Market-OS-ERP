@@ -6,11 +6,11 @@ time, each ending in a gate**. Nothing here is optional — "deferred" means a l
 release, never removed (OD-02).
 
 Regenerate the status counts with the parser in `docs/traceability.md`'s own table; last
-counted **4 August 2026** (Stage 14 complete).
+counted **4 August 2026** (Stage 15 complete).
 
 ## Where the build actually stands
 
-**144 individual requirement rows: 108 built · 4 partial · 32 not started.**
+**144 individual requirement rows: 111 built · 4 partial · 29 not started.**
 
 | Module | Release | Built | Partial | Not started |
 | --- | --- | --- | --- | --- |
@@ -31,8 +31,8 @@ counted **4 August 2026** (Stage 14 complete).
 | M15 Loss prevention | R2 | 4 | 0 | 0 |
 | M16 Customer & consent | R4 | 4 | 0 | 0 |
 | M17 Loyalty | R4 | 4 | 0 | 0 |
-| M18 Orders | R5 | 2 | 0 | 2 |
-| M19 Fulfilment & delivery | R5 | 3 | 0 | 1 |
+| M18 Orders | R5 | 4 | 0 | 0 |
+| M19 Fulfilment & delivery | R5 | 4 | 0 | 0 |
 | M20 Customer app & web | R4 | 4 | 0 | 0 |
 | M21 CRM & service desk | R4 | 4 | 0 | 0 |
 | M22 B2B | R6 | 2 | 0 | 2 |
@@ -62,10 +62,11 @@ written evidence in `docs/evidence/` — the gates are about proof, not code, an
 was executed against a real PostgreSQL rather than asserted. That is why M01–M15 plus
 M33–M35 are fully green: **the store-facing core of the product is built and proven.**
 
-**Stages 5 to 10 and Stage 14 have all passed their gates.** Stage 11 is blocked on the
+**Stages 5 to 10, 14 and 15 have all passed their gates.** Stage 11 is blocked on the
 previous system's export rights (EX-02), which is a letter to send rather than code to
-write; Stages 12–13 need the store and an owner GO. The next unblocked build stages are
-**15 (fulfilment and delivery)** and **16 (enterprise modules)**.
+write; Stages 12–13 need the store and an owner GO. **Stage 16 (enterprise modules) is the
+largest remaining block** — 16 requirement rows across M22, M24–M28 with almost nothing
+built.
 
 ## Stage 5 — Engineering foundation — ✅ **COMPLETE, GATE PASSED**
 
@@ -178,8 +179,18 @@ Gate: *one customer, end to end.*
 independent penetration test — is the one genuine gate before customer launch** and needs a
 paid engagement; it is the only outstanding item on this stage and belongs to the owner.
 
-## Stage 15 — Fulfilment and delivery
-M18-FR-03/04, M19-FR-02, M20 delivery surfaces, D09.
+## Stage 15 — Fulfilment and delivery — ✅ **COMPLETE, GATE PASSED**
+Gate: *pick to doorstep.*
+
+| # | Work | Requirement | State |
+| --- | --- | --- | --- |
+| 15.1 | Pickup, scheduled/express routing, dark stores, contribution | M18-FR-03 / D09 | ✅ done |
+| 15.2 | Cancellation, substitution, channel reconciliation | M18-FR-04 / A04 | ✅ done |
+| 15.3 | Packing, handling requirements, dispatch manifest | M19-FR-02 / D09 | ✅ done |
+| 15.4 | Stage 15 gate evidence — pick to doorstep | QG-04 | ✅ **PASSED** — `docs/evidence/stage-15-pick-to-doorstep.md` |
+
+**M18 and M19 are now complete.** The M20 delivery surfaces are covered by the storefront's
+tracking view (Stage 14).
 
 ## Stage 16 — Enterprise modules
 M22-FR-02/04, M24, M25, M26, M27, M28-FR-02/03/04.

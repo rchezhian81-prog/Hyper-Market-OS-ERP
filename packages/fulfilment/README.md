@@ -21,3 +21,22 @@ delivered one.
 
 > Pure and deterministic; offline the caller queues these as events (PII minimized on device).
 > Tested in `tests/unit/fulfilment.test.ts`. Part of the repository layout in `CLAUDE.md`.
+
+- **`src/packing.ts`** (M19-FR-02) — the last moment the shop can catch a mistake for free.
+  **A weighed line is priced at its actual packed weight** (D09): "about 1 kg" of chicken is
+  1.187 kg, and if that is not priced at pack the shop is guessing at the doorstep — every
+  guess being either a customer overcharged or margin given away. Exact integer arithmetic
+  from grams, never a float. **A missing pack temperature is a failure, not a gap** — the
+  same rule the goods-in door applies, for the same reason. **A crate cannot mix
+  incompatible handling**: frozen with ambient is a wet bag of atta, and raw meat above
+  ready-to-eat food is a contamination route; both are refusals, not warnings. One bad crate
+  does **not** stop the rest of the order — the customer gets most of their shopping and the
+  refusals are listed rather than quietly left out.
+  `dispatchOrder` builds the manifest **from what was packed, never from what was ordered**:
+  a manifest built from the order is a list of what the shop hoped to send, and the driver
+  is the one who discovers the difference at a stranger's door. It refuses an unsealed crate
+  and refuses to leave while a short line is unresolved, because the doorstep is the worst
+  place to have that conversation.
+
+> Tested in `tests/unit/fulfilment-packing.test.ts` (16) and proven end to end in
+> `tests/integration/pick-to-doorstep.test.ts` (Stage 15 gate).

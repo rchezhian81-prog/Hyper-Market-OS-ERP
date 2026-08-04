@@ -19,16 +19,16 @@ surface**: 94 of the 144 requirement rows built, **1,209 automated tests** plus 
 integration tests against real PostgreSQL 16.13**, and written evidence for every gate in
 `docs/evidence/`. **Stage 11 (migration rehearsal) is blocked on EX-02** — the previous
 system's export rights — which is a letter to send, not code to write, so the build has
-moved to **Stage 14 (customer commerce)**, which is now **COMPLETE with its gate passed** —
-M16, M17, M20, M21 and M31 all done: 108 of the 144 requirement rows built, **1,370
-automated tests** plus **48 integration tests** against real PostgreSQL. The other outstanding externals are the hosting/live-database decision (OB-02,
+moved to **Stage 14 (customer commerce)**, and then **Stage 15**, both now **COMPLETE
+with their gates passed** — M16–M21 and M31 all done: 111 of the 144 requirement rows
+built, **1,413 automated tests** plus **59 integration tests** against real PostgreSQL. The other outstanding externals are the hosting/live-database decision (OB-02,
 owner-deferred) and the in-store activities that need the store itself (QG-02 usability
 testing, the owner-witnessed restore in UAT-01).
 
 ---
 
 ## Current stage
-**Stage 15 — Fulfilment and delivery (next). Stages 0–10 and Stage 14 complete, all gates
+**Stage 16 — Enterprise modules (next). Stages 0–10, 14 and 15 complete, all gates
 passed.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
 done for Store-Core (R2); Stage 5 has built 59 tested foundation units, five
@@ -1226,6 +1226,65 @@ will be brought as a decision with options; nothing else on Stage 14 is outstand
 
 ---
 
+## Stage 15 — Fulfilment and delivery — ✅ COMPLETE, GATE PASSED (4 August 2026)
+
+Gate: *pick to doorstep* — `docs/evidence/stage-15-pick-to-doorstep.md`.
+**M18 and M19 are now complete.**
+
+- **Fulfilment routing and contribution (M18-FR-03)** — the routing decision is made
+  **explicitly, with the reason recorded**, rather than defaulting to "the nearest shop",
+  which is the rule that quietly sends a ₹200 order on a 9 km round trip. Three things it
+  refuses to pretend: **capacity is real** (a slot with eight vans is a slot with eight
+  vans, and promising a ninth is a customer waiting in for a delivery that was never going
+  to come); **express is a different promise** (it needs stock at that location *now*, not
+  "in the chain somewhere" — an express price on a scheduled delivery is a promise the shop
+  will break); and a **dark store can never serve a pickup**, because there is no shop floor
+  to walk into. An unprofitable drop is **flagged, not blocked** (D09): the shop may well
+  want the customer, it just must not take the order believing it made money. 12 tests.
+- **Cancellation and substitution (M18-FR-04)** — `cancelOrder` returns **every reservation
+  to release as part of the same result**. A cancellation that forgets the release makes
+  stock invisible to the shop floor: it shows as unavailable to a walk-in standing in front
+  of it, and nobody connects the two for weeks. And **no answer is a no** — a picker
+  swapping full-fat for skimmed, or one brand of atta for another, is making a decision
+  about someone else's dinner, their diet or their religion, and the substitution people
+  remember is always the one they did not agree to. A dearer substitute is charged at the
+  **original** price; a cheaper one is charged cheaper and the difference **refunded, not
+  kept**. Channel reconciliation runs **both ways**, because the two failures are different
+  and a one-way check misses one entirely. 15 tests.
+- **Packing and dispatch (M19-FR-02)** — between the shelf and the van there is one moment
+  where the shop can still catch a mistake for free. **A weighed line is priced at its
+  actual packed weight** (D09): "about 1 kg" of chicken is 1.187 kg, and pricing it later
+  means guessing at the doorstep — every guess being either a customer overcharged or margin
+  given away. **A missing pack temperature is a failure, not a gap**, the same rule the
+  goods-in door applies. **A crate cannot mix frozen with ambient** (that is a wet bag of
+  atta) **or raw meat with ready-to-eat food**, and those are refusals rather than warnings
+  — but one bad crate never stops the rest of the order, because the customer getting most
+  of their shopping beats getting none of it. The manifest is derived from **what was
+  packed, never from what was ordered**: a manifest built from the order is a list of what
+  the shop hoped to send, and the driver is the one who finds out at a stranger's door.
+  16 tests.
+
+**The gate** (`tests/integration/pick-to-doorstep.test.ts`, 11 assertions, 21 controls)
+follows one order against real PostgreSQL: routed to the dark store, falling through to the
+shop on a full slot, an express promise refused as unachievable · two bags reserved and a
+cancelled order's five given straight back · a substitution refused on silence and **refunded
+when cheaper** · frozen peas refused in the atta crate while the rest still packs · **1.187 kg
+of chicken priced at ₹249.27** rather than guessed · dispatch refused on an unsealed crate and
+on an unresolved short line · a manifest built from the pack · both state machines refusing an
+out-of-order transition · COD reconciled to the paisa with a short driver as a valued
+exception · an unprofitable drop flagged not blocked · the channel reconciled both ways · and
+the database refusing to delete any of it.
+
+**A defect the gate caught:** the first version of the gate test called `reserveStock`,
+`releaseReservation` and `reconcileCod` with field names those modules do not have. The
+modules were right and the test was wrong — rewritten against the real signatures rather
+than the other way round.
+
+`pnpm check` green: typecheck + lint + secret-scan + **1,413 tests**, plus **59 integration
+tests** against real PostgreSQL 16.13.
+
+---
+
 ## Last completed
 - **Setup 1/3/4** — repository, `CLAUDE.md`, safety net (tests, guardrails, secret
   scan, CI), and baseline ADR. (Merged to `main` via PR #1.)
@@ -1249,14 +1308,12 @@ will be brought as a decision with options; nothing else on Stage 14 is outstand
   **real export data from the incumbent ERP**, and the letter requesting it
   (`docs/discovery/legacy-data-access.md`) has not been sent. This is the first point in
   the whole roadmap where building further in sequence is genuinely impossible.
-- **Stage 15 — Fulfilment and delivery.** M18-FR-03/04, M19-FR-02, the M20 delivery
-  surfaces and D09. `packages/orders`, `packages/fulfilment`, `apps/picker-app` and
-  `apps/delivery-app` are built and tested; Stage 15 completes the order lifecycle and
-  proves a pick-to-doorstep run end to end.
-- Then **Stage 16 — Enterprise modules**: M22-FR-02/04, M24 (supplier portals), M25
-  (workforce), M26 (facilities and assets), M27 (concession), M28-FR-02/03/04. These are
-  the largest remaining block: **16 requirement rows across five modules with nothing
-  built yet.**
+- **Stage 16 — Enterprise modules.** M22-FR-02/04 (B2B), M24 (supplier portals), M25
+  (workforce), M26 (facilities and assets), M27 (concession), M28-FR-02/03/04 (waste and
+  sustainability). **The largest remaining block: 16 requirement rows across six modules,
+  four of them entirely unbuilt.**
+- After that the only code stages left are **17 (governed AI agents, needs EX-12)**,
+  **18 (multi-branch and M36)** and **19 (operate and improve)**.
 - Everything earlier is **finished, not paused**: stages 0–10 complete with written gate
   evidence in `docs/evidence/`. Nothing has been silently dropped — `docs/backlog.md`
   schedules every remaining requirement row to a named stage.
@@ -1278,15 +1335,15 @@ will be brought as a decision with options; nothing else on Stage 14 is outstand
   store operations lead, finance/CA reviewer, security/architecture reviewer.
 
 ## Next session should start with
-**Stage 15 — Fulfilment and delivery**, which is unblocked:
-1. **M18-FR-03/04** — order amendment and cancellation, and the order-to-cash close.
-2. **M19-FR-02** — route planning and driver assignment.
-3. **D09** — the delivery-economics rules already partly modelled in `apps/delivery-app`.
-4. **Stage 15 gate evidence** — one order picked, packed, driven and delivered against
-   real PostgreSQL, with a substitution the customer confirmed and COD reconciled.
-
-Then **Stage 16 (enterprise modules)** — the largest remaining block, 16 requirement rows
-across M24–M28 with nothing built yet.
+**Stage 16 — Enterprise modules**, the largest remaining block:
+1. **M24** — supplier portals (self-service ASN, invoice status, performance visibility).
+2. **M25** — workforce (rosters, attendance, labour cost against sales).
+3. **M26** — facilities and assets (equipment, maintenance, the cold-chain assets M10
+   already depends on).
+4. **M27** — concession and shop-in-shop settlement.
+5. **M28-FR-02/03/04** — waste analytics, donation and sustainability reporting.
+6. **M22-FR-02/04** — the remaining B2B requirements.
+7. **Stage 16 gate evidence.**
 
 **The one thing that would genuinely help from outside:** send the ERP-vendor letter in
 `docs/discovery/legacy-data-access.md`. It unblocks EX-02 and therefore Stage 11, which is
