@@ -5,3 +5,4 @@
 // online and offline. Grows one reviewed, tested unit at a time.
 
 export * from './promotions';
+export * from './simulation';
