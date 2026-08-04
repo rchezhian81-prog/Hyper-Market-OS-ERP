@@ -62,3 +62,55 @@ jobs:
           git diff --exit-code --stat docs/evidence/sbom.json \
             || (echo "::error::SBOM is out of date — run 'pnpm run sbom' and commit the result" && exit 1)
 
+  integration:
+    name: Offline/sync vertical slice (real PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # The slice is only meaningful against a real database. A mock would pass
+        # while the schema was wrong — which is exactly what happened before this
+        # job existed (see db/migrations/0005).
+        image: postgres:16
+        env:
+          POSTGRES_USER: sre
+          POSTGRES_DB: sre_core
+          # Throwaway container, reachable only from this job. Trust auth means no
+          # credential appears in this file at all — the repository's secret scan is
+          # absolute, and "it is only CI" is exactly how the first one gets in.
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Migrate, then prove the migrations are idempotent
+        env:
+          DATABASE_URL: postgres://sre@localhost:5432/sre_core
+        run: |
+          pnpm db:migrate
+          pnpm db:migrate
+
+      - name: Offline / duplicate / reorder / recovery / reconciliation (Stage 6 gate)
+        env:
+          DATABASE_URL: postgres://sre@localhost:5432/sre_core
+        run: pnpm run test:integration
+
+      - name: Backup, destroy and restore, reconciled (QG-08)
+        env:
+          DATABASE_URL: postgres://sre@localhost:5432/sre_core
+        run: |
+          node scripts/backup.mjs --out /tmp/backups
+          MANIFEST=$(ls /tmp/backups/*.manifest.json | head -1)
+          psql "postgres://sre@localhost:5432/postgres" -c "DROP DATABASE sre_core WITH (FORCE);"
+          psql "postgres://sre@localhost:5432/postgres" -c "CREATE DATABASE sre_core;"
+          node scripts/restore.mjs --manifest "$MANIFEST" \
+            --target "postgres://sre@localhost:5432/sre_core"
+

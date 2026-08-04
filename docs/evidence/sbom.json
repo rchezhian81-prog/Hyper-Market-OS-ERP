@@ -502,6 +502,13 @@
     },
     {
       "type": "library",
+      "name": "@types/pg",
+      "version": "8.20.3",
+      "scope": "optional",
+      "purl": "pkg:npm/%40types/pg@8.20.3"
+    },
+    {
+      "type": "library",
       "name": "@typescript-eslint/eslint-plugin",
       "version": "8.65.0",
       "scope": "optional",
