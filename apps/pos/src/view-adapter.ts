@@ -11,6 +11,7 @@ import { rate } from '../../../packages/contracts/src/rate';
 import type { Tender } from '../../../packages/tender/src/tender';
 import type { CatalogueCache } from '../../../packages/catalogue/src/catalogue';
 import type { PosSession, SyncBadge } from './session';
+import { presentSyncBadge, type StatusPresentation } from '../../../packages/a11y/src/signals';
 
 /** A basket line as the view renders it — display primitives only. */
 export interface ViewLine {
@@ -59,6 +60,14 @@ export interface PosView {
   basket(): ViewLine[];
   payableMinor(): number;
   syncBadge(): SyncBadge;
+  /**
+   * The badge as it must be RENDERED — tone, label, icon and announcement together (NFR-07).
+   *
+   * The raw `syncBadge()` hands the view a state and a number, which is everything it needs to
+   * render a coloured dot and nothing that stops it. This returns the words as well, so a
+   * colour-only badge takes a deliberate act of discarding them.
+   */
+  syncStatus(): StatusPresentation;
   /** Take a full cash payment and commit locally. Returns the receipt number. */
   tenderCash(saleId: string, receiptNumber: string, atIsoUtc: string): string;
   newSale(): void;
@@ -144,6 +153,11 @@ export function createPosView(
 
     syncBadge(): SyncBadge {
       return session.syncBadge();
+    },
+
+    syncStatus(): StatusPresentation {
+      const badge = session.syncBadge();
+      return presentSyncBadge({ connection: badge.connection, unsentCount: badge.unsentCount });
     },
 
     tenderCash(saleId: string, receiptNumber: string, atIsoUtc: string): string {

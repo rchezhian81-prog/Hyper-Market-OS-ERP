@@ -1660,6 +1660,54 @@ honest rather than being marked complete.
 
 ---
 
+## Cross-cutting hardening — performance shape and accessibility (5 August 2026)
+
+Evidence: `docs/evidence/cross-cutting-performance-and-accessibility.md`. §32, NFR-02, NFR-03,
+NFR-07, NFR-13, QG-05.
+
+**Performance measures SHAPE, not speed, and says so.** §32 states its POS targets *"on certified
+pilot hardware"* — which is EX-09 and does not exist. A green tick against 300 ms measured on a
+CI container would be worse than no measurement: it is the evidence somebody quotes at the pilot
+when the lane turns out slow. So `againstBudget()` returns **`certifiesTheTarget` typed as the
+literal `false`**, and `certifiedHardwareGate()` records the six items that genuinely need the
+store.
+
+What *is* settleable is the part that actually fails in production. Measured at 100× the data:
+a `Map.get` grows **1.9×**; a deliberate `Array.find` regression grows **136×**. Two orders of
+magnitude, which is why a ratio is assertable on unknown hardware when a millisecond figure is
+not. Proven: scan flat across 100× catalogue growth · a miss costs the same as a hit · a
+200-line basket linear in its own lines · commit running with `fetch`, `XMLHttpRequest` and
+`WebSocket` **removed from the runtime** (hard rule #1, by absence rather than by a mock) ·
+commit cost independent of how much the lane has already sold · outbox enqueue and dedupe flat at
+100× queue depth · 72 hours of trading held · a 24-hour backlog draining in order, exactly once,
+in 24 rounds not 2,400 · a dead-lettered item staying counted (#6, P-08).
+
+**The tripwire earned itself immediately.** The deliberate-linear-scan control first reported
+`flat` — which would have meant every complexity assertion in the folder was worthless. The bug
+was in the measurement: lookups used `i % n`, so a linear scan found its match at the same
+absolute position whatever the catalogue size and never got slower. A performance assertion
+nobody has seen fail is an assertion nobody should trust.
+
+**Accessibility found a shipped defect.** The design system has required contrast ≥ 4.5:1 since
+Stage 3, and the maths lived privately inside tenant branding carrying luminance **in
+hundredths** — matching this codebase's integer discipline for money (§29.1). Luminance is not
+money; it is a ratio in 0…1, and two decimal places throws away the resolution exactly where
+contrast is most sensitive. **White on `#777777` computed 4.57:1 and PASSED, against a true
+4.48:1 that fails AA.** Mid-grey on white is body text, not an exotic edge. Fixed in
+`packages/a11y/`: full-precision luminance, rounded once, and the ratio rounds **down** because
+the number exists to be compared against a threshold. The fix discriminates — `#767676`, one
+step lighter, still correctly passes at 4.54:1 — and `branding.ts` now delegates, so there is one
+answer to *"can a cashier read this"* instead of two.
+
+Three design-system sentences that were enforced by nothing are now enforced by code: **colour is
+never the only signal** (`presentStatus` throws without a label or icon; no `toneOf()` helper
+exists, asserted by test — that helper is how a badge becomes a dot), **touch targets** (WCAG's
+24px floor and the design system's 44px bar reported separately, because they are different
+claims), and **NFR-13's ≤3 interactions** (steps named rather than counted: *"4 of 3"* starts an
+argument, the list starts a conversation about which step to remove). Offline is presented as
+**`degraded`, not `error`** — the shop is meant to keep trading (P-01), and a red alarm on the
+normal offline state teaches cashiers to ignore the badge.
+
 ## Stage 11 — Migration rehearsal — ✅ COMPLETE, GATE PASSED (5 August 2026)
 
 Gate: *the old shop arrives whole* — `docs/evidence/stage-11-the-old-shop-arrives-whole.md`.

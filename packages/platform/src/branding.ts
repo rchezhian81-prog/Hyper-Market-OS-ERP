@@ -24,6 +24,8 @@
 //
 // Pure and deterministic: no I/O, no shared mutable default.
 
+import { contrastRatio, parseHex } from '../../a11y/src/contrast';
+
 export interface BrandColours {
   /** Hex, e.g. "#1a4d2e". */
   readonly primary: string;
@@ -115,32 +117,17 @@ export interface BrandingValidation {
   readonly detail: string;
 }
 
-function parseHex(hex: string): { r: number; g: number; b: number } | undefined {
-  const m = /^#([0-9a-f]{6})$/i.exec(hex.trim());
-  if (m === null) return undefined;
-  const n = parseInt(m[1]!, 16);
-  return { r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff };
-}
-
-/** WCAG relative luminance, in hundredths so the arithmetic stays integer-friendly. */
-function luminanceHundredths(hex: string): number | undefined {
-  const rgb = parseHex(hex);
-  if (rgb === undefined) return undefined;
-  const channel = (v: number): number => {
-    const s = v / 255;
-    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-  };
-  return Math.round((0.2126 * channel(rgb.r) + 0.7152 * channel(rgb.g) + 0.0722 * channel(rgb.b)) * 100);
-}
-
-/** Contrast ratio × 100, so 450 is 4.5:1 — the WCAG AA threshold for normal text. */
+/**
+ * Contrast ratio ×100 — 450 is 4.5:1.
+ *
+ * Delegates to `packages/a11y`, which owns the WCAG maths for the whole product. It used to be
+ * computed here, privately, which meant the tenant-branding screen could disagree with every
+ * other surface about whether a colour pair was readable — and it did: luminance was rounded to
+ * hundredths before the ratio, so white on #777777 came out at 4.57:1 and PASSED, against a true
+ * 4.48:1 that fails AA. Mid-grey on white is not an exotic edge case.
+ */
 export function contrastRatioHundredths(a: string, b: string): number | undefined {
-  const la = luminanceHundredths(a);
-  const lb = luminanceHundredths(b);
-  if (la === undefined || lb === undefined) return undefined;
-  const lighter = Math.max(la, lb) / 100;
-  const darker = Math.min(la, lb) / 100;
-  return Math.round(((lighter + 0.05) / (darker + 0.05)) * 100);
+  return contrastRatio(a, b);
 }
 
 /**

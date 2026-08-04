@@ -44,18 +44,18 @@
 | ID | Requirement | Addressed by |
 | --- | --- | --- |
 | NFR-01 | Availability ≥99.9% cloud; store core independent of cloud | P-01; `packages/sale` offline commit; ADR-0002 |
-| NFR-02 | POS p95 targets; no blocking network round-trip for local sale | §32; `pos-offline` guardrail; `packages/sale` |
-| NFR-03 | Durability: acknowledged txns survive restart; sync once | `packages/sync` + `packages/ledger` (idempotent); §4.2 |
+| NFR-02 | POS p95 targets; no blocking network round-trip for local sale | `tests/performance/pos-hot-path.test.ts` — scan is O(1) in catalogue size (proven flat at 100× data, with a tripwire that FIRES on a deliberate linear scan); commit runs with `fetch`/XHR/WebSocket removed from the runtime. Wall-clock measured with 50× headroom; **certification needs EX-09** |
+| NFR-03 | Durability: acknowledged txns survive restart; sync once | `packages/sync` + `packages/ledger` (idempotent); `tests/performance/sync-and-endurance.test.ts` — enqueue and dedupe flat at 100× queue depth, 72h of trading held, backlog drains in order exactly once; §4.2 |
 | NFR-04 | Scalability sized on stores/lanes/SKUs/peak after audit | ADR-0002 sizing; Stage-1 volumes (AVR-04) |
 | NFR-05 | Security: OWASP, zero open critical/high at go-live, SLAs | SEC set; QG-06 |
 | NFR-06 | Privacy: minimization, purpose, rights, retention | PRV set; M16 |
-| NFR-07 | Accessibility: WCAG 2.2 AA (customer/web); staff paths | `docs/design/design-system.md`; customer-app spec |
+| NFR-07 | Accessibility: WCAG 2.2 AA (customer/web); staff paths | `packages/a11y/` — WCAG 2.2 AA contrast (one implementation for the product; fixed a rounding defect that passed a failing 4.48:1 grey), colour never the only signal (label + icon + announcement returned together), touch targets, focus order |
 | NFR-08 | Localization: English & Tamil first; Unicode/locale framework | `packages/contracts` enums; tenant `LANGUAGES` setting; design system |
 | NFR-09 | Observability: metrics, logs, traces, freshness, queue indicators | M35; sync unsent-count; DLQ visibility |
 | NFR-10 | Recoverability: audited RPO/RTO; restore & failover drills | M35; ADR-0002; the quarterly rebuild (AID-10) |
 | NFR-11 | Maintainability: modular domains, versioned contracts, tests | `packages/` (one concern each); `packages/contracts`; the suite |
 | NFR-12 | Portability: documented exports/APIs/backup; no lock-in | P-06; `docs/api/catalogue.md`; ADR-0002/0003 |
-| NFR-13 | Usability: role task-completion targets; minimal cashier clicks | Design system (≤3 interactions); Stage-3 screen specs |
+| NFR-13 | Usability: role task-completion targets; minimal cashier clicks | `packages/a11y/src/signals.ts` `checkInteractionBudget` — the ≤3-interaction bar as an assertable number, with the steps named rather than counted |
 | NFR-14 | Compatibility: certified OS/browser/device/peripheral matrix | ADR-0002; AVR-06; M33 device control |
 | NFR-15 | Auditability: every sensitive mutation reconstructable from evidence | `packages/ledger` (projected balances); M34; append-only |
 
