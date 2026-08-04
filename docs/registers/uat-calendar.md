@@ -24,6 +24,9 @@ Status: **Scheduled** · **Done** · **Waived with reason**.
 | UAT-11 | Formal GO for production cutover. | QG-12 · OD-10 | Stage 13 | **Owner GO required** | Scheduled |
 | UAT-12 | **Live recall drill** — pick a real batch, recall it, and time how long it takes the manager to say how much went out and which customers can be telephoned. The lane must refuse it with the network cable out. | M10-FR-02/04 · QG-07 · Stage 8 gate | Stage 12 pilot | Not yet required | Scheduled |
 | UAT-13 | **Blind stock count walkthrough** — count one product without looking at the screen; confirm the system refuses to correct itself until a second, more senior person approves the difference with a reason, and that the corrected figure equals what was physically counted. | M09-FR-04 · M08-FR-03 · §28 · Stage 8 gate | UAT-02 session | Not yet required | Scheduled |
+| UAT-14 | **Parked-bill power-cut test** — park a bill, pull the lane's power, restart it: the bill comes back with every line. Then try to recall the same bill on a second lane and confirm it refuses. | M12-FR-02 · Stage 9 gate | Stage 12 pilot | Not yet required | Scheduled |
+| UAT-15 | **Settlement list walkthrough** — confirm the cash office sees *two* separate figures (not due yet vs genuinely late), and that every late one has a named owner and a date. | M14-FR-03 · Stage 9 gate | UAT-02 session | Not yet required | Scheduled |
+| UAT-16 | **Refund-uncertainty drill** — ask what happens when the card machine does not answer during a refund. Confirm nobody can mark it refunded by hand, and that the customer is told the true state. | M13-FR-04 · §4.3 · Stage 9 gate | Stage 12 pilot | Not yet required | Scheduled |
 
 ## How UAT-01 runs when we reach it
 

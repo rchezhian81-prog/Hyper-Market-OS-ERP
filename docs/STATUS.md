@@ -8,22 +8,25 @@ Last updated: 4 August 2026
 ---
 
 ## Where we are, in one paragraph
-**Stages 0–8 are complete and their gates are passed.** Stage 5 (engineering foundation)
+**Stages 0–9 are complete and their gates are passed.** Stage 5 (engineering foundation)
 passed on a real destroy-and-restore; Stage 6 (offline/sync slice) on internet-off,
 duplicate, reorder and recovery tests; Stage 7 (product/pricing/purchase) on one delivery
-walked from dock to payment; and **Stage 8 (inventory, warehouse, quality) passed today on
-physical-to-system and recall proof**. 85 of the 144 requirement rows are built, **1,005
-automated tests** pass plus **16 integration tests against real PostgreSQL 16.13**, and
-every gate has written evidence in `docs/evidence/`. **Stage 9 — POS, returns and cash
-office — is now active.** The only things still waiting on the outside world are the
-hosting/live-database decision (OB-02, owner-deferred), the previous system's export rights
-(EX-02, which gates the Stage 11 migration rehearsal), and the in-store activities that need
-the store itself (QG-02 usability testing, the owner-witnessed restore in UAT-01).
+walked from dock to payment; Stage 8 (inventory, warehouse, quality) on physical-to-system
+and recall proof; and **Stage 9 (POS, returns, cash office) passed today on end-of-day and
+refund controls**. That completes **M01–M15 and M33–M35 — the entire store-facing core**:
+90 of the 144 requirement rows built, **1,140 automated tests** plus **25 integration tests
+against real PostgreSQL 16.13**, and written evidence for every gate in `docs/evidence/`.
+**Stage 10 — finance, Tally and owner control — is now active.** The only things still
+waiting on the outside world are the hosting/live-database decision (OB-02,
+owner-deferred), the previous system's export rights (EX-02, which gates the Stage 11
+migration rehearsal), and the in-store activities that need the store itself (QG-02
+usability testing, the owner-witnessed restore in UAT-01).
 
 ---
 
 ## Current stage
-**Stage 9 — POS, returns, cash office (active). Stages 0–8 complete, all gates passed.**
+**Stage 10 — Finance, Tally, owner control (active). Stages 0–9 complete, all gates
+passed.**
 Stage 3 (UX & design system) and Stage 4 (architecture + data dictionary + infra design) are
 done for Store-Core (R2); Stage 5 has built 59 tested foundation units, five
 **persistence-layer** units incl. the PostgreSQL connector + migration runner, and the **first
@@ -877,6 +880,90 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## Stage 9 — POS, returns, cash office — ✅ COMPLETE, GATE PASSED (4 August 2026)
+
+Gate: *end-of-day and refund controls prove out* — `docs/evidence/stage-9-day-close.md`.
+**This completes M12, M13, M14 and M15**, and with them the whole store-facing core.
+
+One theme runs through everything built here: **unknown is not a third kind of paid.**
+
+- **Durable suspended bills and quotations (M12-FR-02)** — `packages/suspended-sales/`.
+  A cashier parks a basket a dozen times a day, and it is one of the commonest ways a till
+  loses money. A basket held in the running program is **gone when the till reboots**, and
+  the cashier re-scans forty items from memory — so a suspension is serialised state, and
+  the gate test proves it by pulling the power and rebuilding from disk. Resuming is a
+  **claim, not a read**: it succeeds once and then names whoever already has it, because
+  two lanes resuming one bill is a double charge that both cashiers believe was correct.
+  A parked bill **holds no stock** (reserving for it starves the shelf all day), and past
+  the tenant's window it **demands a re-price** rather than honouring a promotion that
+  ended at noon. Abandonment is kept, never deleted — repeated park-and-abandon is a
+  pattern, and a deleted record has no pattern in it. Quotations **move no stock**, hold
+  the promised price **only inside validity**, and cannot be used to slip a below-floor
+  price past the margin guard — which is checked across the *whole* quotation, because a
+  loss-making line hides easily inside a healthy one and the customer only sees the total.
+  31 tests.
+- **Payment reversal and gateway status (M13-FR-04)** — `packages/reversal/`. This package
+  exists to enforce one sentence: **never invent a reversal success.** It breaks the same
+  way the tender rule breaks — not by a decision, but by a hopeful default. The provider
+  times out, nobody knows, and the easiest code in the world marks it done. Then either
+  the customer is told "that's refunded", comes back angry and is refunded again, or the
+  reversal worked, the shop thinks it failed, and refunds by hand — **both cost the same
+  money twice.** So an unknown answer becomes `uncertain`, and **the only route out is the
+  provider's own statement.** There is deliberately no `markSucceeded` anywhere in the
+  package, and a test asserts that absence, because the moment one exists somebody uses it
+  to clear a queue at 9pm. 22 tests.
+- **Settlement import and investigation (M14-FR-03)** — `packages/settlement/`. Two
+  distinctions that make the difference between a list somebody reads and a list somebody
+  clears. **Late is not lost**: a card tender with no credit is normal at T+1 and serious
+  at T+9, so unmatched tenders are aged against the provider's contracted cycle and only
+  the genuinely late ones become exceptions. **Fees are not shortfalls**: the bank credits
+  net of commission, and reconciling gross against net flags every line. A provider file
+  is refused unless its own `gross − fees = net` holds — reconciling against a file that
+  does not add up *invents* differences that are not there. Every investigation carries a
+  **named** owner and a due date, closes only with an outcome, needs a second person to
+  write a difference off, and returns concrete feedback. 23 tests.
+- **Cross-domain fraud signals (M15-FR-02)** — coupons, loyalty, cash on delivery and
+  supplier invoices: the four places value leaves the business **without a cashier
+  touching anything**. Signals carry a graded confidence and the weak ones say so in
+  words, because a weak signal presented as strong is how an honest employee gets accused.
+  **Nothing blocks, suspends or sanctions** — the A07 agent summarises and prioritises
+  only (hard rule #5 / AI-NFR-12), and a test scans the module's exports to prove it. 20 tests.
+- **Investigation cases (M15-FR-04)** — a case file is read in two adversarial situations:
+  a disciplinary meeting and a court. So evidence is **append-only and sealed** with no
+  edit or delete anywhere in the module, every chain break is reported rather than just
+  the first, the chain of custody is mandatory (a CCTV clip without one is a video, not
+  evidence), and **"unfounded" is a first-class outcome** — a system that only closes
+  cases as *proven* quietly pressures people into proving things. Outcomes **measurably**
+  tune the rules: a rule that is never right is retired, because after a few weeks of
+  false alarms nobody reads any of the alerts, including the real ones. 26 tests.
+- **Pending-payment recovery (D04-FR-02)** — `packages/tender/pending-recovery.ts`. The
+  card machine does not answer and the customer is standing there. Both obvious answers
+  are wrong: assume it worked and the goods leave for nothing; assume it failed and the
+  customer is charged twice. So the tender commits `uncertain`, the sale still completes
+  locally, and recovery reconciles against the provider's record — where an **incomplete**
+  record is not a decline. At close the exposure is **four separate numbers**, not one
+  "pending" total: recoverable, unrecoverable (*"treat this as a loss, not a debt"*), owed
+  back to customers, and genuinely unknown. 13 tests.
+
+**The gate** (`tests/integration/day-close-honestly.test.ts`, 9 assertions, 30 controls)
+walks one trading day against real PostgreSQL: park a bill → **pull the power** → recover
+it → refuse the second resume → three sales committed locally and banked → a card machine
+that never answered, recovered from evidence → the close **permitted but stated** for
+unknown money and **blocked** while a double capture sits unrefunded → a refund that
+cannot be invented, cannot be double-issued, and is settled only by the statement → a
+provider file refused for bad arithmetic → late told apart from lost → a fraud signal that
+acts on nothing → a case on sealed evidence that cannot be closed once tampered with → and
+the database refusing to delete any of it.
+
+`pnpm check` green: typecheck + lint + secret-scan + **1,140 tests**, plus **25 integration
+tests** against real PostgreSQL 16.13.
+
+> The Stage 8 guardrail earned itself back immediately: while writing the case-evidence
+> seal I used a literal control byte as a field separator, and `plain-text-source` failed
+> the build within the hour. That is exactly the regression it was added to catch.
+
+---
+
 ## Last completed
 - **Setup 1/3/4** — repository, `CLAUDE.md`, safety net (tests, guardrails, secret
   scan, CI), and baseline ADR. (Merged to `main` via PR #1.)
@@ -894,14 +981,12 @@ tests** against real PostgreSQL 16.13.
   family-level baseline.
 
 ## In progress
-- **Stage 9 — POS, returns, cash office.** M12-FR-02 completion, M13-FR-04, M14-FR-03,
-  M15-FR-02/04, D04. The gate is *end-of-day and refund controls prove out*. The engines for
-  most of this exist and are tested (`packages/returns`, `packages/till`,
-  `packages/day-close`, `packages/cash`, `packages/loss-prevention`, `apps/pos`); what Stage
-  9 adds is the missing requirements plus the **proof that the day closes honestly** —
-  drawer to declaration to banking, with a refund that cannot be invented and a shift that
-  cannot be closed over an unsent sale.
-- Everything earlier is **finished, not paused**: stages 0–8 complete with written gate
+- **Stage 10 — Finance, Tally, owner control.** M23-FR-04 (Tally/accounting export and
+  period control), M29-FR-02/03/04 (owner drill-through, alerts and the decision log),
+  D10/D13. `packages/finance` (posting) and `packages/reporting` (KPIs and freshness) are
+  built and tested; Stage 10 adds the accounting hand-off the CA actually signs, and the
+  owner's control surface on top of it.
+- Everything earlier is **finished, not paused**: stages 0–9 complete with written gate
   evidence in `docs/evidence/`. Nothing has been silently dropped — `docs/backlog.md`
   schedules every remaining requirement row to a named stage.
 
@@ -922,15 +1007,13 @@ tests** against real PostgreSQL 16.13.
   store operations lead, finance/CA reviewer, security/architecture reviewer.
 
 ## Next session should start with
-**Stage 9 — POS, returns and cash office**, in the roadmap's own order, one stage at a time:
-1. **M12-FR-02** — complete the POS transaction record (suspend/resume across a lane
-   restart, the exchange path, and the offline reprint trail).
-2. **M13-FR-04** — refund controls: refund method policy, per-role caps, and a refund that
-   can never be created without the sale it reverses.
-3. **M14-FR-03** — cash declaration, banking and the safe/float chain end to end.
-4. **M15-FR-02/04** — CCTV/transaction linking references and the loss-prevention case file.
-5. **D04** — the queue/checkout experience requirements.
-6. **Stage 9 gate evidence** — the day closed honestly, end to end, against real PostgreSQL,
+**Stage 10 — Finance, Tally and owner control**, in the roadmap's own order:
+1. **M23-FR-04** — the accounting hand-off: Tally-compatible export, period locking, and a
+   trial balance the CA can sign without re-keying anything.
+2. **M29-FR-02** — owner drill-through from a KPI to the transactions behind it.
+3. **M29-FR-03/04** — owner alerts and the decision log.
+4. **D10 / D13** — the owner intelligence and reporting extensions.
+5. **Stage 10 gate evidence** — the books reconcile end to end against real PostgreSQL,
    written up in `docs/evidence/`.
 
 In parallel (owner/store, not gating the build): gather the remaining Stage-1 store facts

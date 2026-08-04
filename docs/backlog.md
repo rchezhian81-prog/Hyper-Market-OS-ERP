@@ -6,11 +6,11 @@ time, each ending in a gate**. Nothing here is optional — "deferred" means a l
 release, never removed (OD-02).
 
 Regenerate the status counts with the parser in `docs/traceability.md`'s own table; last
-counted **4 August 2026**.
+counted **4 August 2026** (Stage 9).
 
 ## Where the build actually stands
 
-**144 individual requirement rows: 85 built · 6 partial · 53 not started.**
+**144 individual requirement rows: 90 built · 4 partial · 50 not started.**
 
 | Module | Release | Built | Partial | Not started |
 | --- | --- | --- | --- | --- |
@@ -25,10 +25,10 @@ counted **4 August 2026**.
 | M09 Stock operations | R2 | 4 | 0 | 0 |
 | M10 Batch, expiry, recall | R2 | 4 | 0 | 0 |
 | M11 In-store production | R2 | 4 | 0 | 0 |
-| M12 POS | R2 | 3 | 1 | 0 |
-| M13 Returns & refunds | R2 | 3 | 1 | 0 |
-| M14 Cash office & close | R2 | 3 | 0 | 1 |
-| M15 Loss prevention | R2 | 2 | 0 | 2 |
+| M12 POS | R2 | 4 | 0 | 0 |
+| M13 Returns & refunds | R2 | 4 | 0 | 0 |
+| M14 Cash office & close | R2 | 4 | 0 | 0 |
+| M15 Loss prevention | R2 | 4 | 0 | 0 |
 | M16 Customer & consent | R4 | 2 | 0 | 2 |
 | M17 Loyalty | R4 | 1 | 0 | 3 |
 | M18 Orders | R5 | 2 | 0 | 2 |
@@ -57,12 +57,13 @@ counted **4 August 2026**.
 ## Stage position
 
 Stages 0–4 are complete (registers, discovery, requirements, UX/design system,
-architecture/data/security). Domain engines for stages 7–9 have been built ahead of their
-stages, which is why so much of M03–M15 is green — but **their stage gates are not passed**,
-because the gates are about proof, not code.
+architecture/data/security). Stages 5–9 are complete **with their gates passed**, each with
+written evidence in `docs/evidence/` — the gates are about proof, not code, and every one
+was executed against a real PostgreSQL rather than asserted. That is why M01–M15 plus
+M33–M35 are fully green: **the store-facing core of the product is built and proven.**
 
-**Stages 5, 6, 7 and 8 have all passed their gates. The earliest stage with an open gate is
-Stage 9.**
+**Stages 5, 6, 7, 8 and 9 have all passed their gates. The earliest stage with an open gate
+is Stage 10.**
 
 ## Stage 5 — Engineering foundation — ✅ **COMPLETE, GATE PASSED**
 
@@ -114,10 +115,22 @@ Gate: *physical-to-system and recall proof.*
 
 (M08 and M11 were already built; D05's quality-status thread lands with M10-FR-02 above.)
 
-## Stage 9 — POS, returns, cash office ← **ACTIVE**
-M12-FR-02 completion, M13-FR-04, M14-FR-03, M15-FR-02/04, D04.
+## Stage 9 — POS, returns, cash office — ✅ **COMPLETE, GATE PASSED**
+Gate: *end-of-day and refund controls prove out.*
 
-## Stage 10 — Finance, Tally, owner control
+| # | Work | Requirement | State |
+| --- | --- | --- | --- |
+| 9.1 | Durable suspended bills + quotations (completes M12) | M12-FR-02 | ✅ done |
+| 9.2 | Payment reversal, gateway status, refund reconciliation | M13-FR-04 | ✅ done |
+| 9.3 | Settlement import, matching and exception investigation | M14-FR-03 | ✅ done |
+| 9.4 | Cross-domain fraud signals | M15-FR-02 | ✅ done |
+| 9.5 | Investigation cases + outcome feedback | M15-FR-04 | ✅ done |
+| 9.6 | Pending-payment recovery | D04-FR-02 | ✅ done |
+| 9.7 | Stage 9 gate evidence — the day closes honestly | QG-04 | ✅ **PASSED** — `docs/evidence/stage-9-day-close.md` |
+
+**M12, M13, M14 and M15 are now complete.**
+
+## Stage 10 — Finance, Tally, owner control ← **ACTIVE**
 M23-FR-04, M29-FR-02/03/04, D10/D13.
 
 ## Stage 11 — Migration rehearsal
