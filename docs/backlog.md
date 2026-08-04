@@ -10,12 +10,12 @@ counted **4 August 2026** (Stage 19 complete).
 
 ## Where the build actually stands
 
-**144 individual requirement rows: 140 built · 4 partial · 0 not started.**
+**144 individual requirement rows: 143 built · 1 partial · 0 not started.**
 
 | Module | Release | Built | Partial | Not started |
 | --- | --- | --- | --- | --- |
 | M01 Foundation & config | R1 | 4 | 0 | 0 |
-| M02 Identity & access | R1 | 2 | 2 | 0 |
+| M02 Identity & access | R1 | 3 | 1 | 0 |
 | M03 Product master | R2 | 4 | 0 | 0 |
 | M04 Merchandising & space | R2 | 4 | 0 | 0 |
 | M05 Pricing & promotions | R2 | 4 | 0 | 0 |
@@ -36,14 +36,14 @@ counted **4 August 2026** (Stage 19 complete).
 | M20 Customer app & web | R4 | 4 | 0 | 0 |
 | M21 CRM & service desk | R4 | 4 | 0 | 0 |
 | M22 B2B | R6 | 4 | 0 | 0 |
-| M23 Finance & Tally | R2 | 3 | 1 | 0 |
+| M23 Finance & Tally | R2 | 4 | 0 | 0 |
 | M24 Supplier portals | R6 | 4 | 0 | 0 |
 | M25 Workforce | R6 | 4 | 0 | 0 |
 | M26 Facilities & assets | R6 | 4 | 0 | 0 |
 | M27 Concession | R6 | 4 | 0 | 0 |
 | M28 Waste & sustainability | R6 | 4 | 0 | 0 |
 | M29 Owner intelligence | R2 | 4 | 0 | 0 |
-| M30 Import & export | R2 | 3 | 1 | 0 |
+| M30 Import & export | R2 | 4 | 0 | 0 |
 | M31 Notifications & receipts | R2/R4 | 4 | 0 | 0 |
 | M32 Integration platform | R1 | 4 | 0 | 0 |
 | M33 Platform administration | R1 | 4 | 0 | 0 |
@@ -52,7 +52,15 @@ counted **4 August 2026** (Stage 19 complete).
 | M36 Multi-tenant platform | R8 | 4 | 0 | 0 |
 
 **Nothing has been silently omitted.** Every row above traces to a requirement ID in
-`docs/traceability.md`, and every "not started" row is scheduled to a stage below.
+`docs/traceability.md`, and there are no "not started" rows left.
+
+**The single remaining partial is M02-FR-01, and it is partial on purpose.** Named-account
+rules, the MFA gate on privileged activation, session idle/absolute/device binding, bounded
+offline cached identity, lockout and access review are all built and tested. What is *not*
+here is **credential storage and MFA enrolment**, because those belong to the deployment
+identity provider and putting them in this codebase would mean holding credentials in it —
+hard rule #4. Closing this row would mean building the thing the rule forbids, so it stays
+open and honest rather than being marked complete.
 
 ## Stage position
 

@@ -22,9 +22,12 @@ system's export rights — which is a letter to send, not code to write, so the 
 moved to **Stage 14 (customer commerce)**, then **Stage 15 (fulfilment and delivery)**, and
 then **Stage 16 (enterprise modules)**, **Stage 18 (multi-tenant platform and the innovation
 wave)**, and now **Stage 19 (operate and improve)** — all five **COMPLETE with their gates
-passed**. **Every module M01–M36 now has its foundation built: 140 of the 144 requirement rows
-built, 4 partial, and NONE unstarted**, with **1,802 automated tests** plus **116 integration
-tests** against real PostgreSQL 16.13 and written evidence for all eleven gates. The only
+passed**. **Every module M01–M36 now has its foundation built: 143 of the 144 requirement rows
+built, 1 partial, and NONE unstarted**, with **1,867 automated tests** plus **116 integration
+tests** against real PostgreSQL 16.13 and written evidence for all eleven gates. The single
+remaining partial (M02-FR-01) is partial **on purpose**: credential storage and MFA enrolment
+belong to the deployment identity provider, and closing the row would mean holding credentials
+in this codebase, which hard rule #4 forbids. The only
 code stage left is **17 (governed AI agents)**, which waits on EX-12 — a paid model-gateway
 account, a spending decision. The other outstanding externals are EX-02 (the ERP-vendor letter
 that unblocks Stage 11), the hosting/live-database decision (OB-02, owner-deferred), and the
@@ -1589,6 +1592,55 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## The four partial rows — three closed (4 August 2026)
+
+With every stage gate passed, the only unblocked code left was the four rows marked *partial*.
+Three are now closed; the fourth is partial on purpose and will stay that way.
+
+- **M02-FR-03 — approval delegation.** The manager goes on leave and the shop still needs
+  refunds authorised. Every business solves this, and **most solve it by sharing the login** —
+  which does not merely break separation of duties, it **erases attribution retrospectively
+  and permanently**: once two people use one account, nothing that account ever did can be
+  attributed to anybody again. So delegation exists to make the honest route easier than the
+  dishonest one. A delegate acts as **themselves**, with the borrowed authority named beside
+  their own name on the decision. "Until further notice" is refused as a permanent escalation
+  nobody remembers granting. Nobody can lend more than they hold — and an *uncapped* delegation
+  from a capped approver would grant **more**, so it is refused too. Chains are forbidden,
+  because two hops in nobody can say who was accountable. And a delegation **from the maker**
+  is refused by name as *"a self-approval with an extra step"* — the loophole somebody will
+  actually try. 25 tests.
+- **M23-FR-02 — credit notes, debit notes and returns reporting.** CGST section 34 arrives at
+  hard rule #2 independently: **a correction is a compensating document, never an overwrite.**
+  So the invoice is never edited, and there is no `editInvoice`, `amendInvoice` or
+  `reissueInvoice` anywhere — a test reads the module's exports to prove it. Reissuing an
+  invoice at a lower figure is the commonest small-business accounting error there is, and it
+  produces an input-credit mismatch that **the buyer's GSTR-2B finds before we do**. Tax
+  reverses in the *proportion* it was charged, because reversing the goods and keeping the GST
+  survives audits precisely as the document's own totals still add up. A note is declared in
+  the period it was **issued**, not the invoice's. And returns are split **by reason**, each
+  carrying who it is a conversation with — ₹80,000 of returns is unactionable; ₹52,000 of wrong
+  prices at the till is a job somebody does this week. 23 tests.
+- **M30-FR-04 — import job history and data-quality scoring.** The failure this closes is quiet
+  and expensive: a supplier's price file arriving with 12% of rows rejected **every week for a
+  year**. Nobody is wrong — the operator fixes the dozen rows by hand, the import succeeds, no
+  alert fires, no report shows anything. The cost is an hour a week forever plus the standing
+  risk that one week a row is fixed incorrectly, and it is visible **only as a trend, and only
+  if somebody kept the history**. So every job is recorded whether it succeeded or not (a
+  history of only the successes is how a file that fails half the time looks perfect), the
+  score belongs to the **source** rather than the operator because the fix is at the supplier's
+  end, and the quiet cost is stated in **hours a year** — because "12% rejected" sounds
+  tolerable and "52 hours a year retyping their rows" does not. 17 tests.
+
+**M02-FR-01 stays partial, deliberately.** Named-account rules, the MFA gate, session and
+device binding, bounded offline identity, lockout and access review are all built. Credential
+storage and MFA enrolment belong to the deployment identity provider — closing this row would
+mean holding credentials in this codebase, which hard rule #4 forbids. It stays open and
+honest rather than being marked complete.
+
+`pnpm check` green: **1,867 tests**, plus **116 integration tests** against real PostgreSQL.
+
+---
+
 ## Last completed
 - **Setup 1/3/4** — repository, `CLAUDE.md`, safety net (tests, guardrails, secret
   scan, CI), and baseline ADR. (Merged to `main` via PR #1.)
@@ -1647,8 +1699,9 @@ gate-proven. What is left needs the owner:
 2. **EX-02 — the ERP-vendor letter** in `docs/discovery/legacy-data-access.md`, which unblocks
    **Stage 11 (migration rehearsal)** and therefore the pilot.
 3. **EX-13 — an independent penetration test** before customer launch (paid engagement).
-4. Meanwhile: the four **partial** rows (M02-FR-02/03 hardening, M23-FR-02 GST filing formats,
-   M30-FR-04) and the store-side activities in `docs/registers/uat-calendar.md` (UAT-01…39).
+4. Meanwhile: the store-side activities in `docs/registers/uat-calendar.md` (UAT-01…43).
+   **The partial rows are done** — three closed on 4 August, and M02-FR-01 stays partial on
+   purpose (hard rule #4).
 
 **The one thing that would genuinely help from outside:** send the ERP-vendor letter in
 `docs/discovery/legacy-data-access.md`. It unblocks EX-02 and therefore Stage 11, which is
