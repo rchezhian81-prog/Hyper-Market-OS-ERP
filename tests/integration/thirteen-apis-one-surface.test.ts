@@ -51,7 +51,7 @@ const ALL: readonly Route[] = [
     matchLines: () => [], recordMatch: () => {}, applyBankChange: () => {},
     openCommitments: () => ({ count: 0, valueMinor: 0 }), now: () => NOW,
   }),
-  ...inventoryRoutes({ movements: () => [], appendMovement: () => {}, isKnown: () => false, now: () => NOW }),
+  ...inventoryRoutes({ availability: () => [], appendMovement: () => {}, isKnown: () => false, now: () => NOW }),
   ...posRoutes({
     catalogue: () => new Map(), currentPackVersion: () => 1, saleHoldingReceipt: () => undefined,
     isBanked: () => false, bankSale: () => {}, recordExceptions: () => {},

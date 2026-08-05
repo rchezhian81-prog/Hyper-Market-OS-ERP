@@ -9,7 +9,7 @@ import { buildRouter, handle, MemoryIdempotencyStore, type HttpRequest } from '.
 import { AccessControl } from '../../packages/rbac/src/rbac';
 import { buildSurface } from '../../services/api/src/main';
 import {
-  catalogueAdapter, posAdapter, financeAdapter, customerAdapter, ordersAdapter,
+  catalogueAdapter, posAdapter, financeAdapter, customerAdapter, ordersAdapter, inventoryAdapter,
   fulfilmentAdapter, purchaseAdapter, identityAdapter, platformAdapter, reportingAdapter,
   migrationAdapter, aiAdapter, addMonths, STREAM,
 } from '../../services/api/src/adapters';
@@ -262,11 +262,40 @@ describe.skipIf(!DATABASE_URL)('the API remembers (real PostgreSQL)', () => {
   });
 
   it('gives the same balance whichever way the stream is read', async () => {
-    const ms = await store.readStream(TENANT, STREAM.inventory);
+    const ms = await store.readStream(TENANT, STREAM.inventory, { type: 'InventoryMoved' });
     const payloads = ms.map((e) => e.event.payload as never);
     const forward = project(payloads, NOW);
     const backward = project([...payloads].reverse(), NOW);
     expect(backward).toEqual(forward);
+  });
+
+  it('a snapshot never disagrees with the ledger it was derived from', async () => {
+    // The property that makes a snapshot safe: it is DERIVED, and it can be thrown away and
+    // rebuilt. If a projection read through a snapshot could ever differ from a fold of the raw
+    // ledger, the snapshot would have become a second source of truth — which is precisely the
+    // mutable-balance shape hard rule #2 exists to forbid.
+    const snapping = inventoryAdapter({ store, now: () => NOW, snapshotEvery: 2 });
+    for (const [i, kind] of ['received', 'sold', 'received', 'sold', 'received'].entries()) {
+      await snapping.appendMovement(TENANT, {
+        movementId: `${RUN}-SNAP-${i}`, productId: `${RUN}-PSNAP`, locationId: 'L1',
+        kind: kind as 'received' | 'sold', quantityMinor: 10, uom: 'each',
+        occurredAt: COMMITTED, enteredBy: 'u-warehouse',
+      });
+    }
+
+    // At least one snapshot was actually taken — otherwise this test proves nothing.
+    const snapshots = (await store.readStream(TENANT, STREAM.inventory, { type: 'InventorySnapshotTaken' }));
+    expect(snapshots.length).toBeGreaterThan(0);
+
+    const throughSnapshot = await snapping.availability(TENANT, `${RUN}-PSNAP`);
+    const fromScratch = project(
+      (await store.readStream(TENANT, STREAM.inventory, { type: 'InventoryMoved' }))
+        .map((e) => e.event.payload as never),
+      NOW,
+    ).filter((a) => a.productId === `${RUN}-PSNAP`);
+
+    expect(throughSnapshot.map((a) => [a.productId, a.locationId, a.onHandMinor]))
+      .toEqual(fromScratch.map((a) => [a.productId, a.locationId, a.onHandMinor]));
   });
 
   // ─── 5. The five services that were still stubs ─────────────────────────────
@@ -310,6 +339,9 @@ describe.skipIf(!DATABASE_URL)('the API remembers (real PostgreSQL)', () => {
     // 50 on hand at L1 from the movements above. Two functions that both compute stock are two
     // answers waiting to disagree, and the one that promises to a customer is not the one you
     // want drifting from the one that counts.
+    // And it is read THROUGH the snapshot taken earlier in this file, which is the cross-check
+    // worth having: a snapshot that had drifted would show up here as a wrong promise to a
+    // customer rather than as a failing assertion about snapshots.
     const onHand = await ordersAdapter({ store, now: () => NOW, holdMinutes: 60 }).onHand(TENANT, 'L1');
     expect(onHand.get(`${RUN}-P1`)).toBe(50);
   });

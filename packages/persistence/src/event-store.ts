@@ -33,8 +33,19 @@ export interface EventStore {
   append(tenantId: string, stream: string, event: DomainEvent): Promise<AppendResult>;
   /** Find an event by its idempotency key within a tenant (dedupe lookup). */
   findByIdempotencyKey(tenantId: string, idempotencyKey: string): Promise<PersistedEvent | undefined>;
-  /** All events in a tenant's stream, in append order — the projection scan. */
-  readStream(tenantId: string, stream: string): Promise<readonly PersistedEvent[]>;
+  /**
+   * Events in a tenant's stream, in append order — the projection scan.
+   *
+   * `sinceSeq` and `type` narrow it **at the store**, not afterwards. That distinction is the
+   * whole value: a caller that reads a million events and keeps forty has still read a million,
+   * and no amount of filtering in the application makes the read cheaper. It is also invisible to
+   * a timing test, because filtering a million rows is quick compared with folding them — which is
+   * why the test that guards this counts rows rather than milliseconds.
+   */
+  readStream(
+    tenantId: string, stream: string,
+    opts?: { readonly sinceSeq?: number; readonly type?: string },
+  ): Promise<readonly PersistedEvent[]>;
   /**
    * The most recent event of one type in a stream, **without reading the ones before it**.
    *
@@ -90,8 +101,20 @@ export class InMemoryEventStore implements EventStore {
     return Promise.resolve(this.byKey.get(tenantKey(tenantId, idempotencyKey)));
   }
 
-  readStream(tenantId: string, stream: string): Promise<readonly PersistedEvent[]> {
-    return Promise.resolve(this.byStream.get(tenantKey(tenantId, stream)) ?? []);
+  readStream(
+    tenantId: string, stream: string,
+    opts?: { readonly sinceSeq?: number; readonly type?: string },
+  ): Promise<readonly PersistedEvent[]> {
+    const inStream = this.byStream.get(tenantKey(tenantId, stream)) ?? [];
+    // Binary search rather than a filter: the array is seq-ordered by construction, so the tail
+    // can be found without touching the head. Scanning past a million events to reach the last
+    // forty is the exact cost this parameter exists to avoid, and doing it here would mean the
+    // reference implementation quietly did not honour its own contract.
+    const from = opts?.sinceSeq === undefined ? 0 : lowerBound(inStream, opts.sinceSeq);
+    const tail = from === 0 ? inStream : inStream.slice(from);
+    return Promise.resolve(
+      opts?.type === undefined ? tail : tail.filter((r) => r.event.type === opts.type),
+    );
   }
 
   latestOfType(tenantId: string, stream: string, type: string): Promise<PersistedEvent | undefined> {
@@ -102,6 +125,17 @@ export class InMemoryEventStore implements EventStore {
     }
     return Promise.resolve(undefined);
   }
+}
+
+/** Index of the first record with `seq > since`, by binary search over a seq-ordered array. */
+function lowerBound(records: readonly PersistedEvent[], since: number): number {
+  let lo = 0;
+  let hi = records.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (records[mid]!.seq > since) hi = mid; else lo = mid + 1;
+  }
+  return lo;
 }
 
 /** Map an event_ledger row (snake_case) to a PersistedEvent. */
@@ -176,10 +210,19 @@ export class SqlEventStore implements EventStore {
     return rows.length > 0 ? rowToPersisted(rows[0]!) : undefined;
   }
 
-  async readStream(tenantId: string, stream: string): Promise<readonly PersistedEvent[]> {
+  async readStream(
+    tenantId: string, stream: string,
+    opts?: { readonly sinceSeq?: number; readonly type?: string },
+  ): Promise<readonly PersistedEvent[]> {
+    // `event_ledger_stream_idx` is (tenant_id, stream, seq), so `seq > $3` is a range scan from a
+    // position rather than a read of the stream with a filter over it.
     const rows = await this.client.query(
-      `SELECT ${COLUMNS} FROM event_ledger WHERE tenant_id = $1 AND stream = $2 ORDER BY seq ASC`,
-      [tenantId, stream],
+      `SELECT ${COLUMNS} FROM event_ledger
+       WHERE tenant_id = $1 AND stream = $2
+         AND ($3::bigint IS NULL OR seq > $3::bigint)
+         AND ($4::text IS NULL OR type = $4::text)
+       ORDER BY seq ASC`,
+      [tenantId, stream, opts?.sinceSeq ?? null, opts?.type ?? null],
     );
     return rows.map(rowToPersisted);
   }

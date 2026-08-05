@@ -55,9 +55,25 @@ export interface Availability {
   readonly asAt: string;
 }
 
-/** Project on-hand from an append-only movement set. Order-independent by construction. */
-export function project(movements: readonly Movement[], asAt: string): readonly Availability[] {
+/**
+ * Project on-hand from an append-only movement set. Order-independent by construction.
+ *
+ * `opening` is a balance already projected from the movements **before** this set — a snapshot.
+ * Folding from the beginning of time is correct and unbounded: a hypermarket generates a few
+ * thousand movements a day, so a year is well over a million, and every availability lookup was
+ * replaying all of them. A snapshot is not a second source of truth, because it is derived from
+ * the ledger and can be thrown away and rebuilt; what it is not allowed to be is *editable*, which
+ * is why it is itself an event.
+ */
+export function project(
+  movements: readonly Movement[], asAt: string, opening: readonly Availability[] = [],
+): readonly Availability[] {
   const byKey = new Map<string, { productId: string; locationId: string; qty: number; n: number }>();
+  for (const a of opening) {
+    byKey.set(`${a.productId}\u001f${a.locationId}`, {
+      productId: a.productId, locationId: a.locationId, qty: a.onHandMinor, n: a.movements,
+    });
+  }
   for (const m of movements) {
     const key = `${m.productId}\u001f${m.locationId}`;
     const acc = byKey.get(key) ?? { productId: m.productId, locationId: m.locationId, qty: 0, n: 0 };
@@ -127,7 +143,6 @@ export const negativeStock = (rows: readonly Availability[]): readonly NegativeS
   }));
 
 export interface InventoryDeps {
-  readonly movements: (tenantId: string, productId?: string) => Promise<readonly Movement[]> | readonly Movement[];
   readonly appendMovement: (tenantId: string, m: Movement) => Promise<void> | void;
   /**
    * Has this exact movement already been recorded?
@@ -137,6 +152,15 @@ export interface InventoryDeps {
    * movements paid that forty times.
    */
   readonly isKnown: (tenantId: string, movementId: string) => Promise<boolean> | boolean;
+  /**
+   * On-hand, already projected — snapshot plus whatever has happened since.
+   *
+   * This was `movements(tenantId, productId?) => Movement[]`, and the route folded them. That put
+   * an **unbounded read** behind every availability lookup: a few thousand movements a day is well
+   * over a million a year, all replayed to answer "how many bags of rice are there?". The domain
+   * still owns *how* to project (`project` above); the adapter owns *from where*.
+   */
+  readonly availability: (tenantId: string, productId?: string) => Promise<readonly Availability[]> | readonly Availability[];
   readonly now: () => string;
 }
 
@@ -175,7 +199,7 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
       permission: 'inventory.availability.read',
       handler: async (ctx) => {
         const productId = ctx.query['productId'];
-        const rows = project(await deps.movements(ctx.tenantId, productId), deps.now());
+        const rows = await deps.availability(ctx.tenantId, productId);
         return { status: 200, body: { rows, asAt: deps.now() } };
       },
     },
@@ -183,7 +207,7 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
       api: 'API-04', method: 'GET', path: '/v1/inventory/exceptions',
       permission: 'inventory.availability.read',
       handler: async (ctx) => {
-        const rows = project(await deps.movements(ctx.tenantId), deps.now());
+        const rows = await deps.availability(ctx.tenantId);
         return { status: 200, body: { negative: negativeStock(rows), asAt: deps.now() } };
       },
     },

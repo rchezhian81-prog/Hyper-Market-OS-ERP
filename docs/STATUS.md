@@ -2623,11 +2623,28 @@ price list ever published — 365 of them a year, each holding the whole product
 sale. And the in-house test version of the store was scanning everything for any read, so it had
 quietly stopped behaving like the real one.
 
+**Stock was worse, because it has no ceiling.** The shop generates a few thousand stock movements a
+day — over a million a year — and every "how many are there?" replayed all of them. That is
+somebody standing in an aisle, or a customer watching a page. The software now keeps a **summary of
+where stock stood at a point in time** and only adds up what has happened since.
+
+That summary is not a second set of books. It is worked out from the record, it can be thrown away
+and worked out again, and nothing can edit it — and there is a test proving the answer you get
+through the summary is identical to adding up the whole record from the beginning. The
+click-and-collect stock promise reads through the same summary, so if it ever drifted, that test
+would fail as a wrong promise to a customer rather than as an abstract complaint.
+
+**One thing worth recording, because it nearly slipped past.** My first version of that summary
+*passed its speed test* while still reading every movement and throwing most of them away. Correct,
+faster, and still reading a million rows — which a stopwatch cannot see, because discarding a
+million rows is quick compared with adding them up. The test now **counts rows read**, not
+milliseconds. A timing test would have signed that off.
+
 **The tests are ratios, not stopwatch times** — a hundred times the history must not cost anything
 like a hundred times the work — so they mean the same thing on a laptop, in the cloud, and on the
 shop's back-office PC.
 
-**Tests:** 3,009 automated plus 24 performance, all green.
+**Tests:** 3,010 automated plus 27 performance, all green.
 
 **What the owner should check.** Nothing now. But this is the thing to insist on when the pilot
 starts: **if the tills get slower after a few months, that is a bug and not "more data"**, and we

@@ -104,7 +104,7 @@ export function buildSurface(deps: {
       openCommitments: empty(undefined), now,
     } : purchaseAdapter({ store, now })),
     ...inventoryRoutes(store === undefined ? {
-      movements: empty([]), appendMovement: () => {}, isKnown: empty(false), now,
+      availability: empty([]), appendMovement: () => {}, isKnown: empty(false), now,
     } : inventoryAdapter({ store, now })),
     ...posRoutes(store === undefined ? {
       catalogue: empty(new Map()), currentPackVersion: empty(1),

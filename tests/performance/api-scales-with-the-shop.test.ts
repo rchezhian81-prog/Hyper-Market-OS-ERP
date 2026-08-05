@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { InMemoryEventStore } from '../../packages/persistence/src/event-store';
+import type { EventStore, PersistedEvent } from '../../packages/persistence/src/event-store';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { posAdapter, inventoryAdapter, STREAM } from '../../services/api/src/adapters';
 
@@ -55,6 +56,30 @@ async function shopWithHistory(n: number): Promise<InMemoryEventStore> {
   return store;
 }
 
+/**
+ * A store that records how many events it hands back.
+ *
+ * Rows, not milliseconds — because the two failures look identical on a stopwatch and are not the
+ * same thing. An adapter that reads a million events and keeps forty has still read a million, and
+ * filtering a million rows is *quick* compared with folding them, so a ratio test passes happily
+ * on a read that will take the database down. Counting is the only assertion that distinguishes
+ * "narrowed at the store" from "narrowed afterwards".
+ */
+class CountingStore implements EventStore {
+  rowsRead = 0;
+  constructor(private readonly inner: InMemoryEventStore) {}
+  append: EventStore['append'] = (t, s, e) => this.inner.append(t, s, e);
+  findByIdempotencyKey: EventStore['findByIdempotencyKey'] = (t, k) => this.inner.findByIdempotencyKey(t, k);
+  latestOfType: EventStore['latestOfType'] = (t, s, ty) => this.inner.latestOfType(t, s, ty);
+  async readStream(
+    t: string, s: string, opts?: { readonly sinceSeq?: number; readonly type?: string },
+  ): Promise<readonly PersistedEvent[]> {
+    const rows = await this.inner.readStream(t, s, opts);
+    this.rowsRead += rows.length;
+    return rows;
+  }
+}
+
 /** Milliseconds for `runs` iterations, after a warm-up that is thrown away. */
 async function timed(runs: number, fn: () => Promise<unknown>): Promise<number> {
   for (let i = 0; i < 20; i += 1) await fn();
@@ -104,6 +129,60 @@ describe('the API does not get slower as the shop trades', () => {
     const t20k = await timed(200, () => Promise.resolve(large.isKnown(TENANT, 'M-NEW')));
 
     expect(t20k).toBeLessThan(Math.max(t200, 0.5) * 10);
+  });
+
+  it('answers "how many are there?" from a snapshot rather than replaying every movement', async () => {
+    // The unbounded one. A hypermarket generates a few thousand stock movements a day, so a year
+    // is well over a million — and every availability lookup replayed all of them, which is
+    // somebody standing in an aisle or a customer watching a page.
+    //
+    // A snapshot is not a second source of truth: it is derived from the ledger, it is itself an
+    // append-only event, and it can be thrown away and rebuilt. What it changes is only how far
+    // back the fold starts.
+    const small = inventoryAdapter({ store: await shopWithHistory(400), now: () => NOW, snapshotEvery: 100 });
+    const large = inventoryAdapter({ store: await shopWithHistory(20_000), now: () => NOW, snapshotEvery: 100 });
+
+    // One movement each, which is what takes the snapshot.
+    const move = (id: string) => ({
+      movementId: id, productId: 'P-0', locationId: 'L1', kind: 'received' as const,
+      quantityMinor: 1, uom: 'each', occurredAt: NOW, enteredBy: 'u-1',
+    });
+    await small.appendMovement(TENANT, move('SNAP-A'));
+    await large.appendMovement(TENANT, move('SNAP-A'));
+
+    const t400 = await timed(50, () => Promise.resolve(small.availability(TENANT, 'P-0')));
+    const t20k = await timed(50, () => Promise.resolve(large.availability(TENANT, 'P-0')));
+
+    expect(t20k).toBeLessThan(Math.max(t400, 0.5) * 10);
+  });
+
+  it('READS only the movements since the snapshot, not the whole ledger and a filter', async () => {
+    // The assertion the timing test above cannot make. The first version of the snapshot work
+    // passed on time while still reading every event and filtering to the tail in JavaScript —
+    // correct, bounded in *fold* cost, and unbounded in the read that actually reaches the
+    // database. Rows, not milliseconds.
+    const store = new CountingStore(await shopWithHistory(5_000));
+    const inventory = inventoryAdapter({ store, now: () => NOW, snapshotEvery: 100 });
+
+    await inventory.appendMovement(TENANT, {
+      movementId: 'SNAP-B', productId: 'P-0', locationId: 'L1', kind: 'received',
+      quantityMinor: 1, uom: 'each', occurredAt: NOW, enteredBy: 'u-1',
+    });
+
+    store.rowsRead = 0;
+    await inventory.availability(TENANT, 'P-0');
+
+    // Everything before the snapshot is in the snapshot. Reading more than a handful means the
+    // narrowing is happening after the read rather than at it.
+    expect(store.rowsRead).toBeLessThan(100);
+  });
+
+  it('tripwire — the counter DOES see a full read, so the test above proves something', async () => {
+    // Without this, a counter that silently recorded nothing would make the assertion vacuous.
+    const store = new CountingStore(await shopWithHistory(5_000));
+    store.rowsRead = 0;
+    await store.readStream(TENANT, STREAM.inventory);
+    expect(store.rowsRead).toBe(5_000);
   });
 
   it('keeps the whole sale-intake read path constant, not just one call in it', async () => {

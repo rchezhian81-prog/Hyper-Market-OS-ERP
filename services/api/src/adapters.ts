@@ -26,7 +26,7 @@ import type { SignedPack } from '../../catalogue/src/index';
 import type { CatalogueDeps } from '../../catalogue/src/index';
 import type { IncomingSale, SaleException, PosDeps } from '../../pos/src/index';
 import { project } from '../../inventory/src/index';
-import type { Movement, InventoryDeps } from '../../inventory/src/index';
+import type { Movement, Availability, InventoryDeps } from '../../inventory/src/index';
 import type { MatchResult, BankChangeRequest, PurchaseDeps } from '../../purchase/src/index';
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
 import type { ConsentRecord, CustomerDeps } from '../../customer/src/index';
@@ -64,12 +64,17 @@ export const STREAM = {
 
 const payloadOf = <T>(e: PersistedEvent): T => e.event.payload as T;
 
-/** Every payload of one type in a stream, oldest first. */
+/**
+ * Every payload of one type in a stream, oldest first.
+ *
+ * The type goes to the store rather than to a `filter` afterwards. A caller that reads a million
+ * events and keeps forty has still read a million.
+ */
 async function allOf<T>(
   store: EventStore, tenantId: string, stream: string, type: string,
 ): Promise<readonly T[]> {
-  const events = await store.readStream(tenantId, stream);
-  return events.filter((e) => e.event.type === type).map((e) => payloadOf<T>(e));
+  const events = await store.readStream(tenantId, stream, { type });
+  return events.map((e) => payloadOf<T>(e));
 }
 
 /**
@@ -225,25 +230,71 @@ export function posAdapter(input: {
   };
 }
 
+/**
+ * How many movements may pile up behind a snapshot before a new one is taken.
+ *
+ * A fold of a few thousand is cheap; a fold of a million is a shop waiting to be told how many bags
+ * of rice there are. Large enough that snapshots are rare, small enough that the tail never gets
+ * interesting — and it is a number rather than a policy because the only thing it trades is one
+ * occasional write against every read.
+ */
+export const SNAPSHOT_EVERY = 2_000;
+
+interface StockSnapshot {
+  readonly asOfSeq: number;
+  readonly balances: readonly Availability[];
+}
+
 export function inventoryAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
+  /** Overridable so a test can reach the threshold without appending two thousand events. */
+  readonly snapshotEvery?: number;
 }): InventoryDeps {
-  const all = (tenantId: string) => input.store.readStream(tenantId, STREAM.inventory);
+  const every = input.snapshotEvery ?? SNAPSHOT_EVERY;
+
+  /**
+   * The balance, and the movements not yet folded into it.
+   *
+   * **A snapshot is not a second source of truth.** It is derived from the ledger, it can be
+   * deleted and rebuilt from the ledger, and it is itself an append-only event — so nothing here
+   * can be edited, and hard rule #2 holds exactly as it did when every read folded from the
+   * beginning of time. What changes is only how far back the fold has to start.
+   */
+  const basis = async (tenantId: string): Promise<{
+    readonly opening: readonly Availability[];
+    readonly tail: readonly Movement[];
+    readonly tailSeq: number;
+  }> => {
+    const snapshot = await input.store.latestOfType(tenantId, STREAM.inventory, 'InventorySnapshotTaken');
+    const taken = snapshot === undefined ? undefined : payloadOf<StockSnapshot>(snapshot);
+    // Narrowed at the STORE, not afterwards. Reading the whole stream and filtering to the tail is
+    // the same read, and it is the read rather than the fold that a timing test cannot see.
+    const tail = await input.store.readStream(tenantId, STREAM.inventory, {
+      ...(taken === undefined ? {} : { sinceSeq: taken.asOfSeq }),
+      type: 'InventoryMoved',
+    });
+    return {
+      opening: taken?.balances ?? [],
+      tail: tail.map((e) => payloadOf<Movement>(e)),
+      tailSeq: tail.length === 0 ? (taken?.asOfSeq ?? 0) : tail[tail.length - 1]!.seq,
+    };
+  };
 
   return {
     now: input.now,
-
-    movements: async (tenantId, productId) => {
-      const ms = (await all(tenantId)).map((e) => payloadOf<Movement>(e));
-      return productId === undefined ? ms : ms.filter((m) => m.productId === productId);
-    },
 
     // One index hit. Was a `Set` of every movement id the shop had ever recorded, built so that
     // one `.has()` could run against it — and a handheld back from the chiller sending forty
     // movements paid that forty times.
     isKnown: async (tenantId, movementId) =>
       (await input.store.findByIdempotencyKey(tenantId, `mv-${tenantId}-${movementId}`)) !== undefined,
+
+    availability: async (tenantId, productId) => {
+      const { opening, tail } = await basis(tenantId);
+      const rows = project(tail, input.now(), opening);
+      return productId === undefined ? rows : rows.filter((r) => r.productId === productId);
+    },
 
     appendMovement: async (tenantId, m) => {
       await input.store.append(tenantId, STREAM.inventory, makeEvent({
@@ -254,9 +305,30 @@ export function inventoryAdapter(input: {
         source: 'api/inventory',
         payload: m,
       }));
+
+      // Snapshot when the tail gets long. Deliberately on the WRITE path: a movement arriving from
+      // a handheld can afford an occasional extra fold, whereas an availability lookup is somebody
+      // standing in an aisle or a customer watching a page. The cost lands where there is slack.
+      const { opening, tail, tailSeq } = await basis(tenantId);
+      if (tail.length >= every) {
+        await input.store.append(tenantId, STREAM.inventory, makeEvent({
+          id: `stock-snap-${tenantId}-${tailSeq}`,
+          type: 'InventorySnapshotTaken',
+          occurredAt: input.now(),
+          // Keyed on the sequence it covers, so two writers racing produce one snapshot rather
+          // than two that disagree about where they start.
+          idempotencyKey: `stock-snap-${tenantId}-${tailSeq}`,
+          source: 'api/inventory',
+          payload: {
+            asOfSeq: tailSeq,
+            balances: project(tail, input.now(), opening),
+          } satisfies StockSnapshot,
+        }));
+      }
     },
   };
 }
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Where a projection has no producer yet
@@ -480,14 +552,11 @@ export function ordersAdapter(input: {
      * are two answers waiting to disagree, and the one that promises stock to a customer is not
      * the one you want drifting from the one that counts it.
      */
-    onHand: async (tenantId, locationId) => {
-      const movements = await allOf<Movement>(input.store, tenantId, STREAM.inventory, 'InventoryMoved');
-      return new Map(
-        project(movements, input.now())
-          .filter((a) => a.locationId === locationId)
-          .map((a) => [a.productId, a.onHandMinor] as const),
-      );
-    },
+    onHand: async (tenantId, locationId) => new Map(
+      (await inventoryAdapter({ store: input.store, now: input.now }).availability(tenantId))
+        .filter((a) => a.locationId === locationId)
+        .map((a) => [a.productId, a.onHandMinor] as const),
+    ),
 
     /** Held and not yet lapsed. An expired hold is stock on the shelf, not stock spoken for. */
     outstanding: async (tenantId, locationId) => {
