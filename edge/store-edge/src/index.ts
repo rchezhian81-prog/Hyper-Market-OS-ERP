@@ -59,3 +59,6 @@ export function createEdgeNode(input: {
     },
   };
 }
+
+// The real durable log — the disk the receipt waits for.
+export * from './file-log';

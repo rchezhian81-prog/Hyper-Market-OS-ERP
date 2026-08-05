@@ -2591,6 +2591,51 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## The store edge can now actually run (5 August 2026)
+
+Following on from this morning: having found that nothing could *send* a sale to the cloud, I
+looked at what else was a promise rather than a working part. Two more, both underneath the same
+claim.
+
+**Nothing could write a sale to the disk, either.** The function that decides whether a receipt may
+print was writing to an interface that had a test stand-in behind it and nothing else. So the whole
+offline-first claim rested on a file that did not exist.
+
+**And nothing started the edge at all.** No process, no container, no entry in the deployment file.
+A shop could not have run this.
+
+Both are built. There is now a container for the back-office box, and it is in the deployment file
+alongside the others.
+
+**The detail that matters most, in plain terms.** When a program writes a file, the operating
+system normally says "done" as soon as it has the data in memory — *before* it reaches the disk. On
+a shop PC with no battery backup, a power cut in that gap means the receipt printed and the sale
+does not exist. The software now waits for the disk to confirm, every time, before the receipt is
+allowed to print. It is a little slower and it is the whole reason the till can be trusted.
+
+If the power does go mid-write, the half-written record is **kept and reported, never repaired** —
+a repaired half-sale is a made-up sale — and the edge says so out loud when it next starts.
+
+**The property I most wanted to prove: the edge starts and sells with no cloud settings at all.**
+Not "starts with warnings" — starts, sells, and says plainly that nothing is being synced. You can
+bring the whole system up with the cloud switched off and the network unplugged, and the shop
+trades. If it needed the cloud to start, offline-first would be a sentence in a document rather
+than something the software does.
+
+**Found while writing it:** my first version of the file format mangled any sale whose text
+contained a line break — a lost sale, produced by the code whose entire job is not losing sales.
+Caught by a test written the same hour.
+
+**Tests:** 3,060 automated plus 31 performance, all green.
+
+**What the owner should check.** This is now testable in the store, and it is the test I would run
+first: **switch off the internet at the router, sell ten things, switch it back on.** Every sale
+must appear in the cloud, once. Then the harder one, when we are ready: **pull the plug on the
+back-office PC mid-sale.** Nothing should be lost, and anything half-written should be reported
+rather than quietly disappearing.
+
+---
+
 ## The shop can now actually reach the cloud (5 August 2026)
 
 **This was the biggest hole in the product and I had not spotted it.** The till commits a sale to

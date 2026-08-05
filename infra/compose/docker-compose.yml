@@ -115,6 +115,47 @@ services:
     stop_grace_period: 30s
 
   # ---------------------------------------------------------------------------
+  # The store edge — the box in the back office that lets the shop keep trading.
+  #
+  # It has NO depends_on and NO cloud settings that are required. That is the whole
+  # point of P-01: bring this up on its own, with the API stopped and the network
+  # unplugged, and the shop still sells. Give it CLOUD_API_URL and CLOUD_API_TOKEN
+  # and it will also drain its queue to the cloud when there is a line; leave them
+  # out and it says so plainly rather than pretending.
+  #
+  # No ports are published. The edge is not a service anybody calls — it owns a disk
+  # and drains a queue — and the way to be sure nothing can reach it is to publish
+  # nothing.
+  # ---------------------------------------------------------------------------
+  edge:
+    build:
+      context: ../..
+      dockerfile: infra/docker/edge.Dockerfile
+    restart: unless-stopped
+    environment:
+      EDGE_DATA_DIR: /var/lib/sre-edge
+      EDGE_TENANT_ID: ${EDGE_TENANT_ID}
+      # The same key the cloud signs packs with — the edge VERIFIES with it, which is
+      # how a lane knows a price list came from us (hard rule #4: from .env only).
+      PACK_SIGNING_KEY: ${PACK_SIGNING_KEY}
+      EDGE_CAPACITY_BYTES: ${EDGE_CAPACITY_BYTES:-10737418240}
+      # Optional, and read by the sync loop only. Absent means "sell, queue, sync later".
+      CLOUD_API_URL: ${CLOUD_API_URL:-}
+      CLOUD_API_TOKEN: ${CLOUD_API_TOKEN:-}
+    volumes:
+      # The one thing this container must be able to write is the one thing it must
+      # never lose, so it is a named volume rather than the container's own layer.
+      - edge-data:/var/lib/sre-edge
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    # Long, because stopping mid-drain loses nothing (an unacknowledged item stays
+    # queued) but stopping mid-WRITE is the one thing worth waiting for.
+    stop_grace_period: 30s
+
+  # ---------------------------------------------------------------------------
   # The app shells (POS, owner, ERP) served as static files. Each shell is
   # offline-capable via its service worker, so a lane keeps working if this
   # container or the network goes away (hard rule #1).
@@ -133,3 +174,4 @@ services:
 
 volumes:
   db-data:
+  edge-data:
