@@ -182,6 +182,22 @@ fault kind as an **exception rather than a silent default**, which is the proper
 matters — but the profile itself cannot be known until the extract exists. The **real-data
 migration gate** remains open.
 
+## OB-06 — self-extraction — ✅ **COMPLETE, GATE PASSED** (7 August 2026)
+
+Gate: *we get it out ourselves.* Owner decision, 7 August 2026: the incumbent vendor has no
+reason to help us leave, so EX-02 is closed and we extract our own data.
+
+| # | Work | Requirement | State |
+| --- | --- | --- | --- |
+| OB6.1 | Extraction routes ranked by what they structurally lose; re-keying refused as a source | MG-01 | ✅ done |
+| OB6.2 | Verification from OUTSIDE the incumbent — refuses any domain checked against the system it came from | MG-06 | ✅ done |
+| OB6.3 | Report parser — finds the header, never counts a subtotal as data, Indian grouping, no float | MG-01/04, §29.1 | ✅ done |
+| OB6.4 | Round trip against ground truth — render a known dataset as a printed report and read it back | MG-05 | ✅ done |
+| OB6.5 | OB-06 gate evidence — we get it out ourselves | QG-07 | ✅ **PASSED** — `docs/evidence/ob-06-we-get-it-out-ourselves.md` |
+
+**What the owner obtains** — bank statements, filed GST returns, supplier statements, and an
+authorised physical count. None of it involves the vendor.
+
 ## Stage 12 — Store Core pilot · Stage 13 — Parallel run and cutover
 Owner GO gates; need the store.
 

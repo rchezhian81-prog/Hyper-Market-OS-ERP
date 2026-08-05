@@ -1661,6 +1661,39 @@ honest rather than being marked complete.
 
 ---
 
+## OB-06 gate passed — the whole self-extraction path, end to end (7 August 2026)
+
+Evidence: `docs/evidence/ob-06-we-get-it-out-ourselves.md`.
+`tests/integration/we-get-it-out-ourselves.test.ts`, 16 assertions against real PostgreSQL.
+
+Stage 11 proved the engine against a synthetic dataset in this product's own clean shape. That
+was right for the engine and it is **not the shape the data now arrives in**. So this walks the
+real path: a dataset we generated — and therefore know the truth about — is rendered back into a
+printed report with banner, page breaks, repeated headers and department subtotals, then parsed
+with the same parser that will read the real thing, sealed, reconciled and banked.
+
+**The round trip is the point.** With a real file nobody knows what the right answer was. Here we
+do: **396 stock rows through 526 printed lines, lossless, every paisa exact** — and repeated at
+page sizes 7, 13, 25, 60 and 500, because a break landing between a row and its subtotal is the
+case that breaks naive parsers and it has to be exercised where it actually falls. Four tripwires
+prove the check fires: a dropped row, a subtotal counted as data, a lost second location hiding
+behind a still-present id, and a misread figure with every row present.
+
+**A real limitation surfaced by writing the test, and kept.** The first version invented an
+`@MAIN` location suffix for opening state, and the event store immediately refused the second row
+for a product stocked in two places — the store being right and my test being wrong. **A printed
+stock valuation has no location column.** Opening state built from it is product-level,
+deliberately: pretending to a location the source never carried is how a migration produces stock
+in a place nobody put it. `cannotYield` now names it alongside batch and expiry.
+
+**And the control the approach rests on held throughout.** Stock verified against another report
+from the same product is refused by name; a control total whose two sides both came off the
+report is refused; the physical count is accepted; the loader cannot sign it; opening state is
+refused before QG-07 and banked as append-only events after. The whole path ran **from a file** —
+no connection to the incumbent, nothing of theirs touched, asserted by absence.
+
+Full suite **2,489**.
+
 ## Reading what the old system actually exports (7 August 2026)
 
 The self-extraction decision made this necessary. `packages/import` takes clean rows and

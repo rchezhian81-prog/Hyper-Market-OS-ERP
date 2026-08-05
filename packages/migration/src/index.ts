@@ -75,3 +75,8 @@ export {
   type ParsedMoney, type RowKind, type ClassifiedRow, type ParsedSubtotal,
   type ParsedReport, type ParseRefusal, type ParseResult, type ParseCheck,
 } from './report-parser';
+
+export {
+  formatIndianMoney, renderStockReport, checkRoundTrip,
+  type RenderOptions, type RoundTrip,
+} from './render-report';
