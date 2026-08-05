@@ -42,9 +42,14 @@ Fourteen screen specifications exist in `docs/design/screens/` and they are good
 budgets, offline states, the ≤3-tap rule, what a new cashier must manage unsupervised in thirty
 minutes. **None of them has been built.**
 
-What exists: `apps/pos/web/` and `apps/owner-app/web/` hold an `index.html` and an `app.js` each —
-demonstration shells. `web-erp`, `customer-app`, `picker-app` and `delivery-app` have **no web files
-at all**.
+What exists, stated precisely — the first draft of this page was too harsh and the correction
+matters. **The POS shell is real**: `apps/pos/web/` holds a laid-out screen following the spec
+(total largest, line list, one Tender action, permanent sync badge, 56px touch targets) and it is
+bundled against the **real tested session**, not a mock. `apps/owner-app/web/` has a shell too.
+What the POS shell lacked was a way to reach a disk — built today, see below. What it still lacks is
+tender beyond cash, returns, suspend/recall, cash movements, till open/close, and Tamil.
+
+`web-erp`, `customer-app`, `picker-app` and `delivery-app` have **no web files at all**.
 
 What this means concretely: today nobody can ring up a sale, receive a delivery, count stock, close
 a day, approve a price change, pick an order, or look at a dashboard. The rules that would govern
@@ -97,7 +102,7 @@ Three columns, and they are different questions. **Rules** = is the logic writte
 | M03–M05 Product, pricing, catalogue | ✅ | ✅ | ❌ | No screen to create or price a product. No HSN field |
 | M06–M07 Purchase, supplier | ✅ | ◐ | ❌ | Three-way match real; **nothing captures an invoice**, so it has no lines to match |
 | M08–M11 Inventory, warehouse, quality | ✅ | ✅ | ❌ | Movements and snapshots real; no counting screen |
-| M12–M15 POS, returns, cash office | ✅ | ✅ | ◐ | The strongest area. Durable commit now real. **Demo shell only** |
+| M12–M15 POS, returns, cash office | ✅ | ✅ | ◐ | The strongest area. Durable commit real, and the screen now reaches the till's own disk over loopback (ADR-0004). **Sale + cash tender only** — returns, suspend, cash movements and till open/close have no screen |
 | M16–M18 Customer, loyalty, storefront | ✅ | ✅ | ❌ | Consent real; loyalty **accrual not wired** — points read as *not known* |
 | M19–M20 Picking, delivery | ✅ | ◐ | ❌ | Attempts real; **no dispatch list exists**, so runs report unassigned |
 | M21–M24 Finance, Tally | ✅ | ◐ | ❌ | Journals and period close real. **No control totals can be built** — deliberate, and it means no month can close yet |
@@ -162,9 +167,11 @@ them this project already has.
 
 ## What I recommend, in order
 
-**1. Build the POS screen, properly, end to end.** One screen, on real hardware, ringing real sales
-into the real edge and the real cloud. It is the most-used surface in the product and everything
-after it is easier for having done it first.
+**1. Finish the POS screen, end to end.** ✅ *The seam is built:* the screen now commits to the
+till's own disk over a loopback socket, and a sale rung on the screen lands on the disk and in the
+cloud queue — proved end to end with nothing stubbed. **What remains:** tender beyond cash, returns,
+suspend/recall, cash movements, till open/close, Tamil, and then the whole thing on real hardware
+with a real scanner.
 
 **2. Get real data into the rehearsal environment.** Follow the extraction plan. Every control is
 built and waiting; none has met a real export.

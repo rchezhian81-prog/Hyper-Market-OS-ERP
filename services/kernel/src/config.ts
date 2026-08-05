@@ -176,6 +176,11 @@ export const STORE_EDGE_CONFIG: readonly Spec[] = [
   { key: 'EDGE_TENANT_ID' },
   { key: 'PACK_SIGNING_KEY', secret: true, minLength: 32 },
   { key: 'EDGE_CAPACITY_BYTES', numeric: true, fallback: '10737418240' },
+  /**
+   * The loopback port the lane's screen posts sales to. Optional: absent, this edge has no screen
+   * attached and does the shop-wide work — which is exactly what the back-office box is (ADR-0004).
+   */
+  { key: 'EDGE_LANE_PORT', numeric: true, optional: true },
   // Optional, and read by the sync agent only. Absent means "sell, queue, sync later".
   { key: 'CLOUD_API_URL', optional: true },
   { key: 'CLOUD_API_TOKEN', secret: true, minLength: 20, optional: true },

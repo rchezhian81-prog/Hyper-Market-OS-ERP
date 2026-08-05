@@ -92,3 +92,6 @@ export function createEdgeNode(input: {
 
 // The real durable log — the disk the receipt waits for.
 export * from './file-log';
+
+// The socket between the till's screen and the till's disk (ADR-0004).
+export * from './lane-server';

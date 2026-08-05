@@ -38,6 +38,7 @@ import { httpTransport } from '../../../edge/sync-agent/src/http-transport';
 import { openFileLog, readLog, type OpenFileLog } from './file-log';
 import { readCursor, writeCursor, advanceTo } from './sync-cursor';
 import { createEdgeNode, type EdgeNode } from './index';
+import { startLaneServer, LANE_HOST, type LaneServer } from './lane-server';
 import { hmacSigner } from '../../../services/catalogue/src/index';
 import { makeEvent } from '../../../packages/contracts/src/event';
 
@@ -53,6 +54,11 @@ export function nextInterval(consecutiveQuietPasses: number): number {
 
 export interface EdgeProcess {
   readonly log: OpenFileLog;
+  /**
+   * The loopback socket the lane's screen posts a sale to, or null when this edge has no lane —
+   * the back-office box runs the same process and does the shop-wide work (ADR-0004).
+   */
+  readonly lane: LaneServer | null;
   readonly outbox: SyncOutbox;
   /** What a lane talks to: price a scan, commit a sale, take a new pack. */
   readonly node: EdgeNode;
@@ -128,13 +134,22 @@ export async function startEdge(
     outbox,
   });
 
+  // The lane socket. Absent `EDGE_LANE_PORT`, this edge has no screen attached and does the
+  // shop-wide work instead — which is what the back-office box is.
+  const lanePort = settings['EDGE_LANE_PORT'];
+  const lane = lanePort === undefined ? null : await startLaneServer({ node, port: Number(lanePort) });
+  if (lane !== null) say(`lane socket on ${LANE_HOST}:${lane.port} — loopback only, nothing on the shop network can reach it`);
+
   const cloudUrl = settings['CLOUD_API_URL'];
   const cloudToken = settings['CLOUD_API_TOKEN'];
 
   if (cloudUrl === undefined || cloudToken === undefined) {
     // Supported, and said plainly. The lanes sell; the queue grows; nobody is told a lie about it.
     say('no cloud is configured, so nothing will be synced. The shop can still trade — that is the point.');
-    return { log, outbox, node, agent: null, stop: () => log.close() };
+    return {
+      log, outbox, node, lane, agent: null,
+      stop: async () => { if (lane !== null) await lane.stop(); await log.close(); },
+    };
   }
 
   const agent = new SyncAgent(outbox, httpTransport({
@@ -191,6 +206,7 @@ export async function startEdge(
     log,
     outbox,
     node,
+    lane,
     agent,
     stop: async () => {
       stopping = true;
@@ -205,6 +221,7 @@ export async function startEdge(
       if (badge.unsentCount > 0) {
         say(`stopping with ${badge.unsentCount} sale(s) still to send. They are on the disk and will go when this starts again.`);
       }
+      if (lane !== null) await lane.stop();
       await log.close();
     },
   };

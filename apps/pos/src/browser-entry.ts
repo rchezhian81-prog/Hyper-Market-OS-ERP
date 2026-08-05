@@ -1,9 +1,14 @@
-// Browser entry — the bundler's input (see `scripts/build-pos.mjs`). It wires a
-// real `PosSession` for this lane and attaches the view adapter as
-// `window.posSession`, which `web/app.js` binds to. Everything here is local: the
-// stock ledger and sync outbox are in-memory at the lane, exactly as the offline
-// design requires (hard rule #1) — the durable store and sync agent attach behind
-// the outbox, never in the sale path.
+// Browser entry — the bundler's input (see `scripts/build-pos.mjs`). It wires a real `PosSession`
+// for this lane and attaches the view adapter as `window.posSession`, which `web/app.js` binds to.
+//
+// **The durable write goes to this till's own edge, over loopback** (ADR-0004). A browser cannot
+// call `fsync`, so the disk belongs to a small local process and the shell posts to it on
+// `127.0.0.1`. That is not a network call in the sense hard rule #1 forbids: it does not leave the
+// machine, and it cannot be affected by the shop's switch, the router or the internet. What it must
+// never become is a call to anything off this till.
+//
+// Everything else here is local by design: the stock ledger and outbox are in memory at the lane,
+// and the sync agent drains the outbox afterwards, never in the sale path.
 
 import { InMemoryLedgerStore, Ledger } from '../../../packages/ledger/src/ledger';
 import type { CommitOutcome } from '../../../edge/store-edge/src/durability';
@@ -19,10 +24,45 @@ interface PosWindow {
   posCatalogue?: CatalogueSnapshot;
 }
 
+/** Where this till's edge listens. Loopback only — see ADR-0004 and `edge/store-edge/src/lane-server.ts`. */
+export const DEFAULT_LANE_PORT = 8090;
+
+export type DurableWrite = (saleId: string, record: string) => Promise<CommitOutcome>;
+
 /**
- * Build the lane's session from its configuration. In deployment the lane config
- * (lane id, cashier, trading day, currency, tax rate) comes from the tenant's signed
- * local config pack; the defaults here let the shell run standalone.
+ * The lane's durable write: post the sale to this till's own edge and wait for the answer.
+ *
+ * The wait is the point. `commit` does not return, the receipt number does not exist, and the
+ * screen cannot say "Sale complete" until the disk has confirmed.
+ */
+export function laneDurable(port: number = DEFAULT_LANE_PORT): DurableWrite {
+  return async (_saleId, record) => {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/lane/sales`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: record,
+      });
+      return await response.json() as CommitOutcome;
+    } catch {
+      // The edge is not running, or was stopped, or the port is wrong. **Refused**, and refused is
+      // right: it happens before the receipt exists and the customer is still standing there.
+      // Accepting into memory instead would be a sale the cashier saw succeed that exists nowhere.
+      return {
+        committed: false,
+        refusedBecause: 'could_not_write_durably',
+        detail: `the lane's local store did not answer on port ${port}`,
+        laneMessage: 'This lane is not ready to take payment. Do not take money — tell the manager and use another lane.',
+      };
+    }
+  };
+}
+
+/**
+ * Build the lane's session from its configuration.
+ *
+ * In deployment the lane config (lane id, cashier, trading day, currency, tax rate) comes from the
+ * tenant's signed local config pack; the defaults here let the shell run standalone.
  */
 export function bootPos(config?: {
   laneId?: string;
@@ -31,15 +71,10 @@ export function bootPos(config?: {
   taxPercent?: number;
   /** The lane's cached catalogue snapshot; without it, barcode scanning is off. */
   catalogue?: CatalogueSnapshot;
-  /**
-   * The lane's durable local write — the edge's disk (hard rule #1).
-   *
-   * **Required in the type and defaulted here to a refusal**, which is the honest default for a
-   * browser shell that has not been handed one: a lane with nowhere to write a sale must not take
-   * payment. The alternative default — accept and hold it in memory — is a sale the cashier saw
-   * succeed and that exists nowhere, which is the worst failure this product has.
-   */
-  durable?: (saleId: string, record: string) => Promise<CommitOutcome>;
+  /** Where this till's edge listens. Only ever loopback. */
+  lanePort?: number;
+  /** Overridable for tests. Production always goes to this till's own edge. */
+  durable?: DurableWrite;
 }): PosView {
   const session = new PosSession(
     {
@@ -51,21 +86,16 @@ export function bootPos(config?: {
     },
     new Ledger(new InMemoryLedgerStore()),
     new SyncOutbox(),
-    config?.durable ?? (() => Promise.resolve({
-      committed: false,
-      refusedBecause: 'could_not_write_durably' as const,
-      detail: 'this lane has no durable local store wired to it',
-      laneMessage: 'This lane is not ready to take payment. Do not take money — tell the manager and use another lane.',
-    })),
+    config?.durable ?? laneDurable(config?.lanePort ?? DEFAULT_LANE_PORT),
   );
   // Indexing happens once at boot, so every subsequent scan is O(1) (§32).
   const catalogue = config?.catalogue ? new CatalogueCache(config.catalogue) : undefined;
   return createPosView(session, 'INR', catalogue);
 }
 
-// Attach for the view. `app.js` uses `window.posSession` when present and falls
-// back to its stand-in when the bundle has not been built. In the browser
-// `globalThis.window` IS the window, so this needs no DOM types.
+// Attach for the view. `app.js` uses `window.posSession` when present and falls back to its
+// stand-in when the bundle has not been built. In the browser `globalThis.window` IS the window,
+// so this needs no DOM types.
 const browserWindow = (globalThis as { window?: PosWindow }).window;
 if (browserWindow !== undefined) {
   browserWindow.posSession = bootPos({ catalogue: browserWindow.posCatalogue });
