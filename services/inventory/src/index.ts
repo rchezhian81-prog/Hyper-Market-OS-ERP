@@ -129,7 +129,14 @@ export const negativeStock = (rows: readonly Availability[]): readonly NegativeS
 export interface InventoryDeps {
   readonly movements: (tenantId: string, productId?: string) => Promise<readonly Movement[]> | readonly Movement[];
   readonly appendMovement: (tenantId: string, m: Movement) => Promise<void> | void;
-  readonly known: (tenantId: string) => Promise<ReadonlySet<string>> | ReadonlySet<string>;
+  /**
+   * Has this exact movement already been recorded?
+   *
+   * Was `known(tenantId) => Set<string>` — every movement id the shop has ever recorded, loaded so
+   * that one `.has()` could be run against it. A handheld back from the chiller sending forty
+   * movements paid that forty times.
+   */
+  readonly isKnown: (tenantId: string, movementId: string) => Promise<boolean> | boolean;
   readonly now: () => string;
 }
 
@@ -157,7 +164,7 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
             nextSafeAction: 'Nothing was appended. Add what is missing and send it again — the stock has not moved in the system either way.',
           });
         }
-        if (!(await deps.known(ctx.tenantId)).has(m.movementId)) {
+        if (!(await deps.isKnown(ctx.tenantId, m.movementId))) {
           await deps.appendMovement(ctx.tenantId, m);
         }
         return { status: 202, body: { movementId: m.movementId, appended: true } };

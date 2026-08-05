@@ -107,9 +107,19 @@ export interface IntakeContext {
   /** The cloud catalogue as it stands now — which is not what the lane priced from. */
   readonly catalogue: ReadonlyMap<string, CatalogueProduct>;
   readonly currentPackVersion: number;
-  /** Receipt numbers already banked, and which sale each belongs to. */
-  readonly receiptNumbers: ReadonlyMap<string, string>;
-  readonly alreadyBanked: ReadonlySet<string>;
+  /**
+   * Which sale, if any, already holds this sale's receipt number — and whether this exact sale
+   * has already been banked.
+   *
+   * These were a `Map` of every receipt number the shop has ever issued and a `Set` of every sale
+   * it has ever made, from which this function took **one lookup each**. That is the whole of the
+   * difference: a type that hands back the history obliges every implementation to read the
+   * history, so no adapter written against it could be quick, and the cost was paid on every sale.
+   * At 2,000 sales a day the till would have been waiting on a quarter of a million rows by month
+   * three, for a two-word answer.
+   */
+  readonly saleHoldingThisReceipt: string | undefined;
+  readonly alreadyBanked: boolean;
   readonly now: string;
   /** How many pack versions behind is worth mentioning. Per-tenant. Default 3. */
   readonly stalePackVersions?: number;
@@ -201,14 +211,14 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
       'This lane\'s clock is wrong. Its sales will land in the wrong trading day until it is fixed.');
   }
 
-  const heldBy = ctx.receiptNumbers.get(sale.receiptNumber);
+  const heldBy = ctx.saleHoldingThisReceipt;
   if (heldBy !== undefined && heldBy !== sale.saleId) {
     add('receipt_number_reused', 'material',
       `receipt ${sale.receiptNumber} already belongs to sale ${heldBy}`,
       'Two sales carry one receipt number, so a customer returning goods cannot be matched to the right one. Both sales stand; the numbering needs looking at.');
   }
 
-  const alreadyBanked = ctx.alreadyBanked.has(sale.saleId);
+  const alreadyBanked = ctx.alreadyBanked;
 
   return {
     banked: true,

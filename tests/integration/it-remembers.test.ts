@@ -173,11 +173,13 @@ describe.skipIf(!DATABASE_URL)('the API remembers (real PostgreSQL)', () => {
     await handle(kernel, post('/v1/sales', sale, `k-${RUN}-1`));
     await handle(kernel, post('/v1/sales', sale, `k-${RUN}-DIFFERENT`));
 
-    const banked = await posAdapter({ store, now: () => NOW }).bankedSaleIds(TENANT);
-    expect([...banked].filter((id) => id === sale.saleId)).toHaveLength(1);
+    expect(await posAdapter({ store, now: () => NOW }).isBanked(TENANT, sale.saleId)).toBe(true);
 
+    // One SaleCommitted, whatever arrived. Filtered by type because the sales stream also carries
+    // the receipt-number index, and a reader taking every event would count each sale twice.
     const stream = await store.readStream(TENANT, STREAM.sales);
-    expect(stream.filter((e) => (e.event.payload as { saleId: string }).saleId === sale.saleId)).toHaveLength(1);
+    expect(stream.filter((e) => e.event.type === 'SaleCommitted'
+      && (e.event.payload as { saleId: string }).saleId === sale.saleId)).toHaveLength(1);
   });
 
   it('prices the sale against the pack the SHOP published, not a stub', async () => {
@@ -201,6 +203,38 @@ describe.skipIf(!DATABASE_URL)('the API remembers (real PostgreSQL)', () => {
     expect(res.status).toBe(200);
     const body = res.body as { material: unknown[]; informational: number };
     expect(body.material.length + body.informational).toBeGreaterThan(0);
+  });
+
+  it('points a reused receipt number at the sale that HAD it, not the one that asked last', async () => {
+    // The receipt index is appended after the sale and deliberately allowed to lose: a second sale
+    // claiming R-1 finds the key taken and the entry keeps pointing at the first. That is exactly
+    // right — the exception reads "receipt R-1 already belongs to sale S-1", and S-1 is the one
+    // that had it. The index records who holds the number, not who asked for it most recently.
+    const clash = {
+      ...sale, saleId: `${RUN}-S3`, receiptNumber: `${RUN}-R1`,
+    };
+    const res = await handle(kernel, post('/v1/sales', clash, `k-${RUN}-3`));
+    expect(res.status).toBe(202);
+
+    const kinds = (res.body as { exceptions: { kind: string }[] }).exceptions.map((e) => e.kind);
+    expect(kinds).toContain('receipt_number_reused');
+    const reuse = (res.body as { exceptions: { kind: string; detail: string }[] }).exceptions
+      .find((e) => e.kind === 'receipt_number_reused')!;
+    expect(reuse.detail).toContain(sale.saleId);
+
+    // Both sales stand — the second is banked, because the money was taken either way.
+    expect(await posAdapter({ store, now: () => NOW }).isBanked(TENANT, clash.saleId)).toBe(true);
+    // And the index still names the first.
+    expect(await posAdapter({ store, now: () => NOW }).saleHoldingReceipt(TENANT, sale.receiptNumber))
+      .toBe(sale.saleId);
+  });
+
+  it('answers both intake questions without reading the sales stream', async () => {
+    // The property `tests/performance/api-scales-with-the-shop.test.ts` measures, asserted here as
+    // behaviour against the real database: a sale we have never seen is answered without a scan.
+    const adapter = posAdapter({ store, now: () => NOW });
+    expect(await adapter.isBanked(TENANT, `${RUN}-NEVER`)).toBe(false);
+    expect(await adapter.saleHoldingReceipt(TENANT, `${RUN}-NEVER`)).toBeUndefined();
   });
 
   // ─── 3. Stock, projected rather than stored ─────────────────────────────────
@@ -490,10 +524,12 @@ describe.skipIf(!DATABASE_URL)('the API remembers (real PostgreSQL)', () => {
     const figures = await reportingAdapter({ store, now: () => new Date().toISOString() })
       .figures(TENANT, 'dashboard');
     const sales = figures.find((f) => f.name === 'Sales today');
-    // Two sales banked earlier in this file, on today's trading day: 64,000 + 50,000.
-    expect(sales?.valueMinor).toBe(114_000);
+    // Three sales banked earlier in this file, on today's trading day: 64,000 + 50,000 + 64,000.
+    // The third is the receipt-number clash — it is a real sale and counts, which is the point of
+    // banking it: the money was taken either way and the clash is work, not a reason to lose it.
+    expect(sales?.valueMinor).toBe(178_000);
     expect(sales?.staleness).toBe('live');
-    expect(figures.find((f) => f.name === 'Sales today — receipts')?.valueMinor).toBe(2);
+    expect(figures.find((f) => f.name === 'Sales today — receipts')?.valueMinor).toBe(3);
   });
 
   it('will not produce the signed migration page while it cannot name the people on it', async () => {

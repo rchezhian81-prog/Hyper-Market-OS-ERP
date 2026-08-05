@@ -35,6 +35,16 @@ export interface EventStore {
   findByIdempotencyKey(tenantId: string, idempotencyKey: string): Promise<PersistedEvent | undefined>;
   /** All events in a tenant's stream, in append order — the projection scan. */
   readStream(tenantId: string, stream: string): Promise<readonly PersistedEvent[]>;
+  /**
+   * The most recent event of one type in a stream, **without reading the ones before it**.
+   *
+   * "Current" is a fold, and folding is what makes the ledger the only truth — but *the latest of
+   * a type* is a fold with an answer at the end of the stream, and reading forward to reach it is
+   * work nobody needs. The catalogue is the case that forced this: a shop publishing a price list
+   * a day has 365 packs a year, each one holding its entire product master, and answering "which
+   * version are we on?" was deserialising all of them to look at the last.
+   */
+  latestOfType(tenantId: string, stream: string, type: string): Promise<PersistedEvent | undefined>;
 }
 
 function tenantKey(tenantId: string, idempotencyKey: string): string {
@@ -50,6 +60,15 @@ function tenantKey(tenantId: string, idempotencyKey: string): string {
 export class InMemoryEventStore implements EventStore {
   private readonly records: PersistedEvent[] = [];
   private readonly byKey = new Map<string, PersistedEvent>();
+  /**
+   * Streams, indexed.
+   *
+   * Without this, `readStream` filtered every record the store held — so reading a stream with
+   * three events in it cost the same as reading one with three hundred thousand, and the reference
+   * implementation quietly stopped modelling the contract it exists to define. It matters beyond
+   * tests: this is the store the edge runs on.
+   */
+  private readonly byStream = new Map<string, PersistedEvent[]>();
   private seq = 0;
 
   append(tenantId: string, stream: string, event: DomainEvent): Promise<AppendResult> {
@@ -61,6 +80,9 @@ export class InMemoryEventStore implements EventStore {
     const record: PersistedEvent = Object.freeze({ seq: this.seq, tenantId, stream, event });
     this.records.push(record);
     this.byKey.set(tenantKey(tenantId, event.idempotencyKey), record);
+    const key = tenantKey(tenantId, stream);
+    const inStream = this.byStream.get(key);
+    if (inStream === undefined) this.byStream.set(key, [record]); else inStream.push(record);
     return Promise.resolve({ record, deduped: false });
   }
 
@@ -69,9 +91,16 @@ export class InMemoryEventStore implements EventStore {
   }
 
   readStream(tenantId: string, stream: string): Promise<readonly PersistedEvent[]> {
-    return Promise.resolve(
-      this.records.filter((r) => r.tenantId === tenantId && r.stream === stream),
-    );
+    return Promise.resolve(this.byStream.get(tenantKey(tenantId, stream)) ?? []);
+  }
+
+  latestOfType(tenantId: string, stream: string, type: string): Promise<PersistedEvent | undefined> {
+    const inStream = this.byStream.get(tenantKey(tenantId, stream)) ?? [];
+    for (let i = inStream.length - 1; i >= 0; i -= 1) {
+      const record = inStream[i]!;
+      if (record.event.type === type) return Promise.resolve(record);
+    }
+    return Promise.resolve(undefined);
   }
 }
 
@@ -153,5 +182,20 @@ export class SqlEventStore implements EventStore {
       [tenantId, stream],
     );
     return rows.map(rowToPersisted);
+  }
+
+  async latestOfType(
+    tenantId: string, stream: string, type: string,
+  ): Promise<PersistedEvent | undefined> {
+    // `event_ledger_stream_type_idx` (migration 0006) makes this an index scan of one row rather
+    // than a read of the whole stream. Without the index it is still correct and still slow, which
+    // is the failure mode worth being explicit about.
+    const rows = await this.client.query(
+      `SELECT ${COLUMNS} FROM event_ledger
+       WHERE tenant_id = $1 AND stream = $2 AND type = $3
+       ORDER BY seq DESC LIMIT 1`,
+      [tenantId, stream, type],
+    );
+    return rows.length > 0 ? rowToPersisted(rows[0]!) : undefined;
   }
 }

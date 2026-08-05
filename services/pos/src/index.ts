@@ -21,8 +21,16 @@ export {
 export interface PosDeps {
   readonly catalogue: (tenantId: string) => Promise<ReadonlyMap<string, CatalogueProduct>> | ReadonlyMap<string, CatalogueProduct>;
   readonly currentPackVersion: (tenantId: string) => Promise<number> | number;
-  readonly receiptNumbers: (tenantId: string) => Promise<ReadonlyMap<string, string>> | ReadonlyMap<string, string>;
-  readonly bankedSaleIds: (tenantId: string) => Promise<ReadonlySet<string>> | ReadonlySet<string>;
+  /**
+   * Two questions about one sale, rather than the whole history to search.
+   *
+   * `receiptNumbers(tenantId) => Map` and `bankedSaleIds(tenantId) => Set` were the previous
+   * shapes, and they were a performance defect written into a **type**: a port that returns
+   * everything can only be implemented by reading everything. The lane pays that on every scan,
+   * and hard rule #1 is about the lane.
+   */
+  readonly saleHoldingReceipt: (tenantId: string, receiptNumber: string) => Promise<string | undefined> | string | undefined;
+  readonly isBanked: (tenantId: string, saleId: string) => Promise<boolean> | boolean;
   /** Append-only. A sale is never updated, so there is no `updateSale` port to call. */
   readonly bankSale: (tenantId: string, sale: IncomingSale) => Promise<void> | void;
   readonly recordExceptions: (tenantId: string, exceptions: readonly SaleException[]) => Promise<void> | void;
@@ -63,8 +71,8 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
         const intake = acceptSale(sale, {
           catalogue: await deps.catalogue(ctx.tenantId),
           currentPackVersion: await deps.currentPackVersion(ctx.tenantId),
-          receiptNumbers: await deps.receiptNumbers(ctx.tenantId),
-          alreadyBanked: await deps.bankedSaleIds(ctx.tenantId),
+          saleHoldingThisReceipt: await deps.saleHoldingReceipt(ctx.tenantId, sale.receiptNumber),
+          alreadyBanked: await deps.isBanked(ctx.tenantId, sale.saleId),
           now: deps.now(),
         } satisfies IntakeContext);
 
@@ -97,9 +105,8 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
       api: 'API-05', method: 'GET', path: '/v1/sales/:saleId',
       permission: 'pos.sale.read',
       handler: async (ctx) => {
-        const banked = await deps.bankedSaleIds(ctx.tenantId);
         const saleId = ctx.params['saleId'] ?? '';
-        if (!banked.has(saleId)) throw notFound(`sale ${saleId}`);
+        if (!(await deps.isBanked(ctx.tenantId, saleId))) throw notFound(`sale ${saleId}`);
         return { status: 200, body: { saleId, banked: true } };
       },
     },

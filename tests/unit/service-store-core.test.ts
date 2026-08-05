@@ -247,7 +247,7 @@ describe('all three register cleanly on the kernel', () => {
   );
 
   const invDeps: InventoryDeps = {
-    movements: () => [move()], appendMovement: () => {}, known: () => new Set(), now: () => NOW,
+    movements: () => [move()], appendMovement: () => {}, isKnown: () => false, now: () => NOW,
   };
   const idDeps: IdentityDeps = {
     roles: () => [], permissionsOf: () => [], recordGrant: () => {}, branches: () => [], now: () => NOW,

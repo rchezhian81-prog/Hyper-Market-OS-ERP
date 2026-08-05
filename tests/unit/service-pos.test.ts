@@ -32,7 +32,10 @@ const sale = (over: Partial<IncomingSale> = {}): IncomingSale => ({
 
 const ctx = (over: Partial<IntakeContext> = {}): IntakeContext => ({
   catalogue: CATALOGUE, currentPackVersion: 10,
-  receiptNumbers: new Map(), alreadyBanked: new Set(),
+  // Two answers, not two collections to search. The port used to hand over every receipt number
+  // the shop had ever issued and every sale it had ever banked so that one lookup could be run
+  // against each — a performance defect written into a type, paid on every scan at the lane.
+  saleHoldingThisReceipt: undefined, alreadyBanked: false,
   now: '2026-08-07T12:00:00Z', ...over,
 });
 
@@ -187,9 +190,7 @@ describe('what the lane\'s own state says', () => {
   });
 
   it('flags two sales claiming one receipt number', () => {
-    const r = acceptSale(sale({ saleId: 'S-002' }), ctx({
-      receiptNumbers: new Map([['R-001', 'S-001']]),
-    }));
+    const r = acceptSale(sale({ saleId: 'S-002' }), ctx({ saleHoldingThisReceipt: 'S-001' }));
     const e = r.exceptions.find((x) => x.kind === 'receipt_number_reused')!;
     expect(e.detail).toContain('S-001');
     expect(e.ownerAction).toContain('Both sales stand');
@@ -198,7 +199,7 @@ describe('what the lane\'s own state says', () => {
 
 describe('a resend is not a second sale (§31.1)', () => {
   it('recognises a sale it has already banked', () => {
-    const r = acceptSale(sale(), ctx({ alreadyBanked: new Set(['S-001']) }));
+    const r = acceptSale(sale(), ctx({ alreadyBanked: true }));
     expect(r.alreadyBanked).toBe(true);
     expect(r.banked).toBe(true);
     expect(r.detail).toContain('a resend, not a second sale');
@@ -237,7 +238,7 @@ describe('a batch from a lane back after three days offline', () => {
   it('collapses resends without counting them as sales', () => {
     const s = summariseIntake([
       ...results.slice(0, 3),
-      acceptSale(sale({ saleId: 'S-0' }), ctx({ alreadyBanked: new Set(['S-0']) })),
+      acceptSale(sale({ saleId: 'S-0' }), ctx({ alreadyBanked: true })),
     ]);
     expect(s.banked).toBe(3);
     expect(s.resends).toBe(1);
@@ -256,8 +257,8 @@ describe('the service on the kernel', () => {
     const deps: PosDeps = {
       catalogue: () => CATALOGUE,
       currentPackVersion: () => 10,
-      receiptNumbers: () => new Map(),
-      bankedSaleIds: () => banked,
+      saleHoldingReceipt: () => undefined,
+      isBanked: (_t, saleId) => banked.has(saleId),
       bankSale: (_t, s) => { banked.add(s.saleId); },
       recordExceptions: (_t, e) => { recorded.push(...e); },
       openExceptions: () => recorded,

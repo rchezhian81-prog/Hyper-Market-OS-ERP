@@ -72,16 +72,20 @@ async function allOf<T>(
   return events.filter((e) => e.event.type === type).map((e) => payloadOf<T>(e));
 }
 
-/** The last event of a type in a stream, or nothing. "Current" is a fold, never a field. */
+/**
+ * The last event of a type in a stream, or nothing. "Current" is a fold, never a field.
+ *
+ * It goes to the store's indexed `latestOfType` rather than reading the stream and taking the end
+ * of it. The first version did the latter, and the catalogue is what made that expensive: a shop
+ * publishing a price list a day holds 365 packs a year, each carrying its entire product master,
+ * and answering "which version are we on?" deserialised all of them to look at the last one — on
+ * every sale, because the POS route checks the pack version before it banks anything.
+ */
 async function latest<T>(
   store: EventStore, tenantId: string, stream: string, type: string,
 ): Promise<T | undefined> {
-  const events = await store.readStream(tenantId, stream);
-  for (let i = events.length - 1; i >= 0; i -= 1) {
-    const e = events[i]!;
-    if (e.event.type === type) return payloadOf<T>(e);
-  }
-  return undefined;
+  const found = await store.latestOfType(tenantId, stream, type);
+  return found === undefined ? undefined : payloadOf<T>(found);
 }
 
 export function catalogueAdapter(input: {
@@ -134,8 +138,6 @@ export function posAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
 }): PosDeps {
-  const sales = (tenantId: string) => input.store.readStream(tenantId, STREAM.sales);
-
   return {
     now: input.now,
 
@@ -147,16 +149,34 @@ export function posAdapter(input: {
     currentPackVersion: async (tenantId) =>
       (await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished'))?.snapshot.version ?? 0,
 
-    receiptNumbers: async (tenantId) => new Map(
-      (await sales(tenantId)).map((e) => {
-        const s = payloadOf<IncomingSale>(e);
-        return [s.receiptNumber, s.saleId] as const;
-      }),
-    ),
+    /**
+     * Two indexed lookups, not two folds.
+     *
+     * Both of these used to read every sale the shop had ever made and build a `Map` or a `Set` so
+     * that one key could be looked up in it — on **every sale**. At SRE's ~2,000 a day that is a
+     * quarter of a million rows scanned per scan by month three, and it would have arrived as
+     * "the tills have got slow" with nothing obviously changed.
+     *
+     * The store already indexes `(tenant_id, idempotency_key)` — it has to, because that unique
+     * constraint is what makes `append` idempotent — so the answer was always one index hit away.
+     * What was in the way was the *port's shape*, not the store.
+     */
+    isBanked: async (tenantId, saleId) =>
+      (await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${saleId}`)) !== undefined,
 
-    bankedSaleIds: async (tenantId) => new Set(
-      (await sales(tenantId)).map((e) => payloadOf<IncomingSale>(e).saleId),
-    ),
+    /**
+     * Receipt numbers get their own key alongside the sale, written by `bankSale` below.
+     *
+     * A receipt number is not the sale's identity — two sales carrying one receipt number is a
+     * *finding*, not a collision — so it cannot share the sale's key. Its own key makes it
+     * findable in one hit, and the reverse lookup is deliberately a **separate append** rather
+     * than a second column on the sale, because the ledger has one shape and everything in it is
+     * an event.
+     */
+    saleHoldingReceipt: async (tenantId, receiptNumber) => {
+      const held = await input.store.findByIdempotencyKey(tenantId, `receipt-${tenantId}-${receiptNumber}`);
+      return held === undefined ? undefined : (held.event.payload as { readonly saleId: string }).saleId;
+    },
 
     bankSale: async (tenantId, sale) => {
       await input.store.append(tenantId, STREAM.sales, makeEvent({
@@ -168,6 +188,21 @@ export function posAdapter(input: {
         idempotencyKey: `sale-${tenantId}-${sale.saleId}`,
         source: 'api/pos',
         payload: sale,
+      }));
+
+      // The receipt-number index, appended second and deliberately allowed to lose.
+      //
+      // If two sales carry one receipt number the second append dedupes and this entry keeps
+      // pointing at the FIRST sale — which is exactly right, because the exception it raises reads
+      // "receipt R-101 already belongs to sale S-7", and S-7 is the one that had it. The index
+      // records who holds the number, not who asked for it last.
+      await input.store.append(tenantId, STREAM.sales, makeEvent({
+        id: `receipt-${sale.receiptNumber}`,
+        type: 'ReceiptNumberIssued',
+        occurredAt: sale.committedAt,
+        idempotencyKey: `receipt-${tenantId}-${sale.receiptNumber}`,
+        source: 'api/pos',
+        payload: { receiptNumber: sale.receiptNumber, saleId: sale.saleId },
       }));
     },
 
@@ -204,9 +239,11 @@ export function inventoryAdapter(input: {
       return productId === undefined ? ms : ms.filter((m) => m.productId === productId);
     },
 
-    known: async (tenantId) => new Set(
-      (await all(tenantId)).map((e) => payloadOf<Movement>(e).movementId),
-    ),
+    // One index hit. Was a `Set` of every movement id the shop had ever recorded, built so that
+    // one `.has()` could run against it — and a handheld back from the chiller sending forty
+    // movements paid that forty times.
+    isKnown: async (tenantId, movementId) =>
+      (await input.store.findByIdempotencyKey(tenantId, `mv-${tenantId}-${movementId}`)) !== undefined,
 
     appendMovement: async (tenantId, m) => {
       await input.store.append(tenantId, STREAM.inventory, makeEvent({

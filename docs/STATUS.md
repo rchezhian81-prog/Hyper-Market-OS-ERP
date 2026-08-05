@@ -2591,6 +2591,51 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## The tills would have got slow by month three (5 August 2026)
+
+A defect I introduced with the persistence work this morning, found by writing the performance test
+that should have gone in at the same time.
+
+**Every one of the adapters answered a question by reading the whole history.** To decide whether a
+sale had already been banked, the software loaded **every sale the shop had ever made** and looked
+in the list. Correct — and slower every day the shop trades.
+
+The arithmetic is what makes it serious rather than untidy. SRE takes roughly 2,000 sales a day:
+
+| | Sales stored | What each till waited for, per scan |
+| --- | --- | --- |
+| Week one | ~14,000 | barely noticeable |
+| Month three | ~180,000 | a scan of 180,000 records |
+| Year one | ~700,000 | a scan of 700,000 records |
+
+It would not have shown up in any test, it would not have shown up in the pilot's first week, and
+it would have arrived some months in as **"the tills have got slow"** with nothing obviously
+changed — which is the worst kind of fault to be handed, because by then nobody can say what
+changed.
+
+**The mistake was in a type, which is why reading the code did not reveal it.** The software asked
+*"give me every sale"* and then looked at one of them. It now asks *"was this one sale banked?"* —
+and the database answers that from an index it already had to keep. The same for receipt numbers
+and stock movements.
+
+Two more came out of the same test: working out "which price list are we on?" was reading every
+price list ever published — 365 of them a year, each holding the whole product list — on every
+sale. And the in-house test version of the store was scanning everything for any read, so it had
+quietly stopped behaving like the real one.
+
+**The tests are ratios, not stopwatch times** — a hundred times the history must not cost anything
+like a hundred times the work — so they mean the same thing on a laptop, in the cloud, and on the
+shop's back-office PC.
+
+**Tests:** 3,009 automated plus 24 performance, all green.
+
+**What the owner should check.** Nothing now. But this is the thing to insist on when the pilot
+starts: **if the tills get slower after a few months, that is a bug and not "more data"**, and we
+have tests that are supposed to catch it before you do. If it ever happens, say so early — the
+faults that arrive gradually are the ones people put up with.
+
+---
+
 ## The cutover weekend, hour by hour (5 August 2026)
 
 `docs/runbooks/cutover-weekend.md` — the plan for the weekend the shop stops using the old system
