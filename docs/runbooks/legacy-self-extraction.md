@@ -121,7 +121,7 @@ their own reasons, with no interest in agreeing with our old ERP:
 | --- | --- | --- |
 | **Stock** | **A physical count.** Count the shelves | The only truth about stock that exists anywhere. Everything else is a record *of* it |
 | **Sales** | The bank statement; the card/UPI settlement file | The bank has no interest in agreeing with our old system (see below — the hardest of the six) |
-| **Tax** | The GST returns already filed | Filed, dated, signed. It cannot be adjusted to make a total agree |
+| **Tax** | The GST returns already filed | Filed, dated, signed. It cannot be adjusted to make a total agree — so where the books disagree, the books are wrong (see below) |
 | **Supplier balances** | The supplier's own statement | They keep their own ledger and will confirm it, because they want paying — no goodwill required (see below) |
 | **Books** | The accounts the CA prepared | Prepared independently, by somebody with a licence at stake |
 | **Loyalty points** | A sample of customers | They can see their own balance and will say if it is wrong |
@@ -201,6 +201,49 @@ Two more things the software insists on:
 what *arrived*. A sale rung up and pocketed at the till reaches neither the old system nor the
 bank, and the two agree perfectly about it. Only the stock count speaks to that.
 
+### Tax against the returns you have already filed
+
+Download GSTR-1 and GSTR-3B for every period being migrated from the GST portal. **They are
+yours, they are already filed, and nobody has to agree to give them to you.**
+
+This check works the opposite way round from every other one. Everywhere else we are asking
+whether the extracted figure is right. Here the return is **already true as a matter of law** — it
+was filed, dated and acknowledged, and it cannot be un-filed or adjusted to make a total come out.
+So the question is not *"does the return agree with our books?"* but **"what do our books have to
+become?"** Where they disagree, it is the books that are wrong.
+
+Four things the software will not accept as a filed return:
+
+- **One with no acknowledgement number.** A spreadsheet called `GSTR1_April.xlsx` is a working
+  paper. The acknowledgement (ARN) is the only thing separating what was *filed* from what
+  somebody *prepared* — and those differ exactly when it matters.
+- **A part month.** A return covers a whole month and cannot be cut at a cutover date. A part
+  period compared against a whole return is short by design, and it looks like missing sales.
+- **One that a later month amended.** Amendments restate an earlier month. Reconciling to the
+  superseded original gives a wrong answer with a perfect audit trail behind it.
+- **One whose own arithmetic does not hold** — where the tax does not follow from the taxable
+  value at its own rate. Either the typing is wrong or the return is, and using it would spread
+  the error through every opening figure.
+
+**And never an average rate.** You sell at 0%, 5%, 12% and 18% in the same basket. Multiply your
+total sales by an average and the answer looks close enough to pass a glance, is wrong on every
+line, and is wrong in **the one way the department checks automatically** — GST returns are
+reconciled rate by rate, not in total. The software refuses a line at a rate nothing could
+actually have been sold at, because that is what an average looks like.
+
+It also checks **GSTR-1 against GSTR-3B**. The department compares those two by machine, so a
+difference between them is a notice waiting to happen. If one is already there, we **inherited**
+it — the migration did not create it — and you are told so in writing either way.
+
+One rule with no exception: **a difference against a filed return goes to your CA, in writing,
+before the opening books are signed.** Somebody signed that return. Quietly adjusting our figures
+to meet it is not ours to do.
+
+**What this cannot prove:** the return shows what was **declared**, never what was correctly
+**charged**. If a product was sold at 5% when it should have been 12%, the return says 5%, the
+books say 5%, and they agree perfectly. That is a question for the CA and the product master, not
+for this check.
+
 ---
 
 ## The order to do it in
@@ -270,6 +313,9 @@ Three things, and none of them involves the vendor:
 - `../../packages/migration/src/banking-verification.ts` — sales against the bank: the route
   reconstructed rather than compared, a commission rate refused if it was derived from the gap it
   explains, and cash reported on its own figure
+- `../../packages/migration/src/tax-verification.ts` — tax against the filed returns: the
+  acknowledgement number as the thing that makes a return evidence, slab by slab with no average
+  rate available anywhere, and a difference treated as a disclosure rather than a fix
 - `../../packages/migration/src/report-parser.ts` — reads what Routes B and C actually produce:
   finds the real header under the shop's name and the report title, never counts a
   *"Total for GROCERY"* line as a product, reads `4,12,000.00` as twelve lakh, and keeps every

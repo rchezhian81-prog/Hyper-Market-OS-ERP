@@ -105,3 +105,10 @@ export {
   type TermsRefusal, type TermsAcceptance, type UnbankedDay, type RouteResult,
   type BankVerification,
 } from './banking-verification';
+
+export {
+  acceptFiledReturn, reconcileTaxPeriod, taxPosition, taxOf, STATUTORY_SLABS_BPS,
+  type ReturnKind, type TaxSlabLine, type FiledReturn, type ReturnRefusal,
+  type ReturnAcceptance, type SlabStatus, type SlabComparison,
+  type TaxPeriodReconciliation, type TaxPosition,
+} from './tax-verification';

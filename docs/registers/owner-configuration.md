@@ -48,6 +48,9 @@ Status: **Default in use** · **Confirmed** · **Changed by owner**.
 | OC-30 | Unexplained supplier difference that need not block the opening balance | `supplierPosition` `toleranceMinor` | **₹0** — every difference is worked. There is **no** tolerance for a supplier who never replied, and none for an invoice only they have | Migration (with CA) |
 | OC-31 | Card/UPI commission rate, GST on it, and settlement lag per provider | `RouteTerms` | **None assumed.** The check **refuses** to run until the rate is given, and refuses a rate worked out from the gap it explains — take it off the merchant agreement | Migration (from the merchant agreement) |
 | OC-32 | Cash taken but not yet lodged that need not block — the float and the till change | `verifySalesAgainstBank` `toleranceMinor` | **₹0** — every rupee is explained until the owner sets the real float | Migration (with CA) |
+| OC-33 | GST slabs the tenant may have traded at | `STATUTORY_SLABS_BPS` / `permittedSlabsBps` | **0, 0.25, 3, 5, 12, 18, 28 %** — the Indian set. A books line at any other rate is refused as a blended average | Migration (with CA) |
+| OC-34 | Per-line rounding allowed on a filed return before its arithmetic is called wrong | `acceptFiledReturn` `roundingAllowanceMinor` | **₹1** | Migration (with CA) |
+| OC-35 | Tax periods the migration covers | `taxPosition` `periodsExpected` | **None assumed** — stated up front, so a period with no return in hand is named rather than silently absent | Migration (with CA) |
 
 > **How to use this at UAT:** work down the list. For each row either accept the default
 > (say nothing) or give the value. Nothing here needs a technical answer — every one is a

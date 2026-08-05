@@ -1661,6 +1661,60 @@ honest rather than being marked complete.
 
 ---
 
+## Proving the tax against the returns already filed (7 August 2026)
+
+`packages/migration/src/tax-verification.ts`. The fourth external check, and **the only one that
+runs backwards.**
+
+Everywhere else in this migration we are asking whether the extracted figure is right. A filed
+return is already true as a matter of law — filed, dated, acknowledged, and impossible to un-file.
+So the question inverts: not *"does the return agree with our books?"* but **"what do our books
+have to become?"** Where the two disagree, it is the books that are wrong. That inversion is the
+whole value of the evidence: a report can be re-run until it agrees, and a filed return cannot be
+adjusted to make a total come out. It is why the CA asks for it first.
+
+Four refusals, each carrying its own failure:
+
+- **No acknowledgement reference.** A spreadsheet named `GSTR1_April.xlsx` is a working paper. The
+  ARN is the only thing separating what was *filed* from what somebody *prepared*, and those
+  differ exactly in the case this check exists to find.
+- **Not a whole tax period.** A return covers a month and cannot be cut at a cutover date. A part
+  period against a whole return is short by design and reads as missing sales.
+- **Superseded by an amendment.** A later period's amendment restates an earlier one; reconciling
+  to the original produces a wrong answer with a flawless audit trail behind it — the worst
+  combination available.
+- **The return's own arithmetic failing.** If the tax does not follow from the taxable value at
+  the declared rate, either the transcription or the return is wrong, and reconciling to it would
+  spread that error through every opening figure.
+
+**A slab rate is never inferred from a total.** A hypermarket sells at 0%, 5%, 12% and 18% in one
+basket; an average is right in total, wrong on every line, and wrong in the one way the department
+checks **automatically**, since GST is reconciled rate-wise. The control turned out to be simpler
+and stronger than a flag: **an average is not a rate anything could have been sold at.** A books
+line at 3.1% is proof on its own that a mixed basket was collapsed, so any rate off the statutory
+slabs is refused — and the slab list is per-tenant, because rates move at every budget and this is
+not written for one shop in one tax regime (OB-05). A test reads the module's **real exports** to
+prove no blended-rate entry point exists; a hand-written list would still pass after somebody
+added one.
+
+GSTR-1 is also checked against GSTR-3B, because **the department reconciles those two by machine**
+and a difference between them is a notice waiting to happen. Where one already exists it is
+reported as **inherited, not created** by this migration.
+
+And the rule with no exception: **a difference against a filed return is a disclosure, not a data
+fix.** Somebody signed that return; quietly adjusting our figures to meet it is not ours to do. It
+goes to the CA in writing before the opening books are signed.
+
+Written in as a fixed `false`: **a return never proves the tax was correctly charged.** Sell at 5%
+what should have been 12% and the books and the return agree exactly, because both record the same
+mistake.
+
+23 tests, two of which were strengthened after they passed for the wrong reason — the rounding
+fixture happened to land on an exact figure, and the absence check scanned a hand-built object
+rather than the module.
+
+Full suite **2,586**.
+
 ## Proving the sales against the bank (7 August 2026)
 
 `packages/migration/src/banking-verification.ts`. The third external check and the hardest of the
@@ -2355,9 +2409,9 @@ tests** against real PostgreSQL 16.13.
   default**, which is the property that had to be settled before the data arrives.
 - **EX-02 is closed (OB-06, 7 August 2026)** — we extract our own data ourselves. What the
   real-data migration now needs is **outside evidence**, not a vendor: bank statements, filed GST
-  returns, supplier statements of account and an authorised physical count. Three of the six
-  checks are built (`count-verification.ts`, `supplier-reconciliation.ts`,
-  `banking-verification.ts`); the rest are in the table under *Next session should start with*.
+  returns, supplier statements of account and an authorised physical count. Four of the six checks
+  are built (`count-verification.ts`, `supplier-reconciliation.ts`, `banking-verification.ts`,
+  `tax-verification.ts`); the rest are in the table under *Next session should start with*.
 - What remains needs the owner or the store: **OB-02** (hosting), the
   **pre-pilot integration gate** (a live AI provider, then UAT-49), **EX-13** (a penetration
   test), and the 55 store activities in
@@ -2394,15 +2448,17 @@ by name in `extraction.ts`, so each row of that table needs code behind it.
 | **Stock** | A physical count of our own shelves | ✅ `count-verification.ts` |
 | **Supplier balances** | The supplier's own statement of account | ✅ `supplier-reconciliation.ts` |
 | **Sales** | The bank statement; the card/UPI settlement file | ✅ `banking-verification.ts` |
-| **Tax** | The GST returns already filed | ⬜ next |
-| **Books** | The accounts the CA prepared | ⬜ |
+| **Tax** | The GST returns already filed | ✅ `tax-verification.ts` |
+| **Books** | The accounts the CA prepared | ⬜ next |
 | **Loyalty points** | A sample of customers confirming their own balance | ⬜ |
 
-**Tax against the filed GST returns is next.** It has a property none of the others has: the
-return is **already filed, dated and signed**, so unlike a report it cannot be adjusted to make a
-total agree — and if the opening books disagree with it, it is the *books* that are wrong, not the
-return. The check runs the other way round from the rest: GSTR-1 and GSTR-3B are the fixed point,
-and the migrated sales and tax must reconcile **to** them.
+**The CA's prepared accounts are next**, and they are the check that ties the other five together:
+the closing balance sheet the CA signed for the last completed year **is** the opening position,
+so the migrated trial balance has to agree with it line by line — and it must still balance
+afterwards. The interesting part is what the accounts contain that no extract will: provisions,
+depreciation, director's drawings and year-end journals that live only in the CA's books and have
+no counterpart anywhere in the old ERP. Migrating without them opens a set of books that does not
+balance, and the difference gets forced into a suspense account nobody ever clears.
 
 **Nothing here needs the ERP vendor, and nothing waits on them.** The letter stays on file
 (`docs/discovery/legacy-data-access.md`); if they ever answer it is a bonus, not a dependency.
