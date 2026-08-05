@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "SRE Retail OS — a hybrid offline-first + cloud retail operating system for SRE Hyper Market. Built from the Final Master Roadmap & Developer Requirements v2.0.",
+  "description": "SRE Retail OS \u2014 a hybrid offline-first + cloud retail operating system for SRE Hyper Market. Built from the Final Master Roadmap & Developer Requirements v2.0.",
   "packageManager": "pnpm@10.33.0",
   "engines": {
     "node": ">=22"
@@ -22,6 +22,7 @@
     "sbom": "node scripts/sbom.mjs",
     "db:backup": "node scripts/backup.mjs",
     "db:restore": "node scripts/restore.mjs",
+    "extract:check": "node --experimental-strip-types scripts/extract-check.mts",
     "test:integration": "vitest run tests/integration"
   },
   "devDependencies": {
