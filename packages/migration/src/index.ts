@@ -122,6 +122,13 @@ export {
 } from './books-verification';
 
 export {
+  buildVerificationReport, signVerificationReport, renderVerificationReport, looksLikeNoReason,
+  type DomainVerdict, type DomainFinding, type Acceptance, type ReportRefusal,
+  type Signature, type VerificationReport, type BuildResult,
+  type SignRefusal as ReportSignRefusal, type SignResult as ReportSignResult,
+} from './verification-report';
+
+export {
   planLoyaltySample, assessLoyaltyVerification,
   type LoyaltyBalance, type ConfirmationMethod, type CustomerConfirmation, type SampleSource,
   type SampleRefusal, type SampleLine, type LoyaltySamplePlan, type SamplePlanResult,

@@ -1709,6 +1709,52 @@ year and every customer confirms the wrong figure cheerfully.
 
 ---
 
+## The page the owner and the CA sign (7 August 2026)
+
+`packages/migration/src/verification-report.ts`. Six checks each produce a verdict and a sentence
+of advice. Nobody should have to read six outputs — this gathers them into **one page, in the
+language of the runbook**, and a worked example is in `docs/evidence/example-verification-report.md`
+so the owner can see the real thing before it matters.
+
+Which makes it **the most dangerous file in the migration**, because a report is what people
+believe: nobody re-derives a figure from the modules once a page exists with a signature on it. So
+the refusals here are about the document rather than the arithmetic.
+
+- **It cannot be produced from some of the domains.** Render four of twelve and you get a page that
+  looks complete — every heading filled, every figure right — and covers a third of the business.
+  The missing eight are missing in the only way nobody checks: they are not on the page to be
+  looked at. Exactly the failure `completeness.ts` refuses in a truncated export, refused the same
+  way.
+- **An unproved domain is a row in the same table, in the same type** — not a footnote, not an
+  appendix, not silence (P-08). A report listing only what passed is a report that hides its gaps.
+- **A proved domain that states no limit is refused.** Every one of these checks has a real limit;
+  a blank does not mean there is none, it means nobody wrote it down — and whoever signs then reads
+  the evidence as covering more than it does.
+- **Each exception is accepted one at a time, by name, by the owner, with a reason.** A single tick
+  against *"I accept the exceptions above"* accepts things nobody read. A reason of *"approved"* or
+  *"as discussed"* is refused, the same way `cutover.ts` refuses an explanation that explains
+  nothing — in two years that sentence is the only record that the owner understood what was being
+  carried.
+- **Whoever ran the extraction can neither prepare nor sign it**, and signatures accumulate rather
+  than being replaced: a signature belongs to the figures that were on the page when it was given.
+
+Four faults found by **reading the rendered page as the owner would**, none of which the assertions
+caught — the tests checked that substrings were present, which is not the same as the page being
+readable:
+
+- Seven of twelve rows showed a dash, because most domains are not a rupee total. It read as a
+  broken report rather than an honest one. Findings now carry a `figureLabel` — *"41,200
+  products"*, *"8,940 customers"*.
+- Only **one** witness was printed per domain. `ledgers` is checked against the bank, the CA's
+  accounts *and* the filed returns; showing one of three understates the evidence behind a figure
+  somebody is about to sign for.
+- The footer printed raw identifiers — `filed_gst_return`, `ca_prepared_accounts`. The reader is
+  not reading identifiers.
+- Nothing required a limit to be stated at all, which is how the `provesX: false` discipline would
+  have quietly failed to reach the only document anybody outside the codebase ever sees.
+
+25 tests. Full suite **2,673**.
+
 ## OB-06 verification gate PASSED — every figure has a witness (7 August 2026)
 
 `tests/integration/every-figure-has-a-witness.test.ts`, **16 assertions, real PostgreSQL 16.13,
@@ -2628,11 +2674,15 @@ portal, statements of account from every supplier, the CA's signed accounts with
 journal-only balances, and an authorised physical count. Each has a check waiting for it, and each
 check refuses to run on an assumption in place of the document.
 
-The honest next piece of build work, when the owner wants it, is **the owner-facing verification
-report** — one page per domain saying what the figure is, what proved it, and what could not be
-proved, in the language of the runbook rather than of the modules. Every module already produces
-its own `ownerAction` sentence; nothing yet gathers them into the single document the owner and
-the CA would sign against.
+**The owner-facing verification report is built too** (`verification-report.ts`), with a worked
+example at `docs/evidence/example-verification-report.md`. There is now nothing outstanding in the
+verification path at all: the checks, the gate that proves they cover everything, and the page that
+gets signed.
+
+The next piece of build work, when the owner wants it, is **the runbook for the migration weekend
+itself** — who does what, in what order, on the days around cutover, with the rollback rehearsed
+rather than described. `cutover.ts` already refuses GO on a rollback that was designed and never
+performed; nothing yet writes down the hours.
 
 **Nothing here needs the ERP vendor, and nothing waits on them.** The letter stays on file
 (`docs/discovery/legacy-data-access.md`); if they ever answer it is a bonus, not a dependency.

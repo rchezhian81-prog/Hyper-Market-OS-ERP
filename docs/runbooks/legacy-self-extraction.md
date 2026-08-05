@@ -377,6 +377,28 @@ Three things, and none of them involves the vendor:
 
 ## What to check when it is done
 
+**There is one page for this, and it is the only thing you need to read.** The software produces
+*"Opening figures — what proved each one"*: every figure going into the new books, what proved it,
+what that proof does **not** cover, and what still needs doing. A worked example is in
+`../evidence/example-verification-report.md` — look at it now, before it matters.
+
+Four things about that page are deliberate, and worth knowing so you can rely on them:
+
+- **It cannot be produced covering only part of the business.** A page over four of the twelve
+  areas would look completely finished. The software will not render one until all twelve are on
+  it.
+- **What could not be proved is in the same table, in the same size type.** Not a footnote.
+- **What each proof does not cover is printed in the body**, under a heading that says *"Read this
+  part."* Every one of these checks has a real limit.
+- **You accept exceptions one at a time, by name, in your own words.** There is no single tick that
+  accepts everything, and *"approved"* or *"as discussed"* is refused as a reason. In two years
+  that sentence is the only record that you understood what was being carried forward.
+
+Whoever ran the extraction cannot prepare or sign that page. Somebody who did not do the work signs
+that the work is right.
+
+Then, in the store:
+
 - **Ask what the stock figure was checked against.** The right answer is *"a physical count."*
   If the answer is another report from the old system, it has not been checked.
 - **Ask which suppliers confirmed their balance, and which never replied.** The second list should
