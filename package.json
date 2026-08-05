@@ -17,13 +17,14 @@
     "db:migrate": "node scripts/migrate.mjs",
     "build:pos": "node scripts/build-app.mjs pos",
     "build:owner": "node scripts/build-app.mjs owner-app",
-    "check": "pnpm run typecheck && pnpm run lint && pnpm run secret-scan && pnpm run test",
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run secret-scan && pnpm run test && pnpm run test:perf",
     "prepare": "git config core.hooksPath .githooks || true",
     "sbom": "node scripts/sbom.mjs",
     "db:backup": "node scripts/backup.mjs",
     "db:restore": "node scripts/restore.mjs",
     "extract:check": "node --experimental-strip-types scripts/extract-check.mts",
-    "test:integration": "vitest run tests/integration"
+    "test:integration": "vitest run tests/integration",
+    "test:perf": "vitest run --config vitest.perf.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",

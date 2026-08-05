@@ -9,13 +9,18 @@
 //   1. **Check the configuration.** If anything is missing, a placeholder, or too short to be a
 //      secret, print every problem at once and **exit non-zero**. Nothing else runs. A service
 //      that starts with a default signing key is a service running in production with one.
-//   2. **Build the surface.** Thirteen services on one router. A route that breaks the kernel's
+//   2. **Open the event store.** Before the surface, because the surface is built around it —
+//      the thirteen services take their persistence as a port, and this is where the real one
+//      is supplied (`adapters.ts`).
+//   3. **Build the surface.** Thirteen services on one router. A route that breaks the kernel's
 //      conventions fails here, at boot, not on the request that finds it.
-//   3. **Listen**, and answer `/livez` and `/readyz` differently — a database it cannot reach
+//   4. **Listen**, and answer `/livez` and `/readyz` differently — a database it cannot reach
 //      means take me out of rotation, not restart me.
-//   4. **On SIGTERM, drain.** In-flight requests finish before the process goes.
+//   5. **On SIGTERM, drain.** In-flight requests finish before the process goes.
 
 import { Client } from 'pg';
+import { SqlEventStore } from '../../../packages/persistence/src/event-store';
+import { pgClient } from '../../../packages/persistence/src/pg-client';
 import {
   buildRouter, loadConfig, startHttpServer, CLOUD_API_CONFIG, MemoryIdempotencyStore,
   type Principal, type Route,
@@ -35,6 +40,8 @@ import { ordersRoutes } from '../../orders/src/index';
 import { fulfilmentRoutes } from '../../fulfilment/src/index';
 import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
+import { catalogueAdapter, posAdapter, inventoryAdapter } from './adapters';
+import type { EventStore } from '../../../packages/persistence/src/event-store';
 
 const now = (): string => new Date().toISOString();
 
@@ -48,32 +55,39 @@ const now = (): string => new Date().toISOString();
 export function buildSurface(deps: {
   readonly signingKey: string;
   readonly migrationTargetKind: TargetKind;
+  /**
+   * Where the events go. Omitted, the surface still assembles and answers — which is what the
+   * route-shape tests need — but nothing persists. Supplying it is what turns the API from a
+   * shell into a system, and `main()` always does.
+   */
+  readonly store?: EventStore;
 }): readonly Route[] {
   const signer = hmacSigner(deps.signingKey);
   const empty = <T>(v: T) => () => v;
+  const store = deps.store;
 
   return [
     ...identityRoutes({
       roles: empty([]), permissionsOf: empty([]), recordGrant: () => {},
       branches: empty([]), now,
     }),
-    ...catalogueRoutes({
+    ...catalogueRoutes(store === undefined ? {
       signer, currentPack: empty(undefined), storePack: () => {},
       buildSnapshot: (tenantId) => ({ tenantId, version: 1, builtAt: now(), products: [], barcodes: [] }),
       approvalsSince: empty([]), now,
-    }),
+    } : catalogueAdapter({ store, signer, now })),
     ...purchaseRoutes({
       matchLines: empty([]), recordMatch: () => {}, applyBankChange: () => {},
       openCommitments: empty({ count: 0, valueMinor: 0 }), now,
     }),
-    ...inventoryRoutes({
+    ...inventoryRoutes(store === undefined ? {
       movements: empty([]), appendMovement: () => {}, known: empty(new Set<string>()), now,
-    }),
-    ...posRoutes({
+    } : inventoryAdapter({ store, now })),
+    ...posRoutes(store === undefined ? {
       catalogue: empty(new Map()), currentPackVersion: empty(1),
       receiptNumbers: empty(new Map()), bankedSaleIds: empty(new Set<string>()),
       bankSale: () => {}, recordExceptions: () => {}, openExceptions: empty([]), now,
-    }),
+    } : posAdapter({ store, now })),
     ...customerRoutes({
       consentRecords: empty([]), appendConsent: () => {}, pointsBalance: empty(undefined), now,
     }),
@@ -118,20 +132,29 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
   }
   const settings = config.value!;
 
-  // 2 — The surface. A route that breaks a convention fails here, not on the request that finds it.
+  // 2 — Persistence, before the surface, because the surface is built around it.
+  const db = new Client({ connectionString: settings['DATABASE_URL']! });
+  await db.connect();
+  const store = new SqlEventStore(pgClient(db));
+
+  // 3 — The surface. A route that breaks a convention fails here, not on the request that finds it.
+  //
+  // Built exactly once. The first version of this built it twice — once to check the shape at boot
+  // and again with the store behind it — and then served `live.router!` without checking `live.ok`.
+  // Two surfaces that are asserted to be identical is one surface and one assumption, and the
+  // assumption is the one holding the non-null.
   const built = buildRouter(buildSurface({
     signingKey: settings['PACK_SIGNING_KEY']!,
     migrationTargetKind: settings['MIGRATION_TARGET_KIND'] as TargetKind,
+    store,
   }));
   if (!built.ok) {
     process.stderr.write(`\nthe API surface is malformed and this service will not start:\n${
       built.refusals.map((r) => `  • ${r.detail}`).join('\n')}\n\n`);
+    await db.end();
     process.exitCode = 78;
     return;
   }
-
-  const db = new Client({ connectionString: settings['DATABASE_URL']! });
-  await db.connect();
 
   const server = startHttpServer({
     router: built.router!,
@@ -149,7 +172,7 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
 
   process.stdout.write(`sre-api listening on ${settings['PORT']}, ${built.router!.list().length} routes\n`);
 
-  // 4 — Drain on SIGTERM. Killing in-flight work is a sale that reached the process and not the
+  // 5 — Drain on SIGTERM. Killing in-flight work is a sale that reached the process and not the
   // database, while the till believes it was delivered.
   const shutdown = (signal: string) => {
     void (async () => {
