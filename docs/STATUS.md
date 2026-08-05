@@ -2591,6 +2591,49 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## The till screen is now usable, not just laid out (5 August 2026)
+
+The layout was already right — big total, line list, one Tender button, permanent sync badge. What
+it did wrong was **ask its questions through the browser's own pop-up boxes**.
+
+That sounds cosmetic. It is not, for three reasons:
+
+- A browser pop-up is a small text box with the phone keyboard over it. Unusable with a queue
+  waiting, impossible with gloves.
+- **Kiosk browsers block them entirely.** On a locked-down till the button would have done nothing
+  at all, and nobody would know why.
+- They cannot be styled, so the one screen that has to be readable across a counter was not.
+
+Now every question is a proper on-screen panel with big buttons: a keypad for quantity and for cash
+received, and **preset buttons for a void reason** rather than free typing — a typed reason is one
+nobody can ever report on.
+
+**Change due is worked out as the cashier types it.** Miscounted change is the most common till
+mistake there is, and nobody should be doing that sum in their head at speed.
+
+**The "do not take payment" message does not disappear.** It is full width, it stays until somebody
+taps to say they have read it, and it uses the exact words the system already had rather than new
+ones. A message that fades after four seconds is a message that was missed by the person serving a
+customer.
+
+**The scanner cannot type into the wrong box**, because there is no box. A shop scanner is really a
+very fast keyboard, and if it types into whatever was last tapped — at a till, that is the quantity
+field — you get a sale of nine hundred million units. The screen listens for the scanner directly.
+
+**Tamil is complete**, not partial. A half-translated screen reads as unfinished exactly where
+somebody is depending on it.
+
+All of it is locked down by tests, because every one of these is easy to undo in a hurry and
+invisible in a code review.
+
+**Tests:** 3,114 automated plus 31 performance, all green.
+
+**What is left on this screen:** card and UPI payment, returns, hold-and-recall a basket, cash in
+and out of the drawer, opening and closing the till — and then the whole thing on a real touchscreen
+with a real scanner and a stopwatch, which is the only test that counts.
+
+---
+
 ## Phase 1 started: the till's screen now reaches the till's disk (5 August 2026)
 
 Not just a plan — the first item on it is built.
