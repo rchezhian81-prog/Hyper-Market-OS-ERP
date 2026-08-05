@@ -2591,6 +2591,38 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## Phase 1 started: the till's screen now reaches the till's disk (5 August 2026)
+
+Not just a plan — the first item on it is built.
+
+**A decision worth understanding, because it changes what we buy.** A browser cannot force a sale
+onto a disk; a small program on the till has to do it. The question was **whose disk** — one shared
+box in the back office, or one per till.
+
+**Chosen: one per till** (`docs/adr/ADR-0004-the-disk-lives-on-the-lane.md`). With a shared box, if
+that box is off, restarting, out of space, or behind a switch somebody unplugged while looking for a
+socket, **every till stops taking money at the same moment**. That is not a slow day; that is a
+closed shop with customers holding baskets — and it happens on exactly the bad day this whole design
+exists for. Each till owning its own disk depends on nothing outside the till it stands in.
+
+The cost is a little redundancy: four tills keep four small logs. **Redundant hardware is cheap. A
+shop that cannot take money is not.**
+
+**The socket between screen and disk listens only to the till itself** — not to the shop network. If
+it listened to the network, any device on the shop wifi, including a customer's phone, could write
+sales into the till's records.
+
+**Found while building it:** the two halves disagreed about a field name, so every real sale was
+refused with "could not read the sale". A till that cannot take money because two files disagree,
+and no test on either side would have shown it — only driving the whole thing did.
+
+**What the owner should check.** When we test in the store: **switch off the back-office box in the
+middle of trading. Every till must keep selling.** That is the test this decision exists for.
+
+**Tests:** 3,102 automated plus 31 performance, all green.
+
+---
+
 ## The honest assessment, and the plan to close every gap (5 August 2026)
 
 The owner asked for three things: find out what data we need, say where the project really stands,
