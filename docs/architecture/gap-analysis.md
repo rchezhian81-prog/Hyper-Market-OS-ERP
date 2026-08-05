@@ -25,8 +25,8 @@ project.
 | `packages/` — domain rules | 45,179 | **Genuinely strong.** The product's value lives here |
 | `services/` — the thirteen APIs | 5,556 | Built, persisting, authenticated, audited |
 | `edge/` — the store box | 1,144 | Now runs, writes durably, syncs. Built **today** |
-| `apps/` — everything a person touches | 6,100 | **Five of six now have real screens.** Only the customer app has none |
-| Tests | 3,372 + 31 | Unusually thorough on rules; thin on assembly until today |
+| `apps/` — everything a person touches | 7,500 | **All six have real screens.** The gap that dominated this document is closed |
+| Tests | 3,438 + 31 | Unusually thorough on rules; thin on assembly until today |
 
 **2,452 lines of app code for six applications** is the number that matters. For comparison, the POS
 alone — one screen a cashier uses eight hours a day — is 1,070 of those lines, and none of it draws
@@ -36,7 +36,11 @@ anything.
 
 ## The three gaps that matter
 
-### Gap 1 — There is no user interface. This is the largest by far.
+### Gap 1 — There is no user interface. ✅ **CLOSED.**
+
+*This section is kept as written, because the correction is the point: this was the largest gap in
+the project and it is now closed. All six applications have real, tested screens. What follows
+below is what it said when it was true.*
 
 Fourteen screen specifications exist in `docs/design/screens/` and they are good: interaction
 budgets, offline states, the ≤3-tap rule, what a new cashier must manage unsupervised in thirty
@@ -49,7 +53,7 @@ bundled against the **real tested session**, not a mock. `apps/owner-app/web/` h
 What the POS shell lacked was a way to reach a disk — built today, see below. What it still lacks is
 tender beyond cash, returns, suspend/recall, cash movements, till open/close, and Tamil.
 
-`web-erp` now has a shell too — approvals, receiving, counting and day close — and `owner-app`'s shell has been rebuilt against a real tested session rather than a sample payload. `picker-app` and `delivery-app` now have shells too, built on their tested sessions. Only `customer-app` has **no web files at all**.
+`web-erp` now has a shell too — approvals, receiving, counting and day close — and `owner-app`'s shell has been rebuilt against a real tested session rather than a sample payload. `picker-app`, `delivery-app` and `customer-app` now have shells too, built on their tested sessions. **Every application in the repository layout now has a screen.**
 
 What this means concretely: today nobody can ring up a sale, receive a delivery, count stock, close
 a day, approve a price change, pick an order, or look at a dashboard. The rules that would govern
@@ -103,7 +107,7 @@ Three columns, and they are different questions. **Rules** = is the logic writte
 | M06–M07 Purchase, supplier | ✅ | ◐ | ◐ | Three-way match real; **goods receiving is now a screen**, and a delivery with no purchase order is flagged unmatched rather than filed quietly. **Nothing captures an invoice**, so the match still has no lines |
 | M08–M11 Inventory, warehouse, quality | ✅ | ✅ | ◐ | Movements and snapshots real; **blind counting is now a screen** — and a count the screen cannot value is refused rather than priced at zero. No expiry or recall screen |
 | M12–M15 POS, returns, cash office | ✅ | ✅ | ✅ | The strongest area. Durable commit real, and the screen reaches the till's own disk over loopback (ADR-0004). Cash, card, UPI, hold/recall, cash to safe and a blind till close are in; **day close now has a manager screen that reports a list rather than a refusal**. Receipt-based returns still have no screen |
-| M16–M18 Customer, loyalty, storefront | ✅ | ✅ | ❌ | Consent real; loyalty **accrual not wired** — points read as *not known* |
+| M16–M18 Customer, loyalty, storefront | ✅ | ✅ | ◐ | **The customer app is now a screen**: search, repeat order, basket review, slots, payment, and a privacy centre where withdrawing consent is the same one tap as giving it (DPDP s.6(6)). Loyalty **accrual still not wired** — points read as *not known* |
 | M19–M20 Picking, delivery | ✅ | ✅ | ✅ | **Both handhelds are now screens**, and both now actually queue their work — until today neither the picker's scans nor the driver's COD reached anything that survived the app closing. **No dispatch list exists**, so runs still report unassigned until M20 route planning is built |
 | M21–M24 Finance, Tally | ✅ | ◐ | ❌ | Journals and period close real. **No control totals can be built** — deliberate, and it means no month can close yet |
 | M25–M28 Reporting, analytics | ✅ | ◐ | ❌ | Two real figures. Everything else needs producers |
@@ -141,9 +145,9 @@ them this project already has.
 | --- | :---: | --- |
 | **It never loses a sale** | ✅ | Durable commit, idempotent sync, append-only ledger, visible dead-letter. Now true on the handhelds too — a picker's wave and a driver's cash survive the device |
 | **It tells the truth when it does not know** | ✅ | Unusually strong. Not-known is a first-class answer throughout |
-| **A new cashier is productive in 30 minutes** | ❌ | Specified, not built. This is the one customers actually judge |
+| **A new cashier is productive in 30 minutes** | ◐ | Built and guarded on all six surfaces. **Never yet put in front of a person with a stopwatch**, which is the only test that settles it |
 | **It is fast at the scale of a real shop** | ◐ | Bounded reads proved with real numbers; **never run against 20,000 real SKUs** |
-| **It is legal on day one** | ◐ | Card handling and audit yes. **E-invoicing, HSN and FSSAI records are not built** |
+| **It is legal on day one** | ◐ | Card handling, audit and now DPDP consent/erasure yes. **E-invoicing, HSN and FSSAI records are not built** |
 
 ---
 
@@ -186,6 +190,12 @@ built and waiting; none has met a real export.
 
 **3. Then the other five surfaces**, in this order: store manager → owner → receiving/purchase →
 picker/delivery → customer app. Ordered by how much of the shop stops without them.
+✅ **All six are built.**
+✅ *The customer app is built* — the only public surface, so WCAG 2.2 AA is enforced statically and
+nothing loads from another host. Its centre of gravity is the privacy centre: withdrawing consent
+is the same single tap as giving it, which is section 6(6) of the DPDP Act and the commonest dark
+pattern in consumer software. An erasure says on the button, before it is pressed, that tax
+records survive it.
 ✅ *The picker handheld and the driver's phone are built* — and building them found the worst
 assembly gap yet: **neither queued anything**. Both session docstrings said the scans, the proof
 and the COD were queued for sync, and every one of them lived only in memory on the device. On the

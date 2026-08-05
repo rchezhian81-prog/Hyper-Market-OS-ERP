@@ -6,3 +6,4 @@
 // until the shop has it.** On a phone with no signal the basket is prepared and nothing else.
 
 export * from './shopping-session';
+export * from './privacy-centre';

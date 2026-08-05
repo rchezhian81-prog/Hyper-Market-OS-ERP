@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 5 August 2026 (session: five screens, and the discovery that the picker's scans and the driver's cash were queueing nowhere at all)
+Last updated: 5 August 2026 (session: all six screens built — and the biggest gap in the project, "there is no user interface", is now closed)
 
 ---
 
@@ -2591,6 +2591,77 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## The customer's app — and making it as easy to leave as to arrive (5 August 2026)
+
+The last screen. Every application in this project now has one.
+
+### The part I want you to read
+
+This is the only screen a **stranger** uses. Everybody else — cashier, manager, picker, driver,
+you — works for the shop and can be shown how it works. A customer cannot. And it is the one screen
+where the money points the wrong way: it is always cheaper to make leaving harder than arriving.
+
+India's data protection law (the DPDP Act 2023) says something very specific about this. Section
+6(6): **turning off permission must be as easy as turning it on.**
+
+That rule is almost never broken deliberately. It gets broken one sensible-looking decision at a
+time. Saying yes is a switch when somebody signs up. Saying no becomes a settings page. Then a "are
+you sure?". Then a "tell us why you're leaving". Then an email to support. Nobody ever sat down and
+decided to make it hard — it just costs nothing to add a step on the way out, and it costs sales to
+add one on the way in.
+
+So on our screen there is **one switch per thing**, and it is the same switch both ways. One tap on,
+one tap off. No confirmation, no "are you sure", no "here's what you'll miss".
+
+And it is not left to good intentions: there is an automatic check that **counts the buttons** in
+that part of the screen and fails the build if a second one ever appears.
+
+### "Delete my information" says what it can and cannot do — before you press it
+
+A customer can ask us, from their own phone with nobody contacted: show me what you hold, correct
+it, send me a copy, or delete it.
+
+Deleting is the honest one. **We cannot delete everything, and the law is why** — sales invoices
+and GST records have to be kept for years. So the button itself says so, before it is pressed. Not
+afterwards in a letter.
+
+And tapping it does not say "deleted". It says we have your request and we must answer by a date.
+Because that is what actually happened: the shop still has to check the request really came from
+that person before doing anything, and a phone that checked itself would be no check at all.
+
+### The other important rule, and it is the opposite of the till
+
+At the till we save the sale on the lane first and send it to the cloud later, because the money is
+already in the drawer and the customer has walked out.
+
+On a customer's phone it is the exact reverse. **Nothing has happened yet.** No money has moved, no
+goods have left, and the shop has never heard of that basket. So if their signal drops, the app says
+— in these words — *your basket is ready but has NOT been sent, and nothing has been charged.*
+
+It never says "order placed" over something that never left the phone. There is an automatic check
+that the words "order placed" do not exist anywhere in that screen's code.
+
+### Some smaller things that matter
+
+- **The basket is saved on their phone**, so losing signal on a bus is annoying and nothing worse.
+  Prices are not — if we republish the price list while somebody is deciding, paying is refused and
+  they are asked to look again, rather than being charged a number they never saw.
+- **A "buy again" that cannot get everything says which item it could not get.** Quietly dropping
+  the milk from somebody's weekly shop is why people stop using that button.
+- **Nothing loads from anywhere else** — no fonts, no images, no outside scripts. That is partly
+  for a slow phone, and partly because a font loaded from another company is that company being
+  told who shops with us.
+- Card numbers are refused outright if one is ever put where a payment token belongs. Refused, not
+  hidden — hiding it means we held it first.
+
+**Tests:** 3,438 automated plus 31 performance, all green.
+
+**What is left:** logging in needs the identity provider you have not chosen yet (OB-02), so there
+is no OTP screen. And this needs a real stranger with a real slow phone, which is the only test that
+counts.
+
+---
+
 ## The picker's handheld and the driver's phone — and work that was going nowhere (5 August 2026)
 
 Two screens built. But the important part of this session is not the screens.
@@ -3617,16 +3688,17 @@ insist on when somebody eventually asks for it to be switched off.
 
 ## Next session should start with
 
-**The store box has to start feeding the five screens that now exist.** The manager's screen wants
+**The store box has to start feeding the six screens that now exist.** The manager's screen wants
 exceptions (M15) and tasks (D11/M25); the owner's phone wants its brief pushed to it; the picker's
 handheld wants an assigned wave; the driver's phone wants a planned route (M20 dispatch, which
-nothing does yet). Every one of these has an engine and no producer, so each screen honestly says
-it has nothing — and the manager's day close correctly refuses to close because of it. **That is
-the next piece of work, and it is the one that turns five demonstrations into a system the shop can
-run on.**
+nothing does yet); the customer app wants a published catalogue and its slots. Every one of these
+has an engine and no producer, so each screen honestly says it has nothing — and the manager's day
+close correctly refuses to close because of it. **That is the next piece of work, and it is the one
+that turns six demonstrations into a system the shop can run on.**
 
-After that, per `docs/architecture/build-plan.md`: purchase and receiving, then the customer app —
-the last surface with no screen at all.
+After that, per `docs/architecture/build-plan.md`: purchase and receiving (M06/M07 — nothing
+captures a supplier invoice yet, so the three-way match still has no lines), then the compliance
+build (HSN, e-invoicing if it applies, FSSAI records, legal-metrology stamping dates).
 
 **Then the owner's decisions.** The code is complete as far as it can go without them: all thirteen
 services persist, token verification is done, no folder in the repository layout is empty, the

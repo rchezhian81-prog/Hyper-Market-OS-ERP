@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Hyper Market — Shop</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      Customer app (docs/design/screens/customer-app.md). The only PUBLIC surface in this
+      product, so WCAG 2.2 AA is a requirement and not an aspiration (NFR-07): real
+      headings, real buttons, real labels, visible focus, and every state announced in
+      words rather than by colour.
+
+      Built for a low-bandwidth phone — no fonts, no images, no framework, one small
+      stylesheet — because a first-time shopper on a slow connection is exactly who this
+      has to work for.
+    -->
+    <style>
+      :root {
+        --bg: #0f172a; --panel: #1e293b; --ink: #f8fafc; --muted: #a3b1c6;
+        --good: #22c55e; --warn: #f59e0b; --danger: #ef4444; --info: #7dd3fc;
+        --line: #334155;
+        --tap: 48px;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--ink);
+        font: 17px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        padding-bottom: 40px;
+      }
+      /* Skip link — a keyboard and screen-reader user should not tab through the nav every time. */
+      .skip {
+        position: absolute; left: -9999px; top: 0; background: var(--ink); color: #0f172a;
+        padding: 12px 16px; border-radius: 0 0 8px 0; z-index: 50;
+      }
+      .skip:focus { left: 0; }
+
+      header { padding: 14px 16px; background: var(--panel); }
+      .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .shopname { font-size: 18px; font-weight: 700; }
+      .lang { background: transparent; border: 1px solid var(--line); color: var(--ink); font-size: 14px; min-height: 40px; border-radius: 8px; padding: 0 12px; }
+
+      /* Connection. Ordering needs it, so it is stated in words and never only in colour. */
+      .conn { margin-top: 8px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+      .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--good); flex: none; }
+      .dot.off { background: var(--warn); }
+      #conn-text.off { color: var(--warn); font-weight: 600; }
+
+      .notice { padding: 10px 16px; margin: 0; font-size: 15px; }
+      .notice.sample { background: var(--warn); color: #451a03; font-weight: 600; }
+      .notice.problem { background: var(--danger); color: #fff; }
+      .notice[hidden] { display: none; }
+
+      nav { display: flex; gap: 8px; padding: 8px 16px; background: var(--panel); overflow-x: auto; }
+      nav button {
+        min-height: var(--tap); padding: 0 16px; border: 0; border-radius: 10px;
+        background: var(--line); color: var(--ink); font-size: 16px; font-weight: 600; white-space: nowrap;
+      }
+      nav button[aria-current='page'] { background: var(--ink); color: #0f172a; }
+
+      main { padding: 16px; display: grid; gap: 16px; }
+      section[hidden] { display: none; }
+      h1 { font-size: 21px; margin: 0 0 4px; }
+      h2 { font-size: 17px; margin: 16px 0 8px; }
+      p.lead { margin: 0 0 12px; color: var(--muted); font-size: 15px; }
+
+      /* The basket line the model produced, always visible and always true. */
+      .say { background: var(--panel); border-radius: 12px; padding: 12px 14px; font-size: 16px; }
+      .say.warn { border-left: 5px solid var(--warn); }
+      .say.stop { border-left: 5px solid var(--danger); }
+      .say.done { border-left: 5px solid var(--good); }
+
+      label { display: block; font-size: 15px; color: var(--muted); margin-bottom: 6px; }
+      input[type='search'], input[type='text'] {
+        width: 100%; min-height: var(--tap); background: #0b1220; color: var(--ink);
+        border: 1px solid var(--line); border-radius: 10px; padding: 0 14px; font-size: 17px;
+      }
+
+      .rows { display: grid; gap: 10px; }
+      .row {
+        background: var(--panel); border-radius: 12px; padding: 12px 14px;
+        display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; align-items: center;
+      }
+      .row .name { font-size: 16px; }
+      .row .price { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .row .note { grid-column: 1 / -1; font-size: 14px; color: var(--muted); }
+      .row .note.bad { color: var(--warn); }
+      .qty { display: flex; align-items: center; gap: 8px; }
+      .qty button { min-width: var(--tap); min-height: var(--tap); font-size: 22px; }
+      .qty .n { min-width: 2.5rem; text-align: center; font-size: 18px; font-variant-numeric: tabular-nums; }
+
+      button {
+        min-height: var(--tap); border-radius: 10px; border: 0; font-size: 16px; font-weight: 600;
+        background: var(--line); color: var(--ink);
+      }
+      button.primary { background: var(--good); color: #052e16; font-size: 18px; }
+      button:disabled { opacity: .5; }
+      /* Visible focus everywhere — WCAG 2.2 AA, and the one thing frameworks remove first. */
+      button:focus-visible, input:focus-visible, a:focus-visible, [role='switch']:focus-visible {
+        outline: 3px solid var(--info); outline-offset: 2px;
+      }
+      .wide { width: 100%; }
+      .empty { color: var(--muted); font-size: 15px; }
+
+      /* ── Privacy centre ─────────────────────────────────────────────────── */
+      .consent { background: var(--panel); border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px; }
+      .consent-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; }
+      .consent-row .why { grid-column: 1 / -1; font-size: 14px; color: var(--muted); }
+      /* One switch. Same control on the way in and on the way out — DPDP s.6(6). */
+      .switch {
+        min-width: 84px; min-height: var(--tap); border-radius: 24px; border: 2px solid var(--line);
+        background: #0b1220; color: var(--ink); font-size: 15px; font-weight: 700;
+      }
+      .switch[aria-checked='true'] { background: var(--good); color: #052e16; border-color: var(--good); }
+      .rights { display: grid; gap: 10px; }
+      .rights button { text-align: left; padding: 12px 14px; min-height: var(--tap); }
+      .rights .caveat { display: block; font-size: 14px; font-weight: 400; color: var(--warn); margin-top: 4px; }
+
+      /* The banner. No timer, never colour alone. */
+      .banner {
+        position: fixed; inset: auto 0 0 0; z-index: 30; padding: 16px;
+        background: var(--panel); border-top: 4px solid var(--info); display: grid; gap: 10px;
+      }
+      .banner[hidden] { display: none; }
+      .banner.bad { border-top-color: var(--danger); }
+      .banner.good { border-top-color: var(--good); }
+      .banner strong { font-size: 18px; }
+      .banner p { margin: 0; font-size: 16px; }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to the main content</a>
+
+    <header>
+      <div class="top">
+        <span class="shopname" id="shopname">SRE Hyper Market</span>
+        <button class="lang" id="lang" type="button" aria-label="Language / மொழி">EN / த</button>
+      </div>
+      <!--
+        Ordering and payment need a connection (§31 customer row). Said in words as well
+        as a colour, because this is the one thing that decides whether the next tap
+        will work.
+      -->
+      <p class="conn" id="conn">
+        <span class="dot" id="conn-dot"></span>
+        <span id="conn-text">Online</span>
+      </p>
+    </header>
+
+    <p class="notice sample" id="sample" hidden role="status">Sample shop — these are not real prices.</p>
+    <p class="notice problem" id="storage" hidden role="alert"></p>
+
+    <nav id="tabs" aria-label="Sections">
+      <button id="tab-shop" type="button" aria-current="page">Shop</button>
+      <button id="tab-basket" type="button">Basket</button>
+      <button id="tab-order" type="button">My order</button>
+      <button id="tab-privacy" type="button">My information</button>
+    </nav>
+
+    <main id="main">
+      <!-- Shop: search, repeat a past basket, add to basket. -->
+      <section id="view-shop">
+        <h1 id="shop-title">Shop</h1>
+        <label for="search" id="search-label">Search for something</label>
+        <input id="search" type="search" autocomplete="off" enterkeyhint="search" />
+        <div class="rows" id="results"></div>
+        <p class="empty" id="results-empty" hidden>—</p>
+
+        <h2 id="repeat-title">Buy again</h2>
+        <div class="rows" id="lists"></div>
+        <p class="empty" id="lists-empty" hidden>—</p>
+      </section>
+
+      <!-- Basket: review against the live catalogue before anything is paid for. -->
+      <section id="view-basket" hidden>
+        <h1 id="basket-title">Your basket</h1>
+        <p class="say" id="basket-say">—</p>
+        <div class="rows" id="basket-lines"></div>
+        <button id="review" class="primary wide" type="button">Check my basket</button>
+        <div id="problems" hidden>
+          <h2 id="problems-title">Some things have changed</h2>
+          <div class="rows" id="problem-lines"></div>
+          <button id="accept" class="wide" type="button">Take what you have</button>
+        </div>
+        <h2 id="slot-title">When would you like it?</h2>
+        <div class="rows" id="slots"></div>
+        <button id="pay" class="primary wide" type="button">Pay and place the order</button>
+      </section>
+
+      <!-- Order: what actually happened. Never a guess. -->
+      <section id="view-order" hidden>
+        <h1 id="order-title">My order</h1>
+        <p class="say" id="order-say">—</p>
+      </section>
+
+      <!--
+        Privacy centre. Consent is one switch per purpose and the SAME switch turns it
+        off — section 6(6) of the DPDP Act requires withdrawing to be as easy as giving,
+        and the way that rule gets broken is never on purpose.
+      -->
+      <section id="view-privacy" hidden>
+        <h1 id="privacy-title">My information</h1>
+        <p class="lead" id="privacy-lead">You decide what we may do with your information. You can change any of this at any time, in one tap.</p>
+        <div class="consent" id="consent"></div>
+
+        <h2 id="rights-title">Ask us about your information</h2>
+        <p class="lead" id="rights-lead">You do not need to phone or email anybody. Tap one and we will answer.</p>
+        <div class="rights" id="rights"></div>
+      </section>
+    </main>
+
+    <!-- The message that must not be missed. No timer. -->
+    <div class="banner" id="banner" hidden role="status" aria-live="polite">
+      <strong id="banner-title">—</strong>
+      <p id="banner-text"></p>
+      <button id="banner-ok" type="button">OK</button>
+    </div>
+
+    <script type="module" src="./customer-app.bundle.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
