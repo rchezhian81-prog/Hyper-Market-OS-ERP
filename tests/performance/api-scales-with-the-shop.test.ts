@@ -3,7 +3,9 @@ import { InMemoryEventStore } from '../../packages/persistence/src/event-store';
 import type { EventStore, PersistedEvent } from '../../packages/persistence/src/event-store';
 import { makeEvent } from '../../packages/contracts/src/event';
 import {
-  posAdapter, inventoryAdapter, reportingAdapter, customerAdapter, STREAM,
+  posAdapter, inventoryAdapter, reportingAdapter, customerAdapter, purchaseAdapter,
+  financeAdapter, ordersAdapter, fulfilmentAdapter, platformAdapter, migrationAdapter,
+  aiAdapter, identityAdapter, STREAM,
 } from '../../services/api/src/adapters';
 
 /**
@@ -33,16 +35,29 @@ import {
 const TENANT = '11111111-1111-4111-8111-111111111111';
 const NOW = '2026-08-05T12:00:00Z';
 
-/** A store holding `n` sales and `n` movements, as if the shop had been trading a while. */
+/**
+ * A store holding `n` sales and `n` movements, as if the shop had been trading a while.
+ *
+ * Sales are **spread across days**, ~200 apiece, which is what a shop does. The first version put
+ * every one of them on today, and the bounded-read sweep below duly reported the dashboard reading
+ * ten thousand rows — the fixture's fault, not the adapter's, and worth the detour: a fixture that
+ * compresses a year into one day makes any per-day bound look like no bound at all.
+ */
 async function shopWithHistory(n: number): Promise<InMemoryEventStore> {
   const store = new InMemoryEventStore();
+  const dayOf = (i: number): string => {
+    const at = new Date('2026-01-01T10:00:00.000Z');
+    at.setUTCDate(at.getUTCDate() + Math.floor(i / 200));
+    return at.toISOString();
+  };
   for (let i = 0; i < n; i += 1) {
+    const at = dayOf(i);
     await store.append(TENANT, STREAM.sales, makeEvent({
-      id: `sale-${i}`, type: 'SaleCommitted', occurredAt: NOW,
+      id: `sale-${i}`, type: 'SaleCommitted', occurredAt: at,
       idempotencyKey: `sale-${TENANT}-S-${i}`, source: 'test',
       payload: {
         saleId: `S-${i}`, receiptNumber: `R-${i}`, laneId: 'lane-1', cashierId: 'u-1',
-        tradingDay: '2026-08-05', committedAt: NOW, totalMinor: 10_000, currency: 'INR',
+        tradingDay: at.slice(0, 10), committedAt: at, totalMinor: 10_000, currency: 'INR',
         packVersion: 1, lines: [], tenders: [],
       },
     }));
@@ -259,5 +274,72 @@ describe('the API does not get slower as the shop trades', () => {
     const t20k = await timed(100, () => ask(large));
 
     expect(t20k).toBeLessThan(Math.max(t200, 0.5) * 10);
+  });
+});
+
+const BOUND = 200;
+
+describe('no read grows with history that has nothing to do with it', () => {
+  /**
+   * The systematic version, and the one that will still be here when somebody adds the fourteenth
+   * adapter.
+   *
+   * Every case above was found one at a time, by noticing. This asks the question of the whole
+   * surface at once: seed a shop with **twenty thousand events it does not care about**, then make
+   * each read and count what came back. A read that has nothing to do with that history and still
+   * touches it is narrowing after the fact, which is the fault every entry in this file is an
+   * instance of.
+   *
+   * The number is deliberately generous — bounded, not minimal. The point is the difference
+   * between "a handful" and "everything", not between eleven rows and nine.
+   */
+  it('every adapter read is bounded, against a shop with 20,000 events behind it', async () => {
+    const inner = await shopWithHistory(10_000); // 10k sales AND 10k movements
+    const store = new CountingStore(inner);
+    const now = () => NOW;
+
+    const reads: readonly (readonly [string, () => Promise<unknown>])[] = [
+      ['pos.isBanked', () => Promise.resolve(posAdapter({ store, now }).isBanked(TENANT, 'S-NEW'))],
+      ['pos.saleHoldingReceipt', () => Promise.resolve(posAdapter({ store, now }).saleHoldingReceipt(TENANT, 'R-NEW'))],
+      ['pos.currentPackVersion', () => Promise.resolve(posAdapter({ store, now }).currentPackVersion(TENANT))],
+      ['pos.catalogue', () => Promise.resolve(posAdapter({ store, now }).catalogue(TENANT))],
+      ['pos.openExceptions', () => Promise.resolve(posAdapter({ store, now }).openExceptions(TENANT))],
+      ['inventory.isKnown', () => Promise.resolve(inventoryAdapter({ store, now }).isKnown(TENANT, 'M-NEW'))],
+      ['catalogue-ish: reporting.figures', () => Promise.resolve(reportingAdapter({ store, now }).figures(TENANT, 'dashboard'))],
+      ['customer.consentRecords', () => Promise.resolve(customerAdapter({ store, now }).consentRecords(TENANT, 'C-1'))],
+      ['customer.pointsBalance', () => Promise.resolve(customerAdapter({ store, now }).pointsBalance(TENANT, 'C-1'))],
+      ['purchase.matchLines', () => Promise.resolve(purchaseAdapter({ store, now }).matchLines(TENANT, 'INV-1'))],
+      ['purchase.openCommitments', () => Promise.resolve(purchaseAdapter({ store, now }).openCommitments(TENANT))],
+      ['finance.periodStates', () => Promise.resolve(financeAdapter({ store, now }).periodStates(TENANT))],
+      ['finance.postersIn', () => Promise.resolve(financeAdapter({ store, now }).postersIn(TENANT, '2026-08'))],
+      ['orders.outstanding', () => Promise.resolve(ordersAdapter({ store, now, holdMinutes: 60 }).outstanding(TENANT, 'L1'))],
+      ['fulfilment.attempts', () => Promise.resolve(fulfilmentAdapter({ store, now }).attempts(TENANT, 'd-ravi', '2026-08-05'))],
+      ['platform.flags', () => Promise.resolve(platformAdapter({ store, now, probes: async () => [] }).flags(TENANT))],
+      ['identity.permissionsOf', () => Promise.resolve(identityAdapter({ store, now, roleCatalogue: [] }).permissionsOf(TENANT, 'u-1'))],
+      ['migration.ownerId', () => Promise.resolve(migrationAdapter({ store, now, targetKind: 'rehearsal', ownerRoleId: 'owner' }).ownerId(TENANT))],
+      ['migration.findings', () => Promise.resolve(migrationAdapter({ store, now, targetKind: 'rehearsal', ownerRoleId: 'owner' }).findings(TENANT))],
+      ['ai.killSwitchOn', () => Promise.resolve(aiAdapter({ store, now }).killSwitchOn(TENANT))],
+      ['ai.enabledAgents', () => Promise.resolve(aiAdapter({ store, now }).enabledAgents(TENANT))],
+      ['ai.budget', () => Promise.resolve(aiAdapter({ store, now }).budget(TENANT))],
+      ['ai.openProposals', () => Promise.resolve(aiAdapter({ store, now }).openProposals(TENANT))],
+    ];
+
+    const overBudget: string[] = [];
+    for (const [name, read] of reads) {
+      store.rowsRead = 0;
+      await read();
+      if (store.rowsRead > BOUND) overBudget.push(`${name} read ${store.rowsRead} rows`);
+    }
+
+    // Named, all at once — one per run would be several rounds of the same discovery.
+    expect(overBudget).toEqual([]);
+  });
+
+  it('tripwire — an UNBOUNDED read of the same store is over the budget', async () => {
+    // Without this the test above would pass just as happily on a store that returned nothing.
+    const store = new CountingStore(await shopWithHistory(10_000));
+    store.rowsRead = 0;
+    await store.readStream(TENANT, STREAM.sales);
+    expect(store.rowsRead).toBeGreaterThan(BOUND);
   });
 });

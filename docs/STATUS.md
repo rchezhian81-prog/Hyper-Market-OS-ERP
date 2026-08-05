@@ -2650,7 +2650,19 @@ out today's. It now reads today. And a customer's marketing consent, asked at th
 somebody waiting, was reading every customer's consent record to find one; each customer now has
 their own record to look in.
 
-**Tests:** 3,010 automated plus 29 performance, all green.
+**Then the same correction everywhere else, and a guard so it stays true.** Deliveries, stock
+reservations and supplier invoices each got their own record to look in, and six places that read a
+whole history to look at its most recent entry now read just that entry. The guard is the part
+worth keeping: it fills a shop with twenty thousand records that have nothing to do with the
+question, asks **every** question the software can answer, and counts how much each one had to read.
+Anything that reads more than a handful is named. It will catch the same mistake in whatever gets
+built next, which is more than any of us noticing would.
+
+It has already earned it — it found a case the one-at-a-time tests missed, and the fault turned out
+to be in the **test data**: it had put a whole year's sales on a single day, which makes a
+per-day limit look like no limit at all.
+
+**Tests:** 3,010 automated plus 31 performance, all green.
 
 **What the owner should check.** Nothing now. But this is the thing to insist on when the pilot
 starts: **if the tills get slower after a few months, that is a bug and not "more data"**, and we

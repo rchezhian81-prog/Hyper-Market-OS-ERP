@@ -54,7 +54,7 @@ export const STREAM = {
   finance: 'finance',
   periods: 'periods',
   /**
-   * Consent is **per customer**, not per tenant — `consentStream(customerId)`.
+   * Consent is **per customer**, not per tenant — `forCustomer(customerId)`.
    *
    * It was one stream for the whole shop, so answering "may we text this customer?" read every
    * consent record the tenant held. At twenty thousand loyalty customers that is a hundred thousand
@@ -100,6 +100,19 @@ async function latest<T>(
   const found = await store.latestOfType(tenantId, stream, type);
   return found === undefined ? undefined : payloadOf<T>(found);
 }
+
+/**
+ * Streams that belong to one thing rather than to the whole shop.
+ *
+ * A stream per aggregate is the shape the store's `(tenant_id, stream, seq)` index was built for,
+ * and getting it wrong is invisible until the shop has been open a year: one stream for every
+ * customer's consent, or every driver's deliveries, means answering a question about *one* of them
+ * reads *all* of them. Consent was the first to be moved; these are the rest.
+ */
+const forCustomer = (customerId: string): string => `${STREAM.consent}-${customerId}`;
+const forDriverRun = (driverId: string, runDate: string): string => `${STREAM.delivery}-${driverId}-${runDate}`;
+const forLocation = (locationId: string): string => `${STREAM.reservations}-${locationId}`;
+const forInvoice = (invoiceId: string): string => `${STREAM.purchase}-invoice-${invoiceId}`;
 
 export function catalogueAdapter(input: {
   readonly store: EventStore;
@@ -233,8 +246,7 @@ export function posAdapter(input: {
     },
 
     openExceptions: async (tenantId) =>
-      (await input.store.readStream(tenantId, STREAM.saleExceptions))
-        .map((e) => payloadOf<SaleException>(e)),
+      allOf<SaleException>(input.store, tenantId, STREAM.saleExceptions, 'SaleExceptionRaised'),
   };
 }
 
@@ -374,10 +386,10 @@ export function purchaseAdapter(input: {
      * an empty line set rather than calling it a match.
      */
     matchLines: async (tenantId, invoiceId) => {
-      const captured = await allOf<{ readonly invoiceId: string; readonly lines: readonly MatchLineOf[] }>(
-        input.store, tenantId, STREAM.purchase, 'PurchaseInvoiceCaptured',
+      const captured = await allOf<{ readonly lines: readonly MatchLineOf[] }>(
+        input.store, tenantId, forInvoice(invoiceId), 'PurchaseInvoiceCaptured',
       );
-      return captured.filter((c) => c.invoiceId === invoiceId).flatMap((c) => c.lines);
+      return captured.flatMap((c) => c.lines);
     },
 
     recordMatch: async (tenantId, invoiceId, r) => {
@@ -520,9 +532,6 @@ export function financeAdapter(input: {
   };
 }
 
-/** One stream per customer. See the note on `STREAM.consent`. */
-const consentStream = (customerId: string): string => `${STREAM.consent}-${customerId}`;
-
 export function customerAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -531,10 +540,10 @@ export function customerAdapter(input: {
     now: input.now,
 
     consentRecords: (tenantId, customerId) =>
-      allOf<ConsentRecord>(input.store, tenantId, consentStream(customerId), 'ConsentRecorded'),
+      allOf<ConsentRecord>(input.store, tenantId, forCustomer(customerId), 'ConsentRecorded'),
 
     appendConsent: async (tenantId, r) => {
-      await input.store.append(tenantId, consentStream(r.customerId), makeEvent({
+      await input.store.append(tenantId, forCustomer(r.customerId), makeEvent({
         id: `consent-${r.customerId}-${r.recordedAt}`,
         type: 'ConsentRecorded',
         occurredAt: r.recordedAt,
@@ -577,15 +586,14 @@ export function ordersAdapter(input: {
 
     /** Held and not yet lapsed. An expired hold is stock on the shelf, not stock spoken for. */
     outstanding: async (tenantId, locationId) => {
-      const held = (await allOf<Reservation>(input.store, tenantId, STREAM.reservations, 'ReservationHeld'))
-        .filter((r) => r.locationId === locationId);
+      const held = await allOf<Reservation>(input.store, tenantId, forLocation(locationId), 'ReservationHeld');
       const lapsed = new Set(expired(held, input.now()).map((r) => r.reservationId));
       return held.filter((r) => !lapsed.has(r.reservationId));
     },
 
     holdReservations: async (tenantId, rs) => {
       for (const r of rs) {
-        await input.store.append(tenantId, STREAM.reservations, makeEvent({
+        await input.store.append(tenantId, forLocation(r.locationId), makeEvent({
           id: `res-${r.reservationId}`,
           type: 'ReservationHeld',
           occurredAt: input.now(),
@@ -606,7 +614,7 @@ export function fulfilmentAdapter(input: {
     now: input.now,
 
     appendAttempt: async (tenantId, a) => {
-      await input.store.append(tenantId, STREAM.delivery, makeEvent({
+      await input.store.append(tenantId, forDriverRun(a.driverId, a.attemptedAt.slice(0, 10)), makeEvent({
         id: `att-${a.attemptId}`,
         type: 'DeliveryAttempted',
         occurredAt: a.attemptedAt,
@@ -616,9 +624,10 @@ export function fulfilmentAdapter(input: {
       }));
     },
 
-    attempts: async (tenantId, driverId, runDate) =>
-      (await allOf<DeliveryAttempt>(input.store, tenantId, STREAM.delivery, 'DeliveryAttempted'))
-        .filter((a) => a.driverId === driverId && a.attemptedAt.slice(0, 10) === runDate),
+    // The run IS the stream. Settling one driver's Tuesday no longer reads every delivery the
+    // shop has ever made — and the two filters that used to do it are now the stream's name.
+    attempts: (tenantId, driverId, runDate) =>
+      allOf<DeliveryAttempt>(input.store, tenantId, forDriverRun(driverId, runDate), 'DeliveryAttempted'),
 
     /**
      * What dispatch gave the driver. Nothing writes it yet (M20 route planning is not on this
@@ -688,6 +697,8 @@ export function platformAdapter(input: {
 
     /** Current flag state, folded forward. The last change to a key wins; the history keeps both. */
     flags: async (tenantId) => {
+      // Every change, deliberately: the current state of *all* flags is genuinely a fold, and the
+      // set of flags a tenant has is small and does not grow with trading.
       const changes = await allOf<FeatureFlagChange>(input.store, tenantId, STREAM.platform, 'FeatureFlagSet');
       const out: Record<string, boolean> = {};
       for (const c of changes) out[c.key] = c.enabled;
@@ -827,10 +838,9 @@ export function migrationAdapter(input: {
      * who that was. A placeholder is a fabricated audit record on a signed document.
      */
     extractionOperator: async (tenantId) => {
-      const runs = await allOf<{ readonly operatorId: string }>(
+      return (await latest<{ readonly operatorId: string }>(
         input.store, tenantId, STREAM.migration, 'ExtractionRun',
-      );
-      return runs[runs.length - 1]?.operatorId;
+      ))?.operatorId;
     },
   };
 }
@@ -850,8 +860,8 @@ export function aiAdapter(input: {
      * switch that defaults off is an agent running because nobody has told it not to.
      */
     killSwitchOn: async (tenantId) => {
-      const set = await allOf<{ readonly on: boolean }>(input.store, tenantId, STREAM.ai, 'AiKillSwitchSet');
-      return set[set.length - 1]?.on ?? true;
+      // One row. This folded every kill-switch change ever made to look at the last one.
+      return (await latest<{ readonly on: boolean }>(input.store, tenantId, STREAM.ai, 'AiKillSwitchSet'))?.on ?? true;
     },
 
     setKillSwitch: async (tenantId, on, by, at) => {
@@ -867,9 +877,11 @@ export function aiAdapter(input: {
 
     /** No budget granted means nothing may be spent. Zero is the honest starting point here. */
     budget: async (tenantId) => {
-      const set = await allOf<Budget>(input.store, tenantId, STREAM.ai, 'AiBudgetSet');
-      const spent = await allOf<{ readonly costMinor: number }>(input.store, tenantId, STREAM.ai, 'AiRunCosted');
-      const cap = set[set.length - 1];
+      const cap = await latest<Budget>(input.store, tenantId, STREAM.ai, 'AiBudgetSet');
+      // Spend genuinely is a sum, and it is bounded by the budget period rather than by history.
+      const spent = await allOf<{ readonly costMinor: number }>(
+        input.store, tenantId, STREAM.ai, 'AiRunCosted',
+      );
       return {
         capMinor: cap?.capMinor ?? 0,
         spentMinor: spent.reduce((t, s) => t + s.costMinor, 0),
@@ -879,8 +891,9 @@ export function aiAdapter(input: {
 
     /** Nothing is enabled until somebody enables it, by name (AID-01…10). */
     enabledAgents: async (tenantId) =>
-      (await allOf<{ readonly agents: readonly AgentId[] }>(input.store, tenantId, STREAM.ai, 'AiAgentsEnabled'))
-        .at(-1)?.agents ?? [],
+      (await latest<{ readonly agents: readonly AgentId[] }>(
+        input.store, tenantId, STREAM.ai, 'AiAgentsEnabled',
+      ))?.agents ?? [],
 
     /**
      * No model is called from here.

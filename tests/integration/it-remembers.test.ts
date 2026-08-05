@@ -356,8 +356,9 @@ describe.skipIf(!DATABASE_URL)('the API remembers (real PostgreSQL)', () => {
     // At 12:00 the second has lapsed. An expired hold is stock on the shelf, not stock spoken for.
     const live = await adapter.outstanding(TENANT, 'L1');
     expect(live.map((r) => r.reservationId)).toEqual([`${RUN}-RES1`]);
-    // ...and it is gone from the answer without being gone from the record.
-    expect((await store.readStream(TENANT, STREAM.reservations)).length).toBe(2);
+    // ...and it is gone from the answer without being gone from the record. Reservations live in
+    // a stream per location, so a busy dark store's holds are not read to answer about this one.
+    expect((await store.readStream(TENANT, `${STREAM.reservations}-L1`)).length).toBe(2);
   });
 
   it('will not close a month that nothing checked', async () => {
