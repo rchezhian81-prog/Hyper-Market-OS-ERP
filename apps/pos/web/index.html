@@ -59,6 +59,44 @@
       button:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
       .empty { color: var(--muted); padding: 32px 4px; }
       .lang { background: transparent; color: var(--muted); min-height: 36px; font-size: 14px; }
+      /* ── On-screen panels ────────────────────────────────────────────────
+         Every target is at least 56px and spaced, for fingers under time pressure. */
+      .sheet {
+        position: fixed; inset: 0; background: rgba(2, 6, 23, .82);
+        display: grid; place-items: end center; z-index: 20;
+      }
+      .sheet[hidden] { display: none; }
+      .sheet-inner {
+        width: min(560px, 100%); background: var(--panel); padding: 20px;
+        border-radius: 20px 20px 0 0; display: grid; gap: 14px;
+      }
+      .sheet h2 { margin: 0; font-size: 22px; font-weight: 600; }
+      .entry {
+        font-size: 44px; font-weight: 700; text-align: right; padding: 10px 16px;
+        background: #0b1220; border-radius: 12px; min-height: 68px;
+      }
+      .hint { color: var(--muted); font-size: 15px; min-height: 22px; }
+      .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+      .keypad button, .reasons button, .sheet-actions button, .refusal button {
+        min-height: var(--tap); font-size: 22px; border: 0; border-radius: 12px;
+        background: #334155; color: var(--ink); font-weight: 600;
+      }
+      .reasons { display: grid; gap: 10px; }
+      .reasons button { font-size: 18px; text-align: left; padding: 0 16px; }
+      .reasons button[aria-pressed='true'] { background: #475569; outline: 3px solid var(--accent); }
+      .sheet-actions { display: grid; grid-template-columns: 1fr 2fr; gap: 12px; }
+      .sheet-actions .primary, .keypad .primary { background: var(--accent); color: #052e16; }
+
+      /* ── The refusal banner ──────────────────────────────────────────────
+         Full width, top of screen, and it stays until acknowledged. */
+      .refusal {
+        position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 20px;
+        background: var(--danger); color: #fff; display: grid; gap: 10px;
+      }
+      .refusal[hidden] { display: none; }
+      .refusal strong { font-size: 24px; }
+      .refusal p { margin: 0; font-size: 18px; line-height: 1.45; }
+      .refusal button { background: #7f1d1d; color: #fff; }
     </style>
   </head>
   <body>
@@ -99,6 +137,36 @@
         <button id="tender" class="primary" type="button">Tender</button>
       </div>
     </footer>
+
+    <!--
+      Every prompt a cashier answers is an ON-SCREEN panel, never `window.prompt`.
+      A browser prompt is a tiny text field with a keyboard over it: unusable with a
+      queue waiting, impossible with gloves, and blocked outright by kiosk browsers.
+    -->
+    <div class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+      <div class="sheet-inner">
+        <h2 id="sheet-title">—</h2>
+        <div class="entry" id="entry">0</div>
+        <div class="hint" id="entry-hint"></div>
+        <div class="keypad" id="keypad"></div>
+        <div class="reasons" id="reasons" hidden></div>
+        <div class="sheet-actions">
+          <button id="sheet-cancel" type="button">Cancel</button>
+          <button id="sheet-ok" class="primary" type="button">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      The refusal banner. It does NOT auto-dismiss and it does not use colour alone:
+      "Do not take payment" is the one message in this product that must not be
+      missed, and a toast that fades is a message that was missed.
+    -->
+    <div class="refusal" id="refusal" hidden role="alert">
+      <strong id="refusal-title">Do not take payment</strong>
+      <p id="refusal-text"></p>
+      <button id="refusal-ok" type="button">I have read this</button>
+    </div>
 
     <!--
       The bundled, tested session (built by `pnpm build:pos`) attaches

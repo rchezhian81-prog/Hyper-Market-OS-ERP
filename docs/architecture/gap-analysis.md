@@ -169,9 +169,12 @@ them this project already has.
 
 **1. Finish the POS screen, end to end.** ✅ *The seam is built:* the screen now commits to the
 till's own disk over a loopback socket, and a sale rung on the screen lands on the disk and in the
-cloud queue — proved end to end with nothing stubbed. **What remains:** tender beyond cash, returns,
-suspend/recall, cash movements, till open/close, Tamil, and then the whole thing on real hardware
-with a real scanner.
+cloud queue — proved end to end with nothing stubbed. ✅ *And the screen is now usable rather than demonstrable:* on-screen
+keypad and reason panels instead of browser prompts (which kiosk browsers block outright), change
+due computed as the cashier types, a refusal banner that does not fade, Tamil throughout, and a
+scanner path that cannot type a barcode into a quantity field.
+**What remains:** tender beyond cash, returns, suspend/recall, cash movements, till open/close, and
+then the whole thing on real hardware with a real scanner and a stopwatch.
 
 **2. Get real data into the rehearsal environment.** Follow the extraction plan. Every control is
 built and waiting; none has met a real export.
