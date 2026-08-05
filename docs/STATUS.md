@@ -2591,6 +2591,47 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## The last empty folder — the customer app (5 August 2026)
+
+`apps/customer-app/` held a README and nothing else. It now holds the shopping session behind the
+customer screens: browse, review the basket against the live catalogue, choose a slot, pay with a
+provider token, and see the truth about whether the order actually reached the shop.
+
+Almost every rule it needs already existed in `packages/storefront`. What it adds is the thing no
+single function can hold — **the order of events**, and what the customer is truthfully told at
+each point.
+
+**The rule that only this layer can hold: an order is not placed until the shop has it.** On a
+phone with no signal the basket is prepared and nothing else — the screen says *not sent yet*,
+never *order placed*, and it says plainly that nothing has been charged.
+
+That is the deliberate **inverse of the till**, and the difference is worth having in writing
+because getting it backwards is easy:
+
+| | Why |
+| --- | --- |
+| **At the till**, commit locally first, sync afterwards | The money is already in the drawer and the customer has walked out. The event happened; refusing to record it loses it. |
+| **On a customer's phone**, do not claim placed | Nothing has happened at all. No money moved, no goods left, and the shop has never heard of this basket. |
+
+An app that says "order placed" over a request sitting in a queue has told the customer something
+untrue about the world, and they find out when nothing arrives.
+
+Three more, all about sequence: nothing is paid for that has not been reviewed; a review built on
+an older price list will not be charged (the customer is sent back to look, not quietly repriced);
+and a short line is reduced only when the customer says so, never silently. A payment reference
+shaped like a card number is refused rather than redacted — redacting means it was held first, and
+by then it is in memory, in a crash report and in whatever the phone wrote to disk.
+
+**Tests:** 3,007 automated plus 19 performance, all green. **No folder in the repository layout is
+empty any more.**
+
+**What the owner should check.** Nothing in the store. When we get to testing this with a real
+phone, the one thing to try is: **turn aeroplane mode on, fill a basket, press pay.** It must say
+the order has not been sent and nothing has been charged. If it ever says "order placed" while the
+phone has no signal, that is a bug and a serious one.
+
+---
+
 ## All thirteen services persist — and the same fault three more times (5 August 2026)
 
 Identity, platform, reporting, migration and AI now read and write the event store. **Every one of
@@ -2801,9 +2842,10 @@ insist on when somebody eventually asks for it to be switched off.
   store operations lead, finance/CA reviewer, security/architecture reviewer.
 
 ## Next session should start with
-**`apps/customer-app`, which is still empty**, and the migration weekend runbook. All thirteen
-services now persist and token verification is done, so the API layer is complete as far as it can
-go without the owner's decisions (an identity provider, hosting, a live AI provider).
+**The migration weekend runbook** — the hour-by-hour plan for the cutover itself. All thirteen
+services persist, token verification is done, and no folder in the repository layout is empty, so
+the code is complete as far as it can go without the owner's decisions (an identity provider,
+hosting, a live AI provider, and the outside evidence for the real migration).
 
 Everything below remains true and unchanged.
 
