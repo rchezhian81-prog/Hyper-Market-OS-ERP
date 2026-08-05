@@ -2623,6 +2623,13 @@ do.
 
 **Tests:** 3,093 automated plus 31 performance, all green.
 
+**One consequence you would notice, and it is deliberate.** The standalone POS demo screen — the
+one that runs on its own with nothing behind it — now **refuses to take payment** and says so,
+because it has nowhere to write a sale. That is the correct behaviour and it is the whole point: a
+lane with no disk behind it must not take money. Connecting a lane to the back-office box is part
+of the store hardware setup (EX-09), and until that is done the demo screen will say it is not
+ready. If it ever goes back to accepting sales without being connected, that is a bug.
+
 **What the owner should check.** This is the second store test I gave you, and it is now worth
 doing: **pull the plug on a lane in the middle of a sale.** Anything the cashier was told was
 complete must still be there afterwards. Anything half-written must be reported, not quietly gone.
@@ -3153,10 +3160,11 @@ looked wired up and was not, I went looking for more, and found five: the piece 
 to the cloud, the piece that writes a sale to the disk, the process that runs the shop's edge, the
 safety catch on repeated requests, and the audit trail itself. **Not one of them was a crash.**
 Every one was a control quietly not being there, and none would have shown up until the shop was
-using it. **A sixth turned out to be different and worse:** two real, working, tested pieces that
-were simply not joined — a sale written safely to the disk and never queued to be sent. No guard
-based on names could catch that one; only driving the real path end to end does. There are two
-guards that look for the shape on purpose — one for controls that are
+using it. **Two more turned out to be different and worse:** real, working, tested pieces that
+were simply not joined to each other — a sale written safely to the disk and never queued to be
+sent, and a till whose commit never reached a disk at all. No guard based on names catches those;
+only driving the real path end to end does, which is what the tests now do. There are two
+guards that look for the name-shape on purpose — one for controls that are
 stand-ins rather than the real thing, one for work that grows with how long the shop has been open
 — because finding them by reading is not a plan.
 
