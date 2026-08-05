@@ -3,7 +3,7 @@
 Infrastructure as code: environments, deployment and CI/CD. The machines are defined in files, not by hand.
 
 - **Design:** `../docs/architecture/infrastructure.md` (topology, cost model to the
-  ₹20,000/month D3 ceiling, environments, delivery pipeline, portability).
+  **₹15,000/month** D3 ceiling (binding, 4 Aug 2026 — the ₹20,000 it superseded is expressly not an approved value), environments, delivery pipeline, portability).
 - **Decision:** `../docs/adr/0002-hosting-and-deployment.md` (hosting approach — Proposed,
   pending owner commercial validation of a vendor against real quotes).
 

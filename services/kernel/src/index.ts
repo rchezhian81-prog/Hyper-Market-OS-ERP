@@ -23,3 +23,14 @@ export {
   type StoredResult, type IdempotencyStore, type AuditSink, type KernelOptions,
   type OutboundFinding,
 } from './pipeline';
+
+export {
+  loadConfig, probes, CLOUD_API_CONFIG, STORE_EDGE_CONFIG,
+  type ConfigProblem, type ConfigFinding, type ConfigResult, type Spec, type Probes,
+  type ProbeState,
+} from './config';
+
+export {
+  startHttpServer,
+  type ServerOptions, type RunningServer,
+} from './http-server';

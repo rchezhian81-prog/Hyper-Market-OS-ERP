@@ -60,6 +60,54 @@ services:
     command: ['node', 'scripts/migrate.mjs']
     restart: 'no'
 
+
+  # ---------------------------------------------------------------------------
+  # The cloud API — all thirteen domain services (API-01…13) on one router, one
+  # port. It REFUSES TO START if any secret is missing, still the placeholder from
+  # .env.example, or too short: a service that boots with a default signing key is
+  # a service running in production with a default signing key.
+  #
+  # Liveness and readiness are separate on purpose. A database it cannot reach
+  # makes it NOT READY (take it out of rotation) and still LIVE (do not restart
+  # it), because restarting will not reconnect the database and a crash loop hides
+  # the outage that caused it.
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      # Signs the catalogue packs the lanes trade on. Generate with:
+      #   openssl rand -base64 48
+      PACK_SIGNING_KEY: ${PACK_SIGNING_KEY}
+      PORT: '8081'
+      NODE_ENV: production
+      # Never 'production' unless the migration really is running against live data.
+      MIGRATION_TARGET_KIND: ${MIGRATION_TARGET_KIND:-rehearsal}
+    ports:
+      - '127.0.0.1:${API_PORT:-8081}:8081'
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O- http://127.0.0.1:8081/livez || exit 1']
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    # Drain rather than kill: an in-flight request cut off is a sale that reached
+    # the process and not the database, while the till believes it was delivered.
+    stop_grace_period: 30s
+
   # ---------------------------------------------------------------------------
   # The app shells (POS, owner, ERP) served as static files. Each shell is
   # offline-capable via its service worker, so a lane keeps working if this
