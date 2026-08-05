@@ -97,12 +97,28 @@ class CountingStore implements EventStore {
   }
 }
 
-/** Milliseconds for `runs` iterations, after a warm-up that is thrown away. */
+/**
+ * Milliseconds for `runs` iterations — **the best of three rounds**, after a warm-up.
+ *
+ * Best-of, not average, and it **tightens** the test rather than loosening it. A round can only be
+ * made slower by something outside the code under test — the garbage collector, another test file,
+ * the machine doing something else — so the fastest round is the closest reading of the work
+ * itself, and taking it removes noise without touching the tolerance.
+ *
+ * The alternative when this flaked once under full-suite load was to widen the ratio, and that is
+ * the wrong repair for the reason the whole performance suite exists: a test loose enough never to
+ * flake is a test that cannot fail. The noise was real and the measurement was too small to see
+ * past it; the answer is a better measurement.
+ */
 async function timed(runs: number, fn: () => Promise<unknown>): Promise<number> {
   for (let i = 0; i < 20; i += 1) await fn();
-  const started = performance.now();
-  for (let i = 0; i < runs; i += 1) await fn();
-  return performance.now() - started;
+  let best = Infinity;
+  for (let round = 0; round < 3; round += 1) {
+    const started = performance.now();
+    for (let i = 0; i < runs; i += 1) await fn();
+    best = Math.min(best, performance.now() - started);
+  }
+  return best;
 }
 
 describe('the API does not get slower as the shop trades', () => {
