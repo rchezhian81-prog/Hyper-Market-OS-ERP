@@ -112,6 +112,46 @@ describe('the scanner cannot type into the wrong place', () => {
   });
 });
 
+describe('the drawer is counted blind', () => {
+  it('never puts an expected figure on the counting panel', () => {
+    // The whole design. Shown "expected: ₹6,000", people write ₹6,000 — not from dishonesty, but
+    // because a number on a screen is an answer and counting is work. A cash-up anchored to the
+    // expectation finds nothing, which is the one thing a cash-up exists to do.
+    const panel = HTML.slice(HTML.indexOf('id="count"'), HTML.indexOf('id="refusal"'));
+    expect(panel).not.toMatch(/expected|should be|target/i);
+
+    const counting = code(APP).slice(code(APP).indexOf('function countDrawer'), code(APP).indexOf('el(\'count-cancel\')'));
+    expect(counting).not.toMatch(/expected|drawerBalance/i);
+  });
+
+  it('reads the expected figure only from the RESULT, after a count was submitted', () => {
+    // It may be shown once it can no longer influence what somebody wrote down.
+    expect(code(APP)).toMatch(/result\.variance/);
+    expect(code(APP)).not.toMatch(/session\.till\.(?:expected|drawerBalanceMinor)\(\)/);
+  });
+
+  it('tells the cashier what to DO about a material difference, not just the number', () => {
+    // "Variance ₹200" is a fact. "Do not put the money away — call the manager now" is an
+    // instruction, and at the end of a long shift only one of those gets acted on.
+    expect(code(APP)).toContain("t('needsReason')");
+    const words = code(APP).slice(code(APP).indexOf('needsReason:'), code(APP).indexOf("',", code(APP).indexOf('needsReason:')));
+    expect(words).toMatch(/call the manager/i);
+  });
+
+  it('counts by denomination rather than asking for one typed total', () => {
+    // A typed total is a number somebody worked out in their head at the end of a shift.
+    expect(code(APP)).toContain('DENOMS');
+    expect(HTML).toContain('id="denoms"');
+  });
+});
+
+describe('what is not built is SAID, not hidden behind a dead button', () => {
+  it('tells the cashier where to send a receipt refund instead of failing silently', () => {
+    // A button that opens a screen which cannot work is worse than one that explains itself.
+    expect(code(APP)).toContain("t('refundNotBuilt')");
+  });
+});
+
 describe('the receipt still waits for the disk', () => {
   it('awaits the commit before it says anything about a receipt', () => {
     // The whole of hard rule #1 at this layer. The receipt number does not exist until the sale is

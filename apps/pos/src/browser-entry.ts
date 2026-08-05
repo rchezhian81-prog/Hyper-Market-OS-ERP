@@ -15,6 +15,7 @@ import type { CommitOutcome } from '../../../edge/store-edge/src/durability';
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { CatalogueCache, type CatalogueSnapshot } from '../../../packages/catalogue/src/catalogue';
 import { PosSession, taxRateFromPercent } from './session';
+import { createTillSession } from './till-session';
 import { createPosView, type PosView } from './view-adapter';
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
@@ -73,9 +74,13 @@ export function bootPos(config?: {
   catalogue?: CatalogueSnapshot;
   /** Where this till's edge listens. Only ever loopback. */
   lanePort?: number;
+  tillId?: string;
+  /** |over/short| at or above which a cash-up variance needs a manager. Per-tenant. */
+  varianceToleranceMinor?: number;
   /** Overridable for tests. Production always goes to this till's own edge. */
   durable?: DurableWrite;
-}): PosView {
+}): PosView & { readonly till: ReturnType<typeof createTillSession> } {
+  const outbox = new SyncOutbox();
   const session = new PosSession(
     {
       laneId: config?.laneId ?? 'lane-1',
@@ -85,12 +90,30 @@ export function bootPos(config?: {
       defaultTaxRate: taxRateFromPercent(config?.taxPercent ?? 18),
     },
     new Ledger(new InMemoryLedgerStore()),
-    new SyncOutbox(),
+    outbox,
     config?.durable ?? laneDurable(config?.lanePort ?? DEFAULT_LANE_PORT),
   );
   // Indexing happens once at boot, so every subsequent scan is O(1) (§32).
   const catalogue = config?.catalogue ? new CatalogueCache(config.catalogue) : undefined;
-  return createPosView(session, 'INR', catalogue);
+  const view = createPosView(session, 'INR', catalogue);
+
+  // The till itself — money in and out of the drawer, refunds, closing the shift. A separate
+  // object rather than more methods on the sale view, because it is a different job done by a
+  // different person at a different time, and because keeping the expected-cash figure out of the
+  // sale surface is what makes the blind count structural.
+  const till = createTillSession(
+    {
+      tillId: config?.tillId ?? 'till-1',
+      laneId: config?.laneId ?? 'lane-1',
+      cashierId: config?.cashierId ?? 'cashier',
+      tradingDay: config?.tradingDay ?? '1970-01-01',
+      varianceToleranceMinor: config?.varianceToleranceMinor ?? 10_000,
+    },
+    new Ledger(new InMemoryLedgerStore()),
+    new Ledger(new InMemoryLedgerStore()),
+    outbox,
+  );
+  return Object.assign(view, { till });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its

@@ -2591,6 +2591,50 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## Cash to the safe, and closing the till — counted blind (5 August 2026)
+
+The last of the till screen, apart from one thing I have deliberately left undone and named.
+
+**The drawer is counted blind, and that is the whole design.** When a cashier closes the till, the
+screen shows **nothing** about what the drawer *should* contain. They count what is actually there,
+note by note, and only afterwards does the system say whether it matches.
+
+That is not distrust. Shown "expected: ₹6,000", people write ₹6,000 — because a number on a screen
+is an answer and counting is work. A cash-up anchored to the expectation finds nothing, which is
+the one thing a cash-up exists to do. It is the same rule as the stock count, and I have made it
+structural in the software rather than a habit: **there is no way to ask the system what the drawer
+should hold.** The function does not exist. It cannot be shown early by accident, and a future
+change cannot expose it without somebody deliberately writing it.
+
+**Counted note by note, not one typed total.** Big plus and minus buttons per denomination — ₹500,
+₹200, ₹100 and so on. A typed total is a number somebody worked out in their head at the end of a
+long shift.
+
+**A big difference produces an instruction, not a number.** Not "variance ₹200" — *"Do not put the
+money away. Call the manager now."* At the end of a shift only one of those gets acted on. A small
+difference passes without fuss, because demanding a written reason for every rupee trains people to
+type anything, and then the reasons on the ones that matter mean nothing either.
+
+**Cash to the safe** is on the same menu, and every movement is recorded and queued to the cloud —
+cash is never a fact that lives only on one machine.
+
+**Refunds:** a cash refund settles at the till immediately. **A card refund stays "pending"**,
+because the bank has not actually reversed anything yet — telling a customer they have been refunded
+when the money has not moved is how they find out days later that it hasn't.
+
+**What I have not built, and said so on the screen rather than hiding it:** a refund against a
+receipt needs the till to look up the original sale, and it cannot do that yet. The screen says so
+and sends the customer to the service desk. A button that opens a screen which cannot work is worse
+than one that explains itself.
+
+**Tests:** 3,139 automated plus 31 performance, all green.
+
+**What the owner should check.** When we test in the store, this one is worth watching yourself:
+**ask a cashier to close a till and see whether anything on the screen tells them what to expect.**
+It should not. If it ever does, the cash-up has stopped being a check.
+
+---
+
 ## Card, UPI and holding a basket — and a real bug the tests caught (5 August 2026)
 
 A hypermarket takes mostly card and UPI, so a cash-only till is not a till. Both are now on the

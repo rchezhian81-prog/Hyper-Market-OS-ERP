@@ -4,3 +4,6 @@
 
 export * from './session';
 export * from './view-adapter';
+
+// The till itself: money in and out of the drawer, refunds, and closing the shift.
+export * from './till-session';

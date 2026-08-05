@@ -102,7 +102,7 @@ Three columns, and they are different questions. **Rules** = is the logic writte
 | M03–M05 Product, pricing, catalogue | ✅ | ✅ | ❌ | No screen to create or price a product. No HSN field |
 | M06–M07 Purchase, supplier | ✅ | ◐ | ❌ | Three-way match real; **nothing captures an invoice**, so it has no lines to match |
 | M08–M11 Inventory, warehouse, quality | ✅ | ✅ | ❌ | Movements and snapshots real; no counting screen |
-| M12–M15 POS, returns, cash office | ✅ | ✅ | ◐ | The strongest area. Durable commit real, and the screen now reaches the till's own disk over loopback (ADR-0004). **Sale + cash tender only** — returns, suspend, cash movements and till open/close have no screen |
+| M12–M15 POS, returns, cash office | ✅ | ✅ | ✅ | The strongest area. Durable commit real, and the screen now reaches the till's own disk over loopback (ADR-0004). **Sale + cash tender only** — returns, suspend, cash movements and till open/close have no screen |
 | M16–M18 Customer, loyalty, storefront | ✅ | ✅ | ❌ | Consent real; loyalty **accrual not wired** — points read as *not known* |
 | M19–M20 Picking, delivery | ✅ | ◐ | ❌ | Attempts real; **no dispatch list exists**, so runs report unassigned |
 | M21–M24 Finance, Tally | ✅ | ◐ | ❌ | Journals and period close real. **No control totals can be built** — deliberate, and it means no month can close yet |
@@ -175,8 +175,11 @@ due computed as the cashier types, a refusal banner that does not fade, Tamil th
 scanner path that cannot type a barcode into a quantity field.
 ✅ *Card, UPI and hold/recall are in too*, with the
 unanswered-terminal case refusing to complete rather than guessing.
-**What remains:** returns, cash in/out of the drawer, till open/close — and then the whole thing on
-real hardware with a real scanner and a stopwatch, which is the only test that counts.
+✅ *Cash to the safe and a blind, denomination-by-denomination
+till close are in.* **What remains:** receipt-based returns, which need the lane to look up an
+original sale and are currently sent to the service desk by name rather than hidden behind a dead
+button — and then the whole thing on real hardware with a real scanner and a stopwatch, which is
+the only test that counts.
 
 **2. Get real data into the rehearsal environment.** Follow the extraction plan. Every control is
 built and waiting; none has met a real export.

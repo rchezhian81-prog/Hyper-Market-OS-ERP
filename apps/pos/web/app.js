@@ -46,6 +46,13 @@ const WORDS = {
     onHold: 'A basket is on hold. Tap Recall to bring it back.',
     tapTerminal: 'What did the card machine say?',
     approved: 'Approved', declined: 'Declined', noAnswer: 'It has not answered',
+    more: 'More', pickup: 'Cash to safe', closeTill: 'Close till', refund: 'Refund',
+    countDrawer: 'Count the drawer', counted: 'Counted', closeTillNow: 'Close till',
+    amountToSafe: 'How much is going to the safe?', movedToSafe: 'Moved to the safe',
+    over: 'Over by', short: 'Short by', balanced: 'The drawer balances exactly.',
+    needsReason: 'This difference is large enough that a manager must be told. Do not put the money away — call the manager now.',
+    countHint: 'Count what is actually in the drawer. Nothing on this screen tells you what it should be — that is on purpose.',
+    refundNotBuilt: 'Refunds against a receipt need the original sale, and this lane cannot look one up yet. Send the customer to the service desk.',
     declinedMsg: 'The payment was declined. The sale is NOT complete — do not hand over the goods. Ask for another payment method.',
     noAnswerMsg: 'The card machine has not answered, so we do not know whether the customer has paid. The sale is NOT complete — do not hand over the goods. Check the machine, and if it is unclear, ask the manager before trying again.',
   },
@@ -63,6 +70,13 @@ const WORDS = {
     onHold: 'ஒரு கூடை நிறுத்தி வைக்கப்பட்டுள்ளது. திரும்பப் பெற தட்டவும்.',
     tapTerminal: 'கார்டு இயந்திரம் என்ன சொன்னது?',
     approved: 'ஏற்கப்பட்டது', declined: 'மறுக்கப்பட்டது', noAnswer: 'பதில் இல்லை',
+    more: 'மேலும்', pickup: 'பணத்தை பெட்டகத்திற்கு', closeTill: 'டில்லை மூடு', refund: 'திரும்பப் பணம்',
+    countDrawer: 'டிராயரை எண்ணவும்', counted: 'எண்ணப்பட்டது', closeTillNow: 'டில்லை மூடு',
+    amountToSafe: 'பெட்டகத்திற்கு எவ்வளவு?', movedToSafe: 'பெட்டகத்திற்கு மாற்றப்பட்டது',
+    over: 'அதிகம்', short: 'குறைவு', balanced: 'டிராயர் சரியாக உள்ளது.',
+    needsReason: 'இந்த வித்தியாசம் பெரியது. மேலாளரிடம் சொல்ல வேண்டும். பணத்தை வைக்க வேண்டாம் — உடனே மேலாளரை அழைக்கவும்.',
+    countHint: 'டிராயரில் உள்ளதை எண்ணவும். எவ்வளவு இருக்க வேண்டும் என்பதை இந்தத் திரை சொல்லாது — அது வேண்டுமென்றே.',
+    refundNotBuilt: 'ரசீதுக்கு எதிரான திரும்பப் பணத்திற்கு அசல் விற்பனை தேவை. இந்த லேனில் அது இன்னும் இல்லை. வாடிக்கையாளரை சேவை மையத்திற்கு அனுப்பவும்.',
     declinedMsg: 'பணம் மறுக்கப்பட்டது. விற்பனை முடியவில்லை — பொருட்களைக் கொடுக்க வேண்டாம். வேறு முறையில் பணம் கேட்கவும்.',
     noAnswerMsg: 'கார்டு இயந்திரம் பதில் சொல்லவில்லை. வாடிக்கையாளர் பணம் செலுத்தினாரா என்று தெரியவில்லை. விற்பனை முடியவில்லை — பொருட்களைக் கொடுக்க வேண்டாம். இயந்திரத்தைச் சரிபார்க்கவும்; தெளிவில்லை என்றால் மேலாளரிடம் கேட்கவும்.',
   },
@@ -110,6 +124,13 @@ function demoSession() {
       : Promise.reject(Object.assign(new Error('not paid'), { notPaid: outcome }))),
     suspend() { held = true; }, recall() { held = false; }, state: () => (held ? 'suspended' : 'selling'),
     newSale() { lines.length = 0; seq = 0; },
+    till: {
+      moveCash: ({ amountMinor }) => ({ tillBalance: { minor: -amountMinor } }),
+      close: ({ countedMinor }) => ({
+        countedCash: { minor: countedMinor }, variance: { minor: 0 },
+        exceptionRaised: false, withinTolerance: true,
+      }),
+    },
   };
 }
 
@@ -223,11 +244,70 @@ function choose(title, options) {
     return button;
   }));
   el('pay-cancel').textContent = t('cancel');
+  el('more').textContent = t('more');
   el('pay').hidden = false;
   return new Promise((resolve) => { payResolve = resolve; });
 }
 let payResolve = null;
 el('pay-cancel').addEventListener('click', () => { el('pay').hidden = true; payResolve?.(null); payResolve = null; });
+
+/** Indian notes and coins in paise, largest first — the order a drawer is counted in. */
+const DENOMS = [50_000, 20_000, 10_000, 5_000, 2_000, 1_000, 500, 200, 100];
+
+let countResolve = null;
+
+/**
+ * Count the drawer, by denomination.
+ *
+ * **The expected total appears nowhere on this panel**, and that is the entire design. Shown
+ * "expected: ₹6,000", people write ₹6,000 — not from dishonesty, but because a number on a screen
+ * is an answer and counting is work. A cash-up anchored to the expectation finds nothing, which is
+ * the one thing a cash-up exists to do. Same control as the stock count.
+ */
+function countDrawer() {
+  const counts = new Map(DENOMS.map((value) => [value, 0]));
+  const total = () => [...counts].reduce((sum, [value, n]) => sum + value * n, 0);
+
+  const paint = () => {
+    el('count-total').textContent = `${t('counted')}: ${inr(total())}`;
+    for (const value of DENOMS) el(`n-${value}`).textContent = String(counts.get(value));
+  };
+
+  el('denoms').replaceChildren(...DENOMS.map((value) => {
+    const row = document.createElement('div');
+    row.className = 'denom';
+    const label = document.createElement('span');
+    label.textContent = inr(value);
+    const minus = document.createElement('button');
+    minus.type = 'button';
+    minus.textContent = '−';
+    minus.setAttribute('aria-label', `one fewer ${inr(value)}`);
+    const shown = document.createElement('span');
+    shown.className = 'n';
+    shown.id = `n-${value}`;
+    shown.textContent = '0';
+    const plus = document.createElement('button');
+    plus.type = 'button';
+    plus.textContent = '+';
+    plus.setAttribute('aria-label', `one more ${inr(value)}`);
+    minus.addEventListener('click', () => { counts.set(value, Math.max(0, counts.get(value) - 1)); paint(); });
+    plus.addEventListener('click', () => { counts.set(value, counts.get(value) + 1); paint(); });
+    row.append(label, minus, shown, plus);
+    return row;
+  }));
+
+  el('count-title').textContent = t('countDrawer');
+  el('count-hint').textContent = t('countHint');
+  el('count-cancel').textContent = t('cancel');
+  el('count-ok').textContent = t('closeTillNow');
+  paint();
+  el('count').hidden = false;
+  return new Promise((resolve) => {
+    countResolve = (accepted) => resolve(accepted ? total() : null);
+  });
+}
+el('count-cancel').addEventListener('click', () => { el('count').hidden = true; countResolve?.(false); countResolve = null; });
+el('count-ok').addEventListener('click', () => { el('count').hidden = true; countResolve?.(true); countResolve = null; });
 
 // ── Rendering ───────────────────────────────────────────────────────────────
 
@@ -377,6 +457,64 @@ async function takeCardOrUpi(kind, payable) {
   }
 }
 
+el('more').addEventListener('click', async () => {
+  const what = await choose(t('more'), [
+    { value: 'pickup', label: t('pickup') },
+    { value: 'refund', label: t('refund') },
+    { value: 'close', label: t('closeTill') },
+  ]);
+  if (what === 'pickup') return takeCashToSafe();
+  if (what === 'refund') {
+    // Said plainly rather than shown a screen that cannot work. A refund against a receipt needs
+    // the original sale, and this lane has no way to look one up yet.
+    tell(t('read'), t('refundNotBuilt'));
+    return;
+  }
+  if (what === 'close') return closeTheTill();
+});
+
+async function takeCashToSafe() {
+  const amount = await ask({ title: t('amountToSafe'), mode: 'number' });
+  if (amount === null) return;
+  const minor = Math.round(Number(amount) * 100);
+  if (minor <= 0) return;
+  try {
+    session.till.moveCash({ kind: 'pickup', amountMinor: minor, at: new Date().toISOString() });
+    tell(t('movedToSafe'), inr(minor));
+  } catch (e) {
+    tell(t('read'), String(e && e.message ? e.message : e));
+  }
+}
+
+/**
+ * Close the till.
+ *
+ * The count comes first and the expected figure is never on screen before it. What comes back
+ * carries the variance, and a material one is not a number to note down — it is an instruction to
+ * call the manager before the money is put away.
+ */
+async function closeTheTill() {
+  const counted = await countDrawer();
+  if (counted === null) return;
+  try {
+    const result = session.till.close({
+      shiftId: `sh-${Date.now().toString(36)}`,
+      closedAt: new Date().toISOString(),
+      countedMinor: counted,
+    });
+    const variance = result.variance.minor;
+    const headline = variance === 0 ? t('balanced')
+      : variance > 0 ? `${t('over')} ${inr(variance)}`
+        : `${t('short')} ${inr(-variance)}`;
+    tell(headline, result.exceptionRaised ? t('needsReason') : `${t('counted')}: ${inr(counted)}`);
+  } catch {
+    // A material variance with no reason is refused by the model. The cashier is told what to DO
+    // rather than shown a validation error — the error names a missing field, and at the end of a
+    // long shift the instruction is what gets acted on.
+    tell(t('read'), t('needsReason'));
+  }
+}
+
 el('lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ta' : 'en';
   el('qty').textContent = t('qty');
@@ -402,7 +540,7 @@ el('unsent').addEventListener('click', () => {
 let scanBuffer = '';
 window.addEventListener('keydown', (event) => {
   // A panel is open; the scan is not for us.
-  if (!el('sheet').hidden || !el('pay').hidden || !el('refusal').hidden) return;
+  if (!el('sheet').hidden || !el('pay').hidden || !el('count').hidden || !el('refusal').hidden) return;
   if (event.key === 'Enter') {
     const code = scanBuffer;
     scanBuffer = '';

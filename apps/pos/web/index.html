@@ -97,6 +97,13 @@
       .refusal strong { font-size: 24px; }
       .refusal p { margin: 0; font-size: 18px; line-height: 1.45; }
       .refusal button { background: #7f1d1d; color: #fff; }
+
+      /* Counting the drawer: one row per denomination, a big count in the middle. */
+      .denoms { display: grid; gap: 8px; max-height: 46dvh; overflow-y: auto; }
+      .denom { display: grid; grid-template-columns: 5rem 1fr 3.5rem 1fr; align-items: center; gap: 8px; }
+      .denom span { font-size: 20px; font-weight: 600; }
+      .denom .n { text-align: center; font-size: 24px; font-variant-numeric: tabular-nums; }
+      .denom button { min-height: 52px; font-size: 26px; border: 0; border-radius: 12px; background: #334155; color: var(--ink); }
     </style>
   </head>
   <body>
@@ -134,6 +141,7 @@
         <button id="qty" type="button">Qty</button>
         <button id="void" type="button">Void</button>
         <button id="hold" type="button">Hold</button>
+        <button id="more" type="button">More</button>
         <!-- The one dominant primary action. -->
         <button id="tender" class="primary" type="button">Tender</button>
       </div>
@@ -168,6 +176,25 @@
         <div class="reasons" id="pay-kinds"></div>
         <div class="sheet-actions">
           <button id="pay-cancel" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      Counting the drawer, by denomination. The EXPECTED total appears nowhere on
+      this panel — shown "expected: ₹6,000", people write ₹6,000, and a cash-up
+      anchored to the expectation finds nothing. It is the same control the stock
+      count uses, and it is worth being structural in both places.
+    -->
+    <div class="sheet" id="count" hidden role="dialog" aria-modal="true" aria-labelledby="count-title">
+      <div class="sheet-inner">
+        <h2 id="count-title">Count the drawer</h2>
+        <div class="denoms" id="denoms"></div>
+        <div class="entry" id="count-total">₹0.00</div>
+        <div class="hint" id="count-hint"></div>
+        <div class="sheet-actions">
+          <button id="count-cancel" type="button">Cancel</button>
+          <button id="count-ok" class="primary" type="button">Close till</button>
         </div>
       </div>
     </div>
