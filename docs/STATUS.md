@@ -2591,6 +2591,72 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## The honest assessment, and the plan to close every gap (5 August 2026)
+
+The owner asked for three things: find out what data we need, say where the project really stands,
+and plan the rest properly. All three are now written down.
+
+### 1. What data we need — `docs/requirements/data-requirements.md`
+
+Researched against public sources rather than guessed, in four parts: **facts about the shop**
+(fifteen minutes of the owner's time), **data out of the old system** (ours to extract), **evidence
+from outside it** (bank, CA, suppliers, the shelves), and **what the law requires** (GST, FSSAI,
+Legal Metrology, data protection, RBI).
+
+Three findings worth knowing now:
+
+- **One number decides a whole piece of work.** If turnover has *ever* exceeded ₹5 crore in any year
+  since 2017–18, electronic invoicing applies **permanently** — every business-to-business invoice
+  must be registered with a government portal before it is issued. That is a build item on the
+  critical path, not a setting. If it has never been above, we skip it entirely.
+- **HSN codes are probably missing** from the old system, and they cannot be guessed: they decide
+  the tax rate and the input credit. Mapped category by category with the CA; anything unmapped is
+  an exception the owner signs.
+- **The cafe's scale prints barcodes with the weight inside them.** That is a standard supermarket
+  thing and a real build item, and nobody had written it down.
+
+### 2. Where the project stands — `docs/architecture/gap-analysis.md`
+
+Written to be uncomfortable, because a comfortable status report is how a project arrives at go-live
+with a surprise.
+
+**The thinking in this system is better than most commercial retail software. The assembly is not
+finished, and there is almost no screen.** 45,000 lines of rules — genuinely strong, and the hard
+part. **2,452 lines across all six applications**, none of which draws anything. Fourteen screen
+designs are written; none is built.
+
+So the honest position: today nobody can ring up a sale, receive a delivery, count stock or close a
+day — while the rules that would govern all of those are written, tested and correct.
+
+There is now a table showing every module against **three separate questions**: are the rules
+written, does it run in the assembled system, and **can a person in the shop actually do it**. The
+third column is the one that matters and it was not visible anywhere before.
+
+### 3. The plan — `docs/architecture/build-plan.md`
+
+Ordered by one principle: **build the thing a person uses first**, because a screen is the only test
+that cannot be passed by a system that merely looks assembled. Seven silent faults in two sessions
+proved that the hard way.
+
+1. **One screen, all the way through** — the till, on real hardware, ringing real sales into the
+   real system. Everything after it is easier for having done it first.
+2. **Real data into rehearsal** — runs in parallel; it is the owner's and the CA's time, not mine.
+3. **The other five screens**, ordered by how much of the shop stops without them.
+4. **Compliance built rather than assumed**, alongside.
+5. **Hardening** — a restore actually performed, a penetration test, monitoring that wakes someone.
+
+### What I need from the owner, and it is short
+
+Everything else proceeds without him.
+
+1. The **store facts questionnaire** — fifteen minutes.
+2. **Has turnover ever exceeded ₹5 crore since 2017–18?** One number.
+3. **An identity provider.** Small, cheap, and all user testing waits behind it.
+4. The **two phone calls** already in the extraction plan: whoever installed the old system, and the
+   CA's journals-only list.
+
+---
+
 ## The seventh: the receipt was not waiting for the disk (5 August 2026)
 
 One level above yesterday's find, and the same shape again.
