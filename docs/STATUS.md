@@ -2591,6 +2591,35 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## The cutover weekend, hour by hour (5 August 2026)
+
+`docs/runbooks/cutover-weekend.md` — the plan for the weekend the shop stops using the old system
+and starts using this one. `extraction-work-plan.md` covers the weeks before; this covers the
+weekend itself, and **every decision on it is taken now, while nobody is tired.**
+
+Two things shape the rest of the page:
+
+- **The point of no return is late on purpose.** Right up until Monday's opening, the answer to
+  "should we go back?" is *yes, and it costs us a weekend*. So the decision to open on the new
+  system is taken **Monday at 06:00 with the checks in front of you**, not on Saturday evening when
+  the load has just finished and everybody is pleased with themselves.
+- **The old system is never switched off.** It goes read-only and stays running for ninety days.
+  That costs nothing, and it is the only thing that makes "go back" a real option rather than a
+  thing we say.
+
+The stop conditions are written down and absolute — no judgement calls at 2am. One of them is easy
+to miss: if the latest rehearsal's exception list is **longer** than the previous one, we stop,
+because something is getting worse and we do not yet know what. Another: **if the shift-in-charge
+is not happy to open on it, we do not open** — they are the ones who will be standing there, and
+that outranks everybody's schedule.
+
+**What the owner should check.** Read the page — it is written for you, not for a programmer. The
+two parts to look at hardest are the four questions you will be asked at 06:00 on the Monday, and
+the stop-conditions table. If you disagree with any of them, now is the time to say so; the whole
+point is that they are settled before the weekend, not during it.
+
+---
+
 ## The last empty folder — the customer app (5 August 2026)
 
 `apps/customer-app/` held a README and nothing else. It now holds the shopping session behind the
@@ -2842,10 +2871,11 @@ insist on when somebody eventually asks for it to be switched off.
   store operations lead, finance/CA reviewer, security/architecture reviewer.
 
 ## Next session should start with
-**The migration weekend runbook** — the hour-by-hour plan for the cutover itself. All thirteen
-services persist, token verification is done, and no folder in the repository layout is empty, so
-the code is complete as far as it can go without the owner's decisions (an identity provider,
-hosting, a live AI provider, and the outside evidence for the real migration).
+**The owner's decisions.** The code is complete as far as it can go without them: all thirteen
+services persist, token verification is done, no folder in the repository layout is empty, and the
+cutover weekend is planned hour by hour. What is left needs the owner or the store — an identity
+provider and hosting (OB-02), a live AI provider, a penetration test (EX-13), store hardware
+(EX-09), the outside evidence for the real migration, and the D4 handover to Mr Sivakumar.
 
 Everything below remains true and unchanged.
 

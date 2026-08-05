@@ -160,6 +160,7 @@ You will find something. The list should be short, named, and in writing.
 
 ## Related
 
+- `cutover-weekend.md` — the weekend itself, hour by hour, and when to stop and go back
 - `legacy-self-extraction.md` — the reference: routes, evidence, and why each rule exists
 - `../evidence/example-verification-report.md` — the page you will sign, worked through
 - `../evidence/ob-06-every-figure-has-a-witness.md` — the gate proving every area has a witness
