@@ -1661,6 +1661,62 @@ honest rather than being marked complete.
 
 ---
 
+## Proving the opening books against the accounts the CA signed (7 August 2026)
+
+`packages/migration/src/books-verification.ts`. The fifth external check, and **the one that ties
+the other four together**: the signed closing balance sheet *is* the opening position. Stock,
+debtors, creditors, cash and tax all appear on it, each already proved by its own evidence — so if
+the opening trial balance agrees with the signed accounts line by line, every earlier check has
+agreed too.
+
+It is also, said plainly in the module's own header, **the weakest of the six as independent
+evidence.** The bank statement is an adversary's record. A supplier's statement is a
+counterparty's. A physical count is the shelves. The CA's accounts are none of those — they were
+*prepared from the same old system we are leaving*, by somebody reading the same reports. What
+they add is **a professional signature and the discipline of double entry**, which is a different
+kind of strength and not a substitute for the other five. `provesTheAccountsAreRight` is typed as
+the literal `false` for exactly that reason.
+
+**The refusal this module exists for: a balancing figure, refused by name.** When an opening trial
+balance does not balance, the universal move is to post the difference to *Suspense*, *Opening
+Difference* or *Diff A/c* and open anyway. The books then balance **perfectly** and are wrong, and
+that account is **never cleared** — it is still there in five years and nobody alive knows what it
+was. It is the same failure as a commission rate derived from the gap it explains: the arithmetic
+is made to close by naming the hole instead of finding it. Checked **before** the balance test, so
+a set of books that closes only because of the plug is never reported as balancing — a test proves
+exactly that, on an opening that sums to zero and is still refused.
+
+Three further refusals, each a real trap:
+
+- **Draft accounts are not accounts.** Unsigned figures still change, and the whole reason to
+  reconcile to them is that somebody with a licence at stake has signed them.
+- **The accounts must end the day before the books open.** A balance sheet is a position at one
+  instant; cut over a month later and the opening is out by a whole trading period while looking
+  entirely authoritative.
+- **What only the CA has must arrive.** Depreciation, provisions, accruals, prepayments and
+  drawings exist only in the CA's books — no ERP export will ever contain them. Their absence is
+  not a variance to investigate: it is *exactly* the amount by which the books will fail to
+  balance, and exactly what would end up in suspense. So it is a precondition, not a finding.
+
+Two defects found by running the tests:
+
+- **The wrong-side check fired on Drawings in a perfectly correct set of books.** Drawings is
+  equity by nature and always carries a debit balance; so does accumulated depreciation against an
+  asset. The check would have flagged every correctly prepared migration — **and a flag that is
+  always on is a flag nobody reads**, which is the failure this codebase keeps guarding against
+  elsewhere. `TrialBalanceLine` now carries `contra`, and `expectedSide()` inverts for it.
+- A fixture of my own that changed one account and broke the trial balance, so the test was
+  exercising the out-of-balance path rather than the account-comparison path it claimed to. The
+  interesting case is the one where the books **balance and still do not match** — 50,000 sitting
+  in the wrong account — and that is what it tests now.
+
+The subtlest case it catches: **two accounts lost in extraction whose balances cancel.** Debtors
+at 8,00,000 debit and GST payable at 8,00,000 credit both go missing, the trial balance still
+closes to zero, and nothing whatsoever looks wrong. Only the account-by-account comparison against
+the signed accounts finds it.
+
+23 tests. Full suite **2,609**.
+
 ## Proving the tax against the returns already filed (7 August 2026)
 
 `packages/migration/src/tax-verification.ts`. The fourth external check, and **the only one that
@@ -2409,9 +2465,10 @@ tests** against real PostgreSQL 16.13.
   default**, which is the property that had to be settled before the data arrives.
 - **EX-02 is closed (OB-06, 7 August 2026)** — we extract our own data ourselves. What the
   real-data migration now needs is **outside evidence**, not a vendor: bank statements, filed GST
-  returns, supplier statements of account and an authorised physical count. Four of the six checks
+  returns, supplier statements of account and an authorised physical count. Five of the six checks
   are built (`count-verification.ts`, `supplier-reconciliation.ts`, `banking-verification.ts`,
-  `tax-verification.ts`); the rest are in the table under *Next session should start with*.
+  `tax-verification.ts`, `books-verification.ts`); loyalty is the last, in the table under
+  *Next session should start with*.
 - What remains needs the owner or the store: **OB-02** (hosting), the
   **pre-pilot integration gate** (a live AI provider, then UAT-49), **EX-13** (a penetration
   test), and the 55 store activities in
@@ -2449,16 +2506,18 @@ by name in `extraction.ts`, so each row of that table needs code behind it.
 | **Supplier balances** | The supplier's own statement of account | ✅ `supplier-reconciliation.ts` |
 | **Sales** | The bank statement; the card/UPI settlement file | ✅ `banking-verification.ts` |
 | **Tax** | The GST returns already filed | ✅ `tax-verification.ts` |
-| **Books** | The accounts the CA prepared | ⬜ next |
-| **Loyalty points** | A sample of customers confirming their own balance | ⬜ |
+| **Books** | The accounts the CA prepared | ✅ `books-verification.ts` |
+| **Loyalty points** | A sample of customers confirming their own balance | ⬜ next |
 
-**The CA's prepared accounts are next**, and they are the check that ties the other five together:
-the closing balance sheet the CA signed for the last completed year **is** the opening position,
-so the migrated trial balance has to agree with it line by line — and it must still balance
-afterwards. The interesting part is what the accounts contain that no extract will: provisions,
-depreciation, director's drawings and year-end journals that live only in the CA's books and have
-no counterpart anywhere in the old ERP. Migrating without them opens a set of books that does not
-balance, and the difference gets forced into a suspense account nobody ever clears.
+**Loyalty points are the last one, and the odd one out.** Every other check proves a figure against
+a record somebody else keeps. Here the only witness is **the customer**, one at a time, and the
+balance is a liability we owe them in goods. Two properties make it different from the rest: a
+customer who has *lost* points complains and is therefore self-reporting, while a customer who has
+*gained* them never will — so the sample cannot be drawn from complaints, and it cannot be drawn
+by whoever ran the extraction either (§28, the same rule as the stock count). And a point balance
+is not money until it is spent, so what matters at migration is not the total but **whether each
+customer's balance is the one they will see in the app on day one** — a customer whose points fell
+is a customer who tells everybody.
 
 **Nothing here needs the ERP vendor, and nothing waits on them.** The letter stays on file
 (`docs/discovery/legacy-data-access.md`); if they ever answer it is a bonus, not a dependency.

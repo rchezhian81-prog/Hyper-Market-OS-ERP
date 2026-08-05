@@ -123,7 +123,7 @@ their own reasons, with no interest in agreeing with our old ERP:
 | **Sales** | The bank statement; the card/UPI settlement file | The bank has no interest in agreeing with our old system (see below — the hardest of the six) |
 | **Tax** | The GST returns already filed | Filed, dated, signed. It cannot be adjusted to make a total agree — so where the books disagree, the books are wrong (see below) |
 | **Supplier balances** | The supplier's own statement | They keep their own ledger and will confirm it, because they want paying — no goodwill required (see below) |
-| **Books** | The accounts the CA prepared | Prepared independently, by somebody with a licence at stake |
+| **Books** | The accounts the CA prepared | A professional signature and double entry — but prepared **from the same old system**, so the weakest of the six (see below) |
 | **Loyalty points** | A sample of customers | They can see their own balance and will say if it is wrong |
 
 **A vendor export is one system's account of itself. A bank statement is an adversary's.** The
@@ -244,6 +244,46 @@ to meet it is not ours to do.
 books say 5%, and they agree perfectly. That is a question for the CA and the product master, not
 for this check.
 
+### The accounts your CA prepared — the one that ties the rest together
+
+Ask your CA for the **signed** accounts for the last completed year. That closing balance sheet
+**is** your opening position: stock, debtors, creditors, cash and tax all appear on it, and each
+one has already been proved by its own evidence above. If the new books agree with it line by
+line, everything else has agreed too.
+
+Worth being straight about one thing: **this is the weakest of the six as outside evidence.** The
+bank is an adversary's record; a supplier's statement is a counterparty's; a count is the shelves
+themselves. Your CA prepared these accounts *from the same old system we are leaving*. What they
+add is not an independent source — it is **a professional signature and the discipline of double
+entry**. That is a different kind of strength, and it does not replace the other five.
+
+**The one thing this exists to stop.** When an opening trial balance does not balance, the
+universal move in this industry is to post the difference to an account called *Suspense*, or
+*Opening Difference*, or *Diff A/c*, and open anyway. The books then balance **perfectly** and are
+wrong. And that account is never cleared — it is still sitting there in five years, and by then
+nobody alive knows what it was. **The software refuses it by name**, and refuses it *before* it
+checks whether the books balance, so a set of books that only closes because of the plug is never
+reported as balancing. If the books do not balance, the number has to be found.
+
+Three more refusals, each a real trap:
+
+- **Draft accounts are not accounts.** Unsigned figures still change, and the whole reason to
+  reconcile to your CA's numbers is that somebody with a licence at stake has put their name and
+  membership number to them.
+- **The accounts must end the day before the books open.** A signed balance sheet is a position at
+  one instant. If you cut over a month later, everything traded in between is missing from it —
+  and the opening is out by a whole trading period while looking completely authoritative.
+- **What only the CA has must arrive.** Depreciation, provisions, accruals, prepayments, drawings
+  and the year-end journals exist **only** in your CA's books. No export from the old system will
+  ever contain them. Leave them out and the books open short by exactly their value — which is
+  precisely the difference that then gets posted to Suspense.
+
+One softer check: a balance sitting on the side you would not expect — a bank account in credit,
+say — is **flagged for a sentence of explanation, not rejected.** Sometimes it is right (the
+account really was overdrawn) and sometimes it is a sign read backwards on the way in. Accounts
+that always sit the other way round on purpose — drawings, accumulated depreciation — are known
+about, so the flag stays rare enough to be worth reading.
+
 ---
 
 ## The order to do it in
@@ -316,6 +356,9 @@ Three things, and none of them involves the vendor:
 - `../../packages/migration/src/tax-verification.ts` — tax against the filed returns: the
   acknowledgement number as the thing that makes a return evidence, slab by slab with no average
   rate available anywhere, and a difference treated as a disclosure rather than a fix
+- `../../packages/migration/src/books-verification.ts` — the opening books against the signed
+  accounts: Suspense refused by name and refused before the balance test, and the CA-only
+  balances treated as a precondition rather than a variance
 - `../../packages/migration/src/report-parser.ts` — reads what Routes B and C actually produce:
   finds the real header under the shop's name and the report title, never counts a
   *"Total for GROCERY"* line as a product, reads `4,12,000.00` as twelve lakh, and keeps every

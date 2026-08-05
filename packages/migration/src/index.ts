@@ -112,3 +112,11 @@ export {
   type ReturnAcceptance, type SlabStatus, type SlabComparison,
   type TaxPeriodReconciliation, type TaxPosition,
 } from './tax-verification';
+
+export {
+  acceptSignedAccounts, reconcileOpeningBooks, looksLikeABalancingFigure, balanceOfLine,
+  expectedSide, NATURAL_SIDE, ONLY_THE_CA_HAS,
+  type AccountNature, type TrialBalanceLine, type SignedAccounts, type AccountsRefusal,
+  type AccountsAcceptance, type LineStatus, type LineComparison, type WrongSideFlag,
+  type OpeningBooksRefusal, type OpeningBooksReconciliation,
+} from './books-verification';

@@ -51,6 +51,8 @@ Status: **Default in use** · **Confirmed** · **Changed by owner**.
 | OC-33 | GST slabs the tenant may have traded at | `STATUTORY_SLABS_BPS` / `permittedSlabsBps` | **0, 0.25, 3, 5, 12, 18, 28 %** — the Indian set. A books line at any other rate is refused as a blended average | Migration (with CA) |
 | OC-34 | Per-line rounding allowed on a filed return before its arithmetic is called wrong | `acceptFiledReturn` `roundingAllowanceMinor` | **₹1** | Migration (with CA) |
 | OC-35 | Tax periods the migration covers | `taxPosition` `periodsExpected` | **None assumed** — stated up front, so a period with no return in hand is named rather than silently absent | Migration (with CA) |
+| OC-36 | Accounts that can only come from the CA (depreciation, provisions, accruals, prepayments, drawings) | `reconcileOpeningBooks` `caOnlyAccountCodes` | **None assumed** — named up front with the CA, because their absence is not a variance but exactly what would end up in suspense | Migration (with CA) |
+| OC-37 | Per-account tolerance against the signed accounts | `reconcileOpeningBooks` `toleranceMinor` | **₹0** — every account matches what was signed. There is **no** tolerance for a trial balance that does not balance, and none for a balancing figure at any value | Migration (with CA) |
 
 > **How to use this at UAT:** work down the list. For each row either accept the default
 > (say nothing) or give the value. Nothing here needs a technical answer — every one is a
