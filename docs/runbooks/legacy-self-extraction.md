@@ -124,7 +124,7 @@ their own reasons, with no interest in agreeing with our old ERP:
 | **Tax** | The GST returns already filed | Filed, dated, signed. It cannot be adjusted to make a total agree — so where the books disagree, the books are wrong (see below) |
 | **Supplier balances** | The supplier's own statement | They keep their own ledger and will confirm it, because they want paying — no goodwill required (see below) |
 | **Books** | The accounts the CA prepared | A professional signature and double entry — but prepared **from the same old system**, so the weakest of the six (see below) |
-| **Loyalty points** | A sample of customers | They can see their own balance and will say if it is wrong |
+| **Loyalty points** | A sample of customers, drawn **before** anybody is told | The only witness there is — but only the ones who *lost* points will speak up, which is why the sample cannot be the complaints (see below) |
 
 **A vendor export is one system's account of itself. A bank statement is an adversary's.** The
 second is better evidence.
@@ -284,6 +284,49 @@ account really was overdrawn) and sometimes it is a sign read backwards on the w
 that always sit the other way round on purpose — drawings, accumulated depreciation — are known
 about, so the flag stays rare enough to be worth reading.
 
+### Loyalty points — the only one where the witness is the customer
+
+Every other check above proves a figure against a record somebody else keeps for their own
+reasons. **Nobody keeps a second record of your customers' points.** So the only way to check them
+is to ask customers, one at a time — and two things about customers decide how.
+
+**First: you cannot use the complaints.** A customer whose points went *down* complains, loudly,
+on day one. A customer whose points went *up* says nothing, ever, to anybody. So a "sample" made
+of the people who complained is every shortfall and no over-credit — and it will confirm, with
+real evidence from real customers, a migration that is quietly giving everybody too much. **The
+customers to ask must be picked before anybody is told anything.** The software refuses a sample
+drawn from complaints, and refuses one picked by whoever ran the extraction (same rule as the
+stock count).
+
+**Second, and this is the one worth remembering: the loud problem is not the expensive one.**
+
+- **Too few points** — the customer is at your till on day one saying so. It costs you trust and
+  an awkward five minutes, and it gets fixed *because* somebody complained.
+- **Too many points** — nobody ever mentions it. Those points get redeemed for real goods at your
+  cost, and the mistake is never found. It is money, it is permanent, and it is invisible.
+
+So the software reports the two **separately and never nets them off**, lists the silent ones
+first, and puts a rupee figure on them using what a redeemed point actually costs you.
+
+**Do not tell the customer the balance.** Ask *"is your balance 450 points?"* and almost everybody
+says yes — nobody carries their points total in their head, so that question measures politeness,
+not the balance. It is exactly the same mistake as printing *"expected: 40"* on a stock count
+sheet, and the software refuses a confirmation obtained that way. Ask instead: **"How many points
+do you think you have, and when did you last use any?"** A customer who says *"I don't know the
+number, but I redeemed against a gas cylinder in June"* has given you something genuinely useful —
+and it is recorded as *not* an agreement about the total.
+
+**Watch the tiers hardest of all.** A tier is printed on the receipt and shown in the app, so it is
+the most visible thing in the entire migration, and a customer dropped from gold to silver takes it
+personally in a way no point total achieves. The software asks the customers sitting right on a
+tier threshold even when their balance is far too small to matter otherwise, and names anybody
+whose tier moved. If several moved, the usual answer is to **hold everybody at their old tier for a
+few months** — decide that before go-live, not at the counter.
+
+**What this cannot prove:** a customer confirming their balance confirms the balance, not that it
+was ever earned correctly. If the old system was awarding double points by mistake for a year,
+every customer will confirm the wrong figure perfectly cheerfully.
+
 ---
 
 ## The order to do it in
@@ -359,6 +402,9 @@ Three things, and none of them involves the vendor:
 - `../../packages/migration/src/books-verification.ts` — the opening books against the signed
   accounts: Suspense refused by name and refused before the balance test, and the CA-only
   balances treated as a precondition rather than a variance
+- `../../packages/migration/src/loyalty-verification.ts` — points against the customers: the
+  complaint list refused as a sample, the balance kept off the question, and the silent
+  over-credit sorted above the loud shortfall
 - `../../packages/migration/src/report-parser.ts` — reads what Routes B and C actually produce:
   finds the real header under the shop's name and the report title, never counts a
   *"Total for GROCERY"* line as a product, reads `4,12,000.00` as twelve lakh, and keeps every

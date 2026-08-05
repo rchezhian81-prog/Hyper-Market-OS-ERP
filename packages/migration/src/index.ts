@@ -120,3 +120,11 @@ export {
   type AccountsAcceptance, type LineStatus, type LineComparison, type WrongSideFlag,
   type OpeningBooksRefusal, type OpeningBooksReconciliation,
 } from './books-verification';
+
+export {
+  planLoyaltySample, assessLoyaltyVerification,
+  type LoyaltyBalance, type ConfirmationMethod, type CustomerConfirmation, type SampleSource,
+  type SampleRefusal, type SampleLine, type LoyaltySamplePlan, type SamplePlanResult,
+  type BalanceFinding, type BalanceCheck, type TierChange, type VerificationRefusal,
+  type LoyaltyVerification,
+} from './loyalty-verification';

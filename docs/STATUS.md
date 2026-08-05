@@ -1661,6 +1661,80 @@ honest rather than being marked complete.
 
 ---
 
+## Proving the loyalty points against the customers — the sixth and last (7 August 2026)
+
+`packages/migration/src/loyalty-verification.ts`. **All six outside-evidence checks are now
+built.** This one is the odd one out: every other domain is proved against a record somebody else
+keeps for their own reasons — a bank, a supplier, the department, the CA. **No such record exists
+for a customer's points.** The only witness is the customer, one at a time, which makes the
+sampling the whole design.
+
+Two facts about customers decide it:
+
+- **The feedback is asymmetric, so complaints are a useless sample.** A customer whose points went
+  down complains, loudly, on day one. A customer whose points went up says nothing, ever. So a
+  sample drawn from the complaint list is **100% shortfalls by construction**, and it would
+  confirm — with real evidence, from real customers — a migration that is systematically
+  over-crediting. Refused by name, alongside the §28 refusal of a sample chosen by whoever ran the
+  extraction.
+- **The loud direction is not the dangerous one.** Understated points are visible, immediate and
+  expensive in trust — and *self-correcting*, because a problem that generates complaints gets
+  fixed. **Overstated points are silent, permanent and cost real money**: redeemed for goods at our
+  cost, never chased by anyone, never discovered. So the silent side sorts first, carries a rupee
+  figure at the tenant's own cost per redeemed point, and is **never netted** against the loud
+  side — offsetting them turns two problems into none.
+
+The central control mirrors the stock count exactly, for the same reason: **the balance is never
+shown to the customer** (`balanceShownToTheCustomer` typed as the literal `false`). Asked *"is your
+balance 450 points?"* almost anybody says yes — nobody carries their points total in their head, so
+the question measures agreeableness rather than the balance. It is *"expected: 40"* on a count
+sheet in a different costume. What is accepted instead is the customer's own figure, or the
+activity they actually remember — and *"I don't know the number, but I redeemed against a gas
+cylinder in June"* is recorded as **honest and explicitly not agreement**.
+
+Sampling is seeded and three-strata: the largest balances (the points that cost money), customers
+sitting on a **tier boundary** (a tier is printed on every receipt and shown in the app, so a
+one-point error there becomes the loudest thing in the migration), and a thin random slice of
+everybody else — which matters most, because the first two are exactly the accounts a careful
+operator would already have got right.
+
+A test caught the strata double-counting: a customer near the tier line who is *also* in the
+largest-balance census must appear once, not twice, or the coverage figure overstates itself. The
+census wins.
+
+`provesTheBalanceWasEarned` is typed as the literal `false`: award double points by mistake for a
+year and every customer confirms the wrong figure cheerfully.
+
+23 tests. Full suite **2,632**.
+
+---
+
+## The six outside-evidence checks — COMPLETE (7 August 2026)
+
+OB-06 said we extract our own data rather than wait for a vendor. The consequence was that
+**every opening figure has to be proved against a record somebody outside the old system keeps**,
+because a domain verified only against the system it came from is refused by name in
+`extraction.ts`. All six now have code behind them:
+
+| Domain | External evidence | Module | The control it stands on |
+| --- | --- | --- | --- |
+| **Stock** | A physical count | `count-verification.ts` | The counter never sees the expected quantity |
+| **Supplier balances** | Their own statement | `supplier-reconciliation.ts` | Nothing is netted; the invoice only they have sorts first |
+| **Sales** | The bank statement | `banking-verification.ts` | A commission rate is declared, never derived from the gap |
+| **Tax** | The returns already filed | `tax-verification.ts` | No acknowledgement, no evidence; slab by slab, never blended |
+| **Books** | The accounts the CA signed | `books-verification.ts` | A balancing figure refused by name, before the balance test |
+| **Loyalty** | The customers themselves | `loyalty-verification.ts` | The sample is not the complaints; the balance is not shown |
+
+Each carries a **fixed `false`** naming what it cannot prove — `provesSalesWereComplete`,
+`provesTaxWasCorrectlyCharged`, `provesTheAccountsAreRight`, `provesTheBalanceWasEarned`,
+`certifiesTheTarget` — so no check can be read as proving more than it does.
+
+The pattern that runs through all six, arrived at independently each time: **an arithmetic that
+closes by naming the hole rather than finding it is refused.** A commission derived from the
+difference it explains, a tax rate averaged across a mixed basket, a suspense account, a sample
+drawn from the people who already complained. Each makes the numbers agree perfectly and proves
+nothing, and each is the move a competent person makes under time pressure.
+
 ## Proving the opening books against the accounts the CA signed (7 August 2026)
 
 `packages/migration/src/books-verification.ts`. The fifth external check, and **the one that ties
@@ -2465,10 +2539,10 @@ tests** against real PostgreSQL 16.13.
   default**, which is the property that had to be settled before the data arrives.
 - **EX-02 is closed (OB-06, 7 August 2026)** — we extract our own data ourselves. What the
   real-data migration now needs is **outside evidence**, not a vendor: bank statements, filed GST
-  returns, supplier statements of account and an authorised physical count. Five of the six checks
-  are built (`count-verification.ts`, `supplier-reconciliation.ts`, `banking-verification.ts`,
-  `tax-verification.ts`, `books-verification.ts`); loyalty is the last, in the table under
-  *Next session should start with*.
+  returns, supplier statements of account and an authorised physical count. **All six checks are
+  now built** — see *The six outside-evidence checks — COMPLETE*. What remains for the real-data
+  migration is the evidence itself, which is the owner's to gather, and the end-to-end gate that
+  runs all six as one pass.
 - What remains needs the owner or the store: **OB-02** (hosting), the
   **pre-pilot integration gate** (a live AI provider, then UAT-49), **EX-13** (a penetration
   test), and the 55 store activities in
@@ -2507,17 +2581,19 @@ by name in `extraction.ts`, so each row of that table needs code behind it.
 | **Sales** | The bank statement; the card/UPI settlement file | ✅ `banking-verification.ts` |
 | **Tax** | The GST returns already filed | ✅ `tax-verification.ts` |
 | **Books** | The accounts the CA prepared | ✅ `books-verification.ts` |
-| **Loyalty points** | A sample of customers confirming their own balance | ⬜ next |
+| **Loyalty points** | A sample of customers confirming their own balance | ✅ `loyalty-verification.ts` |
 
-**Loyalty points are the last one, and the odd one out.** Every other check proves a figure against
-a record somebody else keeps. Here the only witness is **the customer**, one at a time, and the
-balance is a liability we owe them in goods. Two properties make it different from the rest: a
-customer who has *lost* points complains and is therefore self-reporting, while a customer who has
-*gained* them never will — so the sample cannot be drawn from complaints, and it cannot be drawn
-by whoever ran the extraction either (§28, the same rule as the stock count). And a point balance
-is not money until it is spent, so what matters at migration is not the total but **whether each
-customer's balance is the one they will see in the app on day one** — a customer whose points fell
-is a customer who tells everybody.
+**All six are built.** See *The six outside-evidence checks — COMPLETE* below for the set and the
+pattern common to them.
+
+**What is next is no longer a module — it is the end-to-end gate.** Each check has been proved on
+its own; none has yet been run as one pass over a single synthetic legacy dataset, the way Stage 11
+proved MG-01…MG-12 in `the-old-shop-arrives-whole.test.ts`. That integration test is the honest
+next step, and it is the one that would catch the thing unit tests structurally cannot: a domain
+that quietly has **no** external check attached to it at all. `assessExtractionReadiness` in
+`extraction.ts` already knows which domains need which evidence, so the gate is to walk that table
+and prove every row is now satisfiable — with a deliberately unsatisfiable row proving the gate
+fails when it should.
 
 **Nothing here needs the ERP vendor, and nothing waits on them.** The letter stays on file
 (`docs/discovery/legacy-data-access.md`); if they ever answer it is a bonus, not a dependency.

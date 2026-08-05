@@ -53,6 +53,10 @@ Status: **Default in use** · **Confirmed** · **Changed by owner**.
 | OC-35 | Tax periods the migration covers | `taxPosition` `periodsExpected` | **None assumed** — stated up front, so a period with no return in hand is named rather than silently absent | Migration (with CA) |
 | OC-36 | Accounts that can only come from the CA (depreciation, provisions, accruals, prepayments, drawings) | `reconcileOpeningBooks` `caOnlyAccountCodes` | **None assumed** — named up front with the CA, because their absence is not a variance but exactly what would end up in suspense | Migration (with CA) |
 | OC-37 | Per-account tolerance against the signed accounts | `reconcileOpeningBooks` `toleranceMinor` | **₹0** — every account matches what was signed. There is **no** tolerance for a trial balance that does not balance, and none for a balancing figure at any value | Migration (with CA) |
+| OC-38 | What one redeemed loyalty point actually costs the store, in goods | `assessLoyaltyVerification` `pointCostMinor` | **None assumed** — needed to put a rupee figure on points we credited and nobody will ever mention | Migration (with CA) |
+| OC-39 | Loyalty tier thresholds, and how close to one a customer must be to get asked | `planLoyaltySample` `tierThresholds` / `tierBoundaryWindow` | **Off** until the tiers are given. A tier is on every receipt, so a customer one point from a threshold is worth asking | Master-data config |
+| OC-40 | Points difference at or below which a customer's balance need not block | `assessLoyaltyVerification` `tolerancePoints` | **0** — every difference is looked at. There is **no** tolerance for a customer who was asked and never replied | Migration |
+| OC-41 | Whether customers are held at their old tier for a period after go-live | Owner decision at cutover | **Not set** — offered as the usual answer where several tiers moved, never applied silently | Before go-live |
 
 > **How to use this at UAT:** work down the list. For each row either accept the default
 > (say nothing) or give the value. Nothing here needs a technical answer — every one is a
