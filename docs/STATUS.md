@@ -1709,6 +1709,42 @@ year and every customer confirms the wrong figure cheerfully.
 
 ---
 
+## OB-06 verification gate PASSED — every figure has a witness (7 August 2026)
+
+`tests/integration/every-figure-has-a-witness.test.ts`, **16 assertions, real PostgreSQL 16.13,
+three runs green.** All six checks run as one pass over one shop, and the gate adds the two things
+no unit test can reach. Evidence: `docs/evidence/ob-06-every-figure-has-a-witness.md`.
+
+**First: it proves every domain has a witness with code behind it.** A unit test can only test the
+checks that exist; the failure it cannot see is a domain with a *named* witness and **no module** —
+a row that reads as covered and is not. The test walks `VERIFIES` for all twelve domains and
+requires a built module for every source named. The map is typed `Record<ExternalSource, string>`,
+so **the gate is enforced by the compiler**: adding a kind of evidence without building a check is
+a type error, not merely a red test. Confirmed by adding a fictional `insurance_valuation` source
+and watching `tsc` refuse it before any test ran.
+
+**Second: it proves the witnesses agree with each other.** Four figures are tied across
+independent checks — bank gross across every tender = the filed taxable plus tax (₹75,86,000); the
+signed accounts' *Stock on hand* = the counted shelves; *Trade creditors* = the suppliers' own
+confirmations; *GST payable* = the filed return. **A wrong number now has to be wrong consistently
+in two independent records to survive.** And the ties are proved to be real rather than
+decorative: change one day's cash takings by ₹1,00,000 and *two* checks break at once.
+
+**And the gate can say no.** Withhold the physical count and five domains are refused by name as
+`verified_by_the_same_system`. A gate that cannot fail has not been tested.
+
+The verified figures are then banked as append-only events **carrying the witness that proved
+them** — a number in the opening books whose witness nobody recorded is a number nobody can defend
+two years later — and the database refuses to change them afterwards.
+
+Building it cost one guardrail hit, which is worth recording because the resolution was the same
+as every previous one: `ai-provider-neutral` fired on the word *"co**here**nt"* in a comment. The
+tempting fix was word boundaries in the detector, but `\bcohere\b` would then stop matching
+`COHERE_API_KEY` — a real weakening. **The prose was reworded instead.** That guardrail and
+`plain-text-source` have now been paid for six times between them.
+
+Full suite **2,648 across 189 files**.
+
 ## The six outside-evidence checks — COMPLETE (7 August 2026)
 
 OB-06 said we extract our own data rather than wait for a vendor. The consequence was that
@@ -2583,17 +2619,20 @@ by name in `extraction.ts`, so each row of that table needs code behind it.
 | **Books** | The accounts the CA prepared | ✅ `books-verification.ts` |
 | **Loyalty points** | A sample of customers confirming their own balance | ✅ `loyalty-verification.ts` |
 
-**All six are built.** See *The six outside-evidence checks — COMPLETE* below for the set and the
-pattern common to them.
+**All six are built, and the end-to-end gate has passed** — see *OB-06 verification gate PASSED*
+below. Nothing in the verification path is outstanding.
 
-**What is next is no longer a module — it is the end-to-end gate.** Each check has been proved on
-its own; none has yet been run as one pass over a single synthetic legacy dataset, the way Stage 11
-proved MG-01…MG-12 in `the-old-shop-arrives-whole.test.ts`. That integration test is the honest
-next step, and it is the one that would catch the thing unit tests structurally cannot: a domain
-that quietly has **no** external check attached to it at all. `assessExtractionReadiness` in
-`extraction.ts` already knows which domains need which evidence, so the gate is to walk that table
-and prove every row is now satisfiable — with a deliberately unsatisfiable row proving the gate
-fails when it should.
+**What remains for the real-data migration is not code. It is the evidence itself, and it is the
+owner's to gather:** bank statements running past the period end, the filed GST returns off the
+portal, statements of account from every supplier, the CA's signed accounts with the list of
+journal-only balances, and an authorised physical count. Each has a check waiting for it, and each
+check refuses to run on an assumption in place of the document.
+
+The honest next piece of build work, when the owner wants it, is **the owner-facing verification
+report** — one page per domain saying what the figure is, what proved it, and what could not be
+proved, in the language of the runbook rather than of the modules. Every module already produces
+its own `ownerAction` sentence; nothing yet gathers them into the single document the owner and
+the CA would sign against.
 
 **Nothing here needs the ERP vendor, and nothing waits on them.** The letter stays on file
 (`docs/discovery/legacy-data-access.md`); if they ever answer it is a bonus, not a dependency.
