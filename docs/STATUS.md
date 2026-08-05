@@ -1661,6 +1661,47 @@ honest rather than being marked complete.
 
 ---
 
+## The export that reconciles perfectly and is a tenth of the shop (7 August 2026)
+
+`packages/migration/src/completeness.ts`. The runbook names this danger for Route B; nothing
+enforced it.
+
+**It is dangerous because it does not look like a failure.** An operator opens the stock screen,
+sets no filter, clicks Export to Excel, and gets a file. It parses cleanly. Its rows are
+well-formed. Its own grand total agrees with the sum of its rows to the paisa. Everything
+reconciles — and it holds 4,000 of the shop's 41,200 products, because the grid was paginated and
+the export took the page. Nothing downstream can catch it: the cleaning detectors find no faults
+because there are none in what arrived, and the control totals reconcile because both sides are
+computed over the same short file. **It is internally consistent about a shop a tenth of the real
+size**, and the first person to notice is a customer whose product does not scan.
+
+Four signals, checked before anything else reads the file, in order of how much they can be
+trusted: a row count taken off the screen; **`Page N of M` — the signal that works when nobody
+wrote anything down**, because if the file stops at page 3 while the report says *of 47* no
+arithmetic is needed; the end marker, which is printed last; and sequence density.
+
+**Refused, not flagged.** A warning on a truncated export is one somebody clicks past at nine at
+night, and the cost of being wrong is a migration redone after cutover.
+
+**`unverifiable` is kept as a distinct verdict from `complete`.** A bare CSV with no page
+numbers, no end marker and no declared count has not passed anything — it has failed to be
+caught, and collapsing the two is how *"we checked it"* comes to mean *"nothing objected"*.
+
+Two defects my own tests caught while writing it. The end-marker signal was marked always
+available, so a plain CSV — which never has one — was condemned as truncated; it is now available
+only for a file carrying page furniture, since a signal that condemns every clean export is worse
+than no signal. And the sequence density counted repeated identifiers, so a heavily filtered
+export looked dense enough to pass; deduped now. The fixture for that test was also wrong in a
+way worth noting: it filtered every third *row* while its comment claimed every third *product*,
+and a product appears once per location — so it did not test what it said it did.
+
+`compareDoubleKeyed` closes Route D: two typists, two files, every disagreement named as a line
+for a person to settle against the page rather than an average to take. `verifiesTheSource` is
+typed as the literal `false` — two typists agreeing proves they read the page the same way, and
+nothing about whether the page was right.
+
+Full suite **2,504**.
+
 ## OB-06 gate passed — the whole self-extraction path, end to end (7 August 2026)
 
 Evidence: `docs/evidence/ob-06-we-get-it-out-ourselves.md`.

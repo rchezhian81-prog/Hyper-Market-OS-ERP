@@ -80,3 +80,9 @@ export {
   formatIndianMoney, renderStockReport, checkRoundTrip,
   type RenderOptions, type RoundTrip,
 } from './render-report';
+
+export {
+  checkExportCompleteness, compareDoubleKeyed,
+  type CompletenessSignal, type CompletenessVerdict, type SignalResult,
+  type CompletenessCheck, type KeyingDifference, type DoubleKeyResult,
+} from './completeness';

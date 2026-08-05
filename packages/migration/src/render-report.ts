@@ -114,9 +114,14 @@ export function renderStockReport(
     onPage = 0;
   };
 
+  // Page numbers are stamped with a placeholder and rewritten at the end. A real report knows
+  // its page count because it is rendered before it is printed; emitting "of ?" would make the
+  // completeness check untestable against the one signal that works when nobody wrote a count
+  // down.
+  const PAGE_PLACEHOLDER = '\u0000TOTAL\u0000';
   const pageBreak = (pageNumber: number): void => {
     grid.push(pad([]));
-    grid.push(pad([`Page ${pageNumber} of ?`]));
+    grid.push(pad([`Page ${pageNumber} of ${PAGE_PLACEHOLDER}`]));
     banner();
   };
 
@@ -157,9 +162,10 @@ export function renderStockReport(
 
   grid.push(pad(['GRAND TOTAL', '', '', '', '', formatIndianMoney(grandTotalMinor)]));
   grid.push(pad(['Printed on 31/03/2026 by ADMIN']));
-  grid.push(pad([`Page ${page} of ${page}`]));
+  grid.push(pad([`Page ${page} of ${PAGE_PLACEHOLDER}`]));
 
-  return grid;
+  const total = String(page);
+  return grid.map((row) => row.map((cell) => cell.split(PAGE_PLACEHOLDER).join(total)));
 }
 
 export interface RoundTrip {

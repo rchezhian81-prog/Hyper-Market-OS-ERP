@@ -69,6 +69,17 @@ a page limit, or a hidden column, the export has the same. So for every export, 
 for the row count first, and check the file has that many rows. A file with 4,000 rows where the
 screen said 41,200 is not a smaller export — it is the wrong file.
 
+**This is the one failure that reconciles perfectly**, which is why it is dangerous: the short
+file parses cleanly, its rows are well-formed, and its own grand total agrees with the sum of its
+rows to the paisa. It is internally consistent about a shop a tenth of the real size, and the
+first person to notice is a customer whose product does not scan.
+
+The software checks it on four signals before anything else looks at the file, and **refuses**
+rather than warns. The one worth knowing about: **`Page N of M`**. Almost every report prints it,
+and if the file stops at page 3 while the report says *of 47*, it is truncated — no arithmetic,
+and nobody needs to have written a count down. But write the count down anyway; it is one glance
+and it is the strongest check there is.
+
 ### Route C — print a report and read the file
 
 Every such system prints reports. Print to PDF, or to a text file if it offers one.
@@ -86,7 +97,9 @@ it is **not a migration source**, and the software refuses to treat it as one.
 Not snobbery about manual work. A route nobody can re-run cannot be rehearsed, cannot be
 re-applied to catch the changes since, and cannot be redone when the first attempt turns out
 wrong. Two people typing the same page produce two different datasets, and no one can say which
-is right. Where it must be used, **two people key it separately and the two files are compared.**
+is right. Where it must be used, **two people key it separately and the two files are compared** —
+the software does the comparison and names every field the two disagreed on, so each is a line for
+a person to settle against the page rather than an average to take.
 
 ---
 
