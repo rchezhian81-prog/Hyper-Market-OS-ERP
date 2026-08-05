@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 5 August 2026 (session: all six screens built — and the biggest gap in the project, "there is no user interface", is now closed)
+Last updated: 5 August 2026 (session: all six screens built, and the store box now feeds every one of them — the day close closes)
 
 ---
 
@@ -2591,6 +2591,85 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## The store box now feeds all six screens — and the day close closes (5 August 2026)
+
+This is the one that joins everything together.
+
+### What was actually wrong
+
+Every one of the six screens was built to be handed its information when it opens. **Nothing had
+ever handed it anything.** So all six sat there, correctly and uselessly, saying *"I have not been
+told anything"* — and the manager's day close refused to close, every time, exactly as designed.
+
+That was the right behaviour and I said so each time. But it meant six finished screens and no
+system.
+
+### What the box does now
+
+The store box in your back office serves all six screens, and it answers from two different places:
+
+- **From its own disk** — every sale rung at every lane. It wrote them, so it can answer without
+  asking anybody. This is why the screens work with the internet down.
+- **From the last pack the cloud sent** — the product list, who is waiting on an approval, today's
+  checklist, the picker's wave, the driver's route.
+
+And it always says **which of the two** an answer came from. If the cloud has never told it
+something, it says so rather than saying "none".
+
+### The day close now closes
+
+The two things the day close checks — is anything unresolved, and has everything reached the cloud —
+finally have somewhere to come from. **The unsent count is the box's own queue**, which is the only
+honest source there is: the cloud cannot tell you what has not reached the cloud.
+
+And the exceptions are worked out **on the box, from the day's own takings**, against the limits you
+set. If it waited for the cloud to notice a refund spike, that check would go blank the moment the
+internet dropped — which is exactly when a shop is least supervised.
+
+This is proved end to end now: a real socket, the real screens loaded from disk, a real day closed.
+
+### One number I refuse to make up
+
+**Margin.** What you sold something for is on the sale. What it *cost* you is in the product list.
+So if a product has no cost price, that sale's margin cannot be worked out.
+
+The tempting thing is to treat the missing cost as zero. **Do not ever let anybody do that** — it
+reports a 100% margin, which looks like wonderful news and would be believed.
+
+So the box leaves that sale out of the margin figures, keeps it in the takings (the money came in
+either way), and **tells you on your own screen exactly which products are missing a cost price**.
+Two true numbers and a named gap, instead of one number that is quietly wrong.
+
+### Three real faults this found
+
+1. **The till was throwing away figures it had already worked out.** It saved the basket and the
+   total to disk, and dropped the pre-tax amount, the tax and how they paid — all three already
+   calculated to take the money. Without them the day's figures cannot be rebuilt from the disk at
+   all. Fixed.
+2. **The customer app's search was broken and silent.** It read the wrong field, so `?? []` turned
+   every search into "nothing matched that" — for every word, including exact barcodes. Nothing
+   crashed and no test failed; the shop simply appeared to stock nothing. Found by actually running
+   a search. Fixed.
+3. **The manager's approvals list crashed on real data**, because the box sent the amount as a plain
+   number and the approval rules expect an amount *with its currency*. Same fault as the one that
+   once made the till refuse every sale because two files disagreed on a field name. Fixed, and the
+   conversion now happens in one place instead of six.
+
+### A note on the safety catch
+
+All of this can be undone by two characters. Writing `?? []` in the box turns *"the cloud has never
+mentioned approvals"* into *"no approvals are waiting"*, and the day close would then lock a trading
+day on nothing at all. There is now an automatic check that bans that exact shape in the file that
+builds these payloads, and a test that proves the check works.
+
+**Tests:** 3,510 automated plus 31 performance, all green.
+
+**What is left:** nothing plans a delivery route yet (M20), so the driver's route still has to be put
+in the pack by hand. And nothing has yet met one real product from your old system — which is now
+the biggest remaining risk in the whole project.
+
+---
+
 ## The customer's app — and making it as easy to leave as to arrive (5 August 2026)
 
 The last screen. Every application in this project now has one.
@@ -3688,17 +3767,16 @@ insist on when somebody eventually asks for it to be switched off.
 
 ## Next session should start with
 
-**The store box has to start feeding the six screens that now exist.** The manager's screen wants
-exceptions (M15) and tasks (D11/M25); the owner's phone wants its brief pushed to it; the picker's
-handheld wants an assigned wave; the driver's phone wants a planned route (M20 dispatch, which
-nothing does yet); the customer app wants a published catalogue and its slots. Every one of these
-has an engine and no producer, so each screen honestly says it has nothing — and the manager's day
-close correctly refuses to close because of it. **That is the next piece of work, and it is the one
-that turns six demonstrations into a system the shop can run on.**
+**Real data.** The screens are built, the store box feeds them, and the day close closes — and
+**not one line of any of it has met a single real product from the old system.** Every control was
+written for 20,000 SKUs with duplicate barcodes, missing HSN codes, three spellings of one brand and
+produce sold by weight; none of them has met one. That is now the largest risk in the project by a
+wide margin, and `docs/requirements/data-requirements.md` says exactly what to extract.
 
-After that, per `docs/architecture/build-plan.md`: purchase and receiving (M06/M07 — nothing
-captures a supplier invoice yet, so the three-way match still has no lines), then the compliance
-build (HSN, e-invoicing if it applies, FSSAI records, legal-metrology stamping dates).
+After that: route planning (M20 — nothing dispatches, so a driver's route has to be put in the pack
+by hand), purchase and receiving (M06/M07 — nothing captures a supplier invoice, so the three-way
+match still has no lines to match), and the compliance build (HSN, e-invoicing if it applies, FSSAI
+records, legal-metrology stamping dates).
 
 **Then the owner's decisions.** The code is complete as far as it can go without them: all thirteen
 services persist, token verification is done, no folder in the repository layout is empty, the

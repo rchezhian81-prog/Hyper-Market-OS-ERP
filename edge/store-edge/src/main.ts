@@ -39,13 +39,30 @@ import { openFileLog, readLog, type OpenFileLog } from './file-log';
 import { readCursor, writeCursor, advanceTo } from './sync-cursor';
 import { createEdgeNode, type EdgeNode } from './index';
 import { startLaneServer, LANE_HOST, type LaneServer } from './lane-server';
+import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-server';
+import { readSales } from './read-model';
+import { emptyPack, readPack, type StorePack } from './store-pack';
+import type { ScreenInput } from './screen-data';
 import { hmacSigner } from '../../../services/catalogue/src/index';
 import { makeEvent } from '../../../packages/contracts/src/event';
+import { makeTradingDayRule, tradingDate, type TradingDayRule } from '../../../packages/calendar/src/trading-day';
+import { readFile } from 'node:fs/promises';
 
 /** Gap between drains when the last one delivered something. */
 const BASE_INTERVAL_MS = 15_000;
 /** Ceiling on the gap when nothing is getting through. Five minutes, not five hours. */
 const MAX_INTERVAL_MS = 300_000;
+
+/**
+ * The store's trading-day cut-off, from the pack.
+ *
+ * Midnight when the pack has not said, which is the commonest real answer and is stated rather
+ * than hidden — a shop that trades past midnight and has not configured a cut-off would otherwise
+ * silently split one trading day into two, and nobody would find out until the day close.
+ */
+export function packCutoff(pack: { readonly policies: { readonly known: boolean; readonly value?: { readonly tradingDayCutoff: string } } }): TradingDayRule {
+  return makeTradingDayRule(pack.policies.known ? pack.policies.value!.tradingDayCutoff : '00:00');
+}
 
 export function nextInterval(consecutiveQuietPasses: number): number {
   const grown = BASE_INTERVAL_MS * 2 ** Math.min(consecutiveQuietPasses, 10);
@@ -64,6 +81,13 @@ export interface EdgeProcess {
   readonly node: EdgeNode;
   /** Null when no cloud is configured — which is a supported way to run, not a fault. */
   readonly agent: SyncAgent | null;
+  /**
+   * Where the six screens are served from, or null when `EDGE_SCREEN_PORT` is unset.
+   *
+   * Optional because a lane box and the back-office box run the same process: a till does not need
+   * to serve the owner's brief, and not opening a socket is better than opening one nobody uses.
+   */
+  readonly screens: ScreenServer | null;
   stop(): Promise<void>;
 }
 
@@ -104,6 +128,20 @@ export async function startEdge(
   const tenantId = settings['EDGE_TENANT_ID']!;
 
   /**
+   * The day, as this box can see it.
+   *
+   * Re-read on every screen request rather than held from boot: a manager opening the screen at
+   * four o'clock must be shown four o'clock's sales, and a projection frozen at start-up would
+   * quietly report the shop as having taken nothing all day.
+   */
+  let recordsNow = readSales(found.filter((r) => r.ok).map((r) => (r.ok ? r.record : '')));
+  const reread = async (): Promise<void> => {
+    const all = await readLog(log.path);
+    recordsNow = readSales(all.filter((r) => r.ok).map((r) => (r.ok ? r.record : '')));
+    recordsNow = { sales: recordsNow.sales, unreadable: all.filter((r) => !r.ok).length };
+  };
+
+  /**
    * Rebuild the queue from the log.
    *
    * The log is the system of record and the queue is a view of it, so a restart reconstructs the
@@ -140,6 +178,59 @@ export async function startEdge(
   const lane = lanePort === undefined ? null : await startLaneServer({ node, port: Number(lanePort) });
   if (lane !== null) say(`lane socket on ${LANE_HOST}:${lane.port} — loopback only, nothing on the shop network can reach it`);
 
+  /**
+   * What the cloud last told this box.
+   *
+   * It starts as `emptyPack()` — every section saying it does not know — and that is the honest
+   * state of a freshly installed box. **Not one section defaults to empty**, because an empty
+   * approvals list and an unheard-of approvals list mean opposite things, and the manager's day
+   * close is built to refuse the second.
+   */
+  let pack: StorePack = emptyPack();
+  const packPath = settings['EDGE_PACK_FILE'];
+  if (packPath !== undefined) {
+    try {
+      const raw = await readFile(packPath, 'utf8');
+      pack = readPack(JSON.parse(raw) as unknown, new Date().toISOString());
+      say(`store pack version ${pack.version} loaded from ${packPath}`);
+    } catch (e) {
+      // Said out loud and then carried on with a pack that knows nothing — which is exactly what
+      // this box has. A box that refused to start would take the lanes down over a report.
+      say(`the store pack at ${packPath} could not be read (${e instanceof Error ? e.message : String(e)}).`);
+      say('  This box will tell every screen it has not been told anything, which is true.');
+    }
+  } else {
+    say('no store pack is configured, so the screens will be told this box knows nothing yet.');
+  }
+
+  // The screens socket. Built from the CURRENT state on every request, so a screen reloaded at
+  // four o'clock shows four o'clock's exceptions rather than the ones this process saw at boot.
+  const snapshot = (): ScreenInput => {
+    const now = new Date().toISOString();
+    // Fire-and-forget: the next request sees the newly-read records. Awaiting a disk read inside
+    // a page request would put a file read on the path a manager waits on, and the day moves by
+    // seconds rather than milliseconds.
+    void reread();
+    return {
+      pack,
+      sales: recordsNow.sales,
+      unreadableRecords: recordsNow.unreadable,
+      outbox,
+      now,
+      tradingDay: tradingDate(now.slice(0, 16), packCutoff(pack)),
+    };
+  };
+
+  const screenPort = settings['EDGE_SCREEN_PORT'];
+  const screens = screenPort === undefined ? null : await startScreenServer({
+    port: Number(screenPort),
+    appsDir: settings['EDGE_APPS_DIR'] ?? 'apps',
+    snapshot,
+  });
+  if (screens !== null) {
+    say(`screens on ${SCREEN_HOST}:${screens.port} — loopback only, so nothing on the shop network can read the day's takings`);
+  }
+
   const cloudUrl = settings['CLOUD_API_URL'];
   const cloudToken = settings['CLOUD_API_TOKEN'];
 
@@ -147,8 +238,12 @@ export async function startEdge(
     // Supported, and said plainly. The lanes sell; the queue grows; nobody is told a lie about it.
     say('no cloud is configured, so nothing will be synced. The shop can still trade — that is the point.');
     return {
-      log, outbox, node, lane, agent: null,
-      stop: async () => { if (lane !== null) await lane.stop(); await log.close(); },
+      log, outbox, node, lane, screens, agent: null,
+      stop: async () => {
+        if (lane !== null) await lane.stop();
+        if (screens !== null) await screens.stop();
+        await log.close();
+      },
     };
   }
 
@@ -207,6 +302,7 @@ export async function startEdge(
     outbox,
     node,
     lane,
+    screens,
     agent,
     stop: async () => {
       stopping = true;
@@ -222,6 +318,7 @@ export async function startEdge(
         say(`stopping with ${badge.unsentCount} sale(s) still to send. They are on the disk and will go when this starts again.`);
       }
       if (lane !== null) await lane.stop();
+      if (screens !== null) await screens.stop();
       await log.close();
     },
   };

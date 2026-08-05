@@ -24,9 +24,9 @@ project.
 | --- | --- | --- |
 | `packages/` — domain rules | 45,179 | **Genuinely strong.** The product's value lives here |
 | `services/` — the thirteen APIs | 5,556 | Built, persisting, authenticated, audited |
-| `edge/` — the store box | 1,144 | Now runs, writes durably, syncs. Built **today** |
+| `edge/` — the store box | 2,150 | Runs, writes durably, syncs — **and now feeds all six screens** |
 | `apps/` — everything a person touches | 7,500 | **All six have real screens.** The gap that dominated this document is closed |
-| Tests | 3,438 + 31 | Unusually thorough on rules; thin on assembly until today |
+| Tests | 3,510 + 31 | Unusually thorough on rules; thin on assembly until today |
 
 **2,452 lines of app code for six applications** is the number that matters. For comparison, the POS
 alone — one screen a cashier uses eight hours a day — is 1,070 of those lines, and none of it draws
@@ -63,7 +63,14 @@ all of those are written, tested and correct.
 is how retail software ends up with beautiful screens over a system that cannot balance a till. But
 it does mean the project is further from a pilot than a module count suggests.
 
-### Gap 2 — Assembly has lagged the rules, and it hid seven silent faults
+### Gap 2 — Assembly has lagged the rules, and it hid **eleven** silent faults
+
+*Updated. The count was seven when this was written and it is now eleven — every one found the same
+way, by driving a real path rather than reading code. The four added since: the picker's scans and
+the driver's COD both queued nowhere at all despite both docstrings saying they did; the six screens
+had no producer for any of their data; and the customer app's search read the wrong field, so it
+reported "nothing matched" for every term ever typed. **All four are fixed.** The original seven
+follow.*
 
 In one session, driving the real paths rather than reading the code, seven separate things turned
 out to be **present in the design and absent in the running system**:
@@ -185,8 +192,13 @@ original sale and are currently sent to the service desk by name rather than hid
 button — and then the whole thing on real hardware with a real scanner and a stopwatch, which is
 the only test that counts.
 
+✅ **The store box now feeds all six screens** — its own log for the day's sales and exceptions,
+the cloud pack for everything the rest of the business decided, and a clear statement of which of
+the two any given answer came from. **The manager's day close now closes**, proved end to end.
+
 **2. Get real data into the rehearsal environment.** Follow the extraction plan. Every control is
-built and waiting; none has met a real export.
+built and waiting; none has met a real export. **This is now the single biggest remaining risk** —
+the screens, the box and the rules are all built, and none of them has met one real product.
 
 **3. Then the other five surfaces**, in this order: store manager → owner → receiving/purchase →
 picker/delivery → customer app. Ordered by how much of the shop stops without them.

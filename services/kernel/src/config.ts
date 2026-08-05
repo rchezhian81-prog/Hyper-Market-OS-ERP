@@ -181,6 +181,23 @@ export const STORE_EDGE_CONFIG: readonly Spec[] = [
    * attached and does the shop-wide work — which is exactly what the back-office box is (ADR-0004).
    */
   { key: 'EDGE_LANE_PORT', numeric: true, optional: true },
+  /**
+   * The loopback port the six screens are served from. Optional for the same reason the lane port
+   * is: a till does not need to serve the owner's brief, and not opening a socket beats opening
+   * one nobody uses.
+   */
+  { key: 'EDGE_SCREEN_PORT', numeric: true, optional: true },
+  /** Where `apps/` lives on this box, so the screens can be served from disk. */
+  { key: 'EDGE_APPS_DIR', optional: true },
+  /**
+   * The pack the cloud last sent: products and costs, approvals, today's checklist, the assigned
+   * wave and route, slots, and the store's own thresholds.
+   *
+   * Optional, and its absence is a supported state rather than a fault — a freshly installed box
+   * has never been told any of it. What it must never do is *default*: an empty approvals list and
+   * an unheard-of approvals list mean opposite things, and the manager's day close turns on which.
+   */
+  { key: 'EDGE_PACK_FILE', optional: true },
   // Optional, and read by the sync agent only. Absent means "sell, queue, sync later".
   { key: 'CLOUD_API_URL', optional: true },
   { key: 'CLOUD_API_TOKEN', secret: true, minLength: 20, optional: true },

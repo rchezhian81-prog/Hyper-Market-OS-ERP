@@ -240,6 +240,16 @@
       `window.ownerSession`. It loads FIRST so the view binds to the real engines; if the
       bundle has not been built, app.js falls back to sample figures and SAYS SO.
     -->
+    <!--
+      The store box puts this screen's data here, above the bundle, because the bundle
+      reads its global while it evaluates. A screen that fetched afterwards would render
+      once with nothing — and "nothing" on these screens means NOT KNOWN, so every screen
+      would flash "I have been told nothing" before correcting itself.
+
+      Served straight from a file instead, the marker is simply left in place and the
+      shell falls back to its sample data, which it announces.
+    -->
+    <!--SCREEN-DATA-->
     <script type="module" src="./owner-app.bundle.js"></script>
     <script type="module" src="./app.js"></script>
   </body>

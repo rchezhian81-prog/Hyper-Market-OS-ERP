@@ -1,0 +1,50 @@
+{
+  "_comment": [
+    "An EXAMPLE store pack — the shape the cloud sends this box (EDGE_PACK_FILE).",
+    "Every top-level section is optional, and leaving one out is meaningful:",
+    "the box then tells the screens it has NOT BEEN TOLD that section, which is",
+    "different from telling them the section is empty. The manager's day close",
+    "refuses the first and proceeds on the second.",
+    "Contains no real store data, no prices anybody trades on and no secrets."
+  ],
+  "version": 1,
+  "policies": {
+    "storeId": "REPLACE_WITH_STORE_ID",
+    "branchId": "REPLACE_WITH_BRANCH_ID",
+    "branchName": "REPLACE_WITH_BRANCH_NAME",
+    "tradingDayCutoff": "02:00",
+    "staleAfterSeconds": 300,
+    "countApprovalThresholdMinor": 100000,
+    "handoverToleranceMinor": 10000,
+    "privacySlaDays": 30,
+    "warehouseId": "REPLACE_WITH_WAREHOUSE_ID"
+  },
+  "products": [
+    {
+      "productId": "EXAMPLE-1",
+      "name": "Example product",
+      "nameTa": "எடுத்துக்காட்டு பொருள்",
+      "categoryId": "example",
+      "unitPriceMinor": 10000,
+      "unitCostMinor": 7000,
+      "uom": "ea",
+      "barcodes": ["0000000000000"],
+      "availableMinor": 0
+    }
+  ],
+  "approvals": [],
+  "checklist": [
+    { "itemId": "chiller", "description": "Chiller temperature logged", "done": false, "blocking": true }
+  ],
+  "wave": null,
+  "route": null,
+  "slots": [],
+  "lossPreventionRules": [
+    { "kind": "refund", "maxCount": 5, "maxTotalValueMinor": 500000, "escalateAtMultiple": 2 },
+    { "kind": "void", "maxCount": 10 }
+  ],
+  "consentPurposes": [
+    { "purpose": "order_updates", "channel": "sms", "required": true },
+    { "purpose": "marketing", "channel": "sms" }
+  ]
+}

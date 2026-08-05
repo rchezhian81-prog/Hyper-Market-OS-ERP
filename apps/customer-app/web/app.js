@@ -125,9 +125,9 @@ const words = (map, key) => (map[key]?.[lang] ?? map[key]?.en ?? String(key).rep
  */
 function sampleShop() {
   const products = [
-    { productId: 'p1', name: 'Toor dal 1kg', priceMinor: 145_00 },
-    { productId: 'p2', name: 'Idli rice 5kg', priceMinor: 385_00 },
-    { productId: 'p3', name: 'Coconut oil 1L', priceMinor: 320_00 },
+    { productId: 'p1', name: 'Toor dal 1kg', priceMinor: 145_00, unitPriceMinor: 145_00 },
+    { productId: 'p2', name: 'Idli rice 5kg', priceMinor: 385_00, unitPriceMinor: 385_00 },
+    { productId: 'p3', name: 'Coconut oil 1L', priceMinor: 320_00, unitPriceMinor: 320_00 },
   ];
   let lines = [];
   let consent = [
@@ -140,9 +140,11 @@ function sampleShop() {
     : `${lines.length} item(s) in your basket. Prices are checked when you review.`);
   return {
     state: () => ({ stage: 'browsing', lines, tellTheCustomer: say() }),
-    search: (term) => ({ hits: products
+    // The same shape the real engine returns — an array of hits, each wrapping its product. A
+    // stand-in with a different shape is a stand-in that teaches the view the wrong one.
+    search: (term) => products
       .filter((p) => p.name.toLowerCase().includes(term.toLowerCase()))
-      .map((p) => ({ productId: p.productId, name: p.name, priceMinor: p.priceMinor, sellable: true })) }),
+      .map((p) => ({ product: { productId: p.productId, name: p.name, unitPriceMinor: p.priceMinor, buyable: true }, match: 'prefix' })),
     setLine: (productId, quantityMinor) => {
       lines = [...lines.filter((l) => l.productId !== productId), ...(quantityMinor > 0 ? [{ productId, quantityMinor }] : [])];
       return { stage: 'browsing', lines, tellTheCustomer: say() };
@@ -235,7 +237,7 @@ function productRow(product) {
 
   const price = document.createElement('span');
   price.className = 'price';
-  price.textContent = inr(product.priceMinor ?? 0);
+  price.textContent = inr(product.unitPriceMinor ?? 0);
 
   const qty = document.createElement('div');
   qty.className = 'qty';
@@ -271,11 +273,14 @@ function renderSearch() {
     el('results-empty').hidden = true;
     return;
   }
-  const result = shop.search(term);
-  const hits = result.hits ?? [];
+  // `searchCatalogue` returns the hits ARRAY, and each hit wraps its product. The first version
+  // of this read `result.hits`, which is `undefined` — so `?? []` made every single search report
+  // "nothing matched that", for every term, including exact barcodes. Nothing threw and nothing
+  // failed a test; the shop simply appeared to stock nothing. Found by driving the real path.
+  const hits = shop.search(term);
   el('results-empty').hidden = hits.length > 0;
   el('results-empty').textContent = t('nothingFound');
-  el('results').replaceChildren(...hits.map(productRow));
+  el('results').replaceChildren(...hits.map((hit) => productRow(hit.product ?? hit)));
 }
 el('search').addEventListener('input', () => { renderSearch(); });
 
@@ -320,7 +325,7 @@ function renderBasket() {
   const products = window.shopData?.products ?? [];
   el('basket-lines').replaceChildren(...state.lines.map((line) => {
     const product = products.find((p) => p.productId === line.productId)
-      ?? { productId: line.productId, name: line.productId, priceMinor: 0 };
+      ?? { productId: line.productId, name: line.productId, unitPriceMinor: 0 };
     return productRow(product);
   }));
 

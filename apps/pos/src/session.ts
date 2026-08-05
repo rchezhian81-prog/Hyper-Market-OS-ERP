@@ -369,7 +369,23 @@ export class PosSession {
     // nothing has been promised to anybody and the cashier is told to use another lane. This is
     // the one place in the product where refusing a sale is the correct answer, and it is correct
     // because of the moment.
-    const outcome = await this.durable(saleId, JSON.stringify({ ...input, total: totals.payable.minor }));
+    // **What goes on the disk is what the shop later has to be able to answer with.**
+    //
+    // The first version wrote the basket and the payable total and nothing else. That is enough to
+    // reprint a receipt and enough to sync a sale, so nothing ever failed — but the store box
+    // projects the day's figures from this record, and net, tax and the tender kind were simply
+    // not in it. The owner's margin cannot be worked out from a gross total, and a figure that
+    // cannot be worked out is either absent or invented.
+    //
+    // These are not new facts. `totals()` already knows all three; they were being computed,
+    // used to take the money, and then dropped on the floor.
+    const outcome = await this.durable(saleId, JSON.stringify({
+      ...input,
+      total: totals.payable.minor,
+      netMinor: totals.net.minor,
+      taxMinor: totals.tax.minor,
+      currency: totals.payable.currency,
+    }));
     if (!outcome.committed) throw new LocalCommitRefusedError(saleId, outcome.laneMessage);
 
     const sale = commitSale(

@@ -199,6 +199,16 @@
       <button id="banner-ok" type="button">I have read this</button>
     </div>
 
+    <!--
+      The store box puts this screen's data here, above the bundle, because the bundle
+      reads its global while it evaluates. A screen that fetched afterwards would render
+      once with nothing — and "nothing" on these screens means NOT KNOWN, so every screen
+      would flash "I have been told nothing" before correcting itself.
+
+      Served straight from a file instead, the marker is simply left in place and the
+      shell falls back to its sample data, which it announces.
+    -->
+    <!--SCREEN-DATA-->
     <script type="module" src="./delivery-app.bundle.js"></script>
     <script type="module" src="./app.js"></script>
   </body>
