@@ -24,8 +24,23 @@ export interface MigrationDeps {
   readonly acceptances: (tenantId: string) => Promise<readonly Acceptance[]> | readonly Acceptance[];
   readonly signatures: (tenantId: string) => Promise<readonly Signature[]> | readonly Signature[];
   readonly recordAcceptance: (tenantId: string, a: Acceptance) => Promise<void> | void;
-  readonly ownerId: (tenantId: string) => Promise<string> | string;
-  readonly extractionOperator: (tenantId: string) => Promise<string> | string;
+  /**
+   * Who the owner is. **`undefined` means we cannot tell, and nobody may accept in their place.**
+   *
+   * This was a hard-coded `'u-owner'` in the composition root, which meant the check below —
+   * "only the owner may accept a figure into the opening books" — was satisfied by anybody who
+   * typed that string. A control comparing a caller against a placeholder is not a control.
+   */
+  readonly ownerId: (tenantId: string) => Promise<string | undefined> | string | undefined;
+  /**
+   * Who ran the extraction. **`undefined` means we cannot tell, and no report is produced.**
+   *
+   * It appears by name on the page the owner and the CA sign, and it is load-bearing there: the
+   * rule that whoever ran the extraction cannot choose which stock lines get counted only means
+   * something if the page says who that was. A placeholder here is a fabricated audit record on a
+   * signed document.
+   */
+  readonly extractionOperator: (tenantId: string) => Promise<string | undefined> | string | undefined;
   readonly now: () => string;
 }
 
@@ -47,6 +62,33 @@ async function assertSafeTarget(deps: MigrationDeps, tenantId: string): Promise<
   }
 }
 
+/**
+ * The two people the signed page names, or a refusal.
+ *
+ * Both were placeholders in the composition root — `'u-owner'` and `'u-operator'`. A page that
+ * names a person who does not exist is worse than a page that will not render: it is signed.
+ */
+async function namedPeople(
+  deps: MigrationDeps, tenantId: string,
+): Promise<{ ownerId: string; extractionOperator: string }> {
+  const ownerId = await deps.ownerId(tenantId);
+  const extractionOperator = await deps.extractionOperator(tenantId);
+  const missing = [
+    ownerId === undefined ? 'who the owner is' : undefined,
+    extractionOperator === undefined ? 'who ran the extraction' : undefined,
+  ].filter((m): m is string => m !== undefined);
+
+  if (missing.length > 0) {
+    throw apiError(409, {
+      code: 'the_page_would_name_nobody',
+      whatHappened: `This report is signed, and it does not yet know ${missing.join(' or ')}.`,
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'No report was produced. Record those people first — a signed page naming a placeholder is a fabricated record, and the rule that whoever ran the extraction cannot choose which lines get counted only means something if the page says who that was.',
+    });
+  }
+  return { ownerId: ownerId!, extractionOperator: extractionOperator! };
+}
+
 export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
   return [
     {
@@ -54,13 +96,14 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
       permission: 'migration.verification.read',
       handler: async (ctx) => {
         await assertSafeTarget(deps, ctx.tenantId);
+        const people = await namedPeople(deps, ctx.tenantId);
         const built = buildVerificationReport({
           reportId: `VR-${ctx.tenantId}`, asAt: deps.now(),
           preparedBy: ctx.userId,
-          extractionOperator: await deps.extractionOperator(ctx.tenantId),
+          extractionOperator: people.extractionOperator,
           findings: await deps.findings(ctx.tenantId),
           acceptances: await deps.acceptances(ctx.tenantId),
-          ownerId: await deps.ownerId(ctx.tenantId),
+          ownerId: people.ownerId,
         });
         if (!built.ok) {
           // A refusal here is the report declining to exist, which is the point: a partial one
@@ -80,13 +123,14 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
       permission: 'migration.verification.read',
       handler: async (ctx) => {
         await assertSafeTarget(deps, ctx.tenantId);
+        const people = await namedPeople(deps, ctx.tenantId);
         const built = buildVerificationReport({
           reportId: `VR-${ctx.tenantId}`, asAt: deps.now(),
           preparedBy: ctx.userId,
-          extractionOperator: await deps.extractionOperator(ctx.tenantId),
+          extractionOperator: people.extractionOperator,
           findings: await deps.findings(ctx.tenantId),
           acceptances: await deps.acceptances(ctx.tenantId),
-          ownerId: await deps.ownerId(ctx.tenantId),
+          ownerId: people.ownerId,
         });
         if (!built.ok) throw apiError(422, {
           code: built.refusedBecause!, whatHappened: built.detail,
@@ -105,6 +149,14 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
         await assertSafeTarget(deps, ctx.tenantId);
         const a = ctx.body as Acceptance;
         const owner = await deps.ownerId(ctx.tenantId);
+        if (owner === undefined) {
+          throw apiError(409, {
+            code: 'nobody_is_recorded_as_the_owner',
+            whatHappened: 'No user holds the owner role for this tenant, so there is nobody this acceptance could be checked against.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was accepted. Record who the owner is first — until then a check that only the owner may accept has nothing to compare a caller with, and would pass for anybody.',
+          });
+        }
         if (a?.acceptedBy !== owner) {
           throw apiError(403, {
             code: 'accepted_by_somebody_other_than_the_owner',

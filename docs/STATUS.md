@@ -2591,6 +2591,51 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## All thirteen services persist — and the same fault three more times (5 August 2026)
+
+Identity, platform, reporting, migration and AI now read and write the event store. **Every one of
+the thirteen services persists.** The API is a system rather than a shell.
+
+The empty-answer fault from earlier today turned up three more times, and each was fixed in the
+domain rather than hidden in an adapter:
+
+| It was asked | It answered | What that meant |
+| --- | --- | --- |
+| Is the system healthy? (nothing probed) | "healthy — all 0 dependencies reachable" | Green because nothing was checked |
+| Show me the dashboard (no figures) | "0 figures, all current" | Everything is fine |
+| Who is the owner? | `'u-owner'` — a placeholder | Anybody who typed that string could accept a migration figure into the opening books |
+
+The health one is the sharpest: this is the module whose whole point is that *the process being
+alive is not the same as it working*, and it was making exactly that mistake one level up. It now
+answers **unknown** — deliberately not *unhealthy*, which means the shop cannot trade and would
+trigger a failover over what is a gap in monitoring.
+
+The migration one is the most serious. The page the owner and the CA sign was naming a person who
+does not exist. That is worse than a page that refuses to render, because it gets signed — and the
+rule that whoever ran the extraction cannot choose which stock lines get counted only means
+anything if the page says who that was. Both names are now read from the record, and the routes
+refuse, naming every gap at once, rather than proceeding on a placeholder.
+
+**Roles are now written down** (`services/api/src/roles.ts`). A role is configuration — what
+`cashier` *means* is a set of permission codes this product defines — while who holds it is the
+tenant's own data in the event stream. Separation of duties is not a policy document; it is which
+codes are **absent** from a list: the accountant can post a journal and cannot close the period
+they posted into; the store manager runs the shop and cannot grant a role; the cashier, the role
+most people hold, has six permissions.
+
+**The AI kill switch defaults ON.** It is the one place in the adapters where an absent record does
+not mean "we cannot say" — a switch that defaults off is an agent running because nobody has told
+it not to. No budget granted means nothing may be spent.
+
+**Tests:** 2,989 automated plus 19 performance, all green.
+
+**What the owner should check.** Nothing in the store. Two things worth knowing: **the AI is
+switched off and stays off until you turn it on by name**, and **the migration report will not
+print until the system knows who you are and who ran the extraction** — which is deliberate,
+because that page gets signed.
+
+---
+
 ## Nobody could log in — now the door exists (5 August 2026)
 
 **What changed.** The API's `authenticate` returned nothing for every caller. That was
@@ -2756,10 +2801,9 @@ insist on when somebody eventually asks for it to be switched off.
   store operations lead, finance/CA reviewer, security/architecture reviewer.
 
 ## Next session should start with
-**The five services still on stubs** — identity's own routes (roles, grants, branches), platform,
-reporting, migration and AI. Token verification is done; what those five still lack is
-persistence. After that, `apps/customer-app`, which is still empty, and the migration weekend
-runbook.
+**`apps/customer-app`, which is still empty**, and the migration weekend runbook. All thirteen
+services now persist and token verification is done, so the API layer is complete as far as it can
+go without the owner's decisions (an identity provider, hosting, a live AI provider).
 
 Everything below remains true and unchanged.
 

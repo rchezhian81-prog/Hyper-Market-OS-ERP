@@ -24,7 +24,20 @@ export interface DependencyProbe {
   readonly detail?: string;
 }
 
-export type HealthState = 'healthy' | 'degraded' | 'unhealthy';
+/**
+ * `unknown` is the one that was missing, and it is not a nicety.
+ *
+ * With no probes at all `assessHealth` returned **healthy** — "all 0 dependencies reachable" — for
+ * the same reason an empty control-total list closed a month: `filter` over nothing finds nothing,
+ * and nothing found reads as nothing wrong. A monitoring gap and a working system are not the same
+ * state, and the whole point of this module is that the process being alive is not the same as it
+ * working. Green-because-unchecked is that fault one level up.
+ *
+ * It is deliberately *not* `unhealthy`: that means the shop cannot trade and would trigger a
+ * failover for what is a gap in monitoring. It is its own answer, the way `unknown` is its own
+ * answer to "was it saved?" in the kernel.
+ */
+export type HealthState = 'healthy' | 'degraded' | 'unhealthy' | 'unknown';
 
 export interface Health {
   readonly state: HealthState;
@@ -45,16 +58,19 @@ export function assessHealth(probes: readonly DependencyProbe[]): Health {
   const fatal = down.filter((p) => p.criticality === 'shop_cannot_trade_without_it');
   const degrading = down.filter((p) => p.criticality === 'degrades_service');
 
-  const state: HealthState = fatal.length > 0 ? 'unhealthy'
-    : degrading.length > 0 ? 'degraded' : 'healthy';
+  const state: HealthState = probes.length === 0 ? 'unknown'
+    : fatal.length > 0 ? 'unhealthy'
+      : degrading.length > 0 ? 'degraded' : 'healthy';
 
   return {
     state,
     processAlive: true,
     dependencies: probes,
-    detail: state === 'healthy'
-      ? `all ${probes.length} dependencies reachable`
-      : `${down.map((p) => p.name).join(', ')} unreachable — the process is running and that is not the same as working`,
+    detail: state === 'unknown'
+      ? 'nothing was checked. This is not a healthy system, it is an unmonitored one — and the two look identical on a dashboard until the day they do not'
+      : state === 'healthy'
+        ? `all ${probes.length} dependencies reachable`
+        : `${down.map((p) => p.name).join(', ')} unreachable — the process is running and that is not the same as working`,
   };
 }
 

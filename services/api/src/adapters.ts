@@ -33,6 +33,16 @@ import type { ConsentRecord, CustomerDeps } from '../../customer/src/index';
 import { expired } from '../../orders/src/index';
 import type { Reservation, OrdersDeps } from '../../orders/src/index';
 import type { DeliveryAttempt, FulfilmentDeps } from '../../fulfilment/src/index';
+import type { IdentityDeps } from '../../identity/src/index';
+import type { Role, RoleAssignment } from '../../../packages/rbac/src/rbac';
+import type { DependencyProbe, FeatureFlagChange, PlatformDeps } from '../../platform/src/index';
+import { figure } from '../../reporting/src/index';
+import type { ReportingDeps } from '../../reporting/src/index';
+import type { MigrationDeps } from '../../migration/src/index';
+import type { TargetKind } from '../../../packages/migration/src/trial';
+import type { DomainFinding, Acceptance } from '../../../packages/migration/src/verification-report';
+import type { Signature } from '../../../packages/migration/src/verification-report';
+import type { AgentId, Budget, Proposal, AiDeps } from '../../ai/src/index';
 
 /** Streams, named once. A typo here is a domain that silently reads an empty history. */
 export const STREAM = {
@@ -46,6 +56,10 @@ export const STREAM = {
   consent: 'consent',
   reservations: 'reservations',
   delivery: 'delivery',
+  identity: 'identity',
+  platform: 'platform',
+  migration: 'migration',
+  ai: 'ai',
 } as const;
 
 const payloadOf = <T>(e: PersistedEvent): T => e.event.payload as T;
@@ -490,5 +504,259 @@ export function fulfilmentAdapter(input: {
      * empty run list made every run reconcile perfectly.
      */
     assigned: () => [],
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  The last five: identity, platform, reporting, migration, AI
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function identityAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  /**
+   * The role catalogue. Configuration, not tenant data — a role is a set of permission codes this
+   * product defines, and a tenant picks who holds it, not what it means. Passed in so the
+   * deployment owns the list rather than this file.
+   */
+  readonly roleCatalogue: readonly Role[];
+}): IdentityDeps {
+  const assignments = (tenantId: string) =>
+    allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+
+  return {
+    now: input.now,
+    roles: () => input.roleCatalogue,
+
+    /** Every permission from every role this user holds. Union, deduplicated, sorted. */
+    permissionsOf: async (tenantId, userId) => {
+      const held = (await assignments(tenantId)).filter((a) => a.userId === userId);
+      const codes = held.flatMap((a) =>
+        input.roleCatalogue.find((r) => r.id === a.roleId)?.permissions ?? []);
+      return [...new Set(codes)].sort();
+    },
+
+    recordGrant: async (tenantId, assignment, request) => {
+      await input.store.append(tenantId, STREAM.identity, makeEvent({
+        id: `grant-${request.grantId}`,
+        type: 'RoleGranted',
+        occurredAt: request.requestedAt,
+        idempotencyKey: `grant-${tenantId}-${request.grantId}`,
+        source: 'api/identity',
+        // Both: the assignment is what RBAC reads, the request is who asked and who approved —
+        // and an access review a year later is about the second one.
+        payload: { ...assignment, request },
+      }));
+    },
+
+    branches: () => [],
+  };
+}
+
+export function platformAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  /** Reachability of the things the shop cannot trade without. A real call, not a cached flag. */
+  readonly probes: () => Promise<readonly DependencyProbe[]>;
+}): PlatformDeps {
+  return {
+    now: input.now,
+    probe: input.probes,
+
+    /** Current flag state, folded forward. The last change to a key wins; the history keeps both. */
+    flags: async (tenantId) => {
+      const changes = await allOf<FeatureFlagChange>(input.store, tenantId, STREAM.platform, 'FeatureFlagSet');
+      const out: Record<string, boolean> = {};
+      for (const c of changes) out[c.key] = c.enabled;
+      return out;
+    },
+
+    setFlag: async (tenantId, change) => {
+      await input.store.append(tenantId, STREAM.platform, makeEvent({
+        id: `flag-${change.key}-${change.changedAt}`,
+        type: 'FeatureFlagSet',
+        occurredAt: change.changedAt,
+        // Time is in the key: turning a flag off and back on again is two facts, and "who turned
+        // this back on, and when" is the entire reason the record exists.
+        idempotencyKey: `flag-${tenantId}-${change.key}-${change.changedAt}`,
+        source: 'api/platform',
+        payload: change,
+      }));
+    },
+
+    /** Never deleted (#6). Somebody outside the business read this tenant's data, and that is kept. */
+    recordSupportAccess: async (request, expiresAt) => {
+      await input.store.append(request.tenantId, STREAM.platform, makeEvent({
+        id: `support-${request.accessId}`,
+        type: 'SupportAccessGranted',
+        occurredAt: request.grantedAt,
+        idempotencyKey: `support-${request.tenantId}-${request.accessId}`,
+        source: 'api/platform',
+        payload: { ...request, expiresAt },
+      }));
+    },
+  };
+}
+
+export function reportingAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): ReportingDeps {
+  return {
+    now: input.now,
+
+    /**
+     * Figures projected from the streams that hold them.
+     *
+     * Only sales exists today, and it is deliberately the *only* one returned rather than a list
+     * padded out with zeroes: `figure()` refuses to substitute a zero for an absent value, because
+     * a zero is a number somebody acts on. A dashboard with one real figure on it is honest; one
+     * with eleven zeroes and a real one is not.
+     */
+    figures: async (tenantId) => {
+      const sales = await allOf<IncomingSale>(input.store, tenantId, STREAM.sales, 'SaleCommitted');
+      const today = input.now().slice(0, 10);
+      const todays = sales.filter((s) => s.tradingDay === today);
+      return [
+        figure({
+          name: 'Sales today',
+          valueMinor: todays.reduce((t, s) => t + s.totalMinor, 0),
+          unit: 'minor_currency',
+          // As at now, because the ledger is read at request time — there is no cache between
+          // this figure and the events it is computed from, so there is nothing to be stale.
+          asAt: input.now(), now: input.now(),
+        }),
+        figure({
+          name: 'Sales today — receipts',
+          valueMinor: todays.length, unit: 'count',
+          asAt: input.now(), now: input.now(),
+        }),
+      ];
+    },
+  };
+}
+
+export function migrationAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly targetKind: TargetKind;
+  /** Which role means "the owner". Configuration — the word differs by tenant, the authority does not. */
+  readonly ownerRoleId: string;
+}): MigrationDeps {
+  const grants = (tenantId: string) =>
+    allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+
+  return {
+    now: input.now,
+
+    target: (tenantId) => ({
+      targetId: `tgt-${tenantId}`, tenantId,
+      kind: input.targetKind, label: input.targetKind,
+    }),
+
+    findings: (tenantId) => allOf<DomainFinding>(input.store, tenantId, STREAM.migration, 'MigrationFindingRaised'),
+    acceptances: (tenantId) => allOf<Acceptance>(input.store, tenantId, STREAM.migration, 'MigrationExceptionAccepted'),
+    signatures: (tenantId) => allOf<Signature>(input.store, tenantId, STREAM.migration, 'MigrationReportSigned'),
+
+    recordAcceptance: async (tenantId, a) => {
+      await input.store.append(tenantId, STREAM.migration, makeEvent({
+        id: `accept-${a.domain}-${a.acceptedOn}`,
+        type: 'MigrationExceptionAccepted',
+        occurredAt: a.acceptedOn,
+        // Domain and date. One acceptance per domain per day is the shape the owner works in —
+        // and re-sending the same one is a retry, while accepting the same domain again on a
+        // later date is the owner changing their mind, which is a fact worth keeping.
+        idempotencyKey: `accept-${tenantId}-${a.domain}-${a.acceptedOn}`,
+        source: 'api/migration',
+        payload: a,
+      }));
+    },
+
+    /**
+     * The owner, read from who actually holds the owner role — and **`undefined` when nobody
+     * does**, which is what the routes refuse on.
+     *
+     * This was the literal string `'u-owner'` in the composition root, which meant the control
+     * "only the owner may accept a figure into the opening books" was satisfied by anybody who
+     * typed that string. A check comparing a caller against a placeholder is not a check.
+     */
+    ownerId: async (tenantId) =>
+      (await grants(tenantId)).find((g) => g.roleId === input.ownerRoleId)?.userId,
+
+    /**
+     * Who ran the extraction — and `undefined` until something records it, which stops the signed
+     * page being produced at all.
+     *
+     * It is named on that page and it is load-bearing there: the rule that whoever ran the
+     * extraction cannot choose which stock lines get counted only means anything if the page says
+     * who that was. A placeholder is a fabricated audit record on a signed document.
+     */
+    extractionOperator: async (tenantId) => {
+      const runs = await allOf<{ readonly operatorId: string }>(
+        input.store, tenantId, STREAM.migration, 'ExtractionRun',
+      );
+      return runs[runs.length - 1]?.operatorId;
+    },
+  };
+}
+
+export function aiAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): AiDeps {
+  return {
+    now: input.now,
+
+    /**
+     * Default **on** — the safe direction, and the opposite of every other default here.
+     *
+     * Everywhere else in this file the absence of a record means "we cannot say". Here it means
+     * "stopped", because the kill switch is the one control whose failure mode is asymmetric: a
+     * switch that defaults off is an agent running because nobody has told it not to.
+     */
+    killSwitchOn: async (tenantId) => {
+      const set = await allOf<{ readonly on: boolean }>(input.store, tenantId, STREAM.ai, 'AiKillSwitchSet');
+      return set[set.length - 1]?.on ?? true;
+    },
+
+    setKillSwitch: async (tenantId, on, by, at) => {
+      await input.store.append(tenantId, STREAM.ai, makeEvent({
+        id: `kill-${at}`,
+        type: 'AiKillSwitchSet',
+        occurredAt: at,
+        idempotencyKey: `kill-${tenantId}-${at}-${String(on)}`,
+        source: 'api/ai',
+        payload: { on, by, at },
+      }));
+    },
+
+    /** No budget granted means nothing may be spent. Zero is the honest starting point here. */
+    budget: async (tenantId) => {
+      const set = await allOf<Budget>(input.store, tenantId, STREAM.ai, 'AiBudgetSet');
+      const spent = await allOf<{ readonly costMinor: number }>(input.store, tenantId, STREAM.ai, 'AiRunCosted');
+      const cap = set[set.length - 1];
+      return {
+        capMinor: cap?.capMinor ?? 0,
+        spentMinor: spent.reduce((t, s) => t + s.costMinor, 0),
+        periodEnds: cap?.periodEnds ?? input.now(),
+      };
+    },
+
+    /** Nothing is enabled until somebody enables it, by name (AID-01…10). */
+    enabledAgents: async (tenantId) =>
+      (await allOf<{ readonly agents: readonly AgentId[] }>(input.store, tenantId, STREAM.ai, 'AiAgentsEnabled'))
+        .at(-1)?.agents ?? [],
+
+    /**
+     * No model is called from here.
+     *
+     * The gate above this refuses first — nothing is enabled and no budget is granted — so this is
+     * unreachable until a provider is chosen (OB-02) and an agent is turned on by name. It returns
+     * nothing rather than pretending to have run, and the reply says `committedAnything: false`
+     * whatever happens, because a proposal is never an action (hard rule #5).
+     */
+    run: () => [],
+
+    openProposals: (tenantId) => allOf<Proposal>(input.store, tenantId, STREAM.ai, 'AiProposalRaised'),
   };
 }

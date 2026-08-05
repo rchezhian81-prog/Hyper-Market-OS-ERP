@@ -343,6 +343,21 @@ describe('API-10 — no figure leaves without the time it is true as of', () => 
   });
 });
 
+describe('API-10 — an empty dashboard is not a clean one', () => {
+  it('does NOT say everything is current when there is nothing on it', () => {
+    // `reduce` seeded with `live` over no figures returns `live`, so a dashboard with nothing on it
+    // reported "0 figures, all current" — the sentence a person reads as "everything is fine".
+    const d = dashboard([], NOW);
+    expect(d.detail).toContain('An empty dashboard is not a clean one');
+    expect(d.detail).not.toContain('all current');
+  });
+
+  it('tripwire — a dashboard with a live figure on it still says so', () => {
+    const d = dashboard([figure({ name: 'Sales today', valueMinor: 1, unit: 'minor_currency', asAt: NOW, now: NOW })], NOW);
+    expect(d.detail).toContain('all current');
+  });
+});
+
 describe('all three register cleanly on the kernel', () => {
   it('passes every registration rule', () => {
     const purchase: PurchaseDeps = {

@@ -167,6 +167,24 @@ describe('API-11 — health tells the truth, support access is bounded', () => {
     expect(h.state).toBe('healthy');
   });
 
+  it('does NOT report healthy when it checked NOTHING', () => {
+    // `filter` over an empty list finds nothing, and nothing found reads as nothing wrong: with no
+    // probes at all this returned healthy — "all 0 dependencies reachable". A monitoring gap and a
+    // working system are not the same state, and this module exists to say that the process being
+    // alive is not the same as it working. Green-because-unchecked is that fault one level up.
+    const h = assessHealth([]);
+    expect(h.state).toBe('unknown');
+    expect(h.state).not.toBe('healthy');
+    expect(h.detail).toContain('it is an unmonitored one');
+    // Not `unhealthy` either: that means the shop cannot trade and would trigger a failover for
+    // what is a gap in monitoring.
+    expect(h.state).not.toBe('unhealthy');
+  });
+
+  it('tripwire — one reachable dependency still reports healthy', () => {
+    expect(assessHealth([probe()]).state).toBe('healthy');
+  });
+
   it('does NOT report healthy just because the process is alive', () => {
     // The most common lie in operations: a check that stays green while the database is
     // unreachable and every request is failing.

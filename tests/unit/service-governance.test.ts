@@ -87,6 +87,45 @@ describe('API-12 — the migration service cannot point at production', () => {
       .toContain('the owner\'s decision and nobody else\'s');
   });
 
+  it('REFUSES to produce the signed page when it cannot name who ran the extraction', async () => {
+    // The composition root supplied the literal strings 'u-owner' and 'u-operator'. A page that
+    // names a person who does not exist is worse than a page that will not render — it is signed,
+    // and the rule that whoever ran the extraction cannot choose which stock lines get counted only
+    // means something if the page says who that was.
+    const k = kernelFor(migrationRoutes(deps({ extractionOperator: () => undefined })));
+    for (const path of ['/v1/migration/verification', '/v1/migration/verification/page']) {
+      const res = await handle(k, { method: 'GET', path, headers: { authorization: 'Bearer good' } });
+      expect(res.status, path).toBe(409);
+      const err = (res.body as { error: { code: string; whatHappened: string } }).error;
+      expect(err.code).toBe('the_page_would_name_nobody');
+      expect(err.whatHappened).toContain('who ran the extraction');
+    }
+  });
+
+  it('names BOTH gaps at once when neither person is known', async () => {
+    const k = kernelFor(migrationRoutes(deps({ ownerId: () => undefined, extractionOperator: () => undefined })));
+    const res = await handle(k, {
+      method: 'GET', path: '/v1/migration/verification', headers: { authorization: 'Bearer good' },
+    });
+    const err = (res.body as { error: { whatHappened: string } }).error;
+    expect(err.whatHappened).toContain('who the owner is');
+    expect(err.whatHappened).toContain('who ran the extraction');
+  });
+
+  it('REFUSES an acceptance when nobody is recorded as the owner', async () => {
+    // Otherwise the control "only the owner may accept a figure into the opening books" is
+    // satisfied by whoever guesses the placeholder. A check comparing a caller against a
+    // placeholder is not a check.
+    const k = kernelFor(migrationRoutes(deps({ ownerId: () => undefined })));
+    const res = await handle(k, {
+      method: 'POST', path: '/v1/migration/acceptances',
+      body: { domain: 'batches', acceptedBy: 'u-owner', acceptedOn: NOW, reason: 'a long enough reason to pass' },
+      headers: { authorization: 'Bearer good', 'idempotency-key': 'k-noowner' },
+    });
+    expect(res.status).toBe(409);
+    expect((res.body as { error: { code: string } }).error.code).toBe('nobody_is_recorded_as_the_owner');
+  });
+
   it('offers no endpoint that marks a domain verified', async () => {
     // A domain becomes verified by its evidence agreeing. Setting the verdict directly is a way to
     // sign the report without doing the work.

@@ -84,9 +84,14 @@ export function dashboard(figures: readonly Figure[], now: string): Dashboard {
   const missing = figures.filter((f) => f.valueMinor === undefined);
   return {
     figures, worstStaleness: worst, asAt: now,
-    detail: worst === 'live' && missing.length === 0
-      ? `${figures.length} figures, all current`
-      : `${figures.length} figures — worst freshness ${worst}${missing.length > 0 ? `, ${missing.length} not available` : ''}. A dashboard is only as fresh as its stalest number`,
+    // An empty dashboard is not a clean one. `reduce` with a seed of `live` over no figures
+    // returns `live`, so a dashboard with nothing on it reported "0 figures, all current" — which
+    // is the sentence a person reads as "everything is fine".
+    detail: figures.length === 0
+      ? 'no figures at all. An empty dashboard is not a clean one — nothing here has been measured, which is a different thing from everything being in order'
+      : worst === 'live' && missing.length === 0
+        ? `${figures.length} figures, all current`
+        : `${figures.length} figures — worst freshness ${worst}${missing.length > 0 ? `, ${missing.length} not available` : ''}. A dashboard is only as fresh as its stalest number`,
   };
 }
 

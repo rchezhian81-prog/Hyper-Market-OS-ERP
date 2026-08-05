@@ -42,8 +42,11 @@ import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, posAdapter, inventoryAdapter, purchaseAdapter, financeAdapter,
-  customerAdapter, ordersAdapter, fulfilmentAdapter,
+  customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
+  reportingAdapter, migrationAdapter, aiAdapter,
 } from './adapters';
+import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
+import type { DependencyProbe } from '../../platform/src/index';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 
 const now = (): string => new Date().toISOString();
@@ -68,6 +71,12 @@ export function buildSurface(deps: {
   readonly signingKey: string;
   readonly migrationTargetKind: TargetKind;
   /**
+   * Reachability of what the shop cannot trade without. A real call every time it is asked, not a
+   * flag something set earlier — a cached "reachable: true" is a health check that reports the
+   * last time things were fine.
+   */
+  readonly probes?: () => Promise<readonly DependencyProbe[]>;
+  /**
    * Where the events go. Omitted, the surface still assembles and answers — which is what the
    * route-shape tests need — but nothing persists. Supplying it is what turns the API from a
    * shell into a system, and `main()` always does.
@@ -78,11 +87,13 @@ export function buildSurface(deps: {
   const empty = <T>(v: T) => () => v;
   const store = deps.store;
 
+  const probes = deps.probes ?? (async () => []);
+
   return [
-    ...identityRoutes({
+    ...identityRoutes(store === undefined ? {
       roles: empty([]), permissionsOf: empty([]), recordGrant: () => {},
       branches: empty([]), now,
-    }),
+    } : identityAdapter({ store, now, roleCatalogue: ROLE_CATALOGUE })),
     ...catalogueRoutes(store === undefined ? {
       signer, currentPack: empty(undefined), storePack: () => {},
       buildSnapshot: (tenantId) => ({ tenantId, version: 1, builtAt: now(), products: [], barcodes: [] }),
@@ -115,24 +126,32 @@ export function buildSurface(deps: {
       appendJournal: () => {}, controlTotals: empty([]), postersIn: empty([]),
       markClosed: () => {}, now,
     } : financeAdapter({ store, now })),
-    ...reportingRoutes({ figures: empty([]), now }),
-    ...platformRoutes({
-      probe: empty([]), flags: empty({}), setFlag: () => {}, recordSupportAccess: () => {}, now,
-    }),
-    ...migrationRoutes({
+    ...reportingRoutes(store === undefined
+      ? { figures: empty([]), now }
+      : reportingAdapter({ store, now })),
+    ...platformRoutes(store === undefined ? {
+      probe: probes, flags: empty({}), setFlag: () => {}, recordSupportAccess: () => {}, now,
+    } : platformAdapter({ store, now, probes })),
+    ...migrationRoutes(store === undefined ? {
       target: (tenantId) => ({
         targetId: `tgt-${tenantId}`, tenantId,
         kind: deps.migrationTargetKind, label: deps.migrationTargetKind,
       }),
+      // Not `'u-owner'` and `'u-operator'`. A control that compares a caller against a
+      // placeholder is satisfied by anybody who types the placeholder.
       findings: empty([]), acceptances: empty([]), signatures: empty([]),
-      recordAcceptance: () => {}, ownerId: empty('u-owner'),
-      extractionOperator: empty('u-operator'), now,
-    }),
-    ...aiRoutes({
-      killSwitchOn: empty(false), setKillSwitch: () => {},
+      recordAcceptance: () => {}, ownerId: empty(undefined),
+      extractionOperator: empty(undefined), now,
+    } : migrationAdapter({
+      store, now, targetKind: deps.migrationTargetKind, ownerRoleId: OWNER_ROLE_ID,
+    })),
+    ...aiRoutes(store === undefined ? {
+      // Stopped by default, matching the adapter. A kill switch that defaults off is an agent
+      // running because nobody has told it not to.
+      killSwitchOn: empty(true), setKillSwitch: () => {},
       budget: empty({ capMinor: 0, spentMinor: 0, periodEnds: now() }),
       enabledAgents: empty([]), run: empty([]), openProposals: empty([]), now,
-    }),
+    } : aiAdapter({ store, now })),
   ];
 }
 
@@ -157,10 +176,19 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
   // and again with the store behind it — and then served `live.router!` without checking `live.ok`.
   // Two surfaces that are asserted to be identical is one surface and one assumption, and the
   // assumption is the one holding the non-null.
+  const reachable = async (): Promise<boolean> => {
+    try { await db.query('SELECT 1'); return true; } catch { return false; }
+  };
+
   const built = buildRouter(buildSurface({
     signingKey: settings['PACK_SIGNING_KEY']!,
     migrationTargetKind: settings['MIGRATION_TARGET_KIND'] as TargetKind,
     store,
+    probes: async () => [{
+      name: 'postgres',
+      criticality: 'shop_cannot_trade_without_it',
+      reachable: await reachable(),
+    }],
   }));
   if (!built.ok) {
     process.stderr.write(`\nthe API surface is malformed and this service will not start:\n${
@@ -189,9 +217,7 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
     idempotency: new MemoryIdempotencyStore(),
     newTraceId: () => `t-${Math.random().toString(36).slice(2, 10)}`,
     port: Number(settings['PORT']),
-    dependenciesReachable: async () => {
-      try { await db.query('SELECT 1'); return true; } catch { return false; }
-    },
+    dependenciesReachable: reachable,
   });
 
   process.stdout.write(`sre-api listening on ${settings['PORT']}, ${built.router!.list().length} routes\n`);

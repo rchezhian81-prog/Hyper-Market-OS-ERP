@@ -10,8 +10,10 @@ import { AccessControl } from '../../packages/rbac/src/rbac';
 import { buildSurface } from '../../services/api/src/main';
 import {
   catalogueAdapter, posAdapter, financeAdapter, customerAdapter, ordersAdapter,
-  fulfilmentAdapter, purchaseAdapter, addMonths, STREAM,
+  fulfilmentAdapter, purchaseAdapter, identityAdapter, platformAdapter, reportingAdapter,
+  migrationAdapter, aiAdapter, addMonths, STREAM,
 } from '../../services/api/src/adapters';
+import { ROLE_CATALOGUE, OWNER_ROLE_ID } from '../../services/api/src/roles';
 import { hmacSigner, publishPack } from '../../services/catalogue/src/index';
 import { project } from '../../services/inventory/src/index';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
@@ -68,6 +70,10 @@ const ACCESS = new AccessControl(
       'customer.consent.read', 'customer.consent.write', 'loyalty.points.read',
       'order.promise', 'order.reservation.read',
       'delivery.attempt.record', 'delivery.run.read',
+      'platform.health.read', 'platform.flag.write',
+      'reporting.dashboard.read',
+      'migration.verification.read', 'migration.exception.accept',
+      'ai.agent.run', 'ai.proposal.read',
     ],
   }],
   [{ userId: 'u-manager', roleId: 'all', branchScope: 'all' }],
@@ -405,6 +411,144 @@ describe.skipIf(!DATABASE_URL)('the API remembers (real PostgreSQL)', () => {
     expect(changes.map((e) => (e.event.payload as { newAccount: string }).newAccount))
       .toEqual(['ACC-NEW-1', 'ACC-NEW-2']);
   });
+  // ─── 6. The last five ───────────────────────────────────────────────────────
+
+  it('grants a role, and the permissions follow from who holds it', async () => {
+    const adapter = identityAdapter({ store, now: () => NOW, roleCatalogue: ROLE_CATALOGUE });
+    expect(await adapter.permissionsOf(TENANT, 'u-meena')).toEqual([]);
+
+    await adapter.recordGrant(
+      TENANT,
+      { userId: 'u-meena', roleId: 'cashier', branchScope: 'all' },
+      {
+        grantId: `${RUN}-G1`, userId: 'u-meena', roleId: 'cashier', branchScope: 'all',
+        requestedBy: 'u-manager', approvedBy: 'u-owner', requestedAt: NOW,
+      },
+    );
+
+    const perms = await adapter.permissionsOf(TENANT, 'u-meena');
+    expect(perms).toContain('pos.sale.sync');
+    // The narrowest role in the product: no finance, no grants, no flags.
+    expect(perms).not.toContain('finance.journal.post');
+    expect(perms).not.toContain('identity.role.grant');
+  });
+
+  it('keeps WHO ASKED and WHO APPROVED, not just the resulting access', async () => {
+    // An access review a year later is about the second pair, not the first.
+    const granted = (await store.readStream(TENANT, STREAM.identity))
+      .filter((e) => e.event.type === 'RoleGranted')
+      .map((e) => e.event.payload as { request: { requestedBy: string; approvedBy: string } });
+    expect(granted[0]?.request.requestedBy).toBe('u-manager');
+    expect(granted[0]?.request.approvedBy).toBe('u-owner');
+  });
+
+  it('reports health as UNKNOWN when nothing was probed, and healthy when something was', async () => {
+    const nothing = platformAdapter({ store, now: () => NOW, probes: async () => [] });
+    const health = await handle(
+      { ...kernel, router: buildRouter(buildSurface({ signingKey: KEY, migrationTargetKind: 'rehearsal', store })).router! },
+      req({ path: '/v1/platform/health' }),
+    );
+    expect((health.body as { state: string }).state).toBe('unknown');
+    expect(await nothing.probe()).toEqual([]);
+
+    const real = platformAdapter({
+      store, now: () => NOW,
+      probes: async () => [{ name: 'postgres', criticality: 'shop_cannot_trade_without_it', reachable: true }],
+    });
+    expect((await real.probe())[0]?.reachable).toBe(true);
+  });
+
+  it('remembers a feature flag being turned off and back on, as two facts', async () => {
+    const adapter = platformAdapter({ store, now: () => NOW, probes: async () => [] });
+    await adapter.setFlag(TENANT, { key: `${RUN}.self_checkout`, enabled: true, changedBy: 'u-owner', changedAt: '2026-08-01T10:00:00Z' });
+    await adapter.setFlag(TENANT, { key: `${RUN}.self_checkout`, enabled: false, changedBy: 'u-manager', changedAt: '2026-08-02T10:00:00Z' });
+    await adapter.setFlag(TENANT, { key: `${RUN}.self_checkout`, enabled: true, changedBy: 'u-manager', changedAt: '2026-08-03T10:00:00Z' });
+
+    // The last change wins for "is it on"...
+    expect((await adapter.flags(TENANT))[`${RUN}.self_checkout`]).toBe(true);
+    // ...and all three are kept, because "who turned this back on, and when" is the whole point.
+    const changes = (await store.readStream(TENANT, STREAM.platform))
+      .filter((e) => e.event.type === 'FeatureFlagSet');
+    expect(changes).toHaveLength(3);
+  });
+
+  it('keeps a support access grant, which is never deleted (#6)', async () => {
+    const adapter = platformAdapter({ store, now: () => NOW, probes: async () => [] });
+    await adapter.recordSupportAccess({
+      accessId: `${RUN}-SUP`, tenantId: TENANT, engineerId: 'e-1', approvedBy: 'u-owner',
+      reason: 'investigating a sync backlog reported this morning', grantedAt: NOW, minutes: 60,
+    }, '2026-08-07T13:00:00Z');
+
+    const kept = (await store.readStream(TENANT, STREAM.platform))
+      .filter((e) => e.event.type === 'SupportAccessGranted');
+    expect(kept).toHaveLength(1);
+    await expect(client.query('DELETE FROM event_ledger WHERE id = $1', [kept[0]!.event.id]))
+      .rejects.toThrow(/append-only/i);
+  });
+
+  it('reports today\'s sales from the sales stream, not from a stored total', async () => {
+    const figures = await reportingAdapter({ store, now: () => new Date().toISOString() })
+      .figures(TENANT, 'dashboard');
+    const sales = figures.find((f) => f.name === 'Sales today');
+    // Two sales banked earlier in this file, on today's trading day: 64,000 + 50,000.
+    expect(sales?.valueMinor).toBe(114_000);
+    expect(sales?.staleness).toBe('live');
+    expect(figures.find((f) => f.name === 'Sales today — receipts')?.valueMinor).toBe(2);
+  });
+
+  it('will not produce the signed migration page while it cannot name the people on it', async () => {
+    const adapter = migrationAdapter({
+      store, now: () => NOW, targetKind: 'rehearsal', ownerRoleId: OWNER_ROLE_ID,
+    });
+    // Nobody holds the owner role and no extraction has been recorded.
+    expect(await adapter.ownerId(TENANT)).toBeUndefined();
+    expect(await adapter.extractionOperator(TENANT)).toBeUndefined();
+
+    const res = await handle(kernel, req({ path: '/v1/migration/verification' }));
+    expect(res.status).toBe(409);
+    expect((res.body as { error: { code: string } }).error.code).toBe('the_page_would_name_nobody');
+  });
+
+  it('finds the owner once somebody actually holds the owner role', async () => {
+    const identity = identityAdapter({ store, now: () => NOW, roleCatalogue: ROLE_CATALOGUE });
+    await identity.recordGrant(
+      TENANT,
+      { userId: 'u-chezhian', roleId: OWNER_ROLE_ID, branchScope: 'all' },
+      {
+        grantId: `${RUN}-G2`, userId: 'u-chezhian', roleId: OWNER_ROLE_ID, branchScope: 'all',
+        requestedBy: 'u-manager', approvedBy: 'u-manager', requestedAt: NOW,
+      },
+    );
+    const adapter = migrationAdapter({
+      store, now: () => NOW, targetKind: 'rehearsal', ownerRoleId: OWNER_ROLE_ID,
+    });
+    expect(await adapter.ownerId(TENANT)).toBe('u-chezhian');
+  });
+
+  it('has the AI kill switch ON before anybody has said anything', async () => {
+    // The one place in this file where the absence of a record does NOT mean "we cannot say". A
+    // kill switch that defaults off is an agent running because nobody has told it not to.
+    const adapter = aiAdapter({ store, now: () => NOW });
+    expect(await adapter.killSwitchOn(TENANT)).toBe(true);
+    expect(await adapter.enabledAgents(TENANT)).toEqual([]);
+    expect(await adapter.budget(TENANT)).toMatchObject({ capMinor: 0, spentMinor: 0 });
+
+    const res = await handle(kernel, post(`/v1/ai/agents/A01/runs`, { estimatedCostMinor: 100 }, `k-${RUN}-ai`));
+    expect(res.status).toBe(503);
+    expect((res.body as { error: { code: string } }).error.code).toBe('kill_switch_is_on');
+  });
+
+  it('turns the kill switch off only when somebody says so, by name', async () => {
+    const adapter = aiAdapter({ store, now: () => NOW });
+    await adapter.setKillSwitch(TENANT, false, 'u-chezhian', '2026-08-05T09:00:00Z');
+    expect(await adapter.killSwitchOn(TENANT)).toBe(false);
+    // Off then on again is two facts, and both are on the record.
+    await adapter.setKillSwitch(TENANT, true, 'u-chezhian', '2026-08-05T09:30:00Z');
+    expect(await adapter.killSwitchOn(TENANT)).toBe(true);
+    expect((await store.readStream(TENANT, STREAM.ai)).filter((e) => e.event.type === 'AiKillSwitchSet'))
+      .toHaveLength(2);
+  });
+
   // ─── 4. The property everything rests on ────────────────────────────────────
 
   it('the database itself refuses to change what was banked (hard rule #2)', async () => {
