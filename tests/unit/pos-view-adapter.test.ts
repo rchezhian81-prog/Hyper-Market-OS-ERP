@@ -21,7 +21,12 @@ function newView(): { view: PosView; ledger: Ledger; outbox: SyncOutbox } {
     },
     ledger,
     outbox,
-  );
+      // A session with nowhere to write is a lane that must not take payment.
+      () => Promise.resolve({
+        committed: true as const, durable: true as const,
+        detail: 'test double', laneMessage: 'Sale complete.',
+      }),
+    );
   session.setNow(AT);
   return { view: createPosView(session), ledger, outbox };
 }
@@ -60,10 +65,10 @@ describe('createPosView', () => {
     expect(view.payableMinor()).toBe(118_00); // only the first line counts
   });
 
-  it('takes cash locally, returns the receipt number and queues the sale', () => {
+  it('takes cash locally, returns the receipt number and queues the sale', async () => {
     const { view, ledger, outbox } = newView();
     view.scan({ productId: 'p1', description: 'Rice', unitPriceMinor: 100_00, qty: 1 });
-    const receipt = view.tenderCash('sale-1', 'S-0001', AT);
+    const receipt = await view.tenderCash('sale-1', 'S-0001', AT);
 
     expect(receipt).toBe('S-0001');
     expect(ledger.entries()).toHaveLength(1); // stock committed on the lane
@@ -71,10 +76,10 @@ describe('createPosView', () => {
     expect(view.syncBadge().unsentCount).toBe(1);
   });
 
-  it('clears the basket for the next customer', () => {
+  it('clears the basket for the next customer', async () => {
     const { view } = newView();
     view.scan({ productId: 'p1', description: 'Rice', unitPriceMinor: 100_00, qty: 1 });
-    view.tenderCash('sale-1', 'S-0001', AT);
+    await view.tenderCash('sale-1', 'S-0001', AT);
     view.newSale();
     expect(view.basket()).toHaveLength(0);
     expect(view.payableMinor()).toBe(0);

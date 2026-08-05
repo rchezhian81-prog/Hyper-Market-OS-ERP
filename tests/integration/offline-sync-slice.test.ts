@@ -126,7 +126,7 @@ describe.skipIf(!DATABASE_URL)('Stage 6 — offline/sync vertical slice (real Po
   }
 
   /** Steps 2–3: a basket rung up on the lane and committed locally. */
-  function ringUpSale(id: string, catalogue: CatalogueCache) {
+  async function ringUpSale(id: string, catalogue: CatalogueCache) {
     const stockLedger = new Ledger(new InMemoryLedgerStore());
     const outbox = new SyncOutbox();
     const session = new PosSession(
@@ -139,6 +139,11 @@ describe.skipIf(!DATABASE_URL)('Stage 6 — offline/sync vertical slice (real Po
       },
       stockLedger,
       outbox,
+      // A session with nowhere to write is a lane that must not take payment.
+      () => Promise.resolve({
+        committed: true as const, durable: true as const,
+        detail: 'test double', laneMessage: 'Sale complete.',
+      }),
     );
 
     for (const code of ['8901000000018', '8901000000025']) {
@@ -154,7 +159,7 @@ describe.skipIf(!DATABASE_URL)('Stage 6 — offline/sync vertical slice (real Po
     }
 
     const payable = session.totals().payable;
-    const committed = session.commit(id, `INV-${id}`, '2026-08-04T10:00:00Z', [
+    const committed = await session.commit(id, `INV-${id}`, '2026-08-04T10:00:00Z', [
       { kind: 'cash', amount: payable, status: 'settled' },
     ]);
     return { committed, outbox, payable, stockLedger };
@@ -165,7 +170,7 @@ describe.skipIf(!DATABASE_URL)('Stage 6 — offline/sync vertical slice (real Po
     const transport = new ControllableTransport(store);
     transport.online = false; // the cable is out before the customer arrives
 
-    const { committed, outbox, payable } = ringUpSale('S-OFFLINE-1', catalogue);
+    const { committed, outbox, payable } = await ringUpSale('S-OFFLINE-1', catalogue);
 
     // ₹450.00 + ₹180.00 = ₹630.00, +5% GST = ₹661.50
     expect(payable).toEqual(money(66_150, CURRENCY));
@@ -195,7 +200,7 @@ describe.skipIf(!DATABASE_URL)('Stage 6 — offline/sync vertical slice (real Po
   it('produces ONE business effect when the same sale is delivered twice (§31.1)', async () => {
     const catalogue = buildLaneCatalogue();
     const transport = new ControllableTransport(store);
-    const { outbox } = ringUpSale('S-DUP-1', catalogue);
+    const { outbox } = await ringUpSale('S-DUP-1', catalogue);
     const agent = new SyncAgent(outbox, transport);
 
     await agent.drain({ at: '2026-08-04T10:10:00Z' });
@@ -206,7 +211,7 @@ describe.skipIf(!DATABASE_URL)('Stage 6 — offline/sync vertical slice (real Po
     // The classic real-world case: the cloud accepted it, the acknowledgement was
     // lost on the way back, and the lane sends it again.
     const replay = new SyncOutbox();
-    const { outbox: replayOutbox } = ringUpSale('S-DUP-1', catalogue);
+    const { outbox: replayOutbox } = await ringUpSale('S-DUP-1', catalogue);
     for (const item of replayOutbox.pending()) replay.enqueue(item.event);
     await new SyncAgent(replay, transport).drain({ at: '2026-08-04T10:11:00Z' });
 
@@ -222,7 +227,8 @@ describe.skipIf(!DATABASE_URL)('Stage 6 — offline/sync vertical slice (real Po
 
     // Three sales rung up in order, delivered to the cloud back to front — which is
     // what a retry after a partial outage actually looks like.
-    const sales = ['S-ORD-1', 'S-ORD-2', 'S-ORD-3'].map((id) => ringUpSale(id, catalogue));
+    const sales = [];
+    for (const id of ['S-ORD-1', 'S-ORD-2', 'S-ORD-3']) sales.push(await ringUpSale(id, catalogue));
     const reversed = [...sales].reverse();
 
     for (const sale of reversed) {
@@ -251,7 +257,8 @@ describe.skipIf(!DATABASE_URL)('Stage 6 — offline/sync vertical slice (real Po
     const transport = new ControllableTransport(store);
     const combined = new SyncOutbox();
     for (const id of ['S-REC-1', 'S-REC-2', 'S-REC-3']) {
-      for (const item of ringUpSale(id, catalogue).outbox.pending()) combined.enqueue(item.event);
+      const { outbox: rung } = await ringUpSale(id, catalogue);
+      for (const item of rung.pending()) combined.enqueue(item.event);
     }
     expect(combined.unsentCount()).toBe(3);
 
@@ -282,7 +289,7 @@ describe.skipIf(!DATABASE_URL)('Stage 6 — offline/sync vertical slice (real Po
     const laneOutbox = new SyncOutbox();
     let laneTotalMinor = 0;
     for (const id of ['S-RECON-1', 'S-RECON-2', 'S-RECON-3', 'S-RECON-4']) {
-      const sale = ringUpSale(id, catalogue);
+      const sale = await ringUpSale(id, catalogue);
       laneTotalMinor += sale.payable.minor;
       for (const item of sale.outbox.pending()) laneOutbox.enqueue(item.event);
     }

@@ -2591,6 +2591,44 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## The seventh: the receipt was not waiting for the disk (5 August 2026)
+
+One level above yesterday's find, and the same shape again.
+
+**The till's own commit never touched the disk.** It priced the basket, settled the payment,
+recorded the stock movement and queued the sale for the cloud — all correctly, and all **in the
+computer's memory**. A lane that lost power between the sale and the next sync lost the sale, and
+the cashier had already seen "Sale complete".
+
+The function's own description said it commits the sale *locally*, which is our first rule. It did
+not. That is the most expensive kind of comment there is: it tells every later reader the job is
+done.
+
+**Fixed, and fixed in the order that matters.** The sale goes to the disk **first**. Nothing else
+is true until it is there — not the stock, not the queue, not the "sale complete" on the screen.
+And the receipt number now literally does not exist until the disk confirms, so there is nothing to
+print early with. That makes it a property of the software rather than something a future change
+could quietly undo.
+
+If the disk refuses — full, or broken — the sale is refused **before the customer pays**, and the
+cashier is told in words: *"This lane could not save the sale. Do not take payment and do not hand
+over the goods."* That is the one place in this whole product where refusing a sale is the right
+answer, and it is right because of the moment: nothing has happened yet and the customer is still
+standing there.
+
+**Seven now, all the same shape.** Something present in the design and absent in the running
+software. None a crash; every one invisible until a shop depended on it. Two of them — this one and
+yesterday's — could only be found by driving the real path end to end, which is what the tests now
+do.
+
+**Tests:** 3,093 automated plus 31 performance, all green.
+
+**What the owner should check.** This is the second store test I gave you, and it is now worth
+doing: **pull the plug on a lane in the middle of a sale.** Anything the cashier was told was
+complete must still be there afterwards. Anything half-written must be reported, not quietly gone.
+
+---
+
 ## The sixth one, and it was the biggest (5 August 2026)
 
 The guard I built this morning looks for controls that are stand-ins rather than the real thing. It

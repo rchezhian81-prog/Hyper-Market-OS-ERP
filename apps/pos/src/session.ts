@@ -17,6 +17,7 @@ import { settle, type Tender, type Settlement } from '../../../packages/tender/s
 import { commitSale, type CommittedSale } from '../../../packages/sale/src/sale';
 import type { Ledger } from '../../../packages/ledger/src/ledger';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
+import type { CommitOutcome } from '../../../edge/store-edge/src/durability';
 
 export interface PosSessionConfig {
   readonly laneId: string;
@@ -104,6 +105,19 @@ export class SessionStateError extends Error {
  * pricing are recomputed from the basket on demand, so the running total is always
  * consistent with what is on screen.
  */
+/**
+ * The local write was refused, so the sale did not happen.
+ *
+ * Distinct from every other error here because of *when* it is: before the receipt, before payment,
+ * with the customer still standing there. It carries the cashier's words rather than a code.
+ */
+export class LocalCommitRefusedError extends Error {
+  constructor(public readonly saleId: string, public readonly laneMessage: string) {
+    super(`sale ${saleId} was not committed locally: ${laneMessage}`);
+    this.name = 'LocalCommitRefusedError';
+  }
+}
+
 export class PosSession {
   private readonly lines: BasketEntry[] = [];
   private seq = 0;
@@ -117,6 +131,27 @@ export class PosSession {
     private readonly config: PosSessionConfig,
     private readonly stockLedger: Ledger,
     private readonly outbox: SyncOutbox,
+    /**
+     * The durable local write — the edge's disk.
+     *
+     * **Hard rule #1 says commit locally first, and until this existed `commit()` did not.** It
+     * priced, settled, appended to an in-memory ledger and queued to an in-memory outbox, all
+     * correctly and all in memory: nothing reached a disk, so a lane that lost power between the
+     * sale and the next sync lost the sale. The docstring on `commit` already said *"commit the
+     * sale LOCALLY (hard rule #1)"* and the function did not do it, which is the most expensive
+     * kind of comment.
+     *
+     * It is a port so the session stays testable without a filesystem, and `commit` is
+     * **asynchronous because of it** — the one thing a sale is allowed to wait for. Awaiting a
+     * local fsync is not awaiting the network, and the original "synchronous by construction"
+     * comment conflated the two.
+     *
+     * **Required, not optional.** An optional durable write is one a deployment can forget, and
+     * forgetting it is invisible: the lane sells, the screen says "Sale complete", and the sales
+     * are in memory. Today has been spent finding controls that were present in a type and absent
+     * in the running system, so this one sits in the constructor where it cannot be left out.
+     */
+    private readonly durable: (saleId: string, record: string) => Promise<CommitOutcome>,
   ) {}
 
   /** The current screen state (§27.1). */
@@ -281,7 +316,9 @@ export class PosSession {
    * sale queued to the outbox — no network call. Throws if the tenders don't cover
    * the payable amount. Idempotent on the sale id.
    */
-  commit(saleId: string, number: string, committedAt: string, tenders: readonly Tender[]): CommittedSale {
+  async commit(
+    saleId: string, number: string, committedAt: string, tenders: readonly Tender[],
+  ): Promise<CommittedSale> {
     if (this.state === 'committed') {
       throw new SessionStateError('commit', this.state);
     }
@@ -289,22 +326,39 @@ export class PosSession {
     if (totals.lineCount === 0) {
       throw new EmptyBasketError();
     }
-    const sale = commitSale(
-      {
+
+    const input = {
         id: saleId,
         number,
         laneId: this.config.laneId,
         cashierId: this.config.cashierId,
         tradingDay: this.config.tradingDay,
         committedAt,
-        total: totals.payable,
         lines: this.activeLines().map((l) => ({
           productId: l.productId,
           quantityMinor: l.quantityMinor,
           uom: l.uom,
         })),
         tenders,
-      },
+    };
+
+    // **The disk, before anything else is true.**
+    //
+    // The order is the rule: nothing is appended to the ledger, nothing is queued, and the state
+    // does not become `committed` until the sale is on the disk. Doing it the other way round is
+    // the worst failure this product has — a sale the cashier saw succeed, that the customer paid
+    // for and walked away from, which was never written anywhere. Nobody finds out, the day is
+    // short, and the till is blamed for a counting error that never happened.
+    //
+    // A refusal here is thrown, and thrown is right: it happens **before** the receipt exists, so
+    // nothing has been promised to anybody and the cashier is told to use another lane. This is
+    // the one place in the product where refusing a sale is the correct answer, and it is correct
+    // because of the moment.
+    const outcome = await this.durable(saleId, JSON.stringify({ ...input, total: totals.payable.minor }));
+    if (!outcome.committed) throw new LocalCommitRefusedError(saleId, outcome.laneMessage);
+
+    const sale = commitSale(
+      { ...input, total: totals.payable },
       this.stockLedger,
       this.outbox,
     );

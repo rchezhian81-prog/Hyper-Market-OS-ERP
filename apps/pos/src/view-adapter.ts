@@ -69,7 +69,13 @@ export interface PosView {
    */
   syncStatus(): StatusPresentation;
   /** Take a full cash payment and commit locally. Returns the receipt number. */
-  tenderCash(saleId: string, receiptNumber: string, atIsoUtc: string): string;
+  /**
+   * Take cash and finish the sale.
+   *
+   * Returns a **promise**, and the type is the guarantee: the receipt number does not exist until
+   * the sale is on the local disk, so there is nothing to print with before then (hard rule #1).
+   */
+  tenderCash(saleId: string, receiptNumber: string, atIsoUtc: string): Promise<string>;
   newSale(): void;
 }
 
@@ -160,11 +166,16 @@ export function createPosView(
       return presentSyncBadge({ connection: badge.connection, unsentCount: badge.unsentCount });
     },
 
-    tenderCash(saleId: string, receiptNumber: string, atIsoUtc: string): string {
+    async tenderCash(saleId: string, receiptNumber: string, atIsoUtc: string): Promise<string> {
       const payable = session.totals().payable;
       const tenders: Tender[] = [{ kind: 'cash', amount: payable, status: 'settled' }];
-      // Commits locally and queues for sync — no network call (hard rule #1).
-      const sale = session.commit(saleId, receiptNumber, atIsoUtc, tenders);
+      // Commits to the local DISK, then queues for sync — no network call (hard rule #1).
+      //
+      // The `await` is the receipt's guarantee, and it is structural rather than a convention: the
+      // receipt number does not exist until the sale is on the disk, so there is nothing to print
+      // early with. That is why `commit` is asynchronous — awaiting a local fsync is not awaiting
+      // the network.
+      const sale = await session.commit(saleId, receiptNumber, atIsoUtc, tenders);
       return sale.number;
     },
 

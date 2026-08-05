@@ -6,6 +6,7 @@
 // the outbox, never in the sale path.
 
 import { InMemoryLedgerStore, Ledger } from '../../../packages/ledger/src/ledger';
+import type { CommitOutcome } from '../../../edge/store-edge/src/durability';
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { CatalogueCache, type CatalogueSnapshot } from '../../../packages/catalogue/src/catalogue';
 import { PosSession, taxRateFromPercent } from './session';
@@ -30,6 +31,15 @@ export function bootPos(config?: {
   taxPercent?: number;
   /** The lane's cached catalogue snapshot; without it, barcode scanning is off. */
   catalogue?: CatalogueSnapshot;
+  /**
+   * The lane's durable local write — the edge's disk (hard rule #1).
+   *
+   * **Required in the type and defaulted here to a refusal**, which is the honest default for a
+   * browser shell that has not been handed one: a lane with nowhere to write a sale must not take
+   * payment. The alternative default — accept and hold it in memory — is a sale the cashier saw
+   * succeed and that exists nowhere, which is the worst failure this product has.
+   */
+  durable?: (saleId: string, record: string) => Promise<CommitOutcome>;
 }): PosView {
   const session = new PosSession(
     {
@@ -41,6 +51,12 @@ export function bootPos(config?: {
     },
     new Ledger(new InMemoryLedgerStore()),
     new SyncOutbox(),
+    config?.durable ?? (() => Promise.resolve({
+      committed: false,
+      refusedBecause: 'could_not_write_durably' as const,
+      detail: 'this lane has no durable local store wired to it',
+      laneMessage: 'This lane is not ready to take payment. Do not take money — tell the manager and use another lane.',
+    })),
   );
   // Indexing happens once at boot, so every subsequent scan is O(1) (§32).
   const catalogue = config?.catalogue ? new CatalogueCache(config.catalogue) : undefined;

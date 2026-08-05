@@ -36,7 +36,12 @@ function newLane(): { view: PosView; ledger: Ledger; outbox: SyncOutbox } {
     { laneId: 'lane-1', cashierId: 'clerk-1', tradingDay: '2026-08-02', currency: 'INR', defaultTaxRate: taxRateFromPercent(18) },
     ledger,
     outbox,
-  );
+      // A session with nowhere to write is a lane that must not take payment.
+      () => Promise.resolve({
+        committed: true as const, durable: true as const,
+        detail: 'test double', laneMessage: 'Sale complete.',
+      }),
+    );
   session.setNow(AT);
   return { view: createPosView(session, 'INR', CATALOGUE), ledger, outbox };
 }
@@ -77,13 +82,13 @@ describe('POS barcode scanning', () => {
     expect(view.basket()).toHaveLength(0);
   });
 
-  it('completes a scanned basket with cash, locally', () => {
+  it('completes a scanned basket with cash, locally', async () => {
     const { view, ledger, outbox } = newLane();
     view.scanBarcode('8901234567890');
     view.scanBarcode('2123456012349');
     expect(view.payableMinor()).toBe(216_72); // ₹118.00 + ₹98.72
 
-    const receipt = view.tenderCash('sale-1', 'S-0001', AT);
+    const receipt = await view.tenderCash('sale-1', 'S-0001', AT);
     expect(receipt).toBe('S-0001');
     expect(ledger.entries()).toHaveLength(2); // both lines moved stock on the lane
     expect(outbox.unsentCount()).toBe(1); // one sale queued for sync
@@ -95,6 +100,11 @@ describe('POS barcode scanning', () => {
       { laneId: 'lane-2', cashierId: 'c', tradingDay: '2026-08-02', currency: 'INR', defaultTaxRate: taxRateFromPercent(18) },
       ledger,
       new SyncOutbox(),
+      // A session with nowhere to write is a lane that must not take payment.
+      () => Promise.resolve({
+        committed: true as const, durable: true as const,
+        detail: 'test double', laneMessage: 'Sale complete.',
+      }),
     );
     const view = createPosView(session); // no catalogue
     expect(view.hasCatalogue()).toBe(false);

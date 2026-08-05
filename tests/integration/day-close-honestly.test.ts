@@ -88,7 +88,7 @@ describe.skipIf(!DATABASE_URL)('Stage 9 — the day closes honestly (real Postgr
   });
 
   /** A basket rung up on the lane, committed locally with nothing awaiting the network. */
-  function ringUp(id: string, lines: readonly { price: number; qty: number }[]) {
+  async function ringUp(id: string, lines: readonly { price: number; qty: number }[]) {
     const session = new PosSession(
       {
         laneId: 'lane-3',
@@ -99,6 +99,11 @@ describe.skipIf(!DATABASE_URL)('Stage 9 — the day closes honestly (real Postgr
       },
       new Ledger(new InMemoryLedgerStore()),
       outbox,
+      // A session with nowhere to write is a lane that must not take payment.
+      () => Promise.resolve({
+        committed: true as const, durable: true as const,
+        detail: 'test double', laneMessage: 'Sale complete.',
+      }),
     );
     lines.forEach((line, i) => {
       session.scan({
@@ -111,7 +116,7 @@ describe.skipIf(!DATABASE_URL)('Stage 9 — the day closes honestly (real Postgr
       });
     });
     const payable = session.totals().payable;
-    const committed = session.commit(id, `INV-${id}`, '2026-08-04T19:00:00Z', [
+    const committed = await session.commit(id, `INV-${id}`, '2026-08-04T19:00:00Z', [
       { kind: 'cash', amount: payable, status: 'settled' },
     ]);
     return { committed, payable };
@@ -178,7 +183,7 @@ describe.skipIf(!DATABASE_URL)('Stage 9 — the day closes honestly (real Postgr
 
   it('takes the day\'s sales locally and banks them in PostgreSQL', async () => {
     for (const id of [`S-${RUN}-1`, `S-${RUN}-2`, `S-${RUN}-3`]) {
-      const { committed, payable } = ringUp(id, [{ price: 45_000, qty: 1 }, { price: 18_000, qty: 2 }]);
+      const { committed, payable } = await ringUp(id, [{ price: 45_000, qty: 1 }, { price: 18_000, qty: 2 }]);
       expect(committed.id).toBe(id);
       expect(payable).toEqual(money(85_050, CURRENCY)); // ₹810.00 + 5% GST
       await store.append(TENANT, `sale/${id}`, makeEvent({

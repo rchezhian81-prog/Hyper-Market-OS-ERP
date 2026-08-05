@@ -6,6 +6,7 @@ import {
   VoidReasonRequiredError,
   NoSuchLineError,
   SessionStateError,
+  LocalCommitRefusedError,
 } from '../../apps/pos/src/index';
 import { money } from '../../packages/contracts/src/money';
 import { Ledger, InMemoryLedgerStore } from '../../packages/ledger/src/index';
@@ -31,7 +32,12 @@ function newSession() {
     },
     ledger,
     outbox,
-  );
+      // A session with nowhere to write is a lane that must not take payment.
+      () => Promise.resolve({
+        committed: true as const, durable: true as const,
+        detail: 'test double', laneMessage: 'Sale complete.',
+      }),
+    );
   session.setNow(AT);
   return { session, ledger, outbox };
 }
@@ -137,11 +143,11 @@ describe('PosSession — the Sale screen', () => {
     expect(settlement.settled).toEqual(money(0, 'INR'));
   });
 
-  it('commits a cash sale locally and queues it for sync — no network', () => {
+  it('commits a cash sale locally and queues it for sync — no network', async () => {
     const { session, ledger, outbox } = newSession();
     scanItem(session);
     session.goToTender();
-    const sale = session.commit('sale-1', 'S-0001', AT, [cash(118_00)]);
+    const sale = await session.commit('sale-1', 'S-0001', AT, [cash(118_00)]);
 
     expect(sale.total).toEqual(money(118_00, 'INR'));
     expect(session.currentState()).toBe('committed');
@@ -149,11 +155,11 @@ describe('PosSession — the Sale screen', () => {
     expect(outbox.unsentCount()).toBe(1); // queued for the cloud
   });
 
-  it('keeps billing with the cable out and shows the unsent count', () => {
+  it('keeps billing with the cable out and shows the unsent count', async () => {
     const { session, outbox } = newSession();
     session.setConnection('offline');
     scanItem(session);
-    session.commit('sale-1', 'S-0001', AT, [cash(118_00)]);
+    await session.commit('sale-1', 'S-0001', AT, [cash(118_00)]);
 
     const badge = session.syncBadge();
     expect(badge.connection).toBe('offline');
@@ -161,7 +167,7 @@ describe('PosSession — the Sale screen', () => {
     expect(outbox.pending()[0]?.event.type).toBe('SaleCommitted');
   });
 
-  it('suspends and recalls a basket', () => {
+  it('suspends and recalls a basket', async () => {
     const { session } = newSession();
     scanItem(session);
     session.suspend();
@@ -172,23 +178,113 @@ describe('PosSession — the Sale screen', () => {
     expect(session.totals().lineCount).toBe(1);
   });
 
-  it('starts a fresh basket after a commit', () => {
+  it('starts a fresh basket after a commit', async () => {
     const { session } = newSession();
     scanItem(session);
-    session.commit('sale-1', 'S-0001', AT, [cash(118_00)]);
+    await session.commit('sale-1', 'S-0001', AT, [cash(118_00)]);
     session.newSale();
     expect(session.currentState()).toBe('idle');
     expect(session.basket()).toHaveLength(0);
     expect(session.totals().payable).toEqual(money(0, 'INR'));
   });
 
-  it('refuses a double-tap commit and never double-bills', () => {
+  it('refuses a double-tap commit and never double-bills', async () => {
     const { session, ledger, outbox } = newSession();
     scanItem(session);
-    session.commit('sale-1', 'S-0001', AT, [cash(118_00)]);
-    // a second tap on Tender is refused with a clear state error, not a second sale
-    expect(() => session.commit('sale-1', 'S-0001', AT, [cash(118_00)])).toThrow(SessionStateError);
+    await session.commit('sale-1', 'S-0001', AT, [cash(118_00)]);
+    // A second tap on Tender is refused with a clear state error, not a second sale.
+    await expect(session.commit('sale-1', 'S-0001', AT, [cash(118_00)])).rejects.toThrow(SessionStateError);
     expect(ledger.entries()).toHaveLength(1);
     expect(outbox.unsentCount()).toBe(1);
+  });
+});
+
+describe('the receipt waits for the disk (hard rule #1)', () => {
+  /** Records the order things happened in, so "before" can be asserted rather than assumed. */
+  const withRecorder = () => {
+    const order: string[] = [];
+    const ledger = new Ledger(new InMemoryLedgerStore());
+    const outbox = new SyncOutbox();
+    const realAppend = ledger.append.bind(ledger);
+    ledger.append = ((e: Parameters<typeof realAppend>[0]) => { order.push('ledger'); return realAppend(e); }) as typeof realAppend;
+    const realEnqueue = outbox.enqueue.bind(outbox);
+    outbox.enqueue = ((e: Parameters<typeof realEnqueue>[0]) => { order.push('outbox'); return realEnqueue(e); }) as typeof realEnqueue;
+
+    const session = new PosSession(
+      { laneId: 'lane-1', cashierId: 'c-1', tradingDay: '2026-08-05', currency: 'INR', defaultTaxRate: taxRateFromPercent(18) },
+      ledger, outbox,
+      (_id, record) => {
+        order.push('disk');
+        order.push(`bytes:${record.length}`);
+        return Promise.resolve({ committed: true as const, durable: true as const, detail: 'ok', laneMessage: 'Sale complete.' });
+      },
+    );
+    return { session, ledger, outbox, order };
+  };
+
+  it('writes to the DISK before the ledger or the outbox sees anything', () => {
+    // The order is the rule. Doing it the other way round produces the worst failure this product
+    // has: a sale the cashier saw succeed, that the customer paid for and walked away from, which
+    // was never written anywhere.
+    const { session, order } = withRecorder();
+    scanItem(session);
+    return session.commit('sale-1', 'S-0001', AT, [cash(118_00)]).then(() => {
+      expect(order[0]).toBe('disk');
+      expect(order.indexOf('disk')).toBeLessThan(order.indexOf('ledger'));
+      expect(order.indexOf('disk')).toBeLessThan(order.indexOf('outbox'));
+    });
+  });
+
+  it('writes the sale itself, not an empty placeholder', async () => {
+    const { session, order } = withRecorder();
+    scanItem(session);
+    await session.commit('sale-1', 'S-0001', AT, [cash(118_00)]);
+    const bytes = Number(order.find((o) => o.startsWith('bytes:'))!.slice(6));
+    expect(bytes).toBeGreaterThan(100);
+  });
+
+  it('REFUSES the sale when the disk refuses, and changes nothing', async () => {
+    // Before the receipt, before payment, with the customer still standing there — the one place
+    // in the product where refusing a sale is the right answer.
+    const ledger = new Ledger(new InMemoryLedgerStore());
+    const outbox = new SyncOutbox();
+    const session = new PosSession(
+      { laneId: 'lane-1', cashierId: 'c-1', tradingDay: '2026-08-05', currency: 'INR', defaultTaxRate: taxRateFromPercent(18) },
+      ledger, outbox,
+      () => Promise.resolve({
+        committed: false as const, refusedBecause: 'no_room_left' as const,
+        detail: 'the disk is full',
+        laneMessage: 'This lane cannot record any more sales until it syncs. Do not take payment.',
+      }),
+    );
+    scanItem(session);
+
+    await expect(session.commit('sale-1', 'S-0001', AT, [cash(118_00)])).rejects.toThrow(LocalCommitRefusedError);
+    // Nothing moved. Not the stock, not the queue, not the state.
+    expect(ledger.entries()).toHaveLength(0);
+    expect(outbox.unsentCount()).toBe(0);
+    expect(session.currentState()).not.toBe('committed');
+  });
+
+  it('gives the cashier the lane\'s words, not a code', async () => {
+    const session = new PosSession(
+      { laneId: 'lane-1', cashierId: 'c-1', tradingDay: '2026-08-05', currency: 'INR', defaultTaxRate: taxRateFromPercent(18) },
+      new Ledger(new InMemoryLedgerStore()), new SyncOutbox(),
+      () => Promise.resolve({
+        committed: false as const, refusedBecause: 'could_not_write_durably' as const,
+        detail: 'the local write failed',
+        laneMessage: 'This lane could not save the sale. Do not take payment and do not hand over the goods.',
+      }),
+    );
+    scanItem(session);
+    await session.commit('sale-1', 'S-0001', AT, [cash(118_00)]).catch((e: unknown) => {
+      expect((e as LocalCommitRefusedError).laneMessage).toContain('Do not take payment');
+    });
+  });
+
+  it('takes the durable write as a CONSTRUCTOR argument, so it cannot be forgotten', () => {
+    // An optional durable write is one a deployment can forget, and forgetting it is invisible:
+    // the lane sells, the screen says "Sale complete", and the sales are in memory.
+    expect(PosSession.length).toBe(4);
   });
 });
