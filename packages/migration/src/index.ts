@@ -69,3 +69,9 @@ export {
   type RouteAssessment, type ExternalSource, type VerificationPlan, type PlanRefusal,
   type VerificationResult, type ReadinessBlocker, type ExtractionReadiness,
 } from './extraction';
+
+export {
+  parseReportMoney, parseReportQuantity, classifyRow, parseReport, checkAgainstPrintedTotal,
+  type ParsedMoney, type RowKind, type ClassifiedRow, type ParsedSubtotal,
+  type ParsedReport, type ParseRefusal, type ParseResult, type ParseCheck,
+} from './report-parser';

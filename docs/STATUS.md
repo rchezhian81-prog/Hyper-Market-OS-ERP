@@ -1661,6 +1661,45 @@ honest rather than being marked complete.
 
 ---
 
+## Reading what the old system actually exports (7 August 2026)
+
+The self-extraction decision made this necessary. `packages/import` takes clean rows and
+validates them; nothing turned **what these systems actually produce** into rows — and what they
+produce is not a data file, it is a **printed page that happens to be in a spreadsheet**: the
+shop's name, the report title, the date, then the header, then data, then *"Total for GROCERY"*,
+then a page break where the header comes back, then a grand total and a print stamp.
+
+`packages/migration/src/report-parser.ts`. Four things in there will corrupt a migration silently
+if they are got wrong, and each is a test:
+
+- **`4,12,000.00` is twelve lakh, not four thousand.** Indian digit grouping separates at three,
+  then two, then two. Stripping commas happens to work for both conventions, which is exactly why
+  it is dangerous: a parser that *validates* grouping against the Western convention rejects real
+  files, and one that "corrects" it multiplies a stock valuation by a factor nobody notices until
+  an audit.
+- **`parseFloat(x) * 100` is wrong, always**, and it is the line everybody writes — 19.99 times a
+  hundred is 1998.9999999999998 in every language with binary floats. §29.1 requires integer minor
+  units, so the decimal part is parsed **as text**. There is no float in the file.
+- **A `Total for GROCERY` line counted as data adds the group's total back into the group** and
+  doubles it — reconciling to a number that is plausibly wrong rather than obviously wrong. So
+  subtotals are classified *before* anything else.
+- **`CR` is negative.** A credit balance read positive inverts every supplier balance and
+  reconciles to exactly twice the truth. And a lone `-` is nil — a *number*, which these reports
+  print constantly, not a blank.
+
+The header is **found**, not assumed to be line 1: taking the first line on one of these exports
+names the columns after the shop. Nothing is dropped silently — every discarded line is returned
+with its reason, **including the banner above the header**, because *"where did the other four
+hundred rows go"* is asked about the file, not about the part below the header.
+
+The report's own subtotals give a free check that **the reading** was right — and
+`verifiesTheData` is typed as the literal `false`, because both sides came from the same system.
+That is the comparison `planVerification` refuses. The stock figure is still proved by counting
+the shelves.
+
+**The `plain-text-source` guardrail paid for itself a fifth time**, catching a raw non-breaking
+space I had written into a character class. Now an escape, with the reason beside it.
+
 ## OB-06 — we migrate ourselves (7 August 2026)
 
 **Owner decision, and it corrected a mistake in my planning.** I had been carrying the letter to

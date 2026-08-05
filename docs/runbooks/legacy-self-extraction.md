@@ -167,3 +167,7 @@ Three things, and none of them involves the vendor:
 - `../evidence/stage-11-the-old-shop-arrives-whole.md` — the engine, rehearsed end to end
 - `../discovery/legacy-data-access.md` — the vendor letter, retained on file, no longer the plan
 - `../../packages/migration/src/extraction.ts` — the route and verification rules, as code
+- `../../packages/migration/src/report-parser.ts` — reads what Routes B and C actually produce:
+  finds the real header under the shop's name and the report title, never counts a
+  *"Total for GROCERY"* line as a product, reads `4,12,000.00` as twelve lakh, and keeps every
+  paisa exact
