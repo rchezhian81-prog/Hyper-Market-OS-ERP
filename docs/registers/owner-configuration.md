@@ -44,6 +44,10 @@ Status: **Default in use** · **Confirmed** · **Changed by owner**.
 | OC-26 | Catch-weight standard yields per cut (weighed tenants) | `CatchWeightRun.standardYieldBp` | Per-process, entered with the process | Per tenant |
 | OC-27 | Embedded weight/price barcode layout for the store's scales | `EmbeddedBarcodeRule` | Common EAN-13 scheme (prefix `2`) | Master-data config |
 | OC-28 | Backup retention and restore-test frequency | `infra/` + DR runbook | 30 days, restore tested monthly | Stage 5 gate |
+| OC-29 | Supplier-statement timing window — how many days before a difference stops being "in the post" | `reconcileSupplierStatement` `timingWindowDays` | **15 days** | Migration (with CA) |
+| OC-30 | Unexplained supplier difference that need not block the opening balance | `supplierPosition` `toleranceMinor` | **₹0** — every difference is worked. There is **no** tolerance for a supplier who never replied, and none for an invoice only they have | Migration (with CA) |
+| OC-31 | Card/UPI commission rate, GST on it, and settlement lag per provider | `RouteTerms` | **None assumed.** The check **refuses** to run until the rate is given, and refuses a rate worked out from the gap it explains — take it off the merchant agreement | Migration (from the merchant agreement) |
+| OC-32 | Cash taken but not yet lodged that need not block — the float and the till change | `verifySalesAgainstBank` `toleranceMinor` | **₹0** — every rupee is explained until the owner sets the real float | Migration (with CA) |
 
 > **How to use this at UAT:** work down the list. For each row either accept the default
 > (say nothing) or give the value. Nothing here needs a technical answer — every one is a
