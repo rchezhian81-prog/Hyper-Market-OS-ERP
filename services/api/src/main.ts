@@ -22,7 +22,7 @@ import { Client } from 'pg';
 import { SqlEventStore } from '../../../packages/persistence/src/event-store';
 import { pgClient } from '../../../packages/persistence/src/pg-client';
 import {
-  buildRouter, loadConfig, startHttpServer, CLOUD_API_CONFIG, SqlIdempotencyStore,
+  buildRouter, loadConfig, startHttpServer, CLOUD_API_CONFIG, SqlIdempotencyStore, SqlAuditSink,
   type Route,
 } from '../../kernel/src/index';
 import { AccessControl } from '../../../packages/rbac/src/rbac';
@@ -218,6 +218,11 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
     // instances, so the guard that refuses a different request under a used key was quietly not
     // there — which is not a crash, and would never have shown up in a test.
     idempotency: new SqlIdempotencyStore(pgClient(db)),
+
+    // The audit trail. Optional in the kernel's type and NOT optional in a deployment: the port
+    // existed, nothing supplied it, and `writeAudit` returned immediately on every request — so
+    // hard rule #6 was protecting evidence that was never being kept.
+    audit: new SqlAuditSink(pgClient(db), (detail) => { process.stderr.write(`${detail}\n`); }),
     newTraceId: () => `t-${Math.random().toString(36).slice(2, 10)}`,
     port: Number(settings['PORT']),
     dependenciesReachable: reachable,

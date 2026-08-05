@@ -35,3 +35,4 @@ export {
   type ServerOptions, type RunningServer,
 } from './http-server';
 export * from './idempotency-store';
+export * from './audit-sink';

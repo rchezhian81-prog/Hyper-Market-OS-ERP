@@ -2633,7 +2633,20 @@ only, which means it was forgotten on every restart and never shared between two
 service. Not a crash — just the safety catch quietly not being there. It is now kept in the
 database.
 
-**Tests:** 3,066 automated plus 31 performance, all green.
+**And the most serious of the lot: the system was keeping no audit trail at all.** The software
+knows how to record every action and every refusal — who did it, what they asked for, what they
+were told — but nothing had been connected to write it down. Our own rule says never delete audit
+evidence, and there was none to delete. That is now written to a table nobody can edit or delete
+from, including the database administrator.
+
+**So I stopped finding these one at a time.** Five faults of exactly the same shape turned up in
+one session: something that *looked* wired up and was not. None of them was a crash — each was a
+safety control quietly not being there, which is the hardest kind to notice and the kind this
+project cares most about. There is now a guard that reads the four files the running system
+actually starts from and refuses anything that is a stand-in rather than the real thing. It will
+catch the sixth.
+
+**Tests:** 3,080 automated plus 31 performance, all green.
 
 **What the owner should check.** This is now testable in the store, and it is the test I would run
 first: **switch off the internet at the router, sell ten things, switch it back on.** Every sale
