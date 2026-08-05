@@ -91,4 +91,16 @@ export class SyncOutbox<TType extends string = string, TPayload = unknown> {
   find(key: string): OutboxItem<TType, TPayload> | undefined {
     return this.items.get(key);
   }
+
+  /**
+   * Every item ever enqueued in this run, **in enqueue order**, whatever state it reached.
+   *
+   * The order is the point. It is what lets the edge advance a durable cursor over the *contiguous*
+   * finished prefix — and only the contiguous one, because a sale still pending in the middle must
+   * hold the cursor where it is or the next restart would step over it and that sale would be gone
+   * with nothing saying so.
+   */
+  all(): OutboxItem<TType, TPayload>[] {
+    return [...this.items.values()];
+  }
 }

@@ -36,6 +36,10 @@ import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { SyncAgent } from '../../../edge/sync-agent/src/agent';
 import { httpTransport } from '../../../edge/sync-agent/src/http-transport';
 import { openFileLog, readLog, type OpenFileLog } from './file-log';
+import { readCursor, writeCursor, advanceTo } from './sync-cursor';
+import { createEdgeNode, type EdgeNode } from './index';
+import { hmacSigner } from '../../../services/catalogue/src/index';
+import { makeEvent } from '../../../packages/contracts/src/event';
 
 /** Gap between drains when the last one delivered something. */
 const BASE_INTERVAL_MS = 15_000;
@@ -50,6 +54,8 @@ export function nextInterval(consecutiveQuietPasses: number): number {
 export interface EdgeProcess {
   readonly log: OpenFileLog;
   readonly outbox: SyncOutbox;
+  /** What a lane talks to: price a scan, commit a sale, take a new pack. */
+  readonly node: EdgeNode;
   /** Null when no cloud is configured — which is a supported way to run, not a fault. */
   readonly agent: SyncAgent | null;
   stop(): Promise<void>;
@@ -89,13 +95,46 @@ export async function startEdge(
   }
 
   const outbox = new SyncOutbox();
+  const tenantId = settings['EDGE_TENANT_ID']!;
+
+  /**
+   * Rebuild the queue from the log.
+   *
+   * The log is the system of record and the queue is a view of it, so a restart reconstructs the
+   * view rather than trusting one that died with the process. Everything after the cursor is
+   * re-queued; a sale that was mid-flight when the power went is therefore sent again, and the
+   * cloud dedupes it (§31.1). Re-sending is cheap; skipping is permanent.
+   */
+  let handledBefore = await readCursor(settings['EDGE_DATA_DIR']!);
+  const whole = found.filter((r) => r.ok).map((r) => (r.ok ? r.record : ''));
+  const toResend = whole.slice(handledBefore);
+  for (const [i, record] of toResend.entries()) {
+    let payload: unknown;
+    try { payload = JSON.parse(record) as unknown; } catch { continue; }
+    const saleId = (payload as { saleId?: string }).saleId ?? `record-${handledBefore + i}`;
+    outbox.enqueue(makeEvent({
+      id: `edge-sale-${saleId}`, type: 'SaleCommitted', occurredAt: new Date().toISOString(),
+      idempotencyKey: `edge-${tenantId}-${saleId}`, source: 'edge/lane', payload,
+    }));
+  }
+  if (toResend.length > 0) say(`${toResend.length} sale(s) from before are still to send.`);
+
+  const node = createEdgeNode({
+    tenantId,
+    log,
+    signer: hmacSigner(settings['PACK_SIGNING_KEY']!),
+    // The seam. Without it a sale is durable on the disk and never queued, which is exactly how
+    // it was: every piece on either side built and tested, nothing joining them, nothing failing.
+    outbox,
+  });
+
   const cloudUrl = settings['CLOUD_API_URL'];
   const cloudToken = settings['CLOUD_API_TOKEN'];
 
   if (cloudUrl === undefined || cloudToken === undefined) {
     // Supported, and said plainly. The lanes sell; the queue grows; nobody is told a lie about it.
     say('no cloud is configured, so nothing will be synced. The shop can still trade — that is the point.');
-    return { log, outbox, agent: null, stop: () => log.close() };
+    return { log, outbox, node, agent: null, stop: () => log.close() };
   }
 
   const agent = new SyncAgent(outbox, httpTransport({
@@ -106,11 +145,33 @@ export async function startEdge(
   let quietPasses = 0;
   let timer: NodeJS.Timeout | undefined;
 
+  /**
+   * Move the cursor over the finished prefix, and persist it.
+   *
+   * Only a contiguous run counts: a sale still queued, or one that dead-lettered and is now a
+   * person's problem, holds the cursor where it is. Stepping over it would mean the next restart
+   * never re-queued it, and that sale would be gone with nothing saying so.
+   */
+  const advanceCursor = async (): Promise<void> => {
+    // Read from the OUTBOX, not from the start-up snapshot of the log.
+    //
+    // The first version folded over the records found on disk at start-up, which meant a sale rung
+    // up during this run was not in the list at all — so the cursor never moved and every restart
+    // re-sent everything. The outbox holds exactly the right set in exactly the right order: the
+    // records re-queued from the log at start, then everything committed since.
+    const handledNow = handledBefore + advanceTo(outbox.all().map((i) => i.state !== 'pending'));
+    if (handledNow > handledBefore) {
+      handledBefore = handledNow;
+      await writeCursor(settings['EDGE_DATA_DIR']!, handledNow);
+    }
+  };
+
   const pass = async (): Promise<void> => {
     // Sequential by construction: the next pass is scheduled only after this one returns, so two
     // drains can never run at once.
     try {
       const result = await agent.drain({ at: new Date().toISOString() });
+      await advanceCursor();
       quietPasses = result.acknowledged > 0 ? 0 : quietPasses + 1;
       if (result.acknowledged > 0 || result.deadLettered > 0) {
         say(`sync: ${result.acknowledged} sent, ${result.deadLettered} needing a person, ${result.remaining} waiting`);
@@ -129,13 +190,17 @@ export async function startEdge(
   return {
     log,
     outbox,
+    node,
     agent,
     stop: async () => {
       stopping = true;
       if (timer !== undefined) clearTimeout(timer);
       // One last try, then go. Nothing is lost by stopping mid-drain: an unacknowledged item stays
       // pending, which is the whole reason there is an outbox.
-      try { await agent.drain({ at: new Date().toISOString(), limit: 20 }); } catch { /* still queued */ }
+      try {
+        await agent.drain({ at: new Date().toISOString(), limit: 20 });
+        await advanceCursor();
+      } catch { /* still queued, and the cursor stays where it is */ }
       const badge = agent.health();
       if (badge.unsentCount > 0) {
         say(`stopping with ${badge.unsentCount} sale(s) still to send. They are on the disk and will go when this starts again.`);

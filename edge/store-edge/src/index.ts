@@ -17,6 +17,8 @@ export {
 
 import { acceptPack, type SignedPack, type PackSigner } from '../../../services/catalogue/src/pack';
 import { commitLocally, type CommitOutcome, type DurableLog } from './durability';
+import { makeEvent } from '../../../packages/contracts/src/event';
+import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 
 /** What the lane asks the edge for, and all it may ask for. */
 export interface EdgeNode {
@@ -34,16 +36,44 @@ export function createEdgeNode(input: {
   readonly signer: PackSigner;
   readonly initialPack?: SignedPack;
   readonly reserveBytes?: number;
+  /**
+   * Where a committed sale is queued for the cloud.
+   *
+   * **This was missing, and it was the seam the whole product runs through.** `commit` wrote the
+   * sale to the disk and stopped: durable, correct, and never queued — so no sale a lane took ever
+   * reached the cloud. Every piece on either side of this line was built and tested; nothing
+   * joined them, and nothing failed, which is what made it invisible.
+   */
+  readonly outbox?: SyncOutbox;
 }): EdgeNode {
   let held = input.initialPack;
 
   return {
     pack: () => held,
 
-    commit: (saleId, record) => commitLocally({
-      saleId, record, log: input.log,
-      ...(input.reserveBytes === undefined ? {} : { reserveBytes: input.reserveBytes }),
-    }),
+    commit: async (saleId, record) => {
+      const outcome = await commitLocally({
+        saleId, record, log: input.log,
+        ...(input.reserveBytes === undefined ? {} : { reserveBytes: input.reserveBytes }),
+      });
+
+      // **After the durable write, never before.** Queueing first would send a sale the lane went
+      // on to refuse — the cloud would hold a sale that never happened, and the customer would
+      // have walked away without paying for it. Same reasoning as printing the receipt second.
+      if (outcome.committed && input.outbox !== undefined) {
+        input.outbox.enqueue(makeEvent({
+          id: `edge-sale-${saleId}`,
+          type: 'SaleCommitted',
+          occurredAt: new Date().toISOString(),
+          // The sale's own id, minted here at the lane. Every retry from here to the cloud carries
+          // this same key, so a resend collapses to one sale (§31.1).
+          idempotencyKey: `edge-${input.tenantId}-${saleId}`,
+          source: 'edge/lane',
+          payload: JSON.parse(record) as unknown,
+        }));
+      }
+      return outcome;
+    },
 
     takePack: (incoming) => {
       // The same function the service and the tests use, so a lane cannot end up applying a

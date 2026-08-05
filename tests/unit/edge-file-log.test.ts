@@ -164,3 +164,38 @@ describe('the real log satisfies the contract commitLocally was written against'
     expect(records.every((r) => r.ok)).toBe(true);
   });
 });
+
+describe('the sync cursor — where a restart begins', () => {
+  it('advances over a contiguous finished prefix, and stops at the first gap', async () => {
+    const { advanceTo } = await import('../../edge/store-edge/src/sync-cursor');
+    // The whole rule. Three finished, then one still queued: the cursor may move three, not four
+    // and not five. Counting the finished ones instead would step over the pending sale, and the
+    // next restart would never re-queue it — gone, with nothing saying so.
+    expect(advanceTo([true, true, true, false, true])).toBe(3);
+    expect(advanceTo([false, true, true])).toBe(0);
+    expect(advanceTo([true, true])).toBe(2);
+    expect(advanceTo([])).toBe(0);
+  });
+
+  it('reads zero for a cursor that is missing or unreadable, never "everything is done"', async () => {
+    const { readCursor, writeCursor } = await import('../../edge/store-edge/src/sync-cursor');
+    const dir = await tempDir();
+    // Missing.
+    expect(await readCursor(dir)).toBe(0);
+    // Nonsense written by hand.
+    await writeFile(join(dir, 'sync-cursor'), 'not a number\n');
+    // Starting from the beginning re-sends and the cloud dedupes. The other reading — assume
+    // everything is done — skips sales, permanently and silently.
+    expect(await readCursor(dir)).toBe(0);
+
+    await writeCursor(dir, 7);
+    expect(await readCursor(dir)).toBe(7);
+  });
+
+  it('rejects a negative cursor rather than trusting it', async () => {
+    const { readCursor } = await import('../../edge/store-edge/src/sync-cursor');
+    const dir = await tempDir();
+    await writeFile(join(dir, 'sync-cursor'), '-4\n');
+    expect(await readCursor(dir)).toBe(0);
+  });
+});

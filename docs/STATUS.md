@@ -2591,6 +2591,43 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## The sixth one, and it was the biggest (5 August 2026)
+
+The guard I built this morning looks for controls that are stand-ins rather than the real thing. It
+would not have caught this one, because nothing here was a stand-in — **two real, working, tested
+pieces simply were not joined to each other.**
+
+**A sale rung up at the till was written safely to the disk and never put in the queue to be sent.**
+So no sale a lane took would ever have reached the cloud. Everything on both sides of that line was
+built and tested. Nothing failed. That is what made it invisible — and the end-to-end test I wrote
+earlier today passed because it put sales into the queue *by hand*, going around the gap instead of
+through it.
+
+That is now joined, and the test goes through the real path: ring a sale at the till, find it in
+the cloud.
+
+**Two decisions in it worth knowing about:**
+
+- **The queue entry is made after the sale is safely on the disk, never before.** The other order
+  would send a sale the till then refused — the cloud would hold a sale that never happened, and
+  the customer walked out without paying for it.
+- **The queue is rebuilt from the disk every time the edge starts.** The disk is the record; the
+  queue is only a working list. That needs the edge to remember how far it got, so it keeps a small
+  durable marker. If that marker is ever unreadable it starts from the beginning — which re-sends
+  a few sales the cloud then ignores, rather than skipping one, which would be permanent and
+  silent.
+
+**Found while building it:** my first version of that marker never moved, which would have meant
+re-sending every sale the shop had ever made on every restart. Caught by the test within the hour.
+
+**Tests:** 3,088 automated plus 31 performance, all green.
+
+**What the owner should check.** This does not change the two store tests I gave you — it is what
+makes the first of them able to pass at all. **Internet off, sell ten things, internet on: all ten
+in the cloud, once.**
+
+---
+
 ## The store edge can now actually run (5 August 2026)
 
 Following on from this morning: having found that nothing could *send* a sale to the cloud, I
@@ -3078,7 +3115,10 @@ looked wired up and was not, I went looking for more, and found five: the piece 
 to the cloud, the piece that writes a sale to the disk, the process that runs the shop's edge, the
 safety catch on repeated requests, and the audit trail itself. **Not one of them was a crash.**
 Every one was a control quietly not being there, and none would have shown up until the shop was
-using it. There are now two guards that look for that shape on purpose — one for controls that are
+using it. **A sixth turned out to be different and worse:** two real, working, tested pieces that
+were simply not joined — a sale written safely to the disk and never queued to be sent. No guard
+based on names could catch that one; only driving the real path end to end does. There are two
+guards that look for the shape on purpose — one for controls that are
 stand-ins rather than the real thing, one for work that grows with how long the shop has been open
 — because finding them by reading is not a plan.
 

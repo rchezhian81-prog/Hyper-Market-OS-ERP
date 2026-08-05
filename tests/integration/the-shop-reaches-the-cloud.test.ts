@@ -10,6 +10,9 @@ import { AccessControl } from '../../packages/rbac/src/rbac';
 import { buildSurface } from '../../services/api/src/main';
 import { STREAM } from '../../services/api/src/adapters';
 import { SyncOutbox } from '../../packages/sync/src/outbox';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { startEdge } from '../../edge/store-edge/src/main';
 import { SyncAgent } from '../../edge/sync-agent/src/agent';
 import { httpTransport } from '../../edge/sync-agent/src/http-transport';
 import { makeEvent } from '../../packages/contracts/src/event';
@@ -227,5 +230,137 @@ describe.skipIf(!DATABASE_URL)('the shop reaches the cloud (real PostgreSQL)', (
     await expect(
       client.query('UPDATE event_ledger SET payload = $1 WHERE id = $2', ['{"x":1}', first.event.id]),
     ).rejects.toThrow(/append-only/i);
+  });
+});
+
+describe.skipIf(!DATABASE_URL)('a sale RUNG UP at the lane reaches the cloud (real PostgreSQL)', () => {
+  /**
+   * The seam, tested through the real path rather than around it.
+   *
+   * Everything above enqueues events by hand, and that is exactly how the gap survived:
+   * `createEdgeNode.commit()` wrote a sale to the disk and **stopped**. Durable, correct, and never
+   * queued — so no sale a lane took ever reached the cloud. Every piece on either side was built
+   * and tested; nothing joined them, and nothing failed, which is what made it invisible.
+   *
+   * This starts the edge exactly as the container does, rings a sale through the node a lane talks
+   * to, and looks in the cloud's ledger for it.
+   */
+  let client: Client;
+  let store: SqlEventStore;
+  let kernel: Parameters<typeof handle>[0];
+  let dir: string;
+  const TENANT2 = `5${Date.now().toString(16).slice(-7)}-5555-4555-8555-${'5'.repeat(12)}`;
+
+  const apiFetch = (async (url: string, init: RequestInit): Promise<Response> => {
+    const res = await handle(kernel, {
+      method: 'POST', path: new URL(url).pathname,
+      headers: init.headers as Record<string, string>,
+      body: JSON.parse(String(init.body)) as unknown,
+    });
+    return new Response(JSON.stringify(res.body), { status: res.status });
+  }) as unknown as typeof globalThis.fetch;
+
+  beforeAll(async () => {
+    client = new Client({ connectionString: DATABASE_URL });
+    await client.connect();
+    const sql = pgClient(client);
+    const d = 'db/migrations';
+    await runMigrations(sql, readdirSync(d).filter((f) => f.endsWith('.sql')).sort()
+      .map((name) => ({ name, sql: readFileSync(join(d, name), 'utf8') })));
+    store = new SqlEventStore(sql);
+    const built = buildRouter(buildSurface({ signingKey: KEY, migrationTargetKind: 'rehearsal', store }));
+    kernel = {
+      router: built.router!,
+      authenticate: () => ({ tenantId: TENANT2, userId: 'u-lane', branchId: 'b-main' }),
+      access: ACCESS, idempotency: new MemoryIdempotencyStore(),
+      newTraceId: () => `trace-${RUN}-node`,
+    };
+    dir = await mkdtemp(join(tmpdir(), 'sre-seam-'));
+    globalThis.fetch = apiFetch;
+  });
+
+  afterAll(async () => {
+    await client.end();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  const env = () => ({
+    EDGE_DATA_DIR: dir, EDGE_TENANT_ID: TENANT2, PACK_SIGNING_KEY: KEY,
+    EDGE_CAPACITY_BYTES: '10485760',
+    CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TOKEN,
+  });
+
+  const saleRecord = (n: number) => JSON.stringify({
+    saleId: `${RUN}-L${n}`, receiptNumber: `${RUN}-LR${n}`, laneId: 'lane-1', cashierId: 'u-meena',
+    tradingDay: COMMITTED.slice(0, 10), committedAt: COMMITTED, totalMinor: 20_000 + n,
+    currency: 'INR', packVersion: 0,
+    lines: [{ productId: 'P1', quantityMinor: 1, uom: 'each', unitPriceMinor: 20_000 + n, lineTotalMinor: 20_000 + n }],
+    tenders: [{ kind: 'cash', amountMinor: 20_000 + n }],
+  });
+
+  it('QUEUES a sale the moment it is durably committed, without being told to', async () => {
+    const edge = (await startEdge(env(), () => {}))!;
+    const outcome = await edge.node.commit(`${RUN}-L1`, saleRecord(1));
+
+    expect(outcome.committed).toBe(true);
+    // The assertion that was missing. Durable AND queued — one without the other is a sale that
+    // either never happened or never arrives.
+    expect(edge.agent?.health().unsentCount).toBe(1);
+    await edge.stop();
+  });
+
+  it('and that queued sale is in the cloud after the edge stops', async () => {
+    // `stop()` drains before it goes.
+    const banked = (await store.readStream(TENANT2, STREAM.sales, { type: 'SaleCommitted' }))
+      .filter((e) => (e.event.payload as { saleId: string }).saleId === `${RUN}-L1`);
+    expect(banked).toHaveLength(1);
+  });
+
+  it('does not re-send it on the next start — the cursor remembers', async () => {
+    // Without a durable cursor every restart re-sends every sale the shop has ever made. Safe,
+    // because the cloud dedupes, and absurd after a month.
+    const said: string[] = [];
+    const edge = (await startEdge(env(), (l) => said.push(l)))!;
+    expect(edge.agent?.health().unsentCount).toBe(0);
+    expect(said.join('\n')).not.toContain('still to send');
+    await edge.stop();
+  });
+
+  it('DOES re-send one that never got through, after a restart', async () => {
+    // A sale committed with the cloud unreachable, then a restart. Re-queued from the log, because
+    // the log is the system of record and the queue is only a view of it.
+    const broken = (() => Promise.reject(new Error('ENETUNREACH'))) as unknown as typeof globalThis.fetch;
+    globalThis.fetch = broken;
+
+    const offline = (await startEdge(env(), () => {}))!;
+    await offline.node.commit(`${RUN}-L2`, saleRecord(2));
+    await offline.stop();
+    expect((await store.readStream(TENANT2, STREAM.sales, { type: 'SaleCommitted' }))
+      .filter((e) => (e.event.payload as { saleId: string }).saleId === `${RUN}-L2`)).toHaveLength(0);
+
+    globalThis.fetch = apiFetch;
+    const said: string[] = [];
+    const back = (await startEdge(env(), (l) => said.push(l)))!;
+    expect(said.join('\n')).toContain('1 sale(s) from before are still to send');
+    expect(back.agent?.health().unsentCount).toBe(1);
+    await back.stop();
+
+    expect((await store.readStream(TENANT2, STREAM.sales, { type: 'SaleCommitted' }))
+      .filter((e) => (e.event.payload as { saleId: string }).saleId === `${RUN}-L2`)).toHaveLength(1);
+  });
+
+  it('does not queue a sale the lane REFUSED', async () => {
+    // Queueing before the durable write would send a sale the lane went on to refuse: the cloud
+    // would hold a sale that never happened, and the customer walked away without paying for it.
+    const tiny = await mkdtemp(join(tmpdir(), 'sre-full-'));
+    try {
+      const edge = (await startEdge({ ...env(), EDGE_DATA_DIR: tiny, EDGE_CAPACITY_BYTES: '64' }, () => {}))!;
+      const outcome = await edge.node.commit(`${RUN}-L9`, saleRecord(9));
+      expect(outcome.committed).toBe(false);
+      expect(edge.agent?.health().unsentCount).toBe(0);
+      await edge.stop();
+    } finally {
+      await rm(tiny, { recursive: true, force: true });
+    }
   });
 });
