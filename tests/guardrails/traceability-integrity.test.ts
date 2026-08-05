@@ -210,9 +210,13 @@ describe('the document does not let "built" be read as "runnable"', () => {
   it('keeps the assembly claims honest about what is empty', () => {
     // `services/` holding nothing is the single most consequential fact about this repository's
     // state, and it is the one a reader is least likely to discover by accident.
-    const servicesLine = TRACEABILITY.split('\n').find((l) => l.startsWith('| `services/`'))!;
-    const hasCode = readdirSync(join(ROOT, 'services')).some((f) => f !== 'README.md');
-    if (!hasCode) expect(servicesLine).toContain('Not started');
+    const servicesLine = TRACEABILITY.split('\n').find((l) => l.startsWith('| `services/` domain services'))!;
+    expect(servicesLine, 'the assembly table must carry a row for the domain services').toBeDefined();
+    // The kernel is not a domain service. Thirteen APIs are specified and none is implemented, so
+    // this row says "Not started" until one of them exists — a foundation is not a service.
+    const domainServices = readdirSync(join(ROOT, 'services'))
+      .filter((f) => f !== 'README.md' && f !== 'kernel');
+    if (domainServices.length === 0) expect(servicesLine).toContain('Not started');
   });
 });
 

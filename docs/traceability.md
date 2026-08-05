@@ -36,6 +36,8 @@ requirement rows and fails if a family claims anything else.
 > service layer and the store edge are assembled to differing degrees — see *Assembly state*
 > below, which is the honest counterpart to this table and the reason it must be read beside it.
 
+| Service kernel (§30 conventions, §31.1, §27.1, SEC-02/03/07/12, OB-01) | `services/kernel/` (`errors`, `router`, `pipeline`) | The foundation all thirteen APIs sit on, so no cross-cutting rule is written thirteen times and correct twelve. **Every convention is enforced at route REGISTRATION, not at request time** — a service serving an unversioned path, a write with no idempotency, or an endpoint with no permission **fails to start**, rather than failing on the one request in a thousand that exercises the gap; `buildRouter` names every malformed route at once. **The three-part error (§27.1) cannot be constructed incomplete** — and the part every API omits, *whether the data was saved*, has no default, with `unknown` a legitimate answer for a timeout, because answering "failed" when the truth is unknown is what takes the money twice. **Two guards run on the way OUT and refuse rather than redact:** a reply carrying another tenant's id is not sent (the backstop for the one query that was not scoped), and a reply carrying something structurally a card number is not sent (hard rule #3) — Luhn-checked, so it does not fire on a UTR or an ARN and therefore does not get switched off. A different request under a used `Idempotency-Key` is **refused, never answered with the stored result** — a sale of 400 under the key of a sale of 250 would otherwise report success and bank 250. Found and fixed while building: the audit fired only on the success path, so a **refused** write left no trace, which is the event an audit trail exists for. Tested in `tests/unit/service-kernel.test.ts` |
+
 ## Assembly state — what "Built" above does and does not mean
 
 The family table certifies **domain logic and its tests**. It does not certify a system anybody can
@@ -48,7 +50,8 @@ switch on, and reading it alone would leave that impression. Measured, not estim
 | `apps/owner-app`, `web-erp`, `picker-app`, `delivery-app` | 215–335 lines each | **Thin.** Role logic present; not assembled UIs |
 | `apps/customer-app` | **0 lines** | **Not started** |
 | `edge/sync-agent` | ~208 lines, 3 files | **Agent only.** No containerised store-edge services |
-| `services/` | **0 lines** | **Not started.** API-01…13 exist as contracts in `docs/api/`, with no service implementing them |
+| `services/kernel` | ~640 lines, 31 tests | **Built.** The shared foundation all thirteen APIs sit on: versioned paths, default-deny permissions, mandatory idempotency, the three-part error, tenant isolation and the no-card-data guard |
+| `services/` domain services | **0 lines** | **Not started.** API-01…13 exist as contracts in `docs/api/` and now have a kernel to be built on; none is implemented |
 | `infra/` | compose + nginx + env example | **Skeleton.** No IaC, no pipeline |
 
 **The consequence, stated plainly so it cannot be missed:** the business rules are finished and the
