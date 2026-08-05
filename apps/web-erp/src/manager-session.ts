@@ -46,6 +46,7 @@ import {
   type CommittedReceipt,
   type ReceiptLineInput,
 } from '../../../packages/receiving/src/receiving';
+import { isValidReasonFor } from '../../../packages/approvals/src/reasons';
 import { reconcileCount, type CountReconciliation } from '../../../packages/counts/src/counts';
 import { closeDay, type DayCloseResult } from '../../../packages/day-close/src/day-close';
 import type { Ledger } from '../../../packages/ledger/src/ledger';
@@ -214,40 +215,24 @@ export function blockerSentence(blocker: Blocker): string {
 // ── Deciding an approval ────────────────────────────────────────────────────
 
 /**
- * Why a request may be approved. A reason is mandatory (audit) and it is **chosen, not typed** —
- * free text at a screen is a reason nobody can report on afterwards, which is the same rule the
- * till applies to a void.
- */
-export const APPROVE_REASONS = Object.freeze([
-  'within_policy',
-  'checked_with_supplier',
-  'checked_the_stock',
-  'owner_instructed',
-] as const);
-
-/** Why a request may be rejected. A separate list, and the separation is a control — see below. */
-export const REJECT_REASONS = Object.freeze([
-  'price_looks_wrong',
-  'not_enough_evidence',
-  'against_policy',
-  'ask_the_owner_first',
-] as const);
-
-export type ApproveReason = (typeof APPROVE_REASONS)[number];
-export type RejectReason = (typeof REJECT_REASONS)[number];
-export type DecisionReasonCode = ApproveReason | RejectReason;
-
-/**
- * The reasons offered for a decision.
+ * The decision vocabulary lives in `packages/approvals`, not here.
  *
- * The lists do not overlap, and that is the point: approving something "against policy" is not a
- * decision anybody should be able to record, and rejecting something as "within policy" is not a
- * sentence that means anything. Offering one list for both would let either be written into the
- * audit trail, where it would look like a considered decision forever.
+ * A reason is mandatory (audit) and it is **chosen, not typed** — free text at a screen is a reason
+ * nobody can report on afterwards, the same rule the till applies to a void. It is shared rather
+ * than local because the owner's phone can decide the same request from the other side of the city,
+ * and two vocabularies for one audit trail is one vocabulary too many.
+ *
+ * Re-exported so this surface's public shape is unchanged for anything already importing it.
  */
-export function reasonsFor(decision: Decision): readonly DecisionReasonCode[] {
-  return decision === 'approved' ? APPROVE_REASONS : REJECT_REASONS;
-}
+export {
+  APPROVE_REASONS,
+  REJECT_REASONS,
+  reasonsFor,
+  isValidReasonFor,
+  type ApproveReason,
+  type RejectReason,
+  type DecisionReasonCode,
+} from '../../../packages/approvals/src/reasons';
 
 /**
  * Every refusal the approval engine itself can return, restated as a value.
@@ -492,8 +477,9 @@ export function createManagerSession(
 
       // The catalogue is checked before the engine, so an invented reason never reaches the audit
       // trail — and approving "against_policy" is refused rather than recorded.
-      const allowed: readonly string[] = reasonsFor(input.decision);
-      if (!allowed.includes(input.reasonCode)) return { ok: false, refusal: 'unknown_reason_code' };
+      if (!isValidReasonFor(input.decision, input.reasonCode)) {
+        return { ok: false, refusal: 'unknown_reason_code' };
+      }
 
       // The CODE is what gets recorded, not a sentence. A code can be reported on a year later;
       // "ok fine" cannot.

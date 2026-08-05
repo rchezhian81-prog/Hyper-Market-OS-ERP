@@ -41,6 +41,29 @@ const SKIP_DIRS = new Set([
   'node_modules', 'dist', 'build', 'out', 'coverage', '.next', '.turbo', '.git',
 ]);
 
+/**
+ * Build artifacts, which are not source and must not be scanned as if they were.
+ *
+ * `pnpm build:pos|owner|erp` writes `apps/<app>/web/<app>.bundle.js` next to the hand-written
+ * shell. It is git-ignored, machine-written, never edited and never diffed — so a guardrail
+ * finding inside it is a finding about esbuild's output, not about anybody's code.
+ *
+ * Leaving it in did real damage twice in one session: the plain-text guardrail failed because
+ * esbuild had emitted a `\u001f` ESCAPE from the source as a literal byte in its output, and the
+ * linter reported unused exports that only exist because a bundler tree-shook around them. Worse
+ * than either, it made the whole suite pass or fail depending on whether somebody had happened to
+ * run a build — which is the one thing a guardrail may never do.
+ *
+ * Deliberately narrow: only the `*.bundle.js` output, and only its map. The hand-written
+ * `apps/<app>/web/app.js` beside it is source, is reviewed, and is still scanned.
+ */
+const BUILD_ARTIFACT = /\.bundle\.js(?:\.map)?$/;
+
+/** True when a path is a generated bundle rather than something a person wrote. */
+export function isBuildArtifact(file: string): boolean {
+  return BUILD_ARTIFACT.test(file);
+}
+
 /** Only source / config files are scanned. Docs (.md) are excluded on purpose. */
 const SCAN_EXT = new Set([
   '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs',
@@ -64,7 +87,7 @@ function walk(dir: string, acc: string[]): string[] {
     }
     if (st.isDirectory()) {
       if (!SKIP_DIRS.has(name)) walk(full, acc);
-    } else if (st.isFile() && SCAN_EXT.has(extname(name).toLowerCase())) {
+    } else if (st.isFile() && SCAN_EXT.has(extname(name).toLowerCase()) && !isBuildArtifact(name)) {
       acc.push(full);
     }
   }

@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 5 August 2026 (session: the till screen became usable, and the manager's screen refuses to close a day it cannot see)
+Last updated: 5 August 2026 (session: three screens — the till became usable, the manager's refuses to close a day it cannot see, and the owner's records how old the data was when he decided)
 
 ---
 
@@ -2591,6 +2591,82 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## The owner's phone — deciding on numbers that left the shop hours ago (5 August 2026)
+
+The till takes the money. The manager's screen runs the floor. **This one is you, on your phone,
+possibly nowhere near the shop.**
+
+### The thing this screen is really about
+
+Every number on your phone is *old*. Not wrong — old. It left the shop at some point and the shop
+has been trading ever since. For **reading** the day that is completely fine. For **approving an
+₹8 lakh purchase order** it is not, and the whole design is about that difference.
+
+So now:
+
+- **The age of the data is shown inside the approval panel**, right next to the buttons — not in a
+  small badge at the top that you scrolled past on the way down.
+- If the numbers are not live, you have to tap through a warning that says so in plain words. One
+  deliberate act. **And the system writes down that you were told.** *"Approved, on data eleven
+  hours old, and he was shown that"* is a different fact from *"approved"*, and only one of them
+  can be defended a year later.
+- **This is not a block.** An owner who cannot approve anything while travelling ends up telephoning
+  instructions instead — and a telephoned approval has no record at all. That is worse.
+- **One thing is blocked:** if nothing has *ever* reached the phone from that shop, there are no
+  reason buttons to tap. That is not old data, it is no data, and agreeing to nothing is not
+  agreeing to anything.
+
+### If you approve something with no signal, and it changes while it waits
+
+You approve a ₹40,000 order on the train. The phone has no signal, so the decision waits. Meanwhile
+somebody changes that order to ₹90,000.
+
+Your ₹40,000 approval must not quietly land on a ₹90,000 order. It now comes back to the top of
+your screen saying **"this changed after you decided it"**, showing what you said and what it says
+now. It is never sent on its own and it is never thrown away on its own — you look again.
+
+And the decisions you made **survive the app closing**. Three approvals made on a train used to
+live only in the phone's memory. If the phone had killed the app, they would have vanished with no
+message. They are now saved on the device, and if the phone cannot save them it *says so*.
+
+### Every number opens up
+
+Tap any figure — sales, margin, bills, average basket — and you see **every single sale behind it**,
+not a selection. The list adds up to exactly the figure you tapped. A summary that disagrees with
+its own detail is a reporting system nobody trusts again, and the disagreement is only ever found
+by the person being asked to make a decision.
+
+Tap an alert and you see the transactions behind it, on screen.
+
+### Three things the old screen did that it should not have
+
+I want to be plain about these, because all three were already built and shipped.
+
+1. **Tapping an alert opened a grey system box containing raw codes** like `t-1`, `t-2`. That is a
+   dead end dressed up as an action.
+2. **It showed made-up sample takings as if they were the shop's.** ₹413 of sales that came from
+   nowhere, with no warning at all. If you had glanced at it you would have believed it.
+3. **The EN / த button changed nothing.** Not one word on the screen was in Tamil. A button that
+   says "translated" and is not is worse than no button.
+
+All three are fixed, and all three are now locked down by tests so they cannot come back.
+
+### One repair that runs deeper than this screen
+
+Every safety check in the project had been quietly scanning the *machine-generated* files that the
+build produces, not just the code people write. That meant the whole test suite could pass or fail
+depending on whether somebody had happened to run a build. **A safety check that depends on that is
+not a safety check.** Fixed, narrowly, with a test proving the hand-written files beside them are
+still checked.
+
+**Tests:** 3,299 automated plus 31 performance, all green.
+
+**What is left on this screen:** the AI narrative slot (A01) is deliberately empty until a live
+model provider is chosen — the numbers, the priorities and the approvals all work with the AI off,
+which was the requirement. And it wants a real phone, a real train, and a real bad signal.
+
+---
+
 ## The manager's screen — and a day that will not close on an assumption (5 August 2026)
 
 The till was the screen that takes the money. This is the screen that runs the shop: approvals,
@@ -3455,14 +3531,14 @@ insist on when somebody eventually asks for it to be switched off.
 
 ## Next session should start with
 
-**The store box has to start producing the two lists the manager's screen asks for.** Exceptions
-(M15) and tasks (D11/M25) have engines and no producer, so the manager screen honestly answers
-*not known* on both — and correctly refuses to close the day because of it. That is the next piece
-of work, and it is the one that turns the day close from a demonstration into a thing the shop can
-use.
+**The store box has to start producing the lists the screens now ask for.** The manager's screen
+wants exceptions (M15) and tasks (D11/M25); the owner's phone wants the same brief payload pushed
+to it. Both have engines and no producer, so both honestly answer *not known* — and the manager's
+day close correctly refuses because of it. That is the next piece of work, and it is the one that
+turns these screens from demonstrations into things the shop can use.
 
-After that, per `docs/architecture/build-plan.md`: the owner app, then purchase and receiving,
-then picker and delivery, then the customer app.
+After that, per `docs/architecture/build-plan.md`: purchase and receiving, then picker and
+delivery, then the customer app.
 
 **Then the owner's decisions.** The code is complete as far as it can go without them: all thirteen
 services persist, token verification is done, no folder in the repository layout is empty, the

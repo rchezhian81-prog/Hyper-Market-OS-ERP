@@ -8,81 +8,238 @@
     <meta name="theme-color" content="#0f172a" />
     <!--
       Owner command centre (docs/design/screens/owner-command-centre.md). Phone-first
-      and glanceable: the daily brief in plain sentences with the numbers beside the
-      words, the THREE things needing attention dominant, and a persistent freshness
-      indicator. Framework-free and static, so it opens on a low-spec Android phone
-      and still shows the last-synced numbers with no signal.
+      and glanceable: the brief in plain sentences with the numbers beside the words,
+      the THREE things needing attention dominant, and a freshness indicator that is
+      never out of sight.
+
+      Framework-free and static, so it opens on a low-spec Android phone with no signal
+      and shows the LAST-SYNCED numbers, labelled as such. Same palette and controls as
+      the till and the manager screen: it is one product.
     -->
     <style>
       :root {
         --bg: #0f172a; --panel: #1e293b; --ink: #f8fafc; --muted: #94a3b8;
-        --good: #22c55e; --warn: #f59e0b; --danger: #ef4444; --tap: 48px;
+        --good: #22c55e; --warn: #f59e0b; --danger: #ef4444; --info: #38bdf8;
+        --line: #334155;
+        --tap: 48px; /* minimum touch target — a phone in one hand */
       }
       * { box-sizing: border-box; }
       body {
         margin: 0; background: var(--bg); color: var(--ink);
         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-        padding-bottom: 32px;
+        padding-bottom: 40px;
       }
-      header { padding: 16px; background: var(--panel); position: sticky; top: 0; }
-      .title { font-size: 14px; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
-      /* Freshness is persistent and prominent — never implied (P-08). */
-      .freshness { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 14px; }
-      .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--good); }
+      header { padding: 14px 16px; background: var(--panel); position: sticky; top: 0; z-index: 10; }
+      .title { font-size: 13px; color: var(--muted); letter-spacing: .05em; text-transform: uppercase; }
+      .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .lang { background: transparent; border: 0; color: var(--muted); font-size: 14px; min-height: 40px; }
+      /* Freshness is persistent and prominent — never implied (P-08), never colour alone. */
+      .freshness { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 14px; }
+      .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--good); flex: none; }
       .dot.stale { background: var(--warn); }
       .dot.missing { background: var(--danger); }
+      #fresh-text.stale { color: var(--warn); font-weight: 600; }
+      #fresh-text.missing { color: var(--danger); font-weight: 600; }
+
+      /* Branch switcher — one tap per branch, because the second store is a row not a rewrite. */
+      .branches { display: flex; gap: 8px; margin-top: 10px; overflow-x: auto; }
+      .branches button {
+        min-height: var(--tap); padding: 0 14px; border: 0; border-radius: 10px;
+        background: var(--line); color: var(--ink); font-size: 15px; font-weight: 600; white-space: nowrap;
+      }
+      .branches button[aria-current='page'] { background: var(--ink); color: #0f172a; }
+      .branches button .age { display: block; font-size: 11px; font-weight: 400; opacity: .75; }
+
+      /* Sample-data warning. Only ever shown when the tested model is NOT loaded. */
+      .sample { background: var(--warn); color: #451a03; padding: 10px 16px; font-weight: 600; font-size: 15px; margin: 0; }
+      .sample[hidden] { display: none; }
+      /* Something the phone could not save. Never swallowed (P-08). */
+      .queue-problem { background: var(--danger); color: #fff; padding: 10px 16px; font-size: 15px; margin: 0; }
+      .queue-problem[hidden] { display: none; }
+
       main { padding: 0 16px; }
-      section { margin-top: 24px; }
-      h2 { font-size: 13px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; margin: 0 0 8px; }
-      /* The brief reads as sentences; numbers sit beside the words. */
-      .headline { font-size: 20px; line-height: 1.45; margin: 16px 0 0; }
+      section { margin-top: 22px; }
+      h2 { font-size: 12px; color: var(--muted); letter-spacing: .07em; text-transform: uppercase; margin: 0 0 8px; }
+      .headline { font-size: 19px; line-height: 1.45; margin: 16px 0 0; }
+
       .attention { display: grid; gap: 10px; }
       .card {
         background: var(--panel); border-radius: 14px; padding: 14px 16px;
-        border-left: 4px solid var(--warn); min-height: var(--tap);
+        border-left: 5px solid var(--warn); min-height: var(--tap); width: 100%;
+        text-align: left; color: var(--ink); font-size: 16px; border-top: 0; border-right: 0; border-bottom: 0;
       }
       .card.urgent { border-left-color: var(--danger); }
-      .card.approval { border-left-color: #38bdf8; }
-      .rank { font-size: 12px; color: var(--muted); }
+      .card.approval { border-left-color: var(--info); }
+      .rank { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+
+      /* Every figure is a button, because every figure drills to its source (M29-FR-02). */
       .kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-      .kpi { background: var(--panel); border-radius: 14px; padding: 12px 14px; }
+      .kpi {
+        background: var(--panel); border-radius: 14px; padding: 12px 14px; border: 0;
+        text-align: left; color: var(--ink); min-height: 76px;
+      }
       .kpi .label { font-size: 12px; color: var(--muted); }
       .kpi .value { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
-      .alert { padding: 12px 0; border-top: 1px solid #334155; font-size: 15px; }
-      .alert .drill { color: #7dd3fc; font-size: 13px; }
+      .kpi .more { font-size: 11px; color: var(--info); }
+
+      .rows { display: grid; gap: 10px; }
+      .row {
+        background: var(--panel); border-radius: 14px; padding: 14px 16px; display: grid; gap: 8px;
+      }
+      .row .what { font-size: 16px; }
+      .row .meta { color: var(--muted); font-size: 13px; }
+      .row .value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .row-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .alert { width: 100%; text-align: left; background: transparent; color: var(--ink);
+        padding: 12px 0; border: 0; border-top: 1px solid var(--line); font-size: 15px; min-height: var(--tap); }
+      .alert .drill { color: var(--info); font-size: 13px; display: block; margin-top: 2px; }
       .empty { color: var(--muted); font-size: 15px; }
-      .lang { background: transparent; border: 0; color: var(--muted); font-size: 14px; min-height: 36px; }
+
+      button {
+        min-height: var(--tap); border-radius: 12px; border: 0; font-size: 16px; font-weight: 600;
+        background: var(--line); color: var(--ink);
+      }
+      button.primary { background: var(--good); color: #052e16; }
+      button.danger { background: var(--danger); color: #fff; }
+      button:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+      .wide { width: 100%; }
+
+      /* Queued decisions waiting to be sent, and the ones that went out of date (§31.1). */
+      .queued { background: var(--panel); border-radius: 14px; padding: 12px 16px; font-size: 15px; }
+      .recheck { border-left: 5px solid var(--danger); }
+      .recheck .why { color: var(--warn); font-size: 14px; }
+
+      /* ── Panels ─────────────────────────────────────────────────────────── */
+      .sheet {
+        position: fixed; inset: 0; background: rgba(2, 6, 23, .85);
+        display: grid; place-items: end center; z-index: 20;
+      }
+      .sheet[hidden] { display: none; }
+      .sheet-inner {
+        width: min(560px, 100%); background: var(--panel); padding: 20px;
+        border-radius: 20px 20px 0 0; display: grid; gap: 12px; max-height: 88dvh; overflow-y: auto;
+      }
+      .sheet h3 { margin: 0; font-size: 19px; }
+      .sheet .note { color: var(--muted); font-size: 14px; margin: 0; }
+      /* The staleness warning inside the approve panel — the point of the extra tap. */
+      .sheet .stale-warn { background: #78350f; color: #fff7ed; border-radius: 12px; padding: 12px 14px; font-size: 15px; }
+      .sheet .stale-warn[hidden] { display: none; }
+      .choices { display: grid; gap: 10px; }
+      .choices button { text-align: left; padding: 0 16px; font-size: 16px; }
+      .drill-lines { display: grid; gap: 6px; max-height: 44dvh; overflow-y: auto; }
+      .drill-line {
+        display: grid; grid-template-columns: 1fr auto; gap: 10px; font-size: 15px;
+        padding: 10px 12px; background: #0b1220; border-radius: 10px; font-variant-numeric: tabular-nums;
+      }
+      .drill-total { display: flex; justify-content: space-between; font-size: 18px; font-weight: 700; }
+
+      /* The banner. No timer, and never colour alone. */
+      .banner {
+        position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 18px 16px;
+        background: var(--danger); color: #fff; display: grid; gap: 10px;
+      }
+      .banner[hidden] { display: none; }
+      .banner.good { background: var(--good); color: #052e16; }
+      .banner strong { font-size: 20px; }
+      .banner p { margin: 0; font-size: 16px; }
+      .banner button { background: #7f1d1d; color: #fff; }
+      .banner.good button { background: #052e16; color: #ecfdf5; }
     </style>
   </head>
   <body>
     <header>
-      <div class="title">Today · SRE Hyper Market</div>
+      <div class="top">
+        <span class="title" id="title">Today · SRE Hyper Market</span>
+        <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
+      </div>
       <div class="freshness">
         <span class="dot" id="fresh-dot"></span>
-        <span id="fresh-text">Checking data…</span>
-        <button class="lang" id="lang" type="button">EN / த</button>
+        <span id="fresh-text">—</span>
       </div>
+      <div class="branches" id="branches"></div>
     </header>
 
+    <!--
+      Shown only when the tested model has not been bundled in. An owner acting on a
+      number that came from nowhere is worse than an owner with no number at all.
+    -->
+    <p class="sample" id="sample" hidden role="status">Sample figures — this is not your shop.</p>
+    <!-- A decision the phone could not save. Said, never swallowed. -->
+    <p class="queue-problem" id="queue-problem" hidden role="alert"></p>
+
     <main>
-      <p class="headline" id="headline">Loading the brief…</p>
+      <p class="headline" id="headline">—</p>
+
+      <!-- Decisions that went out of date while they waited (§31.1). Above everything. -->
+      <section id="recheck-section" hidden>
+        <h2 id="recheck-title">Look at these again</h2>
+        <div class="rows" id="recheck"></div>
+      </section>
 
       <section>
-        <h2>Needs your attention</h2>
+        <h2 id="attention-title">Needs your attention</h2>
         <div class="attention" id="attention"></div>
       </section>
 
       <section>
-        <h2>Today's numbers</h2>
+        <h2 id="kpis-title">Today's numbers</h2>
         <div class="kpis" id="kpis"></div>
       </section>
 
       <section>
-        <h2>Alerts</h2>
+        <h2 id="approvals-title">Waiting for you</h2>
+        <div class="rows" id="approvals"></div>
+      </section>
+
+      <section>
+        <h2 id="alerts-title">Alerts</h2>
         <div id="alerts"></div>
+      </section>
+
+      <section id="queued-section" hidden>
+        <h2 id="queued-title">Decided, not yet sent</h2>
+        <div class="queued" id="queued"></div>
       </section>
     </main>
 
+    <!--
+      Deciding an approval. The staleness warning lives INSIDE this panel, so the age of
+      the data is in front of the owner at the moment of the decision rather than in a
+      badge they scrolled past.
+    -->
+    <div class="sheet" id="decide" hidden role="dialog" aria-modal="true" aria-labelledby="decide-title">
+      <div class="sheet-inner">
+        <h3 id="decide-title">—</h3>
+        <p class="note" id="decide-what"></p>
+        <div class="stale-warn" id="decide-stale" hidden></div>
+        <div class="choices" id="decide-reasons"></div>
+        <button id="decide-cancel" type="button">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Any figure drills to the sales behind it — every one of them, never a sample. -->
+    <div class="sheet" id="drill" hidden role="dialog" aria-modal="true" aria-labelledby="drill-title">
+      <div class="sheet-inner">
+        <h3 id="drill-title">—</h3>
+        <div class="drill-total"><span id="drill-total-label">Total</span><span id="drill-total">—</span></div>
+        <p class="note" id="drill-note"></p>
+        <div class="drill-lines" id="drill-lines"></div>
+        <button id="drill-close" type="button">Close</button>
+      </div>
+    </div>
+
+    <!-- The message that must not be missed. No timer. -->
+    <div class="banner" id="banner" hidden role="alert">
+      <strong id="banner-title">—</strong>
+      <p id="banner-text"></p>
+      <button id="banner-ok" type="button">I have read this</button>
+    </div>
+
+    <!--
+      The bundled, tested session (built by `pnpm build:owner`) attaches
+      `window.ownerSession`. It loads FIRST so the view binds to the real engines; if the
+      bundle has not been built, app.js falls back to sample figures and SAYS SO.
+    -->
     <script type="module" src="./owner-app.bundle.js"></script>
     <script type="module" src="./app.js"></script>
   </body>

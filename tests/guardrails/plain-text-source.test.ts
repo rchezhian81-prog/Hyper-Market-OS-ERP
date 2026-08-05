@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadCodeEntries, CODE_DIRS } from './lib/scan.js';
+import { loadCodeEntries, isBuildArtifact, CODE_DIRS } from './lib/scan.js';
 
 // Hard rule #8 (CLAUDE.md): nothing merges except through a pull request. A pull
 // request is only a control if a human can actually READ the diff.
@@ -92,6 +92,39 @@ describe('guardrail: shipped source stays reviewable plain text (hard rule #8)',
   it('accepts the escape that replaces it, so the rule has a cost-free fix', () => {
     withFixture('escaped', 'const key = `${a}\\u0000${b}`;\n', (path) => {
       expect(findControlBytes([path])).toEqual([]);
+    });
+  });
+
+  describe('the one exclusion, and how narrow it is', () => {
+    // A generated bundle is not source: git-ignored, machine-written, never diffed. Scanning it
+    // reports on esbuild's output — it failed this very rule because esbuild emitted a unit-separator
+    // ESCAPE, from a reviewed source file, as a literal byte in its own output. It also made the
+    // whole suite pass or fail depending on whether somebody had run a build, which is the one
+    // thing a guardrail may never do.
+    //
+    // The exclusion must stay exactly this narrow, so it is pinned here rather than trusted.
+
+    it('excludes a generated bundle and its map', () => {
+      expect(isBuildArtifact('pos.bundle.js')).toBe(true);
+      expect(isBuildArtifact('web-erp.bundle.js.map')).toBe(true);
+    });
+
+    it('still scans the hand-written shell sitting right beside it', () => {
+      // `apps/<app>/web/app.js` is source, is reviewed, and is where the interesting rules live.
+      expect(isBuildArtifact('app.js')).toBe(false);
+      expect(isBuildArtifact('index.html')).toBe(false);
+      expect(isBuildArtifact('sw.js')).toBe(false);
+      expect(isBuildArtifact('bundle.js')).toBe(false); // not `*.bundle.js`
+      expect(isBuildArtifact('my.bundle.js.ts')).toBe(false);
+    });
+
+    it('proves it by finding the real shells in the scanned surface', () => {
+      // The exclusion is only safe if the files next to it are demonstrably still being read.
+      const files = loadCodeEntries(['apps']).map((e) => e.file);
+      expect(files).toContain('apps/pos/web/app.js');
+      expect(files).toContain('apps/owner-app/web/app.js');
+      expect(files).toContain('apps/web-erp/web/app.js');
+      expect(files.filter((f) => f.endsWith('.bundle.js'))).toEqual([]);
     });
   });
 });

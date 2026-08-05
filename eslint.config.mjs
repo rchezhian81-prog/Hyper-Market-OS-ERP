@@ -13,6 +13,12 @@ export default tseslint.config(
       '**/build/**',
       '**/coverage/**',
       '**/.turbo/**',
+      // Build artifacts from `pnpm build:pos|owner|erp`. They are git-ignored, machine-written and
+      // never edited by hand, so linting them reports on esbuild's output rather than on anybody's
+      // code — and a tree-shaken export that nothing in the bundle happens to call is not a finding.
+      // Worse, it makes `pnpm check` pass or fail depending on whether somebody has run a build.
+      'apps/*/web/*.bundle.js',
+      'apps/*/web/*.bundle.js.map',
     ],
   },
   js.configs.recommended,

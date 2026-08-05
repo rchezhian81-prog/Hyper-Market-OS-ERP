@@ -25,8 +25,8 @@ project.
 | `packages/` — domain rules | 45,179 | **Genuinely strong.** The product's value lives here |
 | `services/` — the thirteen APIs | 5,556 | Built, persisting, authenticated, audited |
 | `edge/` — the store box | 1,144 | Now runs, writes durably, syncs. Built **today** |
-| `apps/` — everything a person touches | 4,000 | **Still the gap**, but two of six now have real screens |
-| Tests | 3,214 + 31 | Unusually thorough on rules; thin on assembly until today |
+| `apps/` — everything a person touches | 4,400 | **Still the gap**, but three of six now have real screens |
+| Tests | 3,299 + 31 | Unusually thorough on rules; thin on assembly until today |
 
 **2,452 lines of app code for six applications** is the number that matters. For comparison, the POS
 alone — one screen a cashier uses eight hours a day — is 1,070 of those lines, and none of it draws
@@ -49,7 +49,7 @@ bundled against the **real tested session**, not a mock. `apps/owner-app/web/` h
 What the POS shell lacked was a way to reach a disk — built today, see below. What it still lacks is
 tender beyond cash, returns, suspend/recall, cash movements, till open/close, and Tamil.
 
-`web-erp` now has a shell too — approvals, receiving, counting and day close, bundled against the real tested session. `customer-app`, `picker-app` and `delivery-app` have **no web files at all**.
+`web-erp` now has a shell too — approvals, receiving, counting and day close — and `owner-app`'s shell has been rebuilt against a real tested session rather than a sample payload. `customer-app`, `picker-app` and `delivery-app` have **no web files at all**.
 
 What this means concretely: today nobody can ring up a sale, receive a delivery, count stock, close
 a day, approve a price change, pick an order, or look at a dashboard. The rules that would govern
@@ -108,7 +108,7 @@ Three columns, and they are different questions. **Rules** = is the logic writte
 | M21–M24 Finance, Tally | ✅ | ◐ | ❌ | Journals and period close real. **No control totals can be built** — deliberate, and it means no month can close yet |
 | M25–M28 Reporting, analytics | ✅ | ◐ | ❌ | Two real figures. Everything else needs producers |
 | M29–M32 Ops, compliance, workforce | ✅ | ❌ | ❌ | Rules only |
-| M33–M35 Owner control, audit, config | ✅ | ✅ | ❌ | Audit trail now real and immutable |
+| M33–M35 Owner control, audit, config | ✅ | ✅ | ◐ | Audit trail now real and immutable. **The owner's phone is now a screen**: brief, drill-through to every sale behind a figure, and approvals that record how old the data was when he decided |
 | M36 + A01–A10 AI | ✅ | ✅ | ❌ | Kill switch defaults **on**. No provider chosen (owner decision) |
 | MG-01–MG-12 Migration | ✅ | ✅ | ◐ | Strongest non-POS area. CLI tool exists. **No real data yet** |
 
@@ -186,6 +186,12 @@ built and waiting; none has met a real export.
 
 **3. Then the other five surfaces**, in this order: store manager → owner → receiving/purchase →
 picker/delivery → customer app. Ordered by how much of the shop stops without them.
+✅ *The owner app is built*: the brief now drills — every figure opens every sale behind it — and
+approvals are decided on the phone with the **age of the data in front of the decision**, recorded
+into it. A decision made with no signal is queued, and if the request changes while it waits it
+comes back to be looked at again rather than being sent or dropped. Three faults in the old shell
+were fixed on the way: browser `alert()` dialogs holding raw ids, sample figures rendered as if
+they were the shop's takings, and a language toggle that changed no words at all.
 ✅ *The store manager screen is built*: approvals inbox, receiving, blind stock count and a day
 close that answers with a list of what is still open. Its registers refuse to guess — a screen
 that cannot read the exception list will not close the day, which is the correct answer and the
