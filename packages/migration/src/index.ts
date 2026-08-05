@@ -92,3 +92,9 @@ export {
   type StockLine, type Stratum, type CountLine, type CountPlan, type PlanResult,
   type CountedLine, type LineVariance, type CountVerification,
 } from './count-verification';
+
+export {
+  reconcileSupplierStatement, supplierPosition, balanceOf, EFFECT_ON_WHAT_WE_OWE,
+  type LedgerItem, type ItemStatus, type TimingPlausibility, type ReconciledItem,
+  type SupplierReconciliation, type SupplierPosition,
+} from './supplier-reconciliation';

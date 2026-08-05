@@ -122,7 +122,7 @@ their own reasons, with no interest in agreeing with our old ERP:
 | **Stock** | **A physical count.** Count the shelves | The only truth about stock that exists anywhere. Everything else is a record *of* it |
 | **Sales** | The bank statement; the card/UPI settlement file | The bank has no interest in agreeing with our old system |
 | **Tax** | The GST returns already filed | Filed, dated, signed. It cannot be adjusted to make a total agree |
-| **Supplier balances** | The supplier's own statement | They keep their own ledger and will confirm it, because they want paying |
+| **Supplier balances** | The supplier's own statement | They keep their own ledger and will confirm it, because they want paying — no goodwill required (see below) |
 | **Books** | The accounts the CA prepared | Prepared independently, by somebody with a licence at stake |
 | **Loyalty points** | A sample of customers | They can see their own balance and will say if it is wrong |
 
@@ -131,6 +131,36 @@ second is better evidence.
 
 Where a domain has *no* outside check available, that is not a reason to stop — but it is written
 down, and the owner is told in writing that those figures rest on the old system's word.
+
+### Supplier statements — the one that costs nothing to get
+
+Ask each supplier for a statement of account as at a chosen date. **This needs nobody's goodwill.**
+A supplier sending you a list of what you owe them is a supplier chasing money; it is the one
+request in this whole exercise that gets answered promptly.
+
+Expect the two ledgers **not** to agree, and expect that to be nobody's fault:
+
+> Their statement says we owe 8,40,000. Our books say we owe 7,95,000.
+> Neither is wrong. We paid 45,000 on the 29th; they banked it on the 2nd.
+
+That is a **timing difference** and it clears by itself. A **real difference** does not. Telling
+them apart is the whole job, and three things the software will not do:
+
+- **It never nets.** *"They say we owe 45,000 more"* and *"we paid 45,000 they have not applied"*
+  might be one event or two separate problems. Offset, they make a clean zero that hides both, so
+  they are always listed separately.
+- **It never calls a disputed amount timing.** If both sides have the same invoice at different
+  amounts, nobody is waiting for the post — it is a price, a quantity or a tax the two of you read
+  differently, and it is settled against the delivery note.
+- **It treats an invoice you have never seen as the serious one**, and puts it at the top of the
+  list. Everything else is a difference you would find; this one you would not. Migrated as it
+  stands you open owing **nothing** for a real bill, and the first you hear of it is when they
+  chase — by which time it is in the signed opening balance. Overstating what you owe gets caught
+  by you. Understating it gets caught by nobody.
+
+**A supplier who never replies is listed by name as unverified.** Silence is the commonest reply
+to a statement request and the easiest to read as agreement — and the balance it leaves unproved
+goes into the opening books either way.
 
 ---
 
@@ -160,6 +190,8 @@ Three things, and none of them involves the vendor:
 
 1. **Get the outside evidence.** Bank statements for the period, the filed GST returns, and
    statements from your main suppliers. These are yours to ask for and nobody will refuse them.
+   Ask **every** supplier, not only the big ones — a supplier who does not reply is recorded as
+   unverified by name, and a small balance nobody confirmed is still a balance nobody confirmed.
 2. **Authorise a physical count.** It is the only thing that proves the stock figure, and it
    needs staff and a closed evening.
 
@@ -182,6 +214,8 @@ Three things, and none of them involves the vendor:
 
 - **Ask what the stock figure was checked against.** The right answer is *"a physical count."*
   If the answer is another report from the old system, it has not been checked.
+- **Ask which suppliers confirmed their balance, and which never replied.** The second list should
+  be short, and it should be a list of names — not a number.
 - **Ask how many rows came out, and how many went in.** Two numbers that match, per table.
 - **Ask to see the list of what could not be proved.** There will be something. It should be
   short, named, and in writing.
@@ -192,6 +226,8 @@ Three things, and none of them involves the vendor:
 - `../evidence/stage-11-the-old-shop-arrives-whole.md` — the engine, rehearsed end to end
 - `../discovery/legacy-data-access.md` — the vendor letter, retained on file, no longer the plan
 - `../../packages/migration/src/extraction.ts` — the route and verification rules, as code
+- `../../packages/migration/src/supplier-reconciliation.ts` — the supplier statement check: timing
+  told from real, nothing netted, and the invoice we have never seen sorted to the top
 - `../../packages/migration/src/report-parser.ts` — reads what Routes B and C actually produce:
   finds the real header under the shop's name and the report title, never counts a
   *"Total for GROCERY"* line as a product, reads `4,12,000.00` as twelve lakh, and keeps every

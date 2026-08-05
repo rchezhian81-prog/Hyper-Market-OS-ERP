@@ -1661,6 +1661,58 @@ honest rather than being marked complete.
 
 ---
 
+## Proving what we owe against what the supplier says we owe (7 August 2026)
+
+`packages/migration/src/supplier-reconciliation.ts`. The second external check after the shelves,
+and **the one that costs nothing to get.** A supplier sending us a statement of what we owe them
+is a supplier chasing money — it is the single request in this whole exercise that gets answered
+promptly, and it needs nobody's goodwill.
+
+`packages/reconciliation` already matches provider settlement lines to POS tenders on an exact
+shared reference. This is a harder problem, because **the two ledgers have no shared key and were
+never meant to agree at a point in time:**
+
+> Their statement says we owe 8,40,000. Our books say we owe 7,95,000.
+> Neither is wrong. We paid 45,000 on the 29th; they banked it on the 2nd.
+
+So the whole job is telling a **timing difference** from a real one, and the distinction turns on
+one fact: a timing difference clears by itself and a real one does not. At migration there is
+usually only one statement, so clearance cannot be observed — and the honest output says which
+items **cannot yet be told apart** rather than guessing and presenting the guess as a
+reconciliation.
+
+Three rules that do not bend:
+
+- **The dangerous direction is theirs, not ours.** An invoice on their statement that is not in
+  our books is a liability we are about to migrate as **zero**. It is called out on its own figure
+  and sorted to the top of the list, above larger differences that are merely wrong. Overstating
+  what we owe gets caught by us; understating it gets caught by nobody until they chase, by which
+  time it is in the opening balance and the CA has signed it.
+- **Nothing is netted.** *"They say we owe 45,000 more"* and *"we paid 45,000 they have not
+  applied"* may be one event or two separate problems. A test proves the point directly: an
+  unapplied payment and an unrecorded credit note of the same size give a headline difference of
+  **exactly zero** while 90,000 sits unexplained — netted, this supplier reports clean and both
+  problems disappear.
+- **An `amount_differs` item is never timing.** Both sides hold the document; nobody is waiting
+  for the post. It is a price, a quantity or a tax the two of us read differently, and it is
+  settled against the delivery note.
+
+Building it caught a defect in my own first draft, and the header of the file had warned about
+exactly it. Three of the four statuses carried each item's contribution to *their balance minus
+ours*; `only_in_our_books` carried its effect on **our** balance instead. Our payable is their
+receivable, and a reconciliation that reads one side backwards balances at twice the true figure —
+the same failure as reading a `CR` as positive. One convention now covers all four, so **the items
+sum to the headline difference exactly**, and that sum is the test. Reverting the sign to confirm
+it: expected 150,000, got 36,000.
+
+A supplier who never replied is listed **by name** as unverified, never quietly counted as
+agreeing. Silence is the commonest response to a statement request and the easiest to read as
+consent, and the balance it leaves unproved goes into the opening books either way. The owner may
+set a tolerance for unexplained difference; there is no tolerance for silence, and none for an
+invoice we have never seen.
+
+Full suite **2,537**.
+
 ## Proving the stock against the shelves (7 August 2026)
 
 `packages/migration/src/count-verification.ts`. The runbook says *"authorise a physical count"* —
@@ -2248,9 +2300,14 @@ tests** against real PostgreSQL 16.13.
   therefore the true cutover window, and the real control-total figures for the CA to sign. The
   pipeline is built to surface an unforeseen fault kind as an **exception rather than a silent
   default**, which is the property that had to be settled before the data arrives.
-- What remains needs the owner or the store: **EX-02** (a letter, unblocks the real-data
-  migration gate), **OB-02** (hosting), the **pre-pilot integration gate** (a live AI provider,
-  then UAT-49), **EX-13** (a penetration test), and the 55 store activities in
+- **EX-02 is closed (OB-06, 7 August 2026)** — we extract our own data ourselves. What the
+  real-data migration now needs is **outside evidence**, not a vendor: bank statements, filed GST
+  returns, supplier statements of account and an authorised physical count. Two of the six checks
+  are built (`count-verification.ts`, `supplier-reconciliation.ts`); the rest are in the table
+  under *Next session should start with*.
+- What remains needs the owner or the store: **OB-02** (hosting), the
+  **pre-pilot integration gate** (a live AI provider, then UAT-49), **EX-13** (a penetration
+  test), and the 55 store activities in
   `docs/registers/uat-calendar.md`. `docs/backlog.md` schedules every remaining requirement row
   to a named stage.
 
@@ -2273,27 +2330,36 @@ tests** against real PostgreSQL 16.13.
   store operations lead, finance/CA reviewer, security/architecture reviewer.
 
 ## Next session should start with
-**Stage 11 preparation and hardening, since every code stage is now complete.**
+**The outside-evidence checks, one domain at a time.** Every code stage is complete and the
+migration engine is gate-proven. What is being built now is the part OB-06 made necessary: since
+nothing comes from the vendor, **every opening figure has to be proved against a record somebody
+outside the old system keeps.** A domain checked only against the system it came from is refused
+by name in `extraction.ts`, so each row of that table needs code behind it.
 
-1. **Synthetic migration rehearsal.** MG-01…12 can be exercised end to end against *generated*
-   legacy data that mimics the incumbent ERP's shape. It proves the engine, the reconciliation
-   and the exception handling without waiting for EX-02 — and when the real export arrives, only
-   the data changes.
-2. **Cross-cutting hardening**: performance budgets under load (§32), accessibility passes on
-   the role surfaces, and the runbooks for the pilot.
-3. **The consolidated cost forecast** the owner asked for at the procurement gate: hosting +
-   storage + backups + messaging + AI against the ₹15,000/month ceiling, with external retainers
-   shown separately.
+| Domain | External evidence | State |
+| --- | --- | --- |
+| **Stock** | A physical count of our own shelves | ✅ `count-verification.ts` |
+| **Supplier balances** | The supplier's own statement of account | ✅ `supplier-reconciliation.ts` |
+| **Sales** | The bank statement; the card/UPI settlement file | ⬜ next |
+| **Tax** | The GST returns already filed | ⬜ |
+| **Books** | The accounts the CA prepared | ⬜ |
+| **Loyalty points** | A sample of customers confirming their own balance | ⬜ |
 
-**The one thing that would genuinely help from outside:** send the ERP-vendor letter in
-`docs/discovery/legacy-data-access.md`. It unblocks EX-02 and therefore Stage 11, which is
-the only stage now standing between the build and the pilot.
+**Sales against the bank is next**, and it is the hardest of the six: a day's takings reach the
+bank as a cash lodgement days later, a card batch net of commission, and a UPI settlement on its
+own cycle — so gross sales never equal a bank line, and the check has to reconstruct the route
+rather than compare two totals. `packages/reconciliation` already matches settlement lines to
+tenders on a shared reference for the *running* system; the migration question is different, and
+it is the one the CA will ask first.
 
-In parallel (owner/store, not gating the build): gather the remaining Stage-1 store facts
-using **`docs/discovery/store-facts-questionnaire.md`** (it includes the **trading-day
-cut-off**); measure the six baselines (`docs/discovery/baseline.md`); send the ERP-vendor
-letter (`docs/discovery/legacy-data-access.md`, which unblocks EX-02 and therefore the Stage
-11 migration rehearsal); begin D4 custody onboarding for Mr Sivakumar.
+**Nothing here needs the ERP vendor, and nothing waits on them.** The letter stays on file
+(`docs/discovery/legacy-data-access.md`); if they ever answer it is a bonus, not a dependency.
+
+In parallel (owner/store, not gating the build): gather the remaining Stage-1 store facts using
+**`docs/discovery/store-facts-questionnaire.md`** (it includes the **trading-day cut-off**);
+measure the six baselines (`docs/discovery/baseline.md`); request statements of account from
+every supplier and pull the bank statements and filed GST returns for the period; begin D4
+custody onboarding for Mr Sivakumar.
 
 Still scheduled and still not forgotten: QG-02 usability testing with real staff, and the
 **owner-witnessed restore demonstration (UAT-01)**, both of which need the store and are
