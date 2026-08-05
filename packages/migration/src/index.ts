@@ -98,3 +98,10 @@ export {
   type LedgerItem, type ItemStatus, type TimingPlausibility, type ReconciledItem,
   type SupplierReconciliation, type SupplierPosition,
 } from './supplier-reconciliation';
+
+export {
+  verifySalesAgainstBank, acceptRouteTerms, expectedCredit, bpsOf,
+  type TenderRoute, type TermsSource, type RouteTerms, type DailyTakings, type BankCredit,
+  type TermsRefusal, type TermsAcceptance, type UnbankedDay, type RouteResult,
+  type BankVerification,
+} from './banking-verification';

@@ -120,7 +120,7 @@ their own reasons, with no interest in agreeing with our old ERP:
 | To prove | Check against | Why it is independent |
 | --- | --- | --- |
 | **Stock** | **A physical count.** Count the shelves | The only truth about stock that exists anywhere. Everything else is a record *of* it |
-| **Sales** | The bank statement; the card/UPI settlement file | The bank has no interest in agreeing with our old system |
+| **Sales** | The bank statement; the card/UPI settlement file | The bank has no interest in agreeing with our old system (see below — the hardest of the six) |
 | **Tax** | The GST returns already filed | Filed, dated, signed. It cannot be adjusted to make a total agree |
 | **Supplier balances** | The supplier's own statement | They keep their own ledger and will confirm it, because they want paying — no goodwill required (see below) |
 | **Books** | The accounts the CA prepared | Prepared independently, by somebody with a licence at stake |
@@ -161,6 +161,45 @@ them apart is the whole job, and three things the software will not do:
 **A supplier who never replies is listed by name as unverified.** Silence is the commonest reply
 to a statement request and the easiest to read as agreement — and the balance it leaves unproved
 goes into the opening books either way.
+
+### Sales against the bank — the hardest of the six
+
+Get the bank statements for the period. Then expect the thing everybody expects: **the sales
+figure will not equal the bank figure, and it never will.** The money changes on the way:
+
+- **Cash** goes in at the bank in lumps, days later, after the float and the till change come out.
+- **Card** arrives **net of the provider's commission** and the GST charged on that commission.
+- **UPI** arrives in full, but on its own cycle.
+
+So the check does not compare two totals — it reconstructs the route, and the danger is that
+everyone already knows the two will not agree. **An explicable difference you see every day is
+the perfect hiding place for a real one.**
+
+The one thing that matters more than any other here: **the commission rate must come off the
+merchant agreement, the provider's advice or the bank's confirmation — never from the gap it is
+meant to explain.** Work it out backwards from the difference and every shortfall becomes
+commission by definition; the reconciliation then agrees perfectly at any figure and has proved
+absolutely nothing. The software refuses that rate by name, and there is a test showing a
+₹60,000 hole reconciling to a clean zero under a rate fitted to it.
+
+**Cash is the one to watch.** Card and UPI move themselves; nobody carries them. Cash is the only
+tender a person physically holds between the till and the bank — and unlike a supplier balance,
+**there is no counterparty who will ever chase it.** So cash taken and not lodged is reported on
+its own figure, never merged into a tender total, with the most cash standing unlodged at any
+point shown beside it. Some of that is float and till change. The rest needs a name against it.
+
+Two more things the software insists on:
+
+- **A credit you cannot explain is not a bonus.** Money arriving with no sale behind it is usually
+  somebody else's — a mis-posted transfer that comes back out. Migrated as revenue it overstates
+  your turnover **and the tax due on it**, and the correction arrives after the return is filed.
+- **Ask the bank for a statement that runs past the period end.** A statement ending on the last
+  trading day looks like a perfectly matched pair of dates, and the last day's card batch settles
+  after it stops — so the money it exists to prove is not in it.
+
+**What this check cannot do**, and it is written into the code as a fixed `false`: the bank shows
+what *arrived*. A sale rung up and pocketed at the till reaches neither the old system nor the
+bank, and the two agree perfectly about it. Only the stock count speaks to that.
 
 ---
 
@@ -228,6 +267,9 @@ Three things, and none of them involves the vendor:
 - `../../packages/migration/src/extraction.ts` — the route and verification rules, as code
 - `../../packages/migration/src/supplier-reconciliation.ts` — the supplier statement check: timing
   told from real, nothing netted, and the invoice we have never seen sorted to the top
+- `../../packages/migration/src/banking-verification.ts` — sales against the bank: the route
+  reconstructed rather than compared, a commission rate refused if it was derived from the gap it
+  explains, and cash reported on its own figure
 - `../../packages/migration/src/report-parser.ts` — reads what Routes B and C actually produce:
   finds the real header under the shop's name and the report title, never counts a
   *"Total for GROCERY"* line as a product, reads `4,12,000.00` as twelve lakh, and keeps every

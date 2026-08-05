@@ -1661,6 +1661,59 @@ honest rather than being marked complete.
 
 ---
 
+## Proving the sales against the bank (7 August 2026)
+
+`packages/migration/src/banking-verification.ts`. The third external check and the hardest of the
+six, because **gross sales never equal a bank line and everybody knows it.**
+
+Two packages already reconcile money in the running system and neither can answer this.
+`packages/reconciliation` matches a tender to a settlement line on a shared provider reference —
+for the historic period there are no references, only a daily total per tender.
+`packages/settlement` checks the provider's own file, where gross, fees and net are declared and
+the arithmetic verifies against itself — for the historic period there is no provider file either.
+So the route has to be **reconstructed**: cash lodged in lumps days later after the float comes
+out, card net of commission and the GST on the commission, UPI gross on its own cycle.
+
+**The control the whole module stands on: a commission rate is declared, never derived.** Compute
+it as `(gross − banked) / gross` and every shortfall becomes commission *by definition* — the
+reconciliation then agrees perfectly at any figure and has proved nothing at all. It is the same
+failure as verifying a total against the system it came from, which `extraction.ts` already
+refuses by name. A test shows both halves: a **₹60,000 hole reconciling to a clean zero** under a
+rate fitted to it, and the identical input refused outright once the source is declared honestly.
+
+**Cash is the dangerous direction.** Card and UPI move themselves; nobody carries them. Cash is
+the only tender a person physically holds between the till and the bank, and unlike a supplier
+balance **there is no counterparty who will ever chase it.** So it carries its own figure, never
+merged into a tender total, with the peak standing unlodged beside it — a security number as much
+as an accounting one. Cash is also deliberately **not** matched day against day, because
+lodgements are lumpy on purpose and a day-by-day comparison manufactures a page of differences
+that all resolve to *"it went in on Friday."*
+
+**An unexplained credit is not good news.** Money with no sale behind it is usually somebody
+else's and comes back out; migrated as revenue it overstates turnover **and the tax due on it**,
+and the correction lands after the return is filed. It sits in the exception list beside the money
+that failed to arrive.
+
+Two defects found while building it, both by writing the test that the design implied:
+
+- **The statement-coverage check asked the file whether the file was complete** — it derived the
+  span from the first and last credit line, which is the exact move `completeness.ts` refuses. It
+  also marked every *correct* statement short, because settlement lags the period start. The span
+  is now read off the statement header, and must run **past** the period end: a statement ending
+  on the last trading day looks like a perfectly matched pair of dates while missing the batch it
+  exists to prove.
+- **A tender sitting at nil crashed with a `TypeError`** instead of refusing. Terms were demanded
+  only for tenders with non-zero takings, so a nil line reached the arithmetic with no terms
+  behind it. Now terms are required for every tender present in the takings at all — reading a
+  zero as *"no terms needed"* invents a lag and a commission for it, which is the same
+  turn-an-unknown-into-a-clean-result substitution the refusal exists to stop.
+
+Written into the type system as a fixed `false`: **the bank never proves the sales were
+complete.** A sale rung up and pocketed at the till reaches neither the old system nor the bank,
+and the two agree perfectly about it. Only the shelves speak to that.
+
+26 tests. Full suite **2,563**.
+
 ## Proving what we owe against what the supplier says we owe (7 August 2026)
 
 `packages/migration/src/supplier-reconciliation.ts`. The second external check after the shelves,
@@ -2302,9 +2355,9 @@ tests** against real PostgreSQL 16.13.
   default**, which is the property that had to be settled before the data arrives.
 - **EX-02 is closed (OB-06, 7 August 2026)** — we extract our own data ourselves. What the
   real-data migration now needs is **outside evidence**, not a vendor: bank statements, filed GST
-  returns, supplier statements of account and an authorised physical count. Two of the six checks
-  are built (`count-verification.ts`, `supplier-reconciliation.ts`); the rest are in the table
-  under *Next session should start with*.
+  returns, supplier statements of account and an authorised physical count. Three of the six
+  checks are built (`count-verification.ts`, `supplier-reconciliation.ts`,
+  `banking-verification.ts`); the rest are in the table under *Next session should start with*.
 - What remains needs the owner or the store: **OB-02** (hosting), the
   **pre-pilot integration gate** (a live AI provider, then UAT-49), **EX-13** (a penetration
   test), and the 55 store activities in
@@ -2340,17 +2393,16 @@ by name in `extraction.ts`, so each row of that table needs code behind it.
 | --- | --- | --- |
 | **Stock** | A physical count of our own shelves | ✅ `count-verification.ts` |
 | **Supplier balances** | The supplier's own statement of account | ✅ `supplier-reconciliation.ts` |
-| **Sales** | The bank statement; the card/UPI settlement file | ⬜ next |
-| **Tax** | The GST returns already filed | ⬜ |
+| **Sales** | The bank statement; the card/UPI settlement file | ✅ `banking-verification.ts` |
+| **Tax** | The GST returns already filed | ⬜ next |
 | **Books** | The accounts the CA prepared | ⬜ |
 | **Loyalty points** | A sample of customers confirming their own balance | ⬜ |
 
-**Sales against the bank is next**, and it is the hardest of the six: a day's takings reach the
-bank as a cash lodgement days later, a card batch net of commission, and a UPI settlement on its
-own cycle — so gross sales never equal a bank line, and the check has to reconstruct the route
-rather than compare two totals. `packages/reconciliation` already matches settlement lines to
-tenders on a shared reference for the *running* system; the migration question is different, and
-it is the one the CA will ask first.
+**Tax against the filed GST returns is next.** It has a property none of the others has: the
+return is **already filed, dated and signed**, so unlike a report it cannot be adjusted to make a
+total agree — and if the opening books disagree with it, it is the *books* that are wrong, not the
+return. The check runs the other way round from the rest: GSTR-1 and GSTR-3B are the fixed point,
+and the migrated sales and tax must reconcile **to** them.
 
 **Nothing here needs the ERP vendor, and nothing waits on them.** The letter stays on file
 (`docs/discovery/legacy-data-access.md`); if they ever answer it is a bonus, not a dependency.
