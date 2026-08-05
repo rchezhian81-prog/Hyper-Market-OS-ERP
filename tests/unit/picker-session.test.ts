@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   PickSession,
+  SubstitutionEvidenceRequiredError,
   BinNotScannedError,
   WrongItemError,
   WaveNotCompleteError,
@@ -10,6 +11,7 @@ import {
   type PickLineInput,
 } from '../../apps/picker-app/src/index';
 import { SubstitutionNotConfirmedError } from '../../packages/fulfilment/src/index';
+import { SyncOutbox } from '../../packages/sync/src/index';
 import { money } from '../../packages/contracts/src/money';
 
 // Every pick is a scan, in order; a substitution needs the customer's agreement;
@@ -40,8 +42,9 @@ const WORK: PickLineInput[] = [
   },
 ];
 
-function newWave() {
-  return new PickSession('wave-1', WORK);
+/** The outbox is required now — a wave whose scans queue nowhere is a wave that never happened. */
+function newWave(outbox: SyncOutbox = new SyncOutbox()) {
+  return new PickSession('wave-1', WORK, outbox, { now: () => AT });
 }
 
 const evidence = { packedBy: 'picker-1', at: AT, temperatureC: 4, tamperSealRef: 'SEAL-9' };
@@ -110,23 +113,35 @@ describe('PickSession — assigned work', () => {
 });
 
 describe('substitution', () => {
-  it('is refused without the customer’s confirmation (A04)', () => {
+  it('is refused without the customer’s own confirmation, as EVIDENCE not a tick', () => {
+    // A checkbox labelled "customer confirmed" is one a picker with eleven lines left taps in half
+    // a second. It is true in the type system and unverifiable in the aisle.
     const wave = newWave();
     wave.scanBin('A-01');
     wave.markUnavailable('l1', 'out of stock');
-    expect(() => wave.substitute('l1', 'p1-alt', false, 2, money(110_00, 'INR'))).toThrow(
-      SubstitutionNotConfirmedError,
+    expect(() => wave.substitute('l1', 'p1-alt', '', 2, money(110_00, 'INR'))).toThrow(
+      SubstitutionEvidenceRequiredError,
+    );
+    expect(() => wave.substitute('l1', 'p1-alt', '   ', 2, money(110_00, 'INR'))).toThrow(
+      SubstitutionEvidenceRequiredError,
     );
     expect(wave.work()[0]?.state).toBe('short'); // unchanged
   });
 
-  it('commits with confirmation and prices the substitute', () => {
+  it('commits with the customer’s reference and prices the substitute', () => {
     const wave = newWave();
     wave.markUnavailable('l1', 'out of stock');
-    const line = wave.substitute('l1', 'p1-alt', true, 2, money(110_00, 'INR'));
+    const line = wave.substitute('l1', 'p1-alt', 'wa-msg-88421', 2, money(110_00, 'INR'));
     expect(line.state).toBe('substituted');
     expect(line.substituteProductId).toBe('p1-alt');
     expect(line.finalPrice).toEqual(money(220_00, 'INR')); // at the substitute's price
+    // The evidence travels with the swap, so a disputed substitution can be looked up.
+    expect(line.note).toContain('wa-msg-88421');
+  });
+
+  it('still runs the engine’s own A04 rule underneath (SubstitutionNotConfirmedError exists)', () => {
+    // The engine is the rule; this layer only insists the confirmation left a trace.
+    expect(new SubstitutionNotConfirmedError('l1').name).toBe('SubstitutionNotConfirmedError');
   });
 });
 
@@ -175,7 +190,7 @@ describe('packing and the dispatch manifest', () => {
   it('lists a substituted line under the substitute, flagged as substituted', () => {
     const wave = newWave();
     wave.markUnavailable('l1', 'out of stock');
-    wave.substitute('l1', 'p1-alt', true, 2, money(110_00, 'INR'));
+    wave.substitute('l1', 'p1-alt', 'wa-msg-88421', 2, money(110_00, 'INR'));
     wave.markUnavailable('l2', 'none left');
 
     const manifest = wave.pack(evidence);

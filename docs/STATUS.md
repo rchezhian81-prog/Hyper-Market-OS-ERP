@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 5 August 2026 (session: three screens — the till became usable, the manager's refuses to close a day it cannot see, and the owner's records how old the data was when he decided)
+Last updated: 5 August 2026 (session: five screens, and the discovery that the picker's scans and the driver's cash were queueing nowhere at all)
 
 ---
 
@@ -2591,6 +2591,92 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## The picker's handheld and the driver's phone — and work that was going nowhere (5 August 2026)
+
+Two screens built. But the important part of this session is not the screens.
+
+### What I found before I built anything
+
+Both of these already had their rules written and tested — how a pick works, how a substitution
+works, how proof of delivery works, how the cash reconciles. And both files said, in writing, that
+the picker's scans and the driver's cash **"queue for sync afterwards."**
+
+**They did not.** Nothing queued. Anywhere.
+
+Every scan a picker made and every delivery a driver completed lived only inside the app, on the
+device, and nowhere else. Close the app, drop the handheld, run out of battery — and it was all
+gone, with nothing anywhere saying it had ever happened.
+
+For the picker that costs an afternoon's work.
+
+**For the driver it is worse, and I want to be direct about it.** A driver collects ₹6,000 in cash
+across four stops. The phone dies. There is now no record anywhere — not in the store, not in the
+cloud, not on the phone — that any of that money was ever collected. At the end of the shift there
+is cash in his pocket and nothing to check it against. **That is unfair to an honest driver and
+invisible for a dishonest one.**
+
+This is the ninth and tenth time in this project I have found something that was described,
+believed, and simply not there. Not one existing test failed when I fixed it.
+
+### What is now true
+
+Both devices write every piece of work to the phone or handheld's own storage as it happens. Drop
+it, close it, run the battery flat — it comes back. And it comes back correctly: work already sent
+is not sent again, and anything the cloud rejected stays visibly rejected rather than quietly
+reappearing.
+
+If the device cannot save something, **the screen says so at the top in red**. A picker whose scans
+are not being saved needs to know before the end of the wave, not after it.
+
+### Two things the screens showed me were wrong in the rules
+
+**1. "Customer confirmed" was a tick box.** A substitution — swapping an item the customer ordered
+for a different one — needed the customer's agreement, and the way that was recorded was a true/false
+flag. On a handheld that is a checkbox, and a picker with eleven lines left taps it in half a second.
+It is true as far as the software is concerned and completely unverifiable in the aisle.
+
+Now it needs **the reference** — the WhatsApp message, the call, wherever the customer actually
+agreed. It travels with the swap, so if the customer complains later you can look it up instead of
+arguing about it. And if the picker cannot get that reference, marking the item unavailable is one
+tap away. That is the honest alternative, and it has to be easy or people work around the rule.
+
+**2. The driver handed cash over and nothing counted it.** Now the driver counts the bag, note by
+note, **and the screen never shows what they should be holding until after they have counted.**
+Same as the till drawer, same as the stock count. Shown "you should have ₹6,000", people hand over
+₹6,000 and count nothing.
+
+If the difference is big, the screen does not show a number — it gives an instruction: *do not hand
+the money over until somebody from the office is with you.*
+
+### The screens themselves
+
+**Picker (handheld, in the aisles):** scan the bin, scan the item, say how many. **There is no
+place to type anything on this screen at all** — that is deliberate. If a picker can type a product
+code, they will when the scanner will not read a crushed label, and then "every pick is a scan"
+stops being true. Buttons are 64px because it is used with gloves, in cold, under freezer glare.
+
+**Driver (phone, at doorsteps):** the stop is the biggest thing on screen and the amount to collect
+is bigger still, because that is the number that has to be right when somebody hands over money.
+Proof is asked for first, because that is the order it happens at a door. **Card is not offered as
+a payment method at all** — COD is cash or UPI only, so it is a rule a driver can never accidentally
+break. A delivery that failed must say what happens to the goods next: try again, or back to the
+store.
+
+### One thing my own safety checks caught in my own work
+
+I wrote the picker screen to say which of the three steps comes next. A check then asked why two of
+those three messages were translated but never actually shown — and it was right. The screen only
+ever said "step 1", even when the picker was on step 3. That is worse than having no indicator at
+all, because somebody told the wrong thing twice stops reading it. Fixed.
+
+**Tests:** 3,372 automated plus 31 performance, all green.
+
+**What is left:** nothing dispatches routes yet (M20), so a driver's route still has to be handed to
+the phone rather than planned by the system. And both of these want a real handheld, a real scanner,
+a real van and a real bad signal — which is the only test that counts.
+
+---
+
 ## The owner's phone — deciding on numbers that left the shop hours ago (5 August 2026)
 
 The till takes the money. The manager's screen runs the floor. **This one is you, on your phone,
@@ -3531,14 +3617,16 @@ insist on when somebody eventually asks for it to be switched off.
 
 ## Next session should start with
 
-**The store box has to start producing the lists the screens now ask for.** The manager's screen
-wants exceptions (M15) and tasks (D11/M25); the owner's phone wants the same brief payload pushed
-to it. Both have engines and no producer, so both honestly answer *not known* — and the manager's
-day close correctly refuses because of it. That is the next piece of work, and it is the one that
-turns these screens from demonstrations into things the shop can use.
+**The store box has to start feeding the five screens that now exist.** The manager's screen wants
+exceptions (M15) and tasks (D11/M25); the owner's phone wants its brief pushed to it; the picker's
+handheld wants an assigned wave; the driver's phone wants a planned route (M20 dispatch, which
+nothing does yet). Every one of these has an engine and no producer, so each screen honestly says
+it has nothing — and the manager's day close correctly refuses to close because of it. **That is
+the next piece of work, and it is the one that turns five demonstrations into a system the shop can
+run on.**
 
-After that, per `docs/architecture/build-plan.md`: purchase and receiving, then picker and
-delivery, then the customer app.
+After that, per `docs/architecture/build-plan.md`: purchase and receiving, then the customer app —
+the last surface with no screen at all.
 
 **Then the owner's decisions.** The code is complete as far as it can go without them: all thirteen
 services persist, token verification is done, no folder in the repository layout is empty, the

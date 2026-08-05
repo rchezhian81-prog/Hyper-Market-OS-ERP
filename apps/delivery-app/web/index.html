@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Delivery — My route</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      Driver's phone (docs/design/screens/delivery.md). A low-spec Android phone, used
+      standing at a doorstep, often one-handed, often in sunlight.
+
+      Two things drive the layout. The stop the driver is at is the biggest thing on
+      screen; and the amount to collect is bigger still, because it is the number that
+      has to be right when somebody hands over cash.
+
+      Framework-free and static, so it opens with no signal between two streets.
+    -->
+    <style>
+      :root {
+        --bg: #0f172a; --panel: #1e293b; --ink: #f8fafc; --muted: #94a3b8;
+        --good: #22c55e; --warn: #f59e0b; --danger: #ef4444; --info: #38bdf8;
+        --line: #334155;
+        --tap: 60px; /* a doorstep, one hand, sunlight */
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--ink);
+        font: 17px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        height: 100dvh; display: grid; grid-template-rows: auto 1fr auto;
+      }
+      header {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 10px; padding: 12px 14px; background: var(--panel);
+      }
+      .route { font-weight: 600; }
+      .route small { display: block; color: var(--muted); font-weight: 400; font-size: 13px; }
+      .sync { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+      .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--good); flex: none; }
+      .dot.waiting { background: var(--warn); }
+      .lang { background: transparent; border: 0; color: var(--muted); min-height: 40px; font-size: 14px; }
+
+      .sample { background: var(--warn); color: #451a03; padding: 8px 14px; font-weight: 600; font-size: 15px; margin: 0; }
+      .sample[hidden] { display: none; }
+      .storage { background: var(--danger); color: #fff; padding: 8px 14px; font-size: 15px; margin: 0; }
+      .storage[hidden] { display: none; }
+      /* A stop the contribution rule flagged. Surfaced, never buried (D09). */
+      .flagged { background: #78350f; color: #fff7ed; padding: 8px 14px; font-size: 15px; margin: 0; }
+      .flagged[hidden] { display: none; }
+
+      main { overflow-y: auto; padding: 10px 14px; }
+      .empty { color: var(--muted); padding: 32px 4px; font-size: 17px; }
+
+      .stop {
+        width: 100%; text-align: left; background: var(--panel); color: var(--ink);
+        border: 0; border-left: 6px solid var(--line); border-radius: 14px;
+        padding: 12px 14px; margin-bottom: 10px; min-height: var(--tap); display: grid; gap: 3px;
+      }
+      .stop[aria-selected='true'] { outline: 3px solid #93c5fd; }
+      .stop.delivered { border-left-color: var(--good); }
+      .stop.failed { border-left-color: var(--danger); }
+      .stop.returned_to_origin { border-left-color: var(--info); }
+      .stop.out_for_delivery { border-left-color: var(--warn); }
+      .stop .area { font-size: 20px; font-weight: 700; }
+      .stop .order { color: var(--muted); font-size: 14px; }
+      /* The money is the biggest thing on the row — it is what has to be right. */
+      .stop .cod { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .stop .cod.prepaid { font-size: 17px; font-weight: 600; color: var(--muted); }
+      .stop .state { font-size: 14px; font-weight: 600; }
+      .stop .flag { font-size: 14px; color: var(--warn); }
+
+      footer { background: var(--panel); padding: 12px 14px 18px; display: grid; gap: 10px; }
+      .summary { display: flex; justify-content: space-between; font-size: 15px; color: var(--muted); }
+      .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      button {
+        min-height: var(--tap); border-radius: 14px; border: 0; font-size: 18px; font-weight: 600;
+        background: var(--line); color: var(--ink);
+      }
+      button.primary { background: var(--good); color: #052e16; font-size: 20px; }
+      button.danger { background: var(--danger); color: #fff; }
+      button:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+      .wide { grid-column: 1 / -1; }
+
+      /* ── Panels ─────────────────────────────────────────────────────────── */
+      .sheet {
+        position: fixed; inset: 0; background: rgba(2, 6, 23, .86);
+        display: grid; place-items: end center; z-index: 20;
+      }
+      .sheet[hidden] { display: none; }
+      .sheet-inner {
+        width: min(560px, 100%); background: var(--panel); padding: 18px;
+        border-radius: 20px 20px 0 0; display: grid; gap: 12px; max-height: 92dvh; overflow-y: auto;
+      }
+      .sheet h2 { margin: 0; font-size: 20px; }
+      .entry {
+        font-size: 42px; font-weight: 700; text-align: right; padding: 8px 16px;
+        background: #0b1220; border-radius: 12px; min-height: 64px;
+      }
+      .hint { color: var(--muted); font-size: 15px; min-height: 22px; }
+      .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .keypad button, .choices button, .sheet-actions button { min-height: var(--tap); font-size: 20px; }
+      .choices { display: grid; gap: 8px; }
+      .choices button { text-align: left; padding: 0 16px; font-size: 17px; }
+      .sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .sheet-actions .primary, .keypad .primary { background: var(--good); color: #052e16; }
+
+      /* Counting the bag: one row per note, a big count in the middle. */
+      .denoms { display: grid; gap: 8px; max-height: 46dvh; overflow-y: auto; }
+      .denom { display: grid; grid-template-columns: 5rem 1fr 3.5rem 1fr; align-items: center; gap: 8px; }
+      .denom span { font-size: 20px; font-weight: 600; }
+      .denom .n { text-align: center; font-size: 24px; font-variant-numeric: tabular-nums; }
+      .denom button { min-height: 52px; font-size: 26px; border: 0; border-radius: 12px; background: var(--line); color: var(--ink); }
+
+      /* The banner. No timer, never colour alone. */
+      .banner {
+        position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 18px 14px;
+        background: var(--danger); color: #fff; display: grid; gap: 10px;
+      }
+      .banner[hidden] { display: none; }
+      .banner.good { background: var(--good); color: #052e16; }
+      .banner strong { font-size: 21px; }
+      .banner p { margin: 0; font-size: 17px; }
+      .banner button { background: #7f1d1d; color: #fff; }
+      .banner.good button { background: #052e16; color: #ecfdf5; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="route" id="route">—<small id="progress">—</small></span>
+      <span class="sync">
+        <span class="dot" id="queue-dot" title="Waiting to sync"></span>
+        <span id="queue-text">—</span>
+        <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
+      </span>
+    </header>
+
+    <p class="sample" id="sample" hidden role="status">Sample route — this is not real work.</p>
+    <p class="storage" id="storage" hidden role="alert"></p>
+    <p class="flagged" id="flagged" hidden role="status"></p>
+
+    <main>
+      <div id="stops"></div>
+      <p class="empty" id="empty" hidden>—</p>
+    </main>
+
+    <footer>
+      <!--
+        Cash held is shown while the driver is working, because they need to know what
+        they are carrying. At HANDOVER it disappears — see app.js.
+      -->
+      <div class="summary">
+        <span id="held-label">Cash you are carrying</span>
+        <span id="held">—</span>
+      </div>
+      <div class="actions">
+        <button id="deliver" class="primary" type="button">Delivered</button>
+        <button id="failed" class="danger" type="button">Could not deliver</button>
+        <button id="handover" class="wide" type="button">End of shift — hand cash over</button>
+      </div>
+    </footer>
+
+    <!-- A number, or a choice. On-screen, never a browser prompt. -->
+    <div class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+      <div class="sheet-inner">
+        <h2 id="sheet-title">—</h2>
+        <div class="entry" id="entry" hidden>0</div>
+        <div class="hint" id="entry-hint"></div>
+        <div class="keypad" id="keypad" hidden></div>
+        <div class="choices" id="choices" hidden></div>
+        <div class="sheet-actions">
+          <button id="sheet-cancel" type="button">Cancel</button>
+          <button id="sheet-ok" class="primary" type="button">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      Counting the cash at handover. Nothing on this panel says what the driver SHOULD
+      be holding — the same control the till drawer and the stock count use, for the
+      same reason.
+    -->
+    <div class="sheet" id="count" hidden role="dialog" aria-modal="true" aria-labelledby="count-title">
+      <div class="sheet-inner">
+        <h2 id="count-title">Count the cash</h2>
+        <div class="denoms" id="denoms"></div>
+        <div class="entry" id="count-total">—</div>
+        <div class="hint" id="count-hint"></div>
+        <div class="sheet-actions">
+          <button id="count-cancel" type="button">Cancel</button>
+          <button id="count-ok" class="primary" type="button">Hand over</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- The message that must not be missed. No timer. -->
+    <div class="banner" id="banner" hidden role="alert">
+      <strong id="banner-title">—</strong>
+      <p id="banner-text"></p>
+      <button id="banner-ok" type="button">I have read this</button>
+    </div>
+
+    <script type="module" src="./delivery-app.bundle.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

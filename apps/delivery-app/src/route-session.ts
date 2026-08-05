@@ -17,8 +17,26 @@
 //     legitimately be a street away), so it is visible on sync;
 //   • CONTRIBUTION STOP RULES (D09) surface an unprofitable stop rather than
 //     silently continuing.
+//
+// ── The outbox, and why this is the worst place to have been missing one ─────
+//
+// The paragraph above used to say the proof and COD "queue for sync afterwards" and **nothing
+// queued**. Every stop lived in a JavaScript object on a phone in a moving vehicle and nowhere
+// else.
+//
+// On the picker's handheld the same gap loses a wave, which is a bad afternoon. Here it loses
+// **money that has already changed hands**. A driver collects ₹6,000 across four stops, the phone
+// dies, and there is no record anywhere that any of it was ever collected — not in the store, not
+// in the cloud, not on the device. The end-of-shift settlement has nothing to reconcile against,
+// so the cash in his pocket is unexplained in a way that is unfair to an honest driver and
+// invisible to a dishonest one.
+//
+// The outbox is therefore a **required** constructor argument. Every stop that reaches a terminal
+// state queues its own event, and so does the settlement.
 
+import { makeEvent } from '../../../packages/contracts/src/event';
 import { money, type Money, type CurrencyCode } from '../../../packages/contracts/src/money';
+import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import {
   transitionDelivery,
   assertProofOfDelivery,
@@ -85,6 +103,23 @@ export class ReasonRequiredError extends Error {
   }
 }
 
+/** What the driver counted, against what the day recorded. Only ever produced by `handOver`. */
+export interface CashHandover {
+  readonly routeId: string;
+  readonly driverId: string;
+  /** The only figure the driver supplied. */
+  readonly countedMinor: number;
+  /** What the recorded collections add up to — revealed only now, never before the count. */
+  readonly recordedMinor: number;
+  /** counted − recorded (positive = more cash than the day recorded). */
+  readonly varianceMinor: number;
+  /** True when the difference is large enough to need the cash office. */
+  readonly material: boolean;
+  readonly currency: CurrencyCode;
+  readonly at: string;
+  readonly reasonCode: string | null;
+}
+
 export class CodAmountError extends Error {
   constructor(stopId: string) {
     super(`Stop "${stopId}" COD must be a non-negative amount.`);
@@ -99,13 +134,26 @@ export class CodAmountError extends Error {
 export class RouteSession {
   private readonly stops: Stop[];
 
+  private readonly currency: CurrencyCode;
+  private readonly contributionRule: ContributionRule | undefined;
+  private readonly at: () => string;
+
   constructor(
     readonly routeId: string,
     readonly driverId: string,
     assigned: readonly StopInput[],
-    private readonly currency: CurrencyCode = 'INR',
-    private readonly contributionRule?: ContributionRule,
+    /** Where every completed stop and the settlement are queued for sync. Required — see above. */
+    private readonly outbox: SyncOutbox,
+    options: {
+      readonly currency?: CurrencyCode;
+      readonly contributionRule?: ContributionRule;
+      /** Injected so a test is deterministic; the phone passes its own clock. */
+      readonly now?: () => string;
+    } = {},
   ) {
+    this.currency = options.currency ?? 'INR';
+    this.contributionRule = options.contributionRule;
+    this.at = options.now ?? (() => new Date().toISOString());
     this.stops = assigned.map((s) => ({ ...s, state: 'assigned' as DeliveryState }));
   }
 
@@ -135,9 +183,46 @@ export class RouteSession {
     return stop;
   }
 
+  /**
+   * Record a stop's new state — and queue it.
+   *
+   * Every path that moves a stop goes through here, so a path added later cannot forget to queue.
+   * Idempotent on stop id **and state**, so re-recording one outcome collapses to a single item
+   * while a genuine change (failed, then reattempted, then delivered) queues each step — because
+   * each of those is a separate thing that happened to somebody's order.
+   *
+   * **What travels is deliberately thin** (§31 PII minimisation): the order reference, the state,
+   * the money and the proof KIND. Never the customer's name, never their phone number, and never
+   * the photograph itself — a route's worth of doorstep photographs on a queue is a privacy
+   * problem being synced rather than a delivery being proved.
+   */
   private replace(next: Stop): void {
     const index = this.stops.findIndex((s) => s.stopId === next.stopId);
     this.stops[index] = next;
+    this.outbox.enqueue(
+      makeEvent({
+        id: `${this.routeId}:${next.stopId}:${next.state}`,
+        type: 'DeliveryStopUpdated',
+        occurredAt: this.at(),
+        idempotencyKey: `stop:${this.routeId}:${next.stopId}:${next.state}`,
+        source: this.routeId,
+        payload: {
+          routeId: this.routeId,
+          driverId: this.driverId,
+          stopId: next.stopId,
+          orderRef: next.orderRef,
+          state: next.state,
+          codExpectedMinor: next.codMinor,
+          codCollectedMinor: next.codCollectedMinor ?? 0,
+          codMethod: next.codMethod ?? null,
+          proofKind: next.proof?.kind ?? null,
+          geofenceMismatch: next.geofenceMismatch === true,
+          failureReason: next.failureReason ?? null,
+          contributionFlag: next.contributionFlag ?? null,
+          currency: this.currency,
+        },
+      }),
+    );
   }
 
   /** Leave for a stop. Refuses an illegal transition (the state machine is the rule). */
@@ -247,6 +332,89 @@ export class RouteSession {
         collectedMinor: s.codCollectedMinor ?? 0,
         method: s.codMethod ?? 'cash',
       }));
-    return reconcileCod(expectations, collections);
+    const result = reconcileCod(expectations, collections);
+
+    // Queued whatever it says. A settlement that only reached the cloud when it balanced would be
+    // a reconciliation that can only ever report success — the short and the over are the two
+    // outcomes anybody actually needs to see (M19-FR-04, M23).
+    this.outbox.enqueue(
+      makeEvent({
+        id: `${this.routeId}:settled`,
+        type: 'RouteSettled',
+        occurredAt: this.at(),
+        idempotencyKey: `settle:${this.routeId}`,
+        source: this.routeId,
+        payload: {
+          routeId: this.routeId,
+          driverId: this.driverId,
+          expectedMinor: expectations.reduce((sum, e) => sum + e.expectedMinor, 0),
+          collectedMinor: collections.reduce((sum, c) => sum + c.collectedMinor, 0),
+          cashHeldMinor: this.codHeld().minor,
+          matchedCount: result.matchedCount,
+          exceptionCount: result.exceptionCount,
+          currency: this.currency,
+        },
+      }),
+    );
+    return result;
+  }
+
+  /**
+   * Hand the cash over at the end of the shift, against a **counted** figure.
+   *
+   * ── The blind count, a third time ─────────────────────────────────────────
+   *
+   * The till does this for the drawer and the stock count does it for the shelf, for the same
+   * reason and it applies just as hard here: **the driver is never shown what they should be
+   * holding before they count it.** Shown "you should have ₹6,000", people hand over ₹6,000 and
+   * count nothing — not from dishonesty, but because a number on a screen is an answer and
+   * counting is work. A handover anchored to the expectation finds nothing, which is the one thing
+   * a handover exists to do.
+   *
+   * So there is no method on this session that returns the expected cash before a count. The
+   * variance only exists **after** a counted figure has been given, and it comes back as part of
+   * the result. `codHeld()` is the recorded total and is what the cash office reconciles against;
+   * it is not a target to read out to the driver first, which is why the screen never shows it
+   * until this has been called.
+   */
+  handOver(input: {
+    readonly countedMinor: number;
+    readonly at: string;
+    /** |over/short| at or above which the variance needs the cash office. Per-tenant. */
+    readonly toleranceMinor: number;
+    readonly reasonCode?: string;
+  }): CashHandover {
+    if (!Number.isSafeInteger(input.countedMinor) || input.countedMinor < 0) {
+      throw new CodAmountError(this.routeId);
+    }
+    const recordedMinor = this.codHeld().minor;
+    const varianceMinor = input.countedMinor - recordedMinor;
+    const material = Math.abs(varianceMinor) >= input.toleranceMinor;
+
+    const handover: CashHandover = Object.freeze({
+      routeId: this.routeId,
+      driverId: this.driverId,
+      countedMinor: input.countedMinor,
+      recordedMinor,
+      varianceMinor,
+      material,
+      currency: this.currency,
+      at: input.at,
+      reasonCode: input.reasonCode ?? null,
+    });
+
+    // Queued whatever it says — a handover that only reached the cash office when it balanced
+    // would be a control that can only ever report success.
+    this.outbox.enqueue(
+      makeEvent({
+        id: `${this.routeId}:handover`,
+        type: 'DriverCashHandedOver',
+        occurredAt: input.at,
+        idempotencyKey: `handover:${this.routeId}`,
+        source: this.routeId,
+        payload: { ...handover },
+      }),
+    );
+    return handover;
   }
 }

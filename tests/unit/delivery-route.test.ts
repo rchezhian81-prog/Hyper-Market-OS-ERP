@@ -6,6 +6,7 @@ import {
   type StopInput,
 } from '../../apps/delivery-app/src/index';
 import { ProofRequiredError, InvalidDeliveryTransitionError, CardDataError } from '../../packages/fulfilment/src/index';
+import { SyncOutbox } from '../../packages/sync/src/index';
 import { money } from '../../packages/contracts/src/money';
 
 // Nothing is delivered without proof; COD reconciles at end of shift; a failure
@@ -18,8 +19,13 @@ const STOPS: StopInput[] = [
 
 const OTP = { kind: 'otp' as const, ref: '4821' };
 
-function newRoute(rule?: { maxCostShareBps: number }) {
-  return new RouteSession('route-1', 'driver-1', STOPS, 'INR', rule);
+/** The outbox is required now — COD nothing queued is cash in a pocket with no record of it. */
+function newRoute(rule?: { maxCostShareBps: number }, outbox: SyncOutbox = new SyncOutbox()) {
+  return new RouteSession('route-1', 'driver-1', STOPS, outbox, {
+    currency: 'INR',
+    now: () => '2026-08-02T10:00:00Z',
+    ...(rule === undefined ? {} : { contributionRule: rule }),
+  });
 }
 
 describe('RouteSession — the driver’s day', () => {

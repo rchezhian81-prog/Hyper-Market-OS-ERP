@@ -15,10 +15,23 @@
 //     what was actually put in the crate;
 //   • THE MANIFEST MATCHES WHAT WAS PACKED — it is derived from the picked lines,
 //     never typed, and packing is blocked while any line is unresolved.
+//
+// ── The outbox, and why it is a required constructor argument ────────────────
+//
+// The paragraph above used to end "the scans queue for sync afterwards" and **nothing queued**.
+// The session held every resolved line in a JavaScript object and no other part of the system ever
+// heard about them: a wave picked correctly, offline, exactly as designed, existed only until the
+// handheld was closed. The docstring was the only place the queue had ever been.
+//
+// So the outbox is a constructor argument and it is **required**. An optional one is a port a
+// deployment can forget, and forgetting it is invisible — which is precisely how this got here.
+// Every line that reaches a resolved state queues an event, and so does the pack.
 
+import { makeEvent } from '../../../packages/contracts/src/event';
 import { money, multiplyByInteger, scaleMoney, type Money, type CurrencyCode } from '../../../packages/contracts/src/money';
 import { precisionOf, type Uom } from '../../../packages/contracts/src/quantity';
 import { confirmSubstitution } from '../../../packages/fulfilment/src/delivery';
+import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 
 export type LineState = 'pending' | 'picked' | 'short' | 'substituted' | 'quality_failed';
 
@@ -123,6 +136,16 @@ export class ReasonRequiredError extends Error {
   }
 }
 
+export class SubstitutionEvidenceRequiredError extends Error {
+  constructor(lineId: string) {
+    super(
+      `Line "${lineId}": a substitution needs the customer's own confirmation, as a reference ` +
+      'that can be looked up afterwards. A tick box is not evidence.',
+    );
+    this.name = 'SubstitutionEvidenceRequiredError';
+  }
+}
+
 /**
  * A picker's assigned wave. Everything is local and synchronous — the handheld
  * works with no signal and the scans queue for sync afterwards.
@@ -132,16 +155,27 @@ export class PickSession {
   private scannedBin: string | null = null;
   private packed: DispatchManifest | null = null;
 
+  private readonly currency: CurrencyCode;
+  private readonly at: () => string;
+
   constructor(
     readonly waveId: string,
     assigned: readonly PickLineInput[],
-    private readonly currency: CurrencyCode = 'INR',
+    /** Where every resolved line and the pack are queued for sync. Required — see above. */
+    private readonly outbox: SyncOutbox,
+    options: {
+      readonly currency?: CurrencyCode;
+      /** Injected so a test is deterministic; the handheld passes its own clock. */
+      readonly now?: () => string;
+    } = {},
   ) {
+    this.currency = options.currency ?? 'INR';
+    this.at = options.now ?? (() => new Date().toISOString());
     this.lines = assigned.map((l) => ({
       ...l,
       state: 'pending' as LineState,
       pickedQty: 0,
-      finalPrice: money(0, currency),
+      finalPrice: money(0, this.currency),
     }));
   }
 
@@ -171,9 +205,42 @@ export class PickSession {
     return line;
   }
 
+  /**
+   * Record a line's new state — and queue it.
+   *
+   * Every path that resolves a line goes through here (pick, substitute, quality fail, mark
+   * unavailable), so the queueing cannot be forgotten by a path added later. That is the point of
+   * doing it in one place rather than four.
+   *
+   * Idempotent on line id **and state**: re-recording the same outcome collapses to one item, while
+   * a genuine change of outcome queues its own event, because "picked 4" followed by "quality
+   * failed" is two things that happened and the cloud needs both.
+   */
   private replace(next: PickLine): void {
     const index = this.lines.findIndex((l) => l.lineId === next.lineId);
     this.lines[index] = next;
+    this.outbox.enqueue(
+      makeEvent({
+        id: `${this.waveId}:${next.lineId}:${next.state}`,
+        type: 'PickLineResolved',
+        occurredAt: this.at(),
+        idempotencyKey: `pick:${this.waveId}:${next.lineId}:${next.state}`,
+        source: this.waveId,
+        payload: {
+          waveId: this.waveId,
+          lineId: next.lineId,
+          // The order reference travels; the customer does not. PII stays off the handheld (§31).
+          orderRef: next.orderRef,
+          productId: next.substituteProductId ?? next.productId,
+          state: next.state,
+          pickedQty: next.pickedQty,
+          finalPriceMinor: next.finalPrice.minor,
+          currency: next.finalPrice.currency,
+          substituted: next.state === 'substituted',
+          note: next.note ?? null,
+        },
+      }),
+    );
   }
 
   private assertPickable(line: PickLine): void {
@@ -227,11 +294,24 @@ export class PickSession {
    * Record a substitution for a short line. It commits ONLY with the customer's
    * confirmation (A04) — delegated to `packages/fulfilment`, which refuses an
    * unconfirmed swap. Never the picker's silent choice.
+   *
+   * ── Why the confirmation needs a REFERENCE and not a tick ──────────────────
+   *
+   * The rule engine takes a boolean, and a boolean on a handheld is a checkbox labelled *customer
+   * confirmed* that a picker with eleven lines left taps in half a second. It is true in the type
+   * system and unverifiable in the aisle, and afterwards nobody can tell an agreed swap from a
+   * guessed one.
+   *
+   * So this layer requires the **evidence**: whatever the tenant's A04 rule produces — the id of
+   * the customer's reply, a call log reference, a chat message id. It is not validated here
+   * (only the tenant knows what shape theirs takes) but it must exist and it travels with the
+   * substitution, so a swap the customer disputes can be looked up rather than argued about.
    */
   substitute(
     lineId: string,
     substituteProductId: string,
-    customerConfirmed: boolean,
+    /** The customer's own confirmation, as a reference that can be looked up. Never a tick box. */
+    approvalRef: string,
     qty: number,
     substituteUnitPrice: Money,
   ): PickLine {
@@ -239,12 +319,15 @@ export class PickSession {
     if (line.state === 'picked' || line.state === 'substituted') {
       throw new LineAlreadyResolvedError(lineId, line.state);
     }
+    if (approvalRef.trim() === '') {
+      throw new SubstitutionEvidenceRequiredError(lineId);
+    }
     // Throws SubstitutionNotConfirmedError when the customer has not agreed.
     confirmSubstitution({
       orderLineId: lineId,
       originalProductId: line.productId,
       substituteProductId,
-      customerConfirmed,
+      customerConfirmed: true,
     });
 
     const priced: PickLine = { ...line, unitPrice: substituteUnitPrice };
@@ -254,6 +337,8 @@ export class PickSession {
       pickedQty: qty,
       finalPrice: this.priceFor(priced, qty),
       substituteProductId,
+      // Kept on the line so it reaches the manifest and the queue with the swap it belongs to.
+      note: `customer approval: ${approvalRef.trim()}`,
     };
     this.replace(next);
     return next;
@@ -319,6 +404,27 @@ export class PickSession {
       totalValue,
       evidence,
     };
+    // The manifest the driver will be handed, queued as one event. Cold-chain and tamper evidence
+    // travel with it — a crate that arrives warm is an argument nobody can settle afterwards
+    // without the temperature that was recorded when it was sealed (M19-FR-02).
+    this.outbox.enqueue(
+      makeEvent({
+        id: `${this.waveId}:packed`,
+        type: 'WavePacked',
+        occurredAt: evidence.at,
+        idempotencyKey: `pack:${this.waveId}`,
+        source: this.waveId,
+        payload: {
+          waveId: this.waveId,
+          packedBy: evidence.packedBy,
+          lineCount: lines.length,
+          totalValueMinor: totalValue.minor,
+          currency: totalValue.currency,
+          temperatureC: evidence.temperatureC ?? null,
+          tamperSealRef: evidence.tamperSealRef ?? null,
+        },
+      }),
+    );
     return this.packed;
   }
 

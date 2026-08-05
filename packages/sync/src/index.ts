@@ -3,3 +3,4 @@
 // dead-letter that is never dropped). Grows one reviewed, tested unit at a time.
 
 export * from './outbox';
+export * from './device-outbox';

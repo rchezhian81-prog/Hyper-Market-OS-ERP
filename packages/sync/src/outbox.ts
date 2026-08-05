@@ -23,6 +23,22 @@ export class SyncOutbox<TType extends string = string, TPayload = unknown> {
   // Map preserves insertion order, so reads come back in enqueue order.
   private readonly items = new Map<string, OutboxItem<TType, TPayload>>();
 
+  /**
+   * @param restored items read back from durable storage at start-up, in their original order.
+   *
+   * A constructor argument on purpose, and nothing like it exists as a method. Rebuilding a queue
+   * from a disk on the device is a legitimate thing to do **once, at boot**; being able to do it
+   * later would be a way to write history into an outbox after the fact, and an outbox whose
+   * contents can be rewritten is not evidence of anything. `state` and `attempts` come back
+   * exactly as they were — a replay that reset every item to `pending` would resend acknowledged
+   * work and quietly resurrect dead letters (hard rule #6).
+   */
+  constructor(restored: readonly OutboxItem<TType, TPayload>[] = []) {
+    for (const item of restored) {
+      this.items.set(item.key, Object.freeze({ ...item }));
+    }
+  }
+
   /** Enqueue a locally-committed event; idempotent on its idempotency key. */
   enqueue(event: DomainEvent<TType, TPayload>): OutboxItem<TType, TPayload> {
     const existing = this.items.get(event.idempotencyKey);

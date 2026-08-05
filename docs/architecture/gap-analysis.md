@@ -25,8 +25,8 @@ project.
 | `packages/` — domain rules | 45,179 | **Genuinely strong.** The product's value lives here |
 | `services/` — the thirteen APIs | 5,556 | Built, persisting, authenticated, audited |
 | `edge/` — the store box | 1,144 | Now runs, writes durably, syncs. Built **today** |
-| `apps/` — everything a person touches | 4,400 | **Still the gap**, but three of six now have real screens |
-| Tests | 3,299 + 31 | Unusually thorough on rules; thin on assembly until today |
+| `apps/` — everything a person touches | 6,100 | **Five of six now have real screens.** Only the customer app has none |
+| Tests | 3,372 + 31 | Unusually thorough on rules; thin on assembly until today |
 
 **2,452 lines of app code for six applications** is the number that matters. For comparison, the POS
 alone — one screen a cashier uses eight hours a day — is 1,070 of those lines, and none of it draws
@@ -49,7 +49,7 @@ bundled against the **real tested session**, not a mock. `apps/owner-app/web/` h
 What the POS shell lacked was a way to reach a disk — built today, see below. What it still lacks is
 tender beyond cash, returns, suspend/recall, cash movements, till open/close, and Tamil.
 
-`web-erp` now has a shell too — approvals, receiving, counting and day close — and `owner-app`'s shell has been rebuilt against a real tested session rather than a sample payload. `customer-app`, `picker-app` and `delivery-app` have **no web files at all**.
+`web-erp` now has a shell too — approvals, receiving, counting and day close — and `owner-app`'s shell has been rebuilt against a real tested session rather than a sample payload. `picker-app` and `delivery-app` now have shells too, built on their tested sessions. Only `customer-app` has **no web files at all**.
 
 What this means concretely: today nobody can ring up a sale, receive a delivery, count stock, close
 a day, approve a price change, pick an order, or look at a dashboard. The rules that would govern
@@ -104,7 +104,7 @@ Three columns, and they are different questions. **Rules** = is the logic writte
 | M08–M11 Inventory, warehouse, quality | ✅ | ✅ | ◐ | Movements and snapshots real; **blind counting is now a screen** — and a count the screen cannot value is refused rather than priced at zero. No expiry or recall screen |
 | M12–M15 POS, returns, cash office | ✅ | ✅ | ✅ | The strongest area. Durable commit real, and the screen reaches the till's own disk over loopback (ADR-0004). Cash, card, UPI, hold/recall, cash to safe and a blind till close are in; **day close now has a manager screen that reports a list rather than a refusal**. Receipt-based returns still have no screen |
 | M16–M18 Customer, loyalty, storefront | ✅ | ✅ | ❌ | Consent real; loyalty **accrual not wired** — points read as *not known* |
-| M19–M20 Picking, delivery | ✅ | ◐ | ❌ | Attempts real; **no dispatch list exists**, so runs report unassigned |
+| M19–M20 Picking, delivery | ✅ | ✅ | ✅ | **Both handhelds are now screens**, and both now actually queue their work — until today neither the picker's scans nor the driver's COD reached anything that survived the app closing. **No dispatch list exists**, so runs still report unassigned until M20 route planning is built |
 | M21–M24 Finance, Tally | ✅ | ◐ | ❌ | Journals and period close real. **No control totals can be built** — deliberate, and it means no month can close yet |
 | M25–M28 Reporting, analytics | ✅ | ◐ | ❌ | Two real figures. Everything else needs producers |
 | M29–M32 Ops, compliance, workforce | ✅ | ❌ | ❌ | Rules only |
@@ -139,7 +139,7 @@ them this project already has.
 
 | | Have it? | |
 | --- | :---: | --- |
-| **It never loses a sale** | ✅ | Durable commit, idempotent sync, append-only ledger, visible dead-letter. This is now genuinely true and tested end to end |
+| **It never loses a sale** | ✅ | Durable commit, idempotent sync, append-only ledger, visible dead-letter. Now true on the handhelds too — a picker's wave and a driver's cash survive the device |
 | **It tells the truth when it does not know** | ✅ | Unusually strong. Not-known is a first-class answer throughout |
 | **A new cashier is productive in 30 minutes** | ❌ | Specified, not built. This is the one customers actually judge |
 | **It is fast at the scale of a real shop** | ◐ | Bounded reads proved with real numbers; **never run against 20,000 real SKUs** |
@@ -186,6 +186,12 @@ built and waiting; none has met a real export.
 
 **3. Then the other five surfaces**, in this order: store manager → owner → receiving/purchase →
 picker/delivery → customer app. Ordered by how much of the shop stops without them.
+✅ *The picker handheld and the driver's phone are built* — and building them found the worst
+assembly gap yet: **neither queued anything**. Both session docstrings said the scans, the proof
+and the COD were queued for sync, and every one of them lived only in memory on the device. On the
+driver's phone that meant cash collected with no record that survived a dead battery. Both now
+write through to the device, the substitution needs the customer's own reference rather than a tick
+box, and the driver's cash handover is counted blind like the till drawer.
 ✅ *The owner app is built*: the brief now drills — every figure opens every sale behind it — and
 approvals are decided on the phone with the **age of the data in front of the decision**, recorded
 into it. A decision made with no signal is queued, and if the request changes while it waits it
