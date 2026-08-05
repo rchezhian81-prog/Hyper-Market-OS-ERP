@@ -44,12 +44,24 @@ export interface ConfigResult<T> {
  * deployment that fails in ten seconds and one that signs catalogue packs with a placeholder.
  */
 const PLACEHOLDERS = [
-  'REPLACE_WITH_A_GENERATED_VALUE', 'CHANGEME', 'changeme', 'password', 'secret',
-  'your-secret-here', 'xxx', 'TODO',
+  'CHANGEME', 'changeme', 'password', 'secret', 'your-secret-here', 'xxx', 'TODO',
 ];
 
-const isPlaceholder = (value: string): boolean =>
-  PLACEHOLDERS.some((p) => value.trim().toLowerCase() === p.toLowerCase());
+/**
+ * The convention the example file uses, matched as a prefix rather than by exact value.
+ *
+ * The list above started as exact strings, and the guardrail that reads `.env.example` caught the
+ * consequence the first time a new placeholder was added: `REPLACE_WITH_YOUR_IDENTITY_PROVIDER_URL`
+ * was not `REPLACE_WITH_A_GENERATED_VALUE`, so it sailed through — a deployment would have believed
+ * tokens from an issuer literally called that. Matching the prefix means the next placeholder
+ * somebody writes is covered before they think to add it here.
+ */
+const PLACEHOLDER_PREFIX = 'replace_with';
+
+const isPlaceholder = (value: string): boolean => {
+  const v = value.trim().toLowerCase();
+  return v.startsWith(PLACEHOLDER_PREFIX) || PLACEHOLDERS.some((p) => v === p.toLowerCase());
+};
 
 export interface Spec {
   readonly key: string;
@@ -138,6 +150,14 @@ export function loadConfig(
 export const CLOUD_API_CONFIG: readonly Spec[] = [
   { key: 'DATABASE_URL', secret: true, minLength: 20 },
   { key: 'PACK_SIGNING_KEY', secret: true, minLength: 32 },
+  // The identity provider's signing key, and who its tokens must claim to be from and for.
+  //
+  // Required, not optional, and deliberately so: absent, `authenticate` would have to fall back to
+  // *something*, and every fallback here is a way in. A deployment with no identity provider
+  // configured does not start — which is louder than one that starts and lets everybody in.
+  { key: 'IDP_SIGNING_KEY', secret: true, minLength: 32 },
+  { key: 'IDP_ISSUER' },
+  { key: 'IDP_AUDIENCE' },
   { key: 'PORT', numeric: true, fallback: '8081' },
   { key: 'NODE_ENV', oneOf: ['development', 'test', 'production'], fallback: 'production' },
   { key: 'MIGRATION_TARGET_KIND', oneOf: ['rehearsal', 'staging', 'local', 'production'], fallback: 'rehearsal' },

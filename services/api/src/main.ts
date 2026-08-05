@@ -23,14 +23,14 @@ import { SqlEventStore } from '../../../packages/persistence/src/event-store';
 import { pgClient } from '../../../packages/persistence/src/pg-client';
 import {
   buildRouter, loadConfig, startHttpServer, CLOUD_API_CONFIG, MemoryIdempotencyStore,
-  type Principal, type Route,
+  type Route,
 } from '../../kernel/src/index';
 import { AccessControl } from '../../../packages/rbac/src/rbac';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
 import { posRoutes } from '../../pos/src/index';
 import { inventoryRoutes } from '../../inventory/src/index';
-import { identityRoutes } from '../../identity/src/index';
+import { identityRoutes, tokenAuthenticator } from '../../identity/src/index';
 import { platformRoutes } from '../../platform/src/index';
 import { purchaseRoutes } from '../../purchase/src/index';
 import { financeRoutes } from '../../finance/src/index';
@@ -172,9 +172,19 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
 
   const server = startHttpServer({
     router: built.router!,
-    // Identity (API-01) supplies the real one; until then nothing authenticates, which is
-    // default-deny rather than a bypass.
-    authenticate: (): Principal | undefined => undefined,
+
+    // Tokens are verified against the identity provider's key, and the reason a token was not
+    // believed goes to the operator's log — never back to the caller, who is told "unauthenticated"
+    // and no more. "The signature did not verify" and "that token expired" are different sentences,
+    // and the difference is free information for whoever is trying tokens.
+    authenticate: tokenAuthenticator(
+      {
+        secret: settings['IDP_SIGNING_KEY']!,
+        issuer: settings['IDP_ISSUER']!,
+        audience: settings['IDP_AUDIENCE']!,
+      },
+      (reason) => { process.stderr.write(`auth refused: ${reason}\n`); },
+    ),
     access: new AccessControl([], []),
     idempotency: new MemoryIdempotencyStore(),
     newTraceId: () => `t-${Math.random().toString(36).slice(2, 10)}`,

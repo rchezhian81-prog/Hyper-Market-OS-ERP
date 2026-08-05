@@ -39,6 +39,9 @@ const fakeDatabaseUrl = ['postgres', '://', 'u', ':', 'p', '@', 'localhost:5432/
 const goodEnv = {
   DATABASE_URL: fakeDatabaseUrl,
   PACK_SIGNING_KEY: KEY,
+  IDP_SIGNING_KEY: KEY,
+  IDP_ISSUER: 'https://idp.example.test/',
+  IDP_AUDIENCE: 'sre-retail-os-api',
   PORT: '0',
   NODE_ENV: 'test',
   MIGRATION_TARGET_KIND: 'rehearsal',
@@ -49,7 +52,12 @@ describe('the service refuses to start on a bad configuration', () => {
     // One problem per restart produces five deploys, and by the third the person is guessing.
     const r = loadConfig(CLOUD_API_CONFIG, {});
     expect(r.ok).toBe(false);
-    expect(r.problems.map((p) => p.key).sort()).toEqual(['DATABASE_URL', 'PACK_SIGNING_KEY']);
+    expect(r.problems.map((p) => p.key).sort()).toEqual([
+      'DATABASE_URL', 'IDP_AUDIENCE', 'IDP_ISSUER', 'IDP_SIGNING_KEY', 'PACK_SIGNING_KEY',
+    ]);
+    // The identity provider's three are REQUIRED, not optional. Absent, `authenticate` would have
+    // to fall back to something, and every fallback there is a way in. A deployment with no
+    // identity provider does not start, which is louder than one that starts and lets everybody in.
     expect(r.value).toBeUndefined();
   });
 
@@ -64,7 +72,10 @@ describe('the service refuses to start on a bad configuration', () => {
 
   it('refuses every placeholder that actually appears in the example file', () => {
     // Read from disk: if somebody adds a new placeholder to .env.example and not to the refusal
-    // list, this is what notices.
+    // list, this is what notices — and it has. Adding the identity-provider settings introduced
+    // `REPLACE_WITH_YOUR_IDENTITY_PROVIDER_URL`, which was not the exact string the list held, so
+    // it sailed through: a deployment would have believed tokens from an issuer literally called
+    // that. The refusal now matches the `REPLACE_WITH` prefix rather than a fixed set of values.
     const example = readFileSync(join(ROOT, 'infra', 'compose', '.env.example'), 'utf8');
     const values = [...example.matchAll(/^[A-Z_]+=(.+)$/gm)].map((m) => m[1]!.trim()).filter((v) => v !== '');
     for (const value of values) {
@@ -73,6 +84,19 @@ describe('the service refuses to start on a bad configuration', () => {
         expect(r.ok, `${value} is in .env.example and would be accepted as a real secret`).toBe(false);
       }
     }
+  });
+
+  it('tripwire — the prefix rule catches an invented placeholder, and lets a real value through', () => {
+    // The guard has to fire on a placeholder nobody thought to list, and NOT on a generated
+    // secret. A refusal that matched too widely would be found in production, by a service that
+    // will not start on a perfectly good key.
+    const spec = [{ key: 'PACK_SIGNING_KEY', secret: true }];
+    for (const invented of ['REPLACE_WITH_ANYTHING_AT_ALL', 'replace_with_the_real_one', '  REPLACE_WITH_X  ']) {
+      const r = loadConfig(spec, { PACK_SIGNING_KEY: invented });
+      expect(r.ok, invented).toBe(false);
+      expect(r.problems[0]?.problem).toBe('still_the_placeholder');
+    }
+    expect(loadConfig(spec, { PACK_SIGNING_KEY: KEY }).ok).toBe(true);
   });
 
   it('REFUSES a secret too short to be one, without echoing it', () => {

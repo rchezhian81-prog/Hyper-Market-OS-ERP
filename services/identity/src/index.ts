@@ -15,6 +15,9 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { Permission, Role, RoleAssignment } from '../../../packages/rbac/src/rbac';
 
+// Resolving a token into scope. It verifies and never issues — see the file for why.
+export * from './token';
+
 export interface GrantRequest {
   readonly grantId: string;
   readonly userId: string;

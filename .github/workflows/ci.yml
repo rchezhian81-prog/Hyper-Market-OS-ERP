@@ -150,6 +150,10 @@ jobs:
             || (echo "::error::the refusal did not name the missing setting" && exit 1)
           echo "$OUT" | grep -q "PACK_SIGNING_KEY is not set" \
             || (echo "::error::the refusal named one problem, not all of them" && exit 1)
+          # No identity provider configured means nobody can log in — which is the correct
+          # failure. A deployment that starts without one starts letting everybody in.
+          echo "$OUT" | grep -q "IDP_SIGNING_KEY is not set" \
+            || (echo "::error::the API started without an identity provider" && exit 1)
 
       - name: It REFUSES the placeholder from .env.example
         run: |
@@ -172,6 +176,8 @@ jobs:
           {
             echo "POSTGRES_PASSWORD=$(openssl rand -base64 24)"
             echo "PACK_SIGNING_KEY=$(openssl rand -base64 48)"
+            echo "IDP_SIGNING_KEY=$(openssl rand -base64 48)"
+            echo "IDP_ISSUER=https://idp.ci.invalid/"
           } >> .env
           PW=$(grep '^POSTGRES_PASSWORD=' .env | tail -1 | cut -d= -f2-)
           # Assembled with printf so the literal scheme://user:password@host shape never appears

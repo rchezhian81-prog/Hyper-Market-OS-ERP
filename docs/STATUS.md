@@ -2591,6 +2591,55 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## Nobody could log in — now the door exists (5 August 2026)
+
+**What changed.** The API's `authenticate` returned nothing for every caller. That was
+*default-deny* rather than a bypass — nothing was exposed — but it also meant the system could not
+be used by anybody. `services/identity/src/token.ts` is the piece that turns a bearer token into
+*who is asking, and on whose behalf*.
+
+**It verifies. It never issues, and it never stores a credential.** No password, passkey or MFA
+secret is held anywhere in this codebase; that belongs to whichever identity provider the
+deployment uses, and M02-FR-01 is a deliberate partial for exactly that reason (hard rule #4). A
+test scans the module's exports to prove there is no way to *make* a token — a module that can
+issue tokens is a module whose key is a token factory.
+
+Every check it performs is shaped around a real, repeatedly-shipped bug, and all of them come down
+to the same mistake — **believing something the token said about itself**:
+
+- `alg: none`, and the RS256→HS256 confusion attack. Both are "the header chose the algorithm".
+  Here the algorithm comes from our configuration and the header is *checked against* it.
+- Reading claims before checking the signature. Until the signature verifies, every byte of the
+  payload is text an attacker wrote.
+- A token with no expiry. It works forever, including after the person who held it has left.
+- A perfectly valid token from a *different* system, or for a different service of ours.
+- A tenant swapped in the claims. `tenantId` comes from the signed payload and nowhere else —
+  there is no header, query parameter or option by which a caller can supply one.
+
+The caller is told "unauthenticated" and **never the reason**: "the signature did not verify" and
+"that token expired" are different sentences, and the difference is free information for whoever is
+trying tokens. The reason goes to the operator's log, which never contains any part of the token.
+
+**Three new settings are required, not optional** — `IDP_SIGNING_KEY`, `IDP_ISSUER`,
+`IDP_AUDIENCE`. Absent, `authenticate` would have to fall back to *something*, and every fallback
+there is a way in. A deployment with no identity provider **does not start**, which is louder than
+one that starts and lets everybody in. CI proves that refusal by name.
+
+**Found by a guardrail, again.** The test that reads `.env.example` off disk and proves every
+placeholder in it would be refused caught the new `REPLACE_WITH_YOUR_IDENTITY_PROVIDER_URL` — the
+refusal list held exact strings, so it sailed straight through, and a deployment would have believed
+tokens from an issuer literally called that. It now matches the `REPLACE_WITH` prefix, with a
+tripwire proving it fires on an invented placeholder and still accepts a generated key.
+
+**Tests:** 2,972 automated plus 19 performance, all green.
+
+**What the owner should check.** Nothing in the store. The thing to know: **we still have to choose
+an identity provider before anyone can log in** — that is part of the hosting decision (OB-02) that
+is deferred, and it is not urgent, but it is on the list. The system is built so that choosing one
+is a configuration change, not a rewrite.
+
+---
+
 ## The API stopped forgetting (5 August 2026)
 
 **What changed.** Until this session the cloud API booted, answered every request correctly, and
@@ -2707,10 +2756,10 @@ insist on when somebody eventually asks for it to be switched off.
   store operations lead, finance/CA reviewer, security/architecture reviewer.
 
 ## Next session should start with
-**The five services still on stubs** — identity, platform, reporting, migration and AI — plus the
-identity wiring behind them (`authenticate` currently returns nothing, which is default-deny rather
-than a bypass, but it means nothing authenticates). After that, `apps/customer-app`, which is still
-empty, and the migration weekend runbook.
+**The five services still on stubs** — identity's own routes (roles, grants, branches), platform,
+reporting, migration and AI. Token verification is done; what those five still lack is
+persistence. After that, `apps/customer-app`, which is still empty, and the migration weekend
+runbook.
 
 Everything below remains true and unchanged.
 

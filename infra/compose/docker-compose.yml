@@ -87,6 +87,12 @@ services:
       # Signs the catalogue packs the lanes trade on. Generate with:
       #   openssl rand -base64 48
       PACK_SIGNING_KEY: ${PACK_SIGNING_KEY}
+      # Whose tokens to believe. The API verifies; it never issues and never
+      # stores a credential (hard rule #4). Missing any of these three and it
+      # does not start.
+      IDP_SIGNING_KEY: ${IDP_SIGNING_KEY}
+      IDP_ISSUER: ${IDP_ISSUER}
+      IDP_AUDIENCE: ${IDP_AUDIENCE}
       PORT: '8081'
       NODE_ENV: production
       # Never 'production' unless the migration really is running against live data.
