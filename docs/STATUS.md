@@ -2626,7 +2626,14 @@ than something the software does.
 contained a line break — a lost sale, produced by the code whose entire job is not losing sales.
 Caught by a test written the same hour.
 
-**Tests:** 3,060 automated plus 31 performance, all green.
+**And one more of the same kind, in the cloud rather than the shop.** The system has a safety
+catch that refuses a *different* sale sent under a reference already used — what stops a ₹400 sale
+being answered with the record of a ₹250 one. It was being remembered in the program's memory
+only, which means it was forgotten on every restart and never shared between two copies of the
+service. Not a crash — just the safety catch quietly not being there. It is now kept in the
+database.
+
+**Tests:** 3,066 automated plus 31 performance, all green.
 
 **What the owner should check.** This is now testable in the store, and it is the test I would run
 first: **switch off the internet at the router, sell ten things, switch it back on.** Every sale

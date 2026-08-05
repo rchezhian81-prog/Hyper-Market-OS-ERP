@@ -22,7 +22,7 @@ import { Client } from 'pg';
 import { SqlEventStore } from '../../../packages/persistence/src/event-store';
 import { pgClient } from '../../../packages/persistence/src/pg-client';
 import {
-  buildRouter, loadConfig, startHttpServer, CLOUD_API_CONFIG, MemoryIdempotencyStore,
+  buildRouter, loadConfig, startHttpServer, CLOUD_API_CONFIG, SqlIdempotencyStore,
   type Route,
 } from '../../kernel/src/index';
 import { AccessControl } from '../../../packages/rbac/src/rbac';
@@ -214,7 +214,10 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
       (reason) => { process.stderr.write(`auth refused: ${reason}\n`); },
     ),
     access: new AccessControl([], []),
-    idempotency: new MemoryIdempotencyStore(),
+    // Durable and shared. In memory it emptied on every restart and was never shared between
+    // instances, so the guard that refuses a different request under a used key was quietly not
+    // there — which is not a crash, and would never have shown up in a test.
+    idempotency: new SqlIdempotencyStore(pgClient(db)),
     newTraceId: () => `t-${Math.random().toString(36).slice(2, 10)}`,
     port: Number(settings['PORT']),
     dependenciesReachable: reachable,

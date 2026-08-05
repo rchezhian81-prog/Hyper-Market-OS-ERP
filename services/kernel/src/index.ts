@@ -34,3 +34,4 @@ export {
   startHttpServer,
   type ServerOptions, type RunningServer,
 } from './http-server';
+export * from './idempotency-store';
