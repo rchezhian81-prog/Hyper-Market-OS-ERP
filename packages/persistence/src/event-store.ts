@@ -22,6 +22,22 @@ export interface PersistedEvent<TType extends string = string, TPayload = unknow
   readonly event: DomainEvent<TType, TPayload>;
 }
 
+export interface ReadOptions {
+  /** Only events after this append sequence — the tail behind a snapshot. */
+  readonly sinceSeq?: number;
+  readonly type?: string;
+  /**
+   * Only events that happened in `[from, to)`, by `occurredAt`.
+   *
+   * Served by `event_ledger_type_idx` on `(tenant_id, type, occurred_at)`. This is what makes
+   * "today's takings" a read of today rather than a read of every sale the shop has ever made
+   * followed by a filter — and the owner looks at that number daily, so it is the one query in the
+   * system guaranteed to be run against the largest table every morning forever.
+   */
+  readonly from?: string;
+  readonly to?: string;
+}
+
 export interface AppendResult {
   readonly record: PersistedEvent;
   readonly deduped: boolean;
@@ -42,10 +58,7 @@ export interface EventStore {
    * a timing test, because filtering a million rows is quick compared with folding them — which is
    * why the test that guards this counts rows rather than milliseconds.
    */
-  readStream(
-    tenantId: string, stream: string,
-    opts?: { readonly sinceSeq?: number; readonly type?: string },
-  ): Promise<readonly PersistedEvent[]>;
+  readStream(tenantId: string, stream: string, opts?: ReadOptions): Promise<readonly PersistedEvent[]>;
   /**
    * The most recent event of one type in a stream, **without reading the ones before it**.
    *
@@ -101,10 +114,7 @@ export class InMemoryEventStore implements EventStore {
     return Promise.resolve(this.byKey.get(tenantKey(tenantId, idempotencyKey)));
   }
 
-  readStream(
-    tenantId: string, stream: string,
-    opts?: { readonly sinceSeq?: number; readonly type?: string },
-  ): Promise<readonly PersistedEvent[]> {
+  readStream(tenantId: string, stream: string, opts?: ReadOptions): Promise<readonly PersistedEvent[]> {
     const inStream = this.byStream.get(tenantKey(tenantId, stream)) ?? [];
     // Binary search rather than a filter: the array is seq-ordered by construction, so the tail
     // can be found without touching the head. Scanning past a million events to reach the last
@@ -112,8 +122,13 @@ export class InMemoryEventStore implements EventStore {
     // reference implementation quietly did not honour its own contract.
     const from = opts?.sinceSeq === undefined ? 0 : lowerBound(inStream, opts.sinceSeq);
     const tail = from === 0 ? inStream : inStream.slice(from);
+    const matches = (r: PersistedEvent): boolean =>
+      (opts?.type === undefined || r.event.type === opts.type)
+      && (opts?.from === undefined || r.event.occurredAt >= opts.from)
+      && (opts?.to === undefined || r.event.occurredAt < opts.to);
     return Promise.resolve(
-      opts?.type === undefined ? tail : tail.filter((r) => r.event.type === opts.type),
+      opts === undefined || (opts.type === undefined && opts.from === undefined && opts.to === undefined)
+        ? tail : tail.filter(matches),
     );
   }
 
@@ -211,18 +226,20 @@ export class SqlEventStore implements EventStore {
   }
 
   async readStream(
-    tenantId: string, stream: string,
-    opts?: { readonly sinceSeq?: number; readonly type?: string },
+    tenantId: string, stream: string, opts?: ReadOptions,
   ): Promise<readonly PersistedEvent[]> {
     // `event_ledger_stream_idx` is (tenant_id, stream, seq), so `seq > $3` is a range scan from a
-    // position rather than a read of the stream with a filter over it.
+    // position rather than a read of the stream with a filter over it; `event_ledger_type_idx` on
+    // (tenant_id, type, occurred_at) serves the time window.
     const rows = await this.client.query(
       `SELECT ${COLUMNS} FROM event_ledger
        WHERE tenant_id = $1 AND stream = $2
          AND ($3::bigint IS NULL OR seq > $3::bigint)
          AND ($4::text IS NULL OR type = $4::text)
+         AND ($5::timestamptz IS NULL OR occurred_at >= $5::timestamptz)
+         AND ($6::timestamptz IS NULL OR occurred_at < $6::timestamptz)
        ORDER BY seq ASC`,
-      [tenantId, stream, opts?.sinceSeq ?? null, opts?.type ?? null],
+      [tenantId, stream, opts?.sinceSeq ?? null, opts?.type ?? null, opts?.from ?? null, opts?.to ?? null],
     );
     return rows.map(rowToPersisted);
   }

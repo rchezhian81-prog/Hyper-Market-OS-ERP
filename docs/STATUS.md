@@ -2644,7 +2644,13 @@ milliseconds. A timing test would have signed that off.
 like a hundred times the work — so they mean the same thing on a laptop, in the cloud, and on the
 shop's back-office PC.
 
-**Tests:** 3,010 automated plus 27 performance, all green.
+**Two more of the same shape, both found by looking rather than waiting.** *Today's takings* — the
+number you look at every morning — was reading every sale the shop had ever banked and then picking
+out today's. It now reads today. And a customer's marketing consent, asked at the counter with
+somebody waiting, was reading every customer's consent record to find one; each customer now has
+their own record to look in.
+
+**Tests:** 3,010 automated plus 29 performance, all green.
 
 **What the owner should check.** Nothing now. But this is the thing to insist on when the pilot
 starts: **if the tills get slower after a few months, that is a bug and not "more data"**, and we

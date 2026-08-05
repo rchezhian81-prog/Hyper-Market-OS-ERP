@@ -53,6 +53,14 @@ export const STREAM = {
   purchase: 'purchase',
   finance: 'finance',
   periods: 'periods',
+  /**
+   * Consent is **per customer**, not per tenant — `consentStream(customerId)`.
+   *
+   * It was one stream for the whole shop, so answering "may we text this customer?" read every
+   * consent record the tenant held. At twenty thousand loyalty customers that is a hundred thousand
+   * rows to answer a question somebody is waiting on at the counter. Stream-per-aggregate is the
+   * shape the store's `(tenant_id, stream, seq)` index was built for.
+   */
   consent: 'consent',
   reservations: 'reservations',
   delivery: 'delivery',
@@ -415,6 +423,13 @@ interface MatchLineOf {
   readonly invoicedUnitMinor: number;
 }
 
+/** `YYYY-MM-DD` plus n days, in UTC — the window the ledger's timestamps are stored in. */
+export function addDays(day: string, n: number): string {
+  const at = new Date(`${day}T00:00:00.000Z`);
+  at.setUTCDate(at.getUTCDate() + n);
+  return at.toISOString().slice(0, 10);
+}
+
 /** `YYYY-MM` plus n months, without a Date round-trip that a timezone can move. */
 export function addMonths(period: string, n: number): string {
   const [y, m] = period.split('-').map(Number) as [number, number];
@@ -505,6 +520,9 @@ export function financeAdapter(input: {
   };
 }
 
+/** One stream per customer. See the note on `STREAM.consent`. */
+const consentStream = (customerId: string): string => `${STREAM.consent}-${customerId}`;
+
 export function customerAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -512,12 +530,11 @@ export function customerAdapter(input: {
   return {
     now: input.now,
 
-    consentRecords: async (tenantId, customerId) =>
-      (await allOf<ConsentRecord>(input.store, tenantId, STREAM.consent, 'ConsentRecorded'))
-        .filter((r) => r.customerId === customerId),
+    consentRecords: (tenantId, customerId) =>
+      allOf<ConsentRecord>(input.store, tenantId, consentStream(customerId), 'ConsentRecorded'),
 
     appendConsent: async (tenantId, r) => {
-      await input.store.append(tenantId, STREAM.consent, makeEvent({
+      await input.store.append(tenantId, consentStream(r.customerId), makeEvent({
         id: `consent-${r.customerId}-${r.recordedAt}`,
         type: 'ConsentRecorded',
         occurredAt: r.recordedAt,
@@ -720,9 +737,21 @@ export function reportingAdapter(input: {
      * with eleven zeroes and a real one is not.
      */
     figures: async (tenantId) => {
-      const sales = await allOf<IncomingSale>(input.store, tenantId, STREAM.sales, 'SaleCommitted');
       const today = input.now().slice(0, 10);
-      const todays = sales.filter((s) => s.tradingDay === today);
+      // A read of today, not a read of every sale the shop has ever made followed by a filter.
+      // The owner looks at this number every morning, which makes it the one query in the system
+      // guaranteed to be run against the largest table daily, forever.
+      //
+      // The window is on `occurredAt` and the check is on `tradingDay`, and both are needed: the
+      // window is what makes the read cheap, and the trading day is what makes it *right*, because
+      // a shop trading past midnight books those sales to the day that is still open (M09).
+      const events = await input.store.readStream(tenantId, STREAM.sales, {
+        type: 'SaleCommitted',
+        from: `${today}T00:00:00.000Z`,
+        to: `${addDays(today, 1)}T00:00:00.000Z`,
+      });
+      const todays = events.map((e) => payloadOf<IncomingSale>(e))
+        .filter((s) => s.tradingDay === today);
       return [
         figure({
           name: 'Sales today',

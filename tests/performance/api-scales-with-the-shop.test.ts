@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { InMemoryEventStore } from '../../packages/persistence/src/event-store';
 import type { EventStore, PersistedEvent } from '../../packages/persistence/src/event-store';
 import { makeEvent } from '../../packages/contracts/src/event';
-import { posAdapter, inventoryAdapter, STREAM } from '../../services/api/src/adapters';
+import {
+  posAdapter, inventoryAdapter, reportingAdapter, customerAdapter, STREAM,
+} from '../../services/api/src/adapters';
 
 /**
  * **The cost of banking a sale must not grow with how long the shop has been open.**
@@ -183,6 +185,63 @@ describe('the API does not get slower as the shop trades', () => {
     store.rowsRead = 0;
     await store.readStream(TENANT, STREAM.inventory);
     expect(store.rowsRead).toBe(5_000);
+  });
+
+  it('reads TODAY to report today\'s takings, not every sale the shop has ever made', async () => {
+    // The owner looks at this number every morning, which makes it the one query in the system
+    // guaranteed to run against the largest table daily, forever. It was reading every sale ever
+    // banked and then filtering to today.
+    const inner = new InMemoryEventStore();
+    const yesterday = '2026-08-04';
+    for (let i = 0; i < 5_000; i += 1) {
+      await inner.append(TENANT, STREAM.sales, makeEvent({
+        id: `old-${i}`, type: 'SaleCommitted', occurredAt: `${yesterday}T10:00:00.000Z`,
+        idempotencyKey: `sale-${TENANT}-OLD-${i}`, source: 'test',
+        payload: {
+          saleId: `OLD-${i}`, receiptNumber: `OR-${i}`, laneId: 'lane-1', cashierId: 'u-1',
+          tradingDay: yesterday, committedAt: `${yesterday}T10:00:00.000Z`, totalMinor: 10_000,
+          currency: 'INR', packVersion: 1, lines: [], tenders: [],
+        },
+      }));
+    }
+    await inner.append(TENANT, STREAM.sales, makeEvent({
+      id: 'today-1', type: 'SaleCommitted', occurredAt: NOW,
+      idempotencyKey: `sale-${TENANT}-TODAY-1`, source: 'test',
+      payload: {
+        saleId: 'TODAY-1', receiptNumber: 'TR-1', laneId: 'lane-1', cashierId: 'u-1',
+        tradingDay: '2026-08-05', committedAt: NOW, totalMinor: 64_000,
+        currency: 'INR', packVersion: 1, lines: [], tenders: [],
+      },
+    }));
+
+    const store = new CountingStore(inner);
+    store.rowsRead = 0;
+    const figures = await reportingAdapter({ store, now: () => NOW }).figures(TENANT, 'dashboard');
+
+    // Right answer...
+    expect(figures.find((f) => f.name === 'Sales today')?.valueMinor).toBe(64_000);
+    // ...reached without reading yesterday.
+    expect(store.rowsRead).toBeLessThan(10);
+  });
+
+  it('answers one customer\'s consent without reading every customer\'s', async () => {
+    // Somebody is waiting at the counter. This read every consent record the tenant held — at
+    // twenty thousand loyalty customers, a hundred thousand rows for a yes or no.
+    const inner = new InMemoryEventStore();
+    const adapter = customerAdapter({ store: inner, now: () => NOW });
+    for (let i = 0; i < 2_000; i += 1) {
+      await adapter.appendConsent(TENANT, {
+        customerId: `C-${i}`, purpose: 'marketing', channel: 'sms',
+        given: true, recordedAt: NOW, evidence: 'signed at the counter',
+      });
+    }
+
+    const store = new CountingStore(inner);
+    store.rowsRead = 0;
+    const records = await customerAdapter({ store, now: () => NOW }).consentRecords(TENANT, 'C-7');
+
+    expect(records).toHaveLength(1);
+    expect(store.rowsRead).toBeLessThan(5);
   });
 
   it('keeps the whole sale-intake read path constant, not just one call in it', async () => {
