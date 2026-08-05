@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 5 August 2026 (session: the API stopped forgetting)
+Last updated: 5 August 2026 (session: the API stopped forgetting — and stopped getting slower)
 
 ---
 
@@ -2952,10 +2952,15 @@ insist on when somebody eventually asks for it to be switched off.
 
 ## Next session should start with
 **The owner's decisions.** The code is complete as far as it can go without them: all thirteen
-services persist, token verification is done, no folder in the repository layout is empty, and the
-cutover weekend is planned hour by hour. What is left needs the owner or the store — an identity
-provider and hosting (OB-02), a live AI provider, a penetration test (EX-13), store hardware
-(EX-09), the outside evidence for the real migration, and the D4 handover to Mr Sivakumar.
+services persist, token verification is done, no folder in the repository layout is empty, the
+cutover weekend is planned hour by hour, and no read the software makes grows with how long the
+shop has been open. What is left needs the owner or the store — an identity provider and hosting
+(OB-02), a live AI provider, a penetration test (EX-13), store hardware (EX-09), the outside
+evidence for the real migration, and the D4 handover to Mr Sivakumar.
+
+**Nothing is half-done and nothing is blocked on me.** This is a clean stopping point: the branch
+`claude/new-session-lw91i4` is pushed, every check passes, and the traceability document has a row
+for every piece of it.
 
 Everything below remains true and unchanged.
 
