@@ -86,3 +86,9 @@ export {
   type CompletenessSignal, type CompletenessVerdict, type SignalResult,
   type CompletenessCheck, type KeyingDifference, type DoubleKeyResult,
 } from './completeness';
+
+export {
+  planCountSample, assessCountVerification,
+  type StockLine, type Stratum, type CountLine, type CountPlan, type PlanResult,
+  type CountedLine, type LineVariance, type CountVerification,
+} from './count-verification';

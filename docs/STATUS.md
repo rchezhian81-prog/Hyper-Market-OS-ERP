@@ -1661,6 +1661,41 @@ honest rather than being marked complete.
 
 ---
 
+## Proving the stock against the shelves (7 August 2026)
+
+`packages/migration/src/count-verification.ts`. The runbook says *"authorise a physical count"* —
+this is the part that makes it affordable and makes it mean something.
+
+`packages/counts` already does blind counting for the **running** system, projecting the expected
+on-hand from the ledger. At migration there is no ledger. The expected figure comes from a report
+we extracted ourselves, and the question is not *"adjust the stock"* but **"does this figure
+deserve to become opening truth?"** Only the shelves can answer that.
+
+**A full count of 14,000 sq ft is one closed evening and most of the staff.** Affordable once,
+which is why the temptation is to sample — and sampling is where this goes wrong three ways:
+
+- **The sample is value-stratified, not random.** In a hypermarket a few lines hold most of the
+  money. The high-value lines are a **census**; the tail is sampled. A random sample of the same
+  size that happened to miss the ghee has verified almost nothing while looking thorough.
+- **The person who ran the extraction cannot choose the lines** (§28). Not dishonesty — *the
+  lines somebody is confident about are the lines they pick, and that is what confidence does.*
+- **The extrapolation is labelled an estimate**, and returns `undefined` rather than a fabricated
+  figure when the sample is too thin to support one. A rate from three lines is arithmetic, not
+  evidence — the same discipline as `not_meaningful` elsewhere in this codebase. It is never
+  added to the measured figure to produce one confident-looking total, because that is the
+  presentation that gets signed.
+
+The expected quantity never reaches the count sheet (`expectedQtyShownToCounter` typed as the
+literal `false`): a counter shown *"expected: 40"* writes 40, and the exercise then measures their
+willingness to disagree rather than the stock. The draw is **seeded**, so an auditor can ask why
+this line and get an answer.
+
+Differences are named worst-by-value first and settled one at a time against the shelf, never
+averaged away. A count that covers too little of the value cannot support a signature, and says
+so.
+
+Full suite **2,519**.
+
 ## The export that reconciles perfectly and is a tenth of the shop (7 August 2026)
 
 `packages/migration/src/completeness.ts`. The runbook names this danger for Route B; nothing

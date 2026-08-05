@@ -160,8 +160,20 @@ Three things, and none of them involves the vendor:
 
 1. **Get the outside evidence.** Bank statements for the period, the filed GST returns, and
    statements from your main suppliers. These are yours to ask for and nobody will refuse them.
-2. **Authorise a physical count.** One full count, or a large sample, near cutover. It is the
-   only thing that proves the stock figure, and it needs staff and a closed evening.
+2. **Authorise a physical count.** It is the only thing that proves the stock figure, and it
+   needs staff and a closed evening.
+
+   **It does not have to be a full count.** The software plans a **value-stratified** one: the
+   high-value lines — the ghee, the oil, the big rice bags — are counted in **full**, and a thin
+   sample is taken from the long tail. Counting the top lines covers ~80% of your money in a
+   fraction of the hours, and a random sample of the same size that happened to miss the ghee
+   would have verified almost nothing while looking thorough.
+
+   Three things the software insists on: the counter **never sees the expected number** (shown
+   "expected: 40", people write 40); the person who ran the extraction **cannot choose which
+   lines get checked** (not dishonesty — you pick the lines you are confident about); and what
+   the sample suggests about the uncounted tail is reported as an **estimate**, never added to
+   the counted figure to make one confident-looking total.
 3. **Find whoever installed the current system.** Not the vendor's support desk — the person or
    local firm who set it up. They usually know where the database sits and what the password is,
    and they have no reason not to say.
