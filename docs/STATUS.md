@@ -2591,6 +2591,52 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## The shop can now actually reach the cloud (5 August 2026)
+
+**This was the biggest hole in the product and I had not spotted it.** The till commits a sale to
+the local disk before the receipt prints, queues it, and tells the cashier honestly how many are
+waiting to be sent. All of that worked and was tested. What did not exist was **the piece that
+sends them.** Every part had been tested on its own; nothing had ever tested the join.
+
+That is built now, and there is an end-to-end test that runs the whole spine against the real
+system: the shop sells five items with the internet down, the sales sit safely in the queue,
+nothing gets lost and nothing gets given up on, the line comes back, and **all five arrive in the
+cloud exactly once.**
+
+**Almost all the care went into one distinction.** When a send fails, the software has to decide
+whether to *try again later* or *give up and flag it for a person*. Those two look nearly identical
+in code and could not be more different in the shop: a sale wrongly given up on stops being retried,
+and the money in the drawer has no record in the cloud until somebody works through a list.
+
+So the rules are written down and tested one by one:
+
+| What happened | What we do | Why |
+| --- | --- | --- |
+| The line timed out | Try again | A rural line does this several times a day. Nothing about it says the sale was bad |
+| We don't know if it arrived | Try again | The cloud ignores a duplicate. Guessing "it arrived" loses the sale silently, and that has no way back |
+| The cloud had a fault | Try again | It's having a bad minute, not judging the sale |
+| The cloud says the sale is malformed | Flag it for a person | Retrying it forever buries everything queued behind it |
+| The login expired | Try again | It renews itself. The sale should still be waiting when it does |
+| The till lacks permission | Flag it for a person | That will not fix itself |
+
+A sale that syncs late goes through **the same door** as one that syncs immediately — same price
+check against the published price list, same receipt-number check, same exception list. There is
+deliberately no back entrance.
+
+**Also fixed:** a naming flaw in yesterday's work that could have merged two drivers' delivery
+records into one — which would have settled cash against the wrong person's round. It needed a
+coincidence in the length of a driver's name to happen, which is precisely the kind of thing that
+happens eventually and is impossible to explain afterwards.
+
+**Tests:** 3,039 automated plus 31 performance, all green.
+
+**What the owner should check.** Nothing yet — but this is the single most important thing to test
+in the store, and it is on the pilot list: **unplug the internet, sell ten things, plug it back in.**
+Every one must appear in the cloud, once. Not nine, not eleven. If that test ever fails, stop the
+pilot.
+
+---
+
 ## The tills would have got slow by month three (5 August 2026)
 
 A defect I introduced with the persistence work this morning, found by writing the performance test

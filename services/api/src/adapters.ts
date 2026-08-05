@@ -109,10 +109,42 @@ async function latest<T>(
  * customer's consent, or every driver's deliveries, means answering a question about *one* of them
  * reads *all* of them. Consent was the first to be moved; these are the rest.
  */
-const forCustomer = (customerId: string): string => `${STREAM.consent}-${customerId}`;
-const forDriverRun = (driverId: string, runDate: string): string => `${STREAM.delivery}-${driverId}-${runDate}`;
-const forLocation = (locationId: string): string => `${STREAM.reservations}-${locationId}`;
-const forInvoice = (invoiceId: string): string => `${STREAM.purchase}-invoice-${invoiceId}`;
+
+/**
+ * The separator between the parts of a stream name — a unit separator, which cannot appear in an
+ * id, a name or a date.
+ *
+ * A hyphen was the obvious choice and it is wrong for a two-part name. `delivery-{driver}-{date}`
+ * is unambiguous **only** while a date is exactly ten characters: a driver id ending in something
+ * date-shaped, or a run date that ever gains a suffix, and two different runs compose to one
+ * stream. Two drivers' deliveries in one stream means `reconcileRun` settles cash against the
+ * wrong set of attempts — money, against a named person, on the strength of a coincidence in
+ * string lengths.
+ *
+ * `packages/catalogue` learned the same lesson: joining fields with nothing let two different
+ * products canonicalise identically, and its guardrail caught it. The fix there and here is a
+ * separator the data cannot contain, plus a refusal if it somehow does.
+ */
+const PART = '\u001f';
+
+function streamName(...parts: readonly string[]): string {
+  for (const part of parts) {
+    if (part.includes(PART)) {
+      // Refused rather than stripped: a stripped separator is a silently different stream, which
+      // is the failure this exists to prevent rather than a smaller version of it.
+      throw new RangeError('a stream name part may not contain the unit separator');
+    }
+  }
+  return parts.join(PART);
+}
+
+const forCustomer = (customerId: string): string => streamName(STREAM.consent, customerId);
+const forDriverRun = (driverId: string, runDate: string): string =>
+  streamName(STREAM.delivery, driverId, runDate);
+const forLocation = (locationId: string): string => streamName(STREAM.reservations, locationId);
+const forInvoice = (invoiceId: string): string => streamName(STREAM.purchase, 'invoice', invoiceId);
+
+export const STREAM_FOR = { forCustomer, forDriverRun, forLocation, forInvoice } as const;
 
 export function catalogueAdapter(input: {
   readonly store: EventStore;

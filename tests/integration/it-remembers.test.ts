@@ -11,7 +11,7 @@ import { buildSurface } from '../../services/api/src/main';
 import {
   catalogueAdapter, posAdapter, financeAdapter, customerAdapter, ordersAdapter, inventoryAdapter,
   fulfilmentAdapter, purchaseAdapter, identityAdapter, platformAdapter, reportingAdapter,
-  migrationAdapter, aiAdapter, addMonths, STREAM,
+  migrationAdapter, aiAdapter, addMonths, STREAM, STREAM_FOR,
 } from '../../services/api/src/adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from '../../services/api/src/roles';
 import { hmacSigner, publishPack } from '../../services/catalogue/src/index';
@@ -358,7 +358,9 @@ describe.skipIf(!DATABASE_URL)('the API remembers (real PostgreSQL)', () => {
     expect(live.map((r) => r.reservationId)).toEqual([`${RUN}-RES1`]);
     // ...and it is gone from the answer without being gone from the record. Reservations live in
     // a stream per location, so a busy dark store's holds are not read to answer about this one.
-    expect((await store.readStream(TENANT, `${STREAM.reservations}-L1`)).length).toBe(2);
+    // Composed through the helper, not by hand: the separator is a unit separator rather than a
+    // hyphen, and a name typed out here would have gone quietly stale the moment that changed.
+    expect((await store.readStream(TENANT, STREAM_FOR.forLocation('L1'))).length).toBe(2);
   });
 
   it('will not close a month that nothing checked', async () => {

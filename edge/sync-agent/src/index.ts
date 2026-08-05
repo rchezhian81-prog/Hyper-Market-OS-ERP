@@ -5,3 +5,4 @@
 
 export * from './transport';
 export * from './agent';
+export * from './http-transport';
