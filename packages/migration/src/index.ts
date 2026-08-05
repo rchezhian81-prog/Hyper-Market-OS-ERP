@@ -61,3 +61,11 @@ export {
   type LegacySupplier, type LegacyDocument, type LegacyDocumentLine, type LegacyDataset,
   type GeneratorOptions,
 } from './synthetic';
+
+export {
+  assessRoute, planVerification, assessExtractionReadiness,
+  METHOD_FIDELITY, VERIFIES, EXTERNAL_SOURCE_NOTE,
+  type ExtractionMethod, type DataDomain, type ExtractionRoute, type RouteRisk,
+  type RouteAssessment, type ExternalSource, type VerificationPlan, type PlanRefusal,
+  type VerificationResult, type ReadinessBlocker, type ExtractionReadiness,
+} from './extraction';

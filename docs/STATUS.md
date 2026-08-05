@@ -32,9 +32,10 @@ against a provider-neutral simulator by owner decision of 4 August 2026. And **S
 (migration) has now been rehearsed end to end against a synthetic legacy dataset** — MG-01…MG-12,
 ten kinds of realistic damage planted and every one found by identity, with zero findings on
 clean data — so **every code stage in the roadmap is finished, Stage 11 included.** What remains
-is EX-02 (the ERP-vendor letter, which now gates only the **real-data** migration, not the
-engine), the hosting decision (OB-02, owner-deferred), the pre-pilot integration gate where a
-live AI provider is chosen, and the in-store activities that need the store itself.
+is the hosting decision (OB-02, owner-deferred), the pre-pilot integration gate where a live AI
+provider is chosen, and the in-store activities that need the store itself. **EX-02 is closed**
+— the owner decided on 7 August 2026 that we extract our own data ourselves rather than wait for
+a vendor with no reason to help us leave (OB-06).
 
 ---
 
@@ -1659,6 +1660,53 @@ honest rather than being marked complete.
 `pnpm check` green: **1,867 tests**, plus **116 integration tests** against real PostgreSQL.
 
 ---
+
+## OB-06 — we migrate ourselves (7 August 2026)
+
+**Owner decision, and it corrected a mistake in my planning.** I had been carrying the letter to
+the incumbent ERP vendor as an open owner action, listed at the end of every update. The owner's
+answer: *"who will give this? no one will be ready to, because they don't want to lose a
+customer. Please stop asking — we have to migrate ourselves."*
+
+That is the correct reading, and I should have reached it myself. A vendor asked to export a
+customer's data in an open format is being asked to help that customer leave. The request gets
+answered slowly, partially, in a format nobody can use, or not at all — and none of those is a
+refusal you can escalate. **A plan whose first step is "wait for them" has handed its schedule to
+somebody whose interests run the other way.**
+
+**EX-02 is closed.** The drafted letter stays on file; if the vendor ever answers, that is a
+bonus and not a dependency.
+
+**What replaces it.** `docs/runbooks/legacy-self-extraction.md` and
+`packages/migration/src/extraction.ts`. Four routes ranked by what they *structurally* lose —
+read the database directly (complete, including history), the system's own export-to-Excel
+(row-level but silently truncated by whatever the screen was filtering), a printed report
+(already grouped and rounded; parsing recovers what it printed, never what it did not), and
+re-keying, which the software **refuses as a migration source** because a route nobody can re-run
+cannot be rehearsed, delta'd or redone.
+
+The boundary is stated plainly: our own data, our own machine, the access we already have. Their
+software is not touched — no source code, no decompiling, nothing defeated. There is one question
+worth asking the CA or a solicitor once, at leisure, about what the licence says; it blocks
+nothing.
+
+**The consequence that actually shapes the design is verification, not access.** With a vendor
+file you have their word for what it means. Without one, everything comes from the same system —
+and MG-06 already refuses a control total whose two sides were computed the same way. Reading the
+stock value off the stock report and checking it against the valuation report *from the same
+product* reconciles perfectly and proves only internal consistency. It would be just as
+consistent about a wrong number.
+
+So the evidence comes from **outside the incumbent entirely**, and `planVerification` refuses by
+name any domain checked only against the system it came from: the bank statement, the GST returns
+already filed, the supplier's own statement of account, and a physical count of our own shelves.
+Each is a record somebody else keeps for their own reasons.
+
+**This is stronger evidence than a vendor export, not a poorer substitute.** A vendor file is one
+system's account of itself. A bank statement is an adversary's.
+
+What the owner obtains instead — bank statements, filed returns, supplier statements, and an
+authorised physical count — involves the vendor in none of it.
 
 ## Migration and contract tests — the last two empty folders (7 August 2026)
 
