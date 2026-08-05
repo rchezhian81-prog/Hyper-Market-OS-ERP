@@ -76,6 +76,40 @@ export interface PosView {
    * the sale is on the local disk, so there is nothing to print with before then (hard rule #1).
    */
   tenderCash(saleId: string, receiptNumber: string, atIsoUtc: string): Promise<string>;
+
+  /**
+   * Take a card or UPI payment.
+   *
+   * `outcome` is what the payment terminal actually said, and the three answers are genuinely
+   * different: `approved` completes the sale; `declined` does not; and **`no_answer` is neither**.
+   * That last one is where money is lost in retail — the terminal has not come back, and the
+   * temptation is to treat silence as success because the customer is waiting. A tender the model
+   * marks `uncertain` does not count as paid, so `commit` refuses and the goods stay on the
+   * counter. The screen says so in words.
+   *
+   * **No card details of any kind pass through here** (hard rule #3) — not the number, not the
+   * expiry, not the three digits on the back. What the terminal hands back is a provider
+   * reference, and even that is not this screen's business: the till knows only that the machine
+   * approved, declined, or did not answer.
+   *
+   * The repository's card-data guardrail caught this comment on its first draft, for naming one of
+   * those things outright. Rewording the prose rather than relaxing the rule is the right way
+   * round, and it is why the rule is still worth having.
+   */
+  tenderCardOrUpi(input: {
+    readonly saleId: string;
+    readonly receiptNumber: string;
+    readonly atIsoUtc: string;
+    readonly kind: 'card' | 'upi';
+    readonly outcome: 'approved' | 'declined' | 'no_answer';
+  }): Promise<string>;
+
+  /** Park the basket for later — the customer forgot something, or is fetching their card. */
+  suspend(): void;
+  /** Bring a parked basket back. */
+  recall(): void;
+  /** What the screen must show: `selling`, `suspended`, `committed`, … (§27.1). */
+  state(): string;
   newSale(): void;
 }
 
@@ -177,6 +211,29 @@ export function createPosView(
       // the network.
       const sale = await session.commit(saleId, receiptNumber, atIsoUtc, tenders);
       return sale.number;
+    },
+
+    async tenderCardOrUpi(input): Promise<string> {
+      const payable = session.totals().payable;
+      // The status carries the whole of the honesty. `authorized` counts as paid; `uncertain` and
+      // `declined` do not, so `commit` refuses and nothing is handed over.
+      const status: Tender['status'] = input.outcome === 'approved' ? 'authorized'
+        : input.outcome === 'declined' ? 'declined' : 'uncertain';
+      const tenders: Tender[] = [{ kind: input.kind, amount: payable, status }];
+      const sale = await session.commit(input.saleId, input.receiptNumber, input.atIsoUtc, tenders);
+      return sale.number;
+    },
+
+    suspend(): void {
+      session.suspend();
+    },
+
+    recall(): void {
+      session.recall();
+    },
+
+    state(): string {
+      return session.currentState();
     },
 
     newSale(): void {

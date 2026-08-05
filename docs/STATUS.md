@@ -2591,6 +2591,44 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## Card, UPI and holding a basket — and a real bug the tests caught (5 August 2026)
+
+A hypermarket takes mostly card and UPI, so a cash-only till is not a till. Both are now on the
+screen, along with holding a basket while a customer fetches something.
+
+**The important part is what happens when the card machine does not answer.** There are three
+outcomes, not two:
+
+| The machine says | What happens |
+| --- | --- |
+| Approved | Sale completes |
+| Declined | Sale does **not** complete. Ask for another payment method |
+| **Nothing at all** | Sale does **not** complete. **Do not hand over the goods** |
+
+That third one is where shops lose money. The terminal has not come back, the customer is waiting,
+there is a queue — and the temptation is to treat silence as "probably fine". The system will not:
+an unanswered payment does not count as paid, the sale cannot complete, and the screen says so in
+words rather than showing an error code. There is **no "force complete" button anywhere**, on
+purpose, because the moment one exists it gets used at seven on a Saturday.
+
+**And the tests caught a real bug of mine.** I had the till writing the sale to the disk *before*
+checking whether it had actually been paid for. So a card payment the machine never answered was
+written down and only then rejected — and because the till rebuilds its send-to-cloud list from
+what is written down, **those unpaid sales would have been sent to the cloud after a restart.**
+
+Nothing about the code looked wrong. Only the test found it. The order is now: **decide whether it
+is a sale, then write it down, then account for it.**
+
+**Holding a basket** parks it whole and the screen *says* it is held. A screen that just looked
+empty is how the same customer's shopping gets rung up twice.
+
+**Tests:** 3,121 automated plus 31 performance, all green.
+
+**What is left on the till screen:** returns, cash in and out of the drawer, opening and closing the
+till — and then the whole thing on a real touchscreen with a real scanner and a stopwatch.
+
+---
+
 ## The till screen is now usable, not just laid out (5 August 2026)
 
 The layout was already right — big total, line list, one Tender button, permanent sync badge. What

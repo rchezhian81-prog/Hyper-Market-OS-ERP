@@ -8,6 +8,8 @@ import {
   SessionStateError,
   LocalCommitRefusedError,
 } from '../../apps/pos/src/index';
+import { createPosView } from '../../apps/pos/src/view-adapter';
+import type { CommitOutcome } from '../../edge/store-edge/src/durability';
 import { money } from '../../packages/contracts/src/money';
 import { Ledger, InMemoryLedgerStore } from '../../packages/ledger/src/index';
 import { SyncOutbox } from '../../packages/sync/src/index';
@@ -286,5 +288,99 @@ describe('the receipt waits for the disk (hard rule #1)', () => {
     // An optional durable write is one a deployment can forget, and forgetting it is invisible:
     // the lane sells, the screen says "Sale complete", and the sales are in memory.
     expect(PosSession.length).toBe(4);
+  });
+});
+
+describe('card and UPI — silence is never success (M12-FR-03)', () => {
+  const ACCEPTS = (): Promise<CommitOutcome> => Promise.resolve({
+    committed: true, durable: true, detail: 'ok', laneMessage: 'Sale complete.',
+  });
+  const viewFor = (durable: (saleId: string, record: string) => Promise<CommitOutcome> = ACCEPTS) => {
+    const session = new PosSession(
+      { laneId: 'lane-1', cashierId: 'c-1', tradingDay: '2026-08-05', currency: 'INR', defaultTaxRate: taxRateFromPercent(18) },
+      new Ledger(new InMemoryLedgerStore()), new SyncOutbox(), durable,
+    );
+    return { session, view: createPosView(session, 'INR') };
+  };
+
+  const basket = (view: ReturnType<typeof viewFor>['view']) => {
+    view.scan({ productId: 'P1', description: 'Ghee 1L', unitPriceMinor: 64_000, qty: 1 });
+  };
+
+  const take = (view: ReturnType<typeof viewFor>['view'], outcome: 'approved' | 'declined' | 'no_answer') =>
+    view.tenderCardOrUpi({
+      saleId: 'S-1', receiptNumber: 'R-0001', atIsoUtc: '2026-08-05T10:00:00Z',
+      kind: 'card', outcome,
+    });
+
+  it('completes the sale when the machine approved it', async () => {
+    const { view } = viewFor();
+    basket(view);
+    await expect(take(view, 'approved')).resolves.toBe('R-0001');
+  });
+
+  it('does NOT complete the sale when the machine declined', async () => {
+    const { view, session } = viewFor();
+    basket(view);
+    await expect(take(view, 'declined')).rejects.toThrow();
+    expect(session.currentState()).not.toBe('committed');
+  });
+
+  it('does NOT complete the sale when the machine has not answered', async () => {
+    // The one that loses money. The terminal has not come back, the customer is waiting, and the
+    // temptation is to treat silence as success. A tender the model marks `uncertain` does not
+    // count as paid, so the sale cannot complete and the goods stay on the counter.
+    const { view, session } = viewFor();
+    basket(view);
+    await expect(take(view, 'no_answer')).rejects.toThrow();
+    expect(session.currentState()).not.toBe('committed');
+  });
+
+  it('writes NOTHING to the disk on an unanswered payment', async () => {
+    // Not merely "does not say paid" — nothing is committed at all. A record of a sale that was
+    // never paid for is a figure somebody reconciles against later.
+    const written: string[] = [];
+    const { view } = viewFor((saleId) => { written.push(saleId); return ACCEPTS(); });
+    basket(view);
+    await expect(take(view, 'no_answer')).rejects.toThrow();
+    expect(written).toEqual([]);
+  });
+
+  it('offers no way to mark an unanswered payment as paid', async () => {
+    // Absence as a control. The moment a "force complete" exists, it is used at 7pm on a Saturday.
+    const module = await import('../../apps/pos/src/index');
+    for (const name of Object.keys(module)) {
+      expect(name).not.toMatch(/forceComplete|markPaid|overrideTender|assumeApproved/i);
+    }
+  });
+});
+
+describe('a held basket is not a lost basket', () => {
+  const viewFor = () => {
+    const session = new PosSession(
+      { laneId: 'lane-1', cashierId: 'c-1', tradingDay: '2026-08-05', currency: 'INR', defaultTaxRate: taxRateFromPercent(18) },
+      new Ledger(new InMemoryLedgerStore()), new SyncOutbox(),
+      () => Promise.resolve({ committed: true as const, durable: true as const, detail: 'ok', laneMessage: 'Sale complete.' }),
+    );
+    return createPosView(session, 'INR');
+  };
+
+  it('holds and recalls, and the lines survive both', () => {
+    // The customer forgot the milk. The basket is parked and comes back whole — a screen that
+    // silently emptied would have the same items rung up twice.
+    const view = viewFor();
+    view.scan({ productId: 'P1', description: 'Ghee 1L', unitPriceMinor: 64_000, qty: 1 });
+    view.suspend();
+    expect(view.state()).toBe('suspended');
+    expect(view.basket()).toHaveLength(1);
+
+    view.recall();
+    expect(view.state()).toBe('selling');
+    expect(view.payableMinor()).toBeGreaterThan(0);
+  });
+
+  it('says which state it is in, so the screen can say so too', () => {
+    const view = viewFor();
+    expect(view.state()).toBe('idle');
   });
 });

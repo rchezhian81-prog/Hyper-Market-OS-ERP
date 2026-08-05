@@ -133,6 +133,7 @@
       <div class="actions">
         <button id="qty" type="button">Qty</button>
         <button id="void" type="button">Void</button>
+        <button id="hold" type="button">Hold</button>
         <!-- The one dominant primary action. -->
         <button id="tender" class="primary" type="button">Tender</button>
       </div>
@@ -153,6 +154,20 @@
         <div class="sheet-actions">
           <button id="sheet-cancel" type="button">Cancel</button>
           <button id="sheet-ok" class="primary" type="button">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      Choosing how the customer pays. Three targets, full width, nothing else on the
+      screen — this is the moment a cashier is most watched and least able to hunt.
+    -->
+    <div class="sheet" id="pay" hidden role="dialog" aria-modal="true" aria-labelledby="pay-title">
+      <div class="sheet-inner">
+        <h2 id="pay-title">How is the customer paying?</h2>
+        <div class="reasons" id="pay-kinds"></div>
+        <div class="sheet-actions">
+          <button id="pay-cancel" type="button">Cancel</button>
         </div>
       </div>
     </div>

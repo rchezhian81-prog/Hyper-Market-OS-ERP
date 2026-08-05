@@ -173,8 +173,10 @@ cloud queue — proved end to end with nothing stubbed. ✅ *And the screen is n
 keypad and reason panels instead of browser prompts (which kiosk browsers block outright), change
 due computed as the cashier types, a refusal banner that does not fade, Tamil throughout, and a
 scanner path that cannot type a barcode into a quantity field.
-**What remains:** tender beyond cash, returns, suspend/recall, cash movements, till open/close, and
-then the whole thing on real hardware with a real scanner and a stopwatch.
+✅ *Card, UPI and hold/recall are in too*, with the
+unanswered-terminal case refusing to complete rather than guessing.
+**What remains:** returns, cash in/out of the drawer, till open/close — and then the whole thing on
+real hardware with a real scanner and a stopwatch, which is the only test that counts.
 
 **2. Get real data into the rehearsal environment.** Follow the extraction plan. Every control is
 built and waiting; none has met a real export.

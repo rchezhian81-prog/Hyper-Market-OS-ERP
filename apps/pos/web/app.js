@@ -41,6 +41,13 @@ const WORDS = {
     notEnough: 'Not enough — the customer still owes',
     allSent: 'Everything on this lane has reached the cloud.',
     noCatalogue: 'This lane has no price list loaded, so it cannot scan. Tell the manager.',
+    hold: 'Hold', recall: 'Recall', held: 'Basket held',
+    howPaying: 'How is the customer paying?', cash: 'Cash', card: 'Card', upi: 'UPI',
+    onHold: 'A basket is on hold. Tap Recall to bring it back.',
+    tapTerminal: 'What did the card machine say?',
+    approved: 'Approved', declined: 'Declined', noAnswer: 'It has not answered',
+    declinedMsg: 'The payment was declined. The sale is NOT complete — do not hand over the goods. Ask for another payment method.',
+    noAnswerMsg: 'The card machine has not answered, so we do not know whether the customer has paid. The sale is NOT complete — do not hand over the goods. Check the machine, and if it is unclear, ask the manager before trying again.',
   },
   ta: {
     scanToBegin: 'தொடங்க ஒரு பொருளை ஸ்கேன் செய்யவும்.', qty: 'எண்ணிக்கை', void: 'நீக்கு',
@@ -51,6 +58,13 @@ const WORDS = {
     read: 'இதைப் படிக்கவும்', notEnough: 'போதவில்லை — வாடிக்கையாளர் இன்னும் தர வேண்டியது',
     allSent: 'இந்த லேனில் உள்ள அனைத்தும் அனுப்பப்பட்டுவிட்டன.',
     noCatalogue: 'இந்த லேனில் விலைப் பட்டியல் இல்லை. மேலாளரிடம் சொல்லவும்.',
+    hold: 'நிறுத்து', recall: 'திரும்பப் பெறு', held: 'கூடை நிறுத்தப்பட்டது',
+    howPaying: 'வாடிக்கையாளர் எவ்வாறு பணம் தருகிறார்?', cash: 'ரொக்கம்', card: 'கார்டு', upi: 'UPI',
+    onHold: 'ஒரு கூடை நிறுத்தி வைக்கப்பட்டுள்ளது. திரும்பப் பெற தட்டவும்.',
+    tapTerminal: 'கார்டு இயந்திரம் என்ன சொன்னது?',
+    approved: 'ஏற்கப்பட்டது', declined: 'மறுக்கப்பட்டது', noAnswer: 'பதில் இல்லை',
+    declinedMsg: 'பணம் மறுக்கப்பட்டது. விற்பனை முடியவில்லை — பொருட்களைக் கொடுக்க வேண்டாம். வேறு முறையில் பணம் கேட்கவும்.',
+    noAnswerMsg: 'கார்டு இயந்திரம் பதில் சொல்லவில்லை. வாடிக்கையாளர் பணம் செலுத்தினாரா என்று தெரியவில்லை. விற்பனை முடியவில்லை — பொருட்களைக் கொடுக்க வேண்டாம். இயந்திரத்தைச் சரிபார்க்கவும்; தெளிவில்லை என்றால் மேலாளரிடம் கேட்கவும்.',
   },
 };
 let lang = 'en';
@@ -73,6 +87,7 @@ const VOID_REASONS = [
 function demoSession() {
   const lines = [];
   let seq = 0;
+  let held = false;
   return {
     scan({ productId, description, unitPriceMinor, qty }) {
       seq += 1;
@@ -90,6 +105,10 @@ function demoSession() {
     scanBarcode() { throw new Error('No price list on this lane.'); },
     hasCatalogue: () => false,
     tenderCash: (_id, number) => Promise.resolve(number),
+    tenderCardOrUpi: ({ receiptNumber, outcome }) => (outcome === 'approved'
+      ? Promise.resolve(receiptNumber)
+      : Promise.reject(Object.assign(new Error('not paid'), { notPaid: outcome }))),
+    suspend() { held = true; }, recall() { held = false; }, state: () => (held ? 'suspended' : 'selling'),
     newSale() { lines.length = 0; seq = 0; },
   };
 }
@@ -188,6 +207,28 @@ el('sheet-ok').addEventListener('click', () => {
   closeSheet(el('reasons').hidden ? el('entry').textContent : chosen);
 });
 
+/**
+ * Ask how the customer is paying, or what the machine said.
+ *
+ * A separate panel from `ask` because this is a **choice between three big things** with nothing
+ * else on screen. It is the moment a cashier is most watched and least able to hunt for a control.
+ */
+function choose(title, options) {
+  el('pay-title').textContent = title;
+  el('pay-kinds').replaceChildren(...options.map((option) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = option.label;
+    button.addEventListener('click', () => { el('pay').hidden = true; payResolve?.(option.value); payResolve = null; });
+    return button;
+  }));
+  el('pay-cancel').textContent = t('cancel');
+  el('pay').hidden = false;
+  return new Promise((resolve) => { payResolve = resolve; });
+}
+let payResolve = null;
+el('pay-cancel').addEventListener('click', () => { el('pay').hidden = true; payResolve?.(null); payResolve = null; });
+
 // ── Rendering ───────────────────────────────────────────────────────────────
 
 function render() {
@@ -208,8 +249,12 @@ function render() {
     return row;
   }));
 
-  el('empty').hidden = lines.length > 0;
-  el('empty').textContent = t('scanToBegin');
+  const suspended = session.state && session.state() === 'suspended';
+  el('hold').textContent = suspended ? t('recall') : t('hold');
+  el('empty').hidden = lines.length > 0 && !suspended;
+  // A held basket must SAY it is held. A screen showing an empty basket when one is parked is how
+  // the same customer's items get rung up twice.
+  el('empty').textContent = suspended ? t('onHold') : t('scanToBegin');
   el('total').textContent = inr(session.payableMinor());
 
   const badge = session.syncBadge();
@@ -243,9 +288,24 @@ el('void').addEventListener('click', async () => {
   render();
 });
 
+el('hold').addEventListener('click', () => {
+  const suspended = session.state && session.state() === 'suspended';
+  if (suspended) session.recall(); else session.suspend();
+  selectedLineId = null;
+  render();
+});
+
 el('tender').addEventListener('click', async () => {
   const payable = session.payableMinor();
   if (payable <= 0) { tell(t('read'), t('scanFirst')); return; }
+
+  const kind = await choose(t('howPaying'), [
+    { value: 'cash', label: `${t('cash')} — ${inr(payable)}` },
+    { value: 'card', label: `${t('card')} — ${inr(payable)}` },
+    { value: 'upi', label: `${t('upi')} — ${inr(payable)}` },
+  ]);
+  if (kind === null) return;
+  if (kind !== 'cash') return takeCardOrUpi(kind, payable);
 
   const changeFor = (rupees) => Math.round(rupees * 100) - payable;
   const received = await ask({
@@ -275,11 +335,54 @@ el('tender').addEventListener('click', async () => {
   }
 });
 
+/**
+ * Card or UPI.
+ *
+ * The cashier tells the screen what the **machine** said, because the terminal is a separate box
+ * and the till has no wire to it yet. Three answers, and the third is the one that matters: when
+ * the machine has not come back, the honest state is *we do not know*, and the model marks that
+ * tender `uncertain` so the sale cannot complete. The goods stay on the counter.
+ *
+ * Treating silence as success is how a shop hands over a trolley for a payment that never
+ * happened, and the pressure to do it is highest exactly when it is worst — a customer waiting and
+ * a queue behind them.
+ */
+async function takeCardOrUpi(kind, payable) {
+  const outcome = await choose(`${t('tapTerminal')} — ${inr(payable)}`, [
+    { value: 'approved', label: t('approved') },
+    { value: 'declined', label: t('declined') },
+    { value: 'no_answer', label: t('noAnswer') },
+  ]);
+  if (outcome === null) return;
+
+  if (outcome !== 'approved') {
+    // Said before anything is attempted, because there is nothing to attempt: an unpaid sale does
+    // not commit, and the cashier needs the instruction, not the error.
+    tell(t('read'), outcome === 'declined' ? t('declinedMsg') : t('noAnswerMsg'));
+    return;
+  }
+
+  const stamp = Date.now().toString(36);
+  try {
+    const receipt = await session.tenderCardOrUpi({
+      saleId: `S-${stamp}`, receiptNumber: `R-${stamp.toUpperCase()}`,
+      atIsoUtc: new Date().toISOString(), kind, outcome,
+    });
+    tell(`${t('approved')} — ${kind === 'card' ? t('card') : t('upi')}`, receipt);
+    session.newSale();
+    selectedLineId = null;
+    render();
+  } catch (e) {
+    tell(t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e));
+  }
+}
+
 el('lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ta' : 'en';
   el('qty').textContent = t('qty');
   el('void').textContent = t('void');
   el('tender').textContent = t('tender');
+  el('pay-cancel').textContent = t('cancel');
   render();
 });
 
@@ -299,7 +402,7 @@ el('unsent').addEventListener('click', () => {
 let scanBuffer = '';
 window.addEventListener('keydown', (event) => {
   // A panel is open; the scan is not for us.
-  if (!el('sheet').hidden || !el('refusal').hidden) return;
+  if (!el('sheet').hidden || !el('pay').hidden || !el('refusal').hidden) return;
   if (event.key === 'Enter') {
     const code = scanBuffer;
     scanBuffer = '';

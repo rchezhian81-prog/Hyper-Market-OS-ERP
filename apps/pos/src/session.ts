@@ -14,7 +14,7 @@ import type { ConnectionState } from '../../../packages/contracts/src/enums';
 import { priceLine, sumLines, type LinePricing, type BillTotals } from '../../../packages/pricing/src/pricing';
 import { bestPrice, type Promotion, type BasketLine } from '../../../packages/promotions/src/promotions';
 import { settle, type Tender, type Settlement } from '../../../packages/tender/src/tender';
-import { commitSale, type CommittedSale } from '../../../packages/sale/src/sale';
+import { commitSale, UnpaidSaleError, type CommittedSale } from '../../../packages/sale/src/sale';
 import type { Ledger } from '../../../packages/ledger/src/ledger';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import type { CommitOutcome } from '../../../edge/store-edge/src/durability';
@@ -341,6 +341,21 @@ export class PosSession {
         })),
         tenders,
     };
+
+    // **Is this a sale at all? Ask before the disk, not after.**
+    //
+    // The durable write used to come first, and a card payment the terminal never answered was
+    // therefore written to the disk and *then* rejected — so the lane's log accumulated sales that
+    // were never paid for, and the edge, which rebuilds its send queue from that log on every
+    // restart, would have carried them to the cloud. A test caught it; nothing about the code read
+    // wrong.
+    //
+    // The order is: **decide, then record, then account for it.** Validation is not an effect —
+    // nothing has happened yet and nothing needs to survive a power cut. It is the same `settle`
+    // that `commitSale` uses below, so the two cannot reach different answers about one basket.
+    if (!settle(totals.payable, tenders).fullyPaid) {
+      throw new UnpaidSaleError(saleId);
+    }
 
     // **The disk, before anything else is true.**
     //
