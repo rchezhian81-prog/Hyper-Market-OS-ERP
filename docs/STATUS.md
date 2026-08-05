@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 5 August 2026 (session: the API stopped forgetting, stopped getting slower, and the shop can now actually run it)
+Last updated: 5 August 2026 (session: the till screen became usable, and the manager's screen refuses to close a day it cannot see)
 
 ---
 
@@ -2591,6 +2591,93 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## The manager's screen — and a day that will not close on an assumption (5 August 2026)
+
+The till was the screen that takes the money. This is the screen that runs the shop: approvals,
+receiving a delivery, counting stock, and closing the day. **Without it goods cannot be booked in
+and the day cannot be closed.**
+
+### The one decision that matters most on this screen
+
+When a manager closes the day, the system is supposed to check two things first: is any exception
+still open, and has everything reached the cloud. The rules that do that checking take **two
+numbers**.
+
+Here is the problem with that, and it is worth reading twice. **A screen that cannot reach the
+store's exception list would send a zero — the exact same zero a shop with nothing wrong sends.**
+The day would close. It would lock. And it would have locked on a page that had never actually
+spoken to the store.
+
+So this screen does not ask for numbers. It asks the store a question and accepts three answers:
+*none*, *this many*, and ***I could not find out***. The third one stops the close. **Not knowing
+is not a small problem — it is the strongest reason there is to stop.**
+
+If you open the manager screen right now, before it is wired to the store box, it will tell you it
+cannot see the lists and it will refuse to close the day. **That is correct.** It is not a rough
+edge to smooth off later.
+
+### "Cannot close" is useless at eleven at night
+
+The old behaviour would have been an error: *the day cannot be closed*. A manager standing there
+with the shutters down needs the list. So the screen now says:
+
+> **3 sales have not reached the cloud** — nothing is lost, they are saved in the store. Check the
+> internet, then check again.
+> **2 exceptions are still open** — Till 3 is short by ₹420. Nine voids by one cashier in an hour.
+
+Everything at once, with the actual items under it, not one problem per attempt. And if the rules
+refuse when the screen thought nothing was wrong, **that disagreement is shown too** rather than
+thrown at a manager as gibberish. The day stays open either way.
+
+### The blind count again — and this time it had a sharper edge
+
+Counting stock works exactly like counting the drawer: the manager never sees what the system
+thinks is there until after they have written down what they actually counted.
+
+But there is a second thing here that the till did not have. A stock difference gets **valued** —
+6 items missing at ₹25 each is ₹150 — and that value decides whether somebody else has to approve
+it. **So a screen that did not know what an item costs, and quietly used ₹0, would value every
+difference at nothing, and every difference at nothing is below every approval limit there is.**
+A hundred thousand rupees of missing stock would post with nobody's approval at all.
+
+It now refuses the count and says so. Nothing is written.
+
+### A delivery with no purchase order is said out loud
+
+Stock still goes up — the goods are physically in the building and pretending otherwise makes the
+shelf and the system disagree. But the screen tells the manager plainly: *there is no purchase
+order behind this, so nobody can check the invoice against it. Tell the buyer today.* The person
+who can still fix that is the buyer, today.
+
+### Approving something takes two taps, and the reason is not typed
+
+Tap **Approve**, tap a reason. The reasons are a fixed list, and **the approve list and the reject
+list are deliberately different** — you cannot approve something "against policy", and you cannot
+reject something as "within policy". Either sentence would sit in the audit trail forever looking
+like a considered decision. A manager can never decide their own request; that row shows *why*
+instead of a button that would fail.
+
+### A real bug the tests caught while writing them
+
+A manager set up with authority over the **whole company** was quietly demoted to a single branch
+by one line of code — and then their own branch scope blocked them from deciding anything outside
+it. Found by an assembly test, not by reading. Fixed.
+
+### What is guarded now
+
+Two new tripwires bind the screen to the rules: every kind of blocker and every kind of refusal the
+system can produce **must** have words in English and in Tamil. Add one and forget the translation
+and the build fails, rather than a manager seeing a blank reason at the moment they most need one.
+
+**Tests:** 3,214 automated plus 31 performance, all green.
+
+**What is left on this screen:** the exception list and the task list have no producer on the store
+box yet, so today they honestly answer *not known* — which is why the day will not close from this
+screen until that is built. Then the whole thing in front of an actual store manager with a
+stopwatch, which is the only test that counts.
+
+---
+
 ## Cash to the safe, and closing the till — counted blind (5 August 2026)
 
 The last of the till screen, apart from one thing I have deliberately left undone and named.
@@ -3367,7 +3454,17 @@ insist on when somebody eventually asks for it to be switched off.
   store operations lead, finance/CA reviewer, security/architecture reviewer.
 
 ## Next session should start with
-**The owner's decisions.** The code is complete as far as it can go without them: all thirteen
+
+**The store box has to start producing the two lists the manager's screen asks for.** Exceptions
+(M15) and tasks (D11/M25) have engines and no producer, so the manager screen honestly answers
+*not known* on both — and correctly refuses to close the day because of it. That is the next piece
+of work, and it is the one that turns the day close from a demonstration into a thing the shop can
+use.
+
+After that, per `docs/architecture/build-plan.md`: the owner app, then purchase and receiving,
+then picker and delivery, then the customer app.
+
+**Then the owner's decisions.** The code is complete as far as it can go without them: all thirteen
 services persist, token verification is done, no folder in the repository layout is empty, the
 cutover weekend is planned hour by hour, and no read the software makes grows with how long the
 shop has been open. What is left needs the owner or the store — an identity provider and hosting

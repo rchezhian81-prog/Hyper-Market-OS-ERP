@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Store Manager</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      Store manager shell (docs/design/screens/store-manager.md). The floor is run BY
+      EXCEPTION (P-03): the home screen is four figures — approvals, exceptions, unsent
+      items, tasks — and every one of them is allowed to say "not known" instead of
+      showing a reassuring zero.
+
+      Deliberately framework-free and fully static, like the till, so the back office
+      opens during an outage and shows the last thing it was told, labelled as such.
+      Same palette and same 56px targets as the POS: it is the same product, often on
+      the same hardware, and a manager covering a lane should not have to relearn it.
+    -->
+    <style>
+      :root {
+        --bg: #0f172a; --panel: #1e293b; --ink: #f8fafc; --muted: #94a3b8;
+        --accent: #22c55e; --warn: #f59e0b; --danger: #ef4444; --line: #334155;
+        --tap: 56px; /* minimum touch target */
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--ink);
+        font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        min-height: 100dvh; display: grid; grid-template-rows: auto auto 1fr;
+      }
+      header {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; padding: 12px 16px; background: var(--panel); flex-wrap: wrap;
+      }
+      .who { font-weight: 600; letter-spacing: .02em; }
+      .day { color: var(--muted); font-size: 14px; display: block; font-weight: 400; }
+      .sync { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+      .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
+      .dot.unknown { background: var(--warn); }
+      .lang { background: transparent; color: var(--muted); min-height: 40px; font-size: 14px; border: 0; }
+      /* Sample-data warning. Only ever shown when the tested model is NOT loaded. */
+      .sample { background: var(--warn); color: #451a03; padding: 8px 16px; font-weight: 600; font-size: 15px; }
+      .sample[hidden] { display: none; }
+
+      nav { display: flex; gap: 8px; padding: 8px 16px; background: var(--panel); overflow-x: auto; }
+      nav button {
+        min-height: var(--tap); padding: 0 18px; border: 0; border-radius: 12px;
+        background: var(--line); color: var(--ink); font-size: 17px; font-weight: 600; white-space: nowrap;
+      }
+      nav button[aria-current='page'] { background: var(--ink); color: #0f172a; }
+
+      main { padding: 16px; display: grid; gap: 16px; align-content: start; }
+      section[hidden] { display: none; }
+      h2 { margin: 0 0 4px; font-size: 20px; font-weight: 600; }
+      p.lead { margin: 0 0 12px; color: var(--muted); font-size: 15px; }
+
+      /* ── Home: four figures, each able to say it does not know ─────────── */
+      .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+      .tile {
+        background: var(--panel); border-radius: 16px; padding: 16px; min-height: 120px;
+        display: grid; align-content: start; gap: 4px; border-left: 6px solid var(--line);
+      }
+      .tile.attention { border-left-color: var(--warn); }
+      .tile.unknown { border-left-color: var(--danger); }
+      .tile .n { font-size: 44px; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .tile .n.unknown { font-size: 24px; color: var(--warn); }
+      .tile .label { color: var(--muted); font-size: 15px; }
+      .tile .note { font-size: 14px; color: var(--muted); }
+
+      /* ── Lists ─────────────────────────────────────────────────────────── */
+      .rows { display: grid; gap: 10px; }
+      .row {
+        background: var(--panel); border-radius: 14px; padding: 14px 16px;
+        display: grid; gap: 10px;
+      }
+      .row .what { font-size: 17px; }
+      .row .meta { color: var(--muted); font-size: 14px; }
+      .row .value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .row-actions { display: grid; grid-auto-flow: column; gap: 10px; justify-content: start; }
+      .row-actions button { min-height: var(--tap); min-width: 130px; padding: 0 18px; }
+      /* A row this manager may not decide shows the REASON, never a button that will fail. */
+      .blocked { color: var(--warn); font-size: 15px; font-weight: 600; }
+      .empty { color: var(--muted); padding: 24px 4px; }
+
+      button {
+        min-height: var(--tap); border-radius: 12px; border: 0; font-size: 17px; font-weight: 600;
+        background: var(--line); color: var(--ink);
+      }
+      button.primary { background: var(--accent); color: #052e16; font-size: 20px; }
+      button.danger { background: var(--danger); color: #fff; }
+      button:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+      .wide { width: 100%; }
+
+      /* ── The close screen ──────────────────────────────────────────────── */
+      .blockers { display: grid; gap: 12px; }
+      .blocker {
+        background: var(--panel); border-radius: 14px; padding: 14px 16px;
+        border-left: 6px solid var(--danger); display: grid; gap: 6px;
+      }
+      .blocker h3 { margin: 0; font-size: 18px; }
+      .blocker .todo { color: var(--warn); font-size: 15px; }
+      .blocker ul { margin: 4px 0 0; padding-left: 20px; color: var(--muted); font-size: 15px; }
+      .blocker li { padding: 2px 0; }
+
+      /* ── Forms: receiving and counting ─────────────────────────────────── */
+      .field { display: grid; gap: 6px; margin-bottom: 12px; }
+      .field label { color: var(--muted); font-size: 15px; }
+      .field input, .field select {
+        min-height: var(--tap); background: #0b1220; color: var(--ink);
+        border: 1px solid var(--line); border-radius: 12px; padding: 0 14px; font-size: 18px;
+      }
+      .lines { display: grid; gap: 8px; margin: 12px 0; }
+      .line-row {
+        display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center;
+        background: var(--panel); border-radius: 12px; padding: 10px 14px; font-size: 17px;
+      }
+      .line-row .q { font-variant-numeric: tabular-nums; font-weight: 700; }
+      .line-row button { min-height: 44px; min-width: 44px; }
+
+      /* ── Panels and the banner: same behaviour as the till ─────────────── */
+      .sheet {
+        position: fixed; inset: 0; background: rgba(2, 6, 23, .82);
+        display: grid; place-items: center; z-index: 20; padding: 16px;
+      }
+      .sheet[hidden] { display: none; }
+      .sheet-inner {
+        width: min(560px, 100%); background: var(--panel); padding: 20px;
+        border-radius: 20px; display: grid; gap: 14px; max-height: 90dvh; overflow-y: auto;
+      }
+      .sheet h2 { margin: 0; font-size: 21px; }
+      .entry {
+        font-size: 40px; font-weight: 700; text-align: right; padding: 10px 16px;
+        background: #0b1220; border-radius: 12px; min-height: 64px;
+      }
+      .hint { color: var(--muted); font-size: 15px; min-height: 22px; }
+      .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+      .keypad button, .choices button, .sheet-actions button {
+        min-height: var(--tap); font-size: 20px; border: 0; border-radius: 12px;
+        background: var(--line); color: var(--ink); font-weight: 600;
+      }
+      .choices { display: grid; gap: 10px; }
+      .choices button { font-size: 17px; text-align: left; padding: 0 16px; }
+      .sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .sheet-actions .primary, .keypad .primary { background: var(--accent); color: #052e16; }
+
+      /* The banner does NOT auto-dismiss, for the same reason it does not at the till. */
+      .banner {
+        position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 20px;
+        background: var(--danger); color: #fff; display: grid; gap: 10px;
+      }
+      .banner[hidden] { display: none; }
+      .banner.good { background: var(--accent); color: #052e16; }
+      .banner strong { font-size: 22px; }
+      .banner p { margin: 0; font-size: 17px; line-height: 1.45; }
+      .banner button { background: #7f1d1d; color: #fff; }
+      .banner.good button { background: #052e16; color: #ecfdf5; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="who" id="who">
+        Store manager
+        <span class="day" id="day">Trading day —</span>
+      </span>
+      <span class="sync">
+        <span class="dot" id="conn-dot" title="Store link"></span>
+        <span id="conn-text">Connected</span>
+        <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
+      </span>
+    </header>
+
+    <!--
+      Shown only when the tested model has not been bundled in. A manager looking at
+      sample figures must know they are sample figures — the alternative is somebody
+      acting on a number that came from nowhere.
+    -->
+    <p class="sample" id="sample" hidden role="status">Sample data — this is not your store.</p>
+
+    <nav id="tabs" aria-label="Sections">
+      <button id="tab-home" type="button" aria-current="page">Today</button>
+      <button id="tab-approvals" type="button">Approvals</button>
+      <button id="tab-receive" type="button">Receive</button>
+      <button id="tab-count" type="button">Count</button>
+      <button id="tab-close" type="button">Close the day</button>
+    </nav>
+
+    <main>
+      <!-- Live trading (home): the floor by exception, four figures and nothing else. -->
+      <section id="view-home">
+        <h2 id="home-title">Today</h2>
+        <p class="lead" id="home-lead">Tap a figure to go to it.</p>
+        <div class="tiles" id="tiles"></div>
+      </section>
+
+      <!-- Approval inbox: ordered by value; a row you cannot decide says why. -->
+      <section id="view-approvals" hidden>
+        <h2 id="approvals-title">Approvals</h2>
+        <p class="lead" id="approvals-lead">Biggest first.</p>
+        <div class="rows" id="approval-rows"></div>
+        <p class="empty" id="approvals-empty" hidden>Nothing is waiting.</p>
+      </section>
+
+      <!-- Receiving: goods in. A delivery with no purchase order is SAID to be unmatched. -->
+      <section id="view-receive" hidden>
+        <h2 id="receive-title">Receive a delivery</h2>
+        <p class="lead" id="receive-lead">Stock goes up as soon as this is saved, with or without a connection.</p>
+        <div class="field">
+          <label for="grn-number" id="grn-number-label">Delivery note number</label>
+          <input id="grn-number" type="text" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="grn-po" id="grn-po-label">Purchase order number (leave empty if there is none)</label>
+          <input id="grn-po" type="text" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="grn-product" id="grn-product-label">Item code</label>
+          <input id="grn-product" type="text" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="grn-qty" id="grn-qty-label">How many</label>
+          <input id="grn-qty" type="number" inputmode="numeric" min="1" step="1" />
+        </div>
+        <button id="add-line" type="button" class="wide">Add this item</button>
+        <div class="lines" id="receive-lines"></div>
+        <p class="empty" id="receive-empty">No items added yet.</p>
+        <button id="save-receipt" type="button" class="primary wide">Save the delivery</button>
+      </section>
+
+      <!--
+        Counting stock. The expected quantity appears NOWHERE on this screen before a
+        count is entered — the same control the till's drawer count uses, and it is
+        worth being structural in both places.
+      -->
+      <section id="view-count" hidden>
+        <h2 id="count-title">Count stock</h2>
+        <p class="lead" id="count-lead">Count what is actually on the shelf. This screen will not show you the system's figure first — that is on purpose.</p>
+        <div class="field">
+          <label for="count-product" id="count-product-label">Product code</label>
+          <input id="count-product" type="text" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="count-location" id="count-location-label">Where (aisle or bay)</label>
+          <input id="count-location" type="text" autocomplete="off" />
+        </div>
+        <button id="enter-count" type="button" class="primary wide">Enter the count</button>
+      </section>
+
+      <!--
+        Close the day. The button asks the model, and what comes back is either a close
+        or a LIST. "Cannot close" is useless at eleven at night; "3 sales unsent, 2
+        exceptions open — here they are" is something a manager can act on.
+      -->
+      <section id="view-close" hidden>
+        <h2 id="close-title">Close the day</h2>
+        <p class="lead" id="close-lead">Check what is still open before you close. A closed day is locked.</p>
+        <button id="check-close" type="button" class="wide">Check what is still open</button>
+        <div class="blockers" id="blockers"></div>
+        <button id="do-close" type="button" class="primary wide" hidden>Close the day now</button>
+      </section>
+    </main>
+
+    <!-- Every question is an on-screen panel, never `window.prompt`. Same as the till. -->
+    <div class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+      <div class="sheet-inner">
+        <h2 id="sheet-title">—</h2>
+        <div class="entry" id="entry" hidden>0</div>
+        <div class="hint" id="entry-hint"></div>
+        <div class="keypad" id="keypad" hidden></div>
+        <div class="choices" id="choices" hidden></div>
+        <div class="sheet-actions">
+          <button id="sheet-cancel" type="button">Cancel</button>
+          <button id="sheet-ok" class="primary" type="button">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- The message that must not be missed. No timer, and never colour alone. -->
+    <div class="banner" id="banner" hidden role="alert">
+      <strong id="banner-title">—</strong>
+      <p id="banner-text"></p>
+      <button id="banner-ok" type="button">I have read this</button>
+    </div>
+
+    <!--
+      The bundled, tested session (built by `pnpm build:erp`) attaches
+      `window.managerSession`. It loads FIRST so the view binds to the real engines; if
+      the bundle has not been built, app.js falls back to sample data and SAYS SO in the
+      header. Module scripts are deferred and run in order.
+    -->
+    <script type="module" src="./web-erp.bundle.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

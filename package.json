@@ -17,6 +17,7 @@
     "db:migrate": "node scripts/migrate.mjs",
     "build:pos": "node scripts/build-app.mjs pos",
     "build:owner": "node scripts/build-app.mjs owner-app",
+    "build:erp": "node scripts/build-app.mjs web-erp",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run secret-scan && pnpm run test && pnpm run test:perf",
     "prepare": "git config core.hooksPath .githooks || true",
     "sbom": "node scripts/sbom.mjs",

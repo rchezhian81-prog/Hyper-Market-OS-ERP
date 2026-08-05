@@ -25,8 +25,8 @@ project.
 | `packages/` — domain rules | 45,179 | **Genuinely strong.** The product's value lives here |
 | `services/` — the thirteen APIs | 5,556 | Built, persisting, authenticated, audited |
 | `edge/` — the store box | 1,144 | Now runs, writes durably, syncs. Built **today** |
-| `apps/` — everything a person touches | 2,452 | **This is the gap.** Session models with no screens |
-| Tests | 3,093 + 31 | Unusually thorough on rules; thin on assembly until today |
+| `apps/` — everything a person touches | 4,000 | **Still the gap**, but two of six now have real screens |
+| Tests | 3,214 + 31 | Unusually thorough on rules; thin on assembly until today |
 
 **2,452 lines of app code for six applications** is the number that matters. For comparison, the POS
 alone — one screen a cashier uses eight hours a day — is 1,070 of those lines, and none of it draws
@@ -49,7 +49,7 @@ bundled against the **real tested session**, not a mock. `apps/owner-app/web/` h
 What the POS shell lacked was a way to reach a disk — built today, see below. What it still lacks is
 tender beyond cash, returns, suspend/recall, cash movements, till open/close, and Tamil.
 
-`web-erp`, `customer-app`, `picker-app` and `delivery-app` have **no web files at all**.
+`web-erp` now has a shell too — approvals, receiving, counting and day close, bundled against the real tested session. `customer-app`, `picker-app` and `delivery-app` have **no web files at all**.
 
 What this means concretely: today nobody can ring up a sale, receive a delivery, count stock, close
 a day, approve a price change, pick an order, or look at a dashboard. The rules that would govern
@@ -98,11 +98,11 @@ Three columns, and they are different questions. **Rules** = is the logic writte
 
 | Modules | Rules | Wired | Usable | The honest note |
 | --- | :---: | :---: | :---: | --- |
-| M01–M02 Platform, identity | ✅ | ✅ | ❌ | Token verification real; **no identity provider chosen**, so nobody can log in |
+| M01–M02 Platform, identity | ✅ | ✅ | ◐ | Token verification real; the **approvals inbox is now a screen** (decide in ≤3 taps, reason recorded, separation of duties visible). **No identity provider chosen**, so nobody can log in |
 | M03–M05 Product, pricing, catalogue | ✅ | ✅ | ❌ | No screen to create or price a product. No HSN field |
-| M06–M07 Purchase, supplier | ✅ | ◐ | ❌ | Three-way match real; **nothing captures an invoice**, so it has no lines to match |
-| M08–M11 Inventory, warehouse, quality | ✅ | ✅ | ❌ | Movements and snapshots real; no counting screen |
-| M12–M15 POS, returns, cash office | ✅ | ✅ | ✅ | The strongest area. Durable commit real, and the screen now reaches the till's own disk over loopback (ADR-0004). **Sale + cash tender only** — returns, suspend, cash movements and till open/close have no screen |
+| M06–M07 Purchase, supplier | ✅ | ◐ | ◐ | Three-way match real; **goods receiving is now a screen**, and a delivery with no purchase order is flagged unmatched rather than filed quietly. **Nothing captures an invoice**, so the match still has no lines |
+| M08–M11 Inventory, warehouse, quality | ✅ | ✅ | ◐ | Movements and snapshots real; **blind counting is now a screen** — and a count the screen cannot value is refused rather than priced at zero. No expiry or recall screen |
+| M12–M15 POS, returns, cash office | ✅ | ✅ | ✅ | The strongest area. Durable commit real, and the screen reaches the till's own disk over loopback (ADR-0004). Cash, card, UPI, hold/recall, cash to safe and a blind till close are in; **day close now has a manager screen that reports a list rather than a refusal**. Receipt-based returns still have no screen |
 | M16–M18 Customer, loyalty, storefront | ✅ | ✅ | ❌ | Consent real; loyalty **accrual not wired** — points read as *not known* |
 | M19–M20 Picking, delivery | ✅ | ◐ | ❌ | Attempts real; **no dispatch list exists**, so runs report unassigned |
 | M21–M24 Finance, Tally | ✅ | ◐ | ❌ | Journals and period close real. **No control totals can be built** — deliberate, and it means no month can close yet |
@@ -186,6 +186,11 @@ built and waiting; none has met a real export.
 
 **3. Then the other five surfaces**, in this order: store manager → owner → receiving/purchase →
 picker/delivery → customer app. Ordered by how much of the shop stops without them.
+✅ *The store manager screen is built*: approvals inbox, receiving, blind stock count and a day
+close that answers with a list of what is still open. Its registers refuse to guess — a screen
+that cannot read the exception list will not close the day, which is the correct answer and the
+one worth rehearsing during the pilot. **What remains on it:** the exception and task registers
+have no producer on the store box yet, so today every one of them answers *not known*.
 
 **4. In parallel, close the compliance build**: HSN on the product, e-invoicing if it applies, FSSAI
 records, legal-metrology stamping dates.
