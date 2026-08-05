@@ -66,6 +66,21 @@ export function threeWayMatch(input: {
   const pTol = input.priceToleranceBps ?? 100;
   const immaterial = input.immaterialMinor ?? 100;
 
+  // No lines is not a match.
+  //
+  // Everything below is `map`, `reduce` and `some` over the line set, and all three are perfectly
+  // happy with an empty one: an invoice we hold no lines for returned `blocked: false`, "invoiced
+  // 0, matched", and told the owner "nothing — the order, the delivery and the invoice agree".
+  // Three documents cannot agree when we are holding none of them. The distinction is between
+  // *checked and clean* and *not checked*, and only one of those is a reason to pay.
+  if (input.lines.length === 0) {
+    return {
+      lines: [], payableMinor: 0, invoicedMinor: 0, withheldMinor: 0, blocked: true,
+      detail: 'no lines were found for this invoice, so nothing has been compared',
+      ownerAction: 'Nothing may be paid on this invoice yet — not because a difference was found, but because no order, delivery or invoice line was found to compare. Check the invoice was received and its lines were captured, then match it again.',
+    };
+  }
+
   const lines = input.lines.map((l): LineMatch => {
     const payQty = Math.min(l.orderedQty, l.receivedQty, l.invoicedQty);
     const payUnit = Math.min(l.orderedUnitMinor, l.invoicedUnitMinor);
@@ -115,9 +130,20 @@ export interface BankChangeRequest {
   readonly numberWeAlreadyHeld?: string;
   readonly approvedBy?: string;
   readonly requestedBy: string;
+  /**
+   * When the request arrived. Required, and it is evidence rather than bookkeeping.
+   *
+   * "When did this come in?" is the first question at an investigation into a payment that went
+   * to the wrong place, and it is also what keeps the record straight when a supplier moves to a
+   * new account and later moves back: without a date, the return to the first account looks
+   * identical to the original change and collapses into it — leaving the ledger asserting the
+   * money still goes to the middle account.
+   */
+  readonly requestedAt: string;
 }
 
 export type BankChangeRefusal =
+  | 'no_request_date'
   | 'not_called_back'
   | 'called_back_on_the_number_they_supplied'
   | 'not_approved'
@@ -137,6 +163,12 @@ export interface BankChangeResult {
  * nothing. The call must go to a number we already held.
  */
 export function verifyBankChange(r: BankChangeRequest): BankChangeResult {
+  if (typeof r.requestedAt !== 'string' || Number.isNaN(Date.parse(r.requestedAt))) {
+    return {
+      ok: false, refusedBecause: 'no_request_date',
+      detail: `${r.supplierId}'s account change carries no date it was requested on. An undated request cannot be placed against the call that verified it or the payment run that followed, which is the whole sequence an investigation reads`,
+    };
+  }
   if (r.calledBackOn === undefined) {
     return {
       ok: false, refusedBecause: 'not_called_back',
@@ -162,8 +194,21 @@ export interface PurchaseDeps {
   readonly matchLines: (tenantId: string, invoiceId: string) => Promise<readonly MatchLine[]> | readonly MatchLine[];
   readonly recordMatch: (tenantId: string, invoiceId: string, r: MatchResult) => Promise<void> | void;
   readonly applyBankChange: (tenantId: string, r: BankChangeRequest) => Promise<void> | void;
-  readonly openCommitments: (tenantId: string) => Promise<{ readonly count: number; readonly valueMinor: number }> | { readonly count: number; readonly valueMinor: number };
+  /**
+   * What is on order and not yet received.
+   *
+   * **`undefined` means not known, and that is not the same answer as zero.** Purchase orders are
+   * not yet recorded by this API, so a projection over an empty stream would return
+   * `{count: 0, valueMinor: 0}` — which an owner reads as "we have nothing on order" and uses to
+   * decide what to buy. Not-known is returned as not-known, the same way loyalty points are.
+   */
+  readonly openCommitments: (tenantId: string) => Promise<Commitments | undefined> | Commitments | undefined;
   readonly now: () => string;
+}
+
+export interface Commitments {
+  readonly count: number;
+  readonly valueMinor: number;
 }
 
 export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
@@ -199,10 +244,18 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
     {
       api: 'API-03', method: 'GET', path: '/v1/purchase/commitments',
       permission: 'purchase.commitment.read',
-      handler: async (ctx) => ({
-        status: 200,
-        body: { ...(await deps.openCommitments(ctx.tenantId)), asAt: deps.now() },
-      }),
+      handler: async (ctx) => {
+        const open = await deps.openCommitments(ctx.tenantId);
+        return {
+          status: 200,
+          body: open === undefined
+            ? {
+              known: false, asAt: deps.now(),
+              detail: 'what is on order cannot be stated yet, because purchase orders are not recorded in this system. A zero here would read as "we have nothing on order" and be acted on.',
+            }
+            : { ...open, known: true, asAt: deps.now() },
+        };
+      },
     },
   ];
 }

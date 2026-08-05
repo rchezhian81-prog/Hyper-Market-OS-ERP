@@ -8,7 +8,10 @@ import { runMigrations } from '../../packages/persistence/src/migrations';
 import { buildRouter, handle, MemoryIdempotencyStore, type HttpRequest } from '../../services/kernel/src/index';
 import { AccessControl } from '../../packages/rbac/src/rbac';
 import { buildSurface } from '../../services/api/src/main';
-import { catalogueAdapter, posAdapter, STREAM } from '../../services/api/src/adapters';
+import {
+  catalogueAdapter, posAdapter, financeAdapter, customerAdapter, ordersAdapter,
+  fulfilmentAdapter, purchaseAdapter, addMonths, STREAM,
+} from '../../services/api/src/adapters';
 import { hmacSigner, publishPack } from '../../services/catalogue/src/index';
 import { project } from '../../services/inventory/src/index';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
@@ -60,6 +63,11 @@ const ACCESS = new AccessControl(
       'catalogue.pack.read', 'catalogue.pack.publish',
       'pos.sale.sync', 'pos.sale.read', 'pos.exception.read',
       'inventory.movement.append', 'inventory.availability.read',
+      'purchase.invoice.match', 'purchase.commitment.read',
+      'finance.journal.post', 'finance.period.close', 'finance.period.read',
+      'customer.consent.read', 'customer.consent.write', 'loyalty.points.read',
+      'order.promise', 'order.reservation.read',
+      'delivery.attempt.record', 'delivery.run.read',
     ],
   }],
   [{ userId: 'u-manager', roleId: 'all', branchScope: 'all' }],
@@ -221,6 +229,182 @@ describe.skipIf(!DATABASE_URL)('the API remembers (real PostgreSQL)', () => {
     expect(backward).toEqual(forward);
   });
 
+  // ─── 5. The five services that were still stubs ─────────────────────────────
+
+  it('remembers consent, and both directions of it', async () => {
+    // Given, withdrawn, given again is three facts about one customer, and the middle one is the
+    // one a regulator asks about. A key without the timestamp would keep the first and call the
+    // rest replays.
+    const adapter = customerAdapter({ store, now: () => NOW });
+    const record = (given: boolean, at: string) => ({
+      customerId: `${RUN}-C1`, purpose: 'marketing' as const, channel: 'sms' as const,
+      given, recordedAt: at, evidence: given ? 'signed at the counter' : 'said no on the phone',
+    });
+    await adapter.appendConsent(TENANT, record(true, '2026-01-01T00:00:00Z'));
+    await adapter.appendConsent(TENANT, record(false, '2026-03-01T00:00:00Z'));
+    await adapter.appendConsent(TENANT, record(true, '2026-06-01T00:00:00Z'));
+
+    const back = await adapter.consentRecords(TENANT, `${RUN}-C1`);
+    expect(back).toHaveLength(3);
+    expect(back.map((r) => r.given)).toEqual([true, false, true]);
+    // And nobody else's consent came back with it.
+    expect(await adapter.consentRecords(TENANT, `${RUN}-C-other`)).toEqual([]);
+  });
+
+  it('answers loyalty points as NOT KNOWN rather than as zero', async () => {
+    const res = await handle(kernel, req({ path: `/v1/customers/${RUN}-C1/points` }));
+    expect(res.status).toBe(200);
+    const body = res.body as { known: boolean; pointsBalance?: number };
+    expect(body.known).toBe(false);
+    // A zero balance and an unknown one are different answers to a customer at the counter.
+    expect(body.pointsBalance).toBeUndefined();
+  });
+
+  it('answers what is on order as NOT KNOWN rather than as nothing on order', async () => {
+    const res = await handle(kernel, req({ path: '/v1/purchase/commitments' }));
+    expect(res.status).toBe(200);
+    expect((res.body as { known: boolean }).known).toBe(false);
+  });
+
+  it('promises against stock the INVENTORY ledger projects, not a second count', async () => {
+    // 50 on hand at L1 from the movements above. Two functions that both compute stock are two
+    // answers waiting to disagree, and the one that promises to a customer is not the one you
+    // want drifting from the one that counts.
+    const onHand = await ordersAdapter({ store, now: () => NOW, holdMinutes: 60 }).onHand(TENANT, 'L1');
+    expect(onHand.get(`${RUN}-P1`)).toBe(50);
+  });
+
+  it('holds a reservation, remembers it, and lets it lapse', async () => {
+    const adapter = ordersAdapter({ store, now: () => NOW, holdMinutes: 60 });
+    await adapter.holdReservations(TENANT, [
+      { reservationId: `${RUN}-RES1`, orderId: `${RUN}-O1`, productId: `${RUN}-P1`, quantityMinor: 2, locationId: 'L1', heldUntil: '2026-08-07T13:00:00Z' },
+      { reservationId: `${RUN}-RES2`, orderId: `${RUN}-O2`, productId: `${RUN}-P1`, quantityMinor: 3, locationId: 'L1', heldUntil: '2026-08-07T11:00:00Z' },
+    ]);
+
+    // At 12:00 the second has lapsed. An expired hold is stock on the shelf, not stock spoken for.
+    const live = await adapter.outstanding(TENANT, 'L1');
+    expect(live.map((r) => r.reservationId)).toEqual([`${RUN}-RES1`]);
+    // ...and it is gone from the answer without being gone from the record.
+    expect((await store.readStream(TENANT, STREAM.reservations)).length).toBe(2);
+  });
+
+  it('will not close a month that nothing checked', async () => {
+    // No control total can be built from this system alone — everything it holds for a period came
+    // down one path. `controlTotals` returns nothing and the close refuses, which is the honest
+    // answer. A month that closes because nobody checked it is the outcome worth refusing.
+    const entry = {
+      entryId: `${RUN}-JE1`, period: '2026-08', documentDate: '2026-08-03',
+      narrative: 'August rent paid to the landlord',
+      lines: [
+        { accountCode: '5100', debitMinor: 150_000, creditMinor: 0 },
+        { accountCode: '1100', debitMinor: 0, creditMinor: 150_000 },
+      ],
+      postedBy: 'u-accounts',
+    };
+    expect((await handle(kernel, post('/v1/finance/journals', entry, `k-${RUN}-je1`))).status).toBe(201);
+
+    const close = await handle(kernel, post('/v1/finance/periods/2026-08/close', { signedBy: 'u-manager' }, `k-${RUN}-cl`));
+    expect(close.status).toBe(422);
+    // The kernel wraps every refusal as `{ error: { code, whatHappened, wasItSaved, ... } }` —
+    // one envelope, so a caller reads a refusal the same way whichever service raised it.
+    const refusal = (close.body as { error: { code: string; whatHappened: string; wasItSaved: string } }).error;
+    expect(refusal.code).toBe('nothing_was_checked');
+    expect(refusal.wasItSaved).toBe('not_saved');
+    expect(refusal.whatHappened).toContain('nothing has checked');
+  });
+
+  it('knows who posted into a month, which is what the second signature rests on', async () => {
+    const posters = await financeAdapter({ store, now: () => NOW }).postersIn(TENANT, '2026-08');
+    expect(posters).toEqual(['u-accounts']);
+    expect(await financeAdapter({ store, now: () => NOW }).postersIn(TENANT, '2026-07')).toEqual([]);
+  });
+
+  it('shows the month as open because nothing closed it, not because a flag says so', async () => {
+    const states = await financeAdapter({ store, now: () => NOW }).periodStates(TENANT);
+    expect(states.get('2026-08')).toBe('open');
+
+    // Close it directly, and the same fold now reads closed. Open is the absence of a close, so no
+    // period can be open and closed at once.
+    await financeAdapter({ store, now: () => NOW }).markClosed(TENANT, '2026-08', 'u-manager');
+    expect((await financeAdapter({ store, now: () => NOW }).periodStates(TENANT)).get('2026-08')).toBe('closed');
+
+    // And a late document is now routed forward rather than into signed figures.
+    expect(await financeAdapter({ store, now: () => '2026-08-20T00:00:00Z' }).nextOpenPeriod(TENANT)).toBe('2026-09');
+  });
+
+  it('steps months without a Date round-trip a timezone could move', () => {
+    expect(addMonths('2026-12', 1)).toBe('2027-01');
+    expect(addMonths('2026-01', -1)).toBe('2025-12');
+    expect(addMonths('2026-08', 12)).toBe('2027-08');
+  });
+
+  it('records a delivery attempt and settles the run against the driver', async () => {
+    const adapter = fulfilmentAdapter({ store, now: () => NOW });
+    await adapter.appendAttempt(TENANT, {
+      attemptId: `${RUN}-A1`, orderId: `${RUN}-O1`, driverId: 'd-ravi',
+      attemptedAt: '2026-08-07T09:30:00Z', outcome: 'delivered', proofRef: 'sig-1',
+      cashCollectedMinor: 64_000,
+    });
+    await adapter.appendAttempt(TENANT, {
+      attemptId: `${RUN}-A2`, orderId: `${RUN}-O2`, driverId: 'd-other',
+      attemptedAt: '2026-08-07T09:40:00Z', outcome: 'delivered', proofRef: 'sig-2',
+    });
+
+    const mine = await adapter.attempts(TENANT, 'd-ravi', '2026-08-07');
+    expect(mine.map((a) => a.attemptId)).toEqual([`${RUN}-A1`]);
+    // A different day is a different run.
+    expect(await adapter.attempts(TENANT, 'd-ravi', '2026-08-06')).toEqual([]);
+  });
+
+  it('does not call a run reconciled when nothing dispatched it', async () => {
+    // `assigned` folds a stream nothing writes to yet. With only the assigned-minus-attempted
+    // check, this run — a delivery and ₹640 of cash — reported "the run reconciles and every
+    // order has an outcome".
+    const res = await handle(kernel, req({
+      path: '/v1/delivery/runs/d-ravi',
+      query: { runDate: '2026-08-07', cashHandedInMinor: '64000' },
+    }));
+    expect(res.status).toBe(200);
+    const body = res.body as { unassigned: string[]; ownerAction: string };
+    expect(body.unassigned).toEqual([`${RUN}-O1`]);
+    expect(body.ownerAction).not.toContain('the run reconciles');
+  });
+
+  it('will not call an invoice it holds no lines for a match', async () => {
+    const res = await handle(kernel, post(`/v1/purchase/invoices/${RUN}-INV1/match`, {}, `k-${RUN}-m1`));
+    expect(res.status).toBe(200);
+    const body = res.body as { blocked: boolean; payableMinor: number; ownerAction: string };
+    expect(body.blocked).toBe(true);
+    expect(body.payableMinor).toBe(0);
+    expect(body.ownerAction).toContain('not because a difference was found');
+
+    // And the outcome is on the record, keyed on what it decided rather than on the invoice alone.
+    const matched = (await store.readStream(TENANT, STREAM.purchase))
+      .filter((e) => e.event.type === 'InvoiceMatched');
+    expect(matched).toHaveLength(1);
+  });
+
+  it('records a supplier bank change as an event, never as an overwrite', async () => {
+    const adapter = purchaseAdapter({ store, now: () => NOW });
+    await adapter.applyBankChange(TENANT, {
+      supplierId: `${RUN}-SUP1`, newAccount: 'ACC-NEW-1', requestedVia: 'phone_call_we_made',
+      calledBackOn: '+91 44 1234 5678', numberWeAlreadyHeld: '+91 44 1234 5678',
+      requestedBy: 'u-accounts', approvedBy: 'u-manager', requestedAt: '2026-08-01T09:00:00Z',
+    });
+    await adapter.applyBankChange(TENANT, {
+      supplierId: `${RUN}-SUP1`, newAccount: 'ACC-NEW-2', requestedVia: 'phone_call_we_made',
+      calledBackOn: '+91 44 1234 5678', numberWeAlreadyHeld: '+91 44 1234 5678',
+      requestedBy: 'u-accounts', approvedBy: 'u-manager', requestedAt: '2026-08-04T09:00:00Z',
+    });
+
+    const changes = (await store.readStream(TENANT, STREAM.purchase))
+      .filter((e) => e.event.type === 'SupplierBankChanged');
+    // Two changes, both kept. The first account is still readable, which is what an investigation
+    // into a payment that went to the wrong place actually needs.
+    expect(changes).toHaveLength(2);
+    expect(changes.map((e) => (e.event.payload as { newAccount: string }).newAccount))
+      .toEqual(['ACC-NEW-1', 'ACC-NEW-2']);
+  });
   // ─── 4. The property everything rests on ────────────────────────────────────
 
   it('the database itself refuses to change what was banked (hard rule #2)', async () => {

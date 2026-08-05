@@ -90,6 +90,7 @@ export interface ControlTotalCheck {
 }
 
 export type CloseRefusal =
+  | 'nothing_was_checked'
   | 'control_total_does_not_agree'
   | 'both_sides_from_the_same_place'
   | 'closed_by_whoever_posted'
@@ -115,6 +116,19 @@ export function closePeriod(input: {
   readonly postedBy: readonly string[];
   readonly signedBy?: string;
 }): CloseResult {
+  // Nothing to check is not the same as everything agreeing.
+  //
+  // The loop below is vacuously satisfied by an empty list, so a period with no control total at
+  // all closed on a signature alone — and then reported "0 control total(s) agreed", which is a
+  // sentence that reads like success. Zero agreements is silence, not agreement. It is the same
+  // fault the second refusal exists to catch, arrived at by subtraction instead of by circularity.
+  if (input.checks.length === 0) {
+    return {
+      ok: false, refusedBecause: 'nothing_was_checked',
+      detail: `no control total was presented for ${input.period}, so closing it would sign off a month that nothing has checked. Two figures from two different places have to agree before a period is signed (QG-07)`,
+    };
+  }
+
   for (const c of input.checks) {
     if (c.leftDerivation.trim().toLowerCase() === c.rightDerivation.trim().toLowerCase()) {
       return {

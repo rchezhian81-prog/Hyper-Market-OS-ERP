@@ -78,7 +78,10 @@ export interface RunReconciliation {
   readonly cashExpectedMinor: number;
   readonly cashHandedInMinor: number;
   readonly differenceMinor: number;
+  /** Assigned, and no attempt recorded — an order nobody can account for. */
   readonly outstanding: readonly string[];
+  /** Attempted, and never assigned to this run — a delivery nobody dispatched. */
+  readonly unassigned: readonly string[];
   readonly detail: string;
   readonly ownerAction: string;
 }
@@ -101,19 +104,32 @@ export function reconcileRun(input: {
   const delivered = mine.filter((a) => a.outcome === 'delivered');
   const cashExpectedMinor = delivered.reduce((t, a) => t + (a.cashCollectedMinor ?? 0), 0);
   const attempted = new Set(mine.map((a) => a.orderId));
+  const assigned = new Set(input.assignedOrderIds);
   const outstanding = input.assignedOrderIds.filter((id) => !attempted.has(id)).sort();
   const differenceMinor = input.cashHandedInMinor - cashExpectedMinor;
+
+  // The mirror of `outstanding`, and it is the one that was missing.
+  //
+  // Only assigned-minus-attempted was checked, so the whole reconciliation was blind in the other
+  // direction: with an empty assignment list — which is exactly what an unwired dispatch produces
+  // — a driver could return five deliveries and a bag of cash, and the run reported "nothing, the
+  // run reconciles and every order has an outcome". A delivery nobody dispatched is at least as
+  // interesting as an order nobody delivered, and unlike the other it has money attached.
+  const unassigned = [...new Set(mine.filter((a) => !assigned.has(a.orderId)).map((a) => a.orderId))].sort();
 
   return {
     driverId: input.driverId, runDate: input.runDate,
     attempts: mine.length, delivered: delivered.length, failed: mine.length - delivered.length,
-    cashExpectedMinor, cashHandedInMinor: input.cashHandedInMinor, differenceMinor, outstanding,
-    detail: `${input.driverId} on ${input.runDate}: ${delivered.length} delivered, ${mine.length - delivered.length} failed, ${outstanding.length} not attempted`,
+    cashExpectedMinor, cashHandedInMinor: input.cashHandedInMinor, differenceMinor,
+    outstanding, unassigned,
+    detail: `${input.driverId} on ${input.runDate}: ${delivered.length} delivered, ${mine.length - delivered.length} failed, ${outstanding.length} not attempted, ${unassigned.length} not on the run`,
     ownerAction: differenceMinor !== 0
       ? `cash is out by ${differenceMinor} against what the delivered orders say was collected. Settle it with ${input.driverId} today — tomorrow nobody can say which door it was`
-      : outstanding.length > 0
-        ? `${outstanding.length} order(s) went out and have no attempt recorded at all: ${outstanding.join(', ')}. Those are not failures, they are orders nobody can account for`
-        : 'nothing — the run reconciles and every order has an outcome',
+      : unassigned.length > 0
+        ? `${unassigned.length} delivery attempt(s) were made against orders that are not on ${input.driverId}'s run for ${input.runDate}: ${unassigned.join(', ')}. Either the run was never recorded, or goods left the building against orders nobody dispatched`
+        : outstanding.length > 0
+          ? `${outstanding.length} order(s) went out and have no attempt recorded at all: ${outstanding.join(', ')}. Those are not failures, they are orders nobody can account for`
+          : 'nothing — the run reconciles and every order has an outcome',
   };
 }
 

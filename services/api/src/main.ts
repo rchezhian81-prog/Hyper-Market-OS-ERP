@@ -40,10 +40,22 @@ import { ordersRoutes } from '../../orders/src/index';
 import { fulfilmentRoutes } from '../../fulfilment/src/index';
 import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
-import { catalogueAdapter, posAdapter, inventoryAdapter } from './adapters';
+import {
+  catalogueAdapter, posAdapter, inventoryAdapter, purchaseAdapter, financeAdapter,
+  customerAdapter, ordersAdapter, fulfilmentAdapter,
+} from './adapters';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 
 const now = (): string => new Date().toISOString();
+
+/**
+ * How long a click-and-collect reservation holds stock.
+ *
+ * Named here rather than typed twice as `60`, because the stub path and the live path both need
+ * it and two literals drift. It belongs in tenant settings (M02) once the config store is on this
+ * surface — a shop with one van and a shop with six do not hold stock for the same hour.
+ */
+const HOLD_MINUTES = 60;
 
 /**
  * Build the whole API surface.
@@ -76,10 +88,10 @@ export function buildSurface(deps: {
       buildSnapshot: (tenantId) => ({ tenantId, version: 1, builtAt: now(), products: [], barcodes: [] }),
       approvalsSince: empty([]), now,
     } : catalogueAdapter({ store, signer, now })),
-    ...purchaseRoutes({
+    ...purchaseRoutes(store === undefined ? {
       matchLines: empty([]), recordMatch: () => {}, applyBankChange: () => {},
-      openCommitments: empty({ count: 0, valueMinor: 0 }), now,
-    }),
+      openCommitments: empty(undefined), now,
+    } : purchaseAdapter({ store, now })),
     ...inventoryRoutes(store === undefined ? {
       movements: empty([]), appendMovement: () => {}, known: empty(new Set<string>()), now,
     } : inventoryAdapter({ store, now })),
@@ -88,19 +100,21 @@ export function buildSurface(deps: {
       receiptNumbers: empty(new Map()), bankedSaleIds: empty(new Set<string>()),
       bankSale: () => {}, recordExceptions: () => {}, openExceptions: empty([]), now,
     } : posAdapter({ store, now })),
-    ...customerRoutes({
+    ...customerRoutes(store === undefined ? {
       consentRecords: empty([]), appendConsent: () => {}, pointsBalance: empty(undefined), now,
-    }),
-    ...ordersRoutes({
+    } : customerAdapter({ store, now })),
+    ...ordersRoutes(store === undefined ? {
       onHand: empty(new Map()), outstanding: empty([]), holdReservations: () => {},
-      holdMinutes: 60, now,
-    }),
-    ...fulfilmentRoutes({ appendAttempt: () => {}, attempts: empty([]), assigned: empty([]), now }),
-    ...financeRoutes({
+      holdMinutes: HOLD_MINUTES, now,
+    } : ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES })),
+    ...fulfilmentRoutes(store === undefined
+      ? { appendAttempt: () => {}, attempts: empty([]), assigned: empty([]), now }
+      : fulfilmentAdapter({ store, now })),
+    ...financeRoutes(store === undefined ? {
       periodStates: empty(new Map()), nextOpenPeriod: empty(now().slice(0, 7)),
       appendJournal: () => {}, controlTotals: empty([]), postersIn: empty([]),
       markClosed: () => {}, now,
-    }),
+    } : financeAdapter({ store, now })),
     ...reportingRoutes({ figures: empty([]), now }),
     ...platformRoutes({
       probe: empty([]), flags: empty({}), setFlag: () => {}, recordSupportAccess: () => {}, now,

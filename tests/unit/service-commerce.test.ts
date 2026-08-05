@@ -68,11 +68,23 @@ describe('API-03 — a supplier bank change is verified out of band', () => {
   const change = (over: Partial<BankChangeRequest> = {}): BankChangeRequest => ({
     supplierId: 'SUP-1', newAccount: '00112233', requestedVia: 'email',
     calledBackOn: '+91-44-2222-3333', numberWeAlreadyHeld: '+91-44-2222-3333',
-    approvedBy: 'u-manager', requestedBy: 'u-clerk', ...over,
+    approvedBy: 'u-manager', requestedBy: 'u-clerk', requestedAt: '2026-08-01T09:00:00Z', ...over,
   });
 
   it('accepts a change confirmed on a number we already held', () => {
     expect(verifyBankChange(change()).ok).toBe(true);
+  });
+
+  it('REFUSES an undated request, before anything else is considered', () => {
+    // "When did this come in?" is the first question at an investigation into a payment that went
+    // to the wrong place. It also keeps the record straight when a supplier moves to a new account
+    // and later moves back: undated, the return looks identical to the original change and
+    // collapses into it, leaving the ledger asserting the money still goes to the middle account.
+    const r = verifyBankChange(change({ requestedAt: undefined as unknown as string }));
+    expect(r.refusedBecause).toBe('no_request_date');
+    expect(r.detail).toContain('which is the whole sequence an investigation reads');
+    // Not the later refusal it would also have earned had the date been present.
+    expect(verifyBankChange(change({ requestedAt: 'last Tuesday' })).refusedBecause).toBe('no_request_date');
   });
 
   it('REFUSES a change nobody rang about', () => {
@@ -180,6 +192,101 @@ describe('API-09 — closing takes two independent totals and a second person', 
   it('REFUSES an unsigned close however well it reconciles (QG-07)', () => {
     expect(closePeriod({ period: '2026-08', checks: [check()], closedBy: 'u-owner', postedBy: [] }).refusedBecause)
       .toBe('not_signed');
+  });
+});
+
+describe('API-03 — nothing to compare is not a match', () => {
+  const line = (over: Partial<MatchLine> = {}): MatchLine => ({
+    productId: 'P1', orderedQty: 100, receivedQty: 100, invoicedQty: 100,
+    orderedUnitMinor: 5_000, invoicedUnitMinor: 5_000, ...over,
+  });
+
+  // Found by wiring a real event store behind this service. `matchLines` folds a stream nothing
+  // writes to yet, so it returns []. Every step of `threeWayMatch` — map, reduce, some — is
+  // perfectly happy with an empty list, so an invoice we hold no documents for came back
+  // `blocked: false`, "invoiced 0, matched", and told the owner the three documents agree.
+  //
+  // Nothing failed when the guard was added, which is the point: no test exercised the empty case,
+  // which is exactly why it was wrong.
+  it('REFUSES to call an invoice with no lines a match', () => {
+    const r = threeWayMatch({ lines: [] });
+    expect(r.blocked).toBe(true);
+    expect(r.payableMinor).toBe(0);
+  });
+
+  it('says nothing was compared, NOT that everything agreed', () => {
+    const r = threeWayMatch({ lines: [] });
+    // The distinction the owner acts on: checked-and-clean versus not-checked. Only one of them
+    // is a reason to pay.
+    expect(r.ownerAction).toContain('not because a difference was found');
+    expect(r.ownerAction).not.toContain('agree');
+    expect(r.detail).toContain('nothing has been compared');
+  });
+
+  it('tripwire — a single agreeing line still matches, so the guard is not just refusing everything', () => {
+    expect(threeWayMatch({ lines: [line()] }).blocked).toBe(false);
+  });
+});
+
+describe('API-03 — what is on order is not known, and not zero', () => {
+  const deps = (open: PurchaseDeps['openCommitments']): PurchaseDeps => ({
+    matchLines: () => [], recordMatch: () => {}, applyBankChange: () => {},
+    openCommitments: open, now: () => NOW,
+  });
+  const call = async (d: PurchaseDeps) => {
+    const route = purchaseRoutes(d).find((r) => r.path === '/v1/purchase/commitments')!;
+    return route.handler({
+      tenantId: 't1', userId: 'u1', traceId: 'x', params: {}, query: {}, headers: {}, body: undefined,
+    } as never);
+  };
+
+  it('answers not-known when purchase orders are not recorded', async () => {
+    const res = await call(deps(() => undefined));
+    const body = res.body as { known: boolean; count?: number; detail?: string };
+    expect(body.known).toBe(false);
+    // Crucially it does not carry a zero the owner could read as a figure.
+    expect(body.count).toBeUndefined();
+    expect(body.detail).toContain('would read as');
+  });
+
+  it('answers with the figure, marked known, when there is one', async () => {
+    const res = await call(deps(() => ({ count: 4, valueMinor: 250_000 })));
+    expect(res.body).toMatchObject({ known: true, count: 4, valueMinor: 250_000 });
+  });
+});
+
+describe('API-09 — a month nothing checked does not close', () => {
+  // The loop over `checks` is vacuously satisfied by an empty list, so a period with no control
+  // total at all closed on a signature and reported "0 control total(s) agreed" — a sentence that
+  // reads like success. Zero agreements is silence, not agreement.
+  const check = (over: Partial<ControlTotalCheck> = {}): ControlTotalCheck => ({
+    name: 'Sales', leftMinor: 500_000, rightMinor: 500_000,
+    leftDerivation: 'sum of the sales ledger', rightDerivation: 'sum of the bank credits',
+    ...over,
+  });
+
+  it('REFUSES a close with no control total at all', () => {
+    const r = closePeriod({
+      period: '2026-08', checks: [], closedBy: 'u-owner',
+      postedBy: ['u-accounts'], signedBy: 'u-owner',
+    });
+    expect(r.ok).toBe(false);
+    expect(r.refusedBecause).toBe('nothing_was_checked');
+    expect(r.detail).toContain('nothing has checked');
+  });
+
+  it('refuses it BEFORE the signature is even considered', () => {
+    // Otherwise the first thing a person hears is "sign it", and signing is what they can do.
+    const r = closePeriod({ period: '2026-08', checks: [], closedBy: 'u-owner', postedBy: [] });
+    expect(r.refusedBecause).toBe('nothing_was_checked');
+    expect(r.refusedBecause).not.toBe('not_signed');
+  });
+
+  it('tripwire — one genuine pair still closes, so the guard is not refusing every close', () => {
+    expect(closePeriod({
+      period: '2026-08', checks: [check()], closedBy: 'u-owner',
+      postedBy: ['u-accounts'], signedBy: 'u-owner',
+    }).ok).toBe(true);
   });
 });
 

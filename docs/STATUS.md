@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 7 August 2026
+Last updated: 5 August 2026 (session: the API stopped forgetting)
 
 ---
 
@@ -2591,6 +2591,63 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## The API stopped forgetting (5 August 2026)
+
+**What changed.** Until this session the cloud API booted, answered every request correctly, and
+**forgot everything** — all thirteen services were wired to stubs. Eight of the thirteen now
+persist to the real event store: catalogue, POS, inventory, purchase, finance, customer, orders
+and fulfilment.
+
+**Everything is an event.** There is no products table, no sales table, no stock table and no
+"current pack" column. A sale is a `SaleCommitted` appended to the tenant's stream, a stock
+movement is an `InventoryMoved`, and every balance and every *current* anything is projected by
+reading the stream forward. A test asserts that no mutable `sales`, `products`, `stock` or
+`inventory` table exists at all. That is not architectural taste — it is the only shape in which
+hard rule #2 can hold, because a table with an `UPDATE` on it is a quantity somebody can
+overwrite, and no discipline in the application layer survives one hurried fix at 9pm.
+
+**Four defects came out of it that had nothing to do with persistence.** Three of the new
+projections read streams nothing writes to yet — purchase orders, the chart of accounts, the
+dispatch list — and in each case the empty answer was an *all-clear*:
+
+| It was asked | It answered | What that meant |
+| --- | --- | --- |
+| Match this invoice (no lines held) | "invoiced 0, matched — the order, the delivery and the invoice agree" | Pay it |
+| Close August (no control totals) | "closed, 0 control total(s) agreed" | A signed month nothing checked |
+| Settle Ravi's run (no dispatch list) | "the run reconciles and every order has an outcome" | Five deliveries and a bag of cash, unaccounted |
+| What is on order? | `{count: 0}` | "We have nothing on order" — and buy against it |
+
+The system was most confident exactly where it knew least. All four were fixed **in the domain
+logic, not papered over in the adapters**, because all four were wrong before persistence existed
+and would have shipped either way. **Not one existing test failed when the guards went in** — no
+test had ever exercised the empty case, which is precisely why all four were wrong.
+
+Two more found the same way: a supplier bank change carried **no date it was requested on**, so a
+supplier who moved to a new account and later moved back had the return collapse into the original
+change as a replay — leaving the ledger asserting the money still goes to the middle account. And
+`JournalPosted` was being stamped with the **document's own date** instead of the time we recorded
+it, which would have put the ledger's clock under the control of whoever typed the date on the
+paper.
+
+**Period close now refuses, deliberately.** No genuine control total can be built inside this API:
+every figure it holds for a period comes down one path — the till banks a sale, the sale becomes a
+journal — so adding those two up and comparing them is one figure written twice, which
+`closePeriod` already refuses by name. The real second source is outside: the bank statement, the
+filed return, the counted shelf. Until one is fed in, the month does not close and the refusal says
+why. **A month that closes because nobody checked it is the outcome worth refusing.**
+
+**Tests:** 2,949 automated plus 19 performance, all green. The performance suite now runs in its
+own isolated pass (`pnpm test:perf`) after flaking three times under full-suite load while passing
+alone — the tempting repair was to widen its tolerances until the noise fitted inside them, and a
+performance test loose enough never to flake is a performance test that cannot fail.
+
+**What the owner should check.** Nothing in the store yet — this is all engine work. The thing to
+know is that **the finance module will refuse to close a month until we give it a bank statement
+or a filed return to check the month against.** That is on purpose, and it is the behaviour to
+insist on when somebody eventually asks for it to be switched off.
+
+---
+
 ## Last completed
 - **Setup 1/3/4** — repository, `CLAUDE.md`, safety net (tests, guardrails, secret
   scan, CI), and baseline ADR. (Merged to `main` via PR #1.)
@@ -2650,6 +2707,13 @@ tests** against real PostgreSQL 16.13.
   store operations lead, finance/CA reviewer, security/architecture reviewer.
 
 ## Next session should start with
+**The five services still on stubs** — identity, platform, reporting, migration and AI — plus the
+identity wiring behind them (`authenticate` currently returns nothing, which is default-deny rather
+than a bypass, but it means nothing authenticates). After that, `apps/customer-app`, which is still
+empty, and the migration weekend runbook.
+
+Everything below remains true and unchanged.
+
 **The outside-evidence checks, one domain at a time.** Every code stage is complete and the
 migration engine is gate-proven. What is being built now is the part OB-06 made necessary: since
 nothing comes from the vendor, **every opening figure has to be proved against a record somebody

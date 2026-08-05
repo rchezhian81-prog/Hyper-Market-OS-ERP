@@ -172,6 +172,46 @@ describe('API-08 — a failed delivery is a state, not silence', () => {
     expect(r.ownerAction).toContain('orders nobody can account for');
   });
 
+  it('reports a delivery made against an order that is NOT on the run', () => {
+    // The mirror of `outstanding`, and it was missing. Only assigned-minus-attempted was checked,
+    // so the reconciliation was blind in the other direction — and a delivery nobody dispatched
+    // is at least as interesting as an order nobody delivered, because it has money attached.
+    const r = reconcileRun({
+      driverId: 'd-ravi', runDate: '2026-08-07',
+      assignedOrderIds: ['O-1'],
+      attempts: [attempt(), attempt({ attemptId: 'A-9', orderId: 'O-99' })],
+      cashHandedInMinor: 0,
+    });
+    expect(r.unassigned).toEqual(['O-99']);
+    expect(r.outstanding).toEqual([]);
+    expect(r.ownerAction).toContain('goods left the building against orders nobody dispatched');
+  });
+
+  it('does NOT declare a run reconciled when the dispatch list is empty and deliveries happened', () => {
+    // Found by wiring a real event store: `assigned` folds a stream nothing writes to yet, so it
+    // returns []. With only the assigned-minus-attempted check, a driver could come back with five
+    // deliveries and a bag of cash and the run reported "nothing — the run reconciles and every
+    // order has an outcome". The system was most confident exactly where it knew least.
+    const r = reconcileRun({
+      driverId: 'd-ravi', runDate: '2026-08-07',
+      assignedOrderIds: [],
+      attempts: [attempt(), attempt({ attemptId: 'A-2', orderId: 'O-2' })],
+      cashHandedInMinor: 0,
+    });
+    expect(r.unassigned).toEqual(['O-1', 'O-2']);
+    expect(r.ownerAction).not.toContain('the run reconciles');
+  });
+
+  it('tripwire — a run where everything assigned was attempted still reconciles', () => {
+    const r = reconcileRun({
+      driverId: 'd-ravi', runDate: '2026-08-07',
+      assignedOrderIds: ['O-1'], attempts: [attempt()], cashHandedInMinor: 0,
+    });
+    expect(r.unassigned).toEqual([]);
+    expect(r.outstanding).toEqual([]);
+    expect(r.ownerAction).toBe('nothing — the run reconciles and every order has an outcome');
+  });
+
   it('offers no way to delete proof (hard rule #6)', async () => {
     const service = await import('../../services/fulfilment/src/index');
     for (const name of Object.keys(service)) {
