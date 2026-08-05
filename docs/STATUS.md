@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 5 August 2026 (session: the API stopped forgetting — and stopped getting slower)
+Last updated: 5 August 2026 (session: the API stopped forgetting, stopped getting slower, and the shop can now actually run it)
 
 ---
 
@@ -3072,6 +3072,15 @@ evidence for the real migration, and the D4 handover to Mr Sivakumar.
 **Nothing is half-done and nothing is blocked on me.** This is a clean stopping point: the branch
 `claude/new-session-lw91i4` is pushed, every check passes, and the traceability document has a row
 for every piece of it.
+
+**The theme of the second half of this session, worth remembering.** Having found one thing that
+looked wired up and was not, I went looking for more, and found five: the piece that sends a sale
+to the cloud, the piece that writes a sale to the disk, the process that runs the shop's edge, the
+safety catch on repeated requests, and the audit trail itself. **Not one of them was a crash.**
+Every one was a control quietly not being there, and none would have shown up until the shop was
+using it. There are now two guards that look for that shape on purpose — one for controls that are
+stand-ins rather than the real thing, one for work that grows with how long the shop has been open
+— because finding them by reading is not a plan.
 
 Everything below remains true and unchanged.
 
