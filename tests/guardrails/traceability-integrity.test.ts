@@ -131,6 +131,91 @@ describe('the counts in the backlog match the rows in traceability', () => {
   });
 });
 
+/**
+ * The family-level baseline table (roadmap §37).
+ *
+ * **This table sat at "Not started" on all twelve families through nineteen stages of work.** Every
+ * check above matches rows beginning `| M##-FR-## |`; a family row begins `| M01–M02, M33–M35 |`,
+ * so none of them ever saw it. The document was watched in one place and unwatched three inches
+ * higher up, and the unwatched part is what somebody opening the file reads first.
+ *
+ * So the family status is now **derived** from the requirement rows beneath it rather than
+ * asserted, and a family that claims anything else fails.
+ */
+const FAMILY_MODULES: Readonly<Record<string, readonly string[]>> = {
+  'M01–M02, M33–M35': ['M01', 'M02', 'M33', 'M34', 'M35'],
+  'M03–M05': ['M03', 'M04', 'M05'],
+  'M06–M07, M24': ['M06', 'M07', 'M24'],
+  'M08–M11': ['M08', 'M09', 'M10', 'M11'],
+  'M12–M15': ['M12', 'M13', 'M14', 'M15'],
+  'M23, M29': ['M23', 'M29'],
+  'M16–M17, M20–M21': ['M16', 'M17', 'M20', 'M21'],
+  'M18–M19': ['M18', 'M19'],
+  'M22, M25–M28': ['M22', 'M25', 'M26', 'M27', 'M28'],
+  'M36/innovation': ['M36'],
+};
+
+/** What a family's status must say, computed from its own requirement rows. */
+function derivedFamilyStatus(modules: readonly string[]): string {
+  const rows = ROWS.filter((r) => modules.includes(r.module));
+  const partial = rows.filter((r) => r.state === 'partial').length;
+  const notStarted = rows.filter((r) => r.state === 'not_started').length;
+  if (rows.length === 0) return 'Not started';
+  if (notStarted === rows.length) return 'Not started';
+  if (partial === 0 && notStarted === 0) return 'Built';
+  return `Built (${rows.filter((r) => r.state === 'built').length}/${rows.length}, ${partial} partial)`;
+}
+
+const familyRow = (name: string, text = TRACEABILITY): string | undefined =>
+  text.split('\n').find((l) => l.startsWith(`| ${name} |`));
+
+describe('the family-level baseline agrees with the rows beneath it', () => {
+  it('states, for every family, what its own requirement rows say', () => {
+    const wrong: { family: string; says: string; shouldSay: string }[] = [];
+    for (const [family, modules] of Object.entries(FAMILY_MODULES)) {
+      const line = familyRow(family);
+      expect(line, `no family row for ${family}`).toBeDefined();
+      const says = line!.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim()).pop() ?? '';
+      const shouldSay = derivedFamilyStatus(modules);
+      if (says !== shouldSay) wrong.push({ family, says, shouldSay });
+    }
+    expect(wrong, 'a family row disagrees with the requirement rows it summarises').toEqual([]);
+  });
+
+  it('FIRES on a family that still claims not started while its rows are built', () => {
+    // The tripwire. This is the exact state the document was in, undetected, for nineteen stages.
+    const broken = TRACEABILITY.replace(
+      /^(\| M03–M05 \|.*\|) [^|]*\|$/m, '$1 Not started |',
+    );
+    expect(broken).not.toBe(TRACEABILITY);
+    const says = familyRow('M03–M05', broken)!.trim().replace(/^\||\|$/g, '')
+      .split('|').map((c) => c.trim()).pop();
+    expect(says).toBe('Not started');
+    expect(says).not.toBe(derivedFamilyStatus(FAMILY_MODULES['M03–M05']!));
+  });
+});
+
+describe('the document does not let "built" be read as "runnable"', () => {
+  it('carries an assembly section, because domain logic finished is not a system assembled', () => {
+    // The family table certifies rules and tests. Read alone it implies a system somebody can
+    // switch on, and there is no service layer at all. The honest counterpart has to be present
+    // and has to name the layers, or the table overstates itself by omission.
+    expect(TRACEABILITY).toContain('## Assembly state');
+    for (const layer of ['`packages/`', '`services/`', '`edge/sync-agent`', '`infra/`']) {
+      expect(TRACEABILITY, `assembly state does not mention ${layer}`).toContain(layer);
+    }
+    expect(TRACEABILITY).toContain('does **not** mean a cashier can scan an item today');
+  });
+
+  it('keeps the assembly claims honest about what is empty', () => {
+    // `services/` holding nothing is the single most consequential fact about this repository's
+    // state, and it is the one a reader is least likely to discover by accident.
+    const servicesLine = TRACEABILITY.split('\n').find((l) => l.startsWith('| `services/`'))!;
+    const hasCode = readdirSync(join(ROOT, 'services')).some((f) => f !== 'README.md');
+    if (!hasCode) expect(servicesLine).toContain('Not started');
+  });
+});
+
 describe('every gate that claims to have passed has its evidence on disk', () => {
   it('names an evidence file that exists for each passed gate in the backlog', () => {
     // Per SECTION, not per line: a stage heading says "GATE PASSED" and its evidence is named a

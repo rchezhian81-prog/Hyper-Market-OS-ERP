@@ -11,20 +11,52 @@ requirement may reach **Done** without a complete individual row.
 
 ## Family-level baseline (roadmap §37)
 
+**The Status column is derived from the requirement rows below it, never asserted here.** This table
+sat at *"Not started"* on all twelve families through nineteen stages of work, because the
+integrity guardrail matched only rows beginning `| M##-FR-## |` and never saw these. It is now
+checked: `tests/guardrails/traceability-integrity.test.ts` recomputes each family from its own
+requirement rows and fails if a family claims anything else.
+
 | Requirement family | Workflow | Screens | Contract | Data | Test family | Release | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| M01–M02, M33–M35 | WF-20 | Admin/Security | API-01/API-11 | Identity/Platform | Security, RBAC, DR, release | R1 | Not started |
-| M03–M05 | WF-01/WF-06 | Product/Merchandising | API-02 | Product/Commercial | Catalogue/price/promotion/offline pack | R2 | Not started |
-| M06–M07, M24 | WF-02–WF-05 | Purchase/Supplier | API-03 | Commercial/Purchase | PO/receipt/match/import | R2 | Not started |
-| M08–M11 | WF-06–WF-09 | Inventory/Warehouse | API-04 | Inventory | Ledger/count/expiry/recall/offline | R2 | Not started |
-| M12–M15 | WF-10–WF-12 | POS/Cash | API-05 | POS/Finance | Performance/offline/tender/fraud | R2 | Not started |
-| M23, M29 | WF-05/WF-12/WF-18 | Finance/Owner | API-09/API-10 | POS/Finance | GST/Tally/reconciliation/profitability | R2 | Not started |
-| MG programme | WF-19 | Migration | API-12 | Migration + all domains | Full-history trial/reconcile/cutover | R3 | Not started |
-| M16–M17, M20–M21 | WF-13/WF-16/WF-17 | Customer/CRM | API-06/API-07 | Commercial/Order | Privacy/loyalty/order/refund | R4 | Not started |
-| M18–M19 | WF-14–WF-15 | Picker/Delivery | API-07/API-08 | Order/Fulfilment | Reservation/substitution/proof/settlement | R5 | Not started |
-| M22, M25–M28 | Relevant | B2B/Workforce/Facilities | Domain APIs | Operations/Commercial | Role UAT/compliance | R6 | Not started |
-| A01–A10 | All governed | AI control + role surfaces | API-13 | AI + authorized domains | Evaluation/injection/authority/cost/kill switch | R7 | Not started |
-| M36/innovation | Controlled extension | Admin/selected | Versioned APIs/events | Tenant/config | Isolation/upgrade/rollback | R8 | Not started |
+| M01–M02, M33–M35 | WF-20 | Admin/Security | API-01/API-11 | Identity/Platform | Security, RBAC, DR, release | R1 | Built (19/20, 1 partial) |
+| M03–M05 | WF-01/WF-06 | Product/Merchandising | API-02 | Product/Commercial | Catalogue/price/promotion/offline pack | R2 | Built |
+| M06–M07, M24 | WF-02–WF-05 | Purchase/Supplier | API-03 | Commercial/Purchase | PO/receipt/match/import | R2 | Built |
+| M08–M11 | WF-06–WF-09 | Inventory/Warehouse | API-04 | Inventory | Ledger/count/expiry/recall/offline | R2 | Built |
+| M12–M15 | WF-10–WF-12 | POS/Cash | API-05 | POS/Finance | Performance/offline/tender/fraud | R2 | Built |
+| M23, M29 | WF-05/WF-12/WF-18 | Finance/Owner | API-09/API-10 | POS/Finance | GST/Tally/reconciliation/profitability | R2 | Built |
+| MG programme | WF-19 | Migration | API-12 | Migration + all domains | Full-history trial/reconcile/cutover | R3 | Built |
+| M16–M17, M20–M21 | WF-13/WF-16/WF-17 | Customer/CRM | API-06/API-07 | Commercial/Order | Privacy/loyalty/order/refund | R4 | Built |
+| M18–M19 | WF-14–WF-15 | Picker/Delivery | API-07/API-08 | Order/Fulfilment | Reservation/substitution/proof/settlement | R5 | Built |
+| M22, M25–M28 | Relevant | B2B/Workforce/Facilities | Domain APIs | Operations/Commercial | Role UAT/compliance | R6 | Built |
+| A01–A10 | All governed | AI control + role surfaces | API-13 | AI + authorized domains | Evaluation/injection/authority/cost/kill switch | R7 | Built |
+| M36/innovation | Controlled extension | Admin/selected | Versioned APIs/events | Tenant/config | Isolation/upgrade/rollback | R8 | Built |
+
+> **"Built" here means the domain logic and its tests, not a deployed system.** The apps, the
+> service layer and the store edge are assembled to differing degrees — see *Assembly state*
+> below, which is the honest counterpart to this table and the reason it must be read beside it.
+
+## Assembly state — what "Built" above does and does not mean
+
+The family table certifies **domain logic and its tests**. It does not certify a system anybody can
+switch on, and reading it alone would leave that impression. Measured, not estimated:
+
+| Layer | Source | State |
+| --- | ---: | --- |
+| `packages/` — domain logic | ~44,800 lines, 247 files | **Complete.** Every module M01–M36, 2,673 tests |
+| `apps/pos` | ~990 lines + PWA shell, service worker, manifest | **Runnable shell.** Lane guards, session, view adapter, offline cache |
+| `apps/owner-app`, `web-erp`, `picker-app`, `delivery-app` | 215–335 lines each | **Thin.** Role logic present; not assembled UIs |
+| `apps/customer-app` | **0 lines** | **Not started** |
+| `edge/sync-agent` | ~208 lines, 3 files | **Agent only.** No containerised store-edge services |
+| `services/` | **0 lines** | **Not started.** API-01…13 exist as contracts in `docs/api/`, with no service implementing them |
+| `infra/` | compose + nginx + env example | **Skeleton.** No IaC, no pipeline |
+
+**The consequence, stated plainly so it cannot be missed:** the business rules are finished and the
+system is not assembled. There is no service layer, so nothing serves API-01…13; the POS shell has
+no cloud counterpart to sync to. A requirement row reading *Built* means its rules are implemented
+and proved, and it does **not** mean a cashier can scan an item today.
+
+This section is the honest counterpart to the family table above and must be read beside it.
 
 ## Design artifacts (Stage 3–4)
 
