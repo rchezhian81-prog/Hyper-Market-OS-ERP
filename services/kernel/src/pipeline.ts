@@ -95,20 +95,41 @@ export function hashRequest(method: Method, path: string, body: unknown): string
 
 // ── The two outbound guards ──────────────────────────────────────────────────
 
-const DIGITS_ONLY = /^\d{13,19}$/;
+const DIGITS_ONLY = /^\d+$/;
 
 /**
- * Luhn, deliberately.
+ * Lengths a modern card PAN actually has: 15 (Amex), 16 (most), 19 (some RuPay/Maestro).
  *
- * Scanning **every string in every response** for 13–19 digits alone would fire on legitimate
- * references of that length — a UTR, an ARN, a long invoice number — and a guard that cries wolf
- * on ordinary traffic is a guard somebody switches off. Luhn takes it from "long number" to
- * "structurally a card number", which is precise enough to leave on in production, which is the
- * only place it matters.
+ * **13 and 14 are excluded deliberately, and this is the important line in the file.** A retail
+ * response is full of 13-digit EAN-13 barcodes and 14-digit ITF-14 carton codes — and EAN-13's
+ * check digit is computed the same alternating way Luhn is, so **about one barcode in ten passes
+ * Luhn by chance.** The first version of this guard did length 13–19 plus Luhn, and the first
+ * service built on it, the catalogue, produced a pack whose barcodes tripped it. The single most
+ * important response in the system would have been blocked.
+ *
+ * What this costs: a 13-digit legacy Visa would not be caught. Those were phased out decades ago,
+ * this is a backstop rather than the control (hard rule #3 is that one is never stored in the
+ * first place), and a guard that fires on ordinary barcodes is a guard somebody switches off —
+ * which catches nothing at all.
+ */
+const CARD_LENGTHS = new Set([15, 16, 19]);
+
+/** Issuer prefixes in actual use. A number is not a card because it is long and passes Luhn. */
+const ISSUER = /^(4|5[1-5]|2(2[2-9]|[3-6]\d|7[01]|720)|3[47]|3(0[0-5]|[689])|6(011|5|0|[45])|8[12])/;
+
+/**
+ * Three signals together, because any one of them alone fires on ordinary retail traffic.
+ *
+ * Scanning **every string in every response** is only tolerable if it is quiet on real data. A
+ * guard that cries wolf on barcodes, UTRs and ARNs gets disabled, and a disabled guard is worse
+ * than none because everyone believes it is running.
  */
 export function looksLikeACardNumber(value: string): boolean {
   const digits = value.replace(/[\s-]/g, '');
   if (!DIGITS_ONLY.test(digits)) return false;
+  if (!CARD_LENGTHS.has(digits.length)) return false;
+  if (!ISSUER.test(digits)) return false;
+
   let sum = 0;
   let double = false;
   for (let i = digits.length - 1; i >= 0; i -= 1) {

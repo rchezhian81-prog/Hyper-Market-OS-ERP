@@ -233,14 +233,29 @@ describe('a write is safe to repeat, which is what the till depends on', () => {
 });
 
 describe('two things never leave the process', () => {
-  it('detects a card number without firing on an ordinary long reference', () => {
-    // Blunt length matching would fire on a UTR or an ARN, and a guard that cries wolf on normal
-    // traffic gets switched off — which is why Luhn is in it.
-    expect(looksLikeACardNumber('4111111111111111')).toBe(true);
+  it('detects a card number', () => {
+    expect(looksLikeACardNumber('4111111111111111')).toBe(true);  // Visa
     expect(looksLikeACardNumber('4111 1111 1111 1111')).toBe(true);
-    expect(looksLikeACardNumber('5555555555554444')).toBe(true);
-    expect(looksLikeACardNumber('AA330426012345X')).toBe(false); // a GST acknowledgement
+    expect(looksLikeACardNumber('4111-1111-1111-1111')).toBe(true);
+    expect(looksLikeACardNumber('5555555555554444')).toBe(true);  // Mastercard
+    expect(looksLikeACardNumber('378282246310005')).toBe(true);   // Amex, 15 digits
     expect(looksLikeACardNumber('4111111111111112')).toBe(false); // fails Luhn
+    expect(looksLikeACardNumber('1234567812345670')).toBe(false); // Luhn-valid, no issuer prefix
+  });
+
+  it('is SILENT on the retail traffic it has to live in', () => {
+    // The defect the catalogue service found on day one: EAN-13's check digit is computed the same
+    // alternating way Luhn is, so about one barcode in ten passes Luhn by chance. The first
+    // version of this guard did 13–19 digits plus Luhn, and it blocked a catalogue pack — the
+    // single most important response in the system. A guard that fires on ordinary data gets
+    // switched off, and a switched-off guard is worse than none because everyone believes it runs.
+    const eans = Array.from({ length: 200 }, (_, i) => `890000000${String(i).padStart(4, '0')}`);
+    expect(eans.filter(looksLikeACardNumber)).toEqual([]);
+
+    expect(looksLikeACardNumber('8901234567890')).toBe(false);    // EAN-13, India GS1
+    expect(looksLikeACardNumber('40123456789012')).toBe(false);   // ITF-14 carton code
+    expect(looksLikeACardNumber('012345678905')).toBe(false);     // UPC-A
+    expect(looksLikeACardNumber('AA330426012345X')).toBe(false);  // GST acknowledgement
     expect(looksLikeACardNumber('123')).toBe(false);
   });
 

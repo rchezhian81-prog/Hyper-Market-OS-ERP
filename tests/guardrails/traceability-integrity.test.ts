@@ -210,13 +210,20 @@ describe('the document does not let "built" be read as "runnable"', () => {
   it('keeps the assembly claims honest about what is empty', () => {
     // `services/` holding nothing is the single most consequential fact about this repository's
     // state, and it is the one a reader is least likely to discover by accident.
-    const servicesLine = TRACEABILITY.split('\n').find((l) => l.startsWith('| `services/` domain services'))!;
-    expect(servicesLine, 'the assembly table must carry a row for the domain services').toBeDefined();
-    // The kernel is not a domain service. Thirteen APIs are specified and none is implemented, so
-    // this row says "Not started" until one of them exists — a foundation is not a service.
-    const domainServices = readdirSync(join(ROOT, 'services'))
+    // Thirteen APIs are specified. The assembly table must carry a row naming how many are not
+    // built, and it must keep saying so — "one service exists" is the point at which a reader
+    // most easily starts believing the service layer is done.
+    const remaining = TRACEABILITY.split('\n').find((l) => l.startsWith('| `services/` remaining domain services'))!;
+    expect(remaining, 'the assembly table must say what is still missing from services/').toBeDefined();
+
+    const built = readdirSync(join(ROOT, 'services'))
       .filter((f) => f !== 'README.md' && f !== 'kernel');
-    if (domainServices.length === 0) expect(servicesLine).toContain('Not started');
+    if (built.length < 13) expect(remaining).toContain('Not started');
+    // Every service that exists on disk has a row of its own, so none is quietly uncounted.
+    for (const service of built) {
+      expect(TRACEABILITY, `services/${service} has no row in the assembly table`)
+        .toContain(`| \`services/${service}\``);
+    }
   });
 });
 
