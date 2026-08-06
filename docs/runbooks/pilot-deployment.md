@@ -33,15 +33,17 @@ cp .env.example .env
 
 Open `.env` in a text editor and do **three** things:
 
-1. Replace the `POSTGRES_PASSWORD` placeholder with a long random password. On Mac/Linux
-   generate one with `openssl rand -base64 24`; on Windows, any long random string of letters
-   and numbers is fine.
+1. Replace the `POSTGRES_PASSWORD` placeholder with a long random password. This value goes
+   **inside** `DATABASE_URL` in step 3, so it must be URL-safe: on Mac/Linux generate one with
+   `openssl rand -hex 24` (letters and numbers only — a `/` or `+` from `base64` would make the
+   URL invalid and nothing would connect); on Windows, any long string of letters and numbers.
 2. Replace the `PACK_SIGNING_KEY` placeholder the same way, with a **different** value —
    `openssl rand -base64 48`. This is the key that signs the price list every till trades from;
    it is what stops a lane accepting a price file that did not come from you.
 3. Fill in `DATABASE_URL` on one line, joining the values you just set — the postgres scheme,
    then `://`, your user, `:`, your password, then `@db:5432/` and the database name. The file
-   itself spells out the shape.
+   itself spells out the shape. Because the password sits inside this URL, keep it URL-safe
+   (the hex recipe in step 1 is); a `/` or `+` in it makes the whole line an invalid URL.
 
 > **If you skip one of these, nothing starts.** The system does not warn and carry on with a
 > default — it prints exactly what is missing and stops. That is deliberate: a shop running for

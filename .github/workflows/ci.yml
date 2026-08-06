@@ -173,8 +173,12 @@ jobs:
           cd infra/compose
           cp .env.example .env
           # Real values for CI only. This file is created here and never committed.
+          # The DB password is generated URL-SAFE (hex, not base64): it becomes part of
+          # DATABASE_URL below, and a base64 value carrying a '/' or '+' makes that string an
+          # invalid URL — a migrate container that exits 1 about two runs in three. The signing
+          # keys stay base64: they are compared as strings, never placed in a URL.
           {
-            echo "POSTGRES_PASSWORD=$(openssl rand -base64 24)"
+            echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)"
             echo "PACK_SIGNING_KEY=$(openssl rand -base64 48)"
             echo "IDP_SIGNING_KEY=$(openssl rand -base64 48)"
             echo "IDP_ISSUER=https://idp.ci.invalid/"
