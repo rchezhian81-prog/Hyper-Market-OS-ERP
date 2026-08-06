@@ -5,11 +5,12 @@ import { GLOBAL_FOR, SCREENS, type ScreenInput, type ScreenName } from '../../ed
 import { known, notKnown, type PackProduct, type StorePack } from '../../edge/store-edge/src/store-pack';
 import type { LoggedSale } from '../../edge/store-edge/src/read-model';
 import { SyncOutbox } from '../../packages/sync/src/index';
+import { CatalogueCache } from '../../packages/catalogue/src/index';
 import { Ledger, InMemoryLedgerStore } from '../../packages/ledger/src/index';
 import { resolvePrice } from '../../packages/price-list/src/index';
 import { makeEvent } from '../../packages/contracts/src/event';
 import {
-  bootBuying, bootCatalogue, bootManager, bootMerchandising, bootReporting, bootService,
+  bootBuying, bootCatalogue, bootExpiry, bootManager, bootMerchandising, bootReporting, bootService,
   buyingGaps, catalogueGaps, merchandisingGaps,
 } from '../../apps/web-erp/src/browser-entry';
 import { bootOwner, forgetfulQueueStore } from '../../apps/owner-app/src/browser-entry';
@@ -41,6 +42,7 @@ const PRODUCTS: PackProduct[] = [
   {
     productId: 'p1', name: 'Toor dal 1kg', categoryId: 'grocery', unitPriceMinor: 145_00,
     unitCostMinor: 100_00, uom: 'ea', barcodes: ['8901'], availableMinor: 10,
+    taxBps: 500, status: 'active',
   },
 ];
 
@@ -186,6 +188,13 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
     returnWindowDays: 30, approvalThresholdMinor: 200_00, noReceiptCapMinor: 100_00,
     agentAuthorityMinor: 50_00, compensationCapMinor: 500_00, userId: 'u-desk',
   }),
+  // Expiry and recall (M10). Batches with dates, and every recall this shop has run.
+  batches: known([
+    { batchId: 'B-OLD', productId: 'p1', qty: 10, expiry: '2026-08-04' },
+    { batchId: 'B-SOON', productId: 'p1', qty: 20, expiry: '2026-08-09' },
+  ]),
+  recalls: known([]),
+  expiryPolicy: known({ nearExpiryDays: 7, userId: 'u-qc' }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([{ purpose: 'marketing', channel: 'sms' }]),
   ...over,
@@ -410,11 +419,64 @@ describe('the other five screens boot on what the box served them', () => {
     expect(route.route()[0]?.codMinor).toBe(250_00);
   });
 
-  it('the till gets the catalogue it needs to scan with no line at all', async () => {
+  it('the till gets a catalogue it can ACTUALLY BUILD, and scans with no line at all', async () => {
+    // **This test used to check the payload's contents and never that the lane could consume
+    // them** — and that is exactly how the defect survived. The box served a shape with no
+    // `barcodes` array, no `status` and no `taxBps`, so `new CatalogueCache(payload)` threw
+    // before the till rendered anything: a cashier saw a blank screen with nothing saying why.
+    // The only honest check is to build the real cache and scan through it.
     const base = await serve(snapshotOf());
     const payload = (await payloadFromScreen(base, 'pos'))!;
-    const products = payload['products'] as { barcodes: string[] }[];
-    expect(products[0]?.barcodes).toEqual(['8901']);
+    const cache = new CatalogueCache(payload as never);
+    const hit = cache.scan('8901');
+    expect(hit.product.name).toBe('Toor dal 1kg');
+    expect(hit.product.unitPriceMinor).toBe(145_00);
+  });
+
+  it('REFUSES a recalled item at the lane, by name, with no network', async () => {
+    // The loudest safety claim in this codebase — "even offline" — and the flag had no field to
+    // arrive in, so the refusal was unreachable and a recalled tin could be sold at the till.
+    const base = await serve(snapshotOf({
+      pack: pack({
+        products: known([{ ...PRODUCTS[0]!, recallBlock: true }]),
+      }),
+    }));
+    const cache = new CatalogueCache((await payloadFromScreen(base, 'pos'))! as never);
+    expect(() => cache.scan('8901')).toThrow(/under recall/);
+  });
+
+  it('honours a recall from the product MASTER too, so the two cannot disagree', async () => {
+    // Recall lives on the master and on the lane-facing summary. On a safety flag a disagreement
+    // must fail one way only: either source saying blocked means blocked.
+    const base = await serve(snapshotOf({
+      pack: pack({
+        productMaster: known([{ ...MASTER[0]!, recallBlocked: true }]),
+      }),
+    }));
+    const cache = new CatalogueCache((await payloadFromScreen(base, 'pos'))! as never);
+    expect(() => cache.scan('8901')).toThrow(/under recall/);
+  });
+
+  it('keeps a product it cannot price safely OFF the lane, and names it', async () => {
+    // A guessed tax rate is a wrong number on every bill for that item. An unknown barcode is at
+    // least a question somebody asks.
+    const base = await serve(snapshotOf({
+      pack: pack({ products: known([{ ...PRODUCTS[0]!, taxBps: undefined }]) }),
+    }));
+    const payload = (await payloadFromScreen(base, 'pos'))!;
+    expect(payload['products']).toEqual([]);
+    expect(payload['excludedProducts']).toEqual([
+      { productId: 'p1', name: 'Toor dal 1kg', why: 'no tax rate on the catalogue' },
+    ]);
+  });
+
+  it('ships a RECALLED product even when it cannot be priced, so the refusal is by name', async () => {
+    // "Unknown barcode" on a recalled tin is a cashier keying it in by hand.
+    const base = await serve(snapshotOf({
+      pack: pack({ products: known([{ ...PRODUCTS[0]!, taxBps: undefined, recallBlock: true }]) }),
+    }));
+    const cache = new CatalogueCache((await payloadFromScreen(base, 'pos'))! as never);
+    expect(() => cache.scan('8901')).toThrow(/under recall/);
   });
 });
 
@@ -440,6 +502,8 @@ describe('a box that has been told nothing tells every screen so', () => {
       returnHistory: notKnown('never'), serviceCases: notKnown('never'),
       satisfaction: notKnown('never'), slaPolicy: notKnown('never'),
       servicePolicy: notKnown('never'),
+      batches: notKnown('never'), recalls: notKnown('never'),
+      expiryPolicy: notKnown('never'),
       lossPreventionRules: notKnown('never'), consentPurposes: notKnown('never'),
     },
     sales: [],
@@ -1750,5 +1814,87 @@ describe('the service desk, fed by the box', () => {
     const base = await serve(snapshotOf({ pack: pack({ servicePolicy: notKnown('never sent') }) }));
     expect(await payloadFromScreen(base, 'service')).toBeNull();
     expect(bootService(undefined)).toBeNull();
+  });
+});
+
+/**
+ * **Expiry and recall, driven over the real socket (M10-FR-01…04).**
+ *
+ * The recall block is the loudest safety claim in this product — *"even offline"* — and it was
+ * unreachable: the flag had no field in the pack, and the payload the box served the lane was not
+ * a `CatalogueSnapshot` at all, so the till threw on boot before rendering anything.
+ */
+describe('the expiry and recall screen, fed by the box', () => {
+  it('lists what is going out of date, earliest first, from the box’s own batches', async () => {
+    const base = await serve(snapshotOf());
+    const payload = (await payloadFromScreen(base, 'expiry'))!;
+    expect(payload['nearExpiryDays']).toBe(7);
+
+    const screen = bootExpiry(payload as never)!;
+    const list = screen.actionList();
+    expect(list.map((l) => l.batchId)).toEqual(['B-OLD', 'B-SOON']);
+    expect(list[0]?.action).toBe('dispose');
+    // Named, because this is a screen about food.
+    expect(list[0]?.name).toBe('Toor dal 1kg');
+  });
+
+  it('says the shop records NO batch dates, rather than showing an empty list', async () => {
+    // "Nothing is expiring" on a shop that has never recorded an expiry date is the most
+    // reassuring wrong sentence on this screen.
+    const base = await serve(snapshotOf({ pack: pack({ batches: notKnown('never sent') }) }));
+    const payload = (await payloadFromScreen(base, 'expiry'))!;
+    expect('batches' in payload, '"batches" must be absent, not empty').toBe(false);
+    expect(bootExpiry(payload as never)!.actionList()).toEqual([]);
+  });
+
+  it('serves the screen nothing at all without the shop’s own near-expiry window', async () => {
+    const base = await serve(snapshotOf({ pack: pack({ expiryPolicy: notKnown('never sent') }) }));
+    expect(await payloadFromScreen(base, 'expiry')).toBeNull();
+    expect(bootExpiry(undefined)).toBeNull();
+  });
+
+  it('starts a recall and says how much is still in customers’ homes', async () => {
+    const base = await serve(snapshotOf());
+    const screen = bootExpiry((await payloadFromScreen(base, 'expiry'))! as never)!;
+    const outcome = screen.start({ recallId: 'RC-1', batchId: 'B-SOON', reason: 'supplier notice' });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.recall.productId).toBe('p1');
+    expect(outcome.view.open).toBe(true);
+  });
+
+  it('refuses a batch this box has never heard of', async () => {
+    const base = await serve(snapshotOf());
+    const screen = bootExpiry((await payloadFromScreen(base, 'expiry'))! as never)!;
+    const outcome = screen.start({ recallId: 'RC-1', batchId: 'B-NOPE', reason: 'glass' });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.refusal).toBe('no_such_batch');
+  });
+
+  it('starts nothing when the box does not know who is asking', async () => {
+    const base = await serve(snapshotOf({
+      pack: pack({ expiryPolicy: known({ nearExpiryDays: 7 }) }),
+    }));
+    const payload = (await payloadFromScreen(base, 'expiry'))!;
+    expect('userId' in payload, '"userId" must be absent, not invented').toBe(false);
+    const outcome = bootExpiry(payload as never)!
+      .start({ recallId: 'RC-1', batchId: 'B-SOON', reason: 'glass' });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.refusal).toBe('nobody_is_named_at_this_desk');
+  });
+
+  it('will not close a recall without evidence', async () => {
+    const started = {
+      recallId: 'RC-1', batchId: 'B-SOON', productId: 'p1', reason: 'glass',
+      startedBy: 'u-qc', startedAt: '2026-08-05T09:00:00.000Z',
+    };
+    const base = await serve(snapshotOf({ pack: pack({ recalls: known([started]) }) }));
+    const screen = bootExpiry((await payloadFromScreen(base, 'expiry'))! as never)!;
+    const outcome = screen.close({ recallId: 'RC-1', evidence: '  ', recoveredQty: 0, disposedQty: 0 });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.refusal).toBe('needs_evidence');
   });
 });

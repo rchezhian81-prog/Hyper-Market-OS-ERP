@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, the day boundary the store box did not have, and the service desk)
+Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, the day boundary the store box did not have, the service desk, and expiry and recall — including the recall block that never reached a till)
 
 ---
 
@@ -2591,6 +2591,102 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## A recalled tin could be sold at your till (6 August 2026)
+
+I built the expiry and recall screen you asked for. While testing it I found something I want to
+put in front of you plainly, because it is a safety matter and not a commercial one.
+
+### What was wrong
+
+The till has always been written to **refuse a recalled item**. Scan it and it says so and will not
+sell it — and it does that with the internet down, which is the hard part and the part that was
+done well.
+
+**But nothing ever told the till which items were recalled.**
+
+There was no place in the message the store computer sends the till for that flag to travel in. The
+rule sat there, correct and tested, checking a box that was never ticked. **So a recalled tin would
+have scanned and sold like any other.**
+
+And underneath that, something simpler and worse: what the store computer was sending the till was
+not the right shape at all — it was missing the barcode list, the tax rates and the item status. On
+a real shop computer **the till would not have opened at all.** A cashier would have got a blank
+screen with nothing anywhere saying why.
+
+### How it was found
+
+Not by reading the code. By starting the real store computer, taking the message it actually sends,
+and trying to build a real till from it. It crashed on the first line. That is the fifth time this
+session that running the real thing found something reading it did not.
+
+The test that was meant to cover this looked at the *message* and never checked that the till could
+*use* it. That is exactly how it survived. It now builds a real till and scans a barcode through it.
+
+### It is fixed, and the fix fails safe
+
+- The recall flag now travels to every till.
+- It is read from **two places**, and **either one saying "recalled" means recalled.** On a safety
+  flag, a disagreement must only ever fail one way.
+- A product with **no tax rate or no status** is now kept **off** the till and named on a list,
+  because a guessed tax rate is a wrong number on every bill for that item. An unknown barcode is
+  at least something a cashier asks about.
+- **Except a recalled one** — that is sent to the till *with* its block, so the till refuses it by
+  name. "Unknown barcode" on a recalled tin is a cashier keying it in by hand.
+
+### The screen itself
+
+**Going out of date.** Everything expired or close to it, soonest first, with the words *throw
+away* or *mark it down* rather than a colour alone. The number of days is **your** setting — bread
+and tinned goods are not the same question.
+
+**Sell the oldest first.** The till now draws from the batch that expires soonest, and never from
+an expired one.
+
+**Recalls.** Start one on a batch code and it stops that item selling at every till immediately,
+internet or no internet. Then the part that matters:
+
+> **The screen leads with how much is still in customers' homes** — not how much is on your shelf.
+> The shelf number is the easy one and it is the one that makes a recall look finished.
+
+It also tells you **how many buyers you can contact and how many you cannot**. Four out of nineteen
+is the number that decides whether a notice goes on the door.
+
+**A recall does not close by pressing a button.** It needs a note of what was actually done with
+the stock. And if some is still unaccounted for, it needs a second note saying why you are closing
+it anyway — because in a real recall some of it has been eaten and is never coming back, and that
+is a decision you sign rather than something the software assumes. Both notes go into the record,
+which is the only thing that exists afterwards and the thing an inspector reads.
+
+**An empty list means one of two things** and the screen says which: nothing is going out of date,
+or **this shop does not record batch dates at all.** The second one wearing the first one's clothes
+would be the most dangerous sentence on the screen.
+
+**Tests:** 4,130 automated plus 31 performance, all green — 59 new.
+
+### What the owner should check, in the store
+
+1. **This one first.** Take any product, have it marked as recalled, and **try to scan it at the
+   till**. It must refuse and say it is under recall. Then **pull the network cable out and try
+   again.** It must still refuse. If it sells either time, stop and call me.
+2. Open the till on a real shop computer and check it opens at all — that it shows products and
+   scans one. That is the crash above.
+3. Open the expiry screen before you have recorded any batch dates. It must say **you record no
+   batch dates**, not "nothing is expiring".
+4. Record a batch with a date a few days out. It must appear as *mark it down*, with the days left.
+5. Start a test recall on that batch. Check the number it gives you for what is still out there,
+   then try to close it with the box empty. It must refuse and ask what you did with the stock.
+
+### Also fixed today
+
+The page listing your outstanding decisions still said four of them were blocking your go-live —
+the cost ceiling, the second custodian, the GO date and the completion date. **All four were
+answered days ago.** The page is corrected. Two pieces of work behind those answers are still
+genuinely outstanding: Mr Sivakumar's custody handover and quarterly rebuild, and the signed GO
+record for the audit file. Neither blocks the build; both block the audit trail being complete.
+
+---
+
+
 ## The service desk — and the refund that could be given every day (6 August 2026)
 
 Your till has had a refund button since the day it was built. Press it and it says, in Tamil and in
@@ -4686,7 +4782,13 @@ the tests were green when I found it.** What found it was running the screen for
 store box, which also turned up a margin of 99.92% from a costing rule that had been copied instead
 of shared. Reading does not find these. Driving the real path does, every time.
 
-**Six now, and the sixth was the one that costs money.** The service desk's at-most-once return
+**Nine now, and the ninth was a safety matter.** The lane's recall block — the refusal that says
+*"even offline"* — had no field in the store pack for the flag to arrive in, and the payload the box
+served the lane was not a `CatalogueSnapshot` at all, so the till threw on boot. A recalled tin
+scanned and sold like any other. Alongside it, `allocateFefo`, `expiryActions`, `assessColdChain`,
+`releaseFromQualityHold` and `traceBatch`: five more written-and-tested rules called by nothing.
+
+**Six then, and the sixth was the one that costs money.** The service desk's at-most-once return
 rule was written, tested, and fed a bare zero by everything that called it — so the same receipt
 could have been refunded every day, with each refund passing the rule meant to stop it. Also found
 in the same build: `packages/service-desk` and `packages/reversal`, 890 lines of tested rules

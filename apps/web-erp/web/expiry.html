@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Expiry and recall</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      Expiry and recall (M10-FR-01..04 / D05 / FSSAI 9.3 / API-04 / API-06).
+      A seventh shell in this folder, sharing the one bundle.
+
+      Two jobs that share one fact — which batch, with which expiry, is where. One saves
+      money quietly every week. The other is the only screen in this product where being
+      late is a safety matter rather than a commercial one.
+
+      A recall is not finished when it is started. Blocking the till is the easy half.
+    -->
+    <style>
+      :root {
+        --bg: #0f172a; --panel: #1e293b; --ink: #f8fafc; --muted: #94a3b8;
+        --good: #22c55e; --warn: #f59e0b; --danger: #ef4444; --info: #38bdf8;
+        --line: #334155;
+        --tap: 48px;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--ink);
+        font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        min-height: 100dvh; display: flex; flex-direction: column;
+      }
+      header {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; padding: 12px 16px; background: var(--panel); flex-wrap: wrap;
+      }
+      .who { font-weight: 600; }
+      .who small { display: block; color: var(--muted); font-weight: 400; font-size: 14px; }
+      .lang { background: transparent; color: var(--muted); min-height: 40px; font-size: 14px; border: 0; }
+
+      .sample { background: var(--warn); color: #451a03; padding: 8px 16px; font-weight: 600; font-size: 15px; margin: 0; }
+      .sample[hidden], .stale[hidden], .nobody[hidden] { display: none; }
+      .stale { background: #1e3a5f; color: #dbeafe; padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info); }
+      /* Nobody named at the desk. Nothing can be committed, and it says so at the top. */
+      .nobody { background: var(--danger); color: #fff; padding: 10px 16px; font-size: 15px; margin: 0; font-weight: 600; }
+
+      nav { display: flex; gap: 8px; padding: 8px 16px; background: var(--panel); overflow-x: auto; }
+      nav button {
+        min-height: var(--tap); padding: 0 18px; border: 0; border-radius: 12px;
+        background: var(--line); color: var(--ink); font-size: 16px; font-weight: 600; white-space: nowrap;
+      }
+      nav button[aria-current='page'] { background: var(--ink); color: #0f172a; }
+
+      main { flex: 1; padding: 16px; display: grid; gap: 16px; align-content: start; max-width: 900px; }
+      section[hidden] { display: none; }
+      h2 { margin: 0 0 4px; font-size: 20px; }
+      h3 { margin: 16px 0 8px; font-size: 17px; }
+      p.lead { margin: 0 0 12px; color: var(--muted); font-size: 15px; }
+
+      label { display: block; margin: 12px 0 4px; font-size: 15px; color: var(--muted); }
+      input, select, textarea {
+        width: 100%; min-height: var(--tap); border-radius: 12px; border: 2px solid var(--line);
+        background: #0b1220; color: var(--ink); font-size: 17px; padding: 0 12px;
+      }
+      textarea { min-height: 80px; padding: 10px 12px; font-family: inherit; }
+      input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible {
+        outline: 3px solid #93c5fd; outline-offset: 2px;
+      }
+      button {
+        min-height: var(--tap); border-radius: 12px; border: 0; font-size: 16px; font-weight: 600;
+        background: var(--line); color: var(--ink);
+      }
+      button.primary { background: var(--good); color: #052e16; font-size: 18px; }
+      button.danger { background: var(--danger); color: #fff; }
+      .wide { width: 100%; }
+      .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+      .row {
+        background: var(--panel); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px;
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      }
+      .row .what { display: grid; gap: 2px; }
+      .row .what small { color: var(--muted); font-size: 14px; }
+      /* Expired: dispose. Near expiry: mark down. Colour AND words, always. */
+      .row.expired { border-left: 5px solid var(--danger); }
+      .row.expired .what small { color: #fca5a5; }
+      .row.near_expiry { border-left: 5px solid var(--warn); }
+      .row.near_expiry .what small { color: #fde68a; }
+      /* An OPEN recall. The loudest thing this product draws. */
+      .row.open { border-left: 6px solid var(--danger); background: #450a0a; }
+      .row.closed { border-left: 5px solid var(--line); opacity: 0.8; }
+
+      /* The SLA colours. Never colour alone — every one of these also says it in words. */
+      .row.breached { border-left: 5px solid var(--danger); }
+      .row.at_risk { border-left: 5px solid var(--warn); }
+      .row.within { border-left: 5px solid var(--good); }
+      .row.met { border-left: 5px solid var(--info); }
+
+      .bill { background: var(--panel); border-radius: 14px; padding: 14px 16px; display: grid; gap: 6px; }
+      .bill .big { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .bill small { color: var(--muted); font-size: 14px; }
+      /* More came back than went out. Should be impossible, so it is loud. */
+      .overreturned { background: #450a0a; border: 2px solid var(--danger); border-radius: 12px; padding: 12px 14px; color: #fecaca; font-size: 15px; }
+      .overreturned[hidden] { display: none; }
+
+      .qty { display: flex; align-items: center; gap: 8px; }
+      .qty input { width: 90px; text-align: center; }
+      .empty { color: var(--muted); padding: 20px 4px; }
+
+      .banner {
+        position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 18px 16px;
+        background: var(--danger); color: #fff; display: grid; gap: 10px;
+      }
+      .banner[hidden] { display: none; }
+      .banner.good { background: var(--good); color: #052e16; }
+      .banner strong { font-size: 20px; }
+      .banner p { margin: 0; font-size: 16px; }
+      .banner button { background: #7f1d1d; color: #fff; }
+      .banner.good button { background: #052e16; color: #ecfdf5; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="who" id="who">Expiry and recall<small id="whoami">—</small></span>
+      <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
+    </header>
+
+    <p class="sample" id="sample" hidden role="status">Sample data — this is not your shop.</p>
+    <p class="stale" id="stale" hidden role="status"></p>
+    <p class="nobody" id="nobody" hidden role="alert"></p>
+
+    <nav id="tabs" aria-label="Sections">
+      <button id="tab-expiry" type="button" aria-current="page">Going out of date</button>
+      <button id="tab-recall" type="button">Recalls</button>
+    </nav>
+
+    <main>
+      <section id="view-expiry">
+        <h2 id="expiry-title">Going out of date</h2>
+        <p class="lead" id="expiry-lead">Earliest first. Expired stock is thrown away; stock close to its date is marked down while it can still sell.</p>
+        <p class="lead" id="no-batches" hidden></p>
+        <div id="expiry-list"></div>
+      </section>
+
+      <section id="view-recall" hidden>
+        <h2 id="recall-title">Recalls</h2>
+        <p class="lead" id="recall-lead">Open ones first. A recall is not finished when it is started — it is finished when the stock is accounted for and written down.</p>
+
+        <h3 id="start-title">Start a recall</h3>
+        <label for="batch" id="batch-label">Batch code on the packaging</label>
+        <input id="batch" type="text" inputmode="latin" autocomplete="off" />
+        <label for="reason" id="reason-label">Why (supplier notice, complaint, test result)</label>
+        <textarea id="reason"></textarea>
+        <button id="start" class="danger wide" type="button">Start the recall</button>
+        <p class="lead" id="start-note">This stops the item being sold at every till, including with the internet down.</p>
+
+        <h3 id="list-title">Recalls in this shop</h3>
+        <div id="recall-list"></div>
+      </section>
+    </main>
+
+    <div class="banner" id="banner" hidden role="alert">
+      <strong id="banner-title">—</strong>
+      <p id="banner-text"></p>
+      <button id="banner-ok" type="button">I have read this</button>
+    </div>
+
+    <!--SCREEN-DATA-->
+    <script type="module" src="./web-erp.bundle.js"></script>
+    <script type="module" src="./expiry.js"></script>
+  </body>
+</html>

@@ -33,6 +33,7 @@ const PRODUCTS: PackProduct[] = [
   {
     productId: 'p1', name: 'Toor dal 1kg', categoryId: 'grocery', unitPriceMinor: 145_00,
     unitCostMinor: 100_00, uom: 'ea', barcodes: ['8901'], availableMinor: 10,
+    taxBps: 500, status: 'active',
   },
   {
     productId: 'p2', name: 'Tomato', categoryId: 'produce', unitPriceMinor: 80_00,
@@ -159,6 +160,13 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
     returnWindowDays: 30, approvalThresholdMinor: 200_00, noReceiptCapMinor: 100_00,
     agentAuthorityMinor: 50_00, compensationCapMinor: 500_00, userId: 'u-desk',
   }),
+  // Expiry and recall (M10). Batches with dates, and every recall this shop has run.
+  batches: known([
+    { batchId: 'B-OLD', productId: 'p1', qty: 10, expiry: '2026-08-04' },
+    { batchId: 'B-SOON', productId: 'p1', qty: 20, expiry: '2026-08-09' },
+  ]),
+  recalls: known([]),
+  expiryPolicy: known({ nearExpiryDays: 7, userId: 'u-qc' }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([]),
   ...over,

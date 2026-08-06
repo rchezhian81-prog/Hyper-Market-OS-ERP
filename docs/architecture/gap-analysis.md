@@ -25,8 +25,8 @@ project.
 | `packages/` — domain rules | 45,179 | **Genuinely strong.** The product's value lives here |
 | `services/` — the thirteen APIs | 5,556 | Built, persisting, authenticated, audited |
 | `edge/` — the store box | 2,250 | Runs, writes durably, syncs — **and now feeds every screen**, the buyer's included |
-| `apps/` — everything a person touches | 9,000 | **All six have real screens, and the ERP now has six** — the manager's, the buyer's, the product and price screen, merchandising and space, reporting, and the service desk. The gap that dominated this document is closed |
-| Tests | 4,071 + 31 | Unusually thorough on rules; thin on assembly until today |
+| `apps/` — everything a person touches | 9,400 | **All six have real screens, and the ERP now has seven** — the manager's, the buyer's, the product and price screen, merchandising and space, reporting, the service desk, and expiry and recall. The gap that dominated this document is closed |
+| Tests | 4,130 + 31 | Unusually thorough on rules; thin on assembly until today |
 
 **2,452 lines of app code for six applications** is the number that matters. For comparison, the POS
 alone — one screen a cashier uses eight hours a day — is 1,070 of those lines, and none of it draws
@@ -112,7 +112,7 @@ Three columns, and they are different questions. **Rules** = is the logic writte
 | M01–M02 Platform, identity | ✅ | ✅ | ◐ | Token verification real; the **approvals inbox is now a screen** (decide in ≤3 taps, reason recorded, separation of duties visible). **No identity provider chosen**, so nobody can log in |
 | M03–M05 Product, pricing, catalogue | ✅ | ✅ | ✅ | **The product and price screen is now built** — HSN/tax class is a field and nothing publishes without one. A price change is drafted, checked against the MRP ceiling and the margin floor with both limits shown *before* the price is typed, approved by somebody else and appended as a new entry. Until this session **nothing in the system had ever produced a `PriceEntry`**, so the catalogue snapshot builder had never had a real price to ship to a lane. **Shelf addresses are built too** (M04-FR-02, owner decision 6 Aug 2026): the store box now sequences the picker's wave by the shop's own shelf map, chiller last where the store has said so — `routeFor` had been written and tested since the module existed and nothing had ever called it. **Planograms, refill tasks, the range review and space are built too** (6 Aug 2026, owner asked for them next): a blind shelf count is the producer that never existed, and an uncounted facing is now reported as *never counted* rather than as an empty shelf — which had been raising the loudest alarm in the system for every product in the shop |
 | M06–M07 Purchase, supplier | ✅ | ✅ | ✅ | Three-way match real; goods receiving is a screen, and a delivery with no purchase order is flagged unmatched rather than filed quietly. **The buyer's screen now captures a supplier invoice in one go** — checked against the total printed on the paper, each line's own arithmetic checked with the line number to look at, approved by somebody else, committed atomically — so the match has lines at last. An uncaptured invoice still refuses, and now says which of the three documents is missing |
-| M08–M11 Inventory, warehouse, quality | ✅ | ✅ | ◐ | Movements and snapshots real; **blind counting is now a screen** — and a count the screen cannot value is refused rather than priced at zero. No expiry or recall screen |
+| M08–M11 Inventory, warehouse, quality | ✅ | ✅ | ✅ | Movements and snapshots real; blind counting is a screen, and a count the screen cannot value is refused rather than priced at zero. ~~No expiry or recall screen~~ ✅ **Expiry and recall are now built** — the action list, FEFO allocation, the backwards trace, and a recall that leads with what is still in customers' homes and will not close without evidence. **The defect found while building it was the worst of the session:** the recall block that says *"even offline"* had no field in the pack to arrive in, and the payload the box served the lane was not a `CatalogueSnapshot` at all, so the till threw on boot — a recalled tin scanned and sold like any other |
 | M12–M15 POS, returns, cash office | ✅ | ✅ | ✅ | The strongest area. Durable commit real, and the screen reaches the till's own disk over loopback (ADR-0004). Cash, card, UPI, hold/recall, cash to safe and a blind till close are in; **day close now has a manager screen that reports a list rather than a refusal**. ~~Receipt-based returns still have no screen~~ ✅ **The service desk is now built** — the desk the till has been pointing at all along. It finds the bill in the box's own log, so a receipted return works with the cable out, and **the at-most-once guard has a producer at last**: it had been fed a bare zero, so the same receipt could be refunded every day |
 | M16–M18 Customer, loyalty, storefront | ✅ | ✅ | ◐ | **The customer app is now a screen**: search, repeat order, basket review, slots, payment, and a privacy centre where withdrawing consent is the same one tap as giving it (DPDP s.6(6)). Loyalty **accrual still not wired** — points read as *not known* |
 | M19–M20 Picking, delivery | ✅ | ✅ | ✅ | **Both handhelds are now screens**, both queue their work, and **the store box now plans the routes** (M19-FR-03) — straight-line distances, stated as such, as a draft a dispatcher confirms. Runs reconcile against a real assignment list at last |
@@ -132,6 +132,23 @@ in the deferral — *no producer of on-shelf counts anywhere in the system* — 
 blind shelf count, and it turned out to be the whole point: `planogramCompliance` had been treating
 an **uncounted** facing as an **empty** one, so on day one the entire shop came back as urgent
 refill tasks and staff would have been sent to full shelves.
+
+### The one that was a safety matter (6 August 2026)
+
+Found while building the expiry and recall screen, by running the till against a payload the store
+box actually produces rather than reading the code.
+
+**The lane's catalogue has refused a recall-blocked scan since it was written**, and the refusal
+says *"even offline"* — the loudest safety claim in this system. Two things made it unreachable:
+the store pack had **no field for the flag to arrive in**, and what `posPayload` served the lane was
+not a `CatalogueSnapshot` at all — no `barcodes` array, no `status`, no `taxBps`. Building the real
+cache from it **threw before the till rendered anything**.
+
+So a cashier opening the till on a real box got a blank screen, and once that was fixed there was
+still nothing to stop a recalled tin being scanned and sold.
+
+The integration test that should have caught it checked the payload's *contents* and never that the
+lane could consume them. It now builds the real cache and scans through it.
 
 ### The defect that had nothing to do with any of the above (6 August 2026)
 

@@ -63,6 +63,10 @@ import {
 } from './service-session';
 import type { OriginalSale, RecordedReturn } from '../../../packages/returns/src/index';
 import type { SatisfactionScore, ServiceCase, SlaPolicy } from '../../../packages/service-desk/src/index';
+import {
+  createExpirySession, type ExpiryPorts, type ExpirySession, type RecallRecord,
+} from './expiry-session';
+import type { Batch } from '../../../packages/fefo/src/index';
 import type { Producer } from '../../../packages/reporting/src/index';
 
 /** What the store knows about a product this screen may be asked to count. */
@@ -274,6 +278,52 @@ export function bootService(
   );
 }
 
+/** What the box tells the expiry and recall screen. */
+export interface ExpiryData {
+  readonly userId?: string;
+  readonly storeId?: string;
+  readonly now?: string;
+  readonly nearExpiryDays?: number;
+  /**
+   * Every batch with its expiry. **Absent means this shop does not record batch dates at all**,
+   * which is a different thing from nothing going out of date — and only one of those is good news.
+   */
+  readonly batches?: readonly Batch[];
+  readonly recalls?: readonly RecallRecord[];
+  readonly productNames?: Readonly<Record<string, string>>;
+}
+
+export function expiryPortsFromData(
+  data: ExpiryData | undefined,
+  ledger: Ledger,
+): ExpiryPorts {
+  return {
+    batches: () => data?.batches ?? [],
+    ledger: () => ledger,
+    recalls: () => data?.recalls ?? [],
+    // NOT defaulted to `{}`. An empty name map and no name map read the same to a lookup, and the
+    // screen needs to fall back to the product code rather than showing a blank where a food
+    // product's name belongs.
+    productNames: () => data?.productNames,
+  };
+}
+
+/** Build the expiry and recall screen, or `null` when the box was told no near-expiry window. */
+export function bootExpiry(data: ExpiryData | undefined, ledger?: Ledger): ExpirySession | null {
+  if (data === undefined) return null;
+  return createExpirySession(
+    {
+      tenantId: 'tenant',
+      storeId: data.storeId ?? 'store-1',
+      // NOT defaulted. A recall carries the name of whoever started it.
+      userId: data.userId === undefined ? null : data.userId,
+      now: data.now ?? '1970-01-01T00:00:00.000Z',
+      nearExpiryDays: data.nearExpiryDays ?? 0,
+    },
+    expiryPortsFromData(data, ledger ?? new Ledger(new InMemoryLedgerStore())),
+  );
+}
+
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
 interface ManagerWindow {
   managerSession?: ManagerSession;
@@ -292,6 +342,8 @@ interface ManagerWindow {
   reportingData?: ReportingData;
   serviceData?: ServiceData;
   serviceSession?: ServiceSession;
+  expiryData?: ExpiryData;
+  expirySession?: ExpirySession;
   /** The decision vocabulary, so the view can offer it and never invent a reason of its own. */
   managerReasons?: {
     readonly approved: readonly DecisionReasonCode[];
@@ -747,6 +799,8 @@ if (browserWindow !== undefined) {
   if (reporting !== null) browserWindow.reportingSession = reporting;
   const service = bootService(browserWindow.serviceData);
   if (service !== null) browserWindow.serviceSession = service;
+  const expiry = bootExpiry(browserWindow.expiryData);
+  if (expiry !== null) browserWindow.expirySession = expiry;
   // The view offers these and records the code the manager picks. It never composes a reason of
   // its own, so the audit trail keeps one vocabulary that can still be reported on in a year.
   browserWindow.managerReasons = { approved: APPROVE_REASONS, rejected: REJECT_REASONS };

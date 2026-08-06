@@ -36,6 +36,8 @@
 //                      this shop does not record, so a report it cannot run refuses by name
 //   • service        — every bill this box holds (not just today's: a receipt from last Tuesday is
 //                      the ordinary case), every return already taken, and the shop's own limits
+//   • expiry         — every batch and its expiry date, and every recall, so the list and the
+//                      backwards trace both work with the cable out
 
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { assessChecklist } from '../../../packages/workforce/src/index';
@@ -51,7 +53,7 @@ import type { StorePack } from './store-pack';
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service',
+  'reporting', 'service', 'expiry',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -76,17 +78,76 @@ export interface ScreenInput {
  */
 export function posPayload(input: ScreenInput): Record<string, unknown> | null {
   if (!input.pack.products.known) return null;
-  return {
-    version: input.pack.version,
-    products: input.pack.products.value.map((p) => ({
+  const policies = input.pack.policies.known ? input.pack.policies.value : undefined;
+
+  // The master record, where the pack carried one. Recall and lifecycle live there, and the
+  // lane-facing summary carries them too — so the two can disagree, and on a SAFETY flag a
+  // disagreement must fail one way only: **either source saying blocked means blocked.**
+  const master = new Map(
+    (input.pack.productMaster.known ? input.pack.productMaster.value : [])
+      .map((m) => [m.productId, m] as const),
+  );
+
+  const products: Record<string, unknown>[] = [];
+  const barcodes: Record<string, unknown>[] = [];
+  const excluded: Record<string, unknown>[] = [];
+
+  for (const p of input.pack.products.value) {
+    const m = master.get(p.productId);
+    const recallBlock = p.recallBlock === true || m?.recallBlocked === true;
+    const status = p.status ?? m?.lifecycle;
+    const minimumAge = m?.safety?.minimumAge;
+    // **A product the lane cannot judge is not shipped to the lane.**
+    //
+    // No tax rate means every line of tax on that sale would be invented; no status means the
+    // catalogue cannot tell active from discontinued, and `SELLABLE.includes(undefined)` is false,
+    // so it would refuse at the scan with a reason nobody can act on. Excluded and COUNTED, the
+    // same treatment the tested snapshot builder already gives them — an unknown barcode at the
+    // till is at least a question somebody asks, where a wrong tax rate is not.
+    //
+    // A recalled product is the exception: it is shipped WITH its block rather than excluded, so
+    // the lane refuses the scan by name — *this is under recall* — instead of by absence. "Unknown
+    // barcode" on a recalled tin is a cashier keying it in by hand.
+    if ((p.taxBps === undefined || status === undefined) && !recallBlock) {
+      excluded.push({
+        productId: p.productId,
+        name: p.name,
+        why: p.taxBps === undefined ? 'no tax rate on the catalogue' : 'no status on the catalogue',
+      });
+      continue;
+    }
+    products.push({
       productId: p.productId,
       name: p.name,
       ...(p.nameTa === undefined ? {} : { nameTa: p.nameTa }),
-      barcodes: p.barcodes,
+      baseUom: p.uom,
       unitPriceMinor: p.unitPriceMinor,
-      uom: p.uom,
-      ...(p.ageRestricted === undefined ? {} : { ageRestricted: p.ageRestricted }),
-    })),
+      taxBps: p.taxBps ?? 0,
+      status: status ?? 'discontinued',
+      // **The recall block, at last.** The lane's catalogue has refused a recall-blocked scan
+      // since it was written — "even offline", the loudest safety claim in this codebase — and
+      // the flag had no field to arrive in, so the refusal was unreachable and a recalled batch
+      // could be sold at the till.
+      ...(recallBlock ? { recallBlock: true } : {}),
+      ...(p.ageRestricted === true ? { regulatedFlags: { minimumAge: minimumAge ?? 18 } } : {}),
+    });
+    for (const code of p.barcodes) {
+      barcodes.push({ code, productId: p.productId, kind: 'ean13' });
+    }
+  }
+
+  // A real `CatalogueSnapshot`, which is what `bootPos` actually consumes. The shape served here
+  // used to be a different one of the same name in spirit — no `barcodes` array, no `status`, no
+  // `taxBps` — and `new CatalogueCache(snapshot)` threw on `snapshot.barcodes` before the till
+  // rendered anything. A cashier saw a blank screen, and nothing anywhere said why.
+  return {
+    tenantId: policies?.storeId ?? 'store-1',
+    version: input.pack.version,
+    builtAt: input.pack.receivedAt ?? input.now,
+    products,
+    barcodes,
+    // Named, never silently dropped: a product missing from the till is a product nobody can sell.
+    ...(excluded.length === 0 ? {} : { excludedProducts: excluded }),
   };
 }
 
@@ -919,6 +980,45 @@ export function servicePayload(input: ScreenInput): Record<string, unknown> | nu
   return payload;
 }
 
+/**
+ * The expiry and recall payload (M10-FR-01…04).
+ *
+ * `null` when the box has not been told this shop's near-expiry window — a screen inventing its own
+ * would be deciding how many days ahead counts as *going out of date*, which is a different number
+ * for bread and for tinned goods and belongs to the shop.
+ *
+ * **The batches are served whether or not the shop tracks them**, because an absent `batches`
+ * section and an empty one mean opposite things: *this shop does not track batches at all* versus
+ * *nothing is going out of date*. The second is a reassuring sentence, and only one of them is true.
+ */
+export function expiryPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.expiryPolicy.known) return null;
+  const policy = input.pack.expiryPolicy.value;
+  const policies = input.pack.policies.known ? input.pack.policies.value : undefined;
+
+  const payload: Record<string, unknown> = {
+    storeId: policies?.storeId ?? 'store-1',
+    branchId: policies?.branchId ?? null,
+    // The box's own clock. A device a day out would call tomorrow's stock expired, or today's fine.
+    now: input.now,
+    tradingDay: input.tradingDay,
+    nearExpiryDays: policy.nearExpiryDays,
+  };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+
+  if (input.pack.batches.known) payload['batches'] = input.pack.batches.value;
+  if (input.pack.recalls.known) payload['recalls'] = input.pack.recalls.value;
+
+  // The names, so a screen about food safety shows a person a product and not a code.
+  if (input.pack.products.known) {
+    const names: Record<string, string> = {};
+    for (const p of input.pack.products.value) names[p.productId] = p.name;
+    payload['productNames'] = names;
+  }
+
+  return payload;
+}
+
 /** The global each screen's bundle reads at boot. One name per screen, and they must not drift. */
 export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   pos: 'posCatalogue',
@@ -932,6 +1032,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   merchandising: 'merchandisingData',
   reporting: 'reportingData',
   service: 'serviceData',
+  expiry: 'expiryData',
 });
 
 const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<string, unknown> | null>> = Object.freeze({
@@ -946,6 +1047,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   merchandising: merchandisingPayload,
   reporting: reportingPayload,
   service: servicePayload,
+  expiry: expiryPayload,
 });
 
 /** Build one screen's payload. `null` means this box has nothing to give it, and says so. */

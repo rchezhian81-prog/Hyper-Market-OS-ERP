@@ -5,15 +5,24 @@ work can be built. **Answered by the owner, never resolved by assumption**
 (`CLAUDE.md`). With the roadmap now in the repo, the earlier "pending roadmap"
 gaps are closed; what remains is genuinely owner-only input.
 
-## A. Blocking owner-closure fields (roadmap §25 / §39)
-These hold the M0 gate (Formal GO). Recorded in `docs/registers/decisions.md`.
+## A. Owner-closure fields (roadmap §25 / §39) — ✅ ALL FOUR ANSWERED
 
-| # | Question | Status |
+These held the M0 gate (Formal GO). **All four are now answered**; the authoritative record is
+`docs/registers/decisions.md` and this table is a summary of it. Corrected 6 August 2026, when this
+page was found still reporting them as blocking long after they were decided — a register that says
+a gate is shut when it is open is worse than no register, because the one thing anybody reads it
+for is what is outstanding.
+
+| # | Question | Answer |
 | --- | --- | --- |
-| D3 | Monthly post-go-live running-cost ceiling (₹/month)? | **Open — blocking** |
-| D4 | Second technical custodian — name? | **Open — blocking** (fill first) |
-| D5 | Formal GO date? | **Open — blocking** |
-| D8 | Full-product completion target date? (Store Core already 1 Apr 2027) | **Open — blocking** |
+| D3 | Monthly post-go-live running-cost ceiling (₹/month)? | **₹15,000 / month, platform runtime only** (owner, 4 Aug 2026, superseding the ₹20,000 of 2 Aug) |
+| D4 | Second technical custodian — name? | **Mr Sivakumar** (owner, 2 Aug 2026) — custody (OD-09) and a quarterly rebuild/deploy (AID-10) still to be demonstrated |
+| D5 | Formal GO date? | **2 August 2026** — GO given in session; a signed record still to be filed for the audit trail |
+| D8 | Full-product completion target date? | **Store Core 1 April 2027** (confirmed 2 Aug 2026); the later releases are dated **release by release** as each approaches |
+
+Two of these carry work that is **not** the decision itself and is still outstanding: Mr Sivakumar's
+custody handover and quarterly rebuild (D4), and the signed GO record for the audit trail (D5).
+Neither blocks the build; both block the audit trail being complete.
 
 ## B. Audit Validation Required (roadmap §13) — the 20 Stage 1 facts
 Full list and owners in `docs/discovery/avr-closure.md`. The highest-leverage ones:

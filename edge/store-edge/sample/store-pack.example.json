@@ -51,7 +51,19 @@
     "with the box's own return log, never replaced by it: the cloud alone leaves the",
     "at-most-once guard blind exactly when the line is down, which is when a shop is",
     "least supervised. THE FIVE NUMBERS IN servicePolicy ARE YOURS TO SET before go-live",
-    "- the ones here are starting figures, not a recommendation."
+    "- the ones here are starting figures, not a recommendation.",
+    "batches/recalls/expiryPolicy: the expiry and recall screen (M10).",
+    "PRODUCT taxBps AND status ARE NOW REQUIRED FOR A PRODUCT TO REACH A TILL. Without",
+    "a tax rate every line of tax on that sale would be invented, and without a status",
+    "the lane cannot tell active from discontinued - so the product is EXCLUDED from the",
+    "till catalogue and named in excludedProducts rather than shipped at a guessed rate.",
+    "recallBlock STOPS THE SALE AT EVERY TILL, INCLUDING WITH THE INTERNET DOWN. It is",
+    "read from here AND from productMaster.recallBlocked, and either one saying blocked",
+    "means blocked - a safety flag must fail one way only. A recalled product is shipped",
+    "to the lane WITH its block rather than excluded, so the till refuses it by name;",
+    "'unknown barcode' on a recalled tin is a cashier keying it in by hand.",
+    "Leave batches out and the screen says THIS SHOP RECORDS NO BATCH DATES, which is a",
+    "different thing from nothing going out of date - only one of those is good news."
   ],
   "version": 1,
   "policies": {
@@ -74,6 +86,9 @@
       "unitPriceMinor": 10000,
       "unitCostMinor": 7000,
       "uom": "ea",
+      "taxBps": 500,
+      "status": "active",
+      "recallBlock": false,
       "barcodes": [
         "0000000000000"
       ],
@@ -346,6 +361,20 @@
     "agentAuthorityMinor": 50000,
     "compensationCapMinor": 500000,
     "userId": "REPLACE_WITH_SERVICE_DESK_USER_ID"
+  },
+  "batches": [
+    {
+      "batchId": "REPLACE_WITH_BATCH_CODE",
+      "productId": "EXAMPLE-1",
+      "qty": 10,
+      "expiry": "2026-12-31",
+      "state": "on_hand"
+    }
+  ],
+  "recalls": [],
+  "expiryPolicy": {
+    "nearExpiryDays": 7,
+    "userId": "REPLACE_WITH_QUALITY_USER_ID"
   },
   "lossPreventionRules": [
     {

@@ -64,6 +64,23 @@ export interface PackProduct {
   readonly barcodes: readonly string[];
   readonly availableMinor: number;
   readonly ageRestricted?: boolean;
+  /**
+   * Tax rate in basis points, from the product's HSN / tax class.
+   *
+   * Absent means this product **cannot be priced safely at a lane** and is excluded from the
+   * catalogue the till is given, counted rather than shipped at a guessed rate.
+   */
+  readonly taxBps?: number;
+  /** `active`, `clearance`, `discontinued`… Absent means the lane cannot judge it sellable. */
+  readonly status?: string;
+  /**
+   * **Stops sale everywhere, honoured offline (M10-FR-04).**
+   *
+   * The lane's catalogue has refused a recall-blocked scan since it was written — *even offline*,
+   * the loudest safety claim in this codebase. The flag had no field to arrive in, so it never
+   * reached a till and the refusal was unreachable. This is that field.
+   */
+  readonly recallBlock?: boolean;
 }
 
 /** One person waiting on somebody else's decision, as the cloud routed it here. */
@@ -349,6 +366,13 @@ export interface PackServicePolicy {
   readonly userId?: string;
 }
 
+/** How this shop judges "near expiry". Per-tenant: bread and tinned goods are not one question. */
+export interface PackExpiryPolicy {
+  readonly nearExpiryDays: number;
+  /** Who is on the quality/recall screen. Absent means nothing may be started or closed. */
+  readonly userId?: string;
+}
+
 export interface PackMerchandisingPolicy {
   readonly refillAtBp: number;
   readonly countStaleAfterMinutes: number;
@@ -496,6 +520,17 @@ export interface StorePack {
   readonly slaPolicy: Register<unknown>;
   /** Return windows, refund thresholds and compensation limits — all per-tenant. */
   readonly servicePolicy: Register<PackServicePolicy>;
+  /**
+   * Every batch this box knows of, with its expiry (M10-FR-01).
+   *
+   * Absent means the shop does not track batches at all, and the screen says exactly that rather
+   * than showing an empty expiry list — which reads as *nothing is going out of date*.
+   */
+  readonly batches: Register<readonly unknown[]>;
+  /** Recalls already started, so one is never started twice and closure is auditable (M10-FR-04). */
+  readonly recalls: Register<readonly unknown[]>;
+  /** The near-expiry window and who is on the desk. Per-tenant. */
+  readonly expiryPolicy: Register<PackExpiryPolicy>;
   /** Loss-prevention thresholds — data, so a store tunes its own without code (M15-FR-01). */
   readonly lossPreventionRules: Register<readonly unknown[]>;
   /** The purposes this tenant asks a customer's consent for (M16 / PRV). */
@@ -556,6 +591,9 @@ export function emptyPack(why: string = NEVER): StorePack {
     satisfaction: notKnown(why),
     slaPolicy: notKnown(why),
     servicePolicy: notKnown(why),
+    batches: notKnown(why),
+    recalls: notKnown(why),
+    expiryPolicy: notKnown(why),
     lossPreventionRules: notKnown(why),
     consentPurposes: notKnown(why),
   };
@@ -622,6 +660,9 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     satisfaction: section<readonly unknown[]>('satisfaction'),
     slaPolicy: section<unknown>('slaPolicy'),
     servicePolicy: section<PackServicePolicy>('servicePolicy'),
+    batches: section<readonly unknown[]>('batches'),
+    recalls: section<readonly unknown[]>('recalls'),
+    expiryPolicy: section<PackExpiryPolicy>('expiryPolicy'),
     lossPreventionRules: section<readonly unknown[]>('lossPreventionRules'),
     consentPurposes: section<readonly { purpose: string; channel: string; required?: boolean }[]>('consentPurposes'),
   };
