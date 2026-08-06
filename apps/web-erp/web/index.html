@@ -27,7 +27,9 @@
       body {
         margin: 0; background: var(--bg); color: var(--ink);
         font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-        min-height: 100dvh; display: grid; grid-template-rows: auto auto 1fr;
+        /* Flex, not a fixed row template: the strips above `main` come and go, and a
+           template counted in rows shifts the layout every time one is hidden. */
+        min-height: 100dvh; display: flex; flex-direction: column;
       }
       header {
         display: flex; align-items: center; justify-content: space-between;
@@ -42,6 +44,11 @@
       /* Sample-data warning. Only ever shown when the tested model is NOT loaded. */
       .sample { background: var(--warn); color: #451a03; padding: 8px 16px; font-weight: 600; font-size: 15px; }
       .sample[hidden] { display: none; }
+      /* Served from this device's cache because the store box could not be reached. It says WHEN,
+         because a page from this morning shown as this minute's is the fault this product exists
+         to refuse (P-08). */
+      .stale { background: #1e3a5f; color: #dbeafe; padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info, #38bdf8); }
+      .stale[hidden] { display: none; }
 
       nav { display: flex; gap: 8px; padding: 8px 16px; background: var(--panel); overflow-x: auto; }
       nav button {
@@ -50,7 +57,7 @@
       }
       nav button[aria-current='page'] { background: var(--ink); color: #0f172a; }
 
-      main { padding: 16px; display: grid; gap: 16px; align-content: start; }
+      main { flex: 1; padding: 16px; display: grid; gap: 16px; align-content: start; }
       section[hidden] { display: none; }
       h2 { margin: 0 0 4px; font-size: 20px; font-weight: 600; }
       p.lead { margin: 0 0 12px; color: var(--muted); font-size: 15px; }
@@ -176,6 +183,7 @@
       acting on a number that came from nowhere.
     -->
     <p class="sample" id="sample" hidden role="status">Sample data — this is not your store.</p>
+    <p class="stale" id="stale" hidden role="status"></p>
 
     <nav id="tabs" aria-label="Sections">
       <button id="tab-home" type="button" aria-current="page">Today</button>

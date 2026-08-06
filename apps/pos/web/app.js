@@ -33,6 +33,7 @@ const inr = (minor) =>
 // are never translated — a total is a total in both.
 const WORDS = {
   en: {
+    staleShell: 'No connection to the store computer. Billing still works. This price list is what this lane was last given, at',
     scanToBegin: 'Scan an item to begin.', qty: 'Qty', void: 'Void', tender: 'Tender',
     cancel: 'Cancel', ok: 'OK', quantity: 'Quantity', cashReceived: 'Cash received',
     changeDue: 'Change due', online: 'Online', offline: 'Offline', unsent: 'Unsent',
@@ -57,6 +58,7 @@ const WORDS = {
     noAnswerMsg: 'The card machine has not answered, so we do not know whether the customer has paid. The sale is NOT complete — do not hand over the goods. Check the machine, and if it is unclear, ask the manager before trying again.',
   },
   ta: {
+    staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. பில் போடுவது வேலை செய்யும். இந்த விலைப் பட்டியல் இந்த லேனுக்குக் கடைசியாகக் கொடுக்கப்பட்டது:',
     scanToBegin: 'தொடங்க ஒரு பொருளை ஸ்கேன் செய்யவும்.', qty: 'எண்ணிக்கை', void: 'நீக்கு',
     tender: 'பணம் பெறு', cancel: 'ரத்து', ok: 'சரி', quantity: 'எண்ணிக்கை',
     cashReceived: 'பெற்ற பணம்', changeDue: 'மீதம் தர வேண்டியது', online: 'இணைப்பில்',
@@ -558,3 +560,30 @@ window.addEventListener('keydown', (event) => {
 });
 
 render();
+
+// ── The shell's own honesty about where this page came from ─────────────────
+//
+// The service worker keeps a copy of the last page the store box actually served, so this screen
+// still opens when the box cannot be reached. That copy carries the time it was taken, and this
+// says so. **A cached page shown as a live one is the fault this product exists to refuse** — it
+// is not a stale label on a screen, it is somebody acting on figures from this morning believing
+// they are from this minute (P-08).
+function paintStale() {
+  const at = window.shellCachedAt;
+  const strip = el('stale');
+  if (!strip) return;
+  strip.hidden = at === undefined;
+  if (at === undefined) return;
+  // The device's own local time, because the person reading it is standing in the shop.
+  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
+}
+paintStale();
+el('lang').addEventListener('click', paintStale);
+
+// The shell existed and nothing ever registered it, so nothing was ever cached and every one of
+// these screens fell back to its sample data the moment the box was unreachable.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {
+    /* the screen still opens; it just will not be there without a network */
+  });
+}

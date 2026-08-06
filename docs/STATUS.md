@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 6 August 2026 (session: the buyer's screen — a supplier invoice captured in one go, against the total printed on the paper)
+Last updated: 6 August 2026 (session: the buyer's screen, and every screen made to open for real with no network)
 
 ---
 
@@ -2591,6 +2591,74 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## Every screen now really does open without a network (6 August 2026)
+
+Six screens each shipped with the piece of software that is supposed to make them work with no
+internet. All six were written correctly. **Five of them were never switched on** — nothing in the
+app ever asked the browser to use it, so nothing was ever kept, and every screen fell back to its
+demonstration data the moment it could not reach the store computer.
+
+At the goods-in door and in a delivery van, that is most of the time.
+
+### Why simply switching them on would have made things worse
+
+These screens are handed the shop's own figures inside the page. So a screen that reaches for its
+saved copy first is a screen reaching for **saved figures** first — this morning's exception list
+handed over as this minute's, quietly, by the one part of the system nobody was looking at. A
+manager could have closed a trading day on it.
+
+So it works the other way round. **It always asks the shop first.** Only when there is genuinely no
+answer does it use what it kept.
+
+### And when it does use what it kept, it says so
+
+A blue strip across the top of the screen, in English and Tamil, saying **this is what this screen
+was last told, and at what time** — in your own local time, because the person reading it is
+standing in the shop.
+
+That strip is the whole point. Keeping a copy of a page is easy. Keeping a copy and letting
+somebody believe it is live is how a day gets closed on figures from three hours ago with nothing
+anywhere saying so.
+
+**The till says something different on purpose.** It says *"No connection to the store computer.
+Billing still works."* — because it does. A lane sells against its own disk, not the network, and a
+strip that only said "no connection" would stop a cashier who could have carried on serving people.
+
+### Two more faults, found by writing the check rather than by reading the code
+
+- **The picker's handheld and the driver's phone were sharing one storage name.** Each one clears
+  out anything that is not its own, so served from the same store computer they took turns wiping
+  each other. Neither would have opened offline reliably and nobody could have said why.
+- **`/pos` — without the slash on the end — was served cheerfully and completely broken.** The
+  browser then looks for the app's programme file one folder too high, does not find it, and you
+  get a blank screen with nothing saying anything at all. Now the box sends you to `/pos/` first.
+  Proved for every screen, over the real socket.
+
+### What is not in this cache, deliberately
+
+Prices, figures, waves, routes and orders are never kept as facts. What is kept is the page, the
+view and the programme file — the parts that only change when we deploy a new version. The lane's
+own sale path never touches this at all: a sale is still written to the till's own disk before the
+receipt prints, and that is refused out loud if the disk does not answer.
+
+**Tests:** 3,631 automated plus 31 performance, all green — 27 new (19 guarding the decisions
+above, 8 driving the redirect and the workers over the real socket).
+
+### What the owner should check, in the store
+
+1. Open the till, then **unplug the store computer's network cable** (not the till's own box). The
+   till should still open, still scan, still take money — and show a blue strip saying when its
+   price list was last given to it.
+2. Do the same on the picker's handheld and the driver's phone. Both should open. Both should say
+   when they were last given their work.
+3. Plug it back in and reload. **The blue strip should disappear.** If it does not, tell me — that
+   means it is showing you a saved page when a live one was available.
+4. On the manager's screen, confirm the blue strip says **do not close the day on it**. A day must
+   never be closed on a saved page.
+
+---
+
+
 ## Purchase and receiving — the eighty lines nobody has to retype (6 August 2026)
 
 The audit found it a year ago and called it *line-by-line invoice pain*: somebody in this shop
@@ -2668,24 +2736,17 @@ Two copies of *"what may we pay this supplier"* is one of them being wrong, and 
 supplier is paid one figure by the screen and reconciled against another by the books. So it moved.
 One rule, both places.
 
-### Something I found on the way, half-fixed on purpose
+### Something I found on the way
 
 Building the offline side of this screen turned up that **five of the six apps have a service
 worker that nothing ever registers.** The file that is supposed to make a screen open with no
-internet was written, is correct, and was never switched on. Only the owner's phone registers its
-own. It fails visibly rather than dangerously — a screen with no network falls back to its sample
-data and says *"Sample data — this is not your shop"* across the top — but it is not what "works
-offline" is supposed to mean (§31, P-01).
+internet was written, is correct, and was never switched on. Only the owner's phone registered its
+own. It failed visibly rather than dangerously — a screen with no network fell back to its sample
+data and said *"Sample data — this is not your shop"* across the top — which is why it survived
+three sessions unnoticed.
 
-**I fixed the back office**, because the buyer's screen lives there and goods-in has the worst wifi
-in the building: both shells now register it, the shared bundle is cached, and a page that fails
-falls back to **its own** shell rather than handing a day close to somebody who opened goods-in.
-
-**I have not touched the till, the picker's handheld, the driver's phone or the customer app.** Each
-is the same one-line change, and each needs its own offline check afterwards rather than a
-copy-paste and an assumption. It is the first item on the next session's list. The POS is the one
-that matters most and also the one that matters least here — a lane's ability to keep selling comes
-from the durable local commit, not from this cache.
+Fixed for the back office in this commit, and **for all six in the next one** — see *Every screen
+now really does open without a network*.
 
 **Tests:** 3,611 automated plus 31 performance, all green — 64 new (25 on the invoice rules, 12
 driving the real screen over the real store box, 27 guarding the decisions above).
@@ -3960,14 +4021,10 @@ insist on when somebody eventually asks for it to be switched off.
 
 ## Next session should start with
 
-**The four service workers nothing registers.** Half an hour of work, and until it is done the
-till, the picker's handheld, the driver's phone and the customer app do not really open offline —
-they open into their sample data and say so. See *Something I found on the way, half-fixed on
-purpose*.
-
-**Then real data.** The screens are built, the store box feeds every one of them, the day close
-closes and a supplier invoice can now be captured whole — and **not one line of any of it has met a single
-real product from the old system.** Every control was written for 20,000 SKUs with duplicate
+**Real data.** The screens are built, the store box feeds every one of them, every one of them now
+really opens with no network and says so, the day close closes and a supplier invoice can be
+captured whole — and **not one line of any of it has met a single real product from the old
+system.** Every control was written for 20,000 SKUs with duplicate
 barcodes, missing HSN codes, three spellings of one brand and produce sold by weight; none of them
 has met one. That is now the largest risk in the project by a wide margin, and
 `docs/requirements/data-requirements.md` says exactly what to extract.

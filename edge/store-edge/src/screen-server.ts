@@ -121,6 +121,27 @@ export function routeOf(url: string): { readonly screen: ScreenName; readonly fi
 }
 
 /**
+ * `/pos` must become `/pos/` before anything else happens.
+ *
+ * **Without the trailing slash every relative URL in the page resolves one level too high.** The
+ * shell asks for `./pos.bundle.js`; from `/pos` a browser resolves that against `/`, asks this box
+ * for `/pos.bundle.js`, and gets a 404 — so the page opens with no bundle, no view and no service
+ * worker registered, which is a blank screen with nothing anywhere saying why. Served happily and
+ * broken, which is the worst of the three possible outcomes.
+ *
+ * Returns the location to redirect to, or `null` when the path is already fine.
+ */
+export function redirectFor(url: string): string | null {
+  const [path, query] = url.split('?');
+  const parts = (path ?? '').split('/').filter((p) => p !== '');
+  if (parts.length !== 1) return null;
+  const name = parts[0]!;
+  if (!(SCREENS as readonly string[]).includes(name)) return null;
+  if ((path ?? '').endsWith('/')) return null;
+  return `/${name}/${query === undefined ? '' : `?${query}`}`;
+}
+
+/**
  * Refuse anything that tries to climb out of the screen's own folder.
  *
  * `..%2f..%2fetc%2fpasswd` is the oldest request in the book and this server reads files from disk
@@ -152,6 +173,18 @@ export function startScreenServer(input: {
         send(res, 405, 'text/plain; charset=utf-8', 'this box serves screens, and only reads');
         return;
       }
+      const redirect = redirectFor(req.url ?? '/');
+      if (redirect !== null) {
+        res.writeHead(301, {
+          location: redirect,
+          'cache-control': 'no-store',
+          'x-frame-options': 'DENY',
+          'referrer-policy': 'no-referrer',
+        });
+        res.end();
+        return;
+      }
+
       const route = routeOf(req.url ?? '/');
       if (route === null) {
         send(res, 404, 'text/plain; charset=utf-8', `not a screen. This box serves: ${SCREENS.join(', ')}`);

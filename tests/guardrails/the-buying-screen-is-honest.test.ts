@@ -212,36 +212,3 @@ describe('the buyer’s screen keeps the house rules', () => {
     expect(code(MODEL)).not.toMatch(/parseFloat/);
   });
 });
-
-describe('the back office actually opens without a network (§31, P-01)', () => {
-  const SW = readFileSync('apps/web-erp/web/sw.js', 'utf8');
-  const MANAGER_VIEW = readFileSync('apps/web-erp/web/app.js', 'utf8');
-
-  it('registers its service worker — it existed for weeks and nothing ever did', () => {
-    // A cache nothing installs is a cache. Goods-in is the worst wifi in the building.
-    for (const [name, source] of [['the buyer', VIEW], ['the manager', MANAGER_VIEW]] as const) {
-      expect(code(source), `${name}'s shell never registers the service worker`)
-        .toMatch(/navigator\.serviceWorker\.register\('\.\/sw\.js'\)/);
-    }
-  });
-
-  it('caches both shells and the bundle they share', () => {
-    // Without the bundle the screens open offline into their SAMPLE stand-in — which says so on
-    // the page, but is not the shop's data and is not what "works offline" means.
-    for (const file of ['./index.html', './buying.html', './buying.js', './web-erp.bundle.js']) {
-      expect(SW, `${file} is not cached`).toContain(file);
-    }
-  });
-
-  it('falls a failed page back to the RIGHT shell of the two', () => {
-    // Falling back to `index.html` regardless would hand a day close to somebody who opened the
-    // goods-in screen — the confusion the box's routing avoids, reintroduced when the wifi drops.
-    expect(code(SW)).toMatch(/includes\('buying'\) \? '\.\/buying\.html' : '\.\/index\.html'/);
-  });
-
-  it('never answers a missing script with a page', () => {
-    // HTML served as JavaScript is a syntax error, and the screen then boots into its sample
-    // stand-in for a reason nobody can see.
-    expect(code(SW)).toMatch(/request\.mode !== 'navigate'/);
-  });
-});

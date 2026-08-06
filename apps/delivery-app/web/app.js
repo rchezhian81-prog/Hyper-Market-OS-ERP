@@ -31,6 +31,7 @@ const inr = (minor) =>
 
 const WORDS = {
   en: {
+    staleShell: 'No signal. This is the route this phone was last given, at',
     myRoute: 'My route', stopsDone: 'stops done', waiting: 'waiting to sync', allSent: 'everything sent',
     cashCarrying: 'Cash you are carrying', collect: 'Collect', prepaid: 'Already paid',
     delivered: 'Delivered', couldNotDeliver: 'Could not deliver', endOfShift: 'End of shift — hand cash over',
@@ -62,6 +63,7 @@ const WORDS = {
     deliveredState: 'Delivered',
   },
   ta: {
+    staleShell: 'சிக்னல் இல்லை. இந்த ஃபோனுக்குக் கடைசியாகக் கொடுக்கப்பட்ட வழி இதுதான்:',
     myRoute: 'என் வழி', stopsDone: 'நிறுத்தங்கள் முடிந்தன', waiting: 'அனுப்பக் காத்திருக்கிறது', allSent: 'அனைத்தும் அனுப்பப்பட்டன',
     cashCarrying: 'நீங்கள் வைத்திருக்கும் பணம்', collect: 'வாங்க வேண்டியது', prepaid: 'ஏற்கனவே செலுத்தப்பட்டது',
     delivered: 'கொடுக்கப்பட்டது', couldNotDeliver: 'கொடுக்க முடியவில்லை', endOfShift: 'ஷிப்ட் முடிவு — பணத்தை ஒப்படை',
@@ -518,4 +520,31 @@ if (real === undefined && window.driverData !== undefined) {
   el('empty').textContent = `${t('noRoute')} ${t('noRouteBody')}`;
 } else {
   render();
+}
+
+// ── The shell's own honesty about where this page came from ─────────────────
+//
+// The service worker keeps a copy of the last page the store box actually served, so this screen
+// still opens when the box cannot be reached. That copy carries the time it was taken, and this
+// says so. **A cached page shown as a live one is the fault this product exists to refuse** — it
+// is not a stale label on a screen, it is somebody acting on figures from this morning believing
+// they are from this minute (P-08).
+function paintStale() {
+  const at = window.shellCachedAt;
+  const strip = el('stale');
+  if (!strip) return;
+  strip.hidden = at === undefined;
+  if (at === undefined) return;
+  // The device's own local time, because the person reading it is standing in the shop.
+  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
+}
+paintStale();
+el('lang').addEventListener('click', paintStale);
+
+// The shell existed and nothing ever registered it, so nothing was ever cached and every one of
+// these screens fell back to its sample data the moment the box was unreachable.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {
+    /* the screen still opens; it just will not be there without a network */
+  });
 }

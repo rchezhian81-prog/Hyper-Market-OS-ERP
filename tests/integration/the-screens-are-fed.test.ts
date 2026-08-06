@@ -631,3 +631,51 @@ describe('the buyer’s screen is fed, and fed only what the box actually knows'
     expect(buyingGaps(payload as never)).toContain('who_may_approve');
   });
 });
+
+/**
+ * **A bare screen path, driven over the real socket.**
+ *
+ * `/pos` and `/pos/` look like the same address and are not: without the trailing slash a browser
+ * resolves `./pos.bundle.js` against `/`, asks this box for `/pos.bundle.js`, and gets nothing —
+ * so the page opens with no bundle, no view and no service worker registered. A blank screen, with
+ * nothing anywhere saying why, served with a cheerful 200.
+ */
+describe('the box sends a bare screen path to its own folder first', () => {
+  it('redirects `/<screen>` to `/<screen>/` for every screen it serves', async () => {
+    const base = await serve(snapshotOf());
+    for (const screen of SCREENS) {
+      const response = await fetch(`${base}/${screen}`, { redirect: 'manual' });
+      expect(response.status, `${screen} was served without a redirect`).toBe(301);
+      expect(response.headers.get('location')).toBe(`/${screen}/`);
+    }
+  });
+
+  it('keeps the query string across the redirect', async () => {
+    const base = await serve(snapshotOf());
+    const response = await fetch(`${base}/driver?driverId=d1`, { redirect: 'manual' });
+    expect(response.headers.get('location')).toBe('/driver/?driverId=d1');
+  });
+
+  it('serves the screen itself once the slash is there, payload intact', async () => {
+    const base = await serve(snapshotOf());
+    const html = await (await fetch(`${base}/pos/`)).text();
+    expect(html).toContain('window.posCatalogue');
+    expect(html).toContain('./pos.bundle.js');
+  });
+
+  it('still refuses a path that is not a screen at all', async () => {
+    const base = await serve(snapshotOf());
+    expect((await fetch(`${base}/admin`, { redirect: 'manual' })).status).toBe(404);
+  });
+
+  it('serves each screen’s service worker, so there is something to register', async () => {
+    // It existed for weeks and only the owner's phone ever registered it.
+    const base = await serve(snapshotOf());
+    for (const screen of SCREENS) {
+      const response = await fetch(`${base}/${screen}/sw.js`);
+      expect(response.status, `${screen} has no service worker to fetch`).toBe(200);
+      expect(response.headers.get('content-type')).toMatch(/javascript/);
+      expect(await response.text()).toContain('shellCachedAt');
+    }
+  });
+});

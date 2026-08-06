@@ -51,6 +51,7 @@
       .notice.sample { background: var(--warn); color: #451a03; font-weight: 600; }
       .notice.problem { background: var(--danger); color: #fff; }
       .notice[hidden] { display: none; }
+      .notice.stale { background: #1e3a5f; color: #dbeafe; }
 
       nav { display: flex; gap: 8px; padding: 8px 16px; background: var(--panel); overflow-x: auto; }
       nav button {
@@ -150,6 +151,7 @@
 
     <p class="notice sample" id="sample" hidden role="status">Sample shop — these are not real prices.</p>
     <p class="notice problem" id="storage" hidden role="alert"></p>
+    <p class="notice stale" id="stale" hidden role="status"></p>
 
     <nav id="tabs" aria-label="Sections">
       <button id="tab-shop" type="button" aria-current="page">Shop</button>

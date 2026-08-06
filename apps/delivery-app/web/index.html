@@ -27,7 +27,9 @@
       body {
         margin: 0; background: var(--bg); color: var(--ink);
         font: 17px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-        height: 100dvh; display: grid; grid-template-rows: auto 1fr auto;
+        /* Flex, not a fixed row template: the strips above `main` come and go, and a
+           template counted in rows shifts the layout every time one is hidden. */
+        height: 100dvh; display: flex; flex-direction: column;
       }
       header {
         display: flex; align-items: center; justify-content: space-between;
@@ -44,11 +46,16 @@
       .sample[hidden] { display: none; }
       .storage { background: var(--danger); color: #fff; padding: 8px 14px; font-size: 15px; margin: 0; }
       .storage[hidden] { display: none; }
+      /* Served from this device's cache because the store box could not be reached. It says WHEN,
+         because a page from this morning shown as this minute's is the fault this product exists
+         to refuse (P-08). */
+      .stale { background: #1e3a5f; color: #dbeafe; padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info, #38bdf8); }
+      .stale[hidden] { display: none; }
       /* A stop the contribution rule flagged. Surfaced, never buried (D09). */
       .flagged { background: #78350f; color: #fff7ed; padding: 8px 14px; font-size: 15px; margin: 0; }
       .flagged[hidden] { display: none; }
 
-      main { overflow-y: auto; padding: 10px 14px; }
+      main { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 14px; }
       .empty { color: var(--muted); padding: 32px 4px; font-size: 17px; }
 
       .stop {
@@ -136,6 +143,7 @@
 
     <p class="sample" id="sample" hidden role="status">Sample route — this is not real work.</p>
     <p class="storage" id="storage" hidden role="alert"></p>
+    <p class="stale" id="stale" hidden role="status"></p>
     <p class="flagged" id="flagged" hidden role="status"></p>
 
     <main>

@@ -37,6 +37,7 @@ const toMinor = (text) => Math.round(Number(String(text).replace(/[^0-9.-]/g, ''
 
 const WORDS = {
   en: {
+    staleShell: 'No connection to the store computer. This page is what it was last told, at',
     buying: 'Buying', supplierInvoice: 'Supplier invoice', checkAgainst: 'Check against the order',
     raiseOrder: 'Raise an order',
     invoiceLead: "Paste the supplier's file, type the total printed on the paper, and see what is wrong before anything is saved.",
@@ -72,6 +73,7 @@ const WORDS = {
     noApprovers: 'This screen has not been told who may approve. Nothing can be saved until it has.',
   },
   ta: {
+    staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
     buying: 'கொள்முதல்', supplierInvoice: 'சப்ளையர் இன்வாய்ஸ்', checkAgainst: 'ஆர்டருடன் சரிபார்',
     raiseOrder: 'ஆர்டர் தயாரி',
     invoiceLead: 'சப்ளையரின் கோப்பை ஒட்டவும், தாளில் அச்சிடப்பட்ட மொத்தத்தைத் தட்டச்சு செய்யவும். எதுவும் சேமிக்கப்படும் முன் என்ன தவறு என்று பாருங்கள்.',
@@ -571,8 +573,27 @@ el('sample').hidden = real !== undefined;
 paintChrome();
 renderPoLines();
 
-// Registered here as well as on the manager's shell, so whichever of the two is opened first is
-// the one that caches them both. Goods-in is the worst wifi in the building (§31, P-01).
+// ── The shell's own honesty about where this page came from ─────────────────
+//
+// The service worker keeps a copy of the last page the store box actually served, so this screen
+// still opens when the box cannot be reached. That copy carries the time it was taken, and this
+// says so. **A cached page shown as a live one is the fault this product exists to refuse** — it
+// is not a stale label on a screen, it is somebody acting on figures from this morning believing
+// they are from this minute (P-08).
+function paintStale() {
+  const at = window.shellCachedAt;
+  const strip = el('stale');
+  if (!strip) return;
+  strip.hidden = at === undefined;
+  if (at === undefined) return;
+  // The device's own local time, because the person reading it is standing in the shop.
+  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
+}
+paintStale();
+el('lang').addEventListener('click', paintStale);
+
+// The shell existed and nothing ever registered it, so nothing was ever cached and every one of
+// these screens fell back to its sample data the moment the box was unreachable.
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {
     /* the screen still opens; it just will not be there without a network */

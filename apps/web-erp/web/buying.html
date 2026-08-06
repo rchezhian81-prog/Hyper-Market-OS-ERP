@@ -41,6 +41,11 @@
       .lang { background: transparent; color: var(--muted); min-height: 40px; font-size: 14px; border: 0; }
       .sample { background: var(--warn); color: #451a03; padding: 8px 16px; font-weight: 600; font-size: 15px; margin: 0; }
       .sample[hidden] { display: none; }
+      /* Served from this device's cache because the store box could not be reached. It says WHEN,
+         because a page from this morning shown as this minute's is the fault this product exists
+         to refuse (P-08). */
+      .stale { background: #1e3a5f; color: #dbeafe; padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info, #38bdf8); }
+      .stale[hidden] { display: none; }
       /* What the store box did not tell this screen, said out loud rather than left to be guessed. */
       .gaps { background: #422006; color: #fde68a; padding: 10px 16px; margin: 0; font-size: 15px; }
       .gaps[hidden] { display: none; }
@@ -140,6 +145,7 @@
     </header>
 
     <p class="sample" id="sample" hidden role="status">Sample data — this is not your shop.</p>
+    <p class="stale" id="stale" hidden role="status"></p>
 
     <!--
       Every thing the store box has NOT told this screen, named. Each one already fails

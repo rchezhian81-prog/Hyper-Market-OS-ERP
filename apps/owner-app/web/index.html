@@ -53,6 +53,11 @@
       /* Sample-data warning. Only ever shown when the tested model is NOT loaded. */
       .sample { background: var(--warn); color: #451a03; padding: 10px 16px; font-weight: 600; font-size: 15px; margin: 0; }
       .sample[hidden] { display: none; }
+      /* Served from this device's cache because the store box could not be reached. It says WHEN,
+         because a page from this morning shown as this minute's is the fault this product exists
+         to refuse (P-08). */
+      .stale { background: #1e3a5f; color: #dbeafe; padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info, #38bdf8); }
+      .stale[hidden] { display: none; }
       /* Something the phone could not save. Never swallowed (P-08). */
       .queue-problem { background: var(--danger); color: #fff; padding: 10px 16px; font-size: 15px; margin: 0; }
       .queue-problem[hidden] { display: none; }
@@ -164,6 +169,7 @@
       number that came from nowhere is worse than an owner with no number at all.
     -->
     <p class="sample" id="sample" hidden role="status">Sample figures — this is not your shop.</p>
+    <p class="stale" id="stale" hidden role="status"></p>
     <!-- A decision the phone could not save. Said, never swallowed. -->
     <p class="queue-problem" id="queue-problem" hidden role="alert"></p>
 
