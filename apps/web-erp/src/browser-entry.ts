@@ -77,6 +77,13 @@ import {
   createAiSession, type AiPorts, type AiSession, type PendingProposal,
 } from './ai-session';
 import type { AgentBudget, KillSwitch, UsageEntry } from '../../../packages/ai/src/index';
+import {
+  createMigrationSession, type MigrationPorts, type MigrationSession,
+} from './migration-session';
+import type {
+  ControlTotal, HistoryExclusion, LegacyArchive, LegacySource, MigrationException,
+  ParallelDayResult, ParallelDifference, TeamMember,
+} from '../../../packages/migration/src/index';
 import type { UserAccount } from '../../../packages/identity/src/index';
 import type { AuditRecord, LegalHold, RetentionPolicy } from '../../../packages/audit/src/index';
 import type { Producer } from '../../../packages/reporting/src/index';
@@ -489,6 +496,84 @@ export function bootAi(data: AiData | undefined): AiSession | null {
   );
 }
 
+/** What the box tells the migration screen. */
+export interface MigrationData {
+  readonly userId?: string;
+  readonly storeId?: string;
+  readonly now?: string;
+  readonly cutoverId?: string;
+  readonly requiredCleanDays?: number;
+  readonly cutoverAccepted?: boolean;
+  /** **Absent means nothing can be signed at all** (§28) — see `migration-session.ts`. */
+  readonly loadOperator?: string;
+  readonly sources?: readonly LegacySource[];
+  /** **Never pruned.** A resolved exception is the evidence somebody looked at it (#6). */
+  readonly exceptions?: readonly MigrationException[];
+  readonly totals?: readonly ControlTotal[];
+  readonly parallelDays?: readonly ParallelDayResult[];
+  readonly parallelDifferences?: readonly ParallelDifference[];
+  readonly exclusions?: readonly HistoryExclusion[];
+  readonly archive?: LegacyArchive;
+  /** From the box's own outbox. **Absent is not nought** — an unsynced till is an unmigrated sale. */
+  readonly edgeUnsyncedItems?: number;
+  readonly deltaAppliedAt?: string;
+  /** When a rollback was **performed**. A designed one leaves this absent, deliberately. */
+  readonly rollbackDemonstratedAt?: string;
+  readonly namedTeam?: readonly TeamMember[];
+  readonly ownerGoBy?: string;
+  readonly openAssessments?: number;
+}
+
+/**
+ * Ports over the migration payload.
+ *
+ * **Not one of these is defaulted**, and that is the whole fix. The eight-check cutover gate has
+ * always been handed booleans somebody typed; a `?? []` on any line below would put it straight
+ * back, because an empty exception list reads as clean data and an empty totals list reads as a
+ * reconciliation with nothing wrong.
+ */
+export function migrationPortsFromData(data: MigrationData | undefined, outbox: SyncOutbox = new SyncOutbox()): MigrationPorts {
+  return {
+    sources: () => data?.sources,
+    exceptions: () => data?.exceptions,
+    totals: () => data?.totals,
+    parallelDays: () => data?.parallelDays,
+    parallelDifferences: () => data?.parallelDifferences,
+    exclusions: () => data?.exclusions,
+    archive: () => data?.archive,
+    edgeUnsyncedItems: () => data?.edgeUnsyncedItems,
+    deltaAppliedAt: () => data?.deltaAppliedAt,
+    rollbackDemonstratedAt: () => data?.rollbackDemonstratedAt,
+    namedTeam: () => data?.namedTeam,
+    ownerGoBy: () => data?.ownerGoBy,
+    openAssessments: () => data?.openAssessments,
+    // A signature made on this page is committed here and queued (hard rule #1). The screen draws
+    // the working copy, and the sync agent drains this to the cloud. A signature that lives only
+    // in the tab is not a signature — which is exactly what the first version produced.
+    outbox: () => outbox,
+  };
+}
+
+/** Build the migration screen, or `null` when the box was told nothing about a cutover. */
+export function bootMigration(data: MigrationData | undefined, outbox: SyncOutbox = new SyncOutbox()): MigrationSession | null {
+  if (data === undefined) return null;
+  return createMigrationSession(
+    {
+      tenantId: data.storeId ?? 'tenant',
+      // NOT defaulted. Signing a figure, deciding about the old data and rolling back all carry
+      // the name of whoever did them.
+      userId: data.userId === undefined ? null : data.userId,
+      now: data.now ?? '1970-01-01T00:00:00.000Z',
+      cutoverId: data.cutoverId ?? '',
+      requiredCleanDays: data.requiredCleanDays ?? 0,
+      // NOT defaulted. A separation of duties that cannot be checked is not a separation.
+      loadOperator: data.loadOperator,
+      cutoverAccepted: data.cutoverAccepted === true,
+    },
+    migrationPortsFromData(data, outbox),
+  );
+}
+
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
 interface ManagerWindow {
   managerSession?: ManagerSession;
@@ -515,6 +600,8 @@ interface ManagerWindow {
   adminSession?: AdminSession;
   aiData?: AiData;
   aiSession?: AiSession;
+  migrationData?: MigrationData;
+  migrationSession?: MigrationSession;
   /** The decision vocabulary, so the view can offer it and never invent a reason of its own. */
   managerReasons?: {
     readonly approved: readonly DecisionReasonCode[];
@@ -978,6 +1065,8 @@ if (browserWindow !== undefined) {
   if (admin !== null) browserWindow.adminSession = admin;
   const ai = bootAi(browserWindow.aiData);
   if (ai !== null) browserWindow.aiSession = ai;
+  const migration = bootMigration(browserWindow.migrationData);
+  if (migration !== null) browserWindow.migrationSession = migration;
   // The view offers these and records the code the manager picks. It never composes a reason of
   // its own, so the audit trail keeps one vocabulary that can still be reported on in a year.
   browserWindow.managerReasons = { approved: APPROVE_REASONS, rejected: REJECT_REASONS };

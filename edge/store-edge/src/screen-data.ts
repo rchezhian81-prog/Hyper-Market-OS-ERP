@@ -53,7 +53,7 @@ import type { StorePack } from './store-pack';
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'admin', 'ai',
+  'reporting', 'service', 'expiry', 'finance', 'admin', 'ai', 'migration',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1128,6 +1128,58 @@ export function aiPayload(input: ScreenInput): Record<string, unknown> | null {
   return payload;
 }
 
+/**
+ * The migration payload (MG-01…MG-12 · §34 · QG-07 · P-01).
+ *
+ * `null` when the box has not been told which cutover this is or how many consecutive clean days
+ * this shop requires — a screen inventing its own clean-day threshold would be deciding, on its
+ * own authority, how much evidence is enough before a hypermarket changes systems.
+ *
+ * **Every other section is served only when the box has it, and every absence fails a check.**
+ * That is the whole point of this screen: the eight-check gate has always been handed booleans
+ * somebody typed, and the one substitution that would undo the fix is a `?? []` here — an empty
+ * exception list reads as clean data, and an empty totals list reads as a reconciliation with
+ * nothing wrong.
+ *
+ * **`edgeUnsyncedItems` comes from this box's own outbox**, which is the only honest source for
+ * it. An unsynced till is an unmigrated sale, and it is not found until a customer asks for the
+ * receipt.
+ */
+export function migrationPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.migrationPolicy.known) return null;
+  const policy = input.pack.migrationPolicy.value;
+  const policies = input.pack.policies.known ? input.pack.policies.value : undefined;
+
+  const payload: Record<string, unknown> = {
+    storeId: policies?.storeId ?? 'store-1',
+    now: input.now,
+    cutoverId: policy.cutoverId,
+    requiredCleanDays: policy.requiredCleanDays,
+    cutoverAccepted: policy.cutoverAccepted === true,
+    // This box's own queue. Never a figure the cloud asserts about the box.
+    edgeUnsyncedItems: input.outbox.pending().length,
+  };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+  if (policy.loadOperator !== undefined) payload['loadOperator'] = policy.loadOperator;
+  if (policy.deltaAppliedAt !== undefined) payload['deltaAppliedAt'] = policy.deltaAppliedAt;
+  if (policy.rollbackDemonstratedAt !== undefined) {
+    payload['rollbackDemonstratedAt'] = policy.rollbackDemonstratedAt;
+  }
+  if (policy.namedTeam !== undefined) payload['namedTeam'] = policy.namedTeam;
+  if (policy.ownerGoBy !== undefined) payload['ownerGoBy'] = policy.ownerGoBy;
+  if (policy.openAssessments !== undefined) payload['openAssessments'] = policy.openAssessments;
+
+  if (input.pack.migrationSources.known) payload['sources'] = input.pack.migrationSources.value;
+  if (input.pack.migrationExceptions.known) payload['exceptions'] = input.pack.migrationExceptions.value;
+  if (input.pack.migrationTotals.known) payload['totals'] = input.pack.migrationTotals.value;
+  if (input.pack.parallelDays.known) payload['parallelDays'] = input.pack.parallelDays.value;
+  if (input.pack.parallelDifferences.known) payload['parallelDifferences'] = input.pack.parallelDifferences.value;
+  if (input.pack.historyExclusions.known) payload['exclusions'] = input.pack.historyExclusions.value;
+  if (input.pack.legacyArchive.known) payload['archive'] = input.pack.legacyArchive.value;
+
+  return payload;
+}
+
 /** The global each screen's bundle reads at boot. One name per screen, and they must not drift. */
 export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   pos: 'posCatalogue',
@@ -1145,6 +1197,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   finance: 'financeData',
   admin: 'adminData',
   ai: 'aiData',
+  migration: 'migrationData',
 });
 
 const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<string, unknown> | null>> = Object.freeze({
@@ -1163,6 +1216,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   finance: financePayload,
   admin: adminPayload,
   ai: aiPayload,
+  migration: migrationPayload,
 });
 
 /** Build one screen's payload. `null` means this box has nothing to give it, and says so. */

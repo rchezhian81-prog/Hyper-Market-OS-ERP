@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, the day boundary the store box did not have, the service desk, expiry and recall — including the recall block that never reached a till — finance, which lets a month close for the first time, admin and security — including a security control that existed twice and enforced less where it counted — and AI control, including the kill switch that stopped nothing)
+Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, the day boundary the store box did not have, the service desk, expiry and recall — including the recall block that never reached a till — finance, which lets a month close for the first time, admin and security — including a security control that existed twice and enforced less where it counted, AI control, including the kill switch that stopped nothing — and migration, including the cutover gate that had only ever been ticked by hand)
 
 ---
 
@@ -2590,6 +2590,101 @@ integration gate as UAT-49.
 tests** against real PostgreSQL 16.13.
 
 ---
+
+## The one button that decides everything was ticked by hand (6 August 2026)
+
+The migration screen — moving off your old system. This is the last screen, and the fault it
+exposed is the most serious one this whole project has turned up.
+
+### What this screen is for
+
+One night, SRE Hyper Market stops running on the old ERP and starts running on this one. That
+night is the single thing in this entire project that cannot be undone by a normal working day.
+Everything else — a wrong price, a bad count, a mistaken refund — is a correction. Switching
+systems on a bad night is not.
+
+So there is a checklist. Eight things that must all be true before the switch-over may go ahead:
+every figure agrees and is signed; a rollback has actually been rehearsed; both systems have run
+side by side long enough with nothing unexplained; the store computer has nothing left waiting to
+send; every serious problem in the old data has been decided; the changes since the last copy are
+loaded; the people for the night are named; and you have said go.
+
+### What was actually wrong
+
+**The eight checks were never worked out. They were typed in.**
+
+The rule that refuses the switch-over until all eight pass has existed, correct and tested, since
+the day it was written. But every single place that used it — including the test we hold up as the
+proof the migration works — simply *handed it the answers*: "figures signed: yes, parallel run
+fine: yes, nothing unsent: zero." The gate on the most irreversible night in the project had never
+once been asked about the actual state of the migration. It had only ever been told, and told the
+answers somebody wanted.
+
+Every one of the eight already had something behind it that knew the real answer — the signed
+figures, the parallel-run days, the list of undecided problems, the store computer's own outbox.
+Nothing joined them up. This screen is that join, and now **the switch-over is judged from what is
+actually true.**
+
+And the safe direction is built in: **anything nobody can answer counts as a fail.** If the store
+computer has never said how many sales are still unsent, that is not "zero, all clear" — it is
+"nobody has told me", drawn in a different colour, because those are opposite facts and only one of
+them is good news.
+
+### A second fault, found by pretending I was mid-migration
+
+I built a store computer in the middle of a real switch-over — some figures signed, one bad day in
+the parallel run, two serious data problems still undecided — and drove the actual screen against
+it. Signing a figure worked, showed green… and vanished on the next refresh. The signature was
+being computed and thrown away. A signature that lives only in the open tab is not a signature.
+Fixed: a decision is now saved on the store computer and queued the same way a sale is, and what
+has not yet been sent is counted on the page.
+
+### The rest of the screen
+
+**Can we switch over** — the eight checks, each saying underneath where its answer came from, so
+nobody takes a tick on trust. And whichever way it goes, a line saying your shop opens tomorrow
+and the tills keep selling, because that is true.
+
+**The figures** — every one twice, what the old system says and what came across, and each signed
+by somebody who did **not** load it. Tax and finance figures can only be signed by your CA.
+
+**Problems in the old data** — worst first, undecided ones at the top, and **nothing here is ever
+deleted**: a decided one stays on the list as the record that somebody looked at it.
+
+**Running both** — a bad day resets the count of clean days, because the clean days only mean
+something after the problem that caused the bad one was fixed.
+
+**The old system** — everything it keeps records in, and the gaps: the loyalty spreadsheet nobody
+owns and nobody counted is exactly the thing this is meant to surface. And switching the old
+system off is never the same act as deleting the old data — this screen will not do the second one.
+
+**Go back to the old system** — one button, always on the page, needing nobody's approval. The
+decision to go back gets made at 6am by a tired person, and it has to be one clear action, not a
+judgement call.
+
+**Tests:** 4,430 automated plus 31 performance, all green — 96 new.
+
+### What the owner should check, in the store
+
+1. Open **Can we switch over** on a real migration and read the eight checks. Any that says
+   "nobody can answer this" (amber) is a wire not yet connected — a different problem from a red
+   one, and tell me which you see.
+2. Sign a figure, then move to another tab and back. It must **still be signed** — that is the
+   fault I just fixed, and it is the one to check.
+3. Try to sign a figure in the name of the person who loaded the data. It must refuse.
+4. Try to sign a **tax** figure as yourself. It must refuse and say only the CA may.
+5. Press **Go back to the old system**. It must work immediately, with no approval step, and tell
+   you your shop keeps trading.
+
+### One thing that is still not mine
+
+There is **no real old-system data here yet.** The whole pipeline is proven against a made-up
+legacy dataset with faults planted in it (that was Stage 11), and this screen drives that same
+proven pipeline. The live extraction from your actual old system is the in-store work that needs
+the store itself — and OB-06 stands: we do it ourselves, nobody is coming to do it for us.
+
+---
+
 
 ## The stop button did not stop anything (6 August 2026)
 

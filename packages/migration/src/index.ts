@@ -55,6 +55,15 @@ export {
   type RollbackResult,
 } from './cutover';
 
+// The producer the eight-check gate never had. `decideCutover` has always taken a checklist of
+// booleans supplied by the caller, and nothing in this codebase derived one — so the gate on the
+// most irreversible action in the project had only ever been told, never asked.
+export {
+  buildCutoverChecklist,
+  type CutoverEvidence, type CheckState, type DerivedCheck, type DerivedChecklist,
+  type TeamMember,
+} from './cutover-checklist';
+
 export {
   generateLegacyDataset, datasetChecksum,
   type FaultKind, type LegacyProduct, type LegacyStockRow, type LegacyCustomer,

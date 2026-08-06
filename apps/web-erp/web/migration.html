@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Moving from the old system</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      Migration (MG-01..MG-12 / section 34 / WF-19 / QG-07 / OD-05 / OD-06).
+      An eleventh shell in this folder, sharing the one bundle.
+
+      No cutover without signed control totals; every exception kept, never deleted;
+      a rollback that has been PERFORMED rather than designed.
+
+      The eight checks are DERIVED from the real state of the migration — never ticked by
+      hand — and a check nothing could answer is drawn differently from one that came back
+      bad, because one is work to finish and the other is a wire that was never connected.
+
+      The rollback button is always there. It needs nobody's approval.
+    -->
+    <style>
+      :root {
+        --bg: #0f172a; --panel: #1e293b; --ink: #f8fafc; --muted: #94a3b8;
+        --good: #22c55e; --warn: #f59e0b; --danger: #ef4444; --info: #38bdf8;
+        --line: #334155;
+        --tap: 48px;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--ink);
+        font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        min-height: 100dvh; display: flex; flex-direction: column;
+      }
+      header {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; padding: 12px 16px; background: var(--panel); flex-wrap: wrap;
+      }
+      .who { font-weight: 600; }
+      .who small { display: block; color: var(--muted); font-weight: 400; font-size: 14px; }
+      .lang { background: transparent; color: var(--muted); min-height: 40px; font-size: 14px; border: 0; }
+
+      .sample { background: var(--warn); color: #451a03; padding: 8px 16px; font-weight: 600; font-size: 15px; margin: 0; }
+      .sample[hidden], .stale[hidden], .nobody[hidden] { display: none; }
+      .stale { background: #1e3a5f; color: #dbeafe; padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info); }
+      /* Nobody named at the desk. Nothing can be signed and nothing can be decided. */
+      .nobody { background: var(--danger); color: #fff; padding: 10px 16px; font-size: 15px; margin: 0; font-weight: 600; }
+
+      nav { display: flex; gap: 8px; padding: 8px 16px; background: var(--panel); overflow-x: auto; }
+      nav button {
+        min-height: var(--tap); padding: 0 18px; border: 0; border-radius: 12px;
+        background: var(--line); color: var(--ink); font-size: 16px; font-weight: 600; white-space: nowrap;
+      }
+      nav button[aria-current='page'] { background: var(--ink); color: #0f172a; }
+
+      main { flex: 1; padding: 16px; display: grid; gap: 16px; align-content: start; max-width: 900px; }
+      section[hidden] { display: none; }
+      h2 { margin: 0 0 4px; font-size: 20px; }
+      h3 { margin: 16px 0 8px; font-size: 17px; }
+      p.lead { margin: 0 0 12px; color: var(--muted); font-size: 15px; }
+
+      label { display: block; margin: 12px 0 4px; font-size: 15px; color: var(--muted); }
+      input, select, textarea {
+        width: 100%; min-height: var(--tap); border-radius: 12px; border: 2px solid var(--line);
+        background: #0b1220; color: var(--ink); font-size: 17px; padding: 0 12px;
+      }
+      textarea { min-height: 80px; padding: 10px 12px; font-family: inherit; }
+      input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible {
+        outline: 3px solid #93c5fd; outline-offset: 2px;
+      }
+      button {
+        min-height: var(--tap); border-radius: 12px; border: 0; font-size: 16px; font-weight: 600;
+        background: var(--line); color: var(--ink);
+      }
+      button.primary { background: var(--good); color: #052e16; font-size: 18px; }
+      button.danger { background: var(--danger); color: #fff; font-size: 18px; }
+      .wide { width: 100%; }
+      .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+      .row {
+        background: var(--panel); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px;
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      }
+      .row .what { display: grid; gap: 2px; }
+      .row .what small { color: var(--muted); font-size: 14px; }
+      /* A check that came back BAD. Work to finish. */
+      .row.failed { border-left: 6px solid var(--danger); background: #450a0a; }
+      .row.failed .what small { color: #fecaca; }
+      /* A check NOTHING COULD ANSWER. A different problem, drawn differently on purpose. */
+      .row.unknown { border-left: 6px solid var(--warn); background: #451a03; }
+      .row.unknown .what small { color: #fde68a; }
+      .row.passed { border-left: 5px solid var(--good); }
+      .row.flagged { border-left: 5px solid var(--warn); }
+      .row.clean { border-left: 5px solid var(--good); }
+      .row.held { border-left: 5px solid var(--info); }
+      .row.done { border-left: 5px solid var(--line); opacity: 0.75; }
+      .chip { background: #0b1220; border-radius: 999px; padding: 2px 10px; font-size: 13px; margin-right: 6px; margin-top: 4px; display: inline-block; }
+      .sides { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+      .sides span { background: #0b1220; border-radius: 8px; padding: 6px 10px; font-variant-numeric: tabular-nums; }
+      .sides small { display: block; color: var(--muted); font-size: 13px; }
+
+      .verdict { border-radius: 14px; padding: 16px; font-weight: 600; margin-bottom: 12px; font-size: 18px; }
+      .verdict.go { background: #052e16; color: #bbf7d0; border: 2px solid var(--good); }
+      .verdict.nogo { background: #450a0a; color: #fecaca; border: 2px solid var(--danger); }
+      .verdict p { margin: 8px 0 0; font-weight: 400; font-size: 16px; }
+      /* P-01, said on the page and not only in the code. */
+      .trading { background: #0b1220; border-radius: 12px; padding: 12px 14px; color: var(--good); font-size: 15px; font-weight: 600; }
+
+      .bill { background: var(--panel); border-radius: 14px; padding: 14px 16px; display: grid; gap: 6px; }
+      .bill .big { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .bill small { color: var(--muted); font-size: 14px; }
+      .empty { color: var(--muted); padding: 20px 4px; }
+
+      .banner {
+        position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 18px 16px;
+        background: var(--danger); color: #fff; display: grid; gap: 10px;
+      }
+      .banner[hidden] { display: none; }
+      .banner.good { background: var(--good); color: #052e16; }
+      .banner strong { font-size: 20px; }
+      .banner p { margin: 0; font-size: 16px; }
+      .banner button { background: #7f1d1d; color: #fff; }
+      .banner.good button { background: #052e16; color: #ecfdf5; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="who" id="who">Moving from the old system<small id="whoami">—</small></span>
+      <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
+    </header>
+
+    <p class="sample" id="sample" hidden role="status">Sample data — this is not your shop.</p>
+    <p class="stale" id="stale" hidden role="status"></p>
+    <p class="nobody" id="nobody" hidden role="alert"></p>
+    <p class="stale" id="unsent" hidden role="status"></p>
+
+    <nav id="tabs" aria-label="Sections">
+      <button id="tab-where" type="button" aria-current="page">Can we switch over</button>
+      <button id="tab-figures" type="button">The figures</button>
+      <button id="tab-data" type="button">Problems in the old data</button>
+      <button id="tab-both" type="button">Running both</button>
+      <button id="tab-old" type="button">The old system</button>
+    </nav>
+
+    <main>
+      <section id="view-where">
+        <h2 id="where-title">Can we switch over</h2>
+        <p class="lead" id="where-lead">Eight checks. Every one of them is worked out from what is actually true — none of them is a box somebody ticks — and each says underneath where its answer came from.</p>
+        <div class="verdict" id="verdict"></div>
+        <p class="trading" id="trading"></p>
+        <div id="check-list"></div>
+
+        <h3 id="rollback-title">Go back to the old system</h3>
+        <p class="lead" id="rollback-lead">One button. It needs nobody's approval and it works at any time, including in the middle of the switch-over. Nothing about the migration record is undone.</p>
+        <label for="trigger" id="trigger-label">Why are you going back</label>
+        <select id="trigger">
+          <option value="control_total_failed" id="trigger-totals">A figure did not add up</option>
+          <option value="edge_cannot_trade" id="trigger-trade">The shop cannot sell</option>
+          <option value="data_corruption" id="trigger-data">The data is wrong</option>
+          <option value="owner_decision" id="trigger-owner">My decision</option>
+          <option value="time_window_exceeded" id="trigger-time">We have run out of time tonight</option>
+        </select>
+        <button id="rollback" class="danger wide" type="button">Go back to the old system now</button>
+      </section>
+
+      <section id="view-figures" hidden>
+        <h2 id="figures-title">The figures</h2>
+        <p class="lead" id="figures-lead">Every figure appears twice — what the old system says and what came across — with how each side was worked out. Both must agree exactly, and somebody who did not run the load must sign each one.</p>
+        <div class="bill" id="figures-summary"></div>
+        <div id="figures-list"></div>
+
+        <h3 id="sign-title">Sign a figure</h3>
+        <label for="sign-total" id="sign-total-label">Which figure</label>
+        <select id="sign-total"></select>
+        <div class="row2">
+          <div>
+            <label for="sign-role" id="sign-role-label">Signing as</label>
+            <input id="sign-role" type="text" autocomplete="off" value="owner" />
+          </div>
+          <div>
+            <label for="sign-statement" id="sign-statement-label">What you checked</label>
+            <input id="sign-statement" type="text" autocomplete="off" />
+          </div>
+        </div>
+        <button id="sign" class="primary wide" type="button">Sign it</button>
+      </section>
+
+      <section id="view-data" hidden>
+        <h2 id="data-title">Problems in the old data</h2>
+        <p class="lead" id="data-lead">Everything wrong with the old system's data, worst first, with the ones nobody has decided about at the top. Nothing here is ever deleted — a decided one stays on the list as the record that somebody looked at it.</p>
+        <div class="bill" id="data-summary"></div>
+        <div id="data-list"></div>
+
+        <h3 id="decide-title">Decide about one</h3>
+        <label for="decide-id" id="decide-id-label">Which one</label>
+        <select id="decide-id"></select>
+        <label for="decide-action" id="decide-action-label">What do you want to do</label>
+        <select id="decide-action">
+          <option value="correct" id="action-correct">Correct it</option>
+          <option value="merge" id="action-merge">They are the same thing — merge them</option>
+          <option value="exclude" id="action-exclude">Leave it behind</option>
+          <option value="migrate_as_is" id="action-as-is">Bring it across exactly as it is</option>
+        </select>
+        <label for="survivor" id="survivor-label">Which record survives the merge</label>
+        <select id="survivor"></select>
+        <label for="decide-reason" id="decide-reason-label">Why (this is what anybody reads a year from now)</label>
+        <textarea id="decide-reason"></textarea>
+        <button id="decide" class="primary wide" type="button">Record my decision</button>
+      </section>
+
+      <section id="view-both" hidden>
+        <h2 id="both-title">Running both</h2>
+        <p class="lead" id="both-lead">Both systems ringing the same sales. Where they disagree, one of them is wrong about your shop, and somebody has to put their name to which. A bad day resets the count — the clean days only count from after the problem was fixed.</p>
+        <div class="bill" id="both-summary"></div>
+        <div id="both-list"></div>
+      </section>
+
+      <section id="view-old" hidden>
+        <h2 id="old-title">The old system</h2>
+        <p class="lead" id="old-lead">Everything the old shop keeps its records in, and anything about it nobody can answer. What is missing here is the point — a migration that starts with gaps migrates whatever somebody happened to remember.</p>
+        <div class="bill" id="old-summary"></div>
+        <div id="old-list"></div>
+
+        <h3 id="retire-title">Switching the old system off</h3>
+        <p class="lead" id="retire-lead">Switching the old system off is not the same act as deleting the old data, and this screen never does the second one.</p>
+        <div id="retire-box"></div>
+      </section>
+    </main>
+
+    <div class="banner" id="banner" hidden role="alert">
+      <strong id="banner-title">—</strong>
+      <p id="banner-text"></p>
+      <button id="banner-ok" type="button">I have read this</button>
+    </div>
+
+    <!--SCREEN-DATA-->
+    <script type="module" src="./web-erp.bundle.js"></script>
+    <script type="module" src="./migration.js"></script>
+  </body>
+</html>

@@ -423,6 +423,39 @@ export interface PackAiPolicy {
   readonly userId?: string;
 }
 
+/** Who is on the migration screen, and the thresholds this shop's cutover is judged by. */
+export interface PackMigrationPolicy {
+  readonly cutoverId: string;
+  /**
+   * Consecutive clean parallel-run days this shop requires before a cutover (§34.1).
+   *
+   * Per-tenant on purpose: three days is a sensible starting figure and it is not a rule of
+   * nature, and a shop with a busier weekend may want its run to span one.
+   */
+  readonly requiredCleanDays: number;
+  /**
+   * Who ran the load.
+   *
+   * **Absent means nothing can be signed at all** (§28) — a signer who is also the loader is
+   * checking their own work, and a separation that cannot be checked is not a separation.
+   */
+  readonly loadOperator?: string;
+  /** Whether the cutover has been accepted, for the retirement assessment (MG-12). */
+  readonly cutoverAccepted?: boolean;
+  /** When the delta since the final extract was applied (MG-09). */
+  readonly deltaAppliedAt?: string;
+  /** When a rollback was **performed**. A designed one leaves this absent, deliberately. */
+  readonly rollbackDemonstratedAt?: string;
+  /** Who is on the night, with a role each. Absent means nobody has been asked. */
+  readonly namedTeam?: readonly { readonly userId: string; readonly role: string }[];
+  /** When the owner gave GO. */
+  readonly ownerGoBy?: string;
+  /** Assessments still open that could need the legacy records (MG-12). Absent is not nought. */
+  readonly openAssessments?: number;
+  /** Who is on the migration screen. Absent means nothing may be signed, decided or rolled back. */
+  readonly userId?: string;
+}
+
 export interface PackMerchandisingPolicy {
   readonly refillAtBp: number;
   readonly countStaleAfterMinutes: number;
@@ -636,6 +669,23 @@ export interface StorePack {
   readonly aiEvaluations: Register<Readonly<Record<string, { readonly passed: number; readonly total: number; readonly at: string }>>>;
   /** Who is on the AI screen, the month, and the owner's platform ceiling. */
   readonly aiPolicy: Register<PackAiPolicy>;
+  /**
+   * The migration (MG-01…MG-12). Every section absent by default, and each absence is meaningful.
+   *
+   * **`migrationTotals` absent is not a reconciliation with nothing wrong**, and
+   * `migrationExceptions` absent is not clean data. The cutover gate treats an unanswerable
+   * check as a failure, which is the only safe reading: the alternative is a shop switching
+   * systems on the strength of questions nobody asked.
+   */
+  readonly migrationSources: Register<readonly unknown[]>;
+  /** Every exception ever raised — **never pruned.** A resolved one is the evidence (#6). */
+  readonly migrationExceptions: Register<readonly unknown[]>;
+  readonly migrationTotals: Register<readonly unknown[]>;
+  readonly parallelDays: Register<readonly unknown[]>;
+  readonly parallelDifferences: Register<readonly unknown[]>;
+  readonly historyExclusions: Register<readonly unknown[]>;
+  readonly legacyArchive: Register<unknown>;
+  readonly migrationPolicy: Register<PackMigrationPolicy>;
   /** Loss-prevention thresholds — data, so a store tunes its own without code (M15-FR-01). */
   readonly lossPreventionRules: Register<readonly unknown[]>;
   /** The purposes this tenant asks a customer's consent for (M16 / PRV). */
@@ -717,6 +767,14 @@ export function emptyPack(why: string = NEVER): StorePack {
     aiPending: notKnown(why),
     aiEvaluations: notKnown(why),
     aiPolicy: notKnown(why),
+    migrationSources: notKnown(why),
+    migrationExceptions: notKnown(why),
+    migrationTotals: notKnown(why),
+    parallelDays: notKnown(why),
+    parallelDifferences: notKnown(why),
+    historyExclusions: notKnown(why),
+    legacyArchive: notKnown(why),
+    migrationPolicy: notKnown(why),
     lossPreventionRules: notKnown(why),
     consentPurposes: notKnown(why),
   };
@@ -804,6 +862,14 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     aiPending: section<readonly unknown[]>('aiPending'),
     aiEvaluations: section<Readonly<Record<string, { readonly passed: number; readonly total: number; readonly at: string }>>>('aiEvaluations'),
     aiPolicy: section<PackAiPolicy>('aiPolicy'),
+    migrationSources: section<readonly unknown[]>('migrationSources'),
+    migrationExceptions: section<readonly unknown[]>('migrationExceptions'),
+    migrationTotals: section<readonly unknown[]>('migrationTotals'),
+    parallelDays: section<readonly unknown[]>('parallelDays'),
+    parallelDifferences: section<readonly unknown[]>('parallelDifferences'),
+    historyExclusions: section<readonly unknown[]>('historyExclusions'),
+    legacyArchive: section<unknown>('legacyArchive'),
+    migrationPolicy: section<PackMigrationPolicy>('migrationPolicy'),
     lossPreventionRules: section<readonly unknown[]>('lossPreventionRules'),
     consentPurposes: section<readonly { purpose: string; channel: string; required?: boolean }[]>('consentPurposes'),
   };

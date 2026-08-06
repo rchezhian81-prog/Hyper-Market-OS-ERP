@@ -59,7 +59,8 @@
 ## 4. Named domain events (§30.2, confirmed in Store-Core specs)
 `SaleCommitted` · `TenderAuthorized` / `TenderUncertain` / `TenderSettled` ·
 `InventoryMoved` · `InventoryAdjusted` · `ReconciliationExceptionRaised` /
-`ReconciliationExceptionResolved` · `PeriodClosed` / `PeriodReopened`.
+`ReconciliationExceptionResolved` · `PeriodClosed` / `PeriodReopened` ·
+`MigrationTotalSigned` / `MigrationExceptionResolved`.
 *(Additional events are defined per module as each is expanded — this list grows with the
 build; it is not invented ahead of the roadmap.)*
 

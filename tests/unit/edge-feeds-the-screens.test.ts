@@ -211,6 +211,38 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   aiPolicy: known({
     staleAfterMinutes: 60, period: '2026-08', platformCeilingMinor: 1_500_000, userId: 'u-owner',
   }),
+  // Migration (MG-01..MG-12). The cutover gate is DERIVED from these, never asserted.
+  migrationSources: known([{
+    sourceId: 'S-1', tenantId: 'store-1', name: 'Legacy ERP database', kind: 'erp_database',
+    ownerUserId: 'u-owner', rowCount: 41_200, volumeBasis: 'counted', retentionYears: 8,
+    extractable: true,
+  }]),
+  migrationExceptions: known([{
+    exceptionId: 'EX-1', tenantId: 'store-1', kind: 'negative_stock', severity: 'blocking',
+    confidence: 'certain', legacyIds: ['p1'], evidence: 'stock on hand is -4 for toor dal 1kg',
+    valueMinor: 40_000,
+  }]),
+  migrationTotals: known([{
+    totalId: 'CT-1', tenantId: 'store-1', kind: 'migration', name: 'Product rows', unit: 'rows',
+    legacyValue: 41_200, loadedValue: 41_200,
+    legacyDerivation: 'count(*) on the legacy product table',
+    loadedDerivation: 'count(*) on the loaded product table',
+  }]),
+  parallelDays: known([
+    { tenantId: 'store-1', businessDate: '2026-08-03', differences: [], clean: true, totalDifferenceMinor: 0, detail: 'agree' },
+    { tenantId: 'store-1', businessDate: '2026-08-04', differences: [], clean: true, totalDifferenceMinor: 0, detail: 'agree' },
+  ]),
+  parallelDifferences: known([]),
+  historyExclusions: known([]),
+  legacyArchive: known({
+    archiveId: 'AR-1', tenantId: 'store-1', sourceId: 'S-1', digest: 'abc123', rowCount: 41_200,
+    archivedAt: '2026-08-05T00:00:00.000Z', retentionYears: 8,
+    earliestRecordDate: '2014-04-01', latestRecordDate: '2026-08-04', readOnly: true,
+  }),
+  migrationPolicy: known({
+    cutoverId: 'cut-1', requiredCleanDays: 3, loadOperator: 'u-eng', userId: 'u-owner',
+    openAssessments: 0,
+  }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([]),
   ...over,

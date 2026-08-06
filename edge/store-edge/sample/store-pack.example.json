@@ -112,7 +112,26 @@
     "ceiling can only be enforced against a figure somebody actually measured - a substituted nought",
     "hands every assistant its whole ceiling again, every month, for as long as the meter is broken.",
     "An assistant missing from aiEvaluations has NEVER BEEN CHECKED for accuracy, which",
-    "the screen says in those words rather than showing a score of nought."
+    "the screen says in those words rather than showing a score of nought.",
+    "migrationSources/migrationExceptions/migrationTotals/parallelDays/parallelDifferences/",
+    "historyExclusions/legacyArchive/migrationPolicy: the migration screen (MG-01..MG-12).",
+    "THE EIGHT CUTOVER CHECKS ARE WORKED OUT FROM THESE, NEVER TICKED BY HAND. Leave any section",
+    "out and the check it feeds FAILS and is reported as one nobody could answer - which is a",
+    "different problem from a check that came back bad, and it needs a different person to fix it.",
+    "An empty migrationExceptions list means the cleaning pass ran and found nothing; leaving the",
+    "section out means it never ran, and only one of those is good news. Same for migrationTotals:",
+    "an empty list is a reconciliation that compared nothing, and QG-07 cannot pass on it.",
+    "edgeUnsyncedItems is NOT in this file. The box takes it from its OWN outbox, because an",
+    "unsynced till is an unmigrated sale and the cloud cannot be the witness for what the box holds.",
+    "rollbackDemonstratedAt is when a rollback was ACTUALLY PERFORMED. A designed rollback and a",
+    "performed one differ on exactly the night it matters, so leaving it out fails the check.",
+    "loadOperator is who brought the data across. Leave it out and NOTHING CAN BE SIGNED AT ALL -",
+    "a signer who is also the loader is checking their own work, and a separation that cannot be",
+    "checked is not a separation. requiredCleanDays is YOURS to set: three is a starting figure.",
+    "migrationExceptions is NEVER PRUNED. A resolved exception stays on the list as the record that",
+    "somebody looked at it, and nothing on that screen can throw one away.",
+    "legacyArchive is LEFT OUT here on purpose: nothing has been archived yet, and",
+    "the screen says the retirement cannot be decided rather than assessing nothing."
   ],
   "version": 1,
   "policies": {
@@ -524,5 +543,31 @@
       "purpose": "marketing",
       "channel": "sms"
     }
-  ]
+  ],
+  "migrationSources": [
+    {
+      "sourceId": "REPLACE_WITH_SOURCE_ID",
+      "tenantId": "REPLACE_WITH_TENANT_ID",
+      "name": "The old ERP database",
+      "kind": "erp_database",
+      "ownerUserId": "REPLACE_WITH_OWNER_USER_ID",
+      "rowCount": 0,
+      "volumeBasis": "counted",
+      "retentionYears": 8,
+      "extractable": true
+    }
+  ],
+  "migrationExceptions": [],
+  "migrationTotals": [],
+  "parallelDays": [],
+  "parallelDifferences": [],
+  "historyExclusions": [],
+  "migrationPolicy": {
+    "cutoverId": "REPLACE_WITH_CUTOVER_ID",
+    "requiredCleanDays": 3,
+    "loadOperator": "REPLACE_WITH_LOAD_OPERATOR_USER_ID",
+    "cutoverAccepted": false,
+    "openAssessments": 0,
+    "userId": "REPLACE_WITH_MIGRATION_SCREEN_USER_ID"
+  }
 }

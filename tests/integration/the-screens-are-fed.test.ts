@@ -10,7 +10,7 @@ import { Ledger, InMemoryLedgerStore } from '../../packages/ledger/src/index';
 import { resolvePrice } from '../../packages/price-list/src/index';
 import { makeEvent } from '../../packages/contracts/src/event';
 import {
-  bootAdmin, bootAi, bootBuying, bootCatalogue, bootExpiry, bootFinance, bootManager, bootMerchandising, bootReporting, bootService,
+  bootAdmin, bootAi, bootBuying, bootCatalogue, bootExpiry, bootFinance, bootManager, bootMerchandising, bootMigration, bootReporting, bootService,
   buyingGaps, catalogueGaps, merchandisingGaps,
 } from '../../apps/web-erp/src/browser-entry';
 import { bootOwner, forgetfulQueueStore } from '../../apps/owner-app/src/browser-entry';
@@ -238,6 +238,38 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
   aiEvaluations: known({ A01: { passed: 19, total: 20, at: '2026-08-05T10:00:00.000Z' } }),
   aiPolicy: known({
     staleAfterMinutes: 60, period: '2026-08', platformCeilingMinor: 1_500_000, userId: 'u-owner',
+  }),
+  // Migration (MG-01..MG-12). The cutover gate is DERIVED from these, never asserted.
+  migrationSources: known([{
+    sourceId: 'S-1', tenantId: 'store-1', name: 'Legacy ERP database', kind: 'erp_database',
+    ownerUserId: 'u-owner', rowCount: 41_200, volumeBasis: 'counted', retentionYears: 8,
+    extractable: true,
+  }]),
+  migrationExceptions: known([{
+    exceptionId: 'EX-1', tenantId: 'store-1', kind: 'negative_stock', severity: 'blocking',
+    confidence: 'certain', legacyIds: ['p1'], evidence: 'stock on hand is -4 for toor dal 1kg',
+    valueMinor: 40_000,
+  }]),
+  migrationTotals: known([{
+    totalId: 'CT-1', tenantId: 'store-1', kind: 'migration', name: 'Product rows', unit: 'rows',
+    legacyValue: 41_200, loadedValue: 41_200,
+    legacyDerivation: 'count(*) on the legacy product table',
+    loadedDerivation: 'count(*) on the loaded product table',
+  }]),
+  parallelDays: known([
+    { tenantId: 'store-1', businessDate: '2026-08-03', differences: [], clean: true, totalDifferenceMinor: 0, detail: 'agree' },
+    { tenantId: 'store-1', businessDate: '2026-08-04', differences: [], clean: true, totalDifferenceMinor: 0, detail: 'agree' },
+  ]),
+  parallelDifferences: known([]),
+  historyExclusions: known([]),
+  legacyArchive: known({
+    archiveId: 'AR-1', tenantId: 'store-1', sourceId: 'S-1', digest: 'abc123', rowCount: 41_200,
+    archivedAt: '2026-08-05T00:00:00.000Z', retentionYears: 8,
+    earliestRecordDate: '2014-04-01', latestRecordDate: '2026-08-04', readOnly: true,
+  }),
+  migrationPolicy: known({
+    cutoverId: 'cut-1', requiredCleanDays: 3, loadOperator: 'u-eng', userId: 'u-owner',
+    openAssessments: 0,
   }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([{ purpose: 'marketing', channel: 'sms' }]),
@@ -558,6 +590,10 @@ describe('a box that has been told nothing tells every screen so', () => {
       aiUsage: notKnown('never'),
       aiPending: notKnown('never'), aiEvaluations: notKnown('never'),
       aiPolicy: notKnown('never'),
+      migrationSources: notKnown('never'), migrationExceptions: notKnown('never'),
+      migrationTotals: notKnown('never'), parallelDays: notKnown('never'),
+      parallelDifferences: notKnown('never'), historyExclusions: notKnown('never'),
+      legacyArchive: notKnown('never'), migrationPolicy: notKnown('never'),
       lossPreventionRules: notKnown('never'), consentPurposes: notKnown('never'),
     },
     sales: [],
@@ -2072,6 +2108,119 @@ describe('finance, fed by the box', () => {
  * things stood between that sentence and the running system: the control had two implementations
  * and the weaker was wired, and the expiry was never checked by anything.
  */
+describe('migration, fed by the box', () => {
+  it('DERIVES the eight checks rather than being told them', async () => {
+    // `decideCutover` has refused GO on eight checks since it was written, and every call site in
+    // this codebase had always handed it a literal with the answers typed in.
+    const base = await serve(snapshotOf());
+    const view = bootMigration((await payloadFromScreen(base, 'migration'))! as never)!.cutover();
+    expect(view.decision.go).toBe(false);
+    expect(view.derived.checks).toHaveLength(8);
+    // Every one of them says where its answer came from.
+    for (const check of view.derived.checks) {
+      expect(check.evidence.length, `${check.check} says nothing`).toBeGreaterThan(20);
+    }
+  });
+
+  it('takes what the store box still holds from the box’s OWN outbox', async () => {
+    const outbox = new SyncOutbox();
+    outbox.enqueue(makeEvent({
+      id: 'e-unsent', type: 'SaleCommitted', occurredAt: NOW, idempotencyKey: 'k-unsent',
+      source: 'lane-1', payload: {},
+    }));
+    const base = await serve(snapshotOf({ outbox }));
+    const payload = (await payloadFromScreen(base, 'migration'))!;
+    expect(payload['edgeUnsyncedItems']).toBe(1);
+    const view = bootMigration(payload as never)!.cutover();
+    expect(view.decision.failed).toContain('edge_fully_synced');
+  });
+
+  it('never turns a section the box was not sent into a passed check', async () => {
+    // The one substitution that would undo the whole fix: an empty exception list reads as clean
+    // data, and an empty totals list reads as a reconciliation with nothing wrong.
+    const base = await serve(snapshotOf({
+      pack: pack({ migrationExceptions: notKnown('never sent'), migrationTotals: notKnown('never sent') }),
+    }));
+    const payload = (await payloadFromScreen(base, 'migration'))!;
+    expect('exceptions' in payload, '"exceptions" must be absent, not invented').toBe(false);
+    expect('totals' in payload, '"totals" must be absent, not invented').toBe(false);
+    const view = bootMigration(payload as never)!.cutover();
+    expect(view.derived.notKnown).toContain('blocking_exceptions_cleared');
+    expect(view.derived.notKnown).toContain('control_totals_signed');
+  });
+
+  it('counts the parallel run CONSECUTIVELY, against the shop’s own required days', async () => {
+    const base = await serve(snapshotOf());
+    const position = bootMigration((await payloadFromScreen(base, 'migration'))! as never)!.parallel();
+    // Two clean days in the pack, three required by this shop's own policy.
+    expect(position?.consecutiveCleanDays).toBe(2);
+    expect(position?.sufficient).toBe(false);
+  });
+
+  it('keeps a blocking exception in the working queue until somebody decides', async () => {
+    const base = await serve(snapshotOf());
+    const migration = bootMigration((await payloadFromScreen(base, 'migration'))! as never)!;
+    expect(migration.cleaning()?.blockingUnresolved).toHaveLength(1);
+    const outcome = migration.resolve({
+      exceptionId: 'EX-1', action: 'correct', reason: 'counted the shelf and set it to four',
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    // Updated, never removed (hard rule #6).
+    expect(outcome.exceptions).toHaveLength(1);
+    expect(outcome.exceptions[0]?.resolution?.decidedBy).toBe('u-owner');
+  });
+
+  it('refuses a signature from whoever ran the load (§28)', async () => {
+    const base = await serve(snapshotOf());
+    const payload = (await payloadFromScreen(base, 'migration'))!;
+    expect(payload['loadOperator']).toBe('u-eng');
+    const outcome = bootMigration({ ...payload, userId: 'u-eng' } as never)!
+      .sign({ totalId: 'CT-1', signerRole: 'owner', statement: 'I checked it against the report' });
+    expect(outcome.ok).toBe(false);
+  });
+
+  it('refuses to sign anything at all when nobody knows who ran the load', async () => {
+    const base = await serve(snapshotOf({
+      pack: pack({ migrationPolicy: known({ cutoverId: 'cut-1', requiredCleanDays: 3, userId: 'u-owner' }) }),
+    }));
+    const payload = (await payloadFromScreen(base, 'migration'))!;
+    expect('loadOperator' in payload, '"loadOperator" must be absent, not invented').toBe(false);
+    const outcome = bootMigration(payload as never)!
+      .sign({ totalId: 'CT-1', signerRole: 'owner', statement: 'I checked it against the report' });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.refusal).toBe('nobody_ran_the_load');
+  });
+
+  it('rolls back on the word of whoever is on the night, needing nobody’s approval', async () => {
+    const base = await serve(snapshotOf());
+    const outcome = bootMigration((await payloadFromScreen(base, 'migration'))! as never)!
+      .rollback({ trigger: 'control_total_failed', legacySystemAvailable: true });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.evidenceRetained).toBe(true);
+    expect(outcome.result.shopKeepsTrading).toBe(true);
+  });
+
+  it('decides and signs nothing when the box does not know who is at the desk', async () => {
+    const base = await serve(snapshotOf({
+      pack: pack({ migrationPolicy: known({ cutoverId: 'cut-1', requiredCleanDays: 3, loadOperator: 'u-eng' }) }),
+    }));
+    const payload = (await payloadFromScreen(base, 'migration'))!;
+    expect('userId' in payload, '"userId" must be absent, not invented').toBe(false);
+    const migration = bootMigration(payload as never)!;
+    expect(migration.rollback({ trigger: 'owner_decision', legacySystemAvailable: true }).ok).toBe(false);
+    expect(migration.sign({ totalId: 'CT-1', signerRole: 'owner', statement: 'checked' }).ok).toBe(false);
+  });
+
+  it('serves the screen nothing at all without the shop’s own cutover policy', async () => {
+    const base = await serve(snapshotOf({ pack: pack({ migrationPolicy: notKnown('never sent') }) }));
+    expect(await payloadFromScreen(base, 'migration')).toBeNull();
+    expect(bootMigration(undefined)).toBeNull();
+  });
+});
+
 describe('AI control, fed by the box', () => {
   const stopped = {
     switchId: 'KS-1', tenantId: 'store-1', scope: 'single_agent', agentId: 'A04',
