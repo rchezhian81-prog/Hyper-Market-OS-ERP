@@ -25,6 +25,13 @@ COPY package.json pnpm-workspace.yaml tsconfig.json ./
 COPY packages ./packages
 COPY services ./services
 COPY edge ./edge
+COPY scripts ./scripts
+
+# The container runs a BUNDLED artifact, not the raw TypeScript tree. This codebase uses
+# extensionless ESM imports, which current Node's ESM resolver will not resolve from source — so
+# launching straight at `edge/store-edge/src/start.ts` dies on the first import and the box never
+# comes up. esbuild bundles the workspace TypeScript into one file, exactly as the API is built.
+RUN node scripts/build-service.mjs edge
 
 # Owned by the user that writes it. A sale that cannot be written is a sale refused at the lane,
 # so the permissions on this directory are a trading matter rather than a tidiness one.
@@ -36,4 +43,4 @@ USER sre
 # No HEALTHCHECK that depends on the cloud. "Healthy" for this container means the process is up
 # and its disk is writable — a shop whose line is down is trading perfectly well, and a health
 # check that says otherwise gets the container restarted in the middle of a queue.
-CMD ["node", "--experimental-strip-types", "edge/store-edge/src/start.ts"]
+CMD ["node", "edge/store-edge/dist/start.js"]

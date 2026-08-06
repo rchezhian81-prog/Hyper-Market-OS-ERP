@@ -26,6 +26,14 @@ COPY services ./services
 COPY db ./db
 COPY scripts ./scripts
 
+# The container runs a BUNDLED artifact, not the raw TypeScript tree. This whole codebase uses
+# extensionless ESM imports (`./main`, `../../../packages/…`), and current Node's ESM resolver
+# will not resolve those from source — so launching straight at `services/api/src/start.ts` dies
+# on the first import before `main()` can refuse a bad configuration cleanly (exit 78). esbuild
+# bundles the workspace TypeScript into one file with the types stripped and extensions resolved,
+# exactly as the app shells are already built.
+RUN node scripts/build-service.mjs api
+
 USER sre
 EXPOSE 8081
 
@@ -34,4 +42,4 @@ EXPOSE 8081
 HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=3 \
   CMD wget -q -O- http://127.0.0.1:8081/livez || exit 1
 
-CMD ["node", "--experimental-strip-types", "services/api/src/start.ts"]
+CMD ["node", "services/api/dist/start.js"]
