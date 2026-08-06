@@ -765,3 +765,12 @@ el('sample').hidden = real !== undefined;
 paintChrome();
 renderLines();
 show('home');
+
+// The back office has to open at the loading bay and in the cash office, where the wifi is worst
+// (§31, P-01). The service worker existed and nothing registered it, so nothing was ever cached.
+// One worker covers both shells in this folder — the manager's and the buyer's.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {
+    /* the screen still opens; it just will not be there without a network */
+  });
+}

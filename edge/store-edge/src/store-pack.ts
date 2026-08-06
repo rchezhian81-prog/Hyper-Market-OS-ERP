@@ -155,6 +155,59 @@ export interface PackRoutingPolicy {
   readonly contributionRule?: { readonly maxCostShareBps: number };
 }
 
+/**
+ * A purchase order this box has been told about (M06).
+ *
+ * Carried so the buyer's screen can compare an invoice against what was actually ordered. Without
+ * it every invoiced line looks like something nobody ordered — which is a refusal, so it fails in
+ * the safe direction, but it is a refusal for the wrong reason and the screen says which.
+ */
+export interface PackPurchaseOrder {
+  readonly poId: string;
+  readonly supplierId: string;
+  readonly lines: readonly { readonly productId: string; readonly qty: number; readonly unitMinor: number }[];
+}
+
+/** What actually arrived against a purchase order (M07). */
+export interface PackReceipt {
+  readonly poId: string;
+  readonly lines: readonly { readonly productId: string; readonly qty: number }[];
+}
+
+/**
+ * A supplier invoice already captured.
+ *
+ * Here so capturing the same invoice twice is **visible**. A second capture is not a duplicate
+ * record to be tidied later; it is a supplier being owed the money twice.
+ */
+export interface PackSupplierInvoice {
+  readonly invoiceId: string;
+  readonly lines: readonly {
+    readonly productId: string;
+    readonly quantity: number;
+    readonly unitPriceMinor: number;
+    readonly lineTotalMinor: number;
+  }[];
+}
+
+/** Who buys, who may check them, and the tolerances this tenant matches on. All per-tenant. */
+export interface PackBuyingPolicy {
+  readonly buyerId: string;
+  /**
+   * Who may approve a capture or an order.
+   *
+   * The buyer must not be in this list (§28), and the box strips them out rather than trusting the
+   * screen to. A separation of duties enforced only by the list somebody was shown is not enforced.
+   */
+  readonly approvers: readonly string[];
+  /** Quantity tolerance for the three-way match, in basis points. */
+  readonly quantityToleranceBps: number;
+  /** Price tolerance for the three-way match, in basis points. */
+  readonly priceToleranceBps: number;
+  /** A difference below this is not worth a person's time. */
+  readonly immaterialMinor: number;
+}
+
 /** A delivery or collection window the customer app may offer. */
 export interface PackSlot {
   readonly slotId: string;
@@ -206,6 +259,14 @@ export interface StorePack {
   readonly drivers: Register<readonly PackDriver[]>;
   readonly routingPolicy: Register<PackRoutingPolicy>;
   readonly slots: Register<readonly PackSlot[]>;
+  /** What is on order (M06) — the buyer's side of the three-way match. */
+  readonly purchaseOrders: Register<readonly PackPurchaseOrder[]>;
+  /** What arrived against those orders (M07). */
+  readonly receipts: Register<readonly PackReceipt[]>;
+  /** Supplier invoices already captured, so a second capture of one is refused (M07-FR-04). */
+  readonly supplierInvoices: Register<readonly PackSupplierInvoice[]>;
+  /** Who buys, who checks them, and this tenant's match tolerances (§28). */
+  readonly buyingPolicy: Register<PackBuyingPolicy>;
   /** Loss-prevention thresholds — data, so a store tunes its own without code (M15-FR-01). */
   readonly lossPreventionRules: Register<readonly unknown[]>;
   /** The purposes this tenant asks a customer's consent for (M16 / PRV). */
@@ -235,6 +296,10 @@ export function emptyPack(why: string = NEVER): StorePack {
     drivers: notKnown(why),
     routingPolicy: notKnown(why),
     slots: notKnown(why),
+    purchaseOrders: notKnown(why),
+    receipts: notKnown(why),
+    supplierInvoices: notKnown(why),
+    buyingPolicy: notKnown(why),
     lossPreventionRules: notKnown(why),
     consentPurposes: notKnown(why),
   };
@@ -270,6 +335,10 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     drivers: section<readonly PackDriver[]>('drivers'),
     routingPolicy: section<PackRoutingPolicy>('routingPolicy'),
     slots: section<readonly PackSlot[]>('slots'),
+    purchaseOrders: section<readonly PackPurchaseOrder[]>('purchaseOrders'),
+    receipts: section<readonly PackReceipt[]>('receipts'),
+    supplierInvoices: section<readonly PackSupplierInvoice[]>('supplierInvoices'),
+    buyingPolicy: section<PackBuyingPolicy>('buyingPolicy'),
     lossPreventionRules: section<readonly unknown[]>('lossPreventionRules'),
     consentPurposes: section<readonly { purpose: string; channel: string; required?: boolean }[]>('consentPurposes'),
   };

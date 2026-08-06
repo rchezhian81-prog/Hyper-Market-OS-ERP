@@ -9,7 +9,12 @@
     "deliveries/drivers/routingPolicy: the box PLANS the routes itself from these,",
     "so vans still go out when the internet is down. `route` overrides the planner",
     "when a dispatcher writes one by hand, and the driver's screen says which it is.",
-    "Distances are straight-line: there is no map here, so the plan is a draft."
+    "Distances are straight-line: there is no map here, so the plan is a draft.",
+    "purchaseOrders/receipts/supplierInvoices/buyingPolicy: the buyer's screen.",
+    "Leave buyingPolicy out and the box serves the buyer's screen nothing at all,",
+    "because a screen inventing its own match tolerances would be deciding how big",
+    "a price difference is worth nobody's attention. The buyer must NOT appear in",
+    "approvers: nobody signs off their own capture (roadmap section 28)."
   ],
   "version": 1,
   "policies": {
@@ -71,6 +76,40 @@
     }
   },
   "slots": [],
+  "purchaseOrders": [
+    {
+      "poId": "REPLACE_WITH_PO_NUMBER",
+      "supplierId": "REPLACE_WITH_SUPPLIER_ID",
+      "lines": [
+        {
+          "productId": "EXAMPLE-1",
+          "qty": 10,
+          "unitMinor": 7000
+        }
+      ]
+    }
+  ],
+  "receipts": [
+    {
+      "poId": "REPLACE_WITH_PO_NUMBER",
+      "lines": [
+        {
+          "productId": "EXAMPLE-1",
+          "qty": 10
+        }
+      ]
+    }
+  ],
+  "supplierInvoices": [],
+  "buyingPolicy": {
+    "buyerId": "REPLACE_WITH_BUYER_USER_ID",
+    "approvers": [
+      "REPLACE_WITH_A_DIFFERENT_USER_ID"
+    ],
+    "quantityToleranceBps": 0,
+    "priceToleranceBps": 100,
+    "immaterialMinor": 100
+  },
   "lossPreventionRules": [
     {
       "kind": "refund",

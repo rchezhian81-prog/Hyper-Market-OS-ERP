@@ -9,7 +9,7 @@ import {
   payloadFor, managerPayload, ownerPayload, posPayload, customerPayload,
   pickerPayload, driverPayload, GLOBAL_FOR, SCREENS, type ScreenInput,
 } from '../../edge/store-edge/src/screen-data';
-import { embed, injectPayload, routeOf, safeFile, DATA_MARKER, APP_DIR } from '../../edge/store-edge/src/screen-server';
+import { embed, injectPayload, routeOf, safeFile, DATA_MARKER, APP_SHELL } from '../../edge/store-edge/src/screen-server';
 import { SyncOutbox } from '../../packages/sync/src/index';
 import { makeEvent } from '../../packages/contracts/src/event';
 
@@ -67,6 +67,16 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
     averageSpeedKmh: 20, serviceMinutesPerStop: 5,
   }),
   slots: known([]),
+  purchaseOrders: known([{
+    poId: 'PO-1', supplierId: 'sup-1',
+    lines: [{ productId: 'p1', qty: 10, unitMinor: 90_00 }],
+  }]),
+  receipts: known([{ poId: 'PO-1', lines: [{ productId: 'p1', qty: 10 }] }]),
+  supplierInvoices: known([]),
+  buyingPolicy: known({
+    buyerId: 'u-buyer', approvers: ['u-manager', 'u-buyer'],
+    quantityToleranceBps: 0, priceToleranceBps: 100, immaterialMinor: 100,
+  }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([]),
   ...over,
@@ -311,7 +321,7 @@ describe('each screen gets what it needs, and nothing when the box has nothing',
   it('has a builder and a global for every screen, with no drift', () => {
     for (const screen of SCREENS) {
       expect(typeof GLOBAL_FOR[screen], `${screen} has no global`).toBe('string');
-      expect(APP_DIR[screen], `${screen} has no app folder`).toBeTruthy();
+      expect(APP_SHELL[screen]?.dir, `${screen} has no app folder`).toBeTruthy();
       // Every one must be callable — a screen with no builder would 500 on its own URL.
       expect(() => payloadFor(screen, input())).not.toThrow();
     }

@@ -24,9 +24,9 @@ project.
 | --- | --- | --- |
 | `packages/` — domain rules | 45,179 | **Genuinely strong.** The product's value lives here |
 | `services/` — the thirteen APIs | 5,556 | Built, persisting, authenticated, audited |
-| `edge/` — the store box | 2,150 | Runs, writes durably, syncs — **and now feeds all six screens** |
-| `apps/` — everything a person touches | 7,500 | **All six have real screens.** The gap that dominated this document is closed |
-| Tests | 3,547 + 31 | Unusually thorough on rules; thin on assembly until today |
+| `edge/` — the store box | 2,250 | Runs, writes durably, syncs — **and now feeds every screen**, the buyer's included |
+| `apps/` — everything a person touches | 8,000 | **All six have real screens, and the ERP now has two** — the manager's and the buyer's. The gap that dominated this document is closed |
+| Tests | 3,611 + 31 | Unusually thorough on rules; thin on assembly until today |
 
 **2,452 lines of app code for six applications** is the number that matters. For comparison, the POS
 alone — one screen a cashier uses eight hours a day — is 1,070 of those lines, and none of it draws
@@ -111,7 +111,7 @@ Three columns, and they are different questions. **Rules** = is the logic writte
 | --- | :---: | :---: | :---: | --- |
 | M01–M02 Platform, identity | ✅ | ✅ | ◐ | Token verification real; the **approvals inbox is now a screen** (decide in ≤3 taps, reason recorded, separation of duties visible). **No identity provider chosen**, so nobody can log in |
 | M03–M05 Product, pricing, catalogue | ✅ | ✅ | ❌ | No screen to create or price a product. No HSN field |
-| M06–M07 Purchase, supplier | ✅ | ◐ | ◐ | Three-way match real; **goods receiving is now a screen**, and a delivery with no purchase order is flagged unmatched rather than filed quietly. **Nothing captures an invoice**, so the match still has no lines |
+| M06–M07 Purchase, supplier | ✅ | ✅ | ✅ | Three-way match real; goods receiving is a screen, and a delivery with no purchase order is flagged unmatched rather than filed quietly. **The buyer's screen now captures a supplier invoice in one go** — checked against the total printed on the paper, each line's own arithmetic checked with the line number to look at, approved by somebody else, committed atomically — so the match has lines at last. An uncaptured invoice still refuses, and now says which of the three documents is missing |
 | M08–M11 Inventory, warehouse, quality | ✅ | ✅ | ◐ | Movements and snapshots real; **blind counting is now a screen** — and a count the screen cannot value is refused rather than priced at zero. No expiry or recall screen |
 | M12–M15 POS, returns, cash office | ✅ | ✅ | ✅ | The strongest area. Durable commit real, and the screen reaches the till's own disk over loopback (ADR-0004). Cash, card, UPI, hold/recall, cash to safe and a blind till close are in; **day close now has a manager screen that reports a list rather than a refusal**. Receipt-based returns still have no screen |
 | M16–M18 Customer, loyalty, storefront | ✅ | ✅ | ◐ | **The customer app is now a screen**: search, repeat order, basket review, slots, payment, and a privacy centre where withdrawing consent is the same one tap as giving it (DPDP s.6(6)). Loyalty **accrual still not wired** — points read as *not known* |
@@ -125,7 +125,9 @@ Three columns, and they are different questions. **Rules** = is the logic writte
 
 **Legend:** ✅ done · ◐ partial, with a named reason · ❌ not started
 
-### The five that are ◐ for a good reason, and must not be "fixed" by relaxing them
+### The ones that are ◐ for a good reason, and must not be "fixed" by relaxing them
+
+_Two have since been closed properly — by building the missing producer, never by weakening the check._
 
 - **Period close refuses** because no control total can be built inside this system — every figure
   comes down one path, so comparing two of them is one figure written twice. The genuine second
@@ -135,10 +137,13 @@ Three columns, and they are different questions. **Rules** = is the logic writte
   never had. The control that catches a delivery against an order nobody dispatched still works —
   it simply no longer fires on every single delivery.
 - **Loyalty points answer "not known"** because nothing accrues them. Correct until M14 is wired.
-- **Commitments answer "not known"** because no purchase order is recorded. Correct until M06 is
-  wired.
-- **Invoice matching refuses** because no invoice lines are captured. Correct until receiving is
-  wired.
+- **Commitments answer "not known"** because no purchase order is recorded *by the API*. The
+  buyer's screen raises orders and the store box serves what is on order, so the screen's own match
+  is real; the API-side projection is still honest about not having them.
+- ~~**Invoice matching refuses** because no invoice lines are captured.~~ ✅ **Closed.** The buyer's
+  screen captures them, against the control total printed on the supplier's paper. The refusal that
+  mattered is still there and still fires: an invoice nobody has captured is *not checked*, which is
+  a different sentence from *clean*, and the screen shows it as the sentence it is.
 
 Each of these is the system telling the truth about what it does not know. **If any of them ever
 starts answering confidently without the missing producer being built, that is the regression.**

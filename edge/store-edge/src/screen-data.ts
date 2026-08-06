@@ -26,6 +26,8 @@
 //   • the picker     — the wave the cloud assigned
 //   • the driver     — the route the cloud assigned
 //   • the customer   — the published catalogue and the slots that can actually be had
+//   • the buyer      — what is on order, what arrived, which invoices are already captured, and
+//                      who is allowed to check the buyer's work
 
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { assessChecklist } from '../../../packages/workforce/src/index';
@@ -34,8 +36,8 @@ import { planDispatch, type DispatchPlan } from '../../../packages/fulfilment/sr
 import { costTheDay, exceptionsFor, activityFrom, type LoggedSale } from './read-model';
 import type { StorePack } from './store-pack';
 
-/** The six screens this box serves. Named so a route, a test and a payload cannot drift apart. */
-export const SCREENS = Object.freeze(['pos', 'manager', 'owner', 'picker', 'driver', 'customer'] as const);
+/** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
+export const SCREENS = Object.freeze(['pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying'] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
 export interface ScreenInput {
@@ -378,6 +380,94 @@ export function customerPayload(input: ScreenInput): Record<string, unknown> | n
   };
 }
 
+/**
+ * Fold a list of documents into a map keyed by their reference, summing quantities per product.
+ *
+ * Two goods receipts against one purchase order is an ordinary Tuesday — half the order on Monday
+ * and the rest on Thursday. Keying by the order number and letting the second overwrite the first
+ * would quietly report that only Thursday's half ever arrived, and the three-way match would then
+ * withhold payment for goods that are sitting on the shelf.
+ *
+ * So they accumulate. The same fold is used for orders and for captured invoices, where a repeated
+ * reference is a producer fault rather than a real second document — and there it fails toward
+ * *blocked*, because a doubled invoiced quantity exceeds what was received and the match refuses.
+ * Wrong, and refusing, is survivable. Wrong, and paying, is not.
+ */
+function foldByReference<TLine extends { readonly productId: string }>(
+  documents: readonly { readonly reference: string; readonly lines: readonly TLine[] }[],
+  merge: (into: TLine, next: TLine) => TLine,
+): Record<string, TLine[]> {
+  const out: Record<string, TLine[]> = {};
+  for (const doc of documents) {
+    const lines = out[doc.reference];
+    const target = lines === undefined ? (out[doc.reference] = []) : lines;
+    for (const line of doc.lines) {
+      const index = target.findIndex((l) => l.productId === line.productId);
+      const existing = index === -1 ? undefined : target[index];
+      if (existing === undefined) target.push(line);
+      else target[index] = merge(existing, line);
+    }
+  }
+  return out;
+}
+
+/**
+ * The buyer's payload (M06 · M07 · §28).
+ *
+ * `null` when this box has never been told who buys or what this tenant's match tolerances are —
+ * because a buying screen that invented its own tolerances would be deciding, on its own authority,
+ * how much of a price difference is worth nobody's attention.
+ *
+ * The three document sets are each served **only when the pack carried them**. The buyer's screen
+ * then names each one it did not get, in a sentence, on the page. That matters more here than
+ * anywhere else in this file: every missing set fails toward a refusal rather than a false
+ * all-clear, so the danger is not a wrong answer, it is a buyer who cannot tell a supplier who
+ * genuinely overcharged from a box that was never told what the order said.
+ */
+export function buyingPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.buyingPolicy.known) return null;
+  const policy = input.pack.buyingPolicy.value;
+
+  const payload: Record<string, unknown> = {
+    buyerId: policy.buyerId,
+    // The buyer is removed here rather than trusted to leave themselves alone. Separation of duties
+    // enforced only by the list somebody was shown is not enforced at all (§28); the session model
+    // refuses a self-approval as well, and this stops it ever being offered.
+    approvers: policy.approvers.filter((who) => who !== policy.buyerId),
+    quantityToleranceBps: policy.quantityToleranceBps,
+    priceToleranceBps: policy.priceToleranceBps,
+    immaterialMinor: policy.immaterialMinor,
+  };
+
+  if (input.pack.products.known) {
+    payload['productIds'] = input.pack.products.value.map((p) => p.productId);
+  }
+  if (input.pack.purchaseOrders.known) {
+    payload['ordered'] = foldByReference(
+      input.pack.purchaseOrders.value.map((po) => ({ reference: po.poId, lines: po.lines })),
+      (into, next) => ({ ...into, qty: into.qty + next.qty }),
+    );
+  }
+  if (input.pack.receipts.known) {
+    payload['received'] = foldByReference(
+      input.pack.receipts.value.map((r) => ({ reference: r.poId, lines: r.lines })),
+      (into, next) => ({ ...into, qty: into.qty + next.qty }),
+    );
+  }
+  if (input.pack.supplierInvoices.known) {
+    payload['captured'] = foldByReference(
+      input.pack.supplierInvoices.value.map((i) => ({ reference: i.invoiceId, lines: i.lines })),
+      (into, next) => ({
+        ...into,
+        quantity: into.quantity + next.quantity,
+        lineTotalMinor: into.lineTotalMinor + next.lineTotalMinor,
+      }),
+    );
+  }
+
+  return payload;
+}
+
 /** The global each screen's bundle reads at boot. One name per screen, and they must not drift. */
 export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   pos: 'posCatalogue',
@@ -386,6 +476,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   picker: 'pickerData',
   driver: 'driverData',
   customer: 'shopData',
+  buying: 'buyingData',
 });
 
 const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<string, unknown> | null>> = Object.freeze({
@@ -395,6 +486,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   picker: pickerPayload,
   driver: driverPayload,
   customer: customerPayload,
+  buying: buyingPayload,
 });
 
 /** Build one screen's payload. `null` means this box has nothing to give it, and says so. */

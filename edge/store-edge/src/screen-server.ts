@@ -1,4 +1,4 @@
-// The socket the six screens are served from — ADR-0004, §31, P-01.
+// The socket every screen is served from — ADR-0004, §31, P-01.
 //
 // Every screen in this product reads a global at boot (`window.managerData` and its siblings) and
 // nothing ever set one. They were built to be told the truth by something, and this is the
@@ -36,14 +36,27 @@ export const SCREEN_HOST = '127.0.0.1';
 /** The marker each shell carries where its payload belongs. */
 export const DATA_MARKER = '<!--SCREEN-DATA-->';
 
-/** Which folder under `apps/` holds each screen's shell. */
-export const APP_DIR: Readonly<Record<ScreenName, string>> = Object.freeze({
-  pos: 'pos',
-  manager: 'web-erp',
-  owner: 'owner-app',
-  picker: 'picker-app',
-  driver: 'delivery-app',
-  customer: 'customer-app',
+/**
+ * Where each screen's shell lives.
+ *
+ * `dir` is the folder under `apps/`; `file` is the page served for the bare route. They are
+ * separate because **two screens can share one app**: the manager and the buyer are both `web-erp`
+ * and both load `web-erp.bundle.js`, but they are different jobs for different people, so they get
+ * different pages rather than one page with a mode switch on it (P-07). One build, two shells.
+ */
+export interface AppShell {
+  readonly dir: string;
+  readonly file: string;
+}
+
+export const APP_SHELL: Readonly<Record<ScreenName, AppShell>> = Object.freeze({
+  pos: { dir: 'pos', file: 'index.html' },
+  manager: { dir: 'web-erp', file: 'index.html' },
+  owner: { dir: 'owner-app', file: 'index.html' },
+  picker: { dir: 'picker-app', file: 'index.html' },
+  driver: { dir: 'delivery-app', file: 'index.html' },
+  customer: { dir: 'customer-app', file: 'index.html' },
+  buying: { dir: 'web-erp', file: 'buying.html' },
 });
 
 export interface ScreenServer {
@@ -90,14 +103,21 @@ const send = (res: ServerResponse, status: number, type: string, body: string | 
   res.end(body);
 };
 
-/** `/manager/app.js` → `{ screen: 'manager', file: 'app.js' }`, or null if it is not a screen path. */
+/**
+ * `/manager/app.js` → `{ screen: 'manager', file: 'app.js' }`, or null if it is not a screen path.
+ *
+ * A bare route resolves to that screen's own shell, which is **not** always `index.html` — the
+ * buyer's page shares the manager's app folder and would otherwise silently serve the manager's
+ * screen to somebody who asked for the buyer's.
+ */
 export function routeOf(url: string): { readonly screen: ScreenName; readonly file: string } | null {
   const [path] = url.split('?');
   const parts = (path ?? '').split('/').filter((p) => p !== '');
-  const screen = parts[0];
-  if (screen === undefined || !(SCREENS as readonly string[]).includes(screen)) return null;
+  const name = parts[0];
+  if (name === undefined || !(SCREENS as readonly string[]).includes(name)) return null;
+  const screen = name as ScreenName;
   const file = parts.slice(1).join('/');
-  return { screen: screen as ScreenName, file: file === '' ? 'index.html' : file };
+  return { screen, file: file === '' ? APP_SHELL[screen].file : file };
 }
 
 /**
@@ -143,7 +163,7 @@ export function startScreenServer(input: {
         return;
       }
 
-      const onDisk = join(input.appsDir, APP_DIR[route.screen], 'web', file);
+      const onDisk = join(input.appsDir, APP_SHELL[route.screen].dir, 'web', file);
       let body: Buffer;
       try {
         body = await readFile(onDisk);

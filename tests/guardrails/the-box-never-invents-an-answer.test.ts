@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { SCREENS, GLOBAL_FOR } from '../../edge/store-edge/src/screen-data';
-import { APP_DIR, DATA_MARKER } from '../../edge/store-edge/src/screen-server';
+import { APP_SHELL, DATA_MARKER } from '../../edge/store-edge/src/screen-server';
 
 /**
  * **The one-character rule, guarded on the box's side of the socket.**
@@ -135,12 +135,17 @@ describe('the box and the screens cannot drift apart', () => {
     // Rename a global on one side and the screen silently gets nothing — which every screen would
     // then render, correctly and uselessly, as "I have been told nothing".
     for (const screen of SCREENS) {
-      const dir = APP_DIR[screen];
-      expect(dir, `${screen} has no app folder`).toBeTruthy();
+      const shell = APP_SHELL[screen];
+      expect(shell?.dir, `${screen} has no app folder`).toBeTruthy();
+      expect(shell?.file, `${screen} has no shell page`).toBeTruthy();
       expect(GLOBAL_FOR[screen], `${screen} has no global`).toBeTruthy();
 
-      const html = readFileSync(`apps/${dir}/web/index.html`, 'utf8');
-      expect(html, `apps/${dir}/web/index.html has no data marker`).toContain(DATA_MARKER);
+      // The screen's OWN page, not `index.html` by assumption. Two screens share the `web-erp`
+      // folder, and reading the wrong one of the two would have checked the manager's shell twice
+      // and the buyer's never.
+      const path = `apps/${shell.dir}/web/${shell.file}`;
+      const html = readFileSync(path, 'utf8');
+      expect(html, `${path} has no data marker`).toContain(DATA_MARKER);
 
       // The marker must sit ABOVE the bundle: the bundle reads its global while it evaluates, and
       // a payload injected after it would arrive too late to be read at all.
@@ -149,11 +154,24 @@ describe('the box and the screens cannot drift apart', () => {
     }
   });
 
+  it('gives each screen sharing an app folder its own page', () => {
+    // A bare `/buying` that resolved to `index.html` would silently serve the manager's screen to
+    // somebody who asked for the buyer's — same folder, same bundle, wrong job.
+    const byFolder = new Map<string, string[]>();
+    for (const screen of SCREENS) {
+      const shell = APP_SHELL[screen];
+      byFolder.set(shell.dir, [...(byFolder.get(shell.dir) ?? []), shell.file]);
+    }
+    for (const [dir, files] of byFolder) {
+      expect(new Set(files).size, `two screens in apps/${dir} share one page`).toBe(files.length);
+    }
+  });
+
   it('the global each shell reads is the one the box writes', () => {
     // The lane socket once looked for `saleId` where the record carried `id`, and refused every
     // real sale. Same class of fault, checked rather than hoped for.
     for (const screen of SCREENS) {
-      const entry = readFileSync(`apps/${APP_DIR[screen]}/src/browser-entry.ts`, 'utf8');
+      const entry = readFileSync(`apps/${APP_SHELL[screen].dir}/src/browser-entry.ts`, 'utf8');
       expect(entry, `${screen}'s entry never reads window.${GLOBAL_FOR[screen]}`)
         .toMatch(new RegExp(`\\b${GLOBAL_FOR[screen]}\\b`));
     }

@@ -5,7 +5,7 @@ import { known, notKnown, type PackProduct, type StorePack } from '../../edge/st
 import type { LoggedSale } from '../../edge/store-edge/src/read-model';
 import { SyncOutbox } from '../../packages/sync/src/index';
 import { makeEvent } from '../../packages/contracts/src/event';
-import { bootManager } from '../../apps/web-erp/src/browser-entry';
+import { bootBuying, bootManager, buyingGaps } from '../../apps/web-erp/src/browser-entry';
 import { bootOwner, forgetfulQueueStore } from '../../apps/owner-app/src/browser-entry';
 import { bootShop, forgetfulBasket } from '../../apps/customer-app/src/browser-entry';
 import { bootPicker } from '../../apps/picker-app/src/browser-entry';
@@ -80,6 +80,16 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
     slotId: 'today-evening', startsAt: '2026-08-05T17:00:00.000Z',
     endsAt: '2026-08-05T19:00:00.000Z', capacity: 5, booked: 0, kind: 'delivery',
   }]),
+  purchaseOrders: known([{
+    poId: 'PO-1', supplierId: 'sup-1',
+    lines: [{ productId: 'p1', qty: 10, unitMinor: 90_00 }],
+  }]),
+  receipts: known([{ poId: 'PO-1', lines: [{ productId: 'p1', qty: 10 }] }]),
+  supplierInvoices: known([]),
+  buyingPolicy: known({
+    buyerId: 'u-buyer', approvers: ['u-manager', 'u-buyer'],
+    quantityToleranceBps: 0, priceToleranceBps: 100, immaterialMinor: 100,
+  }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([{ purpose: 'marketing', channel: 'sms' }]),
   ...over,
@@ -319,14 +329,16 @@ describe('a box that has been told nothing tells every screen so', () => {
       policies: notKnown('never'), products: notKnown('never'), approvals: notKnown('never'),
       checklist: notKnown('never'), wave: notKnown('never'), route: notKnown('never'),
       deliveries: notKnown('never'), drivers: notKnown('never'), routingPolicy: notKnown('never'),
-      slots: notKnown('never'), lossPreventionRules: notKnown('never'), consentPurposes: notKnown('never'),
+      slots: notKnown('never'), purchaseOrders: notKnown('never'), receipts: notKnown('never'),
+      supplierInvoices: notKnown('never'), buyingPolicy: notKnown('never'),
+      lossPreventionRules: notKnown('never'), consentPurposes: notKnown('never'),
     },
     sales: [],
   });
 
   it('serves the shells with no payload at all, marker intact', async () => {
     const base = await serve(nothing);
-    for (const screen of ['pos', 'owner', 'picker', 'driver', 'customer'] as const) {
+    for (const screen of ['pos', 'owner', 'picker', 'driver', 'customer', 'buying'] as const) {
       expect(await payloadFromScreen(base, screen), `${screen} invented something`).toBeNull();
     }
   });
@@ -444,5 +456,178 @@ describe('the box plans the driver’s route itself (M19-FR-03)', () => {
     const payload = (await payloadFromScreen(base, 'driver'))!;
     expect(payload['driverId']).toBe('d2');
     expect((payload['stops'] as unknown[])).toHaveLength(2);
+  });
+});
+
+/**
+ * **The buyer's screen, driven over the same socket (M06 · M07 · §28).**
+ *
+ * This is the one screen where being wrong costs money that has already left. So it is driven the
+ * hard way: the real server, the real `buying.html` off disk, the payload pulled back out of the
+ * page, and the real `BuyingSession` booted on it — the same code path a buyer standing at the
+ * goods-in door would be running.
+ */
+describe('the buyer’s screen is fed, and fed only what the box actually knows', () => {
+  /** A clean two-line invoice for the products the pack carries: 10 × ₹90 = ₹900.00 */
+  const FILE = [
+    'productId,quantity,unitPriceMinor,lineTotalMinor',
+    'p1,10,9000,90000',
+  ].join('\n');
+  const TOTAL = 90_000;
+
+  const approvalBy = (decidedBy: string, invoiceId: string) => ({
+    id: `ap-${invoiceId}`, subjectType: 'supplier_invoice', subjectRef: invoiceId,
+    requestedBy: 'u-buyer', branchId: null, value: null,
+    status: 'approved' as const, decidedBy, reason: 'checked_with_supplier', decidedAt: NOW,
+  });
+
+  it('serves the buyer their OWN page, not the manager’s', async () => {
+    // Both screens live in `apps/web-erp/web` and share one bundle. A bare `/buying` that resolved
+    // to `index.html` would put a day close in front of somebody who came to capture an invoice.
+    const base = await serve(snapshotOf());
+    const html = await (await fetch(`${base}/buying`)).text();
+    expect(html).toContain('id="declared-total"');
+    expect(html, 'the manager’s screen was served to the buyer').not.toContain('id="close-title"');
+    // …and the manager's own page is still the manager's.
+    const manager = await (await fetch(`${base}/manager`)).text();
+    expect(manager).toContain('id="close-title"');
+  });
+
+  it('removes the buyer from their own approver list before the page is even built', async () => {
+    // The pack lists `u-buyer` among the approvers — a tenant misconfiguration, and exactly the
+    // one that separation of duties is supposed to survive. It must never reach the screen.
+    const base = await serve(snapshotOf());
+    const payload = (await payloadFromScreen(base, 'buying'))!;
+    expect(payload['approvers']).toEqual(['u-manager']);
+    expect(payload['buyerId']).toBe('u-buyer');
+  });
+
+  it('captures a whole supplier invoice in one go, once somebody else has checked it', async () => {
+    // Audit finding A-03: eighty lines retyped by hand every week. This is the replacement.
+    const base = await serve(snapshotOf());
+    const payload = (await payloadFromScreen(base, 'buying'))!;
+    const buying = bootBuying(payload as never)!;
+
+    const preview = buying.previewInvoice({ text: FILE, declaredTotalMinor: TOTAL });
+    expect(preview.problems).toEqual([]);
+    expect(preview.readyToApprove).toBe(true);
+
+    const outcome = buying.captureInvoice({
+      invoiceId: 'INV-1', supplierId: 'sup-1', preview, approval: approvalBy('u-manager', 'INV-1'),
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.lines).toHaveLength(1);
+    expect(outcome.totalMinor).toBe(TOTAL);
+  });
+
+  it('refuses the buyer’s own approval, on the payload the box actually served', async () => {
+    const base = await serve(snapshotOf());
+    const buying = bootBuying((await payloadFromScreen(base, 'buying'))! as never)!;
+    const preview = buying.previewInvoice({ text: FILE, declaredTotalMinor: TOTAL });
+    const outcome = buying.captureInvoice({
+      invoiceId: 'INV-2', supplierId: 'sup-1', preview, approval: approvalBy('u-buyer', 'INV-2'),
+    });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.refusal).toBe('approved_by_the_person_who_captured_it');
+  });
+
+  it('catches a missing line that every remaining line would pass', async () => {
+    // The control total is the only figure in the flow that does not come from the file. A file
+    // whose lines are each perfect and whose sum is short is a file missing a line, and nothing
+    // else in the system can notice.
+    const base = await serve(snapshotOf());
+    const buying = bootBuying((await payloadFromScreen(base, 'buying'))! as never)!;
+    const preview = buying.previewInvoice({ text: FILE, declaredTotalMinor: TOTAL + 45_00 });
+
+    expect(preview.problems).toEqual([]); // every line is individually fine
+    expect(preview.readyToApprove).toBe(false);
+    const outcome = buying.captureInvoice({
+      invoiceId: 'INV-3', supplierId: 'sup-1', preview, approval: approvalBy('u-manager', 'INV-3'),
+    });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.refusal).toBe('does_not_add_up_to_the_invoice_total');
+  });
+
+  it('will not call an uncaptured invoice agreed with the order', async () => {
+    // *Not checked* is not *clean*. Three documents cannot agree when we are holding two of them.
+    const base = await serve(snapshotOf());
+    const buying = bootBuying((await payloadFromScreen(base, 'buying'))! as never)!;
+    const result = buying.match({ poId: 'PO-1', invoiceId: 'INV-NEVER-CAPTURED' });
+    expect(result.blocked).toBe(true);
+  });
+
+  it('matches a captured invoice against what was ordered and what arrived', async () => {
+    const base = await serve(snapshotOf({
+      pack: pack({
+        supplierInvoices: known([{
+          invoiceId: 'INV-9',
+          lines: [{ productId: 'p1', quantity: 10, unitPriceMinor: 90_00, lineTotalMinor: 900_00 }],
+        }]),
+      }),
+    }));
+    const buying = bootBuying((await payloadFromScreen(base, 'buying'))! as never)!;
+    const result = buying.match({ poId: 'PO-1', invoiceId: 'INV-9' });
+    expect(result.blocked).toBe(false);
+    expect(result.payableMinor).toBe(900_00);
+  });
+
+  it('adds up two deliveries against one order rather than losing the first', async () => {
+    // Half on Monday and the rest on Thursday is an ordinary week. Overwriting would report that
+    // only Thursday's half arrived, and the match would withhold payment for goods on the shelf.
+    const base = await serve(snapshotOf({
+      pack: pack({
+        receipts: known([
+          { poId: 'PO-1', lines: [{ productId: 'p1', qty: 4 }] },
+          { poId: 'PO-1', lines: [{ productId: 'p1', qty: 6 }] },
+        ]),
+        supplierInvoices: known([{
+          invoiceId: 'INV-9',
+          lines: [{ productId: 'p1', quantity: 10, unitPriceMinor: 90_00, lineTotalMinor: 900_00 }],
+        }]),
+      }),
+    }));
+    const payload = (await payloadFromScreen(base, 'buying'))!;
+    const received = payload['received'] as Record<string, { qty: number }[]>;
+    expect(received['PO-1']?.[0]?.qty).toBe(10);
+
+    const buying = bootBuying(payload as never)!;
+    expect(buying.match({ poId: 'PO-1', invoiceId: 'INV-9' }).blocked).toBe(false);
+  });
+
+  it('serves the buyer nothing at all when the box has no buying policy', async () => {
+    // A screen inventing its own match tolerances would be deciding, on its own authority, how big
+    // a price difference is worth nobody's attention.
+    const base = await serve(snapshotOf({ pack: pack({ buyingPolicy: notKnown('never sent') }) }));
+    expect(await payloadFromScreen(base, 'buying')).toBeNull();
+    expect(bootBuying(undefined)).toBeNull();
+  });
+
+  it('names what it was NOT told, rather than letting a refusal read as a supplier’s fault', async () => {
+    // Every gap here already fails toward a refusal. That is the safe direction and still not
+    // honest on its own: "this was never ordered" looks identical whether the supplier invented
+    // the line or the box was simply never sent the order, and only one is an argument to have.
+    const base = await serve(snapshotOf({
+      pack: pack({ purchaseOrders: notKnown('never sent'), receipts: notKnown('never sent') }),
+    }));
+    const payload = (await payloadFromScreen(base, 'buying'))!;
+    expect('ordered' in payload, '"ordered" must be absent, not empty').toBe(false);
+    expect(buyingGaps(payload as never)).toEqual(['what_was_ordered', 'what_arrived']);
+  });
+
+  it('reports an unserved approver list as a gap, because it stops the same work', async () => {
+    const base = await serve(snapshotOf({
+      pack: pack({
+        buyingPolicy: known({
+          buyerId: 'u-buyer', approvers: ['u-buyer'], // only the buyer — stripped, leaving nobody
+          quantityToleranceBps: 0, priceToleranceBps: 100, immaterialMinor: 100,
+        }),
+      }),
+    }));
+    const payload = (await payloadFromScreen(base, 'buying'))!;
+    expect(payload['approvers']).toEqual([]);
+    expect(buyingGaps(payload as never)).toContain('who_may_approve');
   });
 });

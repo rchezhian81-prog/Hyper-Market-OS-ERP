@@ -4,4 +4,5 @@
 // one reviewed, tested unit at a time.
 
 export * from './purchasing';
+export * from './three-way-match';
 export * from './supplier-performance';

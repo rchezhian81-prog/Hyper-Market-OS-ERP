@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 5 August 2026 (session: six screens, the store box feeding all of them, and the van now knows where it is going)
+Last updated: 6 August 2026 (session: the buyer's screen — a supplier invoice captured in one go, against the total printed on the paper)
 
 ---
 
@@ -2591,6 +2591,119 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## Purchase and receiving — the eighty lines nobody has to retype (6 August 2026)
+
+The audit found it a year ago and called it *line-by-line invoice pain*: somebody in this shop
+retypes an eighty-line supplier invoice into a computer, by hand, every week. Everything needed to
+stop that was already built and tested — and **nothing anywhere captured a supplier invoice**, so
+the check that compares the order, the delivery and the invoice had nothing to compare and refused
+every single time. Correctly, and uselessly.
+
+That is now a screen. Paste the supplier's file, see what is wrong, get it checked by somebody
+else, save it in one go.
+
+### The control that makes this safe rather than just fast
+
+**You type the total off the bottom of the supplier's paper.**
+
+It is the only figure in the whole flow that does not come out of the file, and that is exactly
+why it earns its place. If the supplier's file is missing a line, every remaining line is perfect —
+nothing else in the system can possibly notice. The printed total notices.
+
+It has been proved that way round: a file where every line is correct and the total is short by one
+line previews with **no problems at all** and is still refused, by name, saying either a line is
+wrong or a line is missing. Both mean paying something other than what was agreed.
+
+**And each line is checked against itself.** Quantity × price each must equal the line total printed
+on the invoice. A mistyped quantity is invisible in a column of numbers and obvious the moment those
+three are multiplied — and it is the commonest typing mistake there is. When it finds one it tells
+you **the line number on the paper**, so somebody can go and look at it rather than hunt.
+
+### It is all of it, or none of it
+
+Seventy-seven of eighty lines saved is an invoice in the system that matches no piece of paper
+anywhere, and nobody can afterwards say which three are missing. So it saves the whole invoice or
+it saves nothing.
+
+**And the save button does not exist on the page until the check has passed.** Not greyed out — a
+greyed-out button is something people keep clicking. Absent, so the only thing to do is go back and
+look at what is wrong.
+
+### Nobody signs off their own work
+
+The person who captured the invoice cannot be the person who approves it. That is roadmap §28, and
+it is enforced in two places on purpose: **the screen is never even given the buyer's own name to
+pick**, and the model refuses their approval anyway if it somehow arrives. Offering somebody a name
+and then rejecting it would be the worse of the two.
+
+### The fault my own test caught before it shipped
+
+The comparison built its list of things to check from all three documents at once — what was
+ordered, what arrived, what was invoiced. So an invoice **nobody had captured** still produced rows
+saying "invoiced: none, nothing to pay, nothing held back", and came back **not blocked**.
+
+Which is true, and useless. The engine already refuses to call an empty comparison an agreement —
+and my screen defeated that guard from the outside by handing it lines it should never have had.
+
+Three documents cannot agree when we are holding two of them. It now passes nothing through, and the
+engine's own refusal fires: *nothing has been compared* — a different sentence from *these agree*,
+and only one of them is a reason to pay somebody.
+
+### When the box has not been told something, it says so
+
+Every gap here already fails the safe way — if the box has not been sent the purchase orders, every
+invoiced line looks like something nobody ordered, and nothing gets paid.
+
+That is safe and it is still not honest enough. *"This was never ordered"* looks identical whether
+the supplier invented the line or **we simply never sent the order to this screen** — and only one
+of those is an argument to have with a supplier. So the screen names what it was not told, in a
+sentence, in English and Tamil, at the top of the page.
+
+### One rule now lives in one place
+
+The comparison rule was sitting inside the purchase service, next to server code a browser cannot
+load. The two ways forward were to copy it into the screen or to move it somewhere both can reach.
+
+Two copies of *"what may we pay this supplier"* is one of them being wrong, and you find out when a
+supplier is paid one figure by the screen and reconciled against another by the books. So it moved.
+One rule, both places.
+
+### Something I found on the way, half-fixed on purpose
+
+Building the offline side of this screen turned up that **five of the six apps have a service
+worker that nothing ever registers.** The file that is supposed to make a screen open with no
+internet was written, is correct, and was never switched on. Only the owner's phone registers its
+own. It fails visibly rather than dangerously — a screen with no network falls back to its sample
+data and says *"Sample data — this is not your shop"* across the top — but it is not what "works
+offline" is supposed to mean (§31, P-01).
+
+**I fixed the back office**, because the buyer's screen lives there and goods-in has the worst wifi
+in the building: both shells now register it, the shared bundle is cached, and a page that fails
+falls back to **its own** shell rather than handing a day close to somebody who opened goods-in.
+
+**I have not touched the till, the picker's handheld, the driver's phone or the customer app.** Each
+is the same one-line change, and each needs its own offline check afterwards rather than a
+copy-paste and an assumption. It is the first item on the next session's list. The POS is the one
+that matters most and also the one that matters least here — a lane's ability to keep selling comes
+from the durable local commit, not from this cache.
+
+**Tests:** 3,611 automated plus 31 performance, all green — 64 new (25 on the invoice rules, 12
+driving the real screen over the real store box, 27 guarding the decisions above).
+
+### What the owner should check, in the store
+
+1. Open the buyer's screen and ask for a supplier's file **in a plain file** — most suppliers can
+   email one, and it is the difference between eighty lines typed and eighty lines pasted.
+2. Take a real supplier invoice. **Type the total off the bottom of it**, paste the lines, and press
+   check. Then try it again with the total deliberately ₹100 out and confirm it refuses.
+3. Confirm the person who captures an invoice is **not** in the list of people offered as the
+   approver. If they are, tell me — that list comes from the store's own configuration.
+4. Tell me who in the shop may approve a captured invoice, and who may approve a purchase order.
+   Until I am told, the screen says so plainly and refuses to save anything.
+
+---
+
+
 ## Route planning — the van now knows where it is going (5 August 2026)
 
 The last named gap in delivery. Until today somebody had to write out the driver's route by hand.
@@ -3816,6 +3929,11 @@ insist on when somebody eventually asks for it to be switched off.
   now built** — see *The six outside-evidence checks — COMPLETE*. What remains for the real-data
   migration is the evidence itself, which is the owner's to gather, and the end-to-end gate that
   runs all six as one pass.
+- **Two per-store facts the buyer's screen needs (6 August 2026).** Who may approve a captured
+  supplier invoice, and who may approve a purchase order. Until the store's configuration carries
+  them, the screen names the gap on the page and refuses to save — which is the correct behaviour,
+  not a bug to route around. The buyer is stripped out of their own approver list by the store box,
+  so naming only the buyer is the same as naming nobody (§28).
 - What remains needs the owner or the store: **OB-02** (hosting), the
   **pre-pilot integration gate** (a live AI provider, then UAT-49), **EX-13** (a penetration
   test), and the 55 store activities in
@@ -3842,15 +3960,24 @@ insist on when somebody eventually asks for it to be switched off.
 
 ## Next session should start with
 
-**Real data.** The screens are built, the store box feeds them, and the day close closes — and
-**not one line of any of it has met a single real product from the old system.** Every control was
-written for 20,000 SKUs with duplicate barcodes, missing HSN codes, three spellings of one brand and
-produce sold by weight; none of them has met one. That is now the largest risk in the project by a
-wide margin, and `docs/requirements/data-requirements.md` says exactly what to extract.
+**The four service workers nothing registers.** Half an hour of work, and until it is done the
+till, the picker's handheld, the driver's phone and the customer app do not really open offline —
+they open into their sample data and say so. See *Something I found on the way, half-fixed on
+purpose*.
 
-After that: purchase and receiving (M06/M07 — nothing captures a supplier invoice, so the three-way
-match still has no lines to match), and the compliance build (HSN, e-invoicing if it applies, FSSAI
-records, legal-metrology stamping dates).
+**Then real data.** The screens are built, the store box feeds every one of them, the day close
+closes and a supplier invoice can now be captured whole — and **not one line of any of it has met a single
+real product from the old system.** Every control was written for 20,000 SKUs with duplicate
+barcodes, missing HSN codes, three spellings of one brand and produce sold by weight; none of them
+has met one. That is now the largest risk in the project by a wide margin, and
+`docs/requirements/data-requirements.md` says exactly what to extract.
+
+~~After that: purchase and receiving (M06/M07 — nothing captures a supplier invoice, so the
+three-way match still has no lines to match).~~ ✅ **Done this session.** What is left in that area
+is the compliance build (HSN, e-invoicing if it applies, FSSAI records, legal-metrology stamping
+dates), and **two facts only the owner can give**: who may approve a captured supplier invoice, and
+who may approve a purchase order. The screen refuses to save anything until it is told, and says so
+on the page rather than guessing.
 
 **Then the owner's decisions.** The code is complete as far as it can go without them: all thirteen
 services persist, token verification is done, no folder in the repository layout is empty, the

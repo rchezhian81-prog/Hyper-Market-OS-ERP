@@ -35,6 +35,7 @@ import {
   type ValueRegister,
 } from './manager-session';
 import type { ApprovalRequest } from '../../../packages/approvals/src/approvals';
+import { createBuyingSession, type BuyingPorts, type BuyingSession, type InvoiceLine } from './buying-session';
 
 /** What the store knows about a product this screen may be asked to count. */
 export interface ProductFact {
@@ -52,10 +53,32 @@ export interface ManagerData {
   readonly products?: readonly ProductFact[];
 }
 
+/** What the buyer's screen was last told. Absent means this box knows nothing about buying. */
+export interface BuyingData {
+  readonly buyerId?: string;
+  /** Who may check this buyer's work. The box has already removed the buyer from it (§28). */
+  readonly approvers?: readonly string[];
+  readonly productIds?: readonly string[];
+  /** Per-tenant tolerances for the three-way match. */
+  readonly quantityToleranceBps?: number;
+  readonly priceToleranceBps?: number;
+  readonly immaterialMinor?: number;
+  /** What each purchase order ordered, keyed by PO number. */
+  readonly ordered?: Readonly<Record<string, readonly { readonly productId: string; readonly qty: number; readonly unitMinor: number }[]>>;
+  /** What was received against each purchase order. */
+  readonly received?: Readonly<Record<string, readonly { readonly productId: string; readonly qty: number }[]>>;
+  /** Invoices already captured, keyed by invoice number. */
+  readonly captured?: Readonly<Record<string, readonly InvoiceLine[]>>;
+}
+
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
 interface ManagerWindow {
   managerSession?: ManagerSession;
   managerData?: ManagerData;
+  buyingSession?: BuyingSession;
+  buyingData?: BuyingData;
+  /** What the box did not tell the buyer's screen, so the screen can say it rather than guess. */
+  buyingGaps?: readonly BuyingGap[];
   /** The decision vocabulary, so the view can offer it and never invent a reason of its own. */
   managerReasons?: {
     readonly approved: readonly DecisionReasonCode[];
@@ -146,10 +169,86 @@ export function bootManager(config?: {
   );
 }
 
+/**
+ * Something this screen was never told, named so it can be said on the page.
+ *
+ * Every one of these fails toward a **refusal** rather than a false all-clear — an unknown product
+ * list rejects every line, an unknown order set makes every invoiced line look unordered, an
+ * unknown invoice set makes the match refuse outright. That is the safe direction, and it is still
+ * not good enough on its own: a buyer looking at "this was never ordered" cannot tell a supplier
+ * who invoiced for goods nobody asked for from a box that was simply never sent the order. The
+ * screen has to say which (P-08).
+ */
+export const BUYING_GAPS = Object.freeze([
+  'what_this_shop_stocks',
+  'what_was_ordered',
+  'what_arrived',
+  'which_invoices_are_already_saved',
+  'who_may_approve',
+] as const);
+export type BuyingGap = (typeof BUYING_GAPS)[number];
+
+/** Everything the buyer's screen was not given. Empty means it was told all of it. */
+export function buyingGaps(data: BuyingData | undefined): readonly BuyingGap[] {
+  const gaps: BuyingGap[] = [];
+  if (data?.productIds === undefined) gaps.push('what_this_shop_stocks');
+  if (data?.ordered === undefined) gaps.push('what_was_ordered');
+  if (data?.received === undefined) gaps.push('what_arrived');
+  if (data?.captured === undefined) gaps.push('which_invoices_are_already_saved');
+  // An empty list counts as a gap here, and deliberately: nobody to approve is indistinguishable in
+  // effect from never having been told, because both leave the buyer unable to save anything.
+  if (data?.approvers === undefined || data.approvers.length === 0) gaps.push('who_may_approve');
+  return gaps;
+}
+
+/**
+ * Ports over what the buyer's screen was told.
+ *
+ * A purchase order this box has never heard of contributes **nothing** rather than an invented
+ * empty order — and an empty ordered set against a real invoice would make the three-way match
+ * compare an invoice with a delivery that did not happen. The buying session's own `match` already
+ * refuses when no invoice has been captured; this must not undo that from the other side.
+ *
+ * The empty answers here are therefore load-bearing refusals, not tidy defaults, and every one of
+ * them is reported by `buyingGaps` so the screen can name it.
+ */
+export function buyingPortsFromData(data: BuyingData | undefined): BuyingPorts {
+  return {
+    knownProductIds: () => data?.productIds ?? [],
+    orderedLines: (poId) => data?.ordered?.[poId] ?? [],
+    receivedLines: (poId) => data?.received?.[poId] ?? [],
+    capturedLines: (invoiceId) => data?.captured?.[invoiceId] ?? [],
+  };
+}
+
+/** Build the buyer's session, or `null` when this box was told nothing about buying. */
+export function bootBuying(data: BuyingData | undefined): BuyingSession | null {
+  if (data === undefined) return null;
+  return createBuyingSession(
+    {
+      tenantId: 'tenant',
+      buyerId: data.buyerId ?? 'buyer',
+      currency: 'INR',
+      // Defaults matching `threeWayMatch`'s own: no quantity tolerance, 1% on price, ₹1 immaterial.
+      quantityToleranceBps: data.quantityToleranceBps ?? 0,
+      priceToleranceBps: data.priceToleranceBps ?? 100,
+      immaterialMinor: data.immaterialMinor ?? 100,
+    },
+    buyingPortsFromData(data),
+  );
+}
+
 // In the browser `globalThis.window` IS the window, so this needs no DOM types.
 const browserWindow = (globalThis as { window?: ManagerWindow }).window;
 if (browserWindow !== undefined) {
   browserWindow.managerSession = bootManager({ data: browserWindow.managerData });
+  // The buyer's shell shares this bundle: one build, two screens, and each boots only what it was
+  // given. A shell that was told nothing gets `undefined` and says so rather than showing zeros.
+  const buying = bootBuying(browserWindow.buyingData);
+  if (buying !== null) {
+    browserWindow.buyingSession = buying;
+    browserWindow.buyingGaps = buyingGaps(browserWindow.buyingData);
+  }
   // The view offers these and records the code the manager picks. It never composes a reason of
   // its own, so the audit trail keeps one vocabulary that can still be reported on in a year.
   browserWindow.managerReasons = { approved: APPROVE_REASONS, rejected: REJECT_REASONS };
