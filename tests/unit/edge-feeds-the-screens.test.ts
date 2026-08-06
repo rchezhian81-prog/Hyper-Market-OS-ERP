@@ -47,6 +47,19 @@ const sale = (over: Partial<LoggedSale> = {}): LoggedSale => ({
   ...over,
 });
 
+const CATEGORIES = [{
+  categoryId: 'grocery', name: 'Grocery', parentId: null,
+  attributes: [{ key: 'packSize', label: 'a pack size', type: 'text' as const, required: true }],
+}];
+
+const MASTER = [{
+  productId: 'p1', tenantId: 't1', sku: 'SKU-1', name: 'Toor dal 1kg', brand: 'Aachi',
+  primaryCategoryId: 'grocery', baseUom: 'ea', taxClass: '0713',
+  attributes: { packSize: '1kg' },
+  mrpHistory: [{ value: { minor: 160_00, currency: 'INR' as const }, effectiveFrom: '2026-01-01' }],
+  lifecycle: 'active' as const,
+}];
+
 const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   receivedAt: NOW,
   version: 7,
@@ -76,6 +89,15 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   buyingPolicy: known({
     buyerId: 'u-buyer', approvers: ['u-manager', 'u-buyer'],
     quantityToleranceBps: 0, priceToleranceBps: 100, immaterialMinor: 100,
+  }),
+  categories: known(CATEGORIES),
+  productMaster: known(MASTER),
+  priceEntries: known([{
+    id: 'pe-1', productId: 'p1', scope: 'store', scopeRef: 'store-1',
+    priceMinor: 145_00, effectiveFrom: '2026-01-01', status: 'active', version: 1,
+  }]),
+  pricingPolicy: known({
+    userId: 'u-pricing', approvers: ['u-manager', 'u-pricing'], marginFloorBps: 2000,
   }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([]),

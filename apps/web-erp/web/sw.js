@@ -1,9 +1,10 @@
 // Back-office service worker — makes the ERP open with no internet (§31), including at the goods-in
 // door and in the cash office, which are the worst two places for wifi in the building.
 //
-// **This folder serves two screens** — the manager's and the buyer's — sharing one bundle. Each is
-// registered separately by the store box under its own path, so each gets its own scope and `./` is
-// always that screen's own page. There is no way for one to be served in place of the other.
+// **This folder serves three screens** — the manager's, the buyer's and the one that sets prices —
+// sharing one bundle. Each is registered separately by the store box under its own path, so each
+// gets its own scope and `./` is always that screen's own page. There is no way for one to be
+// served in place of another.
 //
 // It caches the SHELL and the last page the box actually served. It does not cache the store's
 // figures as facts: a cached exception count served hours later as if it were current is the exact
@@ -32,7 +33,7 @@
 const CACHE = 'sre-erp-shell-v2';
 
 /** Committed files. A missing one is a packaging fault and should fail the install loudly. */
-const SHELL = ['./app.js', './buying.js', './manifest.webmanifest'];
+const SHELL = ['./app.js', './buying.js', './catalogue.js', './manifest.webmanifest'];
 
 /** Build artefacts. Added tolerantly: `addAll` is all-or-nothing and a missing build must not
  *  stop the rest of the shell being cached. Without the bundle the screen opens into its SAMPLE

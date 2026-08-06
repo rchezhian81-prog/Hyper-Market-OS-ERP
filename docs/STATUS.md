@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 6 August 2026 (session: the buyer's screen, and every screen made to open for real with no network)
+Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, and the product and price screen)
 
 ---
 
@@ -2591,6 +2591,119 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## Products and prices — the price nobody had ever made (6 August 2026)
+
+The shop can now create an item and set what it sells for. Until today it could do neither.
+
+### What I found while building it
+
+Everything that *polices* a price was already here and tested — the MRP ceiling, the minimum
+margin, the effective dates, the full history, the price list that goes down to the tills. And
+**nothing in the whole system had ever produced a price.** Every price in the code was a made-up
+one written for a test. So the piece that sends prices to the tills had never had a real price to
+send.
+
+Same as the supplier invoice last time: every rule built, the join missing, nothing failing to say
+so.
+
+### The one refusal nobody can overrule
+
+**A price above the MRP printed on the pack is refused, and there is no approval for it.** Not the
+owner, not a written reason, not a "just this once" button. MRP is the law in India, not a shop
+rule, and a screen offering a way round it would be offering to break the law with a record proving
+we meant to.
+
+There is also a check in the tests that **no such button ever gets added** — because a helpful
+little override is exactly the thing somebody adds on a busy Friday.
+
+And it reads **today's** MRP, not the newest one on file. If a price increase is recorded for
+December, the customer in front of you is still holding the pack printed at the old price.
+
+### The margin check, and the thing that would have silently defeated it
+
+To know whether a price makes money, the system needs to know what the goods cost. If it does not
+know, the tempting thing is to treat the cost as zero — and then **every price looks like a 100%
+margin** and the check passes cheerfully at exactly the moment somebody is relying on it.
+
+So an unknown cost is its own answer: *nobody can say what this price earns*, and it goes to a
+second person to approve with their eyes open. The store computer also sends **no cost at all** for
+an item it has no cost for, rather than a zero.
+
+### The two limits are on the screen before you type
+
+The MRP printed on the pack, and the lowest price that still keeps the shop's margin — both shown
+as soon as you pick an item. A screen that only says "rejected" afterwards teaches people to guess,
+and guessing at a legal limit is how this goes wrong.
+
+### A price change never overwrites the old price
+
+It adds a new one. The old price stays exactly as it was, with the date it ran from and who changed
+it. A receipt printed last Tuesday has to stay explainable, and an overwritten price explains
+nothing. Withdrawing a price also adds a record rather than rubbing one out.
+
+**And a price cannot start before today.** Back-dating would change what yesterday's sales should
+have charged — the receipts and the reports would stop agreeing and nobody could say which was
+right.
+
+### "How finished is this item?" — counts, not a percentage on its own
+
+For each item the screen says **four of seven things needed are done**, then the percentage, then
+every missing thing by name in plain words: *no HSN / tax code*, *no allergen declaration*, *no pack
+size*. A bare "57%" gets put on a wall and argued about and nobody can say what the other 43% is.
+
+**What counts as finished is your decision, not mine.** Which fields a department needs, and which
+departments are food or age-restricted, come from your own settings. The law's fields (allergens,
+country of origin, net quantity, packer details) are only asked of the departments you have declared
+regulated.
+
+And an item in a department the screen has not been told about says **"this item cannot be checked"**
+with the reason — not 0%, which would read as *somebody has filled in nothing* and send a person to
+fix a record that may already be perfect.
+
+### Also on the screen
+
+- **Stop selling this everywhere** — two taps. Stops the till and the customer app at once, and
+  keeps working with no internet, because it travels with the price list.
+- **Possible duplicates** — two records for the same barcode are listed for somebody to look at.
+  Nothing is ever merged automatically.
+- **Offers** — type the normal price, the offer price, what it costs and how many you expect to
+  sell, and it tells you what the offer costs you and how many extra units it would take to break
+  even. An offer that loses money can still run, but somebody else has to approve it **and write
+  down why**, in a sentence readable next year.
+
+**Tests:** 3,725 automated plus 31 performance, all green — 93 new.
+
+### What is NOT in this screen, and needs your decision
+
+**Shelf planning and space** — planograms, which shelf an item lives on, sales per square foot, and
+display space a supplier pays for (M04). The rules are built and tested; there is no screen. The
+roadmap marks these **P2** and asks you directly whether they are in scope for the first store.
+
+Three options, and I need one of them in writing rather than silence:
+1. **Defer to R3, after go-live.** Cheapest now. Shelf locations then stay as they are, which means
+   the picker's walking route is ordered by whatever we import rather than by your real aisles.
+2. **Build shelf locations only, before go-live.** Roughly a session's work. It is the half that
+   makes the picker walk the shop once instead of back and forth — the audit called that out as a
+   real cost.
+3. **Build all of it, including planograms and supplier display contracts.** Several sessions, and
+   most of it earns nothing until the shop is trading and has sales history to measure space by.
+
+**My recommendation is option 2.**
+
+### What the owner should check, in the store
+
+1. Open the product screen and look at the list. It should say, item by item, **how many things are
+   still needed** before it can be sold — and the ones needing least work should be at the bottom.
+2. Pick a real item and try to price it **above the MRP printed on the pack**. It must refuse, and
+   there must be no way to make it accept.
+3. Try pricing something **below cost**. It should refuse until somebody else approves it, and it
+   should ask that person to write down why.
+4. Tell me **the minimum margin** the shop will not go below, and **who may approve** going below
+   it. Until then the screen says so plainly on the page and refuses.
+
+---
+
+
 ## Every screen now really does open without a network (6 August 2026)
 
 Six screens each shipped with the piece of software that is supposed to make them work with no
@@ -3990,6 +4103,15 @@ insist on when somebody eventually asks for it to be switched off.
   now built** — see *The six outside-evidence checks — COMPLETE*. What remains for the real-data
   migration is the evidence itself, which is the owner's to gather, and the end-to-end gate that
   runs all six as one pass.
+- **Two per-store facts the product and price screen needs (6 August 2026).** The **minimum margin**
+  the shop will not go below, and **who may approve** a price beneath it. Until the store's
+  configuration carries them the screen names the gap on the page and refuses — which is correct,
+  not a bug to route around. The person who sets a price is stripped out of their own approver list
+  by the store box, so naming only them is the same as naming nobody (§28).
+- **An owner decision on M04 (shelf planning and space).** Three costed options are in *Products and
+  prices — the price nobody had ever made*. P2 in the roadmap, and §M04's own open items ask whether
+  planograms and space contracts are in first-store scope at all. Needs a named target release in
+  writing (OD-02/OD-10) — it is not dropped.
 - **Two per-store facts the buyer's screen needs (6 August 2026).** Who may approve a captured
   supplier invoice, and who may approve a purchase order. Until the store's configuration carries
   them, the screen names the gap on the page and refuses to save — which is the correct behaviour,
@@ -4021,10 +4143,15 @@ insist on when somebody eventually asks for it to be switched off.
 
 ## Next session should start with
 
-**Real data.** The screens are built, the store box feeds every one of them, every one of them now
-really opens with no network and says so, the day close closes and a supplier invoice can be
-captured whole — and **not one line of any of it has met a single real product from the old
-system.** Every control was written for 20,000 SKUs with duplicate
+**An owner decision on shelf planning and space (M04)** — three options with costs are written up
+in *Products and prices — the price nobody had ever made*. My recommendation is to build shelf
+locations only, before go-live, and defer planograms and display contracts. It is not dropped
+either way; it needs a target release in writing.
+
+**Then real data.** The screens are built, the store box feeds every one of them, every one of them
+now really opens with no network and says so, the day close closes, a supplier invoice can be
+captured whole and a price can be set — and **not one line of any of it has met a single real
+product from the old system.** Every control was written for 20,000 SKUs with duplicate
 barcodes, missing HSN codes, three spellings of one brand and produce sold by weight; none of them
 has met one. That is now the largest risk in the project by a wide margin, and
 `docs/requirements/data-requirements.md` says exactly what to extract.

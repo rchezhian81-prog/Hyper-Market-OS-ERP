@@ -36,6 +36,13 @@ import {
 } from './manager-session';
 import type { ApprovalRequest } from '../../../packages/approvals/src/approvals';
 import { createBuyingSession, type BuyingPorts, type BuyingSession, type InvoiceLine } from './buying-session';
+import {
+  createCatalogueSession,
+  type CataloguePorts, type CatalogueSession,
+} from './catalogue-session';
+import type { Category, ProductRecord } from '../../../packages/product/src/index';
+import type { CostRegister, PriceEntry } from '../../../packages/price-list/src/index';
+import type { Promotion } from '../../../packages/promotions/src/index';
 
 /** What the store knows about a product this screen may be asked to count. */
 export interface ProductFact {
@@ -71,6 +78,27 @@ export interface BuyingData {
   readonly captured?: Readonly<Record<string, readonly InvoiceLine[]>>;
 }
 
+/** What the product-and-pricing screen was last told. Absent means this box knows nothing of it. */
+export interface CatalogueData {
+  readonly userId?: string;
+  readonly storeId?: string;
+  /** Today in the shop's own calendar. The screen never reads a clock of its own. */
+  readonly today?: string;
+  /** Minimum gross margin in basis points. Per-tenant policy (M05-FR-02). */
+  readonly marginFloorBps?: number;
+  /** Who may approve a below-floor price or a margin-losing offer. Never the person setting it. */
+  readonly approvers?: readonly string[];
+  /** The tenant's own department hierarchy — what each department requires is theirs to say. */
+  readonly categories?: readonly Category[];
+  readonly products?: readonly ProductRecord[];
+  /** Every price entry ever recorded, any status. */
+  readonly priceEntries?: readonly PriceEntry[];
+  /** What one unit cost us, in minor units, keyed by product. A gap here is a real gap. */
+  readonly costsMinor?: Readonly<Record<string, number>>;
+  readonly barcodes?: readonly { readonly barcode: string; readonly productId: string }[];
+  readonly promotions?: readonly Promotion[];
+}
+
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
 interface ManagerWindow {
   managerSession?: ManagerSession;
@@ -79,6 +107,9 @@ interface ManagerWindow {
   buyingData?: BuyingData;
   /** What the box did not tell the buyer's screen, so the screen can say it rather than guess. */
   buyingGaps?: readonly BuyingGap[];
+  catalogueSession?: CatalogueSession;
+  catalogueData?: CatalogueData;
+  catalogueGaps?: readonly CatalogueGap[];
   /** The decision vocabulary, so the view can offer it and never invent a reason of its own. */
   managerReasons?: {
     readonly approved: readonly DecisionReasonCode[];
@@ -238,6 +269,91 @@ export function bootBuying(data: BuyingData | undefined): BuyingSession | null {
   );
 }
 
+/**
+ * Something the product-and-pricing screen was never told.
+ *
+ * These do NOT all fail the same way, which is why each is named rather than rolled into one
+ * "not connected" message:
+ *
+ *   • no departments and nothing can be **scored at all** — the screen says *not knowable*
+ *     rather than 0%, because a zero would send somebody to fix a finished record;
+ *   • no costs and no **margin** can be checked, so every price change needs an approver;
+ *   • no barcodes and a clash cannot be spotted, so one scan could ring up two products;
+ *   • nobody to approve and nothing that needs approval can go through at all.
+ */
+export const CATALOGUE_GAPS = Object.freeze([
+  'what_the_shop_sells',
+  'what_each_department_needs',
+  'what_things_cost',
+  'the_prices_already_set',
+  'which_barcodes_are_taken',
+  'who_may_approve',
+] as const);
+export type CatalogueGap = (typeof CATALOGUE_GAPS)[number];
+
+/** Everything the product-and-pricing screen was not given. Empty means it was told all of it. */
+export function catalogueGaps(data: CatalogueData | undefined): readonly CatalogueGap[] {
+  const gaps: CatalogueGap[] = [];
+  if (data?.products === undefined) gaps.push('what_the_shop_sells');
+  if (data?.categories === undefined) gaps.push('what_each_department_needs');
+  if (data?.costsMinor === undefined) gaps.push('what_things_cost');
+  if (data?.priceEntries === undefined) gaps.push('the_prices_already_set');
+  if (data?.barcodes === undefined) gaps.push('which_barcodes_are_taken');
+  // An empty list counts, and deliberately: nobody to approve stops exactly the same work as
+  // never having been told who may.
+  if (data?.approvers === undefined || data.approvers.length === 0) gaps.push('who_may_approve');
+  return gaps;
+}
+
+/**
+ * Ports over what the product-and-pricing screen was told.
+ *
+ * The empty answers here are load-bearing refusals rather than tidy defaults, and every one is
+ * reported by `catalogueGaps` so the screen can name it. The cost port is the important one: it
+ * answers **not known** rather than zero, because a cost of zero makes every price look like a
+ * 100% margin and the floor check then passes, confidently and wrongly, at the moment a buyer is
+ * relying on it.
+ */
+export function cataloguePortsFromData(data: CatalogueData | undefined): CataloguePorts {
+  const costOf = (productId: string): CostRegister => {
+    const minor = data?.costsMinor?.[productId];
+    if (minor === undefined) {
+      return {
+        known: false,
+        why: `this screen has not been told what "${productId}" cost us, so its margin cannot be worked out`,
+      };
+    }
+    return { known: true, cost: { minor, currency: 'INR' } };
+  };
+
+  return {
+    categories: () => data?.categories ?? [],
+    products: () => data?.products ?? [],
+    priceEntries: () => data?.priceEntries ?? [],
+    costOf,
+    barcodesInUse: () => data?.barcodes ?? [],
+    promotions: () => data?.promotions ?? [],
+  };
+}
+
+/** Build the product-and-pricing session, or `null` when this box was told nothing about it. */
+export function bootCatalogue(data: CatalogueData | undefined): CatalogueSession | null {
+  if (data === undefined) return null;
+  return createCatalogueSession(
+    {
+      tenantId: 'tenant',
+      storeId: data.storeId ?? 'store-1',
+      userId: data.userId ?? 'pricing',
+      currency: 'INR',
+      // No clock in here. A screen that read its own would price against the device's date, and a
+      // till whose clock is a day out would then activate tomorrow's price today.
+      today: data.today ?? '1970-01-01',
+      marginFloorBps: data.marginFloorBps ?? 0,
+    },
+    cataloguePortsFromData(data),
+  );
+}
+
 // In the browser `globalThis.window` IS the window, so this needs no DOM types.
 const browserWindow = (globalThis as { window?: ManagerWindow }).window;
 if (browserWindow !== undefined) {
@@ -248,6 +364,11 @@ if (browserWindow !== undefined) {
   if (buying !== null) {
     browserWindow.buyingSession = buying;
     browserWindow.buyingGaps = buyingGaps(browserWindow.buyingData);
+  }
+  const catalogue = bootCatalogue(browserWindow.catalogueData);
+  if (catalogue !== null) {
+    browserWindow.catalogueSession = catalogue;
+    browserWindow.catalogueGaps = catalogueGaps(browserWindow.catalogueData);
   }
   // The view offers these and records the code the manager picks. It never composes a reason of
   // its own, so the audit trail keeps one vocabulary that can still be reported on in a year.

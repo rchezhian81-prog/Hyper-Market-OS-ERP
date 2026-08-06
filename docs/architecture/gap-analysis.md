@@ -26,7 +26,7 @@ project.
 | `services/` — the thirteen APIs | 5,556 | Built, persisting, authenticated, audited |
 | `edge/` — the store box | 2,250 | Runs, writes durably, syncs — **and now feeds every screen**, the buyer's included |
 | `apps/` — everything a person touches | 8,000 | **All six have real screens, and the ERP now has two** — the manager's and the buyer's. The gap that dominated this document is closed |
-| Tests | 3,631 + 31 | Unusually thorough on rules; thin on assembly until today |
+| Tests | 3,725 + 31 | Unusually thorough on rules; thin on assembly until today |
 
 **2,452 lines of app code for six applications** is the number that matters. For comparison, the POS
 alone — one screen a cashier uses eight hours a day — is 1,070 of those lines, and none of it draws
@@ -110,7 +110,7 @@ Three columns, and they are different questions. **Rules** = is the logic writte
 | Modules | Rules | Wired | Usable | The honest note |
 | --- | :---: | :---: | :---: | --- |
 | M01–M02 Platform, identity | ✅ | ✅ | ◐ | Token verification real; the **approvals inbox is now a screen** (decide in ≤3 taps, reason recorded, separation of duties visible). **No identity provider chosen**, so nobody can log in |
-| M03–M05 Product, pricing, catalogue | ✅ | ✅ | ❌ | No screen to create or price a product. No HSN field |
+| M03–M05 Product, pricing, catalogue | ✅ | ✅ | ✅ | **The product and price screen is now built** — HSN/tax class is a field and nothing publishes without one. A price change is drafted, checked against the MRP ceiling and the margin floor with both limits shown *before* the price is typed, approved by somebody else and appended as a new entry. Until this session **nothing in the system had ever produced a `PriceEntry`**, so the catalogue snapshot builder had never had a real price to ship to a lane. Merchandising space and planograms (M04-FR-02/03/04, P2) are rules-only and have no screen — see below |
 | M06–M07 Purchase, supplier | ✅ | ✅ | ✅ | Three-way match real; goods receiving is a screen, and a delivery with no purchase order is flagged unmatched rather than filed quietly. **The buyer's screen now captures a supplier invoice in one go** — checked against the total printed on the paper, each line's own arithmetic checked with the line number to look at, approved by somebody else, committed atomically — so the match has lines at last. An uncaptured invoice still refuses, and now says which of the three documents is missing |
 | M08–M11 Inventory, warehouse, quality | ✅ | ✅ | ◐ | Movements and snapshots real; **blind counting is now a screen** — and a count the screen cannot value is refused rather than priced at zero. No expiry or recall screen |
 | M12–M15 POS, returns, cash office | ✅ | ✅ | ✅ | The strongest area. Durable commit real, and the screen reaches the till's own disk over loopback (ADR-0004). Cash, card, UPI, hold/recall, cash to safe and a blind till close are in; **day close now has a manager screen that reports a list rather than a refusal**. Receipt-based returns still have no screen |
@@ -124,6 +124,13 @@ Three columns, and they are different questions. **Rules** = is the logic writte
 | MG-01–MG-12 Migration | ✅ | ✅ | ◐ | Strongest non-POS area. CLI tool exists. **No real data yet** |
 
 **Legend:** ✅ done · ◐ partial, with a named reason · ❌ not started
+
+**Not built, and named rather than dropped:** the **merchandising and space** screens — planograms,
+shelf mapping, sales per square foot and supplier-funded display contracts (M04-FR-02/03/04, D02).
+The rules are built and tested in `packages/merchandising`; what is missing is a surface. They are
+**P2** in the roadmap, and §M04's own open items ask the owner whether planograms and space
+contracts are in first-store scope at all. This needs an owner decision with a named target
+release (OD-02/OD-10) — it is not dropped.
 
 ### The ones that are ◐ for a good reason, and must not be "fixed" by relaxing them
 

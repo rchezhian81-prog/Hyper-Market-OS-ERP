@@ -5,3 +5,4 @@
 // reviewed, tested unit at a time.
 
 export * from './price-list';
+export * from './price-change';

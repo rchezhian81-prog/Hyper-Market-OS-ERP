@@ -28,6 +28,8 @@
 //   • the customer   — the published catalogue and the slots that can actually be had
 //   • the buyer      — what is on order, what arrived, which invoices are already captured, and
 //                      who is allowed to check the buyer's work
+//   • the catalogue  — the master records, the tenant's own department rules, what things cost and
+//                      every price ever set
 
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { assessChecklist } from '../../../packages/workforce/src/index';
@@ -37,7 +39,7 @@ import { costTheDay, exceptionsFor, activityFrom, type LoggedSale } from './read
 import type { StorePack } from './store-pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
-export const SCREENS = Object.freeze(['pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying'] as const);
+export const SCREENS = Object.freeze(['pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue'] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
 export interface ScreenInput {
@@ -468,6 +470,67 @@ export function buyingPayload(input: ScreenInput): Record<string, unknown> | nul
   return payload;
 }
 
+/**
+ * The product-and-pricing payload (M03 · M05 · D01 · §28).
+ *
+ * `null` when this box has never been told who prices or what margin this tenant will not go below
+ * — a screen that invented its own margin floor would be deciding, on its own authority, how much
+ * of the shop's profit is worth nobody's attention.
+ *
+ * **What things cost is served from the pack's own cost prices, and a product with none is simply
+ * absent from the map.** Not zero. A cost of zero makes every price look like a 100% margin, so the
+ * floor check passes loudly and wrongly at the moment somebody is relying on it — the screen turns
+ * an absent cost into a refusal that needs an approver, which is the honest answer.
+ */
+export function cataloguePayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.pricingPolicy.known) return null;
+  const policy = input.pack.pricingPolicy.value;
+
+  const payload: Record<string, unknown> = {
+    userId: policy.userId,
+    storeId: input.pack.policies.known ? input.pack.policies.value.storeId : 'store-1',
+    // The shop's own trading day, not the browser's clock. A device whose date is a day out would
+    // otherwise activate tomorrow's price today.
+    today: input.tradingDay,
+    marginFloorBps: policy.marginFloorBps,
+    // The setter is removed here rather than trusted to leave themselves alone (§28). The session
+    // model refuses a self-approval as well; this stops it ever being offered.
+    approvers: policy.approvers.filter((who) => who !== policy.userId),
+  };
+
+  if (input.pack.categories.known) payload['categories'] = input.pack.categories.value;
+  if (input.pack.productMaster.known) payload['products'] = input.pack.productMaster.value;
+  if (input.pack.priceEntries.known) {
+    payload['priceEntries'] = input.pack.priceEntries.value.map((e) => ({
+      id: e.id,
+      productId: e.productId,
+      scope: e.scope,
+      scopeRef: e.scopeRef,
+      // The wire carries minor units; the engine takes Money. Converting here rather than at every
+      // call site means one place can be wrong instead of six — the same fault the manager's
+      // approval inbox had once, where a bare number met code expecting `value.currency`.
+      price: { minor: e.priceMinor, currency: 'INR' },
+      effectiveFrom: e.effectiveFrom,
+      ...(e.effectiveTo === undefined ? {} : { effectiveTo: e.effectiveTo }),
+      status: e.status,
+      version: e.version,
+    }));
+  }
+  if (input.pack.products.known) {
+    payload['barcodes'] = input.pack.products.value.flatMap((p) =>
+      p.barcodes.map((barcode) => ({ barcode, productId: p.productId })));
+    // Only the products that HAVE a cost. An entry of zero for the rest would be the whole point,
+    // missed: the screen must be able to tell "it cost us nothing" from "nobody has told me".
+    const costs: Record<string, number> = {};
+    for (const product of input.pack.products.value) {
+      if (product.unitCostMinor !== undefined) costs[product.productId] = product.unitCostMinor;
+    }
+    payload['costsMinor'] = costs;
+  }
+
+  return payload;
+}
+
 /** The global each screen's bundle reads at boot. One name per screen, and they must not drift. */
 export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   pos: 'posCatalogue',
@@ -477,6 +540,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   driver: 'driverData',
   customer: 'shopData',
   buying: 'buyingData',
+  catalogue: 'catalogueData',
 });
 
 const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<string, unknown> | null>> = Object.freeze({
@@ -487,6 +551,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   driver: driverPayload,
   customer: customerPayload,
   buying: buyingPayload,
+  catalogue: cataloguePayload,
 });
 
 /** Build one screen's payload. `null` means this box has nothing to give it, and says so. */

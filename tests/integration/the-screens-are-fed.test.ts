@@ -4,8 +4,9 @@ import { GLOBAL_FOR, SCREENS, type ScreenInput, type ScreenName } from '../../ed
 import { known, notKnown, type PackProduct, type StorePack } from '../../edge/store-edge/src/store-pack';
 import type { LoggedSale } from '../../edge/store-edge/src/read-model';
 import { SyncOutbox } from '../../packages/sync/src/index';
+import { resolvePrice } from '../../packages/price-list/src/index';
 import { makeEvent } from '../../packages/contracts/src/event';
-import { bootBuying, bootManager, buyingGaps } from '../../apps/web-erp/src/browser-entry';
+import { bootBuying, bootCatalogue, bootManager, buyingGaps, catalogueGaps } from '../../apps/web-erp/src/browser-entry';
 import { bootOwner, forgetfulQueueStore } from '../../apps/owner-app/src/browser-entry';
 import { bootShop, forgetfulBasket } from '../../apps/customer-app/src/browser-entry';
 import { bootPicker } from '../../apps/picker-app/src/browser-entry';
@@ -44,6 +45,19 @@ const SALE: LoggedSale = {
   lines: [{ productId: 'p1', quantityMinor: 1, uom: 'ea' }],
   tenders: [{ kind: 'cash', amount: { minor: 145_00 } }],
 };
+
+const CATEGORIES = [{
+  categoryId: 'grocery', name: 'Grocery', parentId: null,
+  attributes: [{ key: 'packSize', label: 'a pack size', type: 'text' as const, required: true }],
+}];
+
+const MASTER = [{
+  productId: 'p1', tenantId: 't1', sku: 'SKU-1', name: 'Toor dal 1kg', brand: 'Aachi',
+  primaryCategoryId: 'grocery', baseUom: 'ea', taxClass: '0713',
+  attributes: { packSize: '1kg' },
+  mrpHistory: [{ value: { minor: 160_00, currency: 'INR' as const }, effectiveFrom: '2026-01-01' }],
+  lifecycle: 'active' as const,
+}];
 
 const pack = (over: Partial<StorePack> = {}): StorePack => ({
   receivedAt: NOW,
@@ -89,6 +103,15 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
   buyingPolicy: known({
     buyerId: 'u-buyer', approvers: ['u-manager', 'u-buyer'],
     quantityToleranceBps: 0, priceToleranceBps: 100, immaterialMinor: 100,
+  }),
+  categories: known(CATEGORIES),
+  productMaster: known(MASTER),
+  priceEntries: known([{
+    id: 'pe-1', productId: 'p1', scope: 'store', scopeRef: 'store-1',
+    priceMinor: 145_00, effectiveFrom: '2026-01-01', status: 'active', version: 1,
+  }]),
+  pricingPolicy: known({
+    userId: 'u-pricing', approvers: ['u-manager', 'u-pricing'], marginFloorBps: 2000,
   }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([{ purpose: 'marketing', channel: 'sms' }]),
@@ -331,6 +354,8 @@ describe('a box that has been told nothing tells every screen so', () => {
       deliveries: notKnown('never'), drivers: notKnown('never'), routingPolicy: notKnown('never'),
       slots: notKnown('never'), purchaseOrders: notKnown('never'), receipts: notKnown('never'),
       supplierInvoices: notKnown('never'), buyingPolicy: notKnown('never'),
+      categories: notKnown('never'), productMaster: notKnown('never'),
+      priceEntries: notKnown('never'), pricingPolicy: notKnown('never'),
       lossPreventionRules: notKnown('never'), consentPurposes: notKnown('never'),
     },
     sales: [],
@@ -338,7 +363,7 @@ describe('a box that has been told nothing tells every screen so', () => {
 
   it('serves the shells with no payload at all, marker intact', async () => {
     const base = await serve(nothing);
-    for (const screen of ['pos', 'owner', 'picker', 'driver', 'customer', 'buying'] as const) {
+    for (const screen of ['pos', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue'] as const) {
       expect(await payloadFromScreen(base, screen), `${screen} invented something`).toBeNull();
     }
   });
@@ -677,5 +702,143 @@ describe('the box sends a bare screen path to its own folder first', () => {
       expect(response.headers.get('content-type')).toMatch(/javascript/);
       expect(await response.text()).toContain('shellCachedAt');
     }
+  });
+});
+
+/**
+ * **The product-and-pricing screen, driven over the same socket (M03 · M05 · D01 · §28).**
+ *
+ * Everything needed to police a price was built and tested — the MRP ceiling, the margin floor, the
+ * effective-dated resolution, the append-only history, the catalogue snapshot that carries it to a
+ * lane — and **nothing anywhere produced a price**. This proves the whole chain now runs: the box
+ * serves the master records and the tenant's own rules, the screen makes a price, and the price the
+ * lane would resolve is the one the screen decided.
+ */
+describe('the product-and-pricing screen is fed, and cannot break the law', () => {
+  const approvalBy = (decidedBy: string, subjectRef: string) => ({
+    id: `ap-${subjectRef}`, subjectType: 'price_change', subjectRef,
+    requestedBy: 'u-pricing', branchId: null, value: null,
+    status: 'approved' as const, decidedBy, reason: 'clearance', decidedAt: NOW,
+  });
+
+  it('serves its OWN page, not the manager’s and not the buyer’s', async () => {
+    const base = await serve(snapshotOf());
+    const html = await (await fetch(`${base}/catalogue/`)).text();
+    expect(html).toContain('id="floor-value"');
+    expect(html).not.toContain('id="close-title"');
+    expect(html).not.toContain('id="declared-total"');
+  });
+
+  it('removes the person setting prices from their own approver list', async () => {
+    // The pack lists `u-pricing` among the approvers — a tenant misconfiguration, and exactly the
+    // one that separation of duties has to survive. It must never reach the screen.
+    const base = await serve(snapshotOf());
+    const payload = (await payloadFromScreen(base, 'catalogue'))!;
+    expect(payload['approvers']).toEqual(['u-manager']);
+    expect(payload['userId']).toBe('u-pricing');
+  });
+
+  it('serves the shop’s trading day rather than leaving the screen to read a clock', async () => {
+    const base = await serve(snapshotOf());
+    const payload = (await payloadFromScreen(base, 'catalogue'))!;
+    expect(payload['today']).toBe(DAY);
+  });
+
+  it('makes a price, and the lane would resolve exactly that price', async () => {
+    // The whole chain, end to end: nothing has ever produced a `PriceEntry` before this.
+    const base = await serve(snapshotOf());
+    const payload = (await payloadFromScreen(base, 'catalogue'))!;
+    const catalogue = bootCatalogue(payload as never)!;
+
+    const proposal = catalogue.proposePrice({
+      id: 'pc-1', productId: 'p1', priceMinor: 150_00, effectiveFrom: DAY,
+    });
+    expect(proposal.refusals).toEqual([]);
+    const outcome = catalogue.activatePrice(proposal);
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+
+    // The same engine the till's catalogue snapshot uses, given the new entry alongside the old.
+    const resolved = resolvePrice(
+      [...(payload['priceEntries'] as Parameters<typeof resolvePrice>[0]), outcome.entry],
+      { productId: 'p1', at: `${DAY}T12:00:00.000Z`, storeId: 'store-1' },
+    );
+    expect(resolved?.price.minor).toBe(150_00);
+    expect(resolved?.id).toBe('pc-1');
+  });
+
+  it('refuses a price above the MRP the box served, whoever approves it', async () => {
+    const base = await serve(snapshotOf());
+    const catalogue = bootCatalogue((await payloadFromScreen(base, 'catalogue'))! as never)!;
+    const proposal = catalogue.proposePrice({
+      id: 'pc-2', productId: 'p1', priceMinor: 175_00, effectiveFrom: DAY,
+    });
+    expect(proposal.refusals).toContain('above_the_printed_mrp');
+    expect(catalogue.activatePrice(proposal, approvalBy('u-manager', 'pc-2')).ok).toBe(false);
+  });
+
+  it('needs an approver for a below-floor price, using the tenant’s own floor', async () => {
+    // Cost ₹100 from the pack, floor 20% from the pack ⇒ under ₹125 is below the floor.
+    const base = await serve(snapshotOf());
+    const catalogue = bootCatalogue((await payloadFromScreen(base, 'catalogue'))! as never)!;
+    const proposal = catalogue.proposePrice({
+      id: 'pc-3', productId: 'p1', priceMinor: 110_00, effectiveFrom: DAY,
+    });
+    expect(proposal.refusals).toEqual(['below_the_margin_floor']);
+    expect(catalogue.activatePrice(proposal).ok).toBe(false);
+    expect(catalogue.activatePrice(proposal, approvalBy('u-manager', 'pc-3')).ok).toBe(true);
+  });
+
+  it('will not check a margin against a cost the box never sent', async () => {
+    // The pack's product carries no `unitCostMinor` here, so the payload's cost map has no entry —
+    // NOT a zero, which would make every price look like a 100% margin.
+    const base = await serve(snapshotOf({
+      pack: pack({ products: known([{ ...PRODUCTS[0]!, unitCostMinor: undefined }]) }),
+    }));
+    const payload = (await payloadFromScreen(base, 'catalogue'))!;
+    expect(payload['costsMinor']).toEqual({});
+
+    const catalogue = bootCatalogue(payload as never)!;
+    const proposal = catalogue.proposePrice({
+      id: 'pc-4', productId: 'p1', priceMinor: 1_00, effectiveFrom: DAY,
+    });
+    expect(proposal.refusals).toEqual(['the_cost_is_not_known_so_the_margin_was_never_checked']);
+    expect(catalogue.activatePrice(proposal).ok).toBe(false);
+  });
+
+  it('scores what is missing from a record, against the tenant’s own department rules', async () => {
+    const base = await serve(snapshotOf());
+    const catalogue = bootCatalogue((await payloadFromScreen(base, 'catalogue'))! as never)!;
+    const view = catalogue.shelf()[0]!;
+    expect(view.score.knowable).toBe(true);
+    if (!view.score.knowable) return;
+    expect(view.score.percent).toBe(100);
+    expect(view.score.publishable).toBe(true);
+  });
+
+  it('says a record is NOT KNOWABLE when the box never sent its department', async () => {
+    // A zero would read as "somebody has filled in nothing" and send a person to fix a finished
+    // record. The reason names the department nobody told this screen about.
+    const base = await serve(snapshotOf({ pack: pack({ categories: known([]) }) }));
+    const catalogue = bootCatalogue((await payloadFromScreen(base, 'catalogue'))! as never)!;
+    const score = catalogue.shelf()[0]!.score;
+    expect(score.knowable).toBe(false);
+    if (score.knowable) return;
+    expect(score.why).toContain('grocery');
+  });
+
+  it('serves the screen nothing at all when the box has no pricing policy', async () => {
+    const base = await serve(snapshotOf({ pack: pack({ pricingPolicy: notKnown('never sent') }) }));
+    expect(await payloadFromScreen(base, 'catalogue')).toBeNull();
+    expect(bootCatalogue(undefined)).toBeNull();
+  });
+
+  it('names what it was NOT told rather than letting a refusal read as somebody’s fault', async () => {
+    const base = await serve(snapshotOf({
+      pack: pack({ categories: notKnown('never sent'), priceEntries: notKnown('never sent') }),
+    }));
+    const payload = (await payloadFromScreen(base, 'catalogue'))!;
+    expect('categories' in payload, '"categories" must be absent, not empty').toBe(false);
+    expect(catalogueGaps(payload as never)).toEqual(['what_each_department_needs', 'the_prices_already_set']);
   });
 });

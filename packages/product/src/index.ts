@@ -6,3 +6,4 @@
 export * from './product';
 export * from './pack';
 export * from './duplicates';
+export * from './completeness';

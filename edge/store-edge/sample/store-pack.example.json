@@ -1,6 +1,6 @@
 {
   "_comment": [
-    "An EXAMPLE store pack \u2014 the shape the cloud sends this box (EDGE_PACK_FILE).",
+    "An EXAMPLE store pack — the shape the cloud sends this box (EDGE_PACK_FILE).",
     "Every top-level section is optional, and leaving one out is meaningful:",
     "the box then tells the screens it has NOT BEEN TOLD that section, which is",
     "different from telling them the section is empty. The manager's day close",
@@ -14,7 +14,13 @@
     "Leave buyingPolicy out and the box serves the buyer's screen nothing at all,",
     "because a screen inventing its own match tolerances would be deciding how big",
     "a price difference is worth nobody's attention. The buyer must NOT appear in",
-    "approvers: nobody signs off their own capture (roadmap section 28)."
+    "approvers: nobody signs off their own capture (roadmap section 28).",
+    "categories/productMaster/priceEntries/pricingPolicy: the product and price screen.",
+    "Leave pricingPolicy out and the box serves that screen nothing, because a screen",
+    "inventing its own margin floor would be deciding how much of the shop's profit is",
+    "worth nobody's attention. The person who sets prices must NOT be in approvers.",
+    "A product with no unitCostMinor has NO entry in the cost map served to that screen",
+    "- not a zero. Zero cost reports a 100% margin, which is a lie that reads as good news."
   ],
   "version": 1,
   "policies": {
@@ -32,7 +38,7 @@
     {
       "productId": "EXAMPLE-1",
       "name": "Example product",
-      "nameTa": "\u0b8e\u0b9f\u0bc1\u0ba4\u0bcd\u0ba4\u0bc1\u0b95\u0bcd\u0b95\u0bbe\u0b9f\u0bcd\u0b9f\u0bc1 \u0baa\u0bca\u0bb0\u0bc1\u0bb3\u0bcd",
+      "nameTa": "எடுத்துக்காட்டு பொருள்",
       "categoryId": "example",
       "unitPriceMinor": 10000,
       "unitCostMinor": 7000,
@@ -109,6 +115,65 @@
     "quantityToleranceBps": 0,
     "priceToleranceBps": 100,
     "immaterialMinor": 100
+  },
+  "categories": [
+    {
+      "categoryId": "example",
+      "name": "Example department",
+      "parentId": null,
+      "attributes": [
+        {
+          "key": "packSize",
+          "label": "a pack size",
+          "type": "text",
+          "required": true
+        }
+      ],
+      "regulated": []
+    }
+  ],
+  "productMaster": [
+    {
+      "productId": "EXAMPLE-1",
+      "tenantId": "REPLACE_WITH_TENANT_ID",
+      "sku": "EXAMPLE-1",
+      "name": "Example product",
+      "primaryCategoryId": "example",
+      "baseUom": "ea",
+      "taxClass": "REPLACE_WITH_HSN_CODE",
+      "attributes": {
+        "packSize": "1kg"
+      },
+      "mrpHistory": [
+        {
+          "value": {
+            "minor": 12000,
+            "currency": "INR"
+          },
+          "effectiveFrom": "2026-01-01"
+        }
+      ],
+      "lifecycle": "active"
+    }
+  ],
+  "priceEntries": [
+    {
+      "id": "pe-example-1",
+      "productId": "EXAMPLE-1",
+      "scope": "store",
+      "scopeRef": "REPLACE_WITH_STORE_ID",
+      "priceMinor": 10000,
+      "effectiveFrom": "2026-01-01",
+      "status": "active",
+      "version": 1
+    }
+  ],
+  "pricingPolicy": {
+    "userId": "REPLACE_WITH_PRICING_USER_ID",
+    "approvers": [
+      "REPLACE_WITH_A_DIFFERENT_USER_ID"
+    ],
+    "marginFloorBps": 2000
   },
   "lossPreventionRules": [
     {

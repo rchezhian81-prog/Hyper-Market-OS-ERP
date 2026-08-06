@@ -190,6 +190,85 @@ export interface PackSupplierInvoice {
   }[];
 }
 
+/**
+ * A department, as this tenant defines it (M03-FR-01).
+ *
+ * The attributes and the regulated flags are **the tenant's own declaration**, never ours: which
+ * fields a hypermarket in Tamil Nadu must record for its chilled aisle is a question about that
+ * shop and its licences, and a product screen that answered it from a constant in this repository
+ * would be wrong for every second tenant.
+ */
+export interface PackCategory {
+  readonly categoryId: string;
+  readonly name: string;
+  readonly parentId: string | null;
+  readonly attributes?: readonly {
+    readonly key: string;
+    readonly label: string;
+    readonly type: 'text' | 'number' | 'boolean' | 'enum' | 'date';
+    readonly required?: boolean;
+    readonly allowed?: readonly string[];
+  }[];
+  readonly regulated?: readonly string[];
+}
+
+/**
+ * The product MASTER record (M03) — a different, richer thing from the lane's catalogue slice.
+ *
+ * `PackProduct` above is what a till needs: a name, a price, some barcodes. This is what the person
+ * maintaining the catalogue needs: the department, the HSN code, the effective-dated MRP, the
+ * safety content the law asks of a regulated department. A box that only feeds tills never has to
+ * carry this at all, and says so rather than serving a thin record as if it were the whole one.
+ */
+export interface PackMasterProduct {
+  readonly productId: string;
+  readonly tenantId: string;
+  readonly sku: string;
+  readonly name: string;
+  readonly brand?: string;
+  readonly manufacturer?: string;
+  readonly primaryCategoryId: string | null;
+  readonly parentProductId?: string | null;
+  readonly baseUom: string;
+  /** HSN / tax class code. Nothing publishes without one. */
+  readonly taxClass: string | null;
+  readonly mrpHistory?: readonly { readonly value: { readonly minor: number; readonly currency: 'INR' }; readonly effectiveFrom: string }[];
+  readonly attributes?: Readonly<Record<string, string>>;
+  readonly safety?: {
+    readonly ingredients?: string;
+    readonly allergens?: readonly string[];
+    readonly countryOfOrigin?: string;
+    readonly storageConditions?: string;
+    readonly netQuantity?: string;
+    readonly packerDetails?: string;
+    readonly minimumAge?: number;
+  };
+  readonly lifecycle: 'draft' | 'new' | 'active' | 'clearance' | 'discontinued';
+  readonly recallBlocked?: boolean;
+}
+
+/** A price entry the cloud has recorded — every one ever set, any status (M05-FR-01). */
+export interface PackPriceEntry {
+  readonly id: string;
+  readonly productId: string;
+  readonly scope: 'customer' | 'channel' | 'zone' | 'store';
+  readonly scopeRef: string;
+  readonly priceMinor: number;
+  readonly effectiveFrom: string;
+  readonly effectiveTo?: string | null;
+  readonly status: 'draft' | 'active' | 'rolled_back';
+  readonly version: number;
+}
+
+/** Who sets prices, who checks them, and the margin this tenant will not go below. */
+export interface PackPricingPolicy {
+  readonly userId: string;
+  /** Who may approve a below-floor price or a margin-losing offer. Never the setter (§28). */
+  readonly approvers: readonly string[];
+  /** Minimum gross margin in basis points. Per-tenant policy, never a constant (M05-FR-02). */
+  readonly marginFloorBps: number;
+}
+
 /** Who buys, who may check them, and the tolerances this tenant matches on. All per-tenant. */
 export interface PackBuyingPolicy {
   readonly buyerId: string;
@@ -267,6 +346,14 @@ export interface StorePack {
   readonly supplierInvoices: Register<readonly PackSupplierInvoice[]>;
   /** Who buys, who checks them, and this tenant's match tolerances (§28). */
   readonly buyingPolicy: Register<PackBuyingPolicy>;
+  /** The tenant's own department hierarchy (M03-FR-01). Without it nothing can be scored. */
+  readonly categories: Register<readonly PackCategory[]>;
+  /** The full master records (M03) — richer than the lane's slice, and not every box holds them. */
+  readonly productMaster: Register<readonly PackMasterProduct[]>;
+  /** Every price ever set, any status — the append-only history (M05-FR-01). */
+  readonly priceEntries: Register<readonly PackPriceEntry[]>;
+  /** Who prices, who approves, and the margin floor (M05-FR-02, §28). */
+  readonly pricingPolicy: Register<PackPricingPolicy>;
   /** Loss-prevention thresholds — data, so a store tunes its own without code (M15-FR-01). */
   readonly lossPreventionRules: Register<readonly unknown[]>;
   /** The purposes this tenant asks a customer's consent for (M16 / PRV). */
@@ -300,6 +387,10 @@ export function emptyPack(why: string = NEVER): StorePack {
     receipts: notKnown(why),
     supplierInvoices: notKnown(why),
     buyingPolicy: notKnown(why),
+    categories: notKnown(why),
+    productMaster: notKnown(why),
+    priceEntries: notKnown(why),
+    pricingPolicy: notKnown(why),
     lossPreventionRules: notKnown(why),
     consentPurposes: notKnown(why),
   };
@@ -339,6 +430,10 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     receipts: section<readonly PackReceipt[]>('receipts'),
     supplierInvoices: section<readonly PackSupplierInvoice[]>('supplierInvoices'),
     buyingPolicy: section<PackBuyingPolicy>('buyingPolicy'),
+    categories: section<readonly PackCategory[]>('categories'),
+    productMaster: section<readonly PackMasterProduct[]>('productMaster'),
+    priceEntries: section<readonly PackPriceEntry[]>('priceEntries'),
+    pricingPolicy: section<PackPricingPolicy>('pricingPolicy'),
     lossPreventionRules: section<readonly unknown[]>('lossPreventionRules'),
     consentPurposes: section<readonly { purpose: string; channel: string; required?: boolean }[]>('consentPurposes'),
   };
