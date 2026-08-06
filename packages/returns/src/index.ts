@@ -4,3 +4,4 @@
 // Composes the foundation; works offline. Grows one reviewed, tested unit at a time.
 
 export * from './returns';
+export * from './return-register';

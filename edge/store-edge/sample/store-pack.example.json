@@ -41,7 +41,17 @@
     "serves that screen nothing, because a screen inventing its own staleness thresholds",
     "would be deciding, on its own authority, how old a number may be before somebody",
     "should stop making decisions on it. roles/roleAssignments are the shop's OWN access",
-    "control, so the same default-deny check that guards an action guards its export."
+    "control, so the same default-deny check that guards an action guards its export.",
+    "returnHistory/serviceCases/satisfaction/slaPolicy/servicePolicy: the service desk.",
+    "Leave servicePolicy out and the box serves that screen nothing, because a screen",
+    "inventing its own return window would be deciding how long this shop takes goods",
+    "back for, and inventing its own refund threshold would be deciding how much money",
+    "may leave without a second signature. returnHistory is the returns the CLOUD knows",
+    "about - another branch's, or ones taken before this box was installed. It is MERGED",
+    "with the box's own return log, never replaced by it: the cloud alone leaves the",
+    "at-most-once guard blind exactly when the line is down, which is when a shop is",
+    "least supervised. THE FIVE NUMBERS IN servicePolicy ARE YOURS TO SET before go-live",
+    "- the ones here are starting figures, not a recommendation."
   ],
   "version": 1,
   "policies": {
@@ -311,6 +321,31 @@
     "laggingAfterMinutes": 5,
     "staleAfterMinutes": 60,
     "userId": "REPLACE_WITH_USER_ID"
+  },
+  "returnHistory": [],
+  "serviceCases": [],
+  "satisfaction": [],
+  "slaPolicy": {
+    "firstResponseMinutes": {
+      "urgent": 30,
+      "high": 120,
+      "normal": 480,
+      "low": 1440
+    },
+    "resolutionMinutes": {
+      "urgent": 240,
+      "high": 1440,
+      "normal": 4320,
+      "low": 10080
+    }
+  },
+  "servicePolicy": {
+    "returnWindowDays": 30,
+    "approvalThresholdMinor": 200000,
+    "noReceiptCapMinor": 100000,
+    "agentAuthorityMinor": 50000,
+    "compensationCapMinor": 500000,
+    "userId": "REPLACE_WITH_SERVICE_DESK_USER_ID"
   },
   "lossPreventionRules": [
     {

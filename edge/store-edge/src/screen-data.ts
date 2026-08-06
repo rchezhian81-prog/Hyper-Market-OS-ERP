@@ -34,6 +34,8 @@
 //                      each part of the floor earns
 //   • reporting      — the day's sales facts, the outbox, the exception register, and WHICH FACTS
 //                      this shop does not record, so a report it cannot run refuses by name
+//   • service        — every bill this box holds (not just today's: a receipt from last Tuesday is
+//                      the ordinary case), every return already taken, and the shop's own limits
 
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { assessChecklist } from '../../../packages/workforce/src/index';
@@ -49,7 +51,7 @@ import type { StorePack } from './store-pack';
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting',
+  'reporting', 'service',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -847,6 +849,76 @@ export function reportingPayload(input: ScreenInput): Record<string, unknown> | 
   return payload;
 }
 
+/**
+ * The service desk's payload (M13 · M21 · API-05/API-06).
+ *
+ * `null` when the box has not been told the shop's own limits — a screen inventing its own return
+ * window would be deciding how long this shop takes goods back for, and inventing its own refund
+ * threshold would be deciding how much money may leave without a second signature.
+ *
+ * **The whole sales log, deliberately, not the trading day.** A customer brings back a receipt from
+ * last Tuesday; that is the ordinary case and the reason the screen exists. This is the same
+ * distinction the range check draws, in the other direction from the day's figures — and getting it
+ * wrong here would make the desk unable to find any bill except one rung this morning.
+ */
+export function servicePayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.servicePolicy.known) return null;
+  const policy = input.pack.servicePolicy.value;
+  const policies = input.pack.policies.known ? input.pack.policies.value : undefined;
+
+  const payload: Record<string, unknown> = {
+    storeId: policies?.storeId ?? 'store-1',
+    branchId: policies?.branchId ?? null,
+    now: input.now,
+    tradingDay: input.tradingDay,
+    returnWindowDays: policy.returnWindowDays,
+    approvalThresholdMinor: policy.approvalThresholdMinor,
+    noReceiptCapMinor: policy.noReceiptCapMinor,
+    agentAuthorityMinor: policy.agentAuthorityMinor,
+    compensationCapMinor: policy.compensationCapMinor,
+  };
+  // Not defaulted: a refund and a compensation both carry the name of whoever gave them into an
+  // audit record that is the only evidence afterwards.
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+
+  // Every bill this box holds, reduced to what a return needs. A record with no readable lines
+  // cannot be returned against — there is nothing to check a quantity against — so it is left out
+  // rather than offered as a bill with nothing on it.
+  const bills: Record<string, unknown>[] = [];
+  for (const sale of input.sales) {
+    if (sale.lines === undefined || sale.number === undefined) continue;
+    bills.push({
+      saleId: sale.id,
+      number: sale.number,
+      tradingDay: sale.tradingDay ?? input.tradingDay,
+      committedAt: sale.committedAt ?? input.now,
+      totalMinor: sale.total ?? 0,
+      lines: sale.lines.map((line) => ({
+        productId: line.productId,
+        uom: line.uom ?? 'ea',
+        quantityMinor: line.quantityMinor,
+      })),
+      // How it was paid, served only when the record carried it. A bill with no recorded tender
+      // is a bill the desk **cannot** offer "back to the original tender" against, and an empty
+      // list would read as "paid by nothing" rather than "we do not know how this was paid".
+      ...(sale.tenders === undefined ? {} : {
+        tenders: sale.tenders.map((t) => ({
+          kind: t.kind ?? 'unknown',
+          amountMinor: t.amount?.minor ?? 0,
+        })),
+      }),
+    });
+  }
+  payload['sales'] = bills;
+
+  if (input.pack.returnHistory.known) payload['returnHistory'] = input.pack.returnHistory.value;
+  if (input.pack.serviceCases.known) payload['cases'] = input.pack.serviceCases.value;
+  if (input.pack.satisfaction.known) payload['satisfaction'] = input.pack.satisfaction.value;
+  if (input.pack.slaPolicy.known) payload['slaPolicy'] = input.pack.slaPolicy.value;
+
+  return payload;
+}
+
 /** The global each screen's bundle reads at boot. One name per screen, and they must not drift. */
 export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   pos: 'posCatalogue',
@@ -859,6 +931,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   catalogue: 'catalogueData',
   merchandising: 'merchandisingData',
   reporting: 'reportingData',
+  service: 'serviceData',
 });
 
 const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<string, unknown> | null>> = Object.freeze({
@@ -872,6 +945,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   catalogue: cataloguePayload,
   merchandising: merchandisingPayload,
   reporting: reportingPayload,
+  service: servicePayload,
 });
 
 /** Build one screen's payload. `null` means this box has nothing to give it, and says so. */

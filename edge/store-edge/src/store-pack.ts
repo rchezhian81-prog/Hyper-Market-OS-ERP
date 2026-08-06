@@ -333,6 +333,22 @@ export interface PackReportingPolicy {
   readonly userId?: string;
 }
 
+/** The desk's own limits — every one per-tenant, none of them a constant (M13 / M21). */
+export interface PackServicePolicy {
+  /** How many days after the sale a return may still be taken. */
+  readonly returnWindowDays: number;
+  /** Refund value at or above which a DIFFERENT person must approve (M13-FR-03, §28). */
+  readonly approvalThresholdMinor: number;
+  /** The ceiling on a return with no receipt, which always needs approval too (M13-FR-01). */
+  readonly noReceiptCapMinor: number;
+  /** What one agent may give away on a case alone; above it, a second signature (M21-FR-03). */
+  readonly agentAuthorityMinor: number;
+  /** The desk's absolute ceiling for compensation, whoever signs. */
+  readonly compensationCapMinor: number;
+  /** Who is on the desk. Absent means the box was not told, and nothing may be committed. */
+  readonly userId?: string;
+}
+
 export interface PackMerchandisingPolicy {
   readonly refillAtBp: number;
   readonly countStaleAfterMinutes: number;
@@ -463,6 +479,23 @@ export interface StorePack {
   readonly roleAssignments: Register<readonly unknown[]>;
   /** Reporting freshness thresholds (§32), per-tenant. */
   readonly reportingPolicy: Register<PackReportingPolicy>;
+  /**
+   * What the desk needs to take goods back (M13) and run its cases (M21).
+   *
+   * `returnHistory` is the returns the CLOUD knows about — another branch's, or ones taken before
+   * this box was installed. It is merged with the box's own durable return log, never replaced by
+   * it: the cloud alone leaves the at-most-once guard blind exactly when the line is down, and the
+   * box alone cannot see a return taken at the other shop.
+   */
+  readonly returnHistory: Register<readonly unknown[]>;
+  /** Open and recent service cases (M21-FR-03). */
+  readonly serviceCases: Register<readonly unknown[]>;
+  /** Satisfaction responses, reported WITH their response rate and never as a bare average. */
+  readonly satisfaction: Register<readonly unknown[]>;
+  /** The desk's own SLA targets. Absent means this shop has never agreed any (M21-FR-04). */
+  readonly slaPolicy: Register<unknown>;
+  /** Return windows, refund thresholds and compensation limits — all per-tenant. */
+  readonly servicePolicy: Register<PackServicePolicy>;
   /** Loss-prevention thresholds — data, so a store tunes its own without code (M15-FR-01). */
   readonly lossPreventionRules: Register<readonly unknown[]>;
   /** The purposes this tenant asks a customer's consent for (M16 / PRV). */
@@ -518,6 +551,11 @@ export function emptyPack(why: string = NEVER): StorePack {
     roles: notKnown(why),
     roleAssignments: notKnown(why),
     reportingPolicy: notKnown(why),
+    returnHistory: notKnown(why),
+    serviceCases: notKnown(why),
+    satisfaction: notKnown(why),
+    slaPolicy: notKnown(why),
+    servicePolicy: notKnown(why),
     lossPreventionRules: notKnown(why),
     consentPurposes: notKnown(why),
   };
@@ -579,6 +617,11 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     roles: section<readonly unknown[]>('roles'),
     roleAssignments: section<readonly unknown[]>('roleAssignments'),
     reportingPolicy: section<PackReportingPolicy>('reportingPolicy'),
+    returnHistory: section<readonly unknown[]>('returnHistory'),
+    serviceCases: section<readonly unknown[]>('serviceCases'),
+    satisfaction: section<readonly unknown[]>('satisfaction'),
+    slaPolicy: section<unknown>('slaPolicy'),
+    servicePolicy: section<PackServicePolicy>('servicePolicy'),
     lossPreventionRules: section<readonly unknown[]>('lossPreventionRules'),
     consentPurposes: section<readonly { purpose: string; channel: string; required?: boolean }[]>('consentPurposes'),
   };

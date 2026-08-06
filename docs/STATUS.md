@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, and the day boundary the store box did not have)
+Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, the day boundary the store box did not have, and the service desk)
 
 ---
 
@@ -2591,6 +2591,116 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## The service desk — and the refund that could be given every day (6 August 2026)
+
+Your till has had a refund button since the day it was built. Press it and it says, in Tamil and in
+English: *"refunds against a receipt need the original sale, and this lane cannot look one up yet.
+Send the customer to the service desk."*
+
+**There was no service desk.** That is what this is.
+
+### The thing I found while building it, and it is money
+
+The rule *"the same item cannot be returned twice"* has been written and tested in this system for
+a long time. It works by comparing what is being returned against **what has already come back off
+that bill**.
+
+Nothing in the system ever told it what had already come back.
+
+So it compared against **nothing**, every time, and passed. In plain terms: **the same receipt
+could have been refunded today, again tomorrow, and again the day after** — and each refund would
+have looked completely correct to the software, because the rule that was supposed to stop it was
+being asked a question with no answer in it.
+
+That is the sixth time this session I have found a control that was described, tested, and
+connected to nothing. It is the first one that was money leaving the till rather than a wrong
+number on a screen.
+
+It is now fixed and it is now proved: the desk finds the bill, works out what has already come
+back, and **refuses the second refund by name**.
+
+### Two different ways to be refunded twice
+
+There are two, and they catch different things, so there are two rules:
+
+- **The same goods.** Three tins bought, three tins already returned — nothing left to give back.
+- **The same money.** A discounted bill: ₹500 paid for three items. Return one and refund ₹400,
+  return another and refund ₹400. Both are different tins, so the first rule is happy — and the
+  shop has paid out ₹800 on a ₹500 bill.
+
+The desk enforces both.
+
+### What the desk does
+
+**Finds the bill from a receipt number, with the internet off.** It reads the store box's own
+record, which is why last Tuesday's receipt works exactly as well as this morning's.
+
+**Shows every line with three numbers**: what was bought, what has already come back, and what is
+left. A line with nothing left is **greyed out with the reason showing** rather than hidden —
+because the only question the customer is going to ask is "why not?", and your staff have to be
+able to answer it.
+
+**Never tells a customer a card refund has happened.** It hasn't. The bank has to move the money
+and, with the internet down, nobody has even asked yet. So the screen says the bank has been told
+and it takes a few working days. Saying "refunded" makes the shop responsible for a promise it has
+not kept, and they come back in three days holding a receipt that agrees with them.
+
+**Keeps damaged goods off the shelf.** The person taking the return says where it goes — back on
+the shelf, hold for checking, damaged, or throw away — and only the first one puts it back into
+sellable stock.
+
+**Complaints and enquiries**, with the clock running on **both** promises: how long until somebody
+replies, and how long until it is sorted. Those fail differently, and a desk that sorts everything
+on time while nobody answers the phone for two days is failing in the way people actually notice.
+
+**Goodwill money needs a second signature above your limit** — because it is money leaving the
+business, decided by the person the customer is currently shouting at.
+
+**Tests:** 4,071 automated plus 31 performance, all green — 94 new.
+
+### What the owner should check, in the store
+
+1. Ring up a sale, take the receipt to the desk, and **refund it**. Then try to refund the **same
+   receipt again**. It must refuse and say the goods have already come back. If it lets you, stop
+   and tell me — that is the fault above.
+2. Refund something to a **card**. Read what the screen tells you to tell the customer. It must not
+   say the money is back on their card.
+3. Return something as **damaged**. It must not go back into your stock figure.
+4. Try a refund above your limit. It must ask for a second person, and it must not let the same
+   person approve their own.
+5. Pull the network cable out and do a receipted return. It must work.
+
+### Five numbers I need from you before go-live — and my recommendation
+
+These are the shop's decisions, not mine. The desk **works today** on the starting figures below,
+and each one is a setting rather than something built into the software. But they are yours, and
+somebody will be standing at that desk arguing about them.
+
+| What | Starting figure | What it decides |
+| --- | ---: | --- |
+| Return window | **30 days** | How old a receipt can be and still be taken back |
+| Refund needing a second signature | **₹2,000** | Above this, a manager must approve |
+| No-receipt cap | **₹1,000** | The most that can be given back with no bill at all |
+| One agent's own goodwill limit | **₹500** | What they can settle a complaint with alone |
+| The desk's absolute goodwill ceiling | **₹5,000** | Above this it is a management decision |
+
+**Option 1 — take the figures above as they stand.** They are ordinary for a hypermarket of this
+size and they are all changeable later without a code change. Fastest, and nothing is blocked.
+
+**Option 2 — give me your own five numbers now.** Better if you already know what you have been
+doing informally, because the software will then match the shop from day one rather than being
+corrected in week two.
+
+**Option 3 — set the two refund limits low for the first month** (say ₹500 and ₹200) and raise them
+once you have seen how often the desk is actually used. Safest against a new-system mistake, at the
+cost of more trips to a manager in the first weeks.
+
+I would take **option 3** for the first month, then **option 2**. But if you would rather not think
+about it now, option 1 is a real answer and nothing waits on it.
+
+---
+
+
 ## The number on your phone was wrong, every day, by more each day (6 August 2026)
 
 This is the most serious thing I have found in this project, and I want to be plain about it.
@@ -4575,6 +4685,12 @@ that built it — a report that would have opened with nothing on it. **The last
 the tests were green when I found it.** What found it was running the screen for real over the
 store box, which also turned up a margin of 99.92% from a costing rule that had been copied instead
 of shared. Reading does not find these. Driving the real path does, every time.
+
+**Six now, and the sixth was the one that costs money.** The service desk's at-most-once return
+rule was written, tested, and fed a bare zero by everything that called it — so the same receipt
+could have been refunded every day, with each refund passing the rule meant to stop it. Also found
+in the same build: `packages/service-desk` and `packages/reversal`, 890 lines of tested rules
+between them, called by nothing outside their own tests.
 
 **And then the variant of it that is worse than all of them.** Running the reporting screen against
 a box with **four days of trading on it rather than one** showed that the sales log is never

@@ -58,6 +58,11 @@ import {
   type DayTotal, type ReportableSale, type ReportingPorts, type ReportingSession,
 } from './reporting-session';
 import { AccessControl, type Role, type RoleAssignment } from '../../../packages/rbac/src/index';
+import {
+  createServiceSession, type ServicePorts, type ServiceSession,
+} from './service-session';
+import type { OriginalSale, RecordedReturn } from '../../../packages/returns/src/index';
+import type { SatisfactionScore, ServiceCase, SlaPolicy } from '../../../packages/service-desk/src/index';
 import type { Producer } from '../../../packages/reporting/src/index';
 
 /** What the store knows about a product this screen may be asked to count. */
@@ -182,6 +187,93 @@ export interface ReportingData {
   readonly categoryNames?: Readonly<Record<string, string>>;
 }
 
+/**
+ * What the box tells the service desk.
+ *
+ * `sales` is **every bill this box holds**, not the trading day's: a customer brings back a receipt
+ * from last Tuesday, and that is the ordinary case this screen exists for.
+ */
+export interface ServiceData {
+  readonly userId?: string;
+  readonly storeId?: string;
+  readonly branchId?: string | null;
+  readonly now?: string;
+  readonly tradingDay?: string;
+  readonly returnWindowDays?: number;
+  readonly approvalThresholdMinor?: number;
+  readonly noReceiptCapMinor?: number;
+  readonly agentAuthorityMinor?: number;
+  readonly compensationCapMinor?: number;
+  readonly sales?: readonly OriginalSale[];
+  /** Returns the CLOUD knows about — merged with this box's own, never replaced by them. */
+  readonly returnHistory?: readonly RecordedReturn[];
+  readonly cases?: readonly ServiceCase[];
+  readonly satisfaction?: readonly SatisfactionScore[];
+  readonly slaPolicy?: SlaPolicy;
+}
+
+/**
+ * The desk's ports.
+ *
+ * `slaPolicy` is deliberately NOT defaulted to an empty object: an empty policy and no policy read
+ * the same to a lookup, and the desk has to be able to say out loud that the times it is showing
+ * are the software's starting figures rather than anything this shop agreed.
+ */
+export function servicePortsFromData(
+  data: ServiceData | undefined,
+  local: { readonly returns: readonly RecordedReturn[]; readonly stockLedger: Ledger; readonly outbox: SyncOutbox },
+): ServicePorts {
+  return {
+    sales: () => data?.sales ?? [],
+    // Both sources, merged. The cloud alone leaves the at-most-once guard blind exactly when the
+    // line is down, which is when a shop is least supervised; the box alone cannot see a return
+    // taken at another branch. `returnRegister` counts a shared return id once.
+    returns: () => [...(data?.returnHistory ?? []), ...local.returns],
+    refunds: () => [...(data?.returnHistory ?? []), ...local.returns]
+      .map((r) => ({
+        returnId: r.returnId,
+        originalSaleId: r.originalSaleId,
+        refundMinor: (r as { refundMinor?: number }).refundMinor ?? 0,
+      })),
+    cases: () => data?.cases ?? [],
+    slaPolicy: () => data?.slaPolicy,
+    satisfaction: () => data?.satisfaction ?? [],
+    stockLedger: () => local.stockLedger,
+    outbox: () => local.outbox,
+  };
+}
+
+/** Build the service desk, or `null` when this box was told nothing about the desk's limits. */
+export function bootService(
+  data: ServiceData | undefined,
+  local?: { readonly returns: readonly RecordedReturn[]; readonly stockLedger: Ledger; readonly outbox: SyncOutbox },
+): ServiceSession | null {
+  if (data === undefined) return null;
+  const wired = local ?? {
+    returns: [],
+    stockLedger: new Ledger(new InMemoryLedgerStore()),
+    outbox: new SyncOutbox(),
+  };
+  return createServiceSession(
+    {
+      tenantId: 'tenant',
+      storeId: data.storeId ?? 'store-1',
+      laneId: 'service-desk',
+      // NOT defaulted. A refund and a compensation both carry the name of whoever gave them into
+      // an audit record that is the only evidence afterwards.
+      userId: data.userId === undefined ? null : data.userId,
+      now: data.now ?? '1970-01-01T00:00:00.000Z',
+      tradingDay: data.tradingDay ?? '',
+      returnWindowDays: data.returnWindowDays ?? 0,
+      approvalThresholdMinor: data.approvalThresholdMinor ?? 0,
+      noReceiptCapMinor: data.noReceiptCapMinor ?? 0,
+      agentAuthorityMinor: data.agentAuthorityMinor ?? 0,
+      compensationCapMinor: data.compensationCapMinor ?? 0,
+    },
+    servicePortsFromData(data, wired),
+  );
+}
+
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
 interface ManagerWindow {
   managerSession?: ManagerSession;
@@ -198,6 +290,8 @@ interface ManagerWindow {
   merchandisingGaps?: readonly MerchandisingGap[];
   reportingSession?: ReportingSession;
   reportingData?: ReportingData;
+  serviceData?: ServiceData;
+  serviceSession?: ServiceSession;
   /** The decision vocabulary, so the view can offer it and never invent a reason of its own. */
   managerReasons?: {
     readonly approved: readonly DecisionReasonCode[];
@@ -651,6 +745,8 @@ if (browserWindow !== undefined) {
   }
   const reporting = bootReporting(browserWindow.reportingData);
   if (reporting !== null) browserWindow.reportingSession = reporting;
+  const service = bootService(browserWindow.serviceData);
+  if (service !== null) browserWindow.serviceSession = service;
   // The view offers these and records the code the manager picks. It never composes a reason of
   // its own, so the audit trail keeps one vocabulary that can still be reported on in a year.
   browserWindow.managerReasons = { approved: APPROVE_REASONS, rejected: REJECT_REASONS };

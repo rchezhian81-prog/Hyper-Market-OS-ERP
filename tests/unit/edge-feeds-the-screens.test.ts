@@ -146,6 +146,19 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   }]),
   roleAssignments: known([{ userId: 'u-report', roleId: 'analyst', branchScope: ['b1'] }]),
   reportingPolicy: known({ laggingAfterMinutes: 5, staleAfterMinutes: 60, userId: 'u-report' }),
+  // The service desk: what it needs to take goods back (M13) and run its cases (M21).
+  returnHistory: known([]),
+  serviceCases: known([{
+    caseId: 'C-1', tenantId: 't1', kind: 'complaint', customerRef: 'cust-1',
+    openedAt: '2026-08-05T09:00:00.000Z', assignedTo: 'u-desk', priority: 'high',
+    state: 'open', summary: 'Milk was sour',
+  }]),
+  satisfaction: known([]),
+  slaPolicy: known({ resolutionMinutes: { high: 240 }, firstResponseMinutes: { high: 60 } }),
+  servicePolicy: known({
+    returnWindowDays: 30, approvalThresholdMinor: 200_00, noReceiptCapMinor: 100_00,
+    agentAuthorityMinor: 50_00, compensationCapMinor: 500_00, userId: 'u-desk',
+  }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([]),
   ...over,

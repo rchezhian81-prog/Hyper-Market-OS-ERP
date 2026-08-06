@@ -5,10 +5,11 @@ import { GLOBAL_FOR, SCREENS, type ScreenInput, type ScreenName } from '../../ed
 import { known, notKnown, type PackProduct, type StorePack } from '../../edge/store-edge/src/store-pack';
 import type { LoggedSale } from '../../edge/store-edge/src/read-model';
 import { SyncOutbox } from '../../packages/sync/src/index';
+import { Ledger, InMemoryLedgerStore } from '../../packages/ledger/src/index';
 import { resolvePrice } from '../../packages/price-list/src/index';
 import { makeEvent } from '../../packages/contracts/src/event';
 import {
-  bootBuying, bootCatalogue, bootManager, bootMerchandising, bootReporting,
+  bootBuying, bootCatalogue, bootManager, bootMerchandising, bootReporting, bootService,
   buyingGaps, catalogueGaps, merchandisingGaps,
 } from '../../apps/web-erp/src/browser-entry';
 import { bootOwner, forgetfulQueueStore } from '../../apps/owner-app/src/browser-entry';
@@ -172,6 +173,19 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
   }]),
   roleAssignments: known([{ userId: 'u-report', roleId: 'analyst', branchScope: ['b1'] }]),
   reportingPolicy: known({ laggingAfterMinutes: 5, staleAfterMinutes: 60, userId: 'u-report' }),
+  // The service desk: what it needs to take goods back (M13) and run its cases (M21).
+  returnHistory: known([]),
+  serviceCases: known([{
+    caseId: 'C-1', tenantId: 't1', kind: 'complaint', customerRef: 'cust-1',
+    openedAt: '2026-08-05T09:00:00.000Z', assignedTo: 'u-desk', priority: 'high',
+    state: 'open', summary: 'Milk was sour',
+  }]),
+  satisfaction: known([]),
+  slaPolicy: known({ resolutionMinutes: { high: 240 }, firstResponseMinutes: { high: 60 } }),
+  servicePolicy: known({
+    returnWindowDays: 30, approvalThresholdMinor: 200_00, noReceiptCapMinor: 100_00,
+    agentAuthorityMinor: 50_00, compensationCapMinor: 500_00, userId: 'u-desk',
+  }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([{ purpose: 'marketing', channel: 'sms' }]),
   ...over,
@@ -423,6 +437,9 @@ describe('a box that has been told nothing tells every screen so', () => {
       stillOccupying: notKnown('never'), merchandisingPolicy: notKnown('never'),
       reportingRecords: notKnown('never'), roles: notKnown('never'),
       roleAssignments: notKnown('never'), reportingPolicy: notKnown('never'),
+      returnHistory: notKnown('never'), serviceCases: notKnown('never'),
+      satisfaction: notKnown('never'), slaPolicy: notKnown('never'),
+      servicePolicy: notKnown('never'),
       lossPreventionRules: notKnown('never'), consentPurposes: notKnown('never'),
     },
     sales: [],
@@ -1576,5 +1593,162 @@ describe('the reporting screen, fed by the box', () => {
     const reporting = bootReporting(payload as never)!;
     expect(reporting.catalogue().every((e) => !e.availability.available)).toBe(true);
     expect(reporting.run('sales_by_day').ok).toBe(false);
+  });
+});
+
+/**
+ * **The service desk, driven over the real socket (M13-FR-01…04 · M21-FR-03/04).**
+ *
+ * The till has been saying *"this lane cannot look up a receipt — send the customer to the service
+ * desk"* for as long as it has had a refund button, and there was no service desk.
+ *
+ * The headline is the double refund. `commitReturn` has enforced *a line is returned at most once*
+ * since it was written, against a figure the caller supplies — and nothing in this system ever
+ * supplied it, so every return was judged against nothing already returned. This drives the real
+ * path: find last week's bill in the box's own log, refund it, record it, and ask for the same
+ * refund again.
+ */
+describe('the service desk, fed by the box', () => {
+  const BILL: LoggedSale = {
+    ...SALE, id: 'S-LASTWEEK', number: 'R-1001', tradingDay: '2026-08-01',
+    committedAt: '2026-08-01T10:00:00.000Z', total: 500_00, netMinor: 500_00, taxMinor: 0,
+    lines: [{ productId: 'p1', quantityMinor: 3, uom: 'ea' }],
+    tenders: [{ kind: 'card', amount: { minor: 500_00 } }],
+  };
+
+  const wired = () => ({
+    returns: [] as { returnId: string; originalSaleId: string | null; processedAt: string; lines: { productId: string; uom: string; quantityMinor: number }[] }[],
+    stockLedger: new Ledger(new InMemoryLedgerStore()),
+    outbox: new SyncOutbox(),
+  });
+
+  it('is served EVERY bill the box holds, not just today’s', async () => {
+    // A receipt from last Tuesday is the ordinary case, and the reason the screen exists.
+    const base = await serve(snapshotOf({ sales: [BILL, SALE] }));
+    const payload = (await payloadFromScreen(base, 'service'))!;
+    const bills = payload['sales'] as { number: string }[];
+    expect(bills.map((b) => b.number).sort()).toEqual(['R-1', 'R-1001']);
+  });
+
+  it('finds last week’s bill and says what may still come back', async () => {
+    const base = await serve(snapshotOf({ sales: [BILL] }));
+    const desk = bootService((await payloadFromScreen(base, 'service'))! as never, wired())!;
+    const found = desk.lookUp('R-1001');
+    expect(found.ok).toBe(true);
+    if (!found.ok) return;
+    expect(found.receipt.ageDays).toBe(4);
+    expect(found.receipt.lines.find((l) => l.productId === 'p1')?.returnableMinor).toBe(3);
+  });
+
+  it('REFUSES the same refund twice, once the first is on the box’s own log', async () => {
+    const base = await serve(snapshotOf({ sales: [BILL] }));
+    const payload = (await payloadFromScreen(base, 'service'))!;
+    const local = wired();
+    const desk = bootService(payload as never, local)!;
+
+    const first = desk.refund({
+      returnId: 'RT-1', number: 'RTN-1', receiptNumber: 'R-1001', reasonCode: 'damaged',
+      lines: [{ productId: 'p1', quantityMinor: 3, disposition: 'resell' }],
+      refundMinor: 150_00, refundTender: 'card',
+    });
+    expect(first.ok).toBe(true);
+
+    // Exactly what the box's durable return log would hold afterwards.
+    local.returns.push({
+      returnId: 'RT-1', originalSaleId: 'S-LASTWEEK', processedAt: NOW,
+      lines: [{ productId: 'p1', uom: 'ea', quantityMinor: 3 }],
+    });
+
+    const again = desk.refund({
+      returnId: 'RT-2', number: 'RTN-2', receiptNumber: 'R-1001', reasonCode: 'damaged',
+      lines: [{ productId: 'p1', quantityMinor: 3, disposition: 'resell' }],
+      refundMinor: 150_00, refundTender: 'card',
+    });
+    expect(again.ok, 'the same goods were refunded twice').toBe(false);
+    if (again.ok) return;
+    expect(again.detail).toContain('already been returned');
+
+    // And the bill itself now says so, rather than opening with nothing selectable and no reason.
+    const found = desk.lookUp('R-1001');
+    expect(found.ok).toBe(false);
+    if (found.ok) return;
+    expect(found.refusal).toBe('nothing_left_to_return');
+  });
+
+  it('leaves a card refund PENDING and tells the customer the truth', async () => {
+    const base = await serve(snapshotOf({ sales: [BILL] }));
+    const desk = bootService((await payloadFromScreen(base, 'service'))! as never, wired())!;
+    const outcome = desk.refund({
+      returnId: 'RT-1', number: 'RTN-1', receiptNumber: 'R-1001', reasonCode: 'faulty',
+      lines: [{ productId: 'p1', quantityMinor: 1, disposition: 'resell' }],
+      refundMinor: 50_00, refundTender: 'card',
+    });
+    if (!outcome.ok) return;
+    expect(outcome.committed.refundStatus).toBe('pending');
+    expect(outcome.tellTheCustomer).toContain('NOT back on the card yet');
+  });
+
+  it('does not put damaged goods back on the shelf', async () => {
+    const base = await serve(snapshotOf({ sales: [BILL] }));
+    const desk = bootService((await payloadFromScreen(base, 'service'))! as never, wired())!;
+    const outcome = desk.refund({
+      returnId: 'RT-1', number: 'RTN-1', receiptNumber: 'R-1001', reasonCode: 'damaged',
+      lines: [{ productId: 'p1', quantityMinor: 1, disposition: 'damaged' }],
+      refundMinor: 50_00, refundTender: 'cash',
+    });
+    if (!outcome.ok) return;
+    expect(outcome.committed.restockedLines).toBe(0);
+  });
+
+  it('needs a second person above the shop’s own threshold', async () => {
+    const base = await serve(snapshotOf({ sales: [BILL] }));
+    const desk = bootService((await payloadFromScreen(base, 'service'))! as never, wired())!;
+    const outcome = desk.refund({
+      returnId: 'RT-1', number: 'RTN-1', receiptNumber: 'R-1001', reasonCode: 'faulty',
+      lines: [{ productId: 'p1', quantityMinor: 3, disposition: 'resell' }],
+      refundMinor: 300_00, refundTender: 'cash',
+    });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.refusal).toBe('needs_a_second_person');
+  });
+
+  it('commits nothing at all when the box does not know who is on the desk', async () => {
+    const base = await serve(snapshotOf({
+      sales: [BILL],
+      pack: pack({
+        servicePolicy: known({
+          returnWindowDays: 30, approvalThresholdMinor: 200_00, noReceiptCapMinor: 100_00,
+          agentAuthorityMinor: 50_00, compensationCapMinor: 500_00,
+        }),
+      }),
+    }));
+    const payload = (await payloadFromScreen(base, 'service'))!;
+    expect('userId' in payload, '"userId" must be absent, not invented').toBe(false);
+    const desk = bootService(payload as never, wired())!;
+    const outcome = desk.refund({
+      returnId: 'RT-1', number: 'RTN-1', receiptNumber: 'R-1001', reasonCode: 'faulty',
+      lines: [{ productId: 'p1', quantityMinor: 1, disposition: 'resell' }],
+      refundMinor: 50_00, refundTender: 'cash',
+    });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.refusal).toBe('nobody_is_named_at_this_desk');
+  });
+
+  it('runs the case queue on the shop’s own SLA, and says when it is not', async () => {
+    const base = await serve(snapshotOf());
+    const desk = bootService((await payloadFromScreen(base, 'service'))! as never, wired())!;
+    expect(desk.caseList()[0]?.targetsAreDefaults).toBe(false);
+
+    const noPolicy = await serve(snapshotOf({ pack: pack({ slaPolicy: notKnown('never sent') }) }));
+    const other = bootService((await payloadFromScreen(noPolicy, 'service'))! as never, wired())!;
+    expect(other.caseList()[0]?.targetsAreDefaults).toBe(true);
+  });
+
+  it('serves the screen nothing at all without the shop’s own limits', async () => {
+    const base = await serve(snapshotOf({ pack: pack({ servicePolicy: notKnown('never sent') }) }));
+    expect(await payloadFromScreen(base, 'service')).toBeNull();
+    expect(bootService(undefined)).toBeNull();
   });
 });

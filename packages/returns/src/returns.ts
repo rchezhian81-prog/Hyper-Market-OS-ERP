@@ -265,6 +265,21 @@ export function commitReturn(
         refundTender: input.refundTender,
         refundStatus,
         lineCount: input.lines.length,
+        // **What was returned, line by line, not just how many lines there were.**
+        //
+        // `lineCount: 2` cannot answer the question this module's headline rule depends on —
+        // *how much of this original line has already come back?* Without it nothing downstream,
+        // the cloud included, can compute `alreadyReturnedMinor`, so the at-most-once guard is
+        // fed a zero every time and the same receipt can be refunded again tomorrow.
+        //
+        // The stock movements above carry a quantity, but they are keyed by product and carry no
+        // original sale, so a returned unit cannot be attributed to the bill it came off.
+        lines: input.lines.map((line) => ({
+          productId: line.productId,
+          uom: line.uom,
+          quantityMinor: Math.abs(line.quantityMinor),
+          disposition: line.disposition,
+        })),
       },
     }),
   );

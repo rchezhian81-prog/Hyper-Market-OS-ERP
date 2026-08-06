@@ -401,9 +401,10 @@ describe('the box tells this screen the truth, including that it knows nothing',
   it('is offered in Tamil everywhere it is offered in English', () => {
     const en = code(VIEW).slice(code(VIEW).indexOf('en: {'), code(VIEW).indexOf('ta: {'));
     const ta = code(VIEW).slice(code(VIEW).indexOf('ta: {'), code(VIEW).indexOf('};'));
-    // Every key, including the second and third on a shared line — matching only the first per
-    // line is how a word gets added in English and quietly never translated.
-    const keys = (block: string): string[] => [...block.matchAll(/(\w+):\s*'/g)].map((m) => m[1]!);
+    // Every key, whichever quote it uses and wherever it sits on the line. Matching only the
+    // first key per line, or only single-quoted values, is how a word gets added in English and
+    // quietly never translated — a value containing an apostrophe has to be double-quoted.
+    const keys = (block: string): string[] => [...block.matchAll(/(\w+):\s*['"]/g)].map((m) => m[1]!);
     expect(keys(en).length).toBeGreaterThan(30);
     expect(keys(ta).length).toBe(keys(en).length);
     for (const key of keys(en)) expect(ta, `"${key}" has no Tamil`).toMatch(new RegExp(`\\b${key}:`));
