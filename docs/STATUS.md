@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, the product and price screen, shelf addresses, and the owner's pick zone order)
+Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, and merchandising and space)
 
 ---
 
@@ -2591,6 +2591,108 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## Merchandising and space — and the shelf nobody had counted (6 August 2026)
+
+The rest of M04, built the same day you asked for it: the shelf plan and refill tasks, the range
+review, and what each part of the floor actually earns.
+
+### The thing I warned you about, and why it mattered more than I thought
+
+When I deferred this, I said the refill engine needed **how many of each item are actually on the
+shelf right now**, and that nothing in the system produced that figure. So I built the counting
+first.
+
+What I found while doing it was worse than a missing feature. The refill engine treated a shelf
+**nobody had counted** as a shelf that was **empty**. And an empty shelf with stock in the
+stockroom is the loudest alarm this system has — *the sale is being lost with the goods in the
+building*.
+
+So on the day you switched it on, before anybody had counted anything, **every product in the shop
+would have come back as an urgent refill task**, and staff would have been sent to full shelves all
+morning.
+
+An alarm that goes off on everything is one people learn to ignore. Then it is worse than no alarm.
+
+Now a shelf nobody has counted says exactly that: **"nobody has counted this — this is not an empty
+shelf, it is an unchecked one."** No task, no alarm, no wasted walk.
+
+### Counting, and the two rules around it
+
+**Blind.** The person counting is never shown what the shelf is supposed to hold. Same as the till
+drawer, the stock count and the driver's cash. A number on the screen is an answer, and a tired
+person at the end of a shift agrees with it. There is no way to show one even by accident — the
+software has no function that could return it.
+
+**A count goes off.** It was true when somebody looked, and the shop keeps selling. So every count
+records **when it was taken**, and a count older than your own limit raises **no task at all**
+rather than sending somebody on a three-day-old reading. Enough wasted walks and nobody believes the
+list any more. Your limit is a setting, not a rule I chose — a shop that counts twice a day and one
+that counts on Sundays need different numbers.
+
+Counts are **added, never overwritten**. "We counted it at nine and again at two" is the record that
+explains a difference; rubbing out the nine o'clock reading destroys the only evidence of what
+happened in between.
+
+### The percentage that would have gone on a wall
+
+The screen shows how full the shelves are — but it shows **how much of the shop was actually
+counted first, above it**, and it says in plain words that a partial check tells you nothing about
+the rest.
+
+A shop where nothing has been counted reports **0%**, not 100%. An empty check is not a clean shop;
+it is an unchecked one, and somebody would have quoted the 100%.
+
+And if the shelves cannot be checked at all, it says which of the two reasons: nobody has addressed
+the shelves yet, or nobody has published a shelf plan. Those need different things done about them,
+and "no problems found" would have read as neither.
+
+### The range
+
+Take an item out of the range and, **if you still have stock of it, it goes to clearance instead of
+being deleted.** Deleting it would make that stock invisible — not counted, not replenished, not
+sold, and eventually written off. The screen reads your real stock figure to decide; guessing zero
+there would have quietly turned every clearance into a deletion.
+
+It also lists where the range and the shop disagree — an item that sold at a store that does not
+range it, for instance — checked against **this shop's own till records**, not against the cloud's
+idea of what sold.
+
+### The floor
+
+Each part of the shop, ranked by **margin per square foot** rather than by turnover. A big seller on
+a thin margin can be the worst use of space in the building while looking like the best.
+
+An area whose square footage nobody has recorded says **"not measured"** rather than showing zero,
+because "this area earns nothing" and "we never measured this area" lead to opposite decisions.
+
+And supplier display space: the finding that matters is an **expired contract with the stand still
+on the floor** — the supplier stopped paying, nobody took the stand away, and the shop is giving
+away its best space.
+
+**Tests:** 3,849 automated plus 31 performance, all green — 87 new.
+
+### What the owner should check, in the store
+
+1. Open the merchandising screen before anybody has counted anything. **The refill list must be
+   empty**, and it must say the shelves have not been counted. If it lists the whole shop, tell me —
+   that is exactly the fault I found.
+2. Count one facing. The screen must **not** tell you what it should have been, before or after.
+3. Now look at the refill list. Only that one item can appear.
+4. Leave it a few hours past your counting limit and look again — it should go quiet, because the
+   count is too old to send somebody on.
+5. Take an item you still have stock of out of the range. It must go to **clearance**, and say how
+   many are still on hand.
+
+### Two things I need from you
+
+- **How long a shelf count stays worth acting on.** I have used two hours as a starting figure.
+  Tell me what suits how often your staff actually walk the shop.
+- **How empty a shelf has to be before it is worth a trip.** Starting figure is half empty.
+  Refilling at 90% wastes the day; refilling at nothing means the customer already found the gap.
+
+---
+
+
 ## Shelf addresses — and the picker's walk nothing had ever sequenced (6 August 2026)
 
 Built on your decision: **option 2, shelf locations before go-live.** Planograms and supplier
@@ -4201,10 +4303,14 @@ insist on when somebody eventually asks for it to be switched off.
   configuration carries them the screen names the gap on the page and refuses — which is correct,
   not a bug to route around. The person who sets a price is stripped out of their own approver list
   by the store box, so naming only them is the same as naming nobody (§28).
-- **M04 — DECIDED (6 August 2026).** Owner chose **option 2**: shelf locations (M04-FR-02) built
-  before go-live; planograms, compliance, refill tasks and supplier display space (M04-FR-03/04)
-  deferred to **R3, after go-live**. Built and shipped the same day — see *Shelf addresses*. Not
-  dropped (OD-02/OD-10).
+- **M04 — COMPLETE (6 August 2026).** Owner chose option 2 (shelf locations first), then asked for
+  the rest the same day. All of M04 is now built — see *Shelf addresses* and *Merchandising and
+  space*. The prerequisite named in the deferral turned out to be a live fault: an uncounted shelf
+  was being treated as an empty one.
+- **Two per-store figures the merchandising screen needs.** How long a shelf count stays worth
+  acting on (starting figure: 2 hours) and how empty a facing must be before it is worth a trip
+  (starting figure: half). Both are settings with stated starting figures, not rules — refilling at
+  90% wastes the day, refilling at nothing means the customer already found the gap.
 - **Pick zone order — ANSWERED (OB-07, 6 August 2026):** `ambient → secure → chilled → frozen`.
   Recorded in `decisions.md` (OB-07) and `owner-configuration.md` (OC-42), held as
   `SETTINGS.PICK_ZONE_ORDER`, shipped in the example store pack, and driven end to end by test. The

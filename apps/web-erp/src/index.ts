@@ -8,3 +8,4 @@ export * from './approvals-workbench';
 export * from './manager-session';
 export * from './buying-session';
 export * from './catalogue-session';
+export * from './merchandising-session';

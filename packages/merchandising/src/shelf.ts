@@ -234,7 +234,11 @@ export type ComplianceFinding =
   | 'below_minimum'
   | 'not_on_plan'
   | 'missing_from_shelf'
-  | 'over_capacity';
+  | 'over_capacity'
+  /** Nobody has ever counted this facing. Not empty — unknown (P-08). */
+  | 'never_counted'
+  /** Counted, but long enough ago that acting on it would waste somebody's walk. */
+  | 'last_counted_too_long_ago';
 
 export interface ComplianceIssue {
   readonly productId: string;
@@ -264,10 +268,20 @@ export interface ReplenishmentTask {
   readonly location: ShelfLocation;
 }
 
+/**
+ * What somebody actually saw on a shelf, and **when**.
+ *
+ * `observedAt` is required, and that is the whole point of the type. A shelf quantity is an
+ * observation, not a fact: it was true when somebody looked, and it decays from that moment. A
+ * count from Tuesday presented on Friday as *the shelf is empty* sends staff to a full shelf, and —
+ * worse — a Tuesday reading of *the shelf is full* hides today's gap.
+ */
 export interface ShelfState {
   readonly productId: string;
   readonly locationId: string;
   readonly onShelfMinor: number;
+  /** ISO-8601 UTC instant somebody counted this facing. */
+  readonly observedAt: string;
 }
 
 /**
@@ -286,23 +300,81 @@ export function planogramCompliance(input: {
   readonly backstock: Readonly<Record<string, number>>;
   readonly assignedRole: string;
   readonly refillAtBp?: number;
+  /** Now, injected. Required, because every observation is judged against it. */
+  readonly asOf: string;
+  /**
+   * How old a count may be before acting on it is a waste of somebody's walk. Per-tenant: a shop
+   * that counts twice a day and one that counts on Sundays need different numbers.
+   */
+  readonly staleAfterMinutes: number;
 }): {
   readonly issues: readonly ComplianceIssue[];
   readonly tasks: readonly ReplenishmentTask[];
-  /** Share of planned facings that are compliant, in basis points — measurable. */
+  /**
+   * Share of **observed** facings that are compliant, in basis points.
+   *
+   * Over the observed ones only, and `notObserved` says how many were left out. A compliance
+   * percentage that quietly counted never-counted facings — as compliant OR as breaches — is a
+   * number nobody should quote, and somebody would quote it.
+   */
   readonly complianceBp: number;
+  /** Facings nobody has counted recently enough to act on. Never folded into the percentage. */
+  readonly notObserved: number;
+  /** True only when every planned facing was observed — so the figure above means what it says. */
+  readonly wholePlanObserved: boolean;
 } {
   const refillAt = input.refillAtBp ?? 5_000; // half empty, by default
   const issues: ComplianceIssue[] = [];
   const tasks: ReplenishmentTask[] = [];
   const stateFor = new Map(input.shelfState.map((s) => [`${s.productId}|${s.locationId}`, s]));
   let compliant = 0;
+  let observed = 0;
+  let notObserved = 0;
+  const staleAfterMs = input.staleAfterMinutes * 60_000;
+  const now = Date.parse(input.asOf);
 
   for (const planned of input.planogram.assignments) {
     const key = `${planned.productId}|${planned.locationId}`;
     const state = stateFor.get(key);
-    const onShelf = state?.onShelfMinor ?? 0;
     const capacity = planned.capacityMinor;
+
+    // **An uncounted facing is not an empty one.**
+    //
+    // This read `state?.onShelfMinor ?? 0`, so a facing nobody had counted came through as ZERO —
+    // which is the loudest finding this function has: *shelf is EMPTY and there are N in the
+    // stockroom, the sale is being lost with the stock in the building*. On day one, before
+    // anybody has counted anything, that fired for every product in the shop and sent staff to
+    // full shelves. An alarm that goes off on everything is one people learn to ignore, and then
+    // it is worse than no alarm at all.
+    if (state === undefined) {
+      notObserved += 1;
+      issues.push({
+        productId: planned.productId,
+        locationId: planned.locationId,
+        finding: 'never_counted',
+        onShelfMinor: 0,
+        capacityMinor: capacity,
+        detail: 'nobody has counted this facing, so nothing is known about it — this is not an empty shelf, it is an unchecked one',
+      });
+      continue;
+    }
+
+    const age = now - Date.parse(state.observedAt);
+    if (!Number.isFinite(age) || age > staleAfterMs) {
+      notObserved += 1;
+      issues.push({
+        productId: planned.productId,
+        locationId: planned.locationId,
+        finding: 'last_counted_too_long_ago',
+        onShelfMinor: state.onShelfMinor,
+        capacityMinor: capacity,
+        detail: `last counted ${Number.isFinite(age) ? `${Math.round(age / 60_000)} minute(s)` : 'at an unreadable time'} ago — too old to send somebody on`,
+      });
+      continue;
+    }
+
+    observed += 1;
+    const onShelf = state.onShelfMinor;
     const fillBp = capacity === 0 ? 0 : Math.round((onShelf * 10_000) / capacity);
     const location = input.map.locationOf(planned.productId);
 
@@ -364,11 +436,14 @@ export function planogramCompliance(input: {
 
   // Tasks are handed over in route order, so the shelf-filler walks the shop once too.
   const ordered = [...tasks].sort((a, b) => compareRoute(a.location, b.location));
-  const planned = input.planogram.assignments.length;
 
   return {
     issues,
     tasks: ordered,
-    complianceBp: planned === 0 ? 10_000 : Math.round((compliant * 10_000) / planned),
+    // Over the OBSERVED facings. A plan nobody has counted returns 0% observed rather than 100%
+    // compliant — an empty plan is not a compliant shop, it is an unchecked one.
+    complianceBp: observed === 0 ? 0 : Math.round((compliant * 10_000) / observed),
+    notObserved,
+    wholePlanObserved: notObserved === 0 && input.planogram.assignments.length > 0,
   };
 }

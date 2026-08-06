@@ -30,6 +30,8 @@
 //                      who is allowed to check the buyer's work
 //   • the catalogue  — the master records, the tenant's own department rules, what things cost and
 //                      every price ever set
+//   • merchandising  — the shelf plan, every count ever taken, the stockroom, the range and what
+//                      each part of the floor earns
 
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { assessChecklist } from '../../../packages/workforce/src/index';
@@ -40,7 +42,9 @@ import { costTheDay, exceptionsFor, activityFrom, type LoggedSale } from './read
 import type { StorePack } from './store-pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
-export const SCREENS = Object.freeze(['pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue'] as const);
+export const SCREENS = Object.freeze([
+  'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
+] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
 export interface ScreenInput {
@@ -612,6 +616,68 @@ export function cataloguePayload(input: ScreenInput): Record<string, unknown> | 
   return payload;
 }
 
+/**
+ * The merchandising payload (M04 · D02).
+ *
+ * `null` when this box has never been told the refill level or how long a count stays worth acting
+ * on — a screen inventing those would be deciding, on its own authority, when a shelf is empty
+ * enough to walk to and how old a reading may be before it is a waste of somebody's time.
+ *
+ * **Every other section is served only when the pack carried it**, and the screen names each gap.
+ * The two that matter most: an absent planogram makes the check refuse outright rather than report
+ * a clean shop, and an absent stockroom figure turns every refill task into a wish.
+ */
+export function merchandisingPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.merchandisingPolicy.known) return null;
+  const policy = input.pack.merchandisingPolicy.value;
+
+  const payload: Record<string, unknown> = {
+    storeId: input.pack.policies.known ? input.pack.policies.value.storeId : 'store-1',
+    // The shop's own trading day and the box's own clock. A tablet whose date is a day out would
+    // otherwise judge every count as stale — or, worse, a three-day-old one as fresh.
+    today: input.tradingDay,
+    now: input.now,
+    refillAtBp: policy.refillAtBp,
+    countStaleAfterMinutes: policy.countStaleAfterMinutes,
+    refillRole: policy.refillRole,
+  };
+
+  if (input.pack.shelfLocations.known) payload['shelfLocations'] = input.pack.shelfLocations.value;
+  if (input.pack.shelfAssignments.known) payload['shelfAssignments'] = input.pack.shelfAssignments.value;
+  if (input.pack.planogram.known) payload['planogram'] = input.pack.planogram.value;
+  if (input.pack.shelfCounts.known) payload['shelfCounts'] = input.pack.shelfCounts.value;
+  if (input.pack.backstock.known) payload['backstock'] = input.pack.backstock.value;
+  if (input.pack.assortment.known) payload['assortment'] = input.pack.assortment.value;
+  if (input.pack.products.known) {
+    // On-hand from the catalogue pack's own availability. **This is the figure that decides whether
+    // dropping an item deletes it or routes it to clearance**, so serving nothing here would be the
+    // dangerous default: every drop would delist, and the stock still on the shelf would become
+    // invisible — not counted, not replenished, not sold, eventually written off.
+    const onHand: Record<string, number> = {};
+    for (const product of input.pack.products.value) onHand[product.productId] = product.availableMinor;
+    payload['onHand'] = onHand;
+  }
+  if (input.pack.spaceAreas.known) payload['spaceAreas'] = input.pack.spaceAreas.value;
+  if (input.pack.salesByAreaMinor.known) payload['salesByAreaMinor'] = input.pack.salesByAreaMinor.value;
+  if (input.pack.marginByAreaMinor.known) payload['marginByAreaMinor'] = input.pack.marginByAreaMinor.value;
+  if (input.pack.displayContracts.known) payload['displayContracts'] = input.pack.displayContracts.value;
+  if (input.pack.fundingReceivedMinor.known) payload['fundingReceivedMinor'] = input.pack.fundingReceivedMinor.value;
+  if (input.pack.stillOccupying.known) payload['stillOccupying'] = input.pack.stillOccupying.value;
+
+  // What this shop actually sold today, from this box's own log — the one figure here that does
+  // not come from the cloud, and the one the range check compares against. A sale record with no
+  // readable lines contributes nothing rather than defaulting, because "this sale had no lines" is
+  // a broken record, not a sale of nothing.
+  const sold = new Set<string>();
+  for (const sale of input.sales) {
+    if (sale.lines === undefined) continue;
+    for (const line of sale.lines) sold.add(line.productId);
+  }
+  payload['soldProductIds'] = [...sold];
+
+  return payload;
+}
+
 /** The global each screen's bundle reads at boot. One name per screen, and they must not drift. */
 export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   pos: 'posCatalogue',
@@ -622,6 +688,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   customer: 'shopData',
   buying: 'buyingData',
   catalogue: 'catalogueData',
+  merchandising: 'merchandisingData',
 });
 
 const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<string, unknown> | null>> = Object.freeze({
@@ -633,6 +700,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   customer: customerPayload,
   buying: buyingPayload,
   catalogue: cataloguePayload,
+  merchandising: merchandisingPayload,
 });
 
 /** Build one screen's payload. `null` means this box has nothing to give it, and says so. */

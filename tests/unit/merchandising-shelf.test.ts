@@ -136,6 +136,14 @@ describe('ShelfMap — walking the shop once', () => {
 });
 
 describe('planogramCompliance — the empty shelf with a full stockroom', () => {
+  const NOW = '2026-08-06T10:00:00.000Z';
+  /** Counted a minute ago — fresh by any policy. */
+  const JUST_NOW = '2026-08-06T09:59:00.000Z';
+  const AS_OF = { asOf: NOW, staleAfterMinutes: 120 };
+  /** A count, with the time somebody actually looked. */
+  const seen = (productId: string, locationId: string, onShelfMinor: number, observedAt = JUST_NOW) =>
+    ({ productId, locationId, onShelfMinor, observedAt });
+
   const planogram: Planogram = {
     planogramId: 'pg-1',
     storeId: STORE,
@@ -150,14 +158,15 @@ describe('planogramCompliance — the empty shelf with a full stockroom', () => 
       planogram,
       map: map(),
       shelfState: [
-        { productId: 'rice', locationId: 'L-B3', onShelfMinor: 0 },
-        { productId: 'oil', locationId: 'L-A1', onShelfMinor: 18 },
-        { productId: 'sugar', locationId: 'L-A9', onShelfMinor: 28 },
-        { productId: 'salt', locationId: 'L-A10', onShelfMinor: 40 },
-        { productId: 'milk', locationId: 'L-CHILL', onShelfMinor: 55 },
+        seen('rice', 'L-B3', 0),
+        seen('oil', 'L-A1', 18),
+        seen('sugar', 'L-A9', 28),
+        seen('salt', 'L-A10', 40),
+        seen('milk', 'L-CHILL', 55),
       ],
       backstock: { rice: 100 },
       assignedRole: 'shelf-filler',
+      ...AS_OF,
     });
 
     const empty = result.issues.find((i) => i.productId === 'rice');
@@ -175,11 +184,13 @@ describe('planogramCompliance — the empty shelf with a full stockroom', () => 
     const result = planogramCompliance({
       planogram,
       map: map(),
-      shelfState: [{ productId: 'rice', locationId: 'L-B3', onShelfMinor: 0 }],
+      shelfState: [seen('rice', 'L-B3', 0)],
       backstock: {},
       assignedRole: 'shelf-filler',
+      ...AS_OF,
     });
-    expect(result.issues[0]?.detail).toContain('this is a reorder, not a refill');
+    expect(result.issues.find((i) => i.productId === 'rice')?.detail)
+      .toContain('this is a reorder, not a refill');
     // No task: never send someone to fetch nothing.
     expect(result.tasks.find((t) => t.productId === 'rice')).toBeUndefined();
   });
@@ -188,9 +199,10 @@ describe('planogramCompliance — the empty shelf with a full stockroom', () => 
     const result = planogramCompliance({
       planogram,
       map: map(),
-      shelfState: [{ productId: 'rice', locationId: 'L-B3', onShelfMinor: 4 }],
+      shelfState: [seen('rice', 'L-B3', 4)],
       backstock: { rice: 6 },
       assignedRole: 'shelf-filler',
+      ...AS_OF,
     });
     const task = result.tasks.find((t) => t.productId === 'rice');
     expect(task?.quantityMinor).toBe(6);
@@ -201,39 +213,132 @@ describe('planogramCompliance — the empty shelf with a full stockroom', () => 
     const result = planogramCompliance({
       planogram,
       map: map(),
-      shelfState: [],
+      shelfState: [
+        seen('rice', 'L-B3', 0), seen('oil', 'L-A1', 0), seen('sugar', 'L-A9', 0),
+        seen('salt', 'L-A10', 0), seen('milk', 'L-CHILL', 0),
+      ],
       backstock: { rice: 50, oil: 50, sugar: 50, salt: 50, milk: 50 },
       assignedRole: 'shelf-filler',
+      ...AS_OF,
     });
     expect(result.tasks.map((t) => t.productId)).toEqual(['oil', 'sugar', 'salt', 'rice', 'milk']);
   });
 
+  // ── An uncounted shelf is not an empty one ────────────────────────────────
+
+  it('does NOT send anybody to a facing nobody has counted', () => {
+    // This read `state?.onShelfMinor ?? 0`, so an uncounted facing came through as zero — which is
+    // the loudest finding here: *shelf is EMPTY and the stock is in the building*. On day one,
+    // before anybody had counted anything, that fired for every product in the shop and sent staff
+    // to full shelves. An alarm that goes off on everything is worse than no alarm.
+    const result = planogramCompliance({
+      planogram,
+      map: map(),
+      shelfState: [],
+      backstock: { rice: 50, oil: 50, sugar: 50, salt: 50, milk: 50 },
+      assignedRole: 'shelf-filler',
+      ...AS_OF,
+    });
+    expect(result.tasks).toEqual([]);
+    expect(result.issues.map((i) => i.finding)).toEqual(Array(5).fill('never_counted'));
+    expect(result.issues[0]?.detail).toContain('not an empty shelf, it is an unchecked one');
+    expect(result.notObserved).toBe(5);
+    expect(result.wholePlanObserved).toBe(false);
+  });
+
+  it('reports 0% rather than 100% when nothing has been counted', () => {
+    // An empty plan is not a compliant shop; it is an unchecked one, and somebody would quote it.
+    const result = planogramCompliance({
+      planogram, map: map(), shelfState: [], backstock: {}, assignedRole: 'r', ...AS_OF,
+    });
+    expect(result.complianceBp).toBe(0);
+  });
+
+  it('refuses to act on a count that is too old, and says how old', () => {
+    // Acting on a three-day-old reading wastes a walk, and after enough wasted walks the whole
+    // task list stops being believed.
+    const result = planogramCompliance({
+      planogram,
+      map: map(),
+      shelfState: [seen('rice', 'L-B3', 0, '2026-08-03T10:00:00.000Z')],
+      backstock: { rice: 50 },
+      assignedRole: 'r',
+      ...AS_OF,
+    });
+    const rice = result.issues.find((i) => i.productId === 'rice');
+    expect(rice?.finding).toBe('last_counted_too_long_ago');
+    expect(rice?.detail).toContain('minute(s) ago');
+    expect(result.tasks.find((t) => t.productId === 'rice')).toBeUndefined();
+  });
+
+  it('takes the freshness window from the tenant, not from a constant', () => {
+    // A shop that counts twice a day and one that counts on Sundays need different numbers.
+    const state = [seen('rice', 'L-B3', 0, '2026-08-06T07:00:00.000Z')]; // three hours old
+    const patient = planogramCompliance({
+      planogram, map: map(), shelfState: state, backstock: { rice: 50 },
+      assignedRole: 'r', asOf: NOW, staleAfterMinutes: 240,
+    });
+    const strict = planogramCompliance({
+      planogram, map: map(), shelfState: state, backstock: { rice: 50 },
+      assignedRole: 'r', asOf: NOW, staleAfterMinutes: 60,
+    });
+    expect(patient.tasks.map((t) => t.productId)).toContain('rice');
+    expect(strict.tasks).toEqual([]);
+  });
+
+  it('leaves an unreadable observation time out rather than treating it as now', () => {
+    const result = planogramCompliance({
+      planogram, map: map(), shelfState: [seen('rice', 'L-B3', 0, 'not a date')],
+      backstock: { rice: 50 }, assignedRole: 'r', ...AS_OF,
+    });
+    expect(result.issues.find((i) => i.productId === 'rice')?.finding).toBe('last_counted_too_long_ago');
+    expect(result.tasks).toEqual([]);
+  });
+
   it('measures compliance, and takes the tenant’s own refill level', () => {
     const shelfState = [
-      { productId: 'rice', locationId: 'L-B3', onShelfMinor: 24 },
-      { productId: 'oil', locationId: 'L-A1', onShelfMinor: 18 },
-      { productId: 'sugar', locationId: 'L-A9', onShelfMinor: 26 }, // 87% — fine at 50%, low at 90%
-      { productId: 'salt', locationId: 'L-A10', onShelfMinor: 16 }, // 40% — low either way
-      { productId: 'milk', locationId: 'L-CHILL', onShelfMinor: 60 },
+      seen('rice', 'L-B3', 24),
+      seen('oil', 'L-A1', 18),
+      seen('sugar', 'L-A9', 26), // 87% — fine at 50%, low at 90%
+      seen('salt', 'L-A10', 16), // 40% — low either way
+      seen('milk', 'L-CHILL', 60),
     ];
     const lenient = planogramCompliance({
-      planogram, map: map(), shelfState, backstock: {}, assignedRole: 'r',
+      planogram, map: map(), shelfState, backstock: {}, assignedRole: 'r', ...AS_OF,
     });
     expect(lenient.complianceBp).toBe(8_000); // 4 of 5 at or above half full
+    expect(lenient.wholePlanObserved, 'the figure only means what it says when all were counted').toBe(true);
 
     const strict = planogramCompliance({
-      planogram, map: map(), shelfState, backstock: {}, assignedRole: 'r', refillAtBp: 9_000,
+      planogram, map: map(), shelfState, backstock: {}, assignedRole: 'r', refillAtBp: 9_000, ...AS_OF,
     });
     expect(strict.complianceBp).toBe(6_000); // salt and sugar now count as low
+  });
+
+  it('measures compliance over the facings actually COUNTED, not over the plan', () => {
+    // Three of five counted, two of those compliant → 66%, and it says two were not counted.
+    // Folding the uncounted two in either direction produces a number somebody would quote.
+    const result = planogramCompliance({
+      planogram,
+      map: map(),
+      shelfState: [seen('rice', 'L-B3', 24), seen('oil', 'L-A1', 18), seen('salt', 'L-A10', 0)],
+      backstock: {},
+      assignedRole: 'r',
+      ...AS_OF,
+    });
+    expect(result.complianceBp).toBe(6_667);
+    expect(result.notObserved).toBe(2);
+    expect(result.wholePlanObserved).toBe(false);
   });
 
   it('flags more on the shelf than the facing holds', () => {
     const result = planogramCompliance({
       planogram,
       map: map(),
-      shelfState: [{ productId: 'rice', locationId: 'L-B3', onShelfMinor: 40 }],
+      shelfState: [seen('rice', 'L-B3', 40)],
       backstock: {},
       assignedRole: 'r',
+      ...AS_OF,
     });
     expect(result.issues.find((i) => i.productId === 'rice')?.finding).toBe('over_capacity');
   });

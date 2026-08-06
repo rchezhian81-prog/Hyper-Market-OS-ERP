@@ -5,4 +5,5 @@
 
 export * from './assortment';
 export * from './shelf';
+export * from './shelf-count';
 export * from './space';

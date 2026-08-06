@@ -7,7 +7,10 @@ import type { LoggedSale } from '../../edge/store-edge/src/read-model';
 import { SyncOutbox } from '../../packages/sync/src/index';
 import { resolvePrice } from '../../packages/price-list/src/index';
 import { makeEvent } from '../../packages/contracts/src/event';
-import { bootBuying, bootCatalogue, bootManager, buyingGaps, catalogueGaps } from '../../apps/web-erp/src/browser-entry';
+import {
+  bootBuying, bootCatalogue, bootManager, bootMerchandising,
+  buyingGaps, catalogueGaps, merchandisingGaps,
+} from '../../apps/web-erp/src/browser-entry';
 import { bootOwner, forgetfulQueueStore } from '../../apps/owner-app/src/browser-entry';
 import { bootShop, forgetfulBasket } from '../../apps/customer-app/src/browser-entry';
 import { bootPicker } from '../../apps/picker-app/src/browser-entry';
@@ -45,6 +48,15 @@ const SALE: LoggedSale = {
   committedAt: NOW, total: 145_00, netMinor: 122_88, taxMinor: 22_12, currency: 'INR',
   lines: [{ productId: 'p1', quantityMinor: 1, uom: 'ea' }],
   tenders: [{ kind: 'cash', amount: { minor: 145_00 } }],
+};
+
+const PLANOGRAM = {
+  planogramId: 'pg-1', storeId: 'store-1', version: 1, effectiveFrom: '2026-08-01',
+  createdBy: 'u-merch',
+  assignments: [
+    { storeId: 'store-1', productId: 'p1', locationId: 'L-A1', capacityMinor: 24, primary: true },
+    { storeId: 'store-1', productId: 'p-milk', locationId: 'L-COLD', capacityMinor: 60, primary: true },
+  ],
 };
 
 const SHELF_LOCATIONS = [
@@ -136,6 +148,19 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
   shelfLocations: known(SHELF_LOCATIONS),
   shelfAssignments: known(SHELF_ASSIGNMENTS),
   shelfPolicy: known({ zoneOrder: ['ambient', 'chilled', 'frozen'] }),
+  planogram: known(PLANOGRAM),
+  shelfCounts: known([]),
+  backstock: known({ p1: 100, 'p-milk': 100 }),
+  assortment: known([
+    { storeId: 'store-1', productId: 'p1', status: 'listed', effectiveFrom: '2026-01-01' },
+  ]),
+  spaceAreas: known([{ areaId: 'grocery', storeId: 'store-1', name: 'Grocery', squareFeet: 2_000 }]),
+  salesByAreaMinor: known({ grocery: 900_000 }),
+  marginByAreaMinor: known({ grocery: 90_000 }),
+  displayContracts: known([]),
+  fundingReceivedMinor: known({}),
+  stillOccupying: known([]),
+  merchandisingPolicy: known({ refillAtBp: 5_000, countStaleAfterMinutes: 120, refillRole: 'shelf-filler' }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([{ purpose: 'marketing', channel: 'sms' }]),
   ...over,
@@ -380,7 +405,11 @@ describe('a box that has been told nothing tells every screen so', () => {
       categories: notKnown('never'), productMaster: notKnown('never'),
       priceEntries: notKnown('never'), pricingPolicy: notKnown('never'),
       shelfLocations: notKnown('never'), shelfAssignments: notKnown('never'),
-      shelfPolicy: notKnown('never'),
+      shelfPolicy: notKnown('never'), planogram: notKnown('never'), shelfCounts: notKnown('never'),
+      backstock: notKnown('never'), assortment: notKnown('never'), spaceAreas: notKnown('never'),
+      salesByAreaMinor: notKnown('never'), marginByAreaMinor: notKnown('never'),
+      displayContracts: notKnown('never'), fundingReceivedMinor: notKnown('never'),
+      stillOccupying: notKnown('never'), merchandisingPolicy: notKnown('never'),
       lossPreventionRules: notKnown('never'), consentPurposes: notKnown('never'),
     },
     sales: [],
@@ -388,7 +417,7 @@ describe('a box that has been told nothing tells every screen so', () => {
 
   it('serves the shells with no payload at all, marker intact', async () => {
     const base = await serve(nothing);
-    for (const screen of ['pos', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue'] as const) {
+    for (const screen of ['pos', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising'] as const) {
       expect(await payloadFromScreen(base, screen), `${screen} invented something`).toBeNull();
     }
   });
@@ -1056,5 +1085,149 @@ describe('the owner’s pick zone order, end to end (OB-07)', () => {
       readFileSync('edge/store-edge/sample/store-pack.example.json', 'utf8'),
     ) as { shelfPolicy: { zoneOrder: string[] } };
     expect(example.shelfPolicy.zoneOrder).toEqual(OWNER_ZONE_ORDER);
+  });
+});
+
+/**
+ * **The merchandising screen, driven over the same socket (M04 · D02).**
+ *
+ * The headline is the fault that gated this whole build: `planogramCompliance` read
+ * `state?.onShelfMinor ?? 0`, so an **uncounted** facing came through as an **empty** one — the
+ * loudest finding it has. On day one, before anybody had counted anything, that fired for every
+ * product in the shop and sent staff to full shelves.
+ */
+describe('the merchandising screen is fed, and an uncounted shelf stays uncounted', () => {
+  const COUNTED = (productId: string, locationId: string, countedMinor: number, at: string) =>
+    ({ storeId: 'store-1', locationId, productId, countedMinor, countedBy: 'u-merch', at });
+
+  it('serves its OWN page, not the manager’s, the buyer’s or the pricer’s', async () => {
+    const base = await serve(snapshotOf());
+    const html = await (await fetch(`${base}/merchandising/`)).text();
+    expect(html).toContain('id="count-qty"');
+    expect(html).not.toContain('id="close-title"');
+    expect(html).not.toContain('id="declared-total"');
+    expect(html).not.toContain('id="floor-value"');
+  });
+
+  it('sends nobody anywhere when nothing has been counted', async () => {
+    const base = await serve(snapshotOf());
+    const merch = bootMerchandising((await payloadFromScreen(base, 'merchandising'))! as never)!;
+    const check = merch.check();
+    expect('why' in check).toBe(false);
+    if ('why' in check) return;
+    expect(check.tasks).toEqual([]);
+    expect(check.issues.map((i) => i.finding)).toEqual(['never_counted', 'never_counted']);
+    expect(check.notObserved).toBe(2);
+    expect(check.complianceBp, 'an unchecked shop reported as compliant').toBe(0);
+  });
+
+  it('raises the urgent refill once somebody has actually looked', async () => {
+    const base = await serve(snapshotOf({
+      pack: pack({ shelfCounts: known([COUNTED('p1', 'L-A1', 0, NOW)]) }),
+    }));
+    const merch = bootMerchandising((await payloadFromScreen(base, 'merchandising'))! as never)!;
+    const check = merch.check();
+    if ('why' in check) return;
+    const task = check.tasks.find((t) => t.productId === 'p1');
+    expect(task?.priority).toBe('urgent');
+    expect(task?.quantityMinor).toBe(24);
+    expect(task?.assignedRole).toBe('shelf-filler');
+    // …and it still says only half the plan was looked at.
+    expect(check.wholePlanObserved).toBe(false);
+    expect(check.plannedFacings).toBe(2);
+  });
+
+  it('goes quiet again when the count goes stale, against the tenant’s own window', async () => {
+    const base = await serve(snapshotOf({
+      pack: pack({ shelfCounts: known([COUNTED('p1', 'L-A1', 0, '2026-08-01T09:00:00.000Z')]) }),
+    }));
+    const merch = bootMerchandising((await payloadFromScreen(base, 'merchandising'))! as never)!;
+    const check = merch.check();
+    if ('why' in check) return;
+    expect(check.tasks).toEqual([]);
+    expect(check.issues.find((i) => i.productId === 'p1')?.finding).toBe('last_counted_too_long_ago');
+  });
+
+  it('takes a count from the screen and refuses one against a shelf that does not exist', async () => {
+    const base = await serve(snapshotOf());
+    const merch = bootMerchandising((await payloadFromScreen(base, 'merchandising'))! as never)!;
+    expect(merch.count({ locationId: 'L-A1', productId: 'p1', countedMinor: 12 }).ok).toBe(true);
+    const bad = merch.count({ locationId: 'L-TYPO', productId: 'p1', countedMinor: 12 });
+    expect(bad.ok).toBe(false);
+    if (bad.ok) return;
+    expect(bad.refusal).toBe('this_shop_has_no_such_shelf');
+  });
+
+  it('puts never-counted facings at the top of the counting list', async () => {
+    const base = await serve(snapshotOf({
+      pack: pack({ shelfCounts: known([COUNTED('p1', 'L-A1', 5, '2026-08-01T09:00:00.000Z')]) }),
+    }));
+    const merch = bootMerchandising((await payloadFromScreen(base, 'merchandising'))! as never)!;
+    expect(merch.countingList().map((r) => r.productId)).toEqual(['p-milk', 'p1']);
+    expect(merch.countingList()[0]?.lastCountedAt).toBeNull();
+  });
+
+  it('says WHY the shelves cannot be checked, rather than reporting a clean shop', async () => {
+    const noPlan = await serve(snapshotOf({ pack: pack({ planogram: known(null) }) }));
+    const merch = bootMerchandising((await payloadFromScreen(noPlan, 'merchandising'))! as never)!;
+    expect(merch.check()).toEqual({ why: 'this_store_has_never_published_a_planogram' });
+
+    const noShelves = await serve(snapshotOf({ pack: pack({ shelfLocations: notKnown('never sent') }) }));
+    const bare = bootMerchandising((await payloadFromScreen(noShelves, 'merchandising'))! as never)!;
+    expect(bare.check()).toEqual({ why: 'this_store_has_no_shelf_map' });
+  });
+
+  it('routes a drop with stock on hand to clearance, never to a deletion', async () => {
+    // The pack says 10 of `p1` are available, and the box serves that as on-hand. Serving nothing
+    // would be the dangerous default here: every drop would delist, and the stock still on the
+    // shelf would become invisible — not counted, not replenished, eventually written off.
+    const base = await serve(snapshotOf());
+    const payload = (await payloadFromScreen(base, 'merchandising'))!;
+    expect(payload['onHand']).toEqual({ p1: 10 });
+
+    const merch = bootMerchandising(payload as never)!;
+    const outcome = merch.drop({ productId: 'p1', reason: 'poor_sales' });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.decision.outcome).toBe('routed_to_clearance');
+    expect(outcome.decision.detail).toContain('10 still on hand');
+  });
+
+  it('delists cleanly only when the shop genuinely has none left', async () => {
+    const base = await serve(snapshotOf({
+      pack: pack({ products: known([{ ...PRODUCTS[0]!, availableMinor: 0 }]) }),
+    }));
+    const merch = bootMerchandising((await payloadFromScreen(base, 'merchandising'))! as never)!;
+    const outcome = merch.drop({ productId: 'p1', reason: 'supplier_discontinued' });
+    if (!outcome.ok) return;
+    expect(outcome.decision.outcome).toBe('delisted');
+  });
+
+  it('checks the range against what this box’s OWN log says was sold', async () => {
+    // Not the cloud's idea of what sold — this box wrote the sales, so it is the honest source.
+    const base = await serve(snapshotOf({
+      pack: pack({ assortment: known([]) }),
+    }));
+    const payload = (await payloadFromScreen(base, 'merchandising'))!;
+    expect(payload['soldProductIds']).toEqual(['p1']);
+    const merch = bootMerchandising(payload as never)!;
+    expect(merch.rangeIssues().find((i) => i.productId === 'p1')?.finding)
+      .toBe('sold_not_in_assortment');
+  });
+
+  it('serves the screen nothing at all without the tenant’s own thresholds', async () => {
+    const base = await serve(snapshotOf({ pack: pack({ merchandisingPolicy: notKnown('never sent') }) }));
+    expect(await payloadFromScreen(base, 'merchandising')).toBeNull();
+    expect(bootMerchandising(undefined)).toBeNull();
+  });
+
+  it('names what it was NOT told rather than reporting an empty shop', async () => {
+    const base = await serve(snapshotOf({
+      pack: pack({ backstock: notKnown('never sent'), spaceAreas: notKnown('never sent') }),
+    }));
+    const payload = (await payloadFromScreen(base, 'merchandising'))!;
+    expect('backstock' in payload, '"backstock" must be absent, not empty').toBe(false);
+    expect(merchandisingGaps(payload as never))
+      .toEqual(['what_is_in_the_stockroom', 'how_big_each_part_of_the_floor_is']);
   });
 });

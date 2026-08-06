@@ -43,7 +43,16 @@ import {
 import type { Category, ProductRecord } from '../../../packages/product/src/index';
 import type { CostRegister, PriceEntry } from '../../../packages/price-list/src/index';
 import type { Promotion } from '../../../packages/promotions/src/index';
-import { ShelfMap, type ShelfAssignment, type ShelfLocation } from '../../../packages/merchandising/src/index';
+import type { Money } from '../../../packages/contracts/src/money';
+import {
+  Assortment, ShelfMap,
+  type AssortmentEntry, type DisplayContract, type Planogram, type ShelfAssignment,
+  type ShelfCount, type ShelfLocation, type SpaceArea,
+} from '../../../packages/merchandising/src/index';
+import {
+  createMerchandisingSession,
+  type MerchandisingPorts, type MerchandisingSession,
+} from './merchandising-session';
 
 /** What the store knows about a product this screen may be asked to count. */
 export interface ProductFact {
@@ -105,6 +114,34 @@ export interface CatalogueData {
   readonly zoneOrder?: readonly string[];
 }
 
+/** What the merchandising screen was last told. Absent means this box knows nothing of it. */
+export interface MerchandisingData {
+  readonly userId?: string;
+  readonly storeId?: string;
+  readonly today?: string;
+  readonly now?: string;
+  /** Fill level below which a facing is worth refilling, in bp. Per-tenant. */
+  readonly refillAtBp?: number;
+  /** How old a count may be before acting on it wastes a walk. Per-tenant. */
+  readonly countStaleAfterMinutes?: number;
+  readonly refillRole?: string;
+  readonly shelfLocations?: readonly ShelfLocation[];
+  readonly shelfAssignments?: readonly ShelfAssignment[];
+  readonly planogram?: Planogram | null;
+  /** Every count ever taken. Append-only — a recount is a new observation. */
+  readonly shelfCounts?: readonly ShelfCount[];
+  readonly backstock?: Readonly<Record<string, number>>;
+  readonly assortment?: readonly AssortmentEntry[];
+  readonly soldProductIds?: readonly string[];
+  readonly onHand?: Readonly<Record<string, number>>;
+  readonly spaceAreas?: readonly SpaceArea[];
+  readonly salesByAreaMinor?: Readonly<Record<string, number>>;
+  readonly marginByAreaMinor?: Readonly<Record<string, number>>;
+  readonly displayContracts?: readonly DisplayContract[];
+  readonly fundingReceivedMinor?: Readonly<Record<string, number>>;
+  readonly stillOccupying?: readonly string[];
+}
+
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
 interface ManagerWindow {
   managerSession?: ManagerSession;
@@ -116,6 +153,9 @@ interface ManagerWindow {
   catalogueSession?: CatalogueSession;
   catalogueData?: CatalogueData;
   catalogueGaps?: readonly CatalogueGap[];
+  merchandisingSession?: MerchandisingSession;
+  merchandisingData?: MerchandisingData;
+  merchandisingGaps?: readonly MerchandisingGap[];
   /** The decision vocabulary, so the view can offer it and never invent a reason of its own. */
   managerReasons?: {
     readonly approved: readonly DecisionReasonCode[];
@@ -384,6 +424,108 @@ export function bootCatalogue(data: CatalogueData | undefined): CatalogueSession
   );
 }
 
+/**
+ * Something the merchandising screen was never told.
+ *
+ * These do not fail the same way, which is why each is named:
+ *
+ *   • no shelf map and nothing can be counted at all — a count against a shelf that does not
+ *     exist is a count nobody can act on;
+ *   • no planogram and there is nothing to compare a shelf against;
+ *   • no stockroom figures and every refill task would be a wish rather than an instruction;
+ *   • no square footage and "sales per square foot" would be a made-up number that decides a
+ *     layout.
+ */
+export const MERCHANDISING_GAPS = Object.freeze([
+  'where_the_shelves_are',
+  'what_should_be_on_each_shelf',
+  'what_is_in_the_stockroom',
+  'what_this_shop_carries',
+  'how_big_each_part_of_the_floor_is',
+] as const);
+export type MerchandisingGap = (typeof MERCHANDISING_GAPS)[number];
+
+/** Everything the merchandising screen was not given. Empty means it was told all of it. */
+export function merchandisingGaps(data: MerchandisingData | undefined): readonly MerchandisingGap[] {
+  const gaps: MerchandisingGap[] = [];
+  if (data?.shelfLocations === undefined) gaps.push('where_the_shelves_are');
+  if (data?.planogram === undefined || data.planogram === null) gaps.push('what_should_be_on_each_shelf');
+  if (data?.backstock === undefined) gaps.push('what_is_in_the_stockroom');
+  if (data?.assortment === undefined) gaps.push('what_this_shop_carries');
+  if (data?.spaceAreas === undefined) gaps.push('how_big_each_part_of_the_floor_is');
+  return gaps;
+}
+
+/**
+ * Ports over what the merchandising screen was told.
+ *
+ * The empty answers are load-bearing refusals rather than tidy defaults, and each is named by
+ * `merchandisingGaps`. The two that matter most: an absent planogram makes `check()` refuse
+ * outright rather than report a clean shop, and an absent stockroom figure makes every refill a
+ * task for stock that may not exist — so it is reported, never assumed.
+ */
+export function merchandisingPortsFromData(data: MerchandisingData | undefined): MerchandisingPorts {
+  const storeId = data?.storeId ?? 'store-1';
+
+  // Built once and kept, so anything assigned or counted on this screen survives a re-render.
+  const locations = data?.shelfLocations;
+  let map: ShelfMap | null = null;
+  if (locations !== undefined) {
+    map = new ShelfMap(storeId, locations, []);
+    for (const assignment of data?.shelfAssignments ?? []) {
+      try {
+        map.assign(assignment);
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  const assortment = new Assortment(storeId, data?.assortment ?? []);
+  const asMoney = (source: Readonly<Record<string, number>> | undefined): Record<string, Money> => {
+    const out: Record<string, Money> = {};
+    for (const [key, minor] of Object.entries(source ?? {})) out[key] = { minor, currency: 'INR' };
+    return out;
+  };
+
+  return {
+    shelfMap: () => map,
+    planogram: () => data?.planogram ?? null,
+    shelfCounts: () => data?.shelfCounts ?? [],
+    backstock: () => data?.backstock ?? {},
+    assortment: () => assortment,
+    soldProductIds: () => data?.soldProductIds ?? [],
+    onHand: () => data?.onHand ?? {},
+    spaceAreas: () => data?.spaceAreas ?? [],
+    salesByArea: () => asMoney(data?.salesByAreaMinor),
+    marginByArea: () => asMoney(data?.marginByAreaMinor),
+    displayContracts: () => data?.displayContracts ?? [],
+    fundingReceived: () => asMoney(data?.fundingReceivedMinor),
+    stillOccupying: () => data?.stillOccupying ?? [],
+  };
+}
+
+/** Build the merchandising session, or `null` when this box was told nothing about it. */
+export function bootMerchandising(data: MerchandisingData | undefined): MerchandisingSession | null {
+  if (data === undefined) return null;
+  return createMerchandisingSession(
+    {
+      tenantId: 'tenant',
+      storeId: data.storeId ?? 'store-1',
+      userId: data.userId ?? 'merchandiser',
+      currency: 'INR',
+      today: data.today ?? '1970-01-01',
+      // No clock in the screen. A device whose date is a day out would otherwise judge every count
+      // as stale — or, worse, judge a three-day-old one as fresh.
+      now: data.now ?? '1970-01-01T00:00:00.000Z',
+      refillAtBp: data.refillAtBp ?? 5_000,
+      countStaleAfterMinutes: data.countStaleAfterMinutes ?? 120,
+      refillRole: data.refillRole ?? 'shelf-filler',
+    },
+    merchandisingPortsFromData(data),
+  );
+}
+
 // In the browser `globalThis.window` IS the window, so this needs no DOM types.
 const browserWindow = (globalThis as { window?: ManagerWindow }).window;
 if (browserWindow !== undefined) {
@@ -399,6 +541,11 @@ if (browserWindow !== undefined) {
   if (catalogue !== null) {
     browserWindow.catalogueSession = catalogue;
     browserWindow.catalogueGaps = catalogueGaps(browserWindow.catalogueData);
+  }
+  const merchandising = bootMerchandising(browserWindow.merchandisingData);
+  if (merchandising !== null) {
+    browserWindow.merchandisingSession = merchandising;
+    browserWindow.merchandisingGaps = merchandisingGaps(browserWindow.merchandisingData);
   }
   // The view offers these and records the code the manager picks. It never composes a reason of
   // its own, so the audit trail keeps one vocabulary that can still be reported on in a year.

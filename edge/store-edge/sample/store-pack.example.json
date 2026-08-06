@@ -26,7 +26,13 @@
     "field is a NUMBER because 'A10' sorts before 'A9' as text and the picker then",
     "walks the aisle twice without ever knowing why. zoneOrder is YOUR cold-chain",
     "decision - leave it out and the walk is ordered by position only, and every",
-    "screen says so rather than implying a cold chain nobody asked for."
+    "screen says so rather than implying a cold chain nobody asked for.",
+    "planogram/shelfCounts/backstock/assortment/spaceAreas/displayContracts: merchandising.",
+    "Leave merchandisingPolicy out and the box serves that screen nothing, because a",
+    "screen inventing its own refill level would be deciding when a shelf is empty",
+    "enough to be worth walking to. A facing with NO count in shelfCounts is reported",
+    "as 'never counted' - it is NOT treated as empty, which would raise the loudest",
+    "alarm the system has for every product in the shop on day one."
   ],
   "version": 1,
   "policies": {
@@ -220,6 +226,52 @@
       "chilled",
       "frozen"
     ]
+  },
+  "planogram": {
+    "planogramId": "pg-example-1",
+    "storeId": "REPLACE_WITH_STORE_ID",
+    "version": 1,
+    "effectiveFrom": "2026-01-01",
+    "createdBy": "REPLACE_WITH_MERCHANDISER_USER_ID",
+    "assignments": [
+      {
+        "storeId": "REPLACE_WITH_STORE_ID",
+        "productId": "EXAMPLE-1",
+        "locationId": "L-A1",
+        "capacityMinor": 24,
+        "primary": true
+      }
+    ]
+  },
+  "shelfCounts": [],
+  "backstock": {
+    "EXAMPLE-1": 0
+  },
+  "assortment": [
+    {
+      "storeId": "REPLACE_WITH_STORE_ID",
+      "productId": "EXAMPLE-1",
+      "status": "listed",
+      "effectiveFrom": "2026-01-01"
+    }
+  ],
+  "spaceAreas": [
+    {
+      "areaId": "example",
+      "storeId": "REPLACE_WITH_STORE_ID",
+      "name": "Example department",
+      "squareFeet": 0
+    }
+  ],
+  "salesByAreaMinor": {},
+  "marginByAreaMinor": {},
+  "displayContracts": [],
+  "fundingReceivedMinor": {},
+  "stillOccupying": [],
+  "merchandisingPolicy": {
+    "refillAtBp": 5000,
+    "countStaleAfterMinutes": 120,
+    "refillRole": "REPLACE_WITH_ROLE_THAT_FILLS_SHELVES"
   },
   "lossPreventionRules": [
     {

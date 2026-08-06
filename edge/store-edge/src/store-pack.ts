@@ -310,6 +310,21 @@ export interface PackShelfPolicy {
   readonly zoneOrder?: readonly string[];
 }
 
+/**
+ * Merchandising thresholds, both per-tenant and neither of them ours to guess.
+ *
+ * `refillAtBp` decides when a facing is worth walking to: refilling at 90% wastes the staff's day,
+ * refilling at 0% means the customer already found the gap. `countStaleAfterMinutes` decides how
+ * long a shelf count stays worth acting on — a shop that counts twice a day and one that counts on
+ * Sundays need different numbers, and acting on a three-day-old reading wastes a walk.
+ */
+export interface PackMerchandisingPolicy {
+  readonly refillAtBp: number;
+  readonly countStaleAfterMinutes: number;
+  /** The role that picks up a refill task. A task with no owner is not a task (M25). */
+  readonly refillRole: string;
+}
+
 /** Who buys, who may check them, and the tolerances this tenant matches on. All per-tenant. */
 export interface PackBuyingPolicy {
   readonly buyerId: string;
@@ -401,6 +416,25 @@ export interface StorePack {
   readonly shelfAssignments: Register<readonly PackShelfAssignment[]>;
   /** How this store wants its shop walked — the cold-chain order is the store's decision. */
   readonly shelfPolicy: Register<PackShelfPolicy>;
+  /** What should be on each shelf (M04-FR-03). Absent means this store has never published one. */
+  readonly planogram: Register<unknown | null>;
+  /** Every shelf count ever taken — append-only, a recount is a new observation. */
+  readonly shelfCounts: Register<readonly unknown[]>;
+  /** What the stockroom holds, per product — the difference between a task and a wish. */
+  readonly backstock: Register<Readonly<Record<string, number>>>;
+  /** The range, as effective-dated decisions (M04-FR-01). */
+  readonly assortment: Register<readonly unknown[]>;
+  /** The floor in named areas with their square footage (M04-FR-04). */
+  readonly spaceAreas: Register<readonly unknown[]>;
+  /** Sales and margin per area, in minor units. Absent for an area means it cannot be ranked. */
+  readonly salesByAreaMinor: Register<Readonly<Record<string, number>>>;
+  readonly marginByAreaMinor: Register<Readonly<Record<string, number>>>;
+  /** Supplier display-space contracts, what finance received, and what is still on the floor. */
+  readonly displayContracts: Register<readonly unknown[]>;
+  readonly fundingReceivedMinor: Register<Readonly<Record<string, number>>>;
+  readonly stillOccupying: Register<readonly string[]>;
+  /** Merchandising thresholds — the refill level and how long a count stays actionable. */
+  readonly merchandisingPolicy: Register<PackMerchandisingPolicy>;
   /** Loss-prevention thresholds — data, so a store tunes its own without code (M15-FR-01). */
   readonly lossPreventionRules: Register<readonly unknown[]>;
   /** The purposes this tenant asks a customer's consent for (M16 / PRV). */
@@ -441,6 +475,17 @@ export function emptyPack(why: string = NEVER): StorePack {
     shelfLocations: notKnown(why),
     shelfAssignments: notKnown(why),
     shelfPolicy: notKnown(why),
+    planogram: notKnown(why),
+    shelfCounts: notKnown(why),
+    backstock: notKnown(why),
+    assortment: notKnown(why),
+    spaceAreas: notKnown(why),
+    salesByAreaMinor: notKnown(why),
+    marginByAreaMinor: notKnown(why),
+    displayContracts: notKnown(why),
+    fundingReceivedMinor: notKnown(why),
+    stillOccupying: notKnown(why),
+    merchandisingPolicy: notKnown(why),
     lossPreventionRules: notKnown(why),
     consentPurposes: notKnown(why),
   };
@@ -487,6 +532,17 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     shelfLocations: section<readonly PackShelfLocation[]>('shelfLocations'),
     shelfAssignments: section<readonly PackShelfAssignment[]>('shelfAssignments'),
     shelfPolicy: section<PackShelfPolicy>('shelfPolicy'),
+    planogram: section<unknown | null>('planogram'),
+    shelfCounts: section<readonly unknown[]>('shelfCounts'),
+    backstock: section<Readonly<Record<string, number>>>('backstock'),
+    assortment: section<readonly unknown[]>('assortment'),
+    spaceAreas: section<readonly unknown[]>('spaceAreas'),
+    salesByAreaMinor: section<Readonly<Record<string, number>>>('salesByAreaMinor'),
+    marginByAreaMinor: section<Readonly<Record<string, number>>>('marginByAreaMinor'),
+    displayContracts: section<readonly unknown[]>('displayContracts'),
+    fundingReceivedMinor: section<Readonly<Record<string, number>>>('fundingReceivedMinor'),
+    stillOccupying: section<readonly string[]>('stillOccupying'),
+    merchandisingPolicy: section<PackMerchandisingPolicy>('merchandisingPolicy'),
     lossPreventionRules: section<readonly unknown[]>('lossPreventionRules'),
     consentPurposes: section<readonly { purpose: string; channel: string; required?: boolean }[]>('consentPurposes'),
   };

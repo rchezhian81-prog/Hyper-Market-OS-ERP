@@ -26,7 +26,7 @@ project.
 | `services/` — the thirteen APIs | 5,556 | Built, persisting, authenticated, audited |
 | `edge/` — the store box | 2,250 | Runs, writes durably, syncs — **and now feeds every screen**, the buyer's included |
 | `apps/` — everything a person touches | 8,000 | **All six have real screens, and the ERP now has two** — the manager's and the buyer's. The gap that dominated this document is closed |
-| Tests | 3,762 + 31 | Unusually thorough on rules; thin on assembly until today |
+| Tests | 3,849 + 31 | Unusually thorough on rules; thin on assembly until today |
 
 **2,452 lines of app code for six applications** is the number that matters. For comparison, the POS
 alone — one screen a cashier uses eight hours a day — is 1,070 of those lines, and none of it draws
@@ -110,7 +110,7 @@ Three columns, and they are different questions. **Rules** = is the logic writte
 | Modules | Rules | Wired | Usable | The honest note |
 | --- | :---: | :---: | :---: | --- |
 | M01–M02 Platform, identity | ✅ | ✅ | ◐ | Token verification real; the **approvals inbox is now a screen** (decide in ≤3 taps, reason recorded, separation of duties visible). **No identity provider chosen**, so nobody can log in |
-| M03–M05 Product, pricing, catalogue | ✅ | ✅ | ✅ | **The product and price screen is now built** — HSN/tax class is a field and nothing publishes without one. A price change is drafted, checked against the MRP ceiling and the margin floor with both limits shown *before* the price is typed, approved by somebody else and appended as a new entry. Until this session **nothing in the system had ever produced a `PriceEntry`**, so the catalogue snapshot builder had never had a real price to ship to a lane. **Shelf addresses are built too** (M04-FR-02, owner decision 6 Aug 2026): the store box now sequences the picker's wave by the shop's own shelf map, chiller last where the store has said so — `routeFor` had been written and tested since the module existed and nothing had ever called it. Planograms and display contracts (M04-FR-03/04) remain owner-deferred |
+| M03–M05 Product, pricing, catalogue | ✅ | ✅ | ✅ | **The product and price screen is now built** — HSN/tax class is a field and nothing publishes without one. A price change is drafted, checked against the MRP ceiling and the margin floor with both limits shown *before* the price is typed, approved by somebody else and appended as a new entry. Until this session **nothing in the system had ever produced a `PriceEntry`**, so the catalogue snapshot builder had never had a real price to ship to a lane. **Shelf addresses are built too** (M04-FR-02, owner decision 6 Aug 2026): the store box now sequences the picker's wave by the shop's own shelf map, chiller last where the store has said so — `routeFor` had been written and tested since the module existed and nothing had ever called it. **Planograms, refill tasks, the range review and space are built too** (6 Aug 2026, owner asked for them next): a blind shelf count is the producer that never existed, and an uncounted facing is now reported as *never counted* rather than as an empty shelf — which had been raising the loudest alarm in the system for every product in the shop |
 | M06–M07 Purchase, supplier | ✅ | ✅ | ✅ | Three-way match real; goods receiving is a screen, and a delivery with no purchase order is flagged unmatched rather than filed quietly. **The buyer's screen now captures a supplier invoice in one go** — checked against the total printed on the paper, each line's own arithmetic checked with the line number to look at, approved by somebody else, committed atomically — so the match has lines at last. An uncaptured invoice still refuses, and now says which of the three documents is missing |
 | M08–M11 Inventory, warehouse, quality | ✅ | ✅ | ◐ | Movements and snapshots real; **blind counting is now a screen** — and a count the screen cannot value is refused rather than priced at zero. No expiry or recall screen |
 | M12–M15 POS, returns, cash office | ✅ | ✅ | ✅ | The strongest area. Durable commit real, and the screen reaches the till's own disk over loopback (ADR-0004). Cash, card, UPI, hold/recall, cash to safe and a blind till close are in; **day close now has a manager screen that reports a list rather than a refusal**. Receipt-based returns still have no screen |
@@ -125,12 +125,12 @@ Three columns, and they are different questions. **Rules** = is the logic writte
 
 **Legend:** ✅ done · ◐ partial, with a named reason · ❌ not started
 
-**Owner decision taken, 6 August 2026 — M04.** Shelf locations (M04-FR-02) built before go-live;
-planograms, compliance, replenishment tasks and supplier-funded display space (M04-FR-03/04)
-deferred with a named target of **R3, after go-live**. Not dropped (OD-02/OD-10). The replenishment
-half additionally has no producer of on-shelf counts anywhere in the system yet, so building the
-task engine's surface today would give it nothing to read — that is a second reason to hold it, and
-it is the thing to fix first when M04-FR-03 is picked up.
+~~**Owner decision taken, 6 August 2026 — M04.** Shelf locations first; planograms deferred to
+R3.~~ ✅ **All of M04 is now built** (owner asked for the rest the same day). The prerequisite named
+in the deferral — *no producer of on-shelf counts anywhere in the system* — was built first as a
+blind shelf count, and it turned out to be the whole point: `planogramCompliance` had been treating
+an **uncounted** facing as an **empty** one, so on day one the entire shop came back as urgent
+refill tasks and staff would have been sent to full shelves.
 
 ### The ones that are ◐ for a good reason, and must not be "fixed" by relaxing them
 

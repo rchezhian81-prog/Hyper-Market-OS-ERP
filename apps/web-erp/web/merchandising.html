@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Shelves and space</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      Merchandising and space (docs/design/screens/product-merchandising.md, M04).
+      A fourth shell in this folder, sharing the one bundle. A merchandiser walking
+      the aisles with a tablet is doing a different job from the person setting
+      prices at a desk, so it is a different page (P-07).
+
+      The counting field NEVER shows what the facing is supposed to hold. Same
+      discipline as the till drawer and the stock count: a number on the screen is
+      an answer, and a tired person at the end of a shift agrees with it.
+    -->
+    <style>
+      :root {
+        --bg: #0f172a; --panel: #1e293b; --ink: #f8fafc; --muted: #94a3b8;
+        --good: #22c55e; --warn: #f59e0b; --danger: #ef4444; --info: #38bdf8;
+        --line: #334155;
+        --tap: 52px;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--ink);
+        font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        min-height: 100dvh; display: flex; flex-direction: column;
+      }
+      header {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; padding: 12px 16px; background: var(--panel); flex-wrap: wrap;
+      }
+      .who { font-weight: 600; }
+      .who small { display: block; color: var(--muted); font-weight: 400; font-size: 14px; }
+      .lang { background: transparent; color: var(--muted); min-height: 40px; font-size: 14px; border: 0; }
+
+      .sample { background: var(--warn); color: #451a03; padding: 8px 16px; font-weight: 600; font-size: 15px; margin: 0; }
+      .sample[hidden] { display: none; }
+      .stale { background: #1e3a5f; color: #dbeafe; padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info); }
+      .stale[hidden] { display: none; }
+      .gaps { background: #422006; color: #fde68a; padding: 10px 16px; margin: 0; font-size: 15px; }
+      .gaps[hidden] { display: none; }
+      .gaps strong { display: block; margin-bottom: 4px; color: var(--warn); }
+      .gaps ul { margin: 0; padding-left: 20px; }
+
+      nav { display: flex; gap: 8px; padding: 8px 16px; background: var(--panel); overflow-x: auto; }
+      nav button {
+        min-height: var(--tap); padding: 0 18px; border: 0; border-radius: 12px;
+        background: var(--line); color: var(--ink); font-size: 16px; font-weight: 600; white-space: nowrap;
+      }
+      nav button[aria-current='page'] { background: var(--ink); color: #0f172a; }
+
+      main { flex: 1; padding: 16px; display: grid; gap: 16px; align-content: start; max-width: 900px; }
+      section[hidden] { display: none; }
+      h2 { margin: 0 0 4px; font-size: 20px; }
+      h3 { margin: 16px 0 8px; font-size: 17px; }
+      p.lead { margin: 0 0 12px; color: var(--muted); font-size: 15px; }
+
+      .field { display: grid; gap: 6px; margin-bottom: 12px; }
+      .field label { color: var(--muted); font-size: 15px; }
+      .field input, .field select, .field textarea {
+        background: #0b1220; color: var(--ink); border: 1px solid var(--line);
+        border-radius: 12px; padding: 10px 14px; font-size: 18px; width: 100%; min-height: var(--tap);
+      }
+      .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+      button {
+        min-height: var(--tap); border-radius: 12px; border: 0; font-size: 16px; font-weight: 600;
+        background: var(--line); color: var(--ink);
+      }
+      button.primary { background: var(--good); color: #052e16; font-size: 18px; }
+      button:disabled { opacity: .45; }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+      .wide { width: 100%; }
+
+      /*
+        How much of the plan anybody actually looked at. This sits ABOVE the compliance
+        figure on purpose: a percentage over a shop nobody has counted is a number
+        somebody would put on a wall, and it would mean nothing (P-08).
+      */
+      .coverage {
+        background: var(--panel); border-radius: 14px; padding: 14px 16px;
+        border-left: 6px solid var(--line); display: grid; gap: 6px;
+      }
+      .coverage.whole { border-left-color: var(--good); }
+      .coverage.partial { border-left-color: var(--warn); }
+      .coverage.none { border-left-color: var(--info); }
+      .coverage .headline { font-size: 15px; color: var(--muted); }
+      .coverage .figure { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .coverage .caveat { color: var(--warn); font-size: 15px; }
+
+      .row {
+        background: var(--panel); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px;
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      }
+      .row .what { display: grid; gap: 2px; }
+      .row .what small { color: var(--muted); font-size: 14px; }
+      .row.urgent { border-left: 5px solid var(--danger); }
+      .row.normal { border-left: 5px solid var(--warn); }
+      .row.low { border-left: 5px solid var(--line); }
+      .row .qty { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+      table { width: 100%; border-collapse: collapse; font-size: 15px; }
+      th { text-align: left; color: var(--muted); font-size: 13px; font-weight: 500; padding: 8px 6px; }
+      td { padding: 8px 6px; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+      td.amount, th.amount { text-align: right; }
+      tr.flag td { color: var(--warn); }
+      .empty { color: var(--muted); padding: 20px 4px; }
+
+      .sheet {
+        position: fixed; inset: 0; background: rgba(2, 6, 23, .85);
+        display: grid; place-items: center; z-index: 20; padding: 16px;
+      }
+      .sheet[hidden] { display: none; }
+      .sheet-inner {
+        width: min(560px, 100%); background: var(--panel); padding: 20px;
+        border-radius: 20px; display: grid; gap: 12px; max-height: 90dvh; overflow-y: auto;
+      }
+      .sheet h3 { margin: 0; font-size: 19px; }
+      .choices { display: grid; gap: 10px; }
+      .choices button { text-align: left; padding: 0 16px; min-height: var(--tap); }
+
+      .banner {
+        position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 18px 16px;
+        background: var(--danger); color: #fff; display: grid; gap: 10px;
+      }
+      .banner[hidden] { display: none; }
+      .banner.good { background: var(--good); color: #052e16; }
+      .banner strong { font-size: 20px; }
+      .banner p { margin: 0; font-size: 16px; }
+      .banner button { background: #7f1d1d; color: #fff; }
+      .banner.good button { background: #052e16; color: #ecfdf5; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="who" id="who">Shelves and space<small id="whoami">—</small></span>
+      <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
+    </header>
+
+    <p class="sample" id="sample" hidden role="status">Sample data — this is not your shop.</p>
+    <p class="stale" id="stale" hidden role="status"></p>
+
+    <div class="gaps" id="gaps" hidden role="status">
+      <strong id="gaps-title">This screen has not been told everything</strong>
+      <ul id="gaps-list"></ul>
+    </div>
+
+    <nav id="tabs" aria-label="Sections">
+      <button id="tab-count" type="button" aria-current="page">Count a shelf</button>
+      <button id="tab-refill" type="button">Refills</button>
+      <button id="tab-range" type="button">Range</button>
+      <button id="tab-space" type="button">Space</button>
+    </nav>
+
+    <main>
+      <!--
+        Counting. The field asks for a number and shows NOTHING about what should be
+        there — the whole value of a count is that the person did not already know
+        the answer.
+      -->
+      <section id="view-count">
+        <h2 id="count-title">Count a shelf</h2>
+        <p class="lead" id="count-lead">Count what is actually on the facing. You will not be shown what it should be — that is the point.</p>
+
+        <div class="two">
+          <div class="field">
+            <label for="count-location" id="count-location-label">Shelf</label>
+            <select id="count-location"></select>
+          </div>
+          <div class="field">
+            <label for="count-product" id="count-product-label">Item code</label>
+            <input id="count-product" type="text" autocomplete="off" />
+          </div>
+        </div>
+        <div class="field">
+          <label for="count-qty" id="count-qty-label">How many are on the shelf</label>
+          <input id="count-qty" type="number" inputmode="numeric" min="0" step="1" />
+        </div>
+        <button id="save-count" class="primary wide" type="button">Save this count</button>
+
+        <h3 id="tocount-title">Still to count</h3>
+        <p class="lead" id="tocount-lead">The ones nobody has ever counted come first — nothing can be said about those at all.</p>
+        <div id="tocount-list"></div>
+      </section>
+
+      <!-- Refill tasks, and how much of the plan was actually looked at. -->
+      <section id="view-refill" hidden>
+        <h2 id="refill-title">Refills</h2>
+        <p class="lead" id="refill-lead">Shelves that need filling from the stockroom, in the order you walk them.</p>
+
+        <div class="coverage" id="coverage"></div>
+
+        <h3 id="tasks-title">Go and fill these</h3>
+        <div id="tasks-list"></div>
+
+        <h3 id="issues-title">Everything the check found</h3>
+        <div id="issues-list"></div>
+      </section>
+
+      <!-- The range. Dropping something with stock on it routes to clearance. -->
+      <section id="view-range" hidden>
+        <h2 id="range-title">Range</h2>
+        <p class="lead" id="range-lead">What this shop carries. Dropping something you still have stock of puts it on clearance rather than hiding it.</p>
+
+        <div class="two">
+          <div class="field">
+            <label for="drop-product" id="drop-product-label">Item code</label>
+            <input id="drop-product" type="text" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="drop-reason" id="drop-reason-label">Why</label>
+            <select id="drop-reason"></select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="drop-replacement" id="drop-replacement-label">Replaced by (item code)</label>
+          <input id="drop-replacement" type="text" autocomplete="off" />
+        </div>
+        <button id="drop-item" class="primary wide" type="button">Take it out of the range</button>
+
+        <h3 id="range-issues-title">Where the range and the shop disagree</h3>
+        <div id="range-issues"></div>
+
+        <h3 id="range-list-title">Carried today</h3>
+        <div id="range-list"></div>
+      </section>
+
+      <!-- What the floor earns, and who is standing on it for free. -->
+      <section id="view-space" hidden>
+        <h2 id="space-title">Space</h2>
+        <p class="lead" id="space-lead">What each part of the floor earns per square foot. Margin, not turnover — a big seller on a thin margin can be the worst use of space in the building.</p>
+        <div id="space-list"></div>
+
+        <h3 id="contracts-title">Supplier display space</h3>
+        <p class="lead" id="contracts-lead">An expired contract with the stand still on the floor is space you are giving away.</p>
+        <div id="contracts-list"></div>
+      </section>
+    </main>
+
+    <div class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+      <div class="sheet-inner">
+        <h3 id="sheet-title">—</h3>
+        <p class="lead" id="sheet-note"></p>
+        <div class="choices" id="choices"></div>
+        <button id="sheet-cancel" type="button">Cancel</button>
+      </div>
+    </div>
+
+    <div class="banner" id="banner" hidden role="alert">
+      <strong id="banner-title">—</strong>
+      <p id="banner-text"></p>
+      <button id="banner-ok" type="button">I have read this</button>
+    </div>
+
+    <!--SCREEN-DATA-->
+    <script type="module" src="./web-erp.bundle.js"></script>
+    <script type="module" src="./merchandising.js"></script>
+  </body>
+</html>

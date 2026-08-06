@@ -47,6 +47,15 @@ const sale = (over: Partial<LoggedSale> = {}): LoggedSale => ({
   ...over,
 });
 
+const PLANOGRAM = {
+  planogramId: 'pg-1', storeId: 'store-1', version: 1, effectiveFrom: '2026-08-01',
+  createdBy: 'u-merch',
+  assignments: [
+    { storeId: 'store-1', productId: 'p1', locationId: 'L-A1', capacityMinor: 24, primary: true },
+    { storeId: 'store-1', productId: 'p-milk', locationId: 'L-COLD', capacityMinor: 60, primary: true },
+  ],
+};
+
 const SHELF_LOCATIONS = [
   { storeId: 'store-1', locationId: 'L-A1', aisle: 1, rack: 1, bay: 1, shelf: 1, position: 1, label: 'A1' },
   // Physically the FIRST thing you walk past, and it must still be collected last.
@@ -112,6 +121,19 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   shelfLocations: known(SHELF_LOCATIONS),
   shelfAssignments: known(SHELF_ASSIGNMENTS),
   shelfPolicy: known({ zoneOrder: ['ambient', 'chilled', 'frozen'] }),
+  planogram: known(PLANOGRAM),
+  shelfCounts: known([]),
+  backstock: known({ p1: 100, 'p-milk': 100 }),
+  assortment: known([
+    { storeId: 'store-1', productId: 'p1', status: 'listed', effectiveFrom: '2026-01-01' },
+  ]),
+  spaceAreas: known([{ areaId: 'grocery', storeId: 'store-1', name: 'Grocery', squareFeet: 2_000 }]),
+  salesByAreaMinor: known({ grocery: 900_000 }),
+  marginByAreaMinor: known({ grocery: 90_000 }),
+  displayContracts: known([]),
+  fundingReceivedMinor: known({}),
+  stillOccupying: known([]),
+  merchandisingPolicy: known({ refillAtBp: 5_000, countStaleAfterMinutes: 120, refillRole: 'shelf-filler' }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([]),
   ...over,
