@@ -318,6 +318,21 @@ export interface PackShelfPolicy {
  * long a shelf count stays worth acting on — a shop that counts twice a day and one that counts on
  * Sundays need different numbers, and acting on a three-day-old reading wastes a walk.
  */
+/** When a figure stops being current, and when it stops being usable (§32). Per-tenant. */
+export interface PackReportingPolicy {
+  readonly laggingAfterMinutes: number;
+  readonly staleAfterMinutes: number;
+  /**
+   * Who this box's reporting screen acts as, named in the shop's own role assignments.
+   *
+   * Optional on purpose. Absent means the box does not know who is looking, and the screen then
+   * shows every report and **writes nothing out** — because the audit record of an export names
+   * who took the data, and it is the only evidence of that afterwards. A default here would put a
+   * name nobody holds into that record.
+   */
+  readonly userId?: string;
+}
+
 export interface PackMerchandisingPolicy {
   readonly refillAtBp: number;
   readonly countStaleAfterMinutes: number;
@@ -435,6 +450,19 @@ export interface StorePack {
   readonly stillOccupying: Register<readonly string[]>;
   /** Merchandising thresholds — the refill level and how long a count stays actionable. */
   readonly merchandisingPolicy: Register<PackMerchandisingPolicy>;
+  /**
+   * What this shop actually records (D13).
+   *
+   * The gaps are the point: a report whose fact is absent here **refuses by name** rather than
+   * running and coming back as zero. Absent altogether means the box can run nothing at all and
+   * says so for each report, which is honest for a shop that has just been switched on.
+   */
+  readonly reportingRecords: Register<readonly string[]>;
+  /** The shop's own roles and who holds them, so an export runs the SAME default-deny check. */
+  readonly roles: Register<readonly unknown[]>;
+  readonly roleAssignments: Register<readonly unknown[]>;
+  /** Reporting freshness thresholds (§32), per-tenant. */
+  readonly reportingPolicy: Register<PackReportingPolicy>;
   /** Loss-prevention thresholds — data, so a store tunes its own without code (M15-FR-01). */
   readonly lossPreventionRules: Register<readonly unknown[]>;
   /** The purposes this tenant asks a customer's consent for (M16 / PRV). */
@@ -486,6 +514,10 @@ export function emptyPack(why: string = NEVER): StorePack {
     fundingReceivedMinor: notKnown(why),
     stillOccupying: notKnown(why),
     merchandisingPolicy: notKnown(why),
+    reportingRecords: notKnown(why),
+    roles: notKnown(why),
+    roleAssignments: notKnown(why),
+    reportingPolicy: notKnown(why),
     lossPreventionRules: notKnown(why),
     consentPurposes: notKnown(why),
   };
@@ -543,6 +575,10 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     fundingReceivedMinor: section<Readonly<Record<string, number>>>('fundingReceivedMinor'),
     stillOccupying: section<readonly string[]>('stillOccupying'),
     merchandisingPolicy: section<PackMerchandisingPolicy>('merchandisingPolicy'),
+    reportingRecords: section<readonly string[]>('reportingRecords'),
+    roles: section<readonly unknown[]>('roles'),
+    roleAssignments: section<readonly unknown[]>('roleAssignments'),
+    reportingPolicy: section<PackReportingPolicy>('reportingPolicy'),
     lossPreventionRules: section<readonly unknown[]>('lossPreventionRules'),
     consentPurposes: section<readonly { purpose: string; channel: string; required?: boolean }[]>('consentPurposes'),
   };

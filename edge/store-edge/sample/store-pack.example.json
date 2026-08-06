@@ -32,7 +32,16 @@
     "screen inventing its own refill level would be deciding when a shelf is empty",
     "enough to be worth walking to. A facing with NO count in shelfCounts is reported",
     "as 'never counted' - it is NOT treated as empty, which would raise the loudest",
-    "alarm the system has for every product in the shop on day one."
+    "alarm the system has for every product in the shop on day one.",
+    "reportingRecords/roles/roleAssignments/reportingPolicy: the reporting screen (D13).",
+    "reportingRecords is what this shop ACTUALLY records today, and the gaps are the",
+    "point: a report whose fact is not in this list REFUSES BY NAME rather than running",
+    "and coming back as zero, because a zero is read as 'nothing happened' and an empty",
+    "report is read as 'nothing to worry about'. Leave reportingPolicy out and the box",
+    "serves that screen nothing, because a screen inventing its own staleness thresholds",
+    "would be deciding, on its own authority, how old a number may be before somebody",
+    "should stop making decisions on it. roles/roleAssignments are the shop's OWN access",
+    "control, so the same default-deny check that guards an action guards its export."
   ],
   "version": 1,
   "policies": {
@@ -272,6 +281,35 @@
     "refillAtBp": 5000,
     "countStaleAfterMinutes": 120,
     "refillRole": "REPLACE_WITH_ROLE_THAT_FILLS_SHELVES"
+  },
+  "reportingRecords": [
+    "sales_rung_at_the_till",
+    "cost_prices_on_the_catalogue",
+    "the_boxs_own_outbox"
+  ],
+  "roles": [
+    {
+      "id": "REPLACE_WITH_ROLE_ID",
+      "name": "REPLACE_WITH_ROLE_NAME",
+      "permissions": [
+        "reporting.sales.export",
+        "reporting.operations.export"
+      ]
+    }
+  ],
+  "roleAssignments": [
+    {
+      "userId": "REPLACE_WITH_USER_ID",
+      "roleId": "REPLACE_WITH_ROLE_ID",
+      "branchScope": [
+        "REPLACE_WITH_BRANCH_ID"
+      ]
+    }
+  ],
+  "reportingPolicy": {
+    "laggingAfterMinutes": 5,
+    "staleAfterMinutes": 60,
+    "userId": "REPLACE_WITH_USER_ID"
   },
   "lossPreventionRules": [
     {

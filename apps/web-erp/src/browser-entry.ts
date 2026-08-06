@@ -53,6 +53,12 @@ import {
   createMerchandisingSession,
   type MerchandisingPorts, type MerchandisingSession,
 } from './merchandising-session';
+import {
+  createReportingSession,
+  type ReportableSale, type ReportingPorts, type ReportingSession,
+} from './reporting-session';
+import { AccessControl, type Role, type RoleAssignment } from '../../../packages/rbac/src/index';
+import type { Producer } from '../../../packages/reporting/src/index';
 
 /** What the store knows about a product this screen may be asked to count. */
 export interface ProductFact {
@@ -142,6 +148,32 @@ export interface MerchandisingData {
   readonly stillOccupying?: readonly string[];
 }
 
+/** What the reporting screen was last told. Absent means this box knows nothing of it. */
+export interface ReportingData {
+  readonly userId?: string;
+  readonly storeId?: string;
+  readonly branchId?: string | null;
+  readonly now?: string;
+  readonly laggingAfterMinutes?: number;
+  readonly staleAfterMinutes?: number;
+  /**
+   * What this shop actually records today.
+   *
+   * The gaps are the point: everything absent from this list makes its reports **refuse**, by name,
+   * rather than run and come back as zero.
+   */
+  readonly records?: readonly Producer[];
+  readonly sales?: readonly ReportableSale[];
+  readonly lastSyncedAt?: string | null;
+  readonly unsentCount?: number;
+  readonly exceptions?: readonly { readonly what: string }[];
+  /** False means nobody set the shop's limits, so nothing was checked — not that nothing is wrong. */
+  readonly exceptionRulesKnown?: boolean;
+  /** The shop's own roles and who holds them, so the export runs the SAME default-deny check. */
+  readonly roles?: readonly Role[];
+  readonly roleAssignments?: readonly RoleAssignment[];
+}
+
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
 interface ManagerWindow {
   managerSession?: ManagerSession;
@@ -156,6 +188,8 @@ interface ManagerWindow {
   merchandisingSession?: MerchandisingSession;
   merchandisingData?: MerchandisingData;
   merchandisingGaps?: readonly MerchandisingGap[];
+  reportingSession?: ReportingSession;
+  reportingData?: ReportingData;
   /** The decision vocabulary, so the view can offer it and never invent a reason of its own. */
   managerReasons?: {
     readonly approved: readonly DecisionReasonCode[];
@@ -526,6 +560,55 @@ export function bootMerchandising(data: MerchandisingData | undefined): Merchand
   );
 }
 
+/**
+ * Ports over what the reporting screen was told.
+ *
+ * **`records` defaults to nothing, and that is the honest default.** A screen handed no list of
+ * what the shop records reports that it can run nothing at all and names every missing fact —
+ * rather than offering every report and returning zeroes, which is the one outcome this whole
+ * surface exists to prevent.
+ *
+ * The access control is built from the shop's own roles. Absent, it is an empty controller, which
+ * is default-deny: no export leaves a box that has not been told who is allowed to take one.
+ */
+export function reportingPortsFromData(data: ReportingData | undefined): ReportingPorts {
+  const access = new AccessControl(data?.roles ?? [], data?.roleAssignments ?? []);
+  return {
+    access: () => access,
+    records: () => data?.records ?? [],
+    sales: () => data?.sales ?? [],
+    lastSyncedAt: () => data?.lastSyncedAt ?? null,
+    unsentCount: () => data?.unsentCount ?? 0,
+    exceptions: () => data?.exceptions ?? [],
+    // Absent means NOT KNOWN, and not-known must not read as "the rules were checked and nothing
+    // was wrong". Zero exceptions with no rules is a shop nobody is watching.
+    exceptionRulesKnown: () => data?.exceptionRulesKnown === true,
+  };
+}
+
+/** Build the reporting session, or `null` when this box was told nothing about reporting. */
+export function bootReporting(data: ReportingData | undefined): ReportingSession | null {
+  if (data === undefined) return null;
+  return createReportingSession(
+    {
+      tenantId: 'tenant',
+      storeId: data.storeId ?? 'store-1',
+      // NOT defaulted. A made-up id would go into the audit record of every file written out,
+      // and that record is the only evidence afterwards of who took the data. Absent means the
+      // export refuses and says so, rather than denying under a name nobody holds.
+      userId: data.userId === undefined ? null : data.userId,
+      currency: 'INR',
+      // No clock in the screen. A number is judged fresh or stale against the SHOP's clock, and a
+      // device an hour out would quietly relabel a stale figure as live.
+      now: data.now ?? '1970-01-01T00:00:00.000Z',
+      laggingAfterMinutes: data.laggingAfterMinutes ?? 5,
+      staleAfterMinutes: data.staleAfterMinutes ?? 60,
+      branchId: data.branchId === undefined ? null : data.branchId,
+    },
+    reportingPortsFromData(data),
+  );
+}
+
 // In the browser `globalThis.window` IS the window, so this needs no DOM types.
 const browserWindow = (globalThis as { window?: ManagerWindow }).window;
 if (browserWindow !== undefined) {
@@ -547,6 +630,8 @@ if (browserWindow !== undefined) {
     browserWindow.merchandisingSession = merchandising;
     browserWindow.merchandisingGaps = merchandisingGaps(browserWindow.merchandisingData);
   }
+  const reporting = bootReporting(browserWindow.reportingData);
+  if (reporting !== null) browserWindow.reportingSession = reporting;
   // The view offers these and records the code the manager picks. It never composes a reason of
   // its own, so the audit trail keeps one vocabulary that can still be reported on in a year.
   browserWindow.managerReasons = { approved: APPROVE_REASONS, rejected: REJECT_REASONS };

@@ -7,7 +7,7 @@ import {
 } from '../../edge/store-edge/src/store-pack';
 import {
   payloadFor, managerPayload, ownerPayload, posPayload, customerPayload,
-  pickerPayload, driverPayload, GLOBAL_FOR, SCREENS, type ScreenInput,
+  pickerPayload, driverPayload, reportingPayload, GLOBAL_FOR, SCREENS, type ScreenInput,
 } from '../../edge/store-edge/src/screen-data';
 import { embed, injectPayload, routeOf, safeFile, DATA_MARKER, APP_SHELL } from '../../edge/store-edge/src/screen-server';
 import { SyncOutbox } from '../../packages/sync/src/index';
@@ -134,6 +134,17 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   fundingReceivedMinor: known({}),
   stillOccupying: known([]),
   merchandisingPolicy: known({ refillAtBp: 5_000, countStaleAfterMinutes: 120, refillRole: 'shelf-filler' }),
+  // What this shop records, who may export it, and how old a figure may get (D13 / §32).
+  reportingRecords: known([
+    'sales_rung_at_the_till', 'cost_prices_on_the_catalogue', 'the_boxs_own_outbox',
+    'the_shops_own_exception_rules',
+  ]),
+  roles: known([{
+    id: 'analyst', name: 'Analyst',
+    permissions: ['reporting.sales.export', 'reporting.operations.export'],
+  }]),
+  roleAssignments: known([{ userId: 'u-report', roleId: 'analyst', branchScope: ['b1'] }]),
+  reportingPolicy: known({ laggingAfterMinutes: 5, staleAfterMinutes: 60, userId: 'u-report' }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([]),
   ...over,
@@ -434,5 +445,72 @@ describe('the screens socket refuses what it should', () => {
 
   it('decodes BEFORE it checks, because %2e%2e is not .. until it is decoded', () => {
     expect(safeFile('%2e%2e/secrets')).toBeNull();
+  });
+});
+
+/**
+ * **The sale facts the reporting screen is built on.**
+ *
+ * The screen's own rules are tested against its ports; this is the other side of the socket, where
+ * a sale in this box's log becomes a fact a report is worked out from. Two of the conversions are
+ * the sort that fail silently — the answer is simply wrong, on a screen, in the space where a real
+ * figure goes, and nothing anywhere says so.
+ */
+describe('a sale in the log becomes a reporting fact, correctly', () => {
+  const input = (over: Partial<ScreenInput> = {}): ScreenInput => ({
+    pack: fullPack(), sales: [sale()], unreadableRecords: 0, outbox: new SyncOutbox(),
+    now: NOW, tradingDay: DAY, ...over,
+  });
+  const first = (over: Partial<ScreenInput> = {}): Record<string, unknown> =>
+    (reportingPayload(input(over))!['sales'] as Record<string, unknown>[])[0]!;
+
+  it('costs a countable line by the count, not by the thousandth', () => {
+    // One 1kg pack of dal costs ₹100. Dividing by a thousand — right for weighed goods, wrong for
+    // everything countable — makes it 10 paise, and the margin report then says 99.92%, which is
+    // the "100% margin reads as very good news" lie arrived at from the other side. Nothing fails.
+    expect(first()['cogsMinor']).toBe(100_00);
+  });
+
+  it('costs a weighed line by the weight', () => {
+    // 1.5kg of tomatoes at ₹50/kg is ₹75 — held as 1500, so the thousandths DO apply here.
+    const weighed = sale({ lines: [{ productId: 'p2', quantityMinor: 1_500, uom: 'kg' }] });
+    expect(first({ sales: [weighed] })['cogsMinor']).toBe(75_00);
+  });
+
+  it('counts a basket by the items in it, and a weighed line as one item', () => {
+    const mixed = sale({
+      lines: [
+        { productId: 'p1', quantityMinor: 3, uom: 'ea' },
+        { productId: 'p2', quantityMinor: 1_500, uom: 'kg' },
+      ],
+    });
+    // Three packs and some tomatoes is four things in the basket, not 1,503.
+    expect(first({ sales: [mixed] })['units']).toBe(4);
+  });
+
+  it('carries NO cost at all when one line in the basket has no cost price', () => {
+    // Zero cost reports a 100% margin. The sale keeps its takings and loses only its margin.
+    const unpriced = sale({ lines: [{ productId: 'p-unknown', quantityMinor: 1, uom: 'ea' }] });
+    const row = first({ sales: [unpriced] });
+    expect('cogsMinor' in row).toBe(false);
+    expect(row['totalMinor']).toBe(145_00);
+  });
+
+  it('carries NO basket size when the record has no readable lines', () => {
+    const broken = sale({ lines: undefined });
+    expect('units' in first({ sales: [broken] })).toBe(false);
+  });
+
+  it('serves nothing at all when the box has no freshness thresholds', () => {
+    expect(reportingPayload(input({ pack: fullPack({ reportingPolicy: notKnown('never sent') }) }))).toBeNull();
+  });
+
+  it('names no user rather than inventing one', () => {
+    // The audit record of an export names who took the data; a default there is a name nobody holds.
+    const anonymous = reportingPayload(input({
+      pack: fullPack({ reportingPolicy: known({ laggingAfterMinutes: 5, staleAfterMinutes: 60 }) }),
+    }))!;
+    expect('userId' in anonymous).toBe(false);
+    expect(reportingPayload(input())!['userId']).toBe('u-report');
   });
 });

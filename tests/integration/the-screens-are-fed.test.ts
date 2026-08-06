@@ -8,7 +8,7 @@ import { SyncOutbox } from '../../packages/sync/src/index';
 import { resolvePrice } from '../../packages/price-list/src/index';
 import { makeEvent } from '../../packages/contracts/src/event';
 import {
-  bootBuying, bootCatalogue, bootManager, bootMerchandising,
+  bootBuying, bootCatalogue, bootManager, bootMerchandising, bootReporting,
   buyingGaps, catalogueGaps, merchandisingGaps,
 } from '../../apps/web-erp/src/browser-entry';
 import { bootOwner, forgetfulQueueStore } from '../../apps/owner-app/src/browser-entry';
@@ -161,6 +161,17 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
   fundingReceivedMinor: known({}),
   stillOccupying: known([]),
   merchandisingPolicy: known({ refillAtBp: 5_000, countStaleAfterMinutes: 120, refillRole: 'shelf-filler' }),
+  // What this shop records, who may export it, and how old a figure may get (D13 / §32).
+  reportingRecords: known([
+    'sales_rung_at_the_till', 'cost_prices_on_the_catalogue', 'the_boxs_own_outbox',
+    'the_shops_own_exception_rules',
+  ]),
+  roles: known([{
+    id: 'analyst', name: 'Analyst',
+    permissions: ['reporting.sales.export', 'reporting.operations.export'],
+  }]),
+  roleAssignments: known([{ userId: 'u-report', roleId: 'analyst', branchScope: ['b1'] }]),
+  reportingPolicy: known({ laggingAfterMinutes: 5, staleAfterMinutes: 60, userId: 'u-report' }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([{ purpose: 'marketing', channel: 'sms' }]),
   ...over,
@@ -410,6 +421,8 @@ describe('a box that has been told nothing tells every screen so', () => {
       salesByAreaMinor: notKnown('never'), marginByAreaMinor: notKnown('never'),
       displayContracts: notKnown('never'), fundingReceivedMinor: notKnown('never'),
       stillOccupying: notKnown('never'), merchandisingPolicy: notKnown('never'),
+      reportingRecords: notKnown('never'), roles: notKnown('never'),
+      roleAssignments: notKnown('never'), reportingPolicy: notKnown('never'),
       lossPreventionRules: notKnown('never'), consentPurposes: notKnown('never'),
     },
     sales: [],
@@ -417,7 +430,7 @@ describe('a box that has been told nothing tells every screen so', () => {
 
   it('serves the shells with no payload at all, marker intact', async () => {
     const base = await serve(nothing);
-    for (const screen of ['pos', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising'] as const) {
+    for (const screen of ['pos', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising', 'reporting'] as const) {
       expect(await payloadFromScreen(base, screen), `${screen} invented something`).toBeNull();
     }
   });
@@ -1292,5 +1305,201 @@ describe('the owner’s merchandising thresholds, end to end (OB-08)', () => {
     ) as { merchandisingPolicy: { refillAtBp: number; countStaleAfterMinutes: number } };
     expect(example.merchandisingPolicy.countStaleAfterMinutes).toBe(120);
     expect(example.merchandisingPolicy.refillAtBp).toBe(5_000);
+  });
+});
+
+/**
+ * **The reporting screen, driven over the real socket (D13 · M29-FR-01/02 · API-10).**
+ *
+ * Everything this screen refuses to do is a thing that looks like working software when it goes
+ * wrong. A report that runs and returns nought is indistinguishable from a shop with nothing to
+ * report; a figure quoted three hours after the sync stopped looks exactly like a live one; a
+ * column added months later rides out of the building in a file somebody emails.
+ *
+ * So this drives the whole path — the box builds the payload from its own log and its own outbox,
+ * the shell carries it, the real session boots on it, and a report is run and written out.
+ */
+describe('the reporting screen, fed by the box', () => {
+  it('boots on what the box injected, with no clock of its own', async () => {
+    const base = await serve(snapshotOf());
+    const payload = (await payloadFromScreen(base, 'reporting'))!;
+    // The box's clock, not the device's. A tablet an hour out would relabel a stale figure as live.
+    expect(payload['now']).toBe(NOW);
+    expect(payload['laggingAfterMinutes']).toBe(5);
+    expect(payload['staleAfterMinutes']).toBe(60);
+
+    const reporting = bootReporting(payload as never)!;
+    const outcome = reporting.run('sales_by_day');
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    // The one sale this box logged, at the price it was rung at.
+    expect(outcome.result.figures.find((f) => f.name === 'Taken')?.valueMinor).toBe(145_00);
+    expect(outcome.result.figures.find((f) => f.name === 'Bills')?.valueMinor).toBe(1);
+    for (const f of outcome.result.figures) expect(f.asAt, `${f.name} has no as-at`).toBe(NOW);
+  });
+
+  it('refuses a report this shop does not record, by name, rather than showing nought', async () => {
+    const base = await serve(snapshotOf());
+    const reporting = bootReporting((await payloadFromScreen(base, 'reporting'))! as never)!;
+    const outcome = reporting.run('waste');
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.refusal).toBe('this_shop_does_not_record_that_yet');
+    expect(outcome.detail).toContain('what is thrown away recorded');
+  });
+
+  it('refuses a report this BUILD cannot compute, and does not blame the shop', async () => {
+    // The shop records everything `shrinkage` names and there is no code here that works it out.
+    // Judged on the pack's records alone it would open with no figures and no rows, under its own
+    // name, and be read as "no shrinkage".
+    const base = await serve(snapshotOf({
+      pack: pack({
+        reportingRecords: known([
+          'sales_rung_at_the_till', 'cost_prices_on_the_catalogue', 'the_boxs_own_outbox',
+          'stock_movements_recorded', 'stock_counted_on_the_shelves',
+        ]),
+      }),
+    }));
+    const reporting = bootReporting((await payloadFromScreen(base, 'reporting'))! as never)!;
+    const outcome = reporting.run('shrinkage');
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.refusal).toBe('this_version_cannot_produce_that_yet');
+    expect(outcome.missing, 'the shop was blamed for our gap').toEqual([]);
+  });
+
+  it('lists what it cannot run alongside what it can, never hiding it', async () => {
+    const base = await serve(snapshotOf());
+    const reporting = bootReporting((await payloadFromScreen(base, 'reporting'))! as never)!;
+    const all = reporting.catalogue();
+    expect(all.filter((e) => e.availability.available).length).toBeGreaterThan(5);
+    expect(all.filter((e) => !e.availability.available).length).toBeGreaterThan(10);
+    for (const entry of all) {
+      if (entry.availability.available) continue;
+      expect(entry.availability.why, `${entry.report.id} says nothing useful`).not.toMatch(/no data/i);
+    }
+  });
+
+  it('reports the box’s OWN queue, which the cloud cannot tell it', async () => {
+    const outbox = new SyncOutbox();
+    outbox.enqueue(makeEvent({
+      id: 'e1', type: 'SaleCommitted', occurredAt: NOW, idempotencyKey: 'k1', source: 'lane-1', payload: {},
+    }));
+    const base = await serve(snapshotOf({ outbox }));
+    const payload = (await payloadFromScreen(base, 'reporting'))!;
+    expect(payload['unsentCount']).toBe(1);
+    const reporting = bootReporting(payload as never)!;
+    const outcome = reporting.run('sync_health');
+    if (!outcome.ok) return;
+    expect(outcome.result.figures[0]?.valueMinor).toBe(1);
+  });
+
+  it('says NEVER SYNCED rather than nought minutes ago', async () => {
+    // Zero minutes is the freshest possible answer, and on a box that has never heard from the
+    // cloud it would be exactly wrong.
+    const base = await serve(snapshotOf({ pack: { ...pack(), receivedAt: null } }));
+    const reporting = bootReporting((await payloadFromScreen(base, 'reporting'))! as never)!;
+    const outcome = reporting.run('data_freshness');
+    if (!outcome.ok) return;
+    const f = outcome.result.figures[0]!;
+    expect(f.valueMinor).toBeUndefined();
+    expect(f.notAvailableBecause).toContain('never sent anything');
+  });
+
+  it('says nothing was CHECKED when the shop has no loss-prevention limits', async () => {
+    // Zero exceptions with no rules is not a clean shop; it is a shop nobody is watching.
+    const base = await serve(snapshotOf({ pack: pack({ lossPreventionRules: notKnown('never sent') }) }));
+    const payload = (await payloadFromScreen(base, 'reporting'))!;
+    expect(payload['exceptionRulesKnown']).toBe(false);
+    const reporting = bootReporting(payload as never)!;
+    const outcome = reporting.run('exceptions');
+    if (!outcome.ok) return;
+    expect(outcome.result.figures[0]?.valueMinor).toBeUndefined();
+    expect(outcome.result.figures[0]?.notAvailableBecause).toContain('nothing was checked');
+  });
+
+  it('carries NO cost rather than a zero cost for a product with no cost price', async () => {
+    // Zero cost reports a 100% margin, which is a lie that reads as very good news.
+    const base = await serve(snapshotOf({
+      pack: pack({ products: known([{ ...PRODUCTS[0]!, unitCostMinor: undefined }]) }),
+    }));
+    const payload = (await payloadFromScreen(base, 'reporting'))!;
+    const sales = payload['sales'] as Record<string, unknown>[];
+    expect('cogsMinor' in sales[0]!, 'a costless basket was costed anyway').toBe(false);
+
+    const reporting = bootReporting(payload as never)!;
+    const outcome = reporting.run('margin');
+    if (!outcome.ok) return;
+    expect(outcome.result.figures.find((f) => f.name === 'Margin')?.valueMinor).toBeUndefined();
+    expect(outcome.result.figures.find((f) => f.name === 'Sales with no cost price')?.valueMinor).toBe(1);
+  });
+
+  it('carries NO basket size for a record whose lines could not be read', async () => {
+    const base = await serve(snapshotOf({ sales: [{ ...SALE, lines: undefined }] }));
+    const payload = (await payloadFromScreen(base, 'reporting'))!;
+    const sales = payload['sales'] as Record<string, unknown>[];
+    expect('units' in sales[0]!, 'a broken record was counted as a basket of nothing').toBe(false);
+
+    const reporting = bootReporting(payload as never)!;
+    const outcome = reporting.run('basket');
+    if (!outcome.ok) return;
+    expect(outcome.result.figures.find((f) => f.name === 'Units per basket')?.valueMinor).toBeUndefined();
+    expect(outcome.result.figures.find((f) => f.name === 'Bills with no readable lines')?.valueMinor).toBe(1);
+    // The takings are still real and still counted — the till printed them.
+    expect(outcome.result.figures.find((f) => f.name === 'Average basket')?.valueMinor).toBe(145_00);
+  });
+
+  it('writes a report out under the shop’s OWN access control, and refuses without it', async () => {
+    const base = await serve(snapshotOf());
+    const payload = (await payloadFromScreen(base, 'reporting'))!;
+    // The box names who this screen acts as; nothing here invents it.
+    expect(payload['userId']).toBe('u-report');
+
+    const result = bootReporting(payload as never)!.export('sales_by_day');
+    expect('csv' in result, 'the analyst could not export their own family').toBe(true);
+    if (!('csv' in result)) return;
+    expect(result.audit.rowCount).toBe(1);
+    expect(result.audit.userId).toBe('u-report');
+    expect(result.schema.columns.map((c) => c.name)).toEqual(['saleId', 'at', 'totalMinor', 'tender']);
+
+    // Default-deny: somebody the shop has given no role to gets nothing, from the same check.
+    const stranger = bootReporting({ ...payload, userId: 'u-nobody' } as never)!;
+    expect('csv' in stranger.export('sales_by_day')).toBe(false);
+  });
+
+  it('writes nothing out at all when the box does not know who is looking', async () => {
+    // Not a permission failure — a different problem, and it says so. Denying under a default id
+    // would put a name nobody holds into the record of who took the shop's data.
+    const base = await serve(snapshotOf({
+      pack: pack({ reportingPolicy: known({ laggingAfterMinutes: 5, staleAfterMinutes: 60 }) }),
+    }));
+    const payload = (await payloadFromScreen(base, 'reporting'))!;
+    expect('userId' in payload, '"userId" must be absent, not invented').toBe(false);
+
+    const reporting = bootReporting(payload as never)!;
+    // The reports still run: reading them is not the thing that needs a name against it.
+    expect(reporting.run('sales_by_day').ok).toBe(true);
+    const result = reporting.export('sales_by_day');
+    expect('csv' in result).toBe(false);
+    if ('csv' in result) return;
+    expect(result.detail).toContain('has not been told who is using this screen');
+  });
+
+  it('serves the screen nothing at all without the tenant’s own freshness thresholds', async () => {
+    // A screen inventing them would be deciding, on its own authority, how old a number may be
+    // before somebody should stop making decisions on it.
+    const base = await serve(snapshotOf({ pack: pack({ reportingPolicy: notKnown('never sent') }) }));
+    expect(await payloadFromScreen(base, 'reporting')).toBeNull();
+    expect(bootReporting(undefined)).toBeNull();
+  });
+
+  it('runs nothing at all when the box was never told what this shop records', async () => {
+    // Honest for a shop that has just been switched on: not one report, and a reason on each.
+    const base = await serve(snapshotOf({ pack: pack({ reportingRecords: notKnown('never sent') }) }));
+    const payload = (await payloadFromScreen(base, 'reporting'))!;
+    expect('records' in payload, '"records" must be absent, not empty').toBe(false);
+    const reporting = bootReporting(payload as never)!;
+    expect(reporting.catalogue().every((e) => !e.availability.available)).toBe(true);
+    expect(reporting.run('sales_by_day').ok).toBe(false);
   });
 });

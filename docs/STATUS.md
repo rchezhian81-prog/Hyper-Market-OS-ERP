@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, and merchandising and space)
+Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, and reporting and analytics)
 
 ---
 
@@ -2591,6 +2591,103 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## Reporting and analytics — and the report that would have opened blank (6 August 2026)
+
+The reports screen, built the same day you asked for it. Every report the plan names is on it —
+**including the ones this shop cannot run**, which is the part that took the thinking.
+
+### Why the reports you cannot run are on the screen
+
+A reports screen that lists only the reports that work looks finished.
+
+Somebody goes looking for shrinkage, cannot find it, and concludes one of two things: the shop has
+no shrinkage, or the software forgot. Both are wrong, and **neither can be corrected by anybody
+looking at the screen**. There is nothing there to correct it.
+
+So all 26 reports are listed. Nine of them work today. The other seventeen sit in a tab of their
+own, as prominent as the working ones, and each says why in your words — *nothing yet records what
+is thrown away* — rather than "no data".
+
+That list is the build plan, in shop language rather than software language.
+
+### The report that would have opened with nothing on it
+
+Here is the fault I found inside my own work, and it is the fifth time this session that something
+was written, tested, and quietly not joined up.
+
+My first version asked one question: **does this shop record what the report needs?** If yes, run
+it.
+
+But nine reports have code behind them and seventeen do not. So the day you started recording stock
+counts, *Shrinkage* would have passed that test, opened, and shown **nothing** — no figures, no
+rows, its real name at the top, a real timestamp underneath. And an empty shrinkage report reads as
+**no shrinkage**.
+
+That is exactly the thing this screen was built to prevent, arrived at from the other direction.
+
+A report now needs **both** halves: the shop records it, and this version can work it out. And the
+two gaps are kept apart, because they are different people's jobs:
+
+- **"nothing yet records that"** — yours to fix, and the screen tells you what to start recording;
+- **"this version cannot work it out yet"** — ours, and no amount of work in the shop will finish
+  it, so it is never put on your list.
+
+They are different colours, different words, and a different sentence.
+
+### The number that was wrong and said nothing
+
+I ran the screen for real over the store box before writing this, rather than only running its
+tests. The margin came back as **99.92%**.
+
+The cost of goods was being divided by a thousand. That is right for things sold by weight — 1.5kg
+is held as 1,500 — and wrong for everything you count, so a ₹100 pack of dal was costing 10 paise.
+Nothing failed. No test went red. The number was simply wrong, on the screen, in the place a real
+margin goes, and **a 100% margin is a lie that reads as very good news**.
+
+The store box already worked this out correctly for your daily brief. My new screen had its own
+second copy of the same rule, and the copy was wrong. There is now one, used by both.
+
+### The rest of it
+
+**Every number says when it was true**, in words as well as colour, because this is a screen people
+quote from. A figure three hours old looks exactly like a live one otherwise.
+
+**A figure that cannot be worked out says why, where the number would have been.** Never nought,
+never blank.
+
+**A bill with unreadable lines keeps its takings** — the till printed them, they are real — but it
+carries **no** basket size, and the count of those bills is shown beside the average. Counting them
+as baskets of nothing would drag the shop's figure down by an amount nobody could explain.
+
+**Nothing goes out under a name nobody holds.** When you write a report to a file, the record of who
+took it is the only evidence afterwards. If the box has not been told who is using the screen, it
+**writes nothing at all** and says so — rather than refusing in a way that looks like a permissions
+problem, or worse, writing the file under an invented name.
+
+**Tests:** 3,952 automated plus 31 performance, all green — 95 new.
+
+### What the owner should check, in the store
+
+1. Open the reports screen. Look at the **"Cannot be run yet"** tab. It should be longer than the
+   first tab, and every line should say what is missing in words you recognise. If any line says
+   "no data", tell me.
+2. Open **Margin**. Check the percentage against what you know your margin to be. If it says
+   anything near 100%, tell me immediately — that is the fault I found and fixed.
+3. Look under any number for the time it was true. Every single one has it.
+4. Open **"What to record next"**. It should either name something you could start doing, or say
+   plainly that nothing else you record will unlock a report in this version.
+5. Press **"Write this out to a file"** on a report. It should either write it, or say why not in a
+   sentence — never fail silently.
+
+### One thing you should know, not decide
+
+Seventeen of the 26 reports need work on our side, not yours. They are named on the screen so
+nobody has to take my word for what is missing. When you want any of them prioritised, name it and
+it moves; until then they are visible rather than forgotten.
+
+---
+
+
 ## Merchandising and space — and the shelf nobody had counted (6 August 2026)
 
 The rest of M04, built the same day you asked for it: the shelf plan and refill tasks, the range
@@ -4388,7 +4485,16 @@ evidence for the real migration, and the D4 handover to Mr Sivakumar.
 `claude/new-session-lw91i4` is pushed, every check passes, and the traceability document has a row
 for every piece of it.
 
-**The theme of the second half of this session, worth remembering.** Having found one thing that
+**The theme that has now run through two sessions, worth remembering.** A control that is
+described, tested and never joined up is the failure mode of this codebase, and it has been found
+**five more times since**: the picker's route sequencer, the supplier-invoice capture, the price
+producer, the whole merchandising package, and — inside the reporting screen, in the same session
+that built it — a report that would have opened with nothing on it. **The last one was mine, and
+the tests were green when I found it.** What found it was running the screen for real over the
+store box, which also turned up a margin of 99.92% from a costing rule that had been copied instead
+of shared. Reading does not find these. Driving the real path does, every time.
+
+Having found one thing that
 looked wired up and was not, I went looking for more, and found five: the piece that sends a sale
 to the cloud, the piece that writes a sale to the disk, the process that runs the shop's edge, the
 safety catch on repeated requests, and the audit trail itself. **Not one of them was a crash.**

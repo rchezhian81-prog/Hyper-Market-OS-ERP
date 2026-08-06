@@ -32,18 +32,21 @@
 //                      every price ever set
 //   • merchandising  — the shelf plan, every count ever taken, the stockroom, the range and what
 //                      each part of the floor earns
+//   • reporting      — the day's sales facts, the outbox, the exception register, and WHICH FACTS
+//                      this shop does not record, so a report it cannot run refuses by name
 
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { assessChecklist } from '../../../packages/workforce/src/index';
 import type { LpRule } from '../../../packages/loss-prevention/src/index';
 import { planDispatch, type DispatchPlan } from '../../../packages/fulfilment/src/routing';
 import { ShelfMap, type ShelfLocation } from '../../../packages/merchandising/src/index';
-import { costTheDay, exceptionsFor, activityFrom, type LoggedSale } from './read-model';
+import { basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, type LoggedSale } from './read-model';
 import type { StorePack } from './store-pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
+  'reporting',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -678,6 +681,94 @@ export function merchandisingPayload(input: ScreenInput): Record<string, unknown
   return payload;
 }
 
+/**
+ * The reporting payload (D13 · M29-FR-01/02 · §32).
+ *
+ * `null` when the box has never been told when a figure stops being current — a screen inventing
+ * its own staleness thresholds would be deciding, on its own authority, how old a number may be
+ * before somebody should stop making decisions on it.
+ *
+ * **`reportingRecords` is the important one.** It is what the shop actually records, and everything
+ * absent from it makes its reports refuse **by name** rather than run and come back as zero. Served
+ * only when the pack carried it: a box that was never told runs nothing and says so for each
+ * report, which is the honest state for a shop that has just been switched on.
+ */
+export function reportingPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.reportingPolicy.known) return null;
+  const policy = input.pack.reportingPolicy.value;
+  const policies = input.pack.policies.known ? input.pack.policies.value : undefined;
+
+  const payload: Record<string, unknown> = {
+    storeId: policies?.storeId ?? 'store-1',
+    branchId: policies?.branchId ?? null,
+    // The box's own clock. A device an hour out would quietly relabel a stale figure as live.
+    now: input.now,
+    laggingAfterMinutes: policy.laggingAfterMinutes,
+    staleAfterMinutes: policy.staleAfterMinutes,
+    // This box's own queue and its own log — the two facts the cloud cannot supply, by definition.
+    unsentCount: input.outbox.pending().length,
+    lastSyncedAt: input.pack.receivedAt,
+  };
+
+  // Served only when the pack named one. Not defaulted: an export's audit record names who took
+  // the data, and a made-up id there is worse than no export at all.
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+
+  if (input.pack.reportingRecords.known) payload['records'] = input.pack.reportingRecords.value;
+  if (input.pack.roles.known) payload['roles'] = input.pack.roles.value;
+  if (input.pack.roleAssignments.known) payload['roleAssignments'] = input.pack.roleAssignments.value;
+
+  // The day's sales, reduced to reporting facts. A sale whose products have no cost price carries
+  // NO cogs rather than a zero — zero cost reports a 100% margin, and the margin report leaves it
+  // out and counts it instead.
+  const products = input.pack.products.known ? input.pack.products.value : [];
+  const costOf = new Map(products.filter((p) => p.unitCostMinor !== undefined)
+    .map((p) => [p.productId, p.unitCostMinor!] as const));
+  payload['sales'] = input.sales.map((sale) => {
+    // A record with no readable lines keeps its takings — the till printed them and they are real —
+    // but it carries NO basket size. A zero would be averaged into "units per basket" and quietly
+    // drag the shop's figure down by an amount nobody could explain.
+    //
+    // The costing and the basket size both come from `read-model`, which is where this box already
+    // works them out for the owner's brief. Writing them again here is how the two screens end up
+    // quoting different margins for the same day.
+    const lines = sale.lines;
+    let cogs = 0;
+    let costable = lines !== undefined && lines.length > 0;
+    if (lines !== undefined) {
+      for (const line of lines) {
+        const unit = costOf.get(line.productId);
+        if (unit === undefined) { costable = false; break; }
+        cogs += lineCostMinor(unit, line);
+      }
+    }
+    return {
+      saleId: sale.id,
+      committedAt: sale.committedAt ?? input.now,
+      cashierId: sale.cashierId ?? 'unknown',
+      netMinor: sale.netMinor ?? 0,
+      taxMinor: sale.taxMinor ?? 0,
+      totalMinor: sale.total ?? 0,
+      ...(costable ? { cogsMinor: cogs } : {}),
+      ...(lines === undefined ? {} : { units: basketUnits(lines) }),
+      tender: sale.tenders?.[0]?.kind ?? 'unknown',
+    };
+  });
+
+  // The exception register, and whether the shop's limits were known at all. Zero exceptions with
+  // no rules is not a clean shop; it is a shop nobody is watching.
+  const rules = input.pack.lossPreventionRules.known
+    ? (input.pack.lossPreventionRules.value as readonly LpRule[])
+    : undefined;
+  const day = exceptionsFor(activityFrom(input.sales), rules);
+  payload['exceptionRulesKnown'] = day.rulesKnown;
+  payload['exceptions'] = day.exceptions.map((e) => ({
+    what: `${e.kind.replace(/_/g, ' ')} by ${e.cashierId}: ${e.observed} against a limit of ${e.limit}`,
+  }));
+
+  return payload;
+}
+
 /** The global each screen's bundle reads at boot. One name per screen, and they must not drift. */
 export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   pos: 'posCatalogue',
@@ -689,6 +780,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   buying: 'buyingData',
   catalogue: 'catalogueData',
   merchandising: 'merchandisingData',
+  reporting: 'reportingData',
 });
 
 const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<string, unknown> | null>> = Object.freeze({
@@ -701,6 +793,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   buying: buyingPayload,
   catalogue: cataloguePayload,
   merchandising: merchandisingPayload,
+  reporting: reportingPayload,
 });
 
 /** Build one screen's payload. `null` means this box has nothing to give it, and says so. */

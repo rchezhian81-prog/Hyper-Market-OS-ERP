@@ -90,6 +90,39 @@ export interface CostedDay {
  * `uncostableSales`. Both numbers are then true, and the gap between them is named rather than
  * quietly absorbed into the margin.
  */
+/** One sold line, as this box's log records it. */
+export type SoldLine = { readonly productId: string; readonly quantityMinor: number; readonly uom?: string };
+
+/**
+ * What one sold line cost, in minor units.
+ *
+ * **`quantityMinor` means two different things and the UOM is what says which.** Weighed goods are
+ * held in the unit's smallest part, so 1.5kg is `1500` and its cost is `unitCost × 1500 / 1000`. A
+ * countable item is held as a plain count, so two tins is `2` and the cost is `unitCost × 2`.
+ *
+ * Exported so there is exactly **one** of these. A second copy of it lived in the reporting
+ * payload for one commit, with the division and without the condition — which divided the cost of
+ * every countable item by a thousand and reported a margin of 99.92%. Nothing failed; the number
+ * was simply wrong, on the screen, in the space where a real margin goes.
+ *
+ * Integer arithmetic throughout — never a float (§29.1).
+ */
+export function lineCostMinor(unitCostMinor: number, line: SoldLine): number {
+  return line.uom === 'kg' || line.uom === 'g'
+    ? Math.round((unitCostMinor * line.quantityMinor) / 1000)
+    : unitCostMinor * line.quantityMinor;
+}
+
+/**
+ * How many items were on a bill — the basket size.
+ *
+ * A weighed line is one item however much of it was weighed: 1.5kg of tomatoes is one thing in the
+ * basket, and counting it as 1,500 would make the average basket meaningless.
+ */
+export function basketUnits(lines: readonly SoldLine[]): number {
+  return lines.reduce((n, l) => n + (l.uom === 'ea' ? l.quantityMinor : 1), 0);
+}
+
 export function costTheDay(
   sales: readonly LoggedSale[],
   products: readonly PackProduct[],
@@ -114,11 +147,7 @@ export function costTheDay(
         costable = false;
         continue;
       }
-      // Weighed goods are held in the UOM's smallest unit, so the cost of 1.5kg is
-      // `unitCost × 1500 / 1000`. Integer arithmetic throughout — never a float (§29.1).
-      cogs += line.uom === 'kg' || line.uom === 'g'
-        ? Math.round((unitCost * line.quantityMinor) / 1000)
-        : unitCost * line.quantityMinor;
+      cogs += lineCostMinor(unitCost, line);
     }
 
     if (!costable) {
@@ -133,7 +162,7 @@ export function costTheDay(
       taxMinor: sale.taxMinor ?? total - net,
       totalMinor: total,
       cogsMinor: cogs,
-      units: lines.reduce((n, l) => n + (l.uom === 'ea' ? l.quantityMinor : 1), 0),
+      units: basketUnits(lines),
       // The first tender is the one the day is reported by. A split payment is rare and reporting
       // it under its first kind is a choice; reporting it under none would lose the sale entirely.
       tender: sale.tenders?.[0]?.kind ?? 'unknown',

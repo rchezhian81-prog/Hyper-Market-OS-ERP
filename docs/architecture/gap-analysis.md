@@ -25,8 +25,8 @@ project.
 | `packages/` — domain rules | 45,179 | **Genuinely strong.** The product's value lives here |
 | `services/` — the thirteen APIs | 5,556 | Built, persisting, authenticated, audited |
 | `edge/` — the store box | 2,250 | Runs, writes durably, syncs — **and now feeds every screen**, the buyer's included |
-| `apps/` — everything a person touches | 8,000 | **All six have real screens, and the ERP now has two** — the manager's and the buyer's. The gap that dominated this document is closed |
-| Tests | 3,857 + 31 | Unusually thorough on rules; thin on assembly until today |
+| `apps/` — everything a person touches | 8,500 | **All six have real screens, and the ERP now has five** — the manager's, the buyer's, the product and price screen, merchandising and space, and reporting. The gap that dominated this document is closed |
+| Tests | 3,952 + 31 | Unusually thorough on rules; thin on assembly until today |
 
 **2,452 lines of app code for six applications** is the number that matters. For comparison, the POS
 alone — one screen a cashier uses eight hours a day — is 1,070 of those lines, and none of it draws
@@ -117,8 +117,8 @@ Three columns, and they are different questions. **Rules** = is the logic writte
 | M16–M18 Customer, loyalty, storefront | ✅ | ✅ | ◐ | **The customer app is now a screen**: search, repeat order, basket review, slots, payment, and a privacy centre where withdrawing consent is the same one tap as giving it (DPDP s.6(6)). Loyalty **accrual still not wired** — points read as *not known* |
 | M19–M20 Picking, delivery | ✅ | ✅ | ✅ | **Both handhelds are now screens**, both queue their work, and **the store box now plans the routes** (M19-FR-03) — straight-line distances, stated as such, as a draft a dispatcher confirms. Runs reconcile against a real assignment list at last |
 | M21–M24 Finance, Tally | ✅ | ◐ | ❌ | Journals and period close real. **No control totals can be built** — deliberate, and it means no month can close yet |
-| M25–M28 Reporting, analytics | ✅ | ◐ | ❌ | Two real figures. Everything else needs producers |
-| M29–M32 Ops, compliance, workforce | ✅ | ❌ | ❌ | Rules only |
+| M25–M28 Workforce, facilities, concession, waste | ✅ | ◐ | ❌ | **Mislabelled as "Reporting, analytics" in every earlier version of this document.** Rules only, apart from the refill task's owning role, which merchandising now uses |
+| M29–M32 Reporting, ops, compliance | ✅ | ✅ | ◐ | **The reporting screen is now built** (M29-FR-01/02, D13, API-10). D13 names 26 reports; **nine have code behind them and the other seventeen are listed as unrunnable, by name, rather than hidden** — a screen showing only what works looks finished, and somebody who cannot find shrinkage concludes the shop has none. The two reasons are told apart because they have different owners: *nothing yet records what is thrown away* is the shop's to fix, *this version cannot work it out yet* is ours. Exports are permission-checked, PII-redacted and audited, and refuse outright when the box has not been told who is asking. Compliance and workforce are still rules only |
 | M33–M35 Owner control, audit, config | ✅ | ✅ | ◐ | Audit trail now real and immutable. **The owner's phone is now a screen**: brief, drill-through to every sale behind a figure, and approvals that record how old the data was when he decided |
 | M36 + A01–A10 AI | ✅ | ✅ | ❌ | Kill switch defaults **on**. No provider chosen (owner decision) |
 | MG-01–MG-12 Migration | ✅ | ✅ | ◐ | Strongest non-POS area. CLI tool exists. **No real data yet** |
