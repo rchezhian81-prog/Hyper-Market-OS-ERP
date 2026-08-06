@@ -2669,7 +2669,7 @@ And supplier display space: the finding that matters is an **expired contract wi
 on the floor** — the supplier stopped paying, nobody took the stand away, and the shop is giving
 away its best space.
 
-**Tests:** 3,849 automated plus 31 performance, all green — 87 new.
+**Tests:** 3,857 automated plus 31 performance, all green — 95 new.
 
 ### What the owner should check, in the store
 
@@ -2683,12 +2683,22 @@ away its best space.
 5. Take an item you still have stock of out of the range. It must go to **clearance**, and say how
    many are still on hand.
 
-### Two things I need from you
+### Two things I needed from you — ✅ answered the same day (OB-08)
 
-- **How long a shelf count stays worth acting on.** I have used two hours as a starting figure.
-  Tell me what suits how often your staff actually walk the shop.
-- **How empty a shelf has to be before it is worth a trip.** Starting figure is half empty.
-  Refilling at 90% wastes the day; refilling at nothing means the customer already found the gap.
+**Two hours, and half empty.** Both are now your shop's settings rather than starting figures, and
+both are proved at the exact line, because a rule you agreed to is only useful if everybody knows
+which side of it counts:
+
+- a count of **exactly two hours** still raises a refill; one at **two hours and a minute** does not,
+  and says the reading is too old to send somebody on;
+- a facing at **exactly half full** raises no trip; **below half** does — and an **empty** facing is
+  marked urgent while a half-empty one is not.
+
+Unlike the pick zone order, these two do ship as product defaults for the next shop we sell to. The
+reason is which way the mistake falls: a window that is too **short** simply judges more counts
+stale and raises **fewer** trips, so a shop that has not answered is never sent walking on bad
+information. A shop that wants a **longer** window — one that counts once a day, say — is the one
+making a decision, and it makes it knowingly.
 
 ---
 
@@ -4307,10 +4317,11 @@ insist on when somebody eventually asks for it to be switched off.
   the rest the same day. All of M04 is now built — see *Shelf addresses* and *Merchandising and
   space*. The prerequisite named in the deferral turned out to be a live fault: an uncounted shelf
   was being treated as an empty one.
-- **Two per-store figures the merchandising screen needs.** How long a shelf count stays worth
-  acting on (starting figure: 2 hours) and how empty a facing must be before it is worth a trip
-  (starting figure: half). Both are settings with stated starting figures, not rules — refilling at
-  90% wastes the day, refilling at nothing means the customer already found the gap.
+- **Merchandising thresholds — ANSWERED (OB-08, 6 August 2026):** a shelf count stays worth acting
+  on for **2 hours**, and a facing is worth a trip **below half full**. Recorded in `decisions.md`
+  (OB-08) and `owner-configuration.md` (OC-44/OC-45), held as `SETTINGS.SHELF_COUNT_STALE_AFTER_MINUTES`
+  and `SETTINGS.SHELF_REFILL_AT_BP`, shipped in the example store pack, and driven at the exact
+  boundary by test from both sides.
 - **Pick zone order — ANSWERED (OB-07, 6 August 2026):** `ambient → secure → chilled → frozen`.
   Recorded in `decisions.md` (OB-07) and `owner-configuration.md` (OC-42), held as
   `SETTINGS.PICK_ZONE_ORDER`, shipped in the example store pack, and driven end to end by test. The

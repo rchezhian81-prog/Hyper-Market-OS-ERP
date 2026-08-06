@@ -88,6 +88,34 @@ export const SETTINGS = {
     label: 'Order a picker collects the shop’s zones in',
     defaultValue: [] as readonly string[],
   } as TenantSetting<readonly string[]>,
+  /**
+   * How long a shelf count stays worth acting on (M04-FR-03 / OB-08: SRE is 120 minutes).
+   *
+   * A shelf quantity is an observation, not a fact — it was true when somebody looked, and the shop
+   * keeps selling. Past this window a facing raises **no** refill task rather than sending somebody
+   * on an old reading, because enough wasted walks and the whole list stops being believed.
+   *
+   * **The conservative direction here is SHORT**, which is why a default is safe where the pick
+   * zone order's was not: a window that is too short judges more counts stale and therefore raises
+   * *fewer* tasks. A tenant lengthening it is the one making a choice, and they make it knowingly.
+   */
+  SHELF_COUNT_STALE_AFTER_MINUTES: {
+    key: 'merchandising.shelf_count_stale_after_minutes',
+    label: 'How long a shelf count stays worth acting on (minutes)',
+    defaultValue: 120,
+  } as TenantSetting<number>,
+  /**
+   * How empty a facing must be before it is worth a trip (M04-FR-03 / OB-08: SRE is half).
+   *
+   * In basis points of the facing's capacity. Refilling at 90% wastes the staff's day; refilling at
+   * 0% means the customer already found the gap. A facing at **exactly** this level is treated as
+   * properly filled — the task starts below it.
+   */
+  SHELF_REFILL_AT_BP: {
+    key: 'merchandising.shelf_refill_at_bp',
+    label: 'How empty a facing must be before it is worth refilling (basis points)',
+    defaultValue: 5_000,
+  } as TenantSetting<number>,
 };
 
 /**

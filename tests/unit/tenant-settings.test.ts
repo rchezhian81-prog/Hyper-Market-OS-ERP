@@ -66,4 +66,25 @@ describe('per-tenant settings', () => {
     expect(s.get('sre', SETTINGS.PICK_ZONE_ORDER)).toEqual(['ambient', 'secure', 'chilled', 'frozen']);
     expect(s.get('another-tenant', SETTINGS.PICK_ZONE_ORDER)).toEqual([]);
   });
+
+  /**
+   * OB-08 — SRE counts stay actionable for two hours, and a facing is worth a trip below half.
+   *
+   * Unlike the pick zone order, these DO ship with defaults, and the reason is the direction of the
+   * error: a freshness window that is too short judges more counts stale and raises *fewer* tasks,
+   * so the conservative default is safe. A tenant lengthening it is the one making a choice.
+   */
+  it('ships conservative merchandising thresholds, and holds SRE’s confirmed ones', () => {
+    expect(SETTINGS.SHELF_COUNT_STALE_AFTER_MINUTES.defaultValue).toBe(120);
+    expect(SETTINGS.SHELF_REFILL_AT_BP.defaultValue).toBe(5_000);
+
+    const s = newSettings();
+    s.set('sre', SETTINGS.SHELF_COUNT_STALE_AFTER_MINUTES, 120, 'owner', 'OB-08', AT);
+    s.set('sre', SETTINGS.SHELF_REFILL_AT_BP, 5_000, 'owner', 'OB-08', AT);
+    expect(s.get('sre', SETTINGS.SHELF_COUNT_STALE_AFTER_MINUTES)).toBe(120);
+    expect(s.get('sre', SETTINGS.SHELF_REFILL_AT_BP)).toBe(5_000);
+    // A tenant that counts once a day sets its own without touching SRE's.
+    s.set('other-store', SETTINGS.SHELF_COUNT_STALE_AFTER_MINUTES, 1_440, 'owner', 'daily count', AT);
+    expect(s.get('sre', SETTINGS.SHELF_COUNT_STALE_AFTER_MINUTES)).toBe(120);
+  });
 });

@@ -1231,3 +1231,66 @@ describe('the merchandising screen is fed, and an uncounted shelf stays uncounte
       .toEqual(['what_is_in_the_stockroom', 'how_big_each_part_of_the_floor_is']);
   });
 });
+
+/**
+ * **SRE's own merchandising thresholds, driven rather than filed (OB-08, 6 August 2026).**
+ *
+ * Two hours, and half empty. Both fail quietly if they are wrong: a shop whose counts stop working
+ * at 119 minutes has been given a different rule from the one it agreed to, and it would find out
+ * by somebody walking to a shelf that did not need them. So the line itself is driven, over the
+ * real socket, from both sides.
+ */
+describe('the owner’s merchandising thresholds, end to end (OB-08)', () => {
+  const AT = (minutesAgo: number) => new Date(Date.parse(NOW) - minutesAgo * 60_000).toISOString();
+  const COUNT = (onShelf: number, minutesAgo: number) => ([{
+    storeId: 'store-1', locationId: 'L-A1', productId: 'p1',
+    countedMinor: onShelf, countedBy: 'u-merch', at: AT(minutesAgo),
+  }]);
+
+  const withCount = (onShelf: number, minutesAgo: number) => snapshotOf({
+    pack: pack({ shelfCounts: known(COUNT(onShelf, minutesAgo)) }),
+  });
+
+  const tasksFor = async (onShelf: number, minutesAgo: number) => {
+    const base = await serve(withCount(onShelf, minutesAgo));
+    const merch = bootMerchandising((await payloadFromScreen(base, 'merchandising'))! as never)!;
+    const check = merch.check();
+    return 'why' in check ? null : check;
+  };
+
+  it('serves the shop’s own two figures rather than the screen inventing them', async () => {
+    const base = await serve(snapshotOf());
+    const payload = (await payloadFromScreen(base, 'merchandising'))!;
+    expect(payload['countStaleAfterMinutes']).toBe(120);
+    expect(payload['refillAtBp']).toBe(5_000);
+  });
+
+  it('a count exactly two hours old still raises the refill; a minute later it does not', async () => {
+    const onTheLine = await tasksFor(0, 120);
+    expect(onTheLine?.tasks, 'two hours exactly was treated as stale').toHaveLength(1);
+
+    const past = await tasksFor(0, 121);
+    expect(past?.tasks, 'a count just past two hours still sent somebody walking').toEqual([]);
+    expect(past?.issues.find((i) => i.productId === 'p1')?.finding).toBe('last_counted_too_long_ago');
+  });
+
+  it('a facing exactly half full raises no trip; below half does', async () => {
+    // Capacity 24 on the plan: 12 is exactly half, 11 is below it.
+    const half = await tasksFor(12, 5);
+    expect(half?.tasks, 'a half-full facing sent somebody walking').toEqual([]);
+
+    const below = await tasksFor(11, 5);
+    expect(below?.tasks).toHaveLength(1);
+    expect(below?.tasks[0]?.quantityMinor).toBe(13);
+  });
+
+  it('is the same pair the example pack ships, so a new store starts right', async () => {
+    // The register, the tenant setting and the example pack have to agree. Three copies of one
+    // answer is two of them going stale.
+    const example = JSON.parse(
+      readFileSync('edge/store-edge/sample/store-pack.example.json', 'utf8'),
+    ) as { merchandisingPolicy: { refillAtBp: number; countStaleAfterMinutes: number } };
+    expect(example.merchandisingPolicy.countStaleAfterMinutes).toBe(120);
+    expect(example.merchandisingPolicy.refillAtBp).toBe(5_000);
+  });
+});

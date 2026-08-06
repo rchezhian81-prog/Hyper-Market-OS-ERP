@@ -343,3 +343,50 @@ describe('planogramCompliance — the empty shelf with a full stockroom', () => 
     expect(result.issues.find((i) => i.productId === 'rice')?.finding).toBe('over_capacity');
   });
 });
+
+/**
+ * **SRE's own two figures, at the boundary (OB-08, 6 August 2026).**
+ *
+ * "Two hours" and "half empty" are only useful answers if everybody knows which side of the line
+ * counts. A shop told its counts last two hours, whose counts stop working at 119 minutes, has been
+ * given a different rule from the one it agreed to — and it would find out by walking.
+ */
+describe('two hours and half empty, at the exact line', () => {
+  const NOW = '2026-08-06T10:00:00.000Z';
+  const AT = (minutesAgo: number) => new Date(Date.parse(NOW) - minutesAgo * 60_000).toISOString();
+  const OWNER = { asOf: NOW, staleAfterMinutes: 120, refillAtBp: 5_000 };
+
+  const oneFacing: Planogram = {
+    planogramId: 'pg-b', storeId: STORE, version: 1, effectiveFrom: '2026-08-01', createdBy: 'm',
+    assignments: [{ storeId: STORE, productId: 'rice', locationId: 'L-B3', capacityMinor: 24, primary: true }],
+  };
+
+  const run = (onShelfMinor: number, minutesAgo: number) => planogramCompliance({
+    planogram: oneFacing,
+    map: map(),
+    shelfState: [{ productId: 'rice', locationId: 'L-B3', onShelfMinor, observedAt: AT(minutesAgo) }],
+    backstock: { rice: 100 },
+    assignedRole: 'shelf-filler',
+    ...OWNER,
+  });
+
+  it('a count exactly two hours old is still usable; a minute later it is not', () => {
+    expect(run(0, 120).tasks, 'two hours exactly was treated as stale').toHaveLength(1);
+    expect(run(0, 121).tasks, 'a count just past two hours still raised a task').toEqual([]);
+    expect(run(0, 121).issues[0]?.finding).toBe('last_counted_too_long_ago');
+  });
+
+  it('a facing exactly half full raises no trip; below half does', () => {
+    // 24 capacity: 12 is exactly half, 11 is below it.
+    expect(run(12, 5).tasks, 'a half-full facing sent somebody walking').toEqual([]);
+    expect(run(12, 5).complianceBp).toBe(10_000);
+    expect(run(11, 5).tasks).toHaveLength(1);
+    expect(run(11, 5).tasks[0]?.quantityMinor).toBe(13);
+  });
+
+  it('an empty facing is urgent, a half-empty one is not', () => {
+    // The priority is what decides whether somebody walks now or on the next round.
+    expect(run(0, 5).tasks[0]?.priority).toBe('urgent');
+    expect(run(11, 5).tasks[0]?.priority).toBe('low');
+  });
+});
