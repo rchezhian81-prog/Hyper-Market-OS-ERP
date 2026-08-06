@@ -26,7 +26,7 @@ project.
 | `services/` — the thirteen APIs | 5,556 | Built, persisting, authenticated, audited |
 | `edge/` — the store box | 2,250 | Runs, writes durably, syncs — **and now feeds every screen**, the buyer's included |
 | `apps/` — everything a person touches | 8,000 | **All six have real screens, and the ERP now has two** — the manager's and the buyer's. The gap that dominated this document is closed |
-| Tests | 3,755 + 31 | Unusually thorough on rules; thin on assembly until today |
+| Tests | 3,762 + 31 | Unusually thorough on rules; thin on assembly until today |
 
 **2,452 lines of app code for six applications** is the number that matters. For comparison, the POS
 alone — one screen a cashier uses eight hours a day — is 1,070 of those lines, and none of it draws

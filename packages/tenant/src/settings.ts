@@ -71,6 +71,23 @@ export const SETTINGS = {
     label: 'In-store production departments operated',
     defaultValue: [] as readonly string[],
   } as TenantSetting<readonly string[]>,
+  /**
+   * The order a picker collects the shop's zones in (M04-FR-02 / D05).
+   *
+   * **Empty by default, and deliberately so.** Which zones a shop has, how far apart they are and
+   * how long chilled goods may stand out of temperature are questions about a particular licensed
+   * premises. A default here would be this codebase deciding a food-safety matter on behalf of
+   * every tenant, and the wrong guess is silent: the pick route looks perfectly sensible and the
+   * milk is simply warm by the time it reaches the crate.
+   *
+   * Unset, the picker's list is sequenced by shelf position alone and every screen **says so**.
+   * SRE's own answer is `['ambient', 'secure', 'chilled', 'frozen']` (OB-07, 6 Aug 2026).
+   */
+  PICK_ZONE_ORDER: {
+    key: 'picking.zone_order',
+    label: 'Order a picker collects the shop’s zones in',
+    defaultValue: [] as readonly string[],
+  } as TenantSetting<readonly string[]>,
 };
 
 /**

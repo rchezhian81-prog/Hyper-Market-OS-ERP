@@ -46,4 +46,24 @@ describe('per-tenant settings', () => {
     s.set('sre', SETTINGS.BASE_CURRENCY, 'INR', 'owner', 'v2', AT);
     expect(s.get('sre', SETTINGS.BASE_CURRENCY)).toBe('INR');
   });
+
+  /**
+   * OB-07 — SRE collects ambient, then the secure cabinet, then the chiller, then the freezer.
+   *
+   * The setting has **no default**, and that is the part worth a test: which zones a shop has and
+   * how long chilled goods may stand out are questions about a licensed premises, and a default
+   * here would be this codebase answering a food-safety question for every tenant. The wrong guess
+   * is silent — the pick route looks sensible and the milk is warm.
+   */
+  it('ships NO pick zone order, so a shop that has not said gets none', () => {
+    expect(SETTINGS.PICK_ZONE_ORDER.defaultValue).toEqual([]);
+    expect(newSettings().get('a-shop-that-has-not-answered', SETTINGS.PICK_ZONE_ORDER)).toEqual([]);
+  });
+
+  it('holds SRE’s own answer without changing anybody else’s', () => {
+    const s = newSettings();
+    s.set('sre', SETTINGS.PICK_ZONE_ORDER, ['ambient', 'secure', 'chilled', 'frozen'], 'owner', 'OB-07', AT);
+    expect(s.get('sre', SETTINGS.PICK_ZONE_ORDER)).toEqual(['ambient', 'secure', 'chilled', 'frozen']);
+    expect(s.get('another-tenant', SETTINGS.PICK_ZONE_ORDER)).toEqual([]);
+  });
 });

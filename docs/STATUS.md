@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, the product and price screen, and shelf addresses)
+Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, the product and price screen, shelf addresses, and the owner's pick zone order)
 
 ---
 
@@ -2662,8 +2662,14 @@ why.
 3. Give a picker a real order with a chilled item in it. The chiller should be the **last** thing
    on their list — and if it is not, tell me the order you want your zones collected in and I will
    put it into your settings.
-4. Tell me **the zone order** for the shop: which parts are collected last, and in what order.
-   Until you do, the handheld says plainly that the list is in shelf order only.
+4. ~~Tell me the zone order for the shop.~~ ✅ **Answered 6 August 2026: ambient, then the secure
+   cabinet, then the chiller, then the freezer** (OB-07). In the shop that means a picker clears the
+   dry aisles, opens the locked cabinet once, then takes the chiller and the freezer last — so what
+   spoils fastest spends the least time out of temperature. Recorded as SRE's own setting, not as a
+   rule in the software: the next shop we sell this to answers for itself, and one that has not
+   answered still gets a list in shelf order only with the handheld saying so. **Proved, not just
+   filed** — there is a test that runs your order through a shop laid out to defeat it, with the
+   freezer nearest the door and the dry goods furthest away.
 
 ### What is deferred, and what has to happen before it can be built
 
@@ -4199,10 +4205,15 @@ insist on when somebody eventually asks for it to be switched off.
   before go-live; planograms, compliance, refill tasks and supplier display space (M04-FR-03/04)
   deferred to **R3, after go-live**. Built and shipped the same day — see *Shelf addresses*. Not
   dropped (OD-02/OD-10).
-- **One per-store fact the picker's walk needs.** The **zone order** — which parts of the shop are
-  collected last, and in what order. Deliberately not defaulted: guessing a cold-chain order is a
-  licensed-premises decision and the wrong guess is silent. Until it is set, the handheld says the
-  list is in shelf order only.
+- **Pick zone order — ANSWERED (OB-07, 6 August 2026):** `ambient → secure → chilled → frozen`.
+  Recorded in `decisions.md` (OB-07) and `owner-configuration.md` (OC-42), held as
+  `SETTINGS.PICK_ZONE_ORDER`, shipped in the example store pack, and driven end to end by test. The
+  product default stays **empty** — guessing a cold-chain order is a licensed-premises decision and
+  the wrong guess is silent (OB-01/OB-05).
+- **Still open on shelves (OC-43):** the shelf addresses themselves — aisle, rack, bay, shelf and
+  position for each location, and which product lives on which. That is master-data configuration
+  in the store, not a decision: until it exists, the picker's list is in the order it arrived and
+  the handheld says so.
 - **Two per-store facts the buyer's screen needs (6 August 2026).** Who may approve a captured
   supplier invoice, and who may approve a purchase order. Until the store's configuration carries
   them, the screen names the gap on the page and refuses to save — which is the correct behaviour,

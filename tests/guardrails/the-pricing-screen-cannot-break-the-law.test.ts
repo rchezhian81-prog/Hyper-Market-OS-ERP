@@ -307,6 +307,15 @@ describe('the shelf map sequences the picker’s walk, and says when it did not'
     expect(byPosition, 'the zone is compared but the position never is').toBeGreaterThan(byZone);
   });
 
+  it('ships the zone order as a per-tenant setting with no default (OB-07)', () => {
+    // The owner's answer is ambient → secure → chilled → frozen. It is SRE's answer, recorded as
+    // SRE's setting — never a constant, because the next tenant has a different shop.
+    const SETTINGS_SRC = code(readFileSync('packages/tenant/src/settings.ts', 'utf8'));
+    expect(SETTINGS_SRC).toMatch(/PICK_ZONE_ORDER/);
+    const setting = SETTINGS_SRC.slice(SETTINGS_SRC.indexOf('PICK_ZONE_ORDER'));
+    expect(setting.slice(0, 260)).toMatch(/defaultValue: \[\] as readonly string\[\]/);
+  });
+
   it('invents NO cold-chain order of its own', () => {
     // Which zones a shop has, how far apart they are and how long chilled goods may stand out are
     // questions about a licensed premises. Guessing is silent: the route looks sensible and the

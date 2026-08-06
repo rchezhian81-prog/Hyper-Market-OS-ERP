@@ -1,4 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { startScreenServer, SCREEN_HOST, DATA_MARKER, type ScreenServer } from '../../edge/store-edge/src/screen-server';
 import { GLOBAL_FOR, SCREENS, type ScreenInput, type ScreenName } from '../../edge/store-edge/src/screen-data';
 import { known, notKnown, type PackProduct, type StorePack } from '../../edge/store-edge/src/store-pack';
@@ -951,5 +952,109 @@ describe('the box puts the picker’s list in the order they walk the shop', () 
     const catalogue = bootCatalogue((await payloadFromScreen(base, 'catalogue'))! as never)!;
     expect(catalogue.shelves().map((l) => l.locationId)).toEqual(['L-COLD', 'L-A1']);
     expect(catalogue.shelfOf('p1')?.label).toBe('A1');
+  });
+});
+
+/**
+ * **SRE's own answer, driven rather than filed (OB-07, 6 August 2026).**
+ *
+ * The owner's zone order is `ambient → secure → chilled → frozen`. An owner answer that lives only
+ * in a register is an answer nobody checks, and the ones that matter are exactly the ones that
+ * would fail quietly: a wrong pick order does not throw, it just walks a sensible-looking route and
+ * delivers warm milk.
+ *
+ * So this runs the real order through the real box against a shop laid out to punish it — every
+ * zone sitting in the WRONG physical place, so a route that ignored the zones would come back in
+ * exactly the reverse of what the owner asked for.
+ */
+describe('the owner’s pick zone order, end to end (OB-07)', () => {
+  const OWNER_ZONE_ORDER = ['ambient', 'secure', 'chilled', 'frozen'];
+
+  /** Aisle numbers deliberately fight the zone order: frozen is nearest the door, ambient furthest. */
+  const AWKWARD_SHOP = [
+    { storeId: 'store-1', locationId: 'L-FROZEN', aisle: 1, rack: 1, bay: 1, shelf: 1, position: 1, label: 'Freezer', zone: 'frozen' as const },
+    { storeId: 'store-1', locationId: 'L-CHILL', aisle: 2, rack: 1, bay: 1, shelf: 1, position: 1, label: 'Chiller', zone: 'chilled' as const },
+    { storeId: 'store-1', locationId: 'L-LOCK', aisle: 3, rack: 1, bay: 1, shelf: 1, position: 1, label: 'Cabinet', zone: 'secure' as const },
+    { storeId: 'store-1', locationId: 'L-DRY', aisle: 4, rack: 1, bay: 1, shelf: 1, position: 1, label: 'A4' },
+  ];
+
+  const FOUR_ZONES = () => snapshotOf({
+    pack: pack({
+      shelfLocations: known(AWKWARD_SHOP),
+      shelfPolicy: known({ zoneOrder: OWNER_ZONE_ORDER }),
+      shelfAssignments: known([
+        { storeId: 'store-1', productId: 'p1', locationId: 'L-DRY', capacityMinor: 24, primary: true },
+        { storeId: 'store-1', productId: 'p-milk', locationId: 'L-CHILL', capacityMinor: 60, primary: true },
+        { storeId: 'store-1', productId: 'p-peas', locationId: 'L-FROZEN', capacityMinor: 40, primary: true },
+        { storeId: 'store-1', productId: 'p-whisky', locationId: 'L-LOCK', capacityMinor: 12, primary: true },
+      ]),
+      wave: known({
+        waveId: 'w-zones', pickerId: 'u-picker',
+        // Arrives in the worst possible order — frozen first, dry goods last.
+        lines: ['p-peas', 'p-milk', 'p-whisky', 'p1'].map((productId, i) => ({
+          lineId: `l${i}`, orderRef: 'ORD-9', productId, description: productId,
+          bin: 'B', requiredQty: 1, uom: 'ea', unitPriceMinor: 100_00,
+        })),
+      }),
+    }),
+  });
+
+  it('walks ambient, then the secure cabinet, then the chiller, then the freezer', async () => {
+    const base = await serve(FOUR_ZONES());
+    const payload = (await payloadFromScreen(base, 'picker'))!;
+    expect((payload['lines'] as { productId: string }[]).map((l) => l.productId))
+      .toEqual(['p1', 'p-whisky', 'p-milk', 'p-peas']);
+  });
+
+  it('does it in spite of the aisle numbers, not because of them', async () => {
+    // The freezer is aisle 1 and the dry aisle is aisle 4, so a route that ignored the zones would
+    // come back in exactly the reverse. That is the whole point of this fixture.
+    const base = await serve(FOUR_ZONES());
+    const withoutZones = await serve(snapshotOf({
+      pack: pack({
+        shelfLocations: known(AWKWARD_SHOP),
+        shelfPolicy: known({}),
+        shelfAssignments: known([
+          { storeId: 'store-1', productId: 'p1', locationId: 'L-DRY', capacityMinor: 24, primary: true },
+          { storeId: 'store-1', productId: 'p-milk', locationId: 'L-CHILL', capacityMinor: 60, primary: true },
+          { storeId: 'store-1', productId: 'p-peas', locationId: 'L-FROZEN', capacityMinor: 40, primary: true },
+          { storeId: 'store-1', productId: 'p-whisky', locationId: 'L-LOCK', capacityMinor: 12, primary: true },
+        ]),
+        wave: known({
+          waveId: 'w-zones', pickerId: 'u-picker',
+          lines: ['p-peas', 'p-milk', 'p-whisky', 'p1'].map((productId, i) => ({
+            lineId: `l${i}`, orderRef: 'ORD-9', productId, description: productId,
+            bin: 'B', requiredQty: 1, uom: 'ea', unitPriceMinor: 100_00,
+          })),
+        }),
+      }),
+    }));
+
+    const owner = (await payloadFromScreen(base, 'picker'))!;
+    const plain = (await payloadFromScreen(withoutZones, 'picker'))!;
+    expect((plain['lines'] as { productId: string }[]).map((l) => l.productId))
+      .toEqual(['p-peas', 'p-milk', 'p-whisky', 'p1']);
+    expect((owner['lines'] as { productId: string }[]).map((l) => l.productId))
+      .toEqual([...(plain['lines'] as { productId: string }[]).map((l) => l.productId)].reverse());
+  });
+
+  it('reaches the picker’s real session with the shelf sign on every line', async () => {
+    const base = await serve(FOUR_ZONES());
+    const picker = bootPicker(
+      (await payloadFromScreen(base, 'picker'))! as never,
+      new DeviceOutbox(noDeviceStore()),
+      () => NOW,
+    )!;
+    expect(picker.work().map((l) => l.shelf))
+      .toEqual(['A4', 'Cabinet (secure)', 'Chiller (chilled)', 'Freezer (frozen)']);
+  });
+
+  it('is the same order the example pack ships, so a new store starts right', async () => {
+    // The register, the setting and the example pack have to agree. Three copies of one answer is
+    // two of them going stale, and this is the check that stops it.
+    const example = JSON.parse(
+      readFileSync('edge/store-edge/sample/store-pack.example.json', 'utf8'),
+    ) as { shelfPolicy: { zoneOrder: string[] } };
+    expect(example.shelfPolicy.zoneOrder).toEqual(OWNER_ZONE_ORDER);
   });
 });

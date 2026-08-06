@@ -57,6 +57,8 @@ Status: **Default in use** · **Confirmed** · **Changed by owner**.
 | OC-39 | Loyalty tier thresholds, and how close to one a customer must be to get asked | `planLoyaltySample` `tierThresholds` / `tierBoundaryWindow` | **Off** until the tiers are given. A tier is on every receipt, so a customer one point from a threshold is worth asking | Master-data config |
 | OC-40 | Points difference at or below which a customer's balance need not block | `assessLoyaltyVerification` `tolerancePoints` | **0** — every difference is looked at. There is **no** tolerance for a customer who was asked and never replied | Migration |
 | OC-41 | Whether customers are held at their old tier for a period after go-live | Owner decision at cutover | **Not set** — offered as the usual answer where several tiers moved, never applied silently | Before go-live |
+| OC-42 | Order a picker collects the shop's zones in | `SETTINGS.PICK_ZONE_ORDER` → the store pack's `shelfPolicy.zoneOrder` | **`['ambient', 'secure', 'chilled', 'frozen']`** — confirmed by owner (OB-07). Product default is **empty**: unset, the walk is by shelf position alone and the handheld says so, because guessing a cold-chain order is a licensed-premises decision and a wrong guess is silent | ✅ Confirmed |
+| OC-43 | Shelf addresses — aisle, rack, bay, shelf and position per location, and which product lives on which | store pack `shelfLocations` / `shelfAssignments` | **Empty** — a shop with no shelf map has its pick list in the order it arrived, and the handheld says so rather than implying a route | Master-data config |
 
 > **How to use this at UAT:** work down the list. For each row either accept the default
 > (say nothing) or give the value. Nothing here needs a technical answer — every one is a
