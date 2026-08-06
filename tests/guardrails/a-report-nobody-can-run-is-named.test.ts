@@ -293,6 +293,74 @@ describe('an export cannot widen itself, and cannot skip the permission check', 
   });
 });
 
+// ── One trading day, not every day the box has ever seen ────────────────────
+
+describe('a figure about today is about today', () => {
+  it('slices the log to the trading day in every builder that means "today"', () => {
+    // `sales.log` is append-only and never rotated, so `input.sales` is every sale this box has
+    // ever committed. Handing that to a builder that means today is a defect that compounds
+    // daily and never announces itself: the owner's phone reported the WEEK's takings as the
+    // day's, and the manager's exception register — which the day close gates on — counted a
+    // refund from last Tuesday against today's limit, so a clean day could not be closed.
+    for (const builder of ['managerPayload', 'ownerPayload', 'reportingPayload']) {
+      const body = code(SCREEN_DATA).slice(code(SCREEN_DATA).indexOf(`export function ${builder}`));
+      const end = body.indexOf('\nexport function', 1);
+      const scope = end === -1 ? body : body.slice(0, end);
+      expect(scope, `${builder} does not slice the log to one trading day`)
+        .toMatch(/salesOn\(input\.sales, input\.tradingDay\)/);
+      // And nothing inside it still costs, counts or judges the whole log.
+      expect(scope, `${builder} still reads the whole log as today`)
+        .not.toMatch(/(costTheDay|activityFrom)\(input\.sales/);
+    }
+  });
+
+  it('tripwire — the detector fires on the shape it exists to catch', () => {
+    expect('  const day = costTheDay(input.sales, products);').toMatch(/(costTheDay|activityFrom)\(input\.sales/);
+    expect('  const day = exceptionsFor(activityFrom(input.sales), rules);').toMatch(/(costTheDay|activityFrom)\(input\.sales/);
+  });
+
+  it('keeps the whole log where the whole log is the right answer', () => {
+    // The range check asks "has this shop EVER sold something it does not range?", and an item
+    // that sold last Tuesday is exactly as much evidence as one that sold this morning. Slicing
+    // it to today would be the same mistake in the other direction.
+    const merch = code(SCREEN_DATA).slice(code(SCREEN_DATA).indexOf('export function merchandisingPayload'));
+    expect(merch.slice(0, merch.indexOf('\nexport function', 1))).toMatch(/for \(const sale of input\.sales\)/);
+  });
+
+  it('puts a sale with no trading day in nobody’s figures, and names it', () => {
+    // Including it puts another day's money in today's takings; dropping it silently loses real
+    // takings from a total somebody reconciles against the till roll.
+    const read = readFileSync('edge/store-edge/src/read-model.ts', 'utf8');
+    const helper = code(read).slice(code(read).indexOf('export function salesOn'));
+    expect(helper.slice(0, 400)).toMatch(/tradingDay === undefined.*undated \+= 1/s);
+    expect(code(SCREEN_DATA)).toMatch(/edge:undated-sales/);
+    expect(code(SCREEN_DATA)).toMatch(/undatedSales/);
+  });
+
+  it('never measures today against a day the box does not hold', () => {
+    // A comparison against a day that is not there reports the shop as having doubled overnight,
+    // against a nought nobody put in. And a future-dated sale from a lane with a wrong clock must
+    // not become "the day before" — hence strictly earlier, not merely "the next one down".
+    const cmp = code(MODEL).slice(code(MODEL).indexOf("case 'day_on_day'"));
+    expect(cmp).toMatch(/d\.tradingDay < config\.tradingDay/);
+    expect(cmp).toMatch(/no earlier trading day/);
+    expect(code(ENTRY), 'the day list is defaulted somewhere else').not.toMatch(/dayTotals: \(\) => data\?\.dayTotals \?\? \[\{/);
+  });
+
+  it('reports what sells by department in UNITS, because the log has no money per line', () => {
+    // Rebuilding department revenue from list prices makes a bill with a promotion on it produce
+    // a department total that does not add up to the day's takings. A figure that NEARLY
+    // reconciles is worse than one that is honestly a count.
+    const report = REPORTS.find((r) => r.id === 'units_by_category')!;
+    expect(report.answers).toMatch(/how many items/);
+    expect(report.columns?.map((c) => c.name)).toEqual(['department', 'units']);
+    expect(report.needs).toContain('departments_on_the_catalogue');
+    // An item the catalogue places nowhere is counted apart, never folded into a department.
+    expect(code(MODEL)).toMatch(/Items in no department/);
+    expect(code(SCREEN_DATA)).toMatch(/unitsWithNoCategory/);
+  });
+});
+
 // ── The box, and the screen it feeds ────────────────────────────────────────
 
 describe('the box tells this screen the truth, including that it knows nothing', () => {

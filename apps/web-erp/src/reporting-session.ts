@@ -87,6 +87,26 @@ export interface ReportingPorts {
   exceptions(): readonly { readonly what: string }[];
   /** True when the shop's own loss-prevention rules were known — an empty list is not a clean shop. */
   exceptionRulesKnown(): boolean;
+  /**
+   * One row per trading day this box holds, most recent first.
+   *
+   * **Only days it actually holds.** A box installed on Thursday has no Wednesday, and a comparison
+   * against a Wednesday of nought would report the shop as having doubled its takings overnight.
+   */
+  dayTotals(): readonly DayTotal[];
+  /** Units sold today per department id. Units, not money — see the payload builder for why. */
+  unitsByCategory(): Readonly<Record<string, number>>;
+  /** Units sold today whose product the catalogue places in no department. Never folded into one. */
+  unitsWithNoCategory(): number;
+  /** Department id → the name a person would recognise. Absent means the box was never told. */
+  categoryNames(): Readonly<Record<string, string>> | undefined;
+}
+
+/** What one trading day took, as this box recorded it. */
+export interface DayTotal {
+  readonly tradingDay: string;
+  readonly totalMinor: number;
+  readonly bills: number;
 }
 
 export interface ReportingConfig {
@@ -109,6 +129,14 @@ export interface ReportingConfig {
   readonly staleAfterMinutes: number;
   /** The branch this export is for; null = company-wide, which needs an "all"-scope grant. */
   readonly branchId: string | null;
+  /**
+   * The trading day these figures are for, as the SHOP reckons it.
+   *
+   * Not derived from `now`: the shop's day runs to its own cutoff (two in the morning here), so a
+   * sale rung at half past midnight belongs to the day before and slicing on the calendar date
+   * would move it. The box already works this out; the screen is told, not left to guess.
+   */
+  readonly tradingDay: string;
 }
 
 /**
@@ -121,7 +149,7 @@ export interface ReportingConfig {
  */
 export const PRODUCED: readonly string[] = Object.freeze([
   'sales_by_day', 'sales_by_hour', 'sales_by_cashier', 'tender_mix', 'basket', 'margin',
-  'sync_health', 'data_freshness', 'exceptions',
+  'day_on_day', 'units_by_category', 'sync_health', 'data_freshness', 'exceptions',
 ]);
 
 export type RunRefusal =
@@ -317,6 +345,60 @@ export function createReportingSession(
             totalMinor: String(s.totalMinor),
             units: s.units === undefined ? 'not known' : String(s.units),
           })),
+        };
+      }
+
+      case 'day_on_day': {
+        // **The comparison, and the two ways it must refuse.**
+        //
+        // A number on its own says almost nothing: ₹1,40,000 is a good Saturday and a frightening
+        // Tuesday, and the figure is identical. But a comparison invented out of a day that is not
+        // there is worse than no comparison — a box installed yesterday would report the shop as
+        // having doubled overnight, against a zero nobody put there.
+        const days = ports.dayTotals();
+        const today = days.find((d) => d.tradingDay === config.tradingDay);
+        // Days strictly BEFORE today, so a box holding only future-dated junk cannot become the
+        // thing today is measured against.
+        const previous = days.filter((d) => d.tradingDay < config.tradingDay)[0];
+        const why = today === undefined
+          ? 'the shop has taken nothing today yet, so there is nothing to compare'
+          : previous === undefined
+            ? 'this store box holds no earlier trading day, so there is nothing to compare today against'
+            : undefined;
+        const change = why === undefined ? today!.totalMinor - previous!.totalMinor : undefined;
+        return {
+          figures: [
+            at('Today', today?.totalMinor, 'minor_currency',
+              today === undefined ? 'the shop has taken nothing today yet' : undefined),
+            at(previous === undefined ? 'The day before' : `${previous.tradingDay}`,
+              previous?.totalMinor, 'minor_currency',
+              previous === undefined ? 'this store box holds no earlier trading day' : undefined),
+            // Up or down in money, not as a percentage: a percentage off a small day is a big
+            // number that means nothing, and this is a screen people quote from.
+            at('Up or down', change, 'minor_currency', why),
+          ],
+          rows: days.map((d) => ({
+            tradingDay: d.tradingDay, totalMinor: String(d.totalMinor), bills: String(d.bills),
+          })),
+        };
+      }
+
+      case 'units_by_category': {
+        const units = ports.unitsByCategory();
+        const names = ports.categoryNames();
+        const unplaced = ports.unitsWithNoCategory();
+        const ordered = Object.entries(units).sort((a, b) => b[1] - a[1]);
+        return {
+          figures: [
+            ...ordered.map(([id, n]) => at(names?.[id] ?? id, n, 'count')),
+            // Never folded into a department. A product the catalogue does not place is a catalogue
+            // problem, and hiding it inside Grocery is how it stays one.
+            ...(unplaced === 0 ? [] : [at('Items in no department', unplaced, 'count')]),
+          ],
+          rows: [
+            ...ordered.map(([id, n]) => ({ department: names?.[id] ?? id, units: String(n) })),
+            ...(unplaced === 0 ? [] : [{ department: 'in no department', units: String(unplaced) }]),
+          ],
         };
       }
 

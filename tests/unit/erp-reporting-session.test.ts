@@ -33,8 +33,11 @@ const sale = (over: Partial<ReportableSale> = {}): ReportableSale => ({
   ...over,
 });
 
-/** What this shop actually records today: sales, costs, and its own outbox. */
-const RECORDS: Producer[] = ['sales_rung_at_the_till', 'cost_prices_on_the_catalogue', 'the_boxs_own_outbox'];
+/** What this shop actually records today: sales, costs, departments, and its own outbox. */
+const RECORDS: Producer[] = [
+  'sales_rung_at_the_till', 'cost_prices_on_the_catalogue', 'departments_on_the_catalogue',
+  'the_boxs_own_outbox',
+];
 
 const ROLES = [
   { id: 'analyst', name: 'Analyst', permissions: ['reporting.sales.export', 'reporting.operations.export'] },
@@ -44,9 +47,11 @@ const ROLES = [
 const access = (roleId = 'analyst'): AccessControl =>
   new AccessControl(ROLES, [{ userId: 'u-report', roleId, branchScope: ['b1'] }]);
 
+const TODAY = '2026-08-06';
+
 const CONFIG: ReportingConfig = {
   tenantId: 't1', storeId: 'store-1', userId: 'u-report', currency: 'INR',
-  now: NOW, laggingAfterMinutes: 5, staleAfterMinutes: 60, branchId: 'b1',
+  now: NOW, laggingAfterMinutes: 5, staleAfterMinutes: 60, branchId: 'b1', tradingDay: TODAY,
 };
 
 function ports(over: Partial<ReportingPorts> = {}): ReportingPorts {
@@ -58,6 +63,14 @@ function ports(over: Partial<ReportingPorts> = {}): ReportingPorts {
     unsentCount: () => 3,
     exceptions: () => [{ what: 'void spike by u-meena' }],
     exceptionRulesKnown: () => true,
+    // Two days on the box: today and the one before it.
+    dayTotals: () => [
+      { tradingDay: TODAY, totalMinor: 305_00, bills: 2 },
+      { tradingDay: '2026-08-05', totalMinor: 400_00, bills: 3 },
+    ],
+    unitsByCategory: () => ({ grocery: 7, dairy: 2 }),
+    unitsWithNoCategory: () => 0,
+    categoryNames: () => ({ grocery: 'Grocery', dairy: 'Dairy' }),
     ...over,
   };
 }
@@ -128,9 +141,9 @@ describe('a report nothing can produce is listed, and refused', () => {
   });
 
   it('has nothing left to ask THIS shop for, without claiming every report works', () => {
-    // A true and easily-missed state: everything the nine producers need is already recorded, so
-    // there is nothing the owner can do next — and seventeen reports are still unrunnable. The
-    // backlog being empty must never be read as "every report works".
+    // A true and easily-missed state: everything the eleven producers need is already recorded, so
+    // there is nothing the owner can do next — and the rest are still unrunnable. The backlog
+    // being empty must never be read as "every report works".
     expect(session().backlog()).toEqual([]);
     expect(session().catalogue().some((e) => !e.availability.available)).toBe(true);
   });
@@ -303,6 +316,88 @@ describe('the reports this shop can actually run', () => {
     if (!outcome.ok) return;
     expect(outcome.result.figures.find((f) => f.name === 'Sales with no cost price')?.valueMinor).toBe(1);
     expect(outcome.rows.some((r) => r['saleId'] === 'S-9')).toBe(false);
+  });
+
+  it('compares today against the last day the box actually holds', () => {
+    const outcome = session().run('day_on_day');
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.figures.find((f) => f.name === 'Today')?.valueMinor).toBe(305_00);
+    expect(outcome.result.figures.find((f) => f.name === '2026-08-05')?.valueMinor).toBe(400_00);
+    // Down ₹95 on the day before, said in money rather than as a percentage — a percentage off a
+    // small day is a big number that means nothing, and this is a screen people quote from.
+    expect(outcome.result.figures.find((f) => f.name === 'Up or down')?.valueMinor).toBe(-95_00);
+  });
+
+  it('refuses to compare against a day the box does NOT hold', () => {
+    // The fault this exists to prevent: a box installed this morning has no yesterday, and a
+    // comparison against a yesterday of nought reports the shop as having doubled overnight.
+    const firstDay = session({
+      dayTotals: () => [{ tradingDay: TODAY, totalMinor: 305_00, bills: 2 }],
+    });
+    const outcome = firstDay.run('day_on_day');
+    if (!outcome.ok) return;
+    // Today is still real and still shown; only the comparison is absent.
+    expect(outcome.result.figures.find((f) => f.name === 'Today')?.valueMinor).toBe(305_00);
+    const change = outcome.result.figures.find((f) => f.name === 'Up or down')!;
+    expect(change.valueMinor).toBeUndefined();
+    expect(change.notAvailableBecause).toContain('no earlier trading day');
+  });
+
+  it('never measures today against a day that has not happened yet', () => {
+    // A clock wrong on one lane puts a future-dated sale on the box. Sorted most-recent-first and
+    // taken blindly, that future day becomes "the day before" and the comparison is nonsense.
+    const withFuture = session({
+      dayTotals: () => [
+        { tradingDay: '2026-08-09', totalMinor: 999_00, bills: 9 },
+        { tradingDay: TODAY, totalMinor: 305_00, bills: 2 },
+        { tradingDay: '2026-08-05', totalMinor: 400_00, bills: 3 },
+      ],
+    });
+    const outcome = withFuture.run('day_on_day');
+    if (!outcome.ok) return;
+    expect(outcome.result.figures.find((f) => f.name === '2026-08-05')?.valueMinor).toBe(400_00);
+    expect(outcome.result.figures.find((f) => f.name === 'Up or down')?.valueMinor).toBe(-95_00);
+  });
+
+  it('has NO comparison at all on a day the shop has not yet traded', () => {
+    const notOpenedYet = session({
+      dayTotals: () => [{ tradingDay: '2026-08-05', totalMinor: 400_00, bills: 3 }],
+    });
+    const outcome = notOpenedYet.run('day_on_day');
+    if (!outcome.ok) return;
+    const today = outcome.result.figures.find((f) => f.name === 'Today')!;
+    expect(today.valueMinor).toBeUndefined();
+    expect(today.notAvailableBecause).toContain('taken nothing today yet');
+  });
+
+  it('reports what is selling by department, in units, biggest first', () => {
+    const outcome = session().run('units_by_category');
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.figures.map((f) => f.name)).toEqual(['Grocery', 'Dairy']);
+    expect(outcome.result.figures[0]?.valueMinor).toBe(7);
+  });
+
+  it('counts an item the catalogue places in no department separately, never inside one', () => {
+    // Folding it into Grocery is how a catalogue problem stays invisible.
+    const outcome = session({ unitsWithNoCategory: () => 4 }).run('units_by_category');
+    if (!outcome.ok) return;
+    expect(outcome.result.figures.find((f) => f.name === 'Items in no department')?.valueMinor).toBe(4);
+    expect(outcome.result.figures.find((f) => f.name === 'Grocery')?.valueMinor).toBe(7);
+  });
+
+  it('falls back to the department id, rather than hiding a department it cannot name', () => {
+    const outcome = session({ categoryNames: () => undefined }).run('units_by_category');
+    if (!outcome.ok) return;
+    expect(outcome.result.figures.map((f) => f.name)).toEqual(['grocery', 'dairy']);
+  });
+
+  it('refuses the department report when the shop has no departments recorded', () => {
+    const outcome = session({ records: () => ['sales_rung_at_the_till'] }).run('units_by_category');
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.detail).toContain('a department against every product');
   });
 
   it('says nothing was checked when the shop has no loss-prevention limits', () => {

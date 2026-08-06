@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, and reporting and analytics)
+Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, and the day boundary the store box did not have)
 
 ---
 
@@ -2591,6 +2591,88 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## The number on your phone was wrong, every day, by more each day (6 August 2026)
+
+This is the most serious thing I have found in this project, and I want to be plain about it.
+
+### What was wrong
+
+The store box keeps every sale it has ever rung in one file. It never starts a new one. That is
+correct — it is the record.
+
+But **every screen that asked it for "today" was being given the whole file.**
+
+On a box that had been trading for four days, your phone would have said the shop took **₹2,245
+today** when the shop took **₹145**. The reports screen said the same. And it gets worse every
+single day the box stays switched on, which is why nobody would ever have caught it in a day's
+testing.
+
+### The part that would have stopped the shop
+
+Your manager's exception list — voids, refunds, the things that need looking at — was also being
+judged against the whole file. So a limit of *"no more than two refunds"* was counting **every
+refund since the box was installed**.
+
+By the third day it would be over the limit permanently. **And the day close will not close a day
+with an open exception on it.** So within a fortnight, a shop where absolutely nothing had gone
+wrong would be unable to close its day, and there would have been nothing anybody in the store
+could do about it.
+
+### How it was found, and why the tests did not find it
+
+Nothing crashed. Nothing went red. Every rule in the software was correct — they were simply being
+handed the wrong sales.
+
+I found it by opening the reports screen against a box with four days of trading on it instead of
+one. That is the fourth time this session that running the real thing found something reading the
+code did not, and I am now treating it as the rule rather than the exception.
+
+### What it is now
+
+Every screen that means today gets **today** — your trading day, running to your two-o'clock
+cutoff, so a sale rung at half past midnight still belongs to the day before.
+
+And **a sale that names no day at all goes into nobody's figures and says so** — on the manager's
+list and on your brief. Putting it into today would be somebody else's money in today's takings.
+Dropping it quietly would leave a hole in a total you check against the till roll, and that hole
+is the kind of thing that gets blamed on a cashier.
+
+### The comparisons — the "analytics" half you asked for
+
+With the days finally separated, a comparison became possible and honest, so I built two:
+
+**Today against the last day we traded.** A number on its own says almost nothing — ₹1,40,000 is a
+good Saturday and a frightening Tuesday, and it is the same figure. If the box holds no earlier
+day, it **says so** rather than comparing against nought, which would have told you the shop had
+doubled overnight on the morning it was installed. And the change is in rupees, not a percentage:
+a percentage off a quiet day is a big number that means nothing.
+
+**What is selling, by department** — in **items, not money**. The till records how many of each
+thing was sold but not what each line came to, so department takings could only be rebuilt from
+list prices, and any bill with an offer on it would then produce department totals that do not add
+up to the day's takings. A figure that nearly reconciles is worse than one that is honestly a
+count. An item your catalogue has not put in a department is counted **separately** — hiding it
+inside Grocery is how it stays unfixed.
+
+**Tests:** 3,977 automated plus 31 performance, all green — 25 new.
+
+### What the owner should check, in the store
+
+1. **Leave the store box running for three or four days, then open your phone brief in the
+   evening.** The takings must match that day's till roll. If they look like the week's, tell me
+   at once — that is the fault, and it means the fix did not reach that screen.
+2. Open the reports screen, **Sales by day**. Same check: it must be today.
+3. Open **Today against the last day we traded**. It must name a real date next to yesterday's
+   figure, or say plainly that the box has no earlier day. It must never show ₹0 as yesterday.
+4. On the manager's screen, look at the exception list a week in. It must only ever list **today's**
+   exceptions. If yesterday's are still there, the day close will eventually jam.
+5. Open **What is selling, by department**. If a department you know you have is missing, or a big
+   number sits under "Items in no department", that is a catalogue job — tell me and I will show
+   you which products.
+
+---
+
+
 ## Reporting and analytics — and the report that would have opened blank (6 August 2026)
 
 The reports screen, built the same day you asked for it. Every report the plan names is on it —
@@ -4493,6 +4575,17 @@ that built it — a report that would have opened with nothing on it. **The last
 the tests were green when I found it.** What found it was running the screen for real over the
 store box, which also turned up a margin of 99.92% from a costing rule that had been copied instead
 of shared. Reading does not find these. Driving the real path does, every time.
+
+**And then the variant of it that is worse than all of them.** Running the reporting screen against
+a box with **four days of trading on it rather than one** showed that the sales log is never
+rotated and every screen meaning *today* was being handed the whole history. The owner's brief
+reported the week's takings as the day's; the manager's exception register — which the day close
+gates on — counted last Tuesday's refunds against today's limit, so within a fortnight a shop where
+nothing went wrong could not close its day. **Every rule involved was correct. The input to them
+was not, and no test that supplies its own fixture can see that.** The lesson is narrower and more
+useful than "drive the real path": drive it against a box that has been *running for a while*.
+A system that is right on day one and wrong by a little more every day afterwards is invisible to
+every test written so far.
 
 Having found one thing that
 looked wired up and was not, I went looking for more, and found five: the piece that sends a sale

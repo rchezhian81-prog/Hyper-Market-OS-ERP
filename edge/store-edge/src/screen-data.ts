@@ -40,7 +40,10 @@ import { assessChecklist } from '../../../packages/workforce/src/index';
 import type { LpRule } from '../../../packages/loss-prevention/src/index';
 import { planDispatch, type DispatchPlan } from '../../../packages/fulfilment/src/routing';
 import { ShelfMap, type ShelfLocation } from '../../../packages/merchandising/src/index';
-import { basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, type LoggedSale } from './read-model';
+import {
+  basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tradingDaysHeld,
+  type LoggedSale,
+} from './read-model';
 import type { StorePack } from './store-pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
@@ -112,7 +115,11 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
   const rules = input.pack.lossPreventionRules.known
     ? (input.pack.lossPreventionRules.value as readonly LpRule[])
     : undefined;
-  const day = exceptionsFor(activityFrom(input.sales), rules);
+  // TODAY's activity, not the whole log. A "no more than two refunds" limit counted against every
+  // refund since the box was installed breaches on day three and never stops breaching, and the
+  // day close gates on this register — so the shop would eventually be unable to close a clean day.
+  const today = salesOn(input.sales, input.tradingDay);
+  const day = exceptionsFor(activityFrom(today.sales), rules);
   if (day.rulesKnown) {
     const items = day.exceptions.map((e) => ({
       id: `${e.cashierId}:${e.kind}:${e.breach}`,
@@ -125,6 +132,15 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
       items.push({
         id: 'edge:unreadable-records',
         what: `${input.unreadableRecords} record(s) on this box could not be read — most likely a power cut mid-write`,
+      });
+    }
+    // Same reasoning, different cause: a sale that names no trading day cannot be put in one, so it
+    // is out of every day's figures. Silently out of the total somebody reconciles against the till
+    // roll is exactly the kind of gap that gets blamed on a cashier.
+    if (today.undated > 0) {
+      items.push({
+        id: 'edge:undated-sales',
+        what: `${today.undated} sale(s) on this box name no trading day, so they are in nobody's figures — they need looking at`,
       });
     }
 
@@ -208,13 +224,16 @@ export function ownerPayload(input: ScreenInput): Record<string, unknown> | null
   if (!input.pack.policies.known) return null;
   const policies = input.pack.policies.value;
   const products = input.pack.products.known ? input.pack.products.value : [];
-  const day = costTheDay(input.sales, products);
+  // TODAY. The log holds every day the box has ever traded, so this brief reported the whole
+  // week's takings as the day's — on a phone, as one number, with nothing to say it was wrong.
+  const today = salesOn(input.sales, input.tradingDay);
+  const day = costTheDay(today.sales, products);
 
   const exceptions: { cashierId: string; kind: string; breach: string; observed: number; limit: number; severity: string; linkedTxnIds: string[] }[] = [];
   const rules = input.pack.lossPreventionRules.known
     ? (input.pack.lossPreventionRules.value as readonly LpRule[])
     : undefined;
-  for (const e of exceptionsFor(activityFrom(input.sales), rules).exceptions) {
+  for (const e of exceptionsFor(activityFrom(today.sales), rules).exceptions) {
     exceptions.push({ ...e, linkedTxnIds: [...e.linkedTxnIds] });
   }
 
@@ -231,6 +250,9 @@ export function ownerPayload(input: ScreenInput): Record<string, unknown> | null
       lastSyncedAt: input.now,
       sales: day.facts,
       exceptions,
+      // Out of every day's figures, so it is named where the owner will see it rather than
+      // becoming an unexplained difference against the till roll.
+      ...(today.undated === 0 ? {} : { undatedSales: today.undated }),
       approvals: input.pack.approvals.known
         ? input.pack.approvals.value.map((a) => ({
           id: a.id,
@@ -667,10 +689,11 @@ export function merchandisingPayload(input: ScreenInput): Record<string, unknown
   if (input.pack.fundingReceivedMinor.known) payload['fundingReceivedMinor'] = input.pack.fundingReceivedMinor.value;
   if (input.pack.stillOccupying.known) payload['stillOccupying'] = input.pack.stillOccupying.value;
 
-  // What this shop actually sold today, from this box's own log — the one figure here that does
-  // not come from the cloud, and the one the range check compares against. A sale record with no
-  // readable lines contributes nothing rather than defaulting, because "this sale had no lines" is
-  // a broken record, not a sale of nothing.
+  // Everything this box has ever recorded selling — deliberately the whole log rather than today,
+  // because the question the range check asks is *has this shop ever sold something it does not
+  // range?*, and an item that sold last Tuesday is exactly as much evidence as one that sold this
+  // morning. A sale record with no readable lines contributes nothing rather than defaulting,
+  // because "this sale had no lines" is a broken record, not a sale of nothing.
   const sold = new Set<string>();
   for (const sale of input.sales) {
     if (sale.lines === undefined) continue;
@@ -718,13 +741,18 @@ export function reportingPayload(input: ScreenInput): Record<string, unknown> | 
   if (input.pack.roles.known) payload['roles'] = input.pack.roles.value;
   if (input.pack.roleAssignments.known) payload['roleAssignments'] = input.pack.roleAssignments.value;
 
-  // The day's sales, reduced to reporting facts. A sale whose products have no cost price carries
-  // NO cogs rather than a zero — zero cost reports a 100% margin, and the margin report leaves it
-  // out and counts it instead.
+  // **TODAY's** sales, reduced to reporting facts. The log is never rotated, so this was the whole
+  // history — "Sales by day: Taken ₹2,245" on a day the shop took ₹145, with nothing saying so.
+  const today = salesOn(input.sales, input.tradingDay);
+  payload['tradingDay'] = input.tradingDay;
+  if (today.undated > 0) payload['undatedSales'] = today.undated;
+
+  // A sale whose products have no cost price carries NO cogs rather than a zero — zero cost
+  // reports a 100% margin, and the margin report leaves it out and counts it instead.
   const products = input.pack.products.known ? input.pack.products.value : [];
   const costOf = new Map(products.filter((p) => p.unitCostMinor !== undefined)
     .map((p) => [p.productId, p.unitCostMinor!] as const));
-  payload['sales'] = input.sales.map((sale) => {
+  payload['sales'] = today.sales.map((sale) => {
     // A record with no readable lines keeps its takings — the till printed them and they are real —
     // but it carries NO basket size. A zero would be averaged into "units per basket" and quietly
     // drag the shop's figure down by an amount nobody could explain.
@@ -755,12 +783,62 @@ export function reportingPayload(input: ScreenInput): Record<string, unknown> | 
     };
   });
 
+  // ── What today is compared against (M29-FR-02) ────────────────────────────
+  //
+  // A number on its own says almost nothing to a shopkeeper. ₹1,40,000 is a good Saturday and a
+  // frightening Tuesday, and the figure is identical. So every trading day this box holds is
+  // summarised — one small row each, rather than shipping the whole log to a browser — and today
+  // is compared against the one before it.
+  //
+  // **Only the days this box actually holds.** A box installed on Thursday has no Wednesday, and
+  // a comparison against a Wednesday of zero would report the shop as having doubled its takings
+  // overnight. Absent is absent, and the report says so by name.
+  const perDay = new Map<string, { total: number; bills: number }>();
+  for (const sale of input.sales) {
+    if (sale.tradingDay === undefined) continue;
+    const held = perDay.get(sale.tradingDay) ?? { total: 0, bills: 0 };
+    perDay.set(sale.tradingDay, { total: held.total + (sale.total ?? 0), bills: held.bills + 1 });
+  }
+  payload['dayTotals'] = tradingDaysHeld(input.sales).map((tradingDay) => ({
+    tradingDay,
+    totalMinor: perDay.get(tradingDay)!.total,
+    bills: perDay.get(tradingDay)!.bills,
+  }));
+
+  // What sold, by department, in UNITS.
+  //
+  // Units rather than money on purpose: the log records a quantity per line but **no money per
+  // line**, so revenue by department could only be reconstructed from list prices — and a bill
+  // with a promotion on it would then produce a department revenue that does not add up to the
+  // day's takings. A figure that nearly reconciles is worse than one that is honestly a count.
+  const categoryOf = new Map(products.map((p) => [p.productId, p.categoryId] as const));
+  const unitsByCategory: Record<string, number> = {};
+  let unitsWithNoCategory = 0;
+  for (const sale of today.sales) {
+    if (sale.lines === undefined) continue;
+    for (const line of sale.lines) {
+      const units = line.uom === 'ea' ? line.quantityMinor : 1;
+      const category = categoryOf.get(line.productId);
+      if (category === undefined) { unitsWithNoCategory += units; continue; }
+      unitsByCategory[category] = (unitsByCategory[category] ?? 0) + units;
+    }
+  }
+  payload['unitsByCategory'] = unitsByCategory;
+  // Counted, not folded into a department. A product the catalogue does not place is a catalogue
+  // problem, and hiding it inside "Grocery" is how it stays one.
+  if (unitsWithNoCategory > 0) payload['unitsWithNoCategory'] = unitsWithNoCategory;
+  if (input.pack.categories.known) {
+    payload['categoryNames'] = Object.fromEntries(
+      input.pack.categories.value.map((c) => [c.categoryId, c.name] as const),
+    );
+  }
+
   // The exception register, and whether the shop's limits were known at all. Zero exceptions with
   // no rules is not a clean shop; it is a shop nobody is watching.
   const rules = input.pack.lossPreventionRules.known
     ? (input.pack.lossPreventionRules.value as readonly LpRule[])
     : undefined;
-  const day = exceptionsFor(activityFrom(input.sales), rules);
+  const day = exceptionsFor(activityFrom(today.sales), rules);
   payload['exceptionRulesKnown'] = day.rulesKnown;
   payload['exceptions'] = day.exceptions.map((e) => ({
     what: `${e.kind.replace(/_/g, ' ')} by ${e.cashierId}: ${e.observed} against a limit of ${e.limit}`,

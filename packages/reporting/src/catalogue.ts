@@ -44,6 +44,7 @@ export type ReportFamily =
 export type Producer =
   | 'sales_rung_at_the_till'
   | 'cost_prices_on_the_catalogue'
+  | 'departments_on_the_catalogue'
   | 'what_was_ordered_from_suppliers'
   | 'what_arrived_from_suppliers'
   | 'supplier_invoices_captured'
@@ -64,6 +65,7 @@ export type Producer =
 export const PRODUCER_WORDS: Readonly<Record<Producer, string>> = Object.freeze({
   sales_rung_at_the_till: 'sales rung at the till',
   cost_prices_on_the_catalogue: 'cost prices on the catalogue',
+  departments_on_the_catalogue: 'a department against every product on the catalogue',
   what_was_ordered_from_suppliers: 'what was ordered from suppliers',
   what_arrived_from_suppliers: 'what arrived from suppliers',
   supplier_invoices_captured: 'supplier invoices captured',
@@ -159,6 +161,18 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
     answers: 'what a customer spends in one visit',
     needs: ['sales_rung_at_the_till'],
     columns: [{ name: 'saleId', type: 'text' }, { name: 'totalMinor', type: 'money_minor' }, { name: 'units', type: 'integer' }]
+  },
+  {
+    id: 'day_on_day', family: 'sales', name: 'Today against the last day we traded',
+    answers: 'whether today is better or worse than the day before, and by how much',
+    needs: ['sales_rung_at_the_till'],
+    columns: [{ name: 'tradingDay', type: 'date' }, { name: 'totalMinor', type: 'money_minor' }, { name: 'bills', type: 'integer' }]
+  },
+  {
+    id: 'units_by_category', family: 'sales', name: 'What is selling, by department',
+    answers: 'how many items each department sold today',
+    needs: ['sales_rung_at_the_till', 'departments_on_the_catalogue'],
+    columns: [{ name: 'department', type: 'text' }, { name: 'units', type: 'integer' }]
   },
   {
     id: 'margin', family: 'sales', name: 'Margin',

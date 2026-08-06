@@ -55,7 +55,7 @@ import {
 } from './merchandising-session';
 import {
   createReportingSession,
-  type ReportableSale, type ReportingPorts, type ReportingSession,
+  type DayTotal, type ReportableSale, type ReportingPorts, type ReportingSession,
 } from './reporting-session';
 import { AccessControl, type Role, type RoleAssignment } from '../../../packages/rbac/src/index';
 import type { Producer } from '../../../packages/reporting/src/index';
@@ -172,6 +172,14 @@ export interface ReportingData {
   /** The shop's own roles and who holds them, so the export runs the SAME default-deny check. */
   readonly roles?: readonly Role[];
   readonly roleAssignments?: readonly RoleAssignment[];
+  /** The trading day these figures are for, as the shop reckons it — not the calendar date. */
+  readonly tradingDay?: string;
+  /** One row per trading day this box holds, most recent first (M29-FR-02). */
+  readonly dayTotals?: readonly DayTotal[];
+  /** Units sold today per department. Units rather than money — the log records no money per line. */
+  readonly unitsByCategory?: Readonly<Record<string, number>>;
+  readonly unitsWithNoCategory?: number;
+  readonly categoryNames?: Readonly<Record<string, string>>;
 }
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
@@ -583,6 +591,14 @@ export function reportingPortsFromData(data: ReportingData | undefined): Reporti
     // Absent means NOT KNOWN, and not-known must not read as "the rules were checked and nothing
     // was wrong". Zero exceptions with no rules is a shop nobody is watching.
     exceptionRulesKnown: () => data?.exceptionRulesKnown === true,
+    // Only the days the box genuinely holds. Absent is absent: a comparison against a day that is
+    // not there would report the shop as having doubled overnight against a nought nobody put in.
+    dayTotals: () => data?.dayTotals ?? [],
+    unitsByCategory: () => data?.unitsByCategory ?? {},
+    unitsWithNoCategory: () => data?.unitsWithNoCategory ?? 0,
+    // NOT defaulted to `{}`. An empty name map and no name map read the same to a lookup, but the
+    // report needs to know the difference: with no map it shows department ids and says so.
+    categoryNames: () => data?.categoryNames,
   };
 }
 
@@ -604,6 +620,9 @@ export function bootReporting(data: ReportingData | undefined): ReportingSession
       laggingAfterMinutes: data.laggingAfterMinutes ?? 5,
       staleAfterMinutes: data.staleAfterMinutes ?? 60,
       branchId: data.branchId === undefined ? null : data.branchId,
+      // The SHOP's day, worked out by the box against its own cutoff. Slicing on the calendar date
+      // here would move a sale rung at half past midnight into the wrong day.
+      tradingDay: data.tradingDay ?? '',
     },
     reportingPortsFromData(data),
   );

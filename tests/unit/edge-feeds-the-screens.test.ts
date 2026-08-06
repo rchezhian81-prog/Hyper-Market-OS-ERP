@@ -7,7 +7,8 @@ import {
 } from '../../edge/store-edge/src/store-pack';
 import {
   payloadFor, managerPayload, ownerPayload, posPayload, customerPayload,
-  pickerPayload, driverPayload, reportingPayload, GLOBAL_FOR, SCREENS, type ScreenInput,
+  pickerPayload, driverPayload, reportingPayload, merchandisingPayload,
+  GLOBAL_FOR, SCREENS, type ScreenInput,
 } from '../../edge/store-edge/src/screen-data';
 import { embed, injectPayload, routeOf, safeFile, DATA_MARKER, APP_SHELL } from '../../edge/store-edge/src/screen-server';
 import { SyncOutbox } from '../../packages/sync/src/index';
@@ -136,8 +137,8 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   merchandisingPolicy: known({ refillAtBp: 5_000, countStaleAfterMinutes: 120, refillRole: 'shelf-filler' }),
   // What this shop records, who may export it, and how old a figure may get (D13 / §32).
   reportingRecords: known([
-    'sales_rung_at_the_till', 'cost_prices_on_the_catalogue', 'the_boxs_own_outbox',
-    'the_shops_own_exception_rules',
+    'sales_rung_at_the_till', 'cost_prices_on_the_catalogue', 'departments_on_the_catalogue',
+    'the_boxs_own_outbox',
   ]),
   roles: known([{
     id: 'analyst', name: 'Analyst',
@@ -512,5 +513,99 @@ describe('a sale in the log becomes a reporting fact, correctly', () => {
     }))!;
     expect('userId' in anonymous).toBe(false);
     expect(reportingPayload(input())!['userId']).toBe('u-report');
+  });
+});
+
+/**
+ * **The day boundary — the one this box did not have.**
+ *
+ * `sales.log` is append-only and never rotated, so the box holds every sale it has ever committed.
+ * Every screen that meant *today* was handed all of it, and the defect compounds daily. Nothing
+ * crashed and no test went red: the owner's phone simply reported the week's takings as the day's.
+ *
+ * Worse than the wrong number, the manager's exception register — which the **day close gates on**
+ * — counted a refund from last Tuesday against today's limit. On a box a fortnight old, a shop in
+ * which nothing at all went wrong could no longer close its day, and there was nothing anybody
+ * could do to clear it.
+ */
+describe('the box tells each screen about ONE trading day', () => {
+  const on = (id: string, tradingDay: string, total: number) => ({
+    id, number: id, laneId: 'lane-1', cashierId: 'u-meena', tradingDay,
+    committedAt: `${tradingDay}T10:00:00.000Z`, total, netMinor: total, taxMinor: 0, currency: 'INR',
+    lines: [{ productId: 'p1', quantityMinor: 1, uom: 'ea' }],
+    tenders: [{ kind: 'cash', amount: { minor: total } }],
+  });
+
+  /** A box that has been trading since Saturday. Today is DAY, and today took ₹145. */
+  const week = [
+    on('S-SAT', '2026-08-01', 500_00),
+    on('S-SUN', '2026-08-02', 700_00),
+    on('S-MON', '2026-08-04', 900_00),
+    on('S-TODAY', DAY, 145_00),
+  ];
+
+  const input = (over: Partial<ScreenInput> = {}): ScreenInput => ({
+    pack: fullPack(), sales: week, unreadableRecords: 0, outbox: new SyncOutbox(),
+    now: NOW, tradingDay: DAY, ...over,
+  });
+
+  it('reports the OWNER today’s takings, not the whole log’s', () => {
+    const payload = ownerPayload(input())!;
+    const uncostable = payload['uncostable'] as { takenMinor: number; billCount: number };
+    expect(uncostable.takenMinor, 'the week was reported as the day').toBe(145_00);
+    expect(uncostable.billCount).toBe(1);
+    const branch = (payload['branches'] as { sales: unknown[] }[])[0]!;
+    expect(branch.sales).toHaveLength(1);
+  });
+
+  it('reports the REPORTING screen today’s sales, not the whole log’s', () => {
+    const payload = reportingPayload(input())!;
+    expect(payload['sales']).toHaveLength(1);
+    expect(payload['tradingDay']).toBe(DAY);
+  });
+
+  it('judges the MANAGER’s exception limits against today alone', () => {
+    // The register the day close gates on. A "no more than one refund" limit counted against every
+    // refund since the box was installed breaches on day two and never stops breaching.
+    const refunds = [
+      { ...on('R-OLD', '2026-08-01', -50_00), cashierId: 'u-meena' },
+      { ...on('R-OLD2', '2026-08-04', -50_00), cashierId: 'u-meena' },
+      { ...on('R-TODAY', DAY, -50_00), cashierId: 'u-meena' },
+    ];
+    const payload = managerPayload(input({
+      sales: refunds,
+      pack: fullPack({ lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]) }),
+    }));
+    // One refund today is inside a limit of two. Three across the week is not — and the week is
+    // not what the limit is about.
+    expect(payload['openExceptions'], 'yesterday’s refunds held today’s day close').toEqual([]);
+  });
+
+  it('still counts every day the box holds for the comparison', () => {
+    // The whole log is not thrown away — it is what makes a comparison possible at all.
+    const totals = reportingPayload(input())!['dayTotals'] as { tradingDay: string; totalMinor: number }[];
+    expect(totals.map((d) => d.tradingDay)).toEqual([DAY, '2026-08-04', '2026-08-02', '2026-08-01']);
+    expect(totals[1]?.totalMinor).toBe(900_00);
+  });
+
+  it('puts a sale with NO trading day in nobody’s figures, and says so', () => {
+    // Including it puts another day's money in today's takings; dropping it silently loses real
+    // takings from a total somebody reconciles against the till roll.
+    const withUndated = input({ sales: [...week, { ...on('S-??', DAY, 999_00), tradingDay: undefined }] });
+    const owner = ownerPayload(withUndated)!;
+    expect((owner['uncostable'] as { takenMinor: number }).takenMinor).toBe(145_00);
+    expect((owner['branches'] as { undatedSales?: number }[])[0]?.undatedSales).toBe(1);
+
+    const manager = managerPayload(withUndated);
+    const exceptions = manager['openExceptions'] as { id: string; what: string }[];
+    expect(exceptions.map((e) => e.id)).toContain('edge:undated-sales');
+    expect(exceptions.find((e) => e.id === 'edge:undated-sales')?.what).toContain("nobody's figures");
+  });
+
+  it('keeps the range check over the WHOLE log, which is a different question', () => {
+    // "Has this shop ever sold something it does not range?" — an item that sold last Tuesday is
+    // exactly as much evidence as one that sold this morning.
+    const sold = merchandisingPayload(input())!['soldProductIds'] as string[];
+    expect(sold).toEqual(['p1']);
   });
 });

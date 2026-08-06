@@ -285,6 +285,7 @@
   "reportingRecords": [
     "sales_rung_at_the_till",
     "cost_prices_on_the_catalogue",
+    "departments_on_the_catalogue",
     "the_boxs_own_outbox"
   ],
   "roles": [

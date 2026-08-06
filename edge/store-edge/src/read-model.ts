@@ -90,6 +90,45 @@ export interface CostedDay {
  * `uncostableSales`. Both numbers are then true, and the gap between them is named rather than
  * quietly absorbed into the margin.
  */
+/**
+ * **The day boundary — the one this box did not have.**
+ *
+ * The sales log is a single append-only file that is never rotated, so `readSales` returns **every
+ * sale ever committed on this box**. Every screen that meant *today* was handed all of it, and the
+ * defect compounds daily: on a box a week old the owner's phone reported the week's takings as the
+ * day's, and the manager's exception register counted a refund from last Tuesday against today's
+ * limit — which means the day close would eventually refuse permanently, on breaches nobody can
+ * clear, for a day in which nothing went wrong.
+ *
+ * Every screen that means one trading day now says so here, in one place, rather than each of them
+ * remembering to filter.
+ *
+ * **A record with no trading day is neither included nor silently dropped.** Including it puts
+ * another day's money into today's takings; dropping it loses real takings out of a total somebody
+ * reconciles against the till roll. It is excluded and **counted**, the same treatment the box
+ * already gives a record it cannot read at all — an unexplained gap in a total is a thing to
+ * investigate, and it has to be visible to be investigated.
+ */
+export function salesOn(
+  sales: readonly LoggedSale[],
+  tradingDay: string,
+): { readonly sales: readonly LoggedSale[]; readonly undated: number } {
+  const onDay: LoggedSale[] = [];
+  let undated = 0;
+  for (const sale of sales) {
+    if (sale.tradingDay === undefined) { undated += 1; continue; }
+    if (sale.tradingDay === tradingDay) onDay.push(sale);
+  }
+  return { sales: onDay, undated };
+}
+
+/** Which trading days this box holds sales for, most recent first. Undated records are not days. */
+export function tradingDaysHeld(sales: readonly LoggedSale[]): readonly string[] {
+  const days = new Set<string>();
+  for (const sale of sales) if (sale.tradingDay !== undefined) days.add(sale.tradingDay);
+  return [...days].sort().reverse();
+}
+
 /** One sold line, as this box's log records it. */
 export type SoldLine = { readonly productId: string; readonly quantityMinor: number; readonly uom?: string };
 

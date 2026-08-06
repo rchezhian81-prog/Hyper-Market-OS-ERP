@@ -163,8 +163,8 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
   merchandisingPolicy: known({ refillAtBp: 5_000, countStaleAfterMinutes: 120, refillRole: 'shelf-filler' }),
   // What this shop records, who may export it, and how old a figure may get (D13 / §32).
   reportingRecords: known([
-    'sales_rung_at_the_till', 'cost_prices_on_the_catalogue', 'the_boxs_own_outbox',
-    'the_shops_own_exception_rules',
+    'sales_rung_at_the_till', 'cost_prices_on_the_catalogue', 'departments_on_the_catalogue',
+    'the_boxs_own_outbox',
   ]),
   roles: known([{
     id: 'analyst', name: 'Analyst',
@@ -1483,6 +1483,81 @@ describe('the reporting screen, fed by the box', () => {
     expect('csv' in result).toBe(false);
     if ('csv' in result) return;
     expect(result.detail).toContain('has not been told who is using this screen');
+  });
+
+  it('reports TODAY, not every day the box has ever traded', async () => {
+    // `sales.log` is never rotated, so the box holds every sale it has ever committed. Handed
+    // whole to a report that means today, "Sales by day" reported the week's takings as the
+    // day's — nothing failed, and the number was simply wrong on a screen people quote from.
+    const earlier = (id: string, tradingDay: string, total: number): LoggedSale => ({
+      ...SALE, id, number: id, tradingDay, committedAt: `${tradingDay}T10:00:00.000Z`,
+      total, netMinor: total, taxMinor: 0,
+    });
+    const base = await serve(snapshotOf({
+      sales: [earlier('S-OLD1', '2026-08-01', 500_00), earlier('S-OLD2', '2026-08-04', 900_00), SALE],
+    }));
+    const payload = (await payloadFromScreen(base, 'reporting'))!;
+    expect(payload['tradingDay']).toBe(DAY);
+    expect(payload['sales'], 'the whole log was served as today').toHaveLength(1);
+
+    const reporting = bootReporting(payload as never)!;
+    const outcome = reporting.run('sales_by_day');
+    if (!outcome.ok) return;
+    expect(outcome.result.figures.find((f) => f.name === 'Taken')?.valueMinor).toBe(145_00);
+    expect(outcome.result.figures.find((f) => f.name === 'Bills')?.valueMinor).toBe(1);
+  });
+
+  it('compares today against the last day the box actually holds', async () => {
+    const earlier = (id: string, tradingDay: string, total: number): LoggedSale => ({
+      ...SALE, id, number: id, tradingDay, committedAt: `${tradingDay}T10:00:00.000Z`,
+      total, netMinor: total, taxMinor: 0,
+    });
+    const base = await serve(snapshotOf({
+      sales: [earlier('S-OLD', '2026-08-04', 900_00), SALE],
+    }));
+    const reporting = bootReporting((await payloadFromScreen(base, 'reporting'))! as never)!;
+    const outcome = reporting.run('day_on_day');
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.figures.find((f) => f.name === 'Today')?.valueMinor).toBe(145_00);
+    expect(outcome.result.figures.find((f) => f.name === '2026-08-04')?.valueMinor).toBe(900_00);
+    expect(outcome.result.figures.find((f) => f.name === 'Up or down')?.valueMinor).toBe(-755_00);
+  });
+
+  it('refuses the comparison on a box that holds only today', async () => {
+    // A box installed this morning has no yesterday, and a yesterday of nought would report the
+    // shop as having doubled its takings overnight.
+    const base = await serve(snapshotOf());
+    const reporting = bootReporting((await payloadFromScreen(base, 'reporting'))! as never)!;
+    const outcome = reporting.run('day_on_day');
+    if (!outcome.ok) return;
+    const change = outcome.result.figures.find((f) => f.name === 'Up or down')!;
+    expect(change.valueMinor).toBeUndefined();
+    expect(change.notAvailableBecause).toContain('no earlier trading day');
+  });
+
+  it('reports what is selling by department, from the shop’s own catalogue', async () => {
+    const base = await serve(snapshotOf());
+    const payload = (await payloadFromScreen(base, 'reporting'))!;
+    expect(payload['unitsByCategory']).toEqual({ grocery: 1 });
+    const reporting = bootReporting(payload as never)!;
+    const outcome = reporting.run('units_by_category');
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    // Named, not shown as an id, because the box carried the department names too.
+    expect(outcome.result.figures[0]?.name).toBe('Grocery');
+    expect(outcome.result.figures[0]?.valueMinor).toBe(1);
+  });
+
+  it('counts an item the catalogue places in no department apart, never inside one', async () => {
+    const orphan: LoggedSale = { ...SALE, lines: [{ productId: 'p-unlisted', quantityMinor: 2, uom: 'ea' }] };
+    const base = await serve(snapshotOf({ sales: [SALE, orphan] }));
+    const payload = (await payloadFromScreen(base, 'reporting'))!;
+    expect(payload['unitsWithNoCategory']).toBe(2);
+    const outcome = bootReporting(payload as never)!.run('units_by_category');
+    if (!outcome.ok) return;
+    expect(outcome.result.figures.find((f) => f.name === 'Items in no department')?.valueMinor).toBe(2);
+    expect(outcome.result.figures.find((f) => f.name === 'Grocery')?.valueMinor).toBe(1);
   });
 
   it('serves the screen nothing at all without the tenant’s own freshness thresholds', async () => {
