@@ -101,7 +101,14 @@ export interface PackWave {
   }[];
 }
 
-/** The route a driver has been assigned (M20 dispatch). */
+/**
+ * A route somebody wrote out by hand, when there is one.
+ *
+ * Kept because a shop must be able to override the planner — a dispatcher who knows the bridge is
+ * shut needs to be able to say so, and software that cannot be overridden gets worked around
+ * instead. When this is present it **wins**, and the box says which of the two the driver is
+ * holding rather than leaving them to guess.
+ */
 export interface PackRoute {
   readonly routeId: string;
   readonly driverId: string;
@@ -113,6 +120,38 @@ export interface PackRoute {
     readonly costMinor?: number;
     readonly orderValueMinor?: number;
   }[];
+  readonly contributionRule?: { readonly maxCostShareBps: number };
+}
+
+/** Today's confirmed deliveries, for the box to plan into routes (M19-FR-03). */
+export interface PackDelivery {
+  readonly orderId: string;
+  readonly slotId: string;
+  readonly slotStartsAt: string;
+  readonly slotEndsAt: string;
+  /** Coarse area label. Never a full address record on a driver's phone (§31/§35). */
+  readonly area: string;
+  readonly location?: { readonly lat: number; readonly lon: number };
+  readonly codMinor: number;
+  readonly orderValueMinor?: number;
+}
+
+/** Who is driving today. */
+export interface PackDriver {
+  readonly driverId: string;
+  readonly maxStops: number;
+  readonly availableFrom: string;
+  readonly availableUntil: string;
+  /** Set when the van is off the road — the planner re-plans the day without them. */
+  readonly unavailable?: boolean;
+}
+
+/** What the planner needs beyond the orders and the fleet. Per-tenant, all of it. */
+export interface PackRoutingPolicy {
+  readonly storeLocation: { readonly lat: number; readonly lon: number };
+  readonly radiusMetres: number;
+  readonly averageSpeedKmh: number;
+  readonly serviceMinutesPerStop: number;
   readonly contributionRule?: { readonly maxCostShareBps: number };
 }
 
@@ -160,7 +199,12 @@ export interface StorePack {
   readonly approvals: Register<readonly PackApproval[]>;
   readonly checklist: Register<readonly PackChecklistItem[]>;
   readonly wave: Register<PackWave | null>;
+  /** A hand-written route, when a dispatcher has overridden the planner. */
   readonly route: Register<PackRoute | null>;
+  /** Today's confirmed deliveries, for this box to plan (M19-FR-03). */
+  readonly deliveries: Register<readonly PackDelivery[]>;
+  readonly drivers: Register<readonly PackDriver[]>;
+  readonly routingPolicy: Register<PackRoutingPolicy>;
   readonly slots: Register<readonly PackSlot[]>;
   /** Loss-prevention thresholds — data, so a store tunes its own without code (M15-FR-01). */
   readonly lossPreventionRules: Register<readonly unknown[]>;
@@ -187,6 +231,9 @@ export function emptyPack(why: string = NEVER): StorePack {
     checklist: notKnown(why),
     wave: notKnown(why),
     route: notKnown(why),
+    deliveries: notKnown(why),
+    drivers: notKnown(why),
+    routingPolicy: notKnown(why),
     slots: notKnown(why),
     lossPreventionRules: notKnown(why),
     consentPurposes: notKnown(why),
@@ -219,6 +266,9 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     checklist: section<readonly PackChecklistItem[]>('checklist'),
     wave: section<PackWave | null>('wave'),
     route: section<PackRoute | null>('route'),
+    deliveries: section<readonly PackDelivery[]>('deliveries'),
+    drivers: section<readonly PackDriver[]>('drivers'),
+    routingPolicy: section<PackRoutingPolicy>('routingPolicy'),
     slots: section<readonly PackSlot[]>('slots'),
     lossPreventionRules: section<readonly unknown[]>('lossPreventionRules'),
     consentPurposes: section<readonly { purpose: string; channel: string; required?: boolean }[]>('consentPurposes'),

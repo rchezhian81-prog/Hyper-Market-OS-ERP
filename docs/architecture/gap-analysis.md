@@ -26,7 +26,7 @@ project.
 | `services/` — the thirteen APIs | 5,556 | Built, persisting, authenticated, audited |
 | `edge/` — the store box | 2,150 | Runs, writes durably, syncs — **and now feeds all six screens** |
 | `apps/` — everything a person touches | 7,500 | **All six have real screens.** The gap that dominated this document is closed |
-| Tests | 3,510 + 31 | Unusually thorough on rules; thin on assembly until today |
+| Tests | 3,547 + 31 | Unusually thorough on rules; thin on assembly until today |
 
 **2,452 lines of app code for six applications** is the number that matters. For comparison, the POS
 alone — one screen a cashier uses eight hours a day — is 1,070 of those lines, and none of it draws
@@ -115,7 +115,7 @@ Three columns, and they are different questions. **Rules** = is the logic writte
 | M08–M11 Inventory, warehouse, quality | ✅ | ✅ | ◐ | Movements and snapshots real; **blind counting is now a screen** — and a count the screen cannot value is refused rather than priced at zero. No expiry or recall screen |
 | M12–M15 POS, returns, cash office | ✅ | ✅ | ✅ | The strongest area. Durable commit real, and the screen reaches the till's own disk over loopback (ADR-0004). Cash, card, UPI, hold/recall, cash to safe and a blind till close are in; **day close now has a manager screen that reports a list rather than a refusal**. Receipt-based returns still have no screen |
 | M16–M18 Customer, loyalty, storefront | ✅ | ✅ | ◐ | **The customer app is now a screen**: search, repeat order, basket review, slots, payment, and a privacy centre where withdrawing consent is the same one tap as giving it (DPDP s.6(6)). Loyalty **accrual still not wired** — points read as *not known* |
-| M19–M20 Picking, delivery | ✅ | ✅ | ✅ | **Both handhelds are now screens**, and both now actually queue their work — until today neither the picker's scans nor the driver's COD reached anything that survived the app closing. **No dispatch list exists**, so runs still report unassigned until M20 route planning is built |
+| M19–M20 Picking, delivery | ✅ | ✅ | ✅ | **Both handhelds are now screens**, both queue their work, and **the store box now plans the routes** (M19-FR-03) — straight-line distances, stated as such, as a draft a dispatcher confirms. Runs reconcile against a real assignment list at last |
 | M21–M24 Finance, Tally | ✅ | ◐ | ❌ | Journals and period close real. **No control totals can be built** — deliberate, and it means no month can close yet |
 | M25–M28 Reporting, analytics | ✅ | ◐ | ❌ | Two real figures. Everything else needs producers |
 | M29–M32 Ops, compliance, workforce | ✅ | ❌ | ❌ | Rules only |
@@ -130,8 +130,10 @@ Three columns, and they are different questions. **Rules** = is the logic writte
 - **Period close refuses** because no control total can be built inside this system — every figure
   comes down one path, so comparing two of them is one figure written twice. The genuine second
   source is the bank statement or the filed return. **The fix is a bank feed, not a weaker check.**
-- **Delivery runs report unassigned attempts** because nothing dispatches. Correct until M20 route
-  planning is built.
+- ~~**Delivery runs report unassigned attempts** because nothing dispatches.~~ ✅ **Closed.** The
+  store box now plans routes (M19-FR-03) and `assignedOrderIds` gives the reconciliation the list it
+  never had. The control that catches a delivery against an order nobody dispatched still works —
+  it simply no longer fires on every single delivery.
 - **Loyalty points answer "not known"** because nothing accrues them. Correct until M14 is wired.
 - **Commitments answer "not known"** because no purchase order is recorded. Correct until M06 is
   wired.

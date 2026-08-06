@@ -22,6 +22,7 @@ const STORE_PACK = readFileSync('edge/store-edge/src/store-pack.ts', 'utf8');
 const READ_MODEL = readFileSync('edge/store-edge/src/read-model.ts', 'utf8');
 const SCREEN_SERVER = readFileSync('edge/store-edge/src/screen-server.ts', 'utf8');
 const EDGE_MAIN = readFileSync('edge/store-edge/src/main.ts', 'utf8');
+const ROUTING = readFileSync('packages/fulfilment/src/routing.ts', 'utf8');
 
 /** Comments discuss these on purpose, so only real code counts. */
 const code = (source: string): string => source
@@ -173,5 +174,57 @@ describe('the box starts without a pack, and says so', () => {
   it('rebuilds the day per request, so a screen is never shown the state at boot', () => {
     // A projection frozen at start-up reports a shop that has taken nothing all day.
     expect(code(EDGE_MAIN)).toMatch(/void reread\(\)/);
+  });
+});
+
+describe('the route planner never loses a stop, and never claims a map', () => {
+  it('says its distances are straight-line, in the RESULT and not only in a comment', () => {
+    // There is no map here and no road network. Any screen that shows one of these distances has
+    // to acknowledge which kind it is, so the fact travels with the plan.
+    expect(code(ROUTING)).toMatch(/distancesAre: 'straight_line'/);
+    expect(code(ROUTING)).toMatch(/readonly distancesAre: 'straight_line'/);
+  });
+
+  it('accounts for every order — routed or refused by name', () => {
+    // A dropped stop is not an inefficiency; it is a customer who ordered, paid, waited and was
+    // told nothing, and they find out by nothing arriving.
+    expect(code(ROUTING)).toMatch(/accountedFor: routes\.reduce/);
+    expect(code(ROUTING)).toMatch(/unplanned\.push/);
+  });
+
+  it('has no path that discards an order without recording it', () => {
+    // Every `continue` in the triage and assignment loops must be preceded by an `unplanned.push`.
+    // A bare `continue` is exactly how a stop disappears.
+    const body = code(ROUTING).slice(code(ROUTING).indexOf('export function planDispatch'));
+    const lines = body.split('\n');
+    for (const [i, line] of lines.entries()) {
+      if (!/^\s*continue;/.test(line)) continue;
+      const before = lines.slice(Math.max(0, i - 12), i).join('\n');
+      expect(before, `a stop is dropped without a reason near line ${i}`).toMatch(/unplanned\.push|routable\.push|if \(carrying/);
+    }
+  });
+
+  it('re-plans rather than patching when a driver goes off the road', () => {
+    // Patching appends their stops to the end of another run in whatever order they were in, and
+    // the last customer of the day pays for it.
+    expect(code(ROUTING)).toMatch(/export function reassign/);
+    expect(code(ROUTING)).toMatch(/return planDispatch\(/);
+  });
+
+  it('reuses the one distance function rather than adding a third', () => {
+    // Two answers to "how far is that" is one of them being wrong, and the disagreement is only
+    // found by the person driving it.
+    expect(code(ROUTING)).toMatch(/import \{ metresBetween \}/);
+    expect(code(ROUTING)).not.toMatch(/Math\.asin|6_371_000/);
+  });
+
+  it('plans on the BOX, so a dead router does not stop the vans', () => {
+    expect(code(readFileSync('edge/store-edge/src/screen-data.ts', 'utf8'))).toMatch(/planDispatch\(/);
+  });
+
+  it('serves nothing rather than an empty route when it was told no orders', () => {
+    const data = code(readFileSync('edge/store-edge/src/screen-data.ts', 'utf8'));
+    expect(data).toMatch(/!input\.pack\.deliveries\.known/);
+    expect(data).toMatch(/return null;/);
   });
 });

@@ -1,11 +1,15 @@
 {
   "_comment": [
-    "An EXAMPLE store pack — the shape the cloud sends this box (EDGE_PACK_FILE).",
+    "An EXAMPLE store pack \u2014 the shape the cloud sends this box (EDGE_PACK_FILE).",
     "Every top-level section is optional, and leaving one out is meaningful:",
     "the box then tells the screens it has NOT BEEN TOLD that section, which is",
     "different from telling them the section is empty. The manager's day close",
     "refuses the first and proceeds on the second.",
-    "Contains no real store data, no prices anybody trades on and no secrets."
+    "Contains no real store data, no prices anybody trades on and no secrets.",
+    "deliveries/drivers/routingPolicy: the box PLANS the routes itself from these,",
+    "so vans still go out when the internet is down. `route` overrides the planner",
+    "when a dispatcher writes one by hand, and the driver's screen says which it is.",
+    "Distances are straight-line: there is no map here, so the plan is a draft."
   ],
   "version": 1,
   "policies": {
@@ -23,28 +27,71 @@
     {
       "productId": "EXAMPLE-1",
       "name": "Example product",
-      "nameTa": "எடுத்துக்காட்டு பொருள்",
+      "nameTa": "\u0b8e\u0b9f\u0bc1\u0ba4\u0bcd\u0ba4\u0bc1\u0b95\u0bcd\u0b95\u0bbe\u0b9f\u0bcd\u0b9f\u0bc1 \u0baa\u0bca\u0bb0\u0bc1\u0bb3\u0bcd",
       "categoryId": "example",
       "unitPriceMinor": 10000,
       "unitCostMinor": 7000,
       "uom": "ea",
-      "barcodes": ["0000000000000"],
+      "barcodes": [
+        "0000000000000"
+      ],
       "availableMinor": 0
     }
   ],
   "approvals": [],
   "checklist": [
-    { "itemId": "chiller", "description": "Chiller temperature logged", "done": false, "blocking": true }
+    {
+      "itemId": "chiller",
+      "description": "Chiller temperature logged",
+      "done": false,
+      "blocking": true
+    }
   ],
   "wave": null,
   "route": null,
+  "deliveries": [],
+  "drivers": [
+    {
+      "driverId": "REPLACE_WITH_DRIVER_ID",
+      "maxStops": 25,
+      "availableFrom": "2026-01-01T09:00:00.000Z",
+      "availableUntil": "2026-01-01T20:00:00.000Z"
+    }
+  ],
+  "routingPolicy": {
+    "storeLocation": {
+      "lat": 0,
+      "lon": 0
+    },
+    "radiusMetres": 10000,
+    "averageSpeedKmh": 20,
+    "serviceMinutesPerStop": 5,
+    "contributionRule": {
+      "maxCostShareBps": 2000
+    }
+  },
   "slots": [],
   "lossPreventionRules": [
-    { "kind": "refund", "maxCount": 5, "maxTotalValueMinor": 500000, "escalateAtMultiple": 2 },
-    { "kind": "void", "maxCount": 10 }
+    {
+      "kind": "refund",
+      "maxCount": 5,
+      "maxTotalValueMinor": 500000,
+      "escalateAtMultiple": 2
+    },
+    {
+      "kind": "void",
+      "maxCount": 10
+    }
   ],
   "consentPurposes": [
-    { "purpose": "order_updates", "channel": "sms", "required": true },
-    { "purpose": "marketing", "channel": "sms" }
+    {
+      "purpose": "order_updates",
+      "channel": "sms",
+      "required": true
+    },
+    {
+      "purpose": "marketing",
+      "channel": "sms"
+    }
   ]
 }

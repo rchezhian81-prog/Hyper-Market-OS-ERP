@@ -60,6 +60,12 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   checklist: known([]),
   wave: known(null),
   route: known(null),
+  deliveries: known([]),
+  drivers: known([]),
+  routingPolicy: known({
+    storeLocation: { lat: 11, lon: 77 }, radiusMetres: 10_000,
+    averageSpeedKmh: 20, serviceMinutesPerStop: 5,
+  }),
   slots: known([]),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([]),

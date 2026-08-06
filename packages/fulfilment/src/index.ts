@@ -11,3 +11,4 @@
 export * from './delivery';
 export * from './packing';
 export * from './cod';
+export * from './routing';

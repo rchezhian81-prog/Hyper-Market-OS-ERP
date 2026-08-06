@@ -11,6 +11,7 @@ import { bootShop, forgetfulBasket } from '../../apps/customer-app/src/browser-e
 import { bootPicker } from '../../apps/picker-app/src/browser-entry';
 import { bootDriver } from '../../apps/delivery-app/src/browser-entry';
 import { DeviceOutbox, noDeviceStore } from '../../packages/sync/src/device-outbox';
+import type { PackDelivery, PackDriver } from '../../edge/store-edge/src/store-pack';
 
 /**
  * **The join, driven end to end over a real socket.**
@@ -69,6 +70,12 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
     routeId: 'r1', driverId: 'd1',
     stops: [{ stopId: 's1', orderRef: 'ORD-1', area: 'Anna Nagar', codMinor: 250_00 }],
   }),
+  deliveries: known([]),
+  drivers: known([]),
+  routingPolicy: known({
+    storeLocation: { lat: 11, lon: 77 }, radiusMetres: 10_000,
+    averageSpeedKmh: 20, serviceMinutesPerStop: 5,
+  }),
   slots: known([{
     slotId: 'today-evening', startsAt: '2026-08-05T17:00:00.000Z',
     endsAt: '2026-08-05T19:00:00.000Z', capacity: 5, booked: 0, kind: 'delivery',
@@ -77,6 +84,19 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
   consentPurposes: known([{ purpose: 'marketing', channel: 'sms' }]),
   ...over,
 });
+
+const STORE = { lat: 11.0, lon: 77.0 };
+const DELIVERIES: PackDelivery[] = [
+  { orderId: 'ORD-1', slotId: 'evening', slotStartsAt: '2026-08-05T17:00:00.000Z', slotEndsAt: '2026-08-05T19:00:00.000Z', area: 'Anna Nagar', location: { lat: 11.04, lon: 77.0 }, codMinor: 250_00 },
+  { orderId: 'ORD-2', slotId: 'evening', slotStartsAt: '2026-08-05T17:00:00.000Z', slotEndsAt: '2026-08-05T19:00:00.000Z', area: 'Gandhipuram', location: { lat: 11.005, lon: 77.0 }, codMinor: 0 },
+  { orderId: 'ORD-3', slotId: 'evening', slotStartsAt: '2026-08-05T17:00:00.000Z', slotEndsAt: '2026-08-05T19:00:00.000Z', area: 'Unknown', codMinor: 0 },
+];
+const DRIVERS: PackDriver[] = [
+  { driverId: 'd1', maxStops: 10, availableFrom: '2026-08-05T16:00:00.000Z', availableUntil: '2026-08-05T21:00:00.000Z' },
+];
+const ROUTING = {
+  storeLocation: STORE, radiusMetres: 10_000, averageSpeedKmh: 20, serviceMinutesPerStop: 5,
+};
 
 const servers: ScreenServer[] = [];
 afterAll(async () => { for (const s of servers) await s.stop(); });
@@ -298,6 +318,7 @@ describe('a box that has been told nothing tells every screen so', () => {
       receivedAt: null, version: 0,
       policies: notKnown('never'), products: notKnown('never'), approvals: notKnown('never'),
       checklist: notKnown('never'), wave: notKnown('never'), route: notKnown('never'),
+      deliveries: notKnown('never'), drivers: notKnown('never'), routingPolicy: notKnown('never'),
       slots: notKnown('never'), lossPreventionRules: notKnown('never'), consentPurposes: notKnown('never'),
     },
     sales: [],
@@ -332,5 +353,96 @@ describe('a box that has been told nothing tells every screen so', () => {
     expect(attempt.closed).toBe(false);
     if (attempt.closed) return;
     expect(attempt.blockers.some((b) => b.kind === 'cannot_see')).toBe(true);
+  });
+});
+
+describe('the box plans the driver’s route itself (M19-FR-03)', () => {
+  const dispatching = snapshotOf({
+    pack: pack({
+      route: known(null), // nothing hand-written, so the planner decides
+      deliveries: known(DELIVERIES),
+      drivers: known(DRIVERS),
+      routingPolicy: known(ROUTING),
+    }),
+  });
+
+  it('serves a planned route the driver’s phone can open', async () => {
+    // Dispatch runs on the BOX. A shop whose routes could only be planned when the internet was
+    // up would stop delivering on the afternoon the router dies (P-01).
+    const base = await serve(dispatching);
+    const payload = (await payloadFromScreen(base, 'driver'))!;
+
+    expect(payload['plannedBy']).toBe('this store box');
+    expect(payload['distancesAre']).toBe('straight_line');
+
+    const route = bootDriver(payload as Parameters<typeof bootDriver>[0], new DeviceOutbox(noDeviceStore()), () => NOW)!;
+    // The two that could be placed, nearest first. The third had no location.
+    expect(route.route().map((s) => s.orderRef)).toEqual(['ORD-2', 'ORD-1']);
+    expect(route.route()[0]?.codMinor).toBe(0);
+  });
+
+  it('puts the order it could NOT plan on the manager’s exception register', async () => {
+    // An undispatched order is a customer who ordered, paid and is waiting. It belongs where
+    // somebody looks — and it holds the day close, which is correct.
+    const base = await serve(dispatching);
+    const manager = (await payloadFromScreen(base, 'manager'))!;
+    const exceptions = manager['openExceptions'] as { id: string; what: string }[];
+
+    const unplanned = exceptions.find((e) => e.id === 'dispatch:ORD-3');
+    expect(unplanned).toBeDefined();
+    expect(unplanned?.what).toMatch(/no delivery location/i);
+  });
+
+  it('and the day will not close while that order is still unplanned', async () => {
+    const base = await serve(dispatching);
+    const attempt = bootManager({
+      storeId: 'store-1', branchId: 'b1', tradingDay: '2026-08-04', tradingDayCutoff: '02:00',
+      managerId: 'u-mgr', data: (await payloadFromScreen(base, 'manager'))! as never,
+    }).closeTheDay({ dayCloseId: 'dc-r', closedAtLocal: '2026-08-05T02:30', closedAt: NOW });
+
+    expect(attempt.closed).toBe(false);
+    if (attempt.closed) return;
+    expect(attempt.blockers.find((b) => b.kind === 'exceptions_open')?.items.some((i) => i.id === 'dispatch:ORD-3')).toBe(true);
+  });
+
+  it('lets a dispatcher override the planner, and says which the driver is holding', async () => {
+    // Software that cannot be overridden gets worked around — which means a driver with a piece
+    // of paper and a screen that disagrees with it.
+    const base = await serve(snapshotOf({
+      pack: pack({
+        deliveries: known(DELIVERIES), drivers: known(DRIVERS), routingPolicy: known(ROUTING),
+        route: known({
+          routeId: 'by-hand', driverId: 'd1',
+          stops: [{ stopId: 's1', orderRef: 'ORD-9', area: 'Wherever the dispatcher said', codMinor: 0 }],
+        }),
+      }),
+    }));
+    const payload = (await payloadFromScreen(base, 'driver'))!;
+    expect(payload['routeId']).toBe('by-hand');
+    expect(payload['plannedBy']).toBe('a dispatcher, by hand');
+  });
+
+  it('serves nothing when the box has not been told the orders or the fleet', async () => {
+    // Not an empty route. "Nobody has any deliveries today" and "I have not been told what today's
+    // deliveries are" are different sentences, and the screen says which.
+    const base = await serve(snapshotOf({
+      pack: pack({ route: known(null), deliveries: notKnown('never sent'), drivers: known(DRIVERS), routingPolicy: known(ROUTING) }),
+    }));
+    expect(await payloadFromScreen(base, 'driver')).toBeNull();
+  });
+
+  it('re-plans the day around a van that is off the road', async () => {
+    const base = await serve(snapshotOf({
+      pack: pack({
+        route: known(null), deliveries: known(DELIVERIES), routingPolicy: known(ROUTING),
+        drivers: known([
+          { ...DRIVERS[0]!, unavailable: true },
+          { driverId: 'd2', maxStops: 10, availableFrom: '2026-08-05T16:00:00.000Z', availableUntil: '2026-08-05T21:00:00.000Z' },
+        ]),
+      }),
+    }));
+    const payload = (await payloadFromScreen(base, 'driver'))!;
+    expect(payload['driverId']).toBe('d2');
+    expect((payload['stops'] as unknown[])).toHaveLength(2);
   });
 });

@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 5 August 2026 (session: all six screens built, and the store box now feeds every one of them — the day close closes)
+Last updated: 5 August 2026 (session: six screens, the store box feeding all of them, and the van now knows where it is going)
 
 ---
 
@@ -2591,6 +2591,81 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## Route planning — the van now knows where it is going (5 August 2026)
+
+The last named gap in delivery. Until today somebody had to write out the driver's route by hand.
+
+### The part that was actually broken
+
+It was not just the handwriting. The end-of-shift check that asks *"did every order the driver took
+out get delivered?"* was being handed **an empty list of what he took out**. So every single
+delivery he genuinely made came back flagged as *a delivery nobody dispatched* — which is the alarm
+that is supposed to mean **goods left the building against an order nobody planned**.
+
+An alarm that goes off on every normal delivery is an alarm people learn to ignore, and then it is
+worse than no alarm at all. It is now quiet on a normal day and still loud on a real one — proved
+both ways.
+
+### What the box does now
+
+It takes today's confirmed deliveries and who is driving, and it plans the runs. Nearest first from
+the shop, and it fills one driver before starting the next.
+
+**And it does this on the box in your back office, not in the cloud.** A shop whose routes could
+only be planned when the internet was working would stop delivering on the afternoon the router
+dies — which is exactly the day it can least afford to.
+
+### What I will not let it pretend
+
+**These are straight-line distances.** There is no map in this software, no roads and no traffic. It
+measures as the crow flies. If there is a river or a railway line between two houses, the order it
+picks is wrong.
+
+So it says so — every plan it produces carries the words "straight line" in the result itself, not
+buried in a comment, so any screen showing a distance has to admit which kind it is. **It is a
+draft for a dispatcher to confirm, and it never calls itself the best route**, because it cannot
+work that out and software that claims it anyway hands a driver a schedule that was never possible.
+
+### The rule that matters more than the route
+
+**Every order goes somewhere.** Onto a run, or onto a "could not be planned" list with the reason
+written for a person. Never both, and — the important half — **never neither**.
+
+A stop that quietly disappears is not an inefficiency. It is a customer who ordered, paid, waited,
+and was never told anything, and they find out because nothing arrives. So the count is checked
+against what went in, and there is an automatic check that no path in the planner can drop an order
+without writing down why.
+
+The reasons it gives:
+- **No address on the order** — somebody has to add it; guessing a location is worse than saying so.
+- **Outside the delivery area** — it should not have been sold as a delivery. Tell the customer
+  today, not at the door.
+- **Everybody's day is full** — a real answer that needs a person, not a longer route.
+- **Nobody is on shift for that time slot** — put somebody on, or ring the customer and move it.
+
+And **an order it could not plan appears on the manager's exceptions**, so the day will not close
+while somebody's shopping is still in the building and nobody has told them.
+
+### Three smaller decisions worth knowing
+
+- **The promised time beats the shorter route.** If a customer booked five o'clock, their order is
+  not moved to eight because it was geographically convenient. A shorter route and a broken promise
+  — only one of those shows up on a screen.
+- **A stop that will run late is flagged, and still delivered.** It is a phone call, not a reason to
+  quietly not deliver somebody's shopping — and it is flagged while the van is still in the yard,
+  which is the only moment anybody can do anything.
+- **You can still overrule it.** If you know the bridge is shut, write the route by hand and the
+  screen uses yours — and it tells the driver which of the two he is holding. Software that cannot
+  be overruled just gets worked around, and then there is a piece of paper that disagrees with the
+  screen.
+
+**Tests:** 3,547 automated plus 31 performance, all green.
+
+**What is left:** a real map. If routes ever matter more than a draft is worth, the thing to buy is
+road distances from a maps provider — and that is a cost decision (D3), not a code one.
+
+---
+
 ## The store box now feeds all six screens — and the day close closes (5 August 2026)
 
 This is the one that joins everything together.
@@ -3773,8 +3848,7 @@ written for 20,000 SKUs with duplicate barcodes, missing HSN codes, three spelli
 produce sold by weight; none of them has met one. That is now the largest risk in the project by a
 wide margin, and `docs/requirements/data-requirements.md` says exactly what to extract.
 
-After that: route planning (M20 — nothing dispatches, so a driver's route has to be put in the pack
-by hand), purchase and receiving (M06/M07 — nothing captures a supplier invoice, so the three-way
+After that: purchase and receiving (M06/M07 — nothing captures a supplier invoice, so the three-way
 match still has no lines to match), and the compliance build (HSN, e-invoicing if it applies, FSSAI
 records, legal-metrology stamping dates).
 

@@ -30,6 +30,7 @@
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { assessChecklist } from '../../../packages/workforce/src/index';
 import type { LpRule } from '../../../packages/loss-prevention/src/index';
+import { planDispatch, type DispatchPlan } from '../../../packages/fulfilment/src/routing';
 import { costTheDay, exceptionsFor, activityFrom, type LoggedSale } from './read-model';
 import type { StorePack } from './store-pack';
 
@@ -113,6 +114,22 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
         id: 'edge:unreadable-records',
         what: `${input.unreadableRecords} record(s) on this box could not be read — most likely a power cut mid-write`,
       });
+    }
+
+    // An order that could not be put on a route is a customer who ordered, paid and is waiting.
+    // It belongs on the manager's exception register — and therefore holds the day close, which is
+    // correct: a day should not lock with somebody's shopping still in the building and nobody
+    // having told them (M19-FR-03).
+    const plan = dispatchPlanFor(input);
+    if (plan !== null) {
+      for (const unplanned of plan.unplanned) {
+        items.push({ id: `dispatch:${unplanned.orderId}`, what: unplanned.detail });
+      }
+      // Flagged for a look, not raised as an exception: an expensive stop is a question about
+      // whether to keep taking that order, not something wrong with today (D09).
+      for (const flag of plan.contributionFlags) {
+        items.push({ id: `contribution:${flag.orderId}`, what: flag.detail });
+      }
     }
     payload['openExceptions'] = items;
   }
@@ -243,17 +260,91 @@ export function pickerPayload(input: ScreenInput): Record<string, unknown> | nul
   };
 }
 
-/** The driver's payload: the route the cloud assigned, or nothing when none was (M20). */
-export function driverPayload(input: ScreenInput): Record<string, unknown> | null {
-  if (!input.pack.route.known || input.pack.route.value === null) return null;
-  const route = input.pack.route.value;
+/**
+ * Plan today's deliveries on this box (M19-FR-03).
+ *
+ * **Dispatch runs here rather than in the cloud, and that is the whole reason it is in this file.**
+ * Vans go out whether or not the line is up. A shop whose routes could only be planned when the
+ * internet was working would be a shop that stops delivering on the afternoon the router dies —
+ * which is precisely the day it can least afford to (P-01).
+ *
+ * Returns `null` when the box has not been told the orders, the fleet or the rules to plan by. Not
+ * an empty plan: an empty plan says *nobody has any deliveries today*, and that is a different
+ * sentence from *I have not been told what today's deliveries are*.
+ */
+export function dispatchPlanFor(input: ScreenInput): DispatchPlan | null {
+  if (!input.pack.deliveries.known || !input.pack.drivers.known || !input.pack.routingPolicy.known) {
+    return null;
+  }
+  const policy = input.pack.routingPolicy.value;
+  return planDispatch({
+    runDate: input.tradingDay,
+    orders: input.pack.deliveries.value,
+    // A van off the road simply is not in the fleet for the day. The planner then re-plans around
+    // it rather than having somebody's stops appended to another driver's run in whatever order
+    // they happened to be in (M19-FR-03, "partner unavailable → reassign").
+    drivers: input.pack.drivers.value.filter((d) => d.unavailable !== true),
+    policy: {
+      storeLocation: policy.storeLocation,
+      radiusMetres: policy.radiusMetres,
+      averageSpeedKmh: policy.averageSpeedKmh,
+      serviceMinutesPerStop: policy.serviceMinutesPerStop,
+      ...(policy.contributionRule === undefined ? {} : { contributionRule: policy.contributionRule }),
+    },
+  });
+}
+
+/**
+ * The driver's payload — the route this box planned, or the one a dispatcher wrote by hand.
+ *
+ * **A hand-written route wins.** A dispatcher who knows the bridge is shut has to be able to say
+ * so, and software that cannot be overridden gets worked around instead — which means a driver with
+ * a piece of paper and a screen that disagrees with it. The screen is told **which of the two** it
+ * is showing rather than leaving the driver to work it out.
+ */
+export function driverPayload(input: ScreenInput, driverId?: string): Record<string, unknown> | null {
   const policies = input.pack.policies.known ? input.pack.policies.value : undefined;
+  const tolerance = policies === undefined ? {} : { handoverToleranceMinor: policies.handoverToleranceMinor };
+
+  if (input.pack.route.known && input.pack.route.value !== null) {
+    const route = input.pack.route.value;
+    return {
+      routeId: route.routeId,
+      driverId: route.driverId,
+      stops: route.stops,
+      plannedBy: 'a dispatcher, by hand',
+      ...(route.contributionRule === undefined ? {} : { contributionRule: route.contributionRule }),
+      ...tolerance,
+    };
+  }
+
+  const plan = dispatchPlanFor(input);
+  if (plan === null) return null;
+
+  // Whose route this is. Absent a named driver the box serves the first planned run, which is what
+  // a single-van shop wants; a fleet passes the driver.
+  const route = driverId === undefined ? plan.routes[0] : plan.routes.find((r) => r.driverId === driverId);
+  if (route === undefined) return null;
+
   return {
     routeId: route.routeId,
     driverId: route.driverId,
-    stops: route.stops,
-    ...(route.contributionRule === undefined ? {} : { contributionRule: route.contributionRule }),
-    ...(policies === undefined ? {} : { handoverToleranceMinor: policies.handoverToleranceMinor }),
+    plannedBy: 'this store box',
+    // Carried through so the screen can say it, rather than presenting a straight-line estimate as
+    // a road distance. There is no map here and a river between two stops makes the order wrong.
+    distancesAre: plan.distancesAre,
+    stops: route.stops.map((s) => ({
+      stopId: s.stopId,
+      orderRef: s.orderId,
+      area: s.area,
+      codMinor: s.codMinor,
+      ...(s.orderValueMinor === undefined ? {} : { orderValueMinor: s.orderValueMinor }),
+      // The straight-line leg, used by the contribution rule the driver's own session applies.
+      costMinor: s.legMetres,
+    })),
+    estimatedReturnAt: route.estimatedReturnAt,
+    totalCodMinor: route.totalCodMinor,
+    ...tolerance,
   };
 }
 
