@@ -753,10 +753,10 @@ export function platformAdapter(input: {
     /** Never deleted (#6). Somebody outside the business read this tenant's data, and that is kept. */
     recordSupportAccess: async (request, expiresAt) => {
       await input.store.append(request.tenantId, STREAM.platform, makeEvent({
-        id: `support-${request.accessId}`,
+        id: `support-${request.requestId}`,
         type: 'SupportAccessGranted',
-        occurredAt: request.grantedAt,
-        idempotencyKey: `support-${request.tenantId}-${request.accessId}`,
+        occurredAt: request.at,
+        idempotencyKey: `support-${request.tenantId}-${request.requestId}`,
         source: 'api/platform',
         payload: { ...request, expiresAt },
       }));

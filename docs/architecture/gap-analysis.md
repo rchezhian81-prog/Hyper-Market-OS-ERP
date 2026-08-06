@@ -25,8 +25,8 @@ project.
 | `packages/` — domain rules | 45,179 | **Genuinely strong.** The product's value lives here |
 | `services/` — the thirteen APIs | 5,556 | Built, persisting, authenticated, audited |
 | `edge/` — the store box | 2,250 | Runs, writes durably, syncs — **and now feeds every screen**, the buyer's included |
-| `apps/` — everything a person touches | 9,800 | **All six have real screens, and the ERP now has eight** — the manager's, the buyer's, the product and price screen, merchandising and space, reporting, the service desk, expiry and recall, and finance. The gap that dominated this document is closed |
-| Tests | 4,188 + 31 | Unusually thorough on rules; thin on assembly until today |
+| `apps/` — everything a person touches | 10,200 | **All six have real screens, and the ERP now has nine** — the manager's, the buyer's, the product and price screen, merchandising and space, reporting, the service desk, expiry and recall, finance, and admin and security. The gap that dominated this document is closed |
+| Tests | 4,245 + 31 | Unusually thorough on rules; thin on assembly until today |
 
 **2,452 lines of app code for six applications** is the number that matters. For comparison, the POS
 alone — one screen a cashier uses eight hours a day — is 1,070 of those lines, and none of it draws
@@ -109,7 +109,7 @@ Three columns, and they are different questions. **Rules** = is the logic writte
 
 | Modules | Rules | Wired | Usable | The honest note |
 | --- | :---: | :---: | :---: | --- |
-| M01–M02 Platform, identity | ✅ | ✅ | ◐ | Token verification real; the **approvals inbox is now a screen** (decide in ≤3 taps, reason recorded, separation of duties visible). **No identity provider chosen**, so nobody can log in |
+| M01–M02 Platform, identity | ✅ | ✅ | ◐ | Token verification real; the approvals inbox is a screen (decide in ≤3 taps, reason recorded, separation of duties visible). **Admin and security is now a screen too** — outside access scoped and time-bound, who can get in, the device fleet, and what retention would do. **The defect found building it:** support access had two implementations and the weaker was wired to the API — its request had no `scopes` field, so least privilege could not be stated — and the expiry was never checked by anything. **No identity provider chosen**, so nobody can log in |
 | M03–M05 Product, pricing, catalogue | ✅ | ✅ | ✅ | **The product and price screen is now built** — HSN/tax class is a field and nothing publishes without one. A price change is drafted, checked against the MRP ceiling and the margin floor with both limits shown *before* the price is typed, approved by somebody else and appended as a new entry. Until this session **nothing in the system had ever produced a `PriceEntry`**, so the catalogue snapshot builder had never had a real price to ship to a lane. **Shelf addresses are built too** (M04-FR-02, owner decision 6 Aug 2026): the store box now sequences the picker's wave by the shop's own shelf map, chiller last where the store has said so — `routeFor` had been written and tested since the module existed and nothing had ever called it. **Planograms, refill tasks, the range review and space are built too** (6 Aug 2026, owner asked for them next): a blind shelf count is the producer that never existed, and an uncounted facing is now reported as *never counted* rather than as an empty shelf — which had been raising the loudest alarm in the system for every product in the shop |
 | M06–M07 Purchase, supplier | ✅ | ✅ | ✅ | Three-way match real; goods receiving is a screen, and a delivery with no purchase order is flagged unmatched rather than filed quietly. **The buyer's screen now captures a supplier invoice in one go** — checked against the total printed on the paper, each line's own arithmetic checked with the line number to look at, approved by somebody else, committed atomically — so the match has lines at last. An uncaptured invoice still refuses, and now says which of the three documents is missing |
 | M08–M11 Inventory, warehouse, quality | ✅ | ✅ | ✅ | Movements and snapshots real; blind counting is a screen, and a count the screen cannot value is refused rather than priced at zero. ~~No expiry or recall screen~~ ✅ **Expiry and recall are now built** — the action list, FEFO allocation, the backwards trace, and a recall that leads with what is still in customers' homes and will not close without evidence. **The defect found while building it was the worst of the session:** the recall block that says *"even offline"* had no field in the pack to arrive in, and the payload the box served the lane was not a `CatalogueSnapshot` at all, so the till threw on boot — a recalled tin scanned and sold like any other |
@@ -120,7 +120,7 @@ Three columns, and they are different questions. **Rules** = is the logic writte
 | M21 CRM and service desk | ✅ | ✅ | ◐ | **Complaints, enquiries, warranty and lost-and-found are now a screen**, with the SLA clock on both promises — first reply and resolution, which fail differently — and compensation under maker-checker. The desk says out loud when the times it is showing are the software's starting figures rather than anything this shop agreed. Campaigns are still rules only |
 | M25–M28 Workforce, facilities, concession, waste | ✅ | ◐ | ❌ | **Mislabelled as "Reporting, analytics" in every earlier version of this document.** Rules only, apart from the refill task's owning role, which merchandising now uses |
 | M29–M32 Reporting, ops, compliance | ✅ | ✅ | ◐ | **The reporting screen is now built** (M29-FR-01/02, D13, API-10), **comparisons included** — today against the last day the box actually holds, and what is selling by department. D13 names 28 reports; **eleven have code behind them and the other seventeen are listed as unrunnable, by name, rather than hidden** — a screen showing only what works looks finished, and somebody who cannot find shrinkage concludes the shop has none. The two reasons are told apart because they have different owners: *nothing yet records what is thrown away* is the shop's to fix, *this version cannot work it out yet* is ours. Exports are permission-checked, PII-redacted and audited, and refuse outright when the box has not been told who is asking. Compliance and workforce are still rules only |
-| M33–M35 Owner control, audit, config | ✅ | ✅ | ◐ | Audit trail now real and immutable. **The owner's phone is now a screen**: brief, drill-through to every sale behind a figure, and approvals that record how old the data was when he decided |
+| M33–M35 Owner control, audit, config | ✅ | ✅ | ✅ | Audit trail real and immutable. The owner's phone is a screen: brief, drill-through to every sale behind a figure, and approvals that record how old the data was when he decided. **Support access, the device fleet, legal hold and retention are now a screen as well** — and what the shop has not decided is reported as undecided rather than as compliant |
 | M36 + A01–A10 AI | ✅ | ✅ | ❌ | Kill switch defaults **on**. No provider chosen (owner decision) |
 | MG-01–MG-12 Migration | ✅ | ✅ | ◐ | Strongest non-POS area. CLI tool exists. **No real data yet** |
 
@@ -132,6 +132,23 @@ in the deferral — *no producer of on-shelf counts anywhere in the system* — 
 blind shelf count, and it turned out to be the whole point: `planogramCompliance` had been treating
 an **uncounted** facing as an **empty** one, so on day one the entire shop came back as urgent
 refill tasks and staff would have been sent to full shelves.
+
+### The security control with two implementations (6 August 2026)
+
+Found while building the admin and security screen.
+
+`services/platform` carried its own `grantSupportAccess`, and it was the one wired to the API. Its
+request had **no `scopes` field at all** — so support access granted over the wire could not state
+least privilege, could not be refused for holding a scope support may never hold, and had no rule
+stopping an approval **lengthening** the window that was asked for. The package's version, unwired,
+enforced all three.
+
+A second, simpler copy of a security control is the one that drifts, and it drifts in the direction
+of letting more through.
+
+**And the expiry was never checked.** `supportSessionActive` decides liveness from the clock, and
+nothing outside its own unit test ever asked it: a session was granted with an `expiresAt` in a
+response body and no code anywhere read it again. Standing access wearing a time limit's clothes.
 
 ### The gate that had no key (6 August 2026)
 

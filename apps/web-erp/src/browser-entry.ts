@@ -71,6 +71,10 @@ import {
   createFinanceSession, type FinancePorts, type FinanceSession,
 } from './finance-session';
 import type { LedgerSide, QueuedPosting } from '../../../packages/period-close/src/index';
+import { createAdminSession, type AdminPorts, type AdminSession } from './admin-session';
+import type { Device, SupportSession, VersionPolicy } from '../../../packages/platform-admin/src/index';
+import type { UserAccount } from '../../../packages/identity/src/index';
+import type { AuditRecord, LegalHold, RetentionPolicy } from '../../../packages/audit/src/index';
 import type { Producer } from '../../../packages/reporting/src/index';
 
 /** What the store knows about a product this screen may be asked to count. */
@@ -374,6 +378,57 @@ export function bootFinance(data: FinanceData | undefined): FinanceSession | nul
   );
 }
 
+/** What the box tells the admin and security screen. */
+export interface AdminData {
+  readonly userId?: string;
+  readonly storeId?: string;
+  readonly now?: string;
+  readonly dormantAfterDays?: number;
+  readonly accounts?: readonly UserAccount[];
+  readonly roles?: readonly Role[];
+  readonly assignments?: readonly RoleAssignment[];
+  readonly supportSessions?: readonly SupportSession[];
+  readonly devices?: readonly Device[];
+  /** **Absent means nothing is being enforced**, which is not a compliant fleet. */
+  readonly versionPolicy?: VersionPolicy;
+  readonly auditRecords?: readonly AuditRecord[];
+  /** **Absent means the shop has never decided**, which is not "nothing to delete". */
+  readonly retentionPolicies?: readonly RetentionPolicy[];
+  readonly legalHolds?: readonly LegalHold[];
+}
+
+export function adminPortsFromData(data: AdminData | undefined): AdminPorts {
+  return {
+    accounts: () => data?.accounts ?? [],
+    roles: () => data?.roles ?? [],
+    assignments: () => data?.assignments ?? [],
+    supportSessions: () => data?.supportSessions ?? [],
+    devices: () => data?.devices ?? [],
+    // NOT defaulted. No policy means nothing is being enforced, and judging a fleet against a
+    // minimum nobody set would report it compliant with a rule the shop never made.
+    versionPolicy: () => data?.versionPolicy,
+    auditRecords: () => data?.auditRecords ?? [],
+    // An empty list here genuinely means "no policies", which the session reads as undecided.
+    retentionPolicies: () => data?.retentionPolicies ?? [],
+    legalHolds: () => data?.legalHolds ?? [],
+  };
+}
+
+/** Build the admin screen, or `null` when the box was told nothing about who administers this shop. */
+export function bootAdmin(data: AdminData | undefined): AdminSession | null {
+  if (data === undefined) return null;
+  return createAdminSession(
+    {
+      tenantId: 'tenant',
+      // NOT defaulted. Letting somebody into live data carries the name of whoever let them in.
+      userId: data.userId === undefined ? null : data.userId,
+      now: data.now ?? '1970-01-01T00:00:00.000Z',
+      dormantAfterDays: data.dormantAfterDays ?? 0,
+    },
+    adminPortsFromData(data),
+  );
+}
+
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
 interface ManagerWindow {
   managerSession?: ManagerSession;
@@ -396,6 +451,8 @@ interface ManagerWindow {
   expirySession?: ExpirySession;
   financeData?: FinanceData;
   financeSession?: FinanceSession;
+  adminData?: AdminData;
+  adminSession?: AdminSession;
   /** The decision vocabulary, so the view can offer it and never invent a reason of its own. */
   managerReasons?: {
     readonly approved: readonly DecisionReasonCode[];
@@ -855,6 +912,8 @@ if (browserWindow !== undefined) {
   if (expiry !== null) browserWindow.expirySession = expiry;
   const finance = bootFinance(browserWindow.financeData);
   if (finance !== null) browserWindow.financeSession = finance;
+  const admin = bootAdmin(browserWindow.adminData);
+  if (admin !== null) browserWindow.adminSession = admin;
   // The view offers these and records the code the manager picks. It never composes a reason of
   // its own, so the audit trail keeps one vocabulary that can still be reported on in a year.
   browserWindow.managerReasons = { approved: APPROVE_REASONS, rejected: REJECT_REASONS };

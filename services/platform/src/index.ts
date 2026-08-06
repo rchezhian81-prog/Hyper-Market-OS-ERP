@@ -74,60 +74,23 @@ export function assessHealth(probes: readonly DependencyProbe[]): Health {
   };
 }
 
-export interface SupportAccessRequest {
-  readonly accessId: string;
-  readonly tenantId: string;
-  readonly engineerId: string;
-  readonly approvedBy?: string;
-  readonly reason: string;
-  readonly grantedAt: string;
-  readonly minutes: number;
-}
-
-export type SupportRefusal =
-  | 'no_reason_given' | 'not_approved' | 'approved_by_the_engineer' | 'longer_than_policy';
-
-export interface SupportGrant {
-  readonly ok: boolean;
-  readonly expiresAt?: string;
-  readonly refusedBecause?: SupportRefusal;
-  readonly detail: string;
-}
-
-const NOT_A_REASON = /^(support|investigation|debugging|checking|as requested|ticket)\.?$/i;
-
-export function grantSupportAccess(
-  request: SupportAccessRequest,
-  /** Per-tenant maximum. Default 4 hours (OC-25). */
-  maxMinutes = 240,
-): SupportGrant {
-  if (request.reason.trim().length < 15 || NOT_A_REASON.test(request.reason.trim())) {
-    return {
-      ok: false, refusedBecause: 'no_reason_given',
-      detail: `"${request.reason}" does not say what is being looked at or why. In six months this line is the only record of what somebody saw in a customer's live data`,
-    };
-  }
-  if (request.approvedBy === undefined) {
-    return { ok: false, refusedBecause: 'not_approved', detail: 'support access into live tenant data needs a second person (SEC-11)' };
-  }
-  if (request.approvedBy === request.engineerId) {
-    return {
-      ok: false, refusedBecause: 'approved_by_the_engineer',
-      detail: `${request.engineerId} approved their own access to ${request.tenantId}'s live data`,
-    };
-  }
-  if (request.minutes > maxMinutes) {
-    return {
-      ok: false, refusedBecause: 'longer_than_policy',
-      detail: `${request.minutes} minutes exceeds the ${maxMinutes}-minute limit. Access that outlives the problem becomes access nobody remembers granting`,
-    };
-  }
-  return {
-    ok: true,
-    expiresAt: new Date(Date.parse(request.grantedAt) + request.minutes * 60_000).toISOString(),
-    detail: `${request.engineerId} may see ${request.tenantId} for ${request.minutes} minutes, approved by ${request.approvedBy}: ${request.reason}`,
-  };
-}
+/**
+ * **Support access has one implementation, and this is not it.**
+ *
+ * This service used to carry its own `grantSupportAccess`, and the two enforced *different rules*.
+ * The one wired to the API was the weaker: its request had **no `scopes` field at all**, so access
+ * granted over the wire could not express least privilege, could not be refused for holding a scope
+ * support may never hold, and had no rule stopping an approval lengthening the requested window.
+ *
+ * A second, simpler copy of a security control is the one that drifts, and it drifts in the
+ * direction of letting more through. So the request, the refusal and the grant all come from
+ * `packages/platform-admin`, and this service maps HTTP to it and nothing else.
+ */
+export type { SupportAccessRequest, OwnerApproval, SupportSession } from '../../../packages/platform-admin/src/index';
+import {
+  grantSupportAccess,
+  type SupportAccessRequest, type OwnerApproval, type SupportSession,
+} from '../../../packages/platform-admin/src/index';
 
 export interface FeatureFlagChange {
   readonly key: string;
@@ -186,18 +149,23 @@ export function platformRoutes(deps: PlatformDeps): readonly Route[] {
       api: 'API-11', method: 'POST', path: '/v1/platform/support-access',
       permission: 'platform.support.grant', idempotent: true,
       handler: async (ctx) => {
-        const request = ctx.body as SupportAccessRequest;
-        const grant = grantSupportAccess(request);
-        if (!grant.ok) {
+        // The ONE implementation. It refuses an empty scope list, a scope support may never
+        // hold, an approval that tries to lengthen the requested window, and a self-approval —
+        // none of which the copy that used to live in this file could even express.
+        const body = ctx.body as { readonly request: SupportAccessRequest; readonly approval?: OwnerApproval };
+        let session: SupportSession;
+        try {
+          session = grantSupportAccess(body.request, body.approval);
+        } catch (e) {
           throw apiError(422, {
-            code: grant.refusedBecause!,
-            whatHappened: grant.detail,
+            code: 'support_access_refused',
+            whatHappened: e instanceof Error ? e.message : 'support access was refused',
             wasItSaved: 'not_saved',
-            nextSafeAction: 'No access was granted. Give a real reason, a second approver, and a duration within policy.',
+            nextSafeAction: 'No access was granted. State the scopes actually needed, give a real reason, and have somebody else approve it for a window inside policy.',
           });
         }
-        await deps.recordSupportAccess(request, grant.expiresAt!);
-        return { status: 201, body: { expiresAt: grant.expiresAt, detail: grant.detail } };
+        await deps.recordSupportAccess(body.request, session.expiresAt);
+        return { status: 201, body: session };
       },
     },
   ];

@@ -544,8 +544,10 @@ describe.skipIf(!DATABASE_URL)('the API remembers (real PostgreSQL)', () => {
   it('keeps a support access grant, which is never deleted (#6)', async () => {
     const adapter = platformAdapter({ store, now: () => NOW, probes: async () => [] });
     await adapter.recordSupportAccess({
-      accessId: `${RUN}-SUP`, tenantId: TENANT, engineerId: 'e-1', approvedBy: 'u-owner',
-      reason: 'investigating a sync backlog reported this morning', grantedAt: NOW, minutes: 60,
+      requestId: `${RUN}-SUP`, tenantId: TENANT, requesterId: 'e-1', requesterName: 'Engineer',
+      reason: 'investigating a sync backlog reported this morning',
+      // Least privilege, stated. The shape this used to have had no scopes at all.
+      scopes: ['read:sync_queue'], at: NOW, minutes: 60,
     }, '2026-08-07T13:00:00Z');
 
     const kept = (await store.readStream(TENANT, STREAM.platform))

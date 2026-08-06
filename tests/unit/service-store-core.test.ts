@@ -5,9 +5,11 @@ import {
 } from '../../services/inventory/src/index';
 import { grantRole, identityRoutes, type GrantRequest, type IdentityDeps } from '../../services/identity/src/index';
 import {
-  assessHealth, grantSupportAccess, platformRoutes,
-  type DependencyProbe, type SupportAccessRequest, type PlatformDeps,
+  assessHealth, platformRoutes,
+  type DependencyProbe, type SupportAccessRequest, type OwnerApproval, type PlatformDeps,
 } from '../../services/platform/src/index';
+// The ONE implementation. The service used to carry a second, weaker copy of this control.
+import { grantSupportAccess } from '../../packages/platform-admin/src/index';
 import { buildRouter, handle, MemoryIdempotencyStore } from '../../services/kernel/src/index';
 import { AccessControl, type Role } from '../../packages/rbac/src/rbac';
 
@@ -203,34 +205,47 @@ describe('API-11 — health tells the truth, support access is bounded', () => {
   });
 
   const access = (over: Partial<SupportAccessRequest> = {}): SupportAccessRequest => ({
-    accessId: 'A-1', tenantId: 't-other', engineerId: 'u-eng', approvedBy: 'u-lead',
+    requestId: 'A-1', tenantId: 't-other', requesterId: 'u-eng', requesterName: 'Eng',
     reason: 'investigating the duplicate settlement raised in ticket 4471',
-    grantedAt: NOW, minutes: 60, ...over,
+    scopes: ['read:settlements'], at: NOW, minutes: 60, ...over,
+  });
+
+  const approval = (over: Partial<OwnerApproval> = {}): OwnerApproval => ({
+    subjectRef: 'A-1', status: 'approved', decidedBy: 'u-lead', ...over,
   });
 
   it('grants time-bound access with an expiry', () => {
-    const g = grantSupportAccess(access());
-    expect(g.ok).toBe(true);
-    expect(g.expiresAt).toBe('2026-08-07T13:00:00.000Z');
+    const session = grantSupportAccess(access(), approval());
+    expect(session.expiresAt).toBe('2026-08-07T13:00:00Z');
+    expect(session.scopes).toEqual(['read:settlements']);
   });
 
   it('REFUSES a reason that says nothing', () => {
-    for (const reason of ['support', 'debugging', 'checking', 'ticket']) {
-      expect(grantSupportAccess(access({ reason })).refusedBecause).toBe('no_reason_given');
-    }
-    expect(grantSupportAccess(access({ reason: 'looking' })).detail)
-      .toContain('the only record of what somebody saw');
+    expect(() => grantSupportAccess(access({ reason: 'investigate' }), approval()))
+      .toThrow(/not a reason/);
   });
 
   it('REFUSES access an engineer approved for themselves', () => {
-    expect(grantSupportAccess(access({ approvedBy: 'u-eng' })).refusedBecause).toBe('approved_by_the_engineer');
-    expect(grantSupportAccess(access({ approvedBy: undefined })).refusedBecause).toBe('not_approved');
+    expect(() => grantSupportAccess(access(), approval({ decidedBy: 'u-eng' })))
+      .toThrow(/cannot approve their own/);
+    expect(() => grantSupportAccess(access(), undefined)).toThrow(/has not approved/);
   });
 
   it('REFUSES access that outlives the problem', () => {
-    const g = grantSupportAccess(access({ minutes: 10_000 }));
-    expect(g.refusedBecause).toBe('longer_than_policy');
-    expect(g.detail).toContain('access nobody remembers granting');
+    expect(() => grantSupportAccess(access({ minutes: 10_000 }), approval()))
+      .toThrow(/no perpetual support access/);
+  });
+
+  it('REFUSES blanket access — the rule the service’s own copy could not express', () => {
+    // The copy wired to the API had no `scopes` field at all, so least privilege could not be
+    // stated, let alone enforced.
+    expect(() => grantSupportAccess(access({ scopes: [] }), approval()))
+      .toThrow(/never blanket admin/);
+  });
+
+  it('REFUSES an approval that tries to LENGTHEN the requested window', () => {
+    expect(() => grantSupportAccess(access({ minutes: 30 }), approval({ grantedMinutes: 240 })))
+      .toThrow(/never extend it/);
   });
 });
 

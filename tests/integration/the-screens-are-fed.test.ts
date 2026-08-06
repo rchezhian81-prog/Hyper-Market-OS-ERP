@@ -10,7 +10,7 @@ import { Ledger, InMemoryLedgerStore } from '../../packages/ledger/src/index';
 import { resolvePrice } from '../../packages/price-list/src/index';
 import { makeEvent } from '../../packages/contracts/src/event';
 import {
-  bootBuying, bootCatalogue, bootExpiry, bootFinance, bootManager, bootMerchandising, bootReporting, bootService,
+  bootAdmin, bootBuying, bootCatalogue, bootExpiry, bootFinance, bootManager, bootMerchandising, bootReporting, bootService,
   buyingGaps, catalogueGaps, merchandisingGaps,
 } from '../../apps/web-erp/src/browser-entry';
 import { bootOwner, forgetfulQueueStore } from '../../apps/owner-app/src/browser-entry';
@@ -208,6 +208,22 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
     journalPrefixes: { takings: 'SALES', tax: 'GST', refunds: 'REFUND' },
     userId: 'u-finance',
   }),
+  // Admin and security (M01/M02/M33/M34). Support access is never pruned (hard rule #6).
+  accounts: known([{
+    userId: 'u-meena', tenantId: 't1', username: 'meena',
+    person: { fullName: 'Meena R', email: 'meena@example.com' },
+    status: 'active', mfaEnrolled: true, lastLoginAt: '2026-08-05T09:00:00.000Z',
+  }]),
+  supportSessions: known([]),
+  devices: known([{
+    deviceId: 'D-1', tenantId: 't1', branchId: 'b1', kind: 'pos', label: 'Lane 1',
+    status: 'active', appVersion: '2.0.0', lastSeenAt: '2026-08-05T13:59:00.000Z',
+  }]),
+  versionPolicy: known({ currentVersion: '2.0.0', minimumSupportedVersion: '1.0.0' }),
+  auditRecords: known([]),
+  retentionPolicies: known([]),
+  legalHolds: known([]),
+  adminPolicy: known({ dormantAfterDays: 60, userId: 'u-admin' }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([{ purpose: 'marketing', channel: 'sms' }]),
   ...over,
@@ -274,7 +290,7 @@ describe('every screen is served, and served its own data', () => {
 
   it('refuses anything that is not a screen, and anything that climbs out', async () => {
     const base = await serve(snapshotOf());
-    expect((await fetch(`${base}/admin`)).status).toBe(404);
+    expect((await fetch(`${base}/payroll`)).status).toBe(404);
     expect((await fetch(`${base}/manager/..%2f..%2f..%2fpackage.json`)).status).toBe(400);
     expect((await fetch(`${base}/manager/nothing-here.js`)).status).toBe(404);
   });
@@ -519,6 +535,10 @@ describe('a box that has been told nothing tells every screen so', () => {
       expiryPolicy: notKnown('never'),
       tallyPostings: notKnown('never'), financeLedger: notKnown('never'),
       periodState: notKnown('never'), financePolicy: notKnown('never'),
+      accounts: notKnown('never'), supportSessions: notKnown('never'),
+      devices: notKnown('never'), versionPolicy: notKnown('never'),
+      auditRecords: notKnown('never'), retentionPolicies: notKnown('never'),
+      legalHolds: notKnown('never'), adminPolicy: notKnown('never'),
       lossPreventionRules: notKnown('never'), consentPurposes: notKnown('never'),
     },
     sales: [],
@@ -853,7 +873,7 @@ describe('the box sends a bare screen path to its own folder first', () => {
 
   it('still refuses a path that is not a screen at all', async () => {
     const base = await serve(snapshotOf());
-    expect((await fetch(`${base}/admin`, { redirect: 'manual' })).status).toBe(404);
+    expect((await fetch(`${base}/payroll`, { redirect: 'manual' })).status).toBe(404);
   });
 
   it('serves each screen’s service worker, so there is something to register', async () => {
@@ -2023,5 +2043,109 @@ describe('finance, fed by the box', () => {
     const base = await serve(snapshotOf({ pack: pack({ financePolicy: notKnown('never sent') }) }));
     expect(await payloadFromScreen(base, 'finance')).toBeNull();
     expect(bootFinance(undefined)).toBeNull();
+  });
+});
+
+/**
+ * **Admin and security, driven over the real socket (M01 · M02 · M33 · M34 · D12).**
+ *
+ * The design bar is one line: time-bound, audited support access — never standing god-mode. Two
+ * things stood between that sentence and the running system: the control had two implementations
+ * and the weaker was wired, and the expiry was never checked by anything.
+ */
+describe('admin and security, fed by the box', () => {
+  const live = {
+    sessionId: 'S-LIVE', requesterId: 'u-eng', requesterName: 'Engineer', approvedBy: 'u-owner',
+    reason: 'investigating the duplicate settlement raised in ticket 4471',
+    scopes: ['read:settlements'], tenantId: 't1',
+    startedAt: '2026-08-05T13:00:00.000Z', expiresAt: '2026-08-05T15:00:00.000Z', actions: [],
+  };
+
+  it('judges a support session against the box’s clock, not a stored flag', async () => {
+    const base = await serve(snapshotOf({ pack: pack({ supportSessions: known([live]) }) }));
+    const admin = bootAdmin((await payloadFromScreen(base, 'admin'))! as never)!;
+    // NOW is 14:00; the grant runs to 15:00.
+    expect(admin.support()[0]?.active).toBe(true);
+    expect(admin.support()[0]?.minutesLeft).toBe(60);
+  });
+
+  it('reports an EXPIRED session as not access at all', async () => {
+    const base = await serve(snapshotOf({
+      pack: pack({ supportSessions: known([{ ...live, expiresAt: '2026-08-05T13:30:00.000Z' }]) }),
+    }));
+    const admin = bootAdmin((await payloadFromScreen(base, 'admin'))! as never)!;
+    expect(admin.support()[0]?.active, 'an expired grant still read as access').toBe(false);
+  });
+
+  it('REFUSES blanket access — the rule the API path could not even state', async () => {
+    const base = await serve(snapshotOf());
+    const admin = bootAdmin((await payloadFromScreen(base, 'admin'))! as never)!;
+    const outcome = admin.grant({
+      request: {
+        requestId: 'R-1', requesterId: 'u-eng', requesterName: 'Engineer',
+        reason: 'investigating the duplicate settlement raised in ticket 4471',
+        scopes: [], tenantId: 'store-1', minutes: 60, at: NOW,
+      },
+      approval: { subjectRef: 'R-1', status: 'approved', decidedBy: 'u-owner' },
+    });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.detail).toContain('never blanket admin');
+  });
+
+  it('lets nobody in when the box does not know who is letting them', async () => {
+    const base = await serve(snapshotOf({
+      pack: pack({ adminPolicy: known({ dormantAfterDays: 60 }) }),
+    }));
+    const payload = (await payloadFromScreen(base, 'admin'))!;
+    expect('userId' in payload, '"userId" must be absent, not invented').toBe(false);
+    const outcome = bootAdmin(payload as never)!.grant({
+      request: {
+        requestId: 'R-1', requesterId: 'u-eng', requesterName: 'Engineer',
+        reason: 'investigating the duplicate settlement raised in ticket 4471',
+        scopes: ['read:settlements'], tenantId: 'store-1', minutes: 60, at: NOW,
+      },
+      approval: { subjectRef: 'R-1', status: 'approved', decidedBy: 'u-owner' },
+    });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.refusal).toBe('nobody_is_named_at_this_desk');
+  });
+
+  it('reports a fleet as UNENFORCED when the shop has set no version policy', async () => {
+    // Judging it against a minimum nobody set would report it compliant with a rule the shop
+    // never made.
+    const base = await serve(snapshotOf({ pack: pack({ versionPolicy: notKnown('never sent') }) }));
+    const payload = (await payloadFromScreen(base, 'admin'))!;
+    expect('versionPolicy' in payload).toBe(false);
+    const fleet = bootAdmin(payload as never)!.fleet();
+    expect(fleet.policyKnown).toBe(false);
+    expect(fleet.summary).toBeUndefined();
+  });
+
+  it('reports retention as UNDECIDED when the shop has set no policy', async () => {
+    const base = await serve(snapshotOf());
+    expect(bootAdmin((await payloadFromScreen(base, 'admin'))! as never)!.retention()).toBeUndefined();
+  });
+
+  it('flags a privileged account with no second factor', async () => {
+    const base = await serve(snapshotOf({
+      pack: pack({
+        accounts: known([{
+          userId: 'u-boss', tenantId: 't1', username: 'boss',
+          person: { fullName: 'Owner', email: 'owner@example.com' },
+          status: 'active', privileged: true, mfaEnrolled: false,
+          lastLoginAt: '2026-08-05T09:00:00.000Z',
+        }]),
+      }),
+    }));
+    const rows = bootAdmin((await payloadFromScreen(base, 'admin'))! as never)!.access();
+    expect(rows[0]?.flags.join(' ')).toContain('second factor');
+  });
+
+  it('serves the screen nothing at all without the shop’s own windows', async () => {
+    const base = await serve(snapshotOf({ pack: pack({ adminPolicy: notKnown('never sent') }) }));
+    expect(await payloadFromScreen(base, 'admin')).toBeNull();
+    expect(bootAdmin(undefined)).toBeNull();
   });
 });

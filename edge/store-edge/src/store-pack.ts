@@ -393,6 +393,14 @@ export interface PackFinancePolicy {
   readonly userId?: string;
 }
 
+/** Who administers this shop, and the windows it judges accounts and devices by. */
+export interface PackAdminPolicy {
+  /** Days without a login after which an account is stale enough to review. Per-tenant. */
+  readonly dormantAfterDays: number;
+  /** Who is on the admin screen. Absent means nothing privileged may be done. */
+  readonly userId?: string;
+}
+
 export interface PackMerchandisingPolicy {
   readonly refillAtBp: number;
   readonly countStaleAfterMinutes: number;
@@ -565,6 +573,23 @@ export interface StorePack {
   readonly periodState: Register<unknown>;
   /** The shop's own chart-of-accounts headings and the month being worked on. */
   readonly financePolicy: Register<PackFinancePolicy>;
+  /** Every account, so joiners, movers and leavers can be reviewed (M02-FR-04). */
+  readonly accounts: Register<readonly unknown[]>;
+  /**
+   * Every support session ever granted — **never pruned.** Somebody outside the business saw this
+   * tenant's live data, and that record is the only evidence of it (hard rule #6).
+   */
+  readonly supportSessions: Register<readonly unknown[]>;
+  /** The tills, handhelds and phones this shop runs on (M33). */
+  readonly devices: Register<readonly unknown[]>;
+  /** Minimum versions this tenant enforces. **Absent means nothing is being enforced.** */
+  readonly versionPolicy: Register<unknown>;
+  /** Audit records in scope for a retention review, the shop's policies, and any legal holds. */
+  readonly auditRecords: Register<readonly unknown[]>;
+  readonly retentionPolicies: Register<readonly unknown[]>;
+  readonly legalHolds: Register<readonly unknown[]>;
+  /** Who administers this shop and the windows it judges by. */
+  readonly adminPolicy: Register<PackAdminPolicy>;
   /** Loss-prevention thresholds — data, so a store tunes its own without code (M15-FR-01). */
   readonly lossPreventionRules: Register<readonly unknown[]>;
   /** The purposes this tenant asks a customer's consent for (M16 / PRV). */
@@ -632,6 +657,14 @@ export function emptyPack(why: string = NEVER): StorePack {
     financeLedger: notKnown(why),
     periodState: notKnown(why),
     financePolicy: notKnown(why),
+    accounts: notKnown(why),
+    supportSessions: notKnown(why),
+    devices: notKnown(why),
+    versionPolicy: notKnown(why),
+    auditRecords: notKnown(why),
+    retentionPolicies: notKnown(why),
+    legalHolds: notKnown(why),
+    adminPolicy: notKnown(why),
     lossPreventionRules: notKnown(why),
     consentPurposes: notKnown(why),
   };
@@ -705,6 +738,14 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     financeLedger: section<unknown>('financeLedger'),
     periodState: section<unknown>('periodState'),
     financePolicy: section<PackFinancePolicy>('financePolicy'),
+    accounts: section<readonly unknown[]>('accounts'),
+    supportSessions: section<readonly unknown[]>('supportSessions'),
+    devices: section<readonly unknown[]>('devices'),
+    versionPolicy: section<unknown>('versionPolicy'),
+    auditRecords: section<readonly unknown[]>('auditRecords'),
+    retentionPolicies: section<readonly unknown[]>('retentionPolicies'),
+    legalHolds: section<readonly unknown[]>('legalHolds'),
+    adminPolicy: section<PackAdminPolicy>('adminPolicy'),
     lossPreventionRules: section<readonly unknown[]>('lossPreventionRules'),
     consentPurposes: section<readonly { purpose: string; channel: string; required?: boolean }[]>('consentPurposes'),
   };

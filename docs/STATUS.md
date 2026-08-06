@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, the day boundary the store box did not have, the service desk, expiry and recall — including the recall block that never reached a till — and finance, which lets a month close for the first time)
+Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, the day boundary the store box did not have, the service desk, expiry and recall — including the recall block that never reached a till — finance, which lets a month close for the first time, and admin and security — including a security control that existed twice and enforced less where it counted)
 
 ---
 
@@ -2591,6 +2591,91 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## A security rule existed twice, and the weaker one was the one in use (6 August 2026)
+
+The admin and security screen. What it exposed is the kind of thing that is invisible until somebody
+goes looking.
+
+### Support access — what it is, and why it matters
+
+If something goes wrong that only we can fix, an engineer of ours may need to look at **your real
+data**. Your customers, your takings, your staff. The rule for that has always been written down:
+
+> Time-bound. For named things only. Approved by somebody who is not the engineer. **Never standing
+> access.**
+
+### What was actually wrong
+
+**That rule existed in two places in the software, and the two did not say the same thing.**
+
+The version connected to the working system was the weaker one. It could not even *ask* what the
+engineer needed to see — there was no field for it. So access granted through it was **everything**,
+not the one thing they needed. It also had no rule stopping an approval quietly making the window
+longer than what was asked for.
+
+The stronger version — the one that refuses blanket access, refuses a forbidden area, and refuses an
+approval that lengthens the window — was sitting there unused.
+
+**And the time limit was never checked by anything.** Access was granted "for 60 minutes", that was
+written into a message, and **no part of the system ever looked at it again**. Nothing ended it.
+Nothing marked it finished. It was standing access wearing a time limit's clothes.
+
+### It is one rule now, and the clock is actually read
+
+- **One implementation.** The working system now uses the strict one, and a test makes sure a second
+  copy cannot quietly reappear.
+- **Blanket access cannot be asked for.** The screen has a box for exactly what they may see; leaving
+  it empty is **refused**, not treated as "everything".
+- **Whether access is live is worked out from the clock, every time the screen is opened.** Never
+  from a stored yes/no that something has to switch off — because that something is precisely what
+  did not exist.
+- Every session ever granted is kept for good. Somebody outside your business saw your data, and
+  that record is the only evidence of it.
+
+### The rest of the screen
+
+**Who can get in** — every account, with anything worth a second look said in words: a privileged
+account with no second factor, somebody who has never logged in, somebody dormant past your own
+limit.
+
+**Tills and devices** — what each one is running and whether it may take a sale.
+
+**Records kept** — what your retention rules would eventually allow to be deleted, and what a legal
+hold stops. **Nothing on this screen deletes anything.**
+
+### Two sentences the screen refuses to say
+
+- If you have not set a minimum software version, it says **nothing is being enforced on any
+  device** — not "all devices are up to date".
+- If you have not set retention rules, it says **nothing has been decided** — not "nothing to
+  delete".
+
+Those are opposite meanings that look identical on a screen, and each pair has a comfortable version
+and a true one.
+
+**Tests:** 4,245 automated plus 31 performance, all green — 57 new.
+
+### What the owner should check, in the store
+
+1. Open **Outside access**. If anybody is in there right now it will be at the top, in red, saying
+   what they can see and how long they have left. If that list is not empty and you did not approve
+   it, call me.
+2. Try to let somebody in **without filling in what they may see**. It must refuse.
+3. Try to approve it **in your own name as the person asking**. It must refuse.
+4. Let somebody in for two minutes, then reload the page after three. It must show as finished by
+   itself — nobody has to end it.
+5. Open **Who can get in** and look for anyone flagged. A privileged account without a second factor
+   is the one to act on first.
+
+### One thing that is still not mine to fix
+
+Nobody can actually log in yet, because **no identity provider has been chosen** — that is the one
+requirement deliberately left partial, since closing it would mean this software holding passwords,
+which your own rules forbid. Everything on this screen is ready for whichever one you pick.
+
+---
+
+
 ## Your month can now be closed, and your CA can sign it (6 August 2026)
 
 The finance screen. This one opens a door that has been shut since the beginning.
@@ -4866,7 +4951,13 @@ the tests were green when I found it.** What found it was running the screen for
 store box, which also turned up a margin of 99.92% from a costing rule that had been copied instead
 of shared. Reading does not find these. Driving the real path does, every time.
 
-**Ten now, and the tenth was the gate itself.** QG-07 — *a period cannot close on unvalidated
+**Eleven now, and the eleventh had two of them.** Support access existed in two implementations
+enforcing different rules, and the weaker — with no way to state least privilege at all — was the
+one wired to the API. Its time limit was never read by anything after the grant. Seven more tested
+rules beside it (access review, device checks, fleet summary, retention planning, legal holds) were
+called by nothing.
+
+**Ten before that, and the tenth was the gate itself.** QG-07 — *a period cannot close on unvalidated
 control totals, and a CA must be able to sign them* — was enforced by three tested functions that
 were never given a control total, because nothing built one. No month could close at all. The
 producer now exists, and the decision it turns on is one line: only a posting the accounts have

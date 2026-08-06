@@ -180,6 +180,22 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
     journalPrefixes: { takings: 'SALES', tax: 'GST', refunds: 'REFUND' },
     userId: 'u-finance',
   }),
+  // Admin and security (M01/M02/M33/M34). Support access is never pruned (hard rule #6).
+  accounts: known([{
+    userId: 'u-meena', tenantId: 't1', username: 'meena',
+    person: { fullName: 'Meena R', email: 'meena@example.com' },
+    status: 'active', mfaEnrolled: true, lastLoginAt: '2026-08-05T09:00:00.000Z',
+  }]),
+  supportSessions: known([]),
+  devices: known([{
+    deviceId: 'D-1', tenantId: 't1', branchId: 'b1', kind: 'pos', label: 'Lane 1',
+    status: 'active', appVersion: '2.0.0', lastSeenAt: '2026-08-05T13:59:00.000Z',
+  }]),
+  versionPolicy: known({ currentVersion: '2.0.0', minimumSupportedVersion: '1.0.0' }),
+  auditRecords: known([]),
+  retentionPolicies: known([]),
+  legalHolds: known([]),
+  adminPolicy: known({ dormantAfterDays: 60, userId: 'u-admin' }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([]),
   ...over,
@@ -462,7 +478,7 @@ describe('the screens socket refuses what it should', () => {
     expect(routeOf('/manager')).toEqual({ screen: 'manager', file: 'index.html' });
     expect(routeOf('/manager/app.js')).toEqual({ screen: 'manager', file: 'app.js' });
     expect(routeOf('/owner/?x=1')).toEqual({ screen: 'owner', file: 'index.html' });
-    expect(routeOf('/admin')).toBeNull();
+    expect(routeOf('/payroll')).toBeNull();
     expect(routeOf('/')).toBeNull();
   });
 

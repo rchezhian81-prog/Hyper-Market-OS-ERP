@@ -53,7 +53,7 @@ import type { StorePack } from './store-pack';
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance',
+  'reporting', 'service', 'expiry', 'finance', 'admin',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1054,6 +1054,43 @@ export function financePayload(input: ScreenInput): Record<string, unknown> | nu
   return payload;
 }
 
+/**
+ * The admin and security payload (M01 · M02 · M33 · M34 · D12).
+ *
+ * `null` when the box has not been told who administers this shop and by what windows — a screen
+ * inventing its own dormancy window would be deciding, on its own authority, when a colleague's
+ * account is stale enough to take away.
+ *
+ * **`versionPolicy` and `retentionPolicies` are served only when the box has them.** Absent means
+ * nothing is being enforced and nothing has been decided, which is different from a fleet that
+ * complies and a shelf of records with nothing due for deletion — and only one of each pair is
+ * good news.
+ */
+export function adminPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.adminPolicy.known) return null;
+  const policy = input.pack.adminPolicy.value;
+  const policies = input.pack.policies.known ? input.pack.policies.value : undefined;
+
+  const payload: Record<string, unknown> = {
+    storeId: policies?.storeId ?? 'store-1',
+    now: input.now,
+    dormantAfterDays: policy.dormantAfterDays,
+  };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+
+  if (input.pack.accounts.known) payload['accounts'] = input.pack.accounts.value;
+  if (input.pack.roles.known) payload['roles'] = input.pack.roles.value;
+  if (input.pack.roleAssignments.known) payload['assignments'] = input.pack.roleAssignments.value;
+  if (input.pack.supportSessions.known) payload['supportSessions'] = input.pack.supportSessions.value;
+  if (input.pack.devices.known) payload['devices'] = input.pack.devices.value;
+  if (input.pack.versionPolicy.known) payload['versionPolicy'] = input.pack.versionPolicy.value;
+  if (input.pack.auditRecords.known) payload['auditRecords'] = input.pack.auditRecords.value;
+  if (input.pack.retentionPolicies.known) payload['retentionPolicies'] = input.pack.retentionPolicies.value;
+  if (input.pack.legalHolds.known) payload['legalHolds'] = input.pack.legalHolds.value;
+
+  return payload;
+}
+
 /** The global each screen's bundle reads at boot. One name per screen, and they must not drift. */
 export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   pos: 'posCatalogue',
@@ -1069,6 +1106,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   service: 'serviceData',
   expiry: 'expiryData',
   finance: 'financeData',
+  admin: 'adminData',
 });
 
 const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<string, unknown> | null>> = Object.freeze({
@@ -1085,6 +1123,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   service: servicePayload,
   expiry: expiryPayload,
   finance: financePayload,
+  admin: adminPayload,
 });
 
 /** Build one screen's payload. `null` means this box has nothing to give it, and says so. */

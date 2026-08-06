@@ -30,10 +30,10 @@
 // gives the browser a syntax error, and the screen then boots into its sample stand-in for a reason
 // nobody can see.
 
-const CACHE = 'sre-erp-shell-v5';
+const CACHE = 'sre-erp-shell-v6';
 
 /** Committed files. A missing one is a packaging fault and should fail the install loudly. */
-const SHELL = ['./app.js', './buying.js', './catalogue.js', './merchandising.js', './reporting.js', './service.js', './expiry.js', './finance.js', './manifest.webmanifest'];
+const SHELL = ['./app.js', './buying.js', './catalogue.js', './merchandising.js', './reporting.js', './service.js', './expiry.js', './finance.js', './admin.js', './manifest.webmanifest'];
 
 /** Build artefacts. Added tolerantly: `addAll` is all-or-nothing and a missing build must not
  *  stop the rest of the shell being cached. Without the bundle the screen opens into its SAMPLE

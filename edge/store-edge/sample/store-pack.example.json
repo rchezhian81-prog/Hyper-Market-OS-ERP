@@ -75,7 +75,18 @@
     "would reconcile vacuously - and refuses to close the month by name.",
     "journalPrefixes ARE YOUR CHART OF ACCOUNTS. A heading guessed here would file your",
     "takings where your accountant does not look for them; a posting matching none of them",
-    "is raised as 'postings nobody can classify' rather than quietly left out."
+    "is raised as 'postings nobody can classify' rather than quietly left out.",
+    "accounts/supportSessions/devices/versionPolicy/auditRecords/retentionPolicies/",
+    "legalHolds/adminPolicy: the admin and security screen (M01/M02/M33/M34).",
+    "SUPPORT ACCESS IS TIME-BOUND AND SCOPED, NEVER STANDING. A grant names exactly what",
+    "may be seen - an empty scope list is REFUSED, not treated as everything - and its",
+    "expiry is judged from the clock every time the screen is read, never from a stored",
+    "flag somebody has to turn off. supportSessions is NEVER PRUNED: somebody outside the",
+    "business saw this tenant's live data and that record is the only evidence of it.",
+    "Leave versionPolicy out and the screen says NOTHING IS BEING ENFORCED on any device,",
+    "which is not the same as every device being up to date. Leave retentionPolicies",
+    "empty and it says NOTHING HAS BEEN DECIDED, which is not the same as nothing being",
+    "due for deletion. A legal hold outranks a retention date, and nothing deletes."
   ],
   "version": 1,
   "policies": {
@@ -407,6 +418,30 @@
       "refunds": "REPLACE_WITH_YOUR_REFUND_LEDGER_PREFIX"
     },
     "userId": "REPLACE_WITH_FINANCE_USER_ID"
+  },
+  "accounts": [],
+  "supportSessions": [],
+  "devices": [
+    {
+      "deviceId": "REPLACE_WITH_DEVICE_ID",
+      "tenantId": "REPLACE_WITH_TENANT_ID",
+      "branchId": "REPLACE_WITH_BRANCH_ID",
+      "kind": "pos",
+      "label": "Lane 1",
+      "status": "active",
+      "appVersion": "1.0.0"
+    }
+  ],
+  "versionPolicy": {
+    "currentVersion": "1.0.0",
+    "minimumSupportedVersion": "1.0.0"
+  },
+  "auditRecords": [],
+  "retentionPolicies": [],
+  "legalHolds": [],
+  "adminPolicy": {
+    "dormantAfterDays": 60,
+    "userId": "REPLACE_WITH_ADMIN_USER_ID"
   },
   "lossPreventionRules": [
     {
