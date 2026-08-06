@@ -44,15 +44,21 @@ services:
   # One-shot: create the schema by running db/migrations in order. Idempotent —
   # re-running applies only what is new (scripts/migrate.mjs), so it is safe to
   # run on every deploy.
+  #
+  # It runs the SAME image the API is built from, because that image already
+  # carries `scripts/migrate.mjs`, the `db/migrations` and — the part that matters —
+  # `node_modules` with `pg`. A bare `node:22-alpine` with the repo mounted has no
+  # `node_modules`, so `import('pg')` fails on a fresh deploy (and in CI, which does
+  # not install dependencies): migrations that only run where somebody happened to
+  # have installed the tree are not migrations you can deploy.
   # ---------------------------------------------------------------------------
   migrate:
-    image: node:22-alpine
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
     depends_on:
       db:
         condition: service_healthy
-    working_dir: /app
-    volumes:
-      - ../..:/app:ro
     environment:
       # Comes from the git-ignored .env — the same way the cloud tier injects it,
       # so no connection string is ever written into a committed file.
