@@ -75,7 +75,28 @@ export type ModelOutcome =
   | 'malformed'
   | 'over_length'
   | 'provider_error'
-  | 'no_provider';
+  | 'no_provider'
+  /**
+   * The kill switch is out, the budget is spent, or the agent is switched off.
+   *
+   * **This gateway used to have no such outcome**, because it never asked. `killSwitchState` and
+   * `admitCall` were both written and both tested, and the one place every model call passes
+   * through consulted neither — so pulling the kill switch stopped nothing at all.
+   */
+  | 'not_admitted';
+
+/**
+ * Permission for one call, from `admitCall` — the kill switch and the budget, already decided.
+ *
+ * Required, and **its absence refuses**. A caller that forgets to check the kill switch must not
+ * get a model call by default: an emergency control that depends on every caller remembering to
+ * consult it is not an emergency control.
+ */
+export interface CallAdmission {
+  readonly allowed: boolean;
+  /** Why not, in the words the agent's own fallback is described in. */
+  readonly detail: string;
+}
 
 export interface ToolProposal {
   readonly tool: string;
@@ -136,6 +157,14 @@ export interface RawModelReply {
 export function callModel(input: {
   readonly request: ModelRequest;
   readonly transport?: ModelTransport;
+  /**
+   * The kill switch and the budget, already decided by `admitCall`.
+   *
+   * **Absent refuses.** Making this optional-and-permissive would mean every caller has to
+   * remember to check the kill switch, and the one that forgets is the one running when somebody
+   * pulls it.
+   */
+  readonly admission?: CallAdmission;
 }): ModelResponse {
   const r = input.request;
   const base = {
@@ -147,6 +176,17 @@ export function callModel(input: {
     tier: r.tier,
     elapsedMs: 0,
   };
+
+  // **Before the transport is touched.** A call that is not admitted must not reach a provider,
+  // must not cost anything, and must not be able to return a proposal.
+  if (input.admission === undefined || !input.admission.allowed) {
+    return {
+      ...base,
+      outcome: 'not_admitted',
+      detail: input.admission?.detail
+        ?? 'no admission decision was made for this call, so it is refused — the kill switch and the budget are checked before a model is reached, never after',
+    };
+  }
 
   if (input.transport === undefined) {
     return {

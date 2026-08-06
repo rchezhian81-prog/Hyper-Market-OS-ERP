@@ -401,6 +401,28 @@ export interface PackAdminPolicy {
   readonly userId?: string;
 }
 
+/** Who is at the AI control screen, and how long a draft stays fit to accept. All per-tenant. */
+export interface PackAiPolicy {
+  /**
+   * Minutes after which a draft must be regenerated against fresh figures.
+   *
+   * Per-tenant on purpose: a shop that reprices weekly and one that reprices hourly do not agree
+   * on when yesterday's reasoning stopped being reasoning.
+   */
+  readonly staleAfterMinutes: number;
+  /** The month spend is summarised over, e.g. "2026-08". */
+  readonly period: string;
+  /**
+   * The owner's own platform runtime ceiling in minor units (D3).
+   *
+   * **Absent means the owner has never agreed one**, and the screen shows no summary at all
+   * rather than reporting every assistant comfortably inside a limit nobody set.
+   */
+  readonly platformCeilingMinor?: number;
+  /** Who is on the AI screen. Absent means nothing may be stopped and nothing may be accepted. */
+  readonly userId?: string;
+}
+
 export interface PackMerchandisingPolicy {
   readonly refillAtBp: number;
   readonly countStaleAfterMinutes: number;
@@ -590,6 +612,30 @@ export interface StorePack {
   readonly legalHolds: Register<readonly unknown[]>;
   /** Who administers this shop and the windows it judges by. */
   readonly adminPolicy: Register<PackAdminPolicy>;
+  /**
+   * Every kill switch ever pulled, lifted or not — **never pruned** (hard rule #6).
+   *
+   * Absent means the box has never been told, which is not the same as no switch being pulled: a
+   * substituted empty list would show ten assistants running while one of them is stopped.
+   */
+  readonly killSwitches: Register<readonly unknown[]>;
+  /** Per-agent spending ceilings. An agent missing here has none, and cannot make a call at all. */
+  readonly agentBudgets: Register<readonly unknown[]>;
+  /**
+   * Every model call ever metered, each carrying its own period.
+   *
+   * **The only source of what an assistant has spent.** There was briefly a second — a carried
+   * map of per-agent totals with no period on it — and on a box that had been running for a
+   * month the two disagreed by an entire budget: the assistants tab read 95,000 spent while the
+   * cost tab beside it read nought. One number, one source.
+   */
+  readonly aiUsage: Register<readonly unknown[]>;
+  /** Drafts waiting for a named human. AI drafts; a person commits (P-05, hard rule #5). */
+  readonly aiPending: Register<readonly unknown[]>;
+  /** The last evaluation per agent. **An agent absent here has never been evaluated.** */
+  readonly aiEvaluations: Register<Readonly<Record<string, { readonly passed: number; readonly total: number; readonly at: string }>>>;
+  /** Who is on the AI screen, the month, and the owner's platform ceiling. */
+  readonly aiPolicy: Register<PackAiPolicy>;
   /** Loss-prevention thresholds — data, so a store tunes its own without code (M15-FR-01). */
   readonly lossPreventionRules: Register<readonly unknown[]>;
   /** The purposes this tenant asks a customer's consent for (M16 / PRV). */
@@ -665,6 +711,12 @@ export function emptyPack(why: string = NEVER): StorePack {
     retentionPolicies: notKnown(why),
     legalHolds: notKnown(why),
     adminPolicy: notKnown(why),
+    killSwitches: notKnown(why),
+    agentBudgets: notKnown(why),
+    aiUsage: notKnown(why),
+    aiPending: notKnown(why),
+    aiEvaluations: notKnown(why),
+    aiPolicy: notKnown(why),
     lossPreventionRules: notKnown(why),
     consentPurposes: notKnown(why),
   };
@@ -746,6 +798,12 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     retentionPolicies: section<readonly unknown[]>('retentionPolicies'),
     legalHolds: section<readonly unknown[]>('legalHolds'),
     adminPolicy: section<PackAdminPolicy>('adminPolicy'),
+    killSwitches: section<readonly unknown[]>('killSwitches'),
+    agentBudgets: section<readonly unknown[]>('agentBudgets'),
+    aiUsage: section<readonly unknown[]>('aiUsage'),
+    aiPending: section<readonly unknown[]>('aiPending'),
+    aiEvaluations: section<Readonly<Record<string, { readonly passed: number; readonly total: number; readonly at: string }>>>('aiEvaluations'),
+    aiPolicy: section<PackAiPolicy>('aiPolicy'),
     lossPreventionRules: section<readonly unknown[]>('lossPreventionRules'),
     consentPurposes: section<readonly { purpose: string; channel: string; required?: boolean }[]>('consentPurposes'),
   };

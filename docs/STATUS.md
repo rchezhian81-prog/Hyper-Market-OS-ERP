@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, the day boundary the store box did not have, the service desk, expiry and recall — including the recall block that never reached a till — finance, which lets a month close for the first time, and admin and security — including a security control that existed twice and enforced less where it counted)
+Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, the day boundary the store box did not have, the service desk, expiry and recall — including the recall block that never reached a till — finance, which lets a month close for the first time, admin and security — including a security control that existed twice and enforced less where it counted — and AI control, including the kill switch that stopped nothing)
 
 ---
 
@@ -2590,6 +2590,119 @@ integration gate as UAT-49.
 tests** against real PostgreSQL 16.13.
 
 ---
+
+## The stop button did not stop anything (6 August 2026)
+
+The AI control screen. This is the one I would want you to read to the end.
+
+### What you were promised
+
+The rule for AI in this system has never changed, and it is in your own project file:
+
+> The AI suggests or drafts. **A person decides.** And if it starts doing something wrong, there is
+> a switch that stops it immediately.
+
+The first two of those were true. The third was not.
+
+### What was actually wrong
+
+There was a stop button. It was written, it was tested, and the tests passed. When you pulled it,
+the software correctly worked out which assistants were now stopped.
+
+**And then the part that actually calls the AI never asked.**
+
+Every request to an AI in this product goes through one piece of code. That piece of code did not
+check the stop button, and it did not check the spending limit either. So you could pull the
+switch, the screen would show the assistant as stopped in red — and the assistant would carry on
+calling out, answering, and spending money, for as long as nobody noticed.
+
+An emergency switch that relies on every other part of the software *remembering to look at it* is
+not an emergency switch.
+
+### What it does now
+
+The one place that calls the AI now **refuses to call anything unless it has been given a
+decision** — and if nobody gave it one, that is a refusal too. Not a warning. It does not call out
+at all, and it costs nothing.
+
+I checked this the honest way: I made that change first, and **all sixteen existing tests for that
+code went red immediately.** That is the proof it is doing something. Then I updated them and added
+four more, including one where the AI provider is rigged to explode if it is ever contacted — and
+it never is.
+
+### The rest of the screen
+
+**Stop the AI** is the first tab, not a setting buried three levels down. Somebody opening this
+screen at eight in the evening has come here to stop something.
+
+- It takes effect **immediately**. It needs your name and a reason, but it **never waits for
+  anybody's approval** — a stop button that needs sign-off gets pulled twenty minutes too late.
+- You can stop **everything**, or **only the ones customers talk to**, or **one assistant**.
+- Beside every switch is the sentence saying **what your shop does without that assistant** —
+  because "what breaks if I do this?" is the only question you will ask before pressing it.
+- **Starting it again is a separate act, by a different person.** It never turns itself back on. A
+  switch that expires at midnight turns a known-bad assistant back on while nobody is watching.
+
+**The assistants** — all ten, stopped ones first, each saying what it may do, who decides after it,
+and what it has cost. And **what no assistant may ever do, printed as a list**: take a payment,
+give a refund, place an order, change a price, change stock, give somebody access, delete a record.
+No setting, no licence and no request can grant any of them. A rule you cannot see is a rule you
+cannot trust.
+
+**Waiting for you** — everything an assistant has drafted. Nothing in that list has happened. It
+happens when you accept it, and the record then says **your name as the person who did it** and the
+assistant's name as the thing that drafted it. Never the other way round.
+
+**What it costs** — each assistant against its own monthly limit, and all of them against your
+₹15,000 platform limit. When one runs out, **it stops and your shop does not.**
+
+### And a second fault, found by pretending the box had been running a month
+
+I did not read for this one. I built a store box with a month of history on it and drove the real
+screen against it, which is the only way this project has ever found faults like this.
+
+The screen showed one assistant as having spent **₹950 of its ₹1,000 limit**. The cost tab, on the
+same screen, at the same moment, showed the same assistant as having spent **nothing**.
+
+Two places in the software were both answering "what has this cost?", from different records, and
+nobody had ever put them side by side. Worse: that figure is what decides whether an assistant may
+spend any more — so the wrong one either blocks an assistant all month for last month's spending,
+or hands it a fresh full limit it has already used.
+
+There is now **one record** — the actual metered calls, filtered to this month — and both tabs read
+it. A test proves the two figures are the same number.
+
+### Two more sentences the screen refuses to say
+
+- An assistant with **no spending limit set** says so, and cannot make a request at all. It does not
+  read as "limit ₹0" and it does not read as unlimited.
+- An assistant that has **never been checked for accuracy** says exactly that, rather than showing a
+  score.
+
+**Tests:** 4,334 automated plus 31 performance, all green — 89 new.
+
+### What the owner should check, in the store
+
+1. Open **Stop the AI**, choose **Every assistant**, type a reason, press it. Every assistant must
+   go red immediately, and your till, your stock and your money must be completely unaffected —
+   check the till is still selling while it is stopped.
+2. Try to stop something **without typing a reason**. It must refuse.
+3. Press **Start it again** yourself, on a switch you pulled yourself. It must refuse — somebody
+   else has to decide the problem is over.
+4. Open **The assistants** and read the list of things no assistant may ever do. If anything on
+   that list surprises you, tell me now rather than after go-live.
+5. Open **What it costs** and check the figure for any assistant matches what the same assistant
+   shows on the assistants tab. They must be identical.
+
+### One thing that is still not mine to fix
+
+**No AI provider has been chosen** (that is your decision, and it costs money). Everything here runs
+against a simulator, which is deliberate — it is why all of this could be built and proved without
+an account. When you pick a provider, the eight questions in the live-provider gate get answered and
+nothing else in this screen changes.
+
+---
+
 
 ## A security rule existed twice, and the weaker one was the one in use (6 August 2026)
 

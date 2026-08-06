@@ -73,6 +73,10 @@ import {
 import type { LedgerSide, QueuedPosting } from '../../../packages/period-close/src/index';
 import { createAdminSession, type AdminPorts, type AdminSession } from './admin-session';
 import type { Device, SupportSession, VersionPolicy } from '../../../packages/platform-admin/src/index';
+import {
+  createAiSession, type AiPorts, type AiSession, type PendingProposal,
+} from './ai-session';
+import type { AgentBudget, KillSwitch, UsageEntry } from '../../../packages/ai/src/index';
 import type { UserAccount } from '../../../packages/identity/src/index';
 import type { AuditRecord, LegalHold, RetentionPolicy } from '../../../packages/audit/src/index';
 import type { Producer } from '../../../packages/reporting/src/index';
@@ -429,6 +433,62 @@ export function bootAdmin(data: AdminData | undefined): AdminSession | null {
   );
 }
 
+/** What the box tells the AI control screen. */
+export interface AiData {
+  readonly userId?: string;
+  readonly storeId?: string;
+  readonly now?: string;
+  readonly period?: string;
+  readonly staleAfterMinutes?: number;
+  readonly killSwitches?: readonly KillSwitch[];
+  readonly agentBudgets?: readonly AgentBudget[];
+  /**
+   * Every metered call. **Absent means the box has never been told**, which is not no calls —
+   * and it is the only source of what an agent has spent.
+   */
+  readonly usage?: readonly UsageEntry[];
+  /** **Absent means the owner has never set a platform ceiling** (D3) — not a ceiling of nought. */
+  readonly platformCeilingMinor?: number;
+  readonly pending?: readonly PendingProposal[];
+  /** **An agent missing here has never been evaluated**, which is not a score of nought. */
+  readonly evaluations?: Readonly<Record<string, { readonly passed: number; readonly total: number; readonly at: string }>>;
+}
+
+export function aiPortsFromData(data: AiData | undefined): AiPorts {
+  return {
+    // An empty list here genuinely means "no switch has ever been pulled", which is the truth.
+    switches: () => data?.killSwitches ?? [],
+    // An agent with no budget row has no ceiling. `admitCall` refuses without one, and the screen
+    // shows nothing rather than a comfortable-looking nought.
+    budgets: () => data?.agentBudgets ?? [],
+    // NOT defaulted. A substituted empty list says every agent has its whole ceiling still to
+    // spend, which is the more expensive of the two guesses and reads as good news.
+    usage: () => data?.usage,
+    // NOT defaulted. No ceiling means the owner has never agreed one, and a summary built without
+    // it reports every agent sitting comfortably inside a limit nobody set.
+    platformCeilingMinor: () => data?.platformCeilingMinor,
+    period: () => data?.period ?? '',
+    pending: () => data?.pending ?? [],
+    // NOT defaulted per agent. Absent means never evaluated.
+    evaluations: () => data?.evaluations ?? {},
+  };
+}
+
+/** Build the AI control screen, or `null` when the box was told nothing about the agents. */
+export function bootAi(data: AiData | undefined): AiSession | null {
+  if (data === undefined) return null;
+  return createAiSession(
+    {
+      tenantId: data.storeId ?? 'tenant',
+      // NOT defaulted. Stopping the AI, and committing anything it drafted, carries a name.
+      userId: data.userId === undefined ? null : data.userId,
+      now: data.now ?? '1970-01-01T00:00:00.000Z',
+      staleAfterMinutes: data.staleAfterMinutes ?? 60,
+    },
+    aiPortsFromData(data),
+  );
+}
+
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
 interface ManagerWindow {
   managerSession?: ManagerSession;
@@ -453,6 +513,8 @@ interface ManagerWindow {
   financeSession?: FinanceSession;
   adminData?: AdminData;
   adminSession?: AdminSession;
+  aiData?: AiData;
+  aiSession?: AiSession;
   /** The decision vocabulary, so the view can offer it and never invent a reason of its own. */
   managerReasons?: {
     readonly approved: readonly DecisionReasonCode[];
@@ -914,6 +976,8 @@ if (browserWindow !== undefined) {
   if (finance !== null) browserWindow.financeSession = finance;
   const admin = bootAdmin(browserWindow.adminData);
   if (admin !== null) browserWindow.adminSession = admin;
+  const ai = bootAi(browserWindow.aiData);
+  if (ai !== null) browserWindow.aiSession = ai;
   // The view offers these and records the code the manager picks. It never composes a reason of
   // its own, so the audit trail keeps one vocabulary that can still be reported on in a year.
   browserWindow.managerReasons = { approved: APPROVE_REASONS, rejected: REJECT_REASONS };

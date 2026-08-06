@@ -10,7 +10,7 @@ import { Ledger, InMemoryLedgerStore } from '../../packages/ledger/src/index';
 import { resolvePrice } from '../../packages/price-list/src/index';
 import { makeEvent } from '../../packages/contracts/src/event';
 import {
-  bootAdmin, bootBuying, bootCatalogue, bootExpiry, bootFinance, bootManager, bootMerchandising, bootReporting, bootService,
+  bootAdmin, bootAi, bootBuying, bootCatalogue, bootExpiry, bootFinance, bootManager, bootMerchandising, bootReporting, bootService,
   buyingGaps, catalogueGaps, merchandisingGaps,
 } from '../../apps/web-erp/src/browser-entry';
 import { bootOwner, forgetfulQueueStore } from '../../apps/owner-app/src/browser-entry';
@@ -224,6 +224,21 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
   retentionPolicies: known([]),
   legalHolds: known([]),
   adminPolicy: known({ dormantAfterDays: 60, userId: 'u-admin' }),
+  // AI control (M32/M36/A01-A10). Never pruned: a kill switch is the record of a decision.
+  killSwitches: known([]),
+  agentBudgets: known([
+    { agentId: 'A02', tenantId: 'store-1', monthlyCeilingMinor: 100_000,
+      defaultTier: 'standard', permittedTiers: ['small', 'standard'], enabled: true },
+  ]),
+  aiUsage: known([
+    { tenantId: 'store-1', agentId: 'A02', period: '2026-08', inputTokens: 1_000,
+      outputTokens: 500, tier: 'standard', costMinor: 30_000 },
+  ]),
+  aiPending: known([]),
+  aiEvaluations: known({ A01: { passed: 19, total: 20, at: '2026-08-05T10:00:00.000Z' } }),
+  aiPolicy: known({
+    staleAfterMinutes: 60, period: '2026-08', platformCeilingMinor: 1_500_000, userId: 'u-owner',
+  }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([{ purpose: 'marketing', channel: 'sms' }]),
   ...over,
@@ -539,6 +554,10 @@ describe('a box that has been told nothing tells every screen so', () => {
       devices: notKnown('never'), versionPolicy: notKnown('never'),
       auditRecords: notKnown('never'), retentionPolicies: notKnown('never'),
       legalHolds: notKnown('never'), adminPolicy: notKnown('never'),
+      killSwitches: notKnown('never'), agentBudgets: notKnown('never'),
+      aiUsage: notKnown('never'),
+      aiPending: notKnown('never'), aiEvaluations: notKnown('never'),
+      aiPolicy: notKnown('never'),
       lossPreventionRules: notKnown('never'), consentPurposes: notKnown('never'),
     },
     sales: [],
@@ -2053,6 +2072,110 @@ describe('finance, fed by the box', () => {
  * things stood between that sentence and the running system: the control had two implementations
  * and the weaker was wired, and the expiry was never checked by anything.
  */
+describe('AI control, fed by the box', () => {
+  const stopped = {
+    switchId: 'KS-1', tenantId: 'store-1', scope: 'single_agent', agentId: 'A04',
+    reason: 'it told a customer the wrong allergen', activatedBy: 'u-manager',
+    activatedAt: '2026-08-05T13:00:00.000Z',
+  };
+
+  it('draws a stopped assistant as stopped, decided from the switch the box carried', async () => {
+    const base = await serve(snapshotOf({ pack: pack({ killSwitches: known([stopped]) }) }));
+    const ai = bootAi((await payloadFromScreen(base, 'ai'))! as never)!;
+    expect(ai.agents().filter((a) => a.stopped).map((a) => a.agentId)).toEqual(['A04']);
+    // Stopped first, because that is what somebody opened this screen about.
+    expect(ai.agents()[0]?.agentId).toBe('A04');
+  });
+
+  it('and the same box, told no switches, draws none stopped — never an invented empty list', async () => {
+    const base = await serve(snapshotOf({ pack: pack({ killSwitches: notKnown('never sent') }) }));
+    const payload = (await payloadFromScreen(base, 'ai'))!;
+    expect('killSwitches' in payload, '"killSwitches" must be absent, not invented').toBe(false);
+    expect(bootAi(payload as never)!.agents().filter((a) => a.stopped)).toHaveLength(0);
+  });
+
+  it('stops the AI in a named person’s name, and the shop keeps trading', async () => {
+    const base = await serve(snapshotOf());
+    const ai = bootAi((await payloadFromScreen(base, 'ai'))! as never)!;
+    const outcome = ai.pull({ scope: 'all_ai', reason: 'the provider is answering nonsense' });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.stops).toHaveLength(10);
+    expect(outcome.detail).toContain('u-owner');
+  });
+
+  it('stops nothing when the box does not know who is at the desk', async () => {
+    const base = await serve(snapshotOf({
+      pack: pack({ aiPolicy: known({ staleAfterMinutes: 60, period: '2026-08', platformCeilingMinor: 1_500_000 }) }),
+    }));
+    const payload = (await payloadFromScreen(base, 'ai'))!;
+    expect('userId' in payload, '"userId" must be absent, not invented').toBe(false);
+    const outcome = bootAi(payload as never)!.pull({ scope: 'all_ai', reason: 'stop it' });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.refusal).toBe('nobody_is_named_at_this_desk');
+  });
+
+  it('shows an agent with no ceiling as having NONE, not a ceiling of nought', async () => {
+    const base = await serve(snapshotOf());
+    const ai = bootAi((await payloadFromScreen(base, 'ai'))! as never)!;
+    // Only A02 has a budget row in the pack.
+    expect(ai.agents().find((a) => a.agentId === 'A03')?.budget)
+      .toEqual({ known: false, why: 'no_ceiling_set' });
+    expect(ai.agents().find((a) => a.agentId === 'A02')?.budget)
+      .toEqual({ known: true, spentMinor: 30_000, ceilingMinor: 100_000, remainingMinor: 70_000 });
+  });
+
+  it('says the spend is NOT KNOWN when the box has never been told any usage', async () => {
+    // A substituted empty list hands every assistant its whole ceiling again, every month.
+    const base = await serve(snapshotOf({ pack: pack({ aiUsage: notKnown('never sent') }) }));
+    const payload = (await payloadFromScreen(base, 'ai'))!;
+    expect('usage' in payload, '"usage" must be absent, not invented').toBe(false);
+    const ai = bootAi(payload as never)!;
+    expect(ai.agents().find((a) => a.agentId === 'A02')?.budget)
+      .toEqual({ known: false, why: 'spend_not_known' });
+    expect(ai.spend()).toBeUndefined();
+  });
+
+  it('gives the assistants tab and the cost tab the SAME number, from the same calls', async () => {
+    // A real box found the alternative: 95,000 on one tab and nought on the other, same agent.
+    const base = await serve(snapshotOf());
+    const ai = bootAi((await payloadFromScreen(base, 'ai'))! as never)!;
+    const onTheAgent = ai.agents().find((a) => a.agentId === 'A02')!.budget;
+    const onTheCostTab = ai.spend()?.byAgent.find((a) => a.agentId === 'A02');
+    expect(onTheAgent.known && onTheAgent.spentMinor).toBe(onTheCostTab?.costMinor);
+  });
+
+  it('shows an agent never evaluated as never evaluated, not as scoring nought', async () => {
+    const base = await serve(snapshotOf());
+    const ai = bootAi((await payloadFromScreen(base, 'ai'))! as never)!;
+    expect(ai.agents().find((a) => a.agentId === 'A02')?.evaluation).toBeUndefined();
+    expect(ai.agents().find((a) => a.agentId === 'A01')?.evaluation?.passed).toBe(19);
+  });
+
+  it('reports no spend summary at all when the owner has agreed no platform ceiling (D3)', async () => {
+    const base = await serve(snapshotOf({
+      pack: pack({ aiPolicy: known({ staleAfterMinutes: 60, period: '2026-08', userId: 'u-owner' }) }),
+    }));
+    const payload = (await payloadFromScreen(base, 'ai'))!;
+    expect('platformCeilingMinor' in payload).toBe(false);
+    expect(bootAi(payload as never)!.spend()).toBeUndefined();
+  });
+
+  it('summarises spend against the owner’s own ceiling when he has set one', async () => {
+    const base = await serve(snapshotOf());
+    const summary = bootAi((await payloadFromScreen(base, 'ai'))! as never)!.spend();
+    expect(summary?.totalMinor).toBe(30_000);
+    expect(summary?.platformCeilingMinor).toBe(1_500_000);
+  });
+
+  it('serves the screen nothing at all without the shop’s own AI policy', async () => {
+    const base = await serve(snapshotOf({ pack: pack({ aiPolicy: notKnown('never sent') }) }));
+    expect(await payloadFromScreen(base, 'ai')).toBeNull();
+    expect(bootAi(undefined)).toBeNull();
+  });
+});
+
 describe('admin and security, fed by the box', () => {
   const live = {
     sessionId: 'S-LIVE', requesterId: 'u-eng', requesterName: 'Engineer', approvedBy: 'u-owner',

@@ -196,6 +196,21 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   retentionPolicies: known([]),
   legalHolds: known([]),
   adminPolicy: known({ dormantAfterDays: 60, userId: 'u-admin' }),
+  // AI control (M32/M36/A01-A10). Never pruned: a kill switch is the record of a decision.
+  killSwitches: known([]),
+  agentBudgets: known([
+    { agentId: 'A02', tenantId: 'store-1', monthlyCeilingMinor: 100_000,
+      defaultTier: 'standard', permittedTiers: ['small', 'standard'], enabled: true },
+  ]),
+  aiUsage: known([
+    { tenantId: 'store-1', agentId: 'A02', period: '2026-08', inputTokens: 1_000,
+      outputTokens: 500, tier: 'standard', costMinor: 30_000 },
+  ]),
+  aiPending: known([]),
+  aiEvaluations: known({ A01: { passed: 19, total: 20, at: '2026-08-05T10:00:00.000Z' } }),
+  aiPolicy: known({
+    staleAfterMinutes: 60, period: '2026-08', platformCeilingMinor: 1_500_000, userId: 'u-owner',
+  }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([]),
   ...over,

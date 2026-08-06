@@ -1,6 +1,6 @@
 {
   "_comment": [
-    "An EXAMPLE store pack — the shape the cloud sends this box (EDGE_PACK_FILE).",
+    "An EXAMPLE store pack \u2014 the shape the cloud sends this box (EDGE_PACK_FILE).",
     "Every top-level section is optional, and leaving one out is meaningful:",
     "the box then tells the screens it has NOT BEEN TOLD that section, which is",
     "different from telling them the section is empty. The manager's day close",
@@ -86,7 +86,33 @@
     "Leave versionPolicy out and the screen says NOTHING IS BEING ENFORCED on any device,",
     "which is not the same as every device being up to date. Leave retentionPolicies",
     "empty and it says NOTHING HAS BEEN DECIDED, which is not the same as nothing being",
-    "due for deletion. A legal hold outranks a retention date, and nothing deletes."
+    "due for deletion. A legal hold outranks a retention date, and nothing deletes.",
+    "killSwitches/agentBudgets/aiUsage/aiPending/aiEvaluations/aiPolicy:",
+    "the AI control screen (M32/M36/A01-A10).",
+    "THE KILL SWITCH IS THE POINT. Leave killSwitches out and the screen says it has NOT",
+    "BEEN TOLD - it does not draw ten assistants running, which is what an invented empty",
+    "list would do while one of them is actually stopped. A switch is NEVER PRUNED and",
+    "never expires by itself: lifting one is a separate, named act by a DIFFERENT person,",
+    "because a switch that turns itself off at midnight turns a known-bad assistant back",
+    "on while nobody is watching.",
+    "AN ASSISTANT WITH NO ROW IN agentBudgets HAS NO CEILING, AND CANNOT MAKE A CALL AT",
+    "ALL. That is deliberate: a missing ceiling is not an unlimited one. Leave",
+    "platformCeilingMinor out of aiPolicy and the screen shows NO spend summary rather",
+    "than reporting every assistant comfortably inside a limit nobody agreed - the",
+    "figure here is the owner platform runtime ceiling (decision D3), in paise.",
+    "aiPending is what an assistant has DRAFTED. Nothing in it has happened. It happens",
+    "when a named person accepts it, and the record names the PERSON as the actor and the",
+    "assistant as the drafter - no assistant commits a price, payment, refund, purchase,",
+    "stock or privilege change, and no setting anywhere can grant it one.",
+    "aiUsage IS THE ONLY SOURCE OF WHAT AN ASSISTANT HAS SPENT, and every entry carries its own",
+    "period. There was briefly a second - a carried map of per-agent totals with no period on it -",
+    "and on a box that had been running for a month the two disagreed by an entire budget: the",
+    "assistants tab read 95,000 spent while the cost tab beside it read nought. Leave aiUsage out",
+    "and the screen says the spend is NOT KNOWN and no assistant may make a request, because a",
+    "ceiling can only be enforced against a figure somebody actually measured - a substituted nought",
+    "hands every assistant its whole ceiling again, every month, for as long as the meter is broken.",
+    "An assistant missing from aiEvaluations has NEVER BEEN CHECKED for accuracy, which",
+    "the screen says in those words rather than showing a score of nought."
   ],
   "version": 1,
   "policies": {
@@ -104,7 +130,7 @@
     {
       "productId": "EXAMPLE-1",
       "name": "Example product",
-      "nameTa": "எடுத்துக்காட்டு பொருள்",
+      "nameTa": "\u0b8e\u0b9f\u0bc1\u0ba4\u0bcd\u0ba4\u0bc1\u0b95\u0bcd\u0b95\u0bbe\u0b9f\u0bcd\u0b9f\u0bc1 \u0baa\u0bca\u0bb0\u0bc1\u0bb3\u0bcd",
       "categoryId": "example",
       "unitPriceMinor": 10000,
       "unitCostMinor": 7000,
@@ -442,6 +468,39 @@
   "adminPolicy": {
     "dormantAfterDays": 60,
     "userId": "REPLACE_WITH_ADMIN_USER_ID"
+  },
+  "killSwitches": [],
+  "agentBudgets": [
+    {
+      "agentId": "A01",
+      "tenantId": "REPLACE_WITH_TENANT_ID",
+      "monthlyCeilingMinor": 50000,
+      "defaultTier": "standard",
+      "permittedTiers": [
+        "small",
+        "standard"
+      ],
+      "enabled": true
+    },
+    {
+      "agentId": "A04",
+      "tenantId": "REPLACE_WITH_TENANT_ID",
+      "monthlyCeilingMinor": 30000,
+      "defaultTier": "small",
+      "permittedTiers": [
+        "small"
+      ],
+      "enabled": true
+    }
+  ],
+  "aiUsage": [],
+  "aiPending": [],
+  "aiEvaluations": {},
+  "aiPolicy": {
+    "staleAfterMinutes": 60,
+    "period": "REPLACE_WITH_PERIOD_YYYY_MM",
+    "platformCeilingMinor": 1500000,
+    "userId": "REPLACE_WITH_AI_SCREEN_USER_ID"
   },
   "lossPreventionRules": [
     {

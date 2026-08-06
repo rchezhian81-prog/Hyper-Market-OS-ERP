@@ -53,7 +53,7 @@ import type { StorePack } from './store-pack';
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'admin',
+  'reporting', 'service', 'expiry', 'finance', 'admin', 'ai',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1091,6 +1091,43 @@ export function adminPayload(input: ScreenInput): Record<string, unknown> | null
   return payload;
 }
 
+/**
+ * The AI control payload (M32 · M36 · A01–A10 · P-05 · hard rule #5).
+ *
+ * `null` when the box has not been told who is on this screen and how long a draft stays fit to
+ * accept — a screen inventing its own staleness window would be deciding, on its own authority,
+ * when yesterday's reasoning is still good enough to act on.
+ *
+ * **`killSwitches` is served only when the box has it.** A substituted empty list is the exact
+ * fault this screen exists to make impossible: ten assistants drawn as running while one of them
+ * is stopped. **`platformCeilingMinor` likewise** — absent means the owner has never agreed a
+ * ceiling (D3), and no summary at all is the honest answer.
+ */
+export function aiPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.aiPolicy.known) return null;
+  const policy = input.pack.aiPolicy.value;
+  const policies = input.pack.policies.known ? input.pack.policies.value : undefined;
+
+  const payload: Record<string, unknown> = {
+    storeId: policies?.storeId ?? 'store-1',
+    now: input.now,
+    period: policy.period,
+    staleAfterMinutes: policy.staleAfterMinutes,
+  };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+  if (policy.platformCeilingMinor !== undefined) {
+    payload['platformCeilingMinor'] = policy.platformCeilingMinor;
+  }
+
+  if (input.pack.killSwitches.known) payload['killSwitches'] = input.pack.killSwitches.value;
+  if (input.pack.agentBudgets.known) payload['agentBudgets'] = input.pack.agentBudgets.value;
+  if (input.pack.aiUsage.known) payload['usage'] = input.pack.aiUsage.value;
+  if (input.pack.aiPending.known) payload['pending'] = input.pack.aiPending.value;
+  if (input.pack.aiEvaluations.known) payload['evaluations'] = input.pack.aiEvaluations.value;
+
+  return payload;
+}
+
 /** The global each screen's bundle reads at boot. One name per screen, and they must not drift. */
 export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   pos: 'posCatalogue',
@@ -1107,6 +1144,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   expiry: 'expiryData',
   finance: 'financeData',
   admin: 'adminData',
+  ai: 'aiData',
 });
 
 const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<string, unknown> | null>> = Object.freeze({
@@ -1124,6 +1162,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   expiry: expiryPayload,
   finance: financePayload,
   admin: adminPayload,
+  ai: aiPayload,
 });
 
 /** Build one screen's payload. `null` means this box has nothing to give it, and says so. */

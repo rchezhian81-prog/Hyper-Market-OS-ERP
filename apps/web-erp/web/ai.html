@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE AI control</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      AI control (M32 / M36 / A01-A10 / AI-NFR-01..12 / API-13 / P-05 / hard rule 5).
+      A tenth shell in this folder, sharing the one bundle.
+
+      AI recommends or drafts; deterministic rules and authorised humans commit — and a kill
+      switch that always works.
+
+      The switch is the FIRST tab. Somebody who opens this screen in a hurry has come here to
+      stop something, and beside every switch is the sentence describing what the shop does
+      without that agent, so pulling it is a decision that can be made calmly.
+    -->
+    <style>
+      :root {
+        --bg: #0f172a; --panel: #1e293b; --ink: #f8fafc; --muted: #94a3b8;
+        --good: #22c55e; --warn: #f59e0b; --danger: #ef4444; --info: #38bdf8;
+        --line: #334155;
+        --tap: 48px;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--ink);
+        font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        min-height: 100dvh; display: flex; flex-direction: column;
+      }
+      header {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; padding: 12px 16px; background: var(--panel); flex-wrap: wrap;
+      }
+      .who { font-weight: 600; }
+      .who small { display: block; color: var(--muted); font-weight: 400; font-size: 14px; }
+      .lang { background: transparent; color: var(--muted); min-height: 40px; font-size: 14px; border: 0; }
+
+      .sample { background: var(--warn); color: #451a03; padding: 8px 16px; font-weight: 600; font-size: 15px; margin: 0; }
+      .sample[hidden], .stale[hidden], .nobody[hidden] { display: none; }
+      .stale { background: #1e3a5f; color: #dbeafe; padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info); }
+      /* Nobody named at the desk. Nothing can be stopped and nothing can be committed. */
+      .nobody { background: var(--danger); color: #fff; padding: 10px 16px; font-size: 15px; margin: 0; font-weight: 600; }
+
+      nav { display: flex; gap: 8px; padding: 8px 16px; background: var(--panel); overflow-x: auto; }
+      nav button {
+        min-height: var(--tap); padding: 0 18px; border: 0; border-radius: 12px;
+        background: var(--line); color: var(--ink); font-size: 16px; font-weight: 600; white-space: nowrap;
+      }
+      nav button[aria-current='page'] { background: var(--ink); color: #0f172a; }
+
+      main { flex: 1; padding: 16px; display: grid; gap: 16px; align-content: start; max-width: 900px; }
+      section[hidden] { display: none; }
+      h2 { margin: 0 0 4px; font-size: 20px; }
+      h3 { margin: 16px 0 8px; font-size: 17px; }
+      p.lead { margin: 0 0 12px; color: var(--muted); font-size: 15px; }
+
+      label { display: block; margin: 12px 0 4px; font-size: 15px; color: var(--muted); }
+      input, select, textarea {
+        width: 100%; min-height: var(--tap); border-radius: 12px; border: 2px solid var(--line);
+        background: #0b1220; color: var(--ink); font-size: 17px; padding: 0 12px;
+      }
+      textarea { min-height: 80px; padding: 10px 12px; font-family: inherit; }
+      input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible {
+        outline: 3px solid #93c5fd; outline-offset: 2px;
+      }
+      button {
+        min-height: var(--tap); border-radius: 12px; border: 0; font-size: 16px; font-weight: 600;
+        background: var(--line); color: var(--ink);
+      }
+      button.primary { background: var(--good); color: #052e16; font-size: 18px; }
+      button.danger { background: var(--danger); color: #fff; font-size: 18px; }
+      .wide { width: 100%; }
+      .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+      .row {
+        background: var(--panel); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px;
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      }
+      .row .what { display: grid; gap: 2px; }
+      .row .what small { color: var(--muted); font-size: 14px; }
+      /* A STOPPED agent. Drawn as the loudest thing on the list, and listed first. */
+      .row.stopped { border-left: 6px solid var(--danger); background: #450a0a; }
+      .row.stopped .what small { color: #fecaca; }
+      .row.running { border-left: 5px solid var(--good); }
+      .row.flagged { border-left: 5px solid var(--warn); }
+      .row.clean { border-left: 5px solid var(--good); }
+      .row.refused { border-left: 5px solid var(--danger); }
+      .row.held { border-left: 5px solid var(--info); }
+      .chip { background: #0b1220; border-radius: 999px; padding: 2px 10px; font-size: 13px; margin-right: 6px; margin-top: 4px; display: inline-block; }
+      .chip.forbidden { background: #450a0a; color: #fecaca; }
+      .sides { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+      .sides span { background: #0b1220; border-radius: 8px; padding: 6px 10px; font-variant-numeric: tabular-nums; }
+      .sides small { display: block; color: var(--muted); font-size: 13px; }
+
+      .bill { background: var(--panel); border-radius: 14px; padding: 14px 16px; display: grid; gap: 6px; }
+      .bill .big { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .bill small { color: var(--muted); font-size: 14px; }
+
+      /* The bar showing spend against a ceiling. Never colour alone — the figure is beside it. */
+      .bar { background: #0b1220; border-radius: 999px; height: 10px; overflow: hidden; margin-top: 6px; }
+      .bar i { display: block; height: 100%; background: var(--good); }
+      .bar i.warn { background: var(--warn); }
+      .bar i.over { background: var(--danger); }
+
+      .empty { color: var(--muted); padding: 20px 4px; }
+
+      .banner {
+        position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 18px 16px;
+        background: var(--danger); color: #fff; display: grid; gap: 10px;
+      }
+      .banner[hidden] { display: none; }
+      .banner.good { background: var(--good); color: #052e16; }
+      .banner strong { font-size: 20px; }
+      .banner p { margin: 0; font-size: 16px; }
+      .banner button { background: #7f1d1d; color: #fff; }
+      .banner.good button { background: #052e16; color: #ecfdf5; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="who" id="who">AI control<small id="whoami">—</small></span>
+      <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
+    </header>
+
+    <p class="sample" id="sample" hidden role="status">Sample data — this is not your shop.</p>
+    <p class="stale" id="stale" hidden role="status"></p>
+    <p class="nobody" id="nobody" hidden role="alert"></p>
+
+    <nav id="tabs" aria-label="Sections">
+      <button id="tab-switch" type="button" aria-current="page">Stop the AI</button>
+      <button id="tab-agents" type="button">The assistants</button>
+      <button id="tab-queue" type="button">Waiting for you</button>
+      <button id="tab-cost" type="button">What it costs</button>
+    </nav>
+
+    <main>
+      <section id="view-switch">
+        <h2 id="switch-title">Stop the AI</h2>
+        <p class="lead" id="switch-lead">Stopping an assistant takes effect immediately. It needs your name and a reason so it can be reviewed afterwards, but it never waits for anybody's approval. Beside each one is what the shop does without it.</p>
+        <div class="bill" id="kill-state"></div>
+        <div id="kill-list"></div>
+
+        <h3 id="pull-title">Stop something now</h3>
+        <label for="scope" id="scope-label">What do you want to stop</label>
+        <select id="scope">
+          <option value="all_ai" id="scope-all">Every assistant</option>
+          <option value="customer_facing" id="scope-facing">Only the ones customers talk to</option>
+          <option value="single_agent" id="scope-single">One assistant</option>
+        </select>
+        <label for="which" id="which-label">Which one</label>
+        <select id="which"></select>
+        <label for="pull-reason" id="pull-reason-label">Why are you stopping it</label>
+        <textarea id="pull-reason"></textarea>
+        <button id="pull" class="danger wide" type="button">Stop it now</button>
+        <p class="lead" id="pull-note">The shop carries on trading. Nothing on the till, the stock or the money depends on this.</p>
+      </section>
+
+      <section id="view-agents" hidden>
+        <h2 id="agents-title">The assistants</h2>
+        <p class="lead" id="agents-lead">What each assistant may do, who decides after it, and whether it is running. Stopped ones are listed first.</p>
+        <div class="bill" id="forbidden-box"></div>
+        <div id="agent-list"></div>
+      </section>
+
+      <section id="view-queue" hidden>
+        <h2 id="queue-title">Waiting for you</h2>
+        <p class="lead" id="queue-lead">Things an assistant has drafted. Nothing here has happened. It happens when you accept it, and the record carries your name, not the assistant's.</p>
+        <div id="queue-list"></div>
+      </section>
+
+      <section id="view-cost" hidden>
+        <h2 id="cost-title">What it costs</h2>
+        <p class="lead" id="cost-lead">What the assistants have cost this month, each against its own limit and all of them against your monthly platform limit. When one runs out it stops and the shop does not.</p>
+        <div class="bill" id="cost-summary"></div>
+        <div id="cost-list"></div>
+      </section>
+    </main>
+
+    <div class="banner" id="banner" hidden role="alert">
+      <strong id="banner-title">—</strong>
+      <p id="banner-text"></p>
+      <button id="banner-ok" type="button">I have read this</button>
+    </div>
+
+    <!--SCREEN-DATA-->
+    <script type="module" src="./web-erp.bundle.js"></script>
+    <script type="module" src="./ai.js"></script>
+  </body>
+</html>
