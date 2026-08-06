@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, the day boundary the store box did not have, the service desk, and expiry and recall — including the recall block that never reached a till)
+Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, the day boundary the store box did not have, the service desk, expiry and recall — including the recall block that never reached a till — and finance, which lets a month close for the first time)
 
 ---
 
@@ -2591,6 +2591,90 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## Your month can now be closed, and your CA can sign it (6 August 2026)
+
+The finance screen. This one opens a door that has been shut since the beginning.
+
+### What was shut
+
+Your accounts have a rule: a month cannot be closed until every figure has been checked **twice** —
+once against what the shop's own record says, and once against what the accounting system actually
+received — and the two must agree exactly, to the paisa.
+
+That rule has been written and tested for a long time. **Nothing ever produced the figures for it
+to check.** So no month could close at all.
+
+That failed in the safe direction, which is why it was not urgent. But it meant the honest answer to
+"can we close the books?" was no, and had always been no.
+
+### What it does now
+
+Every figure appears **twice, side by side**:
+
+> **Takings** — our record ₹1,00,000 · the accounts ₹1,00,000 — *agrees exactly*
+
+Underneath each one, in words, is **how each side was worked out**, so your CA can check it without
+having to ask anybody. That is the whole point: they are signing something they can re-derive, not
+taking our word for it.
+
+### The bit that took the thinking
+
+There is a way to make those two numbers agree that would be completely wrong, and it is the
+obvious way to build it.
+
+A posting sits in a queue waiting to go to your accounting system. If the software counted a
+**queued** posting as "received by the accounts", both sides of every figure would become the same
+number worked out twice. Everything would agree, every month, always. The month would close, your CA
+would sign it — and the accounting system would have nothing in it.
+
+**So only a posting your accounts have actually accepted counts.** Anything still waiting, and
+anything they refused, is shown *beside* the figures and never inside them. If your accounts have
+not taken it, the two sides disagree by exactly that amount, and the month will not close.
+
+### What stops a month closing
+
+All at once, never one at a time — because a finance team hitting one obstacle after another on the
+last day of the month starts looking for a way round the system, and finds one:
+
+- any figure where the two sides disagree;
+- **any posting your accounts refused** — that is money they have never seen, and it is listed in
+  full with their reason. Nothing on this screen can throw one away;
+- sales on the shop computer that have not reached head office;
+- differences nobody has explained yet.
+
+### And afterwards
+
+**A closed month is never edited.** If something arrives late, the month is *reopened* — with a
+reason, and approved by somebody other than the person asking — and the correction is a new entry.
+A set of accounts that changes after it was signed is the one thing an auditor cannot forgive. That
+reopen button is on the screen, and appears only once the month is actually closed.
+
+**Tests:** 4,188 automated plus 31 performance, all green — 58 new.
+
+### What the owner should check, in the store
+
+1. Open the finance screen at the end of a month. Every figure must show **two numbers**, not one.
+2. Where they agree, it says so. Where they do not, it shows **the difference** and will not let you
+   close. Try it — the month must refuse.
+3. Look at **"What the accounts have not taken"**. Anything waiting or refused is listed there. If
+   something is refused, it must show the reason your accounting system gave.
+4. Close a clean month. Then try to close it again — it must refuse because it is already closed.
+5. Reopen it. It must ask you why, and it must refuse if you name yourself as the approver.
+
+### One thing I need from you before this runs on real books
+
+**Your chart of accounts.** The screen matches postings to figures by the heading your accountant
+uses — the ledger names for sales, GST and refunds. I have not guessed them, because a guessed
+heading would file your takings where your accountant does not look, and the difference would show
+up as a mismatch nobody could explain.
+
+Three or four ledger names from whoever keeps your books is all it needs. Until then the screen
+works and refuses honestly; it just cannot match anything, and it will say so by listing everything
+as *"postings nobody can classify"* — which is exactly the right thing for it to say.
+
+---
+
+
 ## A recalled tin could be sold at your till (6 August 2026)
 
 I built the expiry and recall screen you asked for. While testing it I found something I want to
@@ -4782,7 +4866,13 @@ the tests were green when I found it.** What found it was running the screen for
 store box, which also turned up a margin of 99.92% from a costing rule that had been copied instead
 of shared. Reading does not find these. Driving the real path does, every time.
 
-**Nine now, and the ninth was a safety matter.** The lane's recall block — the refusal that says
+**Ten now, and the tenth was the gate itself.** QG-07 — *a period cannot close on unvalidated
+control totals, and a CA must be able to sign them* — was enforced by three tested functions that
+were never given a control total, because nothing built one. No month could close at all. The
+producer now exists, and the decision it turns on is one line: only a posting the accounts have
+ACCEPTED counts as received, or both sides become the same number computed twice.
+
+**Nine before that, and the ninth was a safety matter.** The lane's recall block — the refusal that says
 *"even offline"* — had no field in the store pack for the flag to arrive in, and the payload the box
 served the lane was not a `CatalogueSnapshot` at all, so the till threw on boot. A recalled tin
 scanned and sold like any other. Alongside it, `allocateFefo`, `expiryActions`, `assessColdChain`,

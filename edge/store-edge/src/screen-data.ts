@@ -53,7 +53,7 @@ import type { StorePack } from './store-pack';
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry',
+  'reporting', 'service', 'expiry', 'finance',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1019,6 +1019,41 @@ export function expiryPayload(input: ScreenInput): Record<string, unknown> | nul
   return payload;
 }
 
+/**
+ * The finance payload (M23-FR-04 / QG-07).
+ *
+ * `null` when the box has not been told this shop's own chart-of-accounts headings — a screen
+ * inventing them would file a shop's takings under a heading its accountant does not use, and the
+ * difference would surface as an unexplained control total nobody could resolve.
+ *
+ * **`financeLedger` is served only when the box has it.** Absent is absent: with no ledger side
+ * there is nothing to compare the accounts against, and the screen refuses to close the month
+ * rather than comparing the accounts with a substituted nought.
+ */
+export function financePayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.financePolicy.known) return null;
+  const policy = input.pack.financePolicy.value;
+  const policies = input.pack.policies.known ? input.pack.policies.value : undefined;
+
+  const payload: Record<string, unknown> = {
+    storeId: policies?.storeId ?? 'store-1',
+    now: input.now,
+    period: policy.period,
+    tradingDayCutoff: policy.tradingDayCutoff,
+    journalPrefixes: policy.journalPrefixes,
+    // This box's own queue is the honest source for what has not reached the cloud, and an unsent
+    // sale is a sale the accounts cannot have seen either.
+    unsentSyncCount: input.outbox.pending().length,
+  };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+
+  if (input.pack.financeLedger.known) payload['ledger'] = input.pack.financeLedger.value;
+  if (input.pack.tallyPostings.known) payload['postings'] = input.pack.tallyPostings.value;
+  if (input.pack.periodState.known) payload['periodState'] = input.pack.periodState.value;
+
+  return payload;
+}
+
 /** The global each screen's bundle reads at boot. One name per screen, and they must not drift. */
 export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   pos: 'posCatalogue',
@@ -1033,6 +1068,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   reporting: 'reportingData',
   service: 'serviceData',
   expiry: 'expiryData',
+  finance: 'financeData',
 });
 
 const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<string, unknown> | null>> = Object.freeze({
@@ -1048,6 +1084,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   reporting: reportingPayload,
   service: servicePayload,
   expiry: expiryPayload,
+  finance: financePayload,
 });
 
 /** Build one screen's payload. `null` means this box has nothing to give it, and says so. */

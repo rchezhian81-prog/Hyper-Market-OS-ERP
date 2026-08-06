@@ -373,6 +373,26 @@ export interface PackExpiryPolicy {
   readonly userId?: string;
 }
 
+/** This shop's own chart-of-accounts headings and who closes its months (M23). */
+export interface PackFinancePolicy {
+  /** The month being worked on, e.g. "2026-07". */
+  readonly period: string;
+  readonly tradingDayCutoff: string;
+  /**
+   * Which journal references belong to which control total — per-tenant.
+   *
+   * Never a constant: one shop's chart of accounts is not another's, and a heading guessed here
+   * would file a shop's takings where its accountant does not look for them.
+   */
+  readonly journalPrefixes: {
+    readonly takings: string;
+    readonly tax: string;
+    readonly refunds: string;
+  };
+  /** Who is on the finance screen. Absent means nothing may be closed. */
+  readonly userId?: string;
+}
+
 export interface PackMerchandisingPolicy {
   readonly refillAtBp: number;
   readonly countStaleAfterMinutes: number;
@@ -531,6 +551,20 @@ export interface StorePack {
   readonly recalls: Register<readonly unknown[]>;
   /** The near-expiry window and who is on the desk. Per-tenant. */
   readonly expiryPolicy: Register<PackExpiryPolicy>;
+  /**
+   * What the accounts actually received for the period, in whatever state each posting reached.
+   *
+   * **Absent means the box has never been told**, which is not the same as the accounts having
+   * received nothing — and a control total whose posted side is a substituted nought would
+   * disagree with the ledger by the whole month's takings, which is at least loud.
+   */
+  readonly tallyPostings: Register<readonly unknown[]>;
+  /** What the shop's own record says it took in the period — the ledger side of every total. */
+  readonly financeLedger: Register<unknown>;
+  /** Whether the period is already closed, and by whom. */
+  readonly periodState: Register<unknown>;
+  /** The shop's own chart-of-accounts headings and the month being worked on. */
+  readonly financePolicy: Register<PackFinancePolicy>;
   /** Loss-prevention thresholds — data, so a store tunes its own without code (M15-FR-01). */
   readonly lossPreventionRules: Register<readonly unknown[]>;
   /** The purposes this tenant asks a customer's consent for (M16 / PRV). */
@@ -594,6 +628,10 @@ export function emptyPack(why: string = NEVER): StorePack {
     batches: notKnown(why),
     recalls: notKnown(why),
     expiryPolicy: notKnown(why),
+    tallyPostings: notKnown(why),
+    financeLedger: notKnown(why),
+    periodState: notKnown(why),
+    financePolicy: notKnown(why),
     lossPreventionRules: notKnown(why),
     consentPurposes: notKnown(why),
   };
@@ -663,6 +701,10 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     batches: section<readonly unknown[]>('batches'),
     recalls: section<readonly unknown[]>('recalls'),
     expiryPolicy: section<PackExpiryPolicy>('expiryPolicy'),
+    tallyPostings: section<readonly unknown[]>('tallyPostings'),
+    financeLedger: section<unknown>('financeLedger'),
+    periodState: section<unknown>('periodState'),
+    financePolicy: section<PackFinancePolicy>('financePolicy'),
     lossPreventionRules: section<readonly unknown[]>('lossPreventionRules'),
     consentPurposes: section<readonly { purpose: string; channel: string; required?: boolean }[]>('consentPurposes'),
   };

@@ -10,7 +10,7 @@ import { Ledger, InMemoryLedgerStore } from '../../packages/ledger/src/index';
 import { resolvePrice } from '../../packages/price-list/src/index';
 import { makeEvent } from '../../packages/contracts/src/event';
 import {
-  bootBuying, bootCatalogue, bootExpiry, bootManager, bootMerchandising, bootReporting, bootService,
+  bootBuying, bootCatalogue, bootExpiry, bootFinance, bootManager, bootMerchandising, bootReporting, bootService,
   buyingGaps, catalogueGaps, merchandisingGaps,
 } from '../../apps/web-erp/src/browser-entry';
 import { bootOwner, forgetfulQueueStore } from '../../apps/owner-app/src/browser-entry';
@@ -195,6 +195,19 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
   ]),
   recalls: known([]),
   expiryPolicy: known({ nearExpiryDays: 7, userId: 'u-qc' }),
+  // Finance (M23). Both sides of the month, and this shop's own chart-of-accounts headings.
+  tallyPostings: known([
+    { postingId: 'P-1', idempotencyKey: 'k-1', period: '2026-07', journalRef: 'SALES-001',
+      debitMinor: 100_000_00, creditMinor: 100_000_00, state: 'posted', attempts: 1,
+      queuedAt: '2026-07-31T23:00:00.000Z' },
+  ]),
+  financeLedger: known({ takingsMinor: 100_000_00, taxMinor: 0, refundsMinor: 0, billCount: 412 }),
+  periodState: known({ closed: false }),
+  financePolicy: known({
+    period: '2026-07', tradingDayCutoff: '02:00',
+    journalPrefixes: { takings: 'SALES', tax: 'GST', refunds: 'REFUND' },
+    userId: 'u-finance',
+  }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([{ purpose: 'marketing', channel: 'sms' }]),
   ...over,
@@ -504,6 +517,8 @@ describe('a box that has been told nothing tells every screen so', () => {
       servicePolicy: notKnown('never'),
       batches: notKnown('never'), recalls: notKnown('never'),
       expiryPolicy: notKnown('never'),
+      tallyPostings: notKnown('never'), financeLedger: notKnown('never'),
+      periodState: notKnown('never'), financePolicy: notKnown('never'),
       lossPreventionRules: notKnown('never'), consentPurposes: notKnown('never'),
     },
     sales: [],
@@ -1896,5 +1911,117 @@ describe('the expiry and recall screen, fed by the box', () => {
     expect(outcome.ok).toBe(false);
     if (outcome.ok) return;
     expect(outcome.refusal).toBe('needs_evidence');
+  });
+});
+
+/**
+ * **Finance, driven over the real socket (M23-FR-04 / QG-07).**
+ *
+ * The roadmap's acceptance is one sentence: *a CA can sign the control totals.* Until this build
+ * nothing produced one, so no month could close — which at least failed in the safe direction.
+ */
+describe('finance, fed by the box', () => {
+  it('states both sides of every figure from what the box was told', async () => {
+    const base = await serve(snapshotOf());
+    const payload = (await payloadFromScreen(base, 'finance'))!;
+    expect(payload['period']).toBe('2026-07');
+    expect(payload['journalPrefixes']).toEqual({ takings: 'SALES', tax: 'GST', refunds: 'REFUND' });
+
+    const view = bootFinance(payload as never)!.period();
+    expect(view.totals, 'the box served no ledger side').toBeDefined();
+    const takings = view.totals?.find((t) => t.name === 'Takings');
+    expect(takings?.ledgerMinor).toBe(100_000_00);
+    expect(takings?.postedMinor).toBe(100_000_00);
+    expect(view.allReconcile).toBe(true);
+  });
+
+  it('has NO totals at all when the box has not said what the shop took', async () => {
+    // Not an empty list: an empty list reconciles vacuously and the month closes on nothing.
+    const base = await serve(snapshotOf({ pack: pack({ financeLedger: notKnown('never sent') }) }));
+    const payload = (await payloadFromScreen(base, 'finance'))!;
+    expect('ledger' in payload, '"ledger" must be absent, not zeroed').toBe(false);
+
+    const finance = bootFinance(payload as never)!;
+    expect(finance.period().totals).toBeUndefined();
+    expect(finance.period().allReconcile, 'nothing compared read as everything agreeing').toBe(false);
+
+    const outcome = finance.close();
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.refusal).toBe('the_shop_has_not_told_us_what_it_took');
+  });
+
+  it('does not count a posting the accounts have not accepted', async () => {
+    const base = await serve(snapshotOf({
+      pack: pack({
+        tallyPostings: known([{
+          postingId: 'P-1', idempotencyKey: 'k-1', period: '2026-07', journalRef: 'SALES-001',
+          debitMinor: 100_000_00, creditMinor: 100_000_00, state: 'queued', attempts: 1,
+          queuedAt: '2026-07-31T23:00:00.000Z',
+        }]),
+      }),
+    }));
+    const view = bootFinance((await payloadFromScreen(base, 'finance'))! as never)!.period();
+    expect(view.totals?.find((t) => t.name === 'Takings')?.postedMinor).toBe(0);
+    expect(view.posted.pendingMinor).toBe(100_000_00);
+    expect(view.allReconcile).toBe(false);
+  });
+
+  it('blocks the close on a refused posting and lists it in full', async () => {
+    const base = await serve(snapshotOf({
+      pack: pack({
+        tallyPostings: known([
+          { postingId: 'P-1', idempotencyKey: 'k-1', period: '2026-07', journalRef: 'SALES-001',
+            debitMinor: 100_000_00, creditMinor: 100_000_00, state: 'posted', attempts: 1,
+            queuedAt: '2026-07-31T23:00:00.000Z' },
+          { postingId: 'P-2', idempotencyKey: 'k-2', period: '2026-07', journalRef: 'SALES-002',
+            debitMinor: 5_00, creditMinor: 5_00, state: 'dead_lettered', attempts: 5,
+            queuedAt: '2026-07-31T23:00:00.000Z', lastFailure: 'ledger not found' },
+        ]),
+      }),
+    }));
+    const finance = bootFinance((await payloadFromScreen(base, 'finance'))! as never)!;
+    expect(finance.period().deadLettered[0]?.lastFailure).toBe('ledger not found');
+    const outcome = finance.close();
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.result?.blockers.some((b) => b.kind === 'dead_lettered_postings')).toBe(true);
+  });
+
+  it('blocks the close on sales this box has not sent to head office', async () => {
+    const outbox = new SyncOutbox();
+    outbox.enqueue(makeEvent({
+      id: 'e1', type: 'SaleCommitted', occurredAt: NOW, idempotencyKey: 'k1', source: 'lane-1', payload: {},
+    }));
+    const base = await serve(snapshotOf({ outbox }));
+    const payload = (await payloadFromScreen(base, 'finance'))!;
+    expect(payload['unsentSyncCount']).toBe(1);
+    const outcome = bootFinance(payload as never)!.close();
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.result?.blockers.some((b) => b.kind === 'unsent_sync_items')).toBe(true);
+  });
+
+  it('closes nothing when the box does not know who is asking', async () => {
+    const base = await serve(snapshotOf({
+      pack: pack({
+        financePolicy: known({
+          period: '2026-07', tradingDayCutoff: '02:00',
+          journalPrefixes: { takings: 'SALES', tax: 'GST', refunds: 'REFUND' },
+        }),
+      }),
+    }));
+    const payload = (await payloadFromScreen(base, 'finance'))!;
+    expect('userId' in payload, '"userId" must be absent, not invented').toBe(false);
+    const outcome = bootFinance(payload as never)!.close();
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.refusal).toBe('nobody_is_named_at_this_desk');
+  });
+
+  it('serves the screen nothing at all without the shop’s own headings', async () => {
+    const base = await serve(snapshotOf({ pack: pack({ financePolicy: notKnown('never sent') }) }));
+    expect(await payloadFromScreen(base, 'finance')).toBeNull();
+    expect(bootFinance(undefined)).toBeNull();
   });
 });

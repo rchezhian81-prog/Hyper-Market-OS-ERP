@@ -67,6 +67,10 @@ import {
   createExpirySession, type ExpiryPorts, type ExpirySession, type RecallRecord,
 } from './expiry-session';
 import type { Batch } from '../../../packages/fefo/src/index';
+import {
+  createFinanceSession, type FinancePorts, type FinanceSession,
+} from './finance-session';
+import type { LedgerSide, QueuedPosting } from '../../../packages/period-close/src/index';
 import type { Producer } from '../../../packages/reporting/src/index';
 
 /** What the store knows about a product this screen may be asked to count. */
@@ -324,6 +328,52 @@ export function bootExpiry(data: ExpiryData | undefined, ledger?: Ledger): Expir
   );
 }
 
+/** What the box tells the finance screen. */
+export interface FinanceData {
+  readonly userId?: string;
+  readonly storeId?: string;
+  readonly now?: string;
+  readonly period?: string;
+  readonly tradingDayCutoff?: string;
+  readonly journalPrefixes?: { readonly takings: string; readonly tax: string; readonly refunds: string };
+  /** What the shop's own record says it took. **Absent means nothing to compare against.** */
+  readonly ledger?: LedgerSide;
+  readonly postings?: readonly QueuedPosting[];
+  readonly periodState?: { readonly closed: boolean; readonly closedBy?: string; readonly closedAt?: string };
+  readonly unsentSyncCount?: number;
+  readonly openExceptionCount?: number;
+}
+
+export function financePortsFromData(data: FinanceData | undefined): FinancePorts {
+  return {
+    // NOT defaulted to a zeroed ledger. A ledger of noughts would disagree with the accounts by
+    // the whole month and read as a reconciliation failure, when the truth is that nobody has
+    // told this screen what the shop took.
+    ledger: () => data?.ledger,
+    postings: () => data?.postings ?? [],
+    periodState: () => data?.periodState ?? { closed: false },
+    unsentSyncCount: () => data?.unsentSyncCount ?? 0,
+    openExceptionCount: () => data?.openExceptionCount ?? 0,
+  };
+}
+
+/** Build the finance screen, or `null` when the box was told no chart-of-accounts headings. */
+export function bootFinance(data: FinanceData | undefined): FinanceSession | null {
+  if (data === undefined) return null;
+  return createFinanceSession(
+    {
+      tenantId: 'tenant',
+      period: data.period ?? '',
+      // NOT defaulted. A month close carries the name of whoever closed it.
+      userId: data.userId === undefined ? null : data.userId,
+      now: data.now ?? '1970-01-01T00:00:00.000Z',
+      tradingDayCutoff: data.tradingDayCutoff ?? '00:00',
+      journalPrefixes: data.journalPrefixes ?? { takings: '', tax: '', refunds: '' },
+    },
+    financePortsFromData(data),
+  );
+}
+
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
 interface ManagerWindow {
   managerSession?: ManagerSession;
@@ -344,6 +394,8 @@ interface ManagerWindow {
   serviceSession?: ServiceSession;
   expiryData?: ExpiryData;
   expirySession?: ExpirySession;
+  financeData?: FinanceData;
+  financeSession?: FinanceSession;
   /** The decision vocabulary, so the view can offer it and never invent a reason of its own. */
   managerReasons?: {
     readonly approved: readonly DecisionReasonCode[];
@@ -801,6 +853,8 @@ if (browserWindow !== undefined) {
   if (service !== null) browserWindow.serviceSession = service;
   const expiry = bootExpiry(browserWindow.expiryData);
   if (expiry !== null) browserWindow.expirySession = expiry;
+  const finance = bootFinance(browserWindow.financeData);
+  if (finance !== null) browserWindow.financeSession = finance;
   // The view offers these and records the code the manager picks. It never composes a reason of
   // its own, so the audit trail keeps one vocabulary that can still be reported on in a year.
   browserWindow.managerReasons = { approved: APPROVE_REASONS, rejected: REJECT_REASONS };

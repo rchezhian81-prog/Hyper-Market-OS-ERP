@@ -63,7 +63,19 @@
     "to the lane WITH its block rather than excluded, so the till refuses it by name;",
     "'unknown barcode' on a recalled tin is a cashier keying it in by hand.",
     "Leave batches out and the screen says THIS SHOP RECORDS NO BATCH DATES, which is a",
-    "different thing from nothing going out of date - only one of those is good news."
+    "different thing from nothing going out of date - only one of those is good news.",
+    "tallyPostings/financeLedger/periodState/financePolicy: the finance screen (M23).",
+    "EVERY CONTROL TOTAL IS STATED TWICE AND THE TWO SIDES MUST BE INDEPENDENT.",
+    "financeLedger is what YOUR OWN RECORD says the shop took; tallyPostings is what the",
+    "ACCOUNTS actually received. Only a posting in state 'posted' counts as received - a",
+    "queued one is money Tally has never seen and a dead_lettered one is money it refused.",
+    "Counting either would make both sides the same number computed twice, and the month",
+    "would close, reconciled and signed, with the accounts empty.",
+    "Leave financeLedger out and the screen has NO totals at all - not an empty list, which",
+    "would reconcile vacuously - and refuses to close the month by name.",
+    "journalPrefixes ARE YOUR CHART OF ACCOUNTS. A heading guessed here would file your",
+    "takings where your accountant does not look for them; a posting matching none of them",
+    "is raised as 'postings nobody can classify' rather than quietly left out."
   ],
   "version": 1,
   "policies": {
@@ -375,6 +387,26 @@
   "expiryPolicy": {
     "nearExpiryDays": 7,
     "userId": "REPLACE_WITH_QUALITY_USER_ID"
+  },
+  "tallyPostings": [],
+  "financeLedger": {
+    "takingsMinor": 0,
+    "taxMinor": 0,
+    "refundsMinor": 0,
+    "billCount": 0
+  },
+  "periodState": {
+    "closed": false
+  },
+  "financePolicy": {
+    "period": "REPLACE_WITH_MONTH_YYYY_MM",
+    "tradingDayCutoff": "02:00",
+    "journalPrefixes": {
+      "takings": "REPLACE_WITH_YOUR_SALES_LEDGER_PREFIX",
+      "tax": "REPLACE_WITH_YOUR_GST_LEDGER_PREFIX",
+      "refunds": "REPLACE_WITH_YOUR_REFUND_LEDGER_PREFIX"
+    },
+    "userId": "REPLACE_WITH_FINANCE_USER_ID"
   },
   "lossPreventionRules": [
     {

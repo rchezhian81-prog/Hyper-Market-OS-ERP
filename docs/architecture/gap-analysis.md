@@ -25,8 +25,8 @@ project.
 | `packages/` — domain rules | 45,179 | **Genuinely strong.** The product's value lives here |
 | `services/` — the thirteen APIs | 5,556 | Built, persisting, authenticated, audited |
 | `edge/` — the store box | 2,250 | Runs, writes durably, syncs — **and now feeds every screen**, the buyer's included |
-| `apps/` — everything a person touches | 9,400 | **All six have real screens, and the ERP now has seven** — the manager's, the buyer's, the product and price screen, merchandising and space, reporting, the service desk, and expiry and recall. The gap that dominated this document is closed |
-| Tests | 4,130 + 31 | Unusually thorough on rules; thin on assembly until today |
+| `apps/` — everything a person touches | 9,800 | **All six have real screens, and the ERP now has eight** — the manager's, the buyer's, the product and price screen, merchandising and space, reporting, the service desk, expiry and recall, and finance. The gap that dominated this document is closed |
+| Tests | 4,188 + 31 | Unusually thorough on rules; thin on assembly until today |
 
 **2,452 lines of app code for six applications** is the number that matters. For comparison, the POS
 alone — one screen a cashier uses eight hours a day — is 1,070 of those lines, and none of it draws
@@ -116,7 +116,7 @@ Three columns, and they are different questions. **Rules** = is the logic writte
 | M12–M15 POS, returns, cash office | ✅ | ✅ | ✅ | The strongest area. Durable commit real, and the screen reaches the till's own disk over loopback (ADR-0004). Cash, card, UPI, hold/recall, cash to safe and a blind till close are in; **day close now has a manager screen that reports a list rather than a refusal**. ~~Receipt-based returns still have no screen~~ ✅ **The service desk is now built** — the desk the till has been pointing at all along. It finds the bill in the box's own log, so a receipted return works with the cable out, and **the at-most-once guard has a producer at last**: it had been fed a bare zero, so the same receipt could be refunded every day |
 | M16–M18 Customer, loyalty, storefront | ✅ | ✅ | ◐ | **The customer app is now a screen**: search, repeat order, basket review, slots, payment, and a privacy centre where withdrawing consent is the same one tap as giving it (DPDP s.6(6)). Loyalty **accrual still not wired** — points read as *not known* |
 | M19–M20 Picking, delivery | ✅ | ✅ | ✅ | **Both handhelds are now screens**, both queue their work, and **the store box now plans the routes** (M19-FR-03) — straight-line distances, stated as such, as a draft a dispatcher confirms. Runs reconcile against a real assignment list at last |
-| M21–M24 Finance, Tally | ✅ | ◐ | ❌ | Journals and period close real. **No control totals can be built** — deliberate, and it means no month can close yet |
+| M21–M24 Finance, Tally | ✅ | ✅ | ✅ | Journals and period close real. ~~**No control totals can be built** — deliberate, and it means no month can close yet~~ ✅ **Built.** Every figure is stated twice — the shop's own record and what the accounts actually received — computed independently and agreeing to the paisa or not at all. **Only a posting the accounts ACCEPTED counts as received**, so a queued or refused one cannot make both sides agree by being the same number twice. **A month can now close, and a CA can sign it** (QG-07) |
 | M21 CRM and service desk | ✅ | ✅ | ◐ | **Complaints, enquiries, warranty and lost-and-found are now a screen**, with the SLA clock on both promises — first reply and resolution, which fail differently — and compensation under maker-checker. The desk says out loud when the times it is showing are the software's starting figures rather than anything this shop agreed. Campaigns are still rules only |
 | M25–M28 Workforce, facilities, concession, waste | ✅ | ◐ | ❌ | **Mislabelled as "Reporting, analytics" in every earlier version of this document.** Rules only, apart from the refill task's owning role, which merchandising now uses |
 | M29–M32 Reporting, ops, compliance | ✅ | ✅ | ◐ | **The reporting screen is now built** (M29-FR-01/02, D13, API-10), **comparisons included** — today against the last day the box actually holds, and what is selling by department. D13 names 28 reports; **eleven have code behind them and the other seventeen are listed as unrunnable, by name, rather than hidden** — a screen showing only what works looks finished, and somebody who cannot find shrinkage concludes the shop has none. The two reasons are told apart because they have different owners: *nothing yet records what is thrown away* is the shop's to fix, *this version cannot work it out yet* is ours. Exports are permission-checked, PII-redacted and audited, and refuse outright when the box has not been told who is asking. Compliance and workforce are still rules only |
@@ -132,6 +132,17 @@ in the deferral — *no producer of on-shelf counts anywhere in the system* — 
 blind shelf count, and it turned out to be the whole point: `planogramCompliance` had been treating
 an **uncounted** facing as an **empty** one, so on day one the entire shop came back as urgent
 refill tasks and staff would have been sent to full shelves.
+
+### The gate that had no key (6 August 2026)
+
+QG-07 says a period cannot close on unvalidated control totals, and a CA must be able to sign them.
+`validateControlTotals`, `closePeriod` and `buildEvidencePack` have enforced exactly that since the
+module was written — and **none of them was ever given a control total**, because nothing in this
+system built one. This document has carried the consequence for weeks: *no month can close yet.*
+
+The producer now exists. The decision it turns on is small and load-bearing: **only a posting the
+accounts have accepted counts as received.** Count a queued one and both sides of every total become
+the same number computed twice, so the month closes reconciled and signed with the accounts empty.
 
 ### The one that was a safety matter (6 August 2026)
 

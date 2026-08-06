@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Finance</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      Finance — control totals, the Tally queue and the month close
+      (M23-FR-01..04 / QG-07 / API-09). An eighth shell in this folder, sharing the bundle.
+
+      The roadmap's acceptance is one sentence: a CA can sign the control totals.
+      So every figure is stated TWICE — what the shop's own record says, and what the
+      accounts actually received — computed independently, agreeing exactly or not at all.
+
+      Only a posting the accounts ACCEPTED counts as received. The queue sits beside the
+      totals, never inside them.
+    -->
+    <style>
+      :root {
+        --bg: #0f172a; --panel: #1e293b; --ink: #f8fafc; --muted: #94a3b8;
+        --good: #22c55e; --warn: #f59e0b; --danger: #ef4444; --info: #38bdf8;
+        --line: #334155;
+        --tap: 48px;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--ink);
+        font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        min-height: 100dvh; display: flex; flex-direction: column;
+      }
+      header {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; padding: 12px 16px; background: var(--panel); flex-wrap: wrap;
+      }
+      .who { font-weight: 600; }
+      .who small { display: block; color: var(--muted); font-weight: 400; font-size: 14px; }
+      .lang { background: transparent; color: var(--muted); min-height: 40px; font-size: 14px; border: 0; }
+
+      .sample { background: var(--warn); color: #451a03; padding: 8px 16px; font-weight: 600; font-size: 15px; margin: 0; }
+      .sample[hidden], .stale[hidden], .nobody[hidden] { display: none; }
+      .stale { background: #1e3a5f; color: #dbeafe; padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info); }
+      /* Nobody named at the desk. Nothing can be committed, and it says so at the top. */
+      .nobody { background: var(--danger); color: #fff; padding: 10px 16px; font-size: 15px; margin: 0; font-weight: 600; }
+
+      nav { display: flex; gap: 8px; padding: 8px 16px; background: var(--panel); overflow-x: auto; }
+      nav button {
+        min-height: var(--tap); padding: 0 18px; border: 0; border-radius: 12px;
+        background: var(--line); color: var(--ink); font-size: 16px; font-weight: 600; white-space: nowrap;
+      }
+      nav button[aria-current='page'] { background: var(--ink); color: #0f172a; }
+
+      main { flex: 1; padding: 16px; display: grid; gap: 16px; align-content: start; max-width: 900px; }
+      section[hidden] { display: none; }
+      h2 { margin: 0 0 4px; font-size: 20px; }
+      h3 { margin: 16px 0 8px; font-size: 17px; }
+      p.lead { margin: 0 0 12px; color: var(--muted); font-size: 15px; }
+
+      label { display: block; margin: 12px 0 4px; font-size: 15px; color: var(--muted); }
+      input, select, textarea {
+        width: 100%; min-height: var(--tap); border-radius: 12px; border: 2px solid var(--line);
+        background: #0b1220; color: var(--ink); font-size: 17px; padding: 0 12px;
+      }
+      textarea { min-height: 80px; padding: 10px 12px; font-family: inherit; }
+      input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible {
+        outline: 3px solid #93c5fd; outline-offset: 2px;
+      }
+      button {
+        min-height: var(--tap); border-radius: 12px; border: 0; font-size: 16px; font-weight: 600;
+        background: var(--line); color: var(--ink);
+      }
+      button.primary { background: var(--good); color: #052e16; font-size: 18px; }
+      button.danger { background: var(--danger); color: #fff; }
+      .wide { width: 100%; }
+      .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+      .row {
+        background: var(--panel); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px;
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      }
+      .row .what { display: grid; gap: 2px; }
+      .row .what small { color: var(--muted); font-size: 14px; }
+      /* A control total. Both sides shown side by side, agreeing or not. */
+      .row.reconciles { border-left: 5px solid var(--good); }
+      .row.differs { border-left: 6px solid var(--danger); background: #450a0a; }
+      .row.differs .what small { color: #fecaca; }
+      /* A posting the accounts never took. Never summarised away. */
+      .row.dead { border-left: 5px solid var(--danger); }
+      .row.blocker { border-left: 5px solid var(--warn); }
+      .sides { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+      .sides span { background: #0b1220; border-radius: 8px; padding: 6px 10px; font-variant-numeric: tabular-nums; }
+      .sides small { display: block; color: var(--muted); font-size: 13px; }
+      .verdict { border-radius: 12px; padding: 12px 14px; font-weight: 600; margin-bottom: 12px; }
+      .verdict.signable { background: #052e16; color: #bbf7d0; border: 2px solid var(--good); }
+      .verdict.not-signable { background: #450a0a; color: #fecaca; border: 2px solid var(--danger); }
+
+      /* The SLA colours. Never colour alone — every one of these also says it in words. */
+      .row.breached { border-left: 5px solid var(--danger); }
+      .row.at_risk { border-left: 5px solid var(--warn); }
+      .row.within { border-left: 5px solid var(--good); }
+      .row.met { border-left: 5px solid var(--info); }
+
+      .bill { background: var(--panel); border-radius: 14px; padding: 14px 16px; display: grid; gap: 6px; }
+      .bill .big { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .bill small { color: var(--muted); font-size: 14px; }
+      /* More came back than went out. Should be impossible, so it is loud. */
+      .overreturned { background: #450a0a; border: 2px solid var(--danger); border-radius: 12px; padding: 12px 14px; color: #fecaca; font-size: 15px; }
+      .overreturned[hidden] { display: none; }
+
+      .qty { display: flex; align-items: center; gap: 8px; }
+      .qty input { width: 90px; text-align: center; }
+      .empty { color: var(--muted); padding: 20px 4px; }
+
+      .banner {
+        position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 18px 16px;
+        background: var(--danger); color: #fff; display: grid; gap: 10px;
+      }
+      .banner[hidden] { display: none; }
+      .banner.good { background: var(--good); color: #052e16; }
+      .banner strong { font-size: 20px; }
+      .banner p { margin: 0; font-size: 16px; }
+      .banner button { background: #7f1d1d; color: #fff; }
+      .banner.good button { background: #052e16; color: #ecfdf5; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="who" id="who">Finance<small id="whoami">—</small></span>
+      <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
+    </header>
+
+    <p class="sample" id="sample" hidden role="status">Sample data — this is not your shop.</p>
+    <p class="stale" id="stale" hidden role="status"></p>
+    <p class="nobody" id="nobody" hidden role="alert"></p>
+
+    <nav id="tabs" aria-label="Sections">
+      <button id="tab-totals" type="button" aria-current="page">The month</button>
+      <button id="tab-queue" type="button">What the accounts have not taken</button>
+    </nav>
+
+    <main>
+      <section id="view-totals">
+        <h2 id="totals-title">The month</h2>
+        <p class="lead" id="totals-lead">Every figure is stated twice: what this shop's own record says, and what the accounts actually received. They are worked out separately and must agree exactly.</p>
+
+        <div class="verdict" id="verdict">—</div>
+        <div id="totals-list"></div>
+
+        <h3 id="blockers-title">What is stopping this month closing</h3>
+        <div id="blockers"></div>
+
+        <button id="close-month" class="primary wide" type="button">Close the month</button>
+        <p class="lead" id="close-note">Nothing is closed until every figure agrees and nothing is outstanding. A closed month is never edited — a correction is a new entry in the open one.</p>
+
+        <!-- Shown only once the month is closed. A control with no surface is one somebody works around. -->
+        <div id="reopen-box" hidden>
+          <h3 id="reopen-title">Reopen this month</h3>
+          <label for="reopen-reason" id="reopen-reason-label">Why does it need reopening?</label>
+          <textarea id="reopen-reason"></textarea>
+          <label for="reopen-approver" id="reopen-approver-label">Who is approving it (not you)</label>
+          <input id="reopen-approver" type="text" autocomplete="off" />
+          <button id="reopen" class="danger wide" type="button">Reopen the month</button>
+        </div>
+      </section>
+
+      <section id="view-queue" hidden>
+        <h2 id="queue-title">What the accounts have not taken</h2>
+        <p class="lead" id="queue-lead">A posting waiting in the queue is money the accounts have never seen. A refused one is money they would not take. Neither counts as received, and nothing here is ever thrown away.</p>
+        <div id="queue-summary" class="bill"></div>
+
+        <h3 id="dead-title">Refused outright</h3>
+        <div id="dead-list"></div>
+      </section>
+    </main>
+
+    <div class="banner" id="banner" hidden role="alert">
+      <strong id="banner-title">—</strong>
+      <p id="banner-text"></p>
+      <button id="banner-ok" type="button">I have read this</button>
+    </div>
+
+    <!--SCREEN-DATA-->
+    <script type="module" src="./web-erp.bundle.js"></script>
+    <script type="module" src="./finance.js"></script>
+  </body>
+</html>

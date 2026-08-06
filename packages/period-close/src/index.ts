@@ -11,3 +11,4 @@
 
 export * from './tally-connector';
 export * from './period';
+export * from './control-totals';

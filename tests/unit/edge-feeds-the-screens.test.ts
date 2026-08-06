@@ -167,6 +167,19 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   ]),
   recalls: known([]),
   expiryPolicy: known({ nearExpiryDays: 7, userId: 'u-qc' }),
+  // Finance (M23). Both sides of the month, and this shop's own chart-of-accounts headings.
+  tallyPostings: known([
+    { postingId: 'P-1', idempotencyKey: 'k-1', period: '2026-07', journalRef: 'SALES-001',
+      debitMinor: 100_000_00, creditMinor: 100_000_00, state: 'posted', attempts: 1,
+      queuedAt: '2026-07-31T23:00:00.000Z' },
+  ]),
+  financeLedger: known({ takingsMinor: 100_000_00, taxMinor: 0, refundsMinor: 0, billCount: 412 }),
+  periodState: known({ closed: false }),
+  financePolicy: known({
+    period: '2026-07', tradingDayCutoff: '02:00',
+    journalPrefixes: { takings: 'SALES', tax: 'GST', refunds: 'REFUND' },
+    userId: 'u-finance',
+  }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([]),
   ...over,
