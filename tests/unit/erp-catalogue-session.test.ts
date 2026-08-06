@@ -14,6 +14,7 @@ import {
 import type { DecidedRequest } from '../../packages/approvals/src/index';
 import { money } from '../../packages/contracts/src/money';
 import type { Promotion } from '../../packages/promotions/src/index';
+import { ShelfMap, type ShelfLocation } from '../../packages/merchandising/src/index';
 
 /**
  * **The product and pricing surface (M03 · M05 · D01 · D06 · §28).**
@@ -56,12 +57,29 @@ const FINISHED: ProductRecord = {
   lifecycle: 'active',
 };
 
+const SHELF_LOCATIONS: ShelfLocation[] = [
+  { storeId: 'store-1', locationId: 'L-A1', aisle: 1, rack: 1, bay: 1, shelf: 1, position: 1, label: 'A1' },
+  // Physically the first thing you walk past, and it must still be collected last.
+  { storeId: 'store-1', locationId: 'L-COLD', aisle: 0, rack: 1, bay: 1, shelf: 1, position: 1, label: 'Chiller', zone: 'chilled' },
+];
+
+/**
+ * A FRESH map per session.
+ *
+ * `ShelfMap` accumulates assignments — deliberately, so a person addressing shelves keeps what they
+ * have done while they carry on working. A single shared fixture therefore leaks one test's
+ * assignments into the next, which is how the first draft of these tests passed for the wrong
+ * reason.
+ */
+const shelfMap = (): ShelfMap => new ShelfMap('store-1', SHELF_LOCATIONS, [], ['ambient', 'chilled']);
+
 const CONFIG: CatalogueConfig = {
   tenantId: 't1', storeId: 'store-1', userId: 'u-pricing', currency: 'INR',
   today: TODAY, marginFloorBps: 2000,
 };
 
 function ports(over: Partial<CataloguePorts> = {}): CataloguePorts {
+  const map = shelfMap();
   return {
     categories: () => CATEGORIES,
     products: () => [FINISHED],
@@ -69,6 +87,7 @@ function ports(over: Partial<CataloguePorts> = {}): CataloguePorts {
     costOf: () => ({ known: true, cost: money(100_00, 'INR') }),
     barcodesInUse: () => [{ barcode: '8901', productId: 'p1' }],
     promotions: () => [],
+    shelfMap: () => map,
     ...over,
   };
 }
@@ -555,5 +574,84 @@ describe('the price-change functions stand on their own', () => {
     );
     activatePriceChange(proposal, { setBy: 'u-pricing' });
     expect(existing, 'activating appended to its input').toHaveLength(0);
+  });
+});
+
+// ── Where things sit (M04-FR-02) ────────────────────────────────────────────
+
+describe('shelf addresses, and the walk they produce', () => {
+  it('lists the shop’s shelves in the order they are walked', () => {
+    // L-COLD is aisle 0 — physically first, whatever the store collects last.
+    expect(session().shelves().map((l) => l.locationId)).toEqual(['L-COLD', 'L-A1']);
+  });
+
+  it('puts a product on a shelf', () => {
+    const s = session();
+    const outcome = s.assignShelf({ productId: 'p1', locationId: 'L-A1', capacityMinor: 24 });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.assignment.primary).toBe(true);
+    expect(s.shelfOf('p1')?.locationId).toBe('L-A1');
+  });
+
+  it('refuses a SECOND home for one product', () => {
+    // Two primaries means the picker's route and the refill task disagree about where an item
+    // lives, and then both are wrong.
+    const s = session();
+    s.assignShelf({ productId: 'p1', locationId: 'L-A1', capacityMinor: 24 });
+    const outcome = s.assignShelf({ productId: 'p1', locationId: 'L-COLD', capacityMinor: 10 });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.refusal).toBe('it_already_lives_somewhere_else');
+    expect(outcome.detail).toContain('L-A1');
+  });
+
+  it('refuses a shelf this shop does not have', () => {
+    const outcome = session().assignShelf({ productId: 'p1', locationId: 'L-NOWHERE', capacityMinor: 5 });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.refusal).toBe('no_such_shelf_in_this_shop');
+  });
+
+  it('refuses a facing that holds nothing — it could never be refilled', () => {
+    const outcome = session().assignShelf({ productId: 'p1', locationId: 'L-A1', capacityMinor: 0 });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.refusal).toBe('a_shelf_facing_with_no_capacity_holds_nothing');
+  });
+
+  it('says so, rather than pretending, when the box has no shelf map at all', () => {
+    // An empty map presented as a finished one would report every product as unmapped and read as
+    // the shelf data having been lost.
+    const s = session({ shelfMap: () => null });
+    expect(s.shelves()).toEqual([]);
+    expect(s.shelfOf('p1')).toBeNull();
+    const outcome = s.assignShelf({ productId: 'p1', locationId: 'L-A1', capacityMinor: 5 });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.refusal).toBe('this_box_has_no_shelf_map');
+    expect(s.walk().ordering).toContain('no shelf map');
+  });
+
+  it('shows the walk, so somebody addressing shelves can SEE the order change', () => {
+    const s = session();
+    expect(s.walk(['p1']).unmapped).toEqual(['p1']);
+    s.assignShelf({ productId: 'p1', locationId: 'L-A1', capacityMinor: 24 });
+    const walk = s.walk(['p1']);
+    expect(walk.unmapped).toEqual([]);
+    expect(walk.steps[0]?.shelf).toBe('A1');
+    expect(walk.ordering).toContain('in the order this store set');
+  });
+
+  it('names the products with no shelf address, rather than counting them', () => {
+    // Each one is a walk back across the shop, and the person who can fix it is reading this.
+    const walk = session().walk(['p1', 'p-unknown']);
+    expect(walk.unmapped).toEqual(['p1', 'p-unknown']);
+    expect(walk.steps.map((s) => s.shelf)).toEqual([null, null]);
+  });
+
+  it('has one home per product and no function that moves it silently', () => {
+    // A relocation is a new assignment somebody makes deliberately, never a side-effect.
+    expect(Object.keys(session()).filter((k) => /move|relocate/i.test(k))).toEqual([]);
   });
 });

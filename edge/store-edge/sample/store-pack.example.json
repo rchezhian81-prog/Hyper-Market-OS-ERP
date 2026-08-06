@@ -20,7 +20,13 @@
     "inventing its own margin floor would be deciding how much of the shop's profit is",
     "worth nobody's attention. The person who sets prices must NOT be in approvers.",
     "A product with no unitCostMinor has NO entry in the cost map served to that screen",
-    "- not a zero. Zero cost reports a 100% margin, which is a lie that reads as good news."
+    "- not a zero. Zero cost reports a 100% margin, which is a lie that reads as good news.",
+    "shelfLocations/shelfAssignments/shelfPolicy: where things sit (M04-FR-02).",
+    "This is what puts the picker's list in the order they walk the shop, and every",
+    "field is a NUMBER because 'A10' sorts before 'A9' as text and the picker then",
+    "walks the aisle twice without ever knowing why. zoneOrder is YOUR cold-chain",
+    "decision - leave it out and the walk is ordered by position only, and every",
+    "screen says so rather than implying a cold chain nobody asked for."
   ],
   "version": 1,
   "policies": {
@@ -174,6 +180,46 @@
       "REPLACE_WITH_A_DIFFERENT_USER_ID"
     ],
     "marginFloorBps": 2000
+  },
+  "shelfLocations": [
+    {
+      "storeId": "REPLACE_WITH_STORE_ID",
+      "locationId": "L-A1",
+      "aisle": 1,
+      "rack": 1,
+      "bay": 1,
+      "shelf": 1,
+      "position": 1,
+      "label": "A1"
+    },
+    {
+      "storeId": "REPLACE_WITH_STORE_ID",
+      "locationId": "L-CHILL",
+      "aisle": 9,
+      "rack": 1,
+      "bay": 1,
+      "shelf": 1,
+      "position": 1,
+      "label": "Chiller",
+      "zone": "chilled"
+    }
+  ],
+  "shelfAssignments": [
+    {
+      "storeId": "REPLACE_WITH_STORE_ID",
+      "productId": "EXAMPLE-1",
+      "locationId": "L-A1",
+      "capacityMinor": 24,
+      "primary": true
+    }
+  ],
+  "shelfPolicy": {
+    "zoneOrder": [
+      "ambient",
+      "secure",
+      "chilled",
+      "frozen"
+    ]
   },
   "lossPreventionRules": [
     {

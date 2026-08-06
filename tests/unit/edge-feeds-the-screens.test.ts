@@ -47,6 +47,16 @@ const sale = (over: Partial<LoggedSale> = {}): LoggedSale => ({
   ...over,
 });
 
+const SHELF_LOCATIONS = [
+  { storeId: 'store-1', locationId: 'L-A1', aisle: 1, rack: 1, bay: 1, shelf: 1, position: 1, label: 'A1' },
+  // Physically the FIRST thing you walk past, and it must still be collected last.
+  { storeId: 'store-1', locationId: 'L-COLD', aisle: 0, rack: 1, bay: 1, shelf: 1, position: 1, label: 'Chiller', zone: 'chilled' as const },
+];
+
+const SHELF_ASSIGNMENTS = [
+  { storeId: 'store-1', productId: 'p1', locationId: 'L-A1', capacityMinor: 24, primary: true },
+];
+
 const CATEGORIES = [{
   categoryId: 'grocery', name: 'Grocery', parentId: null,
   attributes: [{ key: 'packSize', label: 'a pack size', type: 'text' as const, required: true }],
@@ -99,6 +109,9 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   pricingPolicy: known({
     userId: 'u-pricing', approvers: ['u-manager', 'u-pricing'], marginFloorBps: 2000,
   }),
+  shelfLocations: known(SHELF_LOCATIONS),
+  shelfAssignments: known(SHELF_ASSIGNMENTS),
+  shelfPolicy: known({ zoneOrder: ['ambient', 'chilled', 'frozen'] }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([]),
   ...over,

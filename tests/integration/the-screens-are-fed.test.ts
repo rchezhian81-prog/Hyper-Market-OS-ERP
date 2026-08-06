@@ -46,6 +46,17 @@ const SALE: LoggedSale = {
   tenders: [{ kind: 'cash', amount: { minor: 145_00 } }],
 };
 
+const SHELF_LOCATIONS = [
+  { storeId: 'store-1', locationId: 'L-A1', aisle: 1, rack: 1, bay: 1, shelf: 1, position: 1, label: 'A1' },
+  // Physically the FIRST thing you walk past, and it must still be collected last.
+  { storeId: 'store-1', locationId: 'L-COLD', aisle: 0, rack: 1, bay: 1, shelf: 1, position: 1, label: 'Chiller', zone: 'chilled' as const },
+];
+
+const SHELF_ASSIGNMENTS = [
+  { storeId: 'store-1', productId: 'p1', locationId: 'L-A1', capacityMinor: 24, primary: true },
+  { storeId: 'store-1', productId: 'p-milk', locationId: 'L-COLD', capacityMinor: 60, primary: true },
+];
+
 const CATEGORIES = [{
   categoryId: 'grocery', name: 'Grocery', parentId: null,
   attributes: [{ key: 'packSize', label: 'a pack size', type: 'text' as const, required: true }],
@@ -75,10 +86,18 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
   checklist: known([]),
   wave: known({
     waveId: 'w1', pickerId: 'u-picker',
-    lines: [{
-      lineId: 'l1', orderRef: 'ORD-1', productId: 'p1', description: 'Toor dal 1kg',
-      bin: 'A-01', requiredQty: 2, uom: 'ea', unitPriceMinor: 145_00,
-    }],
+    // Deliberately in the order a CUSTOMER would type it: milk, dal, milk again. Nothing had ever
+    // re-sequenced a wave, so this is exactly the walk a picker used to be given.
+    lines: [
+      {
+        lineId: 'l0', orderRef: 'ORD-1', productId: 'p-milk', description: 'Milk 1L',
+        bin: 'C-01', requiredQty: 1, uom: 'ea', unitPriceMinor: 60_00,
+      },
+      {
+        lineId: 'l1', orderRef: 'ORD-1', productId: 'p1', description: 'Toor dal 1kg',
+        bin: 'A-01', requiredQty: 2, uom: 'ea', unitPriceMinor: 145_00,
+      },
+    ],
   }),
   route: known({
     routeId: 'r1', driverId: 'd1',
@@ -113,6 +132,9 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
   pricingPolicy: known({
     userId: 'u-pricing', approvers: ['u-manager', 'u-pricing'], marginFloorBps: 2000,
   }),
+  shelfLocations: known(SHELF_LOCATIONS),
+  shelfAssignments: known(SHELF_ASSIGNMENTS),
+  shelfPolicy: known({ zoneOrder: ['ambient', 'chilled', 'frozen'] }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([{ purpose: 'marketing', channel: 'sms' }]),
   ...over,
@@ -324,7 +346,7 @@ describe('the other five screens boot on what the box served them', () => {
     const payload = (await payloadFromScreen(base, 'picker'))!;
     const wave = bootPicker(payload as Parameters<typeof bootPicker>[0], new DeviceOutbox(noDeviceStore()), () => NOW)!;
 
-    expect(wave.work()).toHaveLength(1);
+    expect(wave.work()).toHaveLength(2);
     expect(wave.work()[0]?.bin).toBe('A-01');
   });
 
@@ -356,6 +378,8 @@ describe('a box that has been told nothing tells every screen so', () => {
       supplierInvoices: notKnown('never'), buyingPolicy: notKnown('never'),
       categories: notKnown('never'), productMaster: notKnown('never'),
       priceEntries: notKnown('never'), pricingPolicy: notKnown('never'),
+      shelfLocations: notKnown('never'), shelfAssignments: notKnown('never'),
+      shelfPolicy: notKnown('never'),
       lossPreventionRules: notKnown('never'), consentPurposes: notKnown('never'),
     },
     sales: [],
@@ -840,5 +864,92 @@ describe('the product-and-pricing screen is fed, and cannot break the law', () =
     const payload = (await payloadFromScreen(base, 'catalogue'))!;
     expect('categories' in payload, '"categories" must be absent, not empty').toBe(false);
     expect(catalogueGaps(payload as never)).toEqual(['what_each_department_needs', 'the_prices_already_set']);
+  });
+});
+
+/**
+ * **The picker's walk, sequenced by the shop's own shelf map (M04-FR-02).**
+ *
+ * `ShelfMap.routeFor` was written, tested and **never called by anything** — so every wave was
+ * walked in whatever order the cloud sent it, which on an online grocery order is the order the
+ * customer typed: dairy, rice, back to dairy. The roadmap's audit calls picking time the largest
+ * controllable cost in this business, and it is decided here.
+ */
+describe('the box puts the picker’s list in the order they walk the shop', () => {
+  it('re-sequences the wave, and collects the chiller last', async () => {
+    // The wave arrives milk-then-dal. The chiller is aisle 0 — physically the FIRST thing you walk
+    // past — and it must still be collected last, because this store said so.
+    const base = await serve(snapshotOf());
+    const payload = (await payloadFromScreen(base, 'picker'))!;
+    const lines = payload['lines'] as { productId: string; shelf?: string }[];
+
+    expect(lines.map((l) => l.productId)).toEqual(['p1', 'p-milk']);
+    expect(lines[1]?.shelf).toBe('Chiller (chilled)');
+    expect(payload['orderedBy']).toContain('in the order this store set');
+  });
+
+  it('and the picker’s real session keeps that order and shows the shelf', async () => {
+    const base = await serve(snapshotOf());
+    const payload = (await payloadFromScreen(base, 'picker'))!;
+    const picker = bootPicker(payload as never, new DeviceOutbox(noDeviceStore()), () => NOW)!;
+    expect(picker.work().map((l) => l.productId)).toEqual(['p1', 'p-milk']);
+    expect(picker.work()[0]?.shelf).toBe('A1');
+  });
+
+  it('applies NO zone order when the store has not said which zones to collect last', async () => {
+    // Guessing a cold-chain order would be this repository deciding a licensed matter for every
+    // tenant, and the wrong guess is silent: the route looks sensible and the milk is warm.
+    const base = await serve(snapshotOf({ pack: pack({ shelfPolicy: known({}) }) }));
+    const payload = (await payloadFromScreen(base, 'picker'))!;
+    const lines = payload['lines'] as { productId: string }[];
+    // Aisle 0 first, on physical position alone.
+    expect(lines.map((l) => l.productId)).toEqual(['p-milk', 'p1']);
+    expect(payload['orderedBy']).toContain('has not said which zones');
+  });
+
+  it('puts a line with no shelf address LAST and names it, rather than hiding it', async () => {
+    // Hiding it would send the picker back across the shop; dropping it would lose the line.
+    const base = await serve(snapshotOf({
+      pack: pack({ shelfAssignments: known([SHELF_ASSIGNMENTS[0]!]) }),
+    }));
+    const payload = (await payloadFromScreen(base, 'picker'))!;
+    const lines = payload['lines'] as { productId: string; unmapped: boolean }[];
+    expect(lines.map((l) => l.productId)).toEqual(['p1', 'p-milk']);
+    expect(lines[1]?.unmapped).toBe(true);
+    expect(payload['unmapped']).toEqual(['p-milk']);
+  });
+
+  it('says the list is in the order it arrived when the shop has no shelf map', async () => {
+    // A shop that has not addressed its shelves is a real state, not a degraded one. What must
+    // never happen is a picker believing a list is sequenced when nothing sequenced it.
+    const base = await serve(snapshotOf({ pack: pack({ shelfLocations: notKnown('never sent') }) }));
+    const payload = (await payloadFromScreen(base, 'picker'))!;
+    expect((payload['lines'] as { productId: string }[]).map((l) => l.productId))
+      .toEqual(['p-milk', 'p1']);
+    expect(payload['orderedBy']).toContain('no shelf map');
+  });
+
+  it('drops one contradictory assignment rather than taking the whole map down', async () => {
+    // A pack claiming two homes for one product must not blank the route for every OTHER product
+    // in the shop. The bad row is dropped and the product reads as unmapped — which it is.
+    const base = await serve(snapshotOf({
+      pack: pack({
+        shelfAssignments: known([
+          ...SHELF_ASSIGNMENTS,
+          { storeId: 'store-1', productId: 'p1', locationId: 'L-COLD', capacityMinor: 5, primary: true },
+        ]),
+      }),
+    }));
+    const payload = (await payloadFromScreen(base, 'picker'))!;
+    expect((payload['lines'] as { productId: string }[]).map((l) => l.productId))
+      .toEqual(['p1', 'p-milk']);
+    expect(payload['unmapped']).toEqual([]);
+  });
+
+  it('serves the shelf map to the product screen, so somebody can fix an unmapped item', async () => {
+    const base = await serve(snapshotOf());
+    const catalogue = bootCatalogue((await payloadFromScreen(base, 'catalogue'))! as never)!;
+    expect(catalogue.shelves().map((l) => l.locationId)).toEqual(['L-COLD', 'L-A1']);
+    expect(catalogue.shelfOf('p1')?.label).toBe('A1');
   });
 });

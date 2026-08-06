@@ -41,6 +41,10 @@ import {
   type CostRegister, type PriceChangeOutcome, type PriceEntry, type PriceProposal, type PriceScope,
 } from '../../../packages/price-list/src/index';
 import {
+  ShelfMappingError,
+  type ShelfAssignment, type ShelfLocation, type ShelfMap, type WalkOrdering,
+} from '../../../packages/merchandising/src/index';
+import {
   approveForLaunch, bestPrice, simulatePromotion,
   PromotionApprovalRequiredError,
   type BasketLine, type Promotion, type PromotionResult, type SimulationResult,
@@ -64,6 +68,15 @@ export interface CataloguePorts {
   barcodesInUse(): readonly { readonly barcode: string; readonly productId: string }[];
   /** Promotions this tenant has defined. */
   promotions(): readonly Promotion[];
+  /**
+   * The shop's shelf map, or `null` when this box has none (M04-FR-02).
+   *
+   * `null` is a real state and not a degraded one: a shop that has not addressed its shelves yet
+   * has pick lists in whatever order the wave arrived, and the picker's screen says so. What must
+   * never happen is an empty map presented as a finished one, which would report every product as
+   * unmapped and read as the shelf data having been lost.
+   */
+  shelfMap(): ShelfMap | null;
 }
 
 export interface CatalogueConfig {
@@ -90,6 +103,33 @@ export interface ProductView {
 }
 
 export type PublishRefusal = 'not_finished' | 'recall_blocked' | 'barcode_belongs_to_another_item';
+
+export type ShelfRefusal =
+  | 'this_box_has_no_shelf_map'
+  | 'no_such_shelf_in_this_shop'
+  | 'a_shelf_facing_with_no_capacity_holds_nothing'
+  | 'it_already_lives_somewhere_else';
+
+const SHELF_REFUSALS: Readonly<Record<ShelfRefusal, ShelfRefusal>> = Object.freeze({
+  this_box_has_no_shelf_map: 'this_box_has_no_shelf_map',
+  no_such_shelf_in_this_shop: 'no_such_shelf_in_this_shop',
+  a_shelf_facing_with_no_capacity_holds_nothing: 'a_shelf_facing_with_no_capacity_holds_nothing',
+  it_already_lives_somewhere_else: 'it_already_lives_somewhere_else',
+});
+
+export const SHELF_REFUSAL_KINDS: readonly ShelfRefusal[] = Object.freeze(Object.values(SHELF_REFUSALS));
+
+export type ShelfOutcome =
+  | { readonly ok: true; readonly assignment: ShelfAssignment }
+  | { readonly ok: false; readonly refusal: ShelfRefusal; readonly detail: string };
+
+/** What a picker would actually walk, given the shop's shelf map. */
+export interface WalkPreview {
+  readonly steps: readonly { readonly productId: string; readonly name: string; readonly shelf: string | null }[];
+  readonly ordering: WalkOrdering;
+  /** Products with no shelf address at all — each one is a walk back across the shop. */
+  readonly unmapped: readonly string[];
+}
 
 export type PublishOutcome =
   | { readonly ok: true; readonly product: ProductRecord }
@@ -132,6 +172,33 @@ export interface CatalogueSession {
 
   /** Suspected duplicates, for review. Never merged automatically (M03-FR-04). */
   duplicates(): readonly DuplicatePair[];
+
+  /** Every shelf address this shop has, in the order they are walked (M04-FR-02). */
+  shelves(): readonly ShelfLocation[];
+
+  /** Where one product lives, or `null` when nothing has said. */
+  shelfOf(productId: string): ShelfLocation | null;
+
+  /**
+   * Put a product on a shelf.
+   *
+   * Refuses a **second** primary rather than accepting it: two primaries means the picker's route
+   * and the replenishment task disagree about where an item lives, and then both are wrong.
+   */
+  assignShelf(input: {
+    readonly productId: string;
+    readonly locationId: string;
+    readonly capacityMinor: number;
+    readonly primary?: boolean;
+  }): ShelfOutcome;
+
+  /**
+   * The order a picker would walk this shop, for the products given.
+   *
+   * The point of the whole shelf map, made visible to the person maintaining it: somebody
+   * addressing shelves needs to see the walk change, not take it on trust.
+   */
+  walk(productIds?: readonly string[]): WalkPreview;
 
   /** Work out what a price change would do. Writes nothing, activates nothing. */
   proposePrice(input: {
@@ -264,6 +331,76 @@ export function createCatalogueSession(
     },
 
     setRecallBlock: (product, blocked) => ({ ...product, recallBlocked: blocked }),
+
+    shelves: () => ports.shelfMap()?.allLocations() ?? [],
+
+    shelfOf: (productId) => ports.shelfMap()?.locationOf(productId) ?? null,
+
+    assignShelf: (input) => {
+      const map = ports.shelfMap();
+      if (map === null) {
+        return {
+          ok: false,
+          refusal: 'this_box_has_no_shelf_map',
+          detail: 'this screen has not been told the shop\'s shelf addresses, so there is nowhere to put anything yet.',
+        };
+      }
+      if (input.capacityMinor <= 0) {
+        return {
+          ok: false,
+          refusal: 'a_shelf_facing_with_no_capacity_holds_nothing',
+          detail: 'say how many fit on that shelf facing. A facing that holds nothing cannot be refilled.',
+        };
+      }
+      try {
+        return {
+          ok: true,
+          assignment: map.assign({
+            storeId: config.storeId,
+            productId: input.productId,
+            locationId: input.locationId,
+            capacityMinor: input.capacityMinor,
+            primary: input.primary ?? true,
+          }),
+        };
+      } catch (e) {
+        if (e instanceof ShelfMappingError) {
+          const already = e.message.includes('already has a primary location');
+          return {
+            ok: false,
+            refusal: already ? 'it_already_lives_somewhere_else' : 'no_such_shelf_in_this_shop',
+            detail: already
+              ? `${e.message}. Two homes means the picker's route and the refill task disagree about where it lives, and then both are wrong.`
+              : e.message,
+          };
+        }
+        throw e;
+      }
+    },
+
+    walk: (productIds) => {
+      const products = ports.products();
+      const wanted = productIds === undefined ? products.map((p) => p.productId) : productIds;
+      const nameOf = (id: string): string => products.find((p) => p.productId === id)?.name ?? id;
+      const map = ports.shelfMap();
+      if (map === null) {
+        return {
+          steps: wanted.map((productId) => ({ productId, name: nameOf(productId), shelf: null })),
+          ordering: 'the order the list arrived in — this store has no shelf map',
+          unmapped: wanted,
+        };
+      }
+      const route = map.routeFor(wanted.map((productId) => ({ productId })));
+      return {
+        steps: route.lines.map((line) => ({
+          productId: line.productId,
+          name: nameOf(line.productId),
+          shelf: line.location === undefined ? null : (line.location.label ?? line.location.locationId),
+        })),
+        ordering: route.ordering,
+        unmapped: route.unmapped,
+      };
+    },
 
     duplicates: () => detectDuplicateProducts(
       ports.products().map((p) => ({

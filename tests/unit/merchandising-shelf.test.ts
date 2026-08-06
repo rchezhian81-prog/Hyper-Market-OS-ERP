@@ -45,21 +45,68 @@ describe('ShelfMap — walking the shop once', () => {
       { productId: 'sugar' },
     ]);
     // Aisle 1 first (oil, then sugar), then aisle 2, then the chiller.
-    expect(route.map((r) => r.productId)).toEqual(['oil', 'sugar', 'rice', 'milk']);
+    expect(route.lines.map((r) => r.productId)).toEqual(['oil', 'sugar', 'rice', 'milk']);
+    // This store has not said which zones to collect last, and the result says so rather than
+    // implying a cold chain nobody asked for.
+    expect(route.ordering).toContain('has not said which zones');
   });
 
   it('sorts A9 before A10 — the reason locations are numbers, not labels', () => {
     // As text, "A10" sorts before "A9" and the picker walks the aisle twice.
     const route = map().routeFor([{ productId: 'salt' }, { productId: 'sugar' }]);
-    expect(route.map((r) => r.productId)).toEqual(['sugar', 'salt']);
+    expect(route.lines.map((r) => r.productId)).toEqual(['sugar', 'salt']);
     expect(routeKey(LOCATIONS[1]!)).toEqual([1, 9, 1, 1, 1]);
   });
 
   it('puts unmapped items LAST and marks them, rather than hiding or dropping them', () => {
     const route = map().routeFor([{ productId: 'mystery' }, { productId: 'rice' }]);
-    expect(route.map((r) => r.productId)).toEqual(['rice', 'mystery']);
-    expect(route[1]?.unmapped).toBe(true);
-    expect(route[0]?.location?.locationId).toBe('L-B3');
+    expect(route.lines.map((r) => r.productId)).toEqual(['rice', 'mystery']);
+    expect(route.lines[1]?.unmapped).toBe(true);
+    expect(route.lines[0]?.location?.locationId).toBe('L-B3');
+    // Named, not just counted — each one is a walk back across the shop.
+    expect(route.unmapped).toEqual(['mystery']);
+  });
+
+  it('collects the chiller LAST when the store has said to, whatever the aisle numbers say', () => {
+    // The zone comment on `ShelfLocation` claimed since it was written that a picker collects
+    // chilled last. The sort never looked at it, so the field was decoration and the milk was
+    // collected wherever it happened to fall in aisle order. Found by driving it, not by reading.
+    const chilledLast = new ShelfMap(STORE, [
+      ...LOCATIONS,
+      // Deliberately in aisle 0 — physically first, and it must still be collected last.
+      { storeId: STORE, locationId: 'L-COLD', aisle: 0, rack: 1, bay: 1, shelf: 1, position: 1, zone: 'chilled' },
+    ], [
+      ...ASSIGNMENTS,
+      { storeId: STORE, productId: 'yoghurt', locationId: 'L-COLD', capacityMinor: 20, primary: true },
+    ], ['ambient', 'chilled', 'frozen']);
+
+    const route = chilledLast.routeFor([{ productId: 'yoghurt' }, { productId: 'rice' }, { productId: 'oil' }]);
+    expect(route.lines.map((r) => r.productId)).toEqual(['oil', 'rice', 'yoghurt']);
+    expect(route.ordering).toContain('in the order this store set');
+  });
+
+  it('collects a zone the store never listed last, rather than first', () => {
+    // Being sent for the unfamiliar thing at the end of the walk costs a minute. Being sent for it
+    // first can cost a trolley of chilled goods.
+    const partial = new ShelfMap(STORE, LOCATIONS, ASSIGNMENTS, ['ambient']);
+    const route = partial.routeFor([{ productId: 'milk' }, { productId: 'rice' }]);
+    expect(route.lines.map((r) => r.productId)).toEqual(['rice', 'milk']);
+  });
+
+  it('applies NO zone order when the store has not given one, and says so', () => {
+    // Guessing a cold-chain order would be this repository deciding a licensed matter for every
+    // tenant, and the wrong guess is silent: the route looks sensible and the milk is warm.
+    const route = map().routeFor([{ productId: 'milk' }, { productId: 'rice' }]);
+    expect(route.ordering).toBe('shelf order only — this store has not said which zones to collect last');
+  });
+
+  it('lists the locations a store has, in the order they are walked', () => {
+    expect(map().allLocations().map((l) => l.locationId))
+      .toEqual(['L-A1', 'L-A9', 'L-A10', 'L-B3', 'L-CHILL']);
+  });
+
+  it('names the products with no shelf address at all', () => {
+    expect(map().unmappedProducts(['rice', 'mystery', 'milk'])).toEqual(['mystery']);
   });
 
   it('refuses a second primary location — an item lives in exactly one place', () => {

@@ -43,6 +43,7 @@ import {
 import type { Category, ProductRecord } from '../../../packages/product/src/index';
 import type { CostRegister, PriceEntry } from '../../../packages/price-list/src/index';
 import type { Promotion } from '../../../packages/promotions/src/index';
+import { ShelfMap, type ShelfAssignment, type ShelfLocation } from '../../../packages/merchandising/src/index';
 
 /** What the store knows about a product this screen may be asked to count. */
 export interface ProductFact {
@@ -97,6 +98,11 @@ export interface CatalogueData {
   readonly costsMinor?: Readonly<Record<string, number>>;
   readonly barcodes?: readonly { readonly barcode: string; readonly productId: string }[];
   readonly promotions?: readonly Promotion[];
+  /** The shop's shelf addresses (M04-FR-02). Absent means nobody has addressed the shelves yet. */
+  readonly shelfLocations?: readonly ShelfLocation[];
+  readonly shelfAssignments?: readonly ShelfAssignment[];
+  /** Which zones this store collects last. Absent means it has not said, and the screen says so. */
+  readonly zoneOrder?: readonly string[];
 }
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
@@ -288,6 +294,8 @@ export const CATALOGUE_GAPS = Object.freeze([
   'the_prices_already_set',
   'which_barcodes_are_taken',
   'who_may_approve',
+  'where_things_sit_on_the_shelves',
+  'which_zones_to_collect_last',
 ] as const);
 export type CatalogueGap = (typeof CATALOGUE_GAPS)[number];
 
@@ -302,6 +310,10 @@ export function catalogueGaps(data: CatalogueData | undefined): readonly Catalog
   // An empty list counts, and deliberately: nobody to approve stops exactly the same work as
   // never having been told who may.
   if (data?.approvers === undefined || data.approvers.length === 0) gaps.push('who_may_approve');
+  if (data?.shelfLocations === undefined) gaps.push('where_things_sit_on_the_shelves');
+  // Only worth saying once the shop HAS shelves. Asking a shop with no shelf map which zones it
+  // collects last is asking about a walk that does not exist yet.
+  else if (data.zoneOrder === undefined) gaps.push('which_zones_to_collect_last');
   return gaps;
 }
 
@@ -326,6 +338,23 @@ export function cataloguePortsFromData(data: CatalogueData | undefined): Catalog
     return { known: true, cost: { minor, currency: 'INR' } };
   };
 
+  // Built once and kept: `ShelfMap` accumulates assignments, so rebuilding it per call would
+  // throw away anything assigned on this screen the moment the list was re-rendered.
+  const locations = data?.shelfLocations;
+  let map: ShelfMap | null = null;
+  if (locations !== undefined) {
+    map = new ShelfMap(data?.storeId ?? 'store-1', locations, [], data?.zoneOrder);
+    for (const assignment of data?.shelfAssignments ?? []) {
+      // One bad row must not take the whole map down: refusing everything would report every
+      // product in the shop as unmapped, which reads as the shelf data having been lost.
+      try {
+        map.assign(assignment);
+      } catch {
+        continue;
+      }
+    }
+  }
+
   return {
     categories: () => data?.categories ?? [],
     products: () => data?.products ?? [],
@@ -333,6 +362,7 @@ export function cataloguePortsFromData(data: CatalogueData | undefined): Catalog
     costOf,
     barcodesInUse: () => data?.barcodes ?? [],
     promotions: () => data?.promotions ?? [],
+    shelfMap: () => map,
   };
 }
 

@@ -25,6 +25,16 @@ export interface PickerData {
   readonly waveId?: string;
   readonly pickerId?: string;
   readonly lines?: readonly PickLineInput[];
+  /**
+   * How the list came to be in the order it is in (M04-FR-02).
+   *
+   * Carried rather than assumed, exactly as the driver is told whether a dispatcher wrote their
+   * route by hand. A picker who believes a list is in shelf order when it is not walks it trusting
+   * a sequence nobody applied, and the wasted minutes look like the shop being badly laid out.
+   */
+  readonly orderedBy?: string;
+  /** Products the shop has no shelf address for. Named, because each is a walk back. */
+  readonly unmapped?: readonly string[];
 }
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */

@@ -62,6 +62,26 @@ export function routeKey(location: ShelfLocation): readonly number[] {
   return [location.aisle, location.rack, location.bay, location.shelf, location.position];
 }
 
+/**
+ * The zones, in the order this store wants them collected.
+ *
+ * **There is no default, and that is deliberate.** A cold-chain order is a food-safety decision
+ * about a particular shop — which zones it has, how far apart they are, how long a trolley of
+ * chilled goods may sit out. Inventing one here would be this repository deciding a licensed
+ * matter on behalf of every tenant, and the wrong guess is silent: the picker still walks a
+ * sensible-looking route, and the milk is just warm.
+ *
+ * Absent, the walk is ordered by physical position only, and `routeFor` **says so** so a screen can
+ * show it rather than implying a cold chain that was never applied.
+ */
+export type ZoneOrder = readonly string[];
+
+/** How a pick list came to be in the order it is in. Carried in the result, never assumed. */
+export type WalkOrdering =
+  | 'shelf order, chilled and frozen collected in the order this store set'
+  | 'shelf order only — this store has not said which zones to collect last'
+  | 'the order the list arrived in — this store has no shelf map';
+
 function compareRoute(a: ShelfLocation, b: ShelfLocation): number {
   const left = routeKey(a);
   const right = routeKey(b);
@@ -81,6 +101,8 @@ export class ShelfMap {
     public readonly storeId: string,
     locations: readonly ShelfLocation[] = [],
     assignments: readonly ShelfAssignment[] = [],
+    /** Which zones to collect last, in this store's own words. Absent = no zone ordering. */
+    public readonly zoneOrder?: ZoneOrder,
   ) {
     for (const location of locations) {
       if (location.storeId === storeId) this.locations.set(location.locationId, location);
@@ -132,23 +154,66 @@ export class ShelfMap {
       .reduce((sum, a) => sum + a.capacityMinor, 0);
   }
 
+  /** Where this store wants a zone collected, or `Infinity` when it has not said. */
+  private zoneRank(location: ShelfLocation): number {
+    if (this.zoneOrder === undefined) return 0;
+    const at = this.zoneOrder.indexOf(location.zone ?? 'ambient');
+    // A zone this store did not list is collected last rather than first. Being sent for the
+    // unfamiliar thing at the end of the walk costs a minute; being sent for it first can cost a
+    // trolley of chilled goods.
+    return at === -1 ? this.zoneOrder.length : at;
+  }
+
   /**
-   * Order a pick list so the store is walked once (M04-FR-02 acceptance). Items with
-   * no shelf address go LAST and are marked — hiding them would send the picker back
+   * Order a pick list so the store is walked once (M04-FR-02 acceptance).
+   *
+   * **Zone first, then physical position.** The zone comment on `ShelfLocation` has claimed since
+   * it was written that a picker collects chilled last — and the sort never looked at it, so the
+   * field was decoration and every wave was walked in pure aisle order with the milk collected
+   * wherever it happened to fall. The order comes from the store, not from here.
+   *
+   * Items with no shelf address go **last and are marked** — hiding them would send the picker back
    * across the shop, and dropping them would lose the line.
+   *
+   * The result says which ordering was actually applied, so a screen can show it rather than
+   * implying a cold chain that was never asked for.
    */
   routeFor<T extends { readonly productId: string }>(
     lines: readonly T[],
-  ): readonly (T & { readonly location?: ShelfLocation; readonly unmapped: boolean })[] {
+  ): {
+    readonly lines: readonly (T & { readonly location?: ShelfLocation; readonly unmapped: boolean })[];
+    readonly ordering: WalkOrdering;
+    /** Lines with no shelf address. Named, because each one is a walk back across the shop. */
+    readonly unmapped: readonly string[];
+  } {
     const decorated = lines.map((line) => {
       const location = this.locationOf(line.productId);
       return { ...line, ...(location !== undefined ? { location } : {}), unmapped: location === undefined };
     });
-    return decorated.sort((a, b) => {
+    const sorted = [...decorated].sort((a, b) => {
       if (a.unmapped !== b.unmapped) return a.unmapped ? 1 : -1;
       if (a.location === undefined || b.location === undefined) return 0;
+      const byZone = this.zoneRank(a.location) - this.zoneRank(b.location);
+      if (byZone !== 0) return byZone;
       return compareRoute(a.location, b.location);
     });
+    return {
+      lines: sorted,
+      ordering: this.zoneOrder === undefined
+        ? 'shelf order only — this store has not said which zones to collect last'
+        : 'shelf order, chilled and frozen collected in the order this store set',
+      unmapped: sorted.filter((l) => l.unmapped).map((l) => l.productId),
+    };
+  }
+
+  /** Every location this store has, in the order they are walked. */
+  allLocations(): readonly ShelfLocation[] {
+    return [...this.locations.values()].sort(compareRoute);
+  }
+
+  /** Products with no primary shelf address — each one is a walk back across the shop. */
+  unmappedProducts(productIds: readonly string[]): readonly string[] {
+    return productIds.filter((id) => this.locationOf(id) === undefined);
   }
 }
 

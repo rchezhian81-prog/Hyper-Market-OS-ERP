@@ -269,6 +269,47 @@ export interface PackPricingPolicy {
   readonly marginFloorBps: number;
 }
 
+/**
+ * Where something sits, in the order you walk past it (M04-FR-02).
+ *
+ * Every field is a **number** rather than a label like "A12", because "A10" sorts before "A9" as
+ * text and a picker sent up and down an aisle twice never knows why. The label is for the sign on
+ * the aisle; the numbers are what the route is built from.
+ */
+export interface PackShelfLocation {
+  readonly storeId: string;
+  readonly locationId: string;
+  readonly aisle: number;
+  readonly rack: number;
+  readonly bay: number;
+  readonly shelf: number;
+  readonly position: number;
+  readonly label?: string;
+  readonly zone?: 'ambient' | 'chilled' | 'frozen' | 'secure';
+}
+
+/** Which product lives where, and how many fit (M04-FR-02). */
+export interface PackShelfAssignment {
+  readonly storeId: string;
+  readonly productId: string;
+  readonly locationId: string;
+  readonly capacityMinor: number;
+  /** Exactly one primary per product per store; extras are secondary displays. */
+  readonly primary: boolean;
+}
+
+/**
+ * How this store wants its shop walked.
+ *
+ * `zoneOrder` is the cold-chain decision, and it is **the store's**, not ours: which zones it has,
+ * how far apart they are and how long a trolley of chilled goods may stand out are questions about
+ * a particular shop and its licences. Absent, the walk is ordered by position only and every screen
+ * says so rather than implying a cold chain that was never applied.
+ */
+export interface PackShelfPolicy {
+  readonly zoneOrder?: readonly string[];
+}
+
 /** Who buys, who may check them, and the tolerances this tenant matches on. All per-tenant. */
 export interface PackBuyingPolicy {
   readonly buyerId: string;
@@ -354,6 +395,12 @@ export interface StorePack {
   readonly priceEntries: Register<readonly PackPriceEntry[]>;
   /** Who prices, who approves, and the margin floor (M05-FR-02, §28). */
   readonly pricingPolicy: Register<PackPricingPolicy>;
+  /** The shop's physical shelf addresses — what sequences the picker's walk (M04-FR-02). */
+  readonly shelfLocations: Register<readonly PackShelfLocation[]>;
+  /** Which product lives on which shelf, and how many fit. */
+  readonly shelfAssignments: Register<readonly PackShelfAssignment[]>;
+  /** How this store wants its shop walked — the cold-chain order is the store's decision. */
+  readonly shelfPolicy: Register<PackShelfPolicy>;
   /** Loss-prevention thresholds — data, so a store tunes its own without code (M15-FR-01). */
   readonly lossPreventionRules: Register<readonly unknown[]>;
   /** The purposes this tenant asks a customer's consent for (M16 / PRV). */
@@ -391,6 +438,9 @@ export function emptyPack(why: string = NEVER): StorePack {
     productMaster: notKnown(why),
     priceEntries: notKnown(why),
     pricingPolicy: notKnown(why),
+    shelfLocations: notKnown(why),
+    shelfAssignments: notKnown(why),
+    shelfPolicy: notKnown(why),
     lossPreventionRules: notKnown(why),
     consentPurposes: notKnown(why),
   };
@@ -434,6 +484,9 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     productMaster: section<readonly PackMasterProduct[]>('productMaster'),
     priceEntries: section<readonly PackPriceEntry[]>('priceEntries'),
     pricingPolicy: section<PackPricingPolicy>('pricingPolicy'),
+    shelfLocations: section<readonly PackShelfLocation[]>('shelfLocations'),
+    shelfAssignments: section<readonly PackShelfAssignment[]>('shelfAssignments'),
+    shelfPolicy: section<PackShelfPolicy>('shelfPolicy'),
     lossPreventionRules: section<readonly unknown[]>('lossPreventionRules'),
     consentPurposes: section<readonly { purpose: string; channel: string; required?: boolean }[]>('consentPurposes'),
   };

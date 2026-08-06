@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { PRICE_CHANGE_REFUSALS } from '../../packages/price-list/src/index';
-import { PUBLISH_REFUSAL_KINDS } from '../../apps/web-erp/src/catalogue-session';
+import { PUBLISH_REFUSAL_KINDS, SHELF_REFUSAL_KINDS } from '../../apps/web-erp/src/catalogue-session';
 import { CATALOGUE_GAPS } from '../../apps/web-erp/src/browser-entry';
 
 /**
@@ -280,5 +280,79 @@ describe('the screen keeps the house rules', () => {
     // A merge is approved and reversible elsewhere (M03-FR-04), never a side-effect of looking.
     expect(code(MODEL), 'the session can merge').not.toMatch(/mergeProducts|\bmerge\(/);
     expect(code(VIEW), 'the view can merge').not.toMatch(/mergeProducts|\bmerge\(/);
+  });
+});
+
+describe('the shelf map sequences the picker’s walk, and says when it did not', () => {
+  const SHELF = code(readFileSync('packages/merchandising/src/shelf.ts', 'utf8'));
+  const PICKER_VIEW = code(readFileSync('apps/picker-app/web/app.js', 'utf8'));
+  const PICKER_HTML = readFileSync('apps/picker-app/web/index.html', 'utf8');
+
+  it('is actually called by the box — it was written, tested and never used', () => {
+    // `routeFor` existed and had unit tests from the day the module was written, and nothing
+    // anywhere called it. Every wave was walked in whatever order the cloud sent, which on an
+    // online grocery order is the order the customer typed: dairy, rice, back to dairy.
+    expect(code(SCREEN_DATA)).toMatch(/map\.routeFor\(lines\)/);
+    expect(code(SCREEN_DATA)).toMatch(/export function shelfMapFor/);
+  });
+
+  it('sorts by ZONE before position, so the chiller is collected when the store says', () => {
+    // The zone comment claimed a picker collects chilled last since the day it was written, and
+    // the sort never looked at it — the field was decoration and the milk was collected wherever
+    // it happened to fall in aisle order.
+    const route = SHELF.slice(SHELF.indexOf('routeFor<T extends'));
+    const byZone = route.indexOf('zoneRank');
+    const byPosition = route.indexOf('compareRoute');
+    expect(byZone, 'the walk ignores the zone entirely').toBeGreaterThan(-1);
+    expect(byPosition, 'the zone is compared but the position never is').toBeGreaterThan(byZone);
+  });
+
+  it('invents NO cold-chain order of its own', () => {
+    // Which zones a shop has, how far apart they are and how long chilled goods may stand out are
+    // questions about a licensed premises. Guessing is silent: the route looks sensible and the
+    // milk is warm.
+    expect(SHELF).not.toMatch(/zoneOrder\s*(\?\?|=)\s*\[/);
+    expect(SHELF).toMatch(/if \(this\.zoneOrder === undefined\) return 0;/);
+  });
+
+  it('carries WHICH ordering was applied in the result, not only in a comment', () => {
+    // The same discipline as the driver's route, which says whether a dispatcher wrote it by hand.
+    // A picker who believes a list is sequenced when it is not walks it trusting nothing.
+    expect(SHELF).toMatch(/export type WalkOrdering/);
+    expect(code(SCREEN_DATA)).toMatch(/orderedBy: walk\.ordering/);
+    expect(PICKER_VIEW).toMatch(/window\.pickerData\?\.orderedBy/);
+    expect(PICKER_HTML).toContain('id="ordered-by"');
+  });
+
+  it('puts an unmapped line last, marks it, and never hides or drops it', () => {
+    // Hiding it sends the picker back across the shop; dropping it loses the line.
+    expect(SHELF).toMatch(/if \(a\.unmapped !== b\.unmapped\) return a\.unmapped \? 1 : -1;/);
+    expect(PICKER_VIEW).toMatch(/line\.unmapped === true/);
+    expect(PICKER_VIEW).toMatch(/line\.shelf \?\? line\.bin/);
+  });
+
+  it('refuses a second home for one product, on the rule and on the screen', () => {
+    expect(SHELF).toMatch(/an item lives in exactly one place/);
+    expect(code(MODEL)).toMatch(/it_already_lives_somewhere_else/);
+    expectWordsFor(SHELF_REFUSAL_KINDS, 'SHELF_REFUSAL_WORDS');
+  });
+
+  it('drops one contradictory row rather than taking the whole map down', () => {
+    // Refusing everything would report every product in the shop as unmapped, which reads as the
+    // shelf data having been lost rather than as one bad row.
+    const builder = code(SCREEN_DATA).slice(code(SCREEN_DATA).indexOf('export function shelfMapFor'));
+    expect(builder).toMatch(/catch \{\s*\n\s*continue;/);
+  });
+
+  it('keeps shelf addresses as NUMBERS, so A9 sorts before A10', () => {
+    // As text "A10" sorts before "A9" and the picker walks the aisle twice, never knowing why.
+    expect(SHELF).toMatch(/readonly aisle: number;/);
+    expect(SHELF).toMatch(/readonly position: number;/);
+  });
+
+  it('shows the walk on the maintenance screen, so the order can be SEEN changing', () => {
+    expect(code(VIEW)).toMatch(/function renderShelf/);
+    expect(code(VIEW)).toMatch(/session\.walk\(\)/);
+    expect(HTML).toContain('id="walk-list"');
   });
 });

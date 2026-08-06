@@ -34,6 +34,7 @@ const WORDS = {
   en: {
     staleShell: 'No connection to the store computer. This is the work this handheld was last given, at',
     myWave: 'My wave', done: 'done', waiting: 'waiting to sync', allSent: 'everything sent',
+    noShelfAddress: 'no shelf address — look for it', walkedIn: 'Walked in',
     scanTheBin: 'Scan the bin', scanTheItem: 'Scan the item', confirmQty: 'Confirm how many',
     stepBin: 'Step 1 of 3 — walk to the bin and scan it',
     stepItem: 'Step 2 of 3 — scan the item in your hand',
@@ -69,6 +70,7 @@ const WORDS = {
   ta: {
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்த ஹேண்ட்ஹெல்டுக்குக் கடைசியாகக் கொடுக்கப்பட்ட வேலை இதுதான்:',
     myWave: 'என் வேலை', done: 'முடிந்தது', waiting: 'அனுப்பக் காத்திருக்கிறது', allSent: 'அனைத்தும் அனுப்பப்பட்டன',
+    noShelfAddress: 'அலமாரி முகவரி இல்லை — தேடிப் பாருங்கள்', walkedIn: 'நடக்கும் வரிசை',
     scanTheBin: 'இடத்தை ஸ்கேன் செய்யவும்', scanTheItem: 'பொருளை ஸ்கேன் செய்யவும்', confirmQty: 'எத்தனை என்று உறுதி செய்யவும்',
     stepBin: 'படி 1 / 3 — இடத்திற்குச் சென்று ஸ்கேன் செய்யவும்',
     stepItem: 'படி 2 / 3 — கையில் உள்ள பொருளை ஸ்கேன் செய்யவும்',
@@ -309,6 +311,11 @@ function render() {
   const progress = session.progress();
   el('wave').firstChild.textContent = `${t('myWave')} · ${session.waveId ?? ''} `;
   el('progress').textContent = `${progress.resolved}/${progress.total} ${t('done')}`;
+  // How this list came to be in the order it is in. A picker who believes it is in shelf order
+  // when it is not walks it trusting a sequence nobody applied (M04-FR-02).
+  const orderedBy = window.pickerData?.orderedBy;
+  el('ordered-by').hidden = orderedBy === undefined;
+  if (orderedBy !== undefined) el('ordered-by').textContent = `${t('walkedIn')}: ${orderedBy}`;
 
   el('empty').hidden = lines.length > 0;
   el('lines').replaceChildren(...lines.map((line) => {
@@ -319,7 +326,10 @@ function render() {
 
     const bin = document.createElement('span');
     bin.className = 'bin';
-    bin.textContent = line.bin;
+    // The shelf address if the shop has one, else the bin. A line with NO shelf address says so:
+    // it sits at the end of the walk, and a picker who is not told simply reads the route as wrong.
+    bin.textContent = line.shelf ?? line.bin;
+    if (line.unmapped === true) bin.classList.add('unmapped');
     const what = document.createElement('span');
     what.className = 'what';
     what.textContent = line.description;

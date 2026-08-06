@@ -170,6 +170,7 @@
     <nav id="tabs" aria-label="Sections">
       <button id="tab-items" type="button" aria-current="page">Items</button>
       <button id="tab-price" type="button">Change a price</button>
+      <button id="tab-shelf" type="button">Shelves</button>
       <button id="tab-promo" type="button">Offer</button>
     </nav>
 
@@ -245,6 +246,41 @@
 
         <h3 id="history-title">What this item has been priced at</h3>
         <div id="price-history"></div>
+      </section>
+
+      <!--
+        Where things sit (M04-FR-02). The reason this earns its place: shelf location
+        sequences the picker's walk, and picking time is the largest controllable cost
+        in online grocery. The walk preview is the point — somebody addressing shelves
+        needs to SEE the order change, not take it on trust.
+      -->
+      <section id="view-shelf" hidden>
+        <h2 id="shelf-title">Shelves</h2>
+        <p class="lead" id="shelf-lead">Where each item sits. This is what puts the picker's list in the order they walk the shop.</p>
+
+        <div class="two">
+          <div class="field">
+            <label for="shelf-product" id="shelf-product-label">Item code</label>
+            <input id="shelf-product" type="text" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="shelf-location" id="shelf-location-label">Shelf</label>
+            <select id="shelf-location"></select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="shelf-capacity" id="shelf-capacity-label">How many fit on that facing</label>
+          <input id="shelf-capacity" type="number" inputmode="numeric" min="1" step="1" />
+        </div>
+        <button id="assign-shelf" class="primary wide" type="button">Put it here</button>
+
+        <h3 id="unmapped-title">Items with no shelf address</h3>
+        <p class="lead" id="unmapped-lead">Each of these sends the picker back across the shop.</p>
+        <div id="unmapped-list"></div>
+
+        <h3 id="walk-title">The order a picker would walk</h3>
+        <p class="lead" id="walk-ordering">—</p>
+        <div id="walk-list"></div>
       </section>
 
       <!-- An offer, simulated before anybody can launch it. -->

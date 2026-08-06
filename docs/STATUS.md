@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, and the product and price screen)
+Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, the product and price screen, and shelf addresses)
 
 ---
 
@@ -2591,6 +2591,93 @@ tests** against real PostgreSQL 16.13.
 
 ---
 
+## Shelf addresses — and the picker's walk nothing had ever sequenced (6 August 2026)
+
+Built on your decision: **option 2, shelf locations before go-live.** Planograms and supplier
+display space are deferred to after go-live, with that written down rather than forgotten.
+
+### The thing I expected to build, and the thing I actually found
+
+I expected to build the screen where somebody says which shelf an item lives on. That is built.
+
+What I did not expect: **the piece that puts the picker's list into shelf order already existed,
+had its own tests, and nothing in the entire system had ever called it.** So every picking list was
+walked in whatever order it arrived — which, for an online grocery order, is the order the customer
+typed it: milk, rice, back to milk.
+
+That is the third time this session. The rule was written, the rule was tested, and the wire was
+never connected — and nothing failed, because nothing was watching.
+
+The store computer now puts the list in shelf order before the handheld ever sees it. On the box,
+not in the cloud, so a dead router does not put the pickers back to walking the shop twice.
+
+### And a second one, inside the rule itself
+
+Every shelf can be marked ambient, chilled or frozen, and the note next to that setting has said
+since the day it was written that **a picker collects chilled last**. The sorting code never looked
+at it. The setting was decoration. A chiller that happens to sit near the front of the shop was
+picked first, and the milk was then carried round the whole store.
+
+Fixed. But **the order is yours, not mine.** I have not put a cold-chain order into the software.
+Which zones your shop has, how far apart they are and how long chilled goods may stand out are
+questions about your premises and your licences, and guessing would have been silent — the route
+would look perfectly sensible and the milk would just be warm.
+
+So: if you tell the system the order, it uses it. If you do not, it sorts by position only **and
+says so on the picker's screen**, so nobody walks a list believing it is cold-chain ordered when
+nothing ordered it. There is a test that stops anybody adding a default later.
+
+### An item with no shelf address
+
+It goes **last**, and it is marked on the handheld, and it is named on the product screen.
+
+Hiding it would send the picker back across the shop. Dropping it would lose the line. Neither is
+acceptable, and the person who can fix it — by giving it a shelf — is exactly the person reading
+the product screen.
+
+### One item, one home
+
+If somebody tries to give an item a second shelf, it refuses and names the shelf it is already on.
+Two homes means the picker's route and the refill task disagree about where a thing is, and then
+**both** are wrong.
+
+And if the data arriving from head office contains that contradiction, the **one bad row is
+dropped** rather than the whole shelf map. Refusing the lot would report every product in the shop
+as having no shelf address, which reads as the shelf data having been lost.
+
+### Small thing that matters more than it looks
+
+Shelf addresses are stored as **numbers**, not as labels like "A10". As text, "A10" sorts before
+"A9" — so a picker would walk up the aisle, back down it, and up it again, and would never work out
+why.
+
+**Tests:** 3,755 automated plus 31 performance, all green — 30 new.
+
+### What the owner should check, in the store
+
+1. On the product screen, open **Shelves**. It should list every shelf address the shop has and,
+   underneath, **the order a picker would walk them**. Put an item on a shelf and watch that order
+   change.
+2. Look at **Items with no shelf address**. Those are the ones costing walking time today.
+3. Give a picker a real order with a chilled item in it. The chiller should be the **last** thing
+   on their list — and if it is not, tell me the order you want your zones collected in and I will
+   put it into your settings.
+4. Tell me **the zone order** for the shop: which parts are collected last, and in what order.
+   Until you do, the handheld says plainly that the list is in shelf order only.
+
+### What is deferred, and what has to happen before it can be built
+
+**Planograms, shelf compliance, refill tasks and supplier display space (M04-FR-03/04)** — target
+**R3, after go-live**, per your decision.
+
+Worth knowing for when it is picked up: the refill-task engine is written and tested, and it needs
+**how many of each item are actually on the shelf right now**. Nothing in this system produces that
+figure yet. Building the screen today would give it nothing to read. Whoever picks this up starts
+with the shelf count, not with the planogram.
+
+---
+
+
 ## Products and prices — the price nobody had ever made (6 August 2026)
 
 The shop can now create an item and set what it sells for. Until today it could do neither.
@@ -4108,10 +4195,14 @@ insist on when somebody eventually asks for it to be switched off.
   configuration carries them the screen names the gap on the page and refuses — which is correct,
   not a bug to route around. The person who sets a price is stripped out of their own approver list
   by the store box, so naming only them is the same as naming nobody (§28).
-- **An owner decision on M04 (shelf planning and space).** Three costed options are in *Products and
-  prices — the price nobody had ever made*. P2 in the roadmap, and §M04's own open items ask whether
-  planograms and space contracts are in first-store scope at all. Needs a named target release in
-  writing (OD-02/OD-10) — it is not dropped.
+- **M04 — DECIDED (6 August 2026).** Owner chose **option 2**: shelf locations (M04-FR-02) built
+  before go-live; planograms, compliance, refill tasks and supplier display space (M04-FR-03/04)
+  deferred to **R3, after go-live**. Built and shipped the same day — see *Shelf addresses*. Not
+  dropped (OD-02/OD-10).
+- **One per-store fact the picker's walk needs.** The **zone order** — which parts of the shop are
+  collected last, and in what order. Deliberately not defaulted: guessing a cold-chain order is a
+  licensed-premises decision and the wrong guess is silent. Until it is set, the handheld says the
+  list is in shelf order only.
 - **Two per-store facts the buyer's screen needs (6 August 2026).** Who may approve a captured
   supplier invoice, and who may approve a purchase order. Until the store's configuration carries
   them, the screen names the gap on the page and refuses to save — which is the correct behaviour,
@@ -4143,12 +4234,7 @@ insist on when somebody eventually asks for it to be switched off.
 
 ## Next session should start with
 
-**An owner decision on shelf planning and space (M04)** — three options with costs are written up
-in *Products and prices — the price nobody had ever made*. My recommendation is to build shelf
-locations only, before go-live, and defer planograms and display contracts. It is not dropped
-either way; it needs a target release in writing.
-
-**Then real data.** The screens are built, the store box feeds every one of them, every one of them
+**Real data.** The screens are built, the store box feeds every one of them, every one of them
 now really opens with no network and says so, the day close closes, a supplier invoice can be
 captured whole and a price can be set — and **not one line of any of it has met a single real
 product from the old system.** Every control was written for 20,000 SKUs with duplicate

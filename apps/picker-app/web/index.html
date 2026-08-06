@@ -47,6 +47,10 @@
       .sample[hidden] { display: none; }
       .storage { background: var(--danger); color: #fff; padding: 8px 14px; font-size: 15px; margin: 0; }
       .storage[hidden] { display: none; }
+      .ordered-by { background: #0b1220; color: var(--muted); padding: 6px 14px; margin: 0; font-size: 14px; }
+      .ordered-by[hidden] { display: none; }
+      /* A line with no shelf address: it sits last, and it says why. */
+      .bin.unmapped { background: var(--warn); color: #451a03; }
       /* Served from this device's cache because the store box could not be reached. It says WHEN,
          because a page from this morning shown as this minute's is the fault this product exists
          to refuse (P-08). */
@@ -139,6 +143,8 @@
 
     <p class="sample" id="sample" hidden role="status">Sample wave — this is not real work.</p>
     <p class="storage" id="storage" hidden role="alert"></p>
+    <!-- How this list is ordered, said rather than assumed (M04-FR-02). -->
+    <p class="ordered-by" id="ordered-by" hidden role="status"></p>
     <p class="stale" id="stale" hidden role="status"></p>
 
     <main>

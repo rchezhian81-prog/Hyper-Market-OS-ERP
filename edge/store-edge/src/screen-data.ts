@@ -35,6 +35,7 @@ import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { assessChecklist } from '../../../packages/workforce/src/index';
 import type { LpRule } from '../../../packages/loss-prevention/src/index';
 import { planDispatch, type DispatchPlan } from '../../../packages/fulfilment/src/routing';
+import { ShelfMap, type ShelfLocation } from '../../../packages/merchandising/src/index';
 import { costTheDay, exceptionsFor, activityFrom, type LoggedSale } from './read-model';
 import type { StorePack } from './store-pack';
 
@@ -244,24 +245,96 @@ export function ownerPayload(input: ScreenInput): Record<string, unknown> | null
   };
 }
 
-/** The picker's payload: the wave the cloud assigned, or nothing when none was. */
+/**
+ * This store's shelf map, or `null` when it has none (M04-FR-02).
+ *
+ * Built here rather than in the cloud for the same reason the routes are: a picker walks the shop
+ * whether or not the internet is up, and a shop whose pick lists could only be sequenced online
+ * would go back to walking dairy-then-rice-then-dairy on the afternoon the router dies.
+ */
+export function shelfMapFor(input: ScreenInput): ShelfMap | null {
+  if (!input.pack.shelfLocations.known || !input.pack.shelfAssignments.known) return null;
+  const storeId = input.pack.policies.known ? input.pack.policies.value.storeId : 'store-1';
+  const zoneOrder = input.pack.shelfPolicy.known ? input.pack.shelfPolicy.value.zoneOrder : undefined;
+  const map = new ShelfMap(storeId, input.pack.shelfLocations.value, [], zoneOrder);
+  // Assignments one at a time: a pack carrying two primaries for one product is a contradiction
+  // about where an item lives, and the map refuses it. Refusing the WHOLE map over one bad row
+  // would take the picker's route down for every other product in the shop, so the bad row is
+  // dropped and the rest still sequences — the product simply reads as unmapped, which is exactly
+  // what it is until somebody says where it lives.
+  for (const assignment of input.pack.shelfAssignments.value) {
+    if (assignment.storeId !== storeId) continue;
+    try {
+      map.assign(assignment);
+    } catch {
+      continue;
+    }
+  }
+  return map;
+}
+
+/**
+ * The picker's payload: the wave the cloud assigned, or nothing when none was.
+ *
+ * **The wave is put into shelf order here.** `ShelfMap.routeFor` has existed and been tested since
+ * the module was written, and nothing had ever called it — so every wave was walked in whatever
+ * order the cloud happened to send, which on an online grocery order is the order the customer
+ * typed: dairy, rice, back to dairy. The roadmap's audit calls picking time the largest
+ * controllable cost in this business, and it is decided here.
+ *
+ * The screen is told **which ordering it is holding**, the same way the driver is told whether a
+ * dispatcher wrote their route by hand — a picker who thinks a list is sequenced when it is not
+ * walks it trusting an order that was never applied.
+ */
 export function pickerPayload(input: ScreenInput): Record<string, unknown> | null {
   if (!input.pack.wave.known || input.pack.wave.value === null) return null;
   const wave = input.pack.wave.value;
+
+  const lines = wave.lines.map((l) => ({
+    lineId: l.lineId,
+    orderRef: l.orderRef,
+    productId: l.productId,
+    description: l.description,
+    bin: l.bin,
+    requiredQty: l.requiredQty,
+    uom: l.uom,
+    unitPrice: { minor: l.unitPriceMinor, currency: 'INR' },
+  }));
+
+  const map = shelfMapFor(input);
+  if (map === null) {
+    return {
+      waveId: wave.waveId,
+      pickerId: wave.pickerId,
+      lines,
+      orderedBy: 'the order the list arrived in — this store has no shelf map',
+      unmapped: [],
+    };
+  }
+
+  const walk = map.routeFor(lines);
   return {
     waveId: wave.waveId,
     pickerId: wave.pickerId,
-    lines: wave.lines.map((l) => ({
-      lineId: l.lineId,
-      orderRef: l.orderRef,
-      productId: l.productId,
-      description: l.description,
-      bin: l.bin,
-      requiredQty: l.requiredQty,
-      uom: l.uom,
-      unitPrice: { minor: l.unitPriceMinor, currency: 'INR' },
-    })),
+    // The shelf address travels with the line, so the handheld can show where to go rather than
+    // only which bin to scan. An unmapped line keeps its place at the end of the list and says so.
+    lines: walk.lines.map((l) => {
+      const { location, unmapped, ...line } = l as typeof l & { location?: ShelfLocation };
+      return {
+        ...line,
+        ...(location === undefined ? {} : { shelf: shelfAddress(location) }),
+        unmapped,
+      };
+    }),
+    orderedBy: walk.ordering,
+    unmapped: walk.unmapped,
   };
+}
+
+/** The address a picker reads on the aisle sign, or the numbers when there is no sign. */
+function shelfAddress(location: ShelfLocation): string {
+  const base = location.label ?? `${location.aisle}-${location.rack}-${location.bay}-${location.shelf}`;
+  return location.zone === undefined || location.zone === 'ambient' ? base : `${base} (${location.zone})`;
 }
 
 /**
@@ -526,6 +599,14 @@ export function cataloguePayload(input: ScreenInput): Record<string, unknown> | 
       if (product.unitCostMinor !== undefined) costs[product.productId] = product.unitCostMinor;
     }
     payload['costsMinor'] = costs;
+  }
+
+  // The shelf map, served as its parts rather than as a built map — the screen builds its own so
+  // that anything assigned on it is kept while the person carries on working.
+  if (input.pack.shelfLocations.known) payload['shelfLocations'] = input.pack.shelfLocations.value;
+  if (input.pack.shelfAssignments.known) payload['shelfAssignments'] = input.pack.shelfAssignments.value;
+  if (input.pack.shelfPolicy.known && input.pack.shelfPolicy.value.zoneOrder !== undefined) {
+    payload['zoneOrder'] = input.pack.shelfPolicy.value.zoneOrder;
   }
 
   return payload;

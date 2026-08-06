@@ -36,6 +36,15 @@ const WORDS = {
   en: {
     staleShell: 'No connection to the store computer. This page is what it was last told, at',
     title: 'Products and prices', items: 'Items', changePrice: 'Change a price', offer: 'Offer',
+    shelves: 'Shelves',
+    shelfLead: "Where each item sits. This is what puts the picker's list in the order they walk the shop.",
+    shelf: 'Shelf', fits: 'How many fit on that facing', putItHere: 'Put it here',
+    unmappedTitle: 'Items with no shelf address',
+    unmappedLead: 'Each of these sends the picker back across the shop.',
+    nothingUnmapped: 'Every item has a shelf address.',
+    walkTitle: 'The order a picker would walk', noShelves: 'This shop has no shelf addresses yet.',
+    needShelfFields: 'Pick an item, a shelf, and how many fit.',
+    shelfSet: 'Shelf set', noShelfAddress: 'no shelf address',
     itemsLead: 'What is missing before each item can be sold. The ones needing least work are at the bottom.',
     findItem: 'Find an item', possibleDuplicates: 'Possible duplicates',
     duplicatesLead: 'Nothing here is ever merged automatically. Somebody has to look.',
@@ -80,6 +89,15 @@ const WORDS = {
   ta: {
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
     title: 'பொருட்களும் விலைகளும்', items: 'பொருட்கள்', changePrice: 'விலையை மாற்று', offer: 'சலுகை',
+    shelves: 'அலமாரிகள்',
+    shelfLead: 'ஒவ்வொரு பொருளும் எங்கே இருக்கிறது. இதுவே பிக்கரின் பட்டியலை அவர் கடையை நடக்கும் வரிசையில் அமைக்கிறது.',
+    shelf: 'அலமாரி', fits: 'அந்த இடத்தில் எத்தனை பொருந்தும்', putItHere: 'இங்கே வை',
+    unmappedTitle: 'அலமாரி முகவரி இல்லாத பொருட்கள்',
+    unmappedLead: 'இவை ஒவ்வொன்றும் பிக்கரை கடையின் மறுபக்கம் மீண்டும் அனுப்பும்.',
+    nothingUnmapped: 'எல்லாப் பொருட்களுக்கும் அலமாரி முகவரி உள்ளது.',
+    walkTitle: 'பிக்கர் நடக்கும் வரிசை', noShelves: 'இந்தக் கடையில் இன்னும் அலமாரி முகவரிகள் இல்லை.',
+    needShelfFields: 'பொருள், அலமாரி, எத்தனை பொருந்தும் — எல்லாவற்றையும் தேர்ந்தெடுக்கவும்.',
+    shelfSet: 'அலமாரி நிர்ணயிக்கப்பட்டது', noShelfAddress: 'அலமாரி முகவரி இல்லை',
     itemsLead: 'ஒவ்வொரு பொருளையும் விற்பதற்கு முன் என்ன தேவை. குறைந்த வேலை உள்ளவை கீழே.',
     findItem: 'பொருளைத் தேடு', possibleDuplicates: 'இரட்டிப்பாக இருக்கக்கூடியவை',
     duplicatesLead: 'இங்கு எதுவும் தானாக இணைக்கப்படாது. ஒருவர் பார்க்க வேண்டும்.',
@@ -177,6 +195,26 @@ const PUBLISH_REFUSAL_WORDS = {
   },
 };
 
+/** Why a shelf could not be set — one entry per `ShelfRefusal`, in both languages. */
+const SHELF_REFUSAL_WORDS = {
+  this_box_has_no_shelf_map: {
+    en: 'This screen has not been told the shop’s shelf addresses, so there is nowhere to put anything yet.',
+    ta: 'கடையின் அலமாரி முகவரிகள் இந்தத் திரைக்குத் தெரியவில்லை. எனவே எதையும் வைக்க இடம் இல்லை.',
+  },
+  no_such_shelf_in_this_shop: {
+    en: 'There is no such shelf in this shop.',
+    ta: 'இந்தக் கடையில் அப்படி ஒரு அலமாரி இல்லை.',
+  },
+  a_shelf_facing_with_no_capacity_holds_nothing: {
+    en: 'Say how many fit on that shelf facing. A facing that holds nothing cannot be refilled.',
+    ta: 'அந்த இடத்தில் எத்தனை பொருந்தும் என்று சொல்லுங்கள். எதுவும் பிடிக்காத இடத்தை நிரப்ப முடியாது.',
+  },
+  it_already_lives_somewhere_else: {
+    en: 'This item already lives on another shelf. Two homes means the picker’s route and the refill task disagree about where it is, and then both are wrong.',
+    ta: 'இந்தப் பொருள் ஏற்கனவே வேறு அலமாரியில் உள்ளது. இரண்டு இடங்கள் என்றால் பிக்கரின் வழியும் நிரப்பும் வேலையும் வேறுபடும்; இரண்டுமே தவறாகும்.',
+  },
+};
+
 /** What the store box did not tell this screen — one sentence per `CatalogueGap`. */
 const GAP_WORDS = {
   what_the_shop_sells: {
@@ -202,6 +240,14 @@ const GAP_WORDS = {
   who_may_approve: {
     en: 'It has not been told who may approve, so nothing needing approval can be saved.',
     ta: 'யார் ஒப்புதல் அளிக்கலாம் என்று தெரியவில்லை. எனவே ஒப்புதல் தேவைப்படுவது எதுவும் சேமிக்க முடியாது.',
+  },
+  where_things_sit_on_the_shelves: {
+    en: 'It has not been told where things sit on the shelves, so the picker’s list is in whatever order it arrived rather than the order they walk the shop.',
+    ta: 'பொருட்கள் அலமாரியில் எங்கே இருக்கின்றன என்று தெரியவில்லை. எனவே பிக்கரின் பட்டியல் அவர் நடக்கும் வரிசையில் இல்லாமல், வந்த வரிசையிலேயே இருக்கும்.',
+  },
+  which_zones_to_collect_last: {
+    en: 'It has not been told which zones to collect last, so the chiller is picked wherever it falls in aisle order rather than at the end.',
+    ta: 'எந்தப் பகுதிகளைக் கடைசியாக எடுக்க வேண்டும் என்று தெரியவில்லை. எனவே குளிர்சாதனப் பொருட்கள் கடைசியில் அல்லாமல், வரிசையில் வரும் இடத்திலேயே எடுக்கப்படும்.',
   },
 };
 
@@ -230,6 +276,10 @@ function sampleSession() {
     publish: () => ({ ok: false, refusal: 'not_finished', detail: 'this is sample data', missing: [] }),
     setRecallBlock: (p, blocked) => ({ ...p, recallBlocked: blocked }),
     duplicates: () => [],
+    shelves: () => [],
+    shelfOf: () => null,
+    assignShelf: () => ({ ok: false, refusal: 'this_box_has_no_shelf_map', detail: 'this is sample data' }),
+    walk: () => ({ steps: [], ordering: 'the order the list arrived in — this store has no shelf map', unmapped: [] }),
     proposePrice: () => ({
       draft: { id: 'sample', productId: 'SAMPLE-1', price: { minor: 0, currency: 'INR' }, effectiveFrom: '', status: 'draft', version: 1 },
       replaces: null, check: null, cleanToActivate: false, needsApproval: false,
@@ -324,8 +374,8 @@ function renderGaps() {
 
 // ── Navigation ──────────────────────────────────────────────────────────────
 
-const VIEWS = ['items', 'item', 'price', 'promo'];
-const TABS = ['items', 'price', 'promo'];
+const VIEWS = ['items', 'item', 'price', 'shelf', 'promo'];
+const TABS = ['items', 'price', 'shelf', 'promo'];
 
 function show(name) {
   for (const view of VIEWS) el(`view-${view}`).hidden = view !== name;
@@ -683,6 +733,111 @@ function renderHistory(productId) {
   el('price-history').replaceChildren(table);
 }
 
+// ── Where things sit (M04-FR-02) ────────────────────────────────────────────
+//
+// The reason this earns a tab: **shelf location sequences the picker's walk.** A picker filling an
+// order without a route walks the shop the way the order was typed — dairy, then rice, then back to
+// dairy. The roadmap's audit calls picking time the largest controllable cost in this business, and
+// it is decided by whether a shelf address exists and sorts sensibly.
+//
+// So the walk preview is the point of the screen. Somebody addressing shelves has to SEE the order
+// change rather than take it on trust.
+
+function renderShelf() {
+  el('shelf-title').textContent = t('shelves');
+  el('shelf-lead').textContent = t('shelfLead');
+  el('shelf-product-label').textContent = t('itemCode');
+  el('shelf-location-label').textContent = t('shelf');
+  el('shelf-capacity-label').textContent = t('fits');
+  el('assign-shelf').textContent = t('putItHere');
+  el('unmapped-title').textContent = t('unmappedTitle');
+  el('unmapped-lead').textContent = t('unmappedLead');
+  el('walk-title').textContent = t('walkTitle');
+
+  const shelves = session.shelves();
+  el('shelf-location').replaceChildren(...shelves.map((location) => {
+    const option = document.createElement('option');
+    option.value = location.locationId;
+    // The sign on the aisle, plus the zone when it is not ambient — a picker reading "Chiller"
+    // knows more than one reading "L-COLD".
+    option.textContent = (location.label ?? location.locationId)
+      + (location.zone === undefined || location.zone === 'ambient' ? '' : ` (${location.zone})`);
+    return option;
+  }));
+
+  const walk = session.walk();
+  el('walk-ordering').textContent = shelves.length === 0 ? t('noShelves') : walk.ordering;
+
+  // Named, not counted. Each one is a walk back across the shop, and the person who can fix it is
+  // exactly the person reading this.
+  if (walk.unmapped.length === 0) {
+    const none = document.createElement('p');
+    none.className = 'empty';
+    none.textContent = t('nothingUnmapped');
+    el('unmapped-list').replaceChildren(none);
+  } else {
+    el('unmapped-list').replaceChildren(...walk.unmapped.map((productId) => {
+      const step = walk.steps.find((s) => s.productId === productId);
+      const row = document.createElement('div');
+      row.className = 'row';
+      const what = document.createElement('span');
+      what.className = 'what';
+      const name = document.createElement('strong');
+      name.textContent = step?.name ?? productId;
+      const sub = document.createElement('small');
+      sub.textContent = `${productId} · ${t('noShelfAddress')}`;
+      what.append(name, sub);
+      row.append(what);
+      return row;
+    }));
+  }
+
+  el('walk-list').replaceChildren(...(walk.steps.length === 0 ? [] : [walkTable(walk.steps)]));
+}
+
+function walkTable(steps) {
+  const table = document.createElement('table');
+  const head = document.createElement('tr');
+  for (const text of ['', t('item'), t('shelf')]) {
+    const th = document.createElement('th');
+    th.textContent = text;
+    head.append(th);
+  }
+  table.append(head);
+  steps.forEach((step, index) => {
+    const row = document.createElement('tr');
+    if (step.shelf === null) row.classList.add('blocked');
+    for (const text of [String(index + 1), step.name, step.shelf ?? t('noShelfAddress')]) {
+      const td = document.createElement('td');
+      td.textContent = text;
+      row.append(td);
+    }
+    table.append(row);
+  });
+  return table;
+}
+
+el('assign-shelf').addEventListener('click', () => {
+  const sku = el('shelf-product').value.trim();
+  const locationId = el('shelf-location').value;
+  const capacity = Number(el('shelf-capacity').value);
+  if (sku === '' || locationId === '' || !Number.isInteger(capacity) || capacity <= 0) {
+    tell(t('read'), t('needShelfFields'));
+    return;
+  }
+  const view = session.shelf().find((v) => v.product.sku === sku || v.product.productId === sku);
+  if (view === undefined) { tell(t('read'), t('unknownItem')); return; }
+
+  const outcome = session.assignShelf({
+    productId: view.product.productId, locationId, capacityMinor: capacity,
+  });
+  if (!outcome.ok) { tell(t('read'), words(SHELF_REFUSAL_WORDS, outcome.refusal)); return; }
+  el('shelf-product').value = '';
+  el('shelf-capacity').value = '';
+  renderShelf();
+  tell(t('shelfSet'), `${view.product.name} · ${locationId}`, true);
+});
+
 // ── An offer ────────────────────────────────────────────────────────────────
 
 let lastSimulation = null;
@@ -761,6 +916,7 @@ function paintChrome() {
   el('whoami').textContent = me();
   el('tab-items').textContent = t('items');
   el('tab-price').textContent = t('changePrice');
+  el('tab-shelf').textContent = t('shelves');
   el('tab-promo').textContent = t('offer');
   el('items-title').textContent = t('items');
   el('items-lead').textContent = t('itemsLead');
@@ -784,6 +940,7 @@ function paintChrome() {
   el('sample').textContent = t('sampleData');
   renderGaps();
   renderLimits();
+  renderShelf();
 }
 
 el('item-search').addEventListener('input', renderItems);

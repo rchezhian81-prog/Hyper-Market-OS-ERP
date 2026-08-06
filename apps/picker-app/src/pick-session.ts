@@ -42,6 +42,16 @@ export interface PickLineInput {
   readonly productId: string;
   readonly description: string;
   readonly bin: string;
+  /**
+   * Where this sits in the shop, as the aisle sign reads it (M04-FR-02).
+   *
+   * Absent means the shop has **no shelf address for this item**, which is not a cosmetic gap: the
+   * line is placed at the end of the walk and the picker is told, because the alternative is a
+   * silent trip back across the shop that looks like the route being wrong.
+   */
+  readonly shelf?: string;
+  /** True when this line has no shelf address. Shown, never hidden. */
+  readonly unmapped?: boolean;
   /** Required quantity in the UOM's smallest unit. */
   readonly requiredQty: number;
   readonly uom: Uom;
