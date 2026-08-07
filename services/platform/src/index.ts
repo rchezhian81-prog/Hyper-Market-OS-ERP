@@ -92,22 +92,21 @@ import {
   type SupportAccessRequest, type OwnerApproval, type SupportSession,
 } from '../../../packages/platform-admin/src/index';
 import {
-  TenantSettings, setupStatus, applyAnswer, setupItem,
+  DurableTenantSettings, setupItem,
   InvalidSetupAnswerError, SetupVersionConflictError,
 } from '../../../packages/tenant/src/index';
-import { ConfigStore } from '../../../packages/config/src/index';
+import { InMemoryConfigVersionStore } from '../../../packages/persistence/src/config-store';
 
 /**
- * A fresh per-tenant settings store for wiring the setup surface.
+ * Durable per-tenant settings for the setup surface, backed by the in-memory version store.
  *
- * NOTE — durability: `TenantSettings` is backed by the in-memory `ConfigStore` everywhere in the
- * codebase today; the durable, append-only config store (`packages/persistence`) is not yet wired
- * to it. So a store's setup answers do not yet survive a process restart. Connecting the two is a
- * tracked follow-up and applies to **every** tenant setting, not only setup — this slice adds the
- * missing API surface over the settings abstraction as it currently exists.
+ * Used for the `store === undefined` dev stub and in tests. Production wires a
+ * `SqlConfigVersionStore`-backed `DurableTenantSettings` (see `services/api/src/main.ts`), so a
+ * store's setup answers are written to the append-only `config_versions` table and survive a
+ * process restart.
  */
-export function inMemorySettings(): TenantSettings {
-  return new TenantSettings(new ConfigStore());
+export function inMemorySettings(): DurableTenantSettings {
+  return new DurableTenantSettings(new InMemoryConfigVersionStore());
 }
 
 export interface FeatureFlagChange {
@@ -122,8 +121,8 @@ export interface PlatformDeps {
   readonly flags: (tenantId: string) => Promise<Readonly<Record<string, boolean>>> | Readonly<Record<string, boolean>>;
   readonly setFlag: (tenantId: string, change: FeatureFlagChange) => Promise<void> | void;
   readonly recordSupportAccess: (r: SupportAccessRequest, expiresAt: string) => Promise<void> | void;
-  /** Per-tenant settings backing the self-service store-setup surface (M33-FR-01). */
-  readonly settings: TenantSettings;
+  /** Durable per-tenant settings backing the self-service store-setup surface (M33-FR-01). */
+  readonly settings: DurableTenantSettings;
   readonly now: () => string;
 }
 
@@ -193,7 +192,7 @@ export function platformRoutes(deps: PlatformDeps): readonly Route[] {
       // reads its own setup state — what is answered, on a default, or still blocking.
       api: 'API-11', method: 'GET', path: '/v1/platform/setup',
       permission: 'platform.setup.read',
-      handler: async (ctx) => ({ status: 200, body: setupStatus(deps.settings, ctx.tenantId) }),
+      handler: async (ctx) => ({ status: 200, body: await deps.settings.status(ctx.tenantId) }),
     },
     {
       // A tenant answers one setup item. Validated first (an invalid value is refused, by name,
@@ -222,7 +221,7 @@ export function platformRoutes(deps: PlatformDeps): readonly Route[] {
           });
         }
         try {
-          applyAnswer(deps.settings, ctx.tenantId, item, body.value, ctx.userId, deps.now(), 'store setup', body.ifVersion);
+          await deps.settings.apply(ctx.tenantId, item, body.value, ctx.userId, deps.now(), body.ifVersion);
         } catch (e) {
           if (e instanceof InvalidSetupAnswerError) {
             throw apiError(422, {
@@ -244,7 +243,7 @@ export function platformRoutes(deps: PlatformDeps): readonly Route[] {
           }
           throw e;
         }
-        return { status: 200, body: setupStatus(deps.settings, ctx.tenantId) };
+        return { status: 200, body: await deps.settings.status(ctx.tenantId) };
       },
     },
   ];
