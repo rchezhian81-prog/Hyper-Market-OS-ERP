@@ -31,7 +31,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'price.change.propose', 'price.change.approve',
       'purchase.invoice.capture', 'purchase.invoice.match', 'purchase.supplier.bank', 'purchase.commitment.read',
       'inventory.movement.append', 'inventory.availability.read',
-      'pos.sale.sync', 'pos.sale.read', 'pos.exception.read',
+      'pos.sale.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record',
       'customer.consent.read', 'customer.consent.write', 'loyalty.points.read',
       'order.promise', 'order.reservation.read',
       'delivery.attempt.record', 'delivery.run.read',
@@ -54,7 +54,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'price.change.propose',
       'purchase.invoice.capture', 'purchase.invoice.match', 'purchase.commitment.read',
       'inventory.movement.append', 'inventory.availability.read',
-      'pos.sale.sync', 'pos.sale.read', 'pos.exception.read',
+      'pos.sale.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record',
       'customer.consent.read', 'customer.consent.write', 'loyalty.points.read',
       'order.promise', 'order.reservation.read',
       'delivery.attempt.record', 'delivery.run.read',
@@ -68,7 +68,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     // The narrowest role in the product, and the one most people hold (P-07).
     permissions: [
       'identity.self.read', 'catalogue.pack.read',
-      'pos.sale.sync', 'pos.sale.read',
+      'pos.sale.sync', 'pos.sale.read', 'pos.return.record',
       'customer.consent.read', 'loyalty.points.read',
     ],
   },

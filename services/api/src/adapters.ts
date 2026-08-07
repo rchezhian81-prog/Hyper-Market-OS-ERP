@@ -25,6 +25,7 @@ import type { CatalogueProduct } from '../../../packages/catalogue/src/catalogue
 import type { SignedPack } from '../../catalogue/src/index';
 import type { CatalogueDeps } from '../../catalogue/src/index';
 import type { IncomingSale, SaleException, PosDeps } from '../../pos/src/index';
+import type { ReturnsDeps, ReturnRecord, RecordedRefund, OriginalSale, RecordedReturn } from '../../pos/src/returns';
 import { project } from '../../inventory/src/index';
 import type { Movement, Availability, InventoryDeps } from '../../inventory/src/index';
 import type { MatchResult, BankChangeRequest, PurchaseDeps } from '../../purchase/src/index';
@@ -149,8 +150,10 @@ const forDriverRun = (driverId: string, runDate: string): string =>
   streamName(STREAM.delivery, driverId, runDate);
 const forLocation = (locationId: string): string => streamName(STREAM.reservations, locationId);
 const forInvoice = (invoiceId: string): string => streamName(STREAM.purchase, 'invoice', invoiceId);
+/** Returns hang off the sale they are against, so "what came back on this bill?" reads one stream. */
+const forSaleReturns = (saleId: string): string => streamName(STREAM.sales, 'return', saleId);
 
-export const STREAM_FOR = { forCustomer, forDriverRun, forLocation, forInvoice } as const;
+export const STREAM_FOR = { forCustomer, forDriverRun, forLocation, forInvoice, forSaleReturns } as const;
 
 export function catalogueAdapter(input: {
   readonly store: EventStore;
@@ -285,6 +288,63 @@ export function posAdapter(input: {
 
     openExceptions: async (tenantId) =>
       allOf<SaleException>(input.store, tenantId, STREAM.saleExceptions, 'SaleExceptionRaised'),
+  };
+}
+
+export function returnsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): ReturnsDeps {
+  // Both the return register and the refund history fold the SAME events — read once, project twice.
+  const records = (tenantId: string, saleId: string) =>
+    allOf<ReturnRecord>(input.store, tenantId, forSaleReturns(saleId), 'ReturnRecorded');
+
+  return {
+    now: input.now,
+
+    // The original bill, mapped from the SaleCommitted event to the shape the register reads. Found
+    // in one index hit on the sale's own key — the same key `bankSale` wrote and `isBanked` reads —
+    // rather than folding the sales stream, which the lane cannot afford (see `isBanked`).
+    originalSale: async (tenantId, saleId) => {
+      const held = await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${saleId}`);
+      if (held === undefined) return undefined;
+      const s = held.event.payload as IncomingSale;
+      return {
+        saleId: s.saleId,
+        number: s.receiptNumber,
+        tradingDay: s.tradingDay,
+        committedAt: s.committedAt,
+        totalMinor: s.totalMinor,
+        lines: s.lines.map((l) => ({ productId: l.productId, uom: l.uom, quantityMinor: l.quantityMinor })),
+        tenders: s.tenders.map((t) => ({ kind: t.kind, amountMinor: t.amountMinor })),
+      } satisfies OriginalSale;
+    },
+
+    priorReturns: async (tenantId, saleId) =>
+      (await records(tenantId, saleId)).map((r): RecordedReturn => ({
+        returnId: r.returnId,
+        originalSaleId: r.originalSaleId,
+        processedAt: r.processedAt,
+        lines: r.lines.map((l) => ({ productId: l.productId, uom: l.uom, quantityMinor: l.quantityMinor })),
+      })),
+
+    priorRefunds: async (tenantId, saleId) =>
+      (await records(tenantId, saleId)).map((r): RecordedRefund => ({
+        returnId: r.returnId, originalSaleId: r.originalSaleId, refundMinor: r.refundMinor,
+      })),
+
+    recordReturn: async (tenantId, saleId, record) => {
+      await input.store.append(tenantId, forSaleReturns(saleId), makeEvent({
+        id: `return-${record.returnId}`,
+        type: 'ReturnRecorded',
+        occurredAt: record.processedAt,
+        // The return's own id, no timestamp — a lane retrying an unconfirmed refund collapses to
+        // one, so the money leaves once however many times the till re-sends it.
+        idempotencyKey: `return-${tenantId}-${record.returnId}`,
+        source: 'api/pos',
+        payload: record,
+      }));
+    },
   };
 }
 
