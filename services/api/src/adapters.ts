@@ -30,6 +30,7 @@ import type { CashDeps, RecordedCashMovement } from '../../pos/src/cash';
 import type { StoredCashMovement } from '../../../packages/cash/src/index';
 import type { ShiftDeps, ClosedShiftRecord } from '../../pos/src/shift';
 import type { B2BCreditDeps, B2BAccount, RecordedReceivable } from '../../finance/src/b2b-credit';
+import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord } from '../../purchase/src/supplier-portal';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project } from '../../inventory/src/index';
@@ -169,6 +170,8 @@ const forDriverRun = (driverId: string, runDate: string): string =>
   streamName(STREAM.delivery, driverId, runDate);
 const forLocation = (locationId: string): string => streamName(STREAM.reservations, locationId);
 const forInvoice = (invoiceId: string): string => streamName(STREAM.purchase, 'invoice', invoiceId);
+/** Each supplier partner's portal config and submissions fold one stream — one partner, not the shop. */
+const forPortalPartner = (partnerId: string): string => streamName(STREAM.purchase, 'partner', partnerId);
 /** Returns hang off the sale they are against, so "what came back on this bill?" reads one stream. */
 const forSaleReturns = (saleId: string): string => streamName(STREAM.sales, 'return', saleId);
 /** Each till's cash chain folds one stream — its balance and custodian read one till, not the shop. */
@@ -773,6 +776,47 @@ export function purchaseAdapter(input: {
 
     // Not known, and not zero. See the note above.
     openCommitments: () => undefined,
+  };
+}
+
+export function supplierPortalAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): SupplierPortalDeps {
+  return {
+    now: input.now,
+
+    // The latest configuration applies — grants and compliance can change, folded to their newest set.
+    partner: async (tenantId, partnerId) =>
+      latest<PartnerConfig>(input.store, tenantId, forPortalPartner(partnerId), 'SupplierPartnerConfigured'),
+
+    submissions: async (tenantId, partnerId) =>
+      allOf<SubmissionRecord>(input.store, tenantId, forPortalPartner(partnerId), 'SupplierSubmissionReceived'),
+
+    recordPartner: async (tenantId, partnerId, config) => {
+      await input.store.append(tenantId, forPortalPartner(partnerId), makeEvent({
+        id: `portal-partner-${partnerId}-${config.grants.join('.')}-${config.compliant}`,
+        type: 'SupplierPartnerConfigured',
+        occurredAt: input.now(),
+        // Keyed on the configuration itself — re-sending the same grants+compliance collapses, a change
+        // is a new fact, and the latest applies.
+        idempotencyKey: `portal-partner-${tenantId}-${partnerId}-${config.grants.join('.')}-${config.compliant}`,
+        source: 'api/purchase',
+        payload: config,
+      }));
+    },
+
+    recordSubmission: async (tenantId, partnerId, record) => {
+      await input.store.append(tenantId, forPortalPartner(partnerId), makeEvent({
+        id: `portal-sub-${record.submissionId}`,
+        type: 'SupplierSubmissionReceived',
+        occurredAt: record.receivedAt,
+        // The submission's own id — a retried submission collapses rather than becoming a second one.
+        idempotencyKey: `portal-sub-${tenantId}-${record.submissionId}`,
+        source: 'api/purchase',
+        payload: record,
+      }));
+    },
   };
 }
 

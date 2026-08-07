@@ -296,6 +296,23 @@ completion template, observability, API surface + event contract tests, and the 
   clean additive slice; recorded here rather than forced._ Full gate green (typecheck, lint, secret-scan,
   build:api, **4,628 tests**).
 
+- **Done (this increment): the supplier portal — nothing a supplier submits takes effect on its own
+  (M24-FR-02, API-03).** `packages/supplier-portal` (the highest-risk surface — the one place a party
+  outside the business acts on the system) was another engine nothing fed on the cloud. Added a portal
+  route module (`services/purchase/src/supplier-portal.ts`): `POST /v1/supplier-portal/partners/:id`
+  configures a partner's grants + compliance; `…/submissions` runs the pure `acceptSubmission` — a
+  **catalogue/RFQ/claim lands `requiresReview`** for a buyer (§28, nothing auto-applies), an **ASN/invoice
+  needs the partner's grant and compliance** (still meeting M07 receiving/three-way-match downstream),
+  **another supplier's order is refused** (`not_your_order`), and a **retry is a `duplicate`** not a
+  second invoice; crucially the partner's grants come from its **stored config, never the payload**;
+  `GET …/submissions?review=true` is the buyer's queue. Proven through the real API + real RBAC in
+  `tests/integration/supplier-portal.test.ts` (5 cases). M24 → **PARTIALLY WIRED** (FR-02 submissions
+  wired; server-side scoping FR-01, compliance-at-action FR-03 and statement FR-04 still engine-only).
+  _M22-FR-04 dunning was a candidate but deferred: the AR ageing engine needs structured invoices with
+  due dates, while the just-wired B2B receivables are flat balance deltas — feeding it cleanly means a
+  structured-invoice model (a larger piece that revisits the credit slice), not a two-model hack._ Full
+  gate green (typecheck, lint, secret-scan, build:api, **4,633 tests**).
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in

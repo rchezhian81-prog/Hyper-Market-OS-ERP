@@ -36,6 +36,7 @@ import { pricingRoutes } from '../../pricing/src/index';
 import { posRoutes } from '../../pos/src/index';
 import { returnsRoutes } from '../../pos/src/returns';
 import { cashRoutes } from '../../pos/src/cash';
+import { supplierPortalRoutes } from '../../purchase/src/supplier-portal';
 import { shiftRoutes } from '../../pos/src/shift';
 import { storedValueRoutes } from '../../customer/src/stored-value';
 import { promotionRoutes } from '../../pricing/src/promotions';
@@ -55,7 +56,7 @@ import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, pricingAdapter, posAdapter, returnsAdapter, inventoryAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
-  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, cashAdapter, shiftAdapter, b2bCreditAdapter,
+  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, cashAdapter, shiftAdapter, b2bCreditAdapter, supplierPortalAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
@@ -125,6 +126,9 @@ export function buildSurface(deps: {
       matchLines: empty([]), recordCapture: () => {}, recordMatch: () => {}, applyBankChange: () => {},
       openCommitments: empty(undefined), now,
     } : purchaseAdapter({ store, now })),
+    ...supplierPortalRoutes(store === undefined ? {
+      partner: empty(undefined), submissions: empty([]), recordPartner: () => {}, recordSubmission: () => {}, now,
+    } : supplierPortalAdapter({ store, now })),
     ...inventoryRoutes(store === undefined ? {
       availability: empty([]), appendMovement: () => {}, isKnown: empty(false), now,
     } : inventoryAdapter({ store, now })),
