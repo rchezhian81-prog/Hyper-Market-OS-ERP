@@ -11,17 +11,54 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
-  acceptSubmission,
-  type PortalGrant, type SubmissionKind, type ComplianceCheck,
+  acceptSubmission, checkPartnerCompliance,
+  type PortalGrant, type SubmissionKind, type PartnerDocument, type PartnerDocumentKind,
 } from '../../../packages/supplier-portal/src/index';
+
+export type { PartnerDocument } from '../../../packages/supplier-portal/src/index';
 
 const GRANTS: readonly PortalGrant[] = ['view_orders', 'acknowledge_orders', 'submit_asn', 'submit_invoice', 'submit_catalogue', 'respond_rfq', 'raise_claim', 'view_statement'];
 const KINDS: readonly SubmissionKind[] = ['rfq_response', 'catalogue', 'asn', 'invoice', 'po_acknowledgement', 'claim'];
+const DOCUMENT_KINDS: readonly PartnerDocumentKind[] = ['fssai_licence', 'gst_registration', 'insurance', 'trade_licence', 'bank_mandate', 'quality_certificate'];
 
-/** A partner's portal configuration — what this supplier's login may submit, and whether compliant. */
+const isDate = (s: unknown): s is string => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00.000Z`));
+const isDateTime = (s: unknown): s is string => typeof s === 'string' && s.trim() !== '' && !Number.isNaN(Date.parse(s));
+const isStr = (s: unknown): s is string => typeof s === 'string' && s.trim() !== '';
+
+/**
+ * A partner's portal configuration — what this supplier's login may submit, the compliance documents
+ * it holds, and which document kinds this tenant requires before an action takes effect. Compliance is
+ * NO LONGER a stored boolean: it is derived at the moment of the action from these documents and their
+ * expiry, so a licence that lapsed after the config was set blocks the very next delivery (M24-FR-03).
+ */
 export interface PartnerConfig {
   readonly grants: readonly PortalGrant[];
-  readonly compliant: boolean;
+  readonly documents: readonly PartnerDocument[];
+  readonly requiredDocuments: readonly PartnerDocumentKind[];
+}
+
+/** Read a partner's documents from a payload, stamping the partner id from the PATH — never the body,
+ *  the same rule the rest of the portal applies (another supplier's documents are never cover). */
+function readDocuments(v: unknown, partnerId: string): readonly PartnerDocument[] | undefined {
+  if (v === undefined) return [];
+  if (!Array.isArray(v)) return undefined;
+  const out: PartnerDocument[] = [];
+  for (const raw of v) {
+    const d = raw as Record<string, unknown>;
+    if (!isStr(d['documentId']) || !DOCUMENT_KINDS.includes(d['kind'] as PartnerDocumentKind) || !isStr(d['reference'])
+      || !isDate(d['validFrom']) || !isDate(d['validUntil'])
+      || (d['verifiedBy'] !== undefined && !isStr(d['verifiedBy']))
+      || (d['verifiedAt'] !== undefined && !isDateTime(d['verifiedAt']))) {
+      return undefined;
+    }
+    out.push({
+      documentId: d['documentId'] as string, partnerId, kind: d['kind'] as PartnerDocumentKind,
+      reference: d['reference'] as string, validFrom: d['validFrom'] as string, validUntil: d['validUntil'] as string,
+      ...(isStr(d['verifiedBy']) ? { verifiedBy: d['verifiedBy'] } : {}),
+      ...(isDateTime(d['verifiedAt']) ? { verifiedAt: d['verifiedAt'] } : {}),
+    });
+  }
+  return out;
 }
 
 /** A submission as it is persisted — enough to list the review queue and refuse a duplicate. */
@@ -44,22 +81,27 @@ export interface SupplierPortalDeps {
 export function supplierPortalRoutes(deps: SupplierPortalDeps): readonly Route[] {
   return [
     {
-      // Configure a partner's portal grants and compliance. Latest configuration applies.
+      // Configure a partner's grants, compliance documents and the document kinds this tenant requires.
+      // Latest configuration applies. Compliance is derived at the action, not stored as a flag.
       api: 'API-03', method: 'POST', path: '/v1/supplier-portal/partners/:partnerId',
       permission: 'supplier.portal.manage', idempotent: true,
       handler: async (ctx) => {
         const partnerId = ctx.params['partnerId'] ?? '';
-        const b = (ctx.body ?? {}) as { grants?: unknown; compliant?: unknown };
-        if (!Array.isArray(b.grants) || !b.grants.every((g) => (GRANTS as readonly string[]).includes(g as string)) || typeof b.compliant !== 'boolean') {
+        const b = (ctx.body ?? {}) as { grants?: unknown; documents?: unknown; requiredDocuments?: unknown };
+        const documents = readDocuments(b.documents, partnerId);
+        if (!Array.isArray(b.grants) || !b.grants.every((g) => (GRANTS as readonly string[]).includes(g as string))
+          || documents === undefined
+          || (b.requiredDocuments !== undefined && (!Array.isArray(b.requiredDocuments) || !b.requiredDocuments.every((k) => DOCUMENT_KINDS.includes(k as PartnerDocumentKind))))) {
           throw apiError(400, {
             code: 'not_readable_as_a_partner',
-            whatHappened: 'A partner needs a list of valid portal grants and a compliant flag.',
+            whatHappened: 'A partner needs a list of valid portal grants, optional compliance documents ({ documentId, kind, reference, validFrom, validUntil, verifiedBy? }) and the document kinds it requires.',
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Send { "grants": [...], "compliant": true|false }. Nothing was configured.',
+            nextSafeAction: 'Send { "grants": [...], "documents": [...], "requiredDocuments": [...] }. Nothing was configured.',
           });
         }
-        await deps.recordPartner(ctx.tenantId, partnerId, { grants: b.grants as PortalGrant[], compliant: b.compliant }, deps.now());
-        return { status: 201, body: { partnerId, grants: b.grants, compliant: b.compliant } };
+        const requiredDocuments = (b.requiredDocuments as PartnerDocumentKind[] | undefined) ?? [];
+        await deps.recordPartner(ctx.tenantId, partnerId, { grants: b.grants as PortalGrant[], documents, requiredDocuments }, deps.now());
+        return { status: 201, body: { partnerId, grants: b.grants, documents: documents.length, requiredDocuments } };
       },
     },
     {
@@ -84,11 +126,12 @@ export function supplierPortalRoutes(deps: SupplierPortalDeps): readonly Route[]
         if (config === undefined) throw notFound(`supplier-portal partner ${partnerId}`);
         const prior = await deps.submissions(ctx.tenantId, partnerId);
 
-        const compliance: ComplianceCheck = {
-          partnerId, compliant: config.compliant, documents: [],
-          blocking: config.compliant ? [] : ['gst_registration'],
-          detail: config.compliant ? 'all required documents valid' : 'a required document is missing or expired',
-        };
+        // Compliance AT THE ACTION (M24-FR-03): the partner's real documents checked against today, so a
+        // licence that expired after the config was set blocks this submission. An unverified document
+        // counts as missing; an expiring-but-valid one warns without blocking.
+        const compliance = checkPartnerCompliance({
+          partnerId, documents: config.documents, required: config.requiredDocuments, today: deps.now().slice(0, 10),
+        });
         const result = acceptSubmission({
           submissionId: b.submissionId,
           session: { sessionId: `portal-${partnerId}`, partnerId, tenantId: ctx.tenantId, userId: ctx.userId, grants: config.grants },
@@ -127,6 +170,23 @@ export function supplierPortalRoutes(deps: SupplierPortalDeps): readonly Route[]
           status: 200,
           body: { partnerId, submissions: rows.map((s) => ({ submissionId: s.submissionId, kind: s.kind, requiresReview: s.requiresReview, receivedAt: s.receivedAt })), asAt: deps.now() },
         };
+      },
+    },
+    {
+      // Why a partner can (or cannot) trade, checked against a date — so a buyer sees the expiring
+      // document to chase BEFORE it blocks a delivery, not the block after. `?asOf=` defaults to today.
+      api: 'API-03', method: 'GET', path: '/v1/supplier-portal/partners/:partnerId/compliance',
+      permission: 'supplier.portal.review',
+      handler: async (ctx) => {
+        const partnerId = ctx.params['partnerId'] ?? '';
+        const asOf = ctx.query['asOf'];
+        if (asOf !== undefined && !isDate(asOf)) throw apiError(400, { code: 'compliance_needs_a_valid_date', whatHappened: 'The compliance check needs ?asOf=YYYY-MM-DD, or none to use today.', wasItSaved: 'not_saved', nextSafeAction: 'Send a valid date or omit it. A check reads, it never writes.' });
+        const config = await deps.partner(ctx.tenantId, partnerId);
+        if (config === undefined) throw notFound(`supplier-portal partner ${partnerId}`);
+        const check = checkPartnerCompliance({
+          partnerId, documents: config.documents, required: config.requiredDocuments, today: isDate(asOf) ? asOf : deps.now().slice(0, 10),
+        });
+        return { status: 200, body: check };
       },
     },
   ];

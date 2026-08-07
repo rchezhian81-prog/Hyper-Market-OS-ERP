@@ -28,7 +28,7 @@ describe('nothing a supplier submits takes effect on its own (M24-FR-02, API-03)
   it('queues a catalogue for review and accepts an invoice for downstream matching', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
-    await configPartner(h, A, 'u-owner', 'SUP1', { grants: GRANTS, compliant: true });
+    await configPartner(h, A, 'u-owner', 'SUP1', { grants: GRANTS });
 
     // A catalogue is a proposal — it lands for review, it does not become the price list.
     expect(((await submit(h, A, 'u-owner', 'SUP1', { submissionId: 's-cat', kind: 'catalogue' })).body as Sub).requiresReview).toBe(true);
@@ -45,14 +45,14 @@ describe('nothing a supplier submits takes effect on its own (M24-FR-02, API-03)
   it('refuses a submission the partner has no grant for', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
-    await configPartner(h, A, 'u-owner', 'SUP1', { grants: GRANTS, compliant: true }); // no respond_rfq
+    await configPartner(h, A, 'u-owner', 'SUP1', { grants: GRANTS }); // no respond_rfq
     expect(codeOf(await submit(h, A, 'u-owner', 'SUP1', { submissionId: 's-rfq', kind: 'rfq_response' }))).toBe('no_grant');
   });
 
   it('refuses a duplicate submission and another supplier\'s order', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
-    await configPartner(h, A, 'u-owner', 'SUP1', { grants: GRANTS, compliant: true });
+    await configPartner(h, A, 'u-owner', 'SUP1', { grants: GRANTS });
 
     expect((await submit(h, A, 'u-owner', 'SUP1', { submissionId: 's-asn', kind: 'asn' })).status).toBe(201);
     // A retried submission (new transport key) is a duplicate, not a second ASN.
@@ -64,7 +64,8 @@ describe('nothing a supplier submits takes effect on its own (M24-FR-02, API-03)
   it('refuses an invoice from a non-compliant supplier', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
-    await configPartner(h, A, 'u-owner', 'SUP2', { grants: ['submit_invoice'], compliant: false });
+    // Requires a GST registration it does not hold → not compliant, checked at the action.
+    await configPartner(h, A, 'u-owner', 'SUP2', { grants: ['submit_invoice'], requiredDocuments: ['gst_registration'] });
     expect(codeOf(await submit(h, A, 'u-owner', 'SUP2', { submissionId: 's-inv', kind: 'invoice' }))).toBe('not_compliant');
   });
 
@@ -72,9 +73,9 @@ describe('nothing a supplier submits takes effect on its own (M24-FR-02, API-03)
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     await h.provisionRole(A, 'u-cash', 'cashier'); // a cashier does not operate the supplier portal
-    await configPartner(h, A, 'u-owner', 'SUP1', { grants: GRANTS, compliant: true });
+    await configPartner(h, A, 'u-owner', 'SUP1', { grants: GRANTS });
 
-    expect((await configPartner(h, A, 'u-cash', 'SUP9', { grants: GRANTS, compliant: true })).status).toBe(403);
+    expect((await configPartner(h, A, 'u-cash', 'SUP9', { grants: GRANTS })).status).toBe(403);
     expect((await submit(h, A, 'u-cash', 'SUP1', { submissionId: 'sx', kind: 'invoice' })).status).toBe(403);
     // A partner never configured has no grants — a submission is a 404, not a guess.
     expect((await submit(h, A, 'u-owner', 'GHOST', { submissionId: 'sy', kind: 'invoice' })).status).toBe(404);
