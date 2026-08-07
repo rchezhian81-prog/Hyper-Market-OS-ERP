@@ -55,6 +55,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'reconciliation', label: 'Reconciliation', path: '/reconciliation', requires: 'reconciliation.view', group: 'Finance' },
 
   { id: 'users', label: 'Users & roles', path: '/admin/users', requires: 'admin.users.manage', group: 'Administration' },
+  { id: 'store-setup', label: 'Store setup', path: '/admin/setup', requires: 'platform.setup.read', group: 'Administration' },
   { id: 'settings', label: 'Settings', path: '/admin/settings', requires: 'admin.settings.manage', group: 'Administration' },
   { id: 'audit', label: 'Audit log', path: '/admin/audit', requires: 'audit.view', group: 'Administration' },
 ]);
