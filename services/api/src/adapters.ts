@@ -36,6 +36,7 @@ import type { ScrapDeps, ScrapSale } from '../../finance/src/scrap';
 import type { FacilitiesDeps, MaintenanceSchedule, ScheduledTask, SafetyIncident } from '../../platform/src/facilities';
 import type { FacilitiesAssetsDeps, Asset, ServiceLog, DowntimeEvent, EnergyReading } from '../../platform/src/facilities-assets';
 import type { FacilitiesMonitoringDeps, EquipmentRangeReg, EquipmentContents, EquipmentReading, PowerEvent } from '../../platform/src/facilities-monitoring';
+import type { PackagingDeps, PackagingItem, PackagingMovement } from '../../inventory/src/packaging';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project } from '../../inventory/src/index';
@@ -98,6 +99,7 @@ export const STREAM = {
   concession: 'concession',
   scrap: 'scrap',
   facilities: 'facilities',
+  packaging: 'packaging',
 } as const;
 
 const payloadOf = <T>(e: PersistedEvent): T => e.event.payload as T;
@@ -190,6 +192,8 @@ const SHIFTS_STREAM = streamName(STREAM.cash, 'shifts');
 const forB2BCustomer = (customerId: string): string => streamName(STREAM.b2b, customerId);
 /** Each concession contract's terms and sales fold one stream — one counter, not the shop. */
 const forConcession = (contractId: string): string => streamName(STREAM.concession, contractId);
+/** Each packaging item's registration and movements fold one stream — one item, not every crate. */
+const forPackaging = (packagingId: string): string => streamName(STREAM.packaging, packagingId);
 
 export const STREAM_FOR = { forCustomer, forDriverRun, forLocation, forInvoice, forSaleReturns } as const;
 
@@ -829,6 +833,50 @@ export function facilitiesMonitoringAdapter(input: {
         idempotencyKey: `fac-power-${tenantId}-${event.eventId}`,
         source: 'api/platform',
         payload: event,
+      }));
+    },
+  };
+}
+
+export function packagingAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): PackagingDeps {
+  // Each packaging item folds its own stream: the latest registration of the item, and every movement
+  // deduped on its own id. Nothing is stored as a balance — the position is projected on read (#2).
+  return {
+    now: input.now,
+
+    item: async (tenantId, packagingId) =>
+      latest<PackagingItem>(input.store, tenantId, forPackaging(packagingId), 'PackagingItemRegistered'),
+
+    movements: async (tenantId, packagingId) => {
+      const all = await allOf<PackagingMovement>(input.store, tenantId, forPackaging(packagingId), 'PackagingMoved');
+      const byId = new Map<string, PackagingMovement>();
+      for (const m of all) byId.set(m.movementId, m); // a re-sent movement collapses, never doubles
+      return [...byId.values()];
+    },
+
+    registerItem: async (tenantId, item) => {
+      await input.store.append(tenantId, forPackaging(item.packagingId), makeEvent({
+        id: `pkg-item-${item.packagingId}`,
+        type: 'PackagingItemRegistered',
+        occurredAt: input.now(),
+        // Keyed on the fields that matter so restating collapses and a change is a new fact.
+        idempotencyKey: `pkg-item-${tenantId}-${item.packagingId}-${item.kind}-${item.returnable}-${item.chargeMinor ?? 'free'}-${item.taxRateBps ?? 'none'}-${item.depositMinor ?? 'none'}`,
+        source: 'api/inventory',
+        payload: item,
+      }));
+    },
+
+    recordMovement: async (tenantId, movement) => {
+      await input.store.append(tenantId, forPackaging(movement.packagingId), makeEvent({
+        id: `pkg-mov-${movement.movementId}`,
+        type: 'PackagingMoved',
+        occurredAt: movement.at,
+        idempotencyKey: `pkg-mov-${tenantId}-${movement.movementId}`,
+        source: 'api/inventory',
+        payload: movement,
       }));
     },
   };

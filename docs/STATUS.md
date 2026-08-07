@@ -447,6 +447,25 @@ completion template, observability, API surface + event contract tests, and the 
   refusal-audit/probe-pattern `auditPartnerAction`/`findProbing` still engine-only). Full gate green
   (typecheck, lint, secret-scan, build:api, audit, **4,669 tests**).
 
+- **Done (this increment): packaging back-office — crates circulate, bags are gone, a negative is
+  evidence (M28-FR-03, API-04).** The packaging stock/circulation half of `packages/waste/src/packaging.ts`
+  is now on the cloud, hosted in `services/inventory/src/packaging.ts`: `POST /v1/packaging/items/:id`
+  registers a packaging item (name, kind, returnable, and the charge/tax that feed the price pack),
+  `…/movements/:mid` records a received / issued_to_customer / issued_to_delivery / returned /
+  written_off movement (a write-off is a **compensating movement, never a deletion** — #2), and
+  `GET …/position?branchId=` runs the pure `projectPackaging`. The number worth having is
+  **inCirculation**: a returnable crate that went out with a delivery and never came back, with a loss
+  rate — a shop that treats crates as consumed buys the same 400 every year and never asks the question.
+  And a negative on-hand is **reported NEGATIVE, not clamped to zero**, because bags going out with none
+  recorded in is the evidence that a goods-in was never entered, and clamping destroys it. **The carry-bag
+  CHARGE itself is NOT here** — a charge is a priced line the lane computes from the price pack it already
+  holds so it works with the internet down (hard rule #1); `chargeForBags` is the lane's, not a cloud
+  call. Reuses `inventory.movement.append` / `inventory.availability.read`; cashier refused. Proven
+  through the real API + real RBAC in `tests/integration/packaging.test.ts` (4 cases). M28 → **PARTIALLY
+  WIRED** (scrap FR-02 + packaging FR-03 wired; write-off FR-01 deferred-as-a-duplicate and
+  reporting-coverage FR-04 still engine-only). Full gate green (typecheck, lint, secret-scan, build:api,
+  audit, **4,673 tests**).
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in

@@ -48,6 +48,7 @@ import { facilitiesRoutes } from '../../platform/src/facilities';
 import { facilitiesAssetsRoutes } from '../../platform/src/facilities-assets';
 import { facilitiesMonitoringRoutes } from '../../platform/src/facilities-monitoring';
 import { inventoryRoutes } from '../../inventory/src/index';
+import { packagingRoutes } from '../../inventory/src/packaging';
 import { identityRoutes, tokenAuthenticator } from '../../identity/src/index';
 import { platformRoutes, inMemorySettings } from '../../platform/src/index';
 import { purchaseRoutes } from '../../purchase/src/index';
@@ -59,7 +60,7 @@ import { fulfilmentRoutes } from '../../fulfilment/src/index';
 import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
-  catalogueAdapter, pricingAdapter, posAdapter, returnsAdapter, inventoryAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
+  catalogueAdapter, pricingAdapter, posAdapter, returnsAdapter, inventoryAdapter, packagingAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, cashAdapter, shiftAdapter, b2bCreditAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter,
 } from './adapters';
@@ -138,6 +139,9 @@ export function buildSurface(deps: {
     ...inventoryRoutes(store === undefined ? {
       availability: empty([]), appendMovement: () => {}, isKnown: empty(false), now,
     } : inventoryAdapter({ store, now })),
+    ...packagingRoutes(store === undefined ? {
+      item: empty(undefined), movements: empty([]), registerItem: () => {}, recordMovement: () => {}, now,
+    } : packagingAdapter({ store, now })),
     ...posRoutes(store === undefined ? {
       catalogue: empty(new Map()), currentPackVersion: empty(1),
       saleHoldingReceipt: empty(undefined), isBanked: empty(false),
