@@ -5,3 +5,4 @@
 
 export * from './receipt';
 export * from './escpos';
+export * from './presets';
