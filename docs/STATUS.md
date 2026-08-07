@@ -48,9 +48,19 @@ with this one.
   DB-gated app→API→authorization→ledger check. A regression guard forbids the empty AccessControl
   returning. Full gate green (typecheck, lint, secret-scan, build, **4,248 tests**).
 
-**Next, continuing automatically:** Phase 2 (E2E framework + local/test IdP adapter + contract tests +
-observability + module completion template + CI gate against engine-only-labelled-complete), then
-Phase 3 assembly in the dependency order in the recovery plan. Owner-only blockers are consolidated in
+**Phase 2 (E2E + assembly foundation) — in progress:**
+- **Done (this increment):** a reusable **E2E harness** (`tests/support/api-harness.ts`) that composes
+  the real surface, real token verifier and real per-tenant authorization the way `main()` does, with
+  tenant/user fixtures; a standards-compliant **local/test IdP** (`tests/support/local-idp.ts`, HS256)
+  that stands in for a production IdP (OA-4) and lives OUTSIDE production, guarded so no service/app/
+  edge can import the minting capability; the authorization E2E refactored onto the harness; and the
+  mandatory **`docs/MODULE-COMPLETION-TEMPLATE.md`**.
+- **Still in Phase 2:** API/event contract tests; observability (structured logs + correlation IDs +
+  metrics + traces + health); and a CI gate that blocks labelling an engine-only module "complete".
+
+**Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
+tested domain engines (one authoritative implementation per domain), each module driven up the
+completion ladder with the template above. Owner-only blockers are consolidated in
 `docs/OWNER-ACTION-REGISTER.md` and do not stop other work.
 
 ---
