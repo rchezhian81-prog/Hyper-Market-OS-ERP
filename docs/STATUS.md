@@ -338,6 +338,24 @@ completion template, observability, API surface + event contract tests, and the 
   WIRED** (scrap FR-02 wired; write-off FR-01, packaging FR-03 and reporting-coverage FR-04 still
   engine-only). Full gate green (typecheck, lint, secret-scan, build:api, **4,643 tests**).
 
+- **Done (this increment): facilities schedules — a hollow tick is refused, a compliance miss escalates
+  itself (M26-FR-03, API-11).** `packages/facilities` (another unfed engine) is now on the cloud
+  (`services/platform/src/facilities.ts`): `POST /v1/facilities/schedules/:id` defines a cleaning /
+  pest / fire / electrical / statutory schedule, `…/tasks/:taskId` raises a due instance, and
+  `…/tasks/:taskId/complete` runs the pure `assessCompletion` — a completion **without required
+  evidence is REFUSED** (`evidence_missing`; an accepted-with-a-note task shows green, and green is what
+  everybody reads), a safety check with no second verifier is `not_verified`, and a self-verified one is
+  `self_verified` (§28). `GET /v1/facilities/overdue` escalates a **compliance-linked miss by itself**
+  (`compliance_risk` for fire/pest/electrical/statutory) while cleaning is `escalated` at most — so the
+  fire check is never buried among forty mop-the-aisle alerts. Proven through the real API + real RBAC in
+  `tests/integration/facilities-schedules.test.ts` (4 cases). M26 → **PARTIALLY WIRED** (schedules FR-03
+  wired; assets/downtime FR-01, cold-chain/power FR-02 and incidents/evidence-pack still engine-only).
+  _M28-FR-01 write-off was a candidate but deferred: `commitWriteOff` appends a compensating STOCK
+  movement, which `services/inventory` already wires as a §28-guarded `wasted` movement — wiring it
+  separately would create a second stock-write-off truth (loss-type/evidence/finance-valuation are
+  additive enrichments of that one movement, not a clean separate wire)._ Full gate green (typecheck,
+  lint, secret-scan, build:api, **4,647 tests**).
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in
