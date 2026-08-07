@@ -466,6 +466,26 @@ completion template, observability, API surface + event contract tests, and the 
   reporting-coverage FR-04 still engine-only). Full gate green (typecheck, lint, secret-scan, build:api,
   audit, **4,673 tests**).
 
+- **Done (this increment): waste & sustainability reporting — coverage on the face of the number, a fall
+  in recording is not a fall in waste (M28-FR-04, API-04).** The last waste engine
+  (`packages/waste/src/sustainability.ts`) is now on the cloud, hosted in `services/inventory/src/waste.ts`:
+  `POST /v1/waste/records/:id` logs a valued, sourced (expiry/damage/shrinkage/…), disposal-tagged waste
+  unit; `POST /v1/waste/coverage` sets which departments are EXPECTED to report (the denominator, without
+  which a report cannot tell a quiet department from a clean one); `GET /v1/waste/report` runs
+  `buildSustainabilityReport` and `GET /v1/waste/compare` runs `compareWaste`. The failure mode this
+  exists to catch: a store reports "waste down 18%" and waste is not down — RECORDING is down, the one
+  manager who logged every damaged crate went on leave. So **coverage sits on the FACE of the report**,
+  and below 80% the total is `not_comparable` **in those words** with the silent departments NAMED; the
+  comparison **refuses to call a fall an improvement when coverage moved** ("we CANNOT tell"). Waste is
+  valued and broken down by source and by department, with a landfill-diversion rate on weighed waste.
+  A **store-staff record vs an accountant read split**: recording uses `inventory.movement.append`
+  (store_manager/owner), reading uses `reporting.report.read` (adds the accountant) — an accountant reads
+  the report but cannot log waste, a cashier does neither. Proven through the real API + real RBAC in
+  `tests/integration/waste-reporting.test.ts` (4 cases). M28 → **PARTIALLY WIRED** (scrap FR-02 +
+  packaging FR-03 + waste-reporting FR-04 wired; only write-off FR-01, deferred-as-a-duplicate of the
+  §28-guarded `wasted` movement in `services/inventory`, remains). Full gate green (typecheck, lint,
+  secret-scan, build:api, audit, **4,677 tests**).
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in

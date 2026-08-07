@@ -37,6 +37,7 @@ import type { FacilitiesDeps, MaintenanceSchedule, ScheduledTask, SafetyIncident
 import type { FacilitiesAssetsDeps, Asset, ServiceLog, DowntimeEvent, EnergyReading } from '../../platform/src/facilities-assets';
 import type { FacilitiesMonitoringDeps, EquipmentRangeReg, EquipmentContents, EquipmentReading, PowerEvent } from '../../platform/src/facilities-monitoring';
 import type { PackagingDeps, PackagingItem, PackagingMovement } from '../../inventory/src/packaging';
+import type { WasteDeps, WasteRecord, WasteCoverage } from '../../inventory/src/waste';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project } from '../../inventory/src/index';
@@ -100,6 +101,7 @@ export const STREAM = {
   scrap: 'scrap',
   facilities: 'facilities',
   packaging: 'packaging',
+  waste: 'waste',
 } as const;
 
 const payloadOf = <T>(e: PersistedEvent): T => e.event.payload as T;
@@ -877,6 +879,51 @@ export function packagingAdapter(input: {
         idempotencyKey: `pkg-mov-${tenantId}-${movement.movementId}`,
         source: 'api/inventory',
         payload: movement,
+      }));
+    },
+  };
+}
+
+export function wasteAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): WasteDeps {
+  // Waste is low-to-moderate volume (losses logged by department), so it folds one tenant stream: every
+  // waste record deduped on its own id, and the latest coverage expectation. Nothing is a stored total —
+  // the report is projected on read, with its coverage derived the same way (#2, P-08).
+  return {
+    now: input.now,
+
+    records: async (tenantId) => {
+      const all = await allOf<WasteRecord>(input.store, tenantId, STREAM.waste, 'WasteRecorded');
+      const byId = new Map<string, WasteRecord>();
+      for (const r of all) byId.set(r.wasteId, r);
+      return [...byId.values()];
+    },
+
+    coverage: async (tenantId) =>
+      (await latest<WasteCoverage>(input.store, tenantId, STREAM.waste, 'WasteCoverageSet')) ?? { expected: [], departmentNames: {} },
+
+    recordWaste: async (tenantId, record) => {
+      await input.store.append(tenantId, STREAM.waste, makeEvent({
+        id: `waste-${record.wasteId}`,
+        type: 'WasteRecorded',
+        occurredAt: record.at,
+        idempotencyKey: `waste-${tenantId}-${record.wasteId}`,
+        source: 'api/inventory',
+        payload: record,
+      }));
+    },
+
+    recordCoverage: async (tenantId, coverage) => {
+      await input.store.append(tenantId, STREAM.waste, makeEvent({
+        id: `waste-coverage-${coverage.expected.length}`,
+        type: 'WasteCoverageSet',
+        occurredAt: input.now(),
+        // Keyed on the expected set so re-sending the same expectation collapses, a change is a new fact.
+        idempotencyKey: `waste-coverage-${tenantId}-${coverage.expected.map((e) => `${e.branchId}:${e.departmentId}`).sort().join(',')}`,
+        source: 'api/inventory',
+        payload: coverage,
       }));
     },
   };
