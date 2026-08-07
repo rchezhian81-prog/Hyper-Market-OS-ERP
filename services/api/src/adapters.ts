@@ -34,6 +34,7 @@ import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord } from '../../
 import type { ConcessionDeps, ConcessionContract, ConcessionSale } from '../../finance/src/concession';
 import type { ScrapDeps, ScrapSale } from '../../finance/src/scrap';
 import type { FacilitiesDeps, MaintenanceSchedule, ScheduledTask } from '../../platform/src/facilities';
+import type { FacilitiesAssetsDeps, Asset, ServiceLog, DowntimeEvent, EnergyReading } from '../../platform/src/facilities-assets';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project } from '../../inventory/src/index';
@@ -637,6 +638,90 @@ export function facilitiesAdapter(input: {
         idempotencyKey: `fac-task-done-${tenantId}-${task.taskId}`,
         source: 'api/platform',
         payload: task,
+      }));
+    },
+  };
+}
+
+export function facilitiesAssetsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): FacilitiesAssetsDeps {
+  // Assets, their service history, their downtime and their energy — all low-volume, all folded from
+  // the one facilities stream by event type. An asset is the latest set of it; a downtime event is the
+  // latest set of it (recording the restore supersedes the open record, so it is not counted twice);
+  // services and readings each dedupe on their own id via the append's idempotency key.
+  return {
+    now: input.now,
+
+    assets: async (tenantId) => {
+      const all = await allOf<Asset>(input.store, tenantId, STREAM.facilities, 'FacilitiesAssetSet');
+      const byId = new Map<string, Asset>();
+      for (const a of all) byId.set(a.assetId, a); // later set wins
+      return [...byId.values()];
+    },
+
+    services: async (tenantId) => {
+      const all = await allOf<ServiceLog>(input.store, tenantId, STREAM.facilities, 'FacilitiesServiceLogged');
+      const byId = new Map<string, ServiceLog>();
+      for (const s of all) byId.set(s.serviceId, s);
+      return [...byId.values()];
+    },
+
+    downtime: async (tenantId) => {
+      const all = await allOf<DowntimeEvent>(input.store, tenantId, STREAM.facilities, 'FacilitiesDowntimeRecorded');
+      const byId = new Map<string, DowntimeEvent>();
+      for (const d of all) byId.set(d.eventId, d); // the restore record supersedes the open one
+      return [...byId.values()];
+    },
+
+    energyReadings: async (tenantId) =>
+      allOf<EnergyReading>(input.store, tenantId, STREAM.facilities, 'FacilitiesEnergyReading'),
+
+    recordAsset: async (tenantId, asset) => {
+      await input.store.append(tenantId, STREAM.facilities, makeEvent({
+        id: `fac-asset-${asset.assetId}`,
+        type: 'FacilitiesAssetSet',
+        occurredAt: input.now(),
+        // Keyed on the fields that matter — restating the same asset collapses, a change (renewed AMC,
+        // new criticality, retired) is a new fact.
+        idempotencyKey: `fac-asset-${tenantId}-${asset.assetId}-${asset.criticality}-${asset.amcUntil ?? 'none'}-${asset.warrantyUntil ?? 'none'}-${asset.serviceEveryDays ?? 'none'}-${asset.protectsValueMinor ?? 'none'}-${asset.active}`,
+        source: 'api/platform',
+        payload: asset,
+      }));
+    },
+
+    recordService: async (tenantId, service) => {
+      await input.store.append(tenantId, STREAM.facilities, makeEvent({
+        id: `fac-service-${service.serviceId}`,
+        type: 'FacilitiesServiceLogged',
+        occurredAt: input.now(),
+        idempotencyKey: `fac-service-${tenantId}-${service.serviceId}`,
+        source: 'api/platform',
+        payload: service,
+      }));
+    },
+
+    recordDowntime: async (tenantId, event) => {
+      await input.store.append(tenantId, STREAM.facilities, makeEvent({
+        id: `fac-downtime-${event.eventId}-${event.restoredAt ?? 'open'}`,
+        type: 'FacilitiesDowntimeRecorded',
+        occurredAt: input.now(),
+        // Open and restored are two facts about one event; the reader keeps the later by eventId.
+        idempotencyKey: `fac-downtime-${tenantId}-${event.eventId}-${event.restoredAt ?? 'open'}`,
+        source: 'api/platform',
+        payload: event,
+      }));
+    },
+
+    recordEnergy: async (tenantId, readingId, reading) => {
+      await input.store.append(tenantId, STREAM.facilities, makeEvent({
+        id: `fac-energy-${readingId}`,
+        type: 'FacilitiesEnergyReading',
+        occurredAt: input.now(),
+        idempotencyKey: `fac-energy-${tenantId}-${readingId}`,
+        source: 'api/platform',
+        payload: reading,
       }));
     },
   };
