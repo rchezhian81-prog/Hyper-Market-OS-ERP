@@ -31,7 +31,8 @@ import { project } from '../../inventory/src/index';
 import type { Movement, Availability, InventoryDeps } from '../../inventory/src/index';
 import type { MatchResult, BankChangeRequest, PurchaseDeps } from '../../purchase/src/index';
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
-import type { ConsentRecord, CustomerDeps } from '../../customer/src/index';
+import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
+import type { StoredPointsMovement } from '../../../packages/loyalty/src/assess-points';
 import { expired } from '../../orders/src/index';
 import type { Reservation, OrdersDeps } from '../../orders/src/index';
 import type { DeliveryAttempt, FulfilmentDeps } from '../../fulfilment/src/index';
@@ -77,6 +78,7 @@ export const STREAM = {
   ai: 'ai',
   pricing: 'pricing',
   settlement: 'settlement',
+  loyalty: 'loyalty',
 } as const;
 
 const payloadOf = <T>(e: PersistedEvent): T => e.event.payload as T;
@@ -148,6 +150,8 @@ function streamName(...parts: readonly string[]): string {
 }
 
 const forCustomer = (customerId: string): string => streamName(STREAM.consent, customerId);
+/** Points hang off the customer they belong to, so one customer's balance folds one stream. */
+const forCustomerPoints = (customerId: string): string => streamName(STREAM.loyalty, customerId);
 const forDriverRun = (driverId: string, runDate: string): string =>
   streamName(STREAM.delivery, driverId, runDate);
 const forLocation = (locationId: string): string => streamName(STREAM.reservations, locationId);
@@ -722,9 +726,30 @@ export function customerAdapter(input: {
       }));
     },
 
-    // Not known, and not zero — the route already tells the counter which of the two it got.
-    // Loyalty accrual (M14) does not post to this API yet.
-    pointsBalance: () => undefined,
+    // Not known, and not zero. A customer with no movement at all has no loyalty account here and
+    // the balance is UNKNOWN; a customer whose movements net to zero has a real zero. The route
+    // tells the counter which of the two it got, so the distinction is preserved through the fold.
+    pointsBalance: async (tenantId, customerId) => {
+      const moves = await allOf<RecordedPointsMovement>(input.store, tenantId, forCustomerPoints(customerId), 'PointsMovement');
+      return moves.length === 0 ? undefined : moves.reduce((b, m) => b + m.delta, 0);
+    },
+
+    pointsMovements: async (tenantId, customerId) =>
+      (await allOf<RecordedPointsMovement>(input.store, tenantId, forCustomerPoints(customerId), 'PointsMovement'))
+        .map((m): StoredPointsMovement => ({ movementId: m.movementId, customerId: m.customerId, delta: m.delta })),
+
+    recordPointsMovement: async (tenantId, customerId, m) => {
+      await input.store.append(tenantId, forCustomerPoints(customerId), makeEvent({
+        id: `points-${m.movementId}`,
+        type: 'PointsMovement',
+        occurredAt: m.at,
+        // The movement's own id, no timestamp — a lane retrying an unconfirmed burn collapses to one,
+        // so points leave once however many times the till re-sends it.
+        idempotencyKey: `points-${tenantId}-${m.movementId}`,
+        source: 'api/customer',
+        payload: m,
+      }));
+    },
   };
 }
 

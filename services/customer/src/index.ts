@@ -11,6 +11,17 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
+import { assessPointsMovement, type PointsKind, type StoredPointsMovement } from '../../../packages/loyalty/src/assess-points';
+
+/** A points movement as it is persisted — a signed delta, the reason, and where it came from. */
+export interface RecordedPointsMovement {
+  readonly movementId: string;
+  readonly customerId: string;
+  readonly delta: number;
+  readonly reason: PointsKind;
+  readonly sourceRef: string | null;
+  readonly at: string;
+}
 
 export type ConsentPurpose = 'transactional' | 'marketing' | 'profiling' | 'third_party';
 export type Channel = 'whatsapp' | 'sms' | 'email' | 'push' | 'post';
@@ -98,6 +109,10 @@ export interface CustomerDeps {
   readonly consentRecords: (tenantId: string, customerId: string) => Promise<readonly ConsentRecord[]> | readonly ConsentRecord[];
   readonly appendConsent: (tenantId: string, r: ConsentRecord) => Promise<void> | void;
   readonly pointsBalance: (tenantId: string, customerId: string) => Promise<number | undefined> | number | undefined;
+  /** Every points movement for a customer, for the burn guard (the balance is their sum). */
+  readonly pointsMovements: (tenantId: string, customerId: string) => Promise<readonly StoredPointsMovement[]> | readonly StoredPointsMovement[];
+  /** Append a points movement. Idempotent on the movement id. */
+  readonly recordPointsMovement: (tenantId: string, customerId: string, m: RecordedPointsMovement) => Promise<void> | void;
   readonly now: () => string;
 }
 
@@ -161,6 +176,46 @@ export function customerRoutes(deps: CustomerDeps): readonly Route[] {
           status: 200,
           body: { pointsBalance: balance, known: balance !== undefined, asAt: deps.now() },
         };
+      },
+    },
+    {
+      // Earn, burn or reverse points (M17-FR-01). Points are money-like: the balance is projected
+      // from these movements, never stored, and a burn can never take it below zero. The cloud is
+      // the authoritative balance across every lane and channel (P-02) — an offline lane's cap is a
+      // safeguard, not the truth.
+      api: 'API-06', method: 'POST', path: '/v1/customers/:customerId/points',
+      permission: 'loyalty.points.write', idempotent: true,
+      handler: async (ctx) => {
+        const customerId = ctx.params['customerId'] ?? '';
+        const b = (ctx.body ?? {}) as { movementId?: unknown; kind?: unknown; points?: unknown; sourceRef?: unknown };
+        const kinds: readonly PointsKind[] = ['earn', 'burn', 'reversal'];
+        if (typeof b.movementId !== 'string' || b.movementId.trim() === ''
+          || typeof b.kind !== 'string' || !kinds.includes(b.kind as PointsKind)
+          || typeof b.points !== 'number') {
+          throw apiError(400, {
+            code: 'not_readable_as_a_points_movement',
+            whatHappened: 'A points movement needs a movement id, a kind (earn, burn or reversal) and a whole number of points.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing changed. Send the movement id, the kind and the points, then try again.',
+          });
+        }
+
+        const request = { movementId: b.movementId, customerId, kind: b.kind as PointsKind, points: b.points };
+        const assessment = assessPointsMovement({ priorMovements: await deps.pointsMovements(ctx.tenantId, customerId), request });
+        if (!assessment.ok) {
+          throw apiError(422, {
+            code: assessment.refusedBecause!,
+            whatHappened: assessment.detail,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'No points moved. A burn is capped at the balance the customer actually holds.',
+          });
+        }
+
+        await deps.recordPointsMovement(ctx.tenantId, customerId, {
+          movementId: request.movementId, customerId, delta: assessment.delta, reason: request.kind,
+          sourceRef: typeof b.sourceRef === 'string' ? b.sourceRef : null, at: deps.now(),
+        });
+        return { status: 201, body: { movementId: request.movementId, delta: assessment.delta, reason: request.kind, balance: assessment.balanceAfter } };
       },
     },
   ];

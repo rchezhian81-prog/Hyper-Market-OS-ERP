@@ -57,7 +57,7 @@ const ALL: readonly Route[] = [
     isBanked: () => false, bankSale: () => {}, recordExceptions: () => {},
     openExceptions: () => [], now: () => NOW,
   }),
-  ...customerRoutes({ consentRecords: () => [], appendConsent: () => {}, pointsBalance: () => undefined, now: () => NOW }),
+  ...customerRoutes({ consentRecords: () => [], appendConsent: () => {}, pointsBalance: () => undefined, pointsMovements: () => [], recordPointsMovement: () => {}, now: () => NOW }),
   ...ordersRoutes({ onHand: () => new Map(), outstanding: () => [], holdReservations: () => {}, holdMinutes: 60, now: () => NOW }),
   ...fulfilmentRoutes({ appendAttempt: () => {}, attempts: () => [], assigned: () => [], now: () => NOW }),
   ...financeRoutes({

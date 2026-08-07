@@ -223,7 +223,7 @@ describe('API-08 — a failed delivery is a state, not silence', () => {
 describe('all three register cleanly on the kernel', () => {
   it('passes every registration rule', () => {
     const customer: CustomerDeps = {
-      consentRecords: () => [], appendConsent: () => {}, pointsBalance: () => undefined, now: () => NOW,
+      consentRecords: () => [], appendConsent: () => {}, pointsBalance: () => undefined, pointsMovements: () => [], recordPointsMovement: () => {}, now: () => NOW,
     };
     const orders: OrdersDeps = {
       onHand: () => new Map(), outstanding: () => [], holdReservations: () => {},
