@@ -190,12 +190,40 @@ export function scanOutbound(body: unknown, tenantId: string): readonly Outbound
  */
 export type AccessResolver = (tenantId: string) => AccessControl | Promise<AccessControl>;
 
+/**
+ * One request, seen from outside — what a log line, a metric and a trace are all made from. Emitted
+ * once per request on the way out, whichever way it went. Provider-neutral: the kernel produces this
+ * value and knows nothing about where it is logged, counted or traced (P-06).
+ */
+export interface RequestObservation {
+  /** The id that ties this request's log, audit and response together (the inbound correlation id if the caller sent one). */
+  readonly traceId: string;
+  readonly correlationId: string;
+  readonly method: Method;
+  readonly path: string;
+  /** The matched route's path pattern, or undefined when nothing matched. */
+  readonly route?: string;
+  readonly permission?: string;
+  readonly status: number;
+  /** 'unauthenticated' when there is no principal — never blank, so a log is never ambiguous. */
+  readonly tenantId: string;
+  readonly userId: string;
+  readonly durationMs: number;
+  readonly outcome: 'ok' | 'client_error' | 'server_error' | 'not_found';
+}
+
 export interface KernelOptions {
   readonly router: Router;
   readonly authenticate: Authenticator;
   readonly access: AccessControl | AccessResolver;
   readonly idempotency: IdempotencyStore;
   readonly audit?: AuditSink;
+  /**
+   * Observability sink — called once per request with a `RequestObservation`. Optional in the type
+   * (a test does not want one) and NOT optional in a deployment, like `audit`: structured logs,
+   * metrics and traces are all fed from here. Provider-neutral.
+   */
+  readonly observe?: (o: RequestObservation) => void;
   /** Injected so a reply is reproducible in a test and traceable in production. */
   readonly newTraceId: () => string;
 }
@@ -227,7 +255,12 @@ const asResponse = (e: ApiError, traceId: string): HttpResponse => ({
  * malformed payload.
  */
 export async function handle(opts: KernelOptions, request: HttpRequest): Promise<HttpResponse> {
-  const traceId = opts.newTraceId();
+  // A correlation id the caller sent is honoured as THE id for this request, so one identifier ties
+  // its log, its audit row and its reply together across services; absent, we mint one. It comes back
+  // in the response headers (x-trace-id / x-correlation-id) so the caller can quote it.
+  const startedAt = Date.now();
+  const traceId = request.headers['x-correlation-id'] ?? request.headers['x-request-id'] ?? opts.newTraceId();
+  let matchedRoute: string | undefined;
 
   // Captured as the request proceeds so the audit can be written on the way OUT, whichever way it
   // goes. Auditing only the successes was the first version of this function, and it left no
@@ -256,10 +289,27 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
     });
   };
 
+  // Emitted once per request on the way out, whichever way it went, and stamps the correlation id on
+  // the reply. One place, so no exit can forget it — the same reason the audit is written here.
+  const finish = (resp: HttpResponse): HttpResponse => {
+    opts.observe?.({
+      traceId, correlationId: traceId, method: auditedMethod, path: request.path,
+      route: matchedRoute, permission: auditPermission === '' ? undefined : auditPermission,
+      status: resp.status, tenantId: auditPrincipal?.tenantId ?? 'unauthenticated',
+      userId: auditPrincipal?.userId ?? 'unauthenticated',
+      durationMs: Date.now() - startedAt,
+      outcome: resp.status < 400 ? 'ok' : resp.status === 404 ? 'not_found' : resp.status < 500 ? 'client_error' : 'server_error',
+    });
+    return resp.headers['x-correlation-id'] !== undefined
+      ? resp
+      : { ...resp, headers: { ...resp.headers, 'x-correlation-id': traceId } };
+  };
+
   try {
     const matched = opts.router.match(request.method, request.path);
     if (matched === undefined) throw notFound(`${request.method} ${request.path}`);
     const { route, params } = matched;
+    matchedRoute = route.path;
     auditPermission = route.permission;
     auditedMethod = route.method;
 
@@ -296,7 +346,7 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
         if (seen.requestHash !== requestHash) throw idempotencyKeyReused();
         const replay = sealed(seen.status, seen.body, principal.tenantId, traceId, true);
         await writeAudit(replay.status);
-        return replay;
+        return finish(replay);
       }
     }
 
@@ -322,7 +372,7 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
     }
 
     await writeAudit(response.status);
-    return response;
+    return finish(response);
   } catch (e) {
     const failure = e instanceof ApiError ? asResponse(e, traceId) : asResponse(apiError(500, {
       code: 'unhandled',
@@ -336,7 +386,7 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
     // The refusal goes on the record too. An audit trail that holds only what succeeded cannot
     // answer the question it exists for: who tried.
     await writeAudit(failure.status);
-    return failure;
+    return finish(failure);
   }
 }
 

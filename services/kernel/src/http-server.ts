@@ -40,6 +40,8 @@ export interface ServerOptions extends KernelOptions {
   readonly port: number;
   /** Answers the readiness probe. Liveness never asks it — see `probes()`. */
   readonly dependenciesReachable: () => Promise<boolean> | boolean;
+  /** A request-metrics snapshot served at `/metricz`, before authentication. Optional. */
+  readonly metricsSnapshot?: () => unknown;
 }
 
 export interface RunningServer {
@@ -68,6 +70,14 @@ export function startHttpServer(opts: ServerOptions): RunningServer {
         const ok = path === '/livez' ? p.live : p.ready;
         res.writeHead(ok ? 200 : 503, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ ...p, probe: path.slice(1) }));
+        return;
+      }
+
+      // Request metrics, before authentication like the probes: an operator's scraper holds no token,
+      // and the numbers say nothing a token would protect (counts and latencies, never a body).
+      if (path === '/metricz') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(opts.metricsSnapshot?.() ?? { totalRequests: 0, byStatusClass: {}, byRoute: {} }));
         return;
       }
 
