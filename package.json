@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "SRE Retail OS — a hybrid offline-first + cloud retail operating system for SRE Hyper Market. Built from the Final Master Roadmap & Developer Requirements v2.0.",
+  "description": "SRE Retail OS \u2014 a hybrid offline-first + cloud retail operating system for SRE Hyper Market. Built from the Final Master Roadmap & Developer Requirements v2.0.",
   "packageManager": "pnpm@10.33.0",
   "engines": {
     "node": ">=22"
@@ -14,14 +14,32 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "secret-scan": "node scripts/secret-scan.mjs",
-    "check": "pnpm run typecheck && pnpm run lint && pnpm run secret-scan && pnpm run test",
-    "prepare": "git config core.hooksPath .githooks || true"
+    "db:migrate": "node scripts/migrate.mjs",
+    "build:pos": "node scripts/build-app.mjs pos",
+    "build:owner": "node scripts/build-app.mjs owner-app",
+    "build:erp": "node scripts/build-app.mjs web-erp",
+    "build:picker": "node scripts/build-app.mjs picker-app",
+    "build:delivery": "node scripts/build-app.mjs delivery-app",
+    "build:customer": "node scripts/build-app.mjs customer-app",
+    "build:api": "node scripts/build-service.mjs api",
+    "build:edge": "node scripts/build-service.mjs edge",
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run secret-scan && pnpm run test && pnpm run test:perf",
+    "prepare": "git config core.hooksPath .githooks || true",
+    "sbom": "node scripts/sbom.mjs",
+    "db:backup": "node scripts/backup.mjs",
+    "db:restore": "node scripts/restore.mjs",
+    "extract:check": "node --experimental-strip-types scripts/extract-check.mts",
+    "test:integration": "vitest run tests/integration",
+    "test:perf": "vitest run --config vitest.perf.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",
     "@types/node": "^22.8.1",
+    "@types/pg": "^8.20.3",
+    "esbuild": "^0.28.1",
     "eslint": "^9.13.0",
     "globals": "^15.11.0",
+    "pg": "^8.22.0",
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.11.0",
     "vitest": "^4.1.10"

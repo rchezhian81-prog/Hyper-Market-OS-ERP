@@ -1,0 +1,12 @@
+{
+  "name": "SRE Owner",
+  "short_name": "Owner",
+  "description": "Daily brief, exceptions and approvals for SRE Retail OS.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": []
+}

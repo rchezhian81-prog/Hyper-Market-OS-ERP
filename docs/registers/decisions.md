@@ -30,15 +30,29 @@ Status legend: **Accepted** · **Open — blocking** (holds coding / a gate) ·
 | --- | --- | --- | --- |
 | D1 | Indicative programme budget | ₹5–10 lakh | Recorded; commercial validation required |
 | D2 | Owner review capacity | ≥ 30 hours/week | Recorded |
-| D3 | Monthly post-go-live running-cost ceiling | **OWNER VALUE REQUIRED** | **Open — blocking** before hosting/vendor commitment |
-| D4 | Second technical custodian | **NAME REQUIRED** | **Open — blocking** before production. Still blank in the roadmap — fill first. |
-| D5 | Formal GO date | **DATE/SIGNATURE REQUIRED** | **Open — blocking** before coding |
+| OB-06 | Incumbent-vendor data export | **We migrate ourselves. Do not wait for the vendor** (owner, 7 Aug 2026): *"no one will be ready to, because they don't want to lose a customer."* Extraction is by direct database read, the system's own export, or its printed reports — our own data, our own machine, the access we already have. Their software is not touched. | EX-02 closed. The critical consequence is **verification**: with no vendor file, nothing can be checked against the incumbent except the incumbent, so every control total is proved against evidence from OUTSIDE it — bank, filed returns, supplier statements, physical count. Stronger than a vendor export, not weaker. `docs/runbooks/legacy-self-extraction.md` |
+| D3 | Monthly post-go-live running-cost ceiling | **₹15,000 / month — PLATFORM RUNTIME ONLY** (owner, 4 Aug 2026, superseding the ₹20,000 of 2 Aug). Covers hosting, storage, backups, communication infrastructure, monitoring and normal AI usage. **External developer/support retainers are shown SEPARATELY and are never folded into this figure.** Every AI agent carries its own configurable monthly ceiling; customer-facing AI defaults to the smallest model that passes the approved evaluation; higher-cost models only for explicitly approved, low-volume complex tasks; customer-facing AI independently switchable; the system fails SAFE when a budget is exhausted; no unexpected overage permitted. | If the complete production platform cannot hold within ₹15,000/month, development does NOT stop — the forecast is recorded and ONE consolidated cost decision is presented at the hosting/procurement gate (owner, 4 Aug 2026) |
+| D4 | Second technical custodian | **Mr Sivakumar** (owner, 2 Aug 2026) | Recorded. Must hold custody (OD-09) and demonstrate a quarterly rebuild/deploy (AID-10); onboarding + runbooks/training to be produced before production |
+| D5 | Formal GO date | **2 August 2026** — owner GO given in session | Recorded; a signed GO record to be filed for the audit trail |
 | D6 | Initial online catalogue | 300–600 fast-moving products | Recorded; SKU list required |
 | D7 | Migration history | Full usable history | Recorded; exceptions only by owner approval |
-| D8 | Cutover targets | Store Core **1 April 2027** target; full-product completion date **OWNER VALUE REQUIRED** | Store Core scope & final date must be signed |
+| D8 | Cutover targets | Store Core **1 April 2027** (confirmed, 2 Aug 2026); full-product completion **phased release-by-release** — each later release's date set as it approaches | Recorded |
 
 > The budget (D1) is a planning envelope, not permission to weaken scope,
 > security, migration, testing, documentation or ownership (roadmap §25).
+
+## Owner decisions made during the build (post-roadmap, dated)
+
+| ID | Decision | Consequence | Status |
+| --- | --- | --- | --- |
+| OB-01 | **Commercial, multi-tenant product** (owner, 2 Aug 2026): SRE Retail OS is built to be **sold to other retailers**, not only for SRE's own use. **"Make everything choose-able"** — no store-specific value is hard-coded; all are per-tenant configuration. **SRE Hyper Market is the first tenant / pilot.** | Elevates the roadmap's tenant/white-label readiness (M33/D12/M36) to first-class from the start. `tenant` becomes the top isolation boundary; onboarding is configuration, not code. Full SaaS billing/white-label stays M36 (R8) unless prioritised sooner. See **ADR-0003**. | Accepted |
+| OB-02 | **Infrastructure, live database, hosting and environment setup are deferred** (owner, 2 Aug 2026): "we will plan later". | Do **not** treat these as an active ask or a blocker on design/foundation work; keep building everything that does not require them. When the owner is ready, the DB-backed persistence layer + deployment proceed on the tenant-ready foundation (ADR-0002/0003). | Accepted |
+
+| OB-03 | **Age-restricted sales: minimum age 18; no licence-hour restriction** (owner, 3 Aug 2026). | The tenant default `pos.age_restricted.minimum_age` is **18**, and `pos.licence_hours.enabled` is **false** for SRE. Both remain per-tenant settings (OB-01), so a tenant in a state with different rules changes a setting, not code. The till still **blocks** rather than warns on a flagged item (M12-FR-04). | Accepted |
+| OB-04 | **Fresh/production departments: SRE operates a cafe** (owner, 3 Aug 2026) — closes **AVR-12** for tenant #1. | **SRE's own enablement** is `production.departments = ['cafe']`. See **OB-05** for what this means for the product: every department the roadmap names is **built**; each tenant **enables** only its own. Cold-chain (M10) and FSSAI obligations (M34-FR-03) are sized per tenant from that setting, so SRE's are sized to a cafe. | Accepted |
+| OB-05 | **Product scope is never narrowed to SRE's own footprint** (owner, 3 Aug 2026): *"everything will be there, remember this software is not only for us, it's for multi tenant — so think for that."* | Corrects an over-narrow reading of roadmap §2.2. That rule governs **tenant enablement**, not **product scope**: the product **builds every capability**, and a tenant sees only what it switches on — so a shop with no meat counter never meets one, and a tenant with three counters is not told to wait for a release. Concretely: all M11 production departments (cafe, bakery, deli, meat/fish, central kitchen) are built, **including catch-weight costing and scale labels**, even though SRE runs none of the weighed ones. This applies to **every** module from here on — an SRE answer configures SRE, it never trims the build (reinforces OB-01, OD-02). | Accepted |
+| OB-07 | **Pick zone order: ambient, secure, chilled, frozen** (owner, 6 Aug 2026) — closes the cold-chain question left open by M04-FR-02 / D05. | SRE's own setting is `picking.zone_order = ['ambient', 'secure', 'chilled', 'frozen']`. It stays a **per-tenant** value with **no default** (OB-01/OB-05): a shop with a different layout, different licences or no chiller sets its own, and a tenant that has not answered gets a list sequenced by shelf position alone **with the screen saying so** rather than a guessed cold chain. In practice this means the picker clears the ambient aisles, then the secure cabinet, then the chiller, then the freezer — so the items that spoil fastest spend the least time out of temperature, and the high-value cabinet is opened once rather than revisited. | Accepted |
+| OB-08 | **A shelf count stays worth acting on for 2 hours; a facing is worth a trip below half full** (owner, 6 Aug 2026) — closes the two figures left open by M04-FR-03. | SRE's settings are `merchandising.shelf_count_stale_after_minutes = 120` and `merchandising.shelf_refill_at_bp = 5000`. Both stay **per-tenant** (OB-01/OB-05); unlike the pick zone order they ship with these as **defaults**, because the direction of the error is safe — a window that is too short judges more counts stale and raises *fewer* tasks, so a tenant **lengthening** it is the one making a choice. The boundaries are exact and tested from both sides: a count of **exactly** 120 minutes still raises a refill and one at 121 does not; a facing at **exactly** half is treated as properly filled and one below it raises a task. An empty facing is urgent, a half-empty one is not. | Accepted |
 
 ## AI-assisted development governance — AID-01 to AID-10 (roadmap §18)
 
@@ -61,7 +75,7 @@ Status legend: **Accepted** · **Open — blocking** (holds coding / a gate) ·
 | --- | --- |
 | Business owner — final scope | Mr. Elanchezhian |
 | Product owner | Name required |
-| Second technical custodian | Name required (= D4) |
+| Second technical custodian | **Mr Sivakumar** (= D4, recorded 2 Aug 2026) |
 | Store operations lead | Name required |
 | Finance/CA reviewer | Name required |
 | Security/architecture reviewer | Name required |

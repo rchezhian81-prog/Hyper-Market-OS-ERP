@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE POS — Sale</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      POS shell (docs/design/screens/pos-cashier.md). Layout follows the Stage 3 spec:
+      the running TOTAL is the largest element, a scrolling line list, one dominant
+      Tender action, and a permanent sync badge. Deliberately framework-free (§19:
+      "POS desktop/PWA shell") and fully static, so the lane loads and bills with no
+      network. Accessibility: large targets and high contrast for arm's-length use
+      under glare; the language toggle is per cashier.
+    -->
+    <style>
+      :root {
+        --bg: #0f172a; --panel: #1e293b; --ink: #f8fafc; --muted: #94a3b8;
+        --accent: #22c55e; --warn: #f59e0b; --danger: #ef4444;
+        --tap: 56px; /* minimum touch target */
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--ink);
+        font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        /* Flex, not a fixed row template: the strips above `main` come and go, and a
+           template counted in rows shifts the layout every time one is hidden. */
+        height: 100dvh; display: flex; flex-direction: column;
+      }
+      header {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; padding: 12px 16px; background: var(--panel);
+      }
+      .lane { font-weight: 600; letter-spacing: .02em; }
+      /* Permanent sync badge (§27.1 / P-08) — connection + unsent count. */
+      .sync { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+      .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
+      .dot.offline { background: var(--warn); }
+      .unsent {
+        min-width: var(--tap); min-height: 36px; padding: 6px 12px; border-radius: 8px;
+        background: #334155; color: var(--ink); border: 0; font-size: 14px;
+      }
+      main { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 16px; }
+      table { width: 100%; border-collapse: collapse; }
+      th { text-align: left; color: var(--muted); font-size: 13px; font-weight: 500; padding: 8px 4px; }
+      td { padding: 12px 4px; border-top: 1px solid #334155; font-variant-numeric: tabular-nums; }
+      td.amount, th.amount { text-align: right; }
+      tr.voided td { color: var(--muted); text-decoration: line-through; }
+      footer { background: var(--panel); padding: 12px 16px 20px; }
+      /* The running total is the largest element on the screen. */
+      .total-row { display: flex; align-items: baseline; justify-content: space-between; }
+      .total-label { color: var(--muted); font-size: 15px; }
+      .total { font-size: clamp(40px, 9vw, 72px); font-weight: 700; font-variant-numeric: tabular-nums; }
+      .actions { display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 12px; margin-top: 12px; }
+      button {
+        min-height: var(--tap); border-radius: 12px; border: 0; font-size: 18px; font-weight: 600;
+        background: #334155; color: var(--ink);
+      }
+      button.primary { background: var(--accent); color: #052e16; font-size: 22px; }
+      button:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+      .empty { color: var(--muted); padding: 32px 4px; }
+      /* Served from this device's cache because the store box could not be reached. It says WHEN,
+         because a page from this morning shown as this minute's is the fault this product exists
+         to refuse (P-08). */
+      .stale { background: #1e3a5f; color: #dbeafe; padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info, #38bdf8); }
+      .stale[hidden] { display: none; }
+      .lang { background: transparent; color: var(--muted); min-height: 36px; font-size: 14px; }
+      /* ── On-screen panels ────────────────────────────────────────────────
+         Every target is at least 56px and spaced, for fingers under time pressure. */
+      .sheet {
+        position: fixed; inset: 0; background: rgba(2, 6, 23, .82);
+        display: grid; place-items: end center; z-index: 20;
+      }
+      .sheet[hidden] { display: none; }
+      .sheet-inner {
+        width: min(560px, 100%); background: var(--panel); padding: 20px;
+        border-radius: 20px 20px 0 0; display: grid; gap: 14px;
+      }
+      .sheet h2 { margin: 0; font-size: 22px; font-weight: 600; }
+      .entry {
+        font-size: 44px; font-weight: 700; text-align: right; padding: 10px 16px;
+        background: #0b1220; border-radius: 12px; min-height: 68px;
+      }
+      .hint { color: var(--muted); font-size: 15px; min-height: 22px; }
+      .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+      .keypad button, .reasons button, .sheet-actions button, .refusal button {
+        min-height: var(--tap); font-size: 22px; border: 0; border-radius: 12px;
+        background: #334155; color: var(--ink); font-weight: 600;
+      }
+      .reasons { display: grid; gap: 10px; }
+      .reasons button { font-size: 18px; text-align: left; padding: 0 16px; }
+      .reasons button[aria-pressed='true'] { background: #475569; outline: 3px solid var(--accent); }
+      .sheet-actions { display: grid; grid-template-columns: 1fr 2fr; gap: 12px; }
+      .sheet-actions .primary, .keypad .primary { background: var(--accent); color: #052e16; }
+
+      /* ── The refusal banner ──────────────────────────────────────────────
+         Full width, top of screen, and it stays until acknowledged. */
+      .refusal {
+        position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 20px;
+        background: var(--danger); color: #fff; display: grid; gap: 10px;
+      }
+      .refusal[hidden] { display: none; }
+      .refusal strong { font-size: 24px; }
+      .refusal p { margin: 0; font-size: 18px; line-height: 1.45; }
+      .refusal button { background: #7f1d1d; color: #fff; }
+
+      /* Counting the drawer: one row per denomination, a big count in the middle. */
+      .denoms { display: grid; gap: 8px; max-height: 46dvh; overflow-y: auto; }
+      .denom { display: grid; grid-template-columns: 5rem 1fr 3.5rem 1fr; align-items: center; gap: 8px; }
+      .denom span { font-size: 20px; font-weight: 600; }
+      .denom .n { text-align: center; font-size: 24px; font-variant-numeric: tabular-nums; }
+      .denom button { min-height: 52px; font-size: 26px; border: 0; border-radius: 12px; background: #334155; color: var(--ink); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="lane" id="lane">Lane 1 · Cashier</span>
+      <span class="sync">
+        <span class="dot" id="conn-dot" title="Connection"></span>
+        <span id="conn-text">Online</span>
+        <!-- Tapping the unsent count lists queued sales (spec). -->
+        <button class="unsent" id="unsent" type="button">Unsent: 0</button>
+        <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
+      </span>
+    </header>
+
+    <p class="stale" id="stale" hidden role="status"></p>
+    <main>
+      <table>
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th class="amount">Qty</th>
+            <th class="amount">Amount</th>
+          </tr>
+        </thead>
+        <tbody id="lines"></tbody>
+      </table>
+      <p class="empty" id="empty">Scan an item to begin.</p>
+    </main>
+
+    <footer>
+      <div class="total-row">
+        <span class="total-label">Total to pay</span>
+        <span class="total" id="total">₹0.00</span>
+      </div>
+      <div class="actions">
+        <button id="qty" type="button">Qty</button>
+        <button id="void" type="button">Void</button>
+        <button id="hold" type="button">Hold</button>
+        <button id="more" type="button">More</button>
+        <!-- The one dominant primary action. -->
+        <button id="tender" class="primary" type="button">Tender</button>
+      </div>
+    </footer>
+
+    <!--
+      Every prompt a cashier answers is an ON-SCREEN panel, never `window.prompt`.
+      A browser prompt is a tiny text field with a keyboard over it: unusable with a
+      queue waiting, impossible with gloves, and blocked outright by kiosk browsers.
+    -->
+    <div class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+      <div class="sheet-inner">
+        <h2 id="sheet-title">—</h2>
+        <div class="entry" id="entry">0</div>
+        <div class="hint" id="entry-hint"></div>
+        <div class="keypad" id="keypad"></div>
+        <div class="reasons" id="reasons" hidden></div>
+        <div class="sheet-actions">
+          <button id="sheet-cancel" type="button">Cancel</button>
+          <button id="sheet-ok" class="primary" type="button">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      Choosing how the customer pays. Three targets, full width, nothing else on the
+      screen — this is the moment a cashier is most watched and least able to hunt.
+    -->
+    <div class="sheet" id="pay" hidden role="dialog" aria-modal="true" aria-labelledby="pay-title">
+      <div class="sheet-inner">
+        <h2 id="pay-title">How is the customer paying?</h2>
+        <div class="reasons" id="pay-kinds"></div>
+        <div class="sheet-actions">
+          <button id="pay-cancel" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      Counting the drawer, by denomination. The EXPECTED total appears nowhere on
+      this panel — shown "expected: ₹6,000", people write ₹6,000, and a cash-up
+      anchored to the expectation finds nothing. It is the same control the stock
+      count uses, and it is worth being structural in both places.
+    -->
+    <div class="sheet" id="count" hidden role="dialog" aria-modal="true" aria-labelledby="count-title">
+      <div class="sheet-inner">
+        <h2 id="count-title">Count the drawer</h2>
+        <div class="denoms" id="denoms"></div>
+        <div class="entry" id="count-total">₹0.00</div>
+        <div class="hint" id="count-hint"></div>
+        <div class="sheet-actions">
+          <button id="count-cancel" type="button">Cancel</button>
+          <button id="count-ok" class="primary" type="button">Close till</button>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      The refusal banner. It does NOT auto-dismiss and it does not use colour alone:
+      "Do not take payment" is the one message in this product that must not be
+      missed, and a toast that fades is a message that was missed.
+    -->
+    <div class="refusal" id="refusal" hidden role="alert">
+      <strong id="refusal-title">Do not take payment</strong>
+      <p id="refusal-text"></p>
+      <button id="refusal-ok" type="button">I have read this</button>
+    </div>
+
+    <!--
+      The bundled, tested session (built by `pnpm build:pos`) attaches
+      `window.posSession`. It loads FIRST so the view binds to the real engines;
+      if the bundle has not been built, app.js falls back to its stand-in and the
+      shell still opens. Module scripts are deferred and run in order.
+    -->
+    <!--
+      The store box puts this screen's data here, above the bundle, because the bundle
+      reads its global while it evaluates. A screen that fetched afterwards would render
+      once with nothing — and "nothing" on these screens means NOT KNOWN, so every screen
+      would flash "I have been told nothing" before correcting itself.
+
+      Served straight from a file instead, the marker is simply left in place and the
+      shell falls back to its sample data, which it announces.
+    -->
+    <!--SCREEN-DATA-->
+    <script type="module" src="./pos.bundle.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

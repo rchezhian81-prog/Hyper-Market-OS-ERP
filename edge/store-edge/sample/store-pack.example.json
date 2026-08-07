@@ -1,0 +1,573 @@
+{
+  "_comment": [
+    "An EXAMPLE store pack \u2014 the shape the cloud sends this box (EDGE_PACK_FILE).",
+    "Every top-level section is optional, and leaving one out is meaningful:",
+    "the box then tells the screens it has NOT BEEN TOLD that section, which is",
+    "different from telling them the section is empty. The manager's day close",
+    "refuses the first and proceeds on the second.",
+    "Contains no real store data, no prices anybody trades on and no secrets.",
+    "deliveries/drivers/routingPolicy: the box PLANS the routes itself from these,",
+    "so vans still go out when the internet is down. `route` overrides the planner",
+    "when a dispatcher writes one by hand, and the driver's screen says which it is.",
+    "Distances are straight-line: there is no map here, so the plan is a draft.",
+    "purchaseOrders/receipts/supplierInvoices/buyingPolicy: the buyer's screen.",
+    "Leave buyingPolicy out and the box serves the buyer's screen nothing at all,",
+    "because a screen inventing its own match tolerances would be deciding how big",
+    "a price difference is worth nobody's attention. The buyer must NOT appear in",
+    "approvers: nobody signs off their own capture (roadmap section 28).",
+    "categories/productMaster/priceEntries/pricingPolicy: the product and price screen.",
+    "Leave pricingPolicy out and the box serves that screen nothing, because a screen",
+    "inventing its own margin floor would be deciding how much of the shop's profit is",
+    "worth nobody's attention. The person who sets prices must NOT be in approvers.",
+    "A product with no unitCostMinor has NO entry in the cost map served to that screen",
+    "- not a zero. Zero cost reports a 100% margin, which is a lie that reads as good news.",
+    "shelfLocations/shelfAssignments/shelfPolicy: where things sit (M04-FR-02).",
+    "This is what puts the picker's list in the order they walk the shop, and every",
+    "field is a NUMBER because 'A10' sorts before 'A9' as text and the picker then",
+    "walks the aisle twice without ever knowing why. zoneOrder is YOUR cold-chain",
+    "decision - leave it out and the walk is ordered by position only, and every",
+    "screen says so rather than implying a cold chain nobody asked for.",
+    "planogram/shelfCounts/backstock/assortment/spaceAreas/displayContracts: merchandising.",
+    "Leave merchandisingPolicy out and the box serves that screen nothing, because a",
+    "screen inventing its own refill level would be deciding when a shelf is empty",
+    "enough to be worth walking to. A facing with NO count in shelfCounts is reported",
+    "as 'never counted' - it is NOT treated as empty, which would raise the loudest",
+    "alarm the system has for every product in the shop on day one.",
+    "reportingRecords/roles/roleAssignments/reportingPolicy: the reporting screen (D13).",
+    "reportingRecords is what this shop ACTUALLY records today, and the gaps are the",
+    "point: a report whose fact is not in this list REFUSES BY NAME rather than running",
+    "and coming back as zero, because a zero is read as 'nothing happened' and an empty",
+    "report is read as 'nothing to worry about'. Leave reportingPolicy out and the box",
+    "serves that screen nothing, because a screen inventing its own staleness thresholds",
+    "would be deciding, on its own authority, how old a number may be before somebody",
+    "should stop making decisions on it. roles/roleAssignments are the shop's OWN access",
+    "control, so the same default-deny check that guards an action guards its export.",
+    "returnHistory/serviceCases/satisfaction/slaPolicy/servicePolicy: the service desk.",
+    "Leave servicePolicy out and the box serves that screen nothing, because a screen",
+    "inventing its own return window would be deciding how long this shop takes goods",
+    "back for, and inventing its own refund threshold would be deciding how much money",
+    "may leave without a second signature. returnHistory is the returns the CLOUD knows",
+    "about - another branch's, or ones taken before this box was installed. It is MERGED",
+    "with the box's own return log, never replaced by it: the cloud alone leaves the",
+    "at-most-once guard blind exactly when the line is down, which is when a shop is",
+    "least supervised. THE FIVE NUMBERS IN servicePolicy ARE YOURS TO SET before go-live",
+    "- the ones here are starting figures, not a recommendation.",
+    "batches/recalls/expiryPolicy: the expiry and recall screen (M10).",
+    "PRODUCT taxBps AND status ARE NOW REQUIRED FOR A PRODUCT TO REACH A TILL. Without",
+    "a tax rate every line of tax on that sale would be invented, and without a status",
+    "the lane cannot tell active from discontinued - so the product is EXCLUDED from the",
+    "till catalogue and named in excludedProducts rather than shipped at a guessed rate.",
+    "recallBlock STOPS THE SALE AT EVERY TILL, INCLUDING WITH THE INTERNET DOWN. It is",
+    "read from here AND from productMaster.recallBlocked, and either one saying blocked",
+    "means blocked - a safety flag must fail one way only. A recalled product is shipped",
+    "to the lane WITH its block rather than excluded, so the till refuses it by name;",
+    "'unknown barcode' on a recalled tin is a cashier keying it in by hand.",
+    "Leave batches out and the screen says THIS SHOP RECORDS NO BATCH DATES, which is a",
+    "different thing from nothing going out of date - only one of those is good news.",
+    "tallyPostings/financeLedger/periodState/financePolicy: the finance screen (M23).",
+    "EVERY CONTROL TOTAL IS STATED TWICE AND THE TWO SIDES MUST BE INDEPENDENT.",
+    "financeLedger is what YOUR OWN RECORD says the shop took; tallyPostings is what the",
+    "ACCOUNTS actually received. Only a posting in state 'posted' counts as received - a",
+    "queued one is money Tally has never seen and a dead_lettered one is money it refused.",
+    "Counting either would make both sides the same number computed twice, and the month",
+    "would close, reconciled and signed, with the accounts empty.",
+    "Leave financeLedger out and the screen has NO totals at all - not an empty list, which",
+    "would reconcile vacuously - and refuses to close the month by name.",
+    "journalPrefixes ARE YOUR CHART OF ACCOUNTS. A heading guessed here would file your",
+    "takings where your accountant does not look for them; a posting matching none of them",
+    "is raised as 'postings nobody can classify' rather than quietly left out.",
+    "accounts/supportSessions/devices/versionPolicy/auditRecords/retentionPolicies/",
+    "legalHolds/adminPolicy: the admin and security screen (M01/M02/M33/M34).",
+    "SUPPORT ACCESS IS TIME-BOUND AND SCOPED, NEVER STANDING. A grant names exactly what",
+    "may be seen - an empty scope list is REFUSED, not treated as everything - and its",
+    "expiry is judged from the clock every time the screen is read, never from a stored",
+    "flag somebody has to turn off. supportSessions is NEVER PRUNED: somebody outside the",
+    "business saw this tenant's live data and that record is the only evidence of it.",
+    "Leave versionPolicy out and the screen says NOTHING IS BEING ENFORCED on any device,",
+    "which is not the same as every device being up to date. Leave retentionPolicies",
+    "empty and it says NOTHING HAS BEEN DECIDED, which is not the same as nothing being",
+    "due for deletion. A legal hold outranks a retention date, and nothing deletes.",
+    "killSwitches/agentBudgets/aiUsage/aiPending/aiEvaluations/aiPolicy:",
+    "the AI control screen (M32/M36/A01-A10).",
+    "THE KILL SWITCH IS THE POINT. Leave killSwitches out and the screen says it has NOT",
+    "BEEN TOLD - it does not draw ten assistants running, which is what an invented empty",
+    "list would do while one of them is actually stopped. A switch is NEVER PRUNED and",
+    "never expires by itself: lifting one is a separate, named act by a DIFFERENT person,",
+    "because a switch that turns itself off at midnight turns a known-bad assistant back",
+    "on while nobody is watching.",
+    "AN ASSISTANT WITH NO ROW IN agentBudgets HAS NO CEILING, AND CANNOT MAKE A CALL AT",
+    "ALL. That is deliberate: a missing ceiling is not an unlimited one. Leave",
+    "platformCeilingMinor out of aiPolicy and the screen shows NO spend summary rather",
+    "than reporting every assistant comfortably inside a limit nobody agreed - the",
+    "figure here is the owner platform runtime ceiling (decision D3), in paise.",
+    "aiPending is what an assistant has DRAFTED. Nothing in it has happened. It happens",
+    "when a named person accepts it, and the record names the PERSON as the actor and the",
+    "assistant as the drafter - no assistant commits a price, payment, refund, purchase,",
+    "stock or privilege change, and no setting anywhere can grant it one.",
+    "aiUsage IS THE ONLY SOURCE OF WHAT AN ASSISTANT HAS SPENT, and every entry carries its own",
+    "period. There was briefly a second - a carried map of per-agent totals with no period on it -",
+    "and on a box that had been running for a month the two disagreed by an entire budget: the",
+    "assistants tab read 95,000 spent while the cost tab beside it read nought. Leave aiUsage out",
+    "and the screen says the spend is NOT KNOWN and no assistant may make a request, because a",
+    "ceiling can only be enforced against a figure somebody actually measured - a substituted nought",
+    "hands every assistant its whole ceiling again, every month, for as long as the meter is broken.",
+    "An assistant missing from aiEvaluations has NEVER BEEN CHECKED for accuracy, which",
+    "the screen says in those words rather than showing a score of nought.",
+    "migrationSources/migrationExceptions/migrationTotals/parallelDays/parallelDifferences/",
+    "historyExclusions/legacyArchive/migrationPolicy: the migration screen (MG-01..MG-12).",
+    "THE EIGHT CUTOVER CHECKS ARE WORKED OUT FROM THESE, NEVER TICKED BY HAND. Leave any section",
+    "out and the check it feeds FAILS and is reported as one nobody could answer - which is a",
+    "different problem from a check that came back bad, and it needs a different person to fix it.",
+    "An empty migrationExceptions list means the cleaning pass ran and found nothing; leaving the",
+    "section out means it never ran, and only one of those is good news. Same for migrationTotals:",
+    "an empty list is a reconciliation that compared nothing, and QG-07 cannot pass on it.",
+    "edgeUnsyncedItems is NOT in this file. The box takes it from its OWN outbox, because an",
+    "unsynced till is an unmigrated sale and the cloud cannot be the witness for what the box holds.",
+    "rollbackDemonstratedAt is when a rollback was ACTUALLY PERFORMED. A designed rollback and a",
+    "performed one differ on exactly the night it matters, so leaving it out fails the check.",
+    "loadOperator is who brought the data across. Leave it out and NOTHING CAN BE SIGNED AT ALL -",
+    "a signer who is also the loader is checking their own work, and a separation that cannot be",
+    "checked is not a separation. requiredCleanDays is YOURS to set: three is a starting figure.",
+    "migrationExceptions is NEVER PRUNED. A resolved exception stays on the list as the record that",
+    "somebody looked at it, and nothing on that screen can throw one away.",
+    "legacyArchive is LEFT OUT here on purpose: nothing has been archived yet, and",
+    "the screen says the retirement cannot be decided rather than assessing nothing."
+  ],
+  "version": 1,
+  "policies": {
+    "storeId": "REPLACE_WITH_STORE_ID",
+    "branchId": "REPLACE_WITH_BRANCH_ID",
+    "branchName": "REPLACE_WITH_BRANCH_NAME",
+    "tradingDayCutoff": "02:00",
+    "staleAfterSeconds": 300,
+    "countApprovalThresholdMinor": 100000,
+    "handoverToleranceMinor": 10000,
+    "privacySlaDays": 30,
+    "warehouseId": "REPLACE_WITH_WAREHOUSE_ID"
+  },
+  "products": [
+    {
+      "productId": "EXAMPLE-1",
+      "name": "Example product",
+      "nameTa": "\u0b8e\u0b9f\u0bc1\u0ba4\u0bcd\u0ba4\u0bc1\u0b95\u0bcd\u0b95\u0bbe\u0b9f\u0bcd\u0b9f\u0bc1 \u0baa\u0bca\u0bb0\u0bc1\u0bb3\u0bcd",
+      "categoryId": "example",
+      "unitPriceMinor": 10000,
+      "unitCostMinor": 7000,
+      "uom": "ea",
+      "taxBps": 500,
+      "status": "active",
+      "recallBlock": false,
+      "barcodes": [
+        "0000000000000"
+      ],
+      "availableMinor": 0
+    }
+  ],
+  "approvals": [],
+  "checklist": [
+    {
+      "itemId": "chiller",
+      "description": "Chiller temperature logged",
+      "done": false,
+      "blocking": true
+    }
+  ],
+  "wave": null,
+  "route": null,
+  "deliveries": [],
+  "drivers": [
+    {
+      "driverId": "REPLACE_WITH_DRIVER_ID",
+      "maxStops": 25,
+      "availableFrom": "2026-01-01T09:00:00.000Z",
+      "availableUntil": "2026-01-01T20:00:00.000Z"
+    }
+  ],
+  "routingPolicy": {
+    "storeLocation": {
+      "lat": 0,
+      "lon": 0
+    },
+    "radiusMetres": 10000,
+    "averageSpeedKmh": 20,
+    "serviceMinutesPerStop": 5,
+    "contributionRule": {
+      "maxCostShareBps": 2000
+    }
+  },
+  "slots": [],
+  "purchaseOrders": [
+    {
+      "poId": "REPLACE_WITH_PO_NUMBER",
+      "supplierId": "REPLACE_WITH_SUPPLIER_ID",
+      "lines": [
+        {
+          "productId": "EXAMPLE-1",
+          "qty": 10,
+          "unitMinor": 7000
+        }
+      ]
+    }
+  ],
+  "receipts": [
+    {
+      "poId": "REPLACE_WITH_PO_NUMBER",
+      "lines": [
+        {
+          "productId": "EXAMPLE-1",
+          "qty": 10
+        }
+      ]
+    }
+  ],
+  "supplierInvoices": [],
+  "buyingPolicy": {
+    "buyerId": "REPLACE_WITH_BUYER_USER_ID",
+    "approvers": [
+      "REPLACE_WITH_A_DIFFERENT_USER_ID"
+    ],
+    "quantityToleranceBps": 0,
+    "priceToleranceBps": 100,
+    "immaterialMinor": 100
+  },
+  "categories": [
+    {
+      "categoryId": "example",
+      "name": "Example department",
+      "parentId": null,
+      "attributes": [
+        {
+          "key": "packSize",
+          "label": "a pack size",
+          "type": "text",
+          "required": true
+        }
+      ],
+      "regulated": []
+    }
+  ],
+  "productMaster": [
+    {
+      "productId": "EXAMPLE-1",
+      "tenantId": "REPLACE_WITH_TENANT_ID",
+      "sku": "EXAMPLE-1",
+      "name": "Example product",
+      "primaryCategoryId": "example",
+      "baseUom": "ea",
+      "taxClass": "REPLACE_WITH_HSN_CODE",
+      "attributes": {
+        "packSize": "1kg"
+      },
+      "mrpHistory": [
+        {
+          "value": {
+            "minor": 12000,
+            "currency": "INR"
+          },
+          "effectiveFrom": "2026-01-01"
+        }
+      ],
+      "lifecycle": "active"
+    }
+  ],
+  "priceEntries": [
+    {
+      "id": "pe-example-1",
+      "productId": "EXAMPLE-1",
+      "scope": "store",
+      "scopeRef": "REPLACE_WITH_STORE_ID",
+      "priceMinor": 10000,
+      "effectiveFrom": "2026-01-01",
+      "status": "active",
+      "version": 1
+    }
+  ],
+  "pricingPolicy": {
+    "userId": "REPLACE_WITH_PRICING_USER_ID",
+    "approvers": [
+      "REPLACE_WITH_A_DIFFERENT_USER_ID"
+    ],
+    "marginFloorBps": 2000
+  },
+  "shelfLocations": [
+    {
+      "storeId": "REPLACE_WITH_STORE_ID",
+      "locationId": "L-A1",
+      "aisle": 1,
+      "rack": 1,
+      "bay": 1,
+      "shelf": 1,
+      "position": 1,
+      "label": "A1"
+    },
+    {
+      "storeId": "REPLACE_WITH_STORE_ID",
+      "locationId": "L-CHILL",
+      "aisle": 9,
+      "rack": 1,
+      "bay": 1,
+      "shelf": 1,
+      "position": 1,
+      "label": "Chiller",
+      "zone": "chilled"
+    }
+  ],
+  "shelfAssignments": [
+    {
+      "storeId": "REPLACE_WITH_STORE_ID",
+      "productId": "EXAMPLE-1",
+      "locationId": "L-A1",
+      "capacityMinor": 24,
+      "primary": true
+    }
+  ],
+  "shelfPolicy": {
+    "zoneOrder": [
+      "ambient",
+      "secure",
+      "chilled",
+      "frozen"
+    ]
+  },
+  "planogram": {
+    "planogramId": "pg-example-1",
+    "storeId": "REPLACE_WITH_STORE_ID",
+    "version": 1,
+    "effectiveFrom": "2026-01-01",
+    "createdBy": "REPLACE_WITH_MERCHANDISER_USER_ID",
+    "assignments": [
+      {
+        "storeId": "REPLACE_WITH_STORE_ID",
+        "productId": "EXAMPLE-1",
+        "locationId": "L-A1",
+        "capacityMinor": 24,
+        "primary": true
+      }
+    ]
+  },
+  "shelfCounts": [],
+  "backstock": {
+    "EXAMPLE-1": 0
+  },
+  "assortment": [
+    {
+      "storeId": "REPLACE_WITH_STORE_ID",
+      "productId": "EXAMPLE-1",
+      "status": "listed",
+      "effectiveFrom": "2026-01-01"
+    }
+  ],
+  "spaceAreas": [
+    {
+      "areaId": "example",
+      "storeId": "REPLACE_WITH_STORE_ID",
+      "name": "Example department",
+      "squareFeet": 0
+    }
+  ],
+  "salesByAreaMinor": {},
+  "marginByAreaMinor": {},
+  "displayContracts": [],
+  "fundingReceivedMinor": {},
+  "stillOccupying": [],
+  "merchandisingPolicy": {
+    "refillAtBp": 5000,
+    "countStaleAfterMinutes": 120,
+    "refillRole": "REPLACE_WITH_ROLE_THAT_FILLS_SHELVES"
+  },
+  "reportingRecords": [
+    "sales_rung_at_the_till",
+    "cost_prices_on_the_catalogue",
+    "departments_on_the_catalogue",
+    "the_boxs_own_outbox"
+  ],
+  "roles": [
+    {
+      "id": "REPLACE_WITH_ROLE_ID",
+      "name": "REPLACE_WITH_ROLE_NAME",
+      "permissions": [
+        "reporting.sales.export",
+        "reporting.operations.export"
+      ]
+    }
+  ],
+  "roleAssignments": [
+    {
+      "userId": "REPLACE_WITH_USER_ID",
+      "roleId": "REPLACE_WITH_ROLE_ID",
+      "branchScope": [
+        "REPLACE_WITH_BRANCH_ID"
+      ]
+    }
+  ],
+  "reportingPolicy": {
+    "laggingAfterMinutes": 5,
+    "staleAfterMinutes": 60,
+    "userId": "REPLACE_WITH_USER_ID"
+  },
+  "returnHistory": [],
+  "serviceCases": [],
+  "satisfaction": [],
+  "slaPolicy": {
+    "firstResponseMinutes": {
+      "urgent": 30,
+      "high": 120,
+      "normal": 480,
+      "low": 1440
+    },
+    "resolutionMinutes": {
+      "urgent": 240,
+      "high": 1440,
+      "normal": 4320,
+      "low": 10080
+    }
+  },
+  "servicePolicy": {
+    "returnWindowDays": 30,
+    "approvalThresholdMinor": 200000,
+    "noReceiptCapMinor": 100000,
+    "agentAuthorityMinor": 50000,
+    "compensationCapMinor": 500000,
+    "userId": "REPLACE_WITH_SERVICE_DESK_USER_ID"
+  },
+  "batches": [
+    {
+      "batchId": "REPLACE_WITH_BATCH_CODE",
+      "productId": "EXAMPLE-1",
+      "qty": 10,
+      "expiry": "2026-12-31",
+      "state": "on_hand"
+    }
+  ],
+  "recalls": [],
+  "expiryPolicy": {
+    "nearExpiryDays": 7,
+    "userId": "REPLACE_WITH_QUALITY_USER_ID"
+  },
+  "tallyPostings": [],
+  "financeLedger": {
+    "takingsMinor": 0,
+    "taxMinor": 0,
+    "refundsMinor": 0,
+    "billCount": 0
+  },
+  "periodState": {
+    "closed": false
+  },
+  "financePolicy": {
+    "period": "REPLACE_WITH_MONTH_YYYY_MM",
+    "tradingDayCutoff": "02:00",
+    "journalPrefixes": {
+      "takings": "REPLACE_WITH_YOUR_SALES_LEDGER_PREFIX",
+      "tax": "REPLACE_WITH_YOUR_GST_LEDGER_PREFIX",
+      "refunds": "REPLACE_WITH_YOUR_REFUND_LEDGER_PREFIX"
+    },
+    "userId": "REPLACE_WITH_FINANCE_USER_ID"
+  },
+  "accounts": [],
+  "supportSessions": [],
+  "devices": [
+    {
+      "deviceId": "REPLACE_WITH_DEVICE_ID",
+      "tenantId": "REPLACE_WITH_TENANT_ID",
+      "branchId": "REPLACE_WITH_BRANCH_ID",
+      "kind": "pos",
+      "label": "Lane 1",
+      "status": "active",
+      "appVersion": "1.0.0"
+    }
+  ],
+  "versionPolicy": {
+    "currentVersion": "1.0.0",
+    "minimumSupportedVersion": "1.0.0"
+  },
+  "auditRecords": [],
+  "retentionPolicies": [],
+  "legalHolds": [],
+  "adminPolicy": {
+    "dormantAfterDays": 60,
+    "userId": "REPLACE_WITH_ADMIN_USER_ID"
+  },
+  "killSwitches": [],
+  "agentBudgets": [
+    {
+      "agentId": "A01",
+      "tenantId": "REPLACE_WITH_TENANT_ID",
+      "monthlyCeilingMinor": 50000,
+      "defaultTier": "standard",
+      "permittedTiers": [
+        "small",
+        "standard"
+      ],
+      "enabled": true
+    },
+    {
+      "agentId": "A04",
+      "tenantId": "REPLACE_WITH_TENANT_ID",
+      "monthlyCeilingMinor": 30000,
+      "defaultTier": "small",
+      "permittedTiers": [
+        "small"
+      ],
+      "enabled": true
+    }
+  ],
+  "aiUsage": [],
+  "aiPending": [],
+  "aiEvaluations": {},
+  "aiPolicy": {
+    "staleAfterMinutes": 60,
+    "period": "REPLACE_WITH_PERIOD_YYYY_MM",
+    "platformCeilingMinor": 1500000,
+    "userId": "REPLACE_WITH_AI_SCREEN_USER_ID"
+  },
+  "lossPreventionRules": [
+    {
+      "kind": "refund",
+      "maxCount": 5,
+      "maxTotalValueMinor": 500000,
+      "escalateAtMultiple": 2
+    },
+    {
+      "kind": "void",
+      "maxCount": 10
+    }
+  ],
+  "consentPurposes": [
+    {
+      "purpose": "order_updates",
+      "channel": "sms",
+      "required": true
+    },
+    {
+      "purpose": "marketing",
+      "channel": "sms"
+    }
+  ],
+  "migrationSources": [
+    {
+      "sourceId": "REPLACE_WITH_SOURCE_ID",
+      "tenantId": "REPLACE_WITH_TENANT_ID",
+      "name": "The old ERP database",
+      "kind": "erp_database",
+      "ownerUserId": "REPLACE_WITH_OWNER_USER_ID",
+      "rowCount": 0,
+      "volumeBasis": "counted",
+      "retentionYears": 8,
+      "extractable": true
+    }
+  ],
+  "migrationExceptions": [],
+  "migrationTotals": [],
+  "parallelDays": [],
+  "parallelDifferences": [],
+  "historyExclusions": [],
+  "migrationPolicy": {
+    "cutoverId": "REPLACE_WITH_CUTOVER_ID",
+    "requiredCleanDays": 3,
+    "loadOperator": "REPLACE_WITH_LOAD_OPERATOR_USER_ID",
+    "cutoverAccepted": false,
+    "openAssessments": 0,
+    "userId": "REPLACE_WITH_MIGRATION_SCREEN_USER_ID"
+  }
+}

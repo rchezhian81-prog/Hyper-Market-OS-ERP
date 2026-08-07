@@ -1,0 +1,245 @@
+// The composition root — the one place the whole cloud API is assembled and started.
+//
+// Everything above this file is pure and injected; this is where the real database, the real
+// signing key and the real socket arrive. Keeping that in one file is what makes every other file
+// testable without any of them.
+//
+// The order it does things in is the deployment contract:
+//
+//   1. **Check the configuration.** If anything is missing, a placeholder, or too short to be a
+//      secret, print every problem at once and **exit non-zero**. Nothing else runs. A service
+//      that starts with a default signing key is a service running in production with one.
+//   2. **Open the event store.** Before the surface, because the surface is built around it —
+//      the thirteen services take their persistence as a port, and this is where the real one
+//      is supplied (`adapters.ts`).
+//   3. **Build the surface.** Thirteen services on one router. A route that breaks the kernel's
+//      conventions fails here, at boot, not on the request that finds it.
+//   4. **Listen**, and answer `/livez` and `/readyz` differently — a database it cannot reach
+//      means take me out of rotation, not restart me.
+//   5. **On SIGTERM, drain.** In-flight requests finish before the process goes.
+
+import { Client } from 'pg';
+import { SqlEventStore } from '../../../packages/persistence/src/event-store';
+import { pgClient } from '../../../packages/persistence/src/pg-client';
+import {
+  buildRouter, loadConfig, startHttpServer, CLOUD_API_CONFIG, SqlIdempotencyStore, SqlAuditSink,
+  type Route,
+} from '../../kernel/src/index';
+import { AccessControl } from '../../../packages/rbac/src/rbac';
+import type { TargetKind } from '../../../packages/migration/src/trial';
+import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
+import { posRoutes } from '../../pos/src/index';
+import { inventoryRoutes } from '../../inventory/src/index';
+import { identityRoutes, tokenAuthenticator } from '../../identity/src/index';
+import { platformRoutes } from '../../platform/src/index';
+import { purchaseRoutes } from '../../purchase/src/index';
+import { financeRoutes } from '../../finance/src/index';
+import { reportingRoutes } from '../../reporting/src/index';
+import { customerRoutes } from '../../customer/src/index';
+import { ordersRoutes } from '../../orders/src/index';
+import { fulfilmentRoutes } from '../../fulfilment/src/index';
+import { migrationRoutes } from '../../migration/src/index';
+import { aiRoutes } from '../../ai/src/index';
+import {
+  catalogueAdapter, posAdapter, inventoryAdapter, purchaseAdapter, financeAdapter,
+  customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
+  reportingAdapter, migrationAdapter, aiAdapter,
+} from './adapters';
+import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
+import type { DependencyProbe } from '../../platform/src/index';
+import type { EventStore } from '../../../packages/persistence/src/event-store';
+
+const now = (): string => new Date().toISOString();
+
+/**
+ * How long a click-and-collect reservation holds stock.
+ *
+ * Named here rather than typed twice as `60`, because the stub path and the live path both need
+ * it and two literals drift. It belongs in tenant settings (M02) once the config store is on this
+ * surface — a shop with one van and a shop with six do not hold stock for the same hour.
+ */
+const HOLD_MINUTES = 60;
+
+/**
+ * Build the whole API surface.
+ *
+ * Exported so a test can assemble it exactly as production does — the surface gate in
+ * `tests/integration/thirteen-apis-one-surface.test.ts` proves properties of *this* list, and it
+ * would prove nothing about a list assembled differently here.
+ */
+export function buildSurface(deps: {
+  readonly signingKey: string;
+  readonly migrationTargetKind: TargetKind;
+  /**
+   * Reachability of what the shop cannot trade without. A real call every time it is asked, not a
+   * flag something set earlier — a cached "reachable: true" is a health check that reports the
+   * last time things were fine.
+   */
+  readonly probes?: () => Promise<readonly DependencyProbe[]>;
+  /**
+   * Where the events go. Omitted, the surface still assembles and answers — which is what the
+   * route-shape tests need — but nothing persists. Supplying it is what turns the API from a
+   * shell into a system, and `main()` always does.
+   */
+  readonly store?: EventStore;
+}): readonly Route[] {
+  const signer = hmacSigner(deps.signingKey);
+  const empty = <T>(v: T) => () => v;
+  const store = deps.store;
+
+  const probes = deps.probes ?? (async () => []);
+
+  return [
+    ...identityRoutes(store === undefined ? {
+      roles: empty([]), permissionsOf: empty([]), recordGrant: () => {},
+      branches: empty([]), now,
+    } : identityAdapter({ store, now, roleCatalogue: ROLE_CATALOGUE })),
+    ...catalogueRoutes(store === undefined ? {
+      signer, currentPack: empty(undefined), storePack: () => {},
+      buildSnapshot: (tenantId) => ({ tenantId, version: 1, builtAt: now(), products: [], barcodes: [] }),
+      approvalsSince: empty([]), now,
+    } : catalogueAdapter({ store, signer, now })),
+    ...purchaseRoutes(store === undefined ? {
+      matchLines: empty([]), recordMatch: () => {}, applyBankChange: () => {},
+      openCommitments: empty(undefined), now,
+    } : purchaseAdapter({ store, now })),
+    ...inventoryRoutes(store === undefined ? {
+      availability: empty([]), appendMovement: () => {}, isKnown: empty(false), now,
+    } : inventoryAdapter({ store, now })),
+    ...posRoutes(store === undefined ? {
+      catalogue: empty(new Map()), currentPackVersion: empty(1),
+      saleHoldingReceipt: empty(undefined), isBanked: empty(false),
+      bankSale: () => {}, recordExceptions: () => {}, openExceptions: empty([]), now,
+    } : posAdapter({ store, now })),
+    ...customerRoutes(store === undefined ? {
+      consentRecords: empty([]), appendConsent: () => {}, pointsBalance: empty(undefined), now,
+    } : customerAdapter({ store, now })),
+    ...ordersRoutes(store === undefined ? {
+      onHand: empty(new Map()), outstanding: empty([]), holdReservations: () => {},
+      holdMinutes: HOLD_MINUTES, now,
+    } : ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES })),
+    ...fulfilmentRoutes(store === undefined
+      ? { appendAttempt: () => {}, attempts: empty([]), assigned: empty([]), now }
+      : fulfilmentAdapter({ store, now })),
+    ...financeRoutes(store === undefined ? {
+      periodStates: empty(new Map()), nextOpenPeriod: empty(now().slice(0, 7)),
+      appendJournal: () => {}, controlTotals: empty([]), postersIn: empty([]),
+      markClosed: () => {}, now,
+    } : financeAdapter({ store, now })),
+    ...reportingRoutes(store === undefined
+      ? { figures: empty([]), now }
+      : reportingAdapter({ store, now })),
+    ...platformRoutes(store === undefined ? {
+      probe: probes, flags: empty({}), setFlag: () => {}, recordSupportAccess: () => {}, now,
+    } : platformAdapter({ store, now, probes })),
+    ...migrationRoutes(store === undefined ? {
+      target: (tenantId) => ({
+        targetId: `tgt-${tenantId}`, tenantId,
+        kind: deps.migrationTargetKind, label: deps.migrationTargetKind,
+      }),
+      // Not `'u-owner'` and `'u-operator'`. A control that compares a caller against a
+      // placeholder is satisfied by anybody who types the placeholder.
+      findings: empty([]), acceptances: empty([]), signatures: empty([]),
+      recordAcceptance: () => {}, ownerId: empty(undefined),
+      extractionOperator: empty(undefined), now,
+    } : migrationAdapter({
+      store, now, targetKind: deps.migrationTargetKind, ownerRoleId: OWNER_ROLE_ID,
+    })),
+    ...aiRoutes(store === undefined ? {
+      // Stopped by default, matching the adapter. A kill switch that defaults off is an agent
+      // running because nobody has told it not to.
+      killSwitchOn: empty(true), setKillSwitch: () => {},
+      budget: empty({ capMinor: 0, spentMinor: 0, periodEnds: now() }),
+      enabledAgents: empty([]), run: empty([]), openProposals: empty([]), now,
+    } : aiAdapter({ store, now })),
+  ];
+}
+
+export async function main(env: Readonly<Record<string, string | undefined>> = process.env): Promise<void> {
+  // 1 — Configuration. Every problem at once, then stop.
+  const config = loadConfig(CLOUD_API_CONFIG, env);
+  if (!config.ok) {
+    process.stderr.write(`\n${config.detail}\n\n`);
+    process.exitCode = 78; // EX_CONFIG — a configuration fault, not a crash
+    return;
+  }
+  const settings = config.value!;
+
+  // 2 — Persistence, before the surface, because the surface is built around it.
+  const db = new Client({ connectionString: settings['DATABASE_URL']! });
+  await db.connect();
+  const store = new SqlEventStore(pgClient(db));
+
+  // 3 — The surface. A route that breaks a convention fails here, not on the request that finds it.
+  //
+  // Built exactly once. The first version of this built it twice — once to check the shape at boot
+  // and again with the store behind it — and then served `live.router!` without checking `live.ok`.
+  // Two surfaces that are asserted to be identical is one surface and one assumption, and the
+  // assumption is the one holding the non-null.
+  const reachable = async (): Promise<boolean> => {
+    try { await db.query('SELECT 1'); return true; } catch { return false; }
+  };
+
+  const built = buildRouter(buildSurface({
+    signingKey: settings['PACK_SIGNING_KEY']!,
+    migrationTargetKind: settings['MIGRATION_TARGET_KIND'] as TargetKind,
+    store,
+    probes: async () => [{
+      name: 'postgres',
+      criticality: 'shop_cannot_trade_without_it',
+      reachable: await reachable(),
+    }],
+  }));
+  if (!built.ok) {
+    process.stderr.write(`\nthe API surface is malformed and this service will not start:\n${
+      built.refusals.map((r) => `  • ${r.detail}`).join('\n')}\n\n`);
+    await db.end();
+    process.exitCode = 78;
+    return;
+  }
+
+  const server = startHttpServer({
+    router: built.router!,
+
+    // Tokens are verified against the identity provider's key, and the reason a token was not
+    // believed goes to the operator's log — never back to the caller, who is told "unauthenticated"
+    // and no more. "The signature did not verify" and "that token expired" are different sentences,
+    // and the difference is free information for whoever is trying tokens.
+    authenticate: tokenAuthenticator(
+      {
+        secret: settings['IDP_SIGNING_KEY']!,
+        issuer: settings['IDP_ISSUER']!,
+        audience: settings['IDP_AUDIENCE']!,
+      },
+      (reason) => { process.stderr.write(`auth refused: ${reason}\n`); },
+    ),
+    access: new AccessControl([], []),
+    // Durable and shared. In memory it emptied on every restart and was never shared between
+    // instances, so the guard that refuses a different request under a used key was quietly not
+    // there — which is not a crash, and would never have shown up in a test.
+    idempotency: new SqlIdempotencyStore(pgClient(db)),
+
+    // The audit trail. Optional in the kernel's type and NOT optional in a deployment: the port
+    // existed, nothing supplied it, and `writeAudit` returned immediately on every request — so
+    // hard rule #6 was protecting evidence that was never being kept.
+    audit: new SqlAuditSink(pgClient(db), (detail) => { process.stderr.write(`${detail}\n`); }),
+    newTraceId: () => `t-${Math.random().toString(36).slice(2, 10)}`,
+    port: Number(settings['PORT']),
+    dependenciesReachable: reachable,
+  });
+
+  process.stdout.write(`sre-api listening on ${settings['PORT']}, ${built.router!.list().length} routes\n`);
+
+  // 5 — Drain on SIGTERM. Killing in-flight work is a sale that reached the process and not the
+  // database, while the till believes it was delivered.
+  const shutdown = (signal: string) => {
+    void (async () => {
+      process.stdout.write(`${signal}: draining\n`);
+      await server.stop();
+      await db.end();
+      process.stdout.write('stopped cleanly\n');
+    })();
+  };
+  process.on('SIGTERM', () => { shutdown('SIGTERM'); });
+  process.on('SIGINT', () => { shutdown('SIGINT'); });
+}

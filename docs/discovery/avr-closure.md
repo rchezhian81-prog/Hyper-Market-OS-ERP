@@ -7,6 +7,15 @@ enter GO while an AVR item mapped to it remains open**.
 Each AVR needs a **named person who will answer it** (Stage 1 acceptance) plus the
 finding and its status. Fill the right-hand columns during Stage 1.
 
+> **Owner-friendly version:** `store-facts-questionnaire.md` (the **Store Setup Profile**)
+> turns every item below into a plain-language, choose-able setting grouped by who answers it
+> (owner / floor manager / accounts / IT / payments / privacy), plus the trading-day cut-off.
+>
+> **Per ADR-0003 (commercial, multi-tenant product):** these items are **per-tenant
+> configuration**, not product constants. The answers below configure **SRE Hyper Market as
+> tenant #1** (the pilot); every future retail tenant supplies its own the same way, at
+> onboarding. Nothing here is hard-coded into the product.
+
 Status legend: **Open** · **In progress** · **Closed**.
 
 | AVR ID | Audit decision / fact required | Who answers | Finding / answer | Status |
@@ -22,7 +31,7 @@ Status legend: **Open** · **In progress** · **Closed**.
 | AVR-09 | Tally version/company structure and current accounting workflow | | | Open |
 | AVR-10 | Payment providers, terminals, settlement and refund processes | | | Open |
 | AVR-11 | FSSAI, Legal Metrology and local licences/registrations | | | Open |
-| AVR-12 | Fresh production, pharmacy, food court, concession or regulated departments (**conditional module trigger**) | | | Open |
+| AVR-12 | Fresh production, pharmacy, food court, concession or regulated departments (**conditional module trigger**) | Owner | **SRE operates a cafe** (owner, 3 Aug 2026) — so SRE's setting is `production.departments = ['cafe']`, and only the cafe appears in SRE's screens, cold-chain scope and FSSAI obligations. **This scopes the tenant, not the product** (OB-05): every M11 department the roadmap names — cafe, bakery, deli, meat/fish, central kitchen — is **built**, including catch-weight costing and scale labels, because other tenants operate them. Roadmap §2.2 governs what a tenant is *shown*, not what the product *contains*. | **Closed** |
 | AVR-13 | Delivery radius, model, capacity, slots, fleet and partner strategy | | | Open |
 | AVR-14 | Customer app launch geography, payments, loyalty and service policy | | | Open |
 | AVR-15 | Data retention, privacy notice, consent and grievance practices | | | Open |

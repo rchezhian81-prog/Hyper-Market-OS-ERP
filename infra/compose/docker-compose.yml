@@ -1,0 +1,183 @@
+# SRE Retail OS — pilot / store-edge stack (ADR-0002, §19 "containers, IaC, CI/CD").
+#
+# This brings the whole system up on ONE machine with one command: PostgreSQL, the
+# schema migrations, and the app shells served over HTTP. It is deliberately
+# VENDOR-NEUTRAL — it runs on a shop back-office PC, a laptop, or any cloud VM — so
+# standing up a pilot does NOT pre-empt the owner's cloud-vendor decision (ADR-0002
+# item 4 stays open). The same containers are what the managed cloud tier runs later.
+#
+# Usage (see docs/runbooks/pilot-deployment.md for the plain-English guide):
+#   cp .env.example .env      # then edit .env and set a real database password
+#   docker compose up -d
+#
+# No credential is stored in this file or in git — every secret comes from .env,
+# which is git-ignored (hard rule #4).
+
+name: sre-retail-os
+
+services:
+  # ---------------------------------------------------------------------------
+  # The database. Managed PostgreSQL replaces this service in the cloud tier; the
+  # schema and the application are identical either way (P-06 portability).
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Deterministic collation, so ordering is identical on every machine.
+      LANG: C.UTF-8
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      # Bound to localhost only — the database is never exposed to the network.
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # ---------------------------------------------------------------------------
+  # One-shot: create the schema by running db/migrations in order. Idempotent —
+  # re-running applies only what is new (scripts/migrate.mjs), so it is safe to
+  # run on every deploy.
+  #
+  # It runs the SAME image the API is built from, because that image already
+  # carries `scripts/migrate.mjs`, the `db/migrations` and — the part that matters —
+  # `node_modules` with `pg`. A bare `node:22-alpine` with the repo mounted has no
+  # `node_modules`, so `import('pg')` fails on a fresh deploy (and in CI, which does
+  # not install dependencies): migrations that only run where somebody happened to
+  # have installed the tree are not migrations you can deploy.
+  # ---------------------------------------------------------------------------
+  migrate:
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Comes from the git-ignored .env — the same way the cloud tier injects it,
+      # so no connection string is ever written into a committed file.
+      DATABASE_URL: ${DATABASE_URL}
+    command: ['node', 'scripts/migrate.mjs']
+    restart: 'no'
+
+
+  # ---------------------------------------------------------------------------
+  # The cloud API — all thirteen domain services (API-01…13) on one router, one
+  # port. It REFUSES TO START if any secret is missing, still the placeholder from
+  # .env.example, or too short: a service that boots with a default signing key is
+  # a service running in production with a default signing key.
+  #
+  # Liveness and readiness are separate on purpose. A database it cannot reach
+  # makes it NOT READY (take it out of rotation) and still LIVE (do not restart
+  # it), because restarting will not reconnect the database and a crash loop hides
+  # the outage that caused it.
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      # Signs the catalogue packs the lanes trade on. Generate with:
+      #   openssl rand -base64 48
+      PACK_SIGNING_KEY: ${PACK_SIGNING_KEY}
+      # Whose tokens to believe. The API verifies; it never issues and never
+      # stores a credential (hard rule #4). Missing any of these three and it
+      # does not start.
+      IDP_SIGNING_KEY: ${IDP_SIGNING_KEY}
+      IDP_ISSUER: ${IDP_ISSUER}
+      IDP_AUDIENCE: ${IDP_AUDIENCE}
+      PORT: '8081'
+      NODE_ENV: production
+      # Never 'production' unless the migration really is running against live data.
+      MIGRATION_TARGET_KIND: ${MIGRATION_TARGET_KIND:-rehearsal}
+    ports:
+      - '127.0.0.1:${API_PORT:-8081}:8081'
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O- http://127.0.0.1:8081/livez || exit 1']
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    # Drain rather than kill: an in-flight request cut off is a sale that reached
+    # the process and not the database, while the till believes it was delivered.
+    stop_grace_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # The store edge — the box in the back office that lets the shop keep trading.
+  #
+  # It has NO depends_on and NO cloud settings that are required. That is the whole
+  # point of P-01: bring this up on its own, with the API stopped and the network
+  # unplugged, and the shop still sells. Give it CLOUD_API_URL and CLOUD_API_TOKEN
+  # and it will also drain its queue to the cloud when there is a line; leave them
+  # out and it says so plainly rather than pretending.
+  #
+  # No ports are published. The edge is not a service anybody calls — it owns a disk
+  # and drains a queue — and the way to be sure nothing can reach it is to publish
+  # nothing.
+  # ---------------------------------------------------------------------------
+  edge:
+    build:
+      context: ../..
+      dockerfile: infra/docker/edge.Dockerfile
+    restart: unless-stopped
+    environment:
+      EDGE_DATA_DIR: /var/lib/sre-edge
+      EDGE_TENANT_ID: ${EDGE_TENANT_ID}
+      # The same key the cloud signs packs with — the edge VERIFIES with it, which is
+      # how a lane knows a price list came from us (hard rule #4: from .env only).
+      PACK_SIGNING_KEY: ${PACK_SIGNING_KEY}
+      EDGE_CAPACITY_BYTES: ${EDGE_CAPACITY_BYTES:-10737418240}
+      # Optional, and read by the sync loop only. Absent means "sell, queue, sync later".
+      CLOUD_API_URL: ${CLOUD_API_URL:-}
+      CLOUD_API_TOKEN: ${CLOUD_API_TOKEN:-}
+    volumes:
+      # The one thing this container must be able to write is the one thing it must
+      # never lose, so it is a named volume rather than the container's own layer.
+      - edge-data:/var/lib/sre-edge
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    # Long, because stopping mid-drain loses nothing (an unacknowledged item stays
+    # queued) but stopping mid-WRITE is the one thing worth waiting for.
+    stop_grace_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # The app shells (POS, owner, ERP) served as static files. Each shell is
+  # offline-capable via its service worker, so a lane keeps working if this
+  # container or the network goes away (hard rule #1).
+  # ---------------------------------------------------------------------------
+  web:
+    image: nginx:alpine
+    restart: unless-stopped
+    depends_on:
+      - migrate
+    volumes:
+      - ../../apps/pos/web:/usr/share/nginx/html/pos:ro
+      - ../../apps/owner-app/web:/usr/share/nginx/html/owner:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - '${WEB_PORT:-8080}:80'
+
+volumes:
+  db-data:
+  edge-data:

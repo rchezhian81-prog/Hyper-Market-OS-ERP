@@ -60,3 +60,7 @@ Thumbs.db
 *.tfstate
 *.tfstate.*
 .terraform/
+
+# App build artifacts (produced by `pnpm build:pos`; the shell falls back without them)
+apps/*/web/*.bundle.js
+apps/*/web/*.bundle.js.map

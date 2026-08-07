@@ -1,0 +1,12 @@
+{
+  "name": "SRE Delivery",
+  "short_name": "Delivery",
+  "description": "Assigned route, proof of delivery, COD and end-of-shift handover for SRE Retail OS.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": []
+}

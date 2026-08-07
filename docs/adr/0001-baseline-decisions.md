@@ -1,6 +1,6 @@
 # ADR 0001 — Baseline decisions and the rules the machine enforces
 
-- **Status:** Accepted (baseline). Owner-closure fields D3/D4/D5/D8 remain open.
+- **Status:** Accepted (baseline). Owner-closure fields **D3/D4/D5/D8 closed on 2 August 2026** (see Part B); Stage 1 discovery (the 20 AVR store facts) and the trading-day cut-off remain the outstanding inputs to the M1 spec-freeze.
 - **Date:** 2 August 2026 (updated when the roadmap was added to the repository)
 - **Context:** Recorded during Setup 4 of the Claude Code Build Pack (Annexure H);
   completed from the roadmap decision register when `docs/roadmap/roadmap-v2.0.docx`
@@ -43,12 +43,12 @@ a written change (`docs/registers/changes.md`), never a silent drop.
 | --- | --- | --- | --- |
 | D1 | Indicative programme budget | ₹5–10 lakh (planning envelope only) | Recorded; commercial validation required |
 | D2 | Owner review capacity | ≥ 30 hours/week | Recorded |
-| D3 | Monthly running-cost ceiling | OWNER VALUE REQUIRED | **Open — blocking** before hosting/vendor commitment |
-| D4 | Second technical custodian | NAME REQUIRED | **Open — blocking** before production. Fill first. |
-| D5 | Formal GO date | DATE/SIGNATURE REQUIRED | **Open — blocking** before coding |
+| D3 | Monthly running-cost ceiling | ₹20,000 / month (2 Aug 2026) | Recorded; commercial validation vs vendor quotes required |
+| D4 | Second technical custodian | Mr Sivakumar (2 Aug 2026) | Recorded; custody (OD-09) + quarterly rebuild (AID-10) onboarding to follow |
+| D5 | Formal GO date | 2 August 2026 — owner GO | Recorded; signed GO record to be filed |
 | D6 | Initial online catalogue | 300–600 fast-moving products | Recorded; SKU list required |
 | D7 | Migration history | Full usable history | Recorded; exceptions only by owner approval |
-| D8 | Cutover targets | Store Core 1 April 2027; full completion date OWNER VALUE REQUIRED | Store Core scope & final date must be signed |
+| D8 | Cutover targets | Store Core 1 April 2027 (confirmed); full completion phased release-by-release | Recorded |
 
 ## Part C — Technology baseline (roadmap §19)
 

@@ -1,0 +1,12 @@
+{
+  "name": "SRE Store Manager",
+  "short_name": "Manager",
+  "description": "Approvals, exceptions, receiving, counts and day close for SRE Retail OS.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": []
+}

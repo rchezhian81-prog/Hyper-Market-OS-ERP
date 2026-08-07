@@ -1,0 +1,69 @@
+# Owner Configuration Register
+
+Store-specific values the owner will confirm during **master-data configuration / UAT**.
+
+**None of these blocks development.** Every item below is already implemented as
+**configuration with a documented safe default**, per the owner's autonomous-execution
+authorization (3 Aug 2026): *"When information is incomplete but does not create legal,
+financial, security or irreversible risk — implement the capability as configurable, use a
+clearly documented safe default, add it to the Owner Configuration Register, and continue."*
+
+Defaults are deliberately conservative: where a wrong value would cost money or breach a
+rule, the default **blocks and asks** rather than guessing (e.g. approval thresholds default
+low, so more things need a second person until the owner raises them).
+
+Status: **Default in use** · **Confirmed** · **Changed by owner**.
+
+| ID | Configuration item | Where it lives | Safe default in use | Confirm at |
+| --- | --- | --- | --- | --- |
+| OC-01 | Café recipes / bill of materials — which items are made on site and from what | `packages/production` (`Recipe`) + seed templates | Sample templates only; **no café recipe is production truth** until entered | Master-data config |
+| OC-02 | Café yields and portion sizes per recipe | `Recipe.outputQuantityMinor` | Per-recipe, entered with the recipe | Master-data config |
+| OC-03 | Café use-by / shelf-life hours per product | `Recipe.shelfLifeHours` + product-level override | Per-recipe; a recipe **cannot be saved without one** | Master-data config |
+| OC-04 | Café yield tolerance before a variance is raised | `Recipe.yieldToleranceBp` | 5% (500 bp) | UAT |
+| OC-05 | Wastage / spill reason codes | `packages/waste`, `packages/production` | Standard retail set, extensible per tenant | Master-data config |
+| OC-06 | Trading-day cut-off (when "today" ends for close and GST) | `SETTINGS.TRADING_DAY_CUTOFF` | `00:00` | Master-data config (A-11) |
+| OC-07 | Age-restricted minimum age | `SETTINGS.AGE_RESTRICTED_MINIMUM_AGE` | **18** — confirmed by owner (OB-03) | ✅ Confirmed |
+| OC-08 | Licensed selling hours | `SETTINGS.LICENCE_HOURS_ENABLED` | **off** — confirmed by owner (OB-03) | ✅ Confirmed |
+| OC-09 | Production departments operated | `SETTINGS.PRODUCTION_DEPARTMENTS` | **`['cafe']`** — confirmed by owner (OB-04) | ✅ Confirmed |
+| OC-10 | Approval thresholds (adjustment, refund, discount, write-off, PO value) | per-tenant policy on each engine | Deliberately **low**, so more things need a second person until raised | UAT |
+| OC-11 | Supervisor override limits and escalation path | `SupervisorAuthority` | Low limit, escalates to store manager | UAT |
+| OC-12 | Goods-in tolerances (excess, shortage, near-expiry days, cold-chain °C) | `ReceiptPolicy` | 2% excess, 1% shortage, 30 days, 5°C | UAT |
+| OC-13 | Three-way-match tolerances (price bp, quantity bp, immaterial value) | `MatchPolicy` | 1% price, 0% quantity, ₹1 immaterial | UAT |
+| OC-14 | Delivery radius and zones | `SETTINGS.DELIVERY_RADIUS_KM` | 0 (off) — roadmap commits **10 km** at launch | Stage 15 |
+| OC-15 | Receipt header/footer, logo, statutory lines | `packages/receipt` template | Generic tenant template | Master-data config |
+| OC-16 | Notification wording and templates (WhatsApp/SMS/email) | `packages/notifications` | Approved neutral templates | Stage 14 |
+| OC-17 | Stock ageing buckets | `DEFAULT_AGEING_BUCKETS` | 0-30 / 31-60 / 61-90 / 90+ days | UAT |
+| OC-18 | Retention periods per data class | `packages/audit` `RetentionPolicy` | **Keep** — no policy means never delete | With legal/CA |
+| OC-19 | Licence/certificate register contents and named owners | `packages/compliance` | Empty; alerts cannot fire until entered | Master-data config |
+| OC-20 | Number-series formats per document type | `packages/numbering` | `PREFIX-YYYY-NNNNNN` | Master-data config |
+| OC-21 | Default GST rate and HSN mapping per category | `SETTINGS.DEFAULT_TAX_BPS` + product master | 0 — a product **cannot publish** without a tax class | Master-data config (with CA) |
+| OC-22 | Languages offered on POS and customer app | `SETTINGS.LANGUAGES` | `['en', 'ta']` | UAT |
+| OC-23 | Session idle/absolute timeout, lockout threshold | `SessionPolicy` | 15 min idle, 10 h absolute, 5 failures | UAT |
+| OC-24 | Offline cached-identity window at the lane | `SessionPolicy.offlineIdentityMaxMinutes` | 12 h | UAT |
+| OC-25 | Emergency-access maximum duration | `EmergencyPolicy.maxMinutes` | 4 h | UAT |
+| OC-26 | Catch-weight standard yields per cut (weighed tenants) | `CatchWeightRun.standardYieldBp` | Per-process, entered with the process | Per tenant |
+| OC-27 | Embedded weight/price barcode layout for the store's scales | `EmbeddedBarcodeRule` | Common EAN-13 scheme (prefix `2`) | Master-data config |
+| OC-28 | Backup retention and restore-test frequency | `infra/` + DR runbook | 30 days, restore tested monthly | Stage 5 gate |
+| OC-29 | Supplier-statement timing window — how many days before a difference stops being "in the post" | `reconcileSupplierStatement` `timingWindowDays` | **15 days** | Migration (with CA) |
+| OC-30 | Unexplained supplier difference that need not block the opening balance | `supplierPosition` `toleranceMinor` | **₹0** — every difference is worked. There is **no** tolerance for a supplier who never replied, and none for an invoice only they have | Migration (with CA) |
+| OC-31 | Card/UPI commission rate, GST on it, and settlement lag per provider | `RouteTerms` | **None assumed.** The check **refuses** to run until the rate is given, and refuses a rate worked out from the gap it explains — take it off the merchant agreement | Migration (from the merchant agreement) |
+| OC-32 | Cash taken but not yet lodged that need not block — the float and the till change | `verifySalesAgainstBank` `toleranceMinor` | **₹0** — every rupee is explained until the owner sets the real float | Migration (with CA) |
+| OC-33 | GST slabs the tenant may have traded at | `STATUTORY_SLABS_BPS` / `permittedSlabsBps` | **0, 0.25, 3, 5, 12, 18, 28 %** — the Indian set. A books line at any other rate is refused as a blended average | Migration (with CA) |
+| OC-34 | Per-line rounding allowed on a filed return before its arithmetic is called wrong | `acceptFiledReturn` `roundingAllowanceMinor` | **₹1** | Migration (with CA) |
+| OC-35 | Tax periods the migration covers | `taxPosition` `periodsExpected` | **None assumed** — stated up front, so a period with no return in hand is named rather than silently absent | Migration (with CA) |
+| OC-36 | Accounts that can only come from the CA (depreciation, provisions, accruals, prepayments, drawings) | `reconcileOpeningBooks` `caOnlyAccountCodes` | **None assumed** — named up front with the CA, because their absence is not a variance but exactly what would end up in suspense | Migration (with CA) |
+| OC-37 | Per-account tolerance against the signed accounts | `reconcileOpeningBooks` `toleranceMinor` | **₹0** — every account matches what was signed. There is **no** tolerance for a trial balance that does not balance, and none for a balancing figure at any value | Migration (with CA) |
+| OC-38 | What one redeemed loyalty point actually costs the store, in goods | `assessLoyaltyVerification` `pointCostMinor` | **None assumed** — needed to put a rupee figure on points we credited and nobody will ever mention | Migration (with CA) |
+| OC-39 | Loyalty tier thresholds, and how close to one a customer must be to get asked | `planLoyaltySample` `tierThresholds` / `tierBoundaryWindow` | **Off** until the tiers are given. A tier is on every receipt, so a customer one point from a threshold is worth asking | Master-data config |
+| OC-40 | Points difference at or below which a customer's balance need not block | `assessLoyaltyVerification` `tolerancePoints` | **0** — every difference is looked at. There is **no** tolerance for a customer who was asked and never replied | Migration |
+| OC-41 | Whether customers are held at their old tier for a period after go-live | Owner decision at cutover | **Not set** — offered as the usual answer where several tiers moved, never applied silently | Before go-live |
+| OC-42 | Order a picker collects the shop's zones in | `SETTINGS.PICK_ZONE_ORDER` → the store pack's `shelfPolicy.zoneOrder` | **`['ambient', 'secure', 'chilled', 'frozen']`** — confirmed by owner (OB-07). Product default is **empty**: unset, the walk is by shelf position alone and the handheld says so, because guessing a cold-chain order is a licensed-premises decision and a wrong guess is silent | ✅ Confirmed |
+| OC-43 | Shelf addresses — aisle, rack, bay, shelf and position per location, and which product lives on which | store pack `shelfLocations` / `shelfAssignments` | **Empty** — a shop with no shelf map has its pick list in the order it arrived, and the handheld says so rather than implying a route | Master-data config |
+| OC-44 | How long a shelf count stays worth acting on | `SETTINGS.SHELF_COUNT_STALE_AFTER_MINUTES` → store pack `merchandisingPolicy.countStaleAfterMinutes` | **120 minutes** — confirmed by owner (OB-08). A count of *exactly* 120 minutes still raises a refill; one at 121 does not. Past the window a facing raises **no** task rather than sending somebody on an old reading | ✅ Confirmed |
+| OC-45 | How empty a facing must be before it is worth a trip | `SETTINGS.SHELF_REFILL_AT_BP` → store pack `merchandisingPolicy.refillAtBp` | **5,000 bp (half empty)** — confirmed by owner (OB-08). A facing at *exactly* half is properly filled; the trip starts below it. An empty facing is urgent, a half-empty one is not | ✅ Confirmed |
+| OC-46 | The role that picks up a refill task | store pack `merchandisingPolicy.refillRole` | **None assumed** — a task with no owner is not a task (M25), so the box serves the role the tenant named | Master-data config |
+| OC-47 | The shelf plan itself — what should be on each facing and how many fit | store pack `planogram` | **Absent.** With no plan the shelf check refuses outright and says so, rather than reporting a shop with no problems | Master-data config |
+
+> **How to use this at UAT:** work down the list. For each row either accept the default
+> (say nothing) or give the value. Nothing here needs a technical answer — every one is a
+> business fact about how the store runs.

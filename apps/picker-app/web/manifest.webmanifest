@@ -1,0 +1,12 @@
+{
+  "name": "SRE Picker",
+  "short_name": "Picker",
+  "description": "Assigned waves, scanning, substitution and packing for SRE Retail OS.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": []
+}

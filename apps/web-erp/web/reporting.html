@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Reports</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      Reporting (D13 / M29-FR-01/02 / API-10). A fifth shell in this folder, sharing
+      the one bundle.
+
+      The list of reports this shop CANNOT run is as prominent as the list it can, and
+      it says which fact is missing. A screen showing only what works looks finished,
+      and somebody who cannot find shrinkage concludes the shop has none.
+    -->
+    <style>
+      :root {
+        --bg: #0f172a; --panel: #1e293b; --ink: #f8fafc; --muted: #94a3b8;
+        --good: #22c55e; --warn: #f59e0b; --danger: #ef4444; --info: #38bdf8;
+        --line: #334155;
+        --tap: 48px;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--ink);
+        font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        min-height: 100dvh; display: flex; flex-direction: column;
+      }
+      header {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; padding: 12px 16px; background: var(--panel); flex-wrap: wrap;
+      }
+      .who { font-weight: 600; }
+      .who small { display: block; color: var(--muted); font-weight: 400; font-size: 14px; }
+      .lang { background: transparent; color: var(--muted); min-height: 40px; font-size: 14px; border: 0; }
+
+      .sample { background: var(--warn); color: #451a03; padding: 8px 16px; font-weight: 600; font-size: 15px; margin: 0; }
+      .sample[hidden] { display: none; }
+      .stale { background: #1e3a5f; color: #dbeafe; padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info); }
+      .stale[hidden] { display: none; }
+      /*
+        How current everything on this screen is. It sits at the very top because a
+        number quoted three hours after the sync stopped looks exactly like a live one.
+      */
+      .freshness { padding: 8px 16px; margin: 0; font-size: 15px; background: #0b1220; color: var(--muted); }
+      .freshness.stale { background: #422006; color: #fde68a; }
+      .freshness.missing { background: #422006; color: #fde68a; font-weight: 600; }
+
+      nav { display: flex; gap: 8px; padding: 8px 16px; background: var(--panel); overflow-x: auto; }
+      nav button {
+        min-height: var(--tap); padding: 0 18px; border: 0; border-radius: 12px;
+        background: var(--line); color: var(--ink); font-size: 16px; font-weight: 600; white-space: nowrap;
+      }
+      nav button[aria-current='page'] { background: var(--ink); color: #0f172a; }
+
+      main { flex: 1; padding: 16px; display: grid; gap: 16px; align-content: start; max-width: 900px; }
+      section[hidden] { display: none; }
+      h2 { margin: 0 0 4px; font-size: 20px; }
+      h3 { margin: 16px 0 8px; font-size: 17px; }
+      p.lead { margin: 0 0 12px; color: var(--muted); font-size: 15px; }
+
+      button {
+        min-height: var(--tap); border-radius: 12px; border: 0; font-size: 16px; font-weight: 600;
+        background: var(--line); color: var(--ink);
+      }
+      button.primary { background: var(--good); color: #052e16; font-size: 18px; }
+      button:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+      .wide { width: 100%; }
+
+      .row {
+        background: var(--panel); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px;
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      }
+      .row .what { display: grid; gap: 2px; }
+      .row .what small { color: var(--muted); font-size: 14px; }
+      .row.ready { border-left: 5px solid var(--good); }
+      /* A report nobody can run yet. Listed, never hidden. */
+      .row.blocked { border-left: 5px solid var(--warn); }
+      .row.blocked .what small { color: #fde68a; }
+      /* Waiting on US, not on the shop — a different colour so the two are never read as one job. */
+      .row.ours { border-left: 5px solid var(--info); }
+      .row.ours .what small { color: #bae6fd; }
+
+      /* One figure. The value is large; the as-at sits under it, always. */
+      .figure {
+        background: var(--panel); border-radius: 14px; padding: 14px 16px; margin-bottom: 8px;
+        border-left: 6px solid var(--line); display: grid; gap: 4px;
+      }
+      .figure.lagging { border-left-color: var(--warn); }
+      .figure.stale { border-left-color: var(--danger); }
+      .figure.unavailable { border-left-color: var(--info); }
+      .figure .name { color: var(--muted); font-size: 15px; }
+      .figure .value { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .figure .value.none { font-size: 18px; font-weight: 600; color: var(--info); }
+      .figure .asat { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+
+      table { width: 100%; border-collapse: collapse; font-size: 15px; }
+      th { text-align: left; color: var(--muted); font-size: 13px; font-weight: 500; padding: 8px 6px; }
+      td { padding: 8px 6px; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+      .empty { color: var(--muted); padding: 20px 4px; }
+
+      .banner {
+        position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 18px 16px;
+        background: var(--danger); color: #fff; display: grid; gap: 10px;
+      }
+      .banner[hidden] { display: none; }
+      .banner.good { background: var(--good); color: #052e16; }
+      .banner strong { font-size: 20px; }
+      .banner p { margin: 0; font-size: 16px; }
+      .banner button { background: #7f1d1d; color: #fff; }
+      .banner.good button { background: #052e16; color: #ecfdf5; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="who" id="who">Reports<small id="whoami">—</small></span>
+      <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
+    </header>
+
+    <p class="sample" id="sample" hidden role="status">Sample data — this is not your shop.</p>
+    <p class="stale" id="stale" hidden role="status"></p>
+    <p class="freshness" id="freshness" role="status">—</p>
+
+    <nav id="tabs" aria-label="Sections">
+      <button id="tab-reports" type="button" aria-current="page">Reports</button>
+      <button id="tab-blocked" type="button">Cannot be run yet</button>
+      <button id="tab-backlog" type="button">What to record next</button>
+    </nav>
+
+    <main>
+      <section id="view-reports">
+        <h2 id="reports-title">Reports</h2>
+        <p class="lead" id="reports-lead">Everything this shop can report on today. Every number says when it was true.</p>
+        <div id="reports-list"></div>
+      </section>
+
+      <!--
+        The reports that cannot be produced. As prominent as the ones that can, because
+        an absence somebody has to notice is one nobody notices.
+      -->
+      <section id="view-blocked" hidden>
+        <h2 id="blocked-title">Cannot be run yet</h2>
+        <p class="lead" id="blocked-lead">These are listed on purpose. Each one says which fact the shop is not recording — running them and showing nought would be worse than not offering them.</p>
+        <div id="blocked-list"></div>
+      </section>
+
+      <section id="view-backlog" hidden>
+        <h2 id="backlog-title">What to record next</h2>
+        <p class="lead" id="backlog-lead">Start recording these and the reports beside them start working. Ordered by how many each one unlocks on its own.</p>
+        <div id="backlog-list"></div>
+      </section>
+
+      <!-- One report, with its figures and the rows behind them. -->
+      <section id="view-report" hidden>
+        <h2 id="report-title">—</h2>
+        <p class="lead" id="report-answers">—</p>
+        <div id="report-figures"></div>
+
+        <h3 id="rows-title">The rows behind these figures</h3>
+        <div id="report-rows"></div>
+
+        <button id="export" class="primary wide" type="button">Write this out to a file</button>
+        <p class="lead" id="export-note">The file carries its own column list, and personal data is removed unless you are allowed to see it.</p>
+        <button id="back" type="button" class="wide">Back to the list</button>
+      </section>
+    </main>
+
+    <div class="banner" id="banner" hidden role="alert">
+      <strong id="banner-title">—</strong>
+      <p id="banner-text"></p>
+      <button id="banner-ok" type="button">I have read this</button>
+    </div>
+
+    <!--SCREEN-DATA-->
+    <script type="module" src="./web-erp.bundle.js"></script>
+    <script type="module" src="./reporting.js"></script>
+  </body>
+</html>

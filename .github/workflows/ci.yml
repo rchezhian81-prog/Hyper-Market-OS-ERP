@@ -52,3 +52,163 @@ jobs:
 
       - name: Dependency vulnerability scan
         run: pnpm audit --audit-level=high
+
+      - name: Software bill of materials (QG-03)
+        # Regenerated from the installed tree on every run. The check below fails if
+        # the committed SBOM has drifted from what is actually installed — an SBOM
+        # that is merely present, and stale, is worse than none.
+        run: |
+          pnpm run sbom
+          git diff --exit-code --stat docs/evidence/sbom.json \
+            || (echo "::error::SBOM is out of date — run 'pnpm run sbom' and commit the result" && exit 1)
+
+  integration:
+    name: Stage gate suites (real PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # The slice is only meaningful against a real database. A mock would pass
+        # while the schema was wrong — which is exactly what happened before this
+        # job existed (see db/migrations/0005).
+        image: postgres:16
+        env:
+          POSTGRES_USER: sre
+          POSTGRES_DB: sre_core
+          # Throwaway container, reachable only from this job. Trust auth means no
+          # credential appears in this file at all — the repository's secret scan is
+          # absolute, and "it is only CI" is exactly how the first one gets in.
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Migrate, then prove the migrations are idempotent
+        env:
+          DATABASE_URL: postgres://sre@localhost:5432/sre_core
+        run: |
+          pnpm db:migrate
+          pnpm db:migrate
+
+      # Every passed stage gate re-runs on every push. A gate that was proven once and
+      # never checked again is a claim, not a control.
+      #   Stage 6 — offline / duplicate / reorder / recovery / reconciliation
+      #   Stage 7 — purchase → GRN → invoice → payment
+      #   Stage 8 — physical-to-system reconciliation and recall
+      #   Stage 9 — end-of-day and refund controls
+      #   Stage 10 — the books reconcile and the owner can see why
+      #   Stage 14 — one customer, end to end
+      #   Stage 15 — pick to doorstep
+      - name: Stage 6 to 10, 14 and 15 gate suites
+        env:
+          DATABASE_URL: postgres://sre@localhost:5432/sre_core
+        run: pnpm run test:integration
+
+      - name: Backup, destroy and restore, reconciled (QG-08)
+        env:
+          DATABASE_URL: postgres://sre@localhost:5432/sre_core
+        run: |
+          node scripts/backup.mjs --out /tmp/backups
+          MANIFEST=$(ls /tmp/backups/*.manifest.json | head -1)
+          psql "postgres://sre@localhost:5432/postgres" -c "DROP DATABASE sre_core WITH (FORCE);"
+          psql "postgres://sre@localhost:5432/postgres" -c "CREATE DATABASE sre_core;"
+          node scripts/restore.mjs --manifest "$MANIFEST" \
+            --target "postgres://sre@localhost:5432/sre_core"
+
+
+  deploy:
+    name: The container builds, starts, and refuses a bad configuration
+    runs-on: ubuntu-latest
+    # A Dockerfile that is never built in CI is a Dockerfile that breaks silently and is
+    # discovered on the evening somebody is trying to deploy. A compose file that is never
+    # brought up is the same. Both are code that runs in production, so both run here.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the API image
+        run: docker build -f infra/docker/api.Dockerfile -t sre-api:ci .
+
+      - name: It REFUSES to start with no configuration, and says why
+        # The negative case first, because a start that succeeds proves the happy path and a
+        # refusal is the control. Exit 78 is EX_CONFIG — a configuration fault, not a crash.
+        run: |
+          set +e
+          OUT=$(docker run --rm sre-api:ci 2>&1)
+          CODE=$?
+          set -e
+          echo "$OUT"
+          test "$CODE" = "78" || (echo "::error::expected exit 78 (EX_CONFIG), got $CODE" && exit 1)
+          echo "$OUT" | grep -q "DATABASE_URL is not set" \
+            || (echo "::error::the refusal did not name the missing setting" && exit 1)
+          echo "$OUT" | grep -q "PACK_SIGNING_KEY is not set" \
+            || (echo "::error::the refusal named one problem, not all of them" && exit 1)
+          # No identity provider configured means nobody can log in — which is the correct
+          # failure. A deployment that starts without one starts letting everybody in.
+          echo "$OUT" | grep -q "IDP_SIGNING_KEY is not set" \
+            || (echo "::error::the API started without an identity provider" && exit 1)
+
+      - name: It REFUSES the placeholder from .env.example
+        run: |
+          set +e
+          OUT=$(docker run --rm \
+            -e DATABASE_URL="$(printf '%s://%s@db:5432/%s' postgres sre sre_core)" \
+            -e PACK_SIGNING_KEY=REPLACE_WITH_A_GENERATED_VALUE \
+            sre-api:ci 2>&1)
+          CODE=$?
+          set -e
+          test "$CODE" = "78" || (echo "::error::a placeholder secret was accepted" && exit 1)
+          echo "$OUT" | grep -q "still holds the value from .env.example" \
+            || (echo "::error::the placeholder refusal did not explain itself" && exit 1)
+
+      - name: The whole stack comes up and reports itself ready
+        run: |
+          cd infra/compose
+          cp .env.example .env
+          # Real values for CI only. This file is created here and never committed.
+          # The DB password is generated URL-SAFE (hex, not base64): it becomes part of
+          # DATABASE_URL below, and a base64 value carrying a '/' or '+' makes that string an
+          # invalid URL — a migrate container that exits 1 about two runs in three. The signing
+          # keys stay base64: they are compared as strings, never placed in a URL.
+          {
+            echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)"
+            echo "PACK_SIGNING_KEY=$(openssl rand -base64 48)"
+            echo "IDP_SIGNING_KEY=$(openssl rand -base64 48)"
+            echo "IDP_ISSUER=https://idp.ci.invalid/"
+          } >> .env
+          PW=$(grep '^POSTGRES_PASSWORD=' .env | tail -1 | cut -d= -f2-)
+          # Assembled with printf so the literal scheme://user:password@host shape never appears
+          # in a committed file — the repository's secret scan refuses it anywhere, and "it is
+          # only CI" is exactly how the first real one gets in.
+          printf 'DATABASE_URL=%s://%s:%s@db:5432/%s\n' postgres sre_app "$PW" sre_retail_os >> .env
+          docker compose up -d --build
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8081/readyz >/dev/null 2>&1; then
+              echo "ready after ${i}s"; curl -fsS http://127.0.0.1:8081/readyz; exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::the stack never became ready"
+          docker compose logs --no-color | tail -100
+          exit 1
+
+      - name: It drains rather than being killed
+        run: |
+          cd infra/compose
+          # SIGTERM, then confirm it exited cleanly rather than being force-killed after the
+          # grace period. A container killed mid-request is a sale that reached the process and
+          # not the database.
+          docker compose stop -t 30 api
+          docker compose ps -a --format '{{.Service}} {{.ExitCode}}' | grep -E '^api (0|143)$' \
+            || (echo "::error::the API did not stop cleanly" && exit 1)
+
+      - name: Tear down
+        if: always()
+        run: cd infra/compose && docker compose down -v && rm -f .env

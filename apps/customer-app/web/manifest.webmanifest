@@ -1,0 +1,12 @@
+{
+  "name": "SRE Hyper Market",
+  "short_name": "SRE Shop",
+  "description": "Shop, reorder, track your order and control your information.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": []
+}
