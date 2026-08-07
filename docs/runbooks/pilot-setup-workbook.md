@@ -9,6 +9,10 @@ once: for each line, either **accept the default** (tick the box and move on) or
 value** in the blank. Nothing here blocks the software — every item already runs on a safe
 default; this is where you replace the defaults that are guesses with the facts only you know.
 
+**Prefer a spreadsheet?** The same workbook is in this folder as **`pilot-setup-workbook.xlsx`** —
+fill the yellow "Your answer" cells, and filter the Configuration tab by "Action needed" to see the
+"give now" items first. It is easy to hand to your accountant (filter to the "CA / migration" rows).
+
 **Source of truth:** every line comes from `docs/registers/owner-configuration.md` (items
 OC-01…OC-47). If this workbook and that register ever disagree, the register wins.
 
