@@ -148,6 +148,21 @@ completion template, observability, API surface + event contract tests, and the 
   appended movements order-independently; negative stock is a reported exception, never blocked; a
   write-off needs a reason and a separate approver; per-tenant isolation; cashier append → 403. M08 →
   **INTEGRATION TESTED** for its API-04 core; multi-state sellable stock + warehouse bins (M09) pending.
+- **Done (this increment): supplier-invoice capture → three-way match wired on the cloud surface
+  (M06/M07, API-03, M07-FR-04, D03).** The cloud `/match` route folded a `PurchaseInvoiceCaptured`
+  stream **nothing wrote to**, so it refused every invoice — correctly, but uselessly. Added
+  `POST /v1/purchase/invoices/:invoiceId/capture` (`services/purchase`, `services/api/src/adapters.ts`)
+  which records the invoice's lines onto that stream, idempotently per invoice, so the match now
+  answers against real data. The three-way match pays the **lowest** of ordered/received/invoiced and
+  **withholds** the difference; an invoice nobody captured is refused as *not checked* — a distinct
+  answer from *checked and clean*; a re-sent capture **collapses** rather than doubling what the
+  supplier is owed; and the permission is grantable, so a cashier holds neither capture nor match
+  (403). Proven through the real API + real per-tenant RBAC in
+  `tests/integration/purchase-capture-match.test.ts` (6 cases). This is the **cloud counterpart** to
+  the buyer's ERP screen, which captures into the offline store-edge pack — the edge→cloud sync of
+  captures is a separate wire. M07 stays **PARTIALLY WIRED** (its FR-04 payment control is now wired +
+  integration-tested; receiving/GRN capture and OCR ingestion — D03-FR-02, NOT STARTED — are still off
+  the cloud surface). Full gate green (typecheck, lint, secret-scan, build:api, **4,550 tests**).
 
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the

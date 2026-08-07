@@ -91,6 +91,8 @@ export function verifyBankChange(r: BankChangeRequest): BankChangeResult {
 
 export interface PurchaseDeps {
   readonly matchLines: (tenantId: string, invoiceId: string) => Promise<readonly MatchLine[]> | readonly MatchLine[];
+  /** Record a supplier invoice's captured lines (ordered/received/invoiced per line) for the match. */
+  readonly recordCapture: (tenantId: string, invoiceId: string, lines: readonly MatchLine[]) => Promise<void> | void;
   readonly recordMatch: (tenantId: string, invoiceId: string, r: MatchResult) => Promise<void> | void;
   readonly applyBankChange: (tenantId: string, r: BankChangeRequest) => Promise<void> | void;
   /**
@@ -112,6 +114,39 @@ export interface Commitments {
 
 export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
   return [
+    {
+      // Capture a supplier invoice's lines against its order and delivery, so the three-way match has
+      // something to compare (D03/M07-FR-04). Without this the match route holds no lines for any
+      // invoice and correctly refuses every one. Idempotent per invoice: re-sending the same capture
+      // collapses rather than doubling the lines.
+      api: 'API-03', method: 'POST', path: '/v1/purchase/invoices/:invoiceId/capture',
+      permission: 'purchase.invoice.capture', idempotent: true,
+      handler: async (ctx) => {
+        const invoiceId = ctx.params['invoiceId'] ?? '';
+        const lines = (ctx.body as { lines?: readonly MatchLine[] } | null)?.lines;
+        if (!Array.isArray(lines) || lines.length === 0) {
+          throw apiError(400, {
+            code: 'no_lines_captured',
+            whatHappened: 'A capture must carry at least one invoice line.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { "lines": [ … ] }. Nothing was captured.',
+          });
+        }
+        for (const l of lines) {
+          const nums = [l.orderedQty, l.receivedQty, l.invoicedQty, l.orderedUnitMinor, l.invoicedUnitMinor];
+          if (typeof l.productId !== 'string' || l.productId.trim() === '' || !nums.every((n) => Number.isInteger(n) && n >= 0)) {
+            throw apiError(422, {
+              code: 'line_not_readable',
+              whatHappened: 'Every line needs a product and whole, non-negative ordered/received/invoiced quantities and unit prices.',
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Fix the line and send it again. Nothing was captured.',
+            });
+          }
+        }
+        await deps.recordCapture(ctx.tenantId, invoiceId, lines);
+        return { status: 201, body: { invoiceId, lines: lines.length } };
+      },
+    },
     {
       api: 'API-03', method: 'POST', path: '/v1/purchase/invoices/:invoiceId/match',
       permission: 'purchase.invoice.match', idempotent: true,

@@ -112,7 +112,7 @@ export function buildSurface(deps: {
       ? { recordPriceChange: () => {}, canApprove: () => Promise.resolve(false), now }
       : pricingAdapter({ store, now })),
     ...purchaseRoutes(store === undefined ? {
-      matchLines: empty([]), recordMatch: () => {}, applyBankChange: () => {},
+      matchLines: empty([]), recordCapture: () => {}, recordMatch: () => {}, applyBankChange: () => {},
       openCommitments: empty(undefined), now,
     } : purchaseAdapter({ store, now })),
     ...inventoryRoutes(store === undefined ? {

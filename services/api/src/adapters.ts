@@ -417,17 +417,32 @@ export function purchaseAdapter(input: {
     now: input.now,
 
     /**
-     * Lines for one invoice, from the receiving and invoice-capture events.
+     * Lines for one invoice, from its capture events.
      *
-     * Nothing writes `PurchaseInvoiceCaptured` yet (M06 receiving and invoice capture are not on
-     * this API surface), so today this is empty for every invoice — and `threeWayMatch` refuses
-     * an empty line set rather than calling it a match.
+     * `recordCapture` (the `/capture` route) writes `PurchaseInvoiceCaptured` onto this invoice's
+     * stream; an invoice nobody has captured has no lines here, and `threeWayMatch` refuses an
+     * empty line set rather than calling it a match. So the match answers only for invoices whose
+     * ordered/received/invoiced figures a person has actually entered.
      */
     matchLines: async (tenantId, invoiceId) => {
       const captured = await allOf<{ readonly lines: readonly MatchLineOf[] }>(
         input.store, tenantId, forInvoice(invoiceId), 'PurchaseInvoiceCaptured',
       );
       return captured.flatMap((c) => c.lines);
+    },
+
+    // Capture the invoice's lines onto its own per-invoice stream, where `matchLines` reads them.
+    // Idempotent per invoice: the key carries no timestamp, so a re-sent capture collapses rather
+    // than doubling the lines the match would then compare.
+    recordCapture: async (tenantId, invoiceId, lines) => {
+      await input.store.append(tenantId, forInvoice(invoiceId), makeEvent({
+        id: `capture-${invoiceId}`,
+        type: 'PurchaseInvoiceCaptured',
+        occurredAt: input.now(),
+        idempotencyKey: `capture-${tenantId}-${invoiceId}`,
+        source: 'api/purchase',
+        payload: { invoiceId, lines },
+      }));
     },
 
     recordMatch: async (tenantId, invoiceId, r) => {
