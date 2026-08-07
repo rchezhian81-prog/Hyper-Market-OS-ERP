@@ -38,6 +38,7 @@ import type { Role, RoleAssignment } from '../../../packages/rbac/src/rbac';
 import type { DependencyProbe, FeatureFlagChange, PlatformDeps } from '../../platform/src/index';
 import { inMemorySettings } from '../../platform/src/index';
 import type { DurableTenantSettings } from '../../../packages/tenant/src/index';
+import { InMemoryNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
 import { figure } from '../../reporting/src/index';
 import type { ReportingDeps } from '../../reporting/src/index';
 import type { MigrationDeps } from '../../migration/src/index';
@@ -686,13 +687,17 @@ export function identityAdapter(input: {
    * deployment owns the list rather than this file.
    */
   readonly roleCatalogue: readonly Role[];
+  /** Durable gap-free number series; a SqlNumberSeriesStore in production, in-memory otherwise. */
+  readonly numberSeries?: NumberSeriesStore;
 }): IdentityDeps {
   const assignments = (tenantId: string) =>
     allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+  const numberSeries = input.numberSeries ?? new InMemoryNumberSeriesStore();
 
   return {
     now: input.now,
     roles: () => input.roleCatalogue,
+    allocateNumber: (tenantId, docType) => numberSeries.allocate(tenantId, docType),
 
     /** Every permission from every role this user holds. Union, deduplicated, sorted. */
     permissionsOf: async (tenantId, userId) => {

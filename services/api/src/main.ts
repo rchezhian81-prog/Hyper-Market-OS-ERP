@@ -21,6 +21,7 @@
 import { Client } from 'pg';
 import { SqlEventStore } from '../../../packages/persistence/src/event-store';
 import { SqlConfigVersionStore } from '../../../packages/persistence/src/config-store';
+import { SqlNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
 import { pgClient } from '../../../packages/persistence/src/pg-client';
 import { DurableTenantSettings } from '../../../packages/tenant/src/index';
 import {
@@ -87,6 +88,8 @@ export function buildSurface(deps: {
   readonly store?: EventStore;
   /** Durable per-tenant settings (a SqlConfigVersionStore-backed store in production). */
   readonly settings?: DurableTenantSettings;
+  /** Durable gap-free number series (a SqlNumberSeriesStore-backed store in production). */
+  readonly numberSeries?: NumberSeriesStore;
 }): readonly Route[] {
   const signer = hmacSigner(deps.signingKey);
   const empty = <T>(v: T) => () => v;
@@ -97,8 +100,8 @@ export function buildSurface(deps: {
   return [
     ...identityRoutes(store === undefined ? {
       roles: empty([]), permissionsOf: empty([]), recordGrant: () => {},
-      branches: empty([]), now,
-    } : identityAdapter({ store, now, roleCatalogue: ROLE_CATALOGUE })),
+      branches: empty([]), allocateNumber: () => Promise.resolve(1), now,
+    } : identityAdapter({ store, now, roleCatalogue: ROLE_CATALOGUE, numberSeries: deps.numberSeries })),
     ...catalogueRoutes(store === undefined ? {
       signer, currentPack: empty(undefined), storePack: () => {},
       buildSnapshot: (tenantId) => ({ tenantId, version: 1, builtAt: now(), products: [], barcodes: [] }),
@@ -204,6 +207,7 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
     // Durable, append-only per-tenant settings: setup answers land in config_versions and survive a
     // restart, the same table and rules the in-memory path uses in tests.
     settings: new DurableTenantSettings(new SqlConfigVersionStore(pgClient(db))),
+    numberSeries: new SqlNumberSeriesStore(pgClient(db)),
     probes: async () => [{
       name: 'postgres',
       criticality: 'shop_cannot_trade_without_it',

@@ -107,6 +107,19 @@ completion template, observability, API surface + event contract tests, and the 
   across the whole policy, and is per-tenant + authorized (cashier 403). This is the producer/served
   layer; consumers (POS age-gate, receipt paper, finance currency) reading it in place of their own
   constants is the follow-on wiring, tracked per consumer.
+- **Done (this increment): gap-free document number series wired durably (M01-FR-02).** The numbering
+  engine (`packages/numbering`) was ENGINE ONLY; it is now a durable, authorized, per-tenant capability
+  of the running system. New migration `0009_number_series.sql` adds a per-(tenant, doc_type) counter
+  (a mutable STATE table, deliberately not append-only-guarded — the gap-free guarantee comes from
+  atomic allocation); `packages/persistence/src/number-series-store.ts` (`SqlNumberSeriesStore`)
+  allocates via `INSERT … ON CONFLICT DO UPDATE … RETURNING next_seq - 1`, whose row lock makes
+  concurrent allocations gap-free and collision-free; `POST /v1/identity/number-series/:docType`
+  (API-01, `documents.number.allocate`, idempotent) allocates and formats (RCP/INV/PO/GRN/STMT).
+  **`tests/integration/number-series.test.ts` proves 100 CONCURRENT allocations against real
+  PostgreSQL yield exactly 1..100 — no gaps, no duplicates** — plus authz (cashier 403), idempotent
+  retry (same key → same number), unknown-type 404, and per-tenant isolation. M01 stays PARTIALLY
+  WIRED (org hierarchy + document templates pending); its config FRs (trading-day, settings, number
+  series) are now wired.
 
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
