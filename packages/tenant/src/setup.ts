@@ -176,6 +176,12 @@ export interface SetupItemStatus {
   /** The value in force now — the tenant's answer, or the default. */
   readonly value: unknown;
   readonly isDefault: boolean;
+  /** Current config version (0 when on the default) — the token a save sends back (concurrency). */
+  readonly version: number;
+  /** Who last chose this value, if anyone — the audit fact the screen shows. */
+  readonly changedBy?: string;
+  /** When it was last chosen (ISO-8601 UTC), if ever. */
+  readonly changedAt?: string;
 }
 
 export interface SetupStatus {
@@ -201,6 +207,7 @@ export function setupStatus(
   const items: SetupItemStatus[] = catalogue.map((item) => {
     const answered = settings.isSet(tenantId, item.setting);
     const state: ItemState = item.required && !answered ? 'blocking' : answered ? 'answered' : 'using_default';
+    const meta = settings.metaOf(tenantId, item.setting);
     return {
       key: item.setting.key,
       label: item.setting.label,
@@ -210,6 +217,9 @@ export function setupStatus(
       state,
       value: settings.get(tenantId, item.setting),
       isDefault: !answered,
+      version: settings.versionOf(tenantId, item.setting),
+      changedBy: meta?.author,
+      changedAt: meta?.at,
     };
   });
 
@@ -237,9 +247,30 @@ export class InvalidSetupAnswerError extends Error {
 }
 
 /**
- * Record a tenant's answer to one setup item. Validated first (an invalid value is
- * refused, by name, never stored), then written through the versioned config engine
- * — so the change is audited, reversible, and isolated to this tenant.
+ * A save was made against a version that is no longer current — somebody else changed the setting
+ * in between. The write is refused rather than silently overwriting the newer value; the caller is
+ * told the current version so it can show the conflict and let a person decide.
+ */
+export class SetupVersionConflictError extends Error {
+  constructor(readonly key: string, readonly expected: number, readonly actual: number) {
+    super(`${key} changed since you loaded it (you had v${expected}, it is now v${actual}).`);
+    this.name = 'SetupVersionConflictError';
+  }
+}
+
+/** Validate a value against a setup item; throws InvalidSetupAnswerError, by name, if it does not fit. */
+export function validateSetupAnswer(item: SetupItem, value: unknown): void {
+  const problem = item.validate ? item.validate(value) : null;
+  if (problem !== null) throw new InvalidSetupAnswerError(item.setting.key, problem);
+}
+
+/**
+ * Record a tenant's answer to one setup item. Validated first (an invalid value is refused, by name,
+ * never stored), optionally checked for a version conflict, then written through the versioned config
+ * engine — so the change is audited, reversible, and isolated to this tenant.
+ *
+ * `ifVersion` is optimistic concurrency: when given, the write is refused unless it still matches the
+ * setting's current version, so a save made against a stale reading cannot clobber a newer one.
  */
 export function applyAnswer(
   settings: TenantSettings,
@@ -249,8 +280,12 @@ export function applyAnswer(
   author: string,
   effectiveAt: string,
   reason = 'store setup',
+  ifVersion?: number,
 ): void {
-  const problem = item.validate ? item.validate(value) : null;
-  if (problem !== null) throw new InvalidSetupAnswerError(item.setting.key, problem);
+  validateSetupAnswer(item, value);
+  if (ifVersion !== undefined) {
+    const actual = settings.versionOf(tenantId, item.setting);
+    if (actual !== ifVersion) throw new SetupVersionConflictError(item.setting.key, ifVersion, actual);
+  }
   settings.set(tenantId, item.setting, value, author, reason, effectiveAt);
 }

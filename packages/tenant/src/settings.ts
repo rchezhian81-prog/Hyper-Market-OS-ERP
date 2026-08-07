@@ -168,4 +168,24 @@ export class TenantSettings {
   isSet(tenantId: string, setting: TenantSetting<unknown>): boolean {
     return this.store.current(this.scopedKey(tenantId, setting)) !== undefined;
   }
+
+  /**
+   * The current config version for this tenant's setting (0 when unset). This is the token the
+   * setup screen sends back on a save so a change made against a stale reading is refused rather
+   * than silently overwriting a newer one (optimistic concurrency).
+   */
+  versionOf(tenantId: string, setting: TenantSetting<unknown>): number {
+    return this.store.current(this.scopedKey(tenantId, setting))?.version ?? 0;
+  }
+
+  /** Who last set this value and when (undefined when unset) — the audit facts the screen shows. */
+  metaOf(
+    tenantId: string,
+    setting: TenantSetting<unknown>,
+  ): { readonly version: number; readonly author: string; readonly at: string } | undefined {
+    const current = this.store.current(this.scopedKey(tenantId, setting));
+    return current === undefined
+      ? undefined
+      : { version: current.version, author: current.author, at: current.effectiveAt };
+  }
 }

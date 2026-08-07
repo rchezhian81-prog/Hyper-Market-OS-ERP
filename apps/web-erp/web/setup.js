@@ -1,12 +1,11 @@
-// Store setup — the view layer. Every rule lives in the TESTED session model
-// (apps/web-erp/src/setup-session.ts), attached as window.setupSession.
+// Store setup — the view layer. Every RULE lives in tested code: the read model
+// (apps/web-erp/src/setup-session.ts, window.setupSession) and the editing logic
+// (apps/web-erp/src/setup-editing.ts, window.setupEditing). This file only renders and wires.
 //
-// The screen a retailer reads to see how far its own setup has come: a one-line headline saying
-// whether the store can open, the list of what is still needed, and every setting with the value
-// in force and whether it is the tenant's own choice or a safe default. Read-only for now;
-// changing a setting is an audited write through the API (the next increment).
-//
-// No prompt, confirm or alert.
+// A retailer edits and saves its own configuration from this one page. Each field validates as the
+// engine would, saves against its version (so a stale save is refused, not silently overwritten),
+// queues offline, and shows loading / saved / queued / failed / conflict. Completeness recomputes
+// after a save. No setup value is a secret; none is logged. No prompt/confirm/alert.
 
 const el = (id) => document.getElementById(id);
 
@@ -29,8 +28,19 @@ const WORDS = {
     none: '(none)',
     on: 'on',
     off: 'off',
+    save: 'Save',
+    saving: 'Saving…',
+    saved: 'Saved ✓',
+    queued: 'Saved here — it will sync when the line is back.',
+    failed: 'Could not save:',
+    retry: 'Try again',
+    conflict: 'Someone changed this since you opened the page.',
+    reload: 'Reload',
+    unsaved: 'Unsaved change',
+    unsavedWarn: 'You have unsaved changes. Leave the page and lose them?',
+    changedBy: 'last set by',
+    readOnly: 'You are viewing this — an administrator can change it.',
     noSetup: 'This screen has not been told this store’s setup yet.',
-    changeNote: 'To change a setting, an administrator edits it here — saved changes are audited and reversible.',
   },
   ta: {
     title: 'கடை அமைப்பு',
@@ -50,21 +60,30 @@ const WORDS = {
     none: '(எதுவும் இல்லை)',
     on: 'இயக்கம்',
     off: 'அணைப்பு',
+    save: 'சேமி',
+    saving: 'சேமிக்கிறது…',
+    saved: 'சேமிக்கப்பட்டது ✓',
+    queued: 'இங்கே சேமிக்கப்பட்டது — இணைப்பு வந்தவுடன் ஒத்திசைக்கும்.',
+    failed: 'சேமிக்க முடியவில்லை:',
+    retry: 'மீண்டும் முயற்சி',
+    conflict: 'நீங்கள் பக்கத்தைத் திறந்த பிறகு யாரோ இதை மாற்றியுள்ளனர்.',
+    reload: 'மீண்டும் ஏற்று',
+    unsaved: 'சேமிக்கப்படாத மாற்றம்',
+    unsavedWarn: 'சேமிக்கப்படாத மாற்றங்கள் உள்ளன. பக்கத்தை விட்டு அவற்றை இழக்கவா?',
+    changedBy: 'கடைசியாக அமைத்தவர்',
+    readOnly: 'நீங்கள் இதைப் பார்க்கிறீர்கள் — ஒரு நிர்வாகி இதை மாற்றலாம்.',
     noSetup: 'இந்தக் கடையின் அமைப்பு இந்தத் திரைக்கு இன்னும் சொல்லப்படவில்லை.',
-    changeNote: 'ஒரு அமைப்பை மாற்ற, நிர்வாகி இங்கே அதைத் திருத்துவார் — சேமித்த மாற்றங்கள் தணிக்கை செய்யப்பட்டு, மீளக்கூடியவை.',
   },
 };
 let lang = 'en';
 const t = (key) => WORDS[lang][key] ?? WORDS.en[key];
 
-/** A value as a person reads it — a list, an on/off, or the plain value. */
 function readable(value) {
   if (Array.isArray(value)) return value.length === 0 ? t('none') : value.join(', ');
   if (typeof value === 'boolean') return value ? t('on') : t('off');
   return String(value);
 }
 
-/** A stand-in with the same surface as the bundled session, announced whenever it is in use. */
 function sampleSession() {
   return {
     headline: () => ({
@@ -76,16 +95,18 @@ function sampleSession() {
       {
         group: 'give_now',
         items: [
-          { key: 'tax.default_bps', label: 'Default GST rate', question: 'What default GST rate applies until a category sets its own?', required: true, state: 'blocking', value: 0, isDefault: true },
-          { key: 'trading_day.cutoff', label: 'Trading-day cut-off', question: 'When does one trading day end and the next begin?', required: false, state: 'using_default', value: '00:00', isDefault: true },
+          { key: 'tax.default_bps', label: 'Default GST rate', question: 'What default GST rate applies until a category sets its own?', required: true, state: 'blocking', value: 0, isDefault: true, version: 0 },
+          { key: 'trading_day.cutoff', label: 'Trading-day cut-off', question: 'When does one trading day end and the next begin?', required: false, state: 'using_default', value: '00:00', isDefault: true, version: 0 },
         ],
       },
     ],
+    canEdit: () => false,
   };
 }
 
-const real = window.setupSession;
-const session = real ?? sampleSession();
+const editing = window.setupEditing || null;
+let session = window.setupSession || sampleSession();
+const canEdit = Boolean(editing) && session.canEdit();
 
 function emptyLine(text) {
   const p = document.createElement('p');
@@ -94,9 +115,118 @@ function emptyLine(text) {
   return p;
 }
 
-function render() {
-  const h = session.headline();
+// ── Per-field editing ─────────────────────────────────────────────────────────
 
+function rawOf(control, kind) {
+  return kind === 'toggle' ? control.checked : control.value;
+}
+
+function initialValue(control, kind, value) {
+  if (kind === 'toggle') control.checked = value === true;
+  else if (kind === 'list') control.value = Array.isArray(value) ? value.join('\n') : '';
+  else control.value = String(value);
+}
+
+function makeControl(item) {
+  const spec = editing.editorFor(item.key);
+  let control;
+  if (spec.kind === 'select') {
+    control = document.createElement('select');
+    for (const opt of spec.options || []) {
+      const o = document.createElement('option');
+      o.value = opt.id;
+      o.textContent = opt.label;
+      control.append(o);
+    }
+  } else if (spec.kind === 'list') {
+    control = document.createElement('textarea');
+    control.rows = 2;
+  } else if (spec.kind === 'toggle') {
+    control = document.createElement('input');
+    control.type = 'checkbox';
+    control.className = 'toggle';
+  } else {
+    control = document.createElement('input');
+    control.type = spec.kind === 'number' || spec.kind === 'decimal' ? 'number'
+      : spec.kind === 'time' ? 'time' : 'text';
+    if (spec.kind === 'decimal') control.step = 'any';
+  }
+  control.id = `f-${item.key}`;
+  control.setAttribute('aria-labelledby', `q-${item.key}`);
+  initialValue(control, spec.kind, item.value);
+  return { control, kind: spec.kind };
+}
+
+function paintField(key) {
+  const fs = editing.controller.state(key);
+  const msg = el(`m-${key}`);
+  const saveBtn = el(`s-${key}`);
+  const retryBtn = el(`r-${key}`);
+  if (!msg || !saveBtn) return;
+
+  msg.className = 'fieldmsg';
+  retryBtn.hidden = true;
+  if (fs.error) {
+    msg.textContent = fs.error;
+    msg.classList.add('bad');
+  } else if (fs.status === 'saving') {
+    msg.textContent = t('saving');
+  } else if (fs.status === 'saved') {
+    msg.textContent = t('saved');
+    msg.classList.add('good');
+  } else if (fs.status === 'queued') {
+    msg.textContent = t('queued');
+    msg.classList.add('good');
+  } else if (fs.status === 'failed') {
+    msg.textContent = `${t('failed')} ${fs.message || ''}`;
+    msg.classList.add('bad');
+    retryBtn.hidden = false;
+    retryBtn.textContent = t('retry');
+  } else if (fs.status === 'conflict') {
+    msg.textContent = t('conflict');
+    msg.classList.add('bad');
+    retryBtn.hidden = false;
+    retryBtn.textContent = t('reload');
+  } else if (fs.dirty) {
+    msg.textContent = t('unsaved');
+  } else {
+    msg.textContent = '';
+  }
+  // Save is possible only for a clean, changed, not-in-flight draft.
+  saveBtn.disabled = fs.status === 'saving' || !fs.dirty || Boolean(fs.error);
+  saveBtn.textContent = t('save');
+}
+
+function onSave(key) {
+  const begun = editing.controller.beginSave(key);
+  paintField(key);
+  if (!begun.ok) return;
+  editing.save(key, begun.value, begun.ifVersion).then((result) => {
+    editing.controller.onResult(key, result);
+    paintField(key);
+    if (result.kind === 'saved' || result.kind === 'queued') {
+      editing.reload().then((fresh) => {
+        if (fresh) updateReadouts(editing.present(fresh));
+      });
+    }
+  });
+}
+
+function onRetry(key) {
+  const fs = editing.controller.state(key);
+  editing.controller.retry(key);
+  if (fs.status === 'conflict') {
+    editing.reload().then((fresh) => {
+      if (fresh) { session = editing.present(fresh); render(); }
+    });
+  } else {
+    paintField(key);
+  }
+}
+
+// ── Rendering ──────────────────────────────────────────────────────────────────
+
+function renderHeadline(h) {
   const box = el('headline');
   box.className = `headline ${h.complete ? 'good' : 'warn'}`;
   el('headline-text').textContent = h.complete ? t('ready') : t('notReady');
@@ -116,7 +246,97 @@ function render() {
       return li;
     }));
   }
+}
 
+/** Update the headline, block list and each row's read-outs after a save — without dropping editors. */
+function updateReadouts(freshSession) {
+  renderHeadline(freshSession.headline());
+  for (const group of freshSession.groups()) {
+    for (const item of group.items) {
+      const valueEl = el(`v-${item.key}`);
+      const tagEl = el(`t-${item.key}`);
+      if (valueEl) valueEl.textContent = `${t('now')}: ${readable(item.value)}`;
+      if (tagEl) tagEl.textContent = item.state === 'blocking' ? t('needed') : item.isDefault ? t('usingDefault') : t('yourChoice');
+    }
+  }
+}
+
+function itemRow(item) {
+  const row = document.createElement('div');
+  const kind = item.state === 'blocking' ? 'blocked' : item.isDefault ? 'default' : 'answered';
+  row.className = `row ${kind}`;
+
+  const what = document.createElement('div');
+  what.className = 'what';
+  const question = document.createElement('strong');
+  question.id = `q-${item.key}`;
+  question.textContent = item.question;
+  const value = document.createElement('small');
+  value.id = `v-${item.key}`;
+  value.textContent = `${t('now')}: ${readable(item.value)}`;
+  what.append(question, value);
+  if (item.changedBy) {
+    const audit = document.createElement('small');
+    audit.textContent = `${t('changedBy')} ${item.changedBy}${item.changedAt ? ` · ${new Date(item.changedAt).toLocaleString()}` : ''}`;
+    what.append(audit);
+  }
+
+  const side = document.createElement('div');
+  side.className = 'side';
+  const tag = document.createElement('span');
+  tag.className = 'tag';
+  tag.id = `t-${item.key}`;
+  tag.textContent = item.state === 'blocking' ? t('needed') : item.isDefault ? t('usingDefault') : t('yourChoice');
+  side.append(tag);
+
+  if (canEdit) {
+    editing.controller.seed(item.key, item.version);
+    const { control, kind: editorKind } = makeControl(item);
+    const edit = document.createElement('div');
+    edit.className = 'edit';
+
+    const saveBtn = document.createElement('button');
+    saveBtn.id = `s-${item.key}`;
+    saveBtn.type = 'button';
+    saveBtn.className = 'primary';
+    saveBtn.textContent = t('save');
+    saveBtn.disabled = true;
+
+    const retryBtn = document.createElement('button');
+    retryBtn.id = `r-${item.key}`;
+    retryBtn.type = 'button';
+    retryBtn.hidden = true;
+
+    const msg = document.createElement('small');
+    msg.id = `m-${item.key}`;
+    msg.className = 'fieldmsg';
+    msg.setAttribute('role', 'status');
+    msg.setAttribute('aria-live', 'polite');
+
+    const onInput = () => { editing.controller.edit(item.key, rawOf(control, editorKind)); paintField(item.key); };
+    control.addEventListener('input', onInput);
+    control.addEventListener('change', onInput);
+    if (editorKind !== 'list' && editorKind !== 'toggle') {
+      control.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); onSave(item.key); } });
+    }
+    saveBtn.addEventListener('click', () => onSave(item.key));
+    retryBtn.addEventListener('click', () => onRetry(item.key));
+
+    edit.append(control, saveBtn, retryBtn, msg);
+    what.append(edit);
+  } else {
+    const ro = document.createElement('small');
+    ro.className = 'fieldmsg';
+    ro.textContent = t('readOnly');
+    what.append(ro);
+  }
+
+  row.append(what, side);
+  return row;
+}
+
+function render() {
+  renderHeadline(session.headline());
   const groups = session.groups();
   el('groups').replaceChildren(...(groups.length === 0
     ? [emptyLine(t('noSetup'))]
@@ -125,28 +345,11 @@ function render() {
       const heading = document.createElement('h3');
       heading.textContent = t(group.group);
       wrap.append(heading);
-      for (const item of group.items) {
-        const row = document.createElement('div');
-        // Colour is never alone — the tag says it in words too.
-        const kind = item.state === 'blocking' ? 'blocked' : item.isDefault ? 'default' : 'answered';
-        row.className = `row ${kind}`;
-        const what = document.createElement('span');
-        what.className = 'what';
-        const question = document.createElement('strong');
-        question.textContent = item.question;
-        const value = document.createElement('small');
-        value.textContent = `${t('now')}: ${readable(item.value)}`;
-        what.append(question, value);
-        const tag = document.createElement('span');
-        tag.className = 'tag';
-        tag.textContent = item.state === 'blocking' ? t('needed') : item.isDefault ? t('usingDefault') : t('yourChoice');
-        row.append(what, tag);
-        wrap.append(row);
-      }
+      for (const item of group.items) wrap.append(itemRow(item));
       return wrap;
     })));
-
-  el('change-note').textContent = t('changeNote');
+  // Repaint any field state (e.g. after a language switch re-render).
+  if (canEdit) for (const group of groups) for (const item of group.items) paintField(item.key);
 }
 
 function paintStale() {
@@ -173,9 +376,17 @@ el('lang').addEventListener('click', () => {
 // The stale strip is its own concern, repainted in the reader's new language on a switch.
 el('lang').addEventListener('click', paintStale);
 
+// Nothing is lost silently: warn before leaving with an unsaved edit.
+window.addEventListener('beforeunload', (e) => {
+  if (canEdit && editing.controller.hasUnsavedChanges()) {
+    e.preventDefault();
+    e.returnValue = t('unsavedWarn');
+  }
+});
+
 // ── Boot ────────────────────────────────────────────────────────────────────
 
-el('sample').hidden = real !== undefined;
+el('sample').hidden = window.setupSession !== undefined;
 paintChrome();
 paintStale();
 

@@ -73,6 +73,9 @@ import {
 import type { LedgerSide, QueuedPosting } from '../../../packages/period-close/src/index';
 import { createAdminSession, type AdminPorts, type AdminSession } from './admin-session';
 import { createSetupSession, type SetupSession } from './setup-session';
+import {
+  SetupEditController, editorFor, parseDraft, saveResultFromError, type SaveResult,
+} from './setup-editing';
 import type { SetupStatus } from '../../../packages/tenant/src/index';
 import type { Device, SupportSession, VersionPolicy } from '../../../packages/platform-admin/src/index';
 import {
@@ -467,6 +470,76 @@ export function bootSetup(data: SetupData | undefined): SetupSession | null {
   );
 }
 
+/**
+ * The editing surface the store-setup page drives: the tested controller and parser, plus the
+ * browser-only I/O (save, reload, re-present) kept thin so all the decisions stay in tested code.
+ */
+export interface SetupEditingApi {
+  readonly controller: SetupEditController;
+  readonly editorFor: typeof editorFor;
+  readonly parseDraft: typeof parseDraft;
+  /** Save one answer. Offline → queued; a stale version → conflict; a rule refusal → failed. */
+  readonly save: (key: string, value: unknown, ifVersion: number) => Promise<SaveResult>;
+  /** Re-read the whole setup status (so completeness recomputes after a save). */
+  readonly reload: () => Promise<SetupStatus | null>;
+  /** Re-present a fresh status through the tested screen model. */
+  readonly present: (status: SetupStatus) => SetupSession;
+}
+
+// One idempotency key per field, minted once and reused across retries — so a resend after a lost
+// reply cannot apply the same change twice (the key belongs to the decision, not the attempt).
+const setupIdempotency = new Map<string, string>();
+
+async function setupSave(key: string, value: unknown, ifVersion: number): Promise<SaveResult> {
+  const idem = setupIdempotency.get(key)
+    ?? (globalThis.crypto?.randomUUID?.() ?? `setup-${key}-${ifVersion}`);
+  setupIdempotency.set(key, idem);
+  try {
+    const res = await fetch(`/v1/platform/setup/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'idempotency-key': idem },
+      body: JSON.stringify({ value, ifVersion }),
+    });
+    if (res.status < 400) {
+      setupIdempotency.delete(key);
+      const status = (await res.json()) as SetupStatus;
+      const item = status.items.find((i) => i.key === key);
+      return { kind: 'saved', version: item?.version ?? ifVersion + 1 };
+    }
+    if (res.status === 409) {
+      setupIdempotency.delete(key);
+      return { kind: 'conflict', currentVersion: ifVersion };
+    }
+    setupIdempotency.delete(key);
+    const body = (await res.json().catch(() => ({}))) as { error?: { whatHappened?: string } };
+    return saveResultFromError(res.status, ifVersion, body.error?.whatHappened ?? 'The change was refused.');
+  } catch {
+    // No line: keep the key so a retry reuses it, and report queued — nothing is lost.
+    return { kind: 'queued' };
+  }
+}
+
+async function setupReload(): Promise<SetupStatus | null> {
+  try {
+    const res = await fetch('/v1/platform/setup', { method: 'GET', headers: { accept: 'application/json' } });
+    return res.status < 400 ? ((await res.json()) as SetupStatus) : null;
+  } catch {
+    return null;
+  }
+}
+
+function makeSetupEditing(data: SetupData): SetupEditingApi {
+  const config = { tenantId: data.storeId ?? 'tenant', userId: data.userId === undefined ? null : data.userId };
+  return {
+    controller: new SetupEditController(),
+    editorFor,
+    parseDraft,
+    save: setupSave,
+    reload: setupReload,
+    present: (status) => createSetupSession(config, { status: () => status }),
+  };
+}
+
 /** What the box tells the AI control screen. */
 export interface AiData {
   readonly userId?: string;
@@ -627,6 +700,7 @@ interface ManagerWindow {
   adminSession?: AdminSession;
   setupData?: SetupData;
   setupSession?: SetupSession;
+  setupEditing?: SetupEditingApi;
   aiData?: AiData;
   aiSession?: AiSession;
   migrationData?: MigrationData;
@@ -1093,7 +1167,10 @@ if (browserWindow !== undefined) {
   const admin = bootAdmin(browserWindow.adminData);
   if (admin !== null) browserWindow.adminSession = admin;
   const setup = bootSetup(browserWindow.setupData);
-  if (setup !== null) browserWindow.setupSession = setup;
+  if (setup !== null && browserWindow.setupData !== undefined) {
+    browserWindow.setupSession = setup;
+    browserWindow.setupEditing = makeSetupEditing(browserWindow.setupData);
+  }
   const ai = bootAi(browserWindow.aiData);
   if (ai !== null) browserWindow.aiSession = ai;
   const migration = bootMigration(browserWindow.migrationData);
