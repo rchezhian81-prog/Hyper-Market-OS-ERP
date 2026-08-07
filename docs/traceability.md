@@ -165,7 +165,7 @@ programme updates as each module is wired; it supersedes the family-level "Built
 | M12 | POS sale path | **E2E VERIFIED** (offline commit + sync proven, real PG) | M18 | Orders/fulfilment | ENGINE ONLY (service thin) |
 | M33 | Tenant self-setup | **INTEGRATION TESTED** (durable, API + UI) | M19 | Merchandising | PARTIALLY WIRED |
 | M02 | Identity/RBAC | **WIRED** (per-tenant authz repaired, E2E — 7 Aug) | M20 | Promotions | ENGINE ONLY |
-| M01 | Org/config/trading-day | PARTIALLY WIRED (cut-off unwired) | M21 | Returns/reversal | PARTIALLY WIRED |
+| M01 | Org/config/trading-day | PARTIALLY WIRED (**M01-FR-02 trading-day cut-off WIRED+integration-tested 7 Aug**; org/number-series/templates pending) | M21 | Returns/reversal | PARTIALLY WIRED |
 | M03 | Catalogue | PARTIALLY WIRED | M22 | B2B | ENGINE ONLY |
 | M04 | Picking | PARTIALLY WIRED (app-shell) | M23 | Finance | PARTIALLY WIRED (thin; totals refuse) |
 | M05 | Price-guard/list | ENGINE ONLY | M24 | Supplier portal | ENGINE ONLY |
