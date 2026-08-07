@@ -98,6 +98,15 @@ completion template, observability, API surface + event contract tests, and the 
   (cashier 403). M01 stays PARTIALLY WIRED as a module — its other FRs (org hierarchy, number series,
   templates) are still pending — but M01-FR-02 is done. The one remaining hop, writing this served
   policy into the box's delivered `EDGE_PACK_FILE`, is the pack-delivery/provisioning step.
+- **Done (this increment): durable settings are the single source for the box's operating policy.**
+  `storePolicyFrom` (and `GET /v1/platform/store-pack/policies`) now serve the tenant's whole
+  settings-derived policy from the one durable config store — trading-day cut-off, **base currency,
+  languages, default tax (bps), age-restricted minimum age, licence-hours flag, delivery radius and
+  receipt paper** — instead of each being a scattered constant. `tests/integration/store-pack-policy.test.ts`
+  proves the served policy is the documented defaults until configured, reflects the tenant's answers
+  across the whole policy, and is per-tenant + authorized (cashier 403). This is the producer/served
+  layer; consumers (POS age-gate, receipt paper, finance currency) reading it in place of their own
+  constants is the follow-on wiring, tracked per consumer.
 
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
