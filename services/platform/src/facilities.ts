@@ -10,15 +10,20 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
-  assessCompletion, findOverdue,
+  assessCompletion, findOverdue, closeIncident, buildComplianceEvidence,
   type MaintenanceSchedule, type ScheduledTask, type ScheduleCategory, type ScheduleFrequency,
+  type SafetyIncident, type IncidentKind, type IncidentSeverity,
 } from '../../../packages/facilities/src/index';
 
-export type { MaintenanceSchedule, ScheduledTask } from '../../../packages/facilities/src/index';
+export type { MaintenanceSchedule, ScheduledTask, SafetyIncident } from '../../../packages/facilities/src/index';
 
 const CATEGORIES: readonly ScheduleCategory[] = ['cleaning', 'pest_control', 'fire_safety', 'electrical_safety', 'maintenance', 'statutory'];
 const FREQUENCIES: readonly ScheduleFrequency[] = ['daily', 'weekly', 'monthly', 'quarterly', 'half_yearly', 'annual'];
+const INCIDENT_KINDS: readonly IncidentKind[] = ['injury', 'near_miss', 'fire', 'equipment_failure', 'food_safety', 'security'];
+const INCIDENT_SEVERITIES: readonly IncidentSeverity[] = ['minor', 'serious', 'reportable'];
 const isDate = (s: unknown): s is string => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00.000Z`));
+const isDateTime = (s: unknown): s is string => typeof s === 'string' && s.trim() !== '' && !Number.isNaN(Date.parse(s));
+const isStr = (s: unknown): s is string => typeof s === 'string' && s.trim() !== '';
 
 export interface FacilitiesDeps {
   readonly schedules: (tenantId: string) => Promise<readonly MaintenanceSchedule[]> | readonly MaintenanceSchedule[];
@@ -26,6 +31,8 @@ export interface FacilitiesDeps {
   readonly recordSchedule: (tenantId: string, schedule: MaintenanceSchedule) => Promise<void> | void;
   readonly recordTaskDue: (tenantId: string, task: { taskId: string; scheduleId: string; dueOn: string }) => Promise<void> | void;
   readonly recordTaskCompleted: (tenantId: string, task: ScheduledTask) => Promise<void> | void;
+  readonly incidents: (tenantId: string) => Promise<readonly SafetyIncident[]> | readonly SafetyIncident[];
+  readonly recordIncident: (tenantId: string, incident: SafetyIncident) => Promise<void> | void;
   readonly now: () => string;
 }
 
@@ -126,6 +133,90 @@ export function facilitiesRoutes(deps: FacilitiesDeps): readonly Route[] {
         if (!isDate(asAt)) throw apiError(400, { code: 'overdue_needs_a_date', whatHappened: 'The overdue list needs ?asOf=YYYY-MM-DD to measure lateness against.', wasItSaved: 'not_saved', nextSafeAction: 'Send the date. A list reads, it never writes.' });
         const overdue = findOverdue({ schedules: await deps.schedules(ctx.tenantId), tasks: await deps.tasks(ctx.tenantId), asAt });
         return { status: 200, body: { overdue, complianceRisks: overdue.filter((o) => o.level === 'compliance_risk').length, asAt: deps.now() } };
+      },
+    },
+    {
+      // Raise a safety incident — injury, near miss, fire, equipment failure, food safety, security.
+      api: 'API-11', method: 'POST', path: '/v1/facilities/incidents/:incidentId',
+      permission: 'facilities.incident.record', idempotent: true,
+      handler: async (ctx) => {
+        const incidentId = ctx.params['incidentId'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (!isStr(b['branchId']) || !INCIDENT_KINDS.includes(b['kind'] as IncidentKind) || !INCIDENT_SEVERITIES.includes(b['severity'] as IncidentSeverity)
+          || !isDateTime(b['occurredAt']) || !isDateTime(b['reportedAt']) || !isStr(b['reportedBy']) || !isStr(b['description'])
+          || (b['assetId'] !== undefined && !isStr(b['assetId']))) {
+          throw apiError(400, {
+            code: 'not_readable_as_an_incident',
+            whatHappened: 'An incident needs a branch, a kind, a severity (minor/serious/reportable), when it happened and was reported, who reported it, and a description.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the incident fields. Nothing was raised.',
+          });
+        }
+        const incident: SafetyIncident = {
+          incidentId, tenantId: ctx.tenantId, branchId: b['branchId'] as string,
+          kind: b['kind'] as IncidentKind, severity: b['severity'] as IncidentSeverity,
+          occurredAt: b['occurredAt'] as string, reportedAt: b['reportedAt'] as string,
+          reportedBy: b['reportedBy'] as string, description: b['description'] as string,
+          ...(Array.isArray(b['evidenceRefs']) ? { evidenceRefs: (b['evidenceRefs'] as unknown[]).filter((r): r is string => typeof r === 'string') } : {}),
+          ...(isStr(b['assetId']) ? { assetId: b['assetId'] } : {}),
+        };
+        await deps.recordIncident(ctx.tenantId, incident);
+        return { status: 201, body: { incidentId, kind: incident.kind, severity: incident.severity } };
+      },
+    },
+    {
+      // Close an incident — or refuse to. A close with no corrective action is refused; a serious one
+      // needs evidence and a second person (§28); a reportable one cannot close with no statutory
+      // notification on file — closing it internally is what makes everybody stop thinking about it (#6).
+      api: 'API-11', method: 'POST', path: '/v1/facilities/incidents/:incidentId/close',
+      permission: 'facilities.incident.record', idempotent: true,
+      handler: async (ctx) => {
+        const incidentId = ctx.params['incidentId'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        // closedBy must name a person; actionTaken must be a string but MAY be empty, so the engine can
+        // refuse a close with no corrective action as the business outcome `no_action_recorded` (422)
+        // rather than this boundary masking it as merely malformed.
+        if (!isStr(b['closedBy']) || typeof b['actionTaken'] !== 'string'
+          || (b['authorityNotifiedOn'] !== undefined && !isDate(b['authorityNotifiedOn']))) {
+          throw apiError(400, { code: 'close_needs_who_and_what', whatHappened: 'Closing an incident needs who closed it (closedBy) and the corrective action taken (actionTaken, which may be blank but must be present).', wasItSaved: 'not_saved', nextSafeAction: 'Send closedBy and actionTaken. Nothing was closed.' });
+        }
+        const incident = (await deps.incidents(ctx.tenantId)).find((i) => i.incidentId === incidentId);
+        if (incident === undefined) throw notFound(`facilities incident ${incidentId}`);
+        const at = deps.now();
+        const result = closeIncident({
+          incident, closedBy: b['closedBy'] as string, actionTaken: b['actionTaken'] as string, at,
+          ...(isDate(b['authorityNotifiedOn']) ? { authorityNotifiedOn: b['authorityNotifiedOn'] } : {}),
+        });
+        if (!result.closed) {
+          throw apiError(422, {
+            code: result.outcome,
+            whatHappened: result.detail,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'The incident stays open. Record the corrective action, attach evidence for a serious incident, have a second person close it, and file the statutory notification for a reportable one.',
+          });
+        }
+        const closed: SafetyIncident = { ...incident, actionTaken: b['actionTaken'] as string, closedAt: at, closedBy: b['closedBy'] as string };
+        await deps.recordIncident(ctx.tenantId, closed);
+        return { status: 200, body: { incidentId, closed: true, outcome: result.outcome } };
+      },
+    },
+    {
+      // The pack an inspector would ask for, and whether it would SURVIVE — a pack that presents a
+      // 60%-complete record as "the evidence" is worse than no pack, so every gap is named.
+      api: 'API-11', method: 'GET', path: '/v1/facilities/evidence',
+      permission: 'facilities.overdue.read',
+      handler: async (ctx) => {
+        const branchId = ctx.query['branchId'];
+        const from = ctx.query['from'];
+        const to = ctx.query['to'];
+        if (!isStr(branchId) || !isDate(from) || !isDate(to)) throw apiError(400, { code: 'evidence_needs_branch_and_window', whatHappened: 'The compliance evidence pack needs ?branchId=, ?from=YYYY-MM-DD and ?to=YYYY-MM-DD.', wasItSaved: 'not_saved', nextSafeAction: 'Send all three. A pack reads, it never writes.' });
+        const pack = buildComplianceEvidence({
+          branchId, from, to,
+          schedules: await deps.schedules(ctx.tenantId),
+          tasks: await deps.tasks(ctx.tenantId),
+          incidents: await deps.incidents(ctx.tenantId),
+        });
+        return { status: 200, body: pack };
       },
     },
   ];

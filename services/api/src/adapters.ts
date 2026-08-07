@@ -33,7 +33,7 @@ import type { B2BCreditDeps, B2BAccount, RecordedReceivable } from '../../financ
 import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord } from '../../purchase/src/supplier-portal';
 import type { ConcessionDeps, ConcessionContract, ConcessionSale } from '../../finance/src/concession';
 import type { ScrapDeps, ScrapSale } from '../../finance/src/scrap';
-import type { FacilitiesDeps, MaintenanceSchedule, ScheduledTask } from '../../platform/src/facilities';
+import type { FacilitiesDeps, MaintenanceSchedule, ScheduledTask, SafetyIncident } from '../../platform/src/facilities';
 import type { FacilitiesAssetsDeps, Asset, ServiceLog, DowntimeEvent, EnergyReading } from '../../platform/src/facilities-assets';
 import type { FacilitiesMonitoringDeps, EquipmentRangeReg, EquipmentContents, EquipmentReading, PowerEvent } from '../../platform/src/facilities-monitoring';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
@@ -639,6 +639,25 @@ export function facilitiesAdapter(input: {
         idempotencyKey: `fac-task-done-${tenantId}-${task.taskId}`,
         source: 'api/platform',
         payload: task,
+      }));
+    },
+
+    incidents: async (tenantId) => {
+      const all = await allOf<SafetyIncident>(input.store, tenantId, STREAM.facilities, 'FacilitiesIncidentRecorded');
+      const byId = new Map<string, SafetyIncident>();
+      for (const i of all) byId.set(i.incidentId, i); // the closed record supersedes the open one
+      return [...byId.values()];
+    },
+
+    recordIncident: async (tenantId, incident) => {
+      await input.store.append(tenantId, STREAM.facilities, makeEvent({
+        id: `fac-incident-${incident.incidentId}-${incident.closedAt ?? 'open'}`,
+        type: 'FacilitiesIncidentRecorded',
+        occurredAt: input.now(),
+        // Open and closed are two facts about one incident; the reader keeps the later by incidentId.
+        idempotencyKey: `fac-incident-${tenantId}-${incident.incidentId}-${incident.closedAt ?? 'open'}`,
+        source: 'api/platform',
+        payload: incident,
       }));
     },
   };

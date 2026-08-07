@@ -48,7 +48,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'platform.health.read', 'platform.flag.read', 'platform.flag.write',
       'platform.setup.read', 'platform.setup.write', 'platform.support.grant',
       'facilities.schedule.manage', 'facilities.task.record', 'facilities.overdue.read',
-      'facilities.asset.manage', 'facilities.asset.read', 'facilities.reading.record',
+      'facilities.asset.manage', 'facilities.asset.read', 'facilities.reading.record', 'facilities.incident.record',
       'migration.verification.read', 'migration.exception.accept',
       'ai.agent.run', 'ai.proposal.read', 'ai.budget.read', 'ai.killswitch.set',
     ],
@@ -76,7 +76,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'finance.period.read', 'reporting.dashboard.read', 'reporting.report.read',
       'platform.health.read',
       'facilities.schedule.manage', 'facilities.task.record', 'facilities.overdue.read',
-      'facilities.asset.manage', 'facilities.asset.read', 'facilities.reading.record',
+      'facilities.asset.manage', 'facilities.asset.read', 'facilities.reading.record', 'facilities.incident.record',
     ],
   },
   {
