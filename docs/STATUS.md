@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 6 August 2026 (session: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, the day boundary the store box did not have, the service desk, expiry and recall — including the recall block that never reached a till — finance, which lets a month close for the first time, admin and security — including a security control that existed twice and enforced less where it counted, AI control, including the kill switch that stopped nothing — and migration, including the cutover gate that had only ever been ticked by hand)
+Last updated: 7 August 2026 (PR #10 merged to `main` with CI green — see the 7 August milestone below; the session that built it: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, the day boundary the store box did not have, the service desk, expiry and recall — including the recall block that never reached a till — finance, which lets a month close for the first time, admin and security — including a security control that existed twice and enforced less where it counted, AI control, including the kill switch that stopped nothing — and migration, including the cutover gate that had only ever been ticked by hand)
 
 ---
 
@@ -36,6 +36,45 @@ is the hosting decision (OB-02, owner-deferred), the pre-pilot integration gate 
 provider is chosen, and the in-store activities that need the store itself. **EX-02 is closed**
 — the owner decided on 7 August 2026 that we extract our own data ourselves rather than wait for
 a vendor with no reason to help us leave (OB-06).
+
+---
+
+## The screens merged to main — and two defects GitHub's runners caught (7 August 2026)
+
+**PR #10 merged to `main`** (merge commit `31cb83c`): the eleven ERP screens and the six apps —
+the whole session recorded above — are now on the main line, with all three CI jobs green against
+the merged commit.
+
+The merge waited on a **GitHub Actions outage** that held the runners for several hours. When
+capacity returned, the suite ran for the first time against the assembled branch and caught **two
+real defects that a local `pnpm check` could not see** — both fixed in `0003466` before the merge:
+
+1. **The AI-gateway integration tests** (`tests/integration/ai-proposes-people-decide.test.ts`).
+   The AI-control work made `callModel` **require an admission decision** — the kill switch and
+   the budget, checked before a model is ever reached, its absence refusing. The unit tests were
+   updated for that; this database-backed integration file was not, and it only runs under
+   `test:integration` against a real PostgreSQL, which `pnpm check` skips
+   (`describe.skipIf(!DATABASE_URL)`). So locally the file was silently skipped and its five
+   stale calls never ran; in CI they ran and refused. Fixed by passing the admission each call
+   already implies — **no safety assertion weakened**: the hostile-message case still proves the
+   ₹50,000 refund and the customer export are dropped as tools the agent was never granted.
+   **The lesson worth keeping: a green `pnpm check` is not a green build.** The real-database
+   suites skip without `DATABASE_URL`; only CI — or a local PostgreSQL — actually runs them.
+
+2. **The deploy job — the `migrate` container exited 1.** The CI built `DATABASE_URL` with a
+   password from `openssl rand -base64 24`, and base64 carries a `/` about two runs in five; a
+   `/` in the userinfo makes the connection string an invalid URL, so `pg` threw "Invalid URL"
+   and migrate never connected. The stage-gate job dodged it only because it uses a passwordless
+   trust URL. Fixed by generating the database password **URL-safe** (`openssl rand -hex 24`)
+   everywhere it flows into a URL — the CI step, `infra/compose/.env.example`, and
+   `docs/runbooks/pilot-deployment.md` (a real deployment would have hit the same trap) — with a
+   new guardrail `tests/guardrails/the-db-password-is-url-safe.test.ts` that proves a `/` password
+   breaks the URL, a hex one never does, and bans the 24-byte base64 recipe in all three files.
+
+Both fixes were reproduced against a real PostgreSQL 16 before the merge (465 integration tests
+green, all three CI jobs green on `0003466`). **No requirement row changed** — this was wiring
+already recorded above plus two test/config corrections — so `docs/traceability.md` gains only
+the deployment guardrail against its `infra/` row.
 
 ---
 
