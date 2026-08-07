@@ -38,6 +38,7 @@ import type { FacilitiesAssetsDeps, Asset, ServiceLog, DowntimeEvent, EnergyRead
 import type { FacilitiesMonitoringDeps, EquipmentRangeReg, EquipmentContents, EquipmentReading, PowerEvent } from '../../platform/src/facilities-monitoring';
 import type { PackagingDeps, PackagingItem, PackagingMovement } from '../../inventory/src/packaging';
 import type { WasteDeps, WasteRecord, WasteCoverage } from '../../inventory/src/waste';
+import type { IntegrationDeps, CertifiedEntry, AdapterConfig, AdapterHeartbeat } from '../../platform/src/integration';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project } from '../../inventory/src/index';
@@ -102,6 +103,7 @@ export const STREAM = {
   facilities: 'facilities',
   packaging: 'packaging',
   waste: 'waste',
+  integration: 'integration',
 } as const;
 
 const payloadOf = <T>(e: PersistedEvent): T => e.event.payload as T;
@@ -924,6 +926,68 @@ export function wasteAdapter(input: {
         idempotencyKey: `waste-coverage-${tenantId}-${coverage.expected.map((e) => `${e.branchId}:${e.departmentId}`).sort().join(',')}`,
         source: 'api/inventory',
         payload: coverage,
+      }));
+    },
+  };
+}
+
+export function integrationAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): IntegrationDeps {
+  // The certified matrix, the registered adapters and their heartbeats fold one tenant stream: matrix
+  // entries and adapter configs latest-wins by id, heartbeats deduped on their own id. Health is
+  // projected on read from when each adapter last actually worked (#2).
+  return {
+    now: input.now,
+
+    matrix: async (tenantId) => {
+      const all = await allOf<CertifiedEntry>(input.store, tenantId, STREAM.integration, 'IntegrationMatrixEntrySet');
+      const byId = new Map<string, CertifiedEntry>();
+      for (const e of all) byId.set(e.entryId, e);
+      return [...byId.values()];
+    },
+
+    adapters: async (tenantId) => {
+      const all = await allOf<AdapterConfig>(input.store, tenantId, STREAM.integration, 'IntegrationAdapterRegistered');
+      const byId = new Map<string, AdapterConfig>();
+      for (const a of all) byId.set(a.adapterId, a);
+      return [...byId.values()];
+    },
+
+    heartbeats: async (tenantId) =>
+      allOf<AdapterHeartbeat>(input.store, tenantId, STREAM.integration, 'IntegrationHeartbeat'),
+
+    recordMatrixEntry: async (tenantId, entry) => {
+      await input.store.append(tenantId, STREAM.integration, makeEvent({
+        id: `intg-matrix-${entry.entryId}`,
+        type: 'IntegrationMatrixEntrySet',
+        occurredAt: input.now(),
+        idempotencyKey: `intg-matrix-${tenantId}-${entry.entryId}-${entry.vendor}-${entry.model}-${entry.versions.join('.')}-${entry.rbiAuthorised ?? 'na'}`,
+        source: 'api/platform',
+        payload: entry,
+      }));
+    },
+
+    recordAdapter: async (tenantId, config) => {
+      await input.store.append(tenantId, STREAM.integration, makeEvent({
+        id: `intg-adapter-${config.adapterId}`,
+        type: 'IntegrationAdapterRegistered',
+        occurredAt: input.now(),
+        idempotencyKey: `intg-adapter-${tenantId}-${config.adapterId}-${config.environment}-${config.credentialRef}-${config.enabled}`,
+        source: 'api/platform',
+        payload: config,
+      }));
+    },
+
+    recordHeartbeat: async (tenantId, heartbeatId, heartbeat) => {
+      await input.store.append(tenantId, STREAM.integration, makeEvent({
+        id: `intg-hb-${heartbeatId}`,
+        type: 'IntegrationHeartbeat',
+        occurredAt: heartbeat.at,
+        idempotencyKey: `intg-hb-${tenantId}-${heartbeatId}`,
+        source: 'api/platform',
+        payload: heartbeat,
       }));
     },
   };

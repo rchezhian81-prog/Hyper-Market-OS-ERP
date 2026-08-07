@@ -486,6 +486,37 @@ completion template, observability, API surface + event contract tests, and the 
   §28-guarded `wasted` movement in `services/inventory`, remains). Full gate green (typecheck, lint,
   secret-scan, build:api, audit, **4,677 tests**).
 
+- **Investigated & recorded (not forced): M24-FR-01 portal server-side scoping / probe-pattern is
+  genuinely blocked, not thin.** `scopeToPartner` / `auditPartnerAction` / `findProbing` are about an
+  EXTERNAL partner login being scoped to its own data and a supplier probing for a competitor's invoices
+  being recorded as a security event. The current cloud API is internal-user-centric — staff operate the
+  portal by path param; there is no partner-authenticated session, so the "partner X asking for partner
+  Y" mismatch that produces `not_your_data`/`securityEvent` cannot arise, and wiring `findProbing` onto
+  the internal surface would surface internal staff, not probing suppliers — semantically hollow. This
+  needs the external partner-authentication surface (§35), the same class of dependency as the earlier
+  M09/M22 deferrals. Recorded here rather than forced; revisit when partner auth exists.
+
+- **Done (this increment): integration gateway — certified matrix, adapter registration & health
+  (M32-FR-04, API-11). First cloud wiring of `packages/integration` (M32 was ENGINE ONLY).** Hosted in
+  `services/platform/src/integration.ts`: `POST /v1/integration/matrix/:id` records a certified entry,
+  `POST /v1/integration/adapters/:id` runs the pure `registerAdapter`, `GET /v1/integration/devices/check`
+  runs `checkDevice`, `POST …/heartbeats/:id` records a heartbeat and `GET /v1/integration/health` runs
+  `integrationHealth`. Two refusals are **absolute with no override anywhere**: a payment adapter that
+  declares it retains anything off the ALLOWLIST is refused (`stores_card_data`, hard rule #3 — an
+  allowlist, so a field a provider invents next year is refused too), and a credential that is a literal
+  rather than a `vault://` reference is refused (`credential_inline`, hard rule #4 — catching what is
+  typed into a configuration screen the repo secret-scan never sees); an uncertified or non-RBI payment
+  vendor is refused too. A device refusal **NAMES the certified alternative** (a refusal that does not is
+  overridden on a Sunday). And **health is "when did it last WORK", not "is it configured"** — an adapter
+  silent for days is `silent`, caught while it is still green on any config dashboard, and
+  `posUnaffected` is typed the literal `true` (no integration failure reaches the till, hard rule #1).
+  Owner configures (`platform.setup.write`), a manager reads (`platform.health.read`), a cashier neither.
+  Proven through the real API + real RBAC in `tests/integration/integration-gateway.test.ts` (4 cases).
+  M32 → **PARTIALLY WIRED** (FR-04 wired; versioned-request/idempotency FR-01 is served by the kernel +
+  the Stage-19 gate, signed-webhook receipt + connector delivery/dead-letter FR-01/02 and managed-secrets
+  FR-03 remain engine-only). Full gate green (typecheck, lint, secret-scan, build:api, audit, **4,681
+  tests**).
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in
