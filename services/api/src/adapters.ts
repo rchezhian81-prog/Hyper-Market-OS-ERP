@@ -33,6 +33,7 @@ import type { B2BCreditDeps, B2BAccount, RecordedReceivable } from '../../financ
 import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord } from '../../purchase/src/supplier-portal';
 import type { ConcessionDeps, ConcessionContract, ConcessionSale } from '../../finance/src/concession';
 import type { ScrapDeps, ScrapSale } from '../../finance/src/scrap';
+import type { FacilitiesDeps, MaintenanceSchedule, ScheduledTask } from '../../platform/src/facilities';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project } from '../../inventory/src/index';
@@ -94,6 +95,7 @@ export const STREAM = {
   b2b: 'b2b',
   concession: 'concession',
   scrap: 'scrap',
+  facilities: 'facilities',
 } as const;
 
 const payloadOf = <T>(e: PersistedEvent): T => e.event.payload as T;
@@ -566,6 +568,75 @@ export function scrapAdapter(input: {
         idempotencyKey: `scrap-posted-${tenantId}-${scrapId}`,
         source: 'api/finance',
         payload: { scrapId },
+      }));
+    },
+  };
+}
+
+export function facilitiesAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): FacilitiesDeps {
+  // Facilities is low-volume (a store's schedules and their weekly tasks), so all of it folds one
+  // stream: the latest set of each schedule, and each task's due record merged with its completion.
+  return {
+    now: input.now,
+
+    schedules: async (tenantId) => {
+      const set = await allOf<MaintenanceSchedule>(input.store, tenantId, STREAM.facilities, 'FacilitiesScheduleSet');
+      const byId = new Map<string, MaintenanceSchedule>();
+      for (const s of set) byId.set(s.scheduleId, s); // later set wins
+      return [...byId.values()];
+    },
+
+    tasks: async (tenantId) => {
+      const events = await input.store.readStream(tenantId, STREAM.facilities);
+      const byId = new Map<string, ScheduledTask>();
+      for (const e of events) {
+        const p = e.event.payload as Record<string, unknown>;
+        if (e.event.type === 'FacilitiesTaskDue') {
+          const id = p['taskId'] as string;
+          byId.set(id, { ...(byId.get(id) ?? {} as ScheduledTask), taskId: id, scheduleId: p['scheduleId'] as string, dueOn: p['dueOn'] as string });
+        } else if (e.event.type === 'FacilitiesTaskCompleted') {
+          const id = p['taskId'] as string;
+          byId.set(id, { ...(byId.get(id) ?? { taskId: id, scheduleId: p['scheduleId'] as string, dueOn: p['dueOn'] as string }), ...(p as unknown as ScheduledTask) });
+        }
+      }
+      return [...byId.values()];
+    },
+
+    recordSchedule: async (tenantId, schedule) => {
+      await input.store.append(tenantId, STREAM.facilities, makeEvent({
+        id: `fac-sched-${schedule.scheduleId}-${schedule.title}-${schedule.active}`,
+        type: 'FacilitiesScheduleSet',
+        occurredAt: input.now(),
+        // Keyed on the definition — re-setting the same schedule collapses, a change is a new fact.
+        idempotencyKey: `fac-sched-${tenantId}-${schedule.scheduleId}-${schedule.category}-${schedule.frequency}-${schedule.evidenceRequired}-${schedule.verificationRequired}-${schedule.active}`,
+        source: 'api/platform',
+        payload: schedule,
+      }));
+    },
+
+    recordTaskDue: async (tenantId, task) => {
+      await input.store.append(tenantId, STREAM.facilities, makeEvent({
+        id: `fac-task-due-${task.taskId}`,
+        type: 'FacilitiesTaskDue',
+        occurredAt: input.now(),
+        idempotencyKey: `fac-task-due-${tenantId}-${task.taskId}`,
+        source: 'api/platform',
+        payload: task,
+      }));
+    },
+
+    recordTaskCompleted: async (tenantId, task) => {
+      await input.store.append(tenantId, STREAM.facilities, makeEvent({
+        id: `fac-task-done-${task.taskId}`,
+        type: 'FacilitiesTaskCompleted',
+        occurredAt: input.now(),
+        // The task's own id — a re-sent completion collapses rather than recording two.
+        idempotencyKey: `fac-task-done-${tenantId}-${task.taskId}`,
+        source: 'api/platform',
+        payload: task,
       }));
     },
   };
