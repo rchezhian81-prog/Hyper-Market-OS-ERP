@@ -267,6 +267,19 @@ completion template, observability, API surface + event contract tests, and the 
   over-short M14-FR-02 remains off the cloud surface — the last piece to close M14). Full gate green
   (typecheck, lint, secret-scan, build:api, **4,613 tests**).
 
+- **Done (this increment): the blind shift close — over/short valued and explained (M14-FR-02, API-05).**
+  The last of the cloud cash-office trio. `packages/till` (another unfed engine) is now on the cloud via a
+  new route module (`services/pos/src/shift.ts`): `POST /v1/shifts/:shiftId/close` runs the pure
+  `assessShiftClose` (`packages/till/src/assess-shift.ts`) — expected = float + cash sales − pickups − cash
+  refunds, variance against the **blind count**, and a **material** over/short (|variance| ≥ tolerance)
+  **needs a reason** and is raised for reconciliation; `GET /v1/shifts/over-short` is the cash office's
+  list. Idempotent per shift. Proven through the real API + real RBAC in
+  `tests/integration/shift-close.test.ts` (5 cases) plus `tests/unit/assess-shift.test.ts` (4 pure cases).
+  **M14's cloud cash-office trio (FR-01 till cash, FR-02 shift close, FR-03 settlement) is now wired and
+  integration-tested**; only the store-edge trading-day lock (M14-FR-04, a manager-screen control) sits
+  outside the cloud API by design — so M14 stays **PARTIALLY WIRED** honestly, but its cloud surface is
+  complete. Full gate green (typecheck, lint, secret-scan, build:api, **4,622 tests**).
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in
