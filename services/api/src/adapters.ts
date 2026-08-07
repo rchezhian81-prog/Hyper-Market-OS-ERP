@@ -35,6 +35,7 @@ import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/i
 import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
 import type { StoredPointsMovement } from '../../../packages/loyalty/src/assess-points';
 import type { StoredValueDeps, Instrument, ValueMovement } from '../../customer/src/stored-value';
+import type { PromotionDeps, LaunchRecord } from '../../pricing/src/promotions';
 import { expired } from '../../orders/src/index';
 import type { Reservation, OrdersDeps } from '../../orders/src/index';
 import type { DeliveryAttempt, FulfilmentDeps } from '../../fulfilment/src/index';
@@ -81,6 +82,7 @@ export const STREAM = {
   pricing: 'pricing',
   settlement: 'settlement',
   loyalty: 'loyalty',
+  promotions: 'promotions',
 } as const;
 
 const payloadOf = <T>(e: PersistedEvent): T => e.event.payload as T;
@@ -1021,6 +1023,33 @@ export function pricingAdapter(input: {
         idempotencyKey: `pricechange-${tenantId}-${change.productId}-${change.at}`,
         source: 'api/pricing',
         payload: change,
+      }));
+    },
+  };
+}
+
+export function promotionAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): PromotionDeps {
+  return {
+    now: input.now,
+
+    launchedPromotion: async (tenantId, promotionId) => {
+      const launched = await allOf<LaunchRecord>(input.store, tenantId, STREAM.promotions, 'PromotionLaunched');
+      return launched.find((r) => r.promotionId === promotionId);
+    },
+
+    recordLaunch: async (tenantId, record) => {
+      await input.store.append(tenantId, STREAM.promotions, makeEvent({
+        id: `promo-launch-${record.promotionId}`,
+        type: 'PromotionLaunched',
+        occurredAt: record.launchedAt,
+        // The promotion's own id, no timestamp — re-launching the same one collapses rather than
+        // recording a second launch of an offer that is already live.
+        idempotencyKey: `promo-launch-${tenantId}-${record.promotionId}`,
+        source: 'api/pricing',
+        payload: record,
       }));
     },
   };

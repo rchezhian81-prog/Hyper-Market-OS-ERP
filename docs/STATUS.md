@@ -240,6 +240,21 @@ completion template, observability, API surface + event contract tests, and the 
   gift cards wired; coupons/referrals M17-FR-02 and household pooling / cross-channel double-spend
   M17-FR-04 still engine-only). Full gate green (typecheck, lint, secret-scan, build:api, **4,598 tests**).
 
+- **Done (this increment): promotion governance wired — simulate before, approve a margin loss on
+  purpose (M05-FR-04, §28, API-02).** _Record corrected:_ the earlier note called this "M20 promotions",
+  but M20 is the **storefront** (M20-FR-01/03 browse/checkout); the promotion **simulation/launch
+  governance** is **M05-FR-04**. `packages/promotions` was another complete engine nothing fed. Added a
+  new route module (`services/pricing/src/promotions.ts`): `POST /v1/promotions/:id/simulate` reports
+  incremental margin, break-even volume and a verdict (below-cost / destroys-margin / reduced-but-
+  positive / improves) without committing; `POST …/:id/launch` lets a margin-positive offer go live
+  freely but a **margin-losing** one only with a named approver who is **not the proposer** and a
+  **written reason** (§28) — a loss-leader is legitimate, never by accident — and is idempotent per
+  promotion; `GET …/:id` reports whether it launched and on what verdict. Proven through the real API +
+  real RBAC in `tests/integration/promotion-governance.test.ts` (6 cases). M05 → **PARTIALLY WIRED**
+  (FR-02 price change + FR-04 promotion governance wired; abuse caps enforced offline at the lane,
+  vendor-funding reconciliation and effectiveness measurement still engine-only). Full gate green
+  (typecheck, lint, secret-scan, build:api, **4,604 tests**).
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in
