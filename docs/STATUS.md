@@ -120,6 +120,22 @@ completion template, observability, API surface + event contract tests, and the 
   retry (same key → same number), unknown-type 404, and per-tenant isolation. M01 stays PARTIALLY
   WIRED (org hierarchy + document templates pending); its config FRs (trading-day, settings, number
   series) are now wired.
+- **Done (this increment): governed price changes wired server-side (M05-FR-02, §28).** The price
+  guardrail engine (`packages/price-guard` `checkPrice`) was used only client-side; there was no
+  server API where a price change went through it. New `services/pricing` (API-02) `POST
+  /v1/prices/changes` runs it: a price above the legal **MRP** is rejected outright, and a below-cost
+  or **below-margin-floor** price is blocked unless a **separate person who genuinely holds
+  `price.change.approve`** signs it off with a reason — the approver is verified against the tenant's
+  own grants (the same RBAC the kernel authorizes with), and cannot be the setter (§28). An allowed
+  change is recorded as an append-only `PriceChangeRecorded` event; the pack-publish path re-checks
+  §28 before the price reaches the shelf. `tests/integration/price-change.test.ts` proves: healthy
+  price ok; above-MRP rejected; below-floor blocked without approval; **self-approval refused**;
+  approval by a non-approver refused; proper two-person approval recorded; and a caller without
+  `price.change.propose` gets 403. M05 → PARTIALLY WIRED (price-list effective-dating pending).
+  NOTE: the catalogue pack publish deliberately still REFUSES a product with no tax class rather than
+  applying a silent default (OC-21 — a silent default surfaces as a wrong GST return months later);
+  the tenant default tax's correct role is a category-level fallback in the (stubbed) product-master
+  → snapshot pipeline, tracked as follow-on, not a reversal of that safety refusal.
 
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the

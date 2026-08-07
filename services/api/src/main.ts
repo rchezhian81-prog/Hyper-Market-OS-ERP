@@ -32,6 +32,7 @@ import {
 import { tenantAccessResolver, seedGenesisOwner } from './access';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
+import { pricingRoutes } from '../../pricing/src/index';
 import { posRoutes } from '../../pos/src/index';
 import { inventoryRoutes } from '../../inventory/src/index';
 import { identityRoutes, tokenAuthenticator } from '../../identity/src/index';
@@ -45,7 +46,7 @@ import { fulfilmentRoutes } from '../../fulfilment/src/index';
 import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
-  catalogueAdapter, posAdapter, inventoryAdapter, purchaseAdapter, financeAdapter,
+  catalogueAdapter, pricingAdapter, posAdapter, inventoryAdapter, purchaseAdapter, financeAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
   reportingAdapter, migrationAdapter, aiAdapter,
 } from './adapters';
@@ -107,6 +108,9 @@ export function buildSurface(deps: {
       buildSnapshot: (tenantId) => ({ tenantId, version: 1, builtAt: now(), products: [], barcodes: [] }),
       approvalsSince: empty([]), now,
     } : catalogueAdapter({ store, signer, now })),
+    ...pricingRoutes(store === undefined
+      ? { recordPriceChange: () => {}, canApprove: () => Promise.resolve(false), now }
+      : pricingAdapter({ store, now })),
     ...purchaseRoutes(store === undefined ? {
       matchLines: empty([]), recordMatch: () => {}, applyBankChange: () => {},
       openCommitments: empty(undefined), now,
