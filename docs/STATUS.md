@@ -164,6 +164,23 @@ completion template, observability, API surface + event contract tests, and the 
   integration-tested; receiving/GRN capture and OCR ingestion — D03-FR-02, NOT STARTED — are still off
   the cloud surface). Full gate green (typecheck, lint, secret-scan, build:api, **4,550 tests**).
 
+- **Done (this increment): the cloud refund guard — returns wired where the whole history lives
+  (M13-FR-01/FR-03, M21, API-05).** `packages/returns`' register was, in its own words, "a control
+  described, tested, and fed by nobody" — the offline till commits a return against its own log, but
+  a lane only knows its own log, so the same receipt refunded at another lane, another branch, or
+  online passed a rule written to stop it. Added `POST /v1/sales/:saleId/returns`
+  (`services/pos/src/returns.ts`) whose guard runs against the **whole cloud history** of the bill:
+  the pure `assessReturn` (`packages/returns/src/assess-return.ts`, reusing the register primitives —
+  same pattern as the three-way match) enforces at-most-once per product, a refund never above what
+  was paid (M13-FR-03), and a second, different approver for a material refund (§28); a card/UPI
+  refund is reported **pending**, never assumed settled (M13-FR-04). Idempotent on the return id, so
+  a till retrying an unconfirmed refund does not double-count. Proven through the real API + real RBAC
+  in `tests/integration/returns-guard-the-refund.test.ts` (9 cases) plus `tests/unit/assess-return.test.ts`
+  (6 pure cases — the two-lines-of-one-product gaming attempt, the idempotent self-exclusion). M13 and
+  M21 stay **PARTIALLY WIRED** (this is the refund guard; tender capture, settlement/recon (M14),
+  exchanges and no-receipt returns are still off the cloud surface). Full gate green (typecheck, lint,
+  secret-scan, build:api, **4,565 tests**).
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in

@@ -34,6 +34,7 @@ import type { TargetKind } from '../../../packages/migration/src/trial';
 import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
 import { pricingRoutes } from '../../pricing/src/index';
 import { posRoutes } from '../../pos/src/index';
+import { returnsRoutes } from '../../pos/src/returns';
 import { inventoryRoutes } from '../../inventory/src/index';
 import { identityRoutes, tokenAuthenticator } from '../../identity/src/index';
 import { platformRoutes, inMemorySettings } from '../../platform/src/index';
@@ -46,7 +47,7 @@ import { fulfilmentRoutes } from '../../fulfilment/src/index';
 import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
-  catalogueAdapter, pricingAdapter, posAdapter, inventoryAdapter, purchaseAdapter, financeAdapter,
+  catalogueAdapter, pricingAdapter, posAdapter, returnsAdapter, inventoryAdapter, purchaseAdapter, financeAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
   reportingAdapter, migrationAdapter, aiAdapter,
 } from './adapters';
@@ -123,6 +124,10 @@ export function buildSurface(deps: {
       saleHoldingReceipt: empty(undefined), isBanked: empty(false),
       bankSale: () => {}, recordExceptions: () => {}, openExceptions: empty([]), now,
     } : posAdapter({ store, now })),
+    ...returnsRoutes(store === undefined ? {
+      originalSale: empty(undefined), priorReturns: empty([]), priorRefunds: empty([]),
+      recordReturn: () => {}, now,
+    } : returnsAdapter({ store, now })),
     ...customerRoutes(store === undefined ? {
       consentRecords: empty([]), appendConsent: () => {}, pointsBalance: empty(undefined), now,
     } : customerAdapter({ store, now })),
