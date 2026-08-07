@@ -22,7 +22,9 @@ named person is genuinely required.
 
 ## Phase 1 — Set-up days (before the pilot)
 
-Sit down once, work down the settings, create the logins, and get the safety net in place.
+Sit down once, work down the settings, create the logins, and get the safety net in place. There
+is a **fill-in form for this** — `docs/runbooks/pilot-setup-workbook.md` turns every setting below
+into a plain-English question with its default and a blank to complete.
 
 ### The configuration workshop
 

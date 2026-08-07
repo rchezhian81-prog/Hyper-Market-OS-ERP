@@ -67,3 +67,7 @@ Status: **Default in use** · **Confirmed** · **Changed by owner**.
 > **How to use this at UAT:** work down the list. For each row either accept the default
 > (say nothing) or give the value. Nothing here needs a technical answer — every one is a
 > business fact about how the store runs.
+>
+> **A fill-in form of this register** — grouped into give-now / check-the-default / already-done /
+> leave-for-the-CA, with a blank against each — is `docs/runbooks/pilot-setup-workbook.md`. This
+> register stays the source of truth.
