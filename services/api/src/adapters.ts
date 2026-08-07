@@ -26,6 +26,7 @@ import type { SignedPack } from '../../catalogue/src/index';
 import type { CatalogueDeps } from '../../catalogue/src/index';
 import type { IncomingSale, SaleException, PosDeps } from '../../pos/src/index';
 import type { ReturnsDeps, ReturnRecord, RecordedRefund, OriginalSale, RecordedReturn } from '../../pos/src/returns';
+import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { project } from '../../inventory/src/index';
 import type { Movement, Availability, InventoryDeps } from '../../inventory/src/index';
 import type { MatchResult, BankChangeRequest, PurchaseDeps } from '../../purchase/src/index';
@@ -75,6 +76,7 @@ export const STREAM = {
   migration: 'migration',
   ai: 'ai',
   pricing: 'pricing',
+  settlement: 'settlement',
 } as const;
 
 const payloadOf = <T>(e: PersistedEvent): T => e.event.payload as T;
@@ -344,6 +346,57 @@ export function returnsAdapter(input: {
         source: 'api/pos',
         payload: record,
       }));
+    },
+  };
+}
+
+export function settlementAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): SettlementRoutesDeps {
+  const batches = (tenantId: string) =>
+    allOf<SettlementBatch>(input.store, tenantId, STREAM.settlement, 'SettlementBatchImported');
+
+  return {
+    now: input.now,
+
+    importedBatchIds: async (tenantId) => (await batches(tenantId)).map((b) => b.batchId),
+
+    recordBatch: async (tenantId, batch) => {
+      await input.store.append(tenantId, STREAM.settlement, makeEvent({
+        id: `settle-batch-${batch.batchId}`,
+        type: 'SettlementBatchImported',
+        occurredAt: batch.settlementDate + 'T00:00:00.000Z',
+        // The batch's own id, no timestamp — re-importing the same file collapses rather than
+        // doubling every credit in it. (The route also refuses a duplicate outright; this is the
+        // backstop at the ledger, where the guarantee actually has to hold.)
+        idempotencyKey: `settle-batch-${tenantId}-${batch.batchId}`,
+        source: 'api/finance',
+        payload: batch,
+      }));
+    },
+
+    // Every imported credit line, flattened. Bounded: a shop imports a handful of batches a day, and
+    // a batch is refused before it lands unless its lines sum to what it declares.
+    credits: async (tenantId) =>
+      (await batches(tenantId)).flatMap((b) => b.lines) satisfies readonly SettlementLine[],
+
+    // Electronic tenders captured in the window, from the day's sales. Cash carries no provider
+    // reference and is not part of settlement — only ref-bearing (card/UPI) tenders are projected.
+    // The read is windowed at the store on `occurredAt`, so it costs a window, not the whole history.
+    electronicTenders: async (tenantId, fromIso, toIso) => {
+      const sales = await input.store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from: fromIso, to: toIso });
+      const out: CapturedTender[] = [];
+      for (const e of sales) {
+        const sale = e.event.payload as IncomingSale;
+        const capturedOn = sale.committedAt.slice(0, 10);
+        sale.tenders.forEach((t, i) => {
+          if (typeof t.ref === 'string' && t.ref.trim() !== '') {
+            out.push({ id: `${sale.saleId}:t${i}`, ref: t.ref, amountMinor: t.amountMinor, capturedOn });
+          }
+        });
+      }
+      return out;
     },
   };
 }
