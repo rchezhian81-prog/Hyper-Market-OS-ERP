@@ -92,7 +92,8 @@ import {
   type SupportAccessRequest, type OwnerApproval, type SupportSession,
 } from '../../../packages/platform-admin/src/index';
 import {
-  TenantSettings, setupStatus, applyAnswer, setupItem, InvalidSetupAnswerError,
+  TenantSettings, setupStatus, applyAnswer, setupItem,
+  InvalidSetupAnswerError, SetupVersionConflictError,
 } from '../../../packages/tenant/src/index';
 import { ConfigStore } from '../../../packages/config/src/index';
 
@@ -211,7 +212,7 @@ export function platformRoutes(deps: PlatformDeps): readonly Route[] {
             nextSafeAction: 'Check the key against GET /v1/platform/setup. Nothing changed.',
           });
         }
-        const body = (ctx.body ?? {}) as { value?: unknown };
+        const body = (ctx.body ?? {}) as { value?: unknown; ifVersion?: number };
         if (body.value === undefined) {
           throw apiError(400, {
             code: 'setup_value_not_given',
@@ -221,7 +222,7 @@ export function platformRoutes(deps: PlatformDeps): readonly Route[] {
           });
         }
         try {
-          applyAnswer(deps.settings, ctx.tenantId, item, body.value, ctx.userId, deps.now());
+          applyAnswer(deps.settings, ctx.tenantId, item, body.value, ctx.userId, deps.now(), 'store setup', body.ifVersion);
         } catch (e) {
           if (e instanceof InvalidSetupAnswerError) {
             throw apiError(422, {
@@ -229,6 +230,16 @@ export function platformRoutes(deps: PlatformDeps): readonly Route[] {
               whatHappened: e.message,
               wasItSaved: 'not_saved',
               nextSafeAction: 'Send a value that fits the setting. Nothing was stored.',
+            });
+          }
+          if (e instanceof SetupVersionConflictError) {
+            // Somebody changed this setting since the screen loaded it. Refuse rather than clobber,
+            // and hand back the current state so the screen can show the conflict and let a person choose.
+            throw apiError(409, {
+              code: 'setup_version_conflict',
+              whatHappened: e.message,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Reload the setting, look at the newer value, and re-enter your change if you still want it.',
             });
           }
           throw e;

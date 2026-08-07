@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 7 August 2026 (pilot-preparation pack merged to `main` across PRs #11–#13 — the store go-live checklist, the set-up workbook in document and Excel form, and the day-by-day pilot run-sheet, all CI-green; see the pilot-preparation milestone below. Earlier the same day, PR #10 merged the eleven ERP screens and six apps with CI green — see the 7 August milestone below; the session that built it: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, the day boundary the store box did not have, the service desk, expiry and recall — including the recall block that never reached a till — finance, which lets a month close for the first time, admin and security — including a security control that existed twice and enforced less where it counted, AI control, including the kill switch that stopped nothing — and migration, including the cutover gate that had only ever been ticked by hand)
+Last updated: 7 August 2026 (self-service store setup shipped COMPLETE across PRs #15–#18 — built-in thermal receipt templates, the setup engine with defaults and block-until-given, the API-11 read/answer endpoints with optimistic concurrency and an audit trail, and the bilingual Store setup page with FULL inline editing; see the store-setup milestone below. Earlier the same day: the pilot-preparation pack across PRs #11–#13 — the store go-live checklist, the set-up workbook in document and Excel form, and the day-by-day pilot run-sheet, all CI-green; see the pilot-preparation milestone below. Earlier still, PR #10 merged the eleven ERP screens and six apps with CI green — see the 7 August milestone below; the session that built it: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, the day boundary the store box did not have, the service desk, expiry and recall — including the recall block that never reached a till — finance, which lets a month close for the first time, admin and security — including a security control that existed twice and enforced less where it counted, AI control, including the kill switch that stopped nothing — and migration, including the cutover gate that had only ever been ticked by hand)
 
 ---
 
@@ -75,6 +75,66 @@ Both fixes were reproduced against a real PostgreSQL 16 before the merge (465 in
 green, all three CI jobs green on `0003466`). **No requirement row changed** — this was wiring
 already recorded above plus two test/config corrections — so `docs/traceability.md` gains only
 the deployment guardrail against its `infra/` row.
+
+---
+
+## Self-service store setup — a commercial product feature, complete (7 August 2026)
+
+**Why this exists.** SRE Retail OS is a commercial, multi-tenant product (OB-01 / ADR-0003). Setup
+therefore had to become something **every retailer configures itself**, with safe defaults and
+standard templates in the box — not a form anyone fills for one store. The versioned config engine,
+the per-tenant settings catalogue and the tenant/branding layer already existed but were wired into
+no self-service flow. This built that flow end to end.
+
+**What shipped, and the PRs.**
+- **PR #15 (`694c2c5`)** — built-in **thermal receipt templates**: named 58 / 80 / 112 mm (2/3/4")
+  paper presets and a standard header/footer template a tenant fills with its own facts (store name
+  required, GSTIN shape-checked). Implements **OC-15**; cites **M31-FR-02 / M36-FR-02**.
+- **PR #16 (`fd55216`)** — the **setup engine** (`packages/tenant/src/setup.ts`): a catalogue of
+  every settable item with a plain-English question, safe defaults, and block-until-given on the
+  required ones; `setupStatus()` (answered / on-default / blocking + completeness); `applyAnswer()`
+  validating then writing through the versioned engine. The **API-11 endpoints**
+  (`GET`/`PUT /v1/platform/setup[/:key]`), tenant-scoped, validated, idempotent. The **screen model**
+  and the **Store setup** nav entry.
+- **PR #17 (`b568789`)** — the **bilingual Store setup page** (`apps/web-erp/web/setup.html`/`setup.js`):
+  a headline saying whether the store can open, what is still needed, and every setting with its
+  value tagged; offline, held to the offline-shell guardrail.
+- **PR #18** — **full inline editing** on the page: validate-as-you-type against the engine's own
+  rules; **save-against-version optimistic concurrency** (a stale save is refused **409**, never
+  clobbers a newer one); offline **queue**; **conflict / retry / failed / saving / saved** states;
+  duplicate-submit prevention (one idempotency key per field, reused across retries); an
+  **unsaved-change guard**; an **audit trail** (who / when / version) shown on each row; completeness
+  recomputed after a save. English/Tamil, responsive, keyboard + touch accessible.
+
+**Requirement IDs.** Primary **M33-FR-01** (tenant/company settings + configuration history).
+Mapped: **M01-FR-02** (calendar, cut-off, number series, templates), **M01-FR-03** (versioned config
++ rollback), **M36-FR-01/02** (tenant isolation, plans; white-label without code forks),
+**M31-FR-02 / OC-15** (receipt), **ADR-0003 §4** ("onboarding is configuration, not code"), and the
+owner-configuration items it makes self-service — **OC-06, OC-07, OC-08, OC-09, OC-14, OC-15, OC-21,
+OC-22, OC-42, OC-44, OC-45** — plus **D12**. No requirement row's state changed (all were already
+foundation-built); this wired and hardened them, so `docs/traceability.md`'s M33-FR-01 row gains the
+new files and the inline-editing description, not a new row.
+
+**Evidence / tests.** New: `tenant-setup` (8), `tenant-setup-concurrency` (5), `platform-setup-routes`
+(7), `erp-setup-session` (5), `erp-setup-editing` (12), plus `receipt-presets` (13); the store-setup
+page is in the `every-screen-opens-without-a-network` guardrail (19). **Full gate green on each PR:**
+typecheck, lint, secret-scan, `pnpm build:erp`, and the whole suite — **4,235 tests** (251 DB-gated
+integration tests run in CI's PostgreSQL job).
+
+**Genuinely deferred to UAT / live.** (1) The **browser render and the live network round-trip** of
+the page are verified by typecheck + production build + the offline guardrail (the project's gate for
+a screen — there is no runtime browser test in CI); an in-store click-through belongs to **UAT-02**
+(the master-data configuration workshop) and **UAT-06** (usability). (2) **Durable persistence of
+tenant settings:** `TenantSettings` is backed by the in-memory `ConfigStore` across the whole
+codebase; the append-only `config_versions` store (`packages/persistence`) is built and tested but
+not yet wired to it, so setup answers do not yet survive a process restart. This is documented on
+`inMemorySettings()` and is the next stream (below).
+
+**Current roadmap stage.** Every code stage (0–19) is complete and gated; this was commercialization/
+hardening on the store-core (M33 / M36) rather than a new stage. **Next incomplete, non-blocked
+requirement:** wire `TenantSettings` onto the durable `config_versions` store (**M01-FR-03 /
+M33-FR-01**), removing the in-memory limitation above for every setting including setup — proceeding
+autonomously as the next single implementation stream.
 
 ---
 
