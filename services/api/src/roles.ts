@@ -33,6 +33,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'purchase.invoice.capture', 'purchase.invoice.match', 'purchase.supplier.bank', 'purchase.commitment.read',
       'inventory.movement.append', 'inventory.availability.read',
       'pos.sale.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record',
+      'cash.movement.record', 'cash.till.read',
       'customer.consent.read', 'customer.consent.write', 'loyalty.points.read', 'loyalty.points.write',
       'loyalty.value.issue', 'loyalty.value.redeem', 'loyalty.value.read',
       'order.promise', 'order.reservation.read',
@@ -59,6 +60,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'purchase.invoice.capture', 'purchase.invoice.match', 'purchase.commitment.read',
       'inventory.movement.append', 'inventory.availability.read',
       'pos.sale.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record',
+      'cash.movement.record', 'cash.till.read',
       'customer.consent.read', 'customer.consent.write', 'loyalty.points.read', 'loyalty.points.write',
       'loyalty.value.issue', 'loyalty.value.redeem', 'loyalty.value.read',
       'order.promise', 'order.reservation.read',
@@ -74,6 +76,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     permissions: [
       'identity.self.read', 'catalogue.pack.read',
       'pos.sale.sync', 'pos.sale.read', 'pos.return.record',
+      'cash.movement.record', 'cash.till.read',
       'customer.consent.read', 'loyalty.points.read', 'loyalty.points.write',
       'loyalty.value.issue', 'loyalty.value.redeem', 'loyalty.value.read',
     ],
