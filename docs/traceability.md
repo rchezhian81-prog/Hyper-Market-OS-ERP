@@ -172,7 +172,7 @@ programme updates as each module is wired; it supersedes the family-level "Built
 | M05 | Price-guard/list | PARTIALLY WIRED (**M05-FR-02 governed price change WIRED+integration-tested 7 Aug** — MRP ceiling + margin/cost floor + real §28 separation of duties, server-side; price-list effective-dating pending) | M24 | Supplier portal | ENGINE ONLY |
 | M06 | Counts/adjustments | PARTIALLY WIRED | M25 | Workforce | PARTIALLY WIRED (edge) |
 | M07 | Receiving/GRN | PARTIALLY WIRED (OCR pending) | M26 | Facilities | ENGINE ONLY |
-| M08 | Stock/availability | ENGINE ONLY (dup) | M27 | Concession | ENGINE ONLY |
+| M08 | Stock/availability | **INTEGRATION TESTED** (API-04 movements/availability/negative-stock/§28 write-off, real surface 7 Aug — NOTE: the earlier "dup" was inaccurate; `services/inventory` is a complete wired implementation, and `packages/stock/position` is a distinct richer MULTI-STATE, policy-aware engine, still ENGINE ONLY for a future FR — not a duplicate) | M27 | Concession | ENGINE ONLY |
 | M09 | Warehouse/bins | ENGINE ONLY | M28 | Waste | ENGINE ONLY |
 | M10 | FEFO/expiry/recall | PARTIALLY WIRED (recall→POS wired) | M29 | Reporting | PARTIALLY WIRED (thin) |
 | M11 | Loss-prevention | ENGINE ONLY | M30 | Buying/purchasing | PARTIALLY WIRED (engine reused) |
