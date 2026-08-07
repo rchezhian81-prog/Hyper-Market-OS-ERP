@@ -6,7 +6,7 @@ import { catalogueRoutes, hmacSigner } from '../../services/catalogue/src/index'
 import { posRoutes } from '../../services/pos/src/index';
 import { inventoryRoutes } from '../../services/inventory/src/index';
 import { identityRoutes } from '../../services/identity/src/index';
-import { platformRoutes } from '../../services/platform/src/index';
+import { platformRoutes, inMemorySettings } from '../../services/platform/src/index';
 import { purchaseRoutes } from '../../services/purchase/src/index';
 import { financeRoutes } from '../../services/finance/src/index';
 import { reportingRoutes } from '../../services/reporting/src/index';
@@ -65,7 +65,7 @@ const ALL: readonly Route[] = [
     controlTotals: () => [], postersIn: () => [], markClosed: () => {}, now: () => NOW,
   }),
   ...reportingRoutes({ figures: () => [], now: () => NOW }),
-  ...platformRoutes({ probe: () => [], flags: () => ({}), setFlag: () => {}, recordSupportAccess: () => {}, now: () => NOW }),
+  ...platformRoutes({ probe: () => [], flags: () => ({}), setFlag: () => {}, recordSupportAccess: () => {}, settings: inMemorySettings(), now: () => NOW }),
   ...migrationRoutes({
     target: () => ({ targetId: 'tgt-1', tenantId: 't', kind: 'rehearsal', label: 'rehearsal' }), findings: () => [],
     acceptances: () => [], signatures: () => [], recordAcceptance: () => {},

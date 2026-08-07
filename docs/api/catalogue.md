@@ -38,7 +38,7 @@
 | API-08 | Fulfilment / Delivery | M19 | picks, packs, routes, proof | R5 |
 | API-09 | Finance | M23 | journals, AP/AR, reconciliation, period close, Tally | R2 |
 | API-10 | Reporting | M29 | read models / KPIs (read-only, freshness) | R2 |
-| API-11 | Platform | M32–M35 | flags, jobs, devices, support access, audit, backup/health | R1 |
+| API-11 | Platform | M32–M35 | flags, store setup, jobs, devices, support access, audit, backup/health | R1 |
 | API-12 | Migration | MG-01–MG-12 | staging, mapping, exceptions, reconciliation | R3 |
 | API-13 | AI | A01–A10 | agent runs, evidence, budget, kill switch | R7 |
 

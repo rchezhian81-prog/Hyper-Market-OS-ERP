@@ -31,7 +31,7 @@ import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
 import { posRoutes } from '../../pos/src/index';
 import { inventoryRoutes } from '../../inventory/src/index';
 import { identityRoutes, tokenAuthenticator } from '../../identity/src/index';
-import { platformRoutes } from '../../platform/src/index';
+import { platformRoutes, inMemorySettings } from '../../platform/src/index';
 import { purchaseRoutes } from '../../purchase/src/index';
 import { financeRoutes } from '../../finance/src/index';
 import { reportingRoutes } from '../../reporting/src/index';
@@ -130,7 +130,8 @@ export function buildSurface(deps: {
       ? { figures: empty([]), now }
       : reportingAdapter({ store, now })),
     ...platformRoutes(store === undefined ? {
-      probe: probes, flags: empty({}), setFlag: () => {}, recordSupportAccess: () => {}, now,
+      probe: probes, flags: empty({}), setFlag: () => {}, recordSupportAccess: () => {},
+      settings: inMemorySettings(), now,
     } : platformAdapter({ store, now, probes })),
     ...migrationRoutes(store === undefined ? {
       target: (tenantId) => ({

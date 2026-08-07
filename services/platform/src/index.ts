@@ -91,6 +91,23 @@ import {
   grantSupportAccess,
   type SupportAccessRequest, type OwnerApproval, type SupportSession,
 } from '../../../packages/platform-admin/src/index';
+import {
+  TenantSettings, setupStatus, applyAnswer, setupItem, InvalidSetupAnswerError,
+} from '../../../packages/tenant/src/index';
+import { ConfigStore } from '../../../packages/config/src/index';
+
+/**
+ * A fresh per-tenant settings store for wiring the setup surface.
+ *
+ * NOTE — durability: `TenantSettings` is backed by the in-memory `ConfigStore` everywhere in the
+ * codebase today; the durable, append-only config store (`packages/persistence`) is not yet wired
+ * to it. So a store's setup answers do not yet survive a process restart. Connecting the two is a
+ * tracked follow-up and applies to **every** tenant setting, not only setup — this slice adds the
+ * missing API surface over the settings abstraction as it currently exists.
+ */
+export function inMemorySettings(): TenantSettings {
+  return new TenantSettings(new ConfigStore());
+}
 
 export interface FeatureFlagChange {
   readonly key: string;
@@ -104,6 +121,8 @@ export interface PlatformDeps {
   readonly flags: (tenantId: string) => Promise<Readonly<Record<string, boolean>>> | Readonly<Record<string, boolean>>;
   readonly setFlag: (tenantId: string, change: FeatureFlagChange) => Promise<void> | void;
   readonly recordSupportAccess: (r: SupportAccessRequest, expiresAt: string) => Promise<void> | void;
+  /** Per-tenant settings backing the self-service store-setup surface (M33-FR-01). */
+  readonly settings: TenantSettings;
   readonly now: () => string;
 }
 
@@ -166,6 +185,55 @@ export function platformRoutes(deps: PlatformDeps): readonly Route[] {
         }
         await deps.recordSupportAccess(body.request, session.expiresAt);
         return { status: 201, body: session };
+      },
+    },
+    {
+      // The self-service store-setup surface (ADR-0003 §4 / M01-FR-02/03 / M33-FR-01): a tenant
+      // reads its own setup state — what is answered, on a default, or still blocking.
+      api: 'API-11', method: 'GET', path: '/v1/platform/setup',
+      permission: 'platform.setup.read',
+      handler: async (ctx) => ({ status: 200, body: setupStatus(deps.settings, ctx.tenantId) }),
+    },
+    {
+      // A tenant answers one setup item. Validated first (an invalid value is refused, by name,
+      // and nothing is stored), then written through the versioned config engine — audited,
+      // reversible and isolated to this tenant.
+      api: 'API-11', method: 'PUT', path: '/v1/platform/setup/:key',
+      permission: 'platform.setup.write', idempotent: true,
+      handler: async (ctx) => {
+        const key = ctx.params['key'] ?? '';
+        const item = setupItem(key);
+        if (item === undefined) {
+          throw apiError(404, {
+            code: 'unknown_setting',
+            whatHappened: `There is no store-setup setting called '${key}'.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Check the key against GET /v1/platform/setup. Nothing changed.',
+          });
+        }
+        const body = (ctx.body ?? {}) as { value?: unknown };
+        if (body.value === undefined) {
+          throw apiError(400, {
+            code: 'setup_value_not_given',
+            whatHappened: 'A setup answer must carry the value to store.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { "value": … }. Nothing changed.',
+          });
+        }
+        try {
+          applyAnswer(deps.settings, ctx.tenantId, item, body.value, ctx.userId, deps.now());
+        } catch (e) {
+          if (e instanceof InvalidSetupAnswerError) {
+            throw apiError(422, {
+              code: 'setup_answer_refused',
+              whatHappened: e.message,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Send a value that fits the setting. Nothing was stored.',
+            });
+          }
+          throw e;
+        }
+        return { status: 200, body: setupStatus(deps.settings, ctx.tenantId) };
       },
     },
   ];

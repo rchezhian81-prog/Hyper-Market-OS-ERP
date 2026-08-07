@@ -5,7 +5,7 @@ import {
 } from '../../services/inventory/src/index';
 import { grantRole, identityRoutes, type GrantRequest, type IdentityDeps } from '../../services/identity/src/index';
 import {
-  assessHealth, platformRoutes,
+  assessHealth, platformRoutes, inMemorySettings,
   type DependencyProbe, type SupportAccessRequest, type OwnerApproval, type PlatformDeps,
 } from '../../services/platform/src/index';
 // The ONE implementation. The service used to carry a second, weaker copy of this control.
@@ -269,7 +269,8 @@ describe('all three register cleanly on the kernel', () => {
   };
   const platDeps: PlatformDeps = {
     probe: () => [{ name: 'postgres', criticality: 'shop_cannot_trade_without_it', reachable: true }],
-    flags: () => ({}), setFlag: () => {}, recordSupportAccess: () => {}, now: () => NOW,
+    flags: () => ({}), setFlag: () => {}, recordSupportAccess: () => {},
+    settings: inMemorySettings(), now: () => NOW,
   };
 
   const all = [...inventoryRoutes(invDeps), ...identityRoutes(idDeps), ...platformRoutes(platDeps)];

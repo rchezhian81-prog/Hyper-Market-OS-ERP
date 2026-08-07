@@ -116,6 +116,17 @@ export const SETTINGS = {
     label: 'How empty a facing must be before it is worth refilling (basis points)',
     defaultValue: 5_000,
   } as TenantSetting<number>,
+  /**
+   * The thermal paper the store's receipts print on (OC-15). One of the built-in
+   * formats in `packages/receipt` — 'thermal-58' (2"), 'thermal-80' (3", the common
+   * retail default) or 'thermal-112' (4"). A tenant picks the size it bought; the
+   * header/footer is its own branding, not a code change (M36-FR-02).
+   */
+  RECEIPT_PAPER_FORMAT: {
+    key: 'receipt.paper_format',
+    label: 'Receipt paper size',
+    defaultValue: 'thermal-80',
+  } as TenantSetting<string>,
 };
 
 /**
@@ -146,5 +157,15 @@ export class TenantSettings {
     const current = this.store.current(this.scopedKey(tenantId, setting));
     // A stored value is returned even if falsy (0, "", []); only an unset key defaults.
     return current === undefined ? setting.defaultValue : (current.value as T);
+  }
+
+  /**
+   * Whether this tenant has explicitly chosen a value for the setting, as opposed
+   * to running on its default. This is what the setup screen needs to tell an
+   * *answered* setting from an *accepted default* — `get` alone cannot, because it
+   * returns the default transparently.
+   */
+  isSet(tenantId: string, setting: TenantSetting<unknown>): boolean {
+    return this.store.current(this.scopedKey(tenantId, setting)) !== undefined;
   }
 }

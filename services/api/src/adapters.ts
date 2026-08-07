@@ -36,6 +36,7 @@ import type { DeliveryAttempt, FulfilmentDeps } from '../../fulfilment/src/index
 import type { IdentityDeps } from '../../identity/src/index';
 import type { Role, RoleAssignment } from '../../../packages/rbac/src/rbac';
 import type { DependencyProbe, FeatureFlagChange, PlatformDeps } from '../../platform/src/index';
+import { inMemorySettings } from '../../platform/src/index';
 import { figure } from '../../reporting/src/index';
 import type { ReportingDeps } from '../../reporting/src/index';
 import type { MigrationDeps } from '../../migration/src/index';
@@ -726,6 +727,10 @@ export function platformAdapter(input: {
   return {
     now: input.now,
     probe: input.probes,
+
+    // Per-tenant settings for the self-service setup surface. In-memory for now (see
+    // `inMemorySettings` — durable backing for tenant settings is a tracked, cross-cutting follow-up).
+    settings: inMemorySettings(),
 
     /** Current flag state, folded forward. The last change to a key wins; the history keeps both. */
     flags: async (tenantId) => {
