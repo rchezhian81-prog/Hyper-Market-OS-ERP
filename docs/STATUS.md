@@ -255,6 +255,18 @@ completion template, observability, API surface + event contract tests, and the 
   vendor-funding reconciliation and effectiveness measurement still engine-only). Full gate green
   (typecheck, lint, secret-scan, build:api, **4,604 tests**).
 
+- **Done (this increment): till cash wired — one custodian, no overdraw (M14-FR-01, API-05).** Continuing
+  toward closing M14, `packages/cash` (another unfed engine) is now on the cloud via a new route module
+  (`services/pos/src/cash.ts`): `POST /v1/tills/:tillId/cash-movements` records float/loan/pickup/
+  safe-drop/return through the pure `assessCashMovement` (`packages/cash/src/assess-cash.ts`, mirroring
+  the other cloud guards) — **one custodian per till at a time** and **no overdraw**, enforced against the
+  till's whole cloud chain; `GET …/cash` reports the drawer balance and current custodian **projected from
+  the movements** (never stored). Idempotent per movement. Proven through the real API + real RBAC in
+  `tests/integration/till-cash.test.ts` (5 cases) plus `tests/unit/assess-cash.test.ts` (4 pure cases).
+  M14 stays **PARTIALLY WIRED** (FR-03 fully wired + FR-01 till cash wired; the blind till count / shift
+  over-short M14-FR-02 remains off the cloud surface — the last piece to close M14). Full gate green
+  (typecheck, lint, secret-scan, build:api, **4,613 tests**).
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in

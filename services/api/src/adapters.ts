@@ -26,6 +26,8 @@ import type { SignedPack } from '../../catalogue/src/index';
 import type { CatalogueDeps } from '../../catalogue/src/index';
 import type { IncomingSale, SaleException, PosDeps } from '../../pos/src/index';
 import type { ReturnsDeps, ReturnRecord, RecordedRefund, OriginalSale, RecordedReturn } from '../../pos/src/returns';
+import type { CashDeps, RecordedCashMovement } from '../../pos/src/cash';
+import type { StoredCashMovement } from '../../../packages/cash/src/index';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project } from '../../inventory/src/index';
@@ -83,6 +85,7 @@ export const STREAM = {
   settlement: 'settlement',
   loyalty: 'loyalty',
   promotions: 'promotions',
+  cash: 'cash',
 } as const;
 
 const payloadOf = <T>(e: PersistedEvent): T => e.event.payload as T;
@@ -165,6 +168,8 @@ const forLocation = (locationId: string): string => streamName(STREAM.reservatio
 const forInvoice = (invoiceId: string): string => streamName(STREAM.purchase, 'invoice', invoiceId);
 /** Returns hang off the sale they are against, so "what came back on this bill?" reads one stream. */
 const forSaleReturns = (saleId: string): string => streamName(STREAM.sales, 'return', saleId);
+/** Each till's cash chain folds one stream — its balance and custodian read one till, not the shop. */
+const forTillCash = (tillId: string): string => streamName(STREAM.cash, tillId);
 
 export const STREAM_FOR = { forCustomer, forDriverRun, forLocation, forInvoice, forSaleReturns } as const;
 
@@ -356,6 +361,32 @@ export function returnsAdapter(input: {
         idempotencyKey: `return-${tenantId}-${record.returnId}`,
         source: 'api/pos',
         payload: record,
+      }));
+    },
+  };
+}
+
+export function cashAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): CashDeps {
+  return {
+    now: input.now,
+
+    tillMovements: async (tenantId, tillId) =>
+      (await allOf<RecordedCashMovement>(input.store, tenantId, forTillCash(tillId), 'CashMovement'))
+        .map((m): StoredCashMovement => ({ movementId: m.movementId, tillId: m.tillId, kind: m.kind, deltaMinor: m.deltaMinor, custodianId: m.custodianId })),
+
+    recordCashMovement: async (tenantId, tillId, m) => {
+      await input.store.append(tenantId, forTillCash(tillId), makeEvent({
+        id: `cash-${m.movementId}`,
+        type: 'CashMovement',
+        occurredAt: m.at,
+        // The movement's own id, no timestamp — a lane retrying an unconfirmed drop collapses to one,
+        // so the drawer moves once however many times the till re-sends it.
+        idempotencyKey: `cash-${tenantId}-${m.movementId}`,
+        source: 'api/pos',
+        payload: m,
       }));
     },
   };

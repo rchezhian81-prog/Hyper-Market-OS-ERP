@@ -35,6 +35,7 @@ import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
 import { pricingRoutes } from '../../pricing/src/index';
 import { posRoutes } from '../../pos/src/index';
 import { returnsRoutes } from '../../pos/src/returns';
+import { cashRoutes } from '../../pos/src/cash';
 import { storedValueRoutes } from '../../customer/src/stored-value';
 import { promotionRoutes } from '../../pricing/src/promotions';
 import { settlementRoutes } from '../../finance/src/settlement';
@@ -52,7 +53,7 @@ import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, pricingAdapter, posAdapter, returnsAdapter, inventoryAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
-  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter,
+  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, cashAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
@@ -134,6 +135,9 @@ export function buildSurface(deps: {
       originalSale: empty(undefined), priorReturns: empty([]), priorRefunds: empty([]),
       recordReturn: () => {}, now,
     } : returnsAdapter({ store, now })),
+    ...cashRoutes(store === undefined
+      ? { tillMovements: empty([]), recordCashMovement: () => {}, now }
+      : cashAdapter({ store, now })),
     ...customerRoutes(store === undefined ? {
       consentRecords: empty([]), appendConsent: () => {}, pointsBalance: empty(undefined),
       pointsMovements: empty([]), recordPointsMovement: () => {}, now,
