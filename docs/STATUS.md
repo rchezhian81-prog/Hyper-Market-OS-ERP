@@ -356,6 +356,25 @@ completion template, observability, API surface + event contract tests, and the 
   additive enrichments of that one movement, not a clean separate wire)._ Full gate green (typecheck,
   lint, secret-scan, build:api, **4,647 tests**).
 
+- **Done (this increment): facilities assets, downtime & energy — critical alone, AMC against the money,
+  downtime from failure (M26-FR-01 / M26-FR-04, API-11).** The rest of `packages/facilities` is now on
+  the cloud (`services/platform/src/facilities-assets.ts`): `POST /v1/facilities/assets/:id` registers an
+  asset, `…/services/:serviceId` logs a service, `…/downtime/:eventId` records a failure, and
+  `POST /v1/facilities/energy/:id` a reading; `GET …/assets/health`, `…/assets/downtime` and `…/energy`
+  read through the pure `assessAssets` / `summariseDowntime` / `reportEnergy`. The design refuses to
+  flatten the story: **critical assets come back in their OWN list** (never sorted in beside a shelf
+  trolley where the cold room gets missed); **an absent/expired AMC is reported against the money it
+  protects** ("₹8,00,000 of stock depends on it" gets it renewed, "AMC-14 expired" does not); **a
+  breakdown call is not the preventive service it never had** (a chiller nursed through breakdowns still
+  reads overdue); **downtime is measured from when it BROKE** with unreported minutes stated apart (an
+  hour reported four hours late is a five-hour exposure), and closing a downtime event out **supersedes**
+  the open record so it is never counted twice; and an **energy figure states how much of it was
+  ESTIMATED**. Proven through the real API + real RBAC in `tests/integration/facilities-assets.test.ts`
+  (5 cases). M26 → **PARTIALLY WIRED** (schedules FR-03 + assets FR-01 + downtime/energy FR-04 wired;
+  cold-chain/power FR-02 and incidents/evidence-pack — `packages/facilities/src/monitoring.ts`,
+  `closeIncident`, `buildComplianceEvidence` — remain engine-only, the next facilities increment). Full
+  gate green (typecheck, lint, secret-scan, build:api, **4,652 tests**).
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in

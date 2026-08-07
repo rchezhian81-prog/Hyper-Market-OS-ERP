@@ -45,6 +45,7 @@ import { b2bCreditRoutes } from '../../finance/src/b2b-credit';
 import { concessionRoutes } from '../../finance/src/concession';
 import { scrapRoutes } from '../../finance/src/scrap';
 import { facilitiesRoutes } from '../../platform/src/facilities';
+import { facilitiesAssetsRoutes } from '../../platform/src/facilities-assets';
 import { inventoryRoutes } from '../../inventory/src/index';
 import { identityRoutes, tokenAuthenticator } from '../../identity/src/index';
 import { platformRoutes, inMemorySettings } from '../../platform/src/index';
@@ -59,7 +60,7 @@ import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, pricingAdapter, posAdapter, returnsAdapter, inventoryAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
-  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, cashAdapter, shiftAdapter, b2bCreditAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter,
+  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, cashAdapter, shiftAdapter, b2bCreditAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
@@ -186,6 +187,10 @@ export function buildSurface(deps: {
     ...facilitiesRoutes(store === undefined ? {
       schedules: empty([]), tasks: empty([]), recordSchedule: () => {}, recordTaskDue: () => {}, recordTaskCompleted: () => {}, now,
     } : facilitiesAdapter({ store, now })),
+    ...facilitiesAssetsRoutes(store === undefined ? {
+      assets: empty([]), services: empty([]), downtime: empty([]), energyReadings: empty([]),
+      recordAsset: () => {}, recordService: () => {}, recordDowntime: () => {}, recordEnergy: () => {}, now,
+    } : facilitiesAssetsAdapter({ store, now })),
     ...reportingRoutes(store === undefined
       ? { figures: empty([]), now }
       : reportingAdapter({ store, now })),
