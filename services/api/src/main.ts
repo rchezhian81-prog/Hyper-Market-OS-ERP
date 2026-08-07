@@ -147,7 +147,8 @@ export function buildSurface(deps: {
     } : financeAdapter({ store, now })),
     ...settlementRoutes(store === undefined ? {
       importedBatchIds: empty([]), recordBatch: () => {}, credits: empty([]),
-      electronicTenders: empty([]), now,
+      electronicTenders: empty([]), investigations: empty([]),
+      recordInvestigationOpened: () => {}, recordInvestigationEvidence: () => {}, recordInvestigationResolved: () => {}, now,
     } : settlementAdapter({ store, now })),
     ...reportingRoutes(store === undefined
       ? { figures: empty([]), now }
