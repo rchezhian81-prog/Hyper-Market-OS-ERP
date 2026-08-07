@@ -114,7 +114,7 @@ switch on, and reading it alone would leave that impression. Measured, not estim
 | `services/ai` — API-13 | ~170 lines | **Built.** Proposals only; kill switch needs no approval; budget checked before the call |
 | `services/` remaining domain services | **none** | **All thirteen APIs are served.** API-01…13 each have a service; see the surface gate below |
 | `services/api` — composition root | ~220 lines | **Built.** Config checked at boot, store opened, thirteen services on one router **built exactly once**, drains on SIGTERM. **All thirteen persist.** Tokens are verified against the configured identity provider; `services/api/src/roles.ts` holds the role catalogue, because a role is configuration and its holders are tenant data |
-| `infra/` | compose (db · migrate · **api** · web), Dockerfile, CI deploy job | **Built.** One command brings the whole stack up on one machine; CI builds the image, proves it refuses a bad configuration, and brings the stack to ready |
+| `infra/` | compose (db · migrate · **api** · web), Dockerfile, CI deploy job | **Built.** One command brings the whole stack up on one machine; CI builds the image, proves it refuses a bad configuration, and brings the stack to ready. The database password the deploy step generates is **URL-safe** (hex, never base64 — a `/` in the userinfo makes `DATABASE_URL` an invalid URL and migrate exits 1), guarded by `tests/guardrails/the-db-password-is-url-safe.test.ts` |
 
 **The consequence, stated plainly so it cannot be missed:** the business rules are finished and the
 system is not assembled. There is no service layer, so nothing serves API-01…13; the POS shell has
