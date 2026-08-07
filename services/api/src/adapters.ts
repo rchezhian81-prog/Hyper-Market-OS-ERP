@@ -34,6 +34,7 @@ import type { MatchResult, BankChangeRequest, PurchaseDeps } from '../../purchas
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
 import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
 import type { StoredPointsMovement } from '../../../packages/loyalty/src/assess-points';
+import type { StoredValueDeps, Instrument, ValueMovement } from '../../customer/src/stored-value';
 import { expired } from '../../orders/src/index';
 import type { Reservation, OrdersDeps } from '../../orders/src/index';
 import type { DeliveryAttempt, FulfilmentDeps } from '../../fulfilment/src/index';
@@ -153,6 +154,9 @@ function streamName(...parts: readonly string[]): string {
 const forCustomer = (customerId: string): string => streamName(STREAM.consent, customerId);
 /** Points hang off the customer they belong to, so one customer's balance folds one stream. */
 const forCustomerPoints = (customerId: string): string => streamName(STREAM.loyalty, customerId);
+/** Each stored-value instrument's movements fold one stream; the issued-instruments index is its own. */
+const forInstrument = (instrumentId: string): string => streamName(STREAM.loyalty, 'value', instrumentId);
+const STORED_VALUE_INDEX = streamName(STREAM.loyalty, 'instruments');
 const forDriverRun = (driverId: string, runDate: string): string =>
   streamName(STREAM.delivery, driverId, runDate);
 const forLocation = (locationId: string): string => streamName(STREAM.reservations, locationId);
@@ -808,6 +812,57 @@ export function customerAdapter(input: {
         // The movement's own id, no timestamp — a lane retrying an unconfirmed burn collapses to one,
         // so points leave once however many times the till re-sends it.
         idempotencyKey: `points-${tenantId}-${m.movementId}`,
+        source: 'api/customer',
+        payload: m,
+      }));
+    },
+  };
+}
+
+export function storedValueAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): StoredValueDeps {
+  return {
+    now: input.now,
+
+    instrument: async (tenantId, instrumentId) => {
+      const issued = await allOf<Instrument>(input.store, tenantId, STORED_VALUE_INDEX, 'StoredValueIssued');
+      return issued.find((i) => i.instrumentId === instrumentId);
+    },
+
+    movements: async (tenantId, instrumentId) =>
+      allOf<ValueMovement>(input.store, tenantId, forInstrument(instrumentId), 'StoredValueMovement'),
+
+    recordIssue: async (tenantId, instrument, opening) => {
+      // The instrument goes on the shared index (so it can be found and, later, pooled by owner); its
+      // opening value is the first movement on the instrument's own stream, where the balance folds.
+      await input.store.append(tenantId, STORED_VALUE_INDEX, makeEvent({
+        id: `sv-issue-${instrument.instrumentId}`,
+        type: 'StoredValueIssued',
+        occurredAt: instrument.issuedAt,
+        idempotencyKey: `sv-issue-${tenantId}-${instrument.instrumentId}`,
+        source: 'api/customer',
+        payload: instrument,
+      }));
+      await input.store.append(tenantId, forInstrument(instrument.instrumentId), makeEvent({
+        id: `sv-mv-${opening.movementId}`,
+        type: 'StoredValueMovement',
+        occurredAt: opening.at,
+        idempotencyKey: `sv-mv-${tenantId}-${opening.movementId}`,
+        source: 'api/customer',
+        payload: opening,
+      }));
+    },
+
+    recordMovement: async (tenantId, instrumentId, m) => {
+      await input.store.append(tenantId, forInstrument(instrumentId), makeEvent({
+        id: `sv-mv-${m.movementId}`,
+        type: 'StoredValueMovement',
+        occurredAt: m.at,
+        // The movement's own id, no timestamp — a re-sent redemption collapses, so a gift card is
+        // spent once however many times the till re-sends it.
+        idempotencyKey: `sv-mv-${tenantId}-${m.movementId}`,
         source: 'api/customer',
         payload: m,
       }));
