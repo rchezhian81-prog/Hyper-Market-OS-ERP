@@ -48,7 +48,7 @@ const ALL: readonly Route[] = [
     approvalsSince: () => [], now: () => NOW,
   }),
   ...purchaseRoutes({
-    matchLines: () => [], recordMatch: () => {}, applyBankChange: () => {},
+    matchLines: () => [], recordCapture: () => {}, recordMatch: () => {}, applyBankChange: () => {},
     openCommitments: () => ({ count: 0, valueMinor: 0 }), now: () => NOW,
   }),
   ...inventoryRoutes({ availability: () => [], appendMovement: () => {}, isKnown: () => false, now: () => NOW }),
