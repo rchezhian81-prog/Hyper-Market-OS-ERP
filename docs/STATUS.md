@@ -375,6 +375,24 @@ completion template, observability, API surface + event contract tests, and the 
   `closeIncident`, `buildComplianceEvidence` — remain engine-only, the next facilities increment). Full
   gate green (typecheck, lint, secret-scan, build:api, **4,652 tests**).
 
+- **Done (this increment): facilities equipment & power monitoring — a breach holds the whole room,
+  silence is a fault (M26-FR-02, API-11).** The last unwired half of `packages/facilities` is now on the
+  cloud (`services/platform/src/facilities-monitoring.ts`): `POST /v1/facilities/equipment/:id/range`
+  sets a cold-chain range (+ branch, name, on-backup), `…/readings/:rid` records a reading (sensor /
+  manual probe / log sheet — assessed identically per D14, the source kept), `…/contents` sets what a
+  breach would expose, and `GET …/equipment/:id` runs the pure `assessEquipment`. The point M10 does not
+  cover: M10 assesses the **batch**, this assesses the **equipment**, so a breach **holds every batch in
+  the room including the ones nobody probed**, and a probe that has gone quiet is `no_data` / `stale` and
+  holds too — silence is not a pass. `POST /v1/facilities/power/:id` records a power event and
+  `GET …/power` runs `assessPower`: **unprotected minutes are counted from the mains failure**, not the
+  generator attempt, and the critical assets with no backup are named (a freezer on backup is excluded).
+  New permission `facilities.reading.record` (owner/store_manager) for readings and power events; range
+  and contents stay on `facilities.asset.manage`; cashier refused. Proven through the real API + real
+  RBAC in `tests/integration/facilities-monitoring.test.ts` (6 cases). M26 → **PARTIALLY WIRED**
+  (FR-01/02/03/04 all wired; only incidents `closeIncident` and the compliance evidence pack
+  `buildComplianceEvidence` remain engine-only). Full gate green (typecheck, lint, secret-scan,
+  build:api, **4,658 tests**).
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in

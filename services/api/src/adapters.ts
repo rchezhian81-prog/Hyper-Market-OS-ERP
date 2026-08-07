@@ -35,6 +35,7 @@ import type { ConcessionDeps, ConcessionContract, ConcessionSale } from '../../f
 import type { ScrapDeps, ScrapSale } from '../../finance/src/scrap';
 import type { FacilitiesDeps, MaintenanceSchedule, ScheduledTask } from '../../platform/src/facilities';
 import type { FacilitiesAssetsDeps, Asset, ServiceLog, DowntimeEvent, EnergyReading } from '../../platform/src/facilities-assets';
+import type { FacilitiesMonitoringDeps, EquipmentRangeReg, EquipmentContents, EquipmentReading, PowerEvent } from '../../platform/src/facilities-monitoring';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project } from '../../inventory/src/index';
@@ -722,6 +723,93 @@ export function facilitiesAssetsAdapter(input: {
         idempotencyKey: `fac-energy-${tenantId}-${readingId}`,
         source: 'api/platform',
         payload: reading,
+      }));
+    },
+  };
+}
+
+export function facilitiesMonitoringAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): FacilitiesMonitoringDeps {
+  // Equipment monitoring folds the one facilities stream by event type: a range and an equipment's
+  // contents fold latest-wins by assetId, readings and power events dedupe on their own id via the
+  // append idempotency key. Append-only — a new contents set is a new fact, never an overwrite.
+  return {
+    now: input.now,
+
+    ranges: async (tenantId) => {
+      const all = await allOf<EquipmentRangeReg>(input.store, tenantId, STREAM.facilities, 'FacilitiesEquipmentRangeSet');
+      const byId = new Map<string, EquipmentRangeReg>();
+      for (const r of all) byId.set(r.assetId, r); // later set wins
+      return [...byId.values()];
+    },
+
+    readings: async (tenantId) => {
+      const all = await allOf<EquipmentReading>(input.store, tenantId, STREAM.facilities, 'FacilitiesEquipmentReading');
+      const byId = new Map<string, EquipmentReading>();
+      for (const r of all) byId.set(r.readingId, r);
+      return [...byId.values()];
+    },
+
+    contents: async (tenantId) => {
+      const all = await allOf<EquipmentContents>(input.store, tenantId, STREAM.facilities, 'FacilitiesEquipmentContents');
+      const byId = new Map<string, EquipmentContents>();
+      for (const c of all) byId.set(c.assetId, c); // later set wins
+      return [...byId.values()];
+    },
+
+    powerEvents: async (tenantId) => {
+      const all = await allOf<PowerEvent>(input.store, tenantId, STREAM.facilities, 'FacilitiesPowerEvent');
+      const byId = new Map<string, PowerEvent>();
+      for (const e of all) byId.set(e.eventId, e);
+      return [...byId.values()];
+    },
+
+    recordRange: async (tenantId, reg) => {
+      await input.store.append(tenantId, STREAM.facilities, makeEvent({
+        id: `fac-range-${reg.assetId}`,
+        type: 'FacilitiesEquipmentRangeSet',
+        occurredAt: input.now(),
+        // Keyed on the fields that matter so restating collapses and a change is a new fact.
+        idempotencyKey: `fac-range-${tenantId}-${reg.assetId}-${reg.range.minTenthsC}-${reg.range.maxTenthsC}-${reg.range.graceMinutes}-${reg.range.expectEveryMinutes ?? 'def'}-${reg.onBackup}`,
+        source: 'api/platform',
+        payload: reg,
+      }));
+    },
+
+    recordReading: async (tenantId, reading) => {
+      await input.store.append(tenantId, STREAM.facilities, makeEvent({
+        id: `fac-eqreading-${reading.readingId}`,
+        type: 'FacilitiesEquipmentReading',
+        occurredAt: input.now(),
+        idempotencyKey: `fac-eqreading-${tenantId}-${reading.readingId}`,
+        source: 'api/platform',
+        payload: reading,
+      }));
+    },
+
+    recordContents: async (tenantId, contents) => {
+      await input.store.append(tenantId, STREAM.facilities, makeEvent({
+        id: `fac-contents-${contents.assetId}-${contents.contents.length}`,
+        type: 'FacilitiesEquipmentContents',
+        occurredAt: input.now(),
+        // The contents move; a new set is a new fact. Key on the whole set so an identical resend
+        // collapses but any change appends.
+        idempotencyKey: `fac-contents-${tenantId}-${contents.assetId}-${contents.contents.map((b) => `${b.batchId}:${b.valueMinor}`).join(',')}`,
+        source: 'api/platform',
+        payload: contents,
+      }));
+    },
+
+    recordPowerEvent: async (tenantId, event) => {
+      await input.store.append(tenantId, STREAM.facilities, makeEvent({
+        id: `fac-power-${event.eventId}`,
+        type: 'FacilitiesPowerEvent',
+        occurredAt: input.now(),
+        idempotencyKey: `fac-power-${tenantId}-${event.eventId}`,
+        source: 'api/platform',
+        payload: event,
       }));
     },
   };
