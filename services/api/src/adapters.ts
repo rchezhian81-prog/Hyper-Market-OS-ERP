@@ -31,6 +31,7 @@ import type { StoredCashMovement } from '../../../packages/cash/src/index';
 import type { ShiftDeps, ClosedShiftRecord } from '../../pos/src/shift';
 import type { B2BCreditDeps, B2BAccount, RecordedReceivable } from '../../finance/src/b2b-credit';
 import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord } from '../../purchase/src/supplier-portal';
+import type { ConcessionDeps, ConcessionContract, ConcessionSale } from '../../finance/src/concession';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project } from '../../inventory/src/index';
@@ -90,6 +91,7 @@ export const STREAM = {
   promotions: 'promotions',
   cash: 'cash',
   b2b: 'b2b',
+  concession: 'concession',
 } as const;
 
 const payloadOf = <T>(e: PersistedEvent): T => e.event.payload as T;
@@ -180,6 +182,8 @@ const forTillCash = (tillId: string): string => streamName(STREAM.cash, tillId);
 const SHIFTS_STREAM = streamName(STREAM.cash, 'shifts');
 /** Each B2B customer's credit terms and AR movements fold one stream — one customer, not the shop. */
 const forB2BCustomer = (customerId: string): string => streamName(STREAM.b2b, customerId);
+/** Each concession contract's terms and sales fold one stream — one counter, not the shop. */
+const forConcession = (contractId: string): string => streamName(STREAM.concession, contractId);
 
 export const STREAM_FOR = { forCustomer, forDriverRun, forLocation, forInvoice, forSaleReturns } as const;
 
@@ -472,6 +476,47 @@ export function b2bCreditAdapter(input: {
         idempotencyKey: `b2b-ar-${tenantId}-${m.movementId}`,
         source: 'api/finance',
         payload: m,
+      }));
+    },
+  };
+}
+
+export function concessionAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): ConcessionDeps {
+  return {
+    now: input.now,
+
+    // The latest contract applies — terms can change, folded to their newest set.
+    contract: async (tenantId, contractId) =>
+      latest<ConcessionContract>(input.store, tenantId, forConcession(contractId), 'ConcessionContractSet'),
+
+    sales: async (tenantId, contractId) =>
+      allOf<ConcessionSale>(input.store, tenantId, forConcession(contractId), 'ConcessionSaleRecorded'),
+
+    recordContract: async (tenantId, contract) => {
+      await input.store.append(tenantId, forConcession(contract.contractId), makeEvent({
+        id: `concession-contract-${contract.contractId}-${contract.basis}-${contract.fixedRentMinor ?? 0}-${contract.revenueShareBps ?? 0}`,
+        type: 'ConcessionContractSet',
+        occurredAt: input.now(),
+        // Keyed on the terms — re-sending the same contract collapses, a change of terms is a new fact.
+        idempotencyKey: `concession-contract-${tenantId}-${contract.contractId}-${contract.basis}-${contract.fixedRentMinor ?? 0}-${contract.revenueShareBps ?? 0}-${contract.depositMinor}-${contract.active}`,
+        source: 'api/finance',
+        payload: contract,
+      }));
+    },
+
+    recordSale: async (tenantId, sale) => {
+      await input.store.append(tenantId, forConcession(sale.contractId), makeEvent({
+        id: `concession-sale-${sale.saleId}`,
+        type: 'ConcessionSaleRecorded',
+        occurredAt: sale.at,
+        // The sale's own id — a re-sent concession sale collapses rather than double-counting the
+        // partner's takings, which are money the shop holds on their behalf.
+        idempotencyKey: `concession-sale-${tenantId}-${sale.saleId}`,
+        source: 'api/finance',
+        payload: sale,
       }));
     },
   };

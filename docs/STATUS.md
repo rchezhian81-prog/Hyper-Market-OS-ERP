@@ -313,6 +313,19 @@ completion template, observability, API surface + event contract tests, and the 
   structured-invoice model (a larger piece that revisits the credit slice), not a two-model hack._ Full
   gate green (typecheck, lint, secret-scan, build:api, **4,633 tests**).
 
+- **Done (this increment): concession — the tills hold the partner's money, and the charge is exact
+  (M27-FR-01/FR-03, API-09).** `packages/concession` (another unfed engine) is now on the cloud
+  (`services/finance/src/concession.ts`): `POST /v1/concession/contracts/:id` sets a counter's contract,
+  `…/sales` records its sales (a refund carries a **negative gross** and reduces the base by
+  construction), `GET …/charge` computes rent / revenue-share / **higher-of-both** (the HIGHER, never the
+  sum) in exact integer money, and `GET …/settlement` discharges the money the tills took as a
+  **liability, never the store's revenue** (presenting it as revenue would inflate both sides of the
+  P&L and make every margin figure wrong), pays them collected-less-owed, **states the deposit but never
+  nets it**, and reports a **till-vs-counter difference as a valued exception**. Proven through the real
+  API + real RBAC in `tests/integration/concession.test.ts` (5 cases). M27 → **PARTIALLY WIRED** (charge
+  + settlement wired; ownership/stock-access FR-02 and trading-eligibility/expiry FR-04 still
+  engine-only). Full gate green (typecheck, lint, secret-scan, build:api, **4,638 tests**).
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in
