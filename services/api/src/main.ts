@@ -27,7 +27,7 @@ import {
   buildRouter, loadConfig, startHttpServer, CLOUD_API_CONFIG, SqlIdempotencyStore, SqlAuditSink,
   type Route,
 } from '../../kernel/src/index';
-import { AccessControl } from '../../../packages/rbac/src/rbac';
+import { tenantAccessResolver, seedGenesisOwner } from './access';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
 import { posRoutes } from '../../pos/src/index';
@@ -175,6 +175,17 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
   await db.connect();
   const store = new SqlEventStore(pgClient(db));
 
+  // 2b — Genesis owner (optional bootstrap). Because granting a role itself needs a role
+  // (maker-checker), a brand-new tenant has nobody who can grant the first one. Where the initial
+  // owner is configured, establish them once — idempotent, a no-op if the tenant already has any
+  // grant. The owner's identity is an owner input supplied by configuration, not decided here.
+  const genesisTenant = settings['BOOTSTRAP_OWNER_TENANT_ID'];
+  const genesisOwner = settings['BOOTSTRAP_OWNER_USER_ID'];
+  if (genesisTenant !== undefined && genesisOwner !== undefined) {
+    const outcome = await seedGenesisOwner(store, OWNER_ROLE_ID, genesisTenant, genesisOwner, new Date().toISOString());
+    process.stdout.write(`genesis owner for tenant ${genesisTenant}: ${outcome}\n`);
+  }
+
   // 3 — The surface. A route that breaks a convention fails here, not on the request that finds it.
   //
   // Built exactly once. The first version of this built it twice — once to check the shape at boot
@@ -221,7 +232,13 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
       },
       (reason) => { process.stderr.write(`auth refused: ${reason}\n`); },
     ),
-    access: new AccessControl([], []),
+    // Real, per-tenant authorization. Was `new AccessControl([], [])` — a global, empty table that
+    // authorised NOTHING and, worse, was never rebuilt from anyone's grants, so the whole least-
+    // privilege apparatus was inert on the live surface. Now every request resolves the caller's
+    // authority from THEIR tenant's own `RoleGranted` history in the ledger. Default-deny survives:
+    // a tenant with no grants still authorises nothing — but now for the right reason, and a
+    // provisioned tenant's owner and staff can actually act.
+    access: tenantAccessResolver(store, ROLE_CATALOGUE),
     // Durable and shared. In memory it emptied on every restart and was never shared between
     // instances, so the guard that refuses a different request under a used key was quietly not
     // there — which is not a crash, and would never have shown up in a test.

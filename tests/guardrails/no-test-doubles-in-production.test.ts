@@ -83,6 +83,15 @@ describe('every port the cloud API depends on is actually supplied', () => {
   it('supplies a real event store, so the API does not answer and forget', () => {
     expect(main).toMatch(/new SqlEventStore/);
   });
+
+  it('wires REAL per-tenant authorization, not an empty AccessControl that authorises nothing', () => {
+    // The shape it used to have: `access: new AccessControl([], [])` — a global, empty table that
+    // was never rebuilt from anyone's grants, so every authenticated request returned 403 and the
+    // whole least-privilege apparatus was inert on the live surface. It must resolve authority from
+    // the tenant's own grants instead. This guard is the fix made un-regressable.
+    expect(main).not.toMatch(/access:\s*new AccessControl\s*\(\s*\[\s*\]\s*,\s*\[\s*\]\s*\)/);
+    expect(main).toMatch(/access:\s*tenantAccessResolver\(/);
+  });
 });
 
 describe('every port the store edge depends on is actually supplied', () => {

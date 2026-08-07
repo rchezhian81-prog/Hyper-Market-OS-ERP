@@ -116,12 +116,82 @@ switch on, and reading it alone would leave that impression. Measured, not estim
 | `services/api` — composition root | ~220 lines | **Built.** Config checked at boot, store opened, thirteen services on one router **built exactly once**, drains on SIGTERM. **All thirteen persist.** Tokens are verified against the configured identity provider; `services/api/src/roles.ts` holds the role catalogue, because a role is configuration and its holders are tenant data |
 | `infra/` | compose (db · migrate · **api** · web), Dockerfile, CI deploy job | **Built.** One command brings the whole stack up on one machine; CI builds the image, proves it refuses a bad configuration, and brings the stack to ready. The database password the deploy step generates is **URL-safe** (hex, never base64 — a `/` in the userinfo makes `DATABASE_URL` an invalid URL and migrate exits 1), guarded by `tests/guardrails/the-db-password-is-url-safe.test.ts` |
 
-**The consequence, stated plainly so it cannot be missed:** the business rules are finished and the
-system is not assembled. There is no service layer, so nothing serves API-01…13; the POS shell has
-no cloud counterpart to sync to. A requirement row reading *Built* means its rules are implemented
-and proved, and it does **not** mean a cashier can scan an item today.
+**The consequence, stated plainly so it cannot be missed (reconciled 7 Aug 2026 against the audit):**
+the business rules are finished and the system is **only partially assembled**. An earlier version of
+this paragraph said "there is no service layer" — that is now **stale**: a thin service layer exists
+and all thirteen APIs persist to PostgreSQL (see the table above). But two facts qualify every
+"Built" below and must be read with it:
 
-This section is the honest counterpart to the family table above and must be read beside it.
+1. **The services are thin.** Six of the seven domain services (`finance`, `orders`, `inventory`,
+   `customer`, `fulfilment`, `reporting`) are kernel-only re-implementations that do **not** import
+   the rich, tested domain engines in `packages/`; `services/purchase` reusing `packages/purchasing`
+   is the lone deliberate exception. **35 of 77 packages are imported only by their own tests** —
+   built and unit-proved, but absent from anything that runs.
+2. **"Built" ≠ end-to-end.** A requirement row reading *Built* means its rules are implemented and
+   unit-proved. It does **not** mean a cashier can scan an item today, nor that the row is
+   *WIRED / INTEGRATION TESTED / E2E VERIFIED* in the sense of the completion vocabulary below.
+
+The ASSEMBLY / WIRING workstream (below) tracks each module through that vocabulary. This section is
+the honest counterpart to the family table above and must be read beside it.
+
+## Completion status vocabulary (adopted 7 August 2026)
+
+Per owner instruction, "engine implemented and unit-tested" is **not** "module complete." Every module
+is now tracked through this ladder; a module is COMPLETE only when the whole chain — requirement →
+domain engine → application/service → API/event contract → persistence → authorization → UI/channel
+where applicable → integration tests → E2E → operational evidence — is connected and verified.
+
+`NOT STARTED` · `ENGINE ONLY` · `PARTIALLY WIRED` · `WIRED` · `INTEGRATION TESTED` · `E2E VERIFIED` ·
+`UAT VERIFIED` · `PRODUCTION VERIFIED` · `EXTERNALLY BLOCKED`
+
+Never report `ENGINE ONLY`, simulated, synthetic, mocked, or documented work as product completion.
+
+## ASSEMBLY / WIRING workstream — module ladder (baseline 7 August 2026)
+
+Baseline from the read-only audit. Legend as above. This table is the live tracker the recovery
+programme updates as each module is wired; it supersedes the family-level "Built" for the question
+"can a user actually do this in the running system?"
+
+| M | Domain | Status | M | Domain | Status |
+|---|---|---|---|---|---|
+| M12 | POS sale path | **E2E VERIFIED** (offline commit + sync proven, real PG) | M18 | Orders/fulfilment | ENGINE ONLY (service thin) |
+| M33 | Tenant self-setup | **INTEGRATION TESTED** (durable, API + UI) | M19 | Merchandising | PARTIALLY WIRED |
+| M02 | Identity/RBAC | **WIRED** (per-tenant authz repaired, E2E — 7 Aug) | M20 | Promotions | ENGINE ONLY |
+| M01 | Org/config/trading-day | PARTIALLY WIRED (cut-off unwired) | M21 | Returns/reversal | PARTIALLY WIRED |
+| M03 | Catalogue | PARTIALLY WIRED | M22 | B2B | ENGINE ONLY |
+| M04 | Picking | PARTIALLY WIRED (app-shell) | M23 | Finance | PARTIALLY WIRED (thin; totals refuse) |
+| M05 | Price-guard/list | ENGINE ONLY | M24 | Supplier portal | ENGINE ONLY |
+| M06 | Counts/adjustments | PARTIALLY WIRED | M25 | Workforce | PARTIALLY WIRED (edge) |
+| M07 | Receiving/GRN | PARTIALLY WIRED (OCR pending) | M26 | Facilities | ENGINE ONLY |
+| M08 | Stock/availability | ENGINE ONLY (dup) | M27 | Concession | ENGINE ONLY |
+| M09 | Warehouse/bins | ENGINE ONLY | M28 | Waste | ENGINE ONLY |
+| M10 | FEFO/expiry/recall | PARTIALLY WIRED (recall→POS wired) | M29 | Reporting | PARTIALLY WIRED (thin) |
+| M11 | Loss-prevention | ENGINE ONLY | M30 | Buying/purchasing | PARTIALLY WIRED (engine reused) |
+| M13 | Tender/settlement | PARTIALLY WIRED | M31 | Documents/numbering | PARTIALLY WIRED |
+| M14 | Settlement/recon | ENGINE ONLY | M32 | Integration gateway | ENGINE ONLY |
+| M15 | Suspended/day-close | PARTIALLY WIRED | M34 | Compliance/retention | PARTIALLY WIRED (primitives) |
+| M16 | Cash/till | PARTIALLY WIRED | M35 | Ops/backup/DR | PARTIALLY WIRED (restore proven) |
+| M17 | Loyalty/stored-value | ENGINE ONLY | M36 | Platform plans/branding | ENGINE ONLY |
+
+**Summary:** 1 E2E VERIFIED · 1 INTEGRATION TESTED · 1 WIRED · ~13 PARTIALLY WIRED · ~11 ENGINE ONLY ·
+0 NOT STARTED at module level (but see the restored D-FR rows below). No module is UAT- or
+PRODUCTION-verified. The programme drives each row rightward, engine-into-service, with authz, tenant
+isolation, idempotency, persistence, audit, offline/sync, contracts, integration + E2E tests, UI
+states, and English/Tamil at every increment.
+
+## Restored extension requirement rows (Phase 0 — previously untraced)
+
+The audit found five defined extension requirements with **no traceability row** — a silent-drop that
+the roadmap forbids. Restored here with honest status; none is invented, all trace to the requirement
+text cited.
+
+| Requirement | What it is | Status | Evidence / gap |
+|---|---|---|---|
+| **D01-FR-05** | Regulated-item & recall-block flags on the product master (M03) — plus safety/compliance content (allergens, origin, storage) | PARTIALLY WIRED | Recall-block **is** wired to the till refusal (`packages/traceability`, `apps/web-erp/…/expiry`, POS guard); full regulated/compliance-content authoring is engine-level only |
+| **D01-FR-06** | Product images / customer-app content (M03) | NOT STARTED | Customer-app renders shop content, but the product-master → app-content authoring pipeline is not built |
+| **D02-FR-06** | Supplier display funding tracked against the space it funds, reconciled in finance (M04/M23) | NOT STARTED | No display-funding-vs-space model found in the running system |
+| **D03-FR-02** | Bulk supplier-invoice import (OCR/e-invoice) feeding M07 three-way match — **the store's #1 daily pain (audit A-03)** | NOT STARTED | `packages/import` does generic CSV import; no OCR/e-invoice ingestion. Highest-value missing feature |
+| **D03-FR-06** | Supplier bank-change verification (mandatory fraud control, links M06/M15) | **WIRED** | Verified out-of-band, dated, recorded as an event in `services/purchase` + `packages/bank-controls`; not a silent drop in code, only in the RTM |
 
 ## Design artifacts (Stage 3–4)
 
