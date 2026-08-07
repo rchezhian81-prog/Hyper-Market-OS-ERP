@@ -27,6 +27,7 @@ import type { CatalogueDeps } from '../../catalogue/src/index';
 import type { IncomingSale, SaleException, PosDeps } from '../../pos/src/index';
 import type { ReturnsDeps, ReturnRecord, RecordedRefund, OriginalSale, RecordedReturn } from '../../pos/src/returns';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
+import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project } from '../../inventory/src/index';
 import type { Movement, Availability, InventoryDeps } from '../../inventory/src/index';
 import type { MatchResult, BankChangeRequest, PurchaseDeps } from '../../purchase/src/index';
@@ -361,8 +362,69 @@ export function settlementAdapter(input: {
   const batches = (tenantId: string) =>
     allOf<SettlementBatch>(input.store, tenantId, STREAM.settlement, 'SettlementBatchImported');
 
+  // All investigation lifecycle events live on one stream, folded by id. Investigations are
+  // exceptions, not sales — low-volume — so one stream read to answer for all of them is fine.
+  const investigationsStream = streamName(STREAM.settlement, 'investigations');
+  const foldInvestigations = async (tenantId: string): Promise<readonly Investigation[]> => {
+    const events = await input.store.readStream(tenantId, investigationsStream);
+    const byId = new Map<string, Investigation>();
+    for (const e of events) {
+      const p = e.event.payload as Record<string, unknown>;
+      const id = p['investigationId'] as string;
+      if (e.event.type === 'SettlementInvestigationOpened') {
+        byId.set(id, p as unknown as Investigation);
+      } else if (e.event.type === 'SettlementEvidenceAttached') {
+        const inv = byId.get(id);
+        if (inv !== undefined) byId.set(id, attachEvidence(inv, p['ref'] as string));
+      } else if (e.event.type === 'SettlementInvestigationResolved') {
+        const inv = byId.get(id);
+        if (inv !== undefined) {
+          byId.set(id, { ...inv, state: 'resolved', outcome: p['outcome'] as Investigation['outcome'], outcomeNote: p['outcomeNote'] as string, resolvedBy: p['resolvedBy'] as string, resolvedAt: p['resolvedAt'] as string });
+        }
+      }
+    }
+    return [...byId.values()];
+  };
+
   return {
     now: input.now,
+
+    investigations: (tenantId) => foldInvestigations(tenantId),
+
+    recordInvestigationOpened: async (tenantId, inv) => {
+      await input.store.append(tenantId, investigationsStream, makeEvent({
+        id: `settle-inv-open-${inv.investigationId}`,
+        type: 'SettlementInvestigationOpened',
+        occurredAt: inv.openedAt,
+        idempotencyKey: `settle-inv-open-${tenantId}-${inv.investigationId}`,
+        source: 'api/finance',
+        payload: inv,
+      }));
+    },
+
+    recordInvestigationEvidence: async (tenantId, investigationId, ref, at) => {
+      await input.store.append(tenantId, investigationsStream, makeEvent({
+        id: `settle-inv-ev-${investigationId}-${ref}`,
+        type: 'SettlementEvidenceAttached',
+        occurredAt: at,
+        // Keyed on the ref too — the same evidence attached twice collapses (append-only, never a
+        // duplicate), but a second, different document is a new fact and is kept.
+        idempotencyKey: `settle-inv-ev-${tenantId}-${investigationId}-${ref}`,
+        source: 'api/finance',
+        payload: { investigationId, ref },
+      }));
+    },
+
+    recordInvestigationResolved: async (tenantId, inv) => {
+      await input.store.append(tenantId, investigationsStream, makeEvent({
+        id: `settle-inv-resolve-${inv.investigationId}`,
+        type: 'SettlementInvestigationResolved',
+        occurredAt: inv.resolvedAt ?? input.now(),
+        idempotencyKey: `settle-inv-resolve-${tenantId}-${inv.investigationId}`,
+        source: 'api/finance',
+        payload: { investigationId: inv.investigationId, outcome: inv.outcome, outcomeNote: inv.outcomeNote, resolvedBy: inv.resolvedBy, resolvedAt: inv.resolvedAt },
+      }));
+    },
 
     importedBatchIds: async (tenantId) => (await batches(tenantId)).map((b) => b.batchId),
 

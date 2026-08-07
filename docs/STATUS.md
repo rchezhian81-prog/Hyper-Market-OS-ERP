@@ -211,6 +211,22 @@ completion template, observability, API surface + event contract tests, and the 
   referrals M17-FR-02 and stored value/gift cards M17-FR-03/04 still engine-only). Full gate green
   (typecheck, lint, secret-scan, build:api, **4,584 tests**).
 
+- **Done (this increment): the settlement investigation lifecycle — an exception becomes an owned case
+  (M14-FR-03, API-09).** The `/v1/settlement/review` produces exceptions; this closes the loop by making
+  each one a case that is worked and closed. Four endpoints on the finance surface
+  (`services/finance/src/settlement.ts`): `POST /v1/settlement/investigations` opens on a real exception
+  (a **named owner** and a **future due date**, and it refuses to open on a not-a-problem);
+  `…/:id/evidence` attaches evidence **append-only** (never edited — hard rule #6);
+  `…/:id/resolve` closes **only with an outcome and a note**, with a **§28 write-off control** (writing
+  money off needs someone other than the person who raised it); `GET …/investigations` lists open cases
+  with **ageing buckets**. The investigation is a **mutable aggregate reconstructed from its events**
+  (opened → evidence → resolved), folded in the adapter. The engine gained optional typed refusal codes
+  (backward-compatible — no unit-test change) so the API returns machine-readable reasons. Proven through
+  the real API + real RBAC in `tests/integration/settlement-investigations.test.ts` (7 cases). M14 stays
+  **PARTIALLY WIRED** (FR-03 now fully wired — import + review + investigations; cash/till counts
+  M14-FR-01/02 remain off the cloud surface). Full gate green (typecheck, lint, secret-scan, build:api,
+  **4,591 tests**).
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in

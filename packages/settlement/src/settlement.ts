@@ -305,9 +305,13 @@ export interface Investigation {
   readonly evidenceRefs: readonly string[];
 }
 
+/** Why an investigation could not be opened — a machine-readable code for the API surface. */
+export type OpenInvestigationRefusal = 'not_a_problem' | 'needs_a_named_owner' | 'due_date_in_the_past';
+
 export interface OpenInvestigationResult {
   readonly opened: boolean;
   readonly detail: string;
+  readonly refusedBecause?: OpenInvestigationRefusal;
   readonly investigation?: Investigation;
 }
 
@@ -323,15 +327,15 @@ export function openInvestigation(input: {
 }): OpenInvestigationResult {
   if (!input.exception.needsInvestigation) {
     return {
-      opened: false,
+      opened: false, refusedBecause: 'not_a_problem',
       detail: 'this is not a problem — it is money that is simply not due yet, and opening a case on it trains people to close cases without reading them',
     };
   }
   if (input.ownerId.trim() === '') {
-    return { opened: false, detail: 'an investigation needs a named owner — an exception owned by "the cash office" is owned by nobody' };
+    return { opened: false, refusedBecause: 'needs_a_named_owner', detail: 'an investigation needs a named owner — an exception owned by "the cash office" is owned by nobody' };
   }
   if (input.dueBy < input.at.slice(0, 10)) {
-    return { opened: false, detail: `a due date of ${input.dueBy} is already in the past` };
+    return { opened: false, refusedBecause: 'due_date_in_the_past', detail: `a due date of ${input.dueBy} is already in the past` };
   }
 
   return {
@@ -358,9 +362,13 @@ export function attachEvidence(investigation: Investigation, ref: string): Inves
   return { ...investigation, evidenceRefs: [...investigation.evidenceRefs, ref] };
 }
 
+/** Why an investigation could not be resolved — a machine-readable code for the API surface. */
+export type ResolveRefusal = 'already_resolved' | 'needs_a_note' | 'write_off_needs_a_second_person';
+
 export interface ResolveResult {
   readonly resolved: boolean;
   readonly detail: string;
+  readonly refusedBecause?: ResolveRefusal;
   readonly investigation: Investigation;
   /** What the rules should learn from this — the feedback loop into M15-FR-04. */
   readonly feedback?: string;
@@ -380,15 +388,15 @@ export function resolveInvestigation(input: {
 }): ResolveResult {
   const inv = input.investigation;
   if (inv.state === 'resolved') {
-    return { resolved: false, detail: 'this investigation is already resolved', investigation: inv };
+    return { resolved: false, refusedBecause: 'already_resolved', detail: 'this investigation is already resolved', investigation: inv };
   }
   if (input.note.trim() === '') {
-    return { resolved: false, detail: 'an outcome needs a note saying what was actually found', investigation: inv };
+    return { resolved: false, refusedBecause: 'needs_a_note', detail: 'an outcome needs a note saying what was actually found', investigation: inv };
   }
   if (input.outcome === 'written_off' && input.resolvedBy === inv.openedBy) {
     // Writing money off is a financial decision, not an administrative one (§28).
     return {
-      resolved: false,
+      resolved: false, refusedBecause: 'write_off_needs_a_second_person',
       detail: 'writing off a settlement difference needs someone other than the person who raised it',
       investigation: inv,
     };
