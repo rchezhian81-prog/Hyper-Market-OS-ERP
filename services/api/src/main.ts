@@ -20,7 +20,9 @@
 
 import { Client } from 'pg';
 import { SqlEventStore } from '../../../packages/persistence/src/event-store';
+import { SqlConfigVersionStore } from '../../../packages/persistence/src/config-store';
 import { pgClient } from '../../../packages/persistence/src/pg-client';
+import { DurableTenantSettings } from '../../../packages/tenant/src/index';
 import {
   buildRouter, loadConfig, startHttpServer, CLOUD_API_CONFIG, SqlIdempotencyStore, SqlAuditSink,
   type Route,
@@ -82,6 +84,8 @@ export function buildSurface(deps: {
    * shell into a system, and `main()` always does.
    */
   readonly store?: EventStore;
+  /** Durable per-tenant settings (a SqlConfigVersionStore-backed store in production). */
+  readonly settings?: DurableTenantSettings;
 }): readonly Route[] {
   const signer = hmacSigner(deps.signingKey);
   const empty = <T>(v: T) => () => v;
@@ -132,7 +136,7 @@ export function buildSurface(deps: {
     ...platformRoutes(store === undefined ? {
       probe: probes, flags: empty({}), setFlag: () => {}, recordSupportAccess: () => {},
       settings: inMemorySettings(), now,
-    } : platformAdapter({ store, now, probes })),
+    } : platformAdapter({ store, now, probes, settings: deps.settings ?? inMemorySettings() })),
     ...migrationRoutes(store === undefined ? {
       target: (tenantId) => ({
         targetId: `tgt-${tenantId}`, tenantId,
@@ -185,6 +189,9 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
     signingKey: settings['PACK_SIGNING_KEY']!,
     migrationTargetKind: settings['MIGRATION_TARGET_KIND'] as TargetKind,
     store,
+    // Durable, append-only per-tenant settings: setup answers land in config_versions and survive a
+    // restart, the same table and rules the in-memory path uses in tests.
+    settings: new DurableTenantSettings(new SqlConfigVersionStore(pgClient(db))),
     probes: async () => [{
       name: 'postgres',
       criticality: 'shop_cannot_trade_without_it',

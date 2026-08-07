@@ -37,6 +37,7 @@ import type { IdentityDeps } from '../../identity/src/index';
 import type { Role, RoleAssignment } from '../../../packages/rbac/src/rbac';
 import type { DependencyProbe, FeatureFlagChange, PlatformDeps } from '../../platform/src/index';
 import { inMemorySettings } from '../../platform/src/index';
+import type { DurableTenantSettings } from '../../../packages/tenant/src/index';
 import { figure } from '../../reporting/src/index';
 import type { ReportingDeps } from '../../reporting/src/index';
 import type { MigrationDeps } from '../../migration/src/index';
@@ -723,14 +724,16 @@ export function platformAdapter(input: {
   readonly now: () => string;
   /** Reachability of the things the shop cannot trade without. A real call, not a cached flag. */
   readonly probes: () => Promise<readonly DependencyProbe[]>;
+  /** Durable per-tenant settings — a SqlConfigVersionStore-backed store so setup survives a restart. */
+  readonly settings?: DurableTenantSettings;
 }): PlatformDeps {
   return {
     now: input.now,
     probe: input.probes,
 
-    // Per-tenant settings for the self-service setup surface. In-memory for now (see
-    // `inMemorySettings` — durable backing for tenant settings is a tracked, cross-cutting follow-up).
-    settings: inMemorySettings(),
+    // Durable per-tenant settings for the self-service setup surface (config_versions table).
+    // Production supplies a SqlConfigVersionStore-backed store; tests that omit it get an in-memory one.
+    settings: input.settings ?? inMemorySettings(),
 
     /** Current flag state, folded forward. The last change to a key wins; the history keeps both. */
     flags: async (tenantId) => {

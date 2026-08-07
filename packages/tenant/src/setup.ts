@@ -199,35 +199,37 @@ export interface SetupStatus {
 }
 
 /** Report a tenant's setup state: what is answered, on default, or still blocking. */
-export function setupStatus(
-  settings: TenantSettings,
-  tenantId: string,
+/** Build one item's status from the facts about it — shared by the sync and durable readers. */
+export function setupItemStatus(
+  item: SetupItem,
+  facts: { readonly answered: boolean; readonly value: unknown; readonly version: number; readonly changedBy?: string; readonly changedAt?: string },
+): SetupItemStatus {
+  const state: ItemState = item.required && !facts.answered ? 'blocking' : facts.answered ? 'answered' : 'using_default';
+  return {
+    key: item.setting.key,
+    label: item.setting.label,
+    question: item.question,
+    group: item.group,
+    required: item.required,
+    state,
+    value: facts.value,
+    isDefault: !facts.answered,
+    version: facts.version,
+    changedBy: facts.changedBy,
+    changedAt: facts.changedAt,
+  };
+}
+
+/** Aggregate item statuses into the whole-tenant read-out — shared by the sync and durable readers. */
+export function assembleSetupStatus(
+  items: readonly SetupItemStatus[],
   catalogue: readonly SetupItem[] = SETUP_CATALOGUE,
 ): SetupStatus {
-  const items: SetupItemStatus[] = catalogue.map((item) => {
-    const answered = settings.isSet(tenantId, item.setting);
-    const state: ItemState = item.required && !answered ? 'blocking' : answered ? 'answered' : 'using_default';
-    const meta = settings.metaOf(tenantId, item.setting);
-    return {
-      key: item.setting.key,
-      label: item.setting.label,
-      question: item.question,
-      group: item.group,
-      required: item.required,
-      state,
-      value: settings.get(tenantId, item.setting),
-      isDefault: !answered,
-      version: settings.versionOf(tenantId, item.setting),
-      changedBy: meta?.author,
-      changedAt: meta?.at,
-    };
-  });
-
   const blocking = items.filter((i) => i.state === 'blocking').map((i) => i.key);
   const answered = items.filter((i) => !i.isDefault).length;
   const total = items.length;
   return {
-    items,
+    items: [...items],
     answered,
     total,
     requiredCount: catalogue.filter((i) => i.required).length,
@@ -235,6 +237,24 @@ export function setupStatus(
     complete: blocking.length === 0,
     progressBp: total === 0 ? 10_000 : Math.round((answered / total) * 10_000),
   };
+}
+
+export function setupStatus(
+  settings: TenantSettings,
+  tenantId: string,
+  catalogue: readonly SetupItem[] = SETUP_CATALOGUE,
+): SetupStatus {
+  const items = catalogue.map((item) => {
+    const meta = settings.metaOf(tenantId, item.setting);
+    return setupItemStatus(item, {
+      answered: settings.isSet(tenantId, item.setting),
+      value: settings.get(tenantId, item.setting),
+      version: settings.versionOf(tenantId, item.setting),
+      changedBy: meta?.author,
+      changedAt: meta?.at,
+    });
+  });
+  return assembleSetupStatus(items, catalogue);
 }
 
 // ── Applying an answer ─────────────────────────────────────────────────────────

@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 7 August 2026 (self-service store setup shipped COMPLETE across PRs #15–#18 — built-in thermal receipt templates, the setup engine with defaults and block-until-given, the API-11 read/answer endpoints with optimistic concurrency and an audit trail, and the bilingual Store setup page with FULL inline editing; see the store-setup milestone below. Earlier the same day: the pilot-preparation pack across PRs #11–#13 — the store go-live checklist, the set-up workbook in document and Excel form, and the day-by-day pilot run-sheet, all CI-green; see the pilot-preparation milestone below. Earlier still, PR #10 merged the eleven ERP screens and six apps with CI green — see the 7 August milestone below; the session that built it: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, the day boundary the store box did not have, the service desk, expiry and recall — including the recall block that never reached a till — finance, which lets a month close for the first time, admin and security — including a security control that existed twice and enforced less where it counted, AI control, including the kill switch that stopped nothing — and migration, including the cutover gate that had only ever been ticked by hand)
+Last updated: 7 August 2026 (durable tenant settings — setup answers now persist through the append-only config_versions store and survive a restart, PR #19; see the durable-settings milestone below. Just before it, self-service store setup shipped COMPLETE across PRs #15–#18 — built-in thermal receipt templates, the setup engine with defaults and block-until-given, the API-11 read/answer endpoints with optimistic concurrency and an audit trail, and the bilingual Store setup page with FULL inline editing; see the store-setup milestone below. Earlier the same day: the pilot-preparation pack across PRs #11–#13 — the store go-live checklist, the set-up workbook in document and Excel form, and the day-by-day pilot run-sheet, all CI-green; see the pilot-preparation milestone below. Earlier still, PR #10 merged the eleven ERP screens and six apps with CI green — see the 7 August milestone below; the session that built it: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, the day boundary the store box did not have, the service desk, expiry and recall — including the recall block that never reached a till — finance, which lets a month close for the first time, admin and security — including a security control that existed twice and enforced less where it counted, AI control, including the kill switch that stopped nothing — and migration, including the cutover gate that had only ever been ticked by hand)
 
 ---
 
@@ -75,6 +75,44 @@ Both fixes were reproduced against a real PostgreSQL 16 before the merge (465 in
 green, all three CI jobs green on `0003466`). **No requirement row changed** — this was wiring
 already recorded above plus two test/config corrections — so `docs/traceability.md` gains only
 the deployment guardrail against its `infra/` row.
+
+---
+
+## Durable tenant settings — setup answers survive a restart (7 August 2026)
+
+**Why.** The self-service setup feature (above) wired the setup surface onto `TenantSettings`, which
+was backed by the in-memory `ConfigStore` everywhere in the codebase — so a store's answers were
+lost on a process restart. That was the one honest gap the feature documented. This closes it.
+
+**What shipped (PR #19).** `DurableTenantSettings` (`packages/tenant/src/durable-settings.ts`) reads
+and writes the same configuration through the **durable, append-only `config_versions` store**
+(`packages/persistence`), applying the **same** validation and optimistic-concurrency rules as the
+in-memory path (`validateSetupAnswer`, `SetupVersionConflictError` — one implementation, not a second
+copy that could drift). The platform service's setup endpoints now go through it; `services/api`
+wires a **`SqlConfigVersionStore`-backed** store in production (`main.ts`, over `pgClient`), while the
+dev stub and tests use the in-memory `ConfigVersionStore` contract. `setupStatus` was refactored to
+share its assembly (`setupItemStatus` / `assembleSetupStatus`) between the sync and durable readers.
+
+**Requirement IDs.** **M01-FR-03** (append-only versioned config) and **M33-FR-01** (tenant settings +
+configuration history); ADR-0003 (tenant isolation). No requirement-row state changed — this wired an
+existing capability; the two rows gain the new files and the durability note.
+
+**Evidence / tests.** New `durable-tenant-settings` (6) — defaults, persist-with-version-and-audit, a
+**survives-a-restart** case (a fresh instance over the same store still sees the value), optimistic
+concurrency, invalid-refused-stores-nothing, tenant isolation. `SqlConfigVersionStore` itself is
+tested against a real database in `persistence-config-store` and the DB-gated integration suite.
+**Full gate green:** typecheck, lint, secret-scan, `pnpm build:api`, and the whole suite —
+**4,241 tests**.
+
+**Genuinely deferred.** The read-check-write optimistic-concurrency check is best-effort (adequate for
+human-paced config edits); a fully atomic compare-and-set in SQL is a later hardening if contention
+ever warrants it. In-store click-through of the page stays with UAT-02 / UAT-06.
+
+**Current roadmap stage.** Every code stage (0–19) complete and gated; this was hardening/assembly on
+M01/M33. **Next incomplete, non-blocked requirement:** wire runtime consumers to READ their durable
+tenant setting rather than a constant/env — starting with the orders hold window (`HOLD_MINUTES`,
+flagged in `services/api/src/main.ts`) and the trading-day cut-off (M01-FR-02 / M02) — so a tenant's
+configured value actually drives behavior. Proceeding autonomously as the next single stream.
 
 ---
 
