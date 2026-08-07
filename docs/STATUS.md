@@ -227,6 +227,19 @@ completion template, observability, API surface + event contract tests, and the 
   M14-FR-01/02 remain off the cloud surface). Full gate green (typecheck, lint, secret-scan, build:api,
   **4,591 tests**).
 
+- **Done (this increment): gift cards / store credit wired — a liability, never overdrawn (M17-FR-03,
+  API-06).** Continuing the loyalty wire, `packages/loyalty/stored-value` (another unfed engine) is now on
+  the cloud via a new route module (`services/customer/src/stored-value.ts`): `POST /v1/stored-value/
+  instruments` issues a gift card / store credit with an opening value (a duplicate id refused — issuing
+  the same card twice creates money the shop never took); `POST …/:id/redeem` spends it through the pure
+  `redeemValue` guard — **never overdrawn, expiry-refused, offline-capped** (the shop can still honour its
+  own cards with the internet down, up to a cap), **idempotent** on the movement id (a re-sent redemption
+  is not a second spend); `GET …/:id` reports the balance **projected from the movements** (no setter
+  anywhere — a balance is a liability, not a figure that could drift). Proven through the real API + real
+  RBAC in `tests/integration/stored-value.test.ts` (7 cases). M17 stays **PARTIALLY WIRED** (points +
+  gift cards wired; coupons/referrals M17-FR-02 and household pooling / cross-channel double-spend
+  M17-FR-04 still engine-only). Full gate green (typecheck, lint, secret-scan, build:api, **4,598 tests**).
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in

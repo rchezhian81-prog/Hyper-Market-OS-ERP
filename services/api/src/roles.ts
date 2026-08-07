@@ -33,6 +33,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'inventory.movement.append', 'inventory.availability.read',
       'pos.sale.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record',
       'customer.consent.read', 'customer.consent.write', 'loyalty.points.read', 'loyalty.points.write',
+      'loyalty.value.issue', 'loyalty.value.redeem', 'loyalty.value.read',
       'order.promise', 'order.reservation.read',
       'delivery.attempt.record', 'delivery.run.read',
       'finance.journal.post', 'finance.period.close', 'finance.period.read',
@@ -57,6 +58,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'inventory.movement.append', 'inventory.availability.read',
       'pos.sale.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record',
       'customer.consent.read', 'customer.consent.write', 'loyalty.points.read', 'loyalty.points.write',
+      'loyalty.value.issue', 'loyalty.value.redeem', 'loyalty.value.read',
       'order.promise', 'order.reservation.read',
       'delivery.attempt.record', 'delivery.run.read',
       'finance.period.read', 'reporting.dashboard.read', 'reporting.report.read',
@@ -71,6 +73,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'identity.self.read', 'catalogue.pack.read',
       'pos.sale.sync', 'pos.sale.read', 'pos.return.record',
       'customer.consent.read', 'loyalty.points.read', 'loyalty.points.write',
+      'loyalty.value.issue', 'loyalty.value.redeem', 'loyalty.value.read',
     ],
   },
   {
