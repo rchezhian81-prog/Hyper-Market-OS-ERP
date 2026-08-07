@@ -181,10 +181,19 @@ export function scanOutbound(body: unknown, tenantId: string): readonly Outbound
 
 // ── The pipeline ─────────────────────────────────────────────────────────────
 
+/**
+ * Authorization for a request. Either a single ready `AccessControl` (tests and simple
+ * compositions), or — the production shape — a per-tenant resolver that builds one from that
+ * tenant's OWN role grants, so authority is scoped to the tenant and read from the authoritative
+ * event source rather than a global table. Async because the grants live in the store. Default-deny
+ * is preserved either way: a tenant with no grants yields an `AccessControl` that authorises nothing.
+ */
+export type AccessResolver = (tenantId: string) => AccessControl | Promise<AccessControl>;
+
 export interface KernelOptions {
   readonly router: Router;
   readonly authenticate: Authenticator;
-  readonly access: AccessControl;
+  readonly access: AccessControl | AccessResolver;
   readonly idempotency: IdempotencyStore;
   readonly audit?: AuditSink;
   /** Injected so a reply is reproducible in a test and traceable in production. */
@@ -261,7 +270,11 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
     if (principal === undefined) throw unauthenticated();
     auditPrincipal = principal;
 
-    if (!opts.access.can({
+    // Authorization is per-tenant: a resolver reads THIS tenant's grants; a ready AccessControl is
+    // used as-is. Resolve after authentication so the tenant comes from the signed principal, never
+    // from anything the caller supplied. Default-deny survives either shape.
+    const access = typeof opts.access === 'function' ? await opts.access(principal.tenantId) : opts.access;
+    if (!access.can({
       userId: principal.userId, permission: route.permission, branchId: principal.branchId,
     })) {
       throw forbidden(route.permission);

@@ -161,6 +161,13 @@ export const CLOUD_API_CONFIG: readonly Spec[] = [
   { key: 'PORT', numeric: true, fallback: '8081' },
   { key: 'NODE_ENV', oneOf: ['development', 'test', 'production'], fallback: 'production' },
   { key: 'MIGRATION_TARGET_KIND', oneOf: ['rehearsal', 'staging', 'local', 'production'], fallback: 'rehearsal' },
+  // Genesis owner (optional). A brand-new tenant has nobody who can grant the first role, so — where
+  // set — these name the tenant and the user who become its first owner at boot. Optional and
+  // idempotent: absent, no genesis is seeded (the tenant simply has no authority until provisioned);
+  // present, the owner is established once and never re-widened. The user's identity is an owner
+  // decision, which is why it is configuration and not a constant in the code.
+  { key: 'BOOTSTRAP_OWNER_TENANT_ID', optional: true },
+  { key: 'BOOTSTRAP_OWNER_USER_ID', optional: true },
 ];
 
 /**

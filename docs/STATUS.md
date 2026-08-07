@@ -3,11 +3,60 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 7 August 2026 (durable tenant settings — setup answers now persist through the append-only config_versions store and survive a restart, PR #19; see the durable-settings milestone below. Just before it, self-service store setup shipped COMPLETE across PRs #15–#18 — built-in thermal receipt templates, the setup engine with defaults and block-until-given, the API-11 read/answer endpoints with optimistic concurrency and an audit trail, and the bilingual Store setup page with FULL inline editing; see the store-setup milestone below. Earlier the same day: the pilot-preparation pack across PRs #11–#13 — the store go-live checklist, the set-up workbook in document and Excel form, and the day-by-day pilot run-sheet, all CI-green; see the pilot-preparation milestone below. Earlier still, PR #10 merged the eleven ERP screens and six apps with CI green — see the 7 August milestone below; the session that built it: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, the day boundary the store box did not have, the service desk, expiry and recall — including the recall block that never reached a till — finance, which lets a month close for the first time, admin and security — including a security control that existed twice and enforced less where it counted, AI control, including the kill switch that stopped nothing — and migration, including the cutover gate that had only ever been ticked by hand)
+Last updated: 7 August 2026 (PROJECT RECOVERY KICKOFF — read-only audit accepted as the implementation baseline; Phase 0 baseline/status reconciliation + Phase 1 CRITICAL security repair done: per-tenant RBAC now genuinely enforced on the live API surface (it was inert — `AccessControl([],[])`), with a guarded genesis-owner bootstrap and an authenticated+authorized E2E; completion-status vocabulary adopted, 5 dropped D-FR rows restored, ASSEMBLY/WIRING workstream opened, and `docs/OWNER-ACTION-REGISTER.md` created. See the PROJECT RECOVERY section at the top. Earlier: durable tenant settings — setup answers now persist through the append-only config_versions store and survive a restart, PR #19; see the durable-settings milestone below. Just before it, self-service store setup shipped COMPLETE across PRs #15–#18 — built-in thermal receipt templates, the setup engine with defaults and block-until-given, the API-11 read/answer endpoints with optimistic concurrency and an audit trail, and the bilingual Store setup page with FULL inline editing; see the store-setup milestone below. Earlier the same day: the pilot-preparation pack across PRs #11–#13 — the store go-live checklist, the set-up workbook in document and Excel form, and the day-by-day pilot run-sheet, all CI-green; see the pilot-preparation milestone below. Earlier still, PR #10 merged the eleven ERP screens and six apps with CI green — see the 7 August milestone below; the session that built it: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, the day boundary the store box did not have, the service desk, expiry and recall — including the recall block that never reached a till — finance, which lets a month close for the first time, admin and security — including a security control that existed twice and enforced less where it counted, AI control, including the kill switch that stopped nothing — and migration, including the cutover gate that had only ever been ticked by hand)
+
+---
+
+## PROJECT RECOVERY — honest status (7 August 2026, supersedes the snapshots below)
+
+A full read-only audit was accepted as the implementation baseline, and the systematic
+recovery-and-assembly programme has begun. **Read this section first;** the long historical
+paragraphs below are prior-stage snapshots kept for evidence and are superseded where they conflict
+with this one.
+
+**Two numbers, kept separate (per owner instruction):**
+- **Requirements / design completeness ≈ 85%** — 144 M-FRs + 14 D + 10 A + 20 WF + 12 QG + 12 MG all
+  documented; 5 previously-untraced D-FR rows now restored in `docs/traceability.md`.
+- **Wired & verified product completeness ≈ 22–30%** — only the POS sale path (M12) and tenant
+  self-setup (M33) are wired end-to-end; ~13 modules are PARTIALLY WIRED, ~11 are ENGINE ONLY. The
+  earlier headline figures ("94 of 144", "143 of 144 built") counted **engines with unit tests**, not
+  wired modules, and are superseded by the completion-status vocabulary now adopted (see
+  `docs/traceability.md`): NOT STARTED · ENGINE ONLY · PARTIALLY WIRED · WIRED · INTEGRATION TESTED ·
+  E2E VERIFIED · UAT VERIFIED · PRODUCTION VERIFIED · EXTERNALLY BLOCKED.
+
+**Phase 0 (control baseline & honest status) — done in this increment:**
+- v2.1 recorded as the owner-designated controlling baseline; it is **not yet in the repo** (only
+  v2.0), tracked as **OA-1** in the new `docs/OWNER-ACTION-REGISTER.md`. v2.0 is the working baseline
+  meanwhile; no requirement invented or dropped.
+- The 5 silently-dropped D-FR rows (D01-FR-05/06, D02-FR-06, D03-FR-02, D03-FR-06) are restored with
+  honest status. D03-FR-02 (OCR/e-invoice invoice import — the store's #1 daily pain) is NOT STARTED.
+- STATUS/RTM contradictions reconciled (the "no service layer" line and the 94-vs-143 figures).
+- An ASSEMBLY / WIRING workstream (all 36 modules) is opened in `docs/traceability.md`.
+
+**Phase 1 (critical security repair) — done in this increment:**
+- **RBAC is no longer inert on the live surface.** The production composition wired
+  `new AccessControl([], [])` — a global empty table that authorised nothing and was never rebuilt
+  from anyone's grants, so every authenticated request returned 403 and least-privilege was not
+  actually enforced. It now resolves each caller's authority from **their tenant's own `RoleGranted`
+  history** (`services/api/src/access.ts` `tenantAccessResolver`), default-deny preserved.
+- A guarded, audited **genesis owner** bootstrap (`seedGenesisOwner`, config-driven, once-only) stops
+  a provisioned-but-ungranted tenant being a permanent 403 — without any bypass, wildcard, or
+  hard-coded role. First-owner identity is an owner input (**OA-6**).
+- **New E2E** (`tests/integration/authorization-is-enforced.test.ts`): authed+authorized→200,
+  authed+unauthorized→403, unauthenticated/expired/wrong-key/alg-none/wrong-issuer→401, per-tenant
+  isolation→403, maker-checker (self-approval 422, two-person 201), genesis once-only, plus a
+  DB-gated app→API→authorization→ledger check. A regression guard forbids the empty AccessControl
+  returning. Full gate green (typecheck, lint, secret-scan, build, **4,248 tests**).
+
+**Next, continuing automatically:** Phase 2 (E2E framework + local/test IdP adapter + contract tests +
+observability + module completion template + CI gate against engine-only-labelled-complete), then
+Phase 3 assembly in the dependency order in the recovery plan. Owner-only blockers are consolidated in
+`docs/OWNER-ACTION-REGISTER.md` and do not stop other work.
 
 ---
 
 ## Where we are, in one paragraph
+_(Historical snapshot — superseded by the PROJECT RECOVERY section above where they differ.)_
 **Stages 0–10 are complete and their gates are passed.** Stage 5 (engineering foundation)
 passed on a real destroy-and-restore; Stage 6 (offline/sync slice) on internet-off,
 duplicate, reorder and recovery tests; Stage 7 (product/pricing/purchase) on one delivery
