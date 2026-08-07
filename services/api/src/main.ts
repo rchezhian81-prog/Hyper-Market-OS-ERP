@@ -36,6 +36,7 @@ import { pricingRoutes } from '../../pricing/src/index';
 import { posRoutes } from '../../pos/src/index';
 import { returnsRoutes } from '../../pos/src/returns';
 import { storedValueRoutes } from '../../customer/src/stored-value';
+import { promotionRoutes } from '../../pricing/src/promotions';
 import { settlementRoutes } from '../../finance/src/settlement';
 import { inventoryRoutes } from '../../inventory/src/index';
 import { identityRoutes, tokenAuthenticator } from '../../identity/src/index';
@@ -51,7 +52,7 @@ import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, pricingAdapter, posAdapter, returnsAdapter, inventoryAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
-  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter,
+  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
@@ -114,6 +115,9 @@ export function buildSurface(deps: {
     ...pricingRoutes(store === undefined
       ? { recordPriceChange: () => {}, canApprove: () => Promise.resolve(false), now }
       : pricingAdapter({ store, now })),
+    ...promotionRoutes(store === undefined
+      ? { launchedPromotion: empty(undefined), recordLaunch: () => {}, now }
+      : promotionAdapter({ store, now })),
     ...purchaseRoutes(store === undefined ? {
       matchLines: empty([]), recordCapture: () => {}, recordMatch: () => {}, applyBankChange: () => {},
       openCommitments: empty(undefined), now,
