@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Store setup</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      Store setup (ADR-0003 §4 "onboarding is configuration, not code" / M01-FR-02/03 / M33-FR-01).
+      A shell in this folder, sharing the one bundle. Every retailer configures its OWN store here.
+
+      All rules live in the tested session model (apps/web-erp/src/setup-session.ts), attached as
+      window.setupSession. Read-only for now: it shows what is answered, what is on a safe default,
+      and what is still needed before the store can open. No prompt/confirm/alert.
+    -->
+    <style>
+      :root {
+        --bg: #0f172a; --panel: #1e293b; --ink: #f8fafc; --muted: #94a3b8;
+        --good: #22c55e; --warn: #f59e0b; --danger: #ef4444; --info: #38bdf8;
+        --line: #334155; --tap: 48px;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--ink);
+        font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        min-height: 100dvh; display: flex; flex-direction: column;
+      }
+      header {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; padding: 12px 16px; background: var(--panel); flex-wrap: wrap;
+      }
+      .who { font-weight: 600; }
+      .who small { display: block; color: var(--muted); font-weight: 400; font-size: 14px; }
+      .lang { background: transparent; color: var(--muted); min-height: 40px; font-size: 14px; border: 0; }
+
+      .sample { background: var(--warn); color: #451a03; padding: 8px 16px; font-weight: 600; font-size: 15px; margin: 0; }
+      .sample[hidden], .stale[hidden], .blocking[hidden] { display: none; }
+      .stale { background: #1e3a5f; color: #dbeafe; padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info); }
+
+      main { flex: 1; padding: 16px; display: grid; gap: 16px; align-content: start; max-width: 900px; }
+      h2 { margin: 0; font-size: 20px; }
+      h3 { margin: 18px 0 8px; font-size: 17px; color: var(--muted); }
+      p.lead { margin: 0 0 4px; color: var(--muted); font-size: 15px; }
+
+      .headline { border-radius: 14px; padding: 16px; display: grid; gap: 8px; }
+      .headline.good { background: #052e16; color: #bbf7d0; border: 2px solid var(--good); }
+      .headline.warn { background: #422006; color: #fde68a; border: 2px solid var(--warn); }
+      .headline strong { font-size: 20px; }
+      .headline small { font-size: 15px; opacity: 0.9; }
+      .bar { background: #0b1220; border-radius: 999px; height: 12px; overflow: hidden; }
+      .bar > i { display: block; height: 100%; background: var(--good); }
+
+      .blocking { background: #450a0a; border: 2px solid var(--danger); border-radius: 12px; padding: 12px 16px; color: #fecaca; }
+      .blocking strong { display: block; margin-bottom: 6px; font-size: 16px; }
+      .blocking ul { margin: 0; padding-left: 20px; }
+      .blocking li { margin: 4px 0; }
+
+      .row {
+        background: var(--panel); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px;
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      }
+      .row .what { display: grid; gap: 2px; }
+      .row .what small { color: var(--muted); font-size: 14px; }
+      .row.blocked { border-left: 6px solid var(--danger); }
+      .row.answered { border-left: 5px solid var(--good); }
+      .row.default { border-left: 5px solid var(--line); opacity: 0.9; }
+      .tag { font-size: 13px; background: #0b1220; border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
+      .empty { color: var(--muted); padding: 20px 4px; }
+      .note { color: var(--muted); font-size: 14px; margin: 8px 0 0; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="who" id="who">Store setup<small id="whoami">—</small></span>
+      <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
+    </header>
+
+    <p class="sample" id="sample" hidden role="status">Sample data — this is not your shop.</p>
+    <p class="stale" id="stale" hidden role="status"></p>
+
+    <main>
+      <div class="headline" id="headline">
+        <strong id="headline-text">—</strong>
+        <small id="headline-sub"></small>
+        <div class="bar"><i id="bar-fill" style="width: 0%"></i></div>
+      </div>
+
+      <div class="blocking" id="blocking" hidden>
+        <strong id="blocking-title">Still needed to open:</strong>
+        <ul id="blocking-list"></ul>
+      </div>
+
+      <div id="groups"></div>
+      <p class="note" id="change-note"></p>
+    </main>
+
+    <!--SCREEN-DATA-->
+    <script type="module" src="./web-erp.bundle.js"></script>
+    <script type="module" src="./setup.js"></script>
+  </body>
+</html>

@@ -72,6 +72,8 @@ import {
 } from './finance-session';
 import type { LedgerSide, QueuedPosting } from '../../../packages/period-close/src/index';
 import { createAdminSession, type AdminPorts, type AdminSession } from './admin-session';
+import { createSetupSession, type SetupSession } from './setup-session';
+import type { SetupStatus } from '../../../packages/tenant/src/index';
 import type { Device, SupportSession, VersionPolicy } from '../../../packages/platform-admin/src/index';
 import {
   createAiSession, type AiPorts, type AiSession, type PendingProposal,
@@ -440,6 +442,31 @@ export function bootAdmin(data: AdminData | undefined): AdminSession | null {
   );
 }
 
+/** What the box tells the store-setup screen: who is looking, and the setup status the API computed. */
+export interface SetupData {
+  readonly userId?: string;
+  readonly storeId?: string;
+  /** The tenant's setup status from GET /v1/platform/setup. Absent → the screen was told nothing. */
+  readonly status?: SetupStatus;
+}
+
+/**
+ * Build the store-setup screen, or `null` when the box carried no setup status — the screen then
+ * shows its sample stand-in and says so, rather than inventing an "all done" state from nothing.
+ */
+export function bootSetup(data: SetupData | undefined): SetupSession | null {
+  if (data === undefined || data.status === undefined) return null;
+  const status = data.status;
+  return createSetupSession(
+    {
+      tenantId: data.storeId ?? 'tenant',
+      // NOT defaulted. A change to how the whole store trades carries the name of who made it.
+      userId: data.userId === undefined ? null : data.userId,
+    },
+    { status: () => status },
+  );
+}
+
 /** What the box tells the AI control screen. */
 export interface AiData {
   readonly userId?: string;
@@ -598,6 +625,8 @@ interface ManagerWindow {
   financeSession?: FinanceSession;
   adminData?: AdminData;
   adminSession?: AdminSession;
+  setupData?: SetupData;
+  setupSession?: SetupSession;
   aiData?: AiData;
   aiSession?: AiSession;
   migrationData?: MigrationData;
@@ -1063,6 +1092,8 @@ if (browserWindow !== undefined) {
   if (finance !== null) browserWindow.financeSession = finance;
   const admin = bootAdmin(browserWindow.adminData);
   if (admin !== null) browserWindow.adminSession = admin;
+  const setup = bootSetup(browserWindow.setupData);
+  if (setup !== null) browserWindow.setupSession = setup;
   const ai = bootAi(browserWindow.aiData);
   if (ai !== null) browserWindow.aiSession = ai;
   const migration = bootMigration(browserWindow.migrationData);
