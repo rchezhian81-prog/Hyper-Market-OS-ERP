@@ -280,6 +280,22 @@ completion template, observability, API surface + event contract tests, and the 
   outside the cloud API by design — so M14 stays **PARTIALLY WIRED** honestly, but its cloud surface is
   complete. Full gate green (typecheck, lint, secret-scan, build:api, **4,622 tests**).
 
+- **Done (this increment): B2B credit control wired — sell on terms, safely (M22-FR-01, API-09).**
+  `packages/b2b` was another complete engine nothing fed. Added a B2B credit surface
+  (`services/finance/src/b2b-credit.ts`): `POST /v1/b2b/accounts/:id` sets a per-customer credit limit;
+  `…/receivables` records invoices (+) and payments (−) so the **AR balance is projected from the
+  movements, never stored**; `…/credit-check` runs the pure `checkCredit` — an order that would push the
+  balance past the limit, or an expired contract, is **blocked pending a separate approver** (§28: the
+  approver cannot be the order-taker), never a silent override; `GET …/:id` reports limit/outstanding/
+  available. The latest credit limit applies when it changes. Proven through the real API + real RBAC in
+  `tests/integration/b2b-credit.test.ts` (6 cases). M22 → **PARTIALLY WIRED** (FR-01 credit control wired;
+  quote→invoice document chain FR-02, commission FR-03 and collections/dunning FR-04 still engine-only).
+  _On M09/M08-FR-02 multi-state stock (a candidate this round): investigated and deferred — wiring the
+  richer multi-state `packages/stock` engine cloud-side would create a second inventory truth alongside
+  the single-state `services/inventory` (or require a risky rewrite of that wired service), so it is not a
+  clean additive slice; recorded here rather than forced._ Full gate green (typecheck, lint, secret-scan,
+  build:api, **4,628 tests**).
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in

@@ -29,6 +29,7 @@ import type { ReturnsDeps, ReturnRecord, RecordedRefund, OriginalSale, RecordedR
 import type { CashDeps, RecordedCashMovement } from '../../pos/src/cash';
 import type { StoredCashMovement } from '../../../packages/cash/src/index';
 import type { ShiftDeps, ClosedShiftRecord } from '../../pos/src/shift';
+import type { B2BCreditDeps, B2BAccount, RecordedReceivable } from '../../finance/src/b2b-credit';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project } from '../../inventory/src/index';
@@ -87,6 +88,7 @@ export const STREAM = {
   loyalty: 'loyalty',
   promotions: 'promotions',
   cash: 'cash',
+  b2b: 'b2b',
 } as const;
 
 const payloadOf = <T>(e: PersistedEvent): T => e.event.payload as T;
@@ -173,6 +175,8 @@ const forSaleReturns = (saleId: string): string => streamName(STREAM.sales, 'ret
 const forTillCash = (tillId: string): string => streamName(STREAM.cash, tillId);
 /** Shift closes share one stream (low-volume — a few tills × shifts a day), folded by shift id. */
 const SHIFTS_STREAM = streamName(STREAM.cash, 'shifts');
+/** Each B2B customer's credit terms and AR movements fold one stream — one customer, not the shop. */
+const forB2BCustomer = (customerId: string): string => streamName(STREAM.b2b, customerId);
 
 export const STREAM_FOR = { forCustomer, forDriverRun, forLocation, forInvoice, forSaleReturns } as const;
 
@@ -419,6 +423,52 @@ export function shiftAdapter(input: {
         idempotencyKey: `shift-close-${tenantId}-${record.shiftId}`,
         source: 'api/pos',
         payload: record,
+      }));
+    },
+  };
+}
+
+export function b2bCreditAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): B2BCreditDeps {
+  return {
+    now: input.now,
+
+    // The latest credit limit applies — a limit change is a new fact, folded to its most recent value.
+    account: async (tenantId, customerId) => {
+      const latestLimit = await latest<B2BAccount>(input.store, tenantId, forB2BCustomer(customerId), 'B2BCreditLimitSet');
+      return latestLimit;
+    },
+
+    // Outstanding is PROJECTED from the receivable movements — never a stored balance that could drift
+    // from the invoices and payments beneath it (the whole point of a ledger).
+    outstandingMinor: async (tenantId, customerId) =>
+      (await allOf<RecordedReceivable>(input.store, tenantId, forB2BCustomer(customerId), 'B2BReceivableMovement'))
+        .reduce((b, m) => b + m.deltaMinor, 0),
+
+    recordAccount: async (tenantId, customerId, creditLimitMinor, currency) => {
+      await input.store.append(tenantId, forB2BCustomer(customerId), makeEvent({
+        id: `b2b-limit-${customerId}-${creditLimitMinor}`,
+        type: 'B2BCreditLimitSet',
+        occurredAt: input.now(),
+        // Keyed on the value — setting the same limit twice collapses, a different limit is a new fact.
+        idempotencyKey: `b2b-limit-${tenantId}-${customerId}-${creditLimitMinor}`,
+        source: 'api/finance',
+        payload: { creditLimitMinor, currency } satisfies B2BAccount,
+      }));
+    },
+
+    recordReceivable: async (tenantId, customerId, m) => {
+      await input.store.append(tenantId, forB2BCustomer(customerId), makeEvent({
+        id: `b2b-ar-${m.movementId}`,
+        type: 'B2BReceivableMovement',
+        occurredAt: m.at,
+        // The movement's own id, no timestamp — a re-sent invoice or payment collapses, so the balance
+        // moves once however many times it is sent.
+        idempotencyKey: `b2b-ar-${tenantId}-${m.movementId}`,
+        source: 'api/finance',
+        payload: m,
       }));
     },
   };
