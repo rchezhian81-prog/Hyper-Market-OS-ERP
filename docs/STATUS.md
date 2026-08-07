@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 7 August 2026 (PR #10 merged to `main` with CI green — see the 7 August milestone below; the session that built it: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, the day boundary the store box did not have, the service desk, expiry and recall — including the recall block that never reached a till — finance, which lets a month close for the first time, admin and security — including a security control that existed twice and enforced less where it counted, AI control, including the kill switch that stopped nothing — and migration, including the cutover gate that had only ever been ticked by hand)
+Last updated: 7 August 2026 (pilot-preparation pack merged to `main` across PRs #11–#13 — the store go-live checklist, the set-up workbook in document and Excel form, and the day-by-day pilot run-sheet, all CI-green; see the pilot-preparation milestone below. Earlier the same day, PR #10 merged the eleven ERP screens and six apps with CI green — see the 7 August milestone below; the session that built it: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, the day boundary the store box did not have, the service desk, expiry and recall — including the recall block that never reached a till — finance, which lets a month close for the first time, admin and security — including a security control that existed twice and enforced less where it counted, AI control, including the kill switch that stopped nothing — and migration, including the cutover gate that had only ever been ticked by hand)
 
 ---
 
@@ -75,6 +75,38 @@ Both fixes were reproduced against a real PostgreSQL 16 before the merge (465 in
 green, all three CI jobs green on `0003466`). **No requirement row changed** — this was wiring
 already recorded above plus two test/config corrections — so `docs/traceability.md` gains only
 the deployment guardrail against its `infra/` row.
+
+---
+
+## Pilot-preparation pack for the owner — checklist, workbook, run-sheet (7 August 2026)
+
+With every code stage finished, this session built the **owner-facing pilot pack**: the
+plain-English bridge between "the software is built" and "the shop can run the pilot". Four
+documents, three PRs, all merged to `main` with CI green:
+
+- **PR #11 (`f4e223a`)** — the **store go-live checklist**
+  (`docs/runbooks/store-go-live-checklist.md`): the 58 person-required checks (UAT-01…58) turned
+  into a four-phase walk-through — set-up, pilot, your real data, go live — each line keeping its
+  **UAT-##** and its "what a good result looks like".
+- **PR #12 (`5119619`)** — the **pilot set-up workbook**
+  (`docs/runbooks/pilot-setup-workbook.md`): the Owner Configuration Register (OC-01…47) as a
+  fill-in form, grouped into give-now / check-the-default / already-decided / leave-for-the-CA,
+  plus fill-in sheets for the licence register, staff logins and an incident quick-card.
+- **PR #13 (`cac88d4`)** — the **Excel version** of that workbook
+  (`docs/runbooks/pilot-setup-workbook.xlsx`, five tabs, a highlighted "Your answer" column) **and**
+  the **pilot run-sheet** (`docs/runbooks/pilot-run-sheet.md`): the same drills laid out **day by
+  day**, with the people each one needs and a blank date/tick column, flagging the five drills that
+  matter most and where the owner must personally be.
+
+Every line in all four documents **derives from an existing register** (`uat-calendar.md`,
+`owner-configuration.md`) — no requirement invented, none dropped — and each names those registers
+as the source of truth. **No code or requirement row changed**, so `docs/traceability.md` is
+untouched and the `.xlsx` is safe in CI (the secret scanner skips `.xlsx` by design).
+
+**What is next:** the owner (or a delegate) fills in the set-up workbook and pencils real dates onto
+the run-sheet; then the in-store drills can run. **What is blocked / needs an owner decision**
+(unchanged by this work): (1) the **hosting vendor** (OB-02, owner-deferred), and (2) the **live AI
+provider** chosen at the pre-pilot integration gate. Both block *customer* launch, not the pilot.
 
 ---
 
