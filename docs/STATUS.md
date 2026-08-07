@@ -393,6 +393,26 @@ completion template, observability, API surface + event contract tests, and the 
   `buildComplianceEvidence` remain engine-only). Full gate green (typecheck, lint, secret-scan,
   build:api, **4,658 tests**).
 
+- **Done (this increment): facilities incidents & the compliance evidence pack — a close needs an
+  action, a pack must survive (M26-FR-04, API-11). M26 is now WIRED on the cloud surface end to end.**
+  The final unwired facilities engine is on the cloud (extending `services/platform/src/facilities.ts`):
+  `POST /v1/facilities/incidents/:id` raises a safety incident (injury / near miss / fire / equipment
+  failure / food safety / security; minor / serious / reportable), `…/close` runs the pure
+  `closeIncident`, and `GET /v1/facilities/evidence` runs `buildComplianceEvidence`. A close is
+  **refused** — not warned about — when there is no corrective action (`no_action_recorded`; an incident
+  closed with no action is one that will happen again, recorded as handled), when a serious+ incident
+  has no evidence (`no_evidence`, #6), when the reporter tries to sign off their own serious incident
+  (`self_closed`, §28), or when a **reportable** incident has no statutory notification on file
+  (`not_reported_to_authority` — closing it internally is exactly what makes everybody stop thinking
+  about it). The evidence pack **names every gap** and is `presentable: false` while any remains —
+  because a pack that presents a 60%-complete record as "the evidence" is worse than no pack. New
+  permission `facilities.incident.record` (owner/store_manager); the evidence read reuses
+  `facilities.overdue.read`; cashier refused. The closed record supersedes the open one (folded by
+  incidentId — append-only, #2). Proven through the real API + real RBAC in
+  `tests/integration/facilities-incidents.test.ts` (3 cases). M26 → **WIRED** (every FR on the cloud
+  surface; live sensor/IoT ingestion D14 and owner-app/mobile channel surfacing remain). Full gate green
+  (typecheck, lint, secret-scan, build:api, **4,661 tests**).
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in
