@@ -32,7 +32,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'purchase.invoice.capture', 'purchase.invoice.match', 'purchase.supplier.bank', 'purchase.commitment.read',
       'inventory.movement.append', 'inventory.availability.read',
       'pos.sale.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record',
-      'customer.consent.read', 'customer.consent.write', 'loyalty.points.read',
+      'customer.consent.read', 'customer.consent.write', 'loyalty.points.read', 'loyalty.points.write',
       'order.promise', 'order.reservation.read',
       'delivery.attempt.record', 'delivery.run.read',
       'finance.journal.post', 'finance.period.close', 'finance.period.read',
@@ -56,7 +56,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'purchase.invoice.capture', 'purchase.invoice.match', 'purchase.commitment.read',
       'inventory.movement.append', 'inventory.availability.read',
       'pos.sale.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record',
-      'customer.consent.read', 'customer.consent.write', 'loyalty.points.read',
+      'customer.consent.read', 'customer.consent.write', 'loyalty.points.read', 'loyalty.points.write',
       'order.promise', 'order.reservation.read',
       'delivery.attempt.record', 'delivery.run.read',
       'finance.period.read', 'reporting.dashboard.read', 'reporting.report.read',
@@ -70,7 +70,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     permissions: [
       'identity.self.read', 'catalogue.pack.read',
       'pos.sale.sync', 'pos.sale.read', 'pos.return.record',
-      'customer.consent.read', 'loyalty.points.read',
+      'customer.consent.read', 'loyalty.points.read', 'loyalty.points.write',
     ],
   },
   {

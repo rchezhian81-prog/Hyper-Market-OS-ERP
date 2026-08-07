@@ -130,7 +130,8 @@ export function buildSurface(deps: {
       recordReturn: () => {}, now,
     } : returnsAdapter({ store, now })),
     ...customerRoutes(store === undefined ? {
-      consentRecords: empty([]), appendConsent: () => {}, pointsBalance: empty(undefined), now,
+      consentRecords: empty([]), appendConsent: () => {}, pointsBalance: empty(undefined),
+      pointsMovements: empty([]), recordPointsMovement: () => {}, now,
     } : customerAdapter({ store, now })),
     ...ordersRoutes(store === undefined ? {
       onHand: empty(new Map()), outstanding: empty([]), holdReservations: () => {},

@@ -196,6 +196,21 @@ completion template, observability, API surface + event contract tests, and the 
   the investigation lifecycle and cash/till counts M14-FR-01/02 remain off the cloud surface). Full
   gate green (typecheck, lint, secret-scan, build:api, **4,572 tests**).
 
+- **Done (this increment): loyalty points wired — one balance, never negative (M17-FR-01, API-06).**
+  The customer adapter's `pointsBalance` was hardcoded `() => undefined`, so `/v1/customers/:id/points`
+  answered *not known* for every customer — `packages/loyalty` was another complete engine nothing fed.
+  Added `POST /v1/customers/:customerId/points` (`services/customer/src/index.ts`) which earns, burns or
+  reverses money-like append-only movements; the pure `assessPointsMovement`
+  (`packages/loyalty/src/assess-points.ts`, mirroring `assessReturn`) folds the customer's movements to
+  the balance and refuses a burn that would go below zero — the cloud is the authoritative balance
+  across lanes (P-02: one loyalty truth; the offline burn cap stays on the offline lane). The balance
+  is **projected, never stored**, and a customer with no movement is still *unknown* not zero, so the
+  distinction survives the fold. Idempotent on the movement id (a retried burn does not double). Proven
+  through the real API + real RBAC in `tests/integration/loyalty-points.test.ts` (7 cases) plus
+  `tests/unit/assess-points.test.ts` (5 pure cases). M17 → **PARTIALLY WIRED** (points wired; coupons/
+  referrals M17-FR-02 and stored value/gift cards M17-FR-03/04 still engine-only). Full gate green
+  (typecheck, lint, secret-scan, build:api, **4,584 tests**).
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in

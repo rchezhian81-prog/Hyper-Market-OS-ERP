@@ -12,3 +12,4 @@
 export * from './loyalty';
 export * from './coupons';
 export * from './stored-value';
+export * from './assess-points';
