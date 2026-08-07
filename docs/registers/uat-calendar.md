@@ -5,6 +5,10 @@ belong. Nothing here blocks development; each item is already built and automati
 tested, and the entry exists because the roadmap requires a **human** to witness or supply
 something at a specific point.
 
+> **Plain-English walk-through:** `docs/runbooks/store-go-live-checklist.md` turns this register
+> into a phase-by-phase checklist the owner and staff can tick off on the day. This register stays
+> the source of truth; if the two ever disagree, this one wins.
+
 **These are not open questions.** Do not raise them again before their gate.
 
 Status: **Scheduled** · **Done** · **Waived with reason**.
