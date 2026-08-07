@@ -72,7 +72,18 @@ with this one.
   `reporting.figure.read→reporting.report.read`, and granted the owner `identity.role.read`,
   `platform.flag.read`, `platform.setup.read/write`, `ai.budget.read`). These features were 403 for
   everyone once RBAC became real; they are reachable now, and the contract test keeps them so.
-- **Still in Phase 2:** a CI gate that blocks labelling an engine-only module "complete".
+- **Done (this increment): the COMPLETION CI GATE + M33 integration evidence — Phase 2 COMPLETE.**
+  `tests/guardrails/completion-ladder-has-evidence.test.ts` parses the ASSEMBLY/WIRING ladder and
+  **fails the build** if any module claims `WIRED`/`INTEGRATION TESTED`/`E2E VERIFIED` without
+  registered evidence that exists on disk (and `INTEGRATION TESTED`+ must point at a real
+  integration/e2e test). An engine-only module can no longer be labelled complete, and moving a
+  module up the ladder forces adding its proof. To earn M33's `INTEGRATION TESTED` honestly,
+  `tests/integration/setup-surface.test.ts` drives the store-setup surface end to end through the real
+  pipeline (owner reads → answers → persists with a new version; stale 409; unknown 404; cashier 403)
+  — which also proves the store-setup endpoints, previously 403-for-everyone, are reachable now.
+
+**Phase 2 (E2E & assembly foundation) is COMPLETE:** E2E harness + fixtures, local/test IdP, module
+completion template, observability, API surface + event contract tests, and the completion gate.
 
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the

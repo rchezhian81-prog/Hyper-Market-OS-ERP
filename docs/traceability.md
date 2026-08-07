@@ -146,7 +146,10 @@ where applicable → integration tests → E2E → operational evidence — is c
 
 Never report `ENGINE ONLY`, simulated, synthetic, mocked, or documented work as product completion.
 The evidence each rung requires is the mandatory **`docs/MODULE-COMPLETION-TEMPLATE.md`**, copied into
-every module-assembly PR; a module moves up only to the highest rung whose boxes are ticked. The
+every module-assembly PR; a module moves up only to the highest rung whose boxes are ticked. This is
+**CI-enforced**: `tests/guardrails/completion-ladder-has-evidence.test.ts` fails the build if any
+module below claims `WIRED`+ without registered evidence that exists (and `INTEGRATION TESTED`+ must
+point at a real integration/e2e test), so an engine-only module cannot be labelled complete. The
 shared E2E harness (`tests/support/api-harness.ts`) and local/test IdP (`tests/support/local-idp.ts`)
 are how `E2E VERIFIED` is proved — through the real surface, real token verifier and real per-tenant
 authorization, the way `main()` composes them.
