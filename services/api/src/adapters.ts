@@ -28,6 +28,7 @@ import type { IncomingSale, SaleException, PosDeps } from '../../pos/src/index';
 import type { ReturnsDeps, ReturnRecord, RecordedRefund, OriginalSale, RecordedReturn } from '../../pos/src/returns';
 import type { CashDeps, RecordedCashMovement } from '../../pos/src/cash';
 import type { StoredCashMovement } from '../../../packages/cash/src/index';
+import type { ShiftDeps, ClosedShiftRecord } from '../../pos/src/shift';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project } from '../../inventory/src/index';
@@ -170,6 +171,8 @@ const forInvoice = (invoiceId: string): string => streamName(STREAM.purchase, 'i
 const forSaleReturns = (saleId: string): string => streamName(STREAM.sales, 'return', saleId);
 /** Each till's cash chain folds one stream — its balance and custodian read one till, not the shop. */
 const forTillCash = (tillId: string): string => streamName(STREAM.cash, tillId);
+/** Shift closes share one stream (low-volume — a few tills × shifts a day), folded by shift id. */
+const SHIFTS_STREAM = streamName(STREAM.cash, 'shifts');
 
 export const STREAM_FOR = { forCustomer, forDriverRun, forLocation, forInvoice, forSaleReturns } as const;
 
@@ -387,6 +390,35 @@ export function cashAdapter(input: {
         idempotencyKey: `cash-${tenantId}-${m.movementId}`,
         source: 'api/pos',
         payload: m,
+      }));
+    },
+  };
+}
+
+export function shiftAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): ShiftDeps {
+  const closes = (tenantId: string) =>
+    allOf<ClosedShiftRecord>(input.store, tenantId, SHIFTS_STREAM, 'TillClosed');
+
+  return {
+    now: input.now,
+
+    closedShift: async (tenantId, shiftId) => (await closes(tenantId)).find((r) => r.shiftId === shiftId),
+
+    overShortShifts: async (tenantId) => (await closes(tenantId)).filter((r) => r.exceptionRaised),
+
+    recordShiftClose: async (tenantId, record) => {
+      await input.store.append(tenantId, SHIFTS_STREAM, makeEvent({
+        id: `shift-close-${record.shiftId}`,
+        type: 'TillClosed',
+        occurredAt: record.closedAt,
+        // The shift's own id, no timestamp — re-sending a close collapses rather than recording the
+        // same shift closed twice on a different figure.
+        idempotencyKey: `shift-close-${tenantId}-${record.shiftId}`,
+        source: 'api/pos',
+        payload: record,
       }));
     },
   };
