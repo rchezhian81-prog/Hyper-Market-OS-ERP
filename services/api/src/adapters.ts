@@ -46,6 +46,8 @@ import type { TargetKind } from '../../../packages/migration/src/trial';
 import type { DomainFinding, Acceptance } from '../../../packages/migration/src/verification-report';
 import type { Signature } from '../../../packages/migration/src/verification-report';
 import type { AgentId, Budget, Proposal, AiDeps } from '../../ai/src/index';
+import type { PricingDeps, PriceChangeRecord } from '../../pricing/src/index';
+import { ROLE_CATALOGUE } from './roles';
 
 /** Streams, named once. A typo here is a domain that silently reads an empty history. */
 export const STREAM = {
@@ -71,6 +73,7 @@ export const STREAM = {
   platform: 'platform',
   migration: 'migration',
   ai: 'ai',
+  pricing: 'pricing',
 } as const;
 
 const payloadOf = <T>(e: PersistedEvent): T => e.event.payload as T;
@@ -721,6 +724,35 @@ export function identityAdapter(input: {
     },
 
     branches: () => [],
+  };
+}
+
+export function pricingAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): PricingDeps {
+  return {
+    now: input.now,
+
+    // The approver must genuinely hold price.change.approve — read from the tenant's own grants, the
+    // same authoritative source the kernel authorizes against. A named approver who cannot approve
+    // prices is not an approval (§28).
+    canApprove: async (tenantId, userId) => {
+      const grants = await allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+      const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
+      return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('price.change.approve'));
+    },
+
+    recordPriceChange: async (tenantId, change: PriceChangeRecord) => {
+      await input.store.append(tenantId, STREAM.pricing, makeEvent({
+        id: `pricechange-${change.productId}-${change.at}`,
+        type: 'PriceChangeRecorded',
+        occurredAt: change.at,
+        idempotencyKey: `pricechange-${tenantId}-${change.productId}-${change.at}`,
+        source: 'api/pricing',
+        payload: change,
+      }));
+    },
   };
 }
 

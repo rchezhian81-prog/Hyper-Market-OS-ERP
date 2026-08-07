@@ -100,6 +100,7 @@ switch on, and reading it alone would leave that impression. Measured, not estim
 | `edge/store-edge` | ~1,940 lines | **Built.** Durable local commit before the receipt prints; capacity shed order that never touches a sale; **and it now feeds all six screens** from its own log plus the last pack, saying which of the two it is answering from |
 | `services/kernel` | ~700 lines, 33 tests | **Built.** The shared foundation all thirteen APIs sit on: versioned paths, default-deny permissions, mandatory idempotency, the three-part error, tenant isolation and the no-card-data guard |
 | `services/catalogue` — API-02 | ~330 lines, 30 tests | **Built.** Signed offline pack: publish refusals, lane accept/reject, last-known-good |
+| `services/pricing` — API-02 | ~120 lines | **Built and persisting (M05-FR-02, recovery Phase 3).** Governed price change: MRP ceiling rejected outright, below-cost/below-floor blocked unless a SEPARATE person who genuinely holds `price.change.approve` (checked against the tenant's grants) signs it with a reason; the setter cannot self-approve (§28). An allowed change is an append-only `PriceChangeRecorded` event; the pack-publish path re-checks §28 at the shelf edge. `tests/integration/price-change.test.ts` |
 | `services/pos` — API-05 | ~230 lines, 25 tests | **Built.** Sale intake: always banks, never corrects, everything wrong becomes a visible exception |
 | `services/inventory` — API-04 | ~180 lines | **Built.** Append-only movements, projected balances, negative stock reported not blocked |
 | `services/identity` — API-01 | ~120 lines | **Built.** Scope resolution, maker-checker grants, no credential stored anywhere |
@@ -113,7 +114,7 @@ switch on, and reading it alone would leave that impression. Measured, not estim
 | `services/migration` — API-12 | ~120 lines | **Built.** Refuses a production target on every request; serves the verification report |
 | `services/ai` — API-13 | ~170 lines | **Built.** Proposals only; kill switch needs no approval; budget checked before the call |
 | `services/` remaining domain services | **none** | **All thirteen APIs are served.** API-01…13 each have a service; see the surface gate below |
-| `services/api` — composition root | ~220 lines | **Built.** Config checked at boot, store opened, thirteen services on one router **built exactly once**, drains on SIGTERM. **All thirteen persist.** Tokens are verified against the configured identity provider; `services/api/src/roles.ts` holds the role catalogue, because a role is configuration and its holders are tenant data |
+| `services/api` — composition root | ~220 lines | **Built.** Config checked at boot, store opened, fourteen service modules (thirteen APIs — `pricing` is a second module under API-02) on one router **built exactly once**, drains on SIGTERM. **All persist.** Tokens are verified against the configured identity provider; `services/api/src/roles.ts` holds the role catalogue, because a role is configuration and its holders are tenant data |
 | `infra/` | compose (db · migrate · **api** · web), Dockerfile, CI deploy job | **Built.** One command brings the whole stack up on one machine; CI builds the image, proves it refuses a bad configuration, and brings the stack to ready. The database password the deploy step generates is **URL-safe** (hex, never base64 — a `/` in the userinfo makes `DATABASE_URL` an invalid URL and migrate exits 1), guarded by `tests/guardrails/the-db-password-is-url-safe.test.ts` |
 
 **The consequence, stated plainly so it cannot be missed (reconciled 7 Aug 2026 against the audit):**
@@ -168,7 +169,7 @@ programme updates as each module is wired; it supersedes the family-level "Built
 | M01 | Org/config/trading-day | PARTIALLY WIRED (**M01-FR-02 trading-day cut-off, settings-sourced config, and gap-free number series all WIRED+integration-tested 7 Aug**; org hierarchy / document templates pending) | M21 | Returns/reversal | PARTIALLY WIRED |
 | M03 | Catalogue | PARTIALLY WIRED | M22 | B2B | ENGINE ONLY |
 | M04 | Picking | PARTIALLY WIRED (app-shell) | M23 | Finance | PARTIALLY WIRED (thin; totals refuse) |
-| M05 | Price-guard/list | ENGINE ONLY | M24 | Supplier portal | ENGINE ONLY |
+| M05 | Price-guard/list | PARTIALLY WIRED (**M05-FR-02 governed price change WIRED+integration-tested 7 Aug** — MRP ceiling + margin/cost floor + real §28 separation of duties, server-side; price-list effective-dating pending) | M24 | Supplier portal | ENGINE ONLY |
 | M06 | Counts/adjustments | PARTIALLY WIRED | M25 | Workforce | PARTIALLY WIRED (edge) |
 | M07 | Receiving/GRN | PARTIALLY WIRED (OCR pending) | M26 | Facilities | ENGINE ONLY |
 | M08 | Stock/availability | ENGINE ONLY (dup) | M27 | Concession | ENGINE ONLY |
