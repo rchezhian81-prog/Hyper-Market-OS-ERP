@@ -54,7 +54,7 @@ export interface ApiHarness {
   /** Send a request through the real pipeline as `userId` of `tenantId` (auto-mints a token). */
   request(input: {
     method: Method; path: string; userId: string; tenantId: string; branchId?: string;
-    body?: unknown; idempotencyKey?: string;
+    body?: unknown; idempotencyKey?: string; query?: Readonly<Record<string, string>>;
   }): Promise<HttpResponse>;
   /** Send a request with an explicit Authorization token (or none) and optional extra headers. */
   raw(input: { method: Method; path: string; token?: string; body?: unknown; idempotencyKey?: string; headers?: Record<string, string> }): Promise<HttpResponse>;
@@ -94,8 +94,8 @@ export function apiHarness(opts: { store?: EventStore; idempotency?: Idempotency
   return {
     store,
     idp: TEST_IDP,
-    request: ({ method, path, userId, tenantId, branchId, body, idempotencyKey }) =>
-      handle(kernel, { method, path, body, headers: headers(TEST_IDP.issue({ sub: userId, tenantId, branchId }), idempotencyKey) }),
+    request: ({ method, path, userId, tenantId, branchId, body, idempotencyKey, query }) =>
+      handle(kernel, { method, path, body, ...(query === undefined ? {} : { query }), headers: headers(TEST_IDP.issue({ sub: userId, tenantId, branchId }), idempotencyKey) }),
     raw: ({ method, path, token, body, idempotencyKey, headers: extra }) =>
       handle(kernel, { method, path, body, headers: headers(token, idempotencyKey, extra) }),
     seedOwner: async (tenantId, userId) => { await seedGenesisOwner(store, OWNER_ROLE_ID, tenantId, userId, AT); },

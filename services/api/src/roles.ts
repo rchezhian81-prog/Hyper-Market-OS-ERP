@@ -36,6 +36,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'order.promise', 'order.reservation.read',
       'delivery.attempt.record', 'delivery.run.read',
       'finance.journal.post', 'finance.period.close', 'finance.period.read',
+      'settlement.batch.import', 'settlement.review.read',
       'reporting.dashboard.read', 'reporting.report.read',
       'platform.health.read', 'platform.flag.read', 'platform.flag.write',
       'platform.setup.read', 'platform.setup.write', 'platform.support.grant',
@@ -80,6 +81,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     permissions: [
       'identity.self.read',
       'finance.journal.post', 'finance.period.read',
+      'settlement.batch.import', 'settlement.review.read',
       'purchase.invoice.match', 'purchase.commitment.read',
       'reporting.dashboard.read', 'reporting.report.read',
     ],

@@ -181,6 +181,21 @@ completion template, observability, API surface + event contract tests, and the 
   exchanges and no-receipt returns are still off the cloud surface). Full gate green (typecheck, lint,
   secret-scan, build:api, **4,565 tests**).
 
+- **Done (this increment): the cash office's day — settlement wired on the cloud (M14-FR-03, API-09).**
+  `packages/settlement` was another complete, tested engine that nothing fed. Added two endpoints on
+  the finance surface (`services/finance/src/settlement.ts`): `POST /v1/settlement/batches` refuses a
+  provider file unless it reconciles to its **own** declared figures (lines sum to gross, gross−fees
+  =net) and refuses a duplicate outright (importing it twice doubles every credit); `GET
+  /v1/settlement/review` reconciles the day's card/UPI tenders (projected from the sales stream over a
+  bounded `occurredAt` window) against the imported credits, telling apart **not-due-yet** from
+  **late** by ageing against the contracted cycle, and valuing short/over/unknown separately — and it
+  **reports the window it read**, so an out-of-window tender is out of scope, never silently called
+  settled (P-08). Proven through the real API + real RBAC in
+  `tests/integration/settlement-cash-office.test.ts` (7 cases). Small reusable test-support change: the
+  E2E harness now passes `query` for GET endpoints. M14 → **PARTIALLY WIRED** (import + review wired;
+  the investigation lifecycle and cash/till counts M14-FR-01/02 remain off the cloud surface). Full
+  gate green (typecheck, lint, secret-scan, build:api, **4,572 tests**).
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in
