@@ -430,6 +430,23 @@ completion template, observability, API surface + event contract tests, and the 
   FR-03 compliance wired; server-side scoping FR-01 and statement FR-04 still engine-only). Full gate
   green (typecheck, lint, secret-scan, build:api, **4,665 tests**).
 
+- **Done (this increment): supplier statement — named buckets that reconcile, disputes apart, permission
+  not zero (M24-FR-04, API-03).** The now-wired supplier portal gained its statement
+  (`services/purchase/src/supplier-portal.ts`): `POST …/statement/opening` sets the opening figure,
+  `POST …/statement/lines/:ref` records the signed invoice/credit-note/payment/debit-note lines (a status
+  change supersedes on the line's own ref, never doubling), and `GET …/statement` runs the pure
+  `buildStatement`. The closing balance is built from **named buckets** (invoices + debit notes owed,
+  credit notes + payments off) and **cross-checked a second way** — `reconciles` goes false if a line
+  kind was never categorised, rather than letting it vanish from a supplier's balance. A **disputed line
+  is shown separately** (`disputedMinor`), neither owed nor written off — folding it in is how a dispute
+  quietly becomes a payment. And a login whose config lacks the `view_statement` grant gets
+  `accessible: false` — a permission answer, NOT a balance of zero, because "you owe nothing" and "you
+  may not see this" are not the same sentence. Proven through the real API + real RBAC in
+  `tests/integration/supplier-portal-statement.test.ts` (4 cases). M24 → **PARTIALLY WIRED** (FR-02
+  submissions + FR-03 compliance + FR-04 statement wired; server-side scoping FR-01 and the
+  refusal-audit/probe-pattern `auditPartnerAction`/`findProbing` still engine-only). Full gate green
+  (typecheck, lint, secret-scan, build:api, audit, **4,669 tests**).
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in

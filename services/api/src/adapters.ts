@@ -30,7 +30,7 @@ import type { CashDeps, RecordedCashMovement } from '../../pos/src/cash';
 import type { StoredCashMovement } from '../../../packages/cash/src/index';
 import type { ShiftDeps, ClosedShiftRecord } from '../../pos/src/shift';
 import type { B2BCreditDeps, B2BAccount, RecordedReceivable } from '../../finance/src/b2b-credit';
-import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord } from '../../purchase/src/supplier-portal';
+import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord, StatementLine } from '../../purchase/src/supplier-portal';
 import type { ConcessionDeps, ConcessionContract, ConcessionSale } from '../../finance/src/concession';
 import type { ScrapDeps, ScrapSale } from '../../finance/src/scrap';
 import type { FacilitiesDeps, MaintenanceSchedule, ScheduledTask, SafetyIncident } from '../../platform/src/facilities';
@@ -1150,6 +1150,18 @@ export function supplierPortalAdapter(input: {
     submissions: async (tenantId, partnerId) =>
       allOf<SubmissionRecord>(input.store, tenantId, forPortalPartner(partnerId), 'SupplierSubmissionReceived'),
 
+    // A statement line dedupes on its own document ref, so a status change (open → disputed → settled)
+    // supersedes rather than recording the same invoice twice.
+    statementLines: async (tenantId, partnerId) => {
+      const all = await allOf<StatementLine>(input.store, tenantId, forPortalPartner(partnerId), 'SupplierStatementLineRecorded');
+      const byRef = new Map<string, StatementLine>();
+      for (const l of all) byRef.set(l.documentRef, l);
+      return [...byRef.values()];
+    },
+
+    opening: async (tenantId, partnerId) =>
+      (await latest<{ openingMinor: number }>(input.store, tenantId, forPortalPartner(partnerId), 'SupplierStatementOpeningSet'))?.openingMinor ?? 0,
+
     recordPartner: async (tenantId, partnerId, config) => {
       // A compact digest of the documents so re-sending an identical config collapses, but any change
       // — a new document, a verification, a changed expiry — is a new fact and the latest applies.
@@ -1176,6 +1188,29 @@ export function supplierPortalAdapter(input: {
         idempotencyKey: `portal-sub-${tenantId}-${record.submissionId}`,
         source: 'api/purchase',
         payload: record,
+      }));
+    },
+
+    recordStatementLine: async (tenantId, partnerId, line) => {
+      await input.store.append(tenantId, forPortalPartner(partnerId), makeEvent({
+        id: `portal-stmt-${partnerId}-${line.documentRef}-${line.status}`,
+        type: 'SupplierStatementLineRecorded',
+        occurredAt: input.now(),
+        // Keyed on the line and its status so a re-send collapses but a status change is a new fact.
+        idempotencyKey: `portal-stmt-${tenantId}-${partnerId}-${line.documentRef}-${line.kind}-${line.amountMinor}-${line.status}`,
+        source: 'api/purchase',
+        payload: line,
+      }));
+    },
+
+    recordOpening: async (tenantId, partnerId, openingMinor) => {
+      await input.store.append(tenantId, forPortalPartner(partnerId), makeEvent({
+        id: `portal-opening-${partnerId}-${openingMinor}`,
+        type: 'SupplierStatementOpeningSet',
+        occurredAt: input.now(),
+        idempotencyKey: `portal-opening-${tenantId}-${partnerId}-${openingMinor}`,
+        source: 'api/purchase',
+        payload: { openingMinor },
       }));
     },
   };
