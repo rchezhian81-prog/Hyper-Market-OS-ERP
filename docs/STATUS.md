@@ -326,6 +326,18 @@ completion template, observability, API surface + event contract tests, and the 
   + settlement wired; ownership/stock-access FR-02 and trading-eligibility/expiry FR-04 still
   engine-only). Full gate green (typecheck, lint, secret-scan, build:api, **4,638 tests**).
 
+- **Done (this increment): scrap & recycling — making the off-books number exist (M28-FR-02, API-09).**
+  `packages/waste` (another unfed engine) is now on the cloud (`services/finance/src/scrap.ts`): the
+  store's one revenue stream with no natural paperwork — cardboard, crates, used oil sold to a man with a
+  van. `POST /v1/scrap/sales` records a disposal and **never refuses one** (refusing just pushes it back
+  outside the system); `POST …/:id/posted` clears the off-books flag once finance takes it up; `GET
+  /v1/scrap/review` names the findings — `no_evidence`, `no_buyer_named`, `not_posted_to_finance`
+  (off-books cash until it lands), `unauthorised_recycler` for e-waste/used-oil, and `rate_below_average`
+  measured against the shop's **own running average** (asking about the RATE, not the person). Proven
+  through the real API + real RBAC in `tests/integration/scrap.test.ts` (5 cases). M28 → **PARTIALLY
+  WIRED** (scrap FR-02 wired; write-off FR-01, packaging FR-03 and reporting-coverage FR-04 still
+  engine-only). Full gate green (typecheck, lint, secret-scan, build:api, **4,643 tests**).
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in

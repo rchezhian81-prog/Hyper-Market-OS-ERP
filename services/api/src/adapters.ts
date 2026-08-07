@@ -32,6 +32,7 @@ import type { ShiftDeps, ClosedShiftRecord } from '../../pos/src/shift';
 import type { B2BCreditDeps, B2BAccount, RecordedReceivable } from '../../finance/src/b2b-credit';
 import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord } from '../../purchase/src/supplier-portal';
 import type { ConcessionDeps, ConcessionContract, ConcessionSale } from '../../finance/src/concession';
+import type { ScrapDeps, ScrapSale } from '../../finance/src/scrap';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project } from '../../inventory/src/index';
@@ -92,6 +93,7 @@ export const STREAM = {
   cash: 'cash',
   b2b: 'b2b',
   concession: 'concession',
+  scrap: 'scrap',
 } as const;
 
 const payloadOf = <T>(e: PersistedEvent): T => e.event.payload as T;
@@ -517,6 +519,53 @@ export function concessionAdapter(input: {
         idempotencyKey: `concession-sale-${tenantId}-${sale.saleId}`,
         source: 'api/finance',
         payload: sale,
+      }));
+    },
+  };
+}
+
+export function scrapAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): ScrapDeps {
+  // Scrap is low-volume (a few disposals a week), so all of it folds one stream: the recorded sales,
+  // plus the "posted to finance" events that clear each one's off-books flag.
+  return {
+    now: input.now,
+
+    scrapSales: async (tenantId) => {
+      const events = await input.store.readStream(tenantId, STREAM.scrap);
+      const posted = new Set<string>();
+      const sales: ScrapSale[] = [];
+      for (const e of events) {
+        const p = e.event.payload as Record<string, unknown>;
+        if (e.event.type === 'ScrapPostedToFinance') posted.add(p['scrapId'] as string);
+        else if (e.event.type === 'ScrapSaleRecorded') sales.push(p as unknown as ScrapSale);
+      }
+      return sales.map((s) => (posted.has(s.scrapId) ? { ...s, postedToFinance: true } : s));
+    },
+
+    recordScrapSale: async (tenantId, sale) => {
+      await input.store.append(tenantId, STREAM.scrap, makeEvent({
+        id: `scrap-${sale.scrapId}`,
+        type: 'ScrapSaleRecorded',
+        occurredAt: sale.at,
+        // The disposal's own id — a re-sent scrap sale collapses rather than double-recording the
+        // proceeds (which would make the off-books number wrong in the other direction).
+        idempotencyKey: `scrap-${tenantId}-${sale.scrapId}`,
+        source: 'api/finance',
+        payload: sale,
+      }));
+    },
+
+    recordPosted: async (tenantId, scrapId, at) => {
+      await input.store.append(tenantId, STREAM.scrap, makeEvent({
+        id: `scrap-posted-${scrapId}`,
+        type: 'ScrapPostedToFinance',
+        occurredAt: at,
+        idempotencyKey: `scrap-posted-${tenantId}-${scrapId}`,
+        source: 'api/finance',
+        payload: { scrapId },
       }));
     },
   };
