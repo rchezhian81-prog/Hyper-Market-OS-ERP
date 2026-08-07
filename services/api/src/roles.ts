@@ -25,7 +25,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     id: OWNER_ROLE_ID,
     name: 'Owner',
     permissions: [
-      'identity.self.read', 'identity.role.grant', 'identity.branch.read',
+      'identity.self.read', 'identity.role.read', 'identity.role.grant', 'org.branch.read',
       'catalogue.pack.read', 'catalogue.pack.publish',
       'purchase.invoice.match', 'purchase.supplier.bank', 'purchase.commitment.read',
       'inventory.movement.append', 'inventory.availability.read',
@@ -34,10 +34,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'order.promise', 'order.reservation.read',
       'delivery.attempt.record', 'delivery.run.read',
       'finance.journal.post', 'finance.period.close', 'finance.period.read',
-      'reporting.dashboard.read', 'reporting.figure.read',
-      'platform.health.read', 'platform.flag.write', 'platform.support.grant',
+      'reporting.dashboard.read', 'reporting.report.read',
+      'platform.health.read', 'platform.flag.read', 'platform.flag.write',
+      'platform.setup.read', 'platform.setup.write', 'platform.support.grant',
       'migration.verification.read', 'migration.exception.accept',
-      'ai.agent.run', 'ai.proposal.read', 'ai.killswitch.write',
+      'ai.agent.run', 'ai.proposal.read', 'ai.budget.read', 'ai.killswitch.set',
     ],
   },
   {
@@ -46,7 +47,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     // Everything needed to run the shop, and **nothing that closes a month or grants a role**.
     // Separation of duties is not a policy document; it is which codes are absent from this list.
     permissions: [
-      'identity.self.read', 'identity.branch.read',
+      'identity.self.read', 'org.branch.read',
       'catalogue.pack.read',
       'purchase.invoice.match', 'purchase.commitment.read',
       'inventory.movement.append', 'inventory.availability.read',
@@ -54,7 +55,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'customer.consent.read', 'customer.consent.write', 'loyalty.points.read',
       'order.promise', 'order.reservation.read',
       'delivery.attempt.record', 'delivery.run.read',
-      'finance.period.read', 'reporting.dashboard.read', 'reporting.figure.read',
+      'finance.period.read', 'reporting.dashboard.read', 'reporting.report.read',
       'platform.health.read',
     ],
   },
@@ -77,7 +78,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'identity.self.read',
       'finance.journal.post', 'finance.period.read',
       'purchase.invoice.match', 'purchase.commitment.read',
-      'reporting.dashboard.read', 'reporting.figure.read',
+      'reporting.dashboard.read', 'reporting.report.read',
     ],
   },
 ];

@@ -60,8 +60,19 @@ with this one.
   **`/metricz`**. **Correlation IDs** are honoured from an inbound `x-correlation-id`/`x-request-id`
   header (used as the trace id, echoed on the reply) or minted. Health/readiness (`/livez`,`/readyz`)
   already existed. Wired in `main.ts`; a guardrail forbids a blind production service.
-- **Still in Phase 2:** API/event contract tests; and a CI gate that blocks labelling an engine-only
-  module "complete".
+- **Done (this increment): API SURFACE CONTRACT TESTS + a real bug they caught.**
+  `tests/contract/api-surface-contract.test.ts` locks the whole live route surface (every route has a
+  valid api id / method / versioned path / well-formed permission, no duplicate address, every API
+  domain documented) and adds a check the router does not make: **every permission a route requires is
+  grantable by some role** — else the endpoint is a dead 403-for-everyone. It **found 8 unreachable
+  endpoints** whose permission had drifted from the role catalogue — including the **store-setup
+  screen** (`/v1/platform/setup`), the **AI kill-switch** and **AI budget**, platform flags, branches,
+  reports, and the roles list. Fixed in `services/api/src/roles.ts` (renamed the drifted permissions
+  `identity.branch.read→org.branch.read`, `ai.killswitch.write→ai.killswitch.set`,
+  `reporting.figure.read→reporting.report.read`, and granted the owner `identity.role.read`,
+  `platform.flag.read`, `platform.setup.read/write`, `ai.budget.read`). These features were 403 for
+  everyone once RBAC became real; they are reachable now, and the contract test keeps them so.
+- **Still in Phase 2:** a CI gate that blocks labelling an engine-only module "complete".
 
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
