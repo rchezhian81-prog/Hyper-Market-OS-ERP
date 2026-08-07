@@ -1151,13 +1151,17 @@ export function supplierPortalAdapter(input: {
       allOf<SubmissionRecord>(input.store, tenantId, forPortalPartner(partnerId), 'SupplierSubmissionReceived'),
 
     recordPartner: async (tenantId, partnerId, config) => {
+      // A compact digest of the documents so re-sending an identical config collapses, but any change
+      // — a new document, a verification, a changed expiry — is a new fact and the latest applies.
+      const docsDigest = config.documents
+        .map((d) => `${d.documentId}:${d.kind}:${d.validUntil}:${d.verifiedBy ?? 'unv'}`)
+        .sort()
+        .join(',');
       await input.store.append(tenantId, forPortalPartner(partnerId), makeEvent({
-        id: `portal-partner-${partnerId}-${config.grants.join('.')}-${config.compliant}`,
+        id: `portal-partner-${partnerId}-${config.grants.join('.')}`,
         type: 'SupplierPartnerConfigured',
         occurredAt: input.now(),
-        // Keyed on the configuration itself — re-sending the same grants+compliance collapses, a change
-        // is a new fact, and the latest applies.
-        idempotencyKey: `portal-partner-${tenantId}-${partnerId}-${config.grants.join('.')}-${config.compliant}`,
+        idempotencyKey: `portal-partner-${tenantId}-${partnerId}-${config.grants.join('.')}-${config.requiredDocuments.join('.')}-${docsDigest}`,
         source: 'api/purchase',
         payload: config,
       }));

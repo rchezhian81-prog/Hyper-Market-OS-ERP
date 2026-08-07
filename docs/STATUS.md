@@ -413,6 +413,23 @@ completion template, observability, API surface + event contract tests, and the 
   surface; live sensor/IoT ingestion D14 and owner-app/mobile channel surfacing remain). Full gate green
   (typecheck, lint, secret-scan, build:api, **4,661 tests**).
 
+- **Done (this increment): supplier-portal compliance AT THE ACTION — an expired licence blocks the very
+  next delivery (M24-FR-03, API-03).** The already-wired supplier portal
+  (`services/purchase/src/supplier-portal.ts`) no longer carries a stored `compliant` boolean stub: a
+  partner's real documents (kind, reference, validity window, verification) now sit in its config, and
+  `checkPartnerCompliance` runs at the **submission**, not on a nightly sweep — because the gap between a
+  nightly job and the action is exactly where an expired supplier gets a purchase order. An **expired**,
+  **missing**, or **unverified** required document blocks an ASN/invoice (`not_compliant`; an unverified
+  licence is a photograph somebody uploaded, so it counts as missing); an **expiring-but-valid** one
+  **warns without blocking** so somebody can chase it. New `GET /v1/supplier-portal/partners/:id/compliance?asOf=`
+  shows a buyer WHY — the document to chase before it stops a delivery, with per-document state
+  (valid/expiring/expired/missing/unverified). Proven through the real API + real RBAC in
+  `tests/integration/supplier-portal-compliance.test.ts` (4 cases, incl. the SAME documents reading
+  compliant on one date and blocked on another — the definition of compliance-at-action); the existing
+  M24-FR-02 suite was migrated to the document-based config. M24 → **PARTIALLY WIRED** (FR-02 submissions +
+  FR-03 compliance wired; server-side scoping FR-01 and statement FR-04 still engine-only). Full gate
+  green (typecheck, lint, secret-scan, build:api, **4,665 tests**).
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in
