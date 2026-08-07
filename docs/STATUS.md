@@ -136,6 +136,18 @@ completion template, observability, API surface + event contract tests, and the 
   applying a silent default (OC-21 — a silent default surfaces as a wrong GST return months later);
   the tenant default tax's correct role is a category-level fallback in the (stubbed) product-master
   → snapshot pipeline, tracked as follow-on, not a reversal of that safety refusal.
+- **Done (this increment): inventory availability proven end-to-end (M08, API-04) — and the audit's
+  "dup" label corrected.** Investigating M08 showed the premise was inaccurate: `services/inventory`
+  is a **complete, wired, persisting** API-04 implementation (append-only movements, on-hand projected
+  order-independently, negative-stock reported-not-blocked per P-08, write-off needing a reason + a
+  second approver per §28), NOT a thin reimplementation; and `packages/stock/position` is a **distinct,
+  richer MULTI-STATE, policy-aware engine** (sellable-state availability + per-tenant StockPolicy), a
+  future capability, **not a duplicate to force-merge**. Rather than rip out a working service to
+  shoehorn a different-shaped engine (risky, no net benefit), this adds the missing proof:
+  `tests/integration/inventory-availability.test.ts` drives the real surface — availability reflects
+  appended movements order-independently; negative stock is a reported exception, never blocked; a
+  write-off needs a reason and a separate approver; per-tenant isolation; cashier append → 403. M08 →
+  **INTEGRATION TESTED** for its API-04 core; multi-state sellable stock + warehouse bins (M09) pending.
 
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
