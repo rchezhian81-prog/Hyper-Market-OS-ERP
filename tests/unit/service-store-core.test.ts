@@ -265,7 +265,7 @@ describe('all three register cleanly on the kernel', () => {
     availability: () => project([move()], NOW), appendMovement: () => {}, isKnown: () => false, now: () => NOW,
   };
   const idDeps: IdentityDeps = {
-    roles: () => [], permissionsOf: () => [], recordGrant: () => {}, branches: () => [], now: () => NOW,
+    roles: () => [], permissionsOf: () => [], recordGrant: () => {}, branches: () => [], allocateNumber: () => Promise.resolve(1), now: () => NOW,
   };
   const platDeps: PlatformDeps = {
     probe: () => [{ name: 'postgres', criticality: 'shop_cannot_trade_without_it', reachable: true }],

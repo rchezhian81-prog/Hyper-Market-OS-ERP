@@ -41,7 +41,7 @@ const testKey = ['surface', 'test', 'signing'].join('-').padEnd(40, '0');
 
 /** Every service, wired with do-nothing ports. The surface is the subject, not the behaviour. */
 const ALL: readonly Route[] = [
-  ...identityRoutes({ roles: () => [], permissionsOf: () => [], recordGrant: () => {}, branches: () => [], now: () => NOW }),
+  ...identityRoutes({ roles: () => [], permissionsOf: () => [], recordGrant: () => {}, branches: () => [], allocateNumber: () => Promise.resolve(1), now: () => NOW }),
   ...catalogueRoutes({
     signer: hmacSigner(testKey), currentPack: () => undefined, storePack: () => {},
     buildSnapshot: () => ({ tenantId: 't', version: 1, builtAt: NOW, products: [], barcodes: [] }),

@@ -14,6 +14,20 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { Permission, Role, RoleAssignment } from '../../../packages/rbac/src/rbac';
+import { formatNumber, type NumberFormat } from '../../../packages/numbering/src/numbering';
+
+/**
+ * Document number formats per type (M01-FR-02) — configuration, not tenant data: what an invoice
+ * number LOOKS like is the product's rule; the gap-free series behind it is per tenant. Kept here in
+ * the identity/admin service, which owns "orgs, config, number series".
+ */
+export const NUMBER_FORMATS: Readonly<Record<string, NumberFormat>> = {
+  receipt: { prefix: 'RCP', padTo: 6 },
+  invoice: { prefix: 'INV', padTo: 6 },
+  po: { prefix: 'PO', padTo: 6 },
+  grn: { prefix: 'GRN', padTo: 6 },
+  statement: { prefix: 'STMT', padTo: 6 },
+};
 
 // Resolving a token into scope. It verifies and never issues — see the file for why.
 export * from './token';
@@ -97,6 +111,8 @@ export interface IdentityDeps {
   readonly permissionsOf: (tenantId: string, userId: string) => Promise<readonly Permission[]> | readonly Permission[];
   readonly recordGrant: (tenantId: string, a: RoleAssignment, g: GrantRequest) => Promise<void> | void;
   readonly branches: (tenantId: string) => Promise<readonly { id: string; name: string }[]> | readonly { id: string; name: string }[];
+  /** Allocate the next gap-free sequence number for a tenant's document type (M01-FR-02). */
+  readonly allocateNumber: (tenantId: string, docType: string) => Promise<number>;
   readonly now: () => string;
 }
 
@@ -144,6 +160,27 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
         }
         await deps.recordGrant(ctx.tenantId, result.assignment!, request);
         return { status: 201, body: { granted: result.detail } };
+      },
+    },
+    {
+      // Allocate the next gap-free document number for a type (M01-FR-02). Idempotent: a retry under
+      // the same key returns the SAME number (the kernel replays the stored response), so a dropped
+      // connection never burns a number or hands out two. Gap-free/uniqueness is the store's job.
+      api: 'API-01', method: 'POST', path: '/v1/identity/number-series/:docType',
+      permission: 'documents.number.allocate', idempotent: true,
+      handler: async (ctx) => {
+        const docType = ctx.params['docType'] ?? '';
+        const format = NUMBER_FORMATS[docType];
+        if (format === undefined) {
+          throw apiError(404, {
+            code: 'unknown_document_type',
+            whatHappened: `There is no number series for document type '${docType}'.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: `Use one of: ${Object.keys(NUMBER_FORMATS).join(', ')}. Nothing was allocated.`,
+          });
+        }
+        const seq = await deps.allocateNumber(ctx.tenantId, docType);
+        return { status: 201, body: { docType, seq, formatted: formatNumber(format, seq) } };
       },
     },
   ];

@@ -26,6 +26,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     name: 'Owner',
     permissions: [
       'identity.self.read', 'identity.role.read', 'identity.role.grant', 'org.branch.read',
+      'documents.number.allocate',
       'catalogue.pack.read', 'catalogue.pack.publish',
       'purchase.invoice.match', 'purchase.supplier.bank', 'purchase.commitment.read',
       'inventory.movement.append', 'inventory.availability.read',
