@@ -145,6 +145,11 @@ where applicable → integration tests → E2E → operational evidence — is c
 `UAT VERIFIED` · `PRODUCTION VERIFIED` · `EXTERNALLY BLOCKED`
 
 Never report `ENGINE ONLY`, simulated, synthetic, mocked, or documented work as product completion.
+The evidence each rung requires is the mandatory **`docs/MODULE-COMPLETION-TEMPLATE.md`**, copied into
+every module-assembly PR; a module moves up only to the highest rung whose boxes are ticked. The
+shared E2E harness (`tests/support/api-harness.ts`) and local/test IdP (`tests/support/local-idp.ts`)
+are how `E2E VERIFIED` is proved — through the real surface, real token verifier and real per-tenant
+authorization, the way `main()` composes them.
 
 ## ASSEMBLY / WIRING workstream — module ladder (baseline 7 August 2026)
 
