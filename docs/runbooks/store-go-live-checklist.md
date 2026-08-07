@@ -18,6 +18,9 @@ thing you are looking for.
 **go live**. Nothing here blocks the software; it is scheduled to the point where the store or a
 named person is genuinely required.
 
+**Want it as a timetable?** `docs/runbooks/pilot-run-sheet.md` lays these same drills out **day by
+day**, with the people each one needs — a booked plan you can put your own dates on.
+
 ---
 
 ## Phase 1 — Set-up days (before the pilot)
