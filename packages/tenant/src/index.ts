@@ -4,3 +4,4 @@
 
 export * from './tenant';
 export * from './settings';
+export * from './setup';
