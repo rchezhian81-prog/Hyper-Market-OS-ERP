@@ -92,7 +92,7 @@ import {
   type SupportAccessRequest, type OwnerApproval, type SupportSession,
 } from '../../../packages/platform-admin/src/index';
 import {
-  DurableTenantSettings, setupItem,
+  DurableTenantSettings, setupItem, storePolicyFrom,
   InvalidSetupAnswerError, SetupVersionConflictError,
 } from '../../../packages/tenant/src/index';
 import { InMemoryConfigVersionStore } from '../../../packages/persistence/src/config-store';
@@ -193,6 +193,15 @@ export function platformRoutes(deps: PlatformDeps): readonly Route[] {
       api: 'API-11', method: 'GET', path: '/v1/platform/setup',
       permission: 'platform.setup.read',
       handler: async (ctx) => ({ status: 200, body: await deps.settings.status(ctx.tenantId) }),
+    },
+    {
+      // The settings-derived operating policy the store box needs (M01-FR-02): the tenant's configured
+      // trading-day cut-off, read from the durable settings. This is what lets a box (and the pack
+      // delivered to it) date the trading day from the tenant's chosen rule instead of a "00:00"
+      // fallback — the store-specific fields (storeId, thresholds) are merged in by pack assembly.
+      api: 'API-11', method: 'GET', path: '/v1/platform/store-pack/policies',
+      permission: 'platform.setup.read',
+      handler: async (ctx) => ({ status: 200, body: storePolicyFrom(await deps.settings.status(ctx.tenantId)) }),
     },
     {
       // A tenant answers one setup item. Validated first (an invalid value is refused, by name,

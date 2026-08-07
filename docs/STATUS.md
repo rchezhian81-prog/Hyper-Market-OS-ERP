@@ -85,6 +85,20 @@ with this one.
 **Phase 2 (E2E & assembly foundation) is COMPLETE:** E2E harness + fixtures, local/test IdP, module
 completion template, observability, API surface + event contract tests, and the completion gate.
 
+**Phase 3 (assembly) — in progress:**
+- **Done (this increment): M01-FR-02 trading-day cut-off is WIRED and integration-tested.** The store
+  edge dates every trading day from `pack.policies.tradingDayCutoff` (`packCutoff` → calendar
+  `tradingDate`), but that value was never populated from the tenant's chosen cut-off — every box,
+  screen and report fell back to `00:00`. Now `packages/tenant/src/store-policy.ts` (`storePolicyFrom`)
+  reads the durable `trading_day.cutoff` setting, and the platform surface serves it at
+  **`GET /v1/platform/store-pack/policies`** (API-11, `platform.setup.read`, tenant-scoped, authorized).
+  `tests/integration/trading-day-cutoff.test.ts` proves the roadmap's acceptance case end to end
+  through the **edge's own** `packCutoff` + `tradingDate`: a 00:30 sale under a 02:00 cut-off dates to
+  the **prior** trading day, the default 00:00 dates to the same day, per-tenant and authorized
+  (cashier 403). M01 stays PARTIALLY WIRED as a module — its other FRs (org hierarchy, number series,
+  templates) are still pending — but M01-FR-02 is done. The one remaining hop, writing this served
+  policy into the box's delivered `EDGE_PACK_FILE`, is the pack-delivery/provisioning step.
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in

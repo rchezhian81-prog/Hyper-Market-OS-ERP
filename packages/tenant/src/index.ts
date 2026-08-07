@@ -6,3 +6,4 @@ export * from './tenant';
 export * from './settings';
 export * from './setup';
 export * from './durable-settings';
+export * from './store-policy';
