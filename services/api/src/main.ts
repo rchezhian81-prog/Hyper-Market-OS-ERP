@@ -132,7 +132,8 @@ export function buildSurface(deps: {
       openCommitments: empty(undefined), now,
     } : purchaseAdapter({ store, now })),
     ...supplierPortalRoutes(store === undefined ? {
-      partner: empty(undefined), submissions: empty([]), recordPartner: () => {}, recordSubmission: () => {}, now,
+      partner: empty(undefined), submissions: empty([]), statementLines: empty([]), opening: empty(0),
+      recordPartner: () => {}, recordSubmission: () => {}, recordStatementLine: () => {}, recordOpening: () => {}, now,
     } : supplierPortalAdapter({ store, now })),
     ...inventoryRoutes(store === undefined ? {
       availability: empty([]), appendMovement: () => {}, isKnown: empty(false), now,

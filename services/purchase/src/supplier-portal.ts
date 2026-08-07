@@ -11,15 +11,17 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
-  acceptSubmission, checkPartnerCompliance,
-  type PortalGrant, type SubmissionKind, type PartnerDocument, type PartnerDocumentKind,
+  acceptSubmission, checkPartnerCompliance, buildStatement,
+  type PortalGrant, type SubmissionKind, type PartnerDocument, type PartnerDocumentKind, type StatementLine,
 } from '../../../packages/supplier-portal/src/index';
 
-export type { PartnerDocument } from '../../../packages/supplier-portal/src/index';
+export type { PartnerDocument, StatementLine } from '../../../packages/supplier-portal/src/index';
 
 const GRANTS: readonly PortalGrant[] = ['view_orders', 'acknowledge_orders', 'submit_asn', 'submit_invoice', 'submit_catalogue', 'respond_rfq', 'raise_claim', 'view_statement'];
 const KINDS: readonly SubmissionKind[] = ['rfq_response', 'catalogue', 'asn', 'invoice', 'po_acknowledgement', 'claim'];
 const DOCUMENT_KINDS: readonly PartnerDocumentKind[] = ['fssai_licence', 'gst_registration', 'insurance', 'trade_licence', 'bank_mandate', 'quality_certificate'];
+const LINE_KINDS: readonly StatementLine['kind'][] = ['invoice', 'credit_note', 'payment', 'debit_note'];
+const LINE_STATUSES: readonly StatementLine['status'][] = ['open', 'settled', 'disputed'];
 
 const isDate = (s: unknown): s is string => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00.000Z`));
 const isDateTime = (s: unknown): s is string => typeof s === 'string' && s.trim() !== '' && !Number.isNaN(Date.parse(s));
@@ -73,8 +75,12 @@ export interface SubmissionRecord {
 export interface SupplierPortalDeps {
   readonly partner: (tenantId: string, partnerId: string) => Promise<PartnerConfig | undefined> | PartnerConfig | undefined;
   readonly submissions: (tenantId: string, partnerId: string) => Promise<readonly SubmissionRecord[]> | readonly SubmissionRecord[];
+  readonly statementLines: (tenantId: string, partnerId: string) => Promise<readonly StatementLine[]> | readonly StatementLine[];
+  readonly opening: (tenantId: string, partnerId: string) => Promise<number> | number;
   readonly recordPartner: (tenantId: string, partnerId: string, config: PartnerConfig, at: string) => Promise<void> | void;
   readonly recordSubmission: (tenantId: string, partnerId: string, record: SubmissionRecord) => Promise<void> | void;
+  readonly recordStatementLine: (tenantId: string, partnerId: string, line: StatementLine) => Promise<void> | void;
+  readonly recordOpening: (tenantId: string, partnerId: string, openingMinor: number) => Promise<void> | void;
   readonly now: () => string;
 }
 
@@ -187,6 +193,66 @@ export function supplierPortalRoutes(deps: SupplierPortalDeps): readonly Route[]
           partnerId, documents: config.documents, required: config.requiredDocuments, today: isDate(asOf) ? asOf : deps.now().slice(0, 10),
         });
         return { status: 200, body: check };
+      },
+    },
+    {
+      // Set the opening balance a statement builds from (e.g. a migrated figure). Latest applies.
+      api: 'API-03', method: 'POST', path: '/v1/supplier-portal/partners/:partnerId/statement/opening',
+      permission: 'supplier.portal.manage', idempotent: true,
+      handler: async (ctx) => {
+        const partnerId = ctx.params['partnerId'] ?? '';
+        const openingMinor = (ctx.body as { openingMinor?: unknown } | null)?.openingMinor;
+        if (typeof openingMinor !== 'number' || !Number.isInteger(openingMinor)) {
+          throw apiError(400, { code: 'opening_needs_a_whole_number', whatHappened: 'The opening balance is a whole number of minor units (it may be negative).', wasItSaved: 'not_saved', nextSafeAction: 'Send { "openingMinor": <integer> }. Nothing was set.' });
+        }
+        if (await deps.partner(ctx.tenantId, partnerId) === undefined) throw notFound(`supplier-portal partner ${partnerId}`);
+        await deps.recordOpening(ctx.tenantId, partnerId, openingMinor);
+        return { status: 201, body: { partnerId, openingMinor } };
+      },
+    },
+    {
+      // Record a statement line — an invoice, credit note, payment or debit note. The amount is SIGNED
+      // (an invoice increases what is owed, a payment reduces it); a disputed line is carried but never
+      // folded into the balance. The document ref comes from the PATH; the partner id never from a body.
+      api: 'API-03', method: 'POST', path: '/v1/supplier-portal/partners/:partnerId/statement/lines/:documentRef',
+      permission: 'supplier.portal.manage', idempotent: true,
+      handler: async (ctx) => {
+        const partnerId = ctx.params['partnerId'] ?? '';
+        const documentRef = ctx.params['documentRef'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (!LINE_KINDS.includes(b['kind'] as StatementLine['kind']) || !isDate(b['date'])
+          || typeof b['amountMinor'] !== 'number' || !Number.isInteger(b['amountMinor'])
+          || (b['status'] !== undefined && !LINE_STATUSES.includes(b['status'] as StatementLine['status']))) {
+          throw apiError(400, { code: 'not_readable_as_a_statement_line', whatHappened: 'A statement line needs a kind (invoice/credit_note/payment/debit_note), a date, a signed whole-number amount, and an optional status (open/settled/disputed).', wasItSaved: 'not_saved', nextSafeAction: 'Send the line fields. Nothing was recorded.' });
+        }
+        if (await deps.partner(ctx.tenantId, partnerId) === undefined) throw notFound(`supplier-portal partner ${partnerId}`);
+        const line: StatementLine = {
+          partnerId, tenantId: ctx.tenantId, documentRef,
+          kind: b['kind'] as StatementLine['kind'], date: b['date'] as string,
+          amountMinor: b['amountMinor'] as number,
+          status: (b['status'] as StatementLine['status'] | undefined) ?? 'open',
+        };
+        await deps.recordStatementLine(ctx.tenantId, partnerId, line);
+        return { status: 201, body: { partnerId, documentRef, kind: line.kind, status: line.status } };
+      },
+    },
+    {
+      // The partner's statement — closing balance built from named buckets and cross-checked a second
+      // way (`reconciles` goes false rather than letting an uncategorised line vanish); a disputed line
+      // shown SEPARATELY; and when the partner's config lacks `view_statement`, a permission answer
+      // (`accessible: false`) rather than a balance of zero, because those are not the same thing.
+      api: 'API-03', method: 'GET', path: '/v1/supplier-portal/partners/:partnerId/statement',
+      permission: 'supplier.portal.review',
+      handler: async (ctx) => {
+        const partnerId = ctx.params['partnerId'] ?? '';
+        const config = await deps.partner(ctx.tenantId, partnerId);
+        if (config === undefined) throw notFound(`supplier-portal partner ${partnerId}`);
+        const statement = buildStatement({
+          session: { sessionId: `portal-${partnerId}`, partnerId, tenantId: ctx.tenantId, userId: ctx.userId, grants: config.grants },
+          lines: await deps.statementLines(ctx.tenantId, partnerId),
+          openingMinor: await deps.opening(ctx.tenantId, partnerId),
+        });
+        return { status: 200, body: statement };
       },
     },
   ];
