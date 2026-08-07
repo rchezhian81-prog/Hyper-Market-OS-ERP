@@ -10,7 +10,7 @@
 
 import { InMemoryEventStore, type EventStore } from '../../packages/persistence/src/event-store';
 import { makeEvent } from '../../packages/contracts/src/event';
-import { buildRouter, handle, MemoryIdempotencyStore, type HttpRequest, type HttpResponse } from '../../services/kernel/src/index';
+import { buildRouter, handle, MemoryIdempotencyStore, type HttpRequest, type HttpResponse, type RequestObservation } from '../../services/kernel/src/index';
 import { tokenAuthenticator } from '../../services/identity/src/index';
 import { buildSurface } from '../../services/api/src/main';
 import { tenantAccessResolver, seedGenesisOwner } from '../../services/api/src/access';
@@ -56,8 +56,8 @@ export interface ApiHarness {
     method: Method; path: string; userId: string; tenantId: string; branchId?: string;
     body?: unknown; idempotencyKey?: string;
   }): Promise<HttpResponse>;
-  /** Send a request with an explicit Authorization token (or none) — for auth-rejection tests. */
-  raw(input: { method: Method; path: string; token?: string; body?: unknown; idempotencyKey?: string }): Promise<HttpResponse>;
+  /** Send a request with an explicit Authorization token (or none) and optional extra headers. */
+  raw(input: { method: Method; path: string; token?: string; body?: unknown; idempotencyKey?: string; headers?: Record<string, string> }): Promise<HttpResponse>;
   /** Establish the tenant's first owner via the guarded genesis path (once-only). */
   seedOwner(tenantId: string, userId: string): Promise<void>;
   /** Provision an owner directly (as tenant provisioning would seed the initial admin set). */
@@ -70,7 +70,7 @@ export interface ApiHarness {
  * Build a harness over the given store (in-memory by default) and idempotency store. Pass a
  * `SqlEventStore` + `SqlIdempotencyStore` for a real-database E2E; omit both for a fast in-memory one.
  */
-export function apiHarness(opts: { store?: EventStore; idempotency?: IdempotencyStore } = {}): ApiHarness {
+export function apiHarness(opts: { store?: EventStore; idempotency?: IdempotencyStore; observe?: (o: RequestObservation) => void } = {}): ApiHarness {
   const store = opts.store ?? new InMemoryEventStore();
   const idempotency = opts.idempotency ?? new MemoryIdempotencyStore();
   const built = buildRouter(buildSurface({ signingKey: PACK_KEY, migrationTargetKind: 'rehearsal', store }));
@@ -81,12 +81,14 @@ export function apiHarness(opts: { store?: EventStore; idempotency?: Idempotency
     authenticate: tokenAuthenticator(TEST_IDP.policy()),
     access: tenantAccessResolver(store, ROLE_CATALOGUE),
     idempotency,
+    ...(opts.observe === undefined ? {} : { observe: opts.observe }),
     newTraceId: () => 'trace-e2e',
   };
 
-  const headers = (auth: string | undefined, key: string | undefined): Record<string, string> => ({
+  const headers = (auth: string | undefined, key: string | undefined, extra?: Record<string, string>): Record<string, string> => ({
     ...(auth === undefined ? {} : { authorization: `Bearer ${auth}` }),
     ...(key === undefined ? {} : { 'idempotency-key': key }),
+    ...(extra ?? {}),
   });
 
   return {
@@ -94,8 +96,8 @@ export function apiHarness(opts: { store?: EventStore; idempotency?: Idempotency
     idp: TEST_IDP,
     request: ({ method, path, userId, tenantId, branchId, body, idempotencyKey }) =>
       handle(kernel, { method, path, body, headers: headers(TEST_IDP.issue({ sub: userId, tenantId, branchId }), idempotencyKey) }),
-    raw: ({ method, path, token, body, idempotencyKey }) =>
-      handle(kernel, { method, path, body, headers: headers(token, idempotencyKey) }),
+    raw: ({ method, path, token, body, idempotencyKey, headers: extra }) =>
+      handle(kernel, { method, path, body, headers: headers(token, idempotencyKey, extra) }),
     seedOwner: async (tenantId, userId) => { await seedGenesisOwner(store, OWNER_ROLE_ID, tenantId, userId, AT); },
     provisionOwner: (tenantId, userId) => appendGrant(store, tenantId, userId, OWNER_ROLE_ID),
     provisionRole: (tenantId, userId, roleId) => appendGrant(store, tenantId, userId, roleId),

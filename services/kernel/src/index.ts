@@ -21,8 +21,13 @@ export {
   MemoryIdempotencyStore,
   type Principal, type HttpRequest, type HttpResponse, type Authenticator,
   type StoredResult, type IdempotencyStore, type AuditSink, type KernelOptions,
-  type OutboundFinding,
+  type OutboundFinding, type RequestObservation,
 } from './pipeline';
+
+export {
+  structuredLogger, combineObservers, RequestMetrics,
+  type Observer, type MetricsSnapshot, type RouteMetric,
+} from './observability';
 
 export {
   loadConfig, probes, CLOUD_API_CONFIG, STORE_EDGE_CONFIG,

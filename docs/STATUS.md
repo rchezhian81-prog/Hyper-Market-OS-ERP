@@ -49,14 +49,19 @@ with this one.
   returning. Full gate green (typecheck, lint, secret-scan, build, **4,248 tests**).
 
 **Phase 2 (E2E + assembly foundation) — in progress:**
-- **Done (this increment):** a reusable **E2E harness** (`tests/support/api-harness.ts`) that composes
-  the real surface, real token verifier and real per-tenant authorization the way `main()` does, with
-  tenant/user fixtures; a standards-compliant **local/test IdP** (`tests/support/local-idp.ts`, HS256)
-  that stands in for a production IdP (OA-4) and lives OUTSIDE production, guarded so no service/app/
-  edge can import the minting capability; the authorization E2E refactored onto the harness; and the
-  mandatory **`docs/MODULE-COMPLETION-TEMPLATE.md`**.
-- **Still in Phase 2:** API/event contract tests; observability (structured logs + correlation IDs +
-  metrics + traces + health); and a CI gate that blocks labelling an engine-only module "complete".
+- **Done:** a reusable **E2E harness** (`tests/support/api-harness.ts`) composing the real surface,
+  verifier and per-tenant authorization the way `main()` does, with tenant/user fixtures; a
+  standards-compliant **local/test IdP** (`tests/support/local-idp.ts`, HS256) for OA-4, kept outside
+  production and guarded; the authorization E2E refactored onto the harness; the mandatory
+  **`docs/MODULE-COMPLETION-TEMPLATE.md`**.
+- **Done (this increment): OBSERVABILITY.** The kernel now emits one `RequestObservation` per request
+  into a provider-neutral `observe` port (`services/kernel/src/observability.ts`): a **structured JSON
+  log** line and **in-memory metrics** (count / latency / status-class / per-route) served at
+  **`/metricz`**. **Correlation IDs** are honoured from an inbound `x-correlation-id`/`x-request-id`
+  header (used as the trace id, echoed on the reply) or minted. Health/readiness (`/livez`,`/readyz`)
+  already existed. Wired in `main.ts`; a guardrail forbids a blind production service.
+- **Still in Phase 2:** API/event contract tests; and a CI gate that blocks labelling an engine-only
+  module "complete".
 
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the

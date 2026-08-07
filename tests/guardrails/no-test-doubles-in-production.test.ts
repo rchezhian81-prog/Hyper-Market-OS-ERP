@@ -84,6 +84,15 @@ describe('every port the cloud API depends on is actually supplied', () => {
     expect(main).toMatch(/new SqlEventStore/);
   });
 
+  it('wires observability — structured request logging and metrics — not a blind service', () => {
+    // Optional in the kernel type (a test does not want it) and NOT optional in a deployment: a
+    // service the operator cannot see is a service that fails silently. One structured line per
+    // request and /metricz counters, provider-neutral.
+    expect(main).toMatch(/observe[,:]/);
+    expect(main).toMatch(/metricsSnapshot:/);
+    expect(main).toMatch(/new RequestMetrics\(/);
+  });
+
   it('wires REAL per-tenant authorization, not an empty AccessControl that authorises nothing', () => {
     // The shape it used to have: `access: new AccessControl([], [])` — a global, empty table that
     // was never rebuilt from anyone's grants, so every authenticated request returned 403 and the

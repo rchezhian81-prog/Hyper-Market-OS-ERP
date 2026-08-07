@@ -25,6 +25,7 @@ import { pgClient } from '../../../packages/persistence/src/pg-client';
 import { DurableTenantSettings } from '../../../packages/tenant/src/index';
 import {
   buildRouter, loadConfig, startHttpServer, CLOUD_API_CONFIG, SqlIdempotencyStore, SqlAuditSink,
+  structuredLogger, combineObservers, RequestMetrics,
   type Route,
 } from '../../kernel/src/index';
 import { tenantAccessResolver, seedGenesisOwner } from './access';
@@ -217,8 +218,19 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
     return;
   }
 
+  // Observability: one structured JSON line per request to stdout, and in-memory request metrics
+  // served at /metricz. Provider-neutral (P-06) — a real log shipper or metrics/OTel exporter is a
+  // change to these two lines, not to any handler.
+  const metrics = new RequestMetrics();
+  const observe = combineObservers(
+    structuredLogger((line) => process.stdout.write(`${line}\n`)),
+    metrics.record,
+  );
+
   const server = startHttpServer({
     router: built.router!,
+    observe,
+    metricsSnapshot: () => metrics.snapshot(),
 
     // Tokens are verified against the identity provider's key, and the reason a token was not
     // believed goes to the operator's log — never back to the caller, who is told "unauthenticated"
