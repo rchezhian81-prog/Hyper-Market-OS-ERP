@@ -85,6 +85,15 @@
       .toast { position: fixed; inset: auto 0 16px 0; margin: 0 auto; width: max-content; max-width: 90%; background: var(--panel); color: var(--ink); padding: 12px 18px; border-radius: 12px; z-index: 30; border-left: 6px solid var(--good); }
       .toast[hidden] { display: none; }
       .toast.bad { border-left-color: var(--danger); }
+
+      /* Supervisor action forms */
+      .forms { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+      .card { background: var(--panel); border-radius: 12px; padding: 14px; display: grid; gap: 10px; }
+      .card h3 { margin: 0; font-size: 16px; }
+      .field { display: grid; gap: 4px; }
+      .field label { color: var(--muted); font-size: 14px; }
+      .field input, .field select { background: #0b1220; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; min-height: 42px; padding: 0 12px; font-size: 15px; }
+      .card button.do { min-height: 46px; border: 0; border-radius: 10px; background: var(--info); color: #052e16; font-size: 15px; font-weight: 600; }
     </style>
   </head>
   <body>
@@ -116,6 +125,30 @@
       <section>
         <h2 id="appr-heading">—</h2>
         <div id="approvals"></div>
+      </section>
+
+      <section>
+        <h2 id="actions-heading">—</h2>
+        <div class="forms">
+          <div class="card">
+            <h3 id="transfer-heading">—</h3>
+            <div class="field"><label id="l-from" for="t-from">—</label><input id="t-from" type="text" autocomplete="off" /></div>
+            <div class="field"><label id="l-to" for="t-to">—</label><input id="t-to" type="text" autocomplete="off" /></div>
+            <div class="field"><label id="l-product" for="t-product">—</label><input id="t-product" type="text" autocomplete="off" /></div>
+            <div class="field"><label id="l-qty" for="t-qty">—</label><input id="t-qty" type="number" min="1" step="1" /></div>
+            <div class="field"><label id="l-cost" for="t-cost">—</label><input id="t-cost" type="number" min="0" step="0.01" /></div>
+            <button class="do" id="t-do" type="button">—</button>
+          </div>
+
+          <div class="card">
+            <h3 id="task-heading">—</h3>
+            <div class="field"><label id="l-kind" for="k-kind">—</label><select id="k-kind"></select></div>
+            <div class="field"><label id="l-assignee" for="k-assignee">—</label><input id="k-assignee" type="text" autocomplete="off" /></div>
+            <div class="field"><label id="l-tproduct" for="k-product">—</label><input id="k-product" type="text" autocomplete="off" /></div>
+            <div class="field"><label id="l-bin" for="k-bin">—</label><input id="k-bin" type="text" autocomplete="off" /></div>
+            <button class="do" id="k-do" type="button">—</button>
+          </div>
+        </div>
       </section>
     </main>
 

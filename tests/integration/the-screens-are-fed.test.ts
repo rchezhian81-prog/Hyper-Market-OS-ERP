@@ -562,6 +562,23 @@ describe('the other five screens boot on what the box served them', () => {
     expect(outbox.pending().map((i) => i.event.type)).toEqual(['WarehouseApprovalDecided']);
   });
 
+  it('the supervisor plans a transfer and assigns a task, served over the socket, queued for sync', async () => {
+    const base = await serve(snapshotOf({
+      pack: pack({
+        warehouse: known({
+          assignmentId: 'wa-1', workerId: 'u-wh', storeId: 'store-1',
+          bins: [{ binId: 'B-1', storeId: 'store-1', capacityMinor: 100, pickable: true }],
+          supervisor: { userId: 'u-super', branchScope: 'all' },
+        }),
+      }),
+    }));
+    const s = bootWarehouseSupervisor((await payloadFromScreen(base, 'warehouse-supervisor'))! as unknown as SupervisorData)!;
+    const outbox = new SyncOutbox();
+    expect(s.proposeTransfer({ transferId: 't-1', fromLocationId: 'WH', toLocationId: 'S1', lines: [{ productId: 'p1', quantityMinor: 5, uom: 'EA', unitCostMinor: 90_00, currency: 'INR' }] }, outbox).ok).toBe(true);
+    expect(s.assignTask({ taskId: 'tk-1', kind: 'put_away', assignedTo: 'u-wh', at: NOW }, outbox).ok).toBe(true);
+    expect(outbox.pending().map((i) => i.event.type)).toEqual(['WarehouseTransferProposed', 'WarehouseTaskAssigned']);
+  });
+
   it('the till gets a catalogue it can ACTUALLY BUILD, and scans with no line at all', async () => {
     // **This test used to check the payload's contents and never that the lane could consume
     // them** — and that is exactly how the defect survived. The box served a shape with no
