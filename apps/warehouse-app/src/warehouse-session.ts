@@ -41,6 +41,23 @@ import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 export type ScanFeedback = 'accept' | 'warn' | 'reject';
 
 /**
+ * Every feedback `code` this session can return — the authoritative list the shell must have a word
+ * for, in English AND Tamil (OA-9 bilingual). A completeness tripwire binds the view's vocabulary to
+ * this, so adding an outcome and forgetting its words fails the build rather than showing a warehouse
+ * worker a blank reason at the moment a scan was refused.
+ */
+export const FEEDBACK_CODES = Object.freeze([
+  // receiving (packages/receiving)
+  'received', 'unknown_barcode', 'over_delivery_needs_approval', 'dsd_needs_approval',
+  'price_change_refused', 'not_on_order',
+  // put-away (packages/warehouse) + this session's own checks
+  'moved', 'duplicate_ignored', 'wrong_sku', 'unknown_bin', 'bin_full',
+  'insufficient_goods_in', 'insufficient_in_bin', 'not_pickable_state',
+  'recalled_into_pickable', 'expired_into_pickable', 'invalid_command',
+] as const);
+export type FeedbackCode = (typeof FEEDBACK_CODES)[number];
+
+/**
  * A scan-feedback signal. The `code` is the stable machine reason (the shell maps it to the worker's
  * language, English **and** Tamil, exactly as the manager screen binds its vocabularies); `detail` is
  * a plain-English fallback. `sound`/`vibrateMs` are the device hints the shell realises where the

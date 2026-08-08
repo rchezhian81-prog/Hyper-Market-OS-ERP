@@ -16,6 +16,7 @@ import {
 import { bootOwner, forgetfulQueueStore } from '../../apps/owner-app/src/browser-entry';
 import { bootShop, forgetfulBasket } from '../../apps/customer-app/src/browser-entry';
 import { bootPicker } from '../../apps/picker-app/src/browser-entry';
+import { bootWarehouse, type WarehouseAssignment } from '../../apps/warehouse-app/src/index';
 import { bootDriver } from '../../apps/delivery-app/src/browser-entry';
 import { DeviceOutbox, noDeviceStore } from '../../packages/sync/src/device-outbox';
 import type { PackDelivery, PackDriver } from '../../edge/store-edge/src/store-pack';
@@ -501,6 +502,20 @@ describe('the other five screens boot on what the box served them', () => {
 
     expect(route.route()).toHaveLength(1);
     expect(route.route()[0]?.codMinor).toBe(250_00);
+  });
+
+  it('the warehouse handheld opens the assignment the cloud gave it, and puts stock away over the socket', async () => {
+    // The whole chain for the OA-9 PWA: the box serves the warehouse assignment, the real offline
+    // session boots on it, and a put-away is decided by the authoritative engine — over a real socket.
+    const base = await serve(snapshotOf());
+    const payload = (await payloadFromScreen(base, 'warehouse'))!;
+    const session = bootWarehouse(payload as unknown as WarehouseAssignment, new DeviceOutbox(noDeviceStore()), () => NOW)!;
+
+    expect(session).not.toBeNull();
+    expect(session.goodsIn()).toHaveLength(1); // the goods-in the pack carried
+    const put = session.putAway({ commandId: 'm1', scannedProductId: 'p1', scannedBinId: 'B-1', quantityMinor: 10, uom: 'ea', at: NOW });
+    expect(put.result.accepted).toBe(true);
+    expect(session.binContents()['B-1|p1|']).toBe(10);
   });
 
   it('the till gets a catalogue it can ACTUALLY BUILD, and scans with no line at all', async () => {

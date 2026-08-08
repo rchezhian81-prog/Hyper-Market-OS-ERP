@@ -26,6 +26,7 @@
     "build:picker": "node scripts/build-app.mjs picker-app",
     "build:delivery": "node scripts/build-app.mjs delivery-app",
     "build:customer": "node scripts/build-app.mjs customer-app",
+    "build:warehouse": "node scripts/build-app.mjs warehouse-app",
     "build:api": "node scripts/build-service.mjs api",
     "build:edge": "node scripts/build-service.mjs edge",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run secret-scan && pnpm run test && pnpm run test:perf",

@@ -39,6 +39,7 @@ const SCREENS = [
   { name: 'the picker', dir: 'picker-app', view: 'app.js', page: 'index.html', bundle: 'picker-app.bundle.js' },
   { name: 'the driver', dir: 'delivery-app', view: 'app.js', page: 'index.html', bundle: 'delivery-app.bundle.js' },
   { name: 'the customer', dir: 'customer-app', view: 'app.js', page: 'index.html', bundle: 'customer-app.bundle.js' },
+  { name: 'the warehouse', dir: 'warehouse-app', view: 'app.js', page: 'index.html', bundle: 'warehouse-app.bundle.js' },
 ] as const;
 
 const read = (path: string): string => readFileSync(path, 'utf8');
