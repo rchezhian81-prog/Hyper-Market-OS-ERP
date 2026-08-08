@@ -39,6 +39,10 @@ import type { InvestigationCase, EvidenceItem } from '../../../packages/loss-pre
 import type { LpRule } from '../../../packages/loss-prevention/src/loss-prevention';
 import type { FraudSignalsDeps } from '../../pos/src/fraud-signals';
 import type { FraudThresholds } from '../../../packages/loss-prevention/src/fraud-signals';
+import type { WarehouseDeps } from '../../inventory/src/warehouse';
+import type { Bin, BinContents } from '../../../packages/warehouse/src/movements';
+import { binKey } from '../../../packages/warehouse/src/movements';
+import type { StockMovement } from '../../../packages/stock/src/position';
 import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord, StatementLine } from '../../purchase/src/supplier-portal';
 import type { ConcessionDeps, ConcessionContract, ConcessionSale } from '../../finance/src/concession';
 import type { ScrapDeps, ScrapSale } from '../../finance/src/scrap';
@@ -121,6 +125,7 @@ export const STREAM = {
   waste: 'waste',
   integration: 'integration',
   lossPrevention: 'loss-prevention',
+  warehouse: 'warehouse',
 } as const;
 
 const payloadOf = <T>(e: PersistedEvent): T => e.event.payload as T;
@@ -1344,6 +1349,68 @@ export function fraudSignalsAdapter(input: {
         idempotencyKey: `fraud-thresholds-${tenantId}-${JSON.stringify(thresholds)}`,
         source: 'api/pos',
         payload: thresholds,
+      }));
+    },
+  };
+}
+
+export function warehouseAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): WarehouseDeps {
+  const binsStream = streamName(STREAM.warehouse, 'bins');
+  const movementsStream = streamName(STREAM.warehouse, 'movements');
+
+  // Bin contents are PROJECTED from the append-only movement ledger, never stored (#2): a movement INTO
+  // a bin (to !== null) adds, one OUT of a bin (to === null) subtracts, keyed by bin|product|batch.
+  const foldContents = async (tenantId: string): Promise<BinContents> => {
+    const recorded = await allOf<{ commandId: string; movements: readonly StockMovement[] }>(input.store, tenantId, movementsStream, 'WarehouseMovementRecorded');
+    const contents: Record<string, number> = {};
+    for (const r of recorded) {
+      for (const m of r.movements) {
+        const key = binKey(m.locationId, m.productId, m.batchId);
+        contents[key] = (contents[key] ?? 0) + (m.to !== null ? m.quantityMinor : -m.quantityMinor);
+      }
+    }
+    return contents;
+  };
+
+  return {
+    now: input.now,
+
+    bins: async (tenantId) => {
+      const registered = await allOf<Bin>(input.store, tenantId, binsStream, 'WarehouseBinRegistered');
+      const byId = new Map<string, Bin>();
+      for (const b of registered) byId.set(b.binId, b); // latest definition wins
+      return [...byId.values()];
+    },
+
+    contents: (tenantId) => foldContents(tenantId),
+
+    appliedCommandIds: async (tenantId) =>
+      (await allOf<{ commandId: string }>(input.store, tenantId, movementsStream, 'WarehouseMovementRecorded')).map((r) => r.commandId),
+
+    recordBin: async (tenantId, bin) => {
+      await input.store.append(tenantId, binsStream, makeEvent({
+        id: `wh-bin-${bin.binId}`,
+        type: 'WarehouseBinRegistered',
+        occurredAt: input.now(),
+        // Keyed on the bin id + its shape — re-registering the same bin collapses, a redefinition is a new fact.
+        idempotencyKey: `wh-bin-${tenantId}-${bin.binId}-${bin.capacityMinor}-${bin.pickable}-${bin.zone ?? ''}`,
+        source: 'api/inventory',
+        payload: bin,
+      }));
+    },
+
+    recordMovement: async (tenantId, commandId, movements) => {
+      await input.store.append(tenantId, movementsStream, makeEvent({
+        id: `wh-move-${commandId}`,
+        type: 'WarehouseMovementRecorded',
+        occurredAt: input.now(),
+        // The command's own id — a re-sent scan collapses rather than moving twice (append-only, #2).
+        idempotencyKey: `wh-move-${tenantId}-${commandId}`,
+        source: 'api/inventory',
+        payload: { commandId, movements },
       }));
     },
   };
