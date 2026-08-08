@@ -10,7 +10,7 @@ counted **5 August 2026** (Stage 11 rehearsal complete).
 
 ## Where the build actually stands
 
-**144 individual requirement rows: 143 built · 1 partial · 0 not started.**
+**144 individual requirement rows: 142 built · 2 partial · 0 not started.**
 
 | Module | Release | Built | Partial | Not started |
 | --- | --- | --- | --- | --- |
@@ -31,7 +31,7 @@ counted **5 August 2026** (Stage 11 rehearsal complete).
 | M15 Loss prevention | R2 | 4 | 0 | 0 |
 | M16 Customer & consent | R4 | 4 | 0 | 0 |
 | M17 Loyalty | R4 | 4 | 0 | 0 |
-| M18 Orders | R5 | 4 | 0 | 0 |
+| M18 Orders | R5 | 3 | 1 | 0 |
 | M19 Fulfilment & delivery | R5 | 4 | 0 | 0 |
 | M20 Customer app & web | R4 | 4 | 0 | 0 |
 | M21 CRM & service desk | R4 | 4 | 0 | 0 |

@@ -228,6 +228,8 @@ describe('all three register cleanly on the kernel', () => {
     const orders: OrdersDeps = {
       onHand: () => new Map(), outstanding: () => [], holdReservations: () => {},
       holdMinutes: 60, now: () => NOW,
+      recordPlaced: () => {}, orderState: () => undefined, orderReservations: () => [],
+      recordTransition: () => {}, releaseReservations: () => {},
     };
     const fulfilment: FulfilmentDeps = {
       appendAttempt: () => {}, attempts: () => [], assigned: () => [], now: () => NOW,

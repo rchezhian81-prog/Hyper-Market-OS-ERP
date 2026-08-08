@@ -14,6 +14,8 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
+import type { OrderState, OrderEvent } from '../../../packages/orders/src/lifecycle';
+import { transitionOrder, canTransition } from '../../../packages/orders/src/lifecycle';
 
 export interface Reservation {
   readonly reservationId: string;
@@ -110,12 +112,49 @@ export function promise(input: {
 export const expired = (rs: readonly Reservation[], now: string): readonly Reservation[] =>
   rs.filter((r) => Date.parse(r.heldUntil) <= Date.parse(now));
 
+/** One line of an order as placed — the product and how much of it was asked for. */
+export interface OrderLine {
+  readonly productId: string;
+  readonly quantityMinor: number;
+}
+
+/** The order as it entered the system, recorded so its lifecycle can be read and moved (M18-FR-01). */
+export interface PlacedOrder {
+  readonly orderId: string;
+  readonly locationId: string;
+  readonly lines: readonly OrderLine[];
+  readonly state: OrderState;
+  readonly placedAt: string;
+}
+
+/** One lifecycle step, recorded append-only so the order's history is auditable end-to-end. */
+export interface OrderTransition {
+  readonly orderId: string;
+  readonly event: OrderEvent;
+  readonly from: OrderState;
+  readonly to: OrderState;
+  readonly at: string;
+}
+
+/** Current view of an order — its folded state and how it was placed. */
+export interface OrderStateView {
+  readonly state: OrderState;
+  readonly locationId: string;
+  readonly lines: readonly OrderLine[];
+}
+
 export interface OrdersDeps {
   readonly onHand: (tenantId: string, locationId: string) => Promise<ReadonlyMap<string, number>> | ReadonlyMap<string, number>;
   readonly outstanding: (tenantId: string, locationId: string) => Promise<readonly Reservation[]> | readonly Reservation[];
   readonly holdReservations: (tenantId: string, rs: readonly Reservation[]) => Promise<void> | void;
   readonly holdMinutes: number;
   readonly now: () => string;
+  // Lifecycle (M18-FR-01) and cancellation-releases-reservation (M18-FR-04).
+  readonly recordPlaced: (tenantId: string, order: PlacedOrder) => Promise<void> | void;
+  readonly orderState: (tenantId: string, orderId: string) => Promise<OrderStateView | undefined> | OrderStateView | undefined;
+  readonly orderReservations: (tenantId: string, orderId: string, locationId: string) => Promise<readonly Reservation[]> | readonly Reservation[];
+  readonly recordTransition: (tenantId: string, t: OrderTransition) => Promise<void> | void;
+  readonly releaseReservations: (tenantId: string, rs: readonly Reservation[]) => Promise<void> | void;
 }
 
 export function ordersRoutes(deps: OrdersDeps): readonly Route[] {
@@ -146,6 +185,12 @@ export function ordersRoutes(deps: OrdersDeps): readonly Route[] {
         });
         const reservations = result.lines.flatMap((l) => (l.reservation === undefined ? [] : [l.reservation]));
         if (reservations.length > 0) await deps.holdReservations(ctx.tenantId, reservations);
+        // The order now exists in the system — record it (idempotent on the order id) so it can
+        // be read and moved through its lifecycle, and cancelled to give its stock back. A promise
+        // that reserved nothing is still a placed order the customer is owed an answer on.
+        await deps.recordPlaced(ctx.tenantId, {
+          orderId, locationId: body.locationId, lines: body.lines, state: 'placed', placedAt: deps.now(),
+        });
         // 200 even when short: the answer is a truthful promise, not a failure.
         return { status: 200, body: result };
       },
@@ -159,6 +204,80 @@ export function ordersRoutes(deps: OrdersDeps): readonly Route[] {
         return {
           status: 200,
           body: { outstanding: all, expired: expired(all, deps.now()), asAt: deps.now() },
+        };
+      },
+    },
+    // Read one order's lifecycle end-to-end (M18-FR-01). Registered AFTER the literal
+    // `/v1/orders/reservations` above, so that address is never captured as an order id.
+    {
+      api: 'API-07', method: 'GET', path: '/v1/orders/:orderId',
+      permission: 'order.read',
+      handler: async (ctx) => {
+        const orderId = ctx.params['orderId'] ?? '';
+        const state = await deps.orderState(ctx.tenantId, orderId);
+        if (state === undefined) {
+          throw apiError(404, {
+            code: 'order_unknown',
+            whatHappened: `No order "${orderId}" has been placed.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Check the order reference. Nothing was changed.',
+          });
+        }
+        const reservations = await deps.orderReservations(ctx.tenantId, orderId, state.locationId);
+        return {
+          status: 200,
+          body: {
+            orderId, state: state.state, locationId: state.locationId,
+            lines: state.lines, reservations,
+          },
+        };
+      },
+    },
+    // Move an order along its lifecycle (M18-FR-01); an illegal step is refused, never applied.
+    // A cancel gives every reservation back in the SAME step (M18-FR-04) — a cancel that forgets
+    // the release makes stock invisible to the shop floor, the commonest phantom out-of-stock.
+    {
+      api: 'API-07', method: 'POST', path: '/v1/orders/:orderId/transition',
+      permission: 'order.lifecycle.manage', idempotent: true,
+      handler: async (ctx) => {
+        const orderId = ctx.params['orderId'] ?? '';
+        const body = (ctx.body ?? {}) as { event?: OrderEvent };
+        const current = await deps.orderState(ctx.tenantId, orderId);
+        if (current === undefined) {
+          throw apiError(404, {
+            code: 'order_unknown',
+            whatHappened: `No order "${orderId}" has been placed.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Check the order reference. Nothing was changed.',
+          });
+        }
+        if (body.event === undefined) {
+          throw apiError(400, {
+            code: 'no_transition',
+            whatHappened: 'A lifecycle change needs an event (confirm, pick, pack, dispatch, deliver, collect or cancel).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was changed. Send the event to apply.',
+          });
+        }
+        if (!canTransition(current.state, body.event)) {
+          throw apiError(409, {
+            code: 'illegal_transition',
+            whatHappened: `An order in "${current.state}" cannot "${body.event}".`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was changed. The order is where it was.',
+          });
+        }
+        const to = transitionOrder(current.state, body.event);
+        const at = deps.now();
+        let released: readonly Reservation[] = [];
+        if (body.event === 'cancel') {
+          released = await deps.orderReservations(ctx.tenantId, orderId, current.locationId);
+          if (released.length > 0) await deps.releaseReservations(ctx.tenantId, released);
+        }
+        await deps.recordTransition(ctx.tenantId, { orderId, event: body.event, from: current.state, to, at });
+        return {
+          status: 200,
+          body: { orderId, event: body.event, from: current.state, state: to, released },
         };
       },
     },
