@@ -576,6 +576,39 @@ completion template, observability, API surface + event contract tests, and the 
   (one screen against an already-wired cloud API, e.g. facilities overdue or waste report), plus E2E/UAT,
   rather than further engine-adjacent cloud wiring.
 
+- **Channel increment investigated (deep dive, recorded not forced).** Attempting the first UI/channel
+  increment, I found the screens are 16 fixed, offline-first, EDGE-FED surfaces (`SCREENS` in
+  `edge/store-edge/src/screen-data.ts` — pos/manager/owner/picker/driver/customer/buying/catalogue/
+  merchandising/reporting/service/expiry/finance/admin/ai/migration), each built from a `StorePack` (a
+  large `Register<T>` structure) served by `screen-server.ts` and booted by each app's `*-session.ts`,
+  driven end-to-end by `tests/integration/the-screens-are-fed.test.ts` over a real socket. Surfacing a
+  newly-wired CLOUD API (facilities/waste/integration) on a screen is therefore a
+  **cloud→sync→StorePack→screen-data→session→HTML→screens-are-fed** thread across the offline-sync
+  boundary — a large, multi-layer effort — AND it raises a genuine DESIGN QUESTION: whether cloud
+  back-office data (facilities, waste, integration health) belongs in the OFFLINE pack at all, given the
+  pack exists so the till trades with no internet (P-01) and these are not needed at the lane. This is a
+  design decision to surface, not force into a rushed PR. Recommended: an OWNER/design decision on
+  offline-vs-cloud-only admin screens before the first channel increment; recorded rather than guessed.
+
+- **Done (this increment): B2B collections — aged from the due date, a dispute is not chased, stop-supply
+  needs a person (M22-FR-04, API-09).** Re-verified the earlier deferral ("dunning needs structured
+  invoices"): it was CORRECT — the wired M22-FR-01 credit-control surface projects a FLAT AR balance
+  (invoice/payment deltas, no due date), right for a credit-limit check but un-ageable. So this increment
+  SATISFIES the premise with a structured collections/AR surface (`services/finance/src/b2b-collections.ts`):
+  `POST /v1/b2b/collections/:cust/invoices/:id` records a structured invoice (number, issued/due, gross);
+  `…/payments/:id` runs `allocatePayment` — a payment lands on named invoices then oldest-due-first, and
+  any **overpayment is held UNAPPLIED and visible**, never netted into a balance (settled is PROJECTED
+  from the recorded allocations, never stored, #2); `GET …/ageing` runs `ageReceivables` — from the DUE
+  DATE, and a **disputed invoice is outstanding but never chaseable** (it belongs with a person); and
+  `GET …/dunning` runs `decideDunning` — statement→reminder→final_notice→stop_supply, and **stopping
+  supply is RECOMMENDED and needs a person** (`needsHuman`), because date arithmetic does not get to end
+  a relationship on the morning of a customer's function. A record-vs-read SoD split: recording on
+  `b2b.receivable.record` (owner/accountant), reading on `b2b.account.read` (adds store_manager); a
+  cashier neither. Proven through the real API + real RBAC in `tests/integration/b2b-collections.test.ts`
+  (4 cases). M22 → **PARTIALLY WIRED** (FR-01 credit + FR-04 collections wired; quote→invoice chain FR-02
+  and commission FR-03 engine-only; the customer-facing collections PORTAL and `reconcileAr` need external
+  B2B-customer auth). Full gate green (typecheck, lint, secret-scan, build:api, audit, **4,692 tests**).
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in

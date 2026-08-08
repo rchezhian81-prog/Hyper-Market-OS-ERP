@@ -30,6 +30,7 @@ import type { CashDeps, RecordedCashMovement } from '../../pos/src/cash';
 import type { StoredCashMovement } from '../../../packages/cash/src/index';
 import type { ShiftDeps, ClosedShiftRecord } from '../../pos/src/shift';
 import type { B2BCreditDeps, B2BAccount, RecordedReceivable } from '../../finance/src/b2b-credit';
+import type { B2BCollectionsDeps, Receivable as CollectionsReceivable, RecordedPayment } from '../../finance/src/b2b-collections';
 import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord, StatementLine } from '../../purchase/src/supplier-portal';
 import type { ConcessionDeps, ConcessionContract, ConcessionSale } from '../../finance/src/concession';
 import type { ScrapDeps, ScrapSale } from '../../finance/src/scrap';
@@ -1064,6 +1065,52 @@ export function connectorAdapter(input: {
         idempotencyKey: `conn-map-${tenantId}-${mapping.connectorId}-${mapping.version}-${mapping.rules.length}-${mapping.required.join('.')}`,
         source: 'api/platform',
         payload: mapping,
+      }));
+    },
+  };
+}
+
+export function b2bCollectionsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): B2BCollectionsDeps {
+  // Each B2B customer folds its own stream. Invoices are recorded with settledMinor 0; each invoice's
+  // real settled is PROJECTED by summing the allocations of every recorded payment (#2 — never stored).
+  return {
+    now: input.now,
+
+    invoices: async (tenantId, customerId) => {
+      const invoices = await allOf<CollectionsReceivable>(input.store, tenantId, forB2BCustomer(customerId), 'B2BInvoiceRecorded');
+      const payments = await allOf<RecordedPayment>(input.store, tenantId, forB2BCustomer(customerId), 'B2BPaymentAllocated');
+      const settledByInvoice = new Map<string, number>();
+      for (const p of payments) {
+        for (const a of p.allocations) settledByInvoice.set(a.invoiceId, (settledByInvoice.get(a.invoiceId) ?? 0) + a.appliedMinor);
+      }
+      const byId = new Map<string, CollectionsReceivable>();
+      for (const inv of invoices) byId.set(inv.invoiceId, { ...inv, settledMinor: settledByInvoice.get(inv.invoiceId) ?? 0 }); // later invoice restatement wins
+      return [...byId.values()];
+    },
+
+    recordInvoice: async (tenantId, customerId, invoice) => {
+      await input.store.append(tenantId, forB2BCustomer(customerId), makeEvent({
+        id: `b2b-inv-${customerId}-${invoice.invoiceId}`,
+        type: 'B2BInvoiceRecorded',
+        occurredAt: input.now(),
+        idempotencyKey: `b2b-inv-${tenantId}-${customerId}-${invoice.invoiceId}-${invoice.grossMinor}-${invoice.dueOn}-${invoice.disputed ?? false}`,
+        source: 'api/finance',
+        payload: invoice,
+      }));
+    },
+
+    recordPayment: async (tenantId, customerId, payment) => {
+      await input.store.append(tenantId, forB2BCustomer(customerId), makeEvent({
+        id: `b2b-pay-${customerId}-${payment.receiptId}`,
+        type: 'B2BPaymentAllocated',
+        occurredAt: input.now(),
+        // The receipt's own id — a re-sent payment collapses rather than allocating twice.
+        idempotencyKey: `b2b-pay-${tenantId}-${customerId}-${payment.receiptId}`,
+        source: 'api/finance',
+        payload: payment,
       }));
     },
   };
