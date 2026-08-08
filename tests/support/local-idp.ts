@@ -71,6 +71,11 @@ export class LocalIdp {
 export function tamperSignature(token: string): string {
   const [h, p, s] = token.split('.');
   const sig = s ?? '';
-  const flipped = sig.slice(0, -1) + (sig.slice(-1) === 'A' ? 'B' : 'A');
-  return `${h}.${p}.${flipped}`;
+  // Flip a character at the FRONT, never the end. The last base64url char of a 32-byte HMAC signature
+  // carries only 4 significant bits — the decoder discards the low 2 as padding — so flipping it
+  // (e.g. 'A'↔'B') can decode to the SAME bytes and leave the signature genuinely valid, which made
+  // this helper pass ~1 run in 16 and flaked the auth suite. The first char's 6 bits are all
+  // significant, so changing it always changes the signature: the tamper is now real every time.
+  const first = sig.charAt(0) === 'A' ? 'B' : 'A';
+  return `${h}.${p}.${first}${sig.slice(1)}`;
 }
