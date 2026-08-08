@@ -517,6 +517,27 @@ completion template, observability, API surface + event contract tests, and the 
   FR-03 remain engine-only). Full gate green (typecheck, lint, secret-scan, build:api, audit, **4,681
   tests**).
 
+- **Done (this increment): inbound signed webhooks — a forged one is a security event, a retry is not
+  (M32-FR-01, API-11).** The webhook-receipt half of `packages/integration/src/api-gateway.ts` is now on
+  the cloud (`services/platform/src/webhooks.ts`): `POST /v1/integration/webhooks/:provider` registers a
+  provider's **vault-held** signing key (a literal key is refused, #4), `POST …/deliveries/:id` runs the
+  pure `verifyWebhook`, and `GET …/deliveries` is the replay ledger. An unsigned webhook is an
+  unauthenticated POST from the internet that changes money, and a correctly signed one replayed six
+  hours later is the same thing with extra steps — so a delivery is checked on its **signature** (the
+  timestamp is inside it, which is what makes a replay detectable), its **age**, and its **tenant**: a
+  **bad signature** or a **wrong tenant** is a 401 security event, a **stale** delivery is 422, and a
+  **duplicate delivery id is a 200 provider-retry acknowledgement, NOT an attack** — because a provider
+  genuinely retries when our ack is lost, and calling every retry an attack trains people to ignore the
+  alerts. The HMAC signing key is resolved from a vault ref (never in a payload or a log); owner/gateway
+  receives (`integration.webhook.receive`), a manager may read the ledger (`platform.health.read`).
+  Proven through the real API + real RBAC in `tests/integration/webhooks.test.ts` (4 cases, the test
+  signing with the same deterministic key the surface verifies with). M32 → **PARTIALLY WIRED** (FR-04
+  matrix/health + FR-01 webhook-receipt wired; the versioning/idempotency half of FR-01 is served by the
+  kernel + Stage-19 gate; the connector delivery/dead-letter FR-02 is a worker/transport concern and
+  managed-secrets FR-03 remain engine-only). _The internet-facing TLS edge that forwards the raw delivery
+  is a deployment step; the signature — not the caller's token — is what authenticates the provider._
+  Full gate green (typecheck, lint, secret-scan, build:api, audit, **4,685 tests**).
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in
