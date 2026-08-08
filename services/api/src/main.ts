@@ -44,6 +44,7 @@ import { settlementRoutes } from '../../finance/src/settlement';
 import { b2bCreditRoutes } from '../../finance/src/b2b-credit';
 import { b2bCollectionsRoutes } from '../../finance/src/b2b-collections';
 import { b2bCommissionRoutes } from '../../finance/src/b2b-commission';
+import { b2bDocumentsRoutes } from '../../finance/src/b2b-documents';
 import { concessionRoutes } from '../../finance/src/concession';
 import { scrapRoutes } from '../../finance/src/scrap';
 import { facilitiesRoutes } from '../../platform/src/facilities';
@@ -68,7 +69,7 @@ import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, pricingAdapter, posAdapter, returnsAdapter, inventoryAdapter, packagingAdapter, wasteAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
-  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, cashAdapter, shiftAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, integrationAdapter, webhookAdapter, connectorAdapter,
+  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, cashAdapter, shiftAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, integrationAdapter, webhookAdapter, connectorAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
@@ -210,6 +211,10 @@ export function buildSurface(deps: {
     ...b2bCommissionRoutes(store === undefined ? {
       accruals: empty([]), recordAccrual: () => {}, now,
     } : b2bCommissionAdapter({ store, now })),
+    ...b2bDocumentsRoutes(store === undefined ? {
+      document: empty(undefined), convertedQuotationIds: empty([]), recordDocument: () => {},
+      allocateNumber: () => Promise.resolve(1), creditAllowed: empty(false), now,
+    } : b2bDocumentsAdapter({ store, now, numberSeries: deps.numberSeries })),
     ...concessionRoutes(store === undefined ? {
       contract: empty(undefined), sales: empty([]), recordContract: () => {}, recordSale: () => {}, now,
     } : concessionAdapter({ store, now })),
