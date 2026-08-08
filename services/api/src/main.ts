@@ -173,7 +173,8 @@ export function buildSurface(deps: {
       onHand: empty(0), reconciliations: empty([]), countExists: empty(false), recordReconciliation: () => {}, now,
     } : countsAdapter({ store, now })),
     ...productionRoutes(store === undefined ? {
-      recipe: empty(undefined), recordRecipe: () => {}, onHand: empty(0), priorConsumption: empty({}),
+      recipe: empty(undefined), recordRecipe: () => {}, ingredientCost: empty(undefined), recordCost: () => {},
+      onHand: empty(0), priorConsumption: empty({}),
       runExists: empty(false), runs: empty([]), run: empty(undefined), recordRun: () => {}, recordRelease: () => {},
       enabledDepartments: empty([]), recordDepartmentEnabled: () => {}, now,
     } : productionAdapter({ store, now })),

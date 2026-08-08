@@ -20,6 +20,7 @@
 //     column somebody remembers to filter on (OB-01).
 
 import { makeEvent } from '../../../packages/contracts/src/event';
+import type { Money } from '../../../packages/contracts/src/money';
 import type { EventStore, PersistedEvent } from '../../../packages/persistence/src/event-store';
 import type { CatalogueProduct } from '../../../packages/catalogue/src/catalogue';
 import type { SignedPack } from '../../catalogue/src/index';
@@ -1567,6 +1568,25 @@ export function productionAdapter(input: {
         idempotencyKey: `recipe-${tenantId}-${recipe.recipeId}-${recipe.outputQuantityMinor}-${recipe.inputs.length}-${recipe.shelfLifeHours}`,
         source: 'api/inventory',
         payload: recipe,
+      }));
+    },
+
+    ingredientCost: async (tenantId, productId) => {
+      const set = await allOf<{ productId: string; cost: Money }>(input.store, tenantId, productionStream, 'ProductionCostSet');
+      let latest: Money | undefined;
+      for (const s of set) if (s.productId === productId) latest = s.cost; // last write wins
+      return latest;
+    },
+
+    recordCost: async (tenantId, productId, cost) => {
+      await input.store.append(tenantId, productionStream, makeEvent({
+        id: `prod-cost-${productId}`,
+        type: 'ProductionCostSet',
+        occurredAt: input.now(),
+        // Keyed on the product + the value — re-setting the same cost collapses, a new value supersedes.
+        idempotencyKey: `prod-cost-${tenantId}-${productId}-${cost.minor}-${cost.currency}`,
+        source: 'api/inventory',
+        payload: { productId, cost },
       }));
     },
 
