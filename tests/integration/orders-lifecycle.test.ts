@@ -59,7 +59,7 @@ describe('order lifecycle and reservation, end to end (M18, API-07)', () => {
     // Third order finds the shelf spoken for — promised nothing, told before paying.
     const o3 = (await promise(h, A, 'u-owner', 'o3', [{ productId: 'P1', quantityMinor: 10 }], 'pr-o3')).body as PromiseBody;
     expect(o3.outcome).toBe('cannot_promise');
-    expect(o3.lines[0].promisedMinor).toBe(0);
+    expect(o3.lines[0]?.promisedMinor).toBe(0);
 
     // Total reserved is exactly the 100 on the shelf and not a unit more.
     expect(sumMinor(await reservationsAt(h, A, 'u-owner'))).toBe(100);
@@ -129,7 +129,7 @@ describe('order lifecycle and reservation, end to end (M18, API-07)', () => {
     expect(await reservationsAt(h, A, 'u-owner')).toEqual([]);
     const o5 = (await promise(h, A, 'u-owner', 'o5', [{ productId: 'P5', quantityMinor: 100 }], 'pr-o5')).body as PromiseBody;
     expect(o5.outcome).toBe('promised');
-    expect(o5.lines[0].promisedMinor).toBe(100);
+    expect(o5.lines[0]?.promisedMinor).toBe(100);
 
     const view = (await status(h, A, 'u-owner', 'o4')).body as StatusBody;
     expect(view.state).toBe('cancelled');
