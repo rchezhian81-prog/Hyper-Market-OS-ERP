@@ -31,6 +31,7 @@ import type { StoredCashMovement } from '../../../packages/cash/src/index';
 import type { ShiftDeps, ClosedShiftRecord } from '../../pos/src/shift';
 import type { B2BCreditDeps, B2BAccount, RecordedReceivable } from '../../finance/src/b2b-credit';
 import type { B2BCollectionsDeps, Receivable as CollectionsReceivable, RecordedPayment } from '../../finance/src/b2b-collections';
+import type { B2BCommissionDeps, CommissionAccrual } from '../../finance/src/b2b-commission';
 import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord, StatementLine } from '../../purchase/src/supplier-portal';
 import type { ConcessionDeps, ConcessionContract, ConcessionSale } from '../../finance/src/concession';
 import type { ScrapDeps, ScrapSale } from '../../finance/src/scrap';
@@ -198,6 +199,8 @@ const forTillCash = (tillId: string): string => streamName(STREAM.cash, tillId);
 const SHIFTS_STREAM = streamName(STREAM.cash, 'shifts');
 /** Each B2B customer's credit terms and AR movements fold one stream — one customer, not the shop. */
 const forB2BCustomer = (customerId: string): string => streamName(STREAM.b2b, customerId);
+/** Each salesperson's commission accruals fold one stream — one person's earnings, not every deal. */
+const forB2BSalesperson = (salespersonId: string): string => streamName(STREAM.b2b, 'commission', salespersonId);
 /** Each concession contract's terms and sales fold one stream — one counter, not the shop. */
 const forConcession = (contractId: string): string => streamName(STREAM.concession, contractId);
 /** Each packaging item's registration and movements fold one stream — one item, not every crate. */
@@ -1111,6 +1114,32 @@ export function b2bCollectionsAdapter(input: {
         idempotencyKey: `b2b-pay-${tenantId}-${customerId}-${payment.receiptId}`,
         source: 'api/finance',
         payload: payment,
+      }));
+    },
+  };
+}
+
+export function b2bCommissionAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): B2BCommissionDeps {
+  // Each salesperson folds its own stream. The total earned is projected by summing the accruals here
+  // and in the route — never a stored balance (#2). A re-sent accrual (same id) collapses on append.
+  return {
+    now: input.now,
+
+    accruals: (tenantId, salespersonId) =>
+      allOf<CommissionAccrual>(input.store, tenantId, forB2BSalesperson(salespersonId), 'B2BCommissionAccrued'),
+
+    recordAccrual: async (tenantId, salespersonId, accrual) => {
+      await input.store.append(tenantId, forB2BSalesperson(salespersonId), makeEvent({
+        id: `b2b-comm-${salespersonId}-${accrual.accrualId}`,
+        type: 'B2BCommissionAccrued',
+        occurredAt: input.now(),
+        // The accrual's own id — a re-sent accrual collapses rather than earning twice (append-only).
+        idempotencyKey: `b2b-comm-${tenantId}-${salespersonId}-${accrual.accrualId}`,
+        source: 'api/finance',
+        payload: accrual,
       }));
     },
   };
