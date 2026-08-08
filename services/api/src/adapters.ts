@@ -19,6 +19,7 @@
 //   • **Streams are per tenant and per domain.** `tenantId` is the argument to every call, not a
 //     column somebody remembers to filter on (OB-01).
 
+import { createHash } from 'node:crypto';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { Money } from '../../../packages/contracts/src/money';
 import type { EventStore, PersistedEvent } from '../../../packages/persistence/src/event-store';
@@ -80,8 +81,9 @@ import type {
 import type { DeliveryAttempt, FulfilmentDeps } from '../../fulfilment/src/index';
 import type { IdentityDeps } from '../../identity/src/index';
 import type { Role, RoleAssignment } from '../../../packages/rbac/src/rbac';
-import type { DependencyProbe, FeatureFlagChange, PlatformDeps } from '../../platform/src/index';
+import type { DependencyProbe, FeatureFlagChange, PlatformDeps, ExportedEvent } from '../../platform/src/index';
 import { inMemorySettings } from '../../platform/src/index';
+import { buildTenantExport } from '../../../packages/platform/src/lifecycle';
 import type { DurableTenantSettings } from '../../../packages/tenant/src/index';
 import { InMemoryNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
 import { figure } from '../../reporting/src/index';
@@ -2648,6 +2650,48 @@ export function platformAdapter(input: {
         source: 'api/platform',
         payload: { ...request, expiresAt },
       }));
+    },
+
+    /**
+     * The tenant's whole dataset, certified complete (M36-FR-03). The store read is
+     * `tenant_id`-scoped, so a tenant only ever exports its own history — the critical isolation
+     * guarantee (§35). The ledger is grouped into the product's declared data domains (the STREAM
+     * roots) and run through `buildTenantExport`, which refuses to call the result complete unless
+     * every declared domain is present — with zero rows where empty, absence and emptiness being
+     * different facts — and each is checksummed, because an export nobody can verify is a file, not
+     * evidence (P-06 / OD-09). Deriving the domain list from the same constant the writes use is
+     * what stops the exporter quietly falling behind the product.
+     */
+    exportTenant: async (tenantId, requestedBy) => {
+      const byDomain = new Map<string, ExportedEvent[]>();
+      for (const r of await input.store.exportTenant(tenantId)) {
+        const domain = r.stream.split(PART)[0] ?? r.stream;
+        const mapped: ExportedEvent = {
+          seq: r.seq, stream: r.stream, id: r.event.id, type: r.event.type,
+          occurredAt: r.event.occurredAt, idempotencyKey: r.event.idempotencyKey,
+          source: r.event.source, version: r.event.version, payload: r.event.payload,
+        };
+        const list = byDomain.get(domain);
+        if (list === undefined) byDomain.set(domain, [mapped]); else list.push(mapped);
+      }
+      const declaredDomains = [...new Set<string>(Object.values(STREAM))];
+      const domains = declaredDomains.map((domain) => {
+        const rows = byDomain.get(domain) ?? [];
+        const serialized = JSON.stringify(rows);
+        return {
+          domain, rows: rows.length, format: 'jsonl' as const,
+          checksum: createHash('sha256').update(serialized).digest('hex'),
+          bytes: Buffer.byteLength(serialized, 'utf8'),
+          tenantId,
+        };
+      });
+      const manifest = buildTenantExport({
+        exportId: `exp-${tenantId}-${input.now()}`,
+        tenantId, requestedBy, declaredDomains, domains, at: input.now(),
+      });
+      const data: Record<string, readonly ExportedEvent[]> = {};
+      for (const [domain, evs] of byDomain) data[domain] = evs;
+      return { manifest, data };
     },
   };
 }

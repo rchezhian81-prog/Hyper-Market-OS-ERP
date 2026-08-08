@@ -88,6 +88,7 @@ class CountingStore implements EventStore {
   append: EventStore['append'] = (t, s, e) => this.inner.append(t, s, e);
   findByIdempotencyKey: EventStore['findByIdempotencyKey'] = (t, k) => this.inner.findByIdempotencyKey(t, k);
   latestOfType: EventStore['latestOfType'] = (t, s, ty) => this.inner.latestOfType(t, s, ty);
+  exportTenant: EventStore['exportTenant'] = (t) => this.inner.exportTenant(t);
   async readStream(
     t: string, s: string, opts?: { readonly sinceSeq?: number; readonly type?: string },
   ): Promise<readonly PersistedEvent[]> {

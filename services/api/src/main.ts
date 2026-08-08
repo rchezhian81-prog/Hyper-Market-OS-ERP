@@ -66,7 +66,7 @@ import { integrationRoutes } from '../../platform/src/integration';
 import { webhookRoutes, webhookHasher } from '../../platform/src/webhooks';
 import { connectorRoutes } from '../../platform/src/connectors';
 import { identityRoutes, tokenAuthenticator } from '../../identity/src/index';
-import { platformRoutes, inMemorySettings } from '../../platform/src/index';
+import { platformRoutes, inMemorySettings, emptyExportBundle } from '../../platform/src/index';
 import { purchaseRoutes } from '../../purchase/src/index';
 import { financeRoutes } from '../../finance/src/index';
 import { reportingRoutes } from '../../reporting/src/index';
@@ -280,7 +280,7 @@ export function buildSurface(deps: {
       : reportingAdapter({ store, now })),
     ...platformRoutes(store === undefined ? {
       probe: probes, flags: empty({}), setFlag: () => {}, recordSupportAccess: () => {},
-      settings: inMemorySettings(), now,
+      settings: inMemorySettings(), exportTenant: emptyExportBundle, now,
     } : platformAdapter({ store, now, probes, settings: deps.settings ?? inMemorySettings() })),
     ...migrationRoutes(store === undefined ? {
       target: (tenantId) => ({

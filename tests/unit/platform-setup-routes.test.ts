@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { platformRoutes, inMemorySettings, type PlatformDeps } from '../../services/platform/src/index';
+import { platformRoutes, inMemorySettings, emptyExportBundle, type PlatformDeps } from '../../services/platform/src/index';
 import type { RequestContext, Route } from '../../services/kernel/src/index';
 import type { SetupStatus } from '../../packages/tenant/src/index';
 
@@ -15,6 +15,7 @@ function deps(): PlatformDeps {
     setFlag: () => {},
     recordSupportAccess: () => {},
     settings: inMemorySettings(),
+    exportTenant: () => emptyExportBundle(),
     now: () => NOW,
   };
 }
