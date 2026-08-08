@@ -2713,6 +2713,29 @@ export function platformAdapter(input: {
     },
 
     branding: (tenantId) => latest<TenantBranding>(input.store, tenantId, STREAM.platform, 'TenantBrandingSet'),
+
+    /** An entitlement change is append-only and audited — who turned a module on, and when. */
+    setEntitlement: async (tenantId, feature, enabled, by) => {
+      const at = input.now();
+      await input.store.append(tenantId, STREAM.platform, makeEvent({
+        id: `entitlement-${feature}-${at}`,
+        type: 'TenantEntitlementSet',
+        occurredAt: at,
+        // Time is in the key: turning a feature off and back on are two facts worth keeping.
+        idempotencyKey: `entitlement-${tenantId}-${feature}-${at}`,
+        source: 'api/platform',
+        payload: { feature, enabled, at, by },
+      }));
+    },
+
+    /** The features currently ON — folded forward, latest change per feature wins, default off. */
+    entitlements: async (tenantId) => {
+      const changes = await allOf<{ feature: string; enabled: boolean }>(
+        input.store, tenantId, STREAM.platform, 'TenantEntitlementSet');
+      const state = new Map<string, boolean>();
+      for (const c of changes) state.set(c.feature, c.enabled);
+      return [...state.entries()].filter(([, on]) => on).map(([f]) => f);
+    },
   };
 }
 

@@ -94,7 +94,9 @@ import {
 import {
   DurableTenantSettings, setupItem, storePolicyFrom,
   InvalidSetupAnswerError, SetupVersionConflictError,
+  OPTIONAL_FEATURES, isOptionalFeature,
 } from '../../../packages/tenant/src/index';
+import { checkEntitlement } from '../../../packages/platform/src/plans';
 import { InMemoryConfigVersionStore } from '../../../packages/persistence/src/config-store';
 import type { TenantExport } from '../../../packages/platform/src/lifecycle';
 import { validateBranding, resolveBrand, type TenantBranding } from '../../../packages/platform/src/branding';
@@ -174,6 +176,10 @@ export interface PlatformDeps {
   readonly setBranding: (tenantId: string, branding: TenantBranding) => Promise<void> | void;
   /** The tenant's currently-set branding, or nothing (the caller resolves the neutral fallback). */
   readonly branding: (tenantId: string) => Promise<TenantBranding | undefined> | TenantBranding | undefined;
+  /** Turn an optional feature on/off for a tenant, append-only and audited (M36-FR-01). */
+  readonly setEntitlement: (tenantId: string, feature: string, enabled: boolean, by: string) => Promise<void> | void;
+  /** The optional features currently ON for a tenant — default-off, this tenant only (§35). */
+  readonly entitlements: (tenantId: string) => Promise<readonly string[]> | readonly string[];
   readonly now: () => string;
 }
 
@@ -354,6 +360,81 @@ export function platformRoutes(deps: PlatformDeps): readonly Route[] {
       handler: async (ctx) => {
         const stored = await deps.branding(ctx.tenantId);
         return { status: 200, body: resolveBrand({ tenantId: ctx.tenantId, branding: stored }) };
+      },
+    },
+    {
+      // Turn an optional feature (module/department) on or off for a tenant (M36-FR-01). Optional
+      // features are DEFAULT-OFF: a tenant gets only what it enables. The feature must be one the
+      // product actually offers — enabling a name that is not in the catalogue is refused, never
+      // invented. The tenant is the caller's, so one tenant's plan can never change another's (§35).
+      api: 'API-11', method: 'PUT', path: '/v1/platform/entitlements/:feature',
+      permission: 'platform.entitlement.manage', idempotent: true,
+      handler: async (ctx) => {
+        const feature = ctx.params['feature'] ?? '';
+        const body = (ctx.body ?? {}) as { enabled?: boolean };
+        if (typeof body.enabled !== 'boolean') {
+          throw apiError(400, {
+            code: 'entitlement_state_not_given',
+            whatHappened: 'An entitlement change must say true or false.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { "enabled": true|false }. Nothing changed.',
+          });
+        }
+        if (!isOptionalFeature(feature)) {
+          throw apiError(404, {
+            code: 'unknown_feature',
+            whatHappened: `"${feature}" is not an optional feature this product offers.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: `Choose one of: ${OPTIONAL_FEATURES.join(', ')}. Nothing changed.`,
+          });
+        }
+        await deps.setEntitlement(ctx.tenantId, feature, body.enabled, ctx.userId);
+        return { status: 200, body: { feature, enabled: body.enabled } };
+      },
+    },
+    {
+      // What a tenant is entitled to — it sees only its entitled modules (M36-FR-01). The full
+      // catalogue is returned alongside so "off" and "not a feature" stay distinguishable.
+      api: 'API-11', method: 'GET', path: '/v1/platform/entitlements',
+      permission: 'platform.entitlement.read',
+      handler: async (ctx) => {
+        const entitled = await deps.entitlements(ctx.tenantId);
+        const on = new Set(entitled);
+        return {
+          status: 200,
+          body: {
+            entitled: [...on].sort(),
+            available: [...OPTIONAL_FEATURES],
+            off: OPTIONAL_FEATURES.filter((f) => !on.has(f)),
+          },
+        };
+      },
+    },
+    {
+      // The authoritative entitlement DECISION for one feature — default-deny, with the SOURCE:
+      // "not entitled" is a sales conversation, "suspended" a billing one, and a consumer that
+      // gates on this must be able to tell them apart. The decision runs through the same
+      // `checkEntitlement` engine the plan tier will use; until the owner defines paid plans
+      // (OA-12) the enabled features are explicit grants against an empty base plan.
+      api: 'API-11', method: 'GET', path: '/v1/platform/entitlements/:feature',
+      permission: 'platform.entitlement.read',
+      handler: async (ctx) => {
+        const feature = ctx.params['feature'] ?? '';
+        if (!isOptionalFeature(feature)) {
+          throw apiError(404, {
+            code: 'unknown_feature',
+            whatHappened: `"${feature}" is not an optional feature this product offers.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: `Choose one of: ${OPTIONAL_FEATURES.join(', ')}.`,
+          });
+        }
+        const entitled = await deps.entitlements(ctx.tenantId);
+        const decision = checkEntitlement({
+          feature,
+          subscription: { tenantId: ctx.tenantId, planId: 'unplanned', startedOn: deps.now(), extraGrants: [...entitled] },
+          plan: { planId: 'unplanned', name: 'no paid plan configured', grants: [], limits: {}, monthlyPriceMinor: 0 },
+        });
+        return { status: 200, body: decision };
       },
     },
   ];
