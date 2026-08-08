@@ -280,7 +280,8 @@ export function buildSurface(deps: {
       : reportingAdapter({ store, now })),
     ...platformRoutes(store === undefined ? {
       probe: probes, flags: empty({}), setFlag: () => {}, recordSupportAccess: () => {},
-      settings: inMemorySettings(), exportTenant: emptyExportBundle, now,
+      settings: inMemorySettings(), exportTenant: emptyExportBundle,
+      setBranding: () => {}, branding: empty(undefined), now,
     } : platformAdapter({ store, now, probes, settings: deps.settings ?? inMemorySettings() })),
     ...migrationRoutes(store === undefined ? {
       target: (tenantId) => ({

@@ -97,6 +97,7 @@ import {
 } from '../../../packages/tenant/src/index';
 import { InMemoryConfigVersionStore } from '../../../packages/persistence/src/config-store';
 import type { TenantExport } from '../../../packages/platform/src/lifecycle';
+import { validateBranding, resolveBrand, type TenantBranding } from '../../../packages/platform/src/branding';
 
 /**
  * Durable per-tenant settings for the setup surface, backed by the in-memory version store.
@@ -169,6 +170,10 @@ export interface PlatformDeps {
    * (§35). `requestedBy` names who took it, so the export is attributable.
    */
   readonly exportTenant: (tenantId: string, requestedBy: string) => Promise<TenantExportBundle> | TenantExportBundle;
+  /** Persist a tenant's white-label branding, versioned and append-only (M36-FR-02). */
+  readonly setBranding: (tenantId: string, branding: TenantBranding) => Promise<void> | void;
+  /** The tenant's currently-set branding, or nothing (the caller resolves the neutral fallback). */
+  readonly branding: (tenantId: string) => Promise<TenantBranding | undefined> | TenantBranding | undefined;
   readonly now: () => string;
 }
 
@@ -314,6 +319,41 @@ export function platformRoutes(deps: PlatformDeps): readonly Route[] {
         // export IS the answer (M36-FR-03). A caller must be TOLD an export is not whole rather
         // than handed a smaller file and left to discover the gap months later.
         return { status: 200, body: { export: bundle.manifest, data: bundle.data } };
+      },
+    },
+    {
+      // Set a tenant's white-label branding (M36-FR-02). The tenant is ALWAYS the caller's — never
+      // a field the client sends — so a rebrand can never be aimed at another retailer's paperwork
+      // (§35). Validated first through the authoritative engine: a protected legal term renamed
+      // ("tax invoice" → "bill"), an unreadable colour pair, or an invalid hex is REFUSED and
+      // nothing is stored, because catching it at publish is the only cheap moment.
+      api: 'API-11', method: 'PUT', path: '/v1/platform/branding',
+      permission: 'platform.branding.write', idempotent: true,
+      handler: async (ctx) => {
+        const body = (ctx.body ?? {}) as Partial<TenantBranding>;
+        const branding: TenantBranding = { ...body, tenantId: ctx.tenantId };
+        const validation = validateBranding({ branding, tenantId: ctx.tenantId });
+        if (!validation.valid) {
+          throw apiError(422, {
+            code: 'branding_refused',
+            whatHappened: validation.detail,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Fix the blocking issue(s) and send again. Nothing was stored.',
+          });
+        }
+        await deps.setBranding(ctx.tenantId, branding);
+        return { status: 200, body: { resolved: resolveBrand({ tenantId: ctx.tenantId, branding }), validation } };
+      },
+    },
+    {
+      // Resolve the brand to render for a tenant (M36-FR-02). An unset field falls back to a
+      // NEUTRAL default, never to another tenant's — a missing logo shows a neutral mark, not the
+      // previous tenant's, which would be a retailer invoicing under a competitor's name.
+      api: 'API-11', method: 'GET', path: '/v1/platform/branding',
+      permission: 'platform.branding.read',
+      handler: async (ctx) => {
+        const stored = await deps.branding(ctx.tenantId);
+        return { status: 200, body: resolveBrand({ tenantId: ctx.tenantId, branding: stored }) };
       },
     },
   ];
