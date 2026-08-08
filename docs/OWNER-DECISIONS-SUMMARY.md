@@ -1,0 +1,45 @@
+# What the build needs from you now — one page
+
+_For Mr. Elanchezhian. Plain English. Last updated 8 August 2026._
+
+The autonomous build has now wired and tested every part of the system that could be
+completed **without a decision from you**. This page lists the decisions that are now the
+only thing standing between "built and tested" and "switched on for real," newest first.
+None of them stops the store trading, and none is urgent this week — but each one unblocks
+a specific slice of the product. Full detail for every item is in
+`docs/OWNER-ACTION-REGISTER.md`; this is the short version.
+
+## Where the product stands
+
+- **Requirements & design:** ~85% documented against the roadmap.
+- **Built, wired and automatically tested end-to-end:** ~35% of the product, growing steadily.
+- **Fully wired modules:** the POS sale path, security/roles, pricing, stock availability, the
+  warehouse, fresh-food/production (M11), and loss-prevention (M15) — all proven against a real
+  database.
+- **What is left** is either one of the five decisions below, or deeper analytics that depend on
+  the **stock-valuation method** decision (also below).
+
+## The decisions, and what each one switches on
+
+| # | The decision | Recommended first step | What it switches on | Urgency |
+|---|---|---|---|---|
+| **OA-4** | **Payment provider + login (identity) provider.** Real card/UPI payment and real staff single-sign-on both need a chosen provider and keys. | Keep the test payment mode and test login for the pilot; choose providers before real money and real logins. | Online payment, real settlement matching, production staff logins. | Before production (pilot runs without it). |
+| **OA-13** | **How customers log in to the shopping app** — browse as a guest, or sign in with a one-time SMS code (needs an SMS provider). | Guest browsing for the pilot; add accounts later. | The whole customer app / web store (M20) — the last unbuilt module. | Before the customer app goes live. |
+| **OA-11** | **Delivery service areas** — which branches deliver, how far each reaches, how many delivery slots, which sites are "dark stores." | Nominate one pilot branch with one radius and one slot size. | Online-order routing and delivery slots (M18-FR-03, M20-FR-03). | Before delivery / online orders go live. |
+| **OA-12** | **Subscription plans & pricing** (only relevant when selling this system to other retailers). | Defer — keep per-tenant feature switches (already built) for now. | Paid plans, metered billing for a multi-retailer product (M36). | Only when commercialising to other shops. |
+| **Valuation method** | **How stock is valued** — weighted-average, FIFO, or standard cost. This is an accounting-policy choice. | Confirm the method your accountant already uses. | Stock-value & margin analytics (ageing/turns/GMROI, M08-FR-04), margin reporting (M29), and stock valuation feeding the books (M23). | Before month-end stock valuation and margin reports. |
+
+## What continues regardless
+
+Everything that does **not** need a decision is being built and merged as it becomes ready —
+in-store operations, the warehouse, back-office controls (credit, collections, commissions,
+supplier statements, facilities, waste, integration health), and the multi-tenant platform
+controls (data export, branding, feature entitlements). The engines behind the blocked items
+above are also **already built and tested** — only their live switch-on waits on you.
+
+## What I recommend
+
+Take the two that matter for a pilot — **OA-4** (payment/login: keep test mode for now, choose
+providers before go-live) and **OA-13** (customer login: guest browse first) — and answer them
+when you're planning the pilot. The other three can wait for their moment. Answer any of them in
+one line and the matching slice gets wired and tested the same way everything else has been.
