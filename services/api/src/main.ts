@@ -216,7 +216,7 @@ export function buildSurface(deps: {
       ? { rules: empty([]), recordRule: () => {}, now }
       : lpRulesAdapter({ store, now })),
     ...fraudSignalsRoutes(store === undefined
-      ? { thresholds: empty({}), recordThresholds: () => {}, now }
+      ? { thresholds: empty({}), recordThresholds: () => {}, bankHolders: empty([]), now }
       : fraudSignalsAdapter({ store, now })),
     ...customerRoutes(store === undefined ? {
       consentRecords: empty([]), appendConsent: () => {}, pointsBalance: empty(undefined),

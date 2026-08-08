@@ -1365,6 +1365,21 @@ export function fraudSignalsAdapter(input: {
         payload: thresholds,
       }));
     },
+
+    /**
+     * Each supplier's CURRENT bank account, folded from the append-only bank-change ledger (the
+     * last change per supplier wins), as holder→account references for duplicate detection
+     * (M15-FR-03). Supplier accounts are what this API captures; employee accounts would join the
+     * same fold when they are recorded. The `newAccount` ref is masked/tokenised (PRV).
+     */
+    bankHolders: async (tenantId) => {
+      const changes = await allOf<BankChangeRequest>(input.store, tenantId, STREAM.purchase, 'SupplierBankChanged');
+      const currentAccount = new Map<string, string>();
+      for (const c of changes) currentAccount.set(c.supplierId, c.newAccount);
+      return [...currentAccount.entries()].map(([holderId, accountRef]) => ({
+        holderId, holderType: 'supplier' as const, accountRef,
+      }));
+    },
   };
 }
 
