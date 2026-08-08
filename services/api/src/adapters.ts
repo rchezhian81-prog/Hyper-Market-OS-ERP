@@ -74,7 +74,9 @@ import type { PromotionDeps, LaunchRecord } from '../../pricing/src/promotions';
 import type { PromotionCatalogueDeps } from '../../pricing/src/promotion-catalogue';
 import type { Promotion } from '../../../packages/promotions/src/promotions';
 import { expired } from '../../orders/src/index';
-import type { Reservation, OrdersDeps } from '../../orders/src/index';
+import type {
+  Reservation, OrdersDeps, PlacedOrder, OrderTransition, OrderStateView,
+} from '../../orders/src/index';
 import type { DeliveryAttempt, FulfilmentDeps } from '../../fulfilment/src/index';
 import type { IdentityDeps } from '../../identity/src/index';
 import type { Role, RoleAssignment } from '../../../packages/rbac/src/rbac';
@@ -132,6 +134,7 @@ export const STREAM = {
   integration: 'integration',
   lossPrevention: 'loss-prevention',
   warehouse: 'warehouse',
+  orders: 'orders',
 } as const;
 
 const payloadOf = <T>(e: PersistedEvent): T => e.event.payload as T;
@@ -211,6 +214,8 @@ const STORED_VALUE_INDEX = streamName(STREAM.loyalty, 'instruments');
 const forDriverRun = (driverId: string, runDate: string): string =>
   streamName(STREAM.delivery, driverId, runDate);
 const forLocation = (locationId: string): string => streamName(STREAM.reservations, locationId);
+/** Each order's lifecycle folds one stream — one order's history end-to-end, not the whole shop's. */
+const forOrder = (orderId: string): string => streamName(STREAM.orders, orderId);
 const forInvoice = (invoiceId: string): string => streamName(STREAM.purchase, 'invoice', invoiceId);
 /** Each supplier partner's portal config and submissions fold one stream — one partner, not the shop. */
 const forPortalPartner = (partnerId: string): string => streamName(STREAM.purchase, 'partner', partnerId);
@@ -2269,11 +2274,16 @@ export function ordersAdapter(input: {
         .map((a) => [a.productId, a.onHandMinor] as const),
     ),
 
-    /** Held and not yet lapsed. An expired hold is stock on the shelf, not stock spoken for. */
+    /**
+     * Held, not lapsed and not released. An expired hold is stock on the shelf; a released hold
+     * (a cancelled order, M18-FR-04) is stock back on the shelf too — a cancel that forgot to
+     * subtract here is the commonest phantom out-of-stock, so the release ledger is folded in.
+     */
     outstanding: async (tenantId, locationId) => {
       const held = await allOf<Reservation>(input.store, tenantId, forLocation(locationId), 'ReservationHeld');
+      const released = await releasedIds(input.store, tenantId, locationId);
       const lapsed = new Set(expired(held, input.now()).map((r) => r.reservationId));
-      return held.filter((r) => !lapsed.has(r.reservationId));
+      return held.filter((r) => !released.has(r.reservationId) && !lapsed.has(r.reservationId));
     },
 
     holdReservations: async (tenantId, rs) => {
@@ -2288,7 +2298,84 @@ export function ordersAdapter(input: {
         }));
       }
     },
+
+    /**
+     * Record the order so it can be read and moved through its lifecycle (M18-FR-01). Idempotent
+     * on the order id: a re-promise of an already-placed order does not overwrite how it began.
+     */
+    recordPlaced: async (tenantId, order: PlacedOrder) => {
+      await input.store.append(tenantId, forOrder(order.orderId), makeEvent({
+        id: `ord-placed-${order.orderId}`,
+        type: 'OrderPlaced',
+        occurredAt: order.placedAt,
+        idempotencyKey: `ord-placed-${tenantId}-${order.orderId}`,
+        source: 'api/orders',
+        payload: order,
+      }));
+    },
+
+    /** Current lifecycle state — the placed record plus the last transition; a fold, never a field. */
+    orderState: async (tenantId, orderId): Promise<OrderStateView | undefined> => {
+      const placed = await latest<PlacedOrder>(input.store, tenantId, forOrder(orderId), 'OrderPlaced');
+      if (placed === undefined) return undefined;
+      const transitions = await allOf<OrderTransition>(input.store, tenantId, forOrder(orderId), 'OrderTransitioned');
+      const last = transitions[transitions.length - 1];
+      return {
+        state: last === undefined ? placed.state : last.to,
+        locationId: placed.locationId,
+        lines: placed.lines,
+      };
+    },
+
+    /** This order's reservations that are still holding stock — held, not released, not lapsed. */
+    orderReservations: async (tenantId, orderId, locationId) => {
+      const held = await allOf<Reservation>(input.store, tenantId, forLocation(locationId), 'ReservationHeld');
+      const released = await releasedIds(input.store, tenantId, locationId);
+      const lapsed = new Set(expired(held, input.now()).map((r) => r.reservationId));
+      return held.filter((r) =>
+        r.orderId === orderId && !released.has(r.reservationId) && !lapsed.has(r.reservationId));
+    },
+
+    recordTransition: async (tenantId, t: OrderTransition) => {
+      await input.store.append(tenantId, forOrder(t.orderId), makeEvent({
+        id: `ord-txn-${t.orderId}-${t.event}`,
+        type: 'OrderTransitioned',
+        occurredAt: t.at,
+        idempotencyKey: `ord-txn-${tenantId}-${t.orderId}-${t.event}`,
+        source: 'api/orders',
+        payload: t,
+      }));
+    },
+
+    /**
+     * Give every reservation back — a compensating release event per hold, never an edit of the
+     * hold (ledgers are append-only, hard rule #2). Idempotent on the reservation id.
+     */
+    releaseReservations: async (tenantId, rs) => {
+      for (const r of rs) {
+        await input.store.append(tenantId, forLocation(r.locationId), makeEvent({
+          id: `res-rel-${r.reservationId}`,
+          type: 'ReservationReleased',
+          occurredAt: input.now(),
+          idempotencyKey: `res-rel-${tenantId}-${r.reservationId}`,
+          source: 'api/orders',
+          payload: {
+            reservationId: r.reservationId, orderId: r.orderId,
+            productId: r.productId, locationId: r.locationId, at: input.now(),
+          },
+        }));
+      }
+    },
   };
+}
+
+/** The set of reservation ids released (cancelled) at a location — folded from the release ledger. */
+async function releasedIds(
+  store: EventStore, tenantId: string, locationId: string,
+): Promise<ReadonlySet<string>> {
+  const released = await allOf<{ reservationId: string }>(
+    store, tenantId, forLocation(locationId), 'ReservationReleased');
+  return new Set(released.map((r) => r.reservationId));
 }
 
 export function fulfilmentAdapter(input: {

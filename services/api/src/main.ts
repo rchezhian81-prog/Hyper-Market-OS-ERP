@@ -228,6 +228,8 @@ export function buildSurface(deps: {
     ...ordersRoutes(store === undefined ? {
       onHand: empty(new Map()), outstanding: empty([]), holdReservations: () => {},
       holdMinutes: HOLD_MINUTES, now,
+      recordPlaced: () => {}, orderState: empty(undefined), orderReservations: empty([]),
+      recordTransition: () => {}, releaseReservations: () => {},
     } : ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES })),
     ...fulfilmentRoutes(store === undefined
       ? { appendAttempt: () => {}, attempts: empty([]), assigned: empty([]), now }
