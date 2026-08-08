@@ -16,6 +16,8 @@ function deps(): PlatformDeps {
     recordSupportAccess: () => {},
     settings: inMemorySettings(),
     exportTenant: () => emptyExportBundle(),
+    setBranding: () => {},
+    branding: () => undefined,
     now: () => NOW,
   };
 }

@@ -84,6 +84,7 @@ import type { Role, RoleAssignment } from '../../../packages/rbac/src/rbac';
 import type { DependencyProbe, FeatureFlagChange, PlatformDeps, ExportedEvent } from '../../platform/src/index';
 import { inMemorySettings } from '../../platform/src/index';
 import { buildTenantExport } from '../../../packages/platform/src/lifecycle';
+import type { TenantBranding } from '../../../packages/platform/src/branding';
 import type { DurableTenantSettings } from '../../../packages/tenant/src/index';
 import { InMemoryNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
 import { figure } from '../../reporting/src/index';
@@ -2693,6 +2694,25 @@ export function platformAdapter(input: {
       for (const [domain, evs] of byDomain) data[domain] = evs;
       return { manifest, data };
     },
+
+    /**
+     * Branding is versioned and append-only: each set is a new fact with a time in its key, so
+     * "what did the brand look like then, and who changed it" is answerable, and the current brand
+     * is the LATEST set — a fold, never an overwritten field (hard rule #2).
+     */
+    setBranding: async (tenantId, branding) => {
+      const at = input.now();
+      await input.store.append(tenantId, STREAM.platform, makeEvent({
+        id: `branding-${tenantId}-${at}`,
+        type: 'TenantBrandingSet',
+        occurredAt: at,
+        idempotencyKey: `branding-${tenantId}-${at}`,
+        source: 'api/platform',
+        payload: branding,
+      }));
+    },
+
+    branding: (tenantId) => latest<TenantBranding>(input.store, tenantId, STREAM.platform, 'TenantBrandingSet'),
   };
 }
 
