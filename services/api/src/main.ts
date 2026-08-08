@@ -212,7 +212,7 @@ export function buildSurface(deps: {
       accruals: empty([]), recordAccrual: () => {}, now,
     } : b2bCommissionAdapter({ store, now })),
     ...b2bDocumentsRoutes(store === undefined ? {
-      document: empty(undefined), convertedQuotationIds: empty([]), recordDocument: () => {},
+      document: empty(undefined), documents: empty([]), convertedQuotationIds: empty([]), recordDocument: () => {},
       allocateNumber: () => Promise.resolve(1), creditAllowed: empty(false), now,
     } : b2bDocumentsAdapter({ store, now, numberSeries: deps.numberSeries })),
     ...concessionRoutes(store === undefined ? {

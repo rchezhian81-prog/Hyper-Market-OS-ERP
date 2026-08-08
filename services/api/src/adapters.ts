@@ -1170,6 +1170,8 @@ export function b2bDocumentsAdapter(input: {
     document: async (tenantId, customerId, documentId) =>
       (await foldDocuments(tenantId, customerId)).find((d) => d.documentId === documentId),
 
+    documents: (tenantId, customerId) => foldDocuments(tenantId, customerId),
+
     // Which quotations already became an order — the derivedFrom of every sales order on the stream.
     convertedQuotationIds: async (tenantId, customerId) =>
       (await foldDocuments(tenantId, customerId))
