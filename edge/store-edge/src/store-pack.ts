@@ -549,6 +549,26 @@ export interface PackWarehouseOrdered {
   readonly currency: string;
 }
 
+/** A pending warehouse approval the supervisor may decide (§28) — a stock-adjustment, count variance,
+ *  or over-delivery raised by the floor. The maker is `requestedBy`; the supervisor cannot be them. */
+export interface PackWarehouseApproval {
+  readonly id: string;
+  readonly subjectType: string;
+  readonly subjectRef: string;
+  readonly requestedBy: string;
+  readonly branchId?: string | null;
+  readonly valueMinor?: number;
+  readonly currency?: string;
+}
+
+/** Who the supervisor is, for the maker-checker check: their id, branch scope and approval limit. */
+export interface PackWarehouseSupervisor {
+  readonly userId: string;
+  readonly branchScope: readonly string[] | 'all';
+  readonly authorityLimitMinor?: number;
+  readonly currency?: string;
+}
+
 /**
  * The warehouse work the cloud assigned this box (M09 / OA-9) — the bins, the catalogue for
  * scanning, what is on order, what is awaiting put-away and what is under recall. The offline
@@ -567,6 +587,9 @@ export interface PackWarehouse {
   readonly grnId?: string;
   readonly recalledProductIds?: readonly string[];
   readonly recalledBatchIds?: readonly string[];
+  /** Pending §28 approvals the supervisor may decide, and who the supervisor is. */
+  readonly approvals?: readonly PackWarehouseApproval[];
+  readonly supervisor?: PackWarehouseSupervisor;
 }
 
 /**

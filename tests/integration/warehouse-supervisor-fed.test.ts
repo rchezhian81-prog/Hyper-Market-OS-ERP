@@ -86,3 +86,68 @@ describe('the warehouse supervisor screen is fed from the authoritative warehous
     expect(bootWarehouseSupervisor(undefined)).toBeNull();
   });
 });
+
+describe('the supervisor decides the §28 approvals the floor raises, and queues them for sync', () => {
+  const withApprovals = {
+    version: 4,
+    warehouse: {
+      assignmentId: 'wa-1', workerId: 'u-wh', storeId: 'store-1',
+      bins: [{ binId: 'B-PICK', storeId: 'store-1', capacityMinor: 100, pickable: true }],
+      supervisor: { userId: 'u-super', branchScope: 'all', authorityLimitMinor: 1_000_00, currency: 'INR' },
+      approvals: [
+        { id: 'ap-1', subjectType: 'stock_adjustment', subjectRef: 'adj-1', requestedBy: 'u-wh', valueMinor: 500_00, currency: 'INR' },
+        { id: 'ap-own', subjectType: 'count_variance', subjectRef: 'cnt-9', requestedBy: 'u-super', valueMinor: 200_00, currency: 'INR' },
+      ],
+    },
+  };
+
+  const supervisor = () =>
+    bootWarehouseSupervisor(warehouseSupervisorPayload(screenInput(readPack(withApprovals, NOW))) as unknown as SupervisorData)!;
+
+  it('shows the queue, marking the supervisor’s own request not actionable (§28)', () => {
+    const q = supervisor().approvalQueue();
+    expect(q.known).toBe(true);
+    if (!q.known) return;
+    expect(q.rows.find((r) => r.request.id === 'ap-1')?.actionable).toBe(true);
+    const own = q.rows.find((r) => r.request.id === 'ap-own');
+    expect(own?.actionable).toBe(false);
+    expect(own?.blockedReason).toBe('own_request');
+  });
+
+  it('approves a floor request with a reason code and queues the decision', () => {
+    const s = supervisor();
+    const outbox = new SyncOutbox();
+    const out = s.decide({ requestId: 'ap-1', decision: 'approved', reasonCode: 'checked_the_stock', decidedAt: NOW }, outbox);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.request).toMatchObject({ id: 'ap-1', status: 'approved', decidedBy: 'u-super', reason: 'checked_the_stock' });
+    expect(outbox.pending().map((i) => i.event.type)).toEqual(['WarehouseApprovalDecided']);
+  });
+
+  it('refuses the supervisor deciding their own request (§28) and queues nothing', () => {
+    const s = supervisor();
+    const outbox = new SyncOutbox();
+    const out = s.decide({ requestId: 'ap-own', decision: 'approved', reasonCode: 'within_policy', decidedAt: NOW }, outbox);
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.refusal).toBe('self_approval_forbidden');
+    expect(outbox.unsentCount()).toBe(0);
+  });
+
+  it('refuses an invented reason code, and an unknown request', () => {
+    const s = supervisor();
+    const outbox = new SyncOutbox();
+    expect((s.decide({ requestId: 'ap-1', decision: 'approved', reasonCode: 'because_i_said_so', decidedAt: NOW }, outbox) as { refusal: string }).refusal).toBe('unknown_reason_code');
+    expect((s.decide({ requestId: 'ghost', decision: 'approved', reasonCode: 'within_policy', decidedAt: NOW }, outbox) as { refusal: string }).refusal).toBe('request_not_found');
+    expect(outbox.unsentCount()).toBe(0);
+  });
+
+  it('answers the queue NOT KNOWN when the box sent no approvals or no supervisor identity', () => {
+    const noAppr = bootWarehouseSupervisor(warehouseSupervisorPayload(screenInput(readPack({ version: 4, warehouse: {
+      assignmentId: 'wa-1', workerId: 'u-wh', storeId: 'store-1',
+      bins: [{ binId: 'B-PICK', storeId: 'store-1', capacityMinor: 100, pickable: true }],
+    } }, NOW))) as unknown as SupervisorData)!;
+    expect(noAppr.approvalQueue().known).toBe(false);
+    expect(noAppr.decide({ requestId: 'x', decision: 'approved', reasonCode: 'within_policy', decidedAt: NOW }, new SyncOutbox())).toMatchObject({ ok: false, refusal: 'not_configured' });
+  });
+});
