@@ -17,6 +17,7 @@ import { bootOwner, forgetfulQueueStore } from '../../apps/owner-app/src/browser
 import { bootShop, forgetfulBasket } from '../../apps/customer-app/src/browser-entry';
 import { bootPicker } from '../../apps/picker-app/src/browser-entry';
 import { bootWarehouse, type WarehouseAssignment } from '../../apps/warehouse-app/src/index';
+import { bootWarehouseSupervisor, type SupervisorData } from '../../apps/web-erp/src/warehouse-supervisor-session';
 import { bootDriver } from '../../apps/delivery-app/src/browser-entry';
 import { DeviceOutbox, noDeviceStore } from '../../packages/sync/src/device-outbox';
 import type { PackDelivery, PackDriver } from '../../edge/store-edge/src/store-pack';
@@ -516,6 +517,31 @@ describe('the other five screens boot on what the box served them', () => {
     const put = session.putAway({ commandId: 'm1', scannedProductId: 'p1', scannedBinId: 'B-1', quantityMinor: 10, uom: 'ea', at: NOW });
     expect(put.result.accepted).toBe(true);
     expect(session.binContents()['B-1|p1|']).toBe(10);
+  });
+
+  it('the warehouse supervisor opens the oversight the box served — occupancy, stock and exceptions', async () => {
+    // The supervisory half over the same socket: bin occupancy + stock from the served contents, and
+    // the exception queue (here, a bin packed over its capacity). Same authoritative data as the handheld.
+    const base = await serve(snapshotOf({
+      pack: pack({
+        warehouse: known({
+          assignmentId: 'wa-1', workerId: 'u-wh', storeId: 'store-1',
+          bins: [{ binId: 'B-1', storeId: 'store-1', capacityMinor: 100, pickable: true }],
+          contents: { 'B-1|p1|': 40, 'B-1|p2|': 80 }, // 120 in a bin of 100 → over capacity
+        }),
+      }),
+    }));
+    const payload = (await payloadFromScreen(base, 'warehouse-supervisor'))!;
+    const s = bootWarehouseSupervisor(payload as unknown as SupervisorData)!;
+
+    expect(s).not.toBeNull();
+    expect(s.bins()[0]).toMatchObject({ binId: 'B-1', usedMinor: 120, pctFull: 120 });
+    const stock = s.stock();
+    expect(stock.known).toBe(true);
+    const ex = s.exceptions();
+    expect(ex.known).toBe(true);
+    if (!ex.known) return;
+    expect(ex.rows.some((r) => r.kind === 'over_capacity' && r.binId === 'B-1')).toBe(true);
   });
 
   it('the till gets a catalogue it can ACTUALLY BUILD, and scans with no line at all', async () => {
