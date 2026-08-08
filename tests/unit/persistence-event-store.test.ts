@@ -65,6 +65,18 @@ function eventStoreContract(makeStore: () => EventStore) {
     expect(await store.readStream('t1', 'stock')).toHaveLength(1);
     expect(await store.readStream('t1', 'cash')).toHaveLength(1);
   });
+
+  it('exports a tenant\'s whole dataset — every stream, append order, its own tenant only (M36-FR-03)', async () => {
+    const store = makeStore();
+    await store.append('t1', 'stock', ev('e1', 'k1'));
+    await store.append('t1', 'cash', ev('e2', 'k2'));
+    await store.append('t2', 'stock', ev('e3', 'k3')); // another tenant's row — must never appear
+    const dump = await store.exportTenant('t1');
+    expect(dump.map((r) => r.event.id)).toEqual(['e1', 'e2']); // both streams, in seq order
+    expect(dump.map((r) => r.seq)).toEqual([1, 2]);
+    expect(dump.every((r) => r.tenantId === 't1')).toBe(true); // §35 isolation
+    expect(await store.exportTenant('t2')).toHaveLength(1);
+  });
 }
 
 describe('InMemoryEventStore (reference contract)', () => {
@@ -147,5 +159,21 @@ describe('SqlEventStore', () => {
     const store = new SqlEventStore(client);
     const found = await store.findByIdempotencyKey('t1', 'k1');
     expect(found?.event.occurredAt).toBe('2026-08-02T09:00:00.000Z');
+  });
+
+  it('exports a tenant across all streams, scoped by tenant_id and ordered by seq (M36-FR-03)', async () => {
+    const client = new FakeSqlClient().program([
+      row({ seq: 1, id: 'e1', stream: 'stock' }),
+      row({ seq: 2, id: 'e2', stream: 'cash' }),
+    ]);
+    const store = new SqlEventStore(client);
+    const dump = await store.exportTenant('t1');
+    expect(dump.map((r) => r.event.id)).toEqual(['e1', 'e2']);
+    const sql = client.calls[0]?.sql ?? '';
+    // No stream filter — the whole tenant; the tenant is the ONLY bound scope (§35 isolation).
+    expect(sql).toContain('WHERE tenant_id = $1');
+    expect(sql).not.toContain('stream = $2');
+    expect(sql).toContain('ORDER BY seq ASC');
+    expect(client.calls[0]?.params).toEqual(['t1']);
   });
 });

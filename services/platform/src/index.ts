@@ -96,6 +96,7 @@ import {
   InvalidSetupAnswerError, SetupVersionConflictError,
 } from '../../../packages/tenant/src/index';
 import { InMemoryConfigVersionStore } from '../../../packages/persistence/src/config-store';
+import type { TenantExport } from '../../../packages/platform/src/lifecycle';
 
 /**
  * Durable per-tenant settings for the setup surface, backed by the in-memory version store.
@@ -116,6 +117,46 @@ export interface FeatureFlagChange {
   readonly changedAt: string;
 }
 
+/**
+ * One event in a tenant-data export (M36-FR-03) — the domain event plus where it sits in the
+ * ledger. A portable, self-describing record: no database internals, so a tenant (or an auditor)
+ * can read and re-import it elsewhere (P-06 / OD-09).
+ */
+export interface ExportedEvent {
+  readonly seq: number;
+  readonly stream: string;
+  readonly id: string;
+  readonly type: string;
+  readonly occurredAt: string;
+  readonly idempotencyKey: string;
+  readonly source: string;
+  readonly version: number;
+  readonly payload: unknown;
+}
+
+/**
+ * A tenant's export: the certified manifest (M36-FR-03 `buildTenantExport` — complete or refused,
+ * every domain checksummed) AND the data itself, grouped by domain. The manifest without the data
+ * is a promise; the data without the manifest is a file nobody can verify. Both, or it is not an
+ * export.
+ */
+export interface TenantExportBundle {
+  readonly manifest: TenantExport;
+  readonly data: Readonly<Record<string, readonly ExportedEvent[]>>;
+}
+
+/** An empty bundle for the dev stub and tests — no data means no manifest to certify. */
+export function emptyExportBundle(): TenantExportBundle {
+  return {
+    manifest: {
+      exportId: 'none', tenantId: '', requestedBy: '', at: '1970-01-01T00:00:00.000Z',
+      outcome: 'no_manifest', complete: false, domains: [], missing: [],
+      totalRows: 0, totalBytes: 0, detail: 'no export taken',
+    },
+    data: {},
+  };
+}
+
 export interface PlatformDeps {
   readonly probe: () => Promise<readonly DependencyProbe[]> | readonly DependencyProbe[];
   readonly flags: (tenantId: string) => Promise<Readonly<Record<string, boolean>>> | Readonly<Record<string, boolean>>;
@@ -123,6 +164,11 @@ export interface PlatformDeps {
   readonly recordSupportAccess: (r: SupportAccessRequest, expiresAt: string) => Promise<void> | void;
   /** Durable per-tenant settings backing the self-service store-setup surface (M33-FR-01). */
   readonly settings: DurableTenantSettings;
+  /**
+   * A tenant's whole dataset, certified complete (M36-FR-03) — this tenant only, never another
+   * (§35). `requestedBy` names who took it, so the export is attributable.
+   */
+  readonly exportTenant: (tenantId: string, requestedBy: string) => Promise<TenantExportBundle> | TenantExportBundle;
   readonly now: () => string;
 }
 
@@ -253,6 +299,21 @@ export function platformRoutes(deps: PlatformDeps): readonly Route[] {
           throw e;
         }
         return { status: 200, body: await deps.settings.status(ctx.tenantId) };
+      },
+    },
+    {
+      // A tenant exports its whole dataset (M36-FR-03) — a tenant owns and can export its data
+      // (P-06 / OD-09). The export is strictly the CALLER's tenant, scoped at the store by
+      // `ctx.tenantId`, so no request can reach across the isolation boundary (§35). It is a read:
+      // nothing is removed, and audit evidence is exported, not deleted (hard rule #6).
+      api: 'API-11', method: 'GET', path: '/v1/platform/export',
+      permission: 'platform.tenant.export',
+      handler: async (ctx) => {
+        const bundle = await deps.exportTenant(ctx.tenantId, ctx.userId);
+        // 200 even when the manifest reports the export incomplete: the truthful state of the
+        // export IS the answer (M36-FR-03). A caller must be TOLD an export is not whole rather
+        // than handed a smaller file and left to discover the gap months later.
+        return { status: 200, body: { export: bundle.manifest, data: bundle.data } };
       },
     },
   ];

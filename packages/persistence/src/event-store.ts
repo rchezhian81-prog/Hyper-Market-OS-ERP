@@ -69,6 +69,14 @@ export interface EventStore {
    * version are we on?" was deserialising all of them to look at the last.
    */
   latestOfType(tenantId: string, stream: string, type: string): Promise<PersistedEvent | undefined>;
+  /**
+   * Every event a tenant holds, across all its streams, in append order — the tenant's whole
+   * dataset, for export (M36-FR-03: a tenant owns and can export its data, P-06 / OD-09).
+   * Strictly tenant-scoped: it never returns another tenant's rows, which is the critical
+   * isolation guarantee (§35). A full read by design — an export reads everything — so it is a
+   * deliberate, governed call, not a hot path, and it removes nothing (hard rule #6).
+   */
+  exportTenant(tenantId: string): Promise<readonly PersistedEvent[]>;
 }
 
 function tenantKey(tenantId: string, idempotencyKey: string): string {
@@ -130,6 +138,12 @@ export class InMemoryEventStore implements EventStore {
       opts === undefined || (opts.type === undefined && opts.from === undefined && opts.to === undefined)
         ? tail : tail.filter(matches),
     );
+  }
+
+  exportTenant(tenantId: string): Promise<readonly PersistedEvent[]> {
+    // The master list is seq-ordered by construction, so a filter over it yields the tenant's
+    // whole history in append order. Only this tenant's rows — never another's (§35).
+    return Promise.resolve(this.records.filter((r) => r.tenantId === tenantId));
   }
 
   latestOfType(tenantId: string, stream: string, type: string): Promise<PersistedEvent | undefined> {
@@ -257,5 +271,16 @@ export class SqlEventStore implements EventStore {
       [tenantId, stream, type],
     );
     return rows.length > 0 ? rowToPersisted(rows[0]!) : undefined;
+  }
+
+  async exportTenant(tenantId: string): Promise<readonly PersistedEvent[]> {
+    // One tenant's whole ledger, in append order. `WHERE tenant_id = $1` is the isolation
+    // boundary — a bug here leaks one retailer's data to another (§35), so the export never
+    // widens beyond the single bound parameter.
+    const rows = await this.client.query(
+      `SELECT ${COLUMNS} FROM event_ledger WHERE tenant_id = $1 ORDER BY seq ASC`,
+      [tenantId],
+    );
+    return rows.map(rowToPersisted);
   }
 }
