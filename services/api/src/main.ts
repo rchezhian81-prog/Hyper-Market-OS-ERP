@@ -57,6 +57,7 @@ import { facilitiesMonitoringRoutes } from '../../platform/src/facilities-monito
 import { inventoryRoutes } from '../../inventory/src/index';
 import { warehouseRoutes } from '../../inventory/src/warehouse';
 import { transfersRoutes } from '../../inventory/src/warehouse-transfers';
+import { replenishmentRoutes } from '../../inventory/src/replenishment';
 import { packagingRoutes } from '../../inventory/src/packaging';
 import { wasteRoutes } from '../../inventory/src/waste';
 import { integrationRoutes } from '../../platform/src/integration';
@@ -165,6 +166,7 @@ export function buildSurface(deps: {
     ...transfersRoutes(store === undefined ? {
       transfer: empty(undefined), recordProposed: () => {}, recordDispatched: () => {}, recordReceived: () => {}, now,
     } : transfersAdapter({ store, now })),
+    ...replenishmentRoutes({ now }),
     ...packagingRoutes(store === undefined ? {
       item: empty(undefined), movements: empty([]), registerItem: () => {}, recordMovement: () => {}, now,
     } : packagingAdapter({ store, now })),
