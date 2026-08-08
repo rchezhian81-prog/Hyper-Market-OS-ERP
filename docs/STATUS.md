@@ -538,6 +538,44 @@ completion template, observability, API surface + event contract tests, and the 
   is a deployment step; the signature — not the caller's token — is what authenticates the provider._
   Full gate green (typecheck, lint, secret-scan, build:api, audit, **4,685 tests**).
 
+- **Done (this increment): connector mapping validation — a dropped field is an exception, not a clean
+  run (M32-FR-02 mapping half, API-11).** The transport-free half of
+  `packages/integration/src/connector.ts` is now on the cloud (`services/platform/src/connectors.ts`):
+  `POST /v1/integration/connectors/:id/mappings/:version` registers a mapping (a rule that is not exactly
+  copy/constant/lookup is refused), `…/validate` runs the pure `applyMapping`, and `GET …` reads it back.
+  What makes integrations rot is that failures become **invisible** — a mapping that drops an
+  unrecognised field looks like a clean run until a tax code has not reached the accounts package for a
+  quarter. So a mapping is **validated before a live feed trusts it**: an unmapped source field is
+  `unmapped_fields` (**named, not dropped** — how a cess line vanishes), an unknown lookup is
+  `lookup_miss` (**refused, not mapped to blank** — an unknown ledger code mapped to nothing posts a
+  wrong journal), and a destination-required field the mapping produced nothing for is `missing_required`.
+  Owner configures/validates (`platform.setup.write`), a manager reads (`platform.health.read`). Proven
+  through the real API + real RBAC in `tests/integration/connector-mapping.test.ts` (3 cases). M32 →
+  **PARTIALLY WIRED** (FR-04 matrix/health + FR-01 webhook-receipt + FR-02 mapping-validation wired). _The
+  connector DELIVERY half — `drainConnector`'s retry/back-off/dead-letter against a real destination — is
+  a worker+transport concern (an injected transport), not a cloud-API endpoint; it stays with the
+  edge/worker that owns the network path._ Full gate green (typecheck, lint, secret-scan, build:api,
+  audit, **4,688 tests**).
+
+- **Honest completeness assessment (investigated this session, for the owner's planning).** The
+  **cloud-API layer is now extensively wired** — this session alone added the full facilities module
+  (M26), packaging + waste (M28-FR-03/04), scrap, the cash-office trio (M14), settlement, loyalty,
+  supplier-portal submissions/compliance/statement (M24-FR-02/03/04), promotions governance, B2B credit,
+  concession, and the integration gateway (M32-FR-04/01 + FR-02 mapping) — each Requirement→engine→
+  service→API→persistence→authorization→integration-tested. **The single largest remaining gap is now the
+  UI/CHANNEL layer, not more engine wiring.** The web-erp/owner/pos/customer/picker/delivery screens are
+  fed by the STORE-EDGE (`edge/store-edge/src/screen-data.ts` → `screen-server.ts` → an injected HTML
+  payload → each app's `*-session.ts`), driven end-to-end by `tests/integration/the-screens-are-fed.test.ts`
+  over a real socket. Surfacing a NEWLY-wired cloud API (facilities/packaging/waste/integration) on a
+  screen is therefore a **cloud→edge-pack→screen-data→session→HTML/JS→screens-are-fed** thread — a real
+  multi-layer channel increment, not a small wire, and it is the highest-value next work for the
+  "Wired & verified" percentage. **Genuinely blocked (recorded, not forced):** M24-FR-01 partner scoping
+  (needs external partner-auth, §35); M32-FR-02 delivery/dead-letter and FR-03 secrets (need the
+  worker+real-transport surface); several store-edge/offline and E2E/UAT items (roadmap §31) that live
+  outside the cloud API by design. Recommendation for the next major push: **a first channel increment**
+  (one screen against an already-wired cloud API, e.g. facilities overdue or waste report), plus E2E/UAT,
+  rather than further engine-adjacent cloud wiring.
+
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
 completion ladder with the template above. Owner-only blockers are consolidated in
