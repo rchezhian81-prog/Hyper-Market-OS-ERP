@@ -273,6 +273,14 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
   }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([{ purpose: 'marketing', channel: 'sms' }]),
+  warehouse: known({
+    assignmentId: 'wa-1', workerId: 'u-wh', storeId: 'store-1',
+    bins: [{ binId: 'B-1', storeId: 'store-1', capacityMinor: 100, pickable: true }],
+    goodsIn: [{ productId: 'p1', batchId: null, quantityMinor: 10, uom: 'ea', state: 'on_hand', expiry: null }],
+    barcodes: [{ barcode: '8901', productId: 'p1', level: 'unit' }],
+    ordered: [{ productId: 'p1', quantityMinor: 10, unitCostMinor: 100_00, currency: 'INR' }],
+    grnId: 'GRN-1',
+  }),
   ...over,
 });
 
@@ -595,6 +603,7 @@ describe('a box that has been told nothing tells every screen so', () => {
       parallelDifferences: notKnown('never'), historyExclusions: notKnown('never'),
       legacyArchive: notKnown('never'), migrationPolicy: notKnown('never'),
       lossPreventionRules: notKnown('never'), consentPurposes: notKnown('never'),
+      warehouse: notKnown('never'),
     },
     sales: [],
   });

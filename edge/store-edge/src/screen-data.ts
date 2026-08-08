@@ -423,6 +423,33 @@ export function pickerPayload(input: ScreenInput): Record<string, unknown> | nul
   };
 }
 
+/**
+ * The warehouse handheld's payload: the assignment the cloud gave this box — bins, the catalogue for
+ * scanning, what is on order, what is awaiting put-away and what is under recall (M09 / OA-9). Absent
+ * means the box has never been told about warehouse work, and the shell says so rather than showing
+ * empty bins that read as a shift already finished.
+ *
+ * It maps the pack's ordered lines' `unitCostMinor`/`currency` into the `{ minor, currency }` money
+ * shape the receiving engine expects, and carries every other section through unchanged — the offline
+ * `WarehouseSession` boots on exactly this. Nothing is defaulted: an absent section stays absent.
+ */
+export function warehousePayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.warehouse.known) return null;
+  const w = input.pack.warehouse.value;
+  return {
+    assignmentId: w.assignmentId,
+    workerId: w.workerId,
+    storeId: w.storeId,
+    bins: w.bins,
+    ...(w.goodsIn === undefined ? {} : { goodsIn: w.goodsIn.map((g) => ({ ...g, recalled: g.recalled === true })) }),
+    ...(w.barcodes === undefined ? {} : { barcodes: w.barcodes }),
+    ...(w.grnId === undefined ? {} : { grnId: w.grnId }),
+    ...(w.ordered === undefined ? {} : { ordered: w.ordered.map((o) => ({ productId: o.productId, quantityMinor: o.quantityMinor, unitCost: { minor: o.unitCostMinor, currency: o.currency } })) }),
+    ...(w.recalledProductIds === undefined ? {} : { recalledProductIds: w.recalledProductIds }),
+    ...(w.recalledBatchIds === undefined ? {} : { recalledBatchIds: w.recalledBatchIds }),
+  };
+}
+
 /** The address a picker reads on the aisle sign, or the numbers when there is no sign. */
 function shelfAddress(location: ShelfLocation): string {
   const base = location.label ?? `${location.aisle}-${location.rack}-${location.bay}-${location.shelf}`;
