@@ -559,6 +559,8 @@ export interface PackWarehouse {
   readonly workerId: string;
   readonly storeId: string;
   readonly bins: readonly PackWarehouseBin[];
+  /** Current bin contents, per `binId|productId|batchId` — for supervisory stock visibility & occupancy. */
+  readonly contents?: Readonly<Record<string, number>>;
   readonly goodsIn?: readonly PackWarehouseGoodsIn[];
   readonly barcodes?: readonly PackWarehouseBarcode[];
   readonly ordered?: readonly PackWarehouseOrdered[];
