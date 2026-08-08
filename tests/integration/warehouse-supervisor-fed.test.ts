@@ -151,3 +151,60 @@ describe('the supervisor decides the §28 approvals the floor raises, and queues
     expect(noAppr.decide({ requestId: 'x', decision: 'approved', reasonCode: 'within_policy', decidedAt: NOW }, new SyncOutbox())).toMatchObject({ ok: false, refusal: 'not_configured' });
   });
 });
+
+describe('the supervisor plans transfers and assigns tasks, queued for sync (M09-FR-03 / OA-9)', () => {
+  const supervisor = () =>
+    bootWarehouseSupervisor(warehouseSupervisorPayload(screenInput(readPack({
+      version: 4,
+      warehouse: {
+        assignmentId: 'wa-1', workerId: 'u-wh', storeId: 'store-1',
+        bins: [{ binId: 'B-PICK', storeId: 'store-1', capacityMinor: 100, pickable: true }],
+        supervisor: { userId: 'u-super', branchScope: 'all' },
+      },
+    }, NOW))) as unknown as SupervisorData)!;
+
+  it('proposes an advisory transfer and queues it (dispatch stays a separate, server-side §28 step)', () => {
+    const s = supervisor();
+    const outbox = new SyncOutbox();
+    const out = s.proposeTransfer({
+      transferId: 't-1', fromLocationId: 'WH', toLocationId: 'S1',
+      lines: [{ productId: 'P1', quantityMinor: 10, uom: 'EA', unitCostMinor: 90_00, currency: 'INR' }],
+    }, outbox);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.transfer).toMatchObject({ transferId: 't-1', state: 'proposed', requestedBy: 'u-super' });
+    expect(out.transfer.lines[0]!.unitCost).toEqual({ minor: 90_00, currency: 'INR' });
+    expect(outbox.pending().map((i) => i.event.type)).toEqual(['WarehouseTransferProposed']);
+  });
+
+  it('refuses a transfer to the same place, with no lines, or with a bad line', () => {
+    const s = supervisor();
+    const box = new SyncOutbox();
+    expect((s.proposeTransfer({ transferId: 't', fromLocationId: 'WH', toLocationId: 'WH', lines: [{ productId: 'P1', quantityMinor: 1, uom: 'EA', unitCostMinor: 1 }] }, box) as { refusal: string }).refusal).toBe('same_location');
+    expect((s.proposeTransfer({ transferId: 't', fromLocationId: 'WH', toLocationId: 'S1', lines: [] }, box) as { refusal: string }).refusal).toBe('no_lines');
+    expect((s.proposeTransfer({ transferId: 't', fromLocationId: 'WH', toLocationId: 'S1', lines: [{ productId: 'P1', quantityMinor: 0, uom: 'EA', unitCostMinor: 1 }] }, box) as { refusal: string }).refusal).toBe('invalid_line');
+    expect(box.unsentCount()).toBe(0);
+  });
+
+  it('assigns a task to a worker and queues it, refusing an unknown kind or a blank assignee', () => {
+    const s = supervisor();
+    const outbox = new SyncOutbox();
+    const out = s.assignTask({ taskId: 'tk-1', kind: 'put_away', assignedTo: 'u-wh', binId: 'B-PICK', at: NOW }, outbox);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.task).toMatchObject({ taskId: 'tk-1', kind: 'put_away', assignedTo: 'u-wh', assignedBy: 'u-super' });
+    expect(outbox.pending().map((i) => i.event.type)).toEqual(['WarehouseTaskAssigned']);
+
+    expect((s.assignTask({ taskId: 'tk-2', kind: 'teleport' as never, assignedTo: 'u-wh', at: NOW }, outbox) as { refusal: string }).refusal).toBe('unknown_kind');
+    expect((s.assignTask({ taskId: 'tk-3', kind: 'count', assignedTo: '', at: NOW }, outbox) as { refusal: string }).refusal).toBe('invalid_task');
+  });
+
+  it('refuses a transfer or a task when the box has not said who the supervisor is', () => {
+    const noSup = bootWarehouseSupervisor(warehouseSupervisorPayload(screenInput(readPack({ version: 4, warehouse: {
+      assignmentId: 'wa-1', workerId: 'u-wh', storeId: 'store-1',
+      bins: [{ binId: 'B-PICK', storeId: 'store-1', capacityMinor: 100, pickable: true }],
+    } }, NOW))) as unknown as SupervisorData)!;
+    expect((noSup.proposeTransfer({ transferId: 't', fromLocationId: 'WH', toLocationId: 'S1', lines: [{ productId: 'P1', quantityMinor: 1, uom: 'EA', unitCostMinor: 1 }] }, new SyncOutbox()) as { refusal: string }).refusal).toBe('not_configured');
+    expect((noSup.assignTask({ taskId: 'tk', kind: 'count', assignedTo: 'u-wh', at: NOW }, new SyncOutbox()) as { refusal: string }).refusal).toBe('not_configured');
+  });
+});
