@@ -9,6 +9,12 @@ None of them stops the store trading, and none is urgent this week — but each 
 a specific slice of the product. Full detail for every item is in
 `docs/OWNER-ACTION-REGISTER.md`; this is the short version.
 
+> **Update — 8 Aug 2026:** You chose **guest browsing** and to **keep payment in test mode**
+> for the pilot. Good news on the first: the customer app is **already built for guest browsing**
+> — it browses the catalogue and reviews a basket today, with no login, and it is tested. The one
+> thing still needed to take a full online order is your **delivery areas** (the OA-11 row below);
+> paying stays in safe test mode until you pick a payment provider before go-live.
+
 ## Where the product stands
 
 - **Requirements & design:** ~85% documented against the roadmap.
@@ -16,15 +22,18 @@ a specific slice of the product. Full detail for every item is in
 - **Fully wired modules:** the POS sale path, security/roles, pricing, stock availability, the
   warehouse, fresh-food/production (M11), and loss-prevention (M15) — all proven against a real
   database.
-- **What is left** is either one of the five decisions below, or deeper analytics that depend on
+- **The customer shopping app** browses the catalogue and reviews a basket today, as a guest with
+  no login — built, served offline-first, and tested. Taking a full online order additionally needs
+  your delivery areas (OA-11 below).
+- **What is left** is either one of the decisions below, or deeper analytics that depend on
   the **stock-valuation method** decision (also below).
 
 ## The decisions, and what each one switches on
 
 | # | The decision | Recommended first step | What it switches on | Urgency |
 |---|---|---|---|---|
-| **OA-4** | **Payment provider + login (identity) provider.** Real card/UPI payment and real staff single-sign-on both need a chosen provider and keys. | Keep the test payment mode and test login for the pilot; choose providers before real money and real logins. | Online payment, real settlement matching, production staff logins. | Before production (pilot runs without it). |
-| **OA-13** | **How customers log in to the shopping app** — browse as a guest, or sign in with a one-time SMS code (needs an SMS provider). | Guest browsing for the pilot; add accounts later. | The whole customer app / web store (M20) — the last unbuilt module. | Before the customer app goes live. |
+| **OA-4** | **Payment provider + login (identity) provider.** Real card/UPI payment and real staff single-sign-on both need a chosen provider and keys. | ✅ **You chose: keep test mode for the pilot.** Choose providers before real money / real logins. | Online payment, real settlement matching, production staff logins. | Before production (pilot runs without it). |
+| **OA-13** | **How customers log in to the shopping app** — browse as a guest, or sign in with a one-time SMS code. | ✅ **You chose: guest browsing.** Already built and tested — browse + basket review work today, no login. | Nothing left to decide; accounts can be added later if you want them. | Done. |
 | **OA-11** | **Delivery service areas** — which branches deliver, how far each reaches, how many delivery slots, which sites are "dark stores." | Nominate one pilot branch with one radius and one slot size. | Online-order routing and delivery slots (M18-FR-03, M20-FR-03). | Before delivery / online orders go live. |
 | **OA-12** | **Subscription plans & pricing** (only relevant when selling this system to other retailers). | Defer — keep per-tenant feature switches (already built) for now. | Paid plans, metered billing for a multi-retailer product (M36). | Only when commercialising to other shops. |
 | **Valuation method** | **How stock is valued** — weighted-average, FIFO, or standard cost. This is an accounting-policy choice. | Confirm the method your accountant already uses. | Stock-value & margin analytics (ageing/turns/GMROI, M08-FR-04), margin reporting (M29), and stock valuation feeding the books (M23). | Before month-end stock valuation and margin reports. |
@@ -39,7 +48,9 @@ above are also **already built and tested** — only their live switch-on waits 
 
 ## What I recommend
 
-Take the two that matter for a pilot — **OA-4** (payment/login: keep test mode for now, choose
-providers before go-live) and **OA-13** (customer login: guest browse first) — and answer them
-when you're planning the pilot. The other three can wait for their moment. Answer any of them in
-one line and the matching slice gets wired and tested the same way everything else has been.
+You have now settled the two pilot decisions — **payment stays in test mode** and **customers
+browse as guests** (already built). The single remaining decision that would unlock a **full
+online order** for the pilot is **OA-11 — your delivery areas** (which branches deliver, how far,
+how many slots). One line — "the main store delivers within 10 km, 8 slots a day" — and I wire and
+test online-order routing and delivery slots the same way everything else has been done. The other
+two (subscription pricing, stock-valuation method) can wait for their moment.
