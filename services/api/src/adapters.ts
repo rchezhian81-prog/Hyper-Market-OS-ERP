@@ -46,7 +46,7 @@ import type { StockMovement } from '../../../packages/stock/src/position';
 import type { TransfersDeps } from '../../inventory/src/warehouse-transfers';
 import type { Transfer } from '../../../packages/warehouse/src/transfers';
 import type { CountsDeps, StoredReconciliation } from '../../inventory/src/counts';
-import type { ProductionDeps, StoredRun } from '../../inventory/src/production';
+import type { ProductionDeps, StoredRun, StoredRelease } from '../../inventory/src/production';
 import type { Recipe } from '../../../packages/production/src/recipe';
 import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord, StatementLine } from '../../purchase/src/supplier-portal';
 import type { ConcessionDeps, ConcessionContract, ConcessionSale } from '../../finance/src/concession';
@@ -1533,8 +1533,19 @@ export function productionAdapter(input: {
   const productionStream = streamName(STREAM.inventory, 'production');
   const inv = inventoryAdapter({ store: input.store, now: input.now });
 
-  const foldRuns = async (tenantId: string): Promise<readonly StoredRun[]> =>
-    allOf<StoredRun>(input.store, tenantId, productionStream, 'ProductionRunCommitted');
+  // Runs fold ProductionRunCommitted, then have their quality-release state merged from the
+  // ProductionBatchReleased events — a batch is sellable only once a named releaser has passed it.
+  const foldRuns = async (tenantId: string): Promise<readonly StoredRun[]> => {
+    const committed = await allOf<StoredRun>(input.store, tenantId, productionStream, 'ProductionRunCommitted');
+    const releases = await allOf<StoredRelease>(input.store, tenantId, productionStream, 'ProductionBatchReleased');
+    const byRun = new Map(releases.map((r) => [r.runId, r] as const));
+    return committed.map((run) => {
+      const rel = byRun.get(run.runId);
+      return rel === undefined
+        ? { ...run, released: false, releasedBy: null, releasedAt: null }
+        : { ...run, released: true, releasedBy: rel.releasedBy, releasedAt: rel.releasedAt };
+    });
+  };
 
   return {
     now: input.now,
@@ -1574,9 +1585,12 @@ export function productionAdapter(input: {
       return consumed;
     },
 
-    runExists: async (tenantId, runId) => (await foldRuns(tenantId)).some((r) => r.runId === runId),
+    runExists: async (tenantId, runId) =>
+      (await allOf<StoredRun>(input.store, tenantId, productionStream, 'ProductionRunCommitted')).some((r) => r.runId === runId),
 
     runs: (tenantId) => foldRuns(tenantId),
+
+    run: async (tenantId, runId) => (await foldRuns(tenantId)).find((r) => r.runId === runId),
 
     recordRun: async (tenantId, run) => {
       await input.store.append(tenantId, productionStream, makeEvent({
@@ -1588,6 +1602,18 @@ export function productionAdapter(input: {
         idempotencyKey: `prod-run-${tenantId}-${run.runId}`,
         source: 'api/inventory',
         payload: run,
+      }));
+    },
+
+    recordRelease: async (tenantId, release) => {
+      await input.store.append(tenantId, productionStream, makeEvent({
+        id: `prod-release-${release.runId}`,
+        type: 'ProductionBatchReleased',
+        occurredAt: release.releasedAt,
+        // The run's own id — a re-sent release collapses (append-only, #2); the batch is released once.
+        idempotencyKey: `prod-release-${tenantId}-${release.runId}`,
+        source: 'api/inventory',
+        payload: release,
       }));
     },
   };
