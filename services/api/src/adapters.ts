@@ -37,6 +37,8 @@ import { checkCredit } from '../../../packages/b2b/src/credit';
 import type { LpCasesDeps, LpRulesDeps } from '../../pos/src/loss-prevention';
 import type { InvestigationCase, EvidenceItem } from '../../../packages/loss-prevention/src/cases';
 import type { LpRule } from '../../../packages/loss-prevention/src/loss-prevention';
+import type { FraudSignalsDeps } from '../../pos/src/fraud-signals';
+import type { FraudThresholds } from '../../../packages/loss-prevention/src/fraud-signals';
 import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord, StatementLine } from '../../purchase/src/supplier-portal';
 import type { ConcessionDeps, ConcessionContract, ConcessionSale } from '../../finance/src/concession';
 import type { ScrapDeps, ScrapSale } from '../../finance/src/scrap';
@@ -1315,6 +1317,33 @@ export function lpRulesAdapter(input: {
         idempotencyKey: `lp-rule-${tenantId}-${rule.kind}-${rule.maxCount ?? ''}-${rule.maxTotalValueMinor ?? ''}-${rule.maxSingleValueMinor ?? ''}-${rule.escalateAtMultiple ?? ''}`,
         source: 'api/pos',
         payload: rule,
+      }));
+    },
+  };
+}
+
+export function fraudSignalsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): FraudSignalsDeps {
+  // A tenant's fraud thresholds are config — one small object, folded to its latest value on its own
+  // per-tenant stream. Empty until set, and the engine then applies its safe defaults.
+  const thresholdsStream = streamName(STREAM.lossPrevention, 'fraud-thresholds');
+  return {
+    now: input.now,
+
+    thresholds: async (tenantId) =>
+      (await latest<FraudThresholds>(input.store, tenantId, thresholdsStream, 'FraudThresholdsSet')) ?? {},
+
+    recordThresholds: async (tenantId, thresholds) => {
+      await input.store.append(tenantId, thresholdsStream, makeEvent({
+        id: `fraud-thresholds-${input.now()}`,
+        type: 'FraudThresholdsSet',
+        occurredAt: input.now(),
+        // Keyed on the values — re-setting the same thresholds collapses, a re-tune is a new fact.
+        idempotencyKey: `fraud-thresholds-${tenantId}-${JSON.stringify(thresholds)}`,
+        source: 'api/pos',
+        payload: thresholds,
       }));
     },
   };
