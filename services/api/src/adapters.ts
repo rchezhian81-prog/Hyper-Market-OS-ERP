@@ -32,6 +32,8 @@ import type { ShiftDeps, ClosedShiftRecord } from '../../pos/src/shift';
 import type { B2BCreditDeps, B2BAccount, RecordedReceivable } from '../../finance/src/b2b-credit';
 import type { B2BCollectionsDeps, Receivable as CollectionsReceivable, RecordedPayment } from '../../finance/src/b2b-collections';
 import type { B2BCommissionDeps, CommissionAccrual } from '../../finance/src/b2b-commission';
+import type { B2BDocumentsDeps, StoredB2BDocument } from '../../finance/src/b2b-documents';
+import { checkCredit } from '../../../packages/b2b/src/credit';
 import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord, StatementLine } from '../../purchase/src/supplier-portal';
 import type { ConcessionDeps, ConcessionContract, ConcessionSale } from '../../finance/src/concession';
 import type { ScrapDeps, ScrapSale } from '../../finance/src/scrap';
@@ -201,6 +203,8 @@ const SHIFTS_STREAM = streamName(STREAM.cash, 'shifts');
 const forB2BCustomer = (customerId: string): string => streamName(STREAM.b2b, customerId);
 /** Each salesperson's commission accruals fold one stream — one person's earnings, not every deal. */
 const forB2BSalesperson = (salespersonId: string): string => streamName(STREAM.b2b, 'commission', salespersonId);
+/** Each B2B customer's document chain (quotations, orders, …) folds one stream — one customer, not the shop. */
+const forB2BDocuments = (customerId: string): string => streamName(STREAM.b2b, 'documents', customerId);
 /** Each concession contract's terms and sales fold one stream — one counter, not the shop. */
 const forConcession = (contractId: string): string => streamName(STREAM.concession, contractId);
 /** Each packaging item's registration and movements fold one stream — one item, not every crate. */
@@ -1141,6 +1145,66 @@ export function b2bCommissionAdapter(input: {
         source: 'api/finance',
         payload: accrual,
       }));
+    },
+  };
+}
+
+export function b2bDocumentsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly numberSeries?: NumberSeriesStore;
+}): B2BDocumentsDeps {
+  const numberSeries = input.numberSeries ?? new InMemoryNumberSeriesStore();
+  // Each B2B customer's document chain folds its own stream. A later restatement of a document (same id)
+  // wins; the credit gate reads the customer's credit/AR stream, exactly as the credit surface does.
+  const foldDocuments = async (tenantId: string, customerId: string): Promise<readonly StoredB2BDocument[]> => {
+    const docs = await allOf<StoredB2BDocument>(input.store, tenantId, forB2BDocuments(customerId), 'B2BDocumentIssued');
+    const byId = new Map<string, StoredB2BDocument>();
+    for (const d of docs) byId.set(d.documentId, d);
+    return [...byId.values()];
+  };
+
+  return {
+    now: input.now,
+
+    document: async (tenantId, customerId, documentId) =>
+      (await foldDocuments(tenantId, customerId)).find((d) => d.documentId === documentId),
+
+    // Which quotations already became an order — the derivedFrom of every sales order on the stream.
+    convertedQuotationIds: async (tenantId, customerId) =>
+      (await foldDocuments(tenantId, customerId))
+        .filter((d) => d.kind === 'sales_order' && d.derivedFrom !== undefined)
+        .map((d) => d.derivedFrom as string),
+
+    recordDocument: async (tenantId, customerId, doc) => {
+      await input.store.append(tenantId, forB2BDocuments(customerId), makeEvent({
+        id: `b2b-doc-${customerId}-${doc.documentId}`,
+        type: 'B2BDocumentIssued',
+        occurredAt: input.now(),
+        // The document's own id — a re-sent issue collapses rather than drawing a second number.
+        idempotencyKey: `b2b-doc-${tenantId}-${customerId}-${doc.documentId}`,
+        source: 'api/finance',
+        payload: doc,
+      }));
+    },
+
+    // The gap-free series, keyed by (tenant, doc type). Called only once the engine would issue.
+    allocateNumber: (tenantId, docType) => numberSeries.allocate(tenantId, docType),
+
+    // The real credit gate (M22-FR-01): read the customer's limit and projected AR, run checkCredit.
+    // No account set means credit control has not cleared them — blocked, never a silent pass.
+    creditAllowed: async (tenantId, customerId, orderValueMinor) => {
+      const account = await latest<B2BAccount>(input.store, tenantId, forB2BCustomer(customerId), 'B2BCreditLimitSet');
+      if (account === undefined) return false;
+      const outstanding = (await allOf<RecordedReceivable>(input.store, tenantId, forB2BCustomer(customerId), 'B2BReceivableMovement'))
+        .reduce((b, m) => b + m.deltaMinor, 0);
+      const decision = checkCredit({
+        id: `conv-${customerId}`, customerId, takenBy: 'system',
+        creditLimit: { minor: account.creditLimitMinor, currency: account.currency },
+        outstanding: { minor: outstanding, currency: account.currency },
+        orderValue: { minor: orderValueMinor, currency: account.currency },
+      });
+      return decision.allowed;
     },
   };
 }
