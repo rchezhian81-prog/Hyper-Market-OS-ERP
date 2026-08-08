@@ -51,6 +51,7 @@ import { inventoryRoutes } from '../../inventory/src/index';
 import { packagingRoutes } from '../../inventory/src/packaging';
 import { wasteRoutes } from '../../inventory/src/waste';
 import { integrationRoutes } from '../../platform/src/integration';
+import { webhookRoutes, webhookHasher } from '../../platform/src/webhooks';
 import { identityRoutes, tokenAuthenticator } from '../../identity/src/index';
 import { platformRoutes, inMemorySettings } from '../../platform/src/index';
 import { purchaseRoutes } from '../../purchase/src/index';
@@ -64,7 +65,7 @@ import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, pricingAdapter, posAdapter, returnsAdapter, inventoryAdapter, packagingAdapter, wasteAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
-  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, cashAdapter, shiftAdapter, b2bCreditAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, integrationAdapter,
+  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, cashAdapter, shiftAdapter, b2bCreditAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, integrationAdapter, webhookAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
@@ -109,6 +110,7 @@ export function buildSurface(deps: {
   readonly numberSeries?: NumberSeriesStore;
 }): readonly Route[] {
   const signer = hmacSigner(deps.signingKey);
+  const whHasher = webhookHasher(deps.signingKey);
   const empty = <T>(v: T) => () => v;
   const store = deps.store;
 
@@ -151,6 +153,9 @@ export function buildSurface(deps: {
       matrix: empty([]), adapters: empty([]), heartbeats: empty([]),
       recordMatrixEntry: () => {}, recordAdapter: () => {}, recordHeartbeat: () => {}, now,
     } : integrationAdapter({ store, now })),
+    ...webhookRoutes(store === undefined ? {
+      config: empty(undefined), seenDeliveryIds: empty([]), recordConfig: () => {}, recordDelivery: () => {}, hasher: whHasher, now,
+    } : webhookAdapter({ store, now, hasher: whHasher })),
     ...posRoutes(store === undefined ? {
       catalogue: empty(new Map()), currentPackVersion: empty(1),
       saleHoldingReceipt: empty(undefined), isBanked: empty(false),

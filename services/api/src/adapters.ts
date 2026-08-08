@@ -39,6 +39,8 @@ import type { FacilitiesMonitoringDeps, EquipmentRangeReg, EquipmentContents, Eq
 import type { PackagingDeps, PackagingItem, PackagingMovement } from '../../inventory/src/packaging';
 import type { WasteDeps, WasteRecord, WasteCoverage } from '../../inventory/src/waste';
 import type { IntegrationDeps, CertifiedEntry, AdapterConfig, AdapterHeartbeat } from '../../platform/src/integration';
+import type { WebhookDeps, WebhookConfig } from '../../platform/src/webhooks';
+import type { Hasher } from '../../../packages/audit/src/audit-trail';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project } from '../../inventory/src/index';
@@ -198,6 +200,8 @@ const forB2BCustomer = (customerId: string): string => streamName(STREAM.b2b, cu
 const forConcession = (contractId: string): string => streamName(STREAM.concession, contractId);
 /** Each packaging item's registration and movements fold one stream — one item, not every crate. */
 const forPackaging = (packagingId: string): string => streamName(STREAM.packaging, packagingId);
+/** Each webhook provider's config and processed deliveries fold one stream — one provider, not all. */
+const forWebhook = (provider: string): string => streamName(STREAM.integration, 'webhook', provider);
 
 export const STREAM_FOR = { forCustomer, forDriverRun, forLocation, forInvoice, forSaleReturns } as const;
 
@@ -988,6 +992,50 @@ export function integrationAdapter(input: {
         idempotencyKey: `intg-hb-${tenantId}-${heartbeatId}`,
         source: 'api/platform',
         payload: heartbeat,
+      }));
+    },
+  };
+}
+
+export function webhookAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly hasher: Hasher;
+}): WebhookDeps {
+  // Each provider folds its own stream: the latest config, and the delivery ids already processed —
+  // the ledger a replay is checked against. A processed delivery is a fact, never overwritten (#2).
+  return {
+    now: input.now,
+    hasher: input.hasher,
+
+    config: async (tenantId, provider) =>
+      latest<WebhookConfig>(input.store, tenantId, forWebhook(provider), 'WebhookConfigured'),
+
+    seenDeliveryIds: async (tenantId, provider) => {
+      const events = await input.store.readStream(tenantId, forWebhook(provider), { type: 'WebhookDeliveryProcessed' });
+      return events.map((e) => (e.event.payload as { deliveryId: string }).deliveryId);
+    },
+
+    recordConfig: async (tenantId, config) => {
+      await input.store.append(tenantId, forWebhook(config.provider), makeEvent({
+        id: `wh-config-${config.provider}`,
+        type: 'WebhookConfigured',
+        occurredAt: input.now(),
+        idempotencyKey: `wh-config-${tenantId}-${config.provider}-${config.signingKeyRef}-${config.maxAgeSeconds ?? 'def'}`,
+        source: 'api/platform',
+        payload: config,
+      }));
+    },
+
+    recordDelivery: async (tenantId, provider, envelope) => {
+      await input.store.append(tenantId, forWebhook(provider), makeEvent({
+        id: `wh-del-${provider}-${envelope.deliveryId}`,
+        type: 'WebhookDeliveryProcessed',
+        occurredAt: input.now(),
+        // The delivery's own id — a genuine provider retry collapses here rather than processing twice.
+        idempotencyKey: `wh-del-${tenantId}-${provider}-${envelope.deliveryId}`,
+        source: 'api/platform',
+        payload: { deliveryId: envelope.deliveryId, event: envelope.event, sentAt: envelope.sentAt },
       }));
     },
   };

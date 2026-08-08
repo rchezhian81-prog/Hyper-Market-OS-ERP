@@ -47,6 +47,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'reporting.dashboard.read', 'reporting.report.read',
       'platform.health.read', 'platform.flag.read', 'platform.flag.write',
       'platform.setup.read', 'platform.setup.write', 'platform.support.grant',
+      'integration.webhook.receive',
       'facilities.schedule.manage', 'facilities.task.record', 'facilities.overdue.read',
       'facilities.asset.manage', 'facilities.asset.read', 'facilities.reading.record', 'facilities.incident.record',
       'migration.verification.read', 'migration.exception.accept',
