@@ -441,12 +441,35 @@ export function warehousePayload(input: ScreenInput): Record<string, unknown> | 
     workerId: w.workerId,
     storeId: w.storeId,
     bins: w.bins,
+    ...(w.contents === undefined ? {} : { contents: w.contents }),
     ...(w.goodsIn === undefined ? {} : { goodsIn: w.goodsIn.map((g) => ({ ...g, recalled: g.recalled === true })) }),
     ...(w.barcodes === undefined ? {} : { barcodes: w.barcodes }),
     ...(w.grnId === undefined ? {} : { grnId: w.grnId }),
     ...(w.ordered === undefined ? {} : { ordered: w.ordered.map((o) => ({ productId: o.productId, quantityMinor: o.quantityMinor, unitCost: { minor: o.unitCostMinor, currency: o.currency } })) }),
     ...(w.recalledProductIds === undefined ? {} : { recalledProductIds: w.recalledProductIds }),
     ...(w.recalledBatchIds === undefined ? {} : { recalledBatchIds: w.recalledBatchIds }),
+  };
+}
+
+/**
+ * The Web ERP warehouse **supervisor's** payload (M09 / OA-9): the bin configuration and — where the
+ * box has been told it — the current bin contents and what is under recall, so the supervisor's screen
+ * can show stock visibility, bin occupancy and the exception queue. It reads the **same** `warehouse`
+ * section the handheld does (one authoritative source, no duplicated data), and the oversight
+ * derivations (occupancy, negative bins, over-capacity, recalled-in-a-pickable-bin) live in the tested
+ * supervisor session, not here. Absent means the box has never been told about warehouse work, and the
+ * screen says so. Nothing is defaulted: stock visibility stays absent unless contents were sent.
+ */
+export function warehouseSupervisorPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.warehouse.known) return null;
+  const w = input.pack.warehouse.value;
+  return {
+    storeId: w.storeId,
+    bins: w.bins,
+    ...(w.contents === undefined ? {} : { contents: w.contents }),
+    ...(w.recalledProductIds === undefined ? {} : { recalledProductIds: w.recalledProductIds }),
+    ...(w.recalledBatchIds === undefined ? {} : { recalledBatchIds: w.recalledBatchIds }),
+    asAt: input.now,
   };
 }
 
