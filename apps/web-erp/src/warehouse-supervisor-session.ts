@@ -49,7 +49,14 @@ export interface StockRow {
   readonly quantityMinor: number;
 }
 
-export type WarehouseExceptionKind = 'negative_stock' | 'over_capacity' | 'recalled_in_pickable_bin';
+/**
+ * Every exception kind the supervisor's queue can raise — the authoritative list the screen must have
+ * a word for, in English AND Tamil (OA-9). A completeness tripwire binds the view's vocabulary to this.
+ */
+export const WAREHOUSE_EXCEPTION_KINDS = Object.freeze([
+  'negative_stock', 'over_capacity', 'recalled_in_pickable_bin',
+] as const);
+export type WarehouseExceptionKind = (typeof WAREHOUSE_EXCEPTION_KINDS)[number];
 
 export interface WarehouseException {
   readonly kind: WarehouseExceptionKind;

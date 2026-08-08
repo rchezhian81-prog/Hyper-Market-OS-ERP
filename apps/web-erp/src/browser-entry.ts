@@ -40,6 +40,7 @@ import {
   createCatalogueSession,
   type CataloguePorts, type CatalogueSession,
 } from './catalogue-session';
+import { bootWarehouseSupervisor, type SupervisorData, type WarehouseSupervisorSession } from './warehouse-supervisor-session';
 import type { Category, ProductRecord } from '../../../packages/product/src/index';
 import type { CostRegister, PriceEntry } from '../../../packages/price-list/src/index';
 import type { Promotion } from '../../../packages/promotions/src/index';
@@ -705,6 +706,8 @@ interface ManagerWindow {
   aiSession?: AiSession;
   migrationData?: MigrationData;
   migrationSession?: MigrationSession;
+  warehouseSupervisorData?: SupervisorData;
+  warehouseSupervisorSession?: WarehouseSupervisorSession;
   /** The decision vocabulary, so the view can offer it and never invent a reason of its own. */
   managerReasons?: {
     readonly approved: readonly DecisionReasonCode[];
@@ -1175,6 +1178,8 @@ if (browserWindow !== undefined) {
   if (ai !== null) browserWindow.aiSession = ai;
   const migration = bootMigration(browserWindow.migrationData);
   if (migration !== null) browserWindow.migrationSession = migration;
+  const warehouseSupervisor = bootWarehouseSupervisor(browserWindow.warehouseSupervisorData);
+  if (warehouseSupervisor !== null) browserWindow.warehouseSupervisorSession = warehouseSupervisor;
   // The view offers these and records the code the manager picks. It never composes a reason of
   // its own, so the audit trail keeps one vocabulary that can still be reported on in a year.
   browserWindow.managerReasons = { approved: APPROVE_REASONS, rejected: REJECT_REASONS };

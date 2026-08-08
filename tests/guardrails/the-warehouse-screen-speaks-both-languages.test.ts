@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { FEEDBACK_CODES } from '../../apps/warehouse-app/src/warehouse-session';
+import { WAREHOUSE_EXCEPTION_KINDS } from '../../apps/web-erp/src/warehouse-supervisor-session';
 
 /**
  * **The warehouse handheld says WHY a scan was refused — in English AND Tamil (OA-9).**
@@ -41,5 +42,27 @@ describe('every warehouse scan outcome has a word in both languages', () => {
   it('tripwire — the detector fires on a code that is genuinely absent', () => {
     // Otherwise a regex that silently matched everything would make the checks above vacuous.
     expect(/\bnever_a_real_code:/.test(en)).toBe(false);
+  });
+});
+
+// The supervisor screen (web-erp/warehouse.js) — its own vocabulary, the same rule.
+const SUP = readFileSync('apps/web-erp/web/warehouse.js', 'utf8');
+const supEn = SUP.slice(SUP.indexOf('  en: {'), SUP.indexOf('  ta: {'));
+const supTa = SUP.slice(SUP.indexOf('  ta: {'));
+
+describe('the warehouse supervisor screen names every exception in both languages', () => {
+  it('has an English word for every exception kind the supervisor session can raise', () => {
+    const missing = WAREHOUSE_EXCEPTION_KINDS.filter((k) => !new RegExp(`\\b${k}:`).test(supEn));
+    expect(missing, `English is missing: ${missing.join(', ')}`).toEqual([]);
+  });
+
+  it('has a Tamil word for every exception kind the supervisor session can raise', () => {
+    const missing = WAREHOUSE_EXCEPTION_KINDS.filter((k) => !new RegExp(`\\b${k}:`).test(supTa));
+    expect(missing, `Tamil is missing: ${missing.join(', ')}`).toEqual([]);
+  });
+
+  it('shows the stale-shell strip in both languages', () => {
+    expect(supEn).toMatch(/staleShell:/);
+    expect(supTa).toMatch(/staleShell:/);
   });
 });
