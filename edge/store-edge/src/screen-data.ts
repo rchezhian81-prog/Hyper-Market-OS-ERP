@@ -469,6 +469,18 @@ export function warehouseSupervisorPayload(input: ScreenInput): Record<string, u
     ...(w.contents === undefined ? {} : { contents: w.contents }),
     ...(w.recalledProductIds === undefined ? {} : { recalledProductIds: w.recalledProductIds }),
     ...(w.recalledBatchIds === undefined ? {} : { recalledBatchIds: w.recalledBatchIds }),
+    // Mapped into the approvals-engine shapes the supervisor session consumes, so no rule is
+    // re-implemented downstream. A request with no value stays value:null (never defaulted to zero).
+    ...(w.approvals === undefined ? {} : { approvals: w.approvals.map((a) => ({
+      id: a.id, subjectType: a.subjectType, subjectRef: a.subjectRef, requestedBy: a.requestedBy,
+      branchId: a.branchId ?? null,
+      value: a.valueMinor === undefined ? null : { minor: a.valueMinor, currency: a.currency ?? 'INR' },
+      status: 'pending',
+    })) }),
+    ...(w.supervisor === undefined ? {} : { supervisor: {
+      userId: w.supervisor.userId, branchScope: w.supervisor.branchScope,
+      authorityLimit: w.supervisor.authorityLimitMinor === undefined ? null : { minor: w.supervisor.authorityLimitMinor, currency: w.supervisor.currency ?? 'INR' },
+    } }),
     asAt: input.now,
   };
 }

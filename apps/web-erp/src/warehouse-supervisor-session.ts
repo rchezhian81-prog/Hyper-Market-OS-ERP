@@ -14,6 +14,11 @@
 // contents were not sent, exactly as the manager's day close refuses on a register it cannot see.
 
 import { binOccupancy, type Bin, type BinContents } from '../../../packages/warehouse/src/movements';
+import { buildQueue, submitDecision, type QueueRow } from './approvals-workbench';
+import type { ApprovalRequest, Approver, Decision, DecidedRequest, RefusalReason } from '../../../packages/approvals/src/approvals';
+import { isValidReasonFor } from '../../../packages/approvals/src/reasons';
+import { makeEvent } from '../../../packages/contracts/src/event';
+import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 
 export type Known<T> =
   | ({ readonly known: true } & T)
@@ -26,8 +31,17 @@ export interface SupervisorData {
   readonly contents?: BinContents;
   readonly recalledProductIds?: readonly string[];
   readonly recalledBatchIds?: readonly string[];
+  /** Pending §28 approvals the supervisor may decide, already in the approval-engine shape. */
+  readonly approvals?: readonly ApprovalRequest[];
+  /** Who the supervisor is, for the maker-checker check (§28). */
+  readonly supervisor?: Approver;
   readonly asAt: string;
 }
+
+/** The outcome of a supervisor decision — the engine's outcome, plus the reasons this layer adds. */
+export type DecideOutcome =
+  | { readonly ok: true; readonly request: DecidedRequest }
+  | { readonly ok: false; readonly refusal: RefusalReason | 'request_not_found' | 'unknown_reason_code' | 'not_configured' };
 
 /** A bin's configuration and, where contents are known, how full it is. */
 export interface BinOverviewRow {
@@ -146,6 +160,57 @@ export class WarehouseSupervisorSession {
       }
     }
     return { known: true, rows };
+  }
+
+  /**
+   * The maker-checker queue for the warehouse (§28): every pending approval the floor raised, marked
+   * actionable-or-not for THIS supervisor with the reason (their own request, out of scope, above
+   * their limit → escalate). `known: false` when the box has not sent the approvals or who the
+   * supervisor is — a supervisor who cannot be identified must not be shown an empty, all-clear queue.
+   * Delegates entirely to the authoritative `buildQueue` — no rule is re-implemented here.
+   */
+  approvalQueue(): Known<{ readonly rows: readonly QueueRow[] }> {
+    if (this.data.approvals === undefined || this.data.supervisor === undefined) {
+      return { known: false, why: 'the store box has not sent the pending approvals or who the supervisor is' };
+    }
+    return { known: true, rows: buildQueue(this.data.approvals, this.data.supervisor) };
+  }
+
+  /**
+   * Decide a pending warehouse approval and queue the decision for sync. The decision goes through the
+   * authoritative engine (`submitDecision` → `decide`), which enforces §28 (the supervisor can never
+   * decide their own request), a mandatory reason, branch scope and value authority — this layer adds
+   * no softening. The reason is a CODE from the shared vocabulary (reportable a year later), validated
+   * before the engine. On success a `WarehouseApprovalDecided` event carrying the decided request is
+   * enqueued; a refusal queues nothing.
+   */
+  decide(
+    input: { readonly requestId: string; readonly decision: Decision; readonly reasonCode: string; readonly decidedAt: string },
+    outbox: SyncOutbox,
+  ): DecideOutcome {
+    if (this.data.approvals === undefined || this.data.supervisor === undefined) {
+      return { ok: false, refusal: 'not_configured' };
+    }
+    const request = this.data.approvals.find((r) => r.id === input.requestId);
+    if (request === undefined) return { ok: false, refusal: 'request_not_found' };
+    // The catalogue is checked before the engine, so an invented reason never reaches the audit trail
+    // — and approving "against_policy" is refused rather than recorded.
+    if (!isValidReasonFor(input.decision, input.reasonCode)) {
+      return { ok: false, refusal: 'unknown_reason_code' };
+    }
+    const outcome = submitDecision(request, this.data.supervisor, input.decision, input.reasonCode, input.decidedAt);
+    if (!outcome.ok) return outcome;
+    outbox.enqueue(makeEvent({
+      id: `wh-appr-${request.id}-${outcome.request.status}`,
+      type: 'WarehouseApprovalDecided',
+      occurredAt: input.decidedAt,
+      // Keyed on the request id and the outcome — re-sending the same decision collapses, a genuine
+      // change of outcome is a new fact (append-only, hard rule #2).
+      idempotencyKey: `wh-appr:${request.id}:${outcome.request.status}`,
+      source: 'web-erp/warehouse-supervisor',
+      payload: outcome.request,
+    }));
+    return outcome;
   }
 }
 
