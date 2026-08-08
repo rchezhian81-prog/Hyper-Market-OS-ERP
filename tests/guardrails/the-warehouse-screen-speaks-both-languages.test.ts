@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { FEEDBACK_CODES } from '../../apps/warehouse-app/src/warehouse-session';
-import { WAREHOUSE_EXCEPTION_KINDS } from '../../apps/web-erp/src/warehouse-supervisor-session';
+import { WAREHOUSE_EXCEPTION_KINDS, WAREHOUSE_TASK_KINDS } from '../../apps/web-erp/src/warehouse-supervisor-session';
 import { APPROVE_REASONS, REJECT_REASONS } from '../../packages/approvals/src/reasons';
 
 /**
@@ -80,5 +80,12 @@ describe('the warehouse supervisor screen names every exception in both language
       expect(supEn, `English missing ${reason}`).toMatch(new RegExp(`\\b${reason}:`));
       expect(supTa, `Tamil missing ${reason}`).toMatch(new RegExp(`\\b${reason}:`));
     }
+  });
+
+  it('has both languages for every task kind the supervisor can assign', () => {
+    const missingEn = WAREHOUSE_TASK_KINDS.filter((k) => !new RegExp(`\\b${k}:`).test(supEn));
+    const missingTa = WAREHOUSE_TASK_KINDS.filter((k) => !new RegExp(`\\b${k}:`).test(supTa));
+    expect(missingEn, `English is missing: ${missingEn.join(', ')}`).toEqual([]);
+    expect(missingTa, `Tamil is missing: ${missingTa.join(', ')}`).toEqual([]);
   });
 });

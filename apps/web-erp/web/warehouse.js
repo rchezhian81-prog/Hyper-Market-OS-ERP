@@ -44,6 +44,13 @@ const WORDS = {
     price_looks_wrong: 'The price looks wrong', not_enough_evidence: 'Not enough evidence', against_policy: 'Against policy', ask_the_owner_first: 'Ask the owner first',
     // outcomes
     decidedApproved: 'Approved and queued to sync', decidedRejected: 'Rejected and queued to sync', decideRefused: 'Could not record the decision',
+    // supervisor actions — transfer planning & task assignment
+    actionsHeading: 'Plan work',
+    transferHeading: 'Propose a transfer', lFrom: 'From location', lTo: 'To location', lProduct: 'Product', lQty: 'Quantity', lCost: 'Unit cost (₹)', doTransfer: 'Propose transfer',
+    taskHeading: 'Assign a task', lKind: 'Task', lAssignee: 'Assign to', lTproduct: 'Product (optional)', lBin: 'Bin (optional)', doTask: 'Assign task',
+    // task kinds, keyed to WAREHOUSE_TASK_KINDS
+    put_away: 'Put away', count: 'Count', bin_to_bin: 'Move bin to bin', replenish: 'Replenish',
+    transferQueued: 'Transfer proposed and queued to sync', taskQueued: 'Task assigned and queued to sync', actionRefused: 'Could not do that',
   },
   ta: {
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
@@ -66,8 +73,15 @@ const WORDS = {
     within_policy: 'கொள்கையின்படி', checked_with_supplier: 'சப்ளையருடன் சரிபார்க்கப்பட்டது', checked_the_stock: 'சரக்கு சரிபார்க்கப்பட்டது', owner_instructed: 'உரிமையாளர் அறிவுறுத்தினார்',
     price_looks_wrong: 'விலை தவறாகத் தெரிகிறது', not_enough_evidence: 'போதிய ஆதாரம் இல்லை', against_policy: 'கொள்கைக்கு எதிரானது', ask_the_owner_first: 'முதலில் உரிமையாளரிடம் கேளுங்கள்',
     decidedApproved: 'ஒப்புதல் அளித்து அனுப்பக் காத்திருக்கிறது', decidedRejected: 'நிராகரித்து அனுப்பக் காத்திருக்கிறது', decideRefused: 'முடிவைப் பதிவு செய்ய முடியவில்லை',
+    actionsHeading: 'வேலை திட்டமிடு',
+    transferHeading: 'இடமாற்றத்தை முன்மொழி', lFrom: 'எந்த இடத்திலிருந்து', lTo: 'எந்த இடத்திற்கு', lProduct: 'பொருள்', lQty: 'அளவு', lCost: 'ஓரலகு விலை (₹)', doTransfer: 'இடமாற்றத்தை முன்மொழி',
+    taskHeading: 'பணியை ஒதுக்கு', lKind: 'பணி', lAssignee: 'யாருக்கு', lTproduct: 'பொருள் (விருப்பம்)', lBin: 'இடம் (விருப்பம்)', doTask: 'பணியை ஒதுக்கு',
+    put_away: 'அடுக்கி வை', count: 'எண்ணிக்கை', bin_to_bin: 'இடத்திலிருந்து இடத்திற்கு நகர்த்து', replenish: 'நிரப்பு',
+    transferQueued: 'இடமாற்றம் முன்மொழியப்பட்டு அனுப்பக் காத்திருக்கிறது', taskQueued: 'பணி ஒதுக்கப்பட்டு அனுப்பக் காத்திருக்கிறது', actionRefused: 'அதைச் செய்ய முடியவில்லை',
   },
 };
+
+const TASK_KINDS = ['put_away', 'count', 'bin_to_bin', 'replenish'];
 
 const APPROVE_CODES = ['within_policy', 'checked_with_supplier', 'checked_the_stock', 'owner_instructed'];
 const REJECT_CODES = ['price_looks_wrong', 'not_enough_evidence', 'against_policy', 'ask_the_owner_first'];
@@ -246,6 +260,49 @@ function toast(text, bad) {
   toastTimer = setTimeout(() => { strip.hidden = true; }, 4000);
 }
 
+// ── Supervisor actions: plan a transfer, assign a task ──────────────────────
+// On-screen forms; the tested session holds every rule. A minted id makes each action idempotent.
+let actionSeq = 0;
+const mintId = (prefix) => `${prefix}-${Date.now()}-${actionSeq++}`;
+
+function paintActionLabels() {
+  el('actions-heading').textContent = t('actionsHeading');
+  el('transfer-heading').textContent = t('transferHeading');
+  el('l-from').textContent = t('lFrom'); el('l-to').textContent = t('lTo'); el('l-product').textContent = t('lProduct');
+  el('l-qty').textContent = t('lQty'); el('l-cost').textContent = t('lCost'); el('t-do').textContent = t('doTransfer');
+  el('task-heading').textContent = t('taskHeading');
+  el('l-kind').textContent = t('lKind'); el('l-assignee').textContent = t('lAssignee');
+  el('l-tproduct').textContent = t('lTproduct'); el('l-bin').textContent = t('lBin'); el('k-do').textContent = t('doTask');
+  const picker = el('k-kind');
+  const current = picker.value;
+  picker.textContent = '';
+  for (const kind of TASK_KINDS) {
+    const opt = document.createElement('option'); opt.value = kind; opt.textContent = t(kind); picker.append(opt);
+  }
+  if (current) picker.value = current;
+}
+
+el('t-do').addEventListener('click', () => {
+  const rupees = Number(el('t-cost').value);
+  const qty = Number(el('t-qty').value);
+  const out = real.proposeTransfer({
+    transferId: mintId('t'), fromLocationId: el('t-from').value.trim(), toLocationId: el('t-to').value.trim(),
+    lines: [{ productId: el('t-product').value.trim(), quantityMinor: Math.round(qty), uom: 'EA', unitCostMinor: Math.round(rupees * 100), currency: 'INR' }],
+  }, window.warehouseSupervisorOutbox);
+  if (out && out.ok) { toast(t('transferQueued'), false); ['t-from', 't-to', 't-product', 't-qty', 't-cost'].forEach((id) => { el(id).value = ''; }); }
+  else { toast(`${t('actionRefused')}: ${out ? out.refusal : 'no_outbox'}`, true); }
+});
+
+el('k-do').addEventListener('click', () => {
+  const out = real.assignTask({
+    taskId: mintId('tk'), kind: el('k-kind').value, assignedTo: el('k-assignee').value.trim(),
+    productId: el('k-product').value.trim() || undefined, binId: el('k-bin').value.trim() || undefined,
+    at: new Date().toISOString(),
+  }, window.warehouseSupervisorOutbox);
+  if (out && out.ok) { toast(t('taskQueued'), false); ['k-assignee', 'k-product', 'k-bin'].forEach((id) => { el(id).value = ''; }); }
+  else { toast(`${t('actionRefused')}: ${out ? out.refusal : 'no_outbox'}`, true); }
+});
+
 function render() {
   el('who').firstChild.textContent = t('who');
   el('store').textContent = (data && data.storeId) || '';
@@ -258,6 +315,7 @@ function render() {
   renderStock();
   renderExceptions();
   renderApprovals();
+  paintActionLabels();
 }
 
 // ── Boot ────────────────────────────────────────────────────────────────────
