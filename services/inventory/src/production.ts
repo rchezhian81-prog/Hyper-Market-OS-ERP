@@ -22,6 +22,7 @@ import {
   produceBatch, validateRecipe, InvalidRecipeError, InsufficientMaterialError,
   type Recipe, type RecipeInput, type ProductionException,
 } from '../../../packages/production/src/recipe';
+import { releaseForSale } from '../../../packages/production/src/packing';
 import type { StockMovement } from '../../../packages/stock/src/position';
 import { isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
 
@@ -46,6 +47,19 @@ export interface StoredRun {
   readonly consumed: readonly RecipeInput[];
   readonly producedBy: string;
   readonly at: string;
+  /** Quality-release state, set by the adapter's fold of release events (M11-FR-03). */
+  readonly released?: boolean;
+  readonly releasedBy?: string | null;
+  readonly releasedAt?: string | null;
+}
+
+/** A quality release recorded against a run — moves the finished batch out of quarantine. */
+export interface StoredRelease {
+  readonly runId: string;
+  readonly batchId: string;
+  readonly releasedBy: string;
+  readonly quantityMinor: number;
+  readonly releasedAt: string;
 }
 
 export interface ProductionDeps {
@@ -58,7 +72,10 @@ export interface ProductionDeps {
   readonly priorConsumption: (tenantId: string, locationId: string) => Promise<Readonly<Record<string, number>>> | Readonly<Record<string, number>>;
   readonly runExists: (tenantId: string, runId: string) => Promise<boolean> | boolean;
   readonly runs: (tenantId: string) => Promise<readonly StoredRun[]> | readonly StoredRun[];
+  /** One run with its release state merged, or nothing. */
+  readonly run: (tenantId: string, runId: string) => Promise<StoredRun | undefined> | StoredRun | undefined;
   readonly recordRun: (tenantId: string, run: StoredRun) => Promise<void> | void;
+  readonly recordRelease: (tenantId: string, release: StoredRelease) => Promise<void> | void;
   readonly now: () => string;
 }
 
@@ -211,6 +228,45 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
             yieldBp: run.yieldBp, yieldVerdict: run.yieldVerdict, exceptions: run.exceptions,
           },
         };
+      },
+    },
+    {
+      // Quality release (M11-FR-03): move a run's finished batch out of quarantine and make it
+      // sellable. Refused for a failed check, an unnamed releaser, or a batch that has already
+      // expired — you cannot release your way past a use-by date. Freshly produced food is not
+      // sellable because it exists; it is sellable when someone has looked at it and said so.
+      api: 'API-04', method: 'POST', path: '/v1/production/runs/:runId/release',
+      permission: 'production.release', idempotent: true,
+      handler: async (ctx) => {
+        const runId = ctx.params['runId'] ?? '';
+        const b = (ctx.body ?? {}) as { qcPassed?: unknown; notes?: unknown };
+        if (!isStr(runId) || typeof b.qcPassed !== 'boolean' || (b.notes !== undefined && typeof b.notes !== 'string')) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_release',
+            whatHappened: 'A release needs a boolean qcPassed (did the quality check pass?).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { qcPassed: true|false }. Nothing was changed.',
+          });
+        }
+        const run = await deps.run(ctx.tenantId, runId);
+        if (run === undefined) {
+          throw apiError(404, { code: 'run_not_found', whatHappened: `No production run "${runId}".`, wasItSaved: 'not_saved', nextSafeAction: 'Commit the run first, then release it.' });
+        }
+        if (run.released === true) {
+          throw apiError(409, { code: 'batch_already_released', whatHappened: `Run ${runId}'s batch has already been released.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed — the batch is already sellable.' });
+        }
+        const at = deps.now();
+        const result = releaseForSale({
+          release: { batchId: run.outputBatchId, releasedBy: ctx.userId, qcPassed: b.qcPassed, at, ...(isStr(b.notes) ? { notes: b.notes } : {}) },
+          productId: run.outputProductId, locationId: run.locationId, quantityMinor: run.outputQuantityMinor, uom: run.outputUom, expiresAt: run.expiresAt,
+        });
+        if (!result.released) {
+          // qc_failed / already_expired / no_releaser / nothing_to_release — all keep the batch in
+          // quarantine. Reported with the engine's own reason so the audit trail can act on it.
+          throw apiError(422, { code: result.outcome, whatHappened: result.detail, wasItSaved: 'not_saved', nextSafeAction: 'The batch stays in quarantine. Fix the cause and, where the batch is still good, release it again.' });
+        }
+        await deps.recordRelease(ctx.tenantId, { runId, batchId: run.outputBatchId, releasedBy: ctx.userId, quantityMinor: run.outputQuantityMinor, releasedAt: at });
+        return { status: 200, body: { runId, batchId: run.outputBatchId, released: true, releasedBy: ctx.userId, releasedAt: at, movements: result.movements } };
       },
     },
     {

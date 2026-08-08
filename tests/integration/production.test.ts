@@ -127,3 +127,57 @@ describe('production: consume ingredients, create a finished batch in quarantine
     expect(((await readRuns(h, B, 'u-owner-b')).body as { runs: unknown[] }).runs).toHaveLength(0);
   });
 });
+
+const release = (h: ApiHarness, t: string, u: string, runId: string, qcPassed: boolean, key?: string) =>
+  h.request({ method: 'POST', path: `/v1/production/runs/${runId}/release`, userId: u, tenantId: t, idempotencyKey: key ?? `rel-${runId}`, body: { qcPassed } });
+
+describe('production quality release: nothing sellable until a named person passes it (M11-FR-03)', () => {
+  const setup = async (h: ApiHarness, u = 'u-owner') => {
+    await h.seedOwner(A, u);
+    await seedOnHand(h, A, u, 'FLOUR', 500);
+    await seedOnHand(h, A, u, 'SUGAR', 300);
+    await registerRecipe(h, A, u, 'r1');
+    expect((await commitRun(h, A, u, 'run-1', { recipeId: 'r1', batches: 1, actualOutputMinor: 1, outputBatchId: 'C1', locationId: 'KITCHEN' })).status).toBe(201);
+  };
+
+  it('a produced batch stays in quarantine until released, then becomes sellable', async () => {
+    const h = apiHarness();
+    await setup(h);
+    // Before release: the run is recorded but not released.
+    const before = ((await readRuns(h, A, 'u-owner')).body as { runs: { runId: string; released: boolean }[] }).runs.find((r) => r.runId === 'run-1');
+    expect(before?.released).toBe(false);
+
+    const rel = await release(h, A, 'u-owner', 'run-1', true);
+    expect(rel.status).toBe(200);
+    expect((rel.body as { released: boolean; releasedBy: string }).released).toBe(true);
+    expect((rel.body as { releasedBy: string }).releasedBy).toBe('u-owner');
+
+    const after = ((await readRuns(h, A, 'u-owner')).body as { runs: { runId: string; released: boolean }[] }).runs.find((r) => r.runId === 'run-1');
+    expect(after?.released).toBe(true);
+  });
+
+  it('refuses to release a batch that failed its quality check — it stays in quarantine', async () => {
+    const h = apiHarness();
+    await setup(h);
+    const rel = await release(h, A, 'u-owner', 'run-1', false);
+    expect(rel.status).toBe(422);
+    expect(codeOf(rel)).toBe('qc_failed');
+    // Still not released.
+    expect(((await readRuns(h, A, 'u-owner')).body as { runs: { runId: string; released: boolean }[] }).runs.find((r) => r.runId === 'run-1')?.released).toBe(false);
+  });
+
+  it('refuses a second release of the same batch, and an unknown run', async () => {
+    const h = apiHarness();
+    await setup(h);
+    expect((await release(h, A, 'u-owner', 'run-1', true)).status).toBe(200);
+    expect(codeOf(await release(h, A, 'u-owner', 'run-1', true, 'rel-run-1-again'))).toBe('batch_already_released');
+    expect(codeOf(await release(h, A, 'u-owner', 'ghost', true))).toBe('run_not_found');
+  });
+
+  it('is authorized — a cashier cannot release stock for sale', async () => {
+    const h = apiHarness();
+    await setup(h, 'u-owner');
+    await h.provisionRole(A, 'u-cash', 'cashier');
+    expect((await release(h, A, 'u-cash', 'run-1', true, 'rel-cash')).status).toBe(403);
+  });
+});
