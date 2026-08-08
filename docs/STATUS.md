@@ -3,7 +3,7 @@
 _Read this file, together with `CLAUDE.md`, at the start of every session (prompt R6)._
 _Update it at the end of every session (prompt R10). This is what stops the project drifting._
 
-Last updated: 7 August 2026 (PROJECT RECOVERY KICKOFF — read-only audit accepted as the implementation baseline; Phase 0 baseline/status reconciliation + Phase 1 CRITICAL security repair done: per-tenant RBAC now genuinely enforced on the live API surface (it was inert — `AccessControl([],[])`), with a guarded genesis-owner bootstrap and an authenticated+authorized E2E; completion-status vocabulary adopted, 5 dropped D-FR rows restored, ASSEMBLY/WIRING workstream opened, and `docs/OWNER-ACTION-REGISTER.md` created. See the PROJECT RECOVERY section at the top. Earlier: durable tenant settings — setup answers now persist through the append-only config_versions store and survive a restart, PR #19; see the durable-settings milestone below. Just before it, self-service store setup shipped COMPLETE across PRs #15–#18 — built-in thermal receipt templates, the setup engine with defaults and block-until-given, the API-11 read/answer endpoints with optimistic concurrency and an audit trail, and the bilingual Store setup page with FULL inline editing; see the store-setup milestone below. Earlier the same day: the pilot-preparation pack across PRs #11–#13 — the store go-live checklist, the set-up workbook in document and Excel form, and the day-by-day pilot run-sheet, all CI-green; see the pilot-preparation milestone below. Earlier still, PR #10 merged the eleven ERP screens and six apps with CI green — see the 7 August milestone below; the session that built it: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, the day boundary the store box did not have, the service desk, expiry and recall — including the recall block that never reached a till — finance, which lets a month close for the first time, admin and security — including a security control that existed twice and enforced less where it counted, AI control, including the kill switch that stopped nothing — and migration, including the cutover gate that had only ever been ticked by hand)
+Last updated: 8 August 2026 (Phase 3 cloud assembly continues — **M22-FR-03 salesperson commission WIRED** on the cloud surface: earned not stated, computed exactly by the engine on the server, the total projected from the accruals never stored, a re-send collapsing on the accrual id, with a record-vs-read SoD split; integration-tested through the real API + RBAC. Also **OA-9 recorded** in the Owner Action Register — the genuine design decision for the first on-screen increment (offline in-store pack vs a separate cloud office screen for pure back-office data), with a recommended default and two alternatives, surfaced rather than guessed. Earlier: PROJECT RECOVERY KICKOFF — read-only audit accepted as the implementation baseline; Phase 0 baseline/status reconciliation + Phase 1 CRITICAL security repair done: per-tenant RBAC now genuinely enforced on the live API surface (it was inert — `AccessControl([],[])`), with a guarded genesis-owner bootstrap and an authenticated+authorized E2E; completion-status vocabulary adopted, 5 dropped D-FR rows restored, ASSEMBLY/WIRING workstream opened, and `docs/OWNER-ACTION-REGISTER.md` created. See the PROJECT RECOVERY section at the top. Earlier: durable tenant settings — setup answers now persist through the append-only config_versions store and survive a restart, PR #19; see the durable-settings milestone below. Just before it, self-service store setup shipped COMPLETE across PRs #15–#18 — built-in thermal receipt templates, the setup engine with defaults and block-until-given, the API-11 read/answer endpoints with optimistic concurrency and an audit trail, and the bilingual Store setup page with FULL inline editing; see the store-setup milestone below. Earlier the same day: the pilot-preparation pack across PRs #11–#13 — the store go-live checklist, the set-up workbook in document and Excel form, and the day-by-day pilot run-sheet, all CI-green; see the pilot-preparation milestone below. Earlier still, PR #10 merged the eleven ERP screens and six apps with CI green — see the 7 August milestone below; the session that built it: the buyer's screen, offline shells switched on for real, products and prices, shelf addresses, the pick zone order, merchandising and space, reporting and analytics, the day boundary the store box did not have, the service desk, expiry and recall — including the recall block that never reached a till — finance, which lets a month close for the first time, admin and security — including a security control that existed twice and enforced less where it counted, AI control, including the kill switch that stopped nothing — and migration, including the cutover gate that had only ever been ticked by hand)
 
 ---
 
@@ -589,6 +589,10 @@ completion template, observability, API surface + event contract tests, and the 
   pack exists so the till trades with no internet (P-01) and these are not needed at the lane. This is a
   design decision to surface, not force into a rushed PR. Recommended: an OWNER/design decision on
   offline-vs-cloud-only admin screens before the first channel increment; recorded rather than guessed.
+  **Now recorded as OA-9** in `docs/OWNER-ACTION-REGISTER.md` with a recommended default (keep the
+  in-store offline pack for what the floor needs to trade; put pure office data — a compliance report, a
+  supplier statement, integration health — on a separate cloud office screen) and two alternatives.
+  The first office screen is BLOCKED on this decision; all remaining cloud wiring continues meanwhile.
 
 - **Done (this increment): B2B collections — aged from the due date, a dispute is not chased, stop-supply
   needs a person (M22-FR-04, API-09).** Re-verified the earlier deferral ("dunning needs structured
@@ -608,6 +612,23 @@ completion template, observability, API surface + event contract tests, and the 
   (4 cases). M22 → **PARTIALLY WIRED** (FR-01 credit + FR-04 collections wired; quote→invoice chain FR-02
   and commission FR-03 engine-only; the customer-facing collections PORTAL and `reconcileAr` need external
   B2B-customer auth). Full gate green (typecheck, lint, secret-scan, build:api, audit, **4,692 tests**).
+
+- **Done (this increment): B2B salesperson commission — earned, not stated; computed exactly; projected,
+  never stored (M22-FR-03, API-09).** The pure `computeCommission` engine (exact money, half-up, optional
+  cap) had no persistence, no API and no read. This increment wires it (`services/finance/src/b2b-commission.ts`):
+  `POST /v1/b2b/commissions/:sp/accruals/:id` takes a commissionable base and a **declared** rate (bps) with
+  an optional cap, and the **server computes the payout with the engine** — the caller never states the
+  amount, so a fitted figure cannot be slipped in (the same discipline as the migration banking-verification
+  control, where a rate is declared and never derived from the difference); `GET /v1/b2b/commissions/:sp`
+  reports the **total earned, projected by summing the accruals**, never a stored balance (#2); a re-sent
+  accrual **collapses on the accrual id** (append-only, never twice). A record-vs-read SoD split: recording
+  is a finance act (`b2b.commission.record`, owner/accountant), a manager may read what the floor has earned
+  (`b2b.commission.read`), a cashier neither. Proven through the real API + real RBAC in
+  `tests/integration/b2b-commission.test.ts` (3 cases — exact/half-up/cap, projection + re-send collapse,
+  and the authz/tenant/malformed split). M22 → still **PARTIALLY WIRED** (FR-01 credit + FR-03 commission +
+  FR-04 collections wired; quote→invoice chain FR-02 engine-only; the customer-facing collections PORTAL and
+  `reconcileAr` need external B2B-customer auth). Full gate green locally (typecheck, lint, guardrails 574,
+  secret-scan, build:api, audit, and the DB suites).
 
 **Then:** Phase 3 assembly in dependency order — replacing thin duplicated service logic with the
 tested domain engines (one authoritative implementation per domain), each module driven up the
