@@ -42,6 +42,7 @@ import { storedValueRoutes } from '../../customer/src/stored-value';
 import { promotionRoutes } from '../../pricing/src/promotions';
 import { settlementRoutes } from '../../finance/src/settlement';
 import { b2bCreditRoutes } from '../../finance/src/b2b-credit';
+import { b2bCollectionsRoutes } from '../../finance/src/b2b-collections';
 import { concessionRoutes } from '../../finance/src/concession';
 import { scrapRoutes } from '../../finance/src/scrap';
 import { facilitiesRoutes } from '../../platform/src/facilities';
@@ -66,7 +67,7 @@ import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, pricingAdapter, posAdapter, returnsAdapter, inventoryAdapter, packagingAdapter, wasteAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
-  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, cashAdapter, shiftAdapter, b2bCreditAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, integrationAdapter, webhookAdapter, connectorAdapter,
+  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, cashAdapter, shiftAdapter, b2bCreditAdapter, b2bCollectionsAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, integrationAdapter, webhookAdapter, connectorAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
@@ -202,6 +203,9 @@ export function buildSurface(deps: {
     ...b2bCreditRoutes(store === undefined ? {
       account: empty(undefined), outstandingMinor: empty(0), recordAccount: () => {}, recordReceivable: () => {}, now,
     } : b2bCreditAdapter({ store, now })),
+    ...b2bCollectionsRoutes(store === undefined ? {
+      invoices: empty([]), recordInvoice: () => {}, recordPayment: () => {}, now,
+    } : b2bCollectionsAdapter({ store, now })),
     ...concessionRoutes(store === undefined ? {
       contract: empty(undefined), sales: empty([]), recordContract: () => {}, recordSale: () => {}, now,
     } : concessionAdapter({ store, now })),
