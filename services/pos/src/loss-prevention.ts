@@ -20,6 +20,9 @@ import {
   openCase, addEvidence, verifyEvidence, closeCase, ruleFeedback,
   type InvestigationCase, type EvidenceItem, type EvidenceKind, type CaseOutcome,
 } from '../../../packages/loss-prevention/src/cases';
+import {
+  evaluateLossPrevention, type LpRule, type ActivityEvent, type SignalKind,
+} from '../../../packages/loss-prevention/src/loss-prevention';
 
 const KINDS: readonly EvidenceKind[] = ['transaction_record', 'cctv_reference', 'witness_statement', 'stock_count', 'settlement_record', 'note'];
 const OUTCOMES: readonly CaseOutcome[] = ['proven', 'unfounded', 'inconclusive', 'process_failure', 'referred_to_police'];
@@ -127,6 +130,95 @@ export function lpCasesRoutes(deps: LpCasesDeps): readonly Route[] {
       handler: async (ctx) => {
         const all = await deps.cases(ctx.tenantId);
         return { status: 200, body: { adjustments: ruleFeedback(all), asAt: deps.now() } };
+      },
+    },
+  ];
+}
+
+// ── Anomaly rules & detection (M15-FR-01) ─────────────────────────────────────────────────────────
+// "Control by exception" (P-03): a store configures its own thresholds as DATA (no code), and activity
+// — voids, refunds, discounts, no-sales, cash variances, already synced from the lanes — is evaluated
+// against them to surface risky patterns as exceptions that LINK back to the transactions. DETECT-ONLY:
+// nothing is blocked, suspended or sanctioned (AI-NFR-12); a raised exception is what OPENS a case.
+
+const SIGNAL_KINDS: readonly SignalKind[] = ['void', 'refund', 'discount', 'no_sale', 'cash_variance'];
+const isSignalKind = (v: unknown): v is SignalKind => typeof v === 'string' && (SIGNAL_KINDS as readonly string[]).includes(v);
+
+export interface LpRulesDeps {
+  readonly rules: (tenantId: string) => Promise<readonly LpRule[]> | readonly LpRule[];
+  readonly recordRule: (tenantId: string, rule: LpRule) => Promise<void> | void;
+  readonly now: () => string;
+}
+
+/** Read the activity events to evaluate, or null if any is malformed. */
+function readActivity(v: unknown): ActivityEvent[] | null {
+  if (!Array.isArray(v)) return null;
+  const events: ActivityEvent[] = [];
+  for (const raw of v) {
+    if (raw === null || typeof raw !== 'object') return null;
+    const e = raw as Record<string, unknown>;
+    if (!isStr(e['txnId']) || !isSignalKind(e['kind']) || !isStr(e['cashierId']) || !isStr(e['at'])) return null;
+    if (e['valueMinor'] !== undefined && !Number.isInteger(e['valueMinor'])) return null;
+    events.push({
+      txnId: e['txnId'] as string, kind: e['kind'], cashierId: e['cashierId'] as string, at: e['at'] as string,
+      ...(Number.isInteger(e['valueMinor']) ? { valueMinor: e['valueMinor'] as number } : {}),
+    });
+  }
+  return events;
+}
+
+export function lpRulesRoutes(deps: LpRulesDeps): readonly Route[] {
+  return [
+    {
+      // Configure a rule for a signal kind — thresholds are DATA, tuned without code. Latest per kind wins.
+      api: 'API-05', method: 'POST', path: '/v1/loss-prevention/rules/:kind',
+      permission: 'lp.rule.manage', idempotent: true,
+      handler: async (ctx) => {
+        const kind = ctx.params['kind'] ?? '';
+        if (!isSignalKind(kind)) throw notFound(`signal kind ${kind}`);
+        const b = (ctx.body ?? {}) as { maxCount?: unknown; maxTotalValueMinor?: unknown; maxSingleValueMinor?: unknown; escalateAtMultiple?: unknown };
+        const nonNegInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0;
+        for (const [k, v] of Object.entries(b)) {
+          if (v !== undefined && !nonNegInt(v)) refuse('not_readable_as_a_rule', `A rule limit (${k}) must be a whole, non-negative number.`, 400);
+        }
+        if (b.escalateAtMultiple !== undefined && (b.escalateAtMultiple as number) < 1) {
+          refuse('not_readable_as_a_rule', 'escalateAtMultiple must be at least 1.', 400);
+        }
+        if (b.maxCount === undefined && b.maxTotalValueMinor === undefined && b.maxSingleValueMinor === undefined) {
+          refuse('rule_has_no_limit', 'A rule needs at least one limit (maxCount, maxTotalValueMinor or maxSingleValueMinor), or it never fires.', 400);
+        }
+        const rule: LpRule = {
+          kind,
+          ...(nonNegInt(b.maxCount) ? { maxCount: b.maxCount } : {}),
+          ...(nonNegInt(b.maxTotalValueMinor) ? { maxTotalValueMinor: b.maxTotalValueMinor } : {}),
+          ...(nonNegInt(b.maxSingleValueMinor) ? { maxSingleValueMinor: b.maxSingleValueMinor } : {}),
+          ...(nonNegInt(b.escalateAtMultiple) ? { escalateAtMultiple: b.escalateAtMultiple } : {}),
+        };
+        await deps.recordRule(ctx.tenantId, rule);
+        return { status: 201, body: rule };
+      },
+    },
+    {
+      // The store's configured rules — latest per kind.
+      api: 'API-05', method: 'GET', path: '/v1/loss-prevention/rules',
+      permission: 'lp.case.read',
+      handler: async (ctx) => {
+        return { status: 200, body: { rules: await deps.rules(ctx.tenantId), asAt: deps.now() } };
+      },
+    },
+    {
+      // Evaluate already-synced activity against the store's rules — detect-only, exceptions link back to
+      // the transactions. A what-if over supplied activity; it computes, it never commits.
+      api: 'API-05', method: 'POST', path: '/v1/loss-prevention/evaluate',
+      permission: 'lp.case.read', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as { events?: unknown };
+        const events = readActivity(b.events);
+        if (events === null) {
+          refuse('not_readable_as_activity', 'Activity is a list of events, each with a txnId, a kind, a cashierId and an "at" time (valueMinor where the kind has a value).', 400);
+        }
+        const rules = await deps.rules(ctx.tenantId);
+        return { status: 200, body: { exceptions: evaluateLossPrevention(events as ActivityEvent[], rules), asAt: deps.now() } };
       },
     },
   ];
