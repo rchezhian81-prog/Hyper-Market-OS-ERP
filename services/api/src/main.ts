@@ -34,6 +34,7 @@ import type { TargetKind } from '../../../packages/migration/src/trial';
 import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
 import { pricingRoutes } from '../../pricing/src/index';
 import { priceListRoutes } from '../../pricing/src/price-list';
+import { promotionCatalogueRoutes } from '../../pricing/src/promotion-catalogue';
 import { posRoutes } from '../../pos/src/index';
 import { returnsRoutes } from '../../pos/src/returns';
 import { cashRoutes } from '../../pos/src/cash';
@@ -70,7 +71,7 @@ import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, packagingAdapter, wasteAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
-  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, cashAdapter, shiftAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, integrationAdapter, webhookAdapter, connectorAdapter,
+  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, integrationAdapter, webhookAdapter, connectorAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
@@ -140,6 +141,9 @@ export function buildSurface(deps: {
     ...promotionRoutes(store === undefined
       ? { launchedPromotion: empty(undefined), recordLaunch: () => {}, now }
       : promotionAdapter({ store, now })),
+    ...promotionCatalogueRoutes(store === undefined
+      ? { promotion: empty(undefined), promotions: empty([]), recordDefined: () => {}, recordStatus: () => {}, now }
+      : promotionCatalogueAdapter({ store, now })),
     ...purchaseRoutes(store === undefined ? {
       matchLines: empty([]), recordCapture: () => {}, recordMatch: () => {}, applyBankChange: () => {},
       openCommitments: empty(undefined), now,

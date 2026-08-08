@@ -56,6 +56,8 @@ import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../
 import type { StoredPointsMovement } from '../../../packages/loyalty/src/assess-points';
 import type { StoredValueDeps, Instrument, ValueMovement } from '../../customer/src/stored-value';
 import type { PromotionDeps, LaunchRecord } from '../../pricing/src/promotions';
+import type { PromotionCatalogueDeps } from '../../pricing/src/promotion-catalogue';
+import type { Promotion } from '../../../packages/promotions/src/promotions';
 import { expired } from '../../orders/src/index';
 import type { Reservation, OrdersDeps } from '../../orders/src/index';
 import type { DeliveryAttempt, FulfilmentDeps } from '../../fulfilment/src/index';
@@ -2010,6 +2012,62 @@ export function promotionAdapter(input: {
         idempotencyKey: `promo-launch-${tenantId}-${record.promotionId}`,
         source: 'api/pricing',
         payload: record,
+      }));
+    },
+  };
+}
+
+export function promotionCatalogueAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): PromotionCatalogueDeps {
+  // Promotions are low-volume (a shop runs tens, not millions), so all fold one tenant stream. A
+  // definition sets the rule as a DRAFT; activate/stop move only its status — the latest state wins.
+  const foldPromotions = async (tenantId: string): Promise<readonly Promotion[]> => {
+    const events = await input.store.readStream(tenantId, STREAM.promotions);
+    const byId = new Map<string, Promotion>();
+    for (const e of events) {
+      const p = e.event.payload as Record<string, unknown>;
+      if (e.event.type === 'PromotionDefined') {
+        byId.set(p['id'] as string, p as unknown as Promotion);
+      } else if (e.event.type === 'PromotionActivated') {
+        const cur = byId.get(p['promotionId'] as string);
+        if (cur !== undefined) byId.set(cur.id, { ...cur, status: 'active' });
+      } else if (e.event.type === 'PromotionStopped') {
+        const cur = byId.get(p['promotionId'] as string);
+        if (cur !== undefined) byId.set(cur.id, { ...cur, status: 'stopped' });
+      }
+    }
+    return [...byId.values()];
+  };
+
+  return {
+    now: input.now,
+
+    promotions: (tenantId) => foldPromotions(tenantId),
+    promotion: async (tenantId, promotionId) => (await foldPromotions(tenantId)).find((p) => p.id === promotionId),
+
+    recordDefined: async (tenantId, promo) => {
+      await input.store.append(tenantId, STREAM.promotions, makeEvent({
+        id: `promo-def-${promo.id}`,
+        type: 'PromotionDefined',
+        occurredAt: input.now(),
+        // The promotion's own id — a re-sent definition collapses (create-once; the route refuses a redefine).
+        idempotencyKey: `promo-def-${tenantId}-${promo.id}`,
+        source: 'api/pricing',
+        payload: promo,
+      }));
+    },
+
+    recordStatus: async (tenantId, promotionId, status, at) => {
+      await input.store.append(tenantId, STREAM.promotions, makeEvent({
+        id: `promo-${status}-${promotionId}`,
+        type: status === 'active' ? 'PromotionActivated' : 'PromotionStopped',
+        occurredAt: at,
+        // One activate, one stop per promotion — a re-sent transition collapses.
+        idempotencyKey: `promo-${status}-${tenantId}-${promotionId}`,
+        source: 'api/pricing',
+        payload: { promotionId },
       }));
     },
   };
