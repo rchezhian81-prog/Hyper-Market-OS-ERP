@@ -245,6 +245,7 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   }),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([]),
+  warehouse: notKnown('no warehouse work sent'),
   ...over,
 });
 

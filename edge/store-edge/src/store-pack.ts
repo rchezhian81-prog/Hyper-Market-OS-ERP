@@ -509,6 +509,64 @@ export interface PackPolicies {
   readonly warehouseId: string;
 }
 
+/** A storage bin the warehouse handheld can put stock into (M09 / OA-9). */
+export interface PackWarehouseBin {
+  readonly binId: string;
+  readonly storeId: string;
+  readonly locationId?: string;
+  /** Units this bin holds. Zero means "not a storage bin" and is refused at put-away. */
+  readonly capacityMinor: number;
+  /** A pickable bin feeds the shop floor or an order; bad stock is kept out of it. */
+  readonly pickable: boolean;
+  readonly zone?: 'ambient' | 'chilled' | 'frozen' | 'secure' | 'quarantine';
+}
+
+/** Goods received and awaiting put-away — the handheld's worklist, per product+batch. */
+export interface PackWarehouseGoodsIn {
+  readonly productId: string;
+  readonly batchId: string | null;
+  readonly quantityMinor: number;
+  readonly uom: string;
+  /** The condition the stock is in (a `StockState`; kept as a string to stay dependency-free). */
+  readonly state: string;
+  /** The batch's expiry, so put-away can keep expired stock out of a pickable bin. */
+  readonly expiry: string | null;
+  readonly recalled?: boolean;
+}
+
+/** Which barcode identifies which product, and at what pack level — for scanning at goods-in. */
+export interface PackWarehouseBarcode {
+  readonly barcode: string;
+  readonly productId: string;
+  readonly level: string;
+}
+
+/** What is on order, as the receiver sees it — so an over-delivery or an off-order item is caught. */
+export interface PackWarehouseOrdered {
+  readonly productId: string;
+  readonly quantityMinor: number;
+  readonly unitCostMinor: number;
+  readonly currency: string;
+}
+
+/**
+ * The warehouse work the cloud assigned this box (M09 / OA-9) — the bins, the catalogue for
+ * scanning, what is on order, what is awaiting put-away and what is under recall. The offline
+ * Warehouse PWA boots on exactly this; the same authoritative rules decide every scan.
+ */
+export interface PackWarehouse {
+  readonly assignmentId: string;
+  readonly workerId: string;
+  readonly storeId: string;
+  readonly bins: readonly PackWarehouseBin[];
+  readonly goodsIn?: readonly PackWarehouseGoodsIn[];
+  readonly barcodes?: readonly PackWarehouseBarcode[];
+  readonly ordered?: readonly PackWarehouseOrdered[];
+  readonly grnId?: string;
+  readonly recalledProductIds?: readonly string[];
+  readonly recalledBatchIds?: readonly string[];
+}
+
 /**
  * Everything the cloud last told this box.
  *
@@ -690,6 +748,8 @@ export interface StorePack {
   readonly lossPreventionRules: Register<readonly unknown[]>;
   /** The purposes this tenant asks a customer's consent for (M16 / PRV). */
   readonly consentPurposes: Register<readonly { readonly purpose: string; readonly channel: string; readonly required?: boolean }[]>;
+  /** The warehouse work assigned to this box — bins, catalogue, orders, goods-in, recalls (M09 / OA-9). */
+  readonly warehouse: Register<PackWarehouse>;
 }
 
 const NEVER = 'this store box has never received a pack from the cloud';
@@ -777,6 +837,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     migrationPolicy: notKnown(why),
     lossPreventionRules: notKnown(why),
     consentPurposes: notKnown(why),
+    warehouse: notKnown(why),
   };
 }
 
@@ -872,5 +933,6 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     migrationPolicy: section<PackMigrationPolicy>('migrationPolicy'),
     lossPreventionRules: section<readonly unknown[]>('lossPreventionRules'),
     consentPurposes: section<readonly { purpose: string; channel: string; required?: boolean }[]>('consentPurposes'),
+    warehouse: section<PackWarehouse>('warehouse'),
   };
 }
