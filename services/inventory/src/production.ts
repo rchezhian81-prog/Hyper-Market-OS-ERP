@@ -28,7 +28,7 @@ import {
   DepartmentNotOperatedError, UnknownDepartmentError,
 } from '../../../packages/production/src/departments';
 import type { StockMovement } from '../../../packages/stock/src/position';
-import { isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
+import { isCurrencyCode, money, type CurrencyCode, type Money } from '../../../packages/contracts/src/money';
 
 /** A committed production run, recorded as the evidence a later report reads. */
 export interface StoredRun {
@@ -44,6 +44,10 @@ export interface StoredRun {
   readonly inputCostMinor: number;
   readonly outputUnitCostMinor: number;
   readonly currency: CurrencyCode;
+  /** True when every ingredient had a registered cost — the cost/margin is then authoritative. */
+  readonly costKnown: boolean;
+  /** Ingredients with no registered cost — their value is NOT faked as zero (P-08). */
+  readonly uncostedProducts: readonly string[];
   readonly yieldBp: number;
   readonly yieldVerdict: string;
   readonly exceptions: readonly ProductionException[];
@@ -70,6 +74,9 @@ export interface ProductionDeps {
   /** The registered recipe, or nothing when the box has never been told it. */
   readonly recipe: (tenantId: string, recipeId: string) => Promise<Recipe | undefined> | Recipe | undefined;
   readonly recordRecipe: (tenantId: string, recipe: Recipe) => Promise<void> | void;
+  /** The registered ingredient cost per smallest unit (M11-FR-02), or nothing when unknown. */
+  readonly ingredientCost: (tenantId: string, productId: string) => Promise<Money | undefined> | Money | undefined;
+  readonly recordCost: (tenantId: string, productId: string, cost: Money) => Promise<void> | void;
   /** Authoritative M08 on-hand for (product, location) — the base a run is checked against. */
   readonly onHand: (tenantId: string, productId: string, locationId: string) => Promise<number> | number;
   /** What prior production runs at a location have already consumed, per product. */
@@ -155,7 +162,7 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
         const runId = ctx.params['runId'] ?? '';
         const b = (ctx.body ?? {}) as {
           recipeId?: unknown; batches?: unknown; actualOutputMinor?: unknown; outputBatchId?: unknown;
-          locationId?: unknown; unitCosts?: unknown; currency?: unknown;
+          locationId?: unknown; currency?: unknown;
         };
         if (!isStr(runId) || !isStr(b.recipeId) || !isPosInt(b.batches) || !isNonNegInt(b.actualOutputMinor)
           || !isStr(b.outputBatchId) || !isStr(b.locationId)
@@ -201,7 +208,19 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
           const base = await deps.onHand(ctx.tenantId, input.productId, b.locationId);
           available[input.productId] = base - (prior[input.productId] ?? 0);
         }
-        const unitCosts = readUnitCosts(b.unitCosts, currency);
+        // Ingredient costs come from the registered cost register (M11-FR-02), never the request —
+        // a run cannot value its own margin. An ingredient with no registered cost is NOT costed at
+        // zero (that reports a 100% margin, a lie that reads as good news); it is listed as uncosted
+        // and the run's cost is marked not-authoritative, while the physical run still proceeds (a
+        // missing cost must not stop the cafe making coffee).
+        const unitCosts: Record<string, Money> = {};
+        const uncostedProducts: string[] = [];
+        for (const input of recipe.inputs) {
+          const cost = await deps.ingredientCost(ctx.tenantId, input.productId);
+          if (cost === undefined) uncostedProducts.push(input.productId);
+          else unitCosts[input.productId] = cost;
+        }
+        const costKnown = uncostedProducts.length === 0;
 
         let result;
         try {
@@ -228,6 +247,7 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
           outputProductId: result.outputProductId, outputBatchId: result.outputBatchId,
           outputQuantityMinor: result.outputQuantityMinor, outputUom: recipe.outputUom, expiresAt: result.expiresAt,
           inputCostMinor: result.inputCost.minor, outputUnitCostMinor: result.outputUnitCost.minor, currency,
+          costKnown, uncostedProducts,
           yieldBp: result.yieldBp, yieldVerdict: result.yieldVerdict, exceptions: result.exceptions,
           consumed, producedBy: ctx.userId, at,
         };
@@ -238,6 +258,7 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
             runId, outputProductId: run.outputProductId, outputBatchId: run.outputBatchId,
             outputQuantityMinor: run.outputQuantityMinor, expiresAt: run.expiresAt,
             inputCostMinor: run.inputCostMinor, outputUnitCostMinor: run.outputUnitCostMinor,
+            costKnown: run.costKnown, uncostedProducts: run.uncostedProducts,
             yieldBp: run.yieldBp, yieldVerdict: run.yieldVerdict, exceptions: run.exceptions,
           },
         };
@@ -280,6 +301,26 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
         }
         await deps.recordRelease(ctx.tenantId, { runId, batchId: run.outputBatchId, releasedBy: ctx.userId, quantityMinor: run.outputQuantityMinor, releasedAt: at });
         return { status: 200, body: { runId, batchId: run.outputBatchId, released: true, releasedBy: ctx.userId, releasedAt: at, movements: result.movements } };
+      },
+    },
+    {
+      // Register an ingredient's cost (M11-FR-02) — what production values a smallest unit of it at.
+      // Production reads this, never a per-run figure, so a batch cannot value its own margin.
+      api: 'API-04', method: 'POST', path: '/v1/production/costs/:productId',
+      permission: 'production.recipe.manage', idempotent: true,
+      handler: async (ctx) => {
+        const productId = ctx.params['productId'] ?? '';
+        const b = (ctx.body ?? {}) as { unitCostMinor?: unknown; currency?: unknown };
+        if (!isStr(productId) || !isNonNegInt(b.unitCostMinor) || (b.currency !== undefined && !isCurrencyCode(b.currency as string))) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_cost',
+            whatHappened: 'A cost needs a whole unitCostMinor (per smallest unit).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { unitCostMinor, currency }. Nothing was changed.',
+          });
+        }
+        await deps.recordCost(ctx.tenantId, productId, money(b.unitCostMinor, (b.currency as CurrencyCode) ?? 'INR'));
+        return { status: 201, body: { productId, unitCostMinor: b.unitCostMinor } };
       },
     },
     {
@@ -403,13 +444,3 @@ function consumedInputs(movements: readonly StockMovement[]): readonly RecipeInp
     .map((m) => ({ productId: m.productId, quantityMinor: m.quantityMinor, uom: m.uom }));
 }
 
-/** Read caller-supplied ingredient unit costs. Absent costs are zero here; sourcing them from the
- *  catalogue is M11-FR-02 (yield/costing) — recorded honestly rather than guessed. */
-function readUnitCosts(raw: unknown, currency: CurrencyCode): Readonly<Record<string, { minor: number; currency: CurrencyCode }>> {
-  if (raw === null || typeof raw !== 'object') return {};
-  const out: Record<string, { minor: number; currency: CurrencyCode }> = {};
-  for (const [productId, minor] of Object.entries(raw as Record<string, unknown>)) {
-    if (Number.isInteger(minor) && (minor as number) >= 0) out[productId] = { minor: minor as number, currency };
-  }
-  return out;
-}

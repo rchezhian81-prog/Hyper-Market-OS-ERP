@@ -38,6 +38,9 @@ const commitRun = (h: ApiHarness, t: string, u: string, runId: string, body: Rec
 const enableDept = (h: ApiHarness, t: string, u: string, dept = 'cafe', key?: string) =>
   h.request({ method: 'POST', path: `/v1/production/departments/${dept}`, userId: u, tenantId: t, idempotencyKey: key ?? `dept-${dept}`, body: {} });
 
+const setCost = (h: ApiHarness, t: string, u: string, productId: string, unitCostMinor: number, key?: string) =>
+  h.request({ method: 'POST', path: `/v1/production/costs/${productId}`, userId: u, tenantId: t, idempotencyKey: key ?? `cost-${productId}`, body: { unitCostMinor, currency: 'INR' } });
+
 const readRuns = (h: ApiHarness, t: string, u: string) =>
   h.request({ method: 'GET', path: '/v1/production/runs', userId: u, tenantId: t, query: { locationId: 'KITCHEN' } });
 
@@ -50,16 +53,18 @@ describe('production: consume ingredients, create a finished batch in quarantine
     await enableDept(h, A, 'u-owner');
     await seedOnHand(h, A, 'u-owner', 'FLOUR', 500);
     await seedOnHand(h, A, 'u-owner', 'SUGAR', 300);
+    // Ingredient costs come from the registered cost register (M11-FR-02), not the run request.
+    await setCost(h, A, 'u-owner', 'FLOUR', 5); // ₹0.05/g
+    await setCost(h, A, 'u-owner', 'SUGAR', 8); // ₹0.08/g
     expect((await registerRecipe(h, A, 'u-owner', 'r1')).status).toBe(201);
 
     const res = await commitRun(h, A, 'u-owner', 'run-1', {
-      recipeId: 'r1', batches: 2, actualOutputMinor: 2, outputBatchId: 'CAKE-B1', locationId: 'KITCHEN',
-      unitCosts: { FLOUR: 5, SUGAR: 8 }, currency: 'INR', // ₹0.05/g flour, ₹0.08/g sugar
+      recipeId: 'r1', batches: 2, actualOutputMinor: 2, outputBatchId: 'CAKE-B1', locationId: 'KITCHEN', currency: 'INR',
     });
     expect(res.status).toBe(201);
-    const b = res.body as RunBody;
-    // 2 batches → FLOUR 200×5 + SUGAR 100×8 = 1000 + 800 = 1800 minor; 2 cakes → 900/cake.
-    expect(b).toMatchObject({ outputProductId: 'CAKE', outputBatchId: 'CAKE-B1', outputQuantityMinor: 2, inputCostMinor: 1_800, outputUnitCostMinor: 900, yieldVerdict: 'as_expected' });
+    const b = res.body as RunBody & { costKnown: boolean };
+    // 2 batches → FLOUR 200×5 + SUGAR 100×8 = 1000 + 800 = 1800 minor; 2 cakes → 900/cake — from the register.
+    expect(b).toMatchObject({ outputProductId: 'CAKE', outputBatchId: 'CAKE-B1', outputQuantityMinor: 2, inputCostMinor: 1_800, outputUnitCostMinor: 900, yieldVerdict: 'as_expected', costKnown: true });
     // Expiry is 48h after production, carried on the finished batch (M10).
     expect(typeof b.expiresAt).toBe('string');
     expect(Date.parse(b.expiresAt)).toBeGreaterThan(Date.parse('2026-08-08T00:00:00.000Z'));
@@ -239,5 +244,47 @@ describe('production departments & labels: build only for a department the store
     expect(codeOf(await label(h, A, 'u-owner', 'run-1', { productName: 'Coffee cake', packerDetails: 'SRE', priceMinor: 120_00, allergens: [] }, 'lbl-noqty'))).toBe('incomplete_label');
     // Missing the allergen declaration (food safety) → refused.
     expect(codeOf(await label(h, A, 'u-owner', 'run-1', { productName: 'Coffee cake', netQuantity: '180 g', packerDetails: 'SRE', priceMinor: 120_00 }, 'lbl-noallergen'))).toBe('incomplete_label');
+  });
+});
+
+describe('production costing is authoritative — from the cost register, never faked as zero (M11-FR-02)', () => {
+  const base = async (h: ApiHarness) => {
+    await h.seedOwner(A, 'u-owner');
+    await enableDept(h, A, 'u-owner');
+    await seedOnHand(h, A, 'u-owner', 'FLOUR', 500);
+    await seedOnHand(h, A, 'u-owner', 'SUGAR', 300);
+    await registerRecipe(h, A, 'u-owner', 'r1');
+  };
+
+  it('values the finished batch at the REGISTERED ingredient cost, and a request cannot fake it', async () => {
+    const h = apiHarness();
+    await base(h);
+    await setCost(h, A, 'u-owner', 'FLOUR', 5);
+    await setCost(h, A, 'u-owner', 'SUGAR', 8);
+    // The run supplies its own bogus costs in the body — they are ignored; the register wins.
+    const res = await commitRun(h, A, 'u-owner', 'run-1', { recipeId: 'r1', batches: 1, actualOutputMinor: 1, outputBatchId: 'C1', locationId: 'KITCHEN', unitCosts: { FLOUR: 9999, SUGAR: 9999 } });
+    expect(res.status).toBe(201);
+    // 1 batch → FLOUR 100×5 + SUGAR 50×8 = 500 + 400 = 900; 1 cake → 900/cake — the registered cost, not 9999.
+    expect(res.body as { inputCostMinor: number; outputUnitCostMinor: number; costKnown: boolean }).toMatchObject({ inputCostMinor: 900, outputUnitCostMinor: 900, costKnown: true });
+  });
+
+  it('does not fake an uncosted ingredient as zero — the batch is still made, its cost marked not known', async () => {
+    const h = apiHarness();
+    await base(h);
+    await setCost(h, A, 'u-owner', 'FLOUR', 5); // SUGAR has NO registered cost
+    const res = await commitRun(h, A, 'u-owner', 'run-1', { recipeId: 'r1', batches: 1, actualOutputMinor: 1, outputBatchId: 'C1', locationId: 'KITCHEN' });
+    // The physical run still commits — a missing cost must not stop production — but the cost is NOT
+    // authoritative and the uncosted ingredient is named, never valued at zero (which would report a
+    // 100% margin, a lie that reads as good news).
+    expect(res.status).toBe(201);
+    expect(res.body as { costKnown: boolean; uncostedProducts: string[] }).toMatchObject({ costKnown: false, uncostedProducts: ['SUGAR'] });
+  });
+
+  it('refuses a malformed cost and is authorized', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-cash', 'cashier');
+    expect(codeOf(await h.request({ method: 'POST', path: '/v1/production/costs/FLOUR', userId: 'u-owner', tenantId: A, idempotencyKey: 'cost-bad', body: { unitCostMinor: -5 } }))).toBe('not_readable_as_a_cost');
+    expect((await setCost(h, A, 'u-cash', 'FLOUR', 5, 'cost-cash')).status).toBe(403);
   });
 });
