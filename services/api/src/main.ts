@@ -33,6 +33,7 @@ import { tenantAccessResolver, seedGenesisOwner } from './access';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
 import { pricingRoutes } from '../../pricing/src/index';
+import { priceListRoutes } from '../../pricing/src/price-list';
 import { posRoutes } from '../../pos/src/index';
 import { returnsRoutes } from '../../pos/src/returns';
 import { cashRoutes } from '../../pos/src/cash';
@@ -67,7 +68,7 @@ import { fulfilmentRoutes } from '../../fulfilment/src/index';
 import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
-  catalogueAdapter, pricingAdapter, posAdapter, returnsAdapter, inventoryAdapter, packagingAdapter, wasteAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
+  catalogueAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, packagingAdapter, wasteAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, cashAdapter, shiftAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, integrationAdapter, webhookAdapter, connectorAdapter,
 } from './adapters';
@@ -133,6 +134,9 @@ export function buildSurface(deps: {
     ...pricingRoutes(store === undefined
       ? { recordPriceChange: () => {}, canApprove: () => Promise.resolve(false), now }
       : pricingAdapter({ store, now })),
+    ...priceListRoutes(store === undefined
+      ? { entries: empty([]), recordEntry: () => {}, now }
+      : priceListAdapter({ store, now })),
     ...promotionRoutes(store === undefined
       ? { launchedPromotion: empty(undefined), recordLaunch: () => {}, now }
       : promotionAdapter({ store, now })),

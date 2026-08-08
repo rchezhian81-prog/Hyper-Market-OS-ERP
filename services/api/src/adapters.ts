@@ -73,6 +73,8 @@ import type { DomainFinding, Acceptance } from '../../../packages/migration/src/
 import type { Signature } from '../../../packages/migration/src/verification-report';
 import type { AgentId, Budget, Proposal, AiDeps } from '../../ai/src/index';
 import type { PricingDeps, PriceChangeRecord } from '../../pricing/src/index';
+import type { PriceListDeps } from '../../pricing/src/price-list';
+import type { PriceEntry } from '../../../packages/price-list/src/price-list';
 import { ROLE_CATALOGUE } from './roles';
 
 /** Streams, named once. A typo here is a domain that silently reads an empty history. */
@@ -205,6 +207,8 @@ const forB2BCustomer = (customerId: string): string => streamName(STREAM.b2b, cu
 const forB2BSalesperson = (salespersonId: string): string => streamName(STREAM.b2b, 'commission', salespersonId);
 /** Each B2B customer's document chain (quotations, orders, …) folds one stream — one customer, not the shop. */
 const forB2BDocuments = (customerId: string): string => streamName(STREAM.b2b, 'documents', customerId);
+/** Each product's effective-dated price-list entries fold one stream — one product's prices, not the shop's. */
+const forPriceList = (productId: string): string => streamName(STREAM.pricing, 'list', productId);
 /** Each concession contract's terms and sales fold one stream — one counter, not the shop. */
 const forConcession = (contractId: string): string => streamName(STREAM.concession, contractId);
 /** Each packaging item's registration and movements fold one stream — one item, not every crate. */
@@ -1953,6 +1957,32 @@ export function pricingAdapter(input: {
         idempotencyKey: `pricechange-${tenantId}-${change.productId}-${change.at}`,
         source: 'api/pricing',
         payload: change,
+      }));
+    },
+  };
+}
+
+export function priceListAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): PriceListDeps {
+  // Each product's price-list entries fold its own stream. Append-only — a change is a new entry with a
+  // higher version, never an overwrite (§29.1); resolvePrice picks the one that applies at a moment.
+  return {
+    now: input.now,
+
+    entries: (tenantId, productId) =>
+      allOf<PriceEntry>(input.store, tenantId, forPriceList(productId), 'PriceListEntryPublished'),
+
+    recordEntry: async (tenantId, productId, entry) => {
+      await input.store.append(tenantId, forPriceList(productId), makeEvent({
+        id: `price-entry-${productId}-${entry.id}`,
+        type: 'PriceListEntryPublished',
+        occurredAt: input.now(),
+        // The entry's own id — a re-sent publish collapses rather than drawing a second version.
+        idempotencyKey: `price-entry-${tenantId}-${productId}-${entry.id}`,
+        source: 'api/pricing',
+        payload: entry,
       }));
     },
   };
