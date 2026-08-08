@@ -10,7 +10,7 @@ counted **5 August 2026** (Stage 11 rehearsal complete).
 
 ## Where the build actually stands
 
-**144 individual requirement rows: 142 built · 2 partial · 0 not started.**
+**144 individual requirement rows: 141 built · 3 partial · 0 not started.**
 
 | Module | Release | Built | Partial | Not started |
 | --- | --- | --- | --- | --- |
@@ -49,7 +49,7 @@ counted **5 August 2026** (Stage 11 rehearsal complete).
 | M33 Platform administration | R1 | 4 | 0 | 0 |
 | M34 Audit & compliance | R1 | 4 | 0 | 0 |
 | M35 Backup, DR, observability | R1 | 4 | 0 | 0 |
-| M36 Multi-tenant platform | R8 | 4 | 0 | 0 |
+| M36 Multi-tenant platform | R8 | 3 | 1 | 0 |
 
 **Nothing has been silently omitted.** Every row above traces to a requirement ID in
 `docs/traceability.md`, and there are no "not started" rows left.

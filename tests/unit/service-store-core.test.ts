@@ -271,7 +271,8 @@ describe('all three register cleanly on the kernel', () => {
     probe: () => [{ name: 'postgres', criticality: 'shop_cannot_trade_without_it', reachable: true }],
     flags: () => ({}), setFlag: () => {}, recordSupportAccess: () => {},
     settings: inMemorySettings(), exportTenant: () => emptyExportBundle(),
-    setBranding: () => {}, branding: () => undefined, now: () => NOW,
+    setBranding: () => {}, branding: () => undefined,
+    setEntitlement: () => {}, entitlements: () => [], now: () => NOW,
   };
 
   const all = [...inventoryRoutes(invDeps), ...identityRoutes(idDeps), ...platformRoutes(platDeps)];

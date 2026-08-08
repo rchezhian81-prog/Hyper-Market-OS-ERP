@@ -281,7 +281,8 @@ export function buildSurface(deps: {
     ...platformRoutes(store === undefined ? {
       probe: probes, flags: empty({}), setFlag: () => {}, recordSupportAccess: () => {},
       settings: inMemorySettings(), exportTenant: emptyExportBundle,
-      setBranding: () => {}, branding: empty(undefined), now,
+      setBranding: () => {}, branding: empty(undefined),
+      setEntitlement: () => {}, entitlements: empty([]), now,
     } : platformAdapter({ store, now, probes, settings: deps.settings ?? inMemorySettings() })),
     ...migrationRoutes(store === undefined ? {
       target: (tenantId) => ({

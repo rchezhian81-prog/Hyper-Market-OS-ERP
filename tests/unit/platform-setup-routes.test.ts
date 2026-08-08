@@ -18,6 +18,8 @@ function deps(): PlatformDeps {
     exportTenant: () => emptyExportBundle(),
     setBranding: () => {},
     branding: () => undefined,
+    setEntitlement: () => {},
+    entitlements: () => [],
     now: () => NOW,
   };
 }
