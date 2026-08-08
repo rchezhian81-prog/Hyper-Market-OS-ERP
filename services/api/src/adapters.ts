@@ -46,6 +46,8 @@ import type { StockMovement } from '../../../packages/stock/src/position';
 import type { TransfersDeps } from '../../inventory/src/warehouse-transfers';
 import type { Transfer } from '../../../packages/warehouse/src/transfers';
 import type { CountsDeps, StoredReconciliation } from '../../inventory/src/counts';
+import type { ProductionDeps, StoredRun } from '../../inventory/src/production';
+import type { Recipe } from '../../../packages/production/src/recipe';
 import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord, StatementLine } from '../../purchase/src/supplier-portal';
 import type { ConcessionDeps, ConcessionContract, ConcessionSale } from '../../finance/src/concession';
 import type { ScrapDeps, ScrapSale } from '../../finance/src/scrap';
@@ -1516,6 +1518,76 @@ export function countsAdapter(input: {
         idempotencyKey: `count-${tenantId}-${rec.countId}`,
         source: 'api/inventory',
         payload: rec,
+      }));
+    },
+  };
+}
+
+export function productionAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): ProductionDeps {
+  // Recipes and runs live on one append-only production stream, LAYERED on M08 (as counts does).
+  // Recipes fold by id (latest wins); runs fold by id. The on-hand a run is checked against is M08
+  // MINUS what prior runs at that location consumed — production is state-aware and M08 is not.
+  const productionStream = streamName(STREAM.inventory, 'production');
+  const inv = inventoryAdapter({ store: input.store, now: input.now });
+
+  const foldRuns = async (tenantId: string): Promise<readonly StoredRun[]> =>
+    allOf<StoredRun>(input.store, tenantId, productionStream, 'ProductionRunCommitted');
+
+  return {
+    now: input.now,
+
+    recipe: async (tenantId, recipeId) => {
+      const registered = await allOf<Recipe>(input.store, tenantId, productionStream, 'RecipeRegistered');
+      let latest: Recipe | undefined;
+      for (const r of registered) if (r.recipeId === recipeId) latest = r; // last write wins
+      return latest;
+    },
+
+    recordRecipe: async (tenantId, recipe) => {
+      await input.store.append(tenantId, productionStream, makeEvent({
+        id: `recipe-${recipe.recipeId}`,
+        type: 'RecipeRegistered',
+        occurredAt: input.now(),
+        // A light signature in the key so re-registering the SAME recipe collapses, but a genuinely
+        // changed recipe (different output, input count or shelf life) is a new fact and supersedes.
+        idempotencyKey: `recipe-${tenantId}-${recipe.recipeId}-${recipe.outputQuantityMinor}-${recipe.inputs.length}-${recipe.shelfLifeHours}`,
+        source: 'api/inventory',
+        payload: recipe,
+      }));
+    },
+
+    onHand: async (tenantId, productId, locationId) => {
+      const rows = await inv.availability(tenantId, productId);
+      const here = rows.find((r) => r.productId === productId && r.locationId === locationId);
+      return here?.onHandMinor ?? 0;
+    },
+
+    priorConsumption: async (tenantId, locationId) => {
+      const consumed: Record<string, number> = {};
+      for (const run of await foldRuns(tenantId)) {
+        if (run.locationId !== locationId) continue;
+        for (const c of run.consumed) consumed[c.productId] = (consumed[c.productId] ?? 0) + c.quantityMinor;
+      }
+      return consumed;
+    },
+
+    runExists: async (tenantId, runId) => (await foldRuns(tenantId)).some((r) => r.runId === runId),
+
+    runs: (tenantId) => foldRuns(tenantId),
+
+    recordRun: async (tenantId, run) => {
+      await input.store.append(tenantId, productionStream, makeEvent({
+        id: `prod-run-${run.runId}`,
+        type: 'ProductionRunCommitted',
+        occurredAt: run.at,
+        // The run's own id — a re-sent run collapses rather than consuming the ingredients twice
+        // (append-only, #2). A re-make is a NEW run id.
+        idempotencyKey: `prod-run-${tenantId}-${run.runId}`,
+        source: 'api/inventory',
+        payload: run,
       }));
     },
   };
