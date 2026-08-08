@@ -18,6 +18,9 @@ import {
   type FraudThresholds, type FraudSignal,
   type CouponUse, type LoyaltyMovement, type CodRecord, type SupplierInvoiceLine,
 } from '../../../packages/loss-prevention/src/fraud-signals';
+import {
+  detectDuplicateBankAccounts, holdersBlockedForDuplicate, type BankAccountHolder,
+} from '../../../packages/bank-controls/src/duplicate-bank';
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isInt = (v: unknown): v is number => Number.isInteger(v);
@@ -28,6 +31,12 @@ const rec = (v: unknown): Record<string, unknown> | null => (v !== null && typeo
 export interface FraudSignalsDeps {
   readonly thresholds: (tenantId: string) => Promise<FraudThresholds> | FraudThresholds;
   readonly recordThresholds: (tenantId: string, thresholds: FraudThresholds) => Promise<void> | void;
+  /**
+   * The current holder→account references for duplicate-bank detection (M15-FR-03) — folded from
+   * the already-captured bank details, each holder's CURRENT account. Masked/tokenised refs only,
+   * never a raw account number (PRV).
+   */
+  readonly bankHolders: (tenantId: string) => Promise<readonly BankAccountHolder[]> | readonly BankAccountHolder[];
   readonly now: () => string;
 }
 
@@ -142,6 +151,23 @@ export function fraudSignalsRoutes(deps: FraudSignalsDeps): readonly Route[] {
         }
 
         return { status: 200, body: { signals: prioritiseSignals(signals), asAt: deps.now() } };
+      },
+    },
+    {
+      // Duplicate bank-account detection over the ALREADY-CAPTURED bank details (M15-FR-03) — a
+      // mandatory fraud control. Where `evaluate` runs a what-if over data the caller supplies,
+      // this runs over the store's real holder→account references: two distinct holders (suppliers)
+      // sharing one account is flagged and the money is BLOCKED PENDING REVIEW. Detect-and-hold, not
+      // reverse — the block is released by a person, never silently (hard rule #5, §28). The same
+      // holder listing an account twice is not a duplicate; only cross-holder sharing is.
+      api: 'API-05', method: 'GET', path: '/v1/fraud-signals/duplicate-bank',
+      permission: 'lp.case.read',
+      handler: async (ctx) => {
+        const flags = detectDuplicateBankAccounts(await deps.bankHolders(ctx.tenantId));
+        return {
+          status: 200,
+          body: { flags, blocked: [...holdersBlockedForDuplicate(flags)].sort(), asAt: deps.now() },
+        };
       },
     },
   ];
