@@ -708,6 +708,8 @@ interface ManagerWindow {
   migrationSession?: MigrationSession;
   warehouseSupervisorData?: SupervisorData;
   warehouseSupervisorSession?: WarehouseSupervisorSession;
+  /** Where the supervisor's approval decisions queue for sync — the view passes it to `decide`. */
+  warehouseSupervisorOutbox?: SyncOutbox;
   /** The decision vocabulary, so the view can offer it and never invent a reason of its own. */
   managerReasons?: {
     readonly approved: readonly DecisionReasonCode[];
@@ -1179,7 +1181,12 @@ if (browserWindow !== undefined) {
   const migration = bootMigration(browserWindow.migrationData);
   if (migration !== null) browserWindow.migrationSession = migration;
   const warehouseSupervisor = bootWarehouseSupervisor(browserWindow.warehouseSupervisorData);
-  if (warehouseSupervisor !== null) browserWindow.warehouseSupervisorSession = warehouseSupervisor;
+  if (warehouseSupervisor !== null) {
+    browserWindow.warehouseSupervisorSession = warehouseSupervisor;
+    // The decisions the supervisor takes queue here for the sync agent to drain — the same in-memory
+    // outbox the manager screen uses, so a decision made on this screen reaches the cloud the same way.
+    browserWindow.warehouseSupervisorOutbox = new SyncOutbox();
+  }
   // The view offers these and records the code the manager picks. It never composes a reason of
   // its own, so the audit trail keeps one vocabulary that can still be reported on in a year.
   browserWindow.managerReasons = { approved: APPROVE_REASONS, rejected: REJECT_REASONS };

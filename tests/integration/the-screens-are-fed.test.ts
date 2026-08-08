@@ -544,6 +544,24 @@ describe('the other five screens boot on what the box served them', () => {
     expect(ex.rows.some((r) => r.kind === 'over_capacity' && r.binId === 'B-1')).toBe(true);
   });
 
+  it('the supervisor decides a §28 approval served over the socket, and it queues for sync', async () => {
+    const base = await serve(snapshotOf({
+      pack: pack({
+        warehouse: known({
+          assignmentId: 'wa-1', workerId: 'u-wh', storeId: 'store-1',
+          bins: [{ binId: 'B-1', storeId: 'store-1', capacityMinor: 100, pickable: true }],
+          supervisor: { userId: 'u-super', branchScope: 'all', authorityLimitMinor: 1_000_00, currency: 'INR' },
+          approvals: [{ id: 'ap-1', subjectType: 'stock_adjustment', subjectRef: 'adj-1', requestedBy: 'u-wh', valueMinor: 500_00, currency: 'INR' }],
+        }),
+      }),
+    }));
+    const s = bootWarehouseSupervisor((await payloadFromScreen(base, 'warehouse-supervisor'))! as unknown as SupervisorData)!;
+    const outbox = new SyncOutbox();
+    const out = s.decide({ requestId: 'ap-1', decision: 'approved', reasonCode: 'checked_the_stock', decidedAt: NOW }, outbox);
+    expect(out.ok).toBe(true);
+    expect(outbox.pending().map((i) => i.event.type)).toEqual(['WarehouseApprovalDecided']);
+  });
+
   it('the till gets a catalogue it can ACTUALLY BUILD, and scans with no line at all', async () => {
     // **This test used to check the payload's contents and never that the lane could consume
     // them** — and that is exactly how the defect survived. The box served a shape with no
