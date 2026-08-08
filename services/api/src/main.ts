@@ -52,6 +52,7 @@ import { packagingRoutes } from '../../inventory/src/packaging';
 import { wasteRoutes } from '../../inventory/src/waste';
 import { integrationRoutes } from '../../platform/src/integration';
 import { webhookRoutes, webhookHasher } from '../../platform/src/webhooks';
+import { connectorRoutes } from '../../platform/src/connectors';
 import { identityRoutes, tokenAuthenticator } from '../../identity/src/index';
 import { platformRoutes, inMemorySettings } from '../../platform/src/index';
 import { purchaseRoutes } from '../../purchase/src/index';
@@ -65,7 +66,7 @@ import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, pricingAdapter, posAdapter, returnsAdapter, inventoryAdapter, packagingAdapter, wasteAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
-  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, cashAdapter, shiftAdapter, b2bCreditAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, integrationAdapter, webhookAdapter,
+  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, cashAdapter, shiftAdapter, b2bCreditAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, integrationAdapter, webhookAdapter, connectorAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
@@ -156,6 +157,9 @@ export function buildSurface(deps: {
     ...webhookRoutes(store === undefined ? {
       config: empty(undefined), seenDeliveryIds: empty([]), recordConfig: () => {}, recordDelivery: () => {}, hasher: whHasher, now,
     } : webhookAdapter({ store, now, hasher: whHasher })),
+    ...connectorRoutes(store === undefined ? {
+      mapping: empty(undefined), recordMapping: () => {}, now,
+    } : connectorAdapter({ store, now })),
     ...posRoutes(store === undefined ? {
       catalogue: empty(new Map()), currentPackVersion: empty(1),
       saleHoldingReceipt: empty(undefined), isBanked: empty(false),

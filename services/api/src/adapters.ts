@@ -40,6 +40,7 @@ import type { PackagingDeps, PackagingItem, PackagingMovement } from '../../inve
 import type { WasteDeps, WasteRecord, WasteCoverage } from '../../inventory/src/waste';
 import type { IntegrationDeps, CertifiedEntry, AdapterConfig, AdapterHeartbeat } from '../../platform/src/integration';
 import type { WebhookDeps, WebhookConfig } from '../../platform/src/webhooks';
+import type { ConnectorMappingDeps, Mapping } from '../../platform/src/connectors';
 import type { Hasher } from '../../../packages/audit/src/audit-trail';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
@@ -202,6 +203,8 @@ const forConcession = (contractId: string): string => streamName(STREAM.concessi
 const forPackaging = (packagingId: string): string => streamName(STREAM.packaging, packagingId);
 /** Each webhook provider's config and processed deliveries fold one stream — one provider, not all. */
 const forWebhook = (provider: string): string => streamName(STREAM.integration, 'webhook', provider);
+/** Each connector mapping version folds one stream — one (connector, version), not every mapping. */
+const forConnectorMapping = (connectorId: string, version: string): string => streamName(STREAM.integration, 'mapping', connectorId, version);
 
 export const STREAM_FOR = { forCustomer, forDriverRun, forLocation, forInvoice, forSaleReturns } as const;
 
@@ -1036,6 +1039,31 @@ export function webhookAdapter(input: {
         idempotencyKey: `wh-del-${tenantId}-${provider}-${envelope.deliveryId}`,
         source: 'api/platform',
         payload: { deliveryId: envelope.deliveryId, event: envelope.event, sentAt: envelope.sentAt },
+      }));
+    },
+  };
+}
+
+export function connectorAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): ConnectorMappingDeps {
+  // Each (connector, version) mapping folds its own stream — the latest registration. A mapping is
+  // configuration, latest-wins; nothing here delivers, so nothing here needs the message log.
+  return {
+    now: input.now,
+
+    mapping: async (tenantId, connectorId, version) =>
+      latest<Mapping>(input.store, tenantId, forConnectorMapping(connectorId, version), 'ConnectorMappingSet'),
+
+    recordMapping: async (tenantId, mapping) => {
+      await input.store.append(tenantId, forConnectorMapping(mapping.connectorId, mapping.version), makeEvent({
+        id: `conn-map-${mapping.connectorId}-${mapping.version}`,
+        type: 'ConnectorMappingSet',
+        occurredAt: input.now(),
+        idempotencyKey: `conn-map-${tenantId}-${mapping.connectorId}-${mapping.version}-${mapping.rules.length}-${mapping.required.join('.')}`,
+        source: 'api/platform',
+        payload: mapping,
       }));
     },
   };
