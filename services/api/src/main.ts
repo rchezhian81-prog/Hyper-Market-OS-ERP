@@ -174,7 +174,8 @@ export function buildSurface(deps: {
     } : countsAdapter({ store, now })),
     ...productionRoutes(store === undefined ? {
       recipe: empty(undefined), recordRecipe: () => {}, onHand: empty(0), priorConsumption: empty({}),
-      runExists: empty(false), runs: empty([]), run: empty(undefined), recordRun: () => {}, recordRelease: () => {}, now,
+      runExists: empty(false), runs: empty([]), run: empty(undefined), recordRun: () => {}, recordRelease: () => {},
+      enabledDepartments: empty([]), recordDepartmentEnabled: () => {}, now,
     } : productionAdapter({ store, now })),
     ...packagingRoutes(store === undefined ? {
       item: empty(undefined), movements: empty([]), registerItem: () => {}, recordMovement: () => {}, now,
