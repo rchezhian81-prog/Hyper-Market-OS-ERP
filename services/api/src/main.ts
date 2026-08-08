@@ -40,6 +40,7 @@ import { returnsRoutes } from '../../pos/src/returns';
 import { cashRoutes } from '../../pos/src/cash';
 import { supplierPortalRoutes } from '../../purchase/src/supplier-portal';
 import { shiftRoutes } from '../../pos/src/shift';
+import { lpCasesRoutes } from '../../pos/src/loss-prevention';
 import { storedValueRoutes } from '../../customer/src/stored-value';
 import { promotionRoutes } from '../../pricing/src/promotions';
 import { settlementRoutes } from '../../finance/src/settlement';
@@ -71,7 +72,7 @@ import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, packagingAdapter, wasteAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
-  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, integrationAdapter, webhookAdapter, connectorAdapter,
+  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, integrationAdapter, webhookAdapter, connectorAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
@@ -186,6 +187,9 @@ export function buildSurface(deps: {
     ...shiftRoutes(store === undefined
       ? { closedShift: empty(undefined), recordShiftClose: () => {}, overShortShifts: empty([]), now }
       : shiftAdapter({ store, now })),
+    ...lpCasesRoutes(store === undefined
+      ? { cases: empty([]), case: empty(undefined), recordOpened: () => {}, recordEvidence: () => {}, recordClosed: () => {}, now }
+      : lpCasesAdapter({ store, now })),
     ...customerRoutes(store === undefined ? {
       consentRecords: empty([]), appendConsent: () => {}, pointsBalance: empty(undefined),
       pointsMovements: empty([]), recordPointsMovement: () => {}, now,

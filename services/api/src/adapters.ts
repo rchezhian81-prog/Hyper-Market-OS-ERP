@@ -34,6 +34,8 @@ import type { B2BCollectionsDeps, Receivable as CollectionsReceivable, RecordedP
 import type { B2BCommissionDeps, CommissionAccrual } from '../../finance/src/b2b-commission';
 import type { B2BDocumentsDeps, StoredB2BDocument } from '../../finance/src/b2b-documents';
 import { checkCredit } from '../../../packages/b2b/src/credit';
+import type { LpCasesDeps } from '../../pos/src/loss-prevention';
+import type { InvestigationCase, EvidenceItem } from '../../../packages/loss-prevention/src/cases';
 import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord, StatementLine } from '../../purchase/src/supplier-portal';
 import type { ConcessionDeps, ConcessionContract, ConcessionSale } from '../../finance/src/concession';
 import type { ScrapDeps, ScrapSale } from '../../finance/src/scrap';
@@ -115,6 +117,7 @@ export const STREAM = {
   packaging: 'packaging',
   waste: 'waste',
   integration: 'integration',
+  lossPrevention: 'loss-prevention',
 } as const;
 
 const payloadOf = <T>(e: PersistedEvent): T => e.event.payload as T;
@@ -1213,6 +1216,74 @@ export function b2bDocumentsAdapter(input: {
         orderValue: { minor: orderValueMinor, currency: account.currency },
       });
       return decision.allowed;
+    },
+  };
+}
+
+export function lpCasesAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): LpCasesDeps {
+  // Loss-prevention cases are exceptions, not transactions — low volume — so all fold one tenant
+  // stream, by caseId. The append-only stream IS the chain of custody: an opened case, then each sealed
+  // evidence item in the order it was added (the seal chain depends on that order), then a close.
+  const foldCases = async (tenantId: string): Promise<readonly InvestigationCase[]> => {
+    const events = await input.store.readStream(tenantId, STREAM.lossPrevention);
+    const byId = new Map<string, InvestigationCase>();
+    for (const e of events) {
+      const p = e.event.payload as Record<string, unknown>;
+      if (e.event.type === 'LpCaseOpened') {
+        const c = p as unknown as InvestigationCase;
+        byId.set(c.caseId, c);
+      } else if (e.event.type === 'LpEvidenceAdded') {
+        const cur = byId.get(p['caseId'] as string);
+        if (cur !== undefined) byId.set(cur.caseId, { ...cur, evidence: [...cur.evidence, p['item'] as EvidenceItem] });
+      } else if (e.event.type === 'LpCaseClosed') {
+        const cur = byId.get(p['caseId'] as string);
+        if (cur !== undefined) byId.set(cur.caseId, { ...cur, state: 'closed', outcome: p['outcome'] as InvestigationCase['outcome'], outcomeNote: p['outcomeNote'] as string, closedBy: p['closedBy'] as string, closedAt: p['closedAt'] as string });
+      }
+    }
+    return [...byId.values()];
+  };
+
+  return {
+    now: input.now,
+
+    cases: (tenantId) => foldCases(tenantId),
+    case: async (tenantId, caseId) => (await foldCases(tenantId)).find((c) => c.caseId === caseId),
+
+    recordOpened: async (tenantId, investigation) => {
+      await input.store.append(tenantId, STREAM.lossPrevention, makeEvent({
+        id: `lp-case-open-${investigation.caseId}`,
+        type: 'LpCaseOpened',
+        occurredAt: investigation.openedAt,
+        idempotencyKey: `lp-case-open-${tenantId}-${investigation.caseId}`,
+        source: 'api/pos',
+        payload: investigation,
+      }));
+    },
+
+    recordEvidence: async (tenantId, caseId, item) => {
+      await input.store.append(tenantId, STREAM.lossPrevention, makeEvent({
+        id: `lp-ev-${caseId}-${item.evidenceId}`,
+        type: 'LpEvidenceAdded',
+        occurredAt: item.collectedAt,
+        // The (case, evidence) id — the same item added twice collapses; the engine also refuses a dup id.
+        idempotencyKey: `lp-ev-${tenantId}-${caseId}-${item.evidenceId}`,
+        source: 'api/pos',
+        payload: { caseId, item },
+      }));
+    },
+
+    recordClosed: async (tenantId, c) => {
+      await input.store.append(tenantId, STREAM.lossPrevention, makeEvent({
+        id: `lp-case-close-${c.caseId}`,
+        type: 'LpCaseClosed',
+        occurredAt: c.closedAt ?? input.now(),
+        idempotencyKey: `lp-case-close-${tenantId}-${c.caseId}`,
+        source: 'api/pos',
+        payload: { caseId: c.caseId, outcome: c.outcome, outcomeNote: c.outcomeNote, closedBy: c.closedBy, closedAt: c.closedAt },
+      }));
     },
   };
 }
