@@ -53,7 +53,7 @@ import type { StorePack } from './store-pack';
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'admin', 'ai', 'migration',
+  'reporting', 'service', 'expiry', 'finance', 'admin', 'ai', 'migration', 'warehouse',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1225,6 +1225,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   admin: 'adminData',
   ai: 'aiData',
   migration: 'migrationData',
+  warehouse: 'warehouseData',
 });
 
 const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<string, unknown> | null>> = Object.freeze({
@@ -1244,6 +1245,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   admin: adminPayload,
   ai: aiPayload,
   migration: migrationPayload,
+  warehouse: warehousePayload,
 });
 
 /** Build one screen's payload. `null` means this box has nothing to give it, and says so. */
