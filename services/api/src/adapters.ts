@@ -45,6 +45,7 @@ import { binKey } from '../../../packages/warehouse/src/movements';
 import type { StockMovement } from '../../../packages/stock/src/position';
 import type { TransfersDeps } from '../../inventory/src/warehouse-transfers';
 import type { Transfer } from '../../../packages/warehouse/src/transfers';
+import type { CountsDeps, StoredReconciliation } from '../../inventory/src/counts';
 import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord, StatementLine } from '../../purchase/src/supplier-portal';
 import type { ConcessionDeps, ConcessionContract, ConcessionSale } from '../../finance/src/concession';
 import type { ScrapDeps, ScrapSale } from '../../finance/src/scrap';
@@ -1470,6 +1471,51 @@ export function transfersAdapter(input: {
         idempotencyKey: `transfer-received-${tenantId}-${transfer.transferId}`,
         source: 'api/inventory',
         payload: { transfer, movements, discrepancies },
+      }));
+    },
+  };
+}
+
+export function countsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): CountsDeps {
+  // Count reconciliations live on their own append-only stream, LAYERED on the authoritative M08
+  // position. The count-correction ledger is separate from M08 because M08's movement model (a kind +
+  // a positive quantity) cannot express a signed count correction; the corrected on-hand is the M08
+  // base plus the sum of the corrections here. `recordReconciliation` is idempotent on the count id.
+  const countsStream = streamName(STREAM.inventory, 'counts');
+  const inv = inventoryAdapter({ store: input.store, now: input.now });
+
+  const foldReconciliations = async (tenantId: string): Promise<readonly StoredReconciliation[]> =>
+    allOf<StoredReconciliation>(input.store, tenantId, countsStream, 'CountReconciled');
+
+  return {
+    now: input.now,
+
+    // The authoritative M08 on-hand for this product at this location (0 if the position is unknown).
+    onHand: async (tenantId, productId, locationId) => {
+      const rows = await inv.availability(tenantId, productId);
+      const here = rows.find((r) => r.productId === productId && r.locationId === locationId);
+      return here?.onHandMinor ?? 0;
+    },
+
+    reconciliations: async (tenantId, productId, locationId) =>
+      (await foldReconciliations(tenantId)).filter((r) => r.productId === productId && r.locationId === locationId),
+
+    countExists: async (tenantId, countId) =>
+      (await foldReconciliations(tenantId)).some((r) => r.countId === countId),
+
+    recordReconciliation: async (tenantId, rec) => {
+      await input.store.append(tenantId, countsStream, makeEvent({
+        id: `count-${rec.countId}`,
+        type: 'CountReconciled',
+        occurredAt: rec.at,
+        // The count's own id — a re-sent reconciliation of the same count collapses rather than
+        // layering the correction twice (append-only, #2). A re-count is a NEW count id.
+        idempotencyKey: `count-${tenantId}-${rec.countId}`,
+        source: 'api/inventory',
+        payload: rec,
       }));
     },
   };
