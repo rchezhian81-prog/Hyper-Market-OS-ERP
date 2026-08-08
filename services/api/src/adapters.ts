@@ -1616,6 +1616,23 @@ export function productionAdapter(input: {
         payload: release,
       }));
     },
+
+    enabledDepartments: async (tenantId) => {
+      const enabled = await allOf<{ departmentId: string }>(input.store, tenantId, productionStream, 'ProductionDepartmentEnabled');
+      return [...new Set(enabled.map((e) => e.departmentId))];
+    },
+
+    recordDepartmentEnabled: async (tenantId, departmentId) => {
+      await input.store.append(tenantId, productionStream, makeEvent({
+        id: `prod-dept-${departmentId}`,
+        type: 'ProductionDepartmentEnabled',
+        occurredAt: input.now(),
+        // Keyed on the department — enabling the same one twice collapses (append-only, #2).
+        idempotencyKey: `prod-dept-${tenantId}-${departmentId}`,
+        source: 'api/inventory',
+        payload: { departmentId },
+      }));
+    },
   };
 }
 

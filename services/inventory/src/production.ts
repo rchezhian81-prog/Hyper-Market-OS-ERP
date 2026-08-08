@@ -22,7 +22,11 @@ import {
   produceBatch, validateRecipe, InvalidRecipeError, InsufficientMaterialError,
   type Recipe, type RecipeInput, type ProductionException,
 } from '../../../packages/production/src/recipe';
-import { releaseForSale } from '../../../packages/production/src/packing';
+import { releaseForSale, buildPackLabel, renderLabel, IncompleteLabelError, type PackLabel } from '../../../packages/production/src/packing';
+import {
+  requireDepartment, operatedDepartments, DEPARTMENT_CATALOGUE,
+  DepartmentNotOperatedError, UnknownDepartmentError,
+} from '../../../packages/production/src/departments';
 import type { StockMovement } from '../../../packages/stock/src/position';
 import { isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
 
@@ -76,6 +80,9 @@ export interface ProductionDeps {
   readonly run: (tenantId: string, runId: string) => Promise<StoredRun | undefined> | StoredRun | undefined;
   readonly recordRun: (tenantId: string, run: StoredRun) => Promise<void> | void;
   readonly recordRelease: (tenantId: string, release: StoredRelease) => Promise<void> | void;
+  /** The production departments this tenant has switched on (M11-FR-04). */
+  readonly enabledDepartments: (tenantId: string) => Promise<readonly string[]> | readonly string[];
+  readonly recordDepartmentEnabled: (tenantId: string, departmentId: string) => Promise<void> | void;
   readonly now: () => string;
 }
 
@@ -178,6 +185,12 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
           });
         }
 
+        // The store must actually operate this department (M11-FR-04 / §2.2) — you cannot produce for a
+        // meat counter you do not have; the compliance obligations that come with it would apply to a
+        // department that does not exist.
+        const departmentRefusal = refuseDepartment(recipe.departmentId, await deps.enabledDepartments(ctx.tenantId));
+        if (departmentRefusal !== null) throw departmentRefusal;
+
         const currency = (b.currency as CurrencyCode) ?? 'INR';
         const at = deps.now();
         // Available = the authoritative M08 on-hand for each ingredient, MINUS what prior runs at this
@@ -270,6 +283,90 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
       },
     },
     {
+      // Enable a production department for this store (M11-FR-04). Every department the product
+      // supports is BUILT (OB-05); a tenant switches on only its own. SRE enables the cafe (OB-04).
+      api: 'API-04', method: 'POST', path: '/v1/production/departments/:departmentId',
+      permission: 'production.recipe.manage', idempotent: true,
+      handler: async (ctx) => {
+        const departmentId = ctx.params['departmentId'] ?? '';
+        if (!isStr(departmentId) || DEPARTMENT_CATALOGUE[departmentId] === undefined) {
+          throw apiError(400, {
+            code: 'unknown_department',
+            whatHappened: `"${departmentId}" is not a production department this product runs. It runs: ${Object.keys(DEPARTMENT_CATALOGUE).join(', ')}.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Enable one of the departments the product supports. Nothing was changed.',
+          });
+        }
+        await deps.recordDepartmentEnabled(ctx.tenantId, departmentId);
+        return { status: 201, body: { departmentId, department: DEPARTMENT_CATALOGUE[departmentId] } };
+      },
+    },
+    {
+      // The departments this store operates, and (for reference) every department the product supports.
+      api: 'API-04', method: 'GET', path: '/v1/production/departments',
+      permission: 'production.read',
+      handler: async (ctx) => {
+        const enabled = await deps.enabledDepartments(ctx.tenantId);
+        return { status: 200, body: { operated: operatedDepartments(enabled), available: Object.keys(DEPARTMENT_CATALOGUE) } };
+      },
+    },
+    {
+      // Issue a pack / scale label for a run's finished batch (M11-FR-03/04). Legal Metrology and
+      // food-safety fields are mandatory PER THE DEPARTMENT — an incomplete label is refused before it
+      // prints, because a wrong label is a legal problem, not a printing one (§9.3).
+      api: 'API-04', method: 'POST', path: '/v1/production/runs/:runId/label',
+      permission: 'production.recipe.manage', idempotent: true,
+      handler: async (ctx) => {
+        const runId = ctx.params['runId'] ?? '';
+        const b = (ctx.body ?? {}) as {
+          productName?: unknown; netQuantity?: unknown; packerDetails?: unknown; priceMinor?: unknown;
+          currency?: unknown; weightMinor?: unknown; allergens?: unknown; barcode?: unknown;
+        };
+        if (!isStr(runId) || !isStr(b.productName) || !isNonNegInt(b.priceMinor)
+          || (b.currency !== undefined && !isCurrencyCode(b.currency as string))
+          || (b.netQuantity !== undefined && typeof b.netQuantity !== 'string')
+          || (b.packerDetails !== undefined && typeof b.packerDetails !== 'string')
+          || (b.weightMinor !== undefined && !isNonNegInt(b.weightMinor))
+          || (b.allergens !== undefined && !(Array.isArray(b.allergens) && b.allergens.every((a) => typeof a === 'string')))
+          || (b.barcode !== undefined && typeof b.barcode !== 'string')) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_label',
+            whatHappened: 'A label needs at least a productName and a whole priceMinor.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the label fields. Nothing was printed.',
+          });
+        }
+        const run = await deps.run(ctx.tenantId, runId);
+        if (run === undefined) {
+          throw apiError(404, { code: 'run_not_found', whatHappened: `No production run "${runId}".`, wasItSaved: 'not_saved', nextSafeAction: 'Commit the run first.' });
+        }
+        const enabled = await deps.enabledDepartments(ctx.tenantId);
+        const departmentRefusal = refuseDepartment(run.departmentId, enabled);
+        if (departmentRefusal !== null) throw departmentRefusal;
+        const department = requireDepartment(run.departmentId, enabled);
+
+        const label: PackLabel = {
+          productId: run.outputProductId, productName: b.productName, batchId: run.outputBatchId,
+          netQuantity: isStr(b.netQuantity) ? b.netQuantity : '',
+          packerDetails: isStr(b.packerDetails) ? b.packerDetails : '',
+          useBy: run.expiresAt, price: { minor: b.priceMinor, currency: (b.currency as CurrencyCode) ?? 'INR' },
+          ...(b.weightMinor === undefined ? {} : { weightMinor: b.weightMinor }),
+          ...(b.barcode === undefined ? {} : { barcode: b.barcode as string }),
+          ...(b.allergens === undefined ? {} : { allergens: b.allergens as readonly string[] }),
+          producedAt: run.at,
+        };
+        try {
+          buildPackLabel(label, department);
+        } catch (e) {
+          if (e instanceof IncompleteLabelError) {
+            throw apiError(422, { code: 'incomplete_label', whatHappened: e.message, wasItSaved: 'not_saved', nextSafeAction: 'Add the missing field and re-send. Nothing was printed.' });
+          }
+          throw e;
+        }
+        return { status: 200, body: { runId, batchId: run.outputBatchId, lines: renderLabel(label) } };
+      },
+    },
+    {
       // The production runs recorded so far — their finished batches, costs, yields and exceptions.
       api: 'API-04', method: 'GET', path: '/v1/production/runs',
       permission: 'production.read',
@@ -281,6 +378,22 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
       },
     },
   ];
+}
+
+/** Refuse producing/labelling for a department the tenant does not operate, as an `apiError` or null. */
+function refuseDepartment(departmentId: string, enabled: readonly string[]): ReturnType<typeof apiError> | null {
+  try {
+    requireDepartment(departmentId, enabled);
+    return null;
+  } catch (e) {
+    if (e instanceof DepartmentNotOperatedError) {
+      return apiError(422, { code: 'department_not_operated', whatHappened: e.message, wasItSaved: 'not_saved', nextSafeAction: 'Enable the department first, or use a recipe for a department the store operates. Nothing was recorded.' });
+    }
+    if (e instanceof UnknownDepartmentError) {
+      return apiError(400, { code: 'unknown_department', whatHappened: e.message, wasItSaved: 'not_saved', nextSafeAction: 'Use a department the product supports. Nothing was recorded.' });
+    }
+    throw e;
+  }
 }
 
 /** The consumed ingredients of a run, from its ledger movements (the ones that left `on_hand`). */

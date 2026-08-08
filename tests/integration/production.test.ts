@@ -35,6 +35,9 @@ const registerRecipe = (h: ApiHarness, t: string, u: string, recipeId: string, k
 const commitRun = (h: ApiHarness, t: string, u: string, runId: string, body: Record<string, unknown>, key?: string) =>
   h.request({ method: 'POST', path: `/v1/production/runs/${runId}`, userId: u, tenantId: t, idempotencyKey: key ?? `run-${runId}`, body });
 
+const enableDept = (h: ApiHarness, t: string, u: string, dept = 'cafe', key?: string) =>
+  h.request({ method: 'POST', path: `/v1/production/departments/${dept}`, userId: u, tenantId: t, idempotencyKey: key ?? `dept-${dept}`, body: {} });
+
 const readRuns = (h: ApiHarness, t: string, u: string) =>
   h.request({ method: 'GET', path: '/v1/production/runs', userId: u, tenantId: t, query: { locationId: 'KITCHEN' } });
 
@@ -44,6 +47,7 @@ describe('production: consume ingredients, create a finished batch in quarantine
   it('commits a run that consumes raw materials and yields a finished batch with its own id and expiry', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await enableDept(h, A, 'u-owner');
     await seedOnHand(h, A, 'u-owner', 'FLOUR', 500);
     await seedOnHand(h, A, 'u-owner', 'SUGAR', 300);
     expect((await registerRecipe(h, A, 'u-owner', 'r1')).status).toBe(201);
@@ -67,6 +71,7 @@ describe('production: consume ingredients, create a finished batch in quarantine
   it('refuses a run that would issue more than is on hand — nothing is consumed', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await enableDept(h, A, 'u-owner');
     await seedOnHand(h, A, 'u-owner', 'FLOUR', 150); // only enough for 1 batch (needs 100/batch)
     await seedOnHand(h, A, 'u-owner', 'SUGAR', 300);
     await registerRecipe(h, A, 'u-owner', 'r1');
@@ -81,6 +86,7 @@ describe('production: consume ingredients, create a finished batch in quarantine
   it('depletes the shelf across runs — a second run sees what the first consumed', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await enableDept(h, A, 'u-owner');
     await seedOnHand(h, A, 'u-owner', 'FLOUR', 250);
     await seedOnHand(h, A, 'u-owner', 'SUGAR', 300);
     await registerRecipe(h, A, 'u-owner', 'r1');
@@ -94,6 +100,7 @@ describe('production: consume ingredients, create a finished batch in quarantine
   it('refuses an unknown recipe and is idempotent on the run id', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await enableDept(h, A, 'u-owner');
     await seedOnHand(h, A, 'u-owner', 'FLOUR', 500);
     await seedOnHand(h, A, 'u-owner', 'SUGAR', 300);
 
@@ -108,6 +115,7 @@ describe('production: consume ingredients, create a finished batch in quarantine
   it('is authorized (cashier may neither produce nor read), per-tenant isolated, and validates input', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await enableDept(h, A, 'u-owner');
     await h.provisionRole(A, 'u-mgr', 'store_manager');
     await h.provisionRole(A, 'u-cash', 'cashier');
     await seedOnHand(h, A, 'u-mgr', 'FLOUR', 500);
@@ -134,6 +142,7 @@ const release = (h: ApiHarness, t: string, u: string, runId: string, qcPassed: b
 describe('production quality release: nothing sellable until a named person passes it (M11-FR-03)', () => {
   const setup = async (h: ApiHarness, u = 'u-owner') => {
     await h.seedOwner(A, u);
+    await enableDept(h, A, u);
     await seedOnHand(h, A, u, 'FLOUR', 500);
     await seedOnHand(h, A, u, 'SUGAR', 300);
     await registerRecipe(h, A, u, 'r1');
@@ -179,5 +188,56 @@ describe('production quality release: nothing sellable until a named person pass
     await setup(h, 'u-owner');
     await h.provisionRole(A, 'u-cash', 'cashier');
     expect((await release(h, A, 'u-cash', 'run-1', true, 'rel-cash')).status).toBe(403);
+  });
+});
+
+const label = (h: ApiHarness, t: string, u: string, runId: string, body: Record<string, unknown>, key?: string) =>
+  h.request({ method: 'POST', path: `/v1/production/runs/${runId}/label`, userId: u, tenantId: t, idempotencyKey: key ?? `lbl-${runId}`, body });
+
+describe('production departments & labels: build only for a department the store operates (M11-FR-04)', () => {
+  it('refuses to produce for a department the store does not operate, naming what it does', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await seedOnHand(h, A, 'u-owner', 'FLOUR', 500);
+    await seedOnHand(h, A, 'u-owner', 'SUGAR', 300);
+    // Recipe registered, but the cafe is NOT enabled → committing a run is refused.
+    await registerRecipe(h, A, 'u-owner', 'r1');
+    const out = await commitRun(h, A, 'u-owner', 'run-1', { recipeId: 'r1', batches: 1, actualOutputMinor: 1, outputBatchId: 'C1', locationId: 'KITCHEN' });
+    expect(out.status).toBe(422);
+    expect(codeOf(out)).toBe('department_not_operated');
+
+    // Once enabled, the same run commits.
+    expect((await enableDept(h, A, 'u-owner')).status).toBe(201);
+    expect((await commitRun(h, A, 'u-owner', 'run-1', { recipeId: 'r1', batches: 1, actualOutputMinor: 1, outputBatchId: 'C1', locationId: 'KITCHEN' }, 'run-1-b')).status).toBe(201);
+  });
+
+  it('refuses enabling a department the product does not run, and lists what it operates', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    expect(codeOf(await enableDept(h, A, 'u-owner', 'nuclear_reactor', 'dept-bad'))).toBe('unknown_department');
+    await enableDept(h, A, 'u-owner', 'cafe');
+    const body = (await h.request({ method: 'GET', path: '/v1/production/departments', userId: 'u-owner', tenantId: A })).body as { operated: { departmentId: string }[]; available: string[] };
+    expect(body.operated.map((d) => d.departmentId)).toEqual(['cafe']);
+    expect(body.available).toContain('meat_fish');
+  });
+
+  it('issues a complete pack label, and refuses one missing a legally required field', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await enableDept(h, A, 'u-owner');
+    await seedOnHand(h, A, 'u-owner', 'FLOUR', 500);
+    await seedOnHand(h, A, 'u-owner', 'SUGAR', 300);
+    await registerRecipe(h, A, 'u-owner', 'r1');
+    expect((await commitRun(h, A, 'u-owner', 'run-1', { recipeId: 'r1', batches: 1, actualOutputMinor: 1, outputBatchId: 'C1', locationId: 'KITCHEN' })).status).toBe(201);
+    // The cafe is food-safety + Legal Metrology (not weighed): the label needs net quantity, packer
+    // details and an allergen declaration.
+    const ok = await label(h, A, 'u-owner', 'run-1', { productName: 'Coffee cake', netQuantity: '180 g', packerDetails: 'SRE Hyper Market, TN', priceMinor: 120_00, allergens: ['wheat', 'milk'] });
+    expect(ok.status).toBe(200);
+    expect((ok.body as { lines: string[] }).lines.some((l) => l.includes('Coffee cake'))).toBe(true);
+
+    // Missing the net quantity (Legal Metrology) → refused before it prints.
+    expect(codeOf(await label(h, A, 'u-owner', 'run-1', { productName: 'Coffee cake', packerDetails: 'SRE', priceMinor: 120_00, allergens: [] }, 'lbl-noqty'))).toBe('incomplete_label');
+    // Missing the allergen declaration (food safety) → refused.
+    expect(codeOf(await label(h, A, 'u-owner', 'run-1', { productName: 'Coffee cake', netQuantity: '180 g', packerDetails: 'SRE', priceMinor: 120_00 }, 'lbl-noallergen'))).toBe('incomplete_label');
   });
 });
