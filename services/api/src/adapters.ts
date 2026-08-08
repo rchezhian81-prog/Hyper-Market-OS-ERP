@@ -34,8 +34,9 @@ import type { B2BCollectionsDeps, Receivable as CollectionsReceivable, RecordedP
 import type { B2BCommissionDeps, CommissionAccrual } from '../../finance/src/b2b-commission';
 import type { B2BDocumentsDeps, StoredB2BDocument } from '../../finance/src/b2b-documents';
 import { checkCredit } from '../../../packages/b2b/src/credit';
-import type { LpCasesDeps } from '../../pos/src/loss-prevention';
+import type { LpCasesDeps, LpRulesDeps } from '../../pos/src/loss-prevention';
 import type { InvestigationCase, EvidenceItem } from '../../../packages/loss-prevention/src/cases';
+import type { LpRule } from '../../../packages/loss-prevention/src/loss-prevention';
 import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord, StatementLine } from '../../purchase/src/supplier-portal';
 import type { ConcessionDeps, ConcessionContract, ConcessionSale } from '../../finance/src/concession';
 import type { ScrapDeps, ScrapSale } from '../../finance/src/scrap';
@@ -1283,6 +1284,37 @@ export function lpCasesAdapter(input: {
         idempotencyKey: `lp-case-close-${tenantId}-${c.caseId}`,
         source: 'api/pos',
         payload: { caseId: c.caseId, outcome: c.outcome, outcomeNote: c.outcomeNote, closedBy: c.closedBy, closedAt: c.closedAt },
+      }));
+    },
+  };
+}
+
+export function lpRulesAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): LpRulesDeps {
+  // Rules are data — a store's own thresholds. They fold one per-tenant stream, latest per signal kind
+  // wins (a re-tune is a new fact, never an overwrite). Low volume — five kinds.
+  const rulesStream = streamName(STREAM.lossPrevention, 'rules');
+  return {
+    now: input.now,
+
+    rules: async (tenantId) => {
+      const set = await allOf<LpRule>(input.store, tenantId, rulesStream, 'LpRuleSet');
+      const byKind = new Map<string, LpRule>();
+      for (const r of set) byKind.set(r.kind, r); // later re-tune wins
+      return [...byKind.values()];
+    },
+
+    recordRule: async (tenantId, rule) => {
+      await input.store.append(tenantId, rulesStream, makeEvent({
+        id: `lp-rule-${rule.kind}-${input.now()}`,
+        type: 'LpRuleSet',
+        occurredAt: input.now(),
+        // Keyed on the kind AND the limits — re-setting the same thresholds collapses, a re-tune is a new fact.
+        idempotencyKey: `lp-rule-${tenantId}-${rule.kind}-${rule.maxCount ?? ''}-${rule.maxTotalValueMinor ?? ''}-${rule.maxSingleValueMinor ?? ''}-${rule.escalateAtMultiple ?? ''}`,
+        source: 'api/pos',
+        payload: rule,
       }));
     },
   };
