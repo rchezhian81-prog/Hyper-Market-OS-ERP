@@ -43,6 +43,8 @@ import type { WarehouseDeps } from '../../inventory/src/warehouse';
 import type { Bin, BinContents } from '../../../packages/warehouse/src/movements';
 import { binKey } from '../../../packages/warehouse/src/movements';
 import type { StockMovement } from '../../../packages/stock/src/position';
+import type { TransfersDeps } from '../../inventory/src/warehouse-transfers';
+import type { Transfer } from '../../../packages/warehouse/src/transfers';
 import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord, StatementLine } from '../../purchase/src/supplier-portal';
 import type { ConcessionDeps, ConcessionContract, ConcessionSale } from '../../finance/src/concession';
 import type { ScrapDeps, ScrapSale } from '../../finance/src/scrap';
@@ -1411,6 +1413,63 @@ export function warehouseAdapter(input: {
         idempotencyKey: `wh-move-${tenantId}-${commandId}`,
         source: 'api/inventory',
         payload: { commandId, movements },
+      }));
+    },
+  };
+}
+
+export function transfersAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): TransfersDeps {
+  // Each transfer folds one per-tenant stream by transferId; the aggregate carried on each event is the
+  // latest truth (proposed → in_transit → received). Movements/discrepancies ride the event as evidence.
+  const transfersStream = streamName(STREAM.warehouse, 'transfers');
+  const foldTransfers = async (tenantId: string): Promise<Map<string, Transfer>> => {
+    const events = await input.store.readStream(tenantId, transfersStream);
+    const byId = new Map<string, Transfer>();
+    for (const e of events) {
+      const t = (e.event.payload as { transfer?: Transfer }).transfer;
+      if (t !== undefined) byId.set(t.transferId, t);
+    }
+    return byId;
+  };
+
+  return {
+    now: input.now,
+
+    transfer: async (tenantId, transferId) => (await foldTransfers(tenantId)).get(transferId),
+
+    recordProposed: async (tenantId, transfer) => {
+      await input.store.append(tenantId, transfersStream, makeEvent({
+        id: `transfer-proposed-${transfer.transferId}`,
+        type: 'TransferProposed',
+        occurredAt: input.now(),
+        idempotencyKey: `transfer-proposed-${tenantId}-${transfer.transferId}`,
+        source: 'api/inventory',
+        payload: { transfer },
+      }));
+    },
+
+    recordDispatched: async (tenantId, transfer, movements) => {
+      await input.store.append(tenantId, transfersStream, makeEvent({
+        id: `transfer-dispatched-${transfer.transferId}`,
+        type: 'TransferDispatched',
+        occurredAt: transfer.dispatchedAt ?? input.now(),
+        idempotencyKey: `transfer-dispatched-${tenantId}-${transfer.transferId}`,
+        source: 'api/inventory',
+        payload: { transfer, movements },
+      }));
+    },
+
+    recordReceived: async (tenantId, transfer, movements, discrepancies) => {
+      await input.store.append(tenantId, transfersStream, makeEvent({
+        id: `transfer-received-${transfer.transferId}`,
+        type: 'TransferReceived',
+        occurredAt: transfer.receivedAt ?? input.now(),
+        idempotencyKey: `transfer-received-${tenantId}-${transfer.transferId}`,
+        source: 'api/inventory',
+        payload: { transfer, movements, discrepancies },
       }));
     },
   };
