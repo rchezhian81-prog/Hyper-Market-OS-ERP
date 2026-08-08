@@ -63,6 +63,28 @@
       .ex .kind { font-weight: 700; }
       .ex .detail { color: var(--muted); font-size: 14px; }
       .ex-empty { color: var(--good); font-weight: 600; }
+
+      /* Approvals queue */
+      .appr { display: grid; gap: 10px; }
+      .appr .row { background: var(--panel); border-radius: 10px; padding: 12px 14px; display: grid; gap: 8px; }
+      .appr .subject { font-weight: 600; }
+      .appr .blocked { color: var(--warn); font-size: 14px; }
+      .appr .buttons { display: flex; gap: 10px; }
+      .appr button { min-height: 44px; padding: 0 18px; border: 0; border-radius: 10px; font-size: 15px; font-weight: 600; }
+      .appr button.approve { background: var(--good); color: #052e16; }
+      .appr button.reject { background: var(--danger); color: #fff; }
+
+      /* Reason picker — on-screen choices, never a browser prompt. */
+      .sheet { position: fixed; inset: 0; background: rgba(2, 6, 23, .86); display: grid; place-items: center; z-index: 20; padding: 16px; }
+      .sheet[hidden] { display: none; }
+      .sheet-inner { width: min(520px, 100%); background: var(--panel); padding: 18px; border-radius: 16px; display: grid; gap: 10px; }
+      .sheet h3 { margin: 0; font-size: 18px; }
+      .choices { display: grid; gap: 8px; }
+      .choices button { min-height: 48px; text-align: left; padding: 0 16px; border: 0; border-radius: 10px; background: var(--line); color: var(--ink); font-size: 15px; }
+      .sheet-cancel { min-height: 44px; border: 0; border-radius: 10px; background: transparent; color: var(--muted); font-size: 15px; }
+      .toast { position: fixed; inset: auto 0 16px 0; margin: 0 auto; width: max-content; max-width: 90%; background: var(--panel); color: var(--ink); padding: 12px 18px; border-radius: 12px; z-index: 30; border-left: 6px solid var(--good); }
+      .toast[hidden] { display: none; }
+      .toast.bad { border-left-color: var(--danger); }
     </style>
   </head>
   <body>
@@ -90,7 +112,23 @@
         <h2 id="ex-heading">—</h2>
         <div id="exceptions"></div>
       </section>
+
+      <section>
+        <h2 id="appr-heading">—</h2>
+        <div id="approvals"></div>
+      </section>
     </main>
+
+    <!-- Reason picker for a decision. On-screen choices only — never prompt/confirm/alert. -->
+    <div class="sheet" id="reason-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="reason-title">
+      <div class="sheet-inner">
+        <h3 id="reason-title">—</h3>
+        <div class="choices" id="reason-choices"></div>
+        <button class="sheet-cancel" id="reason-cancel" type="button">Cancel</button>
+      </div>
+    </div>
+
+    <p class="toast" id="toast" hidden role="status"></p>
 
     <!--
       The store box puts this screen's data here, above the bundle, because the bundle

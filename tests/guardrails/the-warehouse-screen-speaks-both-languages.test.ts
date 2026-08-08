@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { FEEDBACK_CODES } from '../../apps/warehouse-app/src/warehouse-session';
 import { WAREHOUSE_EXCEPTION_KINDS } from '../../apps/web-erp/src/warehouse-supervisor-session';
+import { APPROVE_REASONS, REJECT_REASONS } from '../../packages/approvals/src/reasons';
 
 /**
  * **The warehouse handheld says WHY a scan was refused — in English AND Tamil (OA-9).**
@@ -64,5 +65,20 @@ describe('the warehouse supervisor screen names every exception in both language
   it('shows the stale-shell strip in both languages', () => {
     expect(supEn).toMatch(/staleShell:/);
     expect(supTa).toMatch(/staleShell:/);
+  });
+
+  it('has both languages for every approval decision reason code (§28 audit vocabulary)', () => {
+    const codes = [...APPROVE_REASONS, ...REJECT_REASONS];
+    const missingEn = codes.filter((c) => !new RegExp(`\\b${c}:`).test(supEn));
+    const missingTa = codes.filter((c) => !new RegExp(`\\b${c}:`).test(supTa));
+    expect(missingEn, `English is missing: ${missingEn.join(', ')}`).toEqual([]);
+    expect(missingTa, `Tamil is missing: ${missingTa.join(', ')}`).toEqual([]);
+  });
+
+  it('has both languages for every reason a request is not actionable', () => {
+    for (const reason of ['own_request', 'out_of_scope', 'exceeds_authority']) {
+      expect(supEn, `English missing ${reason}`).toMatch(new RegExp(`\\b${reason}:`));
+      expect(supTa, `Tamil missing ${reason}`).toMatch(new RegExp(`\\b${reason}:`));
+    }
   });
 });

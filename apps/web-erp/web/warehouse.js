@@ -30,6 +30,20 @@ const WORDS = {
     notKnownEx: 'The store box has not been sent the current bin contents, so exceptions cannot be checked. Not knowing is not the same as none.',
     // exception kinds, keyed to WAREHOUSE_EXCEPTION_KINDS
     negative_stock: 'Impossible negative stock', over_capacity: 'Bin over capacity', recalled_in_pickable_bin: 'Recalled stock in a pickable bin',
+    // approvals
+    apprHeading: 'Approvals waiting on you',
+    apprNotKnown: 'The store box has not sent the pending approvals, or who the supervisor is. Not knowing is not the same as none.',
+    apprEmpty: 'No approvals are waiting.',
+    approve: 'Approve', reject: 'Reject', cancel: 'Cancel', from: 'from', noValue: 'no value',
+    reasonApprove: 'Why are you approving this?', reasonReject: 'Why are you rejecting this?',
+    // blocked reasons (why a row is not actionable by this supervisor)
+    own_request: 'Your own request — someone else must decide it', out_of_scope: 'Outside your branch', exceeds_authority: 'Above your approval limit — escalate',
+    // approve reason codes (packages/approvals APPROVE_REASONS)
+    within_policy: 'Within policy', checked_with_supplier: 'Checked with the supplier', checked_the_stock: 'Checked the stock', owner_instructed: 'Owner instructed',
+    // reject reason codes (packages/approvals REJECT_REASONS)
+    price_looks_wrong: 'The price looks wrong', not_enough_evidence: 'Not enough evidence', against_policy: 'Against policy', ask_the_owner_first: 'Ask the owner first',
+    // outcomes
+    decidedApproved: 'Approved and queued to sync', decidedRejected: 'Rejected and queued to sync', decideRefused: 'Could not record the decision',
   },
   ta: {
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
@@ -43,8 +57,22 @@ const WORDS = {
     notKnownStock: 'கடை கணினி தற்போதைய இட உள்ளடக்கத்தை அனுப்பவில்லை, எனவே சரக்கைக் காட்ட முடியாது. இது காலி கிடங்கு அல்ல — இந்த அலுவலகத்திற்கு இன்னும் தெரிவிக்கப்படவில்லை.',
     notKnownEx: 'கடை கணினி தற்போதைய இட உள்ளடக்கத்தை அனுப்பவில்லை, எனவே விதிவிலக்குகளைச் சரிபார்க்க முடியாது. தெரியாதது என்பது இல்லை என்பது அல்ல.',
     negative_stock: 'சாத்தியமற்ற எதிர்மறை சரக்கு', over_capacity: 'இடம் கொள்ளளவைத் தாண்டியது', recalled_in_pickable_bin: 'எடுக்கும் இடத்தில் திரும்பப் பெற்ற சரக்கு',
+    apprHeading: 'உங்கள் ஒப்புதலுக்குக் காத்திருப்பவை',
+    apprNotKnown: 'கடை கணினி நிலுவையிலுள்ள ஒப்புதல்களையோ, மேற்பார்வையாளர் யார் என்பதையோ அனுப்பவில்லை. தெரியாதது என்பது இல்லை என்பது அல்ல.',
+    apprEmpty: 'ஒப்புதல்கள் எதுவும் காத்திருக்கவில்லை.',
+    approve: 'ஒப்புதல்', reject: 'நிராகரி', cancel: 'ரத்து', from: 'கேட்டவர்', noValue: 'மதிப்பு இல்லை',
+    reasonApprove: 'ஏன் ஒப்புதல் அளிக்கிறீர்கள்?', reasonReject: 'ஏன் நிராகரிக்கிறீர்கள்?',
+    own_request: 'உங்கள் சொந்த கோரிக்கை — வேறு ஒருவர் முடிவு செய்ய வேண்டும்', out_of_scope: 'உங்கள் கிளைக்கு வெளியே', exceeds_authority: 'உங்கள் ஒப்புதல் வரம்பைத் தாண்டியது — மேலிடத்திற்கு அனுப்பவும்',
+    within_policy: 'கொள்கையின்படி', checked_with_supplier: 'சப்ளையருடன் சரிபார்க்கப்பட்டது', checked_the_stock: 'சரக்கு சரிபார்க்கப்பட்டது', owner_instructed: 'உரிமையாளர் அறிவுறுத்தினார்',
+    price_looks_wrong: 'விலை தவறாகத் தெரிகிறது', not_enough_evidence: 'போதிய ஆதாரம் இல்லை', against_policy: 'கொள்கைக்கு எதிரானது', ask_the_owner_first: 'முதலில் உரிமையாளரிடம் கேளுங்கள்',
+    decidedApproved: 'ஒப்புதல் அளித்து அனுப்பக் காத்திருக்கிறது', decidedRejected: 'நிராகரித்து அனுப்பக் காத்திருக்கிறது', decideRefused: 'முடிவைப் பதிவு செய்ய முடியவில்லை',
   },
 };
+
+const APPROVE_CODES = ['within_policy', 'checked_with_supplier', 'checked_the_stock', 'owner_instructed'];
+const REJECT_CODES = ['price_looks_wrong', 'not_enough_evidence', 'against_policy', 'ask_the_owner_first'];
+const inr = (minor) => '₹' + (minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const decided = new Set(); // request ids decided this session, so a row is not offered twice
 let lang = 'en';
 const t = (key) => WORDS[lang][key] ?? WORDS.en[key] ?? key;
 
@@ -138,6 +166,86 @@ function renderExceptions() {
   host.append(wrap);
 }
 
+function renderApprovals() {
+  const host = el('approvals');
+  host.textContent = '';
+  if (real === undefined) return;
+  const q = real.approvalQueue();
+  if (!q.known) {
+    const p = document.createElement('p'); p.className = 'notknown'; p.textContent = t('apprNotKnown'); host.append(p);
+    return;
+  }
+  const rows = q.rows.filter((r) => !decided.has(r.request.id));
+  if (rows.length === 0) {
+    const p = document.createElement('p'); p.className = 'ex-empty'; p.textContent = t('apprEmpty'); host.append(p);
+    return;
+  }
+  const wrap = document.createElement('div');
+  wrap.className = 'appr';
+  for (const row of rows) {
+    const box = document.createElement('div');
+    box.className = 'row';
+    const subject = document.createElement('div');
+    subject.className = 'subject';
+    const val = row.request.value ? inr(row.request.value.minor) : t('noValue');
+    subject.textContent = `${row.request.subjectType.replace(/_/g, ' ')} · ${val} · ${t('from')} ${row.request.requestedBy}`;
+    box.append(subject);
+    if (row.actionable) {
+      const buttons = document.createElement('div');
+      buttons.className = 'buttons';
+      const approve = document.createElement('button'); approve.className = 'approve'; approve.type = 'button'; approve.textContent = t('approve');
+      approve.addEventListener('click', () => openReason(row.request.id, 'approved'));
+      const reject = document.createElement('button'); reject.className = 'reject'; reject.type = 'button'; reject.textContent = t('reject');
+      reject.addEventListener('click', () => openReason(row.request.id, 'rejected'));
+      buttons.append(approve, reject);
+      box.append(buttons);
+    } else {
+      const blocked = document.createElement('div');
+      blocked.className = 'blocked';
+      blocked.textContent = t(row.blockedReason);
+      box.append(blocked);
+    }
+    wrap.append(box);
+  }
+  host.append(wrap);
+}
+
+// ── Deciding an approval — a reason is chosen on-screen, never typed, never a prompt ──────────
+function openReason(requestId, decision) {
+  el('reason-title').textContent = decision === 'approved' ? t('reasonApprove') : t('reasonReject');
+  const choices = el('reason-choices');
+  choices.textContent = '';
+  for (const code of decision === 'approved' ? APPROVE_CODES : REJECT_CODES) {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = t(code);
+    b.addEventListener('click', () => { el('reason-sheet').hidden = true; submit(requestId, decision, code); });
+    choices.append(b);
+  }
+  el('reason-sheet').hidden = false;
+}
+el('reason-cancel').addEventListener('click', () => { el('reason-sheet').hidden = true; });
+
+function submit(requestId, decision, reasonCode) {
+  const outbox = window.warehouseSupervisorOutbox;
+  const out = real.decide({ requestId, decision, reasonCode, decidedAt: new Date().toISOString() }, outbox);
+  if (out && out.ok) {
+    decided.add(requestId);
+    toast(decision === 'approved' ? t('decidedApproved') : t('decidedRejected'), false);
+  } else {
+    toast(`${t('decideRefused')}: ${out ? out.refusal : 'no_outbox'}`, true);
+  }
+  render();
+}
+
+let toastTimer = null;
+function toast(text, bad) {
+  const strip = el('toast');
+  strip.className = 'toast' + (bad ? ' bad' : '');
+  strip.textContent = text;
+  strip.hidden = false;
+  if (toastTimer !== null) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { strip.hidden = true; }, 4000);
+}
+
 function render() {
   el('who').firstChild.textContent = t('who');
   el('store').textContent = (data && data.storeId) || '';
@@ -145,9 +253,11 @@ function render() {
   el('bins-lead').textContent = t('binsLead');
   el('stock-heading').textContent = t('stockHeading');
   el('ex-heading').textContent = t('exHeading');
+  el('appr-heading').textContent = t('apprHeading');
   renderBins();
   renderStock();
   renderExceptions();
+  renderApprovals();
 }
 
 // ── Boot ────────────────────────────────────────────────────────────────────
