@@ -64,8 +64,9 @@ import type { ConnectorMappingDeps, Mapping } from '../../platform/src/connector
 import type { Hasher } from '../../../packages/audit/src/audit-trail';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
-import { project } from '../../inventory/src/index';
+import { project, EFFECT_ON_HAND } from '../../inventory/src/index';
 import type { Movement, Availability, InventoryDeps } from '../../inventory/src/index';
+import { weightedAverageValuation, type ValuationMovement } from '../../../packages/stock/src/valuation';
 import type { MatchResult, BankChangeRequest, PurchaseDeps } from '../../purchase/src/index';
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
 import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
@@ -1854,6 +1855,30 @@ export function inventoryAdapter(input: {
     availability: async (tenantId, productId) => {
       const { opening, tail } = await basis(tenantId);
       const rows = project(tail, input.now(), opening);
+      return productId === undefined ? rows : rows.filter((r) => r.productId === productId);
+    },
+
+    /**
+     * Stock valued at weighted-average cost (M08-FR-04, owner policy). Folds the WHOLE movement
+     * history in occurrence order — the average depends on the sequence of receipts, so unlike
+     * on-hand it cannot start from a quantity-only snapshot; correctness before speed, and a
+     * valuation report is not the aisle hot-path. `unitCostMinor` on a `received` movement is the
+     * price it re-averages at. Currency is the tenant base (INR default); the figure is minor units.
+     */
+    valuation: async (tenantId, productId) => {
+      const events = await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' });
+      const movements = events
+        .map((e) => payloadOf<Movement>(e))
+        .sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0));
+      const rows = weightedAverageValuation(
+        movements.map((m): ValuationMovement => ({
+          productId: m.productId, locationId: m.locationId,
+          effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
+          isPurchaseReceipt: m.kind === 'received',
+          ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
+        })),
+        'INR',
+      );
       return productId === undefined ? rows : rows.filter((r) => r.productId === productId);
     },
 

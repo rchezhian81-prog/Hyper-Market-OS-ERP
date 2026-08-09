@@ -19,6 +19,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
+import type { ProductValuation } from '../../../packages/stock/src/valuation';
 
 export type MovementKind =
   | 'received' | 'sold' | 'returned' | 'transferred_in' | 'transferred_out'
@@ -44,6 +45,12 @@ export interface Movement {
   readonly reason?: string;
   readonly approvedBy?: string;
   readonly enteredBy: string;
+  /**
+   * Unit cost in minor units, for a `received` movement — the price this receipt re-averages the
+   * stock value at (M08-FR-04, weighted-average policy). Optional: a receipt with no cost is on-hand
+   * but reported as unvalued rather than folded in at zero (P-08). Ignored for non-receipts.
+   */
+  readonly unitCostMinor?: number;
 }
 
 export interface Availability {
@@ -161,6 +168,12 @@ export interface InventoryDeps {
    * still owns *how* to project (`project` above); the adapter owns *from where*.
    */
   readonly availability: (tenantId: string, productId?: string) => Promise<readonly Availability[]> | readonly Availability[];
+  /**
+   * Stock valued at weighted-average cost (M08-FR-04) — projected from the same movement ledger as
+   * on-hand, never a stored figure. Returns per product/location the value, the average unit cost,
+   * cost of goods sold and any unvalued (uncosted) quantity.
+   */
+  readonly valuation: (tenantId: string, productId?: string) => Promise<readonly ProductValuation[]> | readonly ProductValuation[];
   readonly now: () => string;
 }
 
@@ -209,6 +222,24 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
       handler: async (ctx) => {
         const rows = await deps.availability(ctx.tenantId);
         return { status: 200, body: { negative: negativeStock(rows), asAt: deps.now() } };
+      },
+    },
+    {
+      // Stock valued at weighted-average cost (M08-FR-04). Projected from the movement ledger, so it
+      // is the same one truth as on-hand; `unvalued` surfaces any stock received without a cost.
+      api: 'API-04', method: 'GET', path: '/v1/inventory/valuation',
+      permission: 'inventory.availability.read',
+      handler: async (ctx) => {
+        const rows = await deps.valuation(ctx.tenantId, ctx.query['productId']);
+        return {
+          status: 200,
+          body: {
+            rows,
+            totalValueMinor: rows.reduce((s, r) => s + r.value.minor, 0),
+            method: 'weighted_average',
+            asAt: deps.now(),
+          },
+        };
       },
     },
   ];

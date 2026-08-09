@@ -262,7 +262,7 @@ describe('all three register cleanly on the kernel', () => {
   );
 
   const invDeps: InventoryDeps = {
-    availability: () => project([move()], NOW), appendMovement: () => {}, isKnown: () => false, now: () => NOW,
+    availability: () => project([move()], NOW), appendMovement: () => {}, isKnown: () => false, valuation: () => [], now: () => NOW,
   };
   const idDeps: IdentityDeps = {
     roles: () => [], permissionsOf: () => [], recordGrant: () => {}, branches: () => [], allocateNumber: () => Promise.resolve(1), now: () => NOW,

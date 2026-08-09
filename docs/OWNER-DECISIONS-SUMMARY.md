@@ -1,6 +1,6 @@
 # What the build needs from you now — one page
 
-_For Mr. Elanchezhian. Plain English. Last updated 8 August 2026._
+_For Mr. Elanchezhian. Plain English. Last updated 9 August 2026._
 
 The autonomous build has now wired and tested every part of the system that could be
 completed **without a decision from you**. This page lists the decisions that are now the
@@ -9,6 +9,12 @@ None of them stops the store trading, and none is urgent this week — but each 
 a specific slice of the product. Full detail for every item is in
 `docs/OWNER-ACTION-REGISTER.md`; this is the short version.
 
+> **Update — 9 Aug 2026:** You chose **weighted-average** as the stock-valuation method. That is
+> now wired: the system values every shelf at the weighted average of what it cost to buy, works out
+> cost of goods sold at that same average when things sell, and shows any stock received without a
+> cost as "not yet valued" rather than pretending it was free. It reads back on a live report and is
+> automatically tested. That was the last accounting-policy decision the analytics were waiting on.
+>
 > **Update — 8 Aug 2026:** You chose **guest browsing** and to **keep payment in test mode**
 > for the pilot. Good news on the first: the customer app is **already built for guest browsing**
 > — it browses the catalogue and reviews a basket today, with no login, and it is tested. The one
@@ -25,8 +31,9 @@ a specific slice of the product. Full detail for every item is in
 - **The customer shopping app** browses the catalogue and reviews a basket today, as a guest with
   no login — built, served offline-first, and tested. Taking a full online order additionally needs
   your delivery areas (OA-11 below).
-- **What is left** is either one of the decisions below, or deeper analytics that depend on
-  the **stock-valuation method** decision (also below).
+- **What is left** is one of the decisions below (payment provider for real money, and — only if you
+  ever sell this system to other shops — subscription pricing). The **stock-valuation method** is now
+  decided (weighted-average) and wired.
 
 ## The decisions, and what each one switches on
 
@@ -36,7 +43,7 @@ a specific slice of the product. Full detail for every item is in
 | **OA-13** | **How customers log in to the shopping app** — browse as a guest, or sign in with a one-time SMS code. | ✅ **You chose: guest browsing.** Already built and tested — browse + basket review work today, no login. | Nothing left to decide; accounts can be added later if you want them. | Done. |
 | **OA-11** | **Delivery service areas** — how far the store delivers and how many slots. | ✅ **Done.** Main store, 10 km @ 11.0168/76.9558, 8 slots/day (9 am–9 pm, 10 each). **Delivery now works end-to-end** in test-payment mode: a customer browses, fills a basket, shares their phone location, picks a slot, and pays (test) — orders beyond 10 km are refused. | Live customer delivery orders (test payment). | Done for the pilot; real card/UPI payment is the only piece left, and it waits on OA-4. |
 | **OA-12** | **Subscription plans & pricing** (only relevant when selling this system to other retailers). | Defer — keep per-tenant feature switches (already built) for now. | Paid plans, metered billing for a multi-retailer product (M36). | Only when commercialising to other shops. |
-| **Valuation method** | **How stock is valued** — weighted-average, FIFO, or standard cost. This is an accounting-policy choice. | Confirm the method your accountant already uses. | Stock-value & margin analytics (ageing/turns/GMROI, M08-FR-04), margin reporting (M29), and stock valuation feeding the books (M23). | Before month-end stock valuation and margin reports. |
+| **Valuation method** | **How stock is valued** — weighted-average, FIFO, or standard cost. This is an accounting-policy choice. | ✅ **You chose: weighted-average.** Now wired and tested — stock value, cost of goods sold and the average unit cost read back on a live report; uncosted receipts show as "not yet valued". | Stock-value & margin analytics (ageing/turns/GMROI, M08-FR-04), margin reporting (M29), and stock valuation feeding the books (M23). | Done. |
 
 ## What continues regardless
 
@@ -54,5 +61,7 @@ switch delivery on is your store's map coordinates** — the latitude and longit
 can tell a 9 km address (deliver) from an 11 km one (refuse). Get them from Google Maps: search
 your store, right-click the pin, and the two numbers at the top are the latitude and longitude —
 send me those two numbers and delivery goes live. Until then everything else works and delivery
-stays safely switched off (no order to a wrong-distance address can slip through). The remaining
-decisions (subscription pricing, stock-valuation method) can wait for their moment.
+stays safely switched off (no order to a wrong-distance address can slip through). You have now also
+settled the **stock-valuation method (weighted-average)**, so the only decisions left are the real
+payment provider (before real money) and — only if you commercialise the system — subscription
+pricing. Both can wait for their moment.
