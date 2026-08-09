@@ -14,15 +14,31 @@ import { InMemoryLedgerStore, Ledger } from '../../../packages/ledger/src/ledger
 import type { CommitOutcome } from '../../../edge/store-edge/src/durability';
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { CatalogueCache, type CatalogueSnapshot } from '../../../packages/catalogue/src/catalogue';
+import { ReservedRangeAllocator } from '../../../packages/numbering/src/numbering';
 import { PosSession, taxRateFromPercent } from './session';
 import { createTillSession } from './till-session';
 import { createPosView, type PosView } from './view-adapter';
+
+/**
+ * This lane's reserved receipt-number range (M01-FR-02), provisioned per lane in the signed local
+ * config pack. Two offline lanes drawing from DISTINCT ranges can never mint the same receipt
+ * number, so the day's numbers stay gap-free and collision-free with no network (audit GAP-SYNC-02).
+ * The range is reconciled/refreshed on sync — a follow-on that rides the inbound pack path (SYNC-01).
+ */
+export interface PosReceiptSeries {
+  readonly prefix: string;
+  readonly padTo: number;
+  readonly rangeStart: number;
+  readonly rangeEnd: number;
+}
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
 interface PosWindow {
   posSession?: PosView;
   /** The lane's cached catalogue snapshot, injected by the edge before boot (§31). */
   posCatalogue?: CatalogueSnapshot;
+  /** This lane's reserved receipt-number range, injected by the edge before boot (per lane). */
+  posReceiptSeries?: PosReceiptSeries;
 }
 
 /** Where this till's edge listens. Loopback only — see ADR-0004 and `edge/store-edge/src/lane-server.ts`. */
@@ -79,7 +95,18 @@ export function bootPos(config?: {
   varianceToleranceMinor?: number;
   /** Overridable for tests. Production always goes to this till's own edge. */
   durable?: DurableWrite;
-}): PosView & { readonly till: ReturnType<typeof createTillSession> } {
+  /** This lane's reserved receipt-number range (M01-FR-02), provisioned per lane. */
+  receipt?: PosReceiptSeries;
+}): PosView & {
+  readonly till: ReturnType<typeof createTillSession>;
+  /** The next receipt number for this lane — gap-free within its reserved range. Throws when the
+   * range is exhausted (the lane must obtain a fresh range on sync); the caller must then take no
+   * money. Without a provisioned range (a standalone/demo shell) a timestamp is returned, which is
+   * NOT collision-safe across lanes and is only for a single unprovisioned till. */
+  readonly nextReceipt: () => string;
+  /** How many receipt numbers remain in this lane's range, or Infinity when unprovisioned. */
+  readonly receiptsRemaining: () => number;
+} {
   const outbox = new SyncOutbox();
   const session = new PosSession(
     {
@@ -113,7 +140,21 @@ export function bootPos(config?: {
     new Ledger(new InMemoryLedgerStore()),
     outbox,
   );
-  return Object.assign(view, { till });
+
+  // Receipt numbering (M01-FR-02). A provisioned reserved range gives gap-free, collision-free
+  // numbers across offline lanes; the allocator throws when the range is spent, which the shell
+  // surfaces as a safe-stop (take no money) rather than reusing a number. Absent a provisioned range
+  // this is a standalone/demo shell, so a timestamp stands in — explicitly NOT collision-safe.
+  const receiptAllocator = config?.receipt === undefined ? undefined : new ReservedRangeAllocator(
+    { prefix: config.receipt.prefix, padTo: config.receipt.padTo },
+    { start: config.receipt.rangeStart, end: config.receipt.rangeEnd },
+  );
+  const nextReceipt = (): string => (receiptAllocator === undefined
+    ? `R-${Date.now().toString(36).toUpperCase()}`
+    : receiptAllocator.allocate().formatted);
+  const receiptsRemaining = (): number => receiptAllocator?.remaining() ?? Number.POSITIVE_INFINITY;
+
+  return Object.assign(view, { till, nextReceipt, receiptsRemaining });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its
@@ -121,5 +162,8 @@ export function bootPos(config?: {
 // so this needs no DOM types.
 const browserWindow = (globalThis as { window?: PosWindow }).window;
 if (browserWindow !== undefined) {
-  browserWindow.posSession = bootPos({ catalogue: browserWindow.posCatalogue });
+  browserWindow.posSession = bootPos({
+    catalogue: browserWindow.posCatalogue,
+    ...(browserWindow.posReceiptSeries === undefined ? {} : { receipt: browserWindow.posReceiptSeries }),
+  });
 }
