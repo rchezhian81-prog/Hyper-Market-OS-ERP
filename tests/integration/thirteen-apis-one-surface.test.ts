@@ -51,7 +51,7 @@ const ALL: readonly Route[] = [
     matchLines: () => [], recordCapture: () => {}, recordMatch: () => {}, applyBankChange: () => {},
     openCommitments: () => ({ count: 0, valueMinor: 0 }), now: () => NOW,
   }),
-  ...inventoryRoutes({ availability: () => [], appendMovement: () => {}, isKnown: () => false, valuation: () => [], ageing: () => ({ lots: [], unvaluedMinor: 0 }), now: () => NOW }),
+  ...inventoryRoutes({ availability: () => [], appendMovement: () => {}, isKnown: () => false, valuation: () => [], ageing: () => ({ lots: [], unvaluedMinor: 0 }), performance: () => ({ from: NOW, to: NOW, periodDays: 0, cogs: { minor: 0, currency: 'INR' }, averageInventory: { minor: 0, currency: 'INR' } }), now: () => NOW }),
   ...posRoutes({
     catalogue: () => new Map(), currentPackVersion: () => 1, saleHoldingReceipt: () => undefined,
     isBanked: () => false, bankSale: () => {}, recordExceptions: () => {},

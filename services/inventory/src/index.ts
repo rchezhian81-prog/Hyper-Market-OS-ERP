@@ -21,7 +21,8 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { ProductValuation } from '../../../packages/stock/src/valuation';
 import type { AgeingSource } from '../../../packages/stock/src/ageing-source';
-import { stockAgeing } from '../../../packages/stock/src/metrics';
+import { stockAgeing, inventoryTurns, gmroi, type Ratio } from '../../../packages/stock/src/metrics';
+import type { Money } from '../../../packages/contracts/src/money';
 
 export type MovementKind =
   | 'received' | 'sold' | 'returned' | 'transferred_in' | 'transferred_out'
@@ -183,7 +184,31 @@ export interface InventoryDeps {
    * uncosted on-hand so it is stated, never priced at a guess (P-08).
    */
   readonly ageing: (tenantId: string, productId?: string) => Promise<AgeingSource> | AgeingSource;
+  /**
+   * The period inputs for stock productivity (M08-FR-04): cost of goods sold and average inventory
+   * over `[from, to]`, both at weighted-average cost, plus net (ex-tax) sales and gross margin when
+   * revenue can be stated. COGS and value come from the inventory ledger; net sales from the POS
+   * ledger de-grossed by the catalogue's tax rate per product. `netSales`/`grossMargin` are ABSENT
+   * (not zero) when a sold product has no known tax rate — the route then reports GMROI as not
+   * meaningful rather than inventing a margin (P-08).
+   */
+  readonly performance: (tenantId: string, opts: { readonly from: string; readonly to: string }) => Promise<StockPerformanceInputs> | StockPerformanceInputs;
   readonly now: () => string;
+}
+
+/** Period inputs for turns/GMROI, computed cross-domain (inventory COGS + POS revenue). */
+export interface StockPerformanceInputs {
+  readonly from: string;
+  readonly to: string;
+  readonly periodDays: number;
+  /** Cost of goods sold during the period, at weighted-average cost. */
+  readonly cogs: Money;
+  /** Average stock value held over the period, at cost — the two-point (opening+closing)/2. */
+  readonly averageInventory: Money;
+  /** Net (ex-tax) sales in the period; absent when a sold product has no known tax rate. */
+  readonly netSales?: Money;
+  /** Net sales minus COGS; absent whenever `netSales` is. */
+  readonly grossMargin?: Money;
 }
 
 export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
@@ -265,6 +290,43 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
         return {
           status: 200,
           body: { ...report, unvaluedMinor, method: 'weighted_average', asAt },
+        };
+      },
+    },
+    {
+      // Stock productivity over a period (M08-FR-04): is the money tied up in stock working, or
+      // sitting there dying? TURNS (COGS ÷ average inventory) and days-of-cover are pure inventory —
+      // how many times the stock sold through. GMROI (gross margin ÷ average inventory) is the rupees
+      // of margin earned per rupee of stock, and needs revenue, so it is stated NET of tax and is
+      // reported as `not_meaningful` — never a guessed number — when a sold product's tax rate is
+      // unknown or no stock was held. Period is `?from=&to=`; default is the trailing 365 days.
+      api: 'API-04', method: 'GET', path: '/v1/inventory/performance',
+      permission: 'inventory.availability.read',
+      handler: async (ctx) => {
+        const asAt = deps.now();
+        const to = ctx.query['to'] ?? asAt;
+        const from = ctx.query['from'] ?? new Date(Date.parse(to) - 365 * 86_400_000).toISOString();
+        const inp = await deps.performance(ctx.tenantId, { from, to });
+        const turns = inventoryTurns({ cogs: inp.cogs, averageInventory: inp.averageInventory, periodDays: inp.periodDays });
+        const margin: Ratio = inp.grossMargin !== undefined
+          ? gmroi({ grossMargin: inp.grossMargin, averageInventory: inp.averageInventory })
+          : { kind: 'not_meaningful', because: 'net sales could not be computed — a product sold in the period has no known tax rate in the catalogue, so revenue cannot be stated net of tax' };
+        return {
+          status: 200,
+          body: {
+            period: { from: inp.from, to: inp.to, days: inp.periodDays },
+            cogs: inp.cogs,
+            averageInventory: inp.averageInventory,
+            netSales: inp.netSales ?? null,
+            grossMargin: inp.grossMargin ?? null,
+            turns: turns.turns,
+            annualisedTurns: turns.annualisedTurns,
+            daysOfCover: turns.daysOfCover,
+            gmroi: margin,
+            method: 'weighted_average',
+            revenueBasis: 'net_of_tax; gross_of_returns',
+            asAt,
+          },
         };
       },
     },
