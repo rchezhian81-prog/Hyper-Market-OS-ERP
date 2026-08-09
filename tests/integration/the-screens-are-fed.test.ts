@@ -1,11 +1,14 @@
 import { describe, it, expect, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { startScreenServer, SCREEN_HOST, DATA_MARKER, type ScreenServer } from '../../edge/store-edge/src/screen-server';
+import { startScreenServer, SCREEN_HOST, type ScreenServer } from '../../edge/store-edge/src/screen-server';
 import { GLOBAL_FOR, SCREENS, type ScreenInput, type ScreenName } from '../../edge/store-edge/src/screen-data';
 import { known, notKnown, type PackProduct, type StorePack } from '../../edge/store-edge/src/store-pack';
 import type { LoggedSale } from '../../edge/store-edge/src/read-model';
 import { SyncOutbox } from '../../packages/sync/src/index';
 import { CatalogueCache } from '../../packages/catalogue/src/index';
+import { hmacSigner } from '../../services/catalogue/src/index';
+import { publishPack, type SignedPack } from '../../services/catalogue/src/pack';
+import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { Ledger, InMemoryLedgerStore } from '../../packages/ledger/src/index';
 import { resolvePrice } from '../../packages/price-list/src/index';
 import { makeEvent } from '../../packages/contracts/src/event';
@@ -322,12 +325,47 @@ async function payloadFromScreen(base: string, screen: ScreenName): Promise<Reco
   const global = GLOBAL_FOR[screen];
   const match = new RegExp(`<script>window\\.${global} = ([\\s\\S]*?);</script>`).exec(html);
   if (match === null) {
-    // The marker is still there, which means the box had nothing to say — a real, supported state.
-    expect(html, `${screen} lost its data marker`).toContain(DATA_MARKER);
+    // The box had nothing to say for this screen — a real, supported state. The pack-age badge
+    // (SYNC-01) may still have replaced the marker with its own tag, so the honest invariant is that
+    // the screen's OWN global is genuinely absent, not that the raw marker survived.
+    expect(html, `${screen} unexpectedly carries its global`).not.toContain(`window.${global} =`);
     return null;
   }
   return JSON.parse(match[1]!) as Record<string, unknown>;
 }
+
+/** Pull the pack-age badge (`window.catalogueFreshness`) the box injected out of a screen's HTML. */
+async function freshnessFromScreen(base: string, screen: ScreenName): Promise<Record<string, unknown> | null> {
+  const html = await (await fetch(`${base}/${screen}`)).text();
+  const match = /<script>window\.catalogueFreshness = ([\s\S]*?);<\/script>/.exec(html);
+  return match === null ? null : JSON.parse(match[1]!) as Record<string, unknown>;
+}
+
+function signedCatalogue(version: number, builtAt: string): SignedPack {
+  const snapshot: CatalogueSnapshot = {
+    tenantId: 't-sre', version, builtAt,
+    products: [{ productId: 'P1', sku: 'GHEE-1L', name: 'Ghee 1L', baseUom: 'each', unitPriceMinor: 64_000, taxBps: 500, mrpMinor: 70_000, status: 'active' }],
+    barcodes: [{ code: '8901234567890', productId: 'P1', kind: 'standard' }],
+  };
+  const result = publishPack({ snapshot, approvals: [], signer: hmacSigner(['screens', 'fed', 'freshness'].join('-').padEnd(48, '0')), publishedBy: 'u', publishedAt: builtAt });
+  if (!result.ok || result.pack === undefined) throw new Error(result.detail);
+  return result.pack;
+}
+
+describe('every screen carries the pack-age badge (SYNC-01, P-08)', () => {
+  it('injects the catalogue version and age from the real server, on every screen', async () => {
+    const base = await serve(snapshotOf({ cataloguePack: signedCatalogue(9, '2026-08-05T09:00:00.000Z') }));
+    for (const screen of SCREENS) {
+      const badge = await freshnessFromScreen(base, screen);
+      expect(badge, `${screen} missing pack-age badge`).toMatchObject({ known: true, version: 9, ageHours: 5 });
+    }
+  });
+
+  it('says the age is not known when the box has pulled no catalogue — never a false "fresh"', async () => {
+    const base = await serve(snapshotOf()); // no cataloguePack
+    expect(await freshnessFromScreen(base, 'manager')).toEqual({ known: false });
+  });
+});
 
 describe('every screen is served, and served its own data', () => {
   it('serves all six shells from disk with their payload injected', async () => {
