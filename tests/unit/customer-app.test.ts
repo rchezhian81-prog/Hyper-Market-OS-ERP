@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   newSession, setLine, review, acceptWhatIsAvailable, chooseSlot, send, orderStatusLine,
 } from '../../apps/customer-app/src/index';
+import { bootShop, forgetfulBasket } from '../../apps/customer-app/src/browser-entry';
 import type { StorefrontProduct } from '../../packages/storefront/src/browse';
 import type { Slot, PaymentAnswer, ServiceabilityPolicy } from '../../packages/storefront/src/checkout';
 
@@ -212,5 +213,51 @@ describe('the customer app — a slot and a status the customer can act on', () 
   it('REFUSES to review an empty basket', () => {
     expect(review(newSession(), { products: [product()], packVersion: 7 }).refusedBecause)
       .toBe('nothing_in_the_basket');
+  });
+});
+
+describe('the app captures the customer\'s own location for the 10 km check (M20-FR-03, OA-11)', () => {
+  const data = {
+    products: [product()], packVersion: 7, slots,
+    policy: POLICY, storeLocation: STORE, deliveryFeeMinor: 4_000,
+  };
+  const readyShop = () => {
+    const shop = bootShop(data, forgetfulBasket(), () => 'O-1')!;
+    shop.setLine('P1', 2);
+    shop.review();
+    shop.chooseSlot('S-11', NOW);
+    return shop;
+  };
+  const place = (shop: ReturnType<typeof readyShop>) =>
+    shop.send({ orderId: 'O-1', providerRef: 'tok_2f9a41ce', result: 'authorised' as const, reachedTheShop: true });
+
+  it('starts with no location and refuses delivery rather than measuring from {0,0}', () => {
+    const shop = readyShop();
+    expect(shop.hasLocation()).toBe(false);
+    expect(place(shop).state.order?.state).toBe('refused');
+  });
+
+  it('captures a nearby location, then confirms the delivery order (test payment)', async () => {
+    const shop = readyShop();
+    const got = await shop.useMyLocation(() => Promise.resolve(NEARBY));
+    expect(got.ok).toBe(true);
+    expect(shop.hasLocation()).toBe(true);
+    expect(place(shop).state.order?.state).toBe('confirmed');
+  });
+
+  it('refuses a location beyond the 10 km radius', async () => {
+    const shop = readyShop();
+    await shop.useMyLocation(() => Promise.resolve({ lat: 12.9716, lon: 77.5946 })); // Bengaluru, far
+    expect(place(shop).state.order?.state).toBe('refused');
+  });
+
+  it('tells the customer plainly when the location is denied or unreadable, and never guesses one', async () => {
+    const shop = readyShop();
+    const denied = await shop.useMyLocation(() => Promise.reject(new Error('permission denied')));
+    expect(denied.ok).toBe(false);
+    expect(shop.hasLocation()).toBe(false);
+    const nonsense = await shop.useMyLocation(() => Promise.resolve({ lat: Number.NaN, lon: Number.NaN }));
+    expect(nonsense.ok).toBe(false);
+    expect(shop.hasLocation()).toBe(false);
   });
 });

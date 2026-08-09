@@ -63,6 +63,15 @@ export interface ShopData {
   readonly privacySlaDays?: number;
 }
 
+/** A source of the customer's current position — the browser's geolocation, or a fake in a test. */
+export type GeoProvider = () => Promise<{ readonly lat: number; readonly lon: number }>;
+
+export interface LocationCaptureResult {
+  readonly ok: boolean;
+  /** The plain sentence for the screen — the truth whether it worked or the customer said no. */
+  readonly detail: string;
+}
+
 /** The basket, kept on the device so a dropped signal is a nuisance and not a lost afternoon. */
 export interface BasketStore {
   read(): SessionState | null;
@@ -136,6 +145,16 @@ export interface Shop {
   acceptWhatIsAvailable(): ReturnType<typeof acceptWhatIsAvailable>;
   slots(): readonly Slot[];
   chooseSlot(slotId: string, now: string): ReturnType<typeof chooseSlot>;
+  /**
+   * Capture the customer's OWN location for the delivery distance check, from a position provider —
+   * the device's geolocation in the browser, injected here so it is testable and needs no external
+   * service. Until it is captured, delivery cannot be judged and the app must not guess a location:
+   * a refused capture leaves it UNSET (and `send` then refuses delivery honestly), never a silent
+   * {0,0} that reads as "9,000 km away".
+   */
+  useMyLocation(provider: GeoProvider): Promise<LocationCaptureResult>;
+  /** Whether the customer's delivery location has been captured — the app gates delivery on it. */
+  hasLocation(): boolean;
   /** Send the order. `reachedTheShop` is the transport's answer and never this app's guess. */
   send(input: {
     readonly orderId: string;
@@ -170,6 +189,9 @@ export function bootShop(
   let state = basket.read() ?? newSession();
   const purposes = data?.consentPurposes ?? [];
   let consent: ConsentState = data?.consent ?? { grants: [] };
+  // The customer's OWN delivery location. Undefined until captured from the device — never guessed,
+  // so the distance check refuses honestly rather than measuring from {0,0}.
+  let deliveryLocation = data?.deliveryLocation;
 
   const keep = (next: SessionState): SessionState => {
     state = next;
@@ -216,6 +238,26 @@ export function bootShop(
       return result;
     },
 
+    hasLocation: () => deliveryLocation !== undefined,
+
+    useMyLocation: async (provider) => {
+      try {
+        const at = await provider();
+        // A provider that hands back nonsense is not a location. Reject it rather than let the
+        // distance check run on rubbish — the customer is told to try again, not silently refused.
+        if (!Number.isFinite(at.lat) || !Number.isFinite(at.lon)) {
+          return { ok: false, detail: 'we could not read a usable location — please try again' };
+        }
+        deliveryLocation = { lat: at.lat, lon: at.lon };
+        return { ok: true, detail: 'got your location — we can now check we deliver to you' };
+      } catch {
+        // Permission denied, timeout, no signal — all the same to the customer: we do not have it,
+        // and we say so plainly rather than proceeding as if we did.
+        deliveryLocation = undefined;
+        return { ok: false, detail: 'we do not have your location, so we cannot check delivery — you can allow it and try again, or collect from the store' };
+      }
+    },
+
     send: (input) => {
       const result = send(state, {
         orderId: input.orderId,
@@ -226,7 +268,10 @@ export function bootShop(
         // the package's own defaults rather than a second copy of them drifting in this file.
         policy: data?.policy ?? {},
         storeLocation: data?.storeLocation ?? { lat: 0, lon: 0 },
-        deliveryLocation: data?.deliveryLocation ?? { lat: 0, lon: 0 },
+        // The customer's captured location. Unset → {0,0}, which is out of every real radius, so an
+        // un-located delivery is refused rather than measured from nowhere (the UI gates on
+        // `hasLocation()` before offering delivery, so this is the belt-and-braces refusal).
+        deliveryLocation: deliveryLocation ?? { lat: 0, lon: 0 },
         // A provider token. The session refuses a card number outright rather than redacting it,
         // because redacting means it was held first (hard rule #3).
         // A declined or unanswered payment carries a REASON, not a reference — there is nothing
