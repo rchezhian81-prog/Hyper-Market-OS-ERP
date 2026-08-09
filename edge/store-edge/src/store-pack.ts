@@ -170,6 +170,19 @@ export interface PackRoutingPolicy {
   readonly averageSpeedKmh: number;
   readonly serviceMinutesPerStop: number;
   readonly contributionRule?: { readonly maxCostShareBps: number };
+  /**
+   * Customer-facing delivery-slot policy (M20-FR-03), sharing the SAME `storeLocation` and
+   * `radiusMetres` the driver dispatch uses — one commerce truth (§6.2), not a second copy. All
+   * optional and provided together: when set, the customer app offers `deliverySlotsPerDay` equal
+   * windows spanning `[deliveryWindowOpen, deliveryWindowClose]` local time (offset by
+   * `deliveryUtcOffsetMinutes`) at `deliverySlotCapacity` orders each; when absent, the app offers
+   * only the concrete slots the pack carried, or none — never an invented slot.
+   */
+  readonly deliverySlotsPerDay?: number;
+  readonly deliveryWindowOpen?: string; // "HH:MM" local
+  readonly deliveryWindowClose?: string; // "HH:MM" local
+  readonly deliverySlotCapacity?: number;
+  readonly deliveryUtcOffsetMinutes?: number;
 }
 
 /**

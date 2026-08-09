@@ -452,6 +452,39 @@ describe('each screen gets what it needs, and nothing when the box has nothing',
     expect(customerPayload(input())).toMatchObject({ packVersion: 7 });
   });
 
+  it('feeds the customer app the store location + radius so the 10 km check works, not {0,0}-refuse-everyone', () => {
+    const payload = customerPayload(input())!;
+    // The routing policy's store location and radius are the SAME ones dispatch uses (§6.2).
+    expect(payload['storeLocation']).toEqual({ lat: 11, lon: 77 });
+    expect(payload['policy']).toEqual({ radiusMetres: 10_000 });
+  });
+
+  it('generates the day\'s delivery slots from the store\'s delivery policy (M20-FR-03, OA-11)', () => {
+    const withDelivery = input({
+      pack: fullPack({
+        routingPolicy: known({
+          storeLocation: { lat: 11.0168, lon: 76.9558 }, radiusMetres: 10_000, // Coimbatore, 10 km
+          averageSpeedKmh: 20, serviceMinutesPerStop: 5,
+          // The owner's answer (OA-11): 8 slots a day, 9 am–9 pm IST, 10 orders each.
+          deliverySlotsPerDay: 8, deliveryWindowOpen: '09:00', deliveryWindowClose: '21:00',
+          deliverySlotCapacity: 10, deliveryUtcOffsetMinutes: 330,
+        }),
+      }),
+    });
+    const slots = customerPayload(withDelivery)!['slots'] as { startsAt: string; capacity: number; kind: string }[];
+    expect(slots).toHaveLength(8);
+    // 9 am IST on the trading day is 03:30 UTC; eight 90-minute windows cover to 21:00 IST (15:30 UTC).
+    expect(slots[0]!.startsAt).toBe('2026-08-05T03:30:00.000Z');
+    expect(slots[7]!.startsAt).toBe('2026-08-05T14:00:00.000Z');
+    expect(slots.every((s) => s.capacity === 10 && s.kind === 'delivery')).toBe(true);
+    expect(customerPayload(withDelivery)!['storeLocation']).toEqual({ lat: 11.0168, lon: 76.9558 });
+  });
+
+  it('offers no delivery slots (never a guess) when the store has no delivery policy and no concrete slots', () => {
+    const noDelivery = input({ pack: fullPack({ slots: known([]) }) }); // routingPolicy has no slot config
+    expect(customerPayload(noDelivery)!['slots']).toEqual([]); // the pack's own (empty) slots, nothing invented
+  });
+
   it('gives the picker nothing when no wave was assigned, rather than an empty wave', () => {
     expect(pickerPayload(input())).toBeNull();
     const assigned = pickerPayload(input({
