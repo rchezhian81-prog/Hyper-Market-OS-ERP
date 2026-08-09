@@ -30,12 +30,15 @@ export interface ApiErrorBody {
 export class ApiError extends Error {
   readonly status: number;
   readonly body: ApiErrorBody;
+  /** For a 429/503, whole seconds the caller should wait — surfaced as a `Retry-After` header. */
+  readonly retryAfterSeconds?: number;
 
-  constructor(status: number, body: ApiErrorBody) {
+  constructor(status: number, body: ApiErrorBody, retryAfterSeconds?: number) {
     super(body.whatHappened);
     this.name = 'ApiError';
     this.status = status;
     this.body = body;
+    if (retryAfterSeconds !== undefined) this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -51,7 +54,7 @@ export type ErrorRefusal =
  * its "was it saved" line is not a smaller error, it is the one case where the person cannot act.
  * A validator that runs at the boundary is a validator somebody bypasses on the path that throws.
  */
-export function apiError(status: number, body: ApiErrorBody): ApiError {
+export function apiError(status: number, body: ApiErrorBody, retryAfterSeconds?: number): ApiError {
   const missing = whatIsMissing(body);
   if (missing !== undefined) {
     // An error about an error still has to be a usable error, so this one is complete too.
@@ -62,7 +65,7 @@ export function apiError(status: number, body: ApiErrorBody): ApiError {
       nextSafeAction: 'Treat the original request as unknown: check whether it applied before retrying it.',
     });
   }
-  return new ApiError(status, body);
+  return new ApiError(status, body, retryAfterSeconds);
 }
 
 const DESCRIBE: Readonly<Record<ErrorRefusal, string>> = {
@@ -124,3 +127,19 @@ export const notFound = (what: string): ApiError => apiError(404, {
   wasItSaved: 'not_saved',
   nextSafeAction: 'Check the address. Nothing was changed.',
 });
+
+/** Too many requests in too short a time — the volume limit (audit FND-03 / SEC-04). */
+export const rateLimited = (retryAfterSeconds: number): ApiError => apiError(429, {
+  code: 'rate_limited',
+  whatHappened: 'Too many requests arrived from here too quickly, so this one was not processed.',
+  wasItSaved: 'not_saved',
+  nextSafeAction: `Wait ${retryAfterSeconds} second(s) and send it again. Nothing was changed.`,
+}, retryAfterSeconds);
+
+/** Too many failed sign-ins from one source — the brute-force lockout (audit FND-03 / SEC-04). */
+export const tooManySignInAttempts = (retryAfterSeconds: number): ApiError => apiError(429, {
+  code: 'too_many_sign_in_attempts',
+  whatHappened: 'Sign-in has been temporarily locked here after repeated failures.',
+  wasItSaved: 'not_saved',
+  nextSafeAction: `Wait ${retryAfterSeconds} second(s) before trying again. If this is not you, tell the manager. Nothing was changed.`,
+}, retryAfterSeconds);

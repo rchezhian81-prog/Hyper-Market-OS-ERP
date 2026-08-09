@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildRouter, Router, handle, apiError, ApiError, scanOutbound, looksLikeACardNumber,
-  hashRequest, MemoryIdempotencyStore,
+  hashRequest, MemoryIdempotencyStore, TokenBucketRateLimiter, BackoffAuthThrottle,
   type Route, type HttpRequest, type Principal, type AuditSink, type Method,
 } from '../../services/kernel/src/index';
 import { AccessControl } from '../../packages/rbac/src/rbac';
@@ -166,6 +166,73 @@ describe('nobody reaches a handler without being who they say and being allowed'
     const res = await handle(k, req({ method: 'POST', body: { rubbish: true } }));
     expect(res.status).toBe(403);
     expect(handlerRan).toBe(false);
+  });
+});
+
+describe('the surface refuses a flood and a brute force (audit FND-03)', () => {
+  it('caps a per-IP flood with a 429 and a Retry-After', async () => {
+    // capacity 1, negligible refill: the first request from an IP gets through, the second is refused
+    // before authentication even runs.
+    const rateLimit = new TokenBucketRateLimiter({ capacity: 1, refillPerSecond: 0.0001 }, () => 0);
+    const k = kernel([route()], { rateLimit });
+    const from = { clientIp: '203.0.113.7' };
+
+    expect((await handle(k, req(from))).status).toBe(200);
+    const refused = await handle(k, req(from));
+    expect(refused.status).toBe(429);
+    expect((refused.body as { error: { code: string } }).error.code).toBe('rate_limited');
+    expect(refused.headers['retry-after']).toBeDefined();
+  });
+
+  it('gives each source its own budget — one IP\'s flood does not refuse another', async () => {
+    // Two shops on two connections (distinct tenants, so the per-tenant bucket is not what binds).
+    const rateLimit = new TokenBucketRateLimiter({ capacity: 1, refillPerSecond: 0.0001 }, () => 0);
+    const authenticate = (t: string): Principal | undefined =>
+      t === 'a' ? { tenantId: 't-a', userId: 'u-meena', branchId: 'b-main' }
+        : t === 'b' ? { tenantId: 't-b', userId: 'u-meena', branchId: 'b-main' } : undefined;
+    const k = kernel([route()], { rateLimit, authenticate });
+    const a = { clientIp: '203.0.113.1', headers: { authorization: 'Bearer a' } };
+    const b = { clientIp: '203.0.113.2', headers: { authorization: 'Bearer b' } };
+
+    expect((await handle(k, req(a))).status).toBe(200);
+    expect((await handle(k, req(a))).status).toBe(429); // first IP spent
+    expect((await handle(k, req(b))).status).toBe(200); // second, a different source, untouched
+  });
+
+  it('locks a source out of sign-in after repeated failures, then a valid token too', async () => {
+    let nowMs = 0;
+    const authThrottle = new BackoffAuthThrottle(
+      { threshold: 2, baseCooldownSeconds: 30, maxCooldownSeconds: 900 }, () => nowMs,
+    );
+    const k = kernel([route()], { authThrottle });
+    const from = { clientIp: '203.0.113.9' };
+    const bad = { ...from, headers: { authorization: 'Bearer forged' } };
+
+    expect((await handle(k, req(bad))).status).toBe(401); // failure 1
+    expect((await handle(k, req(bad))).status).toBe(401); // failure 2 → now locked
+    // Even a VALID token is refused while the source is locked — the brute-force run is stopped.
+    const locked = await handle(k, req(from));
+    expect(locked.status).toBe(429);
+    expect((locked.body as { error: { code: string } }).error.code).toBe('too_many_sign_in_attempts');
+    expect(locked.headers['retry-after']).toBeDefined();
+
+    // After the cooldown, a valid token works again.
+    nowMs += 30_000;
+    expect((await handle(k, req(from))).status).toBe(200);
+  });
+
+  it('a genuine sign-in clears the failure count before it reaches a lockout', async () => {
+    const authThrottle = new BackoffAuthThrottle(
+      { threshold: 2, baseCooldownSeconds: 30, maxCooldownSeconds: 900 }, () => 0,
+    );
+    const k = kernel([route()], { authThrottle });
+    const from = { clientIp: '203.0.113.5' };
+
+    expect((await handle(k, req({ ...from, headers: { authorization: 'Bearer forged' } }))).status).toBe(401);
+    expect((await handle(k, req(from))).status).toBe(200); // a good sign-in clears the one failure
+    // One more failure is only the first again, so no lockout yet.
+    expect((await handle(k, req({ ...from, headers: { authorization: 'Bearer forged' } }))).status).toBe(401);
+    expect((await handle(k, req(from))).status).toBe(200);
   });
 });
 

@@ -21,9 +21,10 @@
 import { AccessControl } from '../../../packages/rbac/src/rbac';
 import {
   ApiError, apiError, forbidden, idempotencyKeyMissing, idempotencyKeyReused,
-  notFound, unauthenticated,
+  notFound, rateLimited, tooManySignInAttempts, unauthenticated,
 } from './errors';
 import { isWrite, type Method, type Router } from './router';
+import type { RateLimiter, AuthThrottle } from './rate-limit';
 
 export interface Principal {
   readonly tenantId: string;
@@ -37,6 +38,12 @@ export interface HttpRequest {
   readonly headers: Readonly<Record<string, string>>;
   readonly query?: Readonly<Record<string, string>>;
   readonly body?: unknown;
+  /**
+   * The caller's source address, set by the HTTP server from the socket (or a trusted forwarding
+   * header). It keys the per-IP rate limit and the auth-attempt lockout (audit FND-03). Absent in a
+   * test that does not exercise those; the limiters then share one 'unknown' bucket.
+   */
+  readonly clientIp?: string;
 }
 
 export interface HttpResponse {
@@ -219,6 +226,18 @@ export interface KernelOptions {
   readonly idempotency: IdempotencyStore;
   readonly audit?: AuditSink;
   /**
+   * Request rate limiter (audit FND-03). Optional in the type (a test that is not about limiting
+   * omits it) and supplied in a deployment. Keyed per source IP before authentication (flood
+   * protection) and per tenant after (fair share).
+   */
+  readonly rateLimit?: RateLimiter;
+  /**
+   * Auth-attempt lockout (audit FND-03). Optional in the type; supplied in a deployment. Consulted
+   * before authenticating a source and updated with the outcome, so repeated failed sign-ins from
+   * one source back off exponentially.
+   */
+  readonly authThrottle?: AuthThrottle;
+  /**
    * Observability sink — called once per request with a `RequestObservation`. Optional in the type
    * (a test does not want one) and NOT optional in a deployment, like `audit`: structured logs,
    * metrics and traces are all fed from here. Provider-neutral.
@@ -244,7 +263,11 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
 const asResponse = (e: ApiError, traceId: string): HttpResponse => ({
   status: e.status,
   body: { error: { ...e.body, traceId } },
-  headers: { 'content-type': 'application/json' },
+  headers: {
+    'content-type': 'application/json',
+    // A 429/503 tells the caller WHEN to come back, so a retry is paced, not a hot loop.
+    ...(e.retryAfterSeconds !== undefined ? { 'retry-after': String(e.retryAfterSeconds) } : {}),
+  },
 });
 
 /**
@@ -305,6 +328,10 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
       : { ...resp, headers: { ...resp.headers, 'x-correlation-id': traceId } };
   };
 
+  // The source address keys the per-IP flood limit and the auth-attempt lockout. Never blank, so an
+  // absent address (a test, or a misconfigured proxy) shares one bucket rather than escaping the cap.
+  const clientIp = request.clientIp ?? 'unknown';
+
   try {
     const matched = opts.router.match(request.method, request.path);
     if (matched === undefined) throw notFound(`${request.method} ${request.path}`);
@@ -313,12 +340,41 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
     auditPermission = route.permission;
     auditedMethod = route.method;
 
+    // Per-IP flood limit, before authentication: a source hammering the API — including the sign-in
+    // path — is capped whether or not it ever presents a valid token (audit FND-03).
+    if (opts.rateLimit !== undefined) {
+      const perIp = await opts.rateLimit.take(`ip:${clientIp}`);
+      if (!perIp.allowed) throw rateLimited(perIp.retryAfterSeconds);
+    }
+
     const header = request.headers['authorization'] ?? request.headers['Authorization'] ?? '';
     const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
     if (token === '') throw unauthenticated();
+
+    // A source that has failed sign-in too many times is refused WITHOUT the token being examined,
+    // so a brute-force run slows to the backoff's pace instead of the network's (audit FND-03).
+    if (opts.authThrottle !== undefined) {
+      const lock = opts.authThrottle.status(`ip:${clientIp}`);
+      if (lock.locked) throw tooManySignInAttempts(lock.retryAfterSeconds);
+    }
+
     const principal = await opts.authenticate(token);
-    if (principal === undefined) throw unauthenticated();
+    if (principal === undefined) {
+      // Record the failure so repeated guessing from this source backs off. Reported after the
+      // audit is written on the way out; the caller still gets a plain 401, not a hint of the lock.
+      opts.authThrottle?.fail(`ip:${clientIp}`);
+      throw unauthenticated();
+    }
+    // A genuine sign-in clears the source's failure count — one good login is not held against it.
+    opts.authThrottle?.succeed(`ip:${clientIp}`);
     auditPrincipal = principal;
+
+    // Per-tenant fair share, after authentication: one tenant's burst cannot starve another's lane
+    // (audit FND-03). Keyed on the signed tenant, never anything the caller supplied.
+    if (opts.rateLimit !== undefined) {
+      const perTenant = await opts.rateLimit.take(`tenant:${principal.tenantId}`);
+      if (!perTenant.allowed) throw rateLimited(perTenant.retryAfterSeconds);
+    }
 
     // Authorization is per-tenant: a resolver reads THIS tenant's grants; a ready AccessControl is
     // used as-is. Resolve after authentication so the tenant comes from the signed principal, never

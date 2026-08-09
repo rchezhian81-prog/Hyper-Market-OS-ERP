@@ -42,3 +42,4 @@ export {
 export * from './idempotency-store';
 export * from './audit-sink';
 export * from './audit-chain';
+export * from './rate-limit';
