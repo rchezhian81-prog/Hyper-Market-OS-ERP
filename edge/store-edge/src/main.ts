@@ -35,8 +35,11 @@ import { loadConfig, STORE_EDGE_CONFIG } from '../../../services/kernel/src/inde
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { SyncAgent } from '../../../edge/sync-agent/src/agent';
 import { httpTransport } from '../../../edge/sync-agent/src/http-transport';
+import { httpPackSource } from '../../../edge/sync-agent/src/pack-source';
+import { pullPack, type PackPullOutcome, type PackPullStatus } from '../../../edge/sync-agent/src/pack-puller';
 import { openFileLog, readLog, type OpenFileLog } from './file-log';
 import { readCursor, writeCursor, advanceTo } from './sync-cursor';
+import { readSignedPack, writeSignedPack } from './signed-pack-file';
 import { createEdgeNode, type EdgeNode } from './index';
 import { startLaneServer, LANE_HOST, type LaneServer } from './lane-server';
 import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-server';
@@ -81,6 +84,13 @@ export interface EdgeProcess {
   readonly node: EdgeNode;
   /** Null when no cloud is configured — which is a supported way to run, not a fault. */
   readonly agent: SyncAgent | null;
+  /**
+   * Pull the latest signed catalogue pack from the cloud now, adopt it if it is newer and verifies,
+   * and persist it to disk — the inbound refresh (SYNC-01). Null when no cloud is configured. The
+   * poll loop calls this on its own timer; it is exposed so a test can drive one pull deterministically
+   * (the same way `agent.drain` is), rather than waiting on the timer.
+   */
+  readonly refreshPack: (() => Promise<PackPullOutcome>) | null;
   /**
    * Where the six screens are served from, or null when `EDGE_SCREEN_PORT` is unset.
    *
@@ -163,13 +173,24 @@ export async function startEdge(
   }
   if (toResend.length > 0) say(`${toResend.length} sale(s) from before are still to send.`);
 
+  const signer = hmacSigner(settings['PACK_SIGNING_KEY']!);
+
+  // The signed catalogue pack this box last accepted, restored from disk and re-verified the same
+  // way a lane verifies one over the wire (SYNC-01). So a reboot starts on the last pack it trusted,
+  // not a blank catalogue — and a tampered file on disk is rejected, starting from no pack instead.
+  const restoredPack = await readSignedPack(settings['EDGE_DATA_DIR']!, signer, tenantId);
+  if (restoredPack !== undefined) {
+    say(`catalogue pack v${restoredPack.snapshot.version} restored from disk — the last one this box trusted.`);
+  }
+
   const node = createEdgeNode({
     tenantId,
     log,
-    signer: hmacSigner(settings['PACK_SIGNING_KEY']!),
+    signer,
     // The seam. Without it a sale is durable on the disk and never queued, which is exactly how
     // it was: every piece on either side built and tested, nothing joining them, nothing failing.
     outbox,
+    ...(restoredPack === undefined ? {} : { initialPack: restoredPack }),
   });
 
   // The lane socket. Absent `EDGE_LANE_PORT`, this edge has no screen attached and does the
@@ -238,7 +259,7 @@ export async function startEdge(
     // Supported, and said plainly. The lanes sell; the queue grows; nobody is told a lie about it.
     say('no cloud is configured, so nothing will be synced. The shop can still trade — that is the point.');
     return {
-      log, outbox, node, lane, screens, agent: null,
+      log, outbox, node, lane, screens, agent: null, refreshPack: null,
       stop: async () => {
         if (lane !== null) await lane.stop();
         if (screens !== null) await screens.stop();
@@ -250,6 +271,32 @@ export async function startEdge(
   const agent = new SyncAgent(outbox, httpTransport({
     baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch,
   }));
+
+  // The INBOUND mirror of the agent: the same cloud, the other direction (SYNC-01). It fetches the
+  // signed catalogue pack; the lane decides whether to trust it (via `node.takePack`); a newer,
+  // verified pack is adopted and persisted atomically so it survives a reboot.
+  const packSource = httpPackSource({ baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch });
+  let lastPackStatus: PackPullStatus | undefined;
+
+  const refreshPack = async (): Promise<PackPullOutcome> => {
+    const outcome = await pullPack({ source: packSource, receiver: node, now: new Date().toISOString() });
+    if (outcome.status === 'updated') {
+      // The lane moved to a newer, verified pack — persist it so the box does not lose it on a reboot.
+      // A failed write is not a failed update: the pack is already live in memory and will be re-pulled.
+      try {
+        await writeSignedPack(settings['EDGE_DATA_DIR']!, node.pack()!);
+      } catch (e) {
+        say(`the new catalogue pack could not be saved to disk (${e instanceof Error ? e.message : String(e)}). It is live now and will be pulled again next time.`);
+      }
+      say(outcome.staffMessage);
+    } else if (outcome.status !== lastPackStatus) {
+      // Only a CHANGE of state is worth a line — going offline, a rejected pack, none published.
+      // Saying "still on the newest pack" every quiet pass would bury the lines that matter (P-08).
+      say(outcome.staffMessage);
+    }
+    lastPackStatus = outcome.status;
+    return outcome;
+  };
 
   let stopping = false;
   let quietPasses = 0;
@@ -292,6 +339,15 @@ export async function startEdge(
       quietPasses += 1;
       say(`sync pass failed: ${e instanceof Error ? e.message : String(e)}. Everything is still queued.`);
     }
+    // The inbound refresh rides the SAME loop, AFTER the drain and just as far from the sale path
+    // (hard rule #1). It never throws — an unreachable cloud is a normal answer that keeps the last
+    // pack — but a disk error persisting a new pack is caught inside `refreshPack`, so this cannot
+    // stop the loop either.
+    try {
+      await refreshPack();
+    } catch (e) {
+      say(`catalogue refresh failed: ${e instanceof Error ? e.message : String(e)}. Still on the last pack this box trusted.`);
+    }
     if (!stopping) timer = setTimeout(() => { void pass(); }, nextInterval(quietPasses));
   };
 
@@ -304,6 +360,7 @@ export async function startEdge(
     lane,
     screens,
     agent,
+    refreshPack,
     stop: async () => {
       stopping = true;
       if (timer !== undefined) clearTimeout(timer);
