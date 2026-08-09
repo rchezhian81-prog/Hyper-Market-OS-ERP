@@ -22,7 +22,7 @@ import { Pool } from 'pg';
 import { SqlEventStore } from '../../../packages/persistence/src/event-store';
 import { SqlConfigVersionStore } from '../../../packages/persistence/src/config-store';
 import { SqlNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
-import { pgClient } from '../../../packages/persistence/src/pg-client';
+import { pgClient, pgPoolClient } from '../../../packages/persistence/src/pg-client';
 import { DurableTenantSettings } from '../../../packages/tenant/src/index';
 import {
   buildRouter, loadConfig, startHttpServer, CLOUD_API_CONFIG, SqlIdempotencyStore, SqlAuditSink,
@@ -331,7 +331,11 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
   // Fail fast at boot if the database is unreachable — the same eager check the single client made,
   // now issued through the pool (which connects lazily otherwise).
   await db.query('SELECT 1');
-  const store = new SqlEventStore(pgClient(db));
+  // The event store gets the TRANSACTIONAL adapter (`pgPoolClient`), so a money-critical command
+  // that writes more than one event — a banked sale plus its receipt index, a return plus its
+  // reporting projection — commits all of them or none, even across a crash (audit FND-01). The
+  // other stores stay on the plain query adapter; they do single writes and need no transaction.
+  const store = new SqlEventStore(pgPoolClient(db));
 
   // 2b — Genesis owner (optional bootstrap). Because granting a role itself needs a role
   // (maker-checker), a brand-new tenant has nobody who can grant the first one. Where the initial

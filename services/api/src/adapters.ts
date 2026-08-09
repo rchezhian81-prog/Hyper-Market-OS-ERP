@@ -348,31 +348,43 @@ export function posAdapter(input: {
     },
 
     bankSale: async (tenantId, sale) => {
-      await input.store.append(tenantId, STREAM.sales, makeEvent({
-        id: `sale-${sale.saleId}`,
-        type: 'SaleCommitted',
-        occurredAt: sale.committedAt,
-        // The sale's own id. A till resending the same sale collapses to one, whatever
-        // Idempotency-Key the transport happened to use.
-        idempotencyKey: `sale-${tenantId}-${sale.saleId}`,
-        source: 'api/pos',
-        payload: sale,
-      }));
-
-      // The receipt-number index, appended second and deliberately allowed to lose.
-      //
-      // If two sales carry one receipt number the second append dedupes and this entry keeps
-      // pointing at the FIRST sale — which is exactly right, because the exception it raises reads
-      // "receipt R-101 already belongs to sale S-7", and S-7 is the one that had it. The index
-      // records who holds the number, not who asked for it last.
-      await input.store.append(tenantId, STREAM.sales, makeEvent({
-        id: `receipt-${sale.receiptNumber}`,
-        type: 'ReceiptNumberIssued',
-        occurredAt: sale.committedAt,
-        idempotencyKey: `receipt-${tenantId}-${sale.receiptNumber}`,
-        source: 'api/pos',
-        payload: { receiptNumber: sale.receiptNumber, saleId: sale.saleId },
-      }));
+      // The sale and its receipt-number index are ONE atomic batch (audit FND-01): a crash between
+      // them must never leave a banked sale with no receipt index, nor an index pointing at a sale
+      // that did not commit. Both carry their own idempotency key, so a till resending the sale
+      // dedups the whole batch.
+      await input.store.appendBatch(tenantId, [
+        {
+          stream: STREAM.sales,
+          event: makeEvent({
+            id: `sale-${sale.saleId}`,
+            type: 'SaleCommitted',
+            occurredAt: sale.committedAt,
+            // The sale's own id. A till resending the same sale collapses to one, whatever
+            // Idempotency-Key the transport happened to use.
+            idempotencyKey: `sale-${tenantId}-${sale.saleId}`,
+            source: 'api/pos',
+            payload: sale,
+          }),
+        },
+        {
+          // The receipt-number index, appended second and deliberately allowed to lose.
+          //
+          // If two sales carry one receipt number the second append dedupes and this entry keeps
+          // pointing at the FIRST sale — which is exactly right, because the exception it raises reads
+          // "receipt R-101 already belongs to sale S-7", and S-7 is the one that had it. The index
+          // records who holds the number, not who asked for it last. Batching does not change this:
+          // the two events have distinct keys, so a receipt already taken still dedups on its own.
+          stream: STREAM.sales,
+          event: makeEvent({
+            id: `receipt-${sale.receiptNumber}`,
+            type: 'ReceiptNumberIssued',
+            occurredAt: sale.committedAt,
+            idempotencyKey: `receipt-${tenantId}-${sale.receiptNumber}`,
+            source: 'api/pos',
+            payload: { receiptNumber: sale.receiptNumber, saleId: sale.saleId },
+          }),
+        },
+      ]);
     },
 
     recordExceptions: async (tenantId, exceptions) => {
@@ -436,28 +448,38 @@ export function returnsAdapter(input: {
       })),
 
     recordReturn: async (tenantId, saleId, record) => {
-      await input.store.append(tenantId, forSaleReturns(saleId), makeEvent({
-        id: `return-${record.returnId}`,
-        type: 'ReturnRecorded',
-        occurredAt: record.processedAt,
-        // The return's own id, no timestamp — a lane retrying an unconfirmed refund collapses to
-        // one, so the money leaves once however many times the till re-sends it.
-        idempotencyKey: `return-${tenantId}-${record.returnId}`,
-        source: 'api/pos',
-        payload: record,
-      }));
-      // A second, additive append to the tenant-wide returns projection — the same pattern `bankSale`
-      // uses for its receipt-number index. It is a READ MODEL for reporting (returns-netting), keyed
-      // on the return id so a retry collapses; if it were ever to fail after the append above, the
-      // money and the register are already safe and only a report would miss one return.
-      await input.store.append(tenantId, STREAM.returns, makeEvent({
-        id: `return-proj-${record.returnId}`,
-        type: 'ReturnRecorded',
-        occurredAt: record.processedAt,
-        idempotencyKey: `return-proj-${tenantId}-${record.returnId}`,
-        source: 'api/pos',
-        payload: record,
-      }));
+      // The register entry and its reporting projection are ONE atomic batch (audit FND-01). Before,
+      // the projection was a second, additive append that a crash could drop — leaving the money and
+      // the per-sale register correct but the tenant-wide returns-netting report short one return.
+      // Batching them removes that window: both land together or neither does, and each keeps its own
+      // idempotency key so a lane retrying an unconfirmed refund still dedups the whole batch (the
+      // money leaves once however many times the till re-sends it).
+      await input.store.appendBatch(tenantId, [
+        {
+          stream: forSaleReturns(saleId),
+          event: makeEvent({
+            id: `return-${record.returnId}`,
+            type: 'ReturnRecorded',
+            occurredAt: record.processedAt,
+            idempotencyKey: `return-${tenantId}-${record.returnId}`,
+            source: 'api/pos',
+            payload: record,
+          }),
+        },
+        {
+          // The tenant-wide returns projection — a READ MODEL for reporting (returns-netting), keyed
+          // on the return id so a retry collapses.
+          stream: STREAM.returns,
+          event: makeEvent({
+            id: `return-proj-${record.returnId}`,
+            type: 'ReturnRecorded',
+            occurredAt: record.processedAt,
+            idempotencyKey: `return-proj-${tenantId}-${record.returnId}`,
+            source: 'api/pos',
+            payload: record,
+          }),
+        },
+      ]);
     },
   };
 }

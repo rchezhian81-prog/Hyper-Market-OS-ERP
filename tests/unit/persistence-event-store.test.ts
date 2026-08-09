@@ -77,6 +77,56 @@ function eventStoreContract(makeStore: () => EventStore) {
     expect(dump.every((r) => r.tenantId === 't1')).toBe(true); // §35 isolation
     expect(await store.exportTenant('t2')).toHaveLength(1);
   });
+
+  // ---- appendBatch: atomic multi-event append (FND-01 / GAP-DATA-01) ----
+
+  it('appends a batch in order, with consecutive seqs, results lined up one-to-one', async () => {
+    const store = makeStore();
+    const results = await store.appendBatch('t1', [
+      { stream: 'sales', event: ev('e1', 'k1', { n: 1 }) },
+      { stream: 'sales', event: ev('e2', 'k2', { n: 2 }) },
+    ]);
+    expect(results.map((r) => r.deduped)).toEqual([false, false]);
+    expect(results.map((r) => r.record.seq)).toEqual([1, 2]);
+    expect(results.map((r) => r.record.event.id)).toEqual(['e1', 'e2']);
+    expect((await store.readStream('t1', 'sales')).map((r) => r.event.id)).toEqual(['e1', 'e2']);
+  });
+
+  it('dedups a whole-batch replay — every event collapses to its first append', async () => {
+    const store = makeStore();
+    const entries = [
+      { stream: 'sales', event: ev('e1', 'k1') },
+      { stream: 'sales', event: ev('e2', 'k2') },
+    ];
+    await store.appendBatch('t1', entries);
+    const replay = await store.appendBatch('t1', entries);
+    expect(replay.map((r) => r.deduped)).toEqual([true, true]);
+    expect(replay.map((r) => r.record.seq)).toEqual([1, 2]); // same rows, no new seqs
+    expect(await store.readStream('t1', 'sales')).toHaveLength(2); // nothing appended twice
+  });
+
+  it('spans logical streams in one batch and stays tenant-scoped', async () => {
+    const store = makeStore();
+    await store.appendBatch('t1', [
+      { stream: 'sales', event: ev('e1', 'k1') },
+      { stream: 'receipts', event: ev('e2', 'k2') },
+    ]);
+    expect(await store.readStream('t1', 'sales')).toHaveLength(1);
+    expect(await store.readStream('t1', 'receipts')).toHaveLength(1);
+    expect(await store.readStream('t2', 'sales')).toHaveLength(0);
+  });
+
+  it('collapses a duplicate key WITHIN one batch to a single append', async () => {
+    const store = makeStore();
+    const results = await store.appendBatch('t1', [
+      { stream: 'sales', event: ev('e1', 'dup') },
+      { stream: 'sales', event: ev('e2', 'dup') },
+    ]);
+    expect(results[0]!.deduped).toBe(false);
+    expect(results[1]!.deduped).toBe(true);
+    expect(results[1]!.record.event.id).toBe('e1'); // the second dedups to the first
+    expect(await store.readStream('t1', 'sales')).toHaveLength(1);
+  });
 }
 
 describe('InMemoryEventStore (reference contract)', () => {
@@ -175,5 +225,110 @@ describe('SqlEventStore', () => {
     expect(sql).not.toContain('stream = $2');
     expect(sql).toContain('ORDER BY seq ASC');
     expect(client.calls[0]?.params).toEqual(['t1']);
+  });
+});
+
+// ---- SqlEventStore.appendBatch atomicity, against a client that models real transactions ----
+
+/**
+ * A SqlClient that actually models `event_ledger` with ON CONFLICT DO NOTHING **and** genuine
+ * transaction semantics: a transaction stages into a private copy of the table and publishes it
+ * only if the callback resolves, so a throw mid-batch leaves the committed table untouched. This is
+ * what lets us prove `SqlEventStore.appendBatch` is crash-atomic (FND-01) without a live database —
+ * a fake that just recorded calls could not.
+ */
+class TransactionalSqlClient implements SqlClient {
+  private committed = new Map<string, SqlRow>();
+  private seq = 0;
+  /** When set, an INSERT for this idempotency key throws — a failure part-way through a batch. */
+  failOnKey?: string;
+
+  query<R extends SqlRow = SqlRow>(sql: string, params: readonly unknown[] = []): Promise<readonly R[]> {
+    return Promise.resolve(this.exec(this.committed, sql, params) as R[]);
+  }
+
+  async transaction<T>(fn: (tx: SqlClient) => Promise<T>): Promise<T> {
+    const staging = new Map(this.committed);
+    const seqBefore = this.seq;
+    const tx = {
+      query: (sql: string, params: readonly unknown[] = []) =>
+        Promise.resolve(this.exec(staging, sql, params)),
+    } as SqlClient;
+    try {
+      const out = await fn(tx);
+      this.committed = staging; // COMMIT — publish the staged rows
+      return out;
+    } catch (err) {
+      this.seq = seqBefore; // ROLLBACK — discard staging and the seqs it consumed
+      throw err;
+    }
+  }
+
+  private exec(rows: Map<string, SqlRow>, sql: string, params: readonly unknown[]): SqlRow[] {
+    if (sql.includes('INSERT INTO event_ledger')) {
+      const [id, tenantId, stream, type, occurredAt, key, source, version, payload] = params as [
+        string, string, string, string, string, string, string, number, string,
+      ];
+      if (this.failOnKey === key) throw new Error(`simulated failure inserting ${key}`);
+      const composite = `${tenantId}::${key}`;
+      if (rows.has(composite)) return []; // ON CONFLICT DO NOTHING
+      this.seq += 1;
+      const record: SqlRow = {
+        seq: this.seq, id, tenant_id: tenantId, stream, type,
+        occurred_at: occurredAt, idempotency_key: key, source, version,
+        payload: JSON.parse(payload) as unknown,
+      };
+      rows.set(composite, record);
+      return [record];
+    }
+    if (sql.includes('idempotency_key = $2')) { // conflict read-back / findByIdempotencyKey
+      const [tenantId, key] = params as [string, string];
+      const found = rows.get(`${tenantId}::${key}`);
+      return found ? [found] : [];
+    }
+    return [];
+  }
+}
+
+describe('SqlEventStore.appendBatch atomicity (FND-01)', () => {
+  it('commits a batch through the transaction primitive and dedups a whole-batch replay', async () => {
+    const store = new SqlEventStore(new TransactionalSqlClient());
+    const entries = [
+      { stream: 'sales', event: ev('e1', 'k1') },
+      { stream: 'sales', event: ev('e2', 'k2') },
+    ];
+    const first = await store.appendBatch('t1', entries);
+    expect(first.map((r) => r.deduped)).toEqual([false, false]);
+    expect(await store.findByIdempotencyKey('t1', 'k1')).toBeDefined();
+    const replay = await store.appendBatch('t1', entries);
+    expect(replay.map((r) => r.deduped)).toEqual([true, true]);
+  });
+
+  it('rolls the WHOLE batch back when one append fails — no partial set survives', async () => {
+    const client = new TransactionalSqlClient();
+    client.failOnKey = 'k2'; // the second event blows up after the first has inserted
+    const store = new SqlEventStore(client);
+    await expect(store.appendBatch('t1', [
+      { stream: 'sales', event: ev('e1', 'k1') },
+      { stream: 'sales', event: ev('e2', 'k2') },
+    ])).rejects.toThrow(/simulated/);
+    // The first insert was rolled back with the failing second — neither is in the ledger.
+    expect(await store.findByIdempotencyKey('t1', 'k1')).toBeUndefined();
+    expect(await store.findByIdempotencyKey('t1', 'k2')).toBeUndefined();
+  });
+
+  it('reads a conflict back on the transaction\'s own connection — sees its uncommitted write', async () => {
+    // Same key twice in one batch: the second conflicts with the first, which is visible ONLY on the
+    // transactional connection (not yet committed). A read-back on a different pool connection would
+    // find nothing and throw "conflicted but no row was found" — so this passing proves appendBatch
+    // reads back on the transaction client, the subtle correctness point the port contract calls out.
+    const store = new SqlEventStore(new TransactionalSqlClient());
+    const results = await store.appendBatch('t1', [
+      { stream: 'sales', event: ev('e1', 'dup') },
+      { stream: 'sales', event: ev('e2', 'dup') },
+    ]);
+    expect(results[0]!.deduped).toBe(false);
+    expect(results[1]!.deduped).toBe(true);
+    expect(results[1]!.record.event.id).toBe('e1'); // dedups to the first
   });
 });

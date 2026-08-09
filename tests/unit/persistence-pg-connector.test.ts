@@ -1,8 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
   pgClient,
+  pgPoolClient,
   runMigrations,
+  type PgPool,
+  type PgPoolClient,
   type PgQueryable,
+  type PgQueryResult,
   type SqlClient,
   type SqlRow,
   type Migration,
@@ -31,6 +35,74 @@ describe('pgClient', () => {
     };
     await pgClient(pool).query('SELECT * FROM t WHERE id = $1', ['x']);
     expect(captured).toEqual({ text: 'SELECT * FROM t WHERE id = $1', values: ['x'] });
+  });
+
+  it('exposes no transaction primitive — a query-only client cannot pin a connection', () => {
+    // `pgClient` is deliberately transaction-free; atomicity comes from `pgPoolClient` over a real
+    // Pool. `EventStore.appendBatch` over this client falls back to sequential writes (audit FND-01).
+    const client = pgClient({ query: () => Promise.resolve({ rows: [] }) });
+    expect(client.transaction).toBeUndefined();
+  });
+});
+
+// A fake pooled connection that records every statement it runs in order and whether it was
+// released — enough to prove the transaction envelope (BEGIN/COMMIT/ROLLBACK) and no pool leak.
+class FakeConn implements PgPoolClient {
+  readonly log: string[] = [];
+  released = false;
+  constructor(private readonly responses: SqlRow[][] = []) {}
+  query(text: string): Promise<PgQueryResult> {
+    this.log.push(text);
+    // BEGIN/COMMIT/ROLLBACK carry no result rows and must not consume a programmed response —
+    // those belong to the callback's own statements.
+    if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
+      return Promise.resolve({ rows: [] });
+    }
+    return Promise.resolve({ rows: this.responses.shift() ?? [] });
+  }
+  release(): void { this.released = true; }
+}
+
+class FakePool implements PgPool {
+  constructor(private readonly conn: FakeConn) {}
+  query(): Promise<PgQueryResult> { return Promise.resolve({ rows: [] }); }
+  connect(): Promise<PgPoolClient> { return Promise.resolve(this.conn); }
+}
+
+describe('pgPoolClient transaction (FND-01 atomicity primitive)', () => {
+  it('wraps the callback in BEGIN … COMMIT on success and releases the connection', async () => {
+    const conn = new FakeConn([[{ n: 1 }]]);
+    const client = pgPoolClient(new FakePool(conn));
+    const out = await client.transaction!(async (tx) => {
+      const rows = await tx.query('INSERT INTO t VALUES ($1) RETURNING n', [1]);
+      return rows[0]!.n;
+    });
+    expect(out).toBe(1);
+    expect(conn.log).toEqual(['BEGIN', 'INSERT INTO t VALUES ($1) RETURNING n', 'COMMIT']);
+    expect(conn.released).toBe(true);
+  });
+
+  it('rolls back and rethrows when the callback throws — and still releases', async () => {
+    const conn = new FakeConn();
+    const client = pgPoolClient(new FakePool(conn));
+    await expect(client.transaction!(async (tx) => {
+      await tx.query('INSERT INTO t VALUES ($1)', [1]);
+      throw new Error('boom');
+    })).rejects.toThrow('boom');
+    // BEGIN, the one insert, then ROLLBACK — never COMMIT.
+    expect(conn.log).toEqual(['BEGIN', 'INSERT INTO t VALUES ($1)', 'ROLLBACK']);
+    expect(conn.log).not.toContain('COMMIT');
+    expect(conn.released).toBe(true);
+  });
+
+  it('runs the callback\'s queries on the pinned connection, not the pool', async () => {
+    // Everything the callback issues must land on the checked-out connection, so its reads see its
+    // own uncommitted writes. Proven by the connection's log carrying the callback's statement.
+    const conn = new FakeConn([[{ v: 'seen' }]]);
+    const client = pgPoolClient(new FakePool(conn));
+    const seen = await client.transaction!((tx) => tx.query('SELECT v'));
+    expect(seen).toEqual([{ v: 'seen' }]);
+    expect(conn.log).toContain('SELECT v');
   });
 });
 
