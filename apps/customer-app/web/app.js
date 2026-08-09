@@ -48,6 +48,9 @@ const WORDS = {
     checkFirst: 'Please check your basket first, so you can see what you are paying for.',
     chooseTime: 'Please choose a time first.', pickedTime: 'Time chosen',
     noSlots: 'There are no delivery times available right now.',
+    useMyLocation: 'Use my location', gotLocation: 'Got your location — we can check delivery.',
+    noLocation: 'We could not get your location. Allow it and try again, or collect from the store.',
+    needLocation: 'Please share your location first, so we can check we deliver to you.',
     nothingToOrder: 'There is nothing in your basket to order.',
     orderTitle: 'My order', noOrderYet: 'You have not placed an order yet.',
     privacyTitle: 'My information',
@@ -81,6 +84,9 @@ const WORDS = {
     checkFirst: 'முதலில் கூடையைச் சரிபார்க்கவும் — எதற்குப் பணம் செலுத்துகிறீர்கள் என்று தெரியும்.',
     chooseTime: 'முதலில் ஒரு நேரத்தைத் தேர்ந்தெடுக்கவும்.', pickedTime: 'நேரம் தேர்ந்தெடுக்கப்பட்டது',
     noSlots: 'இப்போது டெலிவரி நேரம் எதுவும் இல்லை.',
+    useMyLocation: 'என் இருப்பிடத்தைப் பயன்படுத்து', gotLocation: 'உங்கள் இருப்பிடம் கிடைத்தது — டெலிவரியைச் சரிபார்க்கலாம்.',
+    noLocation: 'உங்கள் இருப்பிடத்தைப் பெற முடியவில்லை. அனுமதித்து மீண்டும் முயற்சிக்கவும், அல்லது கடையில் வாங்கவும்.',
+    needLocation: 'நாங்கள் உங்களுக்கு டெலிவரி செய்கிறோமா எனச் சரிபார்க்க முதலில் உங்கள் இருப்பிடத்தைப் பகிரவும்.',
     nothingToOrder: 'ஆர்டர் செய்ய கூடையில் எதுவும் இல்லை.',
     orderTitle: 'என் ஆர்டர்', noOrderYet: 'நீங்கள் இன்னும் ஆர்டர் செய்யவில்லை.',
     privacyTitle: 'என் தகவல்',
@@ -378,6 +384,29 @@ function renderBasket() {
   }
 }
 
+/**
+ * The customer's own position, from the device — no external service, no address typed in. Wrapped
+ * as a promise so the session's injectable capture seam can be tested with a fake in place of the
+ * browser. A missing API, a refusal or a timeout all reject, and the session then keeps the
+ * location UNSET rather than guessing one (the distance check refuses honestly).
+ */
+function browserGeo() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) { reject(new Error('no geolocation on this device')); return; }
+    navigator.geolocation.getCurrentPosition(
+      (p) => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
+      (e) => reject(e),
+      { timeout: 10_000, maximumAge: 60_000 },
+    );
+  });
+}
+
+el('locate').addEventListener('click', async () => {
+  const result = await shop.useMyLocation(browserGeo);
+  tell(t('useMyLocation'), result.ok ? t('gotLocation') : t('noLocation'), result.ok ? 'good' : 'bad');
+  render();
+});
+
 el('review').addEventListener('click', () => {
   const result = shop.review();
   tell(t('checkBasket'), result.state.tellTheCustomer, result.state.review?.hasProblems ? 'bad' : 'good');
@@ -401,6 +430,9 @@ el('accept').addEventListener('click', () => {
 el('pay').addEventListener('click', () => {
   const state = shop.state();
   if (state.lines.length === 0) { tell(t('yourBasket'), t('nothingToOrder'), 'bad'); return; }
+  // Delivery needs to know where the customer is. Ask for it before paying rather than letting the
+  // distance check refuse from {0,0} with a puzzling "9,000 km away" — a clear ask, not a riddle.
+  if (!shop.hasLocation()) { tell(t('payAndPlace'), t('needLocation'), 'bad'); return; }
 
   const result = shop.send({
     orderId: `ORD-${Date.now().toString(36).toUpperCase()}`,
@@ -533,6 +565,7 @@ function paintChrome() {
   el('problems-title').textContent = t('thingsChanged');
   el('accept').textContent = t('takeWhatYouHave');
   el('slot-title').textContent = t('whenWouldYouLike');
+  el('locate').textContent = t('useMyLocation');
   el('pay').textContent = t('payAndPlace');
   el('order-title').textContent = t('orderTitle');
   el('privacy-title').textContent = t('privacyTitle');
