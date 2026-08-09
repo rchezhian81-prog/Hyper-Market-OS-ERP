@@ -67,6 +67,7 @@ import { attachEvidence, type Investigation } from '../../../packages/settlement
 import { project, EFFECT_ON_HAND } from '../../inventory/src/index';
 import type { Movement, Availability, InventoryDeps } from '../../inventory/src/index';
 import { weightedAverageValuation, type ValuationMovement } from '../../../packages/stock/src/valuation';
+import { agedStockLots, type DatedMovement } from '../../../packages/stock/src/ageing-source';
 import type { MatchResult, BankChangeRequest, PurchaseDeps } from '../../purchase/src/index';
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
 import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
@@ -1880,6 +1881,30 @@ export function inventoryAdapter(input: {
         'INR',
       );
       return productId === undefined ? rows : rows.filter((r) => r.productId === productId);
+    },
+
+    /**
+     * Current remaining stock as receipt-dated, WAC-valued lots for the ageing report (M08-FR-04).
+     * Reads the same `InventoryMoved` ledger as valuation and folds it through `agedStockLots`, which
+     * computes the weighted-average pool and the FIFO remaining lots together so the ageing total
+     * reconciles to the valuation's stock value. Filtered by product BEFORE folding, so a single
+     * product's ageing (and its unvalued quantity) is exactly its own.
+     */
+    ageing: async (tenantId, productId) => {
+      const events = await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' });
+      const movements = events
+        .map((e) => payloadOf<Movement>(e))
+        .filter((m) => productId === undefined || m.productId === productId);
+      return agedStockLots(
+        movements.map((m): DatedMovement => ({
+          productId: m.productId, locationId: m.locationId,
+          effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
+          isPurchaseReceipt: m.kind === 'received',
+          occurredAt: m.occurredAt, batchId: m.batchId ?? null,
+          ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
+        })),
+        'INR',
+      );
     },
 
     appendMovement: async (tenantId, m) => {
