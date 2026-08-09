@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Client } from 'pg';
-import { pgClient } from '../../packages/persistence/src/pg-client';
+import { Pool } from 'pg';
+import { pgClient, pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import {
-  buildRouter, handle, SqlIdempotencyStore, SqlAuditSink, type HttpRequest,
+  buildRouter, handle, SqlIdempotencyStore, SqlAuditSink,
+  verifyAuditChain, type ChainedAuditRow, type HttpRequest,
 } from '../../services/kernel/src/index';
 import { AccessControl } from '../../packages/rbac/src/rbac';
 import { buildSurface } from '../../services/api/src/main';
@@ -34,23 +35,23 @@ const ACCESS = new AccessControl(
 );
 
 interface AuditRow {
-  tenant_id: string; user_id: string; method: string; path: string;
+  seq: number; tenant_id: string; user_id: string; method: string; path: string;
   status: number; permission: string; trace_id: string; idempotency_key: string | null;
+  recorded_at: string | Date; prev_hash: string | null; hash: string | null;
 }
 
 describe.skipIf(!DATABASE_URL)('the audit trail is actually kept (real PostgreSQL)', () => {
-  let client: Client;
+  let pool: Pool;
   let kernel: Parameters<typeof handle>[0];
   const failures: string[] = [];
 
-  const rows = async (): Promise<readonly AuditRow[]> => (await client.query<AuditRow>(
+  const rows = async (): Promise<readonly AuditRow[]> => (await pool.query<AuditRow>(
     'SELECT * FROM audit_log WHERE tenant_id = $1 ORDER BY seq ASC', [TENANT],
   )).rows;
 
   beforeAll(async () => {
-    client = new Client({ connectionString: DATABASE_URL });
-    await client.connect();
-    const sql = pgClient(client);
+    pool = new Pool({ connectionString: DATABASE_URL });
+    const sql = pgClient(pool);
     const dir = 'db/migrations';
     await runMigrations(sql, readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
       .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));
@@ -64,12 +65,14 @@ describe.skipIf(!DATABASE_URL)('the audit trail is actually kept (real PostgreSQ
         ? { tenantId: TENANT, userId: 'u-meena', branchId: 'b-main' } : undefined),
       access: ACCESS,
       idempotency: new SqlIdempotencyStore(sql),
-      audit: new SqlAuditSink(sql, (d) => failures.push(d)),
+      // The TRANSACTIONAL adapter, as the deployment wires it (main.ts) — so the sink seals each row
+      // under a per-tenant advisory lock, exactly the production hash-chain path (audit FND-02).
+      audit: new SqlAuditSink(pgPoolClient(pool), (d) => failures.push(d)),
       newTraceId: () => `trace-${RUN}`,
     };
   });
 
-  afterAll(async () => { await client.end(); });
+  afterAll(async () => { await pool.end(); });
 
   const sale = {
     saleId: `${RUN}-S1`, receiptNumber: `${RUN}-R1`, laneId: 'lane-1', cashierId: 'u-meena',
@@ -113,17 +116,53 @@ describe.skipIf(!DATABASE_URL)('the audit trail is actually kept (real PostgreSQ
     const res = await handle(kernel, post(sale, `k-${RUN}-3`, 'bad'));
     expect(res.status).toBe(401);
 
-    const anon = (await client.query<AuditRow>(
+    const anon = (await pool.query<AuditRow>(
       "SELECT * FROM audit_log WHERE tenant_id = 'unauthenticated' AND trace_id = $1", [`trace-${RUN}`],
     )).rows;
     expect(anon.length).toBeGreaterThan(0);
   });
 
+  it('seals each row onto the one before it, and the whole chain verifies (audit FND-02)', async () => {
+    // The rows written above now carry a SHA-256 chain: row 1 from the genesis, each next row's
+    // prev_hash equal to the previous row's hash. This is what makes a row dropped or edited behind
+    // the database DETECTABLE (GAP-SEC-03) — append-only stops edits through the app; the seal
+    // catches an out-of-band one.
+    const entries = await rows();
+    expect(entries.length).toBeGreaterThanOrEqual(2);
+    expect(entries[0]?.prev_hash).toBe(''); // genesis
+    expect(entries[0]?.hash).toMatch(/^[0-9a-f]{64}$/); // a real SHA-256, hex
+    for (let i = 1; i < entries.length; i += 1) {
+      expect(entries[i]?.prev_hash).toBe(entries[i - 1]?.hash); // the links join up
+    }
+
+    // And the shared verifier — the same one `pnpm verify:audit` runs — agrees the chain is intact.
+    const chained: ChainedAuditRow[] = entries.map((r) => ({
+      sequence: Number(r.seq), tenantId: r.tenant_id, userId: r.user_id, method: r.method,
+      path: r.path, status: Number(r.status), permission: r.permission, traceId: r.trace_id,
+      idempotencyKey: r.idempotency_key ?? null, recordedAt: new Date(r.recorded_at).toISOString(),
+      prevHash: r.prev_hash!, hash: r.hash!,
+    }));
+    const result = verifyAuditChain(chained);
+    expect(result.intact, JSON.stringify(result.findings)).toBe(true);
+    expect(result.recordsChecked).toBe(entries.length);
+  });
+
+  it('refuses a forked chain at the database — two rows cannot claim one predecessor', async () => {
+    // The unique index on (tenant_id, prev_hash) is the belt-and-suspenders fork guard: even a bug
+    // or a race cannot silently branch a tenant's chain. A hand-crafted second genesis row (prev_hash
+    // '') for this tenant collides with the real first row and is refused.
+    await expect(pool.query(
+      `INSERT INTO audit_log (tenant_id, user_id, method, path, status, permission, trace_id, prev_hash, hash)
+       VALUES ($1, 'forger', 'POST', '/v1/sales', 202, 'pos.sale.sync', 'trace-forge', '', 'f'||repeat('0',63))`,
+      [TENANT],
+    )).rejects.toThrow(/duplicate key|unique/i);
+  });
+
   it('cannot be edited or deleted, at the database (hard rule #6)', async () => {
     // The entry that says who did it is the one somebody would want to change.
-    await expect(client.query('UPDATE audit_log SET user_id = $1 WHERE tenant_id = $2', ['somebody-else', TENANT]))
+    await expect(pool.query('UPDATE audit_log SET user_id = $1 WHERE tenant_id = $2', ['somebody-else', TENANT]))
       .rejects.toThrow(/append-only/i);
-    await expect(client.query('DELETE FROM audit_log WHERE tenant_id = $1', [TENANT]))
+    await expect(pool.query('DELETE FROM audit_log WHERE tenant_id = $1', [TENANT]))
       .rejects.toThrow(/append-only/i);
     // And it is still there, unchanged.
     expect((await rows())[0]?.user_id).toBe('u-meena');
