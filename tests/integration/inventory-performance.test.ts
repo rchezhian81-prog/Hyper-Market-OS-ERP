@@ -16,8 +16,7 @@ const FROM = '2026-01-01T00:00:00.000Z';
 const TO = '2026-12-31T00:00:00.000Z';
 
 interface Ratio { kind: 'ratio' | 'not_meaningful'; bp?: number; because?: string }
-interface PerfBody {
-  period: { from: string; to: string; days: number };
+interface PerfRow {
   cogs: { minor: number; currency: string };
   averageInventory: { minor: number };
   netSales: { minor: number } | null;
@@ -26,6 +25,10 @@ interface PerfBody {
   annualisedTurns: Ratio;
   daysOfCover: Ratio;
   gmroi: Ratio;
+}
+interface PerfBody extends PerfRow {
+  period: { from: string; to: string; days: number };
+  byProduct: (PerfRow & { productId: string })[];
   method: string;
 }
 
@@ -73,6 +76,11 @@ describe('stock productivity — turns and GMROI over a period (M08-FR-04, API-0
     expect(body.netSales).toBeNull();
     expect(body.grossMargin).toBeNull();
     expect(body.gmroi.kind).toBe('not_meaningful');
+
+    // The per-product breakdown carries the same figures for P1, with its margin equally absent.
+    expect(body.byProduct).toHaveLength(1);
+    expect(body.byProduct[0]).toMatchObject({ productId: 'P1', cogs: { minor: 40000 }, averageInventory: { minor: 30000 }, netSales: null, turns: { kind: 'ratio', bp: 13333 } });
+    expect(body.byProduct[0]!.gmroi.kind).toBe('not_meaningful');
   });
 
   it('computes GMROI once the catalogue supplies the tax rate (revenue net of tax)', async () => {
@@ -89,6 +97,37 @@ describe('stock productivity — turns and GMROI over a period (M08-FR-04, API-0
     expect(body.grossMargin).toEqual({ minor: 10000, currency: 'INR' });
     // GMROI = 10,000 / 30,000 = 0.33× — below 1.0×, the line returns less cash than it ties up.
     expect(body.gmroi).toMatchObject({ kind: 'ratio', bp: 3333 });
+
+    // The single product's row equals the store total when there is only one product.
+    expect(body.byProduct).toHaveLength(1);
+    expect(body.byProduct[0]).toMatchObject({ productId: 'P1', netSales: { minor: 50000 }, grossMargin: { minor: 10000 }, gmroi: { kind: 'ratio', bp: 3333 } });
+  });
+
+  it('breaks turns and GMROI down per product, and the store total is their sum', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    // P1: 100 @ ₹10 received, 40 sold → COGS 40,000, avg inv 30,000; net sales ₹500, margin 10,000.
+    await move(h, A, { movementId: 'p1r', productId: 'P1', kind: 'received', quantityMinor: 100, unitCostMinor: 1000, occurredAt: '2026-03-01T10:00:00.000Z', ...base });
+    await move(h, A, { movementId: 'p1s', productId: 'P1', kind: 'sold', quantityMinor: 40, occurredAt: '2026-06-01T10:00:00.000Z', ...base });
+    await seedSale(h, A, 'S1', '2026-06-01T10:00:00.000Z', [{ productId: 'P1', quantityMinor: 40, lineTotalMinor: 59000 }]);
+    // P2: 50 @ ₹20 received, 10 sold → COGS 20,000, avg inv 40,000; net sales ₹250, margin 5,000.
+    await move(h, A, { movementId: 'p2r', productId: 'P2', kind: 'received', quantityMinor: 50, unitCostMinor: 2000, occurredAt: '2026-03-01T10:00:00.000Z', ...base });
+    await move(h, A, { movementId: 'p2s', productId: 'P2', kind: 'sold', quantityMinor: 10, occurredAt: '2026-06-01T10:00:00.000Z', ...base });
+    await seedSale(h, A, 'S2', '2026-06-01T10:00:00.000Z', [{ productId: 'P2', quantityMinor: 10, lineTotalMinor: 26250 }]);
+    await seedCatalogue(h, A, [{ productId: 'P1', taxBps: 1800 }, { productId: 'P2', taxBps: 500 }]);
+
+    const body = (await perf(h, A, 'u-owner', { from: FROM, to: TO })).body as PerfBody;
+    const rows = new Map(body.byProduct.map((r) => [r.productId, r]));
+    expect(rows.get('P1')).toMatchObject({ cogs: { minor: 40000 }, netSales: { minor: 50000 }, grossMargin: { minor: 10000 }, gmroi: { kind: 'ratio', bp: 3333 } });
+    // P2's ₹262.50 gross at 5% GST = ₹250.00 net; margin 5,000; GMROI 5,000 / 40,000 = 0.125×.
+    expect(rows.get('P2')).toMatchObject({ cogs: { minor: 20000 }, netSales: { minor: 25000 }, grossMargin: { minor: 5000 }, gmroi: { kind: 'ratio', bp: 1250 } });
+
+    // The store total is the sum of the products: COGS 60,000, net sales 75,000, margin 15,000.
+    expect(body.cogs.minor).toBe(60000);
+    expect(body.averageInventory.minor).toBe(70000);
+    expect(body.netSales).toEqual({ minor: 75000, currency: 'INR' });
+    expect(body.grossMargin).toEqual({ minor: 15000, currency: 'INR' });
+    expect(body.gmroi).toMatchObject({ kind: 'ratio', bp: 2143 });
   });
 
   it('is per-tenant and authorized: a cashier cannot read it (403), and an empty tenant is honest not zero', async () => {
