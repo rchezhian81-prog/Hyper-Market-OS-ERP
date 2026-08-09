@@ -40,6 +40,7 @@ const WORDS = {
     reasonForVoid: 'Reason for void', tapLineFirst: 'Tap a line first.',
     scanFirst: 'Scan an item first.', read: 'Please read this',
     notEnough: 'Not enough — the customer still owes',
+    receiptsUsedUp: 'This till has used all its receipt numbers. Do not take money — tell the manager to load a new number range.',
     allSent: 'Everything on this lane has reached the cloud.',
     noCatalogue: 'This lane has no price list loaded, so it cannot scan. Tell the manager.',
     hold: 'Hold', recall: 'Recall', held: 'Basket held',
@@ -65,6 +66,7 @@ const WORDS = {
     offline: 'இணைப்பு இல்லை', unsent: 'அனுப்பப்படாதவை', reasonForVoid: 'நீக்கக் காரணம்',
     tapLineFirst: 'முதலில் ஒரு வரியைத் தொடவும்.', scanFirst: 'முதலில் ஒரு பொருளை ஸ்கேன் செய்யவும்.',
     read: 'இதைப் படிக்கவும்', notEnough: 'போதவில்லை — வாடிக்கையாளர் இன்னும் தர வேண்டியது',
+    receiptsUsedUp: 'இந்த பணப்பெட்டியின் ரசீது எண்கள் முடிந்துவிட்டன. பணம் வாங்க வேண்டாம் — புதிய எண் வரம்பை ஏற்ற மேலாளரிடம் சொல்லவும்.',
     allSent: 'இந்த லேனில் உள்ள அனைத்தும் அனுப்பப்பட்டுவிட்டன.',
     noCatalogue: 'இந்த லேனில் விலைப் பட்டியல் இல்லை. மேலாளரிடம் சொல்லவும்.',
     hold: 'நிறுத்து', recall: 'திரும்பப் பெறு', held: 'கூடை நிறுத்தப்பட்டது',
@@ -120,6 +122,7 @@ function demoSession() {
     syncBadge: () => ({ connection: 'online', unsentCount: 0 }),
     scanBarcode() { throw new Error('No price list on this lane.'); },
     hasCatalogue: () => false,
+    nextReceipt: () => 'R-' + Date.now().toString(36).toUpperCase(),
     tenderCash: (_id, number) => Promise.resolve(number),
     tenderCardOrUpi: ({ receiptNumber, outcome }) => (outcome === 'approved'
       ? Promise.resolve(receiptNumber)
@@ -402,11 +405,19 @@ el('tender').addEventListener('click', async () => {
   const change = changeFor(Number(received));
   if (change < 0) return; // the panel already said so, in words, as they typed
 
-  const stamp = Date.now().toString(36);
+  // The receipt number is drawn from this lane's gap-free reserved range (M01-FR-02). If the range
+  // is spent the till stops rather than reuse a number — no money is taken, the manager is told.
+  let receiptNumber;
+  try {
+    receiptNumber = session.nextReceipt ? session.nextReceipt() : `R-${Date.now().toString(36).toUpperCase()}`;
+  } catch (e) {
+    tell(t('read'), t('receiptsUsedUp'));
+    return;
+  }
   try {
     // Awaited, and the await is the guarantee: the receipt number does not exist until the sale is
     // on this till's disk (hard rule #1). There is nothing to print with before then.
-    const receipt = await session.tenderCash(`S-${stamp}`, `R-${stamp.toUpperCase()}`, new Date().toISOString());
+    const receipt = await session.tenderCash(`S-${receiptNumber}`, receiptNumber, new Date().toISOString());
     tell(`${t('changeDue')}: ${inr(change)}`, receipt);
     session.newSale();
     selectedLineId = null;
@@ -444,10 +455,16 @@ async function takeCardOrUpi(kind, payable) {
     return;
   }
 
-  const stamp = Date.now().toString(36);
+  let receiptNumber;
+  try {
+    receiptNumber = session.nextReceipt ? session.nextReceipt() : `R-${Date.now().toString(36).toUpperCase()}`;
+  } catch (e) {
+    tell(t('read'), t('receiptsUsedUp'));
+    return;
+  }
   try {
     const receipt = await session.tenderCardOrUpi({
-      saleId: `S-${stamp}`, receiptNumber: `R-${stamp.toUpperCase()}`,
+      saleId: `S-${receiptNumber}`, receiptNumber,
       atIsoUtc: new Date().toISOString(), kind, outcome,
     });
     tell(`${t('approved')} — ${kind === 'card' ? t('card') : t('upi')}`, receipt);

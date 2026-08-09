@@ -62,7 +62,7 @@ This gap between "97% built" and "25% wired / 0% verified" is the entire story o
 | GAP-SEC-05 | No token revocation / short-TTL strategy | Medium | `token.ts:31-32` |
 | GAP-SEC-06 | Support-access expiry enforced in web-erp, not API tier | Medium | `admin-session.ts` vs `services/api` |
 | GAP-SYNC-01 | No live inbound sync (pack arrives as locally-placed file) | High | `main.ts:190-204` |
-| GAP-SYNC-02 | Offline document numbering (reserved ranges) not wired to POS | High | `app.js:450` vs `numbering.ts` |
+| GAP-SYNC-02 | Offline document numbering (reserved ranges) not wired to POS — **MECHANISM WIRED (STAB-02)**: `ReservedRangeAllocator` now behind `bootPos().nextReceipt()`, used by the served shell, tested (distinct ranges → no collision, gap-free, exhaustion stops the till). **Follow-on (SYNC-02b):** provision a distinct range per lane into the served shell (`posReceiptSeries`), + range refresh via SYNC-01 | ~~High~~ Medium | `apps/pos/src/browser-entry.ts`, `packages/numbering` |
 | GAP-SYNC-03 | Structured conflict object + operator dead-letter/resolution UI missing | Medium | `agent.ts:136-142`; no `conflict.ts` |
 | GAP-AI-01 | No live model, no RAG, no prompt-versioning, AI audit not first-class, red-team thin | High (for AI value) | `adapters.ts:3117` (`run()=>[]`) |
 | GAP-OPS-01 | No hosting/IaC/CD/automated rollback; forward-only migrations | High | ADR-0002 Proposed; `ci.yml` only |
