@@ -1279,6 +1279,13 @@
     },
     {
       "type": "library",
+      "name": "playwright-core",
+      "version": "1.62.1",
+      "scope": "optional",
+      "purl": "pkg:npm/playwright-core@1.62.1"
+    },
+    {
+      "type": "library",
       "name": "postcss",
       "version": "8.5.25",
       "scope": "optional",
