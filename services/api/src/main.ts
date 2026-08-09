@@ -26,7 +26,7 @@ import { pgClient, pgPoolClient } from '../../../packages/persistence/src/pg-cli
 import { DurableTenantSettings } from '../../../packages/tenant/src/index';
 import {
   buildRouter, loadConfig, startHttpServer, CLOUD_API_CONFIG, SqlIdempotencyStore, SqlAuditSink,
-  structuredLogger, combineObservers, RequestMetrics,
+  structuredLogger, combineObservers, RequestMetrics, TokenBucketRateLimiter, BackoffAuthThrottle,
   type Route,
 } from '../../kernel/src/index';
 import { tenantAccessResolver, seedGenesisOwner } from './access';
@@ -424,6 +424,18 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
     // (`pgPoolClient`, audit FND-01) lets each write seal itself onto the previous one under a
     // per-tenant lock, so the SHA-256 chain (audit FND-02) cannot fork.
     audit: new SqlAuditSink(pgPoolClient(db), (detail) => { process.stderr.write(`${detail}\n`); }),
+
+    // Rate limiting and auth-attempt lockout (audit FND-03 / GAP-SEC-04). The API had exactly one
+    // 429 in the whole product (the AI budget gate); nothing capped request volume and nothing slowed
+    // a script guessing tokens against the sign-in path. A per-source flood limit and a per-tenant
+    // fair-share limit (token buckets), plus an exponential-backoff lockout after repeated failed
+    // sign-ins. IN-MEMORY reference — correct for the single-store box and a single API instance; a
+    // multi-instance cloud swaps these ports for a shared Redis-backed limiter (technology baseline)
+    // so the limit is global, the same in-memory-reference / deployment-adapter split as idempotency.
+    // A busy till bursts, so the capacity is generous and the sustained rate comfortably above normal
+    // per-tenant traffic; the auth lockout is deliberately strict.
+    rateLimit: new TokenBucketRateLimiter({ capacity: 240, refillPerSecond: 20 }),
+    authThrottle: new BackoffAuthThrottle({ threshold: 5, baseCooldownSeconds: 5, maxCooldownSeconds: 900 }),
     newTraceId: () => `t-${Math.random().toString(36).slice(2, 10)}`,
     port: Number(settings['PORT']),
     dependenciesReachable: reachable,

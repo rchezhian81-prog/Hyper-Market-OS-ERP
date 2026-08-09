@@ -118,9 +118,18 @@ export function startHttpServer(opts: ServerOptions): RunningServer {
       const query: Record<string, string> = {};
       url.searchParams.forEach((v, k) => { query[k] = v; });
 
+      // The caller's source address for the per-IP rate limit and auth lockout (FND-03). Behind the
+      // platform's ingress the real client is the leftmost `x-forwarded-for` entry (the ingress sets
+      // it); terminating TLS directly, it is the socket peer. A deployment that must not trust the
+      // header at all configures the ingress to overwrite it — the standard control for XFF spoofing.
+      const forwarded = headers['x-forwarded-for'];
+      const clientIp = forwarded !== undefined && forwarded.trim() !== ''
+        ? forwarded.split(',')[0]!.trim()
+        : (req.socket.remoteAddress ?? 'unknown');
+
       const reply = await handle(opts, {
         method: (req.method ?? 'GET') as Method,
-        path, headers, query,
+        path, headers, query, clientIp,
         ...(body === undefined ? {} : { body }),
       });
 
