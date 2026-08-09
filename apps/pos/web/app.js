@@ -410,7 +410,7 @@ el('tender').addEventListener('click', async () => {
   let receiptNumber;
   try {
     receiptNumber = session.nextReceipt ? session.nextReceipt() : `R-${Date.now().toString(36).toUpperCase()}`;
-  } catch (e) {
+  } catch {
     tell(t('read'), t('receiptsUsedUp'));
     return;
   }
@@ -458,7 +458,7 @@ async function takeCardOrUpi(kind, payable) {
   let receiptNumber;
   try {
     receiptNumber = session.nextReceipt ? session.nextReceipt() : `R-${Date.now().toString(36).toUpperCase()}`;
-  } catch (e) {
+  } catch {
     tell(t('read'), t('receiptsUsedUp'));
     return;
   }
