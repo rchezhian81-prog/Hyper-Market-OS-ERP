@@ -34,7 +34,7 @@ a specific slice of the product. Full detail for every item is in
 |---|---|---|---|---|
 | **OA-4** | **Payment provider + login (identity) provider.** Real card/UPI payment and real staff single-sign-on both need a chosen provider and keys. | ✅ **You chose: keep test mode for the pilot.** Choose providers before real money / real logins. | Online payment, real settlement matching, production staff logins. | Before production (pilot runs without it). |
 | **OA-13** | **How customers log in to the shopping app** — browse as a guest, or sign in with a one-time SMS code. | ✅ **You chose: guest browsing.** Already built and tested — browse + basket review work today, no login. | Nothing left to decide; accounts can be added later if you want them. | Done. |
-| **OA-11** | **Delivery service areas** — which branches deliver, how far each reaches, how many delivery slots, which sites are "dark stores." | Nominate one pilot branch with one radius and one slot size. | Online-order routing and delivery slots (M18-FR-03, M20-FR-03). | Before delivery / online orders go live. |
+| **OA-11** | **Delivery service areas** — how far the store delivers and how many slots. | ✅ **You chose: main store, within 10 km, 8 slots a day.** Slot engine built. **One thing left:** the store's map coordinates (for the 10 km check) — see note below. Hours/capacity defaulted to **9 am–9 pm, 10 orders/slot** (say the word to change). | Online-order routing + delivery slots (M18-FR-03, M20-FR-03) — switches on when coordinates are given. | Coordinates before delivery goes live. |
 | **OA-12** | **Subscription plans & pricing** (only relevant when selling this system to other retailers). | Defer — keep per-tenant feature switches (already built) for now. | Paid plans, metered billing for a multi-retailer product (M36). | Only when commercialising to other shops. |
 | **Valuation method** | **How stock is valued** — weighted-average, FIFO, or standard cost. This is an accounting-policy choice. | Confirm the method your accountant already uses. | Stock-value & margin analytics (ageing/turns/GMROI, M08-FR-04), margin reporting (M29), and stock valuation feeding the books (M23). | Before month-end stock valuation and margin reports. |
 
@@ -48,9 +48,11 @@ above are also **already built and tested** — only their live switch-on waits 
 
 ## What I recommend
 
-You have now settled the two pilot decisions — **payment stays in test mode** and **customers
-browse as guests** (already built). The single remaining decision that would unlock a **full
-online order** for the pilot is **OA-11 — your delivery areas** (which branches deliver, how far,
-how many slots). One line — "the main store delivers within 10 km, 8 slots a day" — and I wire and
-test online-order routing and delivery slots the same way everything else has been done. The other
-two (subscription pricing, stock-valuation method) can wait for their moment.
+You have now settled the pilot decisions — payment in test mode, guest browsing, and delivery
+(main store, 10 km, 8 slots a day). The slot engine is built and tested. **The one thing left to
+switch delivery on is your store's map coordinates** — the latitude and longitude, so the system
+can tell a 9 km address (deliver) from an 11 km one (refuse). Get them from Google Maps: search
+your store, right-click the pin, and the two numbers at the top are the latitude and longitude —
+send me those two numbers and delivery goes live. Until then everything else works and delivery
+stays safely switched off (no order to a wrong-distance address can slip through). The remaining
+decisions (subscription pricing, stock-valuation method) can wait for their moment.

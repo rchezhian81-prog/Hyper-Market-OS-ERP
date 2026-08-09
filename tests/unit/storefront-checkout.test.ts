@@ -4,6 +4,7 @@ import {
   checkServiceability,
   availableSlots,
   bookSlot,
+  generateDeliverySlots,
   placeOrder,
   trackOrder,
   privacyCentre,
@@ -206,5 +207,42 @@ describe('the privacy centre shows everything, including what cannot be erased',
     const on = changeConsent({ customerRef: 'c-1', purpose: 'marketing', granted: true, at: '2026-08-05T09:05:00Z' });
     expect(on.granted).toBe(true);
     expect(on.detail).toContain('switched on');
+  });
+});
+
+describe('generateDeliverySlots turns a delivery policy into bookable windows (M20-FR-03)', () => {
+  const WINDOW = { windowStartIso: '2026-08-10T03:30:00.000Z', windowEndIso: '2026-08-10T15:30:00.000Z' }; // 09:00–21:00 IST
+
+  it('divides the window into N equal contiguous slots that cover it exactly', () => {
+    const slots = generateDeliverySlots({ ...WINDOW, slotsPerDay: 8, capacityPerSlot: 10 });
+    expect(slots).toHaveLength(8);
+    // First starts at the window open, last ends at the window close — no uncovered tail.
+    expect(slots[0]!.startsAt).toBe('2026-08-10T03:30:00.000Z');
+    expect(slots[7]!.endsAt).toBe('2026-08-10T15:30:00.000Z');
+    // Contiguous: each slot begins where the previous ended.
+    for (let i = 1; i < slots.length; i += 1) {
+      expect(slots[i]!.startsAt).toBe(slots[i - 1]!.endsAt);
+    }
+    // 12 hours / 8 = 90-minute windows; every slot carries the configured capacity and starts empty.
+    expect(Date.parse(slots[0]!.endsAt) - Date.parse(slots[0]!.startsAt)).toBe(90 * 60_000);
+    expect(slots.every((s) => s.capacity === 10 && s.booked === 0 && s.kind === 'delivery')).toBe(true);
+    // The generated slots feed straight into the booking engine.
+    expect(bookSlot({ slotId: slots[2]!.slotId, slots, now: '2026-08-10T03:00:00.000Z' }).booked).toBe(true);
+  });
+
+  it('invents nothing — no slots, a backwards window, or no capacity yields an empty list, never a guess', () => {
+    expect(generateDeliverySlots({ ...WINDOW, slotsPerDay: 0, capacityPerSlot: 10 })).toEqual([]);
+    expect(generateDeliverySlots({ ...WINDOW, slotsPerDay: 8, capacityPerSlot: 0 })).toEqual([]);
+    expect(generateDeliverySlots({ windowStartIso: WINDOW.windowEndIso, windowEndIso: WINDOW.windowStartIso, slotsPerDay: 8, capacityPerSlot: 10 })).toEqual([]);
+    // A window smaller than the slot count itself (here 3 ms for 8 slots) → none, not zero-length slivers.
+    expect(generateDeliverySlots({ windowStartIso: '2026-08-10T03:30:00.000Z', windowEndIso: '2026-08-10T03:30:00.003Z', slotsPerDay: 8, capacityPerSlot: 10 })).toEqual([]);
+  });
+
+  it('is deterministic and pickup-capable', () => {
+    const a = generateDeliverySlots({ ...WINDOW, slotsPerDay: 4, capacityPerSlot: 5, kind: 'pickup', slotIdPrefix: 'pick' });
+    const b = generateDeliverySlots({ ...WINDOW, slotsPerDay: 4, capacityPerSlot: 5, kind: 'pickup', slotIdPrefix: 'pick' });
+    expect(a).toEqual(b);
+    expect(a[0]!.slotId).toBe('pick-1');
+    expect(a.every((s) => s.kind === 'pickup')).toBe(true);
   });
 });
