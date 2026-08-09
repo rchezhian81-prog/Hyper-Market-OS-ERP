@@ -151,6 +151,52 @@ export function availableSlots(input: {
     }));
 }
 
+/**
+ * Turn a store's delivery policy — "N slots a day, across this window, this many orders each" —
+ * into the concrete bookable windows the customer app offers (M20-FR-03). The window is divided
+ * into `slotsPerDay` contiguous, equal spans; the last absorbs any rounding remainder so the day
+ * is covered exactly and no minute falls between two slots.
+ *
+ * **It invents nothing.** Every parameter is the tenant's own configuration — an unset or nonsense
+ * value (no slots, a zero-length or backwards window, no capacity) yields NO slots rather than a
+ * guessed one, because a delivery slot the shop cannot actually staff is a promise it will break.
+ * The window is passed as two absolute instants so the caller owns the date and timezone; this
+ * function owns only the division.
+ */
+export function generateDeliverySlots(input: {
+  readonly windowStartIso: string;
+  readonly windowEndIso: string;
+  readonly slotsPerDay: number;
+  readonly capacityPerSlot: number;
+  readonly kind?: Slot['kind'];
+  readonly slotIdPrefix?: string;
+}): readonly Slot[] {
+  const start = Date.parse(input.windowStartIso);
+  const end = Date.parse(input.windowEndIso);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return [];
+  if (!Number.isInteger(input.slotsPerDay) || input.slotsPerDay <= 0) return [];
+  if (!Number.isInteger(input.capacityPerSlot) || input.capacityPerSlot <= 0) return [];
+  const each = Math.floor((end - start) / input.slotsPerDay);
+  if (each <= 0) return []; // more slots than the window has minutes for — none, not slivers
+  const kind = input.kind ?? 'delivery';
+  const prefix = input.slotIdPrefix ?? 'slot';
+  const out: Slot[] = [];
+  for (let i = 0; i < input.slotsPerDay; i += 1) {
+    const s = start + i * each;
+    // The last slot runs to the exact window end, so rounding never leaves an uncovered tail.
+    const e = i === input.slotsPerDay - 1 ? end : s + each;
+    out.push({
+      slotId: `${prefix}-${i + 1}`,
+      startsAt: new Date(s).toISOString(),
+      endsAt: new Date(e).toISOString(),
+      capacity: input.capacityPerSlot,
+      booked: 0,
+      kind,
+    });
+  }
+  return out;
+}
+
 export type SlotBookingOutcome = 'booked' | 'slot_full' | 'too_soon' | 'unknown_slot';
 
 export interface SlotBookingResult {
