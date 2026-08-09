@@ -196,11 +196,8 @@ export interface InventoryDeps {
   readonly now: () => string;
 }
 
-/** Period inputs for turns/GMROI, computed cross-domain (inventory COGS + POS revenue). */
-export interface StockPerformanceInputs {
-  readonly from: string;
-  readonly to: string;
-  readonly periodDays: number;
+/** One row of period inputs for turns/GMROI — for the whole store, or for one product. */
+export interface StockPerformanceRow {
   /** Cost of goods sold during the period, at weighted-average cost. */
   readonly cogs: Money;
   /** Average stock value held over the period, at cost — the two-point (opening+closing)/2. */
@@ -209,6 +206,17 @@ export interface StockPerformanceInputs {
   readonly netSales?: Money;
   /** Net sales minus COGS; absent whenever `netSales` is. */
   readonly grossMargin?: Money;
+}
+
+/** Period inputs for turns/GMROI, computed cross-domain (inventory COGS + POS revenue). */
+export interface StockPerformanceInputs {
+  readonly from: string;
+  readonly to: string;
+  readonly periodDays: number;
+  /** The whole store over the period. */
+  readonly total: StockPerformanceRow;
+  /** One row per product that held stock or sold in the period. Where the range decisions live. */
+  readonly byProduct: readonly (StockPerformanceRow & { readonly productId: string })[];
 }
 
 export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
@@ -307,22 +315,30 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
         const to = ctx.query['to'] ?? asAt;
         const from = ctx.query['from'] ?? new Date(Date.parse(to) - 365 * 86_400_000).toISOString();
         const inp = await deps.performance(ctx.tenantId, { from, to });
-        const turns = inventoryTurns({ cogs: inp.cogs, averageInventory: inp.averageInventory, periodDays: inp.periodDays });
-        const margin: Ratio = inp.grossMargin !== undefined
-          ? gmroi({ grossMargin: inp.grossMargin, averageInventory: inp.averageInventory })
-          : { kind: 'not_meaningful', because: 'net sales could not be computed — a product sold in the period has no known tax rate in the catalogue, so revenue cannot be stated net of tax' };
-        return {
-          status: 200,
-          body: {
-            period: { from: inp.from, to: inp.to, days: inp.periodDays },
-            cogs: inp.cogs,
-            averageInventory: inp.averageInventory,
-            netSales: inp.netSales ?? null,
-            grossMargin: inp.grossMargin ?? null,
+        // Turns/GMROI for one row (store or product), each ratio honest about when it is not meaningful.
+        const figuresOf = (row: StockPerformanceRow): Record<string, unknown> => {
+          const turns = inventoryTurns({ cogs: row.cogs, averageInventory: row.averageInventory, periodDays: inp.periodDays });
+          const margin: Ratio = row.grossMargin !== undefined
+            ? gmroi({ grossMargin: row.grossMargin, averageInventory: row.averageInventory })
+            : { kind: 'not_meaningful', because: 'net sales could not be computed — a product sold in the period has no known tax rate in the catalogue, so revenue cannot be stated net of tax' };
+          return {
+            cogs: row.cogs,
+            averageInventory: row.averageInventory,
+            netSales: row.netSales ?? null,
+            grossMargin: row.grossMargin ?? null,
             turns: turns.turns,
             annualisedTurns: turns.annualisedTurns,
             daysOfCover: turns.daysOfCover,
             gmroi: margin,
+          };
+        };
+        return {
+          status: 200,
+          body: {
+            period: { from: inp.from, to: inp.to, days: inp.periodDays },
+            // Store-wide figures at the top level (unchanged), plus the per-product breakdown.
+            ...figuresOf(inp.total),
+            byProduct: inp.byProduct.map((p) => ({ productId: p.productId, ...figuresOf(p) })),
             method: 'weighted_average',
             revenueBasis: 'net_of_tax; gross_of_returns',
             asAt,

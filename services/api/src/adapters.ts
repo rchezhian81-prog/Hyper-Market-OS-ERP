@@ -1920,7 +1920,8 @@ export function inventoryAdapter(input: {
       const movements = events
         .map((e) => payloadOf<Movement>(e))
         .sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0));
-      const foldTo = (cutoff: string): { cogs: number; value: number } => {
+      // Cumulative WAC cogs and stock value PER PRODUCT at a cut point (summed across locations).
+      const foldTo = (cutoff: string): Map<string, { cogs: number; value: number }> => {
         const rows = weightedAverageValuation(
           movements
             .filter((m) => m.occurredAt <= cutoff)
@@ -1932,40 +1933,61 @@ export function inventoryAdapter(input: {
             })),
           'INR',
         );
-        return { cogs: rows.reduce((s, r) => s + r.cogs.minor, 0), value: rows.reduce((s, r) => s + r.value.minor, 0) };
+        const byProduct = new Map<string, { cogs: number; value: number }>();
+        for (const r of rows) {
+          const acc = byProduct.get(r.productId) ?? { cogs: 0, value: 0 };
+          acc.cogs += r.cogs.minor;
+          acc.value += r.value.minor;
+          byProduct.set(r.productId, acc);
+        }
+        return byProduct;
       };
       const opening = foldTo(from);
       const closing = foldTo(to);
       const periodDays = Math.max(0, Math.floor((Date.parse(to) - Date.parse(from)) / 86_400_000));
 
-      // Net (ex-tax) sales: MRP-style prices are tax-inclusive, so net = gross × 10000 / (10000 + taxBps).
+      // Net (ex-tax) sales PER PRODUCT: MRP-style prices are tax-inclusive, so net = gross × 10000 /
+      // (10000 + taxBps). A product sold with no known tax rate is marked so its margin stays absent.
       const sales = await input.store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from, to });
       const products = (await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished'))?.snapshot.products ?? [];
       const taxByProduct = new Map<string, number>(products.map((p) => [p.productId, p.taxBps]));
-      let netSalesMinor = 0;
-      let taxKnown = true;
+      const netByProduct = new Map<string, number>();
+      const taxUnknown = new Set<string>();
       for (const e of sales) {
         const sale = payloadOf<{ readonly lines: readonly { readonly productId: string; readonly lineTotalMinor: number }[] }>(e);
         for (const line of sale.lines) {
           const taxBps = taxByProduct.get(line.productId);
-          if (taxBps === undefined) { taxKnown = false; continue; }
-          netSalesMinor += Number((BigInt(line.lineTotalMinor) * 10_000n) / BigInt(10_000 + taxBps));
+          if (taxBps === undefined) { taxUnknown.add(line.productId); continue; }
+          netByProduct.set(line.productId, (netByProduct.get(line.productId) ?? 0) + Number((BigInt(line.lineTotalMinor) * 10_000n) / BigInt(10_000 + taxBps)));
         }
       }
 
-      const periodCogs = closing.cogs - opening.cogs;
-      const base = {
-        from, to, periodDays,
-        cogs: { minor: periodCogs, currency: 'INR' as const },
-        averageInventory: { minor: Math.round((opening.value + closing.value) / 2), currency: 'INR' as const },
-      };
-      // A period with sales but an unknown tax rate cannot be stated net of tax — absent, not zero.
-      if (!taxKnown) return base;
-      return {
-        ...base,
-        netSales: { minor: netSalesMinor, currency: 'INR' as const },
-        grossMargin: { minor: netSalesMinor - periodCogs, currency: 'INR' as const },
-      };
+      const inr = (minor: number) => ({ minor, currency: 'INR' as const });
+      const productIds = [...new Set<string>([...opening.keys(), ...closing.keys(), ...netByProduct.keys(), ...taxUnknown])].sort();
+      const byProduct = productIds.map((productId) => {
+        const o = opening.get(productId) ?? { cogs: 0, value: 0 };
+        const c = closing.get(productId) ?? { cogs: 0, value: 0 };
+        const cogs = c.cogs - o.cogs;
+        const row = { productId, cogs: inr(cogs), averageInventory: inr(Math.round((o.value + c.value) / 2)) };
+        // Absent net sales/margin for a product whose tax rate we do not know — never a guess (P-08).
+        if (taxUnknown.has(productId)) return row;
+        const netSales = netByProduct.get(productId) ?? 0;
+        return { ...row, netSales: inr(netSales), grossMargin: inr(netSales - cogs) };
+      });
+
+      const sum = (pick: (r: (typeof byProduct)[number]) => Money | undefined): number =>
+        byProduct.reduce((s, r) => s + (pick(r)?.minor ?? 0), 0);
+      const totalCogs = sum((r) => r.cogs);
+      const total = taxUnknown.size > 0
+        // The store-wide margin cannot be complete if any sold product's revenue is unmeasurable.
+        ? { cogs: inr(totalCogs), averageInventory: inr(sum((r) => r.averageInventory)) }
+        : {
+            cogs: inr(totalCogs),
+            averageInventory: inr(sum((r) => r.averageInventory)),
+            netSales: inr(sum((r) => ('netSales' in r ? r.netSales : undefined))),
+            grossMargin: inr(sum((r) => ('grossMargin' in r ? r.grossMargin : undefined))),
+          };
+      return { from, to, periodDays, total, byProduct };
     },
 
     appendMovement: async (tenantId, m) => {
