@@ -140,6 +140,14 @@ export const STREAM = {
   lossPrevention: 'loss-prevention',
   warehouse: 'warehouse',
   orders: 'orders',
+  /**
+   * A tenant-wide, time-windowed PROJECTION of returns, appended beside the per-sale return stream so
+   * "which returns happened in this period" can be answered without walking every bill (M08-FR-04,
+   * returns-netting). The per-sale `forSaleReturns` stream stays the book of record for the refund
+   * cap and the at-most-once register; this is a read model, exactly as `bankSale` keeps a
+   * receipt-number index beside the sale.
+   */
+  returns: 'returns',
 } as const;
 
 const payloadOf = <T>(e: PersistedEvent): T => e.event.payload as T;
@@ -435,6 +443,18 @@ export function returnsAdapter(input: {
         // The return's own id, no timestamp — a lane retrying an unconfirmed refund collapses to
         // one, so the money leaves once however many times the till re-sends it.
         idempotencyKey: `return-${tenantId}-${record.returnId}`,
+        source: 'api/pos',
+        payload: record,
+      }));
+      // A second, additive append to the tenant-wide returns projection — the same pattern `bankSale`
+      // uses for its receipt-number index. It is a READ MODEL for reporting (returns-netting), keyed
+      // on the return id so a retry collapses; if it were ever to fail after the append above, the
+      // money and the register are already safe and only a report would miss one return.
+      await input.store.append(tenantId, STREAM.returns, makeEvent({
+        id: `return-proj-${record.returnId}`,
+        type: 'ReturnRecorded',
+        occurredAt: record.processedAt,
+        idempotencyKey: `return-proj-${tenantId}-${record.returnId}`,
         source: 'api/pos',
         payload: record,
       }));
@@ -1921,7 +1941,7 @@ export function inventoryAdapter(input: {
         .map((e) => payloadOf<Movement>(e))
         .sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0));
       // Cumulative WAC cogs and stock value PER PRODUCT at a cut point (summed across locations).
-      const foldTo = (cutoff: string): Map<string, { cogs: number; value: number }> => {
+      const foldTo = (cutoff: string): Map<string, { cogs: number; value: number; onHand: number }> => {
         const rows = weightedAverageValuation(
           movements
             .filter((m) => m.occurredAt <= cutoff)
@@ -1933,11 +1953,12 @@ export function inventoryAdapter(input: {
             })),
           'INR',
         );
-        const byProduct = new Map<string, { cogs: number; value: number }>();
+        const byProduct = new Map<string, { cogs: number; value: number; onHand: number }>();
         for (const r of rows) {
-          const acc = byProduct.get(r.productId) ?? { cogs: 0, value: 0 };
+          const acc = byProduct.get(r.productId) ?? { cogs: 0, value: 0, onHand: 0 };
           acc.cogs += r.cogs.minor;
           acc.value += r.value.minor;
+          acc.onHand += r.onHandMinor;
           byProduct.set(r.productId, acc);
         }
         return byProduct;
@@ -1953,37 +1974,72 @@ export function inventoryAdapter(input: {
       const taxByProduct = new Map<string, number>(products.map((p) => [p.productId, p.taxBps]));
       const netByProduct = new Map<string, number>();
       const taxUnknown = new Set<string>();
+      const deGross = (grossMinor: number, taxBps: number): number => Number((BigInt(grossMinor) * 10_000n) / BigInt(10_000 + taxBps));
       for (const e of sales) {
         const sale = payloadOf<{ readonly lines: readonly { readonly productId: string; readonly lineTotalMinor: number }[] }>(e);
         for (const line of sale.lines) {
           const taxBps = taxByProduct.get(line.productId);
           if (taxBps === undefined) { taxUnknown.add(line.productId); continue; }
-          netByProduct.set(line.productId, (netByProduct.get(line.productId) ?? 0) + Number((BigInt(line.lineTotalMinor) * 10_000n) / BigInt(10_000 + taxBps)));
+          netByProduct.set(line.productId, (netByProduct.get(line.productId) ?? 0) + deGross(line.lineTotalMinor, taxBps));
         }
       }
 
+      // Returns-netting: read the returns projection for the window and reverse each. Net sales fall
+      // by the ex-tax refund (allocated across the return's lines by their original sale value); COGS
+      // falls only for `resell` lines (the goods come back sellable) at the closing weighted-average —
+      // a damaged/scrapped return is a real loss, so its cost stays. Returns whose product tax rate is
+      // unknown mark that product unmeasurable, exactly as an unknown-tax sale does (P-08).
+      const returns = await input.store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded', from, to });
+      const returnedNetByProduct = new Map<string, number>();
+      const returnedCogsByProduct = new Map<string, number>();
+      for (const e of returns) {
+        const ret = payloadOf<{ readonly originalSaleId: string; readonly refundMinor: number; readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly disposition: string }[] }>(e);
+        const saleEvent = await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${ret.originalSaleId}`);
+        const saleLines = saleEvent === undefined ? [] : (saleEvent.event.payload as { readonly lines: readonly { readonly productId: string; readonly unitPriceMinor: number }[] }).lines;
+        const priceByProduct = new Map(saleLines.map((l) => [l.productId, l.unitPriceMinor]));
+        const lineGross = ret.lines.map((l) => (priceByProduct.get(l.productId) ?? 0) * l.quantityMinor);
+        const totalGross = lineGross.reduce((s, g) => s + g, 0);
+        let allocated = 0;
+        ret.lines.forEach((l, i) => {
+          // Allocate the ACTUAL refund across lines by original sale value; the last line takes the
+          // rounding remainder so the parts sum exactly to what was refunded.
+          const lineRefund = totalGross <= 0 ? 0 : (i === ret.lines.length - 1 ? ret.refundMinor - allocated : Math.round((ret.refundMinor * lineGross[i]!) / totalGross));
+          allocated += lineRefund;
+          const taxBps = taxByProduct.get(l.productId);
+          if (taxBps === undefined) { taxUnknown.add(l.productId); } else {
+            returnedNetByProduct.set(l.productId, (returnedNetByProduct.get(l.productId) ?? 0) + deGross(lineRefund, taxBps));
+          }
+          if (l.disposition === 'resell') {
+            const c = closing.get(l.productId);
+            const wacUnit = c !== undefined && c.onHand > 0 ? Math.round(c.value / c.onHand) : 0;
+            returnedCogsByProduct.set(l.productId, (returnedCogsByProduct.get(l.productId) ?? 0) + l.quantityMinor * wacUnit);
+          }
+        });
+      }
+
       const inr = (minor: number) => ({ minor, currency: 'INR' as const });
-      const productIds = [...new Set<string>([...opening.keys(), ...closing.keys(), ...netByProduct.keys(), ...taxUnknown])].sort();
+      const productIds = [...new Set<string>([...opening.keys(), ...closing.keys(), ...netByProduct.keys(), ...taxUnknown, ...returnedNetByProduct.keys(), ...returnedCogsByProduct.keys()])].sort();
       const byProduct = productIds.map((productId) => {
-        const o = opening.get(productId) ?? { cogs: 0, value: 0 };
-        const c = closing.get(productId) ?? { cogs: 0, value: 0 };
-        const cogs = c.cogs - o.cogs;
-        const row = { productId, cogs: inr(cogs), averageInventory: inr(Math.round((o.value + c.value) / 2)) };
+        const o = opening.get(productId) ?? { cogs: 0, value: 0, onHand: 0 };
+        const c = closing.get(productId) ?? { cogs: 0, value: 0, onHand: 0 };
+        const cogs = (c.cogs - o.cogs) - (returnedCogsByProduct.get(productId) ?? 0);
+        const returnsExTax = returnedNetByProduct.get(productId) ?? 0;
+        const row = { productId, cogs: inr(cogs), averageInventory: inr(Math.round((o.value + c.value) / 2)), returnsMinor: inr(returnsExTax) };
         // Absent net sales/margin for a product whose tax rate we do not know — never a guess (P-08).
         if (taxUnknown.has(productId)) return row;
-        const netSales = netByProduct.get(productId) ?? 0;
+        const netSales = (netByProduct.get(productId) ?? 0) - returnsExTax;
         return { ...row, netSales: inr(netSales), grossMargin: inr(netSales - cogs) };
       });
 
       const sum = (pick: (r: (typeof byProduct)[number]) => Money | undefined): number =>
         byProduct.reduce((s, r) => s + (pick(r)?.minor ?? 0), 0);
       const totalCogs = sum((r) => r.cogs);
+      const totalBase = { cogs: inr(totalCogs), averageInventory: inr(sum((r) => r.averageInventory)), returnsMinor: inr(sum((r) => r.returnsMinor)) };
       const total = taxUnknown.size > 0
         // The store-wide margin cannot be complete if any sold product's revenue is unmeasurable.
-        ? { cogs: inr(totalCogs), averageInventory: inr(sum((r) => r.averageInventory)) }
+        ? totalBase
         : {
-            cogs: inr(totalCogs),
-            averageInventory: inr(sum((r) => r.averageInventory)),
+            ...totalBase,
             netSales: inr(sum((r) => ('netSales' in r ? r.netSales : undefined))),
             grossMargin: inr(sum((r) => ('grossMargin' in r ? r.grossMargin : undefined))),
           };
