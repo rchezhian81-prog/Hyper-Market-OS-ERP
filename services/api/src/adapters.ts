@@ -1907,6 +1907,67 @@ export function inventoryAdapter(input: {
       );
     },
 
+    /**
+     * Period inputs for stock productivity (M08-FR-04, turns/GMROI). Cross-domain by nature: COGS and
+     * average inventory come from the inventory ledger at weighted-average, net sales from the POS
+     * ledger de-grossed by the catalogue's per-product tax rate. Period COGS is the difference of the
+     * cumulative WAC COGS at the two cut points (it is monotonic), and average inventory is the
+     * two-point (opening+closing)/2. If ANY sold product has no known tax rate, net sales and gross
+     * margin are left ABSENT so the route reports GMROI as not meaningful rather than guessing (P-08).
+     */
+    performance: async (tenantId, { from, to }) => {
+      const events = await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' });
+      const movements = events
+        .map((e) => payloadOf<Movement>(e))
+        .sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0));
+      const foldTo = (cutoff: string): { cogs: number; value: number } => {
+        const rows = weightedAverageValuation(
+          movements
+            .filter((m) => m.occurredAt <= cutoff)
+            .map((m): ValuationMovement => ({
+              productId: m.productId, locationId: m.locationId,
+              effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
+              isPurchaseReceipt: m.kind === 'received',
+              ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
+            })),
+          'INR',
+        );
+        return { cogs: rows.reduce((s, r) => s + r.cogs.minor, 0), value: rows.reduce((s, r) => s + r.value.minor, 0) };
+      };
+      const opening = foldTo(from);
+      const closing = foldTo(to);
+      const periodDays = Math.max(0, Math.floor((Date.parse(to) - Date.parse(from)) / 86_400_000));
+
+      // Net (ex-tax) sales: MRP-style prices are tax-inclusive, so net = gross × 10000 / (10000 + taxBps).
+      const sales = await input.store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from, to });
+      const products = (await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished'))?.snapshot.products ?? [];
+      const taxByProduct = new Map<string, number>(products.map((p) => [p.productId, p.taxBps]));
+      let netSalesMinor = 0;
+      let taxKnown = true;
+      for (const e of sales) {
+        const sale = payloadOf<{ readonly lines: readonly { readonly productId: string; readonly lineTotalMinor: number }[] }>(e);
+        for (const line of sale.lines) {
+          const taxBps = taxByProduct.get(line.productId);
+          if (taxBps === undefined) { taxKnown = false; continue; }
+          netSalesMinor += Number((BigInt(line.lineTotalMinor) * 10_000n) / BigInt(10_000 + taxBps));
+        }
+      }
+
+      const periodCogs = closing.cogs - opening.cogs;
+      const base = {
+        from, to, periodDays,
+        cogs: { minor: periodCogs, currency: 'INR' as const },
+        averageInventory: { minor: Math.round((opening.value + closing.value) / 2), currency: 'INR' as const },
+      };
+      // A period with sales but an unknown tax rate cannot be stated net of tax — absent, not zero.
+      if (!taxKnown) return base;
+      return {
+        ...base,
+        netSales: { minor: netSalesMinor, currency: 'INR' as const },
+        grossMargin: { minor: netSalesMinor - periodCogs, currency: 'INR' as const },
+      };
+    },
+
     appendMovement: async (tenantId, m) => {
       await input.store.append(tenantId, STREAM.inventory, makeEvent({
         id: `mv-${m.movementId}`,
