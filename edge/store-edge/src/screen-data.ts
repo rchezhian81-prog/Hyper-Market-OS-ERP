@@ -43,12 +43,13 @@ import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { assessChecklist } from '../../../packages/workforce/src/index';
 import type { LpRule } from '../../../packages/loss-prevention/src/index';
 import { planDispatch, type DispatchPlan } from '../../../packages/fulfilment/src/routing';
+import { generateDeliverySlots } from '../../../packages/storefront/src/checkout';
 import { ShelfMap, type ShelfLocation } from '../../../packages/merchandising/src/index';
 import {
   basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
-import type { StorePack } from './store-pack';
+import type { StorePack, PackRoutingPolicy, PackSlot } from './store-pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
@@ -589,6 +590,16 @@ export function driverPayload(input: ScreenInput, driverId?: string): Record<str
 export function customerPayload(input: ScreenInput): Record<string, unknown> | null {
   if (!input.pack.products.known) return null;
   const policies = input.pack.policies.known ? input.pack.policies.value : undefined;
+  // Delivery serviceability rides on the routing policy — the SAME store location and radius the
+  // driver dispatch uses (§6.2, one commerce truth). Without it the app defaulted its store to
+  // {0,0}, which is 9,000 km from every real address, so it refused everyone; emitting it is what
+  // makes the 10 km out-of-area check actually distinguish a 9 km address from an 11 km one.
+  const routing = input.pack.routingPolicy.known ? input.pack.routingPolicy.value : undefined;
+  // The day's delivery slots, GENERATED from the store's delivery policy (M20-FR-03) for this
+  // trading day, or the concrete slots the pack carried, or none — never an invented slot.
+  const generated = deliverySlotsFor(routing, input.tradingDay);
+  const slots = generated !== undefined ? generated
+    : input.pack.slots.known ? input.pack.slots.value : undefined;
   return {
     ...(policies === undefined ? {} : { tenantId: policies.storeId, privacySlaDays: policies.privacySlaDays }),
     packVersion: input.pack.version,
@@ -604,9 +615,42 @@ export function customerPayload(input: ScreenInput): Record<string, unknown> | n
       availableMinor: p.availableMinor,
       ...(p.ageRestricted === undefined ? {} : { ageRestricted: p.ageRestricted }),
     })),
-    ...(input.pack.slots.known ? { slots: input.pack.slots.value } : {}),
+    ...(routing === undefined ? {} : { storeLocation: routing.storeLocation, policy: { radiusMetres: routing.radiusMetres } }),
+    ...(slots === undefined ? {} : { slots }),
     ...(input.pack.consentPurposes.known ? { consentPurposes: input.pack.consentPurposes.value } : {}),
   };
+}
+
+/**
+ * The day's bookable delivery slots from a store's delivery policy, or `undefined` when the store
+ * has no delivery-slot policy set (then the caller uses whatever concrete slots the pack carried,
+ * or none). Generation is deterministic and invents nothing — a malformed window or a count that
+ * would produce sub-millisecond slivers yields no slots, never a guess (the engine guards it).
+ */
+function deliverySlotsFor(
+  routing: PackRoutingPolicy | undefined,
+  tradingDay: string,
+): readonly PackSlot[] | undefined {
+  if (routing === undefined) return undefined;
+  const { deliverySlotsPerDay, deliveryWindowOpen, deliveryWindowClose, deliverySlotCapacity } = routing;
+  if (deliverySlotsPerDay === undefined || deliveryWindowOpen === undefined
+    || deliveryWindowClose === undefined || deliverySlotCapacity === undefined) {
+    return undefined;
+  }
+  // Local "HH:MM" on the trading day → an absolute instant: parse as UTC, then shift back by the
+  // store's offset so "09:00" at +05:30 is 03:30Z, the moment it actually is 9 am at the store.
+  const offMs = (routing.deliveryUtcOffsetMinutes ?? 0) * 60_000;
+  const startMs = Date.parse(`${tradingDay}T${deliveryWindowOpen}:00Z`) - offMs;
+  const endMs = Date.parse(`${tradingDay}T${deliveryWindowClose}:00Z`) - offMs;
+  // A malformed window (unparseable "HH:MM" or day) → no slots, never a thrown Invalid Date.
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return undefined;
+  const generated = generateDeliverySlots({
+    windowStartIso: new Date(startMs).toISOString(),
+    windowEndIso: new Date(endMs).toISOString(),
+    slotsPerDay: deliverySlotsPerDay,
+    capacityPerSlot: deliverySlotCapacity,
+  });
+  return generated.length > 0 ? generated : undefined;
 }
 
 /**
