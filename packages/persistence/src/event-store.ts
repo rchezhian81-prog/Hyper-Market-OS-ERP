@@ -43,10 +43,29 @@ export interface AppendResult {
   readonly deduped: boolean;
 }
 
+/** One event bound for a stream — the unit of an atomic multi-event append. */
+export interface BatchEntry {
+  readonly stream: string;
+  readonly event: DomainEvent;
+}
+
 /** The durable, append-only, tenant-scoped event store. */
 export interface EventStore {
   /** Append an event to a tenant's logical stream; idempotent on its idempotency key. */
   append(tenantId: string, stream: string, event: DomainEvent): Promise<AppendResult>;
+  /**
+   * Append several events for one tenant **atomically** — all of them commit, or none do. This is
+   * the boundary a money-critical command draws around its events (audit FND-01 / GAP-DATA-01): a
+   * sale writes both its `SaleCommitted` and its receipt-number index, and a crash between the two
+   * must not leave a sale with no receipt or a receipt with no sale. Each entry keeps its own
+   * idempotency key, so a whole-batch retry dedups every event independently and the result array
+   * lines up one-to-one with `entries`, in order.
+   *
+   * Atomicity comes from the SQL store running the batch inside one transaction; a store or client
+   * that cannot (an embedded engine, a fake) writes sequentially, which is still idempotent but no
+   * longer crash-atomic — the SQL adapter is the one that guarantees the boundary.
+   */
+  appendBatch(tenantId: string, entries: readonly BatchEntry[]): Promise<readonly AppendResult[]>;
   /** Find an event by its idempotency key within a tenant (dedupe lookup). */
   findByIdempotencyKey(tenantId: string, idempotencyKey: string): Promise<PersistedEvent | undefined>;
   /**
@@ -104,18 +123,41 @@ export class InMemoryEventStore implements EventStore {
   private seq = 0;
 
   append(tenantId: string, stream: string, event: DomainEvent): Promise<AppendResult> {
-    const existing = this.byKey.get(tenantKey(tenantId, event.idempotencyKey));
-    if (existing) {
-      return Promise.resolve({ record: existing, deduped: true });
+    return this.appendBatch(tenantId, [{ stream, event }]).then((r) => r[0]!);
+  }
+
+  appendBatch(tenantId: string, entries: readonly BatchEntry[]): Promise<readonly AppendResult[]> {
+    // All-or-nothing without a database: STAGE every entry (resolving dedups against both the
+    // committed store and earlier entries in this same batch), then apply the staged records in one
+    // mutation pass. Single-threaded JS has no await points here, so the batch is atomic by
+    // construction — the crash-in-the-middle a partial batch would represent cannot occur.
+    const results: AppendResult[] = [];
+    const staged: PersistedEvent[] = [];
+    const stagedByKey = new Map<string, PersistedEvent>();
+    let nextSeq = this.seq;
+    for (const { stream, event } of entries) {
+      const key = tenantKey(tenantId, event.idempotencyKey);
+      const existing = this.byKey.get(key) ?? stagedByKey.get(key);
+      if (existing) {
+        results.push({ record: existing, deduped: true });
+        continue;
+      }
+      nextSeq += 1;
+      const record: PersistedEvent = Object.freeze({ seq: nextSeq, tenantId, stream, event });
+      staged.push(record);
+      stagedByKey.set(key, record);
+      results.push({ record, deduped: false });
     }
-    this.seq += 1;
-    const record: PersistedEvent = Object.freeze({ seq: this.seq, tenantId, stream, event });
-    this.records.push(record);
-    this.byKey.set(tenantKey(tenantId, event.idempotencyKey), record);
-    const key = tenantKey(tenantId, stream);
-    const inStream = this.byStream.get(key);
-    if (inStream === undefined) this.byStream.set(key, [record]); else inStream.push(record);
-    return Promise.resolve({ record, deduped: false });
+    // Commit — one pass, no interleaving, so either every staged record lands or (on no staging) none.
+    for (const record of staged) {
+      this.records.push(record);
+      this.byKey.set(tenantKey(record.tenantId, record.event.idempotencyKey), record);
+      const skey = tenantKey(record.tenantId, record.stream);
+      const inStream = this.byStream.get(skey);
+      if (inStream === undefined) this.byStream.set(skey, [record]); else inStream.push(record);
+    }
+    this.seq = nextSeq;
+    return Promise.resolve(results);
   }
 
   findByIdempotencyKey(tenantId: string, idempotencyKey: string): Promise<PersistedEvent | undefined> {
@@ -200,32 +242,64 @@ export class SqlEventStore implements EventStore {
   constructor(private readonly client: SqlClient) {}
 
   async append(tenantId: string, stream: string, event: DomainEvent): Promise<AppendResult> {
-    const inserted = await this.client.query(
-      `INSERT INTO event_ledger (id, tenant_id, stream, type, occurred_at, idempotency_key, source, version, payload)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
-       RETURNING ${COLUMNS}`,
-      [
-        event.id,
-        tenantId,
-        stream,
-        event.type,
-        event.occurredAt,
-        event.idempotencyKey,
-        event.source,
-        event.version,
-        JSON.stringify(event.payload),
-      ],
-    );
-    if (inserted.length > 0) {
-      return { record: rowToPersisted(inserted[0]!), deduped: false };
+    return (await this.appendBatch(tenantId, [{ stream, event }]))[0]!;
+  }
+
+  appendBatch(tenantId: string, entries: readonly BatchEntry[]): Promise<readonly AppendResult[]> {
+    // A batch of two or more runs in ONE transaction when the client offers one, so a crash between
+    // two events of a command leaves the ledger with all of them or none (FND-01). A single event is
+    // already atomic on its own — a lone INSERT needs no transaction, so the common single-append
+    // path pays no BEGIN/COMMIT overhead. A client without a transaction primitive (an embedded
+    // engine, a fake) falls back to sequential appends: still idempotent, but the atomicity of a
+    // multi-event batch then rests on the SQL adapter, as the contract says.
+    const run = (client: SqlClient): Promise<AppendResult[]> => this.appendAllWith(client, tenantId, entries);
+    return entries.length > 1 && this.client.transaction
+      ? this.client.transaction(run)
+      : run(this.client);
+  }
+
+  /**
+   * Append every entry through one client, in order. The read-back after a conflict uses the SAME
+   * `client` — inside a transaction that is the transactional connection, so it sees this batch's
+   * own uncommitted inserts; using `this.client` (a different pool connection) would not.
+   */
+  private async appendAllWith(
+    client: SqlClient, tenantId: string, entries: readonly BatchEntry[],
+  ): Promise<AppendResult[]> {
+    const results: AppendResult[] = [];
+    for (const { stream, event } of entries) {
+      const inserted = await client.query(
+        `INSERT INTO event_ledger (id, tenant_id, stream, type, occurred_at, idempotency_key, source, version, payload)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
+         RETURNING ${COLUMNS}`,
+        [
+          event.id,
+          tenantId,
+          stream,
+          event.type,
+          event.occurredAt,
+          event.idempotencyKey,
+          event.source,
+          event.version,
+          JSON.stringify(event.payload),
+        ],
+      );
+      if (inserted.length > 0) {
+        results.push({ record: rowToPersisted(inserted[0]!), deduped: false });
+        continue;
+      }
+      // A conflicting row already exists — read it back on this same client and dedup.
+      const existing = await client.query(
+        `SELECT ${COLUMNS} FROM event_ledger WHERE tenant_id = $1 AND idempotency_key = $2`,
+        [tenantId, event.idempotencyKey],
+      );
+      if (existing.length === 0) {
+        throw new Error(`Append for "${event.idempotencyKey}" conflicted but no row was found.`);
+      }
+      results.push({ record: rowToPersisted(existing[0]!), deduped: true });
     }
-    // A conflicting row already exists — return it (deduped).
-    const existing = await this.findByIdempotencyKey(tenantId, event.idempotencyKey);
-    if (existing === undefined) {
-      throw new Error(`Append for "${event.idempotencyKey}" conflicted but no row was found.`);
-    }
-    return { record: existing, deduped: true };
+    return results;
   }
 
   async findByIdempotencyKey(
