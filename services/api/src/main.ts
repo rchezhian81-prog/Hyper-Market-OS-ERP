@@ -18,7 +18,7 @@
 //      means take me out of rotation, not restart me.
 //   5. **On SIGTERM, drain.** In-flight requests finish before the process goes.
 
-import { Client } from 'pg';
+import { Pool } from 'pg';
 import { SqlEventStore } from '../../../packages/persistence/src/event-store';
 import { SqlConfigVersionStore } from '../../../packages/persistence/src/config-store';
 import { SqlNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
@@ -320,8 +320,17 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
   const settings = config.value!;
 
   // 2 — Persistence, before the surface, because the surface is built around it.
-  const db = new Client({ connectionString: settings['DATABASE_URL']! });
-  await db.connect();
+  //
+  // A connection POOL, not a single client. A single `pg.Client` serialised every query across all
+  // thirteen APIs over one TCP connection, and a dropped connection disabled all persistence — a
+  // throughput ceiling and a single point of failure (audit GAP-DATA-09). The `pgClient` adapter was
+  // written for a `Pool` from the start (see its header); this is the wire it was waiting for. `max`
+  // bounds concurrent connections for a single-store deployment; the pool reconnects a dropped member
+  // transparently, so a brief DB blip no longer takes the process down with it.
+  const db = new Pool({ connectionString: settings['DATABASE_URL']!, max: 10 });
+  // Fail fast at boot if the database is unreachable — the same eager check the single client made,
+  // now issued through the pool (which connects lazily otherwise).
+  await db.query('SELECT 1');
   const store = new SqlEventStore(pgClient(db));
 
   // 2b — Genesis owner (optional bootstrap). Because granting a role itself needs a role

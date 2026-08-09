@@ -55,7 +55,7 @@ This gap between "97% built" and "25% wired / 0% verified" is the entire story o
 | GAP-DATA-04 | Money stored as JSON number in jsonb payload (JS safe-int bound) | Medium | `0001:29`, `backup.mjs:82` |
 | GAP-DATA-05 | No snapshots — full-fold reads unbounded as volume grows | Medium | `event-store.ts` (no snapshot method) |
 | GAP-DATA-06 | Erasure/anonymization against append-only store structurally unaddressed | High (DPDP) | `data-rights.ts:31` |
-| GAP-DATA-09 | Production shares one `pg.Client` (not a pool) across all stores — SPOF + bottleneck | High | `services/api/src/main.ts:323` |
+| GAP-DATA-09 | ~~Production shares one `pg.Client` (not a pool) across all stores — SPOF + bottleneck~~ **RESOLVED (STAB-01)** — now a `pg.Pool(max:10)`, verified booting against real PostgreSQL | ~~High~~ Closed | `services/api/src/main.ts` |
 | GAP-SEC-02 | DSR access/export/erasure not on the API surface | High (DPDP) | no route/permission; `data-rights.ts` |
 | GAP-SEC-03 | Audit hash-chain non-crypto (FNV-1a) & not wired to `audit_log`; SHA-256 injection unverified | High | `audit-trail.ts:105-124` |
 | GAP-SEC-04 | No rate limiting / DoS control / auth-attempt lockout | High | `services/kernel` (only AI-budget 429) |
