@@ -40,12 +40,19 @@ const perf = (h: ApiHarness, tenantId: string, userId: string, query?: Record<st
   h.request({ method: 'GET', path: '/v1/inventory/performance', userId, tenantId, ...(query === undefined ? {} : { query }) });
 
 // A committed sale, seeded directly on the sales ledger the way the POS bank-sale path writes it.
-const seedSale = (h: ApiHarness, tenantId: string, saleId: string, occurredAt: string, lines: { productId: string; quantityMinor: number; lineTotalMinor: number }[]) =>
-  h.store.append(tenantId, STREAM.sales, makeEvent({
+const seedSale = (h: ApiHarness, tenantId: string, saleId: string, occurredAt: string, lines: { productId: string; quantityMinor: number; lineTotalMinor: number }[]) => {
+  const totalMinor = lines.reduce((s, l) => s + l.lineTotalMinor, 0);
+  return h.store.append(tenantId, STREAM.sales, makeEvent({
     id: `sale-${saleId}`, type: 'SaleCommitted', occurredAt,
     idempotencyKey: `sale-${tenantId}-${saleId}`, source: 'test/pos',
-    payload: { saleId, committedAt: occurredAt, totalMinor: lines.reduce((s, l) => s + l.lineTotalMinor, 0), currency: 'INR', lines: lines.map((l) => ({ ...l, uom: 'each', unitPriceMinor: Math.round(l.lineTotalMinor / l.quantityMinor) })) },
+    payload: {
+      saleId, receiptNumber: saleId, laneId: 'L1', cashierId: 'u-owner', tradingDay: occurredAt.slice(0, 10),
+      committedAt: occurredAt, totalMinor, currency: 'INR', packVersion: 1,
+      lines: lines.map((l) => ({ ...l, uom: 'each', unitPriceMinor: Math.round(l.lineTotalMinor / l.quantityMinor) })),
+      tenders: [{ kind: 'cash', amountMinor: totalMinor }],
+    },
   }));
+};
 
 // A published catalogue carrying each product's tax rate (basis points) — what de-grosses revenue.
 const seedCatalogue = (h: ApiHarness, tenantId: string, products: { productId: string; taxBps: number }[]) =>
@@ -54,6 +61,16 @@ const seedCatalogue = (h: ApiHarness, tenantId: string, products: { productId: s
     idempotencyKey: `catalogue-${tenantId}-v1`, source: 'test/catalogue',
     payload: { snapshot: { tenantId, version: 1, builtAt: FROM, products, barcodes: [] } },
   }));
+
+// Record a return against a banked sale, through the real API (which appends the returns projection).
+const recordReturn = (h: ApiHarness, tenantId: string, saleId: string, ret: Record<string, unknown>) =>
+  h.request({ method: 'POST', path: `/v1/sales/${saleId}/returns`, userId: 'u-owner', tenantId, idempotencyKey: `ret-${ret['returnId']}`, body: ret });
+
+const returnOf = (returnId: string, refundMinor: number, lines: { productId: string; quantityMinor: number; disposition: string }[]) => ({
+  returnId, number: returnId, processedBy: 'u-owner', reasonCode: 'changed_mind',
+  refundMinor, refundTender: 'cash', approvalThresholdMinor: 1_000_000, processedAt: '2026-06-15T10:00:00.000Z',
+  lines: lines.map((l) => ({ ...l, uom: 'each' })),
+});
 
 describe('stock productivity — turns and GMROI over a period (M08-FR-04, API-04)', () => {
   it('computes turns and days-of-cover from inventory, and GMROI is not meaningful without a tax rate', async () => {
@@ -128,6 +145,44 @@ describe('stock productivity — turns and GMROI over a period (M08-FR-04, API-0
     expect(body.netSales).toEqual({ minor: 75000, currency: 'INR' });
     expect(body.grossMargin).toEqual({ minor: 15000, currency: 'INR' });
     expect(body.gmroi).toMatchObject({ kind: 'ratio', bp: 2143 });
+  });
+
+  it('nets a RESELL return out of sales AND cost — the goods come back sellable', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await move(h, A, { movementId: 'r1', productId: 'P1', kind: 'received', quantityMinor: 100, unitCostMinor: 1000, occurredAt: '2026-03-01T10:00:00.000Z', ...base });
+    await move(h, A, { movementId: 's1', productId: 'P1', kind: 'sold', quantityMinor: 40, occurredAt: '2026-06-01T10:00:00.000Z', ...base });
+    await seedSale(h, A, 'SALE-1', '2026-06-01T10:00:00.000Z', [{ productId: 'P1', quantityMinor: 40, lineTotalMinor: 59000 }]);
+    await seedCatalogue(h, A, [{ productId: 'P1', taxBps: 1800 }]);
+    // 10 of the 40 come back, resold: refund ₹147.50 (10 × ₹14.75), i.e. ₹125.00 net of 18% GST.
+    expect((await recordReturn(h, A, 'SALE-1', returnOf('RET-1', 14750, [{ productId: 'P1', quantityMinor: 10, disposition: 'resell' }]))).status).toBe(201);
+
+    const body = (await perf(h, A, 'u-owner', { from: FROM, to: TO })).body as PerfBody & { returns: { minor: number } | null };
+    // Net sales 50,000 − 12,500 returned = 37,500. COGS 40,000 − (10 × ₹10 WAC) 10,000 = 30,000.
+    expect(body.netSales).toEqual({ minor: 37500, currency: 'INR' });
+    expect(body.returns).toEqual({ minor: 12500, currency: 'INR' });
+    expect(body.cogs.minor).toBe(30000);
+    expect(body.grossMargin).toEqual({ minor: 7500, currency: 'INR' });
+    // GMROI = 7,500 / 30,000 = 0.25×.
+    expect(body.gmroi).toMatchObject({ kind: 'ratio', bp: 2500 });
+    expect(body.byProduct[0]).toMatchObject({ productId: 'P1', returns: { minor: 12500 }, grossMargin: { minor: 7500 } });
+  });
+
+  it('nets a DAMAGED return out of sales but NOT cost — the goods are a loss, not stock', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await move(h, A, { movementId: 'r1', productId: 'P1', kind: 'received', quantityMinor: 100, unitCostMinor: 1000, occurredAt: '2026-03-01T10:00:00.000Z', ...base });
+    await move(h, A, { movementId: 's1', productId: 'P1', kind: 'sold', quantityMinor: 40, occurredAt: '2026-06-01T10:00:00.000Z', ...base });
+    await seedSale(h, A, 'SALE-1', '2026-06-01T10:00:00.000Z', [{ productId: 'P1', quantityMinor: 40, lineTotalMinor: 59000 }]);
+    await seedCatalogue(h, A, [{ productId: 'P1', taxBps: 1800 }]);
+    // Same refund, but the goods come back DAMAGED — their cost stays in COGS.
+    await recordReturn(h, A, 'SALE-1', returnOf('RET-1', 14750, [{ productId: 'P1', quantityMinor: 10, disposition: 'damaged' }]));
+
+    const body = (await perf(h, A, 'u-owner', { from: FROM, to: TO })).body as PerfBody;
+    expect(body.netSales).toEqual({ minor: 37500, currency: 'INR' }); // sales still fall
+    expect(body.cogs.minor).toBe(40000); // cost does NOT — the 10 units are written off, not restocked
+    // Margin 37,500 − 40,000 = −2,500: refunding damaged goods lost money on those units.
+    expect(body.grossMargin).toEqual({ minor: -2500, currency: 'INR' });
   });
 
   it('is per-tenant and authorized: a cashier cannot read it (403), and an empty tenant is honest not zero', async () => {

@@ -202,10 +202,12 @@ export interface StockPerformanceRow {
   readonly cogs: Money;
   /** Average stock value held over the period, at cost — the two-point (opening+closing)/2. */
   readonly averageInventory: Money;
-  /** Net (ex-tax) sales in the period; absent when a sold product has no known tax rate. */
+  /** Net (ex-tax) sales in the period, AFTER deducting returns; absent when a tax rate is unknown. */
   readonly netSales?: Money;
-  /** Net sales minus COGS; absent whenever `netSales` is. */
+  /** Net sales minus COGS (COGS itself net of resell returns); absent whenever `netSales` is. */
   readonly grossMargin?: Money;
+  /** The ex-tax value of customer returns deducted from `netSales` in the period. */
+  readonly returnsMinor?: Money;
 }
 
 /** Period inputs for turns/GMROI, computed cross-domain (inventory COGS + POS revenue). */
@@ -326,6 +328,7 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
             averageInventory: row.averageInventory,
             netSales: row.netSales ?? null,
             grossMargin: row.grossMargin ?? null,
+            returns: row.returnsMinor ?? null,
             turns: turns.turns,
             annualisedTurns: turns.annualisedTurns,
             daysOfCover: turns.daysOfCover,
@@ -340,7 +343,7 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
             ...figuresOf(inp.total),
             byProduct: inp.byProduct.map((p) => ({ productId: p.productId, ...figuresOf(p) })),
             method: 'weighted_average',
-            revenueBasis: 'net_of_tax; gross_of_returns',
+            revenueBasis: 'net_of_tax; net_of_returns (resell cost reversed)',
             asAt,
           },
         };
