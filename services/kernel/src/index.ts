@@ -41,3 +41,4 @@ export {
 } from './http-server';
 export * from './idempotency-store';
 export * from './audit-sink';
+export * from './audit-chain';

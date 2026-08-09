@@ -420,8 +420,10 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
 
     // The audit trail. Optional in the kernel's type and NOT optional in a deployment: the port
     // existed, nothing supplied it, and `writeAudit` returned immediately on every request — so
-    // hard rule #6 was protecting evidence that was never being kept.
-    audit: new SqlAuditSink(pgClient(db), (detail) => { process.stderr.write(`${detail}\n`); }),
+    // hard rule #6 was protecting evidence that was never being kept. The TRANSACTIONAL adapter
+    // (`pgPoolClient`, audit FND-01) lets each write seal itself onto the previous one under a
+    // per-tenant lock, so the SHA-256 chain (audit FND-02) cannot fork.
+    audit: new SqlAuditSink(pgPoolClient(db), (detail) => { process.stderr.write(`${detail}\n`); }),
     newTraceId: () => `t-${Math.random().toString(36).slice(2, 10)}`,
     port: Number(settings['PORT']),
     dependenciesReachable: reachable,
