@@ -20,6 +20,8 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { ProductValuation } from '../../../packages/stock/src/valuation';
+import type { AgeingSource } from '../../../packages/stock/src/ageing-source';
+import { stockAgeing } from '../../../packages/stock/src/metrics';
 
 export type MovementKind =
   | 'received' | 'sold' | 'returned' | 'transferred_in' | 'transferred_out'
@@ -174,6 +176,13 @@ export interface InventoryDeps {
    * cost of goods sold and any unvalued (uncosted) quantity.
    */
   readonly valuation: (tenantId: string, productId?: string) => Promise<readonly ProductValuation[]> | readonly ProductValuation[];
+  /**
+   * Current remaining stock as receipt-dated lots valued at weighted-average cost (M08-FR-04) —
+   * the "from where" for the ageing report. Folded from the same movement ledger as on-hand and
+   * valuation, so the three reconcile. The route buckets these by age; `unvaluedMinor` carries any
+   * uncosted on-hand so it is stated, never priced at a guess (P-08).
+   */
+  readonly ageing: (tenantId: string, productId?: string) => Promise<AgeingSource> | AgeingSource;
   readonly now: () => string;
 }
 
@@ -239,6 +248,23 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
             method: 'weighted_average',
             asAt: deps.now(),
           },
+        };
+      },
+    },
+    {
+      // Stock aged by how long the money has been asleep (M08-FR-04). The remaining stock is folded
+      // from the movement ledger and valued at weighted-average cost, then bucketed by receipt age —
+      // so the ageing total reconciles to the valuation's stock value. `unvalued` is uncosted on-hand,
+      // stated separately rather than priced at a guess (P-08).
+      api: 'API-04', method: 'GET', path: '/v1/inventory/ageing',
+      permission: 'inventory.availability.read',
+      handler: async (ctx) => {
+        const { lots, unvaluedMinor } = await deps.ageing(ctx.tenantId, ctx.query['productId']);
+        const asAt = deps.now();
+        const report = stockAgeing(lots, asAt.slice(0, 10), 'INR');
+        return {
+          status: 200,
+          body: { ...report, unvaluedMinor, method: 'weighted_average', asAt },
         };
       },
     },

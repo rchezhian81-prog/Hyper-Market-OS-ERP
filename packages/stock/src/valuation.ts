@@ -67,7 +67,7 @@ interface Acc {
 }
 
 /** value × qty ÷ divisor, rounded half-up on the last minor unit — integer, so nothing drifts. */
-function share(valueMinor: number, qty: number, divisor: number): number {
+export function share(valueMinor: number, qty: number, divisor: number): number {
   if (divisor <= 0) return 0;
   const n = BigInt(valueMinor) * BigInt(qty);
   const d = BigInt(divisor);

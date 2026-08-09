@@ -160,7 +160,8 @@ export function buildSurface(deps: {
       recordPartner: () => {}, recordSubmission: () => {}, recordStatementLine: () => {}, recordOpening: () => {}, now,
     } : supplierPortalAdapter({ store, now })),
     ...inventoryRoutes(store === undefined ? {
-      availability: empty([]), appendMovement: () => {}, isKnown: empty(false), valuation: empty([]), now,
+      availability: empty([]), appendMovement: () => {}, isKnown: empty(false), valuation: empty([]),
+      ageing: empty({ lots: [], unvaluedMinor: 0 }), now,
     } : inventoryAdapter({ store, now })),
     ...warehouseRoutes(store === undefined ? {
       bins: empty([]), contents: empty({}), appliedCommandIds: empty([]), recordBin: () => {}, recordMovement: () => {}, now,
