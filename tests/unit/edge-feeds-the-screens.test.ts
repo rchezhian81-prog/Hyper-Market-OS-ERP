@@ -7,12 +7,15 @@ import {
 } from '../../edge/store-edge/src/store-pack';
 import {
   payloadFor, managerPayload, ownerPayload, posPayload, customerPayload,
-  pickerPayload, driverPayload, reportingPayload, merchandisingPayload,
+  pickerPayload, driverPayload, reportingPayload, merchandisingPayload, catalogueFreshness,
   GLOBAL_FOR, SCREENS, type ScreenInput,
 } from '../../edge/store-edge/src/screen-data';
 import { embed, injectPayload, routeOf, safeFile, DATA_MARKER, APP_SHELL } from '../../edge/store-edge/src/screen-server';
 import { SyncOutbox } from '../../packages/sync/src/index';
 import { makeEvent } from '../../packages/contracts/src/event';
+import { hmacSigner } from '../../services/catalogue/src/index';
+import { publishPack, type SignedPack } from '../../services/catalogue/src/pack';
+import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 
 /**
  * **The store box feeding the six screens.**
@@ -252,6 +255,57 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
 const input = (over: Partial<ScreenInput> = {}): ScreenInput => ({
   pack: fullPack(), sales: [sale()], unreadableRecords: 0,
   outbox: new SyncOutbox(), now: NOW, tradingDay: DAY, ...over,
+});
+
+// A genuinely signed catalogue pack (real signature), for the pack-age badge tests below.
+const FRESH_KEY = ['edge', 'screens', 'freshness', 'key'].join('-').padEnd(48, '0');
+function signedCatalogue(version: number, builtAt: string): SignedPack {
+  const snapshot: CatalogueSnapshot = {
+    tenantId: 't-sre', version, builtAt,
+    products: [{ productId: 'P1', sku: 'GHEE-1L', name: 'Ghee 1L', baseUom: 'each', unitPriceMinor: 64_000, taxBps: 500, mrpMinor: 70_000, status: 'active' }],
+    barcodes: [{ code: '8901234567890', productId: 'P1', kind: 'standard' }],
+  };
+  const result = publishPack({ snapshot, approvals: [], signer: hmacSigner(FRESH_KEY), publishedBy: 'u-manager', publishedAt: builtAt });
+  if (!result.ok || result.pack === undefined) throw new Error(result.detail);
+  return result.pack;
+}
+
+describe('the pack-age badge is on every screen (SYNC-01, P-08)', () => {
+  it('says NOT KNOWN when the box has pulled no catalogue yet — never a misleading "0 hours old"', () => {
+    expect(catalogueFreshness(input())).toEqual({ known: false });
+  });
+
+  it('reports the catalogue version and its age from the cloud builtAt, not the box clock', () => {
+    // NOW is 2026-08-05T14:00Z; the pack was built five hours earlier.
+    const fresh = catalogueFreshness(input({ cataloguePack: signedCatalogue(7, '2026-08-05T09:00:00.000Z') }));
+    expect(fresh).toMatchObject({ known: true, version: 7, ageHours: 5 });
+    expect(String(fresh['visibleToStaff'])).toContain('v7');
+  });
+
+  it('counts a stale catalogue in days once it is over a day old', () => {
+    const fresh = catalogueFreshness(input({ cataloguePack: signedCatalogue(6, '2026-08-03T14:00:00.000Z') }));
+    expect(fresh).toMatchObject({ known: true, ageHours: 48 });
+    expect(String(fresh['visibleToStaff'])).toMatch(/day\(s\)/);
+  });
+
+  it('is injected as its own global on every screen, alongside (or instead of) the screen payload', () => {
+    const held = input({ cataloguePack: signedCatalogue(7, '2026-08-05T09:00:00.000Z') });
+    for (const screen of SCREENS) {
+      const shell = `<html><head>${DATA_MARKER}</head></html>`;
+      const html = injectPayload(shell, GLOBAL_FOR[screen], payloadFor(screen, held), { catalogueFreshness: catalogueFreshness(held) });
+      expect(html, screen).toContain('window.catalogueFreshness =');
+      expect(html, screen).toContain('"version":7');
+    }
+  });
+
+  it('still shows the badge on a screen whose own payload is null (told nothing else)', () => {
+    // posPayload is null when the box holds no products; the badge must still ride.
+    const noProducts = input({ pack: fullPack({ products: notKnown('no catalogue') }), cataloguePack: signedCatalogue(7, '2026-08-05T09:00:00.000Z') });
+    expect(posPayload(noProducts)).toBeNull();
+    const html = injectPayload(`${DATA_MARKER}`, GLOBAL_FOR['pos'], posPayload(noProducts), { catalogueFreshness: catalogueFreshness(noProducts) });
+    expect(html).toContain('window.catalogueFreshness =');
+    expect(html).not.toContain(`window.${GLOBAL_FOR['pos']} =`); // no screen payload, but the badge is there
+  });
 });
 
 describe('a pack that never arrived is not an empty pack', () => {

@@ -232,6 +232,10 @@ export async function startEdge(
     // a page request would put a file read on the path a manager waits on, and the day moves by
     // seconds rather than milliseconds.
     void reread();
+    // The signed catalogue pack this box is trading on — the source of the pack-age badge every
+    // screen shows (SYNC-01). Absent until the first pull (or restore) lands, which the badge states
+    // honestly rather than hiding.
+    const heldCatalogue = node.pack();
     return {
       pack,
       sales: recordsNow.sales,
@@ -239,6 +243,7 @@ export async function startEdge(
       outbox,
       now,
       tradingDay: tradingDate(now.slice(0, 16), packCutoff(pack)),
+      ...(heldCatalogue === undefined ? {} : { cataloguePack: heldCatalogue }),
     };
   };
 

@@ -28,7 +28,7 @@
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
-import { GLOBAL_FOR, SCREENS, payloadFor, type ScreenInput, type ScreenName } from './screen-data';
+import { GLOBAL_FOR, SCREENS, payloadFor, catalogueFreshness, type ScreenInput, type ScreenName } from './screen-data';
 
 /** The one address this may listen on. Named so a test can assert on it. */
 export const SCREEN_HOST = '127.0.0.1';
@@ -95,10 +95,24 @@ export function embed(payload: unknown): string {
   return JSON.stringify(payload).replace(/</g, '\\u003c');
 }
 
-/** Put a screen's payload into its shell at the marked point. */
-export function injectPayload(html: string, global: string, payload: unknown): string {
-  if (payload === null) return html; // nothing to say; the shell already handles being told nothing
-  return html.replace(DATA_MARKER, `<script>window.${global} = ${embed(payload)};</script>`);
+/**
+ * Put a screen's payload into its shell at the marked point.
+ *
+ * `extra` globals ride the same script and are injected on EVERY screen, even one whose own payload
+ * is `null` — the pack-age badge (SYNC-01) belongs on a screen that has nothing else to show just as
+ * much as on one that does. When there is nothing at all to inject, the marker is left untouched and
+ * the shell handles being told nothing.
+ */
+export function injectPayload(
+  html: string, global: string, payload: unknown, extra: Readonly<Record<string, unknown>> = {},
+): string {
+  // Each global in its OWN <script> tag, so a reader (a shell, or a test) can pull one out without
+  // the others in the way — the same one-tag shape the screen global has always had.
+  const tags: string[] = [];
+  if (payload !== null) tags.push(`<script>window.${global} = ${embed(payload)};</script>`);
+  for (const [name, value] of Object.entries(extra)) tags.push(`<script>window.${name} = ${embed(value)};</script>`);
+  if (tags.length === 0) return html; // nothing to say; the shell already handles being told nothing
+  return html.replace(DATA_MARKER, tags.join(''));
 }
 
 const send = (res: ServerResponse, status: number, type: string, body: string | Buffer): void => {
@@ -225,9 +239,14 @@ export function startScreenServer(input: {
       }
 
       // The payload is built PER REQUEST. A screen reloaded at four o'clock must show four
-      // o'clock's exceptions, not the ones this process saw when it started.
-      const payload = payloadFor(route.screen, input.snapshot());
-      send(res, 200, type, injectPayload(body.toString('utf8'), GLOBAL_FOR[route.screen], payload));
+      // o'clock's exceptions, not the ones this process saw when it started. The pack-age badge
+      // (SYNC-01) rides alongside it on every screen, from the same one snapshot.
+      const snap = input.snapshot();
+      const payload = payloadFor(route.screen, snap);
+      send(res, 200, type, injectPayload(
+        body.toString('utf8'), GLOBAL_FOR[route.screen], payload,
+        { catalogueFreshness: catalogueFreshness(snap) },
+      ));
     })();
   });
 

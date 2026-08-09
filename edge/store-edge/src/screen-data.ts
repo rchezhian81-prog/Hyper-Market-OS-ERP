@@ -50,6 +50,7 @@ import {
   type LoggedSale,
 } from './read-model';
 import type { StorePack, PackRoutingPolicy, PackSlot } from './store-pack';
+import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
@@ -67,6 +68,35 @@ export interface ScreenInput {
   readonly outbox: SyncOutbox;
   readonly now: string;
   readonly tradingDay: string;
+  /**
+   * The signed catalogue pack this box last pulled from the cloud (SYNC-01), or absent if it holds
+   * none yet. It drives the pack-age badge every screen shows — how far behind the cloud this shop's
+   * prices/recalls have fallen — computed from the pack's own `builtAt`, not the box's boot clock.
+   */
+  readonly cataloguePack?: SignedPack;
+}
+
+/**
+ * How fresh the catalogue this box last pulled is — surfaced on EVERY screen (SYNC-01, P-08).
+ *
+ * The honest state matters: a box that has never pulled a pack says `known: false` (its catalogue
+ * age is genuinely unknown), not "0 hours old", which would read as fresh. When it holds one, the
+ * age is measured from the pack's own cloud `builtAt` via the same `packFreshness` the cloud serves,
+ * so "3 hours old" means three hours behind the cloud — never "three hours since this box rebooted".
+ */
+export function catalogueFreshness(input: ScreenInput): Record<string, unknown> {
+  const pack = input.cataloguePack;
+  if (pack === undefined) {
+    return { known: false };
+  }
+  const freshness = packFreshness(pack, input.now);
+  return {
+    known: true,
+    version: pack.snapshot.version,
+    builtAt: pack.snapshot.builtAt,
+    ageHours: freshness.ageHours,
+    visibleToStaff: freshness.visibleToStaff,
+  };
 }
 
 /**
