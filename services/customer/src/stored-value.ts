@@ -171,8 +171,13 @@ export function storedValueRoutes(deps: StoredValueDeps): readonly Route[] {
       // once every channel's movements arrived — spent in the store AND in the app while the two were
       // out of sync. BOTH redemptions are kept and both channels named; nothing is silently reversed,
       // because two people really did receive goods and the shop, not a last-write-wins, decides.
+      //
+      // This is a LOSS surface, not a customer-service one: it names money the shop gave away twice.
+      // So it is gated one rung above the pooled balance — `lp.case.read` (owner / manager / the
+      // accountant), NOT the cashier's `loyalty.value.read`. Least privilege (P-04): a cashier
+      // checking a customer's balance at the till has no business pulling the shop's fraud report.
       api: 'API-06', method: 'GET', path: '/v1/stored-value/households/:ownerRef/double-spends',
-      permission: 'loyalty.value.read',
+      permission: 'lp.case.read',
       handler: async (ctx) => {
         const ownerRef = ctx.params['ownerRef'] ?? '';
         const instruments = await deps.instrumentsForOwner(ctx.tenantId, ownerRef);
