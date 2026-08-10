@@ -262,7 +262,7 @@ export function buildSurface(deps: {
       markClosed: () => {}, now,
     } : financeAdapter({ store, now })),
     ...creditNoteRoutes(store === undefined ? {
-      alreadyCredited: empty(0), appendCreditNote: () => {}, now,
+      alreadyCredited: empty(0), appendCreditNote: () => {}, notes: empty([]), now,
     } : financeNotesAdapter({ store, now, ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }) })),
     ...settlementRoutes(store === undefined ? {
       importedBatchIds: empty([]), recordBatch: () => {}, credits: empty([]),

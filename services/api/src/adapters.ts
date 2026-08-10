@@ -2432,6 +2432,12 @@ export function financeNotesAdapter(input: {
       return state[invoiceId] ?? 0;
     },
 
+    // Every credit/debit note issued, folded from the CreditNoteIssued events — the sub-ledger side of
+    // the period credit-note reconciliation (M23-FR-02). reconcileNotes filters by each note's own
+    // declareInPeriod, so the whole set is served and the engine picks the period.
+    notes: async (tenantId) =>
+      allOf<CreditNote>(input.store, tenantId, STREAM.finance, 'CreditNoteIssued'),
+
     appendCreditNote: async (tenantId, note) => {
       await input.store.append(tenantId, STREAM.finance, makeEvent({
         id: note.noteId,

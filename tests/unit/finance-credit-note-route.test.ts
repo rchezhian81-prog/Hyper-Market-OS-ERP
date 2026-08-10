@@ -31,6 +31,7 @@ function routeWith(over: Partial<CreditNoteDeps> = {}): { route: Route; saved: C
   const deps: CreditNoteDeps = {
     alreadyCredited: () => 0,
     appendCreditNote: (_t, n) => { saved.push(n); },
+    notes: () => saved, // the period reconciliation reads back what was issued
     now: () => NOW,
     ...over,
   };
