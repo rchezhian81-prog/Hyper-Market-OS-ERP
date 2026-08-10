@@ -116,3 +116,32 @@ describe('GET /v1/finance/tax/discount-eligibility — CGST s.15(3) (A11)', () =
     expect((await discountEligibility(h, 'u-cash', { discountMinor: '5000', onInvoice: 'true' })).status).toBe(403);
   });
 });
+
+const get = (h: ApiHarness, userId: string, path: string, query: Record<string, string>) =>
+  h.request({ method: 'GET', path, userId, tenantId: A, query });
+
+describe('GET /v1/finance/tax/{bogo,free-sample,voucher-timing} — promotional supplies (A12)', () => {
+  it('serves the BOGO, free-sample and voucher rules over the real pipeline, gated on the finance read', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-cash', 'cashier');
+
+    const bogo = (await get(h, 'u-owner', '/v1/finance/tax/bogo', { paidUnits: '1', freeUnits: '1', unitConsiderationMinor: '10000' })).body as { taxableConsiderationMinor: number; itcReversalRequired: boolean };
+    expect(bogo.taxableConsiderationMinor).toBe(10000);
+    expect(bogo.itcReversalRequired).toBe(false);       // BOGO keeps the ITC
+
+    const sample = (await get(h, 'u-owner', '/v1/finance/tax/free-sample', { itcClaimedMinor: '900' })).body as { isSupply: boolean; itcReversalRequired: boolean; itcToReverseMinor: number };
+    expect(sample.isSupply).toBe(false);
+    expect(sample.itcReversalRequired).toBe(true);       // …a free sample reverses it
+    expect(sample.itcToReverseMinor).toBe(900);
+
+    const atIssue = (await get(h, 'u-owner', '/v1/finance/tax/voucher-timing', { supplyIdentifiableAtIssue: 'true', issueDate: '2026-08-01' })).body as { basis: string; timeOfSupply: string };
+    expect(atIssue.basis).toBe('issue');
+    expect(atIssue.timeOfSupply).toBe('2026-08-01');
+    // Not identifiable at issue and not yet redeemed → refused (pending, never guessed).
+    expect((await get(h, 'u-owner', '/v1/finance/tax/voucher-timing', { supplyIdentifiableAtIssue: 'false', issueDate: '2026-08-01' })).status).toBe(400);
+
+    // The till may not use the back-office calculator.
+    expect((await get(h, 'u-cash', '/v1/finance/tax/bogo', { paidUnits: '1', freeUnits: '1', unitConsiderationMinor: '10000' })).status).toBe(403);
+  });
+});
