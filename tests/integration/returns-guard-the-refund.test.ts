@@ -289,11 +289,12 @@ describe.skipIf(!DATABASE_URL)('the return register is legible end to end on rea
     expect(returnable.returnable.find((l) => l.productId === 'P1')?.returnableMinor).toBe(2);
     expect(returnable.refundableMinor).toBe(10000);
 
-    // A migrated / cross-branch return of 5 against 3 sold, folded from the real returns stream.
+    // A migrated / cross-branch return of 5, folded from the real returns stream on top of the 1
+    // already returned above (RT1): 6 back against 3 sold — money gone twice, surfaced not clamped.
     await syncForeignReturn(h, E2E_TENANT, S, { returnId: `${RUN}-RTM`, qty: 5 });
     const over = (await getOverReturns(h, E2E_TENANT, 'u-owner', S)).body as OverReturns;
     expect(over.anyFound).toBe(true);
-    expect(over.overReturned).toEqual([{ productId: 'P1', soldMinor: 3, returnedMinor: 5 }]);
+    expect(over.overReturned).toEqual([{ productId: 'P1', soldMinor: 3, returnedMinor: 6 }]); // 1 (RT1) + 5 (RTM)
 
     // Least privilege holds against the real database too: a cashier is refused the loss surface.
     expect((await getOverReturns(h, E2E_TENANT, 'u-cash', S)).status).toBe(403);
