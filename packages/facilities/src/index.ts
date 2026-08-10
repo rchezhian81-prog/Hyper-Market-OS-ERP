@@ -12,3 +12,4 @@
 export * from './assets';
 export * from './monitoring';
 export * from './schedules';
+export * from './weighing-verification';
