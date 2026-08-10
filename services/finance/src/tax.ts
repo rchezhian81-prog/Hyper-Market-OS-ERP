@@ -14,9 +14,10 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
-import { extractInclusiveGst, roundToNearestRupee, InvalidInclusiveTaxInput, type PlaceOfSupply } from '../../../packages/finance/src/index';
+import { extractInclusiveGst, roundToNearestRupee, assessDiscountEligibility, InvalidInclusiveTaxInput, type PlaceOfSupply } from '../../../packages/finance/src/index';
 
 const isIntString = (s: unknown): s is string => typeof s === 'string' && /^\d+$/.test(s);
+const isBool = (s: unknown): boolean => s === 'true'; // an explicit 'true'; anything else is false
 
 export function taxRoutes(): readonly Route[] {
   return [
@@ -62,6 +63,34 @@ export function taxRoutes(): readonly Route[] {
           }
           throw err;
         }
+      },
+    },
+    {
+      // Decide whether a discount reduces the GST taxable value (CGST s.15(3), A11). A commercial
+      // discount is real money off the price, but the tax only comes off when it is on the invoice, or
+      // — post-supply — pre-agreed AND invoice-linked AND the recipient's ITC is reversed. Same
+      // back-office finance gate; charging tax on an ineligible discount under-declares output tax.
+      // ?discountMinor=&onInvoice=&preAgreed=&invoiceLinked=&itcReversed= (booleans as literal 'true').
+      api: 'API-09', method: 'GET', path: '/v1/finance/tax/discount-eligibility',
+      permission: 'finance.period.read',
+      handler: async (ctx) => {
+        const discount = ctx.query['discountMinor'];
+        if (!isIntString(discount)) {
+          throw apiError(400, {
+            code: 'discount_needs_an_amount',
+            whatHappened: 'Assessing a discount needs ?discountMinor=<whole minor units>.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the discount amount. A calculation reads, it never writes.',
+          });
+        }
+        const result = assessDiscountEligibility({
+          discountMinor: Number(discount),
+          onInvoice: isBool(ctx.query['onInvoice']),
+          preAgreed: isBool(ctx.query['preAgreed']),
+          invoiceLinked: isBool(ctx.query['invoiceLinked']),
+          itcReversed: isBool(ctx.query['itcReversed']),
+        });
+        return { status: 200, body: result };
       },
     },
   ];
