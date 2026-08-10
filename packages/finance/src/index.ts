@@ -18,3 +18,4 @@ export * from './credit-notes';
 export * from './inclusive-tax';
 export * from './discount';
 export * from './promo-tax';
+export * from './rate';

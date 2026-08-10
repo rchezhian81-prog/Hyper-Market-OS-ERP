@@ -145,3 +145,24 @@ describe('GET /v1/finance/tax/{bogo,free-sample,voucher-timing} — promotional 
     expect((await get(h, 'u-cash', '/v1/finance/tax/bogo', { paidUnits: '1', freeUnits: '1', unitConsiderationMinor: '10000' })).status).toBe(403);
   });
 });
+
+describe('GET /v1/finance/tax/rate-on-date — rate in force on the supply date (A6)', () => {
+  it('resolves the rate across a change boundary, parses the schedule, and gates on the finance read', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-cash', 'cashier');
+    const schedule = '2017-07-01:1800,2026-09-01:4000';
+
+    const before = (await get(h, 'u-owner', '/v1/finance/tax/rate-on-date', { schedule, supplyDate: '2026-08-31' })).body as { rateBps: number; effectiveFrom: string };
+    expect(before.rateBps).toBe(1800);
+    expect(before.effectiveFrom).toBe('2017-07-01');
+
+    const onOrAfter = (await get(h, 'u-owner', '/v1/finance/tax/rate-on-date', { schedule, supplyDate: '2026-09-01' })).body as { rateBps: number };
+    expect(onOrAfter.rateBps).toBe(4000);
+
+    // A malformed schedule entry is refused; a supply before the earliest rate is refused; the till is refused.
+    expect((await get(h, 'u-owner', '/v1/finance/tax/rate-on-date', { schedule: '2017-07-01-1800', supplyDate: '2026-09-01' })).status).toBe(400);
+    expect((await get(h, 'u-owner', '/v1/finance/tax/rate-on-date', { schedule, supplyDate: '2017-06-30' })).status).toBe(400);
+    expect((await get(h, 'u-cash', '/v1/finance/tax/rate-on-date', { schedule, supplyDate: '2026-09-01' })).status).toBe(403);
+  });
+});

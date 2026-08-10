@@ -16,8 +16,9 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
   extractInclusiveGst, roundToNearestRupee, assessDiscountEligibility,
-  bogoTreatment, freeSampleTreatment, voucherTimeOfSupply,
-  InvalidInclusiveTaxInput, InvalidPromoTaxInput, type PlaceOfSupply,
+  bogoTreatment, freeSampleTreatment, voucherTimeOfSupply, resolveGstRate,
+  InvalidInclusiveTaxInput, InvalidPromoTaxInput, InvalidRateSchedule,
+  type PlaceOfSupply, type GstRatePeriod,
 } from '../../../packages/finance/src/index';
 
 const isIntString = (s: unknown): s is string => typeof s === 'string' && /^\d+$/.test(s);
@@ -150,6 +151,36 @@ export function taxRoutes(): readonly Route[] {
           return { status: 200, body: result };
         } catch (err) {
           if (err instanceof InvalidPromoTaxInput) throw apiError(400, { code: 'voucher_timing_invalid', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the dates, or supply the redemption date.' });
+          throw err;
+        }
+      },
+    },
+    {
+      // The GST rate in force on the TIME OF SUPPLY (A6), from a per-HSN effective-dated schedule. The
+      // schedule is a compact `YYYY-MM-DD:bps,YYYY-MM-DD:bps` list; the resolver picks the rate in force
+      // on ?supplyDate= (the new rate applies from the day it takes effect, the day before gets the old).
+      // ?schedule=2017-07-01:1800,2026-09-01:4000&supplyDate=2026-08-31
+      api: 'API-09', method: 'GET', path: '/v1/finance/tax/rate-on-date',
+      permission: 'finance.period.read',
+      handler: async (ctx) => {
+        const scheduleStr = ctx.query['schedule'];
+        const supplyDate = ctx.query['supplyDate'];
+        if (typeof scheduleStr !== 'string' || scheduleStr.trim() === '' || supplyDate === undefined) {
+          throw apiError(400, { code: 'rate_needs_schedule_and_date', whatHappened: 'Resolving a rate needs ?schedule=YYYY-MM-DD:bps,YYYY-MM-DD:bps and ?supplyDate=YYYY-MM-DD.', wasItSaved: 'not_saved', nextSafeAction: 'Send the effective-dated schedule and the supply date.' });
+        }
+        // Parse the compact schedule; a malformed pair is refused, never quietly dropped.
+        const schedule: GstRatePeriod[] = [];
+        for (const pair of scheduleStr.split(',')) {
+          const parts = pair.split(':');
+          if (parts.length !== 2 || !/^\d+$/.test(parts[1]!)) {
+            throw apiError(400, { code: 'rate_schedule_malformed', whatHappened: `A schedule entry must be "YYYY-MM-DD:bps"; "${pair}" is not.`, wasItSaved: 'not_saved', nextSafeAction: 'Fix the schedule entry.' });
+          }
+          schedule.push({ effectiveFrom: parts[0]!, rateBps: Number(parts[1]) });
+        }
+        try {
+          return { status: 200, body: resolveGstRate({ schedule, supplyDate }) };
+        } catch (err) {
+          if (err instanceof InvalidRateSchedule) throw apiError(400, { code: 'rate_unresolvable', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the schedule or the supply date.' });
           throw err;
         }
       },
