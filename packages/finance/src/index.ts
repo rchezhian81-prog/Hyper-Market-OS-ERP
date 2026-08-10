@@ -20,3 +20,4 @@ export * from './discount';
 export * from './promo-tax';
 export * from './rate';
 export * from './hsn';
+export * from './invoice-fields';
