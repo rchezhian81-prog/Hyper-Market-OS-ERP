@@ -121,3 +121,27 @@ describe('GET /v1/catalogue/pack-declarations — statutory declarations gate (B
     expect((await packDecl(h, 'u-acct', FULL)).status).toBe(403);
   });
 });
+
+const dualMrp = (h: ApiHarness, userId: string, q: Record<string, string>) =>
+  h.request({ method: 'GET', path: '/v1/catalogue/dual-mrp-check', userId, tenantId: A, query: q });
+
+describe('GET /v1/catalogue/dual-mrp-check — one active MRP per pack (B2)', () => {
+  it('accepts a later-dated change, rejects a same-date clash, and gates on the catalogue read', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-acct', 'accountant'); // no catalogue.pack.read
+    const existing = '2026-01-01~10000,2026-06-01~12000';
+
+    // A later-dated change is a normal price move.
+    expect(((await dualMrp(h, 'u-owner', { existing, effectiveFrom: '2026-09-01', valueMinor: '13000' })).body as { ok: boolean }).ok).toBe(true);
+
+    // A different MRP on a date that already has one is refused.
+    const clash = (await dualMrp(h, 'u-owner', { existing, effectiveFrom: '2026-06-01', valueMinor: '12500' })).body as { ok: boolean; conflict?: { existingMinor: number } };
+    expect(clash.ok).toBe(false);
+    expect(clash.conflict?.existingMinor).toBe(12000);
+
+    // Missing proposed → 400; the accountant is refused.
+    expect((await dualMrp(h, 'u-owner', { existing })).status).toBe(400);
+    expect((await dualMrp(h, 'u-acct', { existing, effectiveFrom: '2026-09-01', valueMinor: '13000' })).status).toBe(403);
+  });
+});
