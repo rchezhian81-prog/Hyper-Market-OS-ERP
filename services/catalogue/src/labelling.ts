@@ -7,11 +7,12 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
-import { unitSalePrice, validateLabelHeight, InvalidUnitPriceInput, InvalidLabelHeightInput, type NetQuantityUnit } from '../../../packages/product/src/index';
+import { unitSalePrice, validateLabelHeight, checkLooseFoodLabel, InvalidUnitPriceInput, InvalidLabelHeightInput, type NetQuantityUnit, type VegClass } from '../../../packages/product/src/index';
 
 const isIntString = (s: unknown): s is string => typeof s === 'string' && /^\d+$/.test(s);
 // A positive decimal (e.g. a 1.5 mm height or a 62.5 cm² panel).
 const isPosNumString = (s: unknown): s is string => typeof s === 'string' && /^\d+(\.\d+)?$/.test(s) && Number(s) > 0;
+const isBool = (s: unknown): boolean => s === 'true';
 const UNITS: readonly NetQuantityUnit[] = ['g', 'kg', 'ml', 'l', 'unit', 'piece'];
 
 export function labellingRoutes(): readonly Route[] {
@@ -72,6 +73,24 @@ export function labellingRoutes(): readonly Route[] {
           if (err instanceof InvalidLabelHeightInput) throw apiError(400, { code: 'label_height_invalid', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the panel area or the height.' });
           throw err;
         }
+      },
+    },
+    {
+      // The mandatory FSSAI declarations for a loose / in-store food counter label (B9): a veg/non-veg
+      // mark and a major-allergen declaration. A missing declaration blocks the label — an undeclared
+      // allergen on prepared food is a safety failure. This is a read; it validates, it never prints.
+      // ?vegClass=veg|non_veg&allergenDeclarationProvided=true&allergensPresent=milk,eggs
+      api: 'API-02', method: 'GET', path: '/v1/catalogue/loose-food-label',
+      permission: 'catalogue.pack.read',
+      handler: async (ctx) => {
+        const veg = ctx.query['vegClass'];
+        const allergensStr = ctx.query['allergensPresent'];
+        const result = checkLooseFoodLabel({
+          ...(veg === 'veg' || veg === 'non_veg' ? { vegClass: veg as VegClass } : {}),
+          allergenDeclarationProvided: isBool(ctx.query['allergenDeclarationProvided']),
+          ...(typeof allergensStr === 'string' && allergensStr !== '' ? { allergensPresent: allergensStr.split(',') } : {}),
+        });
+        return { status: 200, body: result };
       },
     },
   ];
