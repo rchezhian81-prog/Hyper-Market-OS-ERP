@@ -7,7 +7,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
-import { unitSalePrice, validateLabelHeight, checkLooseFoodLabel, InvalidUnitPriceInput, InvalidLabelHeightInput, type NetQuantityUnit, type VegClass } from '../../../packages/product/src/index';
+import { unitSalePrice, validateLabelHeight, checkLooseFoodLabel, checkPackDeclarations, InvalidUnitPriceInput, InvalidLabelHeightInput, type NetQuantityUnit, type VegClass, type PackDeclarations } from '../../../packages/product/src/index';
 
 const isIntString = (s: unknown): s is string => typeof s === 'string' && /^\d+$/.test(s);
 // A positive decimal (e.g. a 1.5 mm height or a 62.5 cm² panel).
@@ -91,6 +91,24 @@ export function labellingRoutes(): readonly Route[] {
           ...(typeof allergensStr === 'string' && allergensStr !== '' ? { allergensPresent: allergensStr.split(',') } : {}),
         });
         return { status: 200, body: result };
+      },
+    },
+    {
+      // The statutory pre-packed-commodity declarations that gate activation (B4, Legal Metrology
+      // Rule 6): net quantity, month/year of manufacture-pack, a consumer-care contact, and country
+      // of origin. A gap blocks the pack from going on sale. A read — it validates, it never activates.
+      // ?netQuantity=&manufactureOrPackDate=&consumerCareContact=&countryOfOrigin=
+      api: 'API-02', method: 'GET', path: '/v1/catalogue/pack-declarations',
+      permission: 'catalogue.pack.read',
+      handler: async (ctx) => {
+        const s = (k: string): string | undefined => (typeof ctx.query[k] === 'string' && ctx.query[k] !== '' ? ctx.query[k] : undefined);
+        const decl: PackDeclarations = {
+          ...(s('netQuantity') === undefined ? {} : { netQuantity: s('netQuantity') }),
+          ...(s('manufactureOrPackDate') === undefined ? {} : { manufactureOrPackDate: s('manufactureOrPackDate') }),
+          ...(s('consumerCareContact') === undefined ? {} : { consumerCareContact: s('consumerCareContact') }),
+          ...(s('countryOfOrigin') === undefined ? {} : { countryOfOrigin: s('countryOfOrigin') }),
+        };
+        return { status: 200, body: checkPackDeclarations(decl) };
       },
     },
   ];

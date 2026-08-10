@@ -96,3 +96,28 @@ describe('GET /v1/catalogue/loose-food-label — FSSAI allergen + veg mark (B9)'
     expect((await looseFood(h, 'u-acct', { vegClass: 'veg', allergenDeclarationProvided: 'true' })).status).toBe(403);
   });
 });
+
+const packDecl = (h: ApiHarness, userId: string, q: Record<string, string>) =>
+  h.request({ method: 'GET', path: '/v1/catalogue/pack-declarations', userId, tenantId: A, query: q });
+
+describe('GET /v1/catalogue/pack-declarations — statutory declarations gate (B4)', () => {
+  const FULL = { netQuantity: '500 g', manufactureOrPackDate: '2026-07', consumerCareContact: 'SRE, care@sre.example', countryOfOrigin: 'India' };
+
+  it('marks a full pack sellable, blocks a gap, and gates on the catalogue read', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-acct', 'accountant'); // no catalogue.pack.read
+
+    expect(((await packDecl(h, 'u-owner', FULL)).body as { sellable: boolean }).sellable).toBe(true);
+
+    // Drop the country of origin → blocked, and the gap names it.
+    const noOrigin = { ...FULL };
+    delete (noOrigin as Record<string, unknown>).countryOfOrigin;
+    const blocked = (await packDecl(h, 'u-owner', noOrigin)).body as { sellable: boolean; missing: string[] };
+    expect(blocked.sellable).toBe(false);
+    expect(blocked.missing.some((m) => m.startsWith('countryOfOrigin'))).toBe(true);
+
+    // The accountant may not use the catalogue calculator.
+    expect((await packDecl(h, 'u-acct', FULL)).status).toBe(403);
+  });
+});
