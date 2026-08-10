@@ -21,12 +21,12 @@
 
 import { createHash } from 'node:crypto';
 import { makeEvent } from '../../../packages/contracts/src/event';
-import type { Money } from '../../../packages/contracts/src/money';
+import type { Money, CurrencyCode } from '../../../packages/contracts/src/money';
 import type { EventStore, PersistedEvent } from '../../../packages/persistence/src/event-store';
 import type { CatalogueProduct } from '../../../packages/catalogue/src/catalogue';
 import type { SignedPack } from '../../catalogue/src/index';
 import type { CatalogueDeps } from '../../catalogue/src/index';
-import type { IncomingSale, SaleException, PosDeps } from '../../pos/src/index';
+import type { IncomingSale, IncomingTender, SaleException, PosDeps } from '../../pos/src/index';
 import type { ReturnsDeps, ReturnRecord, RecordedRefund, OriginalSale, RecordedReturn } from '../../pos/src/returns';
 import type { CashDeps, RecordedCashMovement } from '../../pos/src/cash';
 import type { StoredCashMovement } from '../../../packages/cash/src/index';
@@ -90,8 +90,9 @@ import type { TenantBranding } from '../../../packages/platform/src/branding';
 import type { DurableTenantSettings } from '../../../packages/tenant/src/index';
 import { InMemoryNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
 import { figure } from '../../reporting/src/index';
-import type { ReportingDeps } from '../../reporting/src/index';
-import type { Producer } from '../../../packages/reporting/src/index';
+import type { ReportingDeps, Figure } from '../../reporting/src/index';
+import { salesSummary } from '../../../packages/reporting/src/index';
+import type { Producer, SaleFact } from '../../../packages/reporting/src/index';
 import type { MigrationDeps } from '../../migration/src/index';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import type { DomainFinding, Acceptance } from '../../../packages/migration/src/verification-report';
@@ -2966,6 +2967,17 @@ export function platformAdapter(input: {
   };
 }
 
+/**
+ * The tender a basket is booked under for the tender-mix KPI: the largest single tender on the
+ * receipt (a split payment is attributed to where most of the money actually came from), or
+ * `unrecorded` when the lane banked a sale with no tender detail — which is itself worth seeing on
+ * the dashboard, not hiding (P-08).
+ */
+function primaryTender(tenders: readonly IncomingTender[]): string {
+  if (tenders.length === 0) return 'unrecorded';
+  return [...tenders].sort((a, b) => b.amountMinor - a.amountMinor)[0]!.kind;
+}
+
 export function reportingAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -3009,20 +3021,35 @@ export function reportingAdapter(input: {
       });
       const todays = events.map((e) => payloadOf<IncomingSale>(e))
         .filter((s) => s.tradingDay === today);
+
+      // Aggregate through the tested KPI engine (packages/reporting `salesSummary`, M29-FR-01),
+      // not a second copy of the arithmetic here (CORE-02). The cloud `SaleCommitted` event carries
+      // the takings and the tenders but NOT the pre-tax split or the cost of goods — those are
+      // joined at the edge (`costTheDay`), where the cost book lives. So this path surfaces only the
+      // figures the event can honestly support: gross takings, basket count and the tender mix. It
+      // never emits a margin it cannot compute — a zero margin is a number somebody acts on.
+      const facts: SaleFact[] = todays.map((s) => ({
+        saleId: s.saleId,
+        totalMinor: s.totalMinor,
+        netMinor: 0, taxMinor: 0, cogsMinor: 0, units: 0, // not on the cloud event; never surfaced
+        tender: primaryTender(s.tenders),
+        currency: s.currency as CurrencyCode,
+      }));
+      const summary = salesSummary(facts, (todays[0]?.currency as CurrencyCode) ?? 'INR');
+
+      // As at now, because the ledger is read at request time — there is no cache between these
+      // figures and the events they are computed from, so there is nothing to be stale.
+      const asAt = input.now();
+      const money = (name: string, valueMinor: number): Figure =>
+        figure({ name, valueMinor, unit: 'minor_currency', asAt, now: asAt });
+
       return [
-        figure({
-          name: 'Sales today',
-          valueMinor: todays.reduce((t, s) => t + s.totalMinor, 0),
-          unit: 'minor_currency',
-          // As at now, because the ledger is read at request time — there is no cache between
-          // this figure and the events it is computed from, so there is nothing to be stale.
-          asAt: input.now(), now: input.now(),
-        }),
-        figure({
-          name: 'Sales today — receipts',
-          valueMinor: todays.length, unit: 'count',
-          asAt: input.now(), now: input.now(),
-        }),
+        money('Sales today', summary.grossSalesMinor),
+        figure({ name: 'Sales today — receipts', valueMinor: summary.basketCount, unit: 'count', asAt, now: asAt }),
+        // One figure per tender the day actually saw (deterministic order), each an exact Σ from the
+        // engine — the split the owner reaches for first: how much came in as cash, card, UPI.
+        ...Object.keys(summary.tenderMix).sort()
+          .map((kind) => money(`Sales today — ${kind}`, summary.tenderMix[kind]!)),
       ];
     },
   };

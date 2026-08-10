@@ -22,7 +22,7 @@ says which._
 | `services/pos` | `packages/till`, `packages/cash`, `packages/returns`, `packages/loss-prevention`, `packages/bank-controls`, `packages/catalogue` | ✅ wired |
 | `services/pricing` | `packages/price-list`, `packages/promotions`, `packages/price-guard`, `packages/approvals`, `packages/contracts` | ✅ wired |
 | `services/purchase` | `packages/purchasing`, `packages/supplier-portal` | ✅ wired |
-| **`services/reporting`** | **`packages/reporting`** (`reportCatalogue`, `whatWouldUnlockMost`) | ✅ **wired — CORE-01 inc1** |
+| **`services/reporting`** | **`packages/reporting`** (`reportCatalogue`, `whatWouldUnlockMost`; KPI figures via `salesSummary` in the composition-root adapter) | ✅ **wired — CORE-01 inc1 (catalogue) + CORE-02 inc1 (KPI figures)** |
 | **`services/fulfilment`** | **`packages/fulfilment`** (`transitionDelivery`, `isTerminalDelivery`) | ✅ **wired — CORE-01 inc2** |
 | **`services/ai`** | **`packages/ai`** (`AGENTS`, `FORBIDDEN_TOOLS`, `AgentId`) | ✅ **wired — CORE-01 inc3** |
 
