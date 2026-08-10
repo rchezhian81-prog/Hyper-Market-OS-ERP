@@ -32,8 +32,9 @@ const NOT_A_DOMAIN_SERVICE = new Set(['api', 'kernel', 'README.md']);
 /**
  * Domain services still known to re-implement rather than delegate to a tested engine — the
  * remaining CORE-01 collapse work. Shrinks, never grows: wiring one to `packages/*` removes it here.
+ * `reporting` was collapsed in inc1, `fulfilment` in inc2; `ai` is the last one left.
  */
-const PENDING = new Set(['ai', 'fulfilment']);
+const PENDING = new Set(['ai']);
 
 /** Every domain service on disk (anything under `services/` with a `src/`, minus the two non-domains). */
 function domainServices(): readonly string[] {
@@ -88,10 +89,16 @@ describe('every domain service runs on a tested engine, not a private re-impleme
     expect(reimplementing).toEqual([]);
   });
 
-  it('reporting is wired to its tested engine (this increment collapsed it)', () => {
+  it('reporting is wired to its tested engine (CORE-01 inc1 collapsed it)', () => {
     // The concrete fact CORE-01 inc1 established: the running reporting service executes
     // packages/reporting (reportCatalogue), rather than a second copy of that logic.
     expect([...enginesImportedBy('reporting')]).toContain('reporting');
+  });
+
+  it('fulfilment is wired to its tested engine (CORE-01 inc2 collapsed it)', () => {
+    // CORE-01 inc2: the running fulfilment service decides a recorded attempt's resulting delivery
+    // state with packages/fulfilment's tested state machine (transitionDelivery), not its own copy.
+    expect([...enginesImportedBy('fulfilment')]).toContain('fulfilment');
   });
 
   it('the PENDING backlog only shrinks — a wired service must be removed from it', () => {

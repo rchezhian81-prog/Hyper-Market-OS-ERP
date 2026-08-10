@@ -15,6 +15,12 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
+import {
+  transitionDelivery,
+  isTerminalDelivery,
+  type DeliveryState,
+  type DeliveryEvent,
+} from '../../../packages/fulfilment/src/index';
 
 export type AttemptOutcome =
   | 'delivered' | 'nobody_in' | 'refused' | 'wrong_address' | 'could_not_access' | 'damaged_in_transit';
@@ -140,6 +146,18 @@ export interface FulfilmentDeps {
   readonly now: () => string;
 }
 
+/**
+ * The delivery state a recorded attempt produces — decided by the tested engine's state machine
+ * (`packages/fulfilment`), not a second copy of the rules living here (CORE-01 / GAP-ARCH-01). An
+ * attempt can only be made while the order is out for delivery, so that is the state it is evaluated
+ * from: a `delivered` outcome is the `deliver` event, and every failure outcome is the `fail` event —
+ * a `failed` state the order can later be reattempted from or returned to origin, never a silence.
+ */
+function stateAfterAttempt(outcome: AttemptOutcome): DeliveryState {
+  const event: DeliveryEvent = outcome === 'delivered' ? 'deliver' : 'fail';
+  return transitionDelivery('out_for_delivery', event);
+}
+
 export function fulfilmentRoutes(deps: FulfilmentDeps): readonly Route[] {
   return [
     {
@@ -157,7 +175,18 @@ export function fulfilmentRoutes(deps: FulfilmentDeps): readonly Route[] {
           });
         }
         await deps.appendAttempt(ctx.tenantId, attempt);
-        return { status: 201, body: { attemptId: attempt.attemptId, recorded: check.detail } };
+        // The engine, not this route, decides the state the attempt leaves the order in — so the
+        // running path and the delivery-app run the SAME state machine, not two copies of it.
+        const deliveryState = stateAfterAttempt(attempt.outcome);
+        return {
+          status: 201,
+          body: {
+            attemptId: attempt.attemptId,
+            recorded: check.detail,
+            deliveryState,
+            final: isTerminalDelivery(deliveryState),
+          },
+        };
       },
     },
     {
