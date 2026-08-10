@@ -24,7 +24,7 @@ says which._
 | `services/purchase` | `packages/purchasing`, `packages/supplier-portal` | ✅ wired |
 | **`services/reporting`** | **`packages/reporting`** (`reportCatalogue`, `whatWouldUnlockMost`) | ✅ **wired — CORE-01 inc1** |
 | **`services/fulfilment`** | **`packages/fulfilment`** (`transitionDelivery`, `isTerminalDelivery`) | ✅ **wired — CORE-01 inc2** |
-| `services/ai` | — | ⏳ PENDING (CORE-01 backlog) |
+| **`services/ai`** | **`packages/ai`** (`AGENTS`, `FORBIDDEN_TOOLS`, `AgentId`) | ✅ **wired — CORE-01 inc3** |
 
 `services/api` (the composition root that assembles every route) and `services/kernel` (the request
 framework) are not domain services and are excluded from the check.
@@ -33,8 +33,9 @@ framework) are not domain services and are excluded from the check.
 
 `PENDING` in the guardrail may only shrink. Wiring a pending service to its engine makes the test
 fail until the service is removed from `PENDING`; a wired service that later drops its engine import
-fails the same way. So the remaining CORE-01 collapse work — `services/ai` onto `packages/ai` — cannot
-be quietly forgotten, and no new drift can be introduced without CI noticing.
+fails the same way. **`PENDING` is now empty — every domain service provably runs on its tested
+engine.** A new service that re-implements an engine instead of importing it fails the check rather
+than being quietly added back, so no new GAP-ARCH-01 drift can be introduced without CI noticing.
 
 ## What "wired" does and does not certify
 
