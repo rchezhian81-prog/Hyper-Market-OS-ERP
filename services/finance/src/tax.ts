@@ -14,7 +14,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
-import { extractInclusiveGst, InvalidInclusiveTaxInput, type PlaceOfSupply } from '../../../packages/finance/src/index';
+import { extractInclusiveGst, roundToNearestRupee, InvalidInclusiveTaxInput, type PlaceOfSupply } from '../../../packages/finance/src/index';
 
 const isIntString = (s: unknown): s is string => typeof s === 'string' && /^\d+$/.test(s);
 
@@ -48,7 +48,9 @@ export function taxRoutes(): readonly Route[] {
           const breakdown = extractInclusiveGst({
             mrpMinor: Number(mrp), rateBps: Number(rate), placeOfSupply: place as PlaceOfSupply,
           });
-          return { status: 200, body: breakdown };
+          // The exact paisa breakdown (A9) plus the whole-rupee, per-component view (A10) with its
+          // round-off stated — so an invoice can print either without re-deriving the rounding.
+          return { status: 200, body: { ...breakdown, nearestRupee: roundToNearestRupee(breakdown) } };
         } catch (err) {
           if (err instanceof InvalidInclusiveTaxInput) {
             throw apiError(400, {

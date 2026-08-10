@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractInclusiveGst, InvalidInclusiveTaxInput } from '../../packages/finance/src/inclusive-tax';
+import { extractInclusiveGst, roundToNearestRupeeMinor, roundToNearestRupee, InvalidInclusiveTaxInput } from '../../packages/finance/src/inclusive-tax';
 
 // Roadmap v2.1 A9 (GST extracted from tax-inclusive MRP) + A8 (place-of-supply split). The load-bearing
 // invariant A9 states is: given an MRP + rate, taxable value + tax reconcile to the MRP TO THE PAISA.
@@ -76,6 +76,45 @@ describe('extractInclusiveGst — A8: place of supply decides the split, never t
     expect(cgst!.amountMinor).toBe(76);          // floor(153/2)
     expect(sgst!.amountMinor).toBe(77);          // remainder carries the odd paisa
     expect(cgst!.amountMinor + sgst!.amountMinor).toBe(153);
+  });
+});
+
+describe('roundToNearestRupee — A10: nearest-rupee rounding, ≥50p up / <50p down, per component', () => {
+  it('rounds a paisa amount at the exact ≥50p-up / <50p-down boundary', () => {
+    expect(roundToNearestRupeeMinor(0)).toBe(0);
+    expect(roundToNearestRupeeMinor(49)).toBe(0);     // <50 → down
+    expect(roundToNearestRupeeMinor(50)).toBe(100);   // ≥50 → up
+    expect(roundToNearestRupeeMinor(99)).toBe(100);
+    expect(roundToNearestRupeeMinor(149)).toBe(100);
+    expect(roundToNearestRupeeMinor(150)).toBe(200);
+    expect(roundToNearestRupeeMinor(249)).toBe(200);
+    expect(roundToNearestRupeeMinor(250)).toBe(300);
+    expect(roundToNearestRupeeMinor(100)).toBe(100);  // already whole rupee
+  });
+
+  it('rejects a non-whole paisa amount', () => {
+    expect(() => roundToNearestRupeeMinor(50.5)).toThrow(InvalidInclusiveTaxInput);
+  });
+
+  it('rounds each component of a breakdown and states the round-off, leaving the exact view untouched', () => {
+    // ₹9.99 @ 18% intra → exact: taxable 847, CGST 76, SGST 77 (A9). Rounded per component:
+    const exact = extractInclusiveGst({ mrpMinor: 999, rateBps: 1800, placeOfSupply: 'intra_state' });
+    const r = roundToNearestRupee(exact);
+    expect(r.taxableMinor).toBe(800);                 // 847 → 800 (47p down)
+    expect(r.components.map((c) => c.amountMinor)).toEqual([100, 100]); // 76 → 100, 77 → 100
+    expect(r.totalTaxMinor).toBe(200);
+    expect(r.grossMinor).toBe(1000);
+    expect(r.roundOffMinor).toBe(1);                  // 1000 − 999
+    // The exact breakdown is unchanged — A9's paisa reconciliation still holds.
+    expect(exact.taxableMinor + exact.totalTaxMinor).toBe(999);
+  });
+
+  it('rounds to a zero round-off when every part is already a whole rupee', () => {
+    const exact = extractInclusiveGst({ mrpMinor: 118_00, rateBps: 1800, placeOfSupply: 'inter_state' });
+    const r = roundToNearestRupee(exact);
+    expect(r.taxableMinor).toBe(100_00);
+    expect(r.components[0]!.amountMinor).toBe(18_00);
+    expect(r.roundOffMinor).toBe(0);
   });
 });
 

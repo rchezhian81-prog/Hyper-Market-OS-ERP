@@ -11,10 +11,15 @@ const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const fromMrp = (h: ApiHarness, userId: string, q: Record<string, string>) =>
   h.request({ method: 'GET', path: '/v1/finance/tax/from-mrp', userId, tenantId: A, query: q });
 
+interface Rounded {
+  taxableMinor: number; totalTaxMinor: number; grossMinor: number; roundOffMinor: number;
+  components: { component: string; amountMinor: number }[];
+}
 interface Breakdown {
   grossMinor: number; taxableMinor: number; totalTaxMinor: number; rateBps: number;
   placeOfSupply: string; reconcilesToGross: boolean;
   components: { component: string; rateBps: number; amountMinor: number }[];
+  nearestRupee: Rounded;
 }
 
 describe('GET /v1/finance/tax/from-mrp — GST pulled out of an inclusive MRP (A9/A8)', () => {
@@ -29,6 +34,19 @@ describe('GET /v1/finance/tax/from-mrp — GST pulled out of an inclusive MRP (A
     expect(r.components.map((c) => c.component)).toEqual(['CGST', 'SGST']);
     expect(r.components.every((c) => c.rateBps === 900)).toBe(true);
     expect(r.components.reduce((s, c) => s + c.amountMinor, 0)).toBe(1800);
+  });
+
+  it('also serves the whole-rupee per-component view (A10) with its round-off stated', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+
+    // ₹9.99 @ 18% intra → exact taxable 847 / CGST 76 / SGST 77; rounded per component → 800 / 100 / 100.
+    const r = (await fromMrp(h, 'u-owner', { mrpMinor: '999', rateBps: '1800', placeOfSupply: 'intra_state' })).body as Breakdown;
+    expect(r.taxableMinor + r.totalTaxMinor).toBe(999);          // exact view still reconciles (A9)
+    expect(r.nearestRupee.taxableMinor).toBe(800);
+    expect(r.nearestRupee.components.map((c) => c.amountMinor)).toEqual([100, 100]);
+    expect(r.nearestRupee.grossMinor).toBe(1000);
+    expect(r.nearestRupee.roundOffMinor).toBe(1);               // the invoice "Round Off" line
   });
 
   it('extracts an inter-State breakdown as a single IGST equal to the intra-State total', async () => {
