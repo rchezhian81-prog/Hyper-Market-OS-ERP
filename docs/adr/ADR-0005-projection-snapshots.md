@@ -1,6 +1,6 @@
 # ADR 0005 — Projection snapshots (bounding full-fold reads)
 
-- **Status:** Accepted. Introduced by CORE-03 inc1.
+- **Status:** Accepted. Introduced by CORE-03 inc1; durable `SqlSnapshotStore` added in inc2.
 - **Date:** 10 August 2026
 - **Context:** A read model in this system is derived by folding the append-only
   event ledger — there is no separate source table (see `packages/persistence`
@@ -58,10 +58,17 @@ credit-note history on each issuance.
   increment may migrate the bespoke one onto the facility once the SQL snapshot
   store exists, but not before, because the inventory path is hot and already
   proven.
-- **The SQL `SnapshotStore` is deferred.** Until it lands, snapshots are
-  process-local (rebuilt from the ledger on a cold start) — correct, just not
-  shared across instances. Because snapshots are disposable this is safe, only
-  less efficient.
+- **The durable `SqlSnapshotStore` landed in inc2** (`projection_snapshot`,
+  migration 0011): the whole `Snapshot` is one JSONB row keyed by
+  (tenant, stream, projection), UPSERTed so the newest fold wins, and `main()`
+  wires it into the finance credited-per-invoice read so that bounded read
+  survives a restart. The table carries no append-only guard and no audit chain
+  — unlike the ledger, a snapshot row is meant to be overwritten and safely
+  truncated. Its one added constraint over the in-memory store is that a
+  projection's **state must be JSON-serialisable** (`Record`/array/scalar, not a
+  `Map`); the credited-per-invoice state is a plain `Record<string, number>`.
+  A store not given a `SqlSnapshotStore` (tests, the store-less wiring) still
+  falls back to the in-memory one.
 - **A versioned projection name is mandatory discipline**: resuming a changed
   reducer from an old shape would be a silent corruption, so the version in the
   name is the guard.

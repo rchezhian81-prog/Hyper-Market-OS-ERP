@@ -23,7 +23,7 @@ import { createHash } from 'node:crypto';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { Money, CurrencyCode } from '../../../packages/contracts/src/money';
 import type { EventStore, PersistedEvent } from '../../../packages/persistence/src/event-store';
-import { InMemorySnapshotStore, projectFromSnapshot, type Projection } from '../../../packages/persistence/src/index';
+import { InMemorySnapshotStore, projectFromSnapshot, type Projection, type SnapshotStore } from '../../../packages/persistence/src/index';
 import type { CatalogueProduct } from '../../../packages/catalogue/src/catalogue';
 import type { SignedPack } from '../../catalogue/src/index';
 import type { CatalogueDeps } from '../../catalogue/src/index';
@@ -2399,12 +2399,15 @@ const CREDITED_PER_INVOICE: Projection<Readonly<Record<string, number>>> = {
 export function financeNotesAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
+  /**
+   * Where the credited-per-invoice snapshot lives (CORE-03). In production `main()` passes a durable
+   * `SqlSnapshotStore` so the bounded read survives a restart; omitted, it falls back to a
+   * process-local `InMemorySnapshotStore`, which is still correct (a snapshot is disposable and
+   * rebuilt from the ledger) — just rebuilt on each cold start.
+   */
+  readonly snapshots?: SnapshotStore;
 }): CreditNoteDeps {
-  // A process-local, disposable snapshot cache (CORE-03) so the cumulative-credit read stays bounded
-  // as the shop's credit-note history grows over the years, instead of re-folding all of it on every
-  // issuance. Derived from the ledger and rebuilt from it on a cold start — losing it costs a
-  // rebuild, never data, so an empty cache (a fresh process) is always a correct start.
-  const snapshots = new InMemorySnapshotStore();
+  const snapshots = input.snapshots ?? new InMemorySnapshotStore();
 
   return {
     now: input.now,
