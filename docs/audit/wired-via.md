@@ -23,7 +23,7 @@ says which._
 | `services/pricing` | `packages/price-list`, `packages/promotions`, `packages/price-guard`, `packages/approvals`, `packages/contracts` | ✅ wired |
 | `services/purchase` | `packages/purchasing`, `packages/supplier-portal` | ✅ wired |
 | **`services/reporting`** | **`packages/reporting`** (`reportCatalogue`, `whatWouldUnlockMost`) | ✅ **wired — CORE-01 inc1** |
-| `services/fulfilment` | — | ⏳ PENDING (CORE-01 backlog) |
+| **`services/fulfilment`** | **`packages/fulfilment`** (`transitionDelivery`, `isTerminalDelivery`) | ✅ **wired — CORE-01 inc2** |
 | `services/ai` | — | ⏳ PENDING (CORE-01 backlog) |
 
 `services/api` (the composition root that assembles every route) and `services/kernel` (the request
@@ -33,9 +33,8 @@ framework) are not domain services and are excluded from the check.
 
 `PENDING` in the guardrail may only shrink. Wiring a pending service to its engine makes the test
 fail until the service is removed from `PENDING`; a wired service that later drops its engine import
-fails the same way. So the remaining CORE-01 collapse work — `services/fulfilment` onto
-`packages/fulfilment`, and `services/ai` onto `packages/ai` — cannot be quietly forgotten, and no
-new drift can be introduced without CI noticing.
+fails the same way. So the remaining CORE-01 collapse work — `services/ai` onto `packages/ai` — cannot
+be quietly forgotten, and no new drift can be introduced without CI noticing.
 
 ## What "wired" does and does not certify
 
