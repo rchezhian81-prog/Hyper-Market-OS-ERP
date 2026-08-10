@@ -166,3 +166,25 @@ describe('GET /v1/finance/tax/rate-on-date — rate in force on the supply date 
     expect((await get(h, 'u-cash', '/v1/finance/tax/rate-on-date', { schedule, supplyDate: '2026-09-01' })).status).toBe(403);
   });
 });
+
+describe('GET /v1/finance/tax/hsn-digits — HSN digit count by turnover (A4)', () => {
+  it('reports the required digits, validates a code, and gates on the finance read', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-cash', 'cashier');
+
+    // Small shop → 4 digits; big shop (> ₹5cr) → 6.
+    expect(((await get(h, 'u-owner', '/v1/finance/tax/hsn-digits', { annualTurnoverMinor: '1000000' })).body as { requiredDigits: number }).requiredDigits).toBe(4);
+    expect(((await get(h, 'u-owner', '/v1/finance/tax/hsn-digits', { annualTurnoverMinor: '5000000001' })).body as { requiredDigits: number }).requiredDigits).toBe(6);
+
+    // Validate a code: a 4-digit HSN fails for a big shop.
+    const bad = (await get(h, 'u-owner', '/v1/finance/tax/hsn-digits', { annualTurnoverMinor: '5000000001', hsn: '1006' })).body as { valid: boolean; requiredDigits: number };
+    expect(bad.valid).toBe(false);
+    expect(bad.requiredDigits).toBe(6);
+    expect(((await get(h, 'u-owner', '/v1/finance/tax/hsn-digits', { annualTurnoverMinor: '5000000001', hsn: '100630' })).body as { valid: boolean }).valid).toBe(true);
+
+    // Refuses a malformed HSN; the till is refused.
+    expect((await get(h, 'u-owner', '/v1/finance/tax/hsn-digits', { annualTurnoverMinor: '1000000', hsn: '10A6' })).status).toBe(400);
+    expect((await get(h, 'u-cash', '/v1/finance/tax/hsn-digits', { annualTurnoverMinor: '1000000' })).status).toBe(403);
+  });
+});
