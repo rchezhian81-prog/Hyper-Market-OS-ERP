@@ -2999,17 +2999,26 @@ export function platformAdapter(input: {
     },
 
     /**
-     * Branding is versioned and append-only: each set is a new fact with a time in its key, so
-     * "what did the brand look like then, and who changed it" is answerable, and the current brand
-     * is the LATEST set — a fold, never an overwritten field (hard rule #2).
+     * Branding is versioned and append-only: each set is a new fact, so "what did the brand look
+     * like then" is answerable, and the current brand is the LATEST set — a fold, never an
+     * overwritten field (hard rule #2).
+     *
+     * The version discriminator is the COUNT of prior sets, not the wall-clock millisecond. Keying on
+     * `now()` alone silently deduped two DIFFERENT brands set inside the same millisecond: the second
+     * carried the same `branding-${tenant}-${ms}` idempotency key as the first, so the store took it
+     * for a retry and dropped it — a brand change vanishing with no error, which is exactly the silent
+     * write P-08 forbids. `setFlag` never had this because its key carries the caller's distinct
+     * `changedAt`; branding has no such field, so the monotonic version is what keeps each set its own
+     * fact. (The append per stream is serialised, and branding is set by one owner, not concurrently.)
      */
     setBranding: async (tenantId, branding) => {
       const at = input.now();
+      const version = (await allOf<TenantBranding>(input.store, tenantId, STREAM.platform, 'TenantBrandingSet')).length + 1;
       await input.store.append(tenantId, STREAM.platform, makeEvent({
-        id: `branding-${tenantId}-${at}`,
+        id: `branding-${tenantId}-${version}`,
         type: 'TenantBrandingSet',
         occurredAt: at,
-        idempotencyKey: `branding-${tenantId}-${at}`,
+        idempotencyKey: `branding-${tenantId}-${version}`,
         source: 'api/platform',
         payload: branding,
       }));

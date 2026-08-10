@@ -12,7 +12,10 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import { assessReturn, type ReturnRequest, type ReturnRequestLine } from '../../../packages/returns/src/assess-return';
-import type { OriginalSale, RecordedReturn } from '../../../packages/returns/src/return-register';
+import {
+  returnRegister, returnableLines, overReturned, alreadyRefundedMinor,
+  type OriginalSale, type RecordedReturn,
+} from '../../../packages/returns/src/return-register';
 import type { RefundStatus } from '../../../packages/returns/src/returns';
 
 export type { OriginalSale, RecordedReturn } from '../../../packages/returns/src/return-register';
@@ -125,6 +128,67 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
             restockedLines: assessment.restockedLines,
             remaining: assessment.remaining,
           },
+        };
+      },
+    },
+    {
+      // What may STILL come back on a bill, and how much money is left to refund on it (M13-FR-01/
+      // FR-03, M21). The same register the POST guards against, now legible instead of only enforced:
+      // the desk can see, before it takes a return, that two of three units are still returnable and
+      // ₹100 of a ₹150 bill is still refundable. Folded from the WHOLE cloud history of the bill —
+      // every return at every lane and branch — so it answers what one lane's own log cannot.
+      //
+      // A desk read, on `pos.sale.read` (owner / manager / cashier). Read-only: it moves no money.
+      api: 'API-05', method: 'GET', path: '/v1/sales/:saleId/returnable',
+      permission: 'pos.sale.read',
+      handler: async (ctx) => {
+        const saleId = ctx.params['saleId'] ?? '';
+        const sale = await deps.originalSale(ctx.tenantId, saleId);
+        if (sale === undefined) throw notFound(`sale ${saleId}`);
+
+        const [priorReturns, priorRefunds] = await Promise.all([
+          Promise.resolve(deps.priorReturns(ctx.tenantId, saleId)),
+          Promise.resolve(deps.priorRefunds(ctx.tenantId, saleId)),
+        ]);
+        const returnable = returnableLines(sale, returnRegister(priorReturns));
+        const refundedMinor = alreadyRefundedMinor(saleId, priorRefunds);
+        return {
+          status: 200,
+          body: {
+            saleId, number: sale.number, totalMinor: sale.totalMinor,
+            refundedMinor,
+            // The money cap (M13-FR-03): never below zero, so a fully-refunded bill reads 0, not negative.
+            refundableMinor: Math.max(0, sale.totalMinor - refundedMinor),
+            returnable,
+            asAt: deps.now(),
+          },
+        };
+      },
+    },
+    {
+      // Bills where MORE has come back than went out (M21). It should be impossible through this guard,
+      // which is exactly why it is worth surfacing rather than clamping away: it means a return was
+      // recorded against the wrong bill, or the same goods were refunded twice before this register
+      // existed — a migration, or another branch's log synced in. Both are money already gone, and both
+      // need a person to look. Detect-only: it names the exposure and reverses nothing, because two
+      // people really did receive goods and a human — not a last-write-wins — decides (hard rule #10).
+      //
+      // A LOSS surface, not a desk one, so it is gated one rung above the returnable read — on
+      // `lp.case.read` (owner / manager / accountant), NOT the cashier's `pos.sale.read`. Least
+      // privilege (P-04): a cashier taking a return at the desk has no business pulling the shop's
+      // over-refund report. Mirrors the stored-value double-spend split exactly.
+      api: 'API-05', method: 'GET', path: '/v1/sales/:saleId/over-returns',
+      permission: 'lp.case.read',
+      handler: async (ctx) => {
+        const saleId = ctx.params['saleId'] ?? '';
+        const sale = await deps.originalSale(ctx.tenantId, saleId);
+        if (sale === undefined) throw notFound(`sale ${saleId}`);
+
+        const register = returnRegister(await Promise.resolve(deps.priorReturns(ctx.tenantId, saleId)));
+        const over = overReturned(sale, register);
+        return {
+          status: 200,
+          body: { saleId, overReturned: over, anyFound: over.length > 0, asAt: deps.now() },
         };
       },
     },

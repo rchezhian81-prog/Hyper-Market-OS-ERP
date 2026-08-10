@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { InMemoryEventStore } from '../../packages/persistence/src/event-store';
+import { platformAdapter, STREAM } from '../../services/api/src/adapters';
 
 // White-label branding, end to end through the real API (M36-FR-02, API-11). One codebase, one
 // deployment, many brands. A tenant sets its branding as configuration (no code fork); an unset
@@ -90,5 +92,23 @@ describe('white-label branding, end to end (M36-FR-02, API-11)', () => {
     await h.provisionRole(A, 'u-cash', 'cashier');
     expect((await h.request({ method: 'GET', path: '/v1/platform/branding', userId: 'u-cash', tenantId: A })).status).toBe(403);
     expect((await putBrand(h, A, 'u-cash', { productName: 'X' }, 'cash')).status).toBe(403);
+  });
+
+  it('keeps two brand sets made in the same instant as two facts — a change is never silently dropped (P-08, hard rule #2)', async () => {
+    // A brand versioned only by the wall-clock millisecond loses a change: two DIFFERENT sets inside
+    // the same millisecond carried the same `branding-${tenant}-${ms}` key, so the store took the
+    // second for a retry and dropped it — a rebrand vanishing with no error. Forced deterministically
+    // here with a FIXED clock (the harness's real clock only hits the same millisecond under load,
+    // which is why this surfaced as a flake). The version is the count of prior sets, so both land.
+    const store = new InMemoryEventStore();
+    const adapter = platformAdapter({ store, now: () => '2026-08-07T12:00:00.000Z', probes: async () => [] });
+    await adapter.setBranding(A, { tenantId: A, productName: 'First' });
+    await adapter.setBranding(A, { tenantId: A, productName: 'Second' });
+
+    // Both facts are kept — the second did not silently collide with the first…
+    const sets = (await store.readStream(A, STREAM.platform)).filter((e) => e.event.type === 'TenantBrandingSet');
+    expect(sets).toHaveLength(2);
+    // …and "current" is the LATEST set, a fold over the two, never an overwritten field.
+    expect((await adapter.branding(A))?.productName).toBe('Second');
   });
 });
