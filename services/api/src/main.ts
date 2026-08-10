@@ -273,7 +273,7 @@ export function buildSurface(deps: {
       account: empty(undefined), outstandingMinor: empty(0), recordAccount: () => {}, recordReceivable: () => {}, now,
     } : b2bCreditAdapter({ store, now })),
     ...b2bCollectionsRoutes(store === undefined ? {
-      invoices: empty([]), recordInvoice: () => {}, recordPayment: () => {}, now,
+      invoices: empty([]), outstandingMinor: empty(0), recordInvoice: () => {}, recordPayment: () => {}, now,
     } : b2bCollectionsAdapter({ store, now })),
     ...b2bCommissionRoutes(store === undefined ? {
       accruals: empty([]), recordAccrual: () => {}, now,

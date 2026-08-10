@@ -1166,6 +1166,13 @@ export function b2bCollectionsAdapter(input: {
   return {
     now: input.now,
 
+    // The finance AR balance for this customer — PROJECTED from the SAME receivable-movement stream
+    // the credit surface folds (M22-FR-01), so the reconciliation compares the collections sub-ledger
+    // against the very balance the credit check uses, never a stored total that could drift (#2).
+    outstandingMinor: async (tenantId, customerId) =>
+      (await allOf<RecordedReceivable>(input.store, tenantId, forB2BCustomer(customerId), 'B2BReceivableMovement'))
+        .reduce((b, m) => b + m.deltaMinor, 0),
+
     invoices: async (tenantId, customerId) => {
       const invoices = await allOf<CollectionsReceivable>(input.store, tenantId, forB2BCustomer(customerId), 'B2BInvoiceRecorded');
       const payments = await allOf<RecordedPayment>(input.store, tenantId, forB2BCustomer(customerId), 'B2BPaymentAllocated');
