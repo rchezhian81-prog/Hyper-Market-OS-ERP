@@ -10,7 +10,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
-  redeemValue, balanceOf, householdBalance, findDoubleSpends,
+  redeemValue, balanceOf, householdBalance, findDoubleSpends, reconcileLiability, flagVelocity,
   type Instrument, type ValueMovement, type ValueKind, type DoubleSpend,
 } from '../../../packages/loyalty/src/stored-value';
 
@@ -33,6 +33,9 @@ export interface StoredValueDeps {
   readonly instrumentsForOwner: (tenantId: string, ownerRef: string) => Promise<readonly Instrument[]> | readonly Instrument[];
   /** Every movement across all of that household's instruments (for the pooled balance + double-spend). */
   readonly movementsForOwner: (tenantId: string, ownerRef: string) => Promise<readonly ValueMovement[]> | readonly ValueMovement[];
+  /** Every movement across EVERY instrument in the tenant — the tenant-wide fold behind the liability
+   *  reconciliation and the redemption-velocity flag (M17-FR-03 / M23). */
+  readonly allMovements: (tenantId: string) => Promise<readonly ValueMovement[]> | readonly ValueMovement[];
   readonly now: () => string;
 }
 
@@ -188,6 +191,62 @@ export function storedValueRoutes(deps: StoredValueDeps): readonly Route[] {
           status: 200,
           body: { ownerRef, doubleSpends, anyFound: doubleSpends.length > 0, asAt: deps.now() },
         };
+      },
+    },
+    {
+      // The stored-value LIABILITY reconciliation (M17-FR-03 → M23). Every unspent rupee on a gift
+      // card is money the shop OWES, so the movements' outstanding total (issued − redeemed − expired
+      // + adjusted, folded tenant-wide) is compared EXACTLY against what the accounts have POSTED as
+      // the liability (`?posted=<minor>`); any gap is named as unrecorded debt WITH ITS SIGN, the same
+      // discipline as a period-close control total — never "about right".
+      //
+      // A books/liability oversight surface, not a till one: gated on `lp.case.read` (owner / manager /
+      // accountant), one rung above the cashier's `loyalty.value.read` balance — the SAME gate as the
+      // double-spend report above. A cashier reading a card's balance has no business pulling the
+      // shop's liability reconciliation (P-04 least privilege).
+      api: 'API-06', method: 'GET', path: '/v1/stored-value/liability',
+      permission: 'lp.case.read',
+      handler: async (ctx) => {
+        const posted = ctx.query['posted'];
+        if (posted === undefined || !/^\d+$/.test(posted)) {
+          throw apiError(400, {
+            code: 'liability_needs_a_posted_figure',
+            whatHappened: 'The liability reconciliation needs ?posted=<whole minor units> — the liability the accounts currently carry — to compare the movements against.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the posted figure. A reconciliation reads, it never writes.',
+          });
+        }
+        const reconciliation = reconcileLiability({
+          movements: await deps.allMovements(ctx.tenantId),
+          postedLiabilityMinor: Number(posted),
+        });
+        return { status: 200, body: { ...reconciliation, asAt: deps.now() } };
+      },
+    },
+    {
+      // The redemption-VELOCITY flag (M17-FR-03 fraud limits). Instruments redeemed unusually many
+      // times inside a short window — worth a person's look. DETECT-ONLY: it blocks nothing, because a
+      // genuine customer spending a large gift card across a big shop looks identical, and stopping
+      // them at the counter over a heuristic is the worse outcome than a delayed investigation. Same
+      // LOSS-oversight gate as the double-spend surface (`lp.case.read`). `?at=` sets the window end;
+      // omitted, it is now.
+      api: 'API-06', method: 'GET', path: '/v1/stored-value/velocity',
+      permission: 'lp.case.read',
+      handler: async (ctx) => {
+        const at = ctx.query['at'];
+        if (at !== undefined && (at.trim() === '' || Number.isNaN(Date.parse(at)))) {
+          throw apiError(400, {
+            code: 'velocity_needs_a_valid_time',
+            whatHappened: '?at= must be an ISO timestamp for the window to be measured against; a malformed one would silently count nothing.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send a valid ISO ?at=, or omit it to use now.',
+          });
+        }
+        const flags = flagVelocity({
+          movements: await deps.allMovements(ctx.tenantId),
+          at: at ?? deps.now(),
+        });
+        return { status: 200, body: { flags, anyFound: flags.length > 0, asAt: deps.now() } };
       },
     },
   ];

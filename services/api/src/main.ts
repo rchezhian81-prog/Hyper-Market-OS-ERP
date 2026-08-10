@@ -245,7 +245,7 @@ export function buildSurface(deps: {
     } : customerAdapter({ store, now })),
     ...storedValueRoutes(store === undefined ? {
       instrument: empty(undefined), movements: empty([]), recordIssue: () => {}, recordMovement: () => {},
-      instrumentsForOwner: empty([]), movementsForOwner: empty([]), now,
+      instrumentsForOwner: empty([]), movementsForOwner: empty([]), allMovements: empty([]), now,
     } : storedValueAdapter({ store, now })),
     ...ordersRoutes(store === undefined ? {
       onHand: empty(new Map()), outstanding: empty([]), holdReservations: () => {},
