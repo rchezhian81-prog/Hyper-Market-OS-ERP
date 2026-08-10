@@ -10,6 +10,12 @@
 // at all returns `not_available` with the reason — never a zero. A zero is a number people act on.
 
 import type { Route } from '../../kernel/src/index';
+import {
+  reportCatalogue,
+  whatWouldUnlockMost,
+  type Producer,
+  type CatalogueEntry,
+} from '../../../packages/reporting/src/index';
 
 export type Staleness = 'live' | 'lagging' | 'stale';
 
@@ -95,9 +101,33 @@ export function dashboard(figures: readonly Figure[], now: string): Dashboard {
   };
 }
 
+/**
+ * What the report catalogue needs to answer "which reports can I run, and what should I start
+ * recording to unlock more" — the two facts that are *not* the reporting service's to invent:
+ * `records` is what the shop actually records, `produced` is what this build can work out. Both
+ * are supplied by the composition root (M29/M30). Absent them the catalogue is still honest — it
+ * simply reports everything as not yet available, with the reason.
+ */
+export interface CatalogueInputs {
+  readonly records: readonly Producer[];
+  readonly produced: readonly string[];
+}
+
 export interface ReportingDeps {
   readonly figures: (tenantId: string, name: string) => Promise<readonly Figure[]> | readonly Figure[];
   readonly now: () => string;
+  /**
+   * Optional so a bare wiring (no store) still serves the route honestly. When present, its
+   * `records`/`produced` drive the tested `reportCatalogue` engine — the same code the unit tests
+   * pin — rather than a second copy of that logic living in this service.
+   */
+  readonly catalogueInputs?: (tenantId: string) => Promise<CatalogueInputs> | CatalogueInputs;
+}
+
+/** What the catalogue route returns: the whole catalogue, and what to record next to unlock more. */
+export interface ReportCatalogueView {
+  readonly reports: readonly CatalogueEntry[];
+  readonly unlockNext: ReturnType<typeof whatWouldUnlockMost>;
 }
 
 /**
@@ -115,6 +145,24 @@ export function reportingRoutes(deps: ReportingDeps): readonly Route[] {
         status: 200,
         body: dashboard(await deps.figures(ctx.tenantId, 'dashboard'), deps.now()),
       }),
+    },
+    {
+      // The report catalogue (D13 / M29 / M30): every report D13 names, each marked runnable or
+      // not — and when not, WHY, split into "the shop does not record it yet" (the owner can act)
+      // and "this version cannot produce it" (we can). Produced by the tested `reportCatalogue`
+      // engine, so this running route and the unit tests exercise ONE implementation, not two.
+      // Declared BEFORE the `:name` route so `catalogue` is not read as a report name.
+      api: 'API-10', method: 'GET', path: '/v1/reports/catalogue',
+      permission: 'reporting.report.read',
+      handler: async (ctx) => {
+        const { records, produced } = (await deps.catalogueInputs?.(ctx.tenantId))
+          ?? { records: [], produced: [] };
+        const body: ReportCatalogueView = {
+          reports: reportCatalogue(records, produced),
+          unlockNext: whatWouldUnlockMost(records, produced),
+        };
+        return { status: 200, body };
+      },
     },
     {
       api: 'API-10', method: 'GET', path: '/v1/reports/:name',
