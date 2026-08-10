@@ -17,6 +17,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
   issueCreditNote,
+  reconcileNotes,
   type CreditNote,
   type CreditReason,
   type NoteKind,
@@ -37,6 +38,9 @@ export interface CreditNoteDeps {
    */
   readonly alreadyCredited: (tenantId: string, invoiceId: string) => Promise<number> | number;
   readonly appendCreditNote: (tenantId: string, note: CreditNote) => Promise<void> | void;
+  /** Every credit/debit note issued, folded from the CreditNoteIssued events — the sub-ledger side of
+   *  the period reconciliation (M23-FR-02). The engine filters by each note's own declareInPeriod. */
+  readonly notes: (tenantId: string) => Promise<readonly CreditNote[]> | readonly CreditNote[];
   readonly now: () => string;
 }
 
@@ -115,6 +119,49 @@ export function creditNoteRoutes(deps: CreditNoteDeps): readonly Route[] {
             declareInPeriod: result.note!.declareInPeriod,
           },
         };
+      },
+    },
+    {
+      // The period credit-note reconciliation (M23-FR-02, CGST s.34 / GSTR-1). The credit notes ISSUED
+      // for a return period (folded from the ledger, grouped by each note's own declareInPeriod — the
+      // month ISSUED, never the invoice's) are compared against what the accounts POSTED for that
+      // period (`?ledgerTaxable=&ledgerTax=`, supplied), reporting the difference EXACTLY and with its
+      // sign — the number the buyer's GSTR-2B finds before we do — plus the value issued OUTSIDE the
+      // s.34(2) window (commercially real, fiscally not). A supplied comparison figure on a READ,
+      // exactly like the stored-value liability and B2B AR reconciliations; nothing is posted here.
+      //
+      // A finance-controllership read, gated on the tier that ISSUES the notes — `finance.creditnote.issue`
+      // (owner + accountant), NOT the store_manager. Reconciling GST credit notes to the general ledger
+      // is the accountant's act, the same one-rung-above split as the B2B sub-ledger reconciliation.
+      api: 'API-09', method: 'GET', path: '/v1/finance/credit-notes/reconciliation',
+      permission: 'finance.creditnote.issue',
+      handler: async (ctx) => {
+        const period = ctx.query['period'];
+        const ledgerTaxable = ctx.query['ledgerTaxable'];
+        const ledgerTax = ctx.query['ledgerTax'];
+        if (period === undefined || !/^\d{4}-\d{2}$/.test(period)) {
+          throw apiError(400, {
+            code: 'reconciliation_needs_a_period',
+            whatHappened: 'The credit-note reconciliation needs ?period=YYYY-MM — the return period (the month notes were ISSUED) to reconcile.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the period. A reconciliation reads, it never writes.',
+          });
+        }
+        if (ledgerTaxable === undefined || !/^\d+$/.test(ledgerTaxable) || ledgerTax === undefined || !/^\d+$/.test(ledgerTax)) {
+          throw apiError(400, {
+            code: 'reconciliation_needs_ledger_figures',
+            whatHappened: 'The reconciliation needs the figures the accounts posted to compare against: ?ledgerTaxable=<minor>&ledgerTax=<minor> (whole minor units).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send both ledger figures. A reconciliation reads, it never writes.',
+          });
+        }
+        const reconciliation = reconcileNotes({
+          period,
+          notes: await deps.notes(ctx.tenantId),
+          ledgerTaxableMinor: Number(ledgerTaxable),
+          ledgerTaxMinor: Number(ledgerTax),
+        });
+        return { status: 200, body: { ...reconciliation, asAt: deps.now() } };
       },
     },
   ];
