@@ -22,8 +22,19 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
+import {
+  AGENTS,
+  FORBIDDEN_TOOLS,
+  type AgentDefinition,
+  type AgentId as EngineAgentId,
+} from '../../../packages/ai/src/index';
 
-export type AgentId = 'A01' | 'A02' | 'A03' | 'A04' | 'A05' | 'A06' | 'A07' | 'A08' | 'A09' | 'A10';
+/**
+ * Who the ten agents are — sourced from the tested authority engine (`packages/ai`), not a second
+ * copy of the literal union here (CORE-01 / GAP-ARCH-01). One definition of the agents, and the
+ * running service and the engine's own tests agree on it by construction.
+ */
+export type AgentId = EngineAgentId;
 
 export interface EvidenceItem {
   /** Where the claim came from — a report, a document, a query. Never the model's own assertion. */
@@ -127,8 +138,32 @@ export interface AiDeps {
   readonly now: () => string;
 }
 
+/** The governance catalogue this route returns — who the agents are and what no agent may ever do. */
+export interface AgentCatalogue {
+  readonly agents: readonly AgentDefinition[];
+  /** Tools no agent may ever be granted (AI-NFR-12). A closed list with no override anywhere. */
+  readonly neverAllowed: readonly string[];
+  readonly committedAnything: false;
+}
+
 export function aiRoutes(deps: AiDeps): readonly Route[] {
   return [
+    {
+      // The agent authority catalogue (AI-NFR-01/02/03): every agent, exactly what it may ask for,
+      // who must approve it, whether it is read-only — plus the tools NO agent may ever be granted.
+      // Served from the tested `packages/ai` authority engine, so the running answer to "what can the
+      // AI do here" is the same object its own tests pin, not a second copy that can drift from it.
+      api: 'API-13', method: 'GET', path: '/v1/ai/agents',
+      permission: 'ai.proposal.read',
+      handler: () => {
+        const body: AgentCatalogue = {
+          agents: Object.values(AGENTS),
+          neverAllowed: FORBIDDEN_TOOLS,
+          committedAnything: false,
+        };
+        return { status: 200, body };
+      },
+    },
     {
       api: 'API-13', method: 'POST', path: '/v1/ai/agents/:agent/runs',
       permission: 'ai.agent.run', idempotent: true,
