@@ -91,6 +91,7 @@ import type { DurableTenantSettings } from '../../../packages/tenant/src/index';
 import { InMemoryNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
 import { figure } from '../../reporting/src/index';
 import type { ReportingDeps } from '../../reporting/src/index';
+import type { Producer } from '../../../packages/reporting/src/index';
 import type { MigrationDeps } from '../../migration/src/index';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import type { DomainFinding, Acceptance } from '../../../packages/migration/src/verification-report';
@@ -2968,9 +2969,21 @@ export function platformAdapter(input: {
 export function reportingAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
+  /**
+   * What this shop records and what this build can work out — the two facts the report catalogue
+   * needs (M29/M30). Declared by the composition root because neither is the reporting service's to
+   * invent; conservative by default (nothing claimed) so the catalogue never overstates the shop.
+   */
+  readonly records?: readonly Producer[];
+  readonly produced?: readonly string[];
 }): ReportingDeps {
   return {
     now: input.now,
+
+    // Drives the tested `reportCatalogue` engine on the running path (CORE-01). The values are
+    // declaration, not derivation: the catalogue is a shop-wide statement, so it comes from
+    // configuration the owner ratifies, never from whichever streams this one service happens to see.
+    catalogueInputs: () => ({ records: input.records ?? [], produced: input.produced ?? [] }),
 
     /**
      * Figures projected from the streams that hold them.

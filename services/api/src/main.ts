@@ -70,6 +70,7 @@ import { platformRoutes, inMemorySettings, emptyExportBundle } from '../../platf
 import { purchaseRoutes } from '../../purchase/src/index';
 import { financeRoutes } from '../../finance/src/index';
 import { reportingRoutes } from '../../reporting/src/index';
+import type { Producer } from '../../../packages/reporting/src/index';
 import { customerRoutes } from '../../customer/src/index';
 import { ordersRoutes } from '../../orders/src/index';
 import { fulfilmentRoutes } from '../../fulfilment/src/index';
@@ -85,6 +86,16 @@ import type { DependencyProbe } from '../../platform/src/index';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 
 const now = (): string => new Date().toISOString();
+
+/**
+ * The two facts the report catalogue (M29/M30) needs, declared in the composition root because
+ * neither is a thing the reporting service may invent. Conservative on purpose: it names only what
+ * this running build genuinely records and can work out today, so the owner's catalogue shows the
+ * rest honestly as "not recorded yet" / "this version cannot produce it" rather than pretending.
+ * These move to per-tenant configuration as the shop's recorded facts become tenant settings (M02).
+ */
+const REPORTING_RECORDS: readonly Producer[] = ['sales_rung_at_the_till'];
+const REPORTING_PRODUCED: readonly string[] = ['sales_by_day'];
 
 /**
  * How long a click-and-collect reservation holds stock.
@@ -279,7 +290,7 @@ export function buildSurface(deps: {
     } : facilitiesMonitoringAdapter({ store, now })),
     ...reportingRoutes(store === undefined
       ? { figures: empty([]), now }
-      : reportingAdapter({ store, now })),
+      : reportingAdapter({ store, now, records: REPORTING_RECORDS, produced: REPORTING_PRODUCED })),
     ...platformRoutes(store === undefined ? {
       probe: probes, flags: empty({}), setFlag: () => {}, recordSupportAccess: () => {},
       settings: inMemorySettings(), exportTenant: emptyExportBundle,
