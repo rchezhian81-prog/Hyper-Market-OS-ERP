@@ -189,6 +189,29 @@ describe('GET /v1/finance/tax/hsn-digits — HSN digit count by turnover (A4)', 
   });
 });
 
+describe('GET /v1/finance/tax/invoice-number — gap-free ≤16-char series with FY reset (A2)', () => {
+  it('formats the next number, resets on a new FY, rejects >16 chars, and gates on the finance read', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-cash', 'cashier');
+
+    // A document dated Aug 2026 → FY 2026-27 (compact 2627); seq 1 → INV/2627/000001.
+    const ok = (await get(h, 'u-owner', '/v1/finance/tax/invoice-number', { prefix: 'INV', padTo: '6', seq: '1', date: '2026-08-10' })).body as { number: string; seq: number };
+    expect(ok.number).toBe('INV/2627/000001');
+
+    // Series counting in FY 2627 but a document dated in the next FY resets the sequence to 1.
+    const reset = (await get(h, 'u-owner', '/v1/finance/tax/invoice-number', { prefix: 'INV', padTo: '6', seq: '250', date: '2027-04-01', fyOfSeries: '2627' })).body as { number: string; seq: number };
+    expect(reset.seq).toBe(1);
+    expect(reset.number).toBe('INV/2728/000001');
+
+    // A prefix that pushes the number past 16 chars is rejected.
+    expect((await get(h, 'u-owner', '/v1/finance/tax/invoice-number', { prefix: 'INVOICE', padTo: '6', seq: '1', date: '2026-08-10' })).status).toBe(400);
+    // Missing series fields → 400; the till may not use the back-office calculator.
+    expect((await get(h, 'u-owner', '/v1/finance/tax/invoice-number', { prefix: 'INV', padTo: '6', date: '2026-08-10' })).status).toBe(400);
+    expect((await get(h, 'u-cash', '/v1/finance/tax/invoice-number', { prefix: 'INV', padTo: '6', seq: '1', date: '2026-08-10' })).status).toBe(403);
+  });
+});
+
 describe('GET /v1/finance/tax/invoice-check — mandatory Rule 46 fields (A1)', () => {
   const COMPLETE = {
     documentType: 'Tax Invoice', supplierGstin: '29ABCDE1234F1Z5', invoiceNumber: 'INV/2026/000001',

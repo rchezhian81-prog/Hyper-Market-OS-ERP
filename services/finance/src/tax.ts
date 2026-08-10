@@ -21,6 +21,7 @@ import {
   InvalidInclusiveTaxInput, InvalidPromoTaxInput, InvalidRateSchedule, InvalidHsnInput,
   type PlaceOfSupply, type GstRatePeriod, type TaxInvoiceFields,
 } from '../../../packages/finance/src/index';
+import { allocateInvoiceNumber, financialYearOf, InvalidInvoiceNumber, type InvoiceSeriesState } from '../../../packages/numbering/src/index';
 
 const isIntString = (s: unknown): s is string => typeof s === 'string' && /^\d+$/.test(s);
 const isBool = (s: unknown): boolean => s === 'true'; // an explicit 'true'; anything else is false
@@ -233,6 +234,41 @@ export function taxRoutes(): readonly Route[] {
           ...(str(q['taxComponents']) === undefined ? {} : { taxComponents: q['taxComponents']!.split(',') }),
         };
         return { status: 200, body: checkTaxInvoiceFields(inv) };
+      },
+    },
+    {
+      // Allocate/preview the next invoice number for a document date (A2) — the financial year is put
+      // inside the number so the sequence can restart each April without colliding, and the result is
+      // rejected if it would exceed the 16-character Rule 46 limit. A read — it formats & validates a
+      // number; it does not commit the series (that stays with the authoritative allocator).
+      // ?prefix=&padTo=&seq=&fyNext=&date=  (fyNext = the series' current financial year, e.g. "2627")
+      api: 'API-09', method: 'GET', path: '/v1/finance/tax/invoice-number',
+      permission: 'finance.period.read',
+      handler: async (ctx) => {
+        const prefix = ctx.query['prefix'];
+        const padTo = ctx.query['padTo'];
+        const seq = ctx.query['seq'];
+        const date = ctx.query['date'];
+        const fyOfSeries = ctx.query['fyOfSeries']; // the FY the series is currently counting in
+        if (typeof prefix !== 'string' || prefix === '' || !isIntString(padTo) || !isIntString(seq) || typeof date !== 'string') {
+          throw apiError(400, {
+            code: 'invoice_number_needs_series',
+            whatHappened: 'The invoice number needs ?prefix=, ?padTo=<whole>, ?seq=<whole> and ?date=YYYY-MM-DD.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the series prefix, padding, next sequence and the document date.',
+          });
+        }
+        try {
+          // If the caller states the FY the series is counting in, honour a reset when the date rolls
+          // into a new FY; otherwise treat the date's own FY as the series FY (seq used as given).
+          const seriesFy = typeof fyOfSeries === 'string' && fyOfSeries !== '' ? fyOfSeries : financialYearOf(date).compact;
+          const state: InvoiceSeriesState = { fyCompact: seriesFy, next: Number(seq) };
+          const alloc = allocateInvoiceNumber(state, { prefix, padTo: Number(padTo), dateISO: date });
+          return { status: 200, body: { number: alloc.number, seq: alloc.seq, financialYear: alloc.financialYear, nextState: alloc.state } };
+        } catch (err) {
+          if (err instanceof InvalidInvoiceNumber) throw apiError(400, { code: 'invoice_number_invalid', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Shorten the prefix/padding so the number fits 16 characters, or correct the date.' });
+          throw err;
+        }
       },
     },
   ];
