@@ -20,6 +20,7 @@
 
 import { Pool } from 'pg';
 import { SqlEventStore } from '../../../packages/persistence/src/event-store';
+import { SqlSnapshotStore, type SnapshotStore } from '../../../packages/persistence/src/snapshot';
 import { SqlConfigVersionStore } from '../../../packages/persistence/src/config-store';
 import { SqlNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
 import { pgClient, pgPoolClient } from '../../../packages/persistence/src/pg-client';
@@ -133,6 +134,12 @@ export function buildSurface(deps: {
   readonly settings?: DurableTenantSettings;
   /** Durable gap-free number series (a SqlNumberSeriesStore-backed store in production). */
   readonly numberSeries?: NumberSeriesStore;
+  /**
+   * Where projection snapshots live (CORE-03). A `SqlSnapshotStore` in production, so bounded reads
+   * survive a restart; omitted, adapters fall back to a process-local in-memory cache (still correct,
+   * just rebuilt on a cold start, because a snapshot is disposable).
+   */
+  readonly snapshots?: SnapshotStore;
 }): readonly Route[] {
   const signer = hmacSigner(deps.signingKey);
   const whHasher = webhookHasher(deps.signingKey);
@@ -255,7 +262,7 @@ export function buildSurface(deps: {
     } : financeAdapter({ store, now })),
     ...creditNoteRoutes(store === undefined ? {
       alreadyCredited: empty(0), appendCreditNote: () => {}, now,
-    } : financeNotesAdapter({ store, now })),
+    } : financeNotesAdapter({ store, now, ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }) })),
     ...settlementRoutes(store === undefined ? {
       importedBatchIds: empty([]), recordBatch: () => {}, credits: empty([]),
       electronicTenders: empty([]), investigations: empty([]),
@@ -381,6 +388,9 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
     // restart, the same table and rules the in-memory path uses in tests.
     settings: new DurableTenantSettings(new SqlConfigVersionStore(pgClient(db))),
     numberSeries: new SqlNumberSeriesStore(pgClient(db)),
+    // Durable projection snapshots (CORE-03): bounded reads resume from the last persisted fold
+    // across a restart, rather than re-folding the whole ledger on a cold start.
+    snapshots: new SqlSnapshotStore(pgClient(db)),
     probes: async () => [{
       name: 'postgres',
       criticality: 'shop_cannot_trade_without_it',

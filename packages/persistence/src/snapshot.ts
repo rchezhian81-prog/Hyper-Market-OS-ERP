@@ -12,6 +12,7 @@
 // snapshot never replaces, and hard rule #10 is unaffected because nothing here resolves anything.
 
 import type { EventStore } from './event-store';
+import type { SqlClient } from './sql-client';
 import { runProjection, type Projection, type ProjectionResult } from './projection';
 
 /** A persisted fold: a projection's state at a watermark, for one tenant / stream / projection. */
@@ -59,6 +60,36 @@ export class InMemorySnapshotStore implements SnapshotStore {
   save<S>(snapshot: Snapshot<S>): Promise<void> {
     this.byKey.set(this.key(snapshot.tenantId, snapshot.stream, snapshot.projection), snapshot as Snapshot<unknown>);
     return Promise.resolve();
+  }
+}
+
+/**
+ * Durable snapshot store, backed by the `projection_snapshot` table (migration 0011). Survives a
+ * restart, so a cold process resumes each projection from its last persisted fold instead of
+ * re-folding the whole ledger. The whole `Snapshot` is stored as one JSONB `data`, keyed by
+ * (tenant, stream, projection) — so the projection's STATE must be JSON-serialisable, which is the
+ * one constraint this store adds over the in-memory one. `save` UPSERTs (the newest fold wins).
+ */
+export class SqlSnapshotStore implements SnapshotStore {
+  constructor(private readonly client: Pick<SqlClient, 'query'>) {}
+
+  async load<S>(tenantId: string, stream: string, projection: string): Promise<Snapshot<S> | undefined> {
+    const rows = await this.client.query<{ data: Snapshot<S> }>(
+      'SELECT data FROM projection_snapshot WHERE tenant_id = $1 AND stream = $2 AND projection = $3',
+      [tenantId, stream, projection],
+    );
+    // `data` is JSONB — the driver hands it back already parsed into the stored Snapshot.
+    return rows[0]?.data;
+  }
+
+  async save<S>(snapshot: Snapshot<S>): Promise<void> {
+    await this.client.query(
+      `INSERT INTO projection_snapshot (tenant_id, stream, projection, data)
+       VALUES ($1, $2, $3, $4::jsonb)
+       ON CONFLICT (tenant_id, stream, projection)
+       DO UPDATE SET data = EXCLUDED.data, updated_at = now()`,
+      [snapshot.tenantId, snapshot.stream, snapshot.projection, JSON.stringify(snapshot)],
+    );
   }
 }
 
