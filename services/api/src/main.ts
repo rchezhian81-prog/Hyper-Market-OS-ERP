@@ -69,6 +69,7 @@ import { identityRoutes, tokenAuthenticator } from '../../identity/src/index';
 import { platformRoutes, inMemorySettings, emptyExportBundle } from '../../platform/src/index';
 import { purchaseRoutes } from '../../purchase/src/index';
 import { financeRoutes } from '../../finance/src/index';
+import { creditNoteRoutes } from '../../finance/src/credit-notes';
 import { reportingRoutes } from '../../reporting/src/index';
 import type { Producer } from '../../../packages/reporting/src/index';
 import { customerRoutes } from '../../customer/src/index';
@@ -79,7 +80,7 @@ import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, warehouseAdapter, transfersAdapter, countsAdapter, productionAdapter, packagingAdapter, wasteAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
-  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, integrationAdapter, webhookAdapter, connectorAdapter,
+  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
@@ -252,6 +253,9 @@ export function buildSurface(deps: {
       appendJournal: () => {}, controlTotals: empty([]), postersIn: empty([]),
       markClosed: () => {}, now,
     } : financeAdapter({ store, now })),
+    ...creditNoteRoutes(store === undefined ? {
+      alreadyCredited: empty(0), appendCreditNote: () => {}, now,
+    } : financeNotesAdapter({ store, now })),
     ...settlementRoutes(store === undefined ? {
       importedBatchIds: empty([]), recordBatch: () => {}, credits: empty([]),
       electronicTenders: empty([]), investigations: empty([]),

@@ -13,7 +13,7 @@ says which._
 |---|---|---|
 | `services/catalogue` | `packages/catalogue` | ✅ wired |
 | `services/customer` | `packages/loyalty` | ✅ wired |
-| `services/finance` | `packages/b2b`, `packages/concession`, `packages/settlement`, `packages/reconciliation`, `packages/waste`, `packages/numbering`, `packages/approvals`, `packages/contracts` | ✅ wired |
+| `services/finance` | `packages/b2b`, `packages/concession`, `packages/settlement`, `packages/reconciliation`, `packages/waste`, `packages/numbering`, `packages/approvals`, `packages/contracts`, **`packages/finance`** (`issueCreditNote`) | ✅ wired (credit notes — **CORE-02 inc2**) |
 | `services/identity` | `packages/rbac`, `packages/numbering` | ✅ wired |
 | `services/inventory` | `packages/stock`, `packages/ledger`, `packages/counts`, `packages/replenishment`, `packages/warehouse`, `packages/production`, `packages/waste`, `packages/adjustment` | ✅ wired |
 | `services/migration` | `packages/migration` | ✅ wired |

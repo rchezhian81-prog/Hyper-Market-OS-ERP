@@ -70,6 +70,8 @@ import { weightedAverageValuation, type ValuationMovement } from '../../../packa
 import { agedStockLots, type DatedMovement } from '../../../packages/stock/src/ageing-source';
 import type { MatchResult, BankChangeRequest, PurchaseDeps } from '../../purchase/src/index';
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
+import type { CreditNoteDeps } from '../../finance/src/credit-notes';
+import type { CreditNote } from '../../../packages/finance/src/index';
 import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
 import type { StoredPointsMovement } from '../../../packages/loyalty/src/assess-points';
 import type { StoredValueDeps, Instrument, ValueMovement } from '../../customer/src/stored-value';
@@ -2376,6 +2378,39 @@ export function financeAdapter(input: {
         idempotencyKey: `close-${tenantId}-${period}`,
         source: 'api/finance',
         payload: { period, signedBy, closedAt: input.now() },
+      }));
+    },
+  };
+}
+
+export function financeNotesAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): CreditNoteDeps {
+  const issued = (tenantId: string) =>
+    allOf<CreditNote>(input.store, tenantId, STREAM.finance, 'CreditNoteIssued');
+
+  return {
+    now: input.now,
+
+    // Σ of what earlier CREDIT notes already took off this invoice — projected from the events, not
+    // a stored running total. This is what makes the s.34 cap hold across many notes: the engine
+    // adds the new note to this and refuses if the cumulative total would exceed the invoice. Debit
+    // notes add to a bill and so do not consume the credit headroom.
+    alreadyCredited: async (tenantId, invoiceId) =>
+      (await issued(tenantId))
+        .filter((n) => n.againstInvoiceId === invoiceId && n.kind === 'credit_note')
+        .reduce((s, n) => s + n.taxableMinor, 0),
+
+    appendCreditNote: async (tenantId, note) => {
+      await input.store.append(tenantId, STREAM.finance, makeEvent({
+        id: note.noteId,
+        type: 'CreditNoteIssued',
+        occurredAt: input.now(),
+        // Idempotent on the note id — a resend of the same note is not a second credit.
+        idempotencyKey: `creditnote-${tenantId}-${note.noteId}`,
+        source: 'api/finance',
+        payload: note,
       }));
     },
   };
