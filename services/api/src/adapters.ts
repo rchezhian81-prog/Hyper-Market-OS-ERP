@@ -23,6 +23,7 @@ import { createHash } from 'node:crypto';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { Money, CurrencyCode } from '../../../packages/contracts/src/money';
 import type { EventStore, PersistedEvent } from '../../../packages/persistence/src/event-store';
+import { InMemorySnapshotStore, projectFromSnapshot, type Projection } from '../../../packages/persistence/src/index';
 import type { CatalogueProduct } from '../../../packages/catalogue/src/catalogue';
 import type { SignedPack } from '../../catalogue/src/index';
 import type { CatalogueDeps } from '../../catalogue/src/index';
@@ -2383,24 +2384,43 @@ export function financeAdapter(input: {
   };
 }
 
+/** Σ taxable credited per invoice, folded from the `CreditNoteIssued` events (credit notes only). */
+const CREDITED_PER_INVOICE_PROJECTION = 'credited-per-invoice@1';
+const CREDITED_PER_INVOICE: Projection<Readonly<Record<string, number>>> = {
+  initial: {},
+  apply: (state, event) => {
+    const n = event.payload as CreditNote;
+    // Debit notes add to a bill; only credit notes consume the s.34 credit headroom.
+    if (n.kind !== 'credit_note') return state;
+    return { ...state, [n.againstInvoiceId]: (state[n.againstInvoiceId] ?? 0) + n.taxableMinor };
+  },
+};
+
 export function financeNotesAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
 }): CreditNoteDeps {
-  const issued = (tenantId: string) =>
-    allOf<CreditNote>(input.store, tenantId, STREAM.finance, 'CreditNoteIssued');
+  // A process-local, disposable snapshot cache (CORE-03) so the cumulative-credit read stays bounded
+  // as the shop's credit-note history grows over the years, instead of re-folding all of it on every
+  // issuance. Derived from the ledger and rebuilt from it on a cold start — losing it costs a
+  // rebuild, never data, so an empty cache (a fresh process) is always a correct start.
+  const snapshots = new InMemorySnapshotStore();
 
   return {
     now: input.now,
 
-    // Σ of what earlier CREDIT notes already took off this invoice — projected from the events, not
-    // a stored running total. This is what makes the s.34 cap hold across many notes: the engine
-    // adds the new note to this and refuses if the cumulative total would exceed the invoice. Debit
-    // notes add to a bill and so do not consume the credit headroom.
-    alreadyCredited: async (tenantId, invoiceId) =>
-      (await issued(tenantId))
-        .filter((n) => n.againstInvoiceId === invoiceId && n.kind === 'credit_note')
-        .reduce((s, n) => s + n.taxableMinor, 0),
+    // Σ of what earlier CREDIT notes already took off this invoice, projected through the snapshot
+    // facility rather than re-summing the whole history. This is what makes the s.34 cap hold across
+    // many notes: the engine adds the new note to this and refuses if the cumulative would exceed
+    // the invoice.
+    alreadyCredited: async (tenantId, invoiceId) => {
+      const { state } = await projectFromSnapshot(
+        input.store, snapshots, tenantId, STREAM.finance,
+        CREDITED_PER_INVOICE_PROJECTION, CREDITED_PER_INVOICE,
+        { eventType: 'CreditNoteIssued' },
+      );
+      return state[invoiceId] ?? 0;
+    },
 
     appendCreditNote: async (tenantId, note) => {
       await input.store.append(tenantId, STREAM.finance, makeEvent({
