@@ -4,3 +4,4 @@
 
 export * from './audit-trail';
 export * from './retention';
+export * from './statutory-retention';

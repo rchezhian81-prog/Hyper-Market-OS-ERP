@@ -75,6 +75,7 @@ import { purchaseRoutes } from '../../purchase/src/index';
 import { financeRoutes } from '../../finance/src/index';
 import { creditNoteRoutes } from '../../finance/src/credit-notes';
 import { taxRoutes } from '../../finance/src/tax';
+import { retentionRoutes } from '../../finance/src/retention';
 import { reportingRoutes } from '../../reporting/src/index';
 import type { Producer } from '../../../packages/reporting/src/index';
 import { customerRoutes } from '../../customer/src/index';
@@ -274,6 +275,8 @@ export function buildSurface(deps: {
     } : financeNotesAdapter({ store, now, ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }) })),
     // GST-from-inclusive-MRP calculator (A9/A8) — stateless, folds no ledger, so no deps/stub.
     ...taxRoutes(),
+    // Statutory retention (A28) — stateless: longest statute wins + legal-hold-blocks-deletion.
+    ...retentionRoutes(),
     ...settlementRoutes(store === undefined ? {
       importedBatchIds: empty([]), recordBatch: () => {}, credits: empty([]),
       electronicTenders: empty([]), investigations: empty([]),
