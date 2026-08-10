@@ -11,3 +11,4 @@ export * from './unit-price';
 export * from './label-height';
 export * from './loose-food-label';
 export * from './pack-declarations';
+export * from './dual-mrp';

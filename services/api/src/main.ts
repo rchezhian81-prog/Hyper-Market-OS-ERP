@@ -34,6 +34,7 @@ import { tenantAccessResolver, seedGenesisOwner } from './access';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
 import { labellingRoutes } from '../../catalogue/src/labelling';
+import { masterDataRoutes } from '../../catalogue/src/master-data';
 import { pricingRoutes } from '../../pricing/src/index';
 import { priceListRoutes } from '../../pricing/src/price-list';
 import { promotionCatalogueRoutes } from '../../pricing/src/promotion-catalogue';
@@ -162,6 +163,8 @@ export function buildSurface(deps: {
     } : catalogueAdapter({ store, signer, now })),
     // Unit sale price on the label (B3, Legal Metrology) — stateless, folds no ledger, so no deps/stub.
     ...labellingRoutes(),
+    // Master-data commit guards (B2 dual-MRP) — stateless product-master validation.
+    ...masterDataRoutes(),
     ...pricingRoutes(store === undefined
       ? { recordPriceChange: () => {}, canApprove: () => Promise.resolve(false), now }
       : pricingAdapter({ store, now })),
