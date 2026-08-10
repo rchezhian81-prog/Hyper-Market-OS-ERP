@@ -18,7 +18,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
-  ageReceivables, allocatePayment, decideDunning,
+  ageReceivables, allocatePayment, decideDunning, reconcileAr,
   type Receivable, type PaymentAllocation,
 } from '../../../packages/b2b/src/index';
 
@@ -40,6 +40,10 @@ export interface RecordedPayment {
 export interface B2BCollectionsDeps {
   /** Invoices with `settledMinor` PROJECTED from the recorded allocations — never stored (#2). */
   readonly invoices: (tenantId: string, customerId: string) => Promise<readonly Receivable[]> | readonly Receivable[];
+  /** The finance AR balance for this customer, PROJECTED from the receivable-movement ledger the
+   *  credit surface writes (M22-FR-01) — the independent second figure `reconcileAr` compares the
+   *  collections ageing against. Same customer stream, so it is the very balance the credit check uses. */
+  readonly outstandingMinor: (tenantId: string, customerId: string) => Promise<number> | number;
   readonly recordInvoice: (tenantId: string, customerId: string, invoice: Receivable) => Promise<void> | void;
   readonly recordPayment: (tenantId: string, customerId: string, payment: RecordedPayment) => Promise<void> | void;
   readonly now: () => string;
@@ -121,6 +125,31 @@ export function b2bCollectionsRoutes(deps: B2BCollectionsDeps): readonly Route[]
         if (invoices.length === 0) throw notFound(`b2b customer ${customerId} receivables`);
         const ageing = ageReceivables({ customerId, invoices, asAt });
         return { status: 200, body: decideDunning({ ageing }) };
+      },
+    },
+    {
+      // The sub-ledger ↔ GL reconciliation (M23): does the collections ageing total agree with the
+      // finance AR balance the credit surface holds? A disagreement is a CONTROL EXCEPTION reported
+      // EXACTLY and with its sign (the customer is being asked for money the books do not record, or
+      // shown a smaller debt than they owe and will pay the smaller one), never "approximately
+      // reconciled". Gated ONE RUNG ABOVE the ageing read: a store manager (b2b.account.read) chases
+      // customers, but reconciling the sub-ledger to the general ledger is a finance-controllership
+      // act, so it sits on `b2b.receivable.record` (owner + accountant — the tier that records the
+      // receivables), exactly as the settlement day-review reconciliation is kept off the shop floor.
+      api: 'API-09', method: 'GET', path: '/v1/b2b/collections/:customerId/reconciliation',
+      permission: 'b2b.receivable.record',
+      handler: async (ctx) => {
+        const customerId = ctx.params['customerId'] ?? '';
+        const asAt = ctx.query['asOf'];
+        if (!isDate(asAt)) throw apiError(400, { code: 'reconciliation_needs_a_date', whatHappened: 'A reconciliation needs ?asOf=YYYY-MM-DD to age the sub-ledger against.', wasItSaved: 'not_saved', nextSafeAction: 'Send the date. A reconciliation reads, it never writes.' });
+        const invoices = await deps.invoices(ctx.tenantId, customerId);
+        const financeOutstandingMinor = await deps.outstandingMinor(ctx.tenantId, customerId);
+        // 404 only when NEITHER ledger knows this customer. When collections is empty but finance
+        // records a balance, that is the WORST discrepancy (the customer is shown nothing owed while
+        // the books say otherwise) — it must SURFACE, not 404 like the ageing/dunning reads do.
+        if (invoices.length === 0 && financeOutstandingMinor === 0) throw notFound(`b2b customer ${customerId} receivables`);
+        const ageing = ageReceivables({ customerId, invoices, asAt });
+        return { status: 200, body: reconcileAr({ customerId, ageing, financeOutstandingMinor }) };
       },
     },
   ];
