@@ -52,3 +52,24 @@ describe('GET /v1/catalogue/unit-price — unit sale price on the label (B3)', (
     expect((await unitPrice(h, 'u-owner', { mrpMinor: '10000', netQuantity: '0', unit: 'g' })).status).toBe(400); // zero qty
   });
 });
+
+const labelHeight = (h: ApiHarness, userId: string, q: Record<string, string>) =>
+  h.request({ method: 'GET', path: '/v1/catalogue/label-height', userId, tenantId: A, query: q });
+
+describe('GET /v1/catalogue/label-height — statutory character heights (B24)', () => {
+  it('returns the Rule 9 minimum, validates a template, and gates on the catalogue read', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-acct', 'accountant'); // no catalogue.pack.read
+
+    // 300 cm² panel → 2 mm minimum; 2.5 mm passes, 1.5 mm fails.
+    const ok = (await labelHeight(h, 'u-owner', { principalPanelAreaCm2: '300', declaredHeightMm: '2.5' })).body as { valid: boolean; minHeightMm: number };
+    expect(ok.valid).toBe(true);
+    expect(ok.minHeightMm).toBe(2);
+    expect(((await labelHeight(h, 'u-owner', { principalPanelAreaCm2: '300', declaredHeightMm: '1.5' })).body as { valid: boolean }).valid).toBe(false);
+
+    // Refuses missing figures; the accountant (no catalogue.pack.read) is refused.
+    expect((await labelHeight(h, 'u-owner', { principalPanelAreaCm2: '300' })).status).toBe(400);
+    expect((await labelHeight(h, 'u-acct', { principalPanelAreaCm2: '300', declaredHeightMm: '2.5' })).status).toBe(403);
+  });
+});

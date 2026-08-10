@@ -8,3 +8,4 @@ export * from './pack';
 export * from './duplicates';
 export * from './completeness';
 export * from './unit-price';
+export * from './label-height';
