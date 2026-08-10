@@ -7,9 +7,11 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
-import { unitSalePrice, InvalidUnitPriceInput, type NetQuantityUnit } from '../../../packages/product/src/index';
+import { unitSalePrice, validateLabelHeight, InvalidUnitPriceInput, InvalidLabelHeightInput, type NetQuantityUnit } from '../../../packages/product/src/index';
 
 const isIntString = (s: unknown): s is string => typeof s === 'string' && /^\d+$/.test(s);
+// A positive decimal (e.g. a 1.5 mm height or a 62.5 cm² panel).
+const isPosNumString = (s: unknown): s is string => typeof s === 'string' && /^\d+(\.\d+)?$/.test(s) && Number(s) > 0;
 const UNITS: readonly NetQuantityUnit[] = ['g', 'kg', 'ml', 'l', 'unit', 'piece'];
 
 export function labellingRoutes(): readonly Route[] {
@@ -43,6 +45,31 @@ export function labellingRoutes(): readonly Route[] {
           return { status: 200, body: result };
         } catch (err) {
           if (err instanceof InvalidUnitPriceInput) throw apiError(400, { code: 'unit_price_invalid', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the MRP or net quantity.' });
+          throw err;
+        }
+      },
+    },
+    {
+      // The minimum statutory character height for a declaration, and whether a self-printed template
+      // meets it (B24, Legal Metrology Rule 9). A too-small height is a non-compliant label.
+      // ?principalPanelAreaCm2=&declaredHeightMm=
+      api: 'API-02', method: 'GET', path: '/v1/catalogue/label-height',
+      permission: 'catalogue.pack.read',
+      handler: async (ctx) => {
+        const area = ctx.query['principalPanelAreaCm2'];
+        const height = ctx.query['declaredHeightMm'];
+        if (!isPosNumString(area) || !isPosNumString(height)) {
+          throw apiError(400, {
+            code: 'label_height_needs_figures',
+            whatHappened: 'A label-height check needs ?principalPanelAreaCm2=<positive> and ?declaredHeightMm=<positive> (mm).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the panel area and the printed character height.',
+          });
+        }
+        try {
+          return { status: 200, body: validateLabelHeight({ principalPanelAreaCm2: Number(area), declaredHeightMm: Number(height) }) };
+        } catch (err) {
+          if (err instanceof InvalidLabelHeightInput) throw apiError(400, { code: 'label_height_invalid', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the panel area or the height.' });
           throw err;
         }
       },
