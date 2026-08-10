@@ -4,6 +4,12 @@ _Prepared 9 August 2026, at the owner's instruction: **"have you thoroughly and 
 researched entirely world wide for requirements? Please don't depend me to make and correct
 requirements for this hybrid hyper market project."**_
 
+> **RATIFICATION (10 August 2026):** the owner adopted the recommended **Adopt-now (R2)
+> shortlist** — 52 requirements. They are now recorded as approved requirements with testable
+> acceptance criteria in `docs/roadmap/roadmap-v2.1-addendum.md`. Items gated on the ten owner
+> decisions are held (not dropped); all other items keep the deferred/target-release disposition
+> tabled below. CORE-01 has resumed.
+
 ## What this document is, and is not
 
 This is a **research proposal for the owner to ratify — it is not an approved requirement set.**
