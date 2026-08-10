@@ -17,7 +17,8 @@ import { apiError } from '../../kernel/src/index';
 import {
   extractInclusiveGst, roundToNearestRupee, assessDiscountEligibility,
   bogoTreatment, freeSampleTreatment, voucherTimeOfSupply, resolveGstRate,
-  InvalidInclusiveTaxInput, InvalidPromoTaxInput, InvalidRateSchedule,
+  requiredHsnDigits, validateHsnForTurnover,
+  InvalidInclusiveTaxInput, InvalidPromoTaxInput, InvalidRateSchedule, InvalidHsnInput,
   type PlaceOfSupply, type GstRatePeriod,
 } from '../../../packages/finance/src/index';
 
@@ -181,6 +182,29 @@ export function taxRoutes(): readonly Route[] {
           return { status: 200, body: resolveGstRate({ schedule, supplyDate }) };
         } catch (err) {
           if (err instanceof InvalidRateSchedule) throw apiError(400, { code: 'rate_unresolvable', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the schedule or the supply date.' });
+          throw err;
+        }
+      },
+    },
+    {
+      // How many HSN digits a tax invoice must state at this shop's turnover (A4): 6 above ₹5 crore, else
+      // 4. Pass ?hsn= too to VALIDATE a code — a code with fewer digits than required fails (a too-short
+      // HSN is a non-compliant invoice). ?annualTurnoverMinor=&hsn=
+      api: 'API-09', method: 'GET', path: '/v1/finance/tax/hsn-digits',
+      permission: 'finance.period.read',
+      handler: async (ctx) => {
+        const turnover = ctx.query['annualTurnoverMinor'];
+        if (!isIntString(turnover)) {
+          throw apiError(400, { code: 'hsn_needs_turnover', whatHappened: 'The HSN digit requirement needs ?annualTurnoverMinor=<whole minor units>.', wasItSaved: 'not_saved', nextSafeAction: 'Send the annual turnover.' });
+        }
+        const hsn = ctx.query['hsn'];
+        try {
+          if (typeof hsn === 'string' && hsn !== '') {
+            return { status: 200, body: validateHsnForTurnover({ hsnCode: hsn, annualTurnoverMinor: Number(turnover) }) };
+          }
+          return { status: 200, body: { requiredDigits: requiredHsnDigits(Number(turnover)), annualTurnoverMinor: Number(turnover) } };
+        } catch (err) {
+          if (err instanceof InvalidHsnInput) throw apiError(400, { code: 'hsn_invalid', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the turnover or the HSN code.' });
           throw err;
         }
       },
