@@ -9,3 +9,4 @@ export * from './duplicates';
 export * from './completeness';
 export * from './unit-price';
 export * from './label-height';
+export * from './loose-food-label';

@@ -73,3 +73,26 @@ describe('GET /v1/catalogue/label-height — statutory character heights (B24)',
     expect((await labelHeight(h, 'u-acct', { principalPanelAreaCm2: '300', declaredHeightMm: '2.5' })).status).toBe(403);
   });
 });
+
+const looseFood = (h: ApiHarness, userId: string, q: Record<string, string>) =>
+  h.request({ method: 'GET', path: '/v1/catalogue/loose-food-label', userId, tenantId: A, query: q });
+
+describe('GET /v1/catalogue/loose-food-label — FSSAI allergen + veg mark (B9)', () => {
+  it('validates the mandatory declarations over the real pipeline and gates on the catalogue read', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-acct', 'accountant'); // no catalogue.pack.read
+
+    // Complete → valid.
+    expect(((await looseFood(h, 'u-owner', { vegClass: 'non_veg', allergenDeclarationProvided: 'true', allergensPresent: 'milk,eggs' })).body as { valid: boolean }).valid).toBe(true);
+    // No veg mark → blocked.
+    const noVeg = (await looseFood(h, 'u-owner', { allergenDeclarationProvided: 'true' })).body as { valid: boolean; problems: string[] };
+    expect(noVeg.valid).toBe(false);
+    expect(noVeg.problems.some((p) => p.startsWith('vegMark'))).toBe(true);
+    // No allergen declaration → blocked.
+    expect(((await looseFood(h, 'u-owner', { vegClass: 'veg' })).body as { valid: boolean }).valid).toBe(false);
+
+    // The accountant is refused.
+    expect((await looseFood(h, 'u-acct', { vegClass: 'veg', allergenDeclarationProvided: 'true' })).status).toBe(403);
+  });
+});
