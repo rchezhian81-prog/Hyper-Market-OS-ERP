@@ -2529,6 +2529,18 @@ export function storedValueAdapter(input: {
       return perInstrument.flat();
     },
 
+    // Every movement across EVERY instrument the tenant has issued — the tenant-wide fold behind the
+    // liability reconciliation and the redemption-velocity flag (M17-FR-03 / M23). The same fan-out as
+    // movementsForOwner without the owner filter: the whole issue index, each instrument's own
+    // StoredValueMovement stream, unioned.
+    allMovements: async (tenantId) => {
+      const all = await allOf<Instrument>(input.store, tenantId, STORED_VALUE_INDEX, 'StoredValueIssued');
+      const perInstrument = await Promise.all(
+        all.map((i) => allOf<ValueMovement>(input.store, tenantId, forInstrument(i.instrumentId), 'StoredValueMovement')),
+      );
+      return perInstrument.flat();
+    },
+
     recordIssue: async (tenantId, instrument, opening) => {
       // The instrument goes on the shared index (so it can be found and, later, pooled by owner); its
       // opening value is the first movement on the instrument's own stream, where the balance folds.
