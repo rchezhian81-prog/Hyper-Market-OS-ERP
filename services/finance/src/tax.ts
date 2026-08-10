@@ -14,7 +14,11 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
-import { extractInclusiveGst, roundToNearestRupee, assessDiscountEligibility, InvalidInclusiveTaxInput, type PlaceOfSupply } from '../../../packages/finance/src/index';
+import {
+  extractInclusiveGst, roundToNearestRupee, assessDiscountEligibility,
+  bogoTreatment, freeSampleTreatment, voucherTimeOfSupply,
+  InvalidInclusiveTaxInput, InvalidPromoTaxInput, type PlaceOfSupply,
+} from '../../../packages/finance/src/index';
 
 const isIntString = (s: unknown): s is string => typeof s === 'string' && /^\d+$/.test(s);
 const isBool = (s: unknown): boolean => s === 'true'; // an explicit 'true'; anything else is false
@@ -91,6 +95,63 @@ export function taxRoutes(): readonly Route[] {
           itcReversed: isBool(ctx.query['itcReversed']),
         });
         return { status: 200, body: result };
+      },
+    },
+    {
+      // BOGO (A12 / CBIC 92/2019): a single supply for the paid units — the free units add no extra tax,
+      // and the ITC on them is not reversed (they were sold, for a price).
+      // ?paidUnits=&freeUnits=&unitConsiderationMinor=
+      api: 'API-09', method: 'GET', path: '/v1/finance/tax/bogo',
+      permission: 'finance.period.read',
+      handler: async (ctx) => {
+        const paid = ctx.query['paidUnits'];
+        const free = ctx.query['freeUnits'];
+        const unit = ctx.query['unitConsiderationMinor'];
+        if (!isIntString(paid) || !isIntString(free) || !isIntString(unit)) {
+          throw apiError(400, { code: 'bogo_needs_figures', whatHappened: 'A BOGO assessment needs ?paidUnits=&freeUnits=&unitConsiderationMinor= (whole numbers).', wasItSaved: 'not_saved', nextSafeAction: 'Send the paid/free unit counts and the unit consideration.' });
+        }
+        try {
+          return { status: 200, body: bogoTreatment({ paidUnits: Number(paid), freeUnits: Number(free), unitConsiderationMinor: Number(unit) }) };
+        } catch (err) {
+          if (err instanceof InvalidPromoTaxInput) throw apiError(400, { code: 'bogo_invalid', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the figures and try again.' });
+          throw err;
+        }
+      },
+    },
+    {
+      // A genuine free sample (A12 / s.17(5)(h)): not a supply (no output GST), but the ITC on it must
+      // be reversed. ?itcClaimedMinor= (optional — states the reversal amount when known).
+      api: 'API-09', method: 'GET', path: '/v1/finance/tax/free-sample',
+      permission: 'finance.period.read',
+      handler: async (ctx) => {
+        const itc = ctx.query['itcClaimedMinor'];
+        if (itc !== undefined && !isIntString(itc)) {
+          throw apiError(400, { code: 'free_sample_itc_invalid', whatHappened: '?itcClaimedMinor=, if given, must be a whole non-negative amount of minor units.', wasItSaved: 'not_saved', nextSafeAction: 'Send a whole ITC amount or omit it.' });
+        }
+        return { status: 200, body: freeSampleTreatment(itc === undefined ? {} : { itcClaimedMinor: Number(itc) }) };
+      },
+    },
+    {
+      // The time of supply of a voucher (A12 / s.12(4)): issue date if the supply is identifiable at
+      // issue, else the redemption date. ?supplyIdentifiableAtIssue=&issueDate=&redemptionDate=
+      api: 'API-09', method: 'GET', path: '/v1/finance/tax/voucher-timing',
+      permission: 'finance.period.read',
+      handler: async (ctx) => {
+        const issueDate = ctx.query['issueDate'];
+        if (issueDate === undefined) {
+          throw apiError(400, { code: 'voucher_needs_issue_date', whatHappened: 'A voucher timing needs ?issueDate=YYYY-MM-DD (and ?redemptionDate= when the supply is not identifiable at issue).', wasItSaved: 'not_saved', nextSafeAction: 'Send the issue date.' });
+        }
+        try {
+          const result = voucherTimeOfSupply({
+            supplyIdentifiableAtIssue: isBool(ctx.query['supplyIdentifiableAtIssue']),
+            issueDate,
+            ...(ctx.query['redemptionDate'] === undefined ? {} : { redemptionDate: ctx.query['redemptionDate'] }),
+          });
+          return { status: 200, body: result };
+        } catch (err) {
+          if (err instanceof InvalidPromoTaxInput) throw apiError(400, { code: 'voucher_timing_invalid', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the dates, or supply the redemption date.' });
+          throw err;
+        }
       },
     },
   ];

@@ -17,3 +17,4 @@ export * from './posting';
 export * from './credit-notes';
 export * from './inclusive-tax';
 export * from './discount';
+export * from './promo-tax';
