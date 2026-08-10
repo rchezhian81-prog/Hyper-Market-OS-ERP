@@ -2505,6 +2505,23 @@ export function storedValueAdapter(input: {
     movements: async (tenantId, instrumentId) =>
       allOf<ValueMovement>(input.store, tenantId, forInstrument(instrumentId), 'StoredValueMovement'),
 
+    // The household's instruments: the shared issue index, filtered by owner — the index was built
+    // for exactly this ("so it can be found and, later, pooled by owner", above).
+    instrumentsForOwner: async (tenantId, ownerRef) =>
+      (await allOf<Instrument>(input.store, tenantId, STORED_VALUE_INDEX, 'StoredValueIssued'))
+        .filter((i) => i.ownerRef === ownerRef),
+
+    // Every movement across that household's instruments — a fan-out fold over each instrument's own
+    // stream, unioned. The double-spend is only visible once all of a household's channels are here.
+    movementsForOwner: async (tenantId, ownerRef) => {
+      const mine = (await allOf<Instrument>(input.store, tenantId, STORED_VALUE_INDEX, 'StoredValueIssued'))
+        .filter((i) => i.ownerRef === ownerRef);
+      const perInstrument = await Promise.all(
+        mine.map((i) => allOf<ValueMovement>(input.store, tenantId, forInstrument(i.instrumentId), 'StoredValueMovement')),
+      );
+      return perInstrument.flat();
+    },
+
     recordIssue: async (tenantId, instrument, opening) => {
       // The instrument goes on the shared index (so it can be found and, later, pooled by owner); its
       // opening value is the first movement on the instrument's own stream, where the balance folds.

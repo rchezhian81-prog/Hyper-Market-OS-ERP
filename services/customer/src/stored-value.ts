@@ -10,8 +10,8 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
-  redeemValue, balanceOf,
-  type Instrument, type ValueMovement, type ValueKind,
+  redeemValue, balanceOf, householdBalance, findDoubleSpends,
+  type Instrument, type ValueMovement, type ValueKind, type DoubleSpend,
 } from '../../../packages/loyalty/src/stored-value';
 
 export type { Instrument, ValueMovement } from '../../../packages/loyalty/src/stored-value';
@@ -29,6 +29,10 @@ export interface StoredValueDeps {
   readonly recordIssue: (tenantId: string, instrument: Instrument, opening: ValueMovement) => Promise<void> | void;
   /** Append a movement (a redemption). Idempotent on the movement id. */
   readonly recordMovement: (tenantId: string, instrumentId: string, m: ValueMovement) => Promise<void> | void;
+  /** Every instrument a household/owner holds — the shared index filtered by ownerRef (M17-FR-04). */
+  readonly instrumentsForOwner: (tenantId: string, ownerRef: string) => Promise<readonly Instrument[]> | readonly Instrument[];
+  /** Every movement across all of that household's instruments (for the pooled balance + double-spend). */
+  readonly movementsForOwner: (tenantId: string, ownerRef: string) => Promise<readonly ValueMovement[]> | readonly ValueMovement[];
   readonly now: () => string;
 }
 
@@ -136,6 +140,53 @@ export function storedValueRoutes(deps: StoredValueDeps): readonly Route[] {
             ...(instrument.expiresOn === undefined ? {} : { expiresOn: instrument.expiresOn }),
             asAt: deps.now(),
           },
+        };
+      },
+    },
+    {
+      // One pooled balance across every instrument a household holds (M17-FR-04). A family's gift
+      // cards and store credit are one purse; showing them apart is how a customer is told they have
+      // less than they do. Projected from the same movements the per-instrument balance folds, so the
+      // pool and its parts can never disagree.
+      api: 'API-06', method: 'GET', path: '/v1/stored-value/households/:ownerRef/balance',
+      permission: 'loyalty.value.read',
+      handler: async (ctx) => {
+        const ownerRef = ctx.params['ownerRef'] ?? '';
+        const instruments = await deps.instrumentsForOwner(ctx.tenantId, ownerRef);
+        const balanceMinor = householdBalance(await deps.movementsForOwner(ctx.tenantId, ownerRef), instruments, ownerRef);
+        return {
+          status: 200,
+          body: {
+            ownerRef,
+            balanceMinor,
+            instrumentIds: instruments.map((i) => i.instrumentId).sort(),
+            instrumentCount: instruments.length,
+            asAt: deps.now(),
+          },
+        };
+      },
+    },
+    {
+      // The cross-channel double-spend (M17-FR-04, hard rule #10): an instrument that went negative
+      // once every channel's movements arrived — spent in the store AND in the app while the two were
+      // out of sync. BOTH redemptions are kept and both channels named; nothing is silently reversed,
+      // because two people really did receive goods and the shop, not a last-write-wins, decides.
+      //
+      // This is a LOSS surface, not a customer-service one: it names money the shop gave away twice.
+      // So it is gated one rung above the pooled balance — `lp.case.read` (owner / manager / the
+      // accountant), NOT the cashier's `loyalty.value.read`. Least privilege (P-04): a cashier
+      // checking a customer's balance at the till has no business pulling the shop's fraud report.
+      api: 'API-06', method: 'GET', path: '/v1/stored-value/households/:ownerRef/double-spends',
+      permission: 'lp.case.read',
+      handler: async (ctx) => {
+        const ownerRef = ctx.params['ownerRef'] ?? '';
+        const instruments = await deps.instrumentsForOwner(ctx.tenantId, ownerRef);
+        const doubleSpends: readonly DoubleSpend[] = findDoubleSpends(
+          await deps.movementsForOwner(ctx.tenantId, ownerRef), instruments,
+        );
+        return {
+          status: 200,
+          body: { ownerRef, doubleSpends, anyFound: doubleSpends.length > 0, asAt: deps.now() },
         };
       },
     },
