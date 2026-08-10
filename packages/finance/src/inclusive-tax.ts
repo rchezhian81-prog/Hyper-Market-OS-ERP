@@ -111,3 +111,40 @@ export function extractInclusiveGst(input: {
     reconcilesToGross: true,
   };
 }
+
+/**
+ * Round a paisa amount to the nearest whole rupee (A10): **≥50 paisa rounds UP, <50 paisa rounds
+ * DOWN.** In minor units a rupee is 100 paisa. Correct for negative amounts too (a credit line).
+ */
+export function roundToNearestRupeeMinor(minor: number): number {
+  if (!Number.isInteger(minor)) {
+    throw new InvalidInclusiveTaxInput('a paisa amount to round must be a whole number of minor units');
+  }
+  const RUPEE = 100;
+  const rem = ((minor % RUPEE) + RUPEE) % RUPEE; // 0..99, correct for negatives
+  const floored = minor - rem;
+  return rem >= 50 ? floored + RUPEE : floored;
+}
+
+export interface RoundedGstBreakdown {
+  readonly taxableMinor: number;
+  readonly components: readonly InclusiveTaxComponent[];
+  readonly totalTaxMinor: number;
+  readonly grossMinor: number;
+  /** rounded gross − the exact inclusive gross — the invoice "Round Off" line, stated not hidden (may be ±). */
+  readonly roundOffMinor: number;
+}
+
+/**
+ * Round each part of an extracted breakdown to the nearest rupee **per tax component** (A10), and
+ * state the resulting round-off explicitly (P-08 — a rounding that moves money is never silent). The
+ * exact paisa breakdown (A9) is unchanged; this is the whole-rupee view an invoice prints beside a
+ * single "Round Off" line.
+ */
+export function roundToNearestRupee(breakdown: InclusiveGstBreakdown): RoundedGstBreakdown {
+  const taxableMinor = roundToNearestRupeeMinor(breakdown.taxableMinor);
+  const components = breakdown.components.map((c) => ({ ...c, amountMinor: roundToNearestRupeeMinor(c.amountMinor) }));
+  const totalTaxMinor = components.reduce((s, c) => s + c.amountMinor, 0);
+  const grossMinor = taxableMinor + totalTaxMinor;
+  return { taxableMinor, components, totalTaxMinor, grossMinor, roundOffMinor: grossMinor - breakdown.grossMinor };
+}
