@@ -17,9 +17,9 @@ import { apiError } from '../../kernel/src/index';
 import {
   extractInclusiveGst, roundToNearestRupee, assessDiscountEligibility,
   bogoTreatment, freeSampleTreatment, voucherTimeOfSupply, resolveGstRate,
-  requiredHsnDigits, validateHsnForTurnover,
+  requiredHsnDigits, validateHsnForTurnover, checkTaxInvoiceFields,
   InvalidInclusiveTaxInput, InvalidPromoTaxInput, InvalidRateSchedule, InvalidHsnInput,
-  type PlaceOfSupply, type GstRatePeriod,
+  type PlaceOfSupply, type GstRatePeriod, type TaxInvoiceFields,
 } from '../../../packages/finance/src/index';
 
 const isIntString = (s: unknown): s is string => typeof s === 'string' && /^\d+$/.test(s);
@@ -207,6 +207,32 @@ export function taxRoutes(): readonly Route[] {
           if (err instanceof InvalidHsnInput) throw apiError(400, { code: 'hsn_invalid', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the turnover or the HSN code.' });
           throw err;
         }
+      },
+    },
+    {
+      // Check an assembled tax invoice for the mandatory Rule 46 fields (A1) — the heading, GSTIN,
+      // number+date, HSN, taxable value, rate, the CGST+SGST/IGST split matching the place of supply,
+      // and the place of supply. Names every missing/malformed field rather than let a silently
+      // incomplete (legally invalid) invoice out. A read — it validates, it never issues.
+      // ?documentType=&supplierGstin=&invoiceNumber=&invoiceDate=&hsnCode=&taxableMinor=&rateBps=&placeOfSupply=&taxComponents=CGST,SGST
+      api: 'API-09', method: 'GET', path: '/v1/finance/tax/invoice-check',
+      permission: 'finance.period.read',
+      handler: async (ctx) => {
+        const q = ctx.query;
+        const str = (v: string | undefined): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
+        const intOf = (v: string | undefined): number | undefined => (isIntString(v) ? Number(v) : undefined);
+        const inv: TaxInvoiceFields = {
+          ...(str(q['documentType']) === undefined ? {} : { documentType: q['documentType'] }),
+          ...(str(q['supplierGstin']) === undefined ? {} : { supplierGstin: q['supplierGstin'] }),
+          ...(str(q['invoiceNumber']) === undefined ? {} : { invoiceNumber: q['invoiceNumber'] }),
+          ...(str(q['invoiceDate']) === undefined ? {} : { invoiceDate: q['invoiceDate'] }),
+          ...(str(q['hsnCode']) === undefined ? {} : { hsnCode: q['hsnCode'] }),
+          ...(intOf(q['taxableMinor']) === undefined ? {} : { taxableMinor: intOf(q['taxableMinor']) }),
+          ...(intOf(q['rateBps']) === undefined ? {} : { rateBps: intOf(q['rateBps']) }),
+          ...(q['placeOfSupply'] === 'intra_state' || q['placeOfSupply'] === 'inter_state' ? { placeOfSupply: q['placeOfSupply'] as PlaceOfSupply } : {}),
+          ...(str(q['taxComponents']) === undefined ? {} : { taxComponents: q['taxComponents']!.split(',') }),
+        };
+        return { status: 200, body: checkTaxInvoiceFields(inv) };
       },
     },
   ];

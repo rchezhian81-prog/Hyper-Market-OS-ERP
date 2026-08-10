@@ -188,3 +188,34 @@ describe('GET /v1/finance/tax/hsn-digits — HSN digit count by turnover (A4)', 
     expect((await get(h, 'u-cash', '/v1/finance/tax/hsn-digits', { annualTurnoverMinor: '1000000' })).status).toBe(403);
   });
 });
+
+describe('GET /v1/finance/tax/invoice-check — mandatory Rule 46 fields (A1)', () => {
+  const COMPLETE = {
+    documentType: 'Tax Invoice', supplierGstin: '29ABCDE1234F1Z5', invoiceNumber: 'INV/2026/000001',
+    invoiceDate: '2026-08-10', hsnCode: '1006', taxableMinor: '10000', rateBps: '1800',
+    placeOfSupply: 'intra_state', taxComponents: 'CGST,SGST',
+  };
+
+  it('passes a complete invoice, names a missing field, and gates on the finance read', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-cash', 'cashier');
+
+    const ok = (await get(h, 'u-owner', '/v1/finance/tax/invoice-check', COMPLETE)).body as { valid: boolean; problems: string[] };
+    expect(ok.valid).toBe(true);
+    expect(ok.problems).toEqual([]);
+
+    // Drop the GSTIN → invalid, and the problem names it.
+    const noGstin = { ...COMPLETE };
+    delete (noGstin as Record<string, unknown>).supplierGstin;
+    const bad = (await get(h, 'u-owner', '/v1/finance/tax/invoice-check', noGstin)).body as { valid: boolean; problems: string[] };
+    expect(bad.valid).toBe(false);
+    expect(bad.problems.some((p) => p.startsWith('supplierGstin'))).toBe(true);
+
+    // An intra-State invoice showing IGST is wrong.
+    expect(((await get(h, 'u-owner', '/v1/finance/tax/invoice-check', { ...COMPLETE, taxComponents: 'IGST' })).body as { valid: boolean }).valid).toBe(false);
+
+    // The till may not use the back-office calculator.
+    expect((await get(h, 'u-cash', '/v1/finance/tax/invoice-check', COMPLETE)).status).toBe(403);
+  });
+});
