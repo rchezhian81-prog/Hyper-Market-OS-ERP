@@ -71,6 +71,7 @@ import { platformRoutes, inMemorySettings, emptyExportBundle } from '../../platf
 import { purchaseRoutes } from '../../purchase/src/index';
 import { financeRoutes } from '../../finance/src/index';
 import { creditNoteRoutes } from '../../finance/src/credit-notes';
+import { taxRoutes } from '../../finance/src/tax';
 import { reportingRoutes } from '../../reporting/src/index';
 import type { Producer } from '../../../packages/reporting/src/index';
 import { customerRoutes } from '../../customer/src/index';
@@ -264,6 +265,8 @@ export function buildSurface(deps: {
     ...creditNoteRoutes(store === undefined ? {
       alreadyCredited: empty(0), appendCreditNote: () => {}, notes: empty([]), now,
     } : financeNotesAdapter({ store, now, ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }) })),
+    // GST-from-inclusive-MRP calculator (A9/A8) — stateless, folds no ledger, so no deps/stub.
+    ...taxRoutes(),
     ...settlementRoutes(store === undefined ? {
       importedBatchIds: empty([]), recordBatch: () => {}, credits: empty([]),
       electronicTenders: empty([]), investigations: empty([]),
