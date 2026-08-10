@@ -87,3 +87,32 @@ describe('GET /v1/finance/tax/from-mrp — GST pulled out of an inclusive MRP (A
     expect((await fromMrp(h, 'u-owner', { mrpMinor: '11800', rateBps: '1801', placeOfSupply: 'inter_state' })).status).toBe(200);
   });
 });
+
+const discountEligibility = (h: ApiHarness, userId: string, q: Record<string, string>) =>
+  h.request({ method: 'GET', path: '/v1/finance/tax/discount-eligibility', userId, tenantId: A, query: q });
+
+interface Discount { discountMinor: number; reducesTaxableValue: boolean; eligibleReductionMinor: number; basis: string }
+
+describe('GET /v1/finance/tax/discount-eligibility — CGST s.15(3) (A11)', () => {
+  it('decides eligibility over the real pipeline and gates it on the finance read', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-cash', 'cashier');
+
+    // On the invoice → reduces the taxable value.
+    const onInv = (await discountEligibility(h, 'u-owner', { discountMinor: '5000', onInvoice: 'true' })).body as Discount;
+    expect(onInv.reducesTaxableValue).toBe(true);
+    expect(onInv.basis).toBe('on_invoice');
+    expect(onInv.eligibleReductionMinor).toBe(5000);
+
+    // Post-supply with all three conditions → reduces; missing one → commercial only.
+    expect(((await discountEligibility(h, 'u-owner', { discountMinor: '5000', preAgreed: 'true', invoiceLinked: 'true', itcReversed: 'true' })).body as Discount).reducesTaxableValue).toBe(true);
+    const missing = (await discountEligibility(h, 'u-owner', { discountMinor: '5000', preAgreed: 'true', invoiceLinked: 'true' })).body as Discount;
+    expect(missing.reducesTaxableValue).toBe(false);
+    expect(missing.eligibleReductionMinor).toBe(0);
+
+    // Refuses a missing amount; and the till may not use the back-office calculator.
+    expect((await discountEligibility(h, 'u-owner', { onInvoice: 'true' })).status).toBe(400);
+    expect((await discountEligibility(h, 'u-cash', { discountMinor: '5000', onInvoice: 'true' })).status).toBe(403);
+  });
+});
