@@ -57,6 +57,7 @@ import { scrapRoutes } from '../../finance/src/scrap';
 import { facilitiesRoutes } from '../../platform/src/facilities';
 import { facilitiesAssetsRoutes } from '../../platform/src/facilities-assets';
 import { facilitiesMonitoringRoutes } from '../../platform/src/facilities-monitoring';
+import { weighingVerificationRoutes } from '../../platform/src/facilities-metrology';
 import { inventoryRoutes } from '../../inventory/src/index';
 import { warehouseRoutes } from '../../inventory/src/warehouse';
 import { transfersRoutes } from '../../inventory/src/warehouse-transfers';
@@ -309,6 +310,8 @@ export function buildSurface(deps: {
       ranges: empty([]), readings: empty([]), contents: empty([]), powerEvents: empty([]),
       recordRange: () => {}, recordReading: () => {}, recordContents: () => {}, recordPowerEvent: () => {}, now,
     } : facilitiesMonitoringAdapter({ store, now })),
+    // Verified-scale gate (B6, Legal Metrology) — stateless, folds no ledger, so no deps/stub.
+    ...weighingVerificationRoutes(),
     ...reportingRoutes(store === undefined
       ? { figures: empty([]), now }
       : reportingAdapter({ store, now, records: REPORTING_RECORDS, produced: REPORTING_PRODUCED })),
