@@ -80,6 +80,7 @@ import { creditNoteRoutes } from '../../finance/src/credit-notes';
 import { taxRoutes } from '../../finance/src/tax';
 import { retentionRoutes } from '../../finance/src/retention';
 import { reportingRoutes } from '../../reporting/src/index';
+import { ownerAlertsRoutes } from '../../reporting/src/owner-alerts';
 import type { Producer } from '../../../packages/reporting/src/index';
 import { customerRoutes } from '../../customer/src/index';
 import { ordersRoutes } from '../../orders/src/index';
@@ -318,6 +319,8 @@ export function buildSurface(deps: {
     } : facilitiesMonitoringAdapter({ store, now })),
     // Verified-scale gate (B6, Legal Metrology) — stateless, folds no ledger, so no deps/stub.
     ...weighingVerificationRoutes(),
+    // Owner alerts inbox (M29-FR-03) — control by exception; stateless grouping of the period's exceptions.
+    ...ownerAlertsRoutes(),
     // Price integrity across shelf/POS/app/ESL (D06/D14, ratified R2 B25) — stateless audit; the till is
     // the reference and a shelf underpricing it is ranked first as a legal exposure.
     ...priceIntegrityRoutes(),

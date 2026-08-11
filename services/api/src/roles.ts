@@ -58,6 +58,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'compliance.obligation.manage', 'compliance.obligation.read',
       'quality.coldchain.assess',
       'price.integrity.audit',
+      'owner.alert.read',
       'migration.verification.read', 'migration.exception.accept',
       'ai.agent.run', 'ai.proposal.read', 'ai.budget.read', 'ai.killswitch.set',
     ],
@@ -91,6 +92,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'compliance.obligation.manage', 'compliance.obligation.read',
       'quality.coldchain.assess',
       'price.integrity.audit',
+      'owner.alert.read',
     ],
   },
   {
