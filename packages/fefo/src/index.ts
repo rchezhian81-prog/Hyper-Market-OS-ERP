@@ -4,3 +4,4 @@
 // deterministic. Grows one reviewed, tested unit at a time.
 
 export * from './fefo';
+export * from './assign-batches';
