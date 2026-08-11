@@ -60,6 +60,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'price.integrity.audit',
       'owner.alert.read',
       'refund.exception.read',
+      'notification.send.check',
       'migration.verification.read', 'migration.exception.accept',
       'ai.agent.run', 'ai.proposal.read', 'ai.budget.read', 'ai.killswitch.set',
     ],
@@ -95,6 +96,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'price.integrity.audit',
       'owner.alert.read',
       'refund.exception.read',
+      'notification.send.check',
     ],
   },
   {
