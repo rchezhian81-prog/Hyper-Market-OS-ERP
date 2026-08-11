@@ -59,6 +59,7 @@ import type { FacilitiesAssetsDeps, Asset, ServiceLog, DowntimeEvent, EnergyRead
 import type { FacilitiesMonitoringDeps, EquipmentRangeReg, EquipmentContents, EquipmentReading, PowerEvent } from '../../platform/src/facilities-monitoring';
 import type { PackagingDeps, PackagingItem, PackagingMovement } from '../../inventory/src/packaging';
 import type { ComplianceDeps, Obligation } from '../../compliance/src/index';
+import type { DocumentsDeps, TemplateVersion } from '../../platform/src/documents';
 import type { WasteDeps, WasteRecord, WasteCoverage } from '../../inventory/src/waste';
 import type { IntegrationDeps, CertifiedEntry, AdapterConfig, AdapterHeartbeat } from '../../platform/src/integration';
 import type { WebhookDeps, WebhookConfig } from '../../platform/src/webhooks';
@@ -141,6 +142,7 @@ export const STREAM = {
   scrap: 'scrap',
   facilities: 'facilities',
   compliance: 'compliance',
+  documents: 'documents',
   packaging: 'packaging',
   waste: 'waste',
   integration: 'integration',
@@ -201,6 +203,37 @@ export function complianceAdapter(input: {
         idempotencyKey: `compliance-oblig-${tenantId}-${obligation.obligationId}-${digest}`,
         source: 'api/compliance',
         payload: obligation,
+      }));
+    },
+  };
+}
+
+/**
+ * Versioned document templates (M31-FR-01/M36-FR-02). Append-only — every published version is a
+ * `TemplateVersionPublished` fact and there is no edit path, so a document issued under v1 keeps v1's
+ * layout after v2 publishes (hard rule #6).
+ */
+export function documentsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): DocumentsDeps {
+  return {
+    now: input.now,
+
+    versions: async (tenantId, templateId) => {
+      const all = await allOf<TemplateVersion>(input.store, tenantId, STREAM.documents, 'TemplateVersionPublished');
+      return all.filter((v) => v.templateId === templateId);
+    },
+
+    recordPublish: async (tenantId, template) => {
+      await input.store.append(tenantId, STREAM.documents, makeEvent({
+        id: `doc-tmpl-${template.templateId}-v${template.version}`,
+        type: 'TemplateVersionPublished',
+        occurredAt: input.now(),
+        // A version is unique per template — a re-send of the same publish collapses rather than doubling.
+        idempotencyKey: `doc-tmpl-${tenantId}-${template.templateId}-v${template.version}`,
+        source: 'api/platform',
+        payload: template,
       }));
     },
   };
