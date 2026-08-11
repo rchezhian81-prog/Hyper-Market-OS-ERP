@@ -1,0 +1,44 @@
+import { describe, it, expect } from 'vitest';
+import { validateOutwardLine, gstr1Table12, type OutwardSupplyLine, type ClassifiedLine } from '../../packages/finance/src/index';
+
+// A5 — GSTR-1 Table 12: the HSN-wise summary of outward supplies, B2B/B2C split, HSN from a closed master
+// (no free text). Turnover ₹6cr → 6-digit HSN required (A4 reuse).
+
+const OVER = 6_000_000_000;
+const line = (o: Partial<OutwardSupplyLine> = {}): OutwardSupplyLine =>
+  ({ hsnCode: '100610', quantityMinor: 1000, uom: 'kg', taxableMinor: 10000, rateBps: 500, cgstMinor: 250, sgstMinor: 250, igstMinor: 0, ...o });
+
+describe('outward-supply line validation (A5)', () => {
+  it('accepts a well-formed line and rejects a free-text or short HSN', () => {
+    expect(validateOutwardLine(line(), { annualTurnoverMinor: OVER }).valid).toBe(true);
+    // Free text — rejected (not from the closed master).
+    expect(validateOutwardLine(line({ hsnCode: 'RICE' }), { annualTurnoverMinor: OVER }).valid).toBe(false);
+    // 4-digit HSN below the 6-digit requirement at this turnover.
+    expect(validateOutwardLine(line({ hsnCode: '1006' }), { annualTurnoverMinor: OVER }).valid).toBe(false);
+  });
+
+  it('rejects an inconsistent tax split (both CGST/SGST and IGST, or unequal CGST/SGST)', () => {
+    expect(validateOutwardLine(line({ cgstMinor: 250, sgstMinor: 250, igstMinor: 500 }), { annualTurnoverMinor: OVER }).valid).toBe(false);
+    expect(validateOutwardLine(line({ cgstMinor: 300, sgstMinor: 200 }), { annualTurnoverMinor: OVER }).valid).toBe(false);
+  });
+});
+
+describe('GSTR-1 Table 12 summary (A5)', () => {
+  it('groups by HSN + rate, sums tax, and splits B2B/B2C', () => {
+    const lines: ClassifiedLine[] = [
+      { ...line({ hsnCode: '100610', taxableMinor: 10000, cgstMinor: 250, sgstMinor: 250 }), supplyKind: 'b2b' },
+      { ...line({ hsnCode: '100610', taxableMinor: 20000, cgstMinor: 500, sgstMinor: 500 }), supplyKind: 'b2c' },
+      { ...line({ hsnCode: '220210', taxableMinor: 5000, rateBps: 1800, cgstMinor: 450, sgstMinor: 450 }), supplyKind: 'b2c' },
+    ];
+    const t12 = gstr1Table12(lines);
+    expect(t12.rows).toHaveLength(2); // 100610@500 and 220210@1800
+    const rice = t12.rows.find((r) => r.hsnCode === '100610')!;
+    expect(rice.taxableMinor).toBe(30000);
+    expect(rice.b2bTaxableMinor).toBe(10000);
+    expect(rice.b2cTaxableMinor).toBe(20000);
+    expect(rice.cgstMinor).toBe(750); // 250 + 500
+    expect(t12.totalTaxableMinor).toBe(35000);
+    expect(t12.b2bTaxableMinor).toBe(10000);
+    expect(t12.totalTaxMinor).toBe(750 + 750 + 900); // cgst+sgst across both rows
+  });
+});

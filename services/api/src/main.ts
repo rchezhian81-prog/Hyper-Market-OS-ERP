@@ -58,6 +58,7 @@ import { scrapRoutes } from '../../finance/src/scrap';
 import { refundExceptionsRoutes } from '../../finance/src/refund-exceptions';
 import { eInvoiceRoutes } from '../../finance/src/e-invoice';
 import { eInvoiceRegisterRoutes } from '../../finance/src/e-invoice-register';
+import { gstReturnsRoutes } from '../../finance/src/gst-returns';
 import { facilitiesRoutes } from '../../platform/src/facilities';
 import { facilitiesAssetsRoutes } from '../../platform/src/facilities-assets';
 import { facilitiesMonitoringRoutes } from '../../platform/src/facilities-monitoring';
@@ -98,7 +99,7 @@ import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, warehouseAdapter, transfersAdapter, countsAdapter, productionAdapter, packagingAdapter, wasteAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
-  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, eInvoiceAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter,
+  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, eInvoiceAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
@@ -354,6 +355,10 @@ export function buildSurface(deps: {
     ...eInvoiceRegisterRoutes(store === undefined ? {
       load: () => undefined, recordSubmit: () => {}, recordResponse: () => {}, recordCancel: () => {}, now,
     } : eInvoiceAdapter({ store, now })),
+    // GST returns write path (A5) — persist outward-supply tax lines; GSTR-1 Table 12 folds over them.
+    ...gstReturnsRoutes(store === undefined ? {
+      documents: empty([]), record: () => {}, now,
+    } : gstReturnsAdapter({ store, now })),
     // Price integrity across shelf/POS/app/ESL (D06/D14, ratified R2 B25) — stateless audit; the till is
     // the reference and a shelf underpricing it is ranked first as a legal exposure.
     ...priceIntegrityRoutes(),
