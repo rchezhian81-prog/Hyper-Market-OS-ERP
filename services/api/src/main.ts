@@ -87,6 +87,7 @@ import { customerRoutes } from '../../customer/src/index';
 import { notificationGuardRoutes } from '../../customer/src/notification-guard';
 import { backupVerificationRoutes } from '../../platform/src/backup-verification';
 import { branchLifecycleRoutes } from '../../platform/src/branch-lifecycle';
+import { documentsRoutes } from '../../platform/src/documents';
 import { ordersRoutes } from '../../orders/src/index';
 import { fulfilmentRoutes } from '../../fulfilment/src/index';
 import { migrationRoutes } from '../../migration/src/index';
@@ -94,7 +95,7 @@ import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, warehouseAdapter, transfersAdapter, countsAdapter, productionAdapter, packagingAdapter, wasteAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
-  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter,
+  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
@@ -331,6 +332,10 @@ export function buildSurface(deps: {
     ...backupVerificationRoutes(),
     // Branch open/close lifecycle (M01-FR-04) — governed transition decision; stateless ruling.
     ...branchLifecycleRoutes(),
+    // Versioned document templates (M31-FR-01/M36-FR-02) — append-only publish; a change is a new version.
+    ...documentsRoutes(store === undefined ? {
+      versions: empty([]), recordPublish: () => {}, now,
+    } : documentsAdapter({ store, now })),
     // Refund exceptions & day totals (M14-FR-03/04) — stateless cash-office view of refunds that did not
     // go cleanly; the reversals live in settlement/POS, this is the reading.
     ...refundExceptionsRoutes(),
