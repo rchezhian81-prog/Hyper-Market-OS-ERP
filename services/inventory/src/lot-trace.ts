@@ -23,11 +23,15 @@ export interface LotTraceDeps {
 /** Summary counts over a set of outbound (sold) records — the "who bought this batch" view. */
 function summariseSold(batchId: string, outbound: readonly OutboundLotRecord[]) {
   const identifiedRecipientCount = outbound.filter((r) => typeof r.customerId === 'string' && r.customerId.trim() !== '').length;
+  // Captured = the till recorded the batch; estimated = head office's FIFO best-estimate (ADR-0006).
+  const capturedCount = outbound.filter((r) => r.source !== 'fifo_receipt_estimate').length;
   return {
     batchId,
     outbound,
     totalDispatchedMinor: outbound.reduce((s, r) => s + r.quantityMinor, 0),
     saleCount: outbound.length,
+    capturedCount,
+    estimatedCount: outbound.length - capturedCount,
     identifiedRecipientCount,
     anonymousSaleCount: outbound.length - identifiedRecipientCount,
   };

@@ -30,6 +30,7 @@ import type { CatalogueDeps } from '../../catalogue/src/index';
 import type { IncomingSale, IncomingTender, SaleException, PosDeps } from '../../pos/src/index';
 import type { LotTraceDeps } from '../../inventory/src/lot-trace';
 import type { OutboundLotRecord } from '../../../packages/quality/src/index';
+import { attributeSalesFifo, type BatchReceipt, type HistoricalSaleLine } from '../../../packages/fefo/src/index';
 import type { ReturnsDeps, ReturnRecord, RecordedRefund, OriginalSale, RecordedReturn } from '../../pos/src/returns';
 import type { CashDeps, RecordedCashMovement } from '../../pos/src/cash';
 import type { StoredCashMovement } from '../../../packages/cash/src/index';
@@ -619,24 +620,66 @@ export function posAdapter(input: {
 }
 
 /**
- * Lot-trace outbound (B11 / M10-FR-03, batch-on-sale inc3a). Folds the banked sales — each stored by
- * `bankSale` as a `SaleCommitted` whose payload is the whole sale — and returns every sale line that
- * carried the requested batch as an outbound record. A recall-time read, not a hot path; a walk-in sale
- * with no captured customer is kept (customer identification via loyalty/consent is a later linkage, M16).
+ * Lot-trace outbound (B11 / M10-FR-03). Two sources, both read-only, combined:
+ *
+ *   • **captured** (inc3a) — `bankSale` stores each sale (payload = the whole sale) as a `SaleCommitted`,
+ *     so every line whose till RECORDED this batch is returned directly.
+ *   • **estimated** (inc3b / ADR-0006) — for the product this batch belongs to, head office attributes a
+ *     FIFO-by-receipt best-estimate to the product's batch-tracked sales that arrived with NO captured
+ *     batch, and returns those estimated to draw this batch. Labelled `fifo_receipt_estimate` so an
+ *     estimate is never mistaken for a till-recorded fact, and NEVER written back onto the sale (hard
+ *     rule #2 — it is computed at read time).
+ *
+ * A recall-time read, not a hot path. A walk-in with no captured customer is kept (customer identity via
+ * loyalty/consent is a later M16 linkage).
  */
 export function lotTraceAdapter(input: { readonly store: EventStore }): LotTraceDeps {
   return {
     soldOfBatch: async (tenantId, batchId) => {
       const sales = await allOf<IncomingSale>(input.store, tenantId, STREAM.sales, 'SaleCommitted');
-      const out: OutboundLotRecord[] = [];
+
+      // Captured: the till recorded this exact batch on the line.
+      const captured: OutboundLotRecord[] = [];
       for (const sale of sales) {
         for (const line of sale.lines ?? []) {
           if (line.batchId === batchId) {
-            out.push({ saleId: sale.saleId, soldDate: sale.tradingDay, quantityMinor: line.quantityMinor });
+            captured.push({ saleId: sale.saleId, soldDate: sale.tradingDay, quantityMinor: line.quantityMinor, source: 'captured' });
           }
         }
       }
-      return out;
+
+      // Estimated (ADR-0006): head-office FIFO-by-receipt best-estimate for the product's un-captured
+      // batch-tracked sales. Skipped unless the batch was actually received (so we know its product) and
+      // the catalogue marks that product batch-tracked.
+      const moves = (await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' })).map((e) => payloadOf<Movement>(e));
+      const productId = moves.find((m) => m.batchId === batchId)?.productId;
+      let estimated: OutboundLotRecord[] = [];
+      if (productId !== undefined) {
+        const pack = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
+        const product = pack?.snapshot.products.find((p) => p.productId === productId);
+        if (product?.batchTracked === true) {
+          const receipts: BatchReceipt[] = moves
+            .filter((m) => m.productId === productId && m.kind === 'received' && typeof m.batchId === 'string' && m.batchId !== '')
+            .map((m) => ({ batchId: m.batchId as string, receivedDate: m.occurredAt.slice(0, 10), qty: m.quantityMinor }));
+          const history: HistoricalSaleLine[] = [];
+          for (const sale of sales) {
+            for (const line of sale.lines ?? []) {
+              if (line.productId === productId) {
+                history.push({
+                  saleId: sale.saleId, soldDate: sale.tradingDay, qty: line.quantityMinor, batchTracked: true,
+                  ...(typeof line.batchId === 'string' && line.batchId !== '' ? { capturedBatchId: line.batchId } : {}),
+                });
+              }
+            }
+          }
+          const { estimates } = attributeSalesFifo({ receipts, sales: history });
+          estimated = estimates
+            .filter((e) => e.batchId === batchId)
+            .map((e) => ({ saleId: e.saleId, soldDate: e.soldDate, quantityMinor: e.qty, source: 'fifo_receipt_estimate' as const }));
+        }
+      }
+
+      return [...captured, ...estimated];
     },
   };
 }
