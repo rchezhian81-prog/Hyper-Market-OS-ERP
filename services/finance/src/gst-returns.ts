@@ -13,7 +13,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  validateOutwardLine, gstr1Table12, gstr1Return,
+  validateOutwardLine, gstr1Table12, gstr1Return, toGstnGstr1,
   type OutwardSupplyLine, type ClassifiedLine, type SupplyKind,
 } from '../../../packages/finance/src/index';
 
@@ -110,6 +110,22 @@ export function gstReturnsRoutes(deps: GstReturnsDeps): readonly Route[] {
         }
         const docs = (await deps.documents(ctx.tenantId)).filter((d) => d.documentDate >= from && d.documentDate <= to);
         return { status: 200, body: { from, to, documentCount: docs.length, ...gstr1Return(docs) } };
+      },
+    },
+    {
+      // The GSTN portal JSON — the file the GST portal ingests. gstin + fp (MMYYYY) are supplied per export.
+      api: 'API-09', method: 'GET', path: '/v1/finance/gstr1/export',
+      permission: 'finance.gstr.read',
+      handler: async (ctx) => {
+        const from = ctx.query['from'];
+        const to = ctx.query['to'];
+        const gstin = ctx.query['gstin'];
+        const fp = ctx.query['fp'];
+        if (from === undefined || to === undefined || !DATE.test(from) || !DATE.test(to) || typeof gstin !== 'string' || !GSTIN.test(gstin) || typeof fp !== 'string' || !/^\d{6}$/.test(fp)) {
+          throw apiError(400, { code: 'export_needs_period_gstin_fp', whatHappened: 'The GSTN export needs ?from=YYYY-MM-DD&to=YYYY-MM-DD, the supplier &gstin= and the filing period &fp=MMYYYY.', wasItSaved: 'not_saved', nextSafeAction: 'Send the period, your GSTIN and the filing month as MMYYYY.' });
+        }
+        const docs = (await deps.documents(ctx.tenantId)).filter((d) => d.documentDate >= from && d.documentDate <= to);
+        return { status: 200, body: toGstnGstr1(gstr1Return(docs), { gstin, fp }) };
       },
     },
   ];

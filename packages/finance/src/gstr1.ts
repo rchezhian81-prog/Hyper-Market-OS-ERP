@@ -195,3 +195,56 @@ export function gstr1Return(docs: readonly OutwardDocument[]): Gstr1Return {
   const hsn = gstr1Table12(classified);
   return { b2b, b2c: summariseByRate(b2cLines), hsn, totalTaxableMinor: hsn.totalTaxableMinor, totalTaxMinor: hsn.totalTaxMinor };
 }
+
+// --- the GSTN portal JSON (the file the GST portal actually accepts) -------------------------------
+//
+// The return above is our clean shape; this serialises it into the GSTN GSTR-1 JSON the portal ingests.
+// Two conversions matter and are easy to get wrong: money is stored in **paise** and the portal wants
+// **rupees** (÷100), and dates are stored `YYYY-MM-DD` while the portal wants `DD-MM-YYYY`. B2B invoices
+// are grouped by counterparty GSTIN (`ctin`), each carrying its own invoices (`inv`) and rate-wise items
+// (`itms`/`itm_det`); B2C is rate-wise (`b2cs`); the HSN summary is `hsn.data`.
+//
+// This is faithful to the documented schema, but the portal's offline validation tool is the authority —
+// a first live filing should round-trip through it before submission (recorded as an owner check).
+
+export interface GstnItemDetail { readonly rt: number; readonly txval: number; readonly camt: number; readonly samt: number; readonly iamt: number; }
+export interface GstnInvoiceItem { readonly num: number; readonly itm_det: GstnItemDetail; }
+export interface GstnB2bInvoice { readonly inum: string; readonly idt: string; readonly val: number; readonly itms: readonly GstnInvoiceItem[]; }
+export interface GstnB2b { readonly ctin: string; readonly inv: readonly GstnB2bInvoice[]; }
+export interface GstnB2cs { readonly sply_ty: 'INTRA' | 'INTER'; readonly typ: 'OE'; readonly rt: number; readonly txval: number; readonly camt: number; readonly samt: number; readonly iamt: number; }
+export interface GstnHsnRow { readonly num: number; readonly hsn_sc: string; readonly rt: number; readonly qty: number; readonly txval: number; readonly camt: number; readonly samt: number; readonly iamt: number; }
+export interface GstnGstr1 {
+  readonly gstin: string;
+  readonly fp: string;
+  readonly b2b: readonly GstnB2b[];
+  readonly b2cs: readonly GstnB2cs[];
+  readonly hsn: { readonly data: readonly GstnHsnRow[] };
+}
+
+/** Paise → rupees, rounded to 2 decimals (the portal's money unit). */
+const rupees = (minor: number): number => Math.round(minor) / 100;
+/** `YYYY-MM-DD` → `DD-MM-YYYY` (the portal's date form). */
+const gstnDate = (iso: string): string => `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}`;
+/** basis points → a percentage rate (500 bps → 5). */
+const pct = (bps: number): number => bps / 100;
+
+/**
+ * Serialise a GSTR-1 return into the GSTN portal JSON. `gstin` is the supplier's own GSTIN and `fp` is the
+ * filing period `MMYYYY` — both supplied per export rather than stored, so the same period can be re-run.
+ */
+export function toGstnGstr1(ret: Gstr1Return, meta: { readonly gstin: string; readonly fp: string }): GstnGstr1 {
+  const byCtin = new Map<string, GstnB2bInvoice[]>();
+  for (const inv of ret.b2b) {
+    const invoice: GstnB2bInvoice = {
+      inum: inv.invoiceNumber,
+      idt: gstnDate(inv.invoiceDate),
+      val: rupees(inv.invoiceValueMinor),
+      itms: inv.rateLines.map((r, i) => ({ num: i + 1, itm_det: { rt: pct(r.rateBps), txval: rupees(r.taxableMinor), camt: rupees(r.cgstMinor), samt: rupees(r.sgstMinor), iamt: rupees(r.igstMinor) } })),
+    };
+    byCtin.set(inv.recipientGstin, [...(byCtin.get(inv.recipientGstin) ?? []), invoice]);
+  }
+  const b2b: GstnB2b[] = [...byCtin.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([ctin, inv]) => ({ ctin, inv }));
+  const b2cs: GstnB2cs[] = ret.b2c.map((r) => ({ sply_ty: r.igstMinor > 0 ? 'INTER' : 'INTRA', typ: 'OE', rt: pct(r.rateBps), txval: rupees(r.taxableMinor), camt: rupees(r.cgstMinor), samt: rupees(r.sgstMinor), iamt: rupees(r.igstMinor) }));
+  const data: GstnHsnRow[] = ret.hsn.rows.map((r, i) => ({ num: i + 1, hsn_sc: r.hsnCode, rt: pct(r.rateBps), qty: r.quantityMinor / 1000, txval: rupees(r.taxableMinor), camt: rupees(r.cgstMinor), samt: rupees(r.sgstMinor), iamt: rupees(r.igstMinor) }));
+  return { gstin: meta.gstin, fp: meta.fp, b2b, b2cs, hsn: { data } };
+}
