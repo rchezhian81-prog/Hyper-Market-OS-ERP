@@ -28,6 +28,8 @@ import type { CatalogueProduct } from '../../../packages/catalogue/src/catalogue
 import type { SignedPack } from '../../catalogue/src/index';
 import type { CatalogueDeps } from '../../catalogue/src/index';
 import type { IncomingSale, IncomingTender, SaleException, PosDeps } from '../../pos/src/index';
+import type { LotTraceDeps } from '../../inventory/src/lot-trace';
+import type { OutboundLotRecord } from '../../../packages/quality/src/index';
 import type { ReturnsDeps, ReturnRecord, RecordedRefund, OriginalSale, RecordedReturn } from '../../pos/src/returns';
 import type { CashDeps, RecordedCashMovement } from '../../pos/src/cash';
 import type { StoredCashMovement } from '../../../packages/cash/src/index';
@@ -613,6 +615,29 @@ export function posAdapter(input: {
 
     openExceptions: async (tenantId) =>
       allOf<SaleException>(input.store, tenantId, STREAM.saleExceptions, 'SaleExceptionRaised'),
+  };
+}
+
+/**
+ * Lot-trace outbound (B11 / M10-FR-03, batch-on-sale inc3a). Folds the banked sales — each stored by
+ * `bankSale` as a `SaleCommitted` whose payload is the whole sale — and returns every sale line that
+ * carried the requested batch as an outbound record. A recall-time read, not a hot path; a walk-in sale
+ * with no captured customer is kept (customer identification via loyalty/consent is a later linkage, M16).
+ */
+export function lotTraceAdapter(input: { readonly store: EventStore }): LotTraceDeps {
+  return {
+    soldOfBatch: async (tenantId, batchId) => {
+      const sales = await allOf<IncomingSale>(input.store, tenantId, STREAM.sales, 'SaleCommitted');
+      const out: OutboundLotRecord[] = [];
+      for (const sale of sales) {
+        for (const line of sale.lines ?? []) {
+          if (line.batchId === batchId) {
+            out.push({ saleId: sale.saleId, soldDate: sale.tradingDay, quantityMinor: line.quantityMinor });
+          }
+        }
+      }
+      return out;
+    },
   };
 }
 
