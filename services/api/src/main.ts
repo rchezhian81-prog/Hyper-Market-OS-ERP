@@ -67,6 +67,7 @@ import { countsRoutes } from '../../inventory/src/counts';
 import { productionRoutes } from '../../inventory/src/production';
 import { packagingRoutes } from '../../inventory/src/packaging';
 import { wasteRoutes } from '../../inventory/src/waste';
+import { coldChainRoutes } from '../../inventory/src/cold-chain';
 import { integrationRoutes } from '../../platform/src/integration';
 import { webhookRoutes, webhookHasher } from '../../platform/src/webhooks';
 import { connectorRoutes } from '../../platform/src/connectors';
@@ -316,6 +317,9 @@ export function buildSurface(deps: {
     } : facilitiesMonitoringAdapter({ store, now })),
     // Verified-scale gate (B6, Legal Metrology) — stateless, folds no ledger, so no deps/stub.
     ...weighingVerificationRoutes(),
+    // Cold-chain assessment (M10-FR-02) — stateless verdict on a perishable batch; no second temperature
+    // store (facilities-monitoring owns that truth, P-02), so no deps/stub.
+    ...coldChainRoutes(),
     // Compliance obligation register (M34-FR-03; subsumes B7 scale-cert + B10 FSSAI-licence alerts).
     ...complianceRoutes(store === undefined ? {
       obligations: empty([]), recordRegister: () => {}, now,
