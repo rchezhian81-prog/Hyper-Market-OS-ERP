@@ -38,6 +38,7 @@ import { masterDataRoutes } from '../../catalogue/src/master-data';
 import { pricingRoutes } from '../../pricing/src/index';
 import { priceListRoutes } from '../../pricing/src/price-list';
 import { promotionCatalogueRoutes } from '../../pricing/src/promotion-catalogue';
+import { priceIntegrityRoutes } from '../../pricing/src/price-integrity';
 import { posRoutes } from '../../pos/src/index';
 import { returnsRoutes } from '../../pos/src/returns';
 import { cashRoutes } from '../../pos/src/cash';
@@ -317,6 +318,9 @@ export function buildSurface(deps: {
     } : facilitiesMonitoringAdapter({ store, now })),
     // Verified-scale gate (B6, Legal Metrology) — stateless, folds no ledger, so no deps/stub.
     ...weighingVerificationRoutes(),
+    // Price integrity across shelf/POS/app/ESL (D06/D14, ratified R2 B25) — stateless audit; the till is
+    // the reference and a shelf underpricing it is ranked first as a legal exposure.
+    ...priceIntegrityRoutes(),
     // Cold-chain assessment (M10-FR-02) — stateless verdict on a perishable batch; no second temperature
     // store (facilities-monitoring owns that truth, P-02), so no deps/stub.
     ...coldChainRoutes(),
