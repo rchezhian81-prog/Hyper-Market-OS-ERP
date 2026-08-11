@@ -16,6 +16,8 @@ const table12 = (h: ApiHarness, u: string, from: string, to: string) =>
   h.request({ method: 'GET', path: '/v1/finance/gstr1/table-12', userId: u, tenantId: A, query: { from, to } });
 const gstr1 = (h: ApiHarness, u: string, from: string, to: string) =>
   h.request({ method: 'GET', path: '/v1/finance/gstr1/return', userId: u, tenantId: A, query: { from, to } });
+const exportJson = (h: ApiHarness, u: string, q: Record<string, string>) =>
+  h.request({ method: 'GET', path: '/v1/finance/gstr1/export', userId: u, tenantId: A, query: q });
 
 describe('GST-returns write path + GSTR-1 Table 12 (A5)', () => {
   it('persists outward lines and folds them into a Table-12 summary with a B2B/B2C split', async () => {
@@ -67,6 +69,19 @@ describe('GST-returns write path + GSTR-1 Table 12 (A5)', () => {
     expect(body.hsn.totalTaxableMinor).toBe(30000); // return and HSN summary agree
   });
 
+  it('exports the GSTN portal JSON, and refuses a bad GSTIN or filing period', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await record(h, 'u-owner', 'INV-7', { documentDate: '2026-08-05', supplyType: 'b2b', recipientGstin: GSTIN, annualTurnoverMinor: OVER, lines: [line({ taxableMinor: 10000, cgstMinor: 250, sgstMinor: 250 })] }, 'x-b2b');
+    const json = (await exportJson(h, 'u-owner', { from: '2026-08-01', to: '2026-08-31', gstin: '33ZZZZZ9999Z1Z9', fp: '082026' })).body as { gstin: string; fp: string; b2b: { ctin: string; inv: { inum: string; val: number }[] }[] };
+    expect(json.gstin).toBe('33ZZZZZ9999Z1Z9');
+    expect(json.fp).toBe('082026');
+    expect(json.b2b[0]!.ctin).toBe(GSTIN);
+    expect(json.b2b[0]!.inv[0]!.val).toBe(105); // paise → rupees
+    // A malformed filing period (not MMYYYY) is refused.
+    expect((await exportJson(h, 'u-owner', { from: '2026-08-01', to: '2026-08-31', gstin: '33ZZZZZ9999Z1Z9', fp: 'Aug-2026' })).status).toBe(400);
+  });
+
   it('gates on the permissions', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
@@ -74,5 +89,6 @@ describe('GST-returns write path + GSTR-1 Table 12 (A5)', () => {
     expect((await record(h, 'u-cash', 'x', { documentDate: '2026-08-05', supplyType: 'b2c', annualTurnoverMinor: OVER, lines: [line()] }, 'g-rbac')).status).toBe(403);
     expect((await table12(h, 'u-cash', '2026-08-01', '2026-08-31')).status).toBe(403);
     expect((await gstr1(h, 'u-cash', '2026-08-01', '2026-08-31')).status).toBe(403);
+    expect((await exportJson(h, 'u-cash', { from: '2026-08-01', to: '2026-08-31', gstin: '33ZZZZZ9999Z1Z9', fp: '082026' })).status).toBe(403);
   });
 });

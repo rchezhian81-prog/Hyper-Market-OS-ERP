@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateOutwardLine, gstr1Table12, gstr1Return, type OutwardSupplyLine, type ClassifiedLine, type OutwardDocument } from '../../packages/finance/src/index';
+import { validateOutwardLine, gstr1Table12, gstr1Return, toGstnGstr1, type OutwardSupplyLine, type ClassifiedLine, type OutwardDocument } from '../../packages/finance/src/index';
 
 // A5 — GSTR-1 Table 12: the HSN-wise summary of outward supplies, B2B/B2C split, HSN from a closed master
 // (no free text). Turnover ₹6cr → 6-digit HSN required (A4 reuse).
@@ -67,5 +67,29 @@ describe('GSTR-1 return assembly (A5): B2B invoice-level + B2C rate-wise', () =>
     const ret = gstr1Return([doc({ documentId: 'X', supplyType: 'b2b', lines: [line({ taxableMinor: 8000, cgstMinor: 200, sgstMinor: 200 })] })]);
     expect(ret.b2b).toHaveLength(0);
     expect(ret.b2c[0]!.taxableMinor).toBe(8000);
+  });
+});
+
+describe('GSTN portal JSON export (A5)', () => {
+  const GSTIN = '33ABCDE1234F1Z5';
+  it('serialises to the portal shape: paise→rupees, YYYY-MM-DD→DD-MM-YYYY, grouped by ctin', () => {
+    const ret = gstr1Return([
+      { documentId: 'INV-1', documentDate: '2026-08-05', supplyType: 'b2b', recipientGstin: GSTIN, lines: [line({ taxableMinor: 10000, rateBps: 500, cgstMinor: 250, sgstMinor: 250 })] },
+      { documentId: 'RCPT-1', documentDate: '2026-08-06', supplyType: 'b2c', lines: [line({ taxableMinor: 20000, rateBps: 500, cgstMinor: 500, sgstMinor: 500 })] },
+    ]);
+    const json = toGstnGstr1(ret, { gstin: '33ZZZZZ9999Z1Z9', fp: '082026' });
+    expect(json.gstin).toBe('33ZZZZZ9999Z1Z9');
+    expect(json.fp).toBe('082026');
+    expect(json.b2b).toHaveLength(1);
+    expect(json.b2b[0]!.ctin).toBe(GSTIN);
+    expect(json.b2b[0]!.inv[0]!.inum).toBe('INV-1');
+    expect(json.b2b[0]!.inv[0]!.idt).toBe('05-08-2026');       // date reformatted
+    expect(json.b2b[0]!.inv[0]!.val).toBe(105);                // 10500 paise → 105.00 rupees
+    expect(json.b2b[0]!.inv[0]!.itms[0]!.itm_det.rt).toBe(5);  // 500 bps → 5%
+    expect(json.b2b[0]!.inv[0]!.itms[0]!.itm_det.txval).toBe(100); // 10000 paise → 100
+    expect(json.b2cs[0]!.sply_ty).toBe('INTRA');
+    expect(json.b2cs[0]!.txval).toBe(200);
+    expect(json.hsn.data[0]!.hsn_sc).toBe('100610');
+    expect(json.hsn.data[0]!.txval).toBe(300);                 // 10000 + 20000 paise → 300
   });
 });
