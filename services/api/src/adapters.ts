@@ -58,6 +58,7 @@ import type { FacilitiesDeps, MaintenanceSchedule, ScheduledTask, SafetyIncident
 import type { FacilitiesAssetsDeps, Asset, ServiceLog, DowntimeEvent, EnergyReading } from '../../platform/src/facilities-assets';
 import type { FacilitiesMonitoringDeps, EquipmentRangeReg, EquipmentContents, EquipmentReading, PowerEvent } from '../../platform/src/facilities-monitoring';
 import type { PackagingDeps, PackagingItem, PackagingMovement } from '../../inventory/src/packaging';
+import type { ComplianceDeps, Obligation } from '../../compliance/src/index';
 import type { WasteDeps, WasteRecord, WasteCoverage } from '../../inventory/src/waste';
 import type { IntegrationDeps, CertifiedEntry, AdapterConfig, AdapterHeartbeat } from '../../platform/src/integration';
 import type { WebhookDeps, WebhookConfig } from '../../platform/src/webhooks';
@@ -139,6 +140,7 @@ export const STREAM = {
   concession: 'concession',
   scrap: 'scrap',
   facilities: 'facilities',
+  compliance: 'compliance',
   packaging: 'packaging',
   waste: 'waste',
   integration: 'integration',
@@ -168,6 +170,40 @@ async function allOf<T>(
 ): Promise<readonly T[]> {
   const events = await store.readStream(tenantId, stream, { type });
   return events.map((e) => payloadOf<T>(e));
+}
+
+/**
+ * The compliance obligation register (M34-FR-03). Low-volume — every obligation folds one stream, the
+ * latest registration of an id winning, because a change to a licence's expiry is a new append-only
+ * fact, never an overwrite (hard rule #2/#6).
+ */
+export function complianceAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): ComplianceDeps {
+  return {
+    now: input.now,
+
+    obligations: async (tenantId) => {
+      const all = await allOf<Obligation>(input.store, tenantId, STREAM.compliance, 'ObligationRegistered');
+      const byId = new Map<string, Obligation>();
+      for (const o of all) byId.set(o.obligationId, o); // later registration wins
+      return [...byId.values()];
+    },
+
+    recordRegister: async (tenantId, obligation) => {
+      const digest = createHash('sha256').update(JSON.stringify(obligation)).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, STREAM.compliance, makeEvent({
+        id: `compliance-oblig-${obligation.obligationId}-${digest}`,
+        type: 'ObligationRegistered',
+        occurredAt: input.now(),
+        // Identical re-send collapses on the content digest; any change is a new fact the fold picks up.
+        idempotencyKey: `compliance-oblig-${tenantId}-${obligation.obligationId}-${digest}`,
+        source: 'api/compliance',
+        payload: obligation,
+      }));
+    },
+  };
 }
 
 /**
