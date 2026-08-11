@@ -3,3 +3,4 @@
 // a missing reading fails rather than passes, and release needs a named person.
 
 export * from './cold-chain';
+export * from './lot-trace';

@@ -73,6 +73,7 @@ import { productionRoutes } from '../../inventory/src/production';
 import { packagingRoutes } from '../../inventory/src/packaging';
 import { wasteRoutes } from '../../inventory/src/waste';
 import { coldChainRoutes } from '../../inventory/src/cold-chain';
+import { lotTraceRoutes } from '../../inventory/src/lot-trace';
 import { integrationRoutes } from '../../platform/src/integration';
 import { webhookRoutes, webhookHasher } from '../../platform/src/webhooks';
 import { connectorRoutes } from '../../platform/src/connectors';
@@ -369,6 +370,9 @@ export function buildSurface(deps: {
     // Cold-chain assessment (M10-FR-02) — stateless verdict on a perishable batch; no second temperature
     // store (facilities-monitoring owns that truth, P-02), so no deps/stub.
     ...coldChainRoutes(),
+    // One-up/one-down lot traceability export (B11 / M10-FR-03) — the reconciled supplier→store→recipient
+    // trace a recall runs on; stateless assembler over the caller's records, so no deps/stub.
+    ...lotTraceRoutes(),
     // Compliance obligation register (M34-FR-03; subsumes B7 scale-cert + B10 FSSAI-licence alerts).
     ...complianceRoutes(store === undefined ? {
       obligations: empty([]), recordRegister: () => {}, now,
