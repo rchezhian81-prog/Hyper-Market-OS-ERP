@@ -56,6 +56,7 @@ import { b2bDocumentsRoutes } from '../../finance/src/b2b-documents';
 import { concessionRoutes } from '../../finance/src/concession';
 import { scrapRoutes } from '../../finance/src/scrap';
 import { refundExceptionsRoutes } from '../../finance/src/refund-exceptions';
+import { eInvoiceRoutes } from '../../finance/src/e-invoice';
 import { facilitiesRoutes } from '../../platform/src/facilities';
 import { facilitiesAssetsRoutes } from '../../platform/src/facilities-assets';
 import { facilitiesMonitoringRoutes } from '../../platform/src/facilities-monitoring';
@@ -344,6 +345,9 @@ export function buildSurface(deps: {
     // Refund exceptions & day totals (M14-FR-03/04) — stateless cash-office view of refunds that did not
     // go cleanly; the reversals live in settlement/POS, this is the reading.
     ...refundExceptionsRoutes(),
+    // GST e-invoicing (A20) — eligibility / IRP-request build / apply-IRP-answer; stateless deterministic
+    // core. The live IRP submission + IRN store is the next increment + a certified-GSP deployment adapter.
+    ...eInvoiceRoutes(),
     // Price integrity across shelf/POS/app/ESL (D06/D14, ratified R2 B25) — stateless audit; the till is
     // the reference and a shelf underpricing it is ranked first as a legal exposure.
     ...priceIntegrityRoutes(),
