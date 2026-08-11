@@ -5,3 +5,4 @@
 
 export * from './fefo';
 export * from './assign-batches';
+export * from './attribute-sales';

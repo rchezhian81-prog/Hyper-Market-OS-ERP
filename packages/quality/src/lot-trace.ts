@@ -34,6 +34,10 @@ export interface OutboundLotRecord {
   /** The identified customer, where a sale captured one. Omitted for an anonymous (walk-in) sale — the
    *  sale is still traced by its reference and date. */
   readonly customerId?: string;
+  /** How this line was attributed to the batch: `captured` (the till recorded the batch on the sale) or
+   *  `fifo_receipt_estimate` (head office's FIFO best-estimate, ADR-0006 — never a till-recorded fact).
+   *  Absent on caller-supplied records. */
+  readonly source?: 'captured' | 'fifo_receipt_estimate';
 }
 
 export interface LotTraceExport {
