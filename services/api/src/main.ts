@@ -92,6 +92,7 @@ import { backupVerificationRoutes } from '../../platform/src/backup-verification
 import { branchLifecycleRoutes } from '../../platform/src/branch-lifecycle';
 import { documentsRoutes } from '../../platform/src/documents';
 import { suspendedBillsRoutes } from '../../pos/src/suspended-bills';
+import { restrictedSalesRoutes } from '../../pos/src/restricted-sales';
 import { ordersRoutes } from '../../orders/src/index';
 import { fulfilmentRoutes } from '../../fulfilment/src/index';
 import { migrationRoutes } from '../../migration/src/index';
@@ -344,6 +345,9 @@ export function buildSurface(deps: {
     ...suspendedBillsRoutes(store === undefined ? {
       bills: empty([]), record: () => {}, now,
     } : suspendedBillsAdapter({ store, now })),
+    // Restricted-sale gate (B14 / COTPA 2003) — the till's age-18 gate on tobacco and its refusal of a
+    // loose single-stick quantity; a decision, not a write, so stateless and offline-safe.
+    ...restrictedSalesRoutes(),
     // Refund exceptions & day totals (M14-FR-03/04) — stateless cash-office view of refunds that did not
     // go cleanly; the reversals live in settlement/POS, this is the reading.
     ...refundExceptionsRoutes(),
