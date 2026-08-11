@@ -18,8 +18,9 @@ import {
   extractInclusiveGst, roundToNearestRupee, assessDiscountEligibility,
   bogoTreatment, freeSampleTreatment, voucherTimeOfSupply, resolveGstRate,
   requiredHsnDigits, validateHsnForTurnover, checkTaxInvoiceFields,
-  InvalidInclusiveTaxInput, InvalidPromoTaxInput, InvalidRateSchedule, InvalidHsnInput,
-  type PlaceOfSupply, type GstRatePeriod, type TaxInvoiceFields,
+  assessCompensationCess, checkDemeritHoldover,
+  InvalidInclusiveTaxInput, InvalidPromoTaxInput, InvalidRateSchedule, InvalidHsnInput, InvalidCessInput,
+  type PlaceOfSupply, type GstRatePeriod, type TaxInvoiceFields, type CompensationCessSpec,
 } from '../../../packages/finance/src/index';
 import { allocateInvoiceNumber, financialYearOf, InvalidInvoiceNumber, type InvoiceSeriesState } from '../../../packages/numbering/src/index';
 
@@ -183,6 +184,50 @@ export function taxRoutes(): readonly Route[] {
           return { status: 200, body: resolveGstRate({ schedule, supplyDate }) };
         } catch (err) {
           if (err instanceof InvalidRateSchedule) throw apiError(400, { code: 'rate_unresolvable', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the schedule or the supply date.' });
+          throw err;
+        }
+      },
+    },
+    {
+      // GST Compensation Cess on a tobacco / pan-masala line (A7). Over and above the GST, a short list of
+      // "demerit" HSNs carry a cess: an ad-valorem part (bps of the same taxable value GST is charged on)
+      // and/or a specific part (₹ per block of units, e.g. per 1000 sticks), charged pro-rata on quantity.
+      // A good with neither is not cess-liable and its cess is 0 (the data gate). Pass ?gstRateBps= to also
+      // get the GST-2.0 holdover check — a cess good must stay on 28% GST + cess, never the 40% demerit
+      // slab (that taxes it twice). Same back-office finance gate; the offline till has its own copy.
+      // ?hsn=&taxableMinor=&advaloremBps=&specificPerQuantityMinor=&perQuantity=&quantity=&gstRateBps=
+      api: 'API-09', method: 'GET', path: '/v1/finance/tax/cess',
+      permission: 'finance.period.read',
+      handler: async (ctx) => {
+        const hsn = ctx.query['hsn'];
+        const taxable = ctx.query['taxableMinor'];
+        if (typeof hsn !== 'string' || hsn === '' || !isIntString(taxable)) {
+          throw apiError(400, { code: 'cess_needs_hsn_and_taxable', whatHappened: 'A cess assessment needs ?hsn=<code> and ?taxableMinor=<whole paisa>.', wasItSaved: 'not_saved', nextSafeAction: 'Send the HSN code and the taxable value. A calculation reads, it never writes.' });
+        }
+        // Optional rate/amount params, each a whole number when present; a malformed one is refused.
+        const optInt = (v: string | undefined, dflt: number): number => {
+          if (v === undefined || v === '') return dflt;
+          if (!isIntString(v)) throw apiError(400, { code: 'cess_param_invalid', whatHappened: `A cess parameter must be a whole non-negative number; "${v}" is not.`, wasItSaved: 'not_saved', nextSafeAction: 'Correct the cess rates/quantity and try again.' });
+          return Number(v);
+        };
+        const gstRate = ctx.query['gstRateBps'];
+        if (gstRate !== undefined && gstRate !== '' && !isIntString(gstRate)) {
+          throw apiError(400, { code: 'cess_gst_rate_invalid', whatHappened: '?gstRateBps=, if given, must be a whole non-negative number of basis points.', wasItSaved: 'not_saved', nextSafeAction: 'Send a whole GST rate or omit it.' });
+        }
+        try {
+          const spec: CompensationCessSpec = {
+            hsnCode: hsn,
+            advaloremBps: optInt(ctx.query['advaloremBps'], 0),
+            specificPerQuantityMinor: optInt(ctx.query['specificPerQuantityMinor'], 0),
+            perQuantity: optInt(ctx.query['perQuantity'], 1000),
+          };
+          const assessment = assessCompensationCess({ spec, taxableMinor: Number(taxable), quantity: optInt(ctx.query['quantity'], 0) });
+          const holdover = gstRate !== undefined && gstRate !== ''
+            ? checkDemeritHoldover({ cessLiable: assessment.cessLiable, gstRateBps: Number(gstRate) })
+            : undefined;
+          return { status: 200, body: holdover === undefined ? assessment : { ...assessment, holdover } };
+        } catch (err) {
+          if (err instanceof InvalidCessInput) throw apiError(400, { code: 'cess_invalid', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the cess spec or the figures and try again.' });
           throw err;
         }
       },
