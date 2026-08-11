@@ -31,6 +31,12 @@ export interface IncomingSaleLine {
   /** What the lane actually charged, per unit. Not what anything thinks it should have been. */
   readonly unitPriceMinor: number;
   readonly lineTotalMinor: number;
+  /** The lot/batch this unit came from, where the lane captured it — the one-step-forward half of the
+   *  recall trace (M10-FR-03). Absent for a non-batch-tracked product; absent on a batch-tracked one is
+   *  a finding, not a refusal (below). */
+  readonly batchId?: string;
+  /** The batch's use-by/expiry date (YYYY-MM-DD), where captured — carried for the recall record. */
+  readonly batchExpiry?: string;
 }
 
 export interface IncomingTender {
@@ -62,6 +68,8 @@ export type SaleExceptionKind =
   | 'price_differs_from_catalogue'
   /** The lane sold something since recalled. **Critical**: it is in a customer's hands. */
   | 'sold_a_recalled_product'
+  /** A batch-tracked product was sold with no batch captured — the sale cannot be traced in a recall. */
+  | 'batch_tracked_sold_without_batch'
   /** The tenders do not add up to the total. Somebody's day will not balance. */
   | 'tender_does_not_sum_to_total'
   /** Priced from a pack far behind the current one. */
@@ -180,6 +188,16 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
       add('sold_a_recalled_product', 'critical',
         `${product.sku} is recall-blocked and this lane sold it — its pack (v${sale.packVersion}) predates the block`,
         `ACT NOW: ${product.sku} is in a customer's hands. Check whether the receipt identifies them, and follow the recall procedure. Then confirm every lane has taken the pack that blocks it.`,
+        { productId: line.productId });
+    }
+
+    // A lot/batch-tracked good (perishable, pharma) must carry its batch so a recall can trace who
+    // bought it (M10-FR-03). Sold without one, the sale still stands — but that unit is now untraceable,
+    // which a recall needs to know before it trusts the trace, so it is a finding (hard rule #10, P-08).
+    if (product.batchTracked === true && (typeof line.batchId !== 'string' || line.batchId.trim() === '')) {
+      add('batch_tracked_sold_without_batch', 'material',
+        `${product.sku} is lot/batch-tracked and was sold with no batch captured`,
+        'This unit cannot be traced to a batch, so a recall could not tell whether it was affected. Check that the lane is capturing the batch for this product.',
         { productId: line.productId });
     }
 
