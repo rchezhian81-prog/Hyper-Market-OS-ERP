@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { assessEInvoiceEligibility, buildIrnRequest, applyIrpResult } from '../../packages/e-invoice/src/index';
+import {
+  assessEInvoiceEligibility, buildIrnRequest, applyIrpResult,
+  foldEInvoice, assessCancellation,
+  type EInvoiceEvent, type IrnRequest,
+} from '../../packages/e-invoice/src/index';
 import type { TaxInvoiceFields as TIF } from '../../packages/finance/src/index';
 
 // A20 — GST e-invoicing. ₹5-crore-gated, B2C-excluded eligibility; a malformed invoice never reaches the
@@ -72,5 +76,42 @@ describe('applying the IRP answer — never fabricating a signature (A20)', () =
     expect(applyIrpResult({ invoiceId: 'inv-1', result: { status: 'rejected', errors: ['2172: duplicate IRN for the document'] } }).state).toBe('rejected');
     // An unknown answer is NOT a success — the invoice is not e-invoiced until reconciled.
     expect(applyIrpResult({ invoiceId: 'inv-1', result: { status: 'unknown', reason: 'timeout' } }).state).toBe('pending_unknown');
+  });
+});
+
+describe('the stored e-invoice lifecycle fold (A20 inc2)', () => {
+  const REQUEST: IrnRequest = { supplierGstin: GSTIN, documentType: 'INV', documentNumber: 'INV/2627/000001', documentDate: '2026-08-11', financialYear: '2026-27', taxableMinor: 100000 };
+  const submitted: EInvoiceEvent = { kind: 'submitted', request: REQUEST, at: '2026-08-11T09:00:00Z' };
+  const registered: EInvoiceEvent = { kind: 'response', record: { invoiceId: 'inv-1', state: 'registered', irn: IRN64, signedQr: 'signed', ackNo: 'A', ackDate: '2026-08-11', detail: 'ok' }, at: '2026-08-11T09:05:00Z' };
+
+  it('folds submit → registered, and a registration is FINAL (a later response cannot change it)', () => {
+    const rejectedLater: EInvoiceEvent = { kind: 'response', record: { invoiceId: 'inv-1', state: 'rejected', errors: ['x'], detail: 'no' }, at: '2026-08-11T09:10:00Z' };
+    const agg = foldEInvoice('inv-1', [submitted, registered, rejectedLater]);
+    expect(agg?.state).toBe('registered'); // the rejected-later response is ignored
+    expect(agg?.irn).toBe(IRN64);
+    expect(agg?.registeredAt).toBe('2026-08-11T09:05:00Z');
+  });
+
+  it('lets a pending_unknown move to registered on a later response, and ignores a response with no submit', () => {
+    const unknown: EInvoiceEvent = { kind: 'response', record: { invoiceId: 'inv-1', state: 'pending_unknown', detail: 'timeout' }, at: '2026-08-11T09:03:00Z' };
+    expect(foldEInvoice('inv-1', [submitted, unknown, registered])?.state).toBe('registered');
+    expect(foldEInvoice('inv-1', [registered])).toBeUndefined(); // no submission → nothing
+  });
+
+  it('cancels only a registered invoice, and keeps it final afterwards', () => {
+    const cancelled: EInvoiceEvent = { kind: 'cancelled', reason: 'wrong buyer GSTIN', at: '2026-08-11T10:00:00Z' };
+    const agg = foldEInvoice('inv-1', [submitted, registered, cancelled]);
+    expect(agg?.state).toBe('cancelled');
+    // A cancel with no registration does nothing.
+    expect(foldEInvoice('inv-1', [submitted, cancelled])?.state).toBe('submitted');
+  });
+});
+
+describe('IRN cancellation window (A20 inc2)', () => {
+  it('allows cancellation within 24h and refuses it after, pointing to a credit note', () => {
+    expect(assessCancellation({ registeredAt: '2026-08-11T09:00:00Z', at: '2026-08-11T20:00:00Z' }).cancellable).toBe(true);
+    const late = assessCancellation({ registeredAt: '2026-08-11T09:00:00Z', at: '2026-08-13T09:00:00Z' });
+    expect(late.cancellable).toBe(false);
+    expect(late.reason).toContain('credit note');
   });
 });

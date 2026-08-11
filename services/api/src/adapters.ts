@@ -61,6 +61,8 @@ import type { PackagingDeps, PackagingItem, PackagingMovement } from '../../inve
 import type { ComplianceDeps, Obligation } from '../../compliance/src/index';
 import type { DocumentsDeps, TemplateVersion } from '../../platform/src/documents';
 import type { SuspendedBillsDeps, SuspendedBill } from '../../pos/src/suspended-bills';
+import type { EInvoiceRegisterDeps } from '../../finance/src/e-invoice-register';
+import { foldEInvoice, type EInvoiceEvent, type IrnRequest as EInvoiceIrnRequest, type EInvoiceRecord } from '../../../packages/e-invoice/src/index';
 import type { WasteDeps, WasteRecord, WasteCoverage } from '../../inventory/src/waste';
 import type { IntegrationDeps, CertifiedEntry, AdapterConfig, AdapterHeartbeat } from '../../platform/src/integration';
 import type { WebhookDeps, WebhookConfig } from '../../platform/src/webhooks';
@@ -145,6 +147,7 @@ export const STREAM = {
   compliance: 'compliance',
   documents: 'documents',
   suspended: 'suspended',
+  einvoice: 'einvoice',
   packaging: 'packaging',
   waste: 'waste',
   integration: 'integration',
@@ -271,6 +274,69 @@ export function suspendedBillsAdapter(input: {
         idempotencyKey: `susp-${tenantId}-${bill.billId}-${bill.state}-${stamp}`,
         source: 'api/pos',
         payload: bill,
+      }));
+    },
+  };
+}
+
+/**
+ * The e-invoice lifecycle store (A20 inc2). Each invoice has its own stream of append-only facts —
+ * submitted, the IRP's response(s), a cancellation — folded by the engine into the current state. The
+ * government's IRN/QR is only ever what the IRP actually returned (the engine refuses to fabricate it),
+ * and nothing here is deleted (hard rule #6).
+ */
+export function eInvoiceAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): EInvoiceRegisterDeps {
+  const streamFor = (invoiceId: string): string => streamName(STREAM.einvoice, invoiceId);
+  return {
+    now: input.now,
+
+    load: async (tenantId, invoiceId) => {
+      const persisted = await input.store.readStream(tenantId, streamFor(invoiceId));
+      const events: EInvoiceEvent[] = [];
+      for (const e of persisted) {
+        const p = e.event.payload as Record<string, unknown>;
+        const at = (p['at'] as string | undefined) ?? e.event.occurredAt;
+        if (e.event.type === 'EInvoiceSubmitted') events.push({ kind: 'submitted', request: p['request'] as EInvoiceIrnRequest, at });
+        else if (e.event.type === 'EInvoiceResponseRecorded') events.push({ kind: 'response', record: p['record'] as EInvoiceRecord, at });
+        else if (e.event.type === 'EInvoiceCancelled') events.push({ kind: 'cancelled', reason: p['reason'] as string, at });
+      }
+      return foldEInvoice(invoiceId, events);
+    },
+
+    recordSubmit: async (tenantId, invoiceId, request, at) => {
+      await input.store.append(tenantId, streamFor(invoiceId), makeEvent({
+        id: `einv-submit-${invoiceId}`,
+        type: 'EInvoiceSubmitted',
+        occurredAt: input.now(),
+        idempotencyKey: `einv-submit-${tenantId}-${invoiceId}`, // one submission per invoice
+        source: 'api/finance',
+        payload: { request, at },
+      }));
+    },
+
+    recordResponse: async (tenantId, invoiceId, record, at) => {
+      await input.store.append(tenantId, streamFor(invoiceId), makeEvent({
+        id: `einv-resp-${invoiceId}-${record.state}-${record.irn ?? 'none'}`,
+        type: 'EInvoiceResponseRecorded',
+        occurredAt: input.now(),
+        // The same answer collapses; a distinct state/IRN is its own fact.
+        idempotencyKey: `einv-resp-${tenantId}-${invoiceId}-${record.state}-${record.irn ?? 'none'}`,
+        source: 'api/finance',
+        payload: { record, at },
+      }));
+    },
+
+    recordCancel: async (tenantId, invoiceId, reason, at) => {
+      await input.store.append(tenantId, streamFor(invoiceId), makeEvent({
+        id: `einv-cancel-${invoiceId}`,
+        type: 'EInvoiceCancelled',
+        occurredAt: input.now(),
+        idempotencyKey: `einv-cancel-${tenantId}-${invoiceId}`,
+        source: 'api/finance',
+        payload: { reason, at },
       }));
     },
   };

@@ -187,3 +187,73 @@ export function applyIrpResult(input: { readonly invoiceId: string; readonly res
       return { invoiceId, state: 'pending_unknown', detail: `no clear answer from the IRP (${result.reason}) — the IRN status is UNKNOWN until reconciled; the invoice must NOT be issued as e-invoiced yet` };
   }
 }
+
+// --- the stored lifecycle (inc2): submit → IRP response → cancel, folded from append-only events -------
+//
+// The API is the durable store of e-invoice state; a credentialed GSP connector reads submitted invoices,
+// calls the IRP, and posts the answer back through `record-response`. This decoupling is deliberate — an
+// invoice is not held hostage to a synchronous network call, and a retry that posts the same answer twice
+// collapses. Two rules the fold enforces: a `registered` invoice is FINAL (a later response cannot change
+// or un-set its IRN — only a cancellation moves it), and a response with no prior submission is ignored.
+
+/** Hours an IRN may be cancelled within, after which a credit note is the only route (GST rule). */
+export const IRN_CANCEL_WINDOW_HOURS = 24;
+
+export type EInvoiceLifecycleState = 'submitted' | 'registered' | 'rejected' | 'pending_unknown' | 'provider_error' | 'cancelled';
+
+export interface EInvoiceAggregate {
+  readonly invoiceId: string;
+  readonly state: EInvoiceLifecycleState;
+  readonly request?: IrnRequest;
+  readonly irn?: string;
+  readonly signedQr?: string;
+  readonly ackNo?: string;
+  readonly ackDate?: string;
+  readonly errors?: readonly string[];
+  readonly registeredAt?: string;
+  readonly cancelledAt?: string;
+  readonly cancelReason?: string;
+  readonly detail: string;
+}
+
+export type EInvoiceEvent =
+  | { readonly kind: 'submitted'; readonly request: IrnRequest; readonly at: string }
+  | { readonly kind: 'response'; readonly record: EInvoiceRecord; readonly at: string }
+  | { readonly kind: 'cancelled'; readonly reason: string; readonly at: string };
+
+/** Fold an invoice's append-only e-invoice events into its current state. `undefined` if never submitted. */
+export function foldEInvoice(invoiceId: string, events: readonly EInvoiceEvent[]): EInvoiceAggregate | undefined {
+  let agg: EInvoiceAggregate | undefined;
+  for (const e of events) {
+    if (e.kind === 'submitted') {
+      // A re-submit before any response is idempotent — the first submission stands.
+      if (agg === undefined) agg = { invoiceId, state: 'submitted', request: e.request, detail: 'submitted — awaiting the IRP' };
+    } else if (e.kind === 'response') {
+      if (agg === undefined) continue;                                   // a response with no submission is ignored
+      if (agg.state === 'registered' || agg.state === 'cancelled') continue; // registered/cancelled is final
+      const r = e.record;
+      agg = {
+        ...agg,
+        state: r.state as EInvoiceLifecycleState,
+        ...(r.irn !== undefined ? { irn: r.irn } : {}),
+        ...(r.signedQr !== undefined ? { signedQr: r.signedQr } : {}),
+        ...(r.ackNo !== undefined ? { ackNo: r.ackNo } : {}),
+        ...(r.ackDate !== undefined ? { ackDate: r.ackDate } : {}),
+        ...(r.errors !== undefined ? { errors: r.errors } : {}),
+        ...(r.state === 'registered' ? { registeredAt: e.at } : {}),
+        detail: r.detail,
+      };
+    } else if (e.kind === 'cancelled') {
+      if (agg?.state === 'registered') agg = { ...agg, state: 'cancelled', cancelledAt: e.at, cancelReason: e.reason, detail: `cancelled within the ${IRN_CANCEL_WINDOW_HOURS}h window: ${e.reason}` };
+    }
+  }
+  return agg;
+}
+
+/** May a registered IRN still be cancelled? Within 24 hours of registration; otherwise a credit note. */
+export function assessCancellation(input: { readonly registeredAt: string; readonly at: string }): { readonly cancellable: boolean; readonly reason: string } {
+  const hours = (Date.parse(input.at) - Date.parse(input.registeredAt)) / 3_600_000;
+  if (Number.isNaN(hours) || hours < 0) return { cancellable: false, reason: 'the cancellation time is not after the registration time' };
+  if (hours > IRN_CANCEL_WINDOW_HOURS) return { cancellable: false, reason: `an IRN may only be cancelled within ${IRN_CANCEL_WINDOW_HOURS} hours of registration — this one is ${Math.floor(hours)}h old, so a credit note is the only route` };
+  return { cancellable: true, reason: `within the ${IRN_CANCEL_WINDOW_HOURS}-hour cancellation window` };
+}
