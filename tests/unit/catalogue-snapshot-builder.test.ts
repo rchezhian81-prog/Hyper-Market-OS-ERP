@@ -56,6 +56,16 @@ describe('buildCatalogueSnapshot', () => {
     expect(result.excluded).toEqual([]);
   });
 
+  it('carries the batch-tracked flag from the master onto the lane snapshot (M10-FR-03)', () => {
+    const result = buildCatalogueSnapshot(input({
+      products: [master({ productId: 'p1', sku: 'MILK1', name: 'Milk 1L', batchTracked: true })],
+    }));
+    expect(result.snapshot.products[0]!.batchTracked).toBe(true);
+    // A product with no flag stays undefined, not forced to false.
+    const plain = buildCatalogueSnapshot(input());
+    expect(plain.snapshot.products[0]!.batchTracked).toBeUndefined();
+  });
+
   it('honours price precedence — a zone price beats the store base price', () => {
     const result = buildCatalogueSnapshot(
       input({

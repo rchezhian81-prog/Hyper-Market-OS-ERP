@@ -19,6 +19,7 @@ const CATALOGUE = new Map<string, CatalogueProduct>([
   ['P1', product('P1')],
   ['P2', product('P2', { unitPriceMinor: 2_500 })],
   ['P3', product('P3', { recallBlock: true })],
+  ['P4', product('P4', { batchTracked: true })], // perishable/lot-tracked: a sale must carry its batch
 ]);
 
 const sale = (over: Partial<IncomingSale> = {}): IncomingSale => ({
@@ -128,6 +129,33 @@ describe('a recall outranks every number on the list', () => {
       lines: [{ productId: 'P3', quantityMinor: 1, uom: 'each', unitPriceMinor: 5_000, lineTotalMinor: 5_000 }],
     }), ctx());
     expect(r.exceptions[0]?.detail).toContain('its pack (v8) predates the block');
+  });
+});
+
+describe('a batch-tracked good must carry its batch for the recall trace (M10-FR-03)', () => {
+  const p4Line = (over: Record<string, unknown> = {}) => ({ productId: 'P4', quantityMinor: 1, uom: 'each', unitPriceMinor: 5_000, lineTotalMinor: 5_000, ...over });
+
+  it('flags a batch-tracked product sold with no batch — banked, but a material finding', () => {
+    const r = acceptSale(sale({ lines: [p4Line()] }), ctx());
+    expect(r.banked).toBe(true); // never refused
+    const e = r.exceptions.find((x) => x.kind === 'batch_tracked_sold_without_batch')!;
+    expect(e.severity).toBe('material');
+    expect(e.ownerAction).toContain('capturing the batch');
+  });
+
+  it('does NOT flag when the batch is captured', () => {
+    const r = acceptSale(sale({ lines: [p4Line({ batchId: 'LOT-42', batchExpiry: '2026-12-31' })] }), ctx());
+    expect(kinds(r.exceptions)).not.toContain('batch_tracked_sold_without_batch');
+  });
+
+  it('treats an empty-string batch as no batch', () => {
+    const r = acceptSale(sale({ lines: [p4Line({ batchId: '   ' })] }), ctx());
+    expect(kinds(r.exceptions)).toContain('batch_tracked_sold_without_batch');
+  });
+
+  it('does NOT flag a non-batch-tracked product sold without a batch (P1)', () => {
+    const r = acceptSale(sale(), ctx());
+    expect(kinds(r.exceptions)).not.toContain('batch_tracked_sold_without_batch');
   });
 });
 

@@ -36,6 +36,8 @@ export interface MasterProduct {
   readonly status: ProductStatus;
   readonly mrpMinor?: number;
   readonly recallBlock?: boolean;
+  /** Lot/batch-tracked — the lane captures the batch on each sale line for recall traceability (M10-FR-03). */
+  readonly batchTracked?: boolean;
   readonly regulatedFlags?: Readonly<Record<string, unknown>>;
 }
 
@@ -128,6 +130,7 @@ export function buildCatalogueSnapshot(input: BuildSnapshotInput): BuildSnapshot
       mrpMinor: master.mrpMinor,
       status: master.status,
       recallBlock: master.recallBlock,
+      batchTracked: master.batchTracked,
       regulatedFlags: master.regulatedFlags,
     });
   }

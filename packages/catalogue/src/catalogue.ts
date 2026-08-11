@@ -33,6 +33,10 @@ export interface CatalogueProduct {
   readonly status: ProductStatus;
   /** Stops sale everywhere, honoured offline (M10-FR-04). */
   readonly recallBlock?: boolean;
+  /** This product is lot/batch-tracked (perishable, pharma, regulated): the lane should capture the
+   *  batch on each sale line so it can be traced in a recall (M10-FR-03). A sale of a batch-tracked
+   *  product with no batch is banked but flagged, never refused (hard rule #1/#10). */
+  readonly batchTracked?: boolean;
   /** e.g. { minimumAge: 18 } — the lane prompts before selling (M12-FR-04). */
   readonly regulatedFlags?: Readonly<Record<string, unknown>>;
 }
