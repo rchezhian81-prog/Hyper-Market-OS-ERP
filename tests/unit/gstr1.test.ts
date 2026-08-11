@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateOutwardLine, gstr1Table12, type OutwardSupplyLine, type ClassifiedLine } from '../../packages/finance/src/index';
+import { validateOutwardLine, gstr1Table12, gstr1Return, type OutwardSupplyLine, type ClassifiedLine, type OutwardDocument } from '../../packages/finance/src/index';
 
 // A5 — GSTR-1 Table 12: the HSN-wise summary of outward supplies, B2B/B2C split, HSN from a closed master
 // (no free text). Turnover ₹6cr → 6-digit HSN required (A4 reuse).
@@ -40,5 +40,32 @@ describe('GSTR-1 Table 12 summary (A5)', () => {
     expect(t12.totalTaxableMinor).toBe(35000);
     expect(t12.b2bTaxableMinor).toBe(10000);
     expect(t12.totalTaxMinor).toBe(750 + 750 + 900); // cgst+sgst across both rows
+  });
+});
+
+describe('GSTR-1 return assembly (A5): B2B invoice-level + B2C rate-wise', () => {
+  const GSTIN = '33ABCDE1234F1Z5';
+  const doc = (o: Partial<OutwardDocument>): OutwardDocument =>
+    ({ documentId: 'd1', documentDate: '2026-08-05', supplyType: 'b2c', lines: [line()], ...o });
+
+  it('reports B2B invoice-by-invoice and B2C rate-wise, agreeing with the HSN summary', () => {
+    const ret = gstr1Return([
+      doc({ documentId: 'INV-1', supplyType: 'b2b', recipientGstin: GSTIN, lines: [line({ taxableMinor: 10000, cgstMinor: 250, sgstMinor: 250 })] }),
+      doc({ documentId: 'INV-2', supplyType: 'b2b', recipientGstin: GSTIN, lines: [line({ taxableMinor: 5000, cgstMinor: 125, sgstMinor: 125 })] }),
+      doc({ documentId: 'RCPT-1', supplyType: 'b2c', lines: [line({ taxableMinor: 20000, cgstMinor: 500, sgstMinor: 500 })] }),
+    ]);
+    expect(ret.b2b).toHaveLength(2); // two invoices, both to the same GSTIN
+    expect(ret.b2b[0]!.invoiceNumber).toBe('INV-1');
+    expect(ret.b2b[0]!.invoiceValueMinor).toBe(10000 + 250 + 250);
+    expect(ret.b2c).toHaveLength(1); // one rate
+    expect(ret.b2c[0]!.taxableMinor).toBe(20000);
+    expect(ret.totalTaxableMinor).toBe(35000);
+    expect(ret.hsn.b2bTaxableMinor).toBe(15000);
+  });
+
+  it('files a B2B document with no recipient GSTIN as B2C — it cannot be a B2B invoice', () => {
+    const ret = gstr1Return([doc({ documentId: 'X', supplyType: 'b2b', lines: [line({ taxableMinor: 8000, cgstMinor: 200, sgstMinor: 200 })] })]);
+    expect(ret.b2b).toHaveLength(0);
+    expect(ret.b2c[0]!.taxableMinor).toBe(8000);
   });
 });

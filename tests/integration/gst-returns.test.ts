@@ -14,6 +14,8 @@ const record = (h: ApiHarness, u: string, id: string, body: unknown, key: string
   h.request({ method: 'POST', path: `/v1/finance/outward-supplies/${id}`, userId: u, tenantId: A, idempotencyKey: key, body });
 const table12 = (h: ApiHarness, u: string, from: string, to: string) =>
   h.request({ method: 'GET', path: '/v1/finance/gstr1/table-12', userId: u, tenantId: A, query: { from, to } });
+const gstr1 = (h: ApiHarness, u: string, from: string, to: string) =>
+  h.request({ method: 'GET', path: '/v1/finance/gstr1/return', userId: u, tenantId: A, query: { from, to } });
 
 describe('GST-returns write path + GSTR-1 Table 12 (A5)', () => {
   it('persists outward lines and folds them into a Table-12 summary with a B2B/B2C split', async () => {
@@ -49,11 +51,28 @@ describe('GST-returns write path + GSTR-1 Table 12 (A5)', () => {
     expect(((await table12(h, 'u-owner', '2026-08-01', '2026-08-31')).body as { totalTaxableMinor: number }).totalTaxableMinor).toBe(7000);
   });
 
+  it('assembles the full GSTR-1 return: B2B invoice-level and B2C rate-wise over stored data', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await record(h, 'u-owner', 'INV-9', { documentDate: '2026-08-05', supplyType: 'b2b', recipientGstin: GSTIN, annualTurnoverMinor: OVER, lines: [line({ taxableMinor: 10000, cgstMinor: 250, sgstMinor: 250 })] }, 'r-b2b');
+    await record(h, 'u-owner', 'RCPT-9', { documentDate: '2026-08-06', supplyType: 'b2c', annualTurnoverMinor: OVER, lines: [line({ taxableMinor: 20000, cgstMinor: 500, sgstMinor: 500 })] }, 'r-b2c');
+
+    const body = (await gstr1(h, 'u-owner', '2026-08-01', '2026-08-31')).body as { b2b: { invoiceNumber: string; recipientGstin: string; invoiceValueMinor: number }[]; b2c: { taxableMinor: number }[]; hsn: { totalTaxableMinor: number }; totalTaxableMinor: number };
+    expect(body.b2b).toHaveLength(1);
+    expect(body.b2b[0]!.invoiceNumber).toBe('INV-9');
+    expect(body.b2b[0]!.recipientGstin).toBe(GSTIN);
+    expect(body.b2b[0]!.invoiceValueMinor).toBe(10500);
+    expect(body.b2c[0]!.taxableMinor).toBe(20000);
+    expect(body.totalTaxableMinor).toBe(30000);
+    expect(body.hsn.totalTaxableMinor).toBe(30000); // return and HSN summary agree
+  });
+
   it('gates on the permissions', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     await h.provisionRole(A, 'u-cash', 'cashier');
     expect((await record(h, 'u-cash', 'x', { documentDate: '2026-08-05', supplyType: 'b2c', annualTurnoverMinor: OVER, lines: [line()] }, 'g-rbac')).status).toBe(403);
     expect((await table12(h, 'u-cash', '2026-08-01', '2026-08-31')).status).toBe(403);
+    expect((await gstr1(h, 'u-cash', '2026-08-01', '2026-08-31')).status).toBe(403);
   });
 });

@@ -13,7 +13,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  validateOutwardLine, gstr1Table12,
+  validateOutwardLine, gstr1Table12, gstr1Return,
   type OutwardSupplyLine, type ClassifiedLine, type SupplyKind,
 } from '../../../packages/finance/src/index';
 
@@ -96,6 +96,20 @@ export function gstReturnsRoutes(deps: GstReturnsDeps): readonly Route[] {
         const docs = (await deps.documents(ctx.tenantId)).filter((d) => d.documentDate >= from && d.documentDate <= to);
         const classified: ClassifiedLine[] = docs.flatMap((d) => d.lines.map((l) => ({ ...l, supplyKind: d.supplyType })));
         return { status: 200, body: { from, to, documentCount: docs.length, ...gstr1Table12(classified) } };
+      },
+    },
+    {
+      // The full GSTR-1 return for the period — B2B invoice-level, B2C rate-wise, and the HSN summary.
+      api: 'API-09', method: 'GET', path: '/v1/finance/gstr1/return',
+      permission: 'finance.gstr.read',
+      handler: async (ctx) => {
+        const from = ctx.query['from'];
+        const to = ctx.query['to'];
+        if (from === undefined || to === undefined || !DATE.test(from) || !DATE.test(to)) {
+          throw apiError(400, { code: 'return_needs_from_to', whatHappened: 'The GSTR-1 return needs ?from=YYYY-MM-DD&to=YYYY-MM-DD.', wasItSaved: 'not_saved', nextSafeAction: 'Send the return period’s from and to dates.' });
+        }
+        const docs = (await deps.documents(ctx.tenantId)).filter((d) => d.documentDate >= from && d.documentDate <= to);
+        return { status: 200, body: { from, to, documentCount: docs.length, ...gstr1Return(docs) } };
       },
     },
   ];
