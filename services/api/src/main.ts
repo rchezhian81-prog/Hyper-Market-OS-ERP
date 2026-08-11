@@ -84,6 +84,7 @@ import { reportingRoutes } from '../../reporting/src/index';
 import { ownerAlertsRoutes } from '../../reporting/src/owner-alerts';
 import type { Producer } from '../../../packages/reporting/src/index';
 import { customerRoutes } from '../../customer/src/index';
+import { notificationGuardRoutes } from '../../customer/src/notification-guard';
 import { ordersRoutes } from '../../orders/src/index';
 import { fulfilmentRoutes } from '../../fulfilment/src/index';
 import { migrationRoutes } from '../../migration/src/index';
@@ -322,6 +323,8 @@ export function buildSurface(deps: {
     ...weighingVerificationRoutes(),
     // Owner alerts inbox (M29-FR-03) — control by exception; stateless grouping of the period's exceptions.
     ...ownerAlertsRoutes(),
+    // Notification send guard (M31-FR-03) — consent/template/suppression/budget gate; stateless ruling.
+    ...notificationGuardRoutes(),
     // Refund exceptions & day totals (M14-FR-03/04) — stateless cash-office view of refunds that did not
     // go cleanly; the reversals live in settlement/POS, this is the reading.
     ...refundExceptionsRoutes(),
