@@ -57,6 +57,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'facilities.asset.manage', 'facilities.asset.read', 'facilities.reading.record', 'facilities.incident.record',
       'compliance.obligation.manage', 'compliance.obligation.read',
       'quality.coldchain.assess',
+      'price.integrity.audit',
       'migration.verification.read', 'migration.exception.accept',
       'ai.agent.run', 'ai.proposal.read', 'ai.budget.read', 'ai.killswitch.set',
     ],
@@ -89,6 +90,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'facilities.asset.manage', 'facilities.asset.read', 'facilities.reading.record', 'facilities.incident.record',
       'compliance.obligation.manage', 'compliance.obligation.read',
       'quality.coldchain.assess',
+      'price.integrity.audit',
     ],
   },
   {
