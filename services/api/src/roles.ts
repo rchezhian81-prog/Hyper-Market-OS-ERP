@@ -65,7 +65,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'branch.transition.evaluate',
       'document.template.manage', 'document.template.read',
       'pos.suspend.write', 'pos.suspend.read',
-      'finance.einvoice.generate',
+      'finance.einvoice.generate', 'finance.einvoice.read',
       'migration.verification.read', 'migration.exception.accept',
       'ai.agent.run', 'ai.proposal.read', 'ai.budget.read', 'ai.killswitch.set',
     ],
@@ -106,7 +106,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'branch.transition.evaluate',
       'document.template.manage', 'document.template.read',
       'pos.suspend.write', 'pos.suspend.read',
-      'finance.einvoice.generate',
+      'finance.einvoice.generate', 'finance.einvoice.read',
     ],
   },
   {
