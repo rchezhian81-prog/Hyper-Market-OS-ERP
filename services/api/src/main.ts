@@ -86,6 +86,7 @@ import type { Producer } from '../../../packages/reporting/src/index';
 import { customerRoutes } from '../../customer/src/index';
 import { notificationGuardRoutes } from '../../customer/src/notification-guard';
 import { backupVerificationRoutes } from '../../platform/src/backup-verification';
+import { branchLifecycleRoutes } from '../../platform/src/branch-lifecycle';
 import { ordersRoutes } from '../../orders/src/index';
 import { fulfilmentRoutes } from '../../fulfilment/src/index';
 import { migrationRoutes } from '../../migration/src/index';
@@ -328,6 +329,8 @@ export function buildSurface(deps: {
     ...notificationGuardRoutes(),
     // Backup verification & restore reconciliation (M35-FR-01/02, P-04) — stateless recovery rulings.
     ...backupVerificationRoutes(),
+    // Branch open/close lifecycle (M01-FR-04) — governed transition decision; stateless ruling.
+    ...branchLifecycleRoutes(),
     // Refund exceptions & day totals (M14-FR-03/04) — stateless cash-office view of refunds that did not
     // go cleanly; the reversals live in settlement/POS, this is the reading.
     ...refundExceptionsRoutes(),
