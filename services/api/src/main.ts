@@ -55,6 +55,7 @@ import { b2bCommissionRoutes } from '../../finance/src/b2b-commission';
 import { b2bDocumentsRoutes } from '../../finance/src/b2b-documents';
 import { concessionRoutes } from '../../finance/src/concession';
 import { scrapRoutes } from '../../finance/src/scrap';
+import { refundExceptionsRoutes } from '../../finance/src/refund-exceptions';
 import { facilitiesRoutes } from '../../platform/src/facilities';
 import { facilitiesAssetsRoutes } from '../../platform/src/facilities-assets';
 import { facilitiesMonitoringRoutes } from '../../platform/src/facilities-monitoring';
@@ -321,6 +322,9 @@ export function buildSurface(deps: {
     ...weighingVerificationRoutes(),
     // Owner alerts inbox (M29-FR-03) — control by exception; stateless grouping of the period's exceptions.
     ...ownerAlertsRoutes(),
+    // Refund exceptions & day totals (M14-FR-03/04) — stateless cash-office view of refunds that did not
+    // go cleanly; the reversals live in settlement/POS, this is the reading.
+    ...refundExceptionsRoutes(),
     // Price integrity across shelf/POS/app/ESL (D06/D14, ratified R2 B25) — stateless audit; the till is
     // the reference and a shelf underpricing it is ranked first as a legal exposure.
     ...priceIntegrityRoutes(),
