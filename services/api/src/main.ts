@@ -88,6 +88,7 @@ import { notificationGuardRoutes } from '../../customer/src/notification-guard';
 import { backupVerificationRoutes } from '../../platform/src/backup-verification';
 import { branchLifecycleRoutes } from '../../platform/src/branch-lifecycle';
 import { documentsRoutes } from '../../platform/src/documents';
+import { suspendedBillsRoutes } from '../../pos/src/suspended-bills';
 import { ordersRoutes } from '../../orders/src/index';
 import { fulfilmentRoutes } from '../../fulfilment/src/index';
 import { migrationRoutes } from '../../migration/src/index';
@@ -95,7 +96,7 @@ import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, warehouseAdapter, transfersAdapter, countsAdapter, productionAdapter, packagingAdapter, wasteAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
-  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter,
+  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
@@ -336,6 +337,10 @@ export function buildSurface(deps: {
     ...documentsRoutes(store === undefined ? {
       versions: empty([]), recordPublish: () => {}, now,
     } : documentsAdapter({ store, now })),
+    // Suspended (parked) bills (M15-FR-01/M12-FR-02) — park/resume/abandon; a recall is a claim, once.
+    ...suspendedBillsRoutes(store === undefined ? {
+      bills: empty([]), record: () => {}, now,
+    } : suspendedBillsAdapter({ store, now })),
     // Refund exceptions & day totals (M14-FR-03/04) — stateless cash-office view of refunds that did not
     // go cleanly; the reversals live in settlement/POS, this is the reading.
     ...refundExceptionsRoutes(),
