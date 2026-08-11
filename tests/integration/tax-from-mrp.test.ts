@@ -167,6 +167,50 @@ describe('GET /v1/finance/tax/rate-on-date — rate in force on the supply date 
   });
 });
 
+interface Cess {
+  hsnCode: string; cessLiable: boolean; taxableMinor: number; quantity: number;
+  advaloremCessMinor: number; specificCessMinor: number; totalCessMinor: number;
+  holdover?: { ok: boolean; band: string; detail: string };
+}
+
+describe('GET /v1/finance/tax/cess — GST Compensation Cess on tobacco/pan-masala (A7)', () => {
+  it('computes ad-valorem + specific cess, applies the holdover check, and gates on the finance read', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-cash', 'cashier');
+
+    // Pan-masala: ₹100 taxable at 60% ad-valorem → ₹60 cess; on 28% GST it is a valid holdover.
+    const pm = (await get(h, 'u-owner', '/v1/finance/tax/cess', { hsn: '21069020', taxableMinor: '10000', advaloremBps: '6000', gstRateBps: '2800' })).body as Cess;
+    expect(pm.cessLiable).toBe(true);
+    expect(pm.advaloremCessMinor).toBe(6000);
+    expect(pm.totalCessMinor).toBe(6000);
+    expect(pm.holdover!.ok).toBe(true);
+    expect(pm.holdover!.band).toBe('cess_holdover_28');
+
+    // Cigarettes: ₹200 taxable + a 20-pack at ₹4170/1000 sticks → ₹10 ad-valorem + ₹83.40 specific.
+    const cig = (await get(h, 'u-owner', '/v1/finance/tax/cess', { hsn: '24022090', taxableMinor: '20000', advaloremBps: '500', specificPerQuantityMinor: '417000', perQuantity: '1000', quantity: '20' })).body as Cess;
+    expect(cig.advaloremCessMinor).toBe(1000);
+    expect(cig.specificCessMinor).toBe(8340);
+    expect(cig.totalCessMinor).toBe(9340);
+
+    // The double-tax guard: a cess-liable good ALSO on the 40% demerit slab is refused (holdover.ok=false).
+    const dbl = (await get(h, 'u-owner', '/v1/finance/tax/cess', { hsn: '24022090', taxableMinor: '20000', advaloremBps: '500', gstRateBps: '4000' })).body as Cess;
+    expect(dbl.holdover!.ok).toBe(false);
+    expect(dbl.holdover!.band).toBe('demerit_40');
+
+    // An ordinary grocery line (no cess spec) is not liable — cess is zero (the data gate).
+    const bread = (await get(h, 'u-owner', '/v1/finance/tax/cess', { hsn: '1905', taxableMinor: '5000' })).body as Cess;
+    expect(bread.cessLiable).toBe(false);
+    expect(bread.totalCessMinor).toBe(0);
+
+    // Refuses missing figures and a bad param; the till may not use the back-office calculator.
+    expect((await get(h, 'u-owner', '/v1/finance/tax/cess', { taxableMinor: '10000' })).status).toBe(400); // no hsn
+    expect((await get(h, 'u-owner', '/v1/finance/tax/cess', { hsn: '24022090', taxableMinor: 'lots' })).status).toBe(400); // non-numeric taxable
+    expect((await get(h, 'u-owner', '/v1/finance/tax/cess', { hsn: '24022090', taxableMinor: '10000', advaloremBps: 'high' })).status).toBe(400); // bad param
+    expect((await get(h, 'u-cash', '/v1/finance/tax/cess', { hsn: '24022090', taxableMinor: '10000', advaloremBps: '6000' })).status).toBe(403);
+  });
+});
+
 describe('GET /v1/finance/tax/hsn-digits — HSN digit count by turnover (A4)', () => {
   it('reports the required digits, validates a code, and gates on the finance read', async () => {
     const h = apiHarness();
