@@ -60,6 +60,7 @@ import type { FacilitiesMonitoringDeps, EquipmentRangeReg, EquipmentContents, Eq
 import type { PackagingDeps, PackagingItem, PackagingMovement } from '../../inventory/src/packaging';
 import type { ComplianceDeps, Obligation } from '../../compliance/src/index';
 import type { DocumentsDeps, TemplateVersion } from '../../platform/src/documents';
+import type { SuspendedBillsDeps, SuspendedBill } from '../../pos/src/suspended-bills';
 import type { WasteDeps, WasteRecord, WasteCoverage } from '../../inventory/src/waste';
 import type { IntegrationDeps, CertifiedEntry, AdapterConfig, AdapterHeartbeat } from '../../platform/src/integration';
 import type { WebhookDeps, WebhookConfig } from '../../platform/src/webhooks';
@@ -143,6 +144,7 @@ export const STREAM = {
   facilities: 'facilities',
   compliance: 'compliance',
   documents: 'documents',
+  suspended: 'suspended',
   packaging: 'packaging',
   waste: 'waste',
   integration: 'integration',
@@ -234,6 +236,41 @@ export function documentsAdapter(input: {
         idempotencyKey: `doc-tmpl-${tenantId}-${template.templateId}-v${template.version}`,
         source: 'api/platform',
         payload: template,
+      }));
+    },
+  };
+}
+
+/**
+ * Suspended (parked) bills (M15-FR-01). Each state transition — suspend / resume / abandon — is an
+ * append-only `SuspendedBillStateChanged` fact; the current bill is the latest fact for its id. The
+ * record is never deleted (hard rule #6: repeated park-and-abandon is a loss-prevention pattern).
+ */
+export function suspendedBillsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): SuspendedBillsDeps {
+  return {
+    now: input.now,
+
+    bills: async (tenantId) => {
+      const all = await allOf<SuspendedBill>(input.store, tenantId, STREAM.suspended, 'SuspendedBillStateChanged');
+      const byId = new Map<string, SuspendedBill>();
+      for (const bill of all) byId.set(bill.billId, bill); // later transition wins
+      return [...byId.values()];
+    },
+
+    record: async (tenantId, bill) => {
+      // Keyed on bill + state + the timestamp of THIS transition, so each transition is its own fact
+      // while a re-send of the same one collapses.
+      const stamp = bill.abandonedAt ?? bill.resumedAt ?? bill.suspendedAt;
+      await input.store.append(tenantId, STREAM.suspended, makeEvent({
+        id: `susp-${bill.billId}-${bill.state}-${stamp}`,
+        type: 'SuspendedBillStateChanged',
+        occurredAt: input.now(),
+        idempotencyKey: `susp-${tenantId}-${bill.billId}-${bill.state}-${stamp}`,
+        source: 'api/pos',
+        payload: bill,
       }));
     },
   };
