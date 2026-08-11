@@ -117,3 +117,81 @@ export function gstr1Table12(lines: readonly ClassifiedLine[]): Gstr1Table12 {
     detail: `${rows.length} HSN/rate row(s); taxable ${totalTaxableMinor} (B2B ${b2bTaxableMinor}, B2C ${b2cTaxableMinor}), tax ${totalTaxMinor}`,
   };
 }
+
+// --- the full GSTR-1 return: B2B invoice-level + B2C rate-wise + HSN Table 12 -----------------------
+//
+// GSTR-1 reports registered-buyer (B2B) supplies invoice-by-invoice — the buyer claims input credit
+// against each one, so the detail must survive — while consumer (B2C) supplies are reported only rate-wise
+// in aggregate. Both are assembled here from the same stored outward-supply lines, so the return can never
+// disagree with the HSN summary about the same sale.
+
+export interface OutwardDocument {
+  readonly documentId: string;
+  readonly documentDate: string;
+  readonly supplyType: SupplyKind;
+  readonly recipientGstin?: string;
+  readonly lines: readonly OutwardSupplyLine[];
+}
+
+export interface RateSummary {
+  readonly rateBps: number;
+  readonly taxableMinor: number;
+  readonly cgstMinor: number;
+  readonly sgstMinor: number;
+  readonly igstMinor: number;
+}
+
+export interface B2bInvoice {
+  readonly recipientGstin: string;
+  readonly invoiceNumber: string;
+  readonly invoiceDate: string;
+  readonly invoiceValueMinor: number;
+  readonly rateLines: readonly RateSummary[];
+}
+
+export interface Gstr1Return {
+  readonly b2b: readonly B2bInvoice[];
+  readonly b2c: readonly RateSummary[];
+  readonly hsn: Gstr1Table12;
+  readonly totalTaxableMinor: number;
+  readonly totalTaxMinor: number;
+}
+
+function summariseByRate(lines: readonly OutwardSupplyLine[]): RateSummary[] {
+  const acc = new Map<number, { rateBps: number; taxableMinor: number; cgstMinor: number; sgstMinor: number; igstMinor: number }>();
+  for (const l of lines) {
+    const row = acc.get(l.rateBps) ?? { rateBps: l.rateBps, taxableMinor: 0, cgstMinor: 0, sgstMinor: 0, igstMinor: 0 };
+    row.taxableMinor += l.taxableMinor;
+    row.cgstMinor += l.cgstMinor;
+    row.sgstMinor += l.sgstMinor;
+    row.igstMinor += l.igstMinor;
+    acc.set(l.rateBps, row);
+  }
+  return [...acc.values()].sort((a, b) => a.rateBps - b.rateBps);
+}
+
+const isB2b = (doc: OutwardDocument): boolean =>
+  doc.supplyType === 'b2b' && typeof doc.recipientGstin === 'string' && doc.recipientGstin !== '';
+
+/**
+ * Assemble the GSTR-1 return from stored outward-supply documents: B2B invoice-by-invoice (with a
+ * recipient GSTIN and a rate-wise breakdown per invoice), B2C rate-wise in aggregate, and the HSN Table 12
+ * over everything. A "B2B" document with no recipient GSTIN is treated as B2C — it cannot be filed as B2B.
+ */
+export function gstr1Return(docs: readonly OutwardDocument[]): Gstr1Return {
+  const b2b: B2bInvoice[] = [];
+  const b2cLines: OutwardSupplyLine[] = [];
+  for (const doc of docs) {
+    if (isB2b(doc)) {
+      const rateLines = summariseByRate(doc.lines);
+      const invoiceValueMinor = rateLines.reduce((s, r) => s + r.taxableMinor + r.cgstMinor + r.sgstMinor + r.igstMinor, 0);
+      b2b.push({ recipientGstin: doc.recipientGstin as string, invoiceNumber: doc.documentId, invoiceDate: doc.documentDate, invoiceValueMinor, rateLines });
+    } else {
+      b2cLines.push(...doc.lines);
+    }
+  }
+  b2b.sort((a, b) => a.recipientGstin.localeCompare(b.recipientGstin) || a.invoiceNumber.localeCompare(b.invoiceNumber));
+  const classified: ClassifiedLine[] = docs.flatMap((d) => d.lines.map((l) => ({ ...l, supplyKind: isB2b(d) ? 'b2b' as const : 'b2c' as const })));
+  const hsn = gstr1Table12(classified);
+  return { b2b, b2c: summariseByRate(b2cLines), hsn, totalTaxableMinor: hsn.totalTaxableMinor, totalTaxMinor: hsn.totalTaxMinor };
+}
