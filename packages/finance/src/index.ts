@@ -21,3 +21,4 @@ export * from './promo-tax';
 export * from './rate';
 export * from './hsn';
 export * from './invoice-fields';
+export * from './gstr1';

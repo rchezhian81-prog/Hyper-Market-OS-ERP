@@ -62,6 +62,7 @@ import type { ComplianceDeps, Obligation } from '../../compliance/src/index';
 import type { DocumentsDeps, TemplateVersion } from '../../platform/src/documents';
 import type { SuspendedBillsDeps, SuspendedBill } from '../../pos/src/suspended-bills';
 import type { EInvoiceRegisterDeps } from '../../finance/src/e-invoice-register';
+import type { GstReturnsDeps, StoredOutwardDoc } from '../../finance/src/gst-returns';
 import { foldEInvoice, type EInvoiceEvent, type IrnRequest as EInvoiceIrnRequest, type EInvoiceRecord } from '../../../packages/e-invoice/src/index';
 import type { WasteDeps, WasteRecord, WasteCoverage } from '../../inventory/src/waste';
 import type { IntegrationDeps, CertifiedEntry, AdapterConfig, AdapterHeartbeat } from '../../platform/src/integration';
@@ -148,6 +149,7 @@ export const STREAM = {
   documents: 'documents',
   suspended: 'suspended',
   einvoice: 'einvoice',
+  gstreturns: 'gstreturns',
   packaging: 'packaging',
   waste: 'waste',
   integration: 'integration',
@@ -337,6 +339,38 @@ export function eInvoiceAdapter(input: {
         idempotencyKey: `einv-cancel-${tenantId}-${invoiceId}`,
         source: 'api/finance',
         payload: { reason, at },
+      }));
+    },
+  };
+}
+
+/**
+ * GST returns — the outward-supply line store (A5). Each document's tax lines are an append-only
+ * `OutwardSupplyRecorded` fact; GSTR-1 folds over them. Idempotent per document — a re-record collapses,
+ * and a correction is a new document / credit note, never an overwrite (hard rule #2).
+ */
+export function gstReturnsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): GstReturnsDeps {
+  return {
+    now: input.now,
+
+    documents: async (tenantId) => {
+      const all = await allOf<StoredOutwardDoc>(input.store, tenantId, STREAM.gstreturns, 'OutwardSupplyRecorded');
+      const byId = new Map<string, StoredOutwardDoc>();
+      for (const d of all) if (!byId.has(d.documentId)) byId.set(d.documentId, d); // first record of an id stands
+      return [...byId.values()];
+    },
+
+    record: async (tenantId, doc) => {
+      await input.store.append(tenantId, STREAM.gstreturns, makeEvent({
+        id: `outward-${doc.documentId}`,
+        type: 'OutwardSupplyRecorded',
+        occurredAt: input.now(),
+        idempotencyKey: `outward-${tenantId}-${doc.documentId}`,
+        source: 'api/finance',
+        payload: doc,
       }));
     },
   };
