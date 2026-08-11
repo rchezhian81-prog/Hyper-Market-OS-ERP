@@ -55,6 +55,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'integration.webhook.receive',
       'facilities.schedule.manage', 'facilities.task.record', 'facilities.overdue.read',
       'facilities.asset.manage', 'facilities.asset.read', 'facilities.reading.record', 'facilities.incident.record',
+      'compliance.obligation.manage', 'compliance.obligation.read',
       'migration.verification.read', 'migration.exception.accept',
       'ai.agent.run', 'ai.proposal.read', 'ai.budget.read', 'ai.killswitch.set',
     ],
@@ -85,6 +86,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'platform.health.read',
       'facilities.schedule.manage', 'facilities.task.record', 'facilities.overdue.read',
       'facilities.asset.manage', 'facilities.asset.read', 'facilities.reading.record', 'facilities.incident.record',
+      'compliance.obligation.manage', 'compliance.obligation.read',
     ],
   },
   {
