@@ -31,8 +31,13 @@ and the foundation the forecast (**D-1**) and the expiry-markdown ladder (**D-4*
     covers all three; overlapping signals multiply, and each horizon day reports its `signalMultiplier` and
     the `appliedSignals`. The calendar is **data the caller supplies** (public festival dates, the shop's
     promo diary, a weather feed), never hard-coded. Threaded through the back-test too, so a known event in
-    the holdout is scored fairly. Still **deferred**: new-item cold-start (a product with too little history
-    to fit) — named here, not dropped.
+    the holdout is scored fairly.
+  - **New-item cold-start** — `coldStartBaseline` blends a product's own demand with a **peer / category**
+    rate, weighted by how much of its own history exists (credibility shrinkage): a brand-new SKU leans on
+    the peer rate, and its own sales take over as they accumulate. `forecastDemand` takes an optional
+    `coldStart: { peerBaselinePerDay, priorDays? }` that seeds the baseline this way and forecasts **flat**
+    (no noisy weekly shape) until real history exists; `baselineSource` says whether the baseline came from
+    `history` or a `cold_start` blend. The peer rate is data the caller supplies, never inferred.
 
 - **`src/markdown.ts`** (D-4) — the expiry markdown ladder, the commercial partner to the perishables work.
   - `proposeMarkdown({ …, remainingShelfLifeDays, onHandMinor, avgDailyDemandMinor, currentPriceMinor,
