@@ -60,8 +60,28 @@ export interface EmbeddedBarcodeRule {
   /** Where the embedded value sits. */
   readonly valueStart: number;
   readonly valueLength: number;
-  /** What the value means: a weight in the UOM's smallest unit, or a price in minor units. */
-  readonly valueKind: 'weight' | 'price';
+  /** What the value means: a weight in the UOM's smallest unit, a price in minor units, or a use-by date
+   *  encoded GS1-style as 6 digits YYMMDD (the value position holds the date — B8 automatic capture). */
+  readonly valueKind: 'weight' | 'price' | 'expiry';
+}
+
+/**
+ * Parse a GS1-style 6-digit YYMMDD date into `YYYY-MM-DD`, or `undefined` if it is not a valid date.
+ * The year maps to 20YY (retail use-by dates are near-future); a day of `00` means the last day of the
+ * month (GS1 AI-17 convention). Pure — no clock.
+ */
+export function parseGs1Date(yymmdd: string): string | undefined {
+  if (!/^\d{6}$/.test(yymmdd)) return undefined;
+  const year = 2000 + Number(yymmdd.slice(0, 2));
+  const month = Number(yymmdd.slice(2, 4));
+  let day = Number(yymmdd.slice(4, 6));
+  if (month < 1 || month > 12) return undefined;
+  if (day === 0) day = new Date(Date.UTC(year, month, 0)).getUTCDate(); // "00" → last day of the month
+  const iso = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  // Reject an impossible day (e.g. 31 April) by checking the date round-trips.
+  const parsed = new Date(`${iso}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.getUTCDate() !== day) return undefined;
+  return iso;
 }
 
 /** A versioned catalogue snapshot the lane holds locally (§31). */
@@ -184,7 +204,7 @@ export class CatalogueCache {
   /** Decode an embedded barcode against the tenant's rules, if one matches. */
   private decodeEmbedded(
     code: string,
-  ): { rule: EmbeddedBarcodeRule; itemCode: string; value: number } | undefined {
+  ): { rule: EmbeddedBarcodeRule; itemCode: string; value: number; valueDigits: string } | undefined {
     for (const rule of this.rules) {
       if (!code.startsWith(rule.prefix)) continue;
       const itemCode = code.slice(rule.itemStart, rule.itemStart + rule.itemLength);
@@ -192,7 +212,7 @@ export class CatalogueCache {
       if (itemCode.length !== rule.itemLength || valueDigits.length !== rule.valueLength) continue;
       const value = Number(valueDigits);
       if (!Number.isSafeInteger(value)) continue;
-      return { rule, itemCode, value };
+      return { rule, itemCode, value, valueDigits };
     }
     return undefined;
   }
@@ -266,7 +286,15 @@ export class CatalogueCache {
         this.bySku.get(embedded.itemCode);
       if (product !== undefined) {
         this.assertSellable(product);
-        this.assertNotExpired(product, batch);
+        if (embedded.rule.valueKind === 'expiry') {
+          // The barcode CARRIES the batch's use-by date (B8 automatic capture). Check it against today
+          // (supplied by the lane), then treat it as an ordinary single-unit scan. An expired date-coded
+          // item is refused at the lane, offline — no manual date entry.
+          const barcodeExpiry = parseGs1Date(embedded.valueDigits);
+          this.assertNotExpired(product, { asOf: batch?.asOf, ...(barcodeExpiry === undefined ? {} : { batchExpiry: barcodeExpiry }) });
+          return { product, barcodeKind: 'standard', quantityMinor: 1, requiresAgeCheck: this.ageCheck(product) };
+        }
+        this.assertNotExpired(product, batch); // an explicit batch context still applies to weight/price scans
         const isWeight = embedded.rule.valueKind === 'weight';
         return {
           product,
