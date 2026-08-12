@@ -127,6 +127,7 @@ export function buildCatalogueSnapshot(input: BuildSnapshotInput): BuildSnapshot
       baseUom: master.baseUom,
       unitPriceMinor,
       taxBps,
+      hsnCode: master.taxClassId, // carry the HSN / tax-class code through for GST-return assembly (A5)
       mrpMinor: master.mrpMinor,
       status: master.status,
       recallBlock: master.recallBlock,

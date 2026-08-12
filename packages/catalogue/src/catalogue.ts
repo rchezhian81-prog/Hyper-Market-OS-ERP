@@ -28,6 +28,10 @@ export interface CatalogueProduct {
   readonly unitPriceMinor: number;
   /** Tax rate in basis points (from the product's tax class / HSN). */
   readonly taxBps: number;
+  /** HSN / tax-class code, carried from the product master's tax class. Used to assemble the GST return
+   *  (GSTR-1) from banked sales without re-keying each product's HSN (A5). Absent on packs built before
+   *  this was carried — a sale of such a product simply surfaces as "unmapped" on the return, never wrong. */
+  readonly hsnCode?: string;
   /** Maximum retail price, minor units — the ceiling a lane may charge (M05-FR-02). */
   readonly mrpMinor?: number;
   readonly status: ProductStatus;

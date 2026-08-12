@@ -1,13 +1,24 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { STREAM } from '../../services/api/src/adapters';
+import { makeEvent } from '../../packages/contracts/src/event';
 
 // A5 — GSTR-1 Table 12 folded straight from the store's own banked B2C till sales (no re-keying). The GST
-// is pulled BACK OUT of each MRP-inclusive line total against the filer's product→{HSN, rate} table. A
-// sold product with no mapping is surfaced in `unmapped`, never silently off the return. Proven end-to-end
-// over the real sale-intake → sales stream → finance fold pipeline.
+// is pulled BACK OUT of each MRP-inclusive line total against the product→{HSN, rate} table, which DEFAULTS
+// from the published catalogue (Option A) and can be OVERRIDDEN per product in the body. A sold product
+// with no mapping is surfaced in `unmapped`, never silently off the return. Proven end-to-end over the real
+// sale-intake → sales stream → finance fold pipeline.
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const SMALL = 1_000_000; // < ₹5cr → 4-digit HSN accepted
+
+// Publish a catalogue pack carrying each product's HSN (tax class) and rate — the DEFAULT tax table.
+const seedCatalogue = (h: ApiHarness, products: { productId: string; hsnCode: string; taxBps: number }[]) =>
+  h.store.append(A, STREAM.catalogue, makeEvent({
+    id: 'pack-hsn', type: 'CataloguePublished', occurredAt: '2026-08-01T00:00:00Z',
+    idempotencyKey: `catalogue-${A}-vhsn`, source: 'test/catalogue',
+    payload: { snapshot: { tenantId: A, version: 1, builtAt: '2026-08-01T00:00:00Z', products, barcodes: [] } },
+  }));
 
 // A banked sale: what the till charged (the MRP-inclusive line total). No HSN or tax split on the line.
 const bankSale = (h: ApiHarness, u: string, saleId: string, productId: string, lineTotalMinor: number, tradingDay: string) =>
@@ -25,7 +36,7 @@ const fromSales = (h: ApiHarness, u: string, body: unknown, key: string) =>
   h.request({ method: 'POST', path: '/v1/finance/gstr1/from-sales/table-12', userId: u, tenantId: A, idempotencyKey: key, body });
 
 interface Table12Body {
-  from: string; to: string; soldLineCount: number; mappedLineCount: number;
+  from: string; to: string; soldLineCount: number; mappedLineCount: number; taxTableSize: number; overrideCount: number;
   table12: { rows: { hsnCode: string; rateBps: number; taxableMinor: number; cgstMinor: number; sgstMinor: number; igstMinor: number; b2cTaxableMinor: number }[]; totalTaxableMinor: number; totalTaxMinor: number; b2bTaxableMinor: number; b2cTaxableMinor: number };
   unmapped: { productId: string; quantityMinor: number; reason: string }[];
 }
@@ -88,12 +99,44 @@ describe('GSTR-1 Table 12 folded from banked till sales (A5)', () => {
     expect((await fromSales(h, 'u-cash', body, 'fs-cash')).status).toBe(403);
   });
 
-  it('refuses a malformed request — a bad period, a missing tax table, and a bad product row', async () => {
+  it('refuses a malformed request — a bad period, a missing turnover, and a bad product-override row', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
 
     expect((await fromSales(h, 'u-owner', { from: '2026-08-31', to: '2026-08-01', annualTurnoverMinor: SMALL, products: MILK }, 'fs-badperiod')).status).toBe(400); // to before from
     expect((await fromSales(h, 'u-owner', { from: '2026-08-01', to: '2026-08-31', products: MILK }, 'fs-noturn')).status).toBe(400); // no turnover
     expect((await fromSales(h, 'u-owner', { from: '2026-08-01', to: '2026-08-31', annualTurnoverMinor: SMALL, products: [{ productId: 'X', rateBps: 500 }] }, 'fs-badrow')).status).toBe(422); // no hsnCode
+  });
+
+  // ── Option A: the tax table DEFAULTS from the published catalogue — no hand-keyed products[] needed. ──
+
+  it('builds the return from the catalogue HSN/rate mapping when no products[] is supplied', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await seedCatalogue(h, [{ productId: 'MILK', hsnCode: '0401', taxBps: 1800 }]); // HSN + rate from the master
+    await bankSale(h, 'u-owner', 'c1', 'MILK', 11_800, '2026-08-05');
+    await bankSale(h, 'u-owner', 'c2', 'MILK', 11_800, '2026-08-06');
+
+    // No products[] in the body — the route sources the mapping from the catalogue.
+    const r = (await fromSales(h, 'u-owner', { from: '2026-08-01', to: '2026-08-31', annualTurnoverMinor: SMALL }, 'fs-catalogue')).body as Table12Body;
+    expect(r.overrideCount).toBe(0);
+    expect(r.taxTableSize).toBe(1);   // MILK came from the catalogue
+    expect(r.mappedLineCount).toBe(2);
+    expect(r.unmapped).toEqual([]);
+    expect(r.table12.rows[0]!.hsnCode).toBe('0401');
+    expect(r.table12.rows[0]!.taxableMinor).toBe(20_000);
+  });
+
+  it('lets a supplied products[] override the catalogue mapping for a product', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await seedCatalogue(h, [{ productId: 'MILK', hsnCode: '0401', taxBps: 1800 }]);
+    await bankSale(h, 'u-owner', 'o1', 'MILK', 11_800, '2026-08-05');
+
+    // The filer files MILK under a corrected HSN for this period — the override wins over the catalogue.
+    const r = (await fromSales(h, 'u-owner', { from: '2026-08-01', to: '2026-08-31', annualTurnoverMinor: SMALL, products: [{ productId: 'MILK', hsnCode: '040110', rateBps: 1800 }] }, 'fs-override')).body as Table12Body;
+    expect(r.overrideCount).toBe(1);
+    expect(r.table12.rows).toHaveLength(1);
+    expect(r.table12.rows[0]!.hsnCode).toBe('040110'); // the override, not the catalogue's 0401
   });
 });

@@ -48,6 +48,12 @@ export interface GstReturnsDeps {
    * the sales stream — the route filters to the return period by trading day. Used by GSTR-1-from-sales.
    */
   readonly soldTaxLines: (tenantId: string, fromIso: string, toIso: string) => Promise<readonly PeriodSoldLine[]> | readonly PeriodSoldLine[];
+  /**
+   * The product→{HSN, rate} table read from the published catalogue (M03 master) — the DEFAULT tax mapping
+   * for GSTR-1-from-sales, so the return builds without hand-keying each product's HSN. A caller-supplied
+   * table still overrides it per product. Products with no HSN carried are omitted (they surface as unmapped).
+   */
+  readonly productTaxTable: (tenantId: string) => Promise<readonly ProductTaxEntry[]> | readonly ProductTaxEntry[];
   readonly now: () => string;
 }
 
@@ -113,9 +119,11 @@ export function gstReturnsRoutes(deps: GstReturnsDeps): readonly Route[] {
     },
     {
       // GSTR-1 Table 12 folded straight from the store's own banked B2C till sales — no re-keying. The GST
-      // is pulled BACK OUT of each MRP-inclusive line total against the filer's product→{HSN, rate} table
-      // (supplied in the body — the mapping being filed this period). A sold product with no mapping or a
-      // bad HSN comes back in `unmapped`, never silently off the return. Read-only fold (idempotent).
+      // is pulled BACK OUT of each MRP-inclusive line total against the product→{HSN, rate} table. That
+      // table DEFAULTS from the published catalogue (M03 master), so the return builds with nothing to key
+      // by hand; a `products[]` in the body OVERRIDES the catalogue per product (an exception the filer is
+      // handling). A sold product with no mapping or a bad HSN comes back in `unmapped`, never silently off
+      // the return. Read-only fold (idempotent).
       api: 'API-09', method: 'POST', path: '/v1/finance/gstr1/from-sales/table-12',
       permission: 'finance.gstr.read', idempotent: true,
       handler: async (ctx) => {
@@ -125,23 +133,29 @@ export function gstReturnsRoutes(deps: GstReturnsDeps): readonly Route[] {
         if (typeof from !== 'string' || typeof to !== 'string' || !DATE.test(from) || !DATE.test(to) || to < from) {
           throw apiError(400, { code: 'from_sales_needs_period', whatHappened: 'GSTR-1 from sales needs from and to (YYYY-MM-DD), with to on or after from.', wasItSaved: 'not_saved', nextSafeAction: 'Send the return period’s from and to dates.' });
         }
-        if (!Number.isInteger(b['annualTurnoverMinor']) || !Array.isArray(b['products'])) {
-          throw apiError(400, { code: 'from_sales_needs_turnover_products', whatHappened: 'It needs annualTurnoverMinor (sets the HSN digit rule) and a products[] tax table of { productId, hsnCode, rateBps }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the shop’s turnover and the product→HSN/rate table for the period.' });
+        if (!Number.isInteger(b['annualTurnoverMinor'])) {
+          throw apiError(400, { code: 'from_sales_needs_turnover', whatHappened: 'It needs annualTurnoverMinor (it sets the HSN digit rule).', wasItSaved: 'not_saved', nextSafeAction: 'Send the shop’s annual turnover in paise.' });
         }
-        const products = b['products'] as unknown[];
-        const taxTable: ProductTaxEntry[] = [];
-        for (let i = 0; i < products.length; i += 1) {
-          const p = products[i];
+        if (b['products'] !== undefined && !Array.isArray(b['products'])) {
+          throw apiError(400, { code: 'products_must_be_a_table', whatHappened: 'products, when sent, must be an array of { productId, hsnCode, rateBps } overrides.', wasItSaved: 'not_saved', nextSafeAction: 'Omit products to use the catalogue’s HSN/rate mapping, or send a valid override table.' });
+        }
+        // Base the tax table on the published catalogue (M03), then overlay any supplied overrides per product.
+        const byProduct = new Map<string, ProductTaxEntry>();
+        for (const e of await deps.productTaxTable(ctx.tenantId)) byProduct.set(e.productId, e);
+        const supplied = (b['products'] as unknown[] | undefined) ?? [];
+        for (let i = 0; i < supplied.length; i += 1) {
+          const p = supplied[i];
           if (!isObj(p) || typeof p['productId'] !== 'string' || p['productId'].trim() === ''
             || typeof p['hsnCode'] !== 'string' || !Number.isInteger(p['rateBps']) || (p['rateBps'] as number) < 0
             || (p['placeOfSupply'] !== undefined && p['placeOfSupply'] !== 'intra_state' && p['placeOfSupply'] !== 'inter_state')) {
             throw apiError(422, { code: 'invalid_product_tax_row', whatHappened: `products[${i}] must be { productId, hsnCode, rateBps (whole, non-negative), placeOfSupply? }.`, wasItSaved: 'not_saved', nextSafeAction: 'Fix the named row — each product needs an HSN and a whole rate.' });
           }
-          taxTable.push({
+          byProduct.set(p['productId'], {
             productId: p['productId'], hsnCode: p['hsnCode'], rateBps: p['rateBps'] as number,
             ...(p['placeOfSupply'] !== undefined ? { placeOfSupply: p['placeOfSupply'] as PlaceOfSupply } : {}),
           });
         }
+        const taxTable = [...byProduct.values()];
         const pos = b['placeOfSupply'];
         if (pos !== undefined && pos !== 'intra_state' && pos !== 'inter_state') {
           throw apiError(400, { code: 'invalid_place_of_supply', whatHappened: "placeOfSupply must be 'intra_state' or 'inter_state'.", wasItSaved: 'not_saved', nextSafeAction: 'Omit it (defaults to intra-State, a counter sale) or send a valid value.' });
@@ -160,7 +174,7 @@ export function gstReturnsRoutes(deps: GstReturnsDeps): readonly Route[] {
             sales, taxTable, annualTurnoverMinor: b['annualTurnoverMinor'] as number,
             ...(pos !== undefined ? { placeOfSupply: pos as PlaceOfSupply } : {}),
           });
-          return { status: 200, body: { from, to, soldLineCount: period.length, table12: result.table12, unmapped: result.unmapped, mappedLineCount: result.mappedLineCount, detail: result.detail } };
+          return { status: 200, body: { from, to, soldLineCount: period.length, taxTableSize: taxTable.length, overrideCount: supplied.length, table12: result.table12, unmapped: result.unmapped, mappedLineCount: result.mappedLineCount, detail: result.detail } };
         } catch (e) {
           if (e instanceof InvalidSalesToOutwardInput) {
             throw apiError(400, { code: 'invalid_from_sales_request', whatHappened: e.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the request and re-send. Nothing was changed.' });

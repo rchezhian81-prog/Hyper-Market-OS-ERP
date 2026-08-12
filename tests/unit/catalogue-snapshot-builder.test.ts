@@ -66,6 +66,16 @@ describe('buildCatalogueSnapshot', () => {
     expect(plain.snapshot.products[0]!.batchTracked).toBeUndefined();
   });
 
+  it('carries the HSN / tax-class code from the master onto the lane snapshot (A5 GST-return assembly)', () => {
+    // A tenant that files GST sets the tax class to a real HSN code; it flows onto the published product.
+    const result = buildCatalogueSnapshot(input({
+      products: [master({ productId: 'p1', sku: 'RICE1', name: 'Rice 1kg', taxClassId: '1006' })],
+      taxClasses: { '1006': 1800 },
+    }));
+    expect(result.snapshot.products[0]!.hsnCode).toBe('1006');
+    expect(result.snapshot.products[0]!.taxBps).toBe(1800);
+  });
+
   it('honours price precedence — a zone price beats the store base price', () => {
     const result = buildCatalogueSnapshot(
       input({
