@@ -12,6 +12,11 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { assessPointsMovement, type PointsKind, type StoredPointsMovement } from '../../../packages/loyalty/src/assess-points';
+import { assessChildDataProcessing, type ChildDataActivity } from '../../../packages/customer/src/child-data-guard';
+
+const CHILD_DATA_ACTIVITIES: readonly ChildDataActivity[] = [
+  'account_enrolment', 'marketing', 'profiling', 'behavioural_tracking', 'targeted_advertising', 'transactional', 'service',
+];
 
 /** A points movement as it is persisted — a signed delta, the reason, and where it came from. */
 export interface RecordedPointsMovement {
@@ -163,6 +168,35 @@ export function customerRoutes(deps: CustomerDeps): readonly Route[] {
             now: deps.now(),
           }),
         };
+      },
+    },
+    {
+      // C4 / DPDP s.9 — may we process this person's data for this activity, given their age and whether a
+      // parent's consent is on record? A pure decision, commits nothing and stores no child's data: a child
+      // (under 18) needs verifiable parental consent for enrolment/marketing/profiling, and tracking or
+      // targeted advertising of a child is refused outright (parental consent cannot cure it). Age unproven
+      // → a child-restricted activity is refused (it never assumes an adult). Read-only; gated on the same
+      // consent-read the enrolling counter staff already hold.
+      api: 'API-06', method: 'POST', path: '/v1/customers/child-data/check',
+      permission: 'customer.consent.read', idempotent: true,
+      handler: (ctx) => {
+        const b = (ctx.body ?? {}) as { activity?: unknown; ageYears?: unknown; dateOfBirth?: unknown; parentalConsentVerified?: unknown };
+        if (typeof b.activity !== 'string' || !CHILD_DATA_ACTIVITIES.includes(b.activity as ChildDataActivity)) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_child_data_check',
+            whatHappened: 'A child-data check needs an activity — one of account_enrolment, marketing, profiling, behavioural_tracking, targeted_advertising, transactional or service.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing changed. Send the activity (and the age or date of birth) and try again.',
+          });
+        }
+        const decision = assessChildDataProcessing({
+          activity: b.activity as ChildDataActivity,
+          ...(typeof b.ageYears === 'number' ? { ageYears: b.ageYears } : {}),
+          ...(typeof b.dateOfBirth === 'string' ? { dateOfBirth: b.dateOfBirth } : {}),
+          ...(b.parentalConsentVerified === true ? { parentalConsentVerified: true } : {}),
+          asOf: deps.now(),
+        });
+        return { status: 200, body: decision };
       },
     },
     {
