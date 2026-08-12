@@ -390,7 +390,13 @@ export function gstReturnsAdapter(input: {
       for (const e of sales) {
         const sale = payloadOf<IncomingSale>(e);
         for (const line of sale.lines ?? []) {
-          lines.push({ productId: line.productId, quantityMinor: line.quantityMinor, uom: line.uom, lineTotalMinor: line.lineTotalMinor, tradingDay: sale.tradingDay });
+          lines.push({
+            productId: line.productId, quantityMinor: line.quantityMinor, uom: line.uom,
+            lineTotalMinor: line.lineTotalMinor, tradingDay: sale.tradingDay,
+            // Frozen tax facts, when the lane stamped them — the return prefers these over the catalogue.
+            ...(typeof line.hsnCode === 'string' ? { hsnCode: line.hsnCode } : {}),
+            ...(Number.isInteger(line.taxRateBps) ? { rateBps: line.taxRateBps } : {}),
+          });
         }
       }
       return lines;

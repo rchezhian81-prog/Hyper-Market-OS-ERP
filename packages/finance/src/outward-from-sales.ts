@@ -27,6 +27,12 @@ export interface SoldTaxLine {
   readonly uom: string;
   /** The MRP-inclusive amount the till charged for the whole line (paisa). The GST is inside it (A9). */
   readonly lineTotalMinor: number;
+  /** The HSN the till priced this line under, FROZEN at the time of supply. When present (with `rateBps`)
+   *  it is used instead of the period tax table — so a product whose rate/HSN changed mid-period files each
+   *  sale under what actually applied when it was sold. Absent on tills that do not yet stamp it. */
+  readonly hsnCode?: string;
+  /** The GST rate (bps) the till charged, frozen at the time of supply. Used with `hsnCode` above. */
+  readonly rateBps?: number;
 }
 
 /** The filer's product→tax mapping for the period: the HSN and rate this product is filed under. */
@@ -59,6 +65,8 @@ export interface SalesToOutwardResult {
   /** Products that sold but are not filable yet (no mapping / bad HSN), one row each. */
   readonly unmapped: readonly UnmappedProduct[];
   readonly mappedLineCount: number;
+  /** Of the filed lines, how many used a rate/HSN FROZEN on the sale line rather than the period tax table. */
+  readonly frozenLineCount: number;
   readonly detail: string;
 }
 
@@ -105,12 +113,17 @@ export function salesToOutwardSupplies(input: {
     unmappedAcc.set(l.productId, row);
   };
 
+  let frozenLineCount = 0;
   for (const l of input.sales) {
-    const info = table.get(l.productId);
+    // A line that carries its OWN tax facts (frozen at the time of supply) wins over the period table —
+    // that is what makes a mid-period rate/HSN change file correctly. Both must be present and well-formed.
+    const frozen = typeof l.hsnCode === 'string' && l.hsnCode !== '' && Number.isInteger(l.rateBps) && (l.rateBps as number) >= 0;
+    const info: ProductTaxInfo | undefined = frozen ? { hsnCode: l.hsnCode as string, rateBps: l.rateBps as number } : table.get(l.productId);
     if (info === undefined) {
-      addUnmapped(l, 'no_tax_mapping', 'sold with no HSN/rate in the supplied tax table');
+      addUnmapped(l, 'no_tax_mapping', 'sold with no HSN/rate on the sale line and none in the catalogue/tax table');
       continue;
     }
+    if (frozen) frozenLineCount += 1;
     try {
       const v = validateHsnForTurnover({ hsnCode: info.hsnCode, annualTurnoverMinor: input.annualTurnoverMinor });
       if (!v.valid) { addUnmapped(l, 'invalid_hsn', `HSN rejected (${v.detail})`); continue; }
@@ -146,6 +159,7 @@ export function salesToOutwardSupplies(input: {
     table12,
     unmapped,
     mappedLineCount: lines.length,
-    detail: `${lines.length} sold line(s) filed across ${table12.rows.length} HSN/rate row(s); taxable ${table12.totalTaxableMinor}, tax ${table12.totalTaxMinor}${unmapped.length > 0 ? `; ${unmapped.length} product(s) unmapped and NOT on the return` : ''}`,
+    frozenLineCount,
+    detail: `${lines.length} sold line(s) filed across ${table12.rows.length} HSN/rate row(s)${frozenLineCount > 0 ? ` (${frozenLineCount} at a rate frozen on the sale)` : ''}; taxable ${table12.totalTaxableMinor}, tax ${table12.totalTaxMinor}${unmapped.length > 0 ? `; ${unmapped.length} product(s) unmapped and NOT on the return` : ''}`,
   };
 }

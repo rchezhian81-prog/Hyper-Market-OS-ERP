@@ -37,6 +37,14 @@ export interface IncomingSaleLine {
   readonly batchId?: string;
   /** The batch's use-by/expiry date (YYYY-MM-DD), where captured — carried for the recall record. */
   readonly batchExpiry?: string;
+  /** The HSN the lane priced this line under, FROZEN at the time of supply (from the pack it held). Carried
+   *  so the GST return (GSTR-1, A5) files each sale under the HSN/rate that actually applied when it sold —
+   *  correct even across a mid-period rate change. Absent on lanes that do not yet stamp it; the return then
+   *  falls back to the current catalogue mapping. It is a record, never a control: a wrong/absent value can
+   *  never refuse the sale (hard rule #1) — at worst the line surfaces as `unmapped` on the return. */
+  readonly hsnCode?: string;
+  /** The GST rate (basis points) the lane charged, frozen at the time of supply. Used with `hsnCode`. */
+  readonly taxRateBps?: number;
 }
 
 export interface IncomingTender {

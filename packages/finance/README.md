@@ -31,9 +31,12 @@ totals** (QG-07).
     the HSN or the tax split. So the derivation needs a **product→{HSN, rate} table**. That table
     **defaults from the published catalogue** (the M03 master's persisted form — the snapshot now carries
     each product's `hsnCode` alongside its rate), so the return builds **with nothing to key by hand**; a
-    caller-supplied table **overrides** it per product (an exception the filer is handling). Supplying the
-    mapping explicitly is also the freeze-safe answer to "capture the tax as it was": the filer states the
-    mapping they are filing this period under.
+    caller-supplied table **overrides** it per product (an exception the filer is handling).
+  - **Frozen-at-supply (mid-period rate change):** a sold line may carry its **own** `hsnCode`/`rateBps`
+    — the tax facts captured **at the time of supply** (from the pack the lane priced from, or from an
+    import of historical sales). When present, those win over the period table, so a product whose GST rate
+    changed **mid-period** files each sale under the rate that actually applied when it sold (the two rates
+    stay as separate HSN/rate rows, never blended). `frozenLineCount` reports how many lines used them.
   - From there it is the tested `extractInclusiveGst` primitive — the GST is pulled **back out** of
     each inclusive total (A9), split by place of supply (A8; a counter sale is intra-State CGST+SGST),
     and aggregated by `gstr1Table12`. A product that sold but is **not** in the table, or whose HSN is
