@@ -12,6 +12,7 @@ import { apiError } from '../../kernel/src/index';
 import { salesHistory, InvalidDemandWindowError, type SoldLine } from '../../../packages/demand/src/sales-history';
 import { forecastDemand, backtestForecast, InvalidForecastInputError, type DailyDemand, type DemandSignal } from '../../../packages/demand/src/forecast';
 import { proposeMarkdown, InvalidMarkdownInputError, type MarkdownPolicy } from '../../../packages/demand/src/markdown';
+import { proposeConstrainedOrder, InvalidConstrainedOrderError, type ForecastPoint } from '../../../packages/replenishment/src/constrained-order';
 
 export interface SalesHistoryDeps {
   /** The sold lines whose `occurredAt` falls in [fromIso, toIso). The engine filters to the trading-day window. */
@@ -271,6 +272,80 @@ export function salesHistoryRoutes(deps: SalesHistoryDeps): readonly Route[] {
               whatHappened: e.message,
               wasItSaved: 'not_saved',
               nextSafeAction: 'Correct the item or policy and re-send. Nothing was changed.',
+            });
+          }
+          throw e;
+        }
+      },
+    },
+    {
+      // D-2: a forecast-driven, constraint-aware order proposal for one product. It forecasts demand (D-1)
+      // from the store's own sales over the supplier's next delivery window and sizes an order to cover it —
+      // rounded to whole cases / pallets, netting stock and open orders. Advisory only (hard rule #5).
+      api: 'API-04', method: 'POST', path: '/v1/replenishment/order-proposal',
+      permission: 'inventory.availability.read', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as {
+          productId?: unknown; onHand?: unknown; onOrder?: unknown; upcomingDeliveries?: unknown;
+          unitsPerCase?: unknown; casesPerPallet?: unknown; minOrderQty?: unknown; orderMultiple?: unknown;
+        };
+        const isInt = (v: unknown): v is number => Number.isInteger(v);
+        if (typeof b.productId !== 'string' || b.productId.trim() === '' || !isInt(b.onHand)
+          || !Array.isArray(b.upcomingDeliveries) || !b.upcomingDeliveries.every((d) => typeof d === 'string' && DAY.test(d))) {
+          throw apiError(400, {
+            code: 'not_readable_as_an_order_request',
+            whatHappened: 'An order proposal needs a productId, a whole onHand, and upcomingDeliveries (a list of YYYY-MM-DD supplier delivery dates).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { "productId": …, "onHand": …, "upcomingDeliveries": [ … ] }. Nothing was changed; this only reads.',
+          });
+        }
+        const productId = b.productId;
+        const today = deps.now().slice(0, 10);
+        const deliveries = ([...b.upcomingDeliveries] as string[]).filter((d) => d >= today).sort();
+
+        // Forecast demand (D-1) from the store's own sales over the horizon up to the delivery-after-next.
+        // With fewer than two future deliveries the engine returns no_supplier_calendar and no forecast is needed.
+        let forecast: ForecastPoint[] = [];
+        if (deliveries.length >= 2) {
+          const coverUntil = deliveries[1]!;
+          const horizonDays = Math.round((Date.parse(`${coverUntil}T00:00:00.000Z`) - Date.parse(`${today}T00:00:00.000Z`)) / 86_400_000);
+          if (!Number.isInteger(horizonDays) || horizonDays < 1 || horizonDays > 400) {
+            throw apiError(400, {
+              code: 'deliveries_out_of_range',
+              whatHappened: 'The upcoming deliveries must be in the future and within about a year — the second date sets the forecast horizon.',
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Send upcoming delivery dates after today and re-send. Nothing was changed.',
+            });
+          }
+          const from = addDays(today, -55);
+          const lines = (await deps.soldLines(ctx.tenantId, `${from}T00:00:00.000Z`, `${addDays(today, 2)}T00:00:00.000Z`))
+            .filter((l) => l.productId === productId);
+          const byDay = salesHistory({ lines, from, to: today }).products.find((p) => p.productId === productId)?.byDay ?? [];
+          const history = byDay.map((d) => ({ day: d.day, qty: d.qtyMinor }));
+          forecast = forecastDemand({ history, from, to: today, horizonDays }).horizon.map((d) => ({ day: d.day, qty: d.forecastQty }));
+        }
+
+        try {
+          const proposal = proposeConstrainedOrder({
+            productId,
+            onHand: b.onHand as number,
+            ...(isInt(b.onOrder) ? { onOrder: b.onOrder as number } : {}),
+            forecast,
+            upcomingDeliveries: deliveries,
+            asOf: today,
+            ...(isInt(b.unitsPerCase) ? { unitsPerCase: b.unitsPerCase as number } : {}),
+            ...(isInt(b.casesPerPallet) ? { casesPerPallet: b.casesPerPallet as number } : {}),
+            ...(isInt(b.minOrderQty) ? { minOrderQty: b.minOrderQty as number } : {}),
+            ...(isInt(b.orderMultiple) ? { orderMultiple: b.orderMultiple as number } : {}),
+          });
+          return { status: 200, body: { ...proposal, asAt: deps.now() } };
+        } catch (e) {
+          if (e instanceof InvalidConstrainedOrderError) {
+            throw apiError(400, {
+              code: 'invalid_order_request',
+              whatHappened: e.message,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Correct the request and re-send. Nothing was changed.',
             });
           }
           throw e;
