@@ -9,7 +9,7 @@ import { money, type CurrencyCode } from '../../../packages/contracts/src/money'
 import type { Uom } from '../../../packages/contracts/src/quantity';
 import { rate } from '../../../packages/contracts/src/rate';
 import type { Tender } from '../../../packages/tender/src/tender';
-import type { CatalogueCache } from '../../../packages/catalogue/src/catalogue';
+import type { CatalogueCache, ScanBatchContext } from '../../../packages/catalogue/src/catalogue';
 import type { PosSession, SyncBadge } from './session';
 import { presentSyncBadge, type StatusPresentation } from '../../../packages/a11y/src/signals';
 
@@ -52,7 +52,12 @@ export interface PosView {
    * Throws a clear error the lane can show if the code is unknown, the item is not
    * sellable, or it is under recall (offline included).
    */
-  scanBarcode(code: string): ScanOutcome;
+  /**
+   * Scan a barcode onto the bill. `batch` is optional (B8): when the lane knows the scanned item's
+   * batch use-by date and today, an expired batch is refused at the lane (offline), and the error
+   * surfaces to the cashier — the same way a recalled item does.
+   */
+  scanBarcode(code: string, batch?: ScanBatchContext): ScanOutcome;
   /** True when no catalogue is loaded on this lane (the view hides scanning). */
   hasCatalogue(): boolean;
   setQuantity(lineId: string, qty: number): void;
@@ -138,13 +143,14 @@ export function createPosView(
       return catalogue !== undefined;
     },
 
-    scanBarcode(code: string): ScanOutcome {
+    scanBarcode(code: string, batch?: ScanBatchContext): ScanOutcome {
       if (catalogue === undefined) {
         throw new Error('No catalogue loaded on this lane.');
       }
-      // The catalogue refuses an unknown code, a non-sellable status, or a recalled
-      // item (offline included) — the error surfaces to the cashier unchanged.
-      const hit = catalogue.scan(code);
+      // The catalogue refuses an unknown code, a non-sellable status, a recalled item, or — when the
+      // lane passes the scanned batch's use-by date and today — an expired batch (offline included, B8).
+      // The error surfaces to the cashier unchanged.
+      const hit = catalogue.scan(code, batch);
       // A price-embedded barcode carries the line price for one unit; otherwise the
       // catalogue's unit price applies to the scanned quantity.
       const unitPriceMinor = hit.priceOverrideMinor ?? hit.product.unitPriceMinor;

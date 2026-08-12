@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { PosSession, taxRateFromPercent, createPosView, type PosView } from '../../apps/pos/src/index';
-import { CatalogueCache, RecalledItemError, UnknownBarcodeError } from '../../packages/catalogue/src/index';
+import { CatalogueCache, RecalledItemError, ExpiredItemError, UnknownBarcodeError } from '../../packages/catalogue/src/index';
 import { Ledger, InMemoryLedgerStore } from '../../packages/ledger/src/index';
 import { SyncOutbox } from '../../packages/sync/src/index';
 
@@ -74,6 +74,16 @@ describe('POS barcode scanning', () => {
     const { view } = newLane();
     expect(() => view.scanBarcode('8901234500005')).toThrow(RecalledItemError);
     expect(view.basket()).toHaveLength(0); // nothing added to the bill
+  });
+
+  it('refuses a past-use-by batch at the scan — even offline (B8), and lets an in-date one through', () => {
+    const { view } = newLane();
+    // The lane knows this batch's use-by (say, read from the label) and today.
+    expect(() => view.scanBarcode('8901234567890', { asOf: '2026-08-02', batchExpiry: '2026-07-30' })).toThrow(ExpiredItemError);
+    expect(view.basket()).toHaveLength(0); // the expired unit never reaches the bill
+    // A batch still in date scans normally onto the bill.
+    view.scanBarcode('8901234567890', { asOf: '2026-08-02', batchExpiry: '2026-09-01' });
+    expect(view.basket()).toHaveLength(1);
   });
 
   it('refuses an unknown barcode without touching the bill', () => {
