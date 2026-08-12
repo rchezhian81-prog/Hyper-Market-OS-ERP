@@ -68,6 +68,7 @@ import { inventoryRoutes } from '../../inventory/src/index';
 import { warehouseRoutes } from '../../inventory/src/warehouse';
 import { transfersRoutes } from '../../inventory/src/warehouse-transfers';
 import { replenishmentRoutes } from '../../inventory/src/replenishment';
+import { salesHistoryRoutes } from '../../inventory/src/sales-history';
 import { countsRoutes } from '../../inventory/src/counts';
 import { productionRoutes } from '../../inventory/src/production';
 import { packagingRoutes } from '../../inventory/src/packaging';
@@ -101,7 +102,7 @@ import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, warehouseAdapter, transfersAdapter, countsAdapter, productionAdapter, packagingAdapter, wasteAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
-  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, eInvoiceAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter, lotTraceAdapter,
+  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, eInvoiceAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter, lotTraceAdapter, salesHistoryAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
@@ -214,6 +215,7 @@ export function buildSurface(deps: {
       transfer: empty(undefined), recordProposed: () => {}, recordDispatched: () => {}, recordReceived: () => {}, now,
     } : transfersAdapter({ store, now })),
     ...replenishmentRoutes({ now }),
+    ...salesHistoryRoutes(store === undefined ? { soldLines: empty([]), now } : salesHistoryAdapter({ store, now })),
     ...countsRoutes(store === undefined ? {
       onHand: empty(0), reconciliations: empty([]), countExists: empty(false), recordReconciliation: () => {}, now,
     } : countsAdapter({ store, now })),
