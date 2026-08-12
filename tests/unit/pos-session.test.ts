@@ -157,6 +157,47 @@ describe('PosSession — the Sale screen', () => {
     expect(outbox.unsentCount()).toBe(1); // queued for the cloud
   });
 
+  it('stamps each sale line the cloud sees with its price and the FROZEN HSN + rate (A5)', async () => {
+    // The record the edge posts to the cloud carries the rich lines: unit price, the tax-inclusive
+    // line total, and the HSN + rate frozen at the moment of sale — read off the pack, a record only.
+    let record = '';
+    const ledger = new Ledger(new InMemoryLedgerStore());
+    const session = new PosSession(
+      { laneId: 'lane-1', cashierId: 'clerk-1', tradingDay: '2026-08-02', currency: 'INR', defaultTaxRate: taxRateFromPercent(18) },
+      ledger, new SyncOutbox(),
+      (_id, r) => { record = r; return Promise.resolve({ committed: true as const, durable: true as const, detail: 'ok', laneMessage: 'Sale complete.' }); },
+    );
+    session.setNow(AT);
+    // ₹100 ex-tax at 18% → line total ₹118 (tax added); HSN frozen from the pack.
+    session.scan({ productId: 'p1', description: 'Rice 1kg', unitPrice: money(100_00, 'INR'), quantityMinor: 1, uom: 'ea', taxRate: taxRateFromPercent(18), hsnCode: '1006' });
+    await session.commit('sale-1', 'S-0001', AT, [cash(118_00)]);
+
+    const line = (JSON.parse(record) as { lines: Array<Record<string, unknown>> }).lines[0]!;
+    expect(line).toMatchObject({
+      productId: 'p1', quantityMinor: 1, uom: 'ea',
+      unitPriceMinor: 100_00,   // ex-tax unit price (for the MRP / price-difference checks)
+      lineTotalMinor: 118_00,   // tax-inclusive line total (sums to the sale total; GST pulled from it)
+      taxRateBps: 1800,         // the rate frozen at supply
+      hsnCode: '1006',          // the HSN frozen at supply
+    });
+  });
+
+  it('omits the HSN on a line whose pack carried none — the return falls back, never guesses', async () => {
+    let record = '';
+    const session = new PosSession(
+      { laneId: 'lane-1', cashierId: 'clerk-1', tradingDay: '2026-08-02', currency: 'INR', defaultTaxRate: taxRateFromPercent(18) },
+      new Ledger(new InMemoryLedgerStore()), new SyncOutbox(),
+      (_id, r) => { record = r; return Promise.resolve({ committed: true as const, durable: true as const, detail: 'ok', laneMessage: 'Sale complete.' }); },
+    );
+    session.setNow(AT);
+    session.scan({ productId: 'p1', description: 'Rice 1kg', unitPrice: money(100_00, 'INR'), quantityMinor: 1, uom: 'ea', taxRate: taxRateFromPercent(18) }); // no hsnCode
+    await session.commit('sale-1', 'S-0001', AT, [cash(118_00)]);
+
+    const line = (JSON.parse(record) as { lines: Array<Record<string, unknown>> }).lines[0]!;
+    expect(line['taxRateBps']).toBe(1800);       // the rate is still frozen
+    expect('hsnCode' in line).toBe(false);        // but no HSN was carried — surfaces on the return, not guessed
+  });
+
   it('keeps billing with the cable out and shows the unsent count', async () => {
     const { session, outbox } = newSession();
     session.setConnection('offline');
