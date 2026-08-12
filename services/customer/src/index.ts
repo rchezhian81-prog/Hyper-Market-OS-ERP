@@ -13,10 +13,16 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { assessPointsMovement, type PointsKind, type StoredPointsMovement } from '../../../packages/loyalty/src/assess-points';
 import { assessChildDataProcessing, type ChildDataActivity } from '../../../packages/customer/src/child-data-guard';
+import { assessBreachNotification, InvalidBreachInputError, type BreachInput } from '../../../packages/customer/src/breach-notification';
 
 const CHILD_DATA_ACTIVITIES: readonly ChildDataActivity[] = [
   'account_enrolment', 'marketing', 'profiling', 'behavioural_tracking', 'targeted_advertising', 'transactional', 'service',
 ];
+
+const BREACH_OPTIONAL_FIELDS = [
+  'description', 'likelyConsequences', 'mitigationMeasures', 'remedialMeasures', 'safetyMeasuresForPrincipals', 'contactPoint',
+  'boardIntimatedAt', 'boardReportFiledAt', 'principalsNotifiedAt',
+] as const;
 
 /** A points movement as it is persisted — a signed delta, the reason, and where it came from. */
 export interface RecordedPointsMovement {
@@ -197,6 +203,55 @@ export function customerRoutes(deps: CustomerDeps): readonly Route[] {
           asOf: deps.now(),
         });
         return { status: 200, body: decision };
+      },
+    },
+    {
+      // C2 / DPDP s.8(6) — assess the notification workflow a personal-data breach demands: the Data
+      // Protection Board (immediate intimation + a 72-hour detailed report, deadline from discovery) and
+      // every affected person, each with the prescribed content still missing. It DRAFTS and TRACKS; a person
+      // sends (accountability stays human). `asOf` is the server's clock, so the deadline state is authoritative.
+      api: 'API-06', method: 'POST', path: '/v1/privacy/breach/assess',
+      permission: 'customer.consent.write', idempotent: true,
+      handler: (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const str = (k: string): string | undefined => (typeof b[k] === 'string' && (b[k] as string).trim() !== '' ? (b[k] as string) : undefined);
+        if (typeof b['breachId'] !== 'string' || (b['breachId'] as string).trim() === ''
+          || typeof b['discoveredAt'] !== 'string'
+          || !Array.isArray(b['affectedDataCategories']) || !(b['affectedDataCategories'] as unknown[]).every((c) => typeof c === 'string')
+          || !Number.isInteger(b['affectedPrincipalCount'])) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_breach',
+            whatHappened: 'A breach needs a breachId, discoveredAt (ISO), affectedDataCategories (a list of strings) and a whole affectedPrincipalCount.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send those fields (plus any notice content you have) and try again. Nothing was changed; this only assesses.',
+          });
+        }
+        const extra: Partial<BreachInput> = {};
+        for (const k of BREACH_OPTIONAL_FIELDS) {
+          const v = str(k);
+          if (v !== undefined) (extra as Record<string, string>)[k] = v;
+        }
+        try {
+          const plan = assessBreachNotification({
+            breachId: b['breachId'] as string,
+            discoveredAt: b['discoveredAt'] as string,
+            asOf: deps.now(),
+            affectedDataCategories: b['affectedDataCategories'] as string[],
+            affectedPrincipalCount: b['affectedPrincipalCount'] as number,
+            ...extra,
+          });
+          return { status: 200, body: plan };
+        } catch (e) {
+          if (e instanceof InvalidBreachInputError) {
+            throw apiError(400, {
+              code: 'invalid_breach_input',
+              whatHappened: e.message,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Correct the breach details and re-send. Nothing was changed.',
+            });
+          }
+          throw e;
+        }
       },
     },
     {

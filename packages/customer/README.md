@@ -36,6 +36,13 @@ data.
   **historic only**, because a projected lifetime value is a guess dressed as a figure.
   `buildAudience` always reports **who it could not reach**, and requires marketing consent as
   well as profiling consent: agreeing to be analysed is not agreeing to be messaged.
+- **`src/breach-notification.ts`** (C2 / **DPDP Act 2023 s.8(6)**) — a personal-data breach becomes the
+  notification **workflow** the law requires. `assessBreachNotification` turns a breach event into three
+  obligations: the Data Protection Board's **immediate intimation**, its **72-hour detailed report** (deadline
+  = `discoveredAt` + 72 h, marked `overdue` once past), and the notice to **every affected person** — each
+  with the prescribed content still missing (the field lists are named constants: a legal fact). It **drafts
+  and tracks; a person sends** — every plan is `advisoryOnly: true` and there is no function that transmits a
+  notice. Pure: the deadline comes from discovery, "now" is supplied. `InvalidBreachInputError` on bad input.
 - **`src/child-data-guard.ts`** (C4 / **DPDP Act 2023 s.9**) — a **child** is anyone under 18.
   `assessChildDataProcessing` is a pure overlay on the consent regime: a child's data may be
   enrolled / marketed / profiled **only with the verifiable consent of a parent or guardian**
