@@ -39,6 +39,36 @@ describe('bestPrice', () => {
     expect(result.applied).toHaveLength(1);
   });
 
+  it('attributes a TARGETED promotion only to the lines it applied to (perLine, CGST s.15(3))', () => {
+    // 10% off p1 (₹100) only; p2 (₹200) is untouched. The ₹10 saving must sit entirely on l1.
+    const lines = [line('l1', 'p1', 100_00, 1), line('l2', 'p2', 200_00, 1)];
+    const result = bestPrice(lines, [promo({ id: 'p1-10pc', kind: 'percent_off', productIds: ['p1'], percentBps: 1000 })], ctx);
+    expect(result.perLine).toEqual([
+      { lineId: 'l1', discountMinor: 10_00 },
+      { lineId: 'l2', discountMinor: 0 },
+    ]);
+    expect(result.perLine.reduce((s, p) => s + p.discountMinor, 0)).toBe(result.discount.minor); // sums exactly
+  });
+
+  it('spreads a BASKET-WIDE discount across the lines by value', () => {
+    // ₹30 off the whole basket (no productIds) over ₹100 + ₹200 → ₹10 and ₹20 (1:2).
+    const lines = [line('l1', 'p1', 100_00, 1), line('l2', 'p2', 200_00, 1)];
+    const result = bestPrice(lines, [promo({ id: 'basket-30', kind: 'amount_off', amountOffMinor: 30_00 })], ctx);
+    expect(result.perLine).toEqual([
+      { lineId: 'l1', discountMinor: 10_00 },
+      { lineId: 'l2', discountMinor: 20_00 },
+    ]);
+  });
+
+  it('reports a zero per-line discount for every line when no promotion applies', () => {
+    const lines = [line('l1', 'p1', 100_00, 1), line('l2', 'p2', 200_00, 1)];
+    const result = bestPrice(lines, [], ctx);
+    expect(result.perLine).toEqual([
+      { lineId: 'l1', discountMinor: 0 },
+      { lineId: 'l2', discountMinor: 0 },
+    ]);
+  });
+
   it('never applies an expired or unpublished promotion (§31)', () => {
     const lines = [line('l1', 'p1', 100_00, 1)];
     const expired = promo({

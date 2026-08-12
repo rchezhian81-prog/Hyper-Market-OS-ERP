@@ -16,3 +16,4 @@ export * as QuantityOps from './quantity';
 export * as RateOps from './rate';
 export * from './enums';
 export * from './event';
+export * from './allocate';
