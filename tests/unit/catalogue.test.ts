@@ -4,6 +4,7 @@ import {
   UnknownBarcodeError,
   ItemNotSellableError,
   RecalledItemError,
+  ExpiredItemError,
   type CatalogueSnapshot,
   type CatalogueProduct,
 } from '../../packages/catalogue/src/index';
@@ -82,6 +83,38 @@ describe('CatalogueCache', () => {
   it('flags an age-restricted item so the lane prompts', () => {
     const cache = new CatalogueCache(snapshot());
     expect(cache.scan('8901234500003').requiresAgeCheck).toBe(true);
+  });
+
+  describe('refuses a past-use-by batch at the lane, even offline (B8 / M10·M12)', () => {
+    const RICE = '8901234567890';
+
+    it('blocks a batch whose use-by is before today', () => {
+      const cache = new CatalogueCache(snapshot());
+      expect(() => cache.scan(RICE, { asOf: '2026-08-07T10:00:00Z', batchExpiry: '2026-08-01' })).toThrow(ExpiredItemError);
+    });
+
+    it('allows a sale ON the use-by date (the last sellable day)', () => {
+      const cache = new CatalogueCache(snapshot());
+      expect(cache.scan(RICE, { asOf: '2026-08-07', batchExpiry: '2026-08-07' }).product.sku).toBe('RICE1');
+    });
+
+    it('allows a batch still in date', () => {
+      const cache = new CatalogueCache(snapshot());
+      expect(cache.scan(RICE, { asOf: '2026-08-07', batchExpiry: '2026-12-31' }).product.sku).toBe('RICE1');
+    });
+
+    it('is backward-compatible: a plain scan, or one it cannot judge, does not block', () => {
+      const cache = new CatalogueCache(snapshot());
+      expect(cache.scan(RICE).product.sku).toBe('RICE1');                                  // no batch context
+      expect(cache.scan(RICE, { batchExpiry: '2020-01-01' }).product.sku).toBe('RICE1');   // no asOf → cannot judge
+      expect(cache.scan(RICE, { asOf: '2026-08-07' }).product.sku).toBe('RICE1');          // no expiry → cannot judge
+      expect(cache.scan(RICE, { asOf: '2026-08-07', batchExpiry: 'soon' }).product.sku).toBe('RICE1'); // bad date → cannot judge
+    });
+
+    it('checks recall BEFORE expiry — a recalled item refuses as recalled, not expired', () => {
+      const cache = new CatalogueCache(snapshot());
+      expect(() => cache.scan('8901234500005', { asOf: '2026-08-07', batchExpiry: '2026-08-01' })).toThrow(RecalledItemError);
+    });
   });
 
   it('decodes a weight-embedded barcode into a quantity', () => {
