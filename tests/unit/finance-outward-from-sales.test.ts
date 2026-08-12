@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   salesToOutwardSupplies,
   netTable12,
+  toGstnB2cFromSales,
   InvalidSalesToOutwardInput,
   type SoldTaxLine,
   type ProductTaxEntry,
@@ -194,5 +195,36 @@ describe('netTable12 (returns netted against sales, CGST s.34)', () => {
     const net = netTable12(build([11_800]), build([]));
     expect(net.returnsTaxableMinor).toBe(0);
     expect(net.netTaxableMinor).toBe(net.salesTaxableMinor);
+  });
+});
+
+describe('toGstnB2cFromSales (the GSTN portal JSON, net of returns)', () => {
+  const table = [{ productId: 'MILK', hsnCode: '0401', rateBps: 1800 }];
+  const t12 = (lineTotals: number[]) => salesToOutwardSupplies({
+    sales: lineTotals.map((lineTotalMinor) => ({ productId: 'MILK', quantityMinor: 1, uom: 'each', lineTotalMinor })),
+    taxTable: table, annualTurnoverMinor: SMALL,
+  }).table12;
+
+  it('serialises the net return into GSTN b2cs + hsn.data, in rupees', () => {
+    // Sold 3 × ₹118 @18% intra; returned 1. Net taxable ₹200, CGST ₹18, SGST ₹18.
+    const net = netTable12(t12([11_800, 11_800, 11_800]), t12([11_800]));
+    const gstn = toGstnB2cFromSales(net, { gstin: '33ABCDE1234F1Z5', fp: '082026' });
+    expect(gstn.gstin).toBe('33ABCDE1234F1Z5');
+    expect(gstn.fp).toBe('082026');
+    expect(gstn.b2cs).toHaveLength(1);
+    const b = gstn.b2cs[0]!;
+    expect(b).toMatchObject({ sply_ty: 'INTRA', typ: 'OE', rt: 18, txval: 200, camt: 18, samt: 18, iamt: 0 });
+    expect(gstn.hsn.data).toHaveLength(1);
+    const h = gstn.hsn.data[0]!;
+    expect(h).toMatchObject({ num: 1, hsn_sc: '0401', rt: 18, txval: 200, camt: 18, samt: 18, iamt: 0 });
+  });
+
+  it('serialises an inter-State net line as a single IGST b2cs entry', () => {
+    const net = netTable12(
+      salesToOutwardSupplies({ sales: [{ productId: 'P', quantityMinor: 1, uom: 'each', lineTotalMinor: 10_500 }], taxTable: [{ productId: 'P', hsnCode: '1006', rateBps: 500, placeOfSupply: 'inter_state' }], annualTurnoverMinor: SMALL }).table12,
+      { rows: [], totalTaxableMinor: 0, totalTaxMinor: 0, b2bTaxableMinor: 0, b2cTaxableMinor: 0, detail: '' },
+    );
+    const gstn = toGstnB2cFromSales(net, { gstin: '33ABCDE1234F1Z5', fp: '082026' });
+    expect(gstn.b2cs[0]).toMatchObject({ sply_ty: 'INTER', rt: 5, txval: 100, camt: 0, samt: 0, iamt: 5 });
   });
 });

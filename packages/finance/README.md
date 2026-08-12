@@ -51,6 +51,12 @@ totals** (QG-07).
     facts), and this nets them per HSN/rate — `sales − returns` filed. A return whose original sale is not
     on file, or a line whose original carried no HSN, surfaces as `unmapped` on the returns side, never
     dropped. The route returns `table12` (sales), `returns`, and `net`.
+  - **The GSTN portal file** — `toGstnB2cFromSales(net, {gstin, fp})`: serialises the netted B2C return
+    into the **GSTN GSTR-1 JSON the government portal ingests** — `b2cs` (net rate-wise) and `hsn.data`
+    (net HSN summary), money paise→rupees. Supplying `gstin`+`fp` on the route returns it as `gstn`; a net
+    line may be negative where returns exceeded sales (the filer reviews it against the portal's amendment
+    rules — the same owner check the document-path export carries). This turns the whole sales+returns fold
+    into an **uploadable filing**, built from real store activity.
   - Pure and deterministic. Wired end-to-end (a read-only fold of the banked sales + returns streams —
     hard rule #1 untouched) at `POST /v1/finance/gstr1/from-sales/table-12`. Tested in
     `tests/unit/finance-outward-from-sales.test.ts` and `tests/integration/gstr1-from-sales.test.ts`.
