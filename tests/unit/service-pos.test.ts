@@ -159,6 +159,59 @@ describe('a batch-tracked good must carry its batch for the recall trace (M10-FR
   });
 });
 
+describe('a price above MRP is a legal breach, not a variance (B1 / M03·M12)', () => {
+  it('flags a line charged above MRP as CRITICAL and banks it (the money is in the drawer)', () => {
+    // P1: MRP 9000, charged 9500.
+    const r = acceptSale(sale({
+      totalMinor: 9_500,
+      lines: [{ productId: 'P1', quantityMinor: 1, uom: 'each', unitPriceMinor: 9_500, lineTotalMinor: 9_500 }],
+      tenders: [{ kind: 'cash', amountMinor: 9_500 }],
+    }), ctx());
+    expect(r.banked).toBe(true);
+    const e = r.exceptions.find((x) => x.kind === 'sold_above_mrp')!;
+    expect(e.severity).toBe('critical');
+    expect(e.ownerAction).toContain('ACT NOW');
+    expect(e.differenceMinor).toBe(500);
+  });
+
+  it('subsumes the ordinary price-difference finding for that line (the overcharge is not buried)', () => {
+    const r = acceptSale(sale({
+      totalMinor: 9_500,
+      lines: [{ productId: 'P1', quantityMinor: 1, uom: 'each', unitPriceMinor: 9_500, lineTotalMinor: 9_500 }],
+      tenders: [{ kind: 'cash', amountMinor: 9_500 }],
+    }), ctx());
+    expect(kinds(r.exceptions)).toContain('sold_above_mrp');
+    expect(kinds(r.exceptions)).not.toContain('price_differs_from_catalogue');
+  });
+
+  it('ranks the MRP breach first, even above a tender mismatch', () => {
+    const r = acceptSale(sale({
+      totalMinor: 9_500,
+      lines: [{ productId: 'P1', quantityMinor: 1, uom: 'each', unitPriceMinor: 9_500, lineTotalMinor: 9_500 }],
+      tenders: [{ kind: 'cash', amountMinor: 9_400 }], // also out by ₹1
+    }), ctx());
+    expect(r.exceptions[0]?.kind).toBe('sold_above_mrp');
+    expect(r.exceptions[0]?.severity).toBe('critical');
+  });
+
+  it('does NOT flag a line at or below MRP', () => {
+    expect(kinds(acceptSale(sale({
+      totalMinor: 9_000, lines: [{ productId: 'P1', quantityMinor: 1, uom: 'each', unitPriceMinor: 9_000, lineTotalMinor: 9_000 }],
+      tenders: [{ kind: 'cash', amountMinor: 9_000 }],
+    }), ctx()).exceptions)).not.toContain('sold_above_mrp'); // exactly MRP is allowed
+  });
+
+  it('cannot breach an MRP the product does not carry', () => {
+    const noMrp = new Map(CATALOGUE);
+    noMrp.set('P1', product('P1', { mrpMinor: undefined }));
+    const r = acceptSale(sale({
+      totalMinor: 99_999, lines: [{ productId: 'P1', quantityMinor: 1, uom: 'each', unitPriceMinor: 99_999, lineTotalMinor: 99_999 }],
+      tenders: [{ kind: 'cash', amountMinor: 99_999 }],
+    }), ctx({ catalogue: noMrp }));
+    expect(kinds(r.exceptions)).not.toContain('sold_above_mrp');
+  });
+});
+
 describe('a price difference is usually nobody\'s fault', () => {
   it('is informational when the lane was behind — it charged what it held', () => {
     // Pricing from the pack it holds is exactly what a lane is supposed to do offline.
@@ -318,6 +371,17 @@ describe('the service on the kernel', () => {
     expect((res.body as { banked: boolean }).banked).toBe(true);
     expect(k.banked.has('S-001')).toBe(true);
     expect(k.recorded).toHaveLength(1);
+  });
+
+  it('banks an above-MRP sale (202) and records the critical breach for the day-end review', async () => {
+    const k = makeKernel();
+    const res = await handle(k.opts, post(sale({
+      totalMinor: 9_500,
+      lines: [{ productId: 'P1', quantityMinor: 1, uom: 'each', unitPriceMinor: 9_500, lineTotalMinor: 9_500 }],
+      tenders: [{ kind: 'cash', amountMinor: 9_500 }],
+    })));
+    expect(res.status).toBe(202); // the sale happened; it is never refused
+    expect(k.recorded.some((e) => e.kind === 'sold_above_mrp' && e.severity === 'critical')).toBe(true);
   });
 
   it('refuses only what cannot be READ as a sale, and tells the lane to keep it', async () => {
