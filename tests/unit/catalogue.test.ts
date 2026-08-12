@@ -5,6 +5,7 @@ import {
   ItemNotSellableError,
   RecalledItemError,
   ExpiredItemError,
+  parseGs1Date,
   type CatalogueSnapshot,
   type CatalogueProduct,
 } from '../../packages/catalogue/src/index';
@@ -49,6 +50,22 @@ function snapshot(over: Partial<CatalogueSnapshot> = {}): CatalogueSnapshot {
     ...over,
   };
 }
+
+describe('parseGs1Date', () => {
+  it('parses a YYMMDD date to YYYY-MM-DD (year → 20YY)', () => {
+    expect(parseGs1Date('260815')).toBe('2026-08-15');
+  });
+  it('treats a day of 00 as the last day of the month (GS1 convention)', () => {
+    expect(parseGs1Date('260200')).toBe('2026-02-28'); // Feb 2026, last day
+    expect(parseGs1Date('240200')).toBe('2024-02-29'); // leap year
+  });
+  it('rejects an impossible or malformed date', () => {
+    expect(parseGs1Date('261301')).toBeUndefined();  // month 13
+    expect(parseGs1Date('260431')).toBeUndefined();  // 31 April
+    expect(parseGs1Date('2608')).toBeUndefined();    // too short
+    expect(parseGs1Date('26081a')).toBeUndefined();  // non-digit
+  });
+});
 
 describe('CatalogueCache', () => {
   it('resolves a plain barcode to its product', () => {
@@ -114,6 +131,35 @@ describe('CatalogueCache', () => {
     it('checks recall BEFORE expiry — a recalled item refuses as recalled, not expired', () => {
       const cache = new CatalogueCache(snapshot());
       expect(() => cache.scan('8901234500005', { asOf: '2026-08-07', batchExpiry: '2026-08-01' })).toThrow(RecalledItemError);
+    });
+  });
+
+  describe('reads the use-by date from a date-coded barcode and blocks an expired one (B8 auto-capture)', () => {
+    // A tenant whose perishable label encodes the batch use-by GS1-style: prefix '3', item at 1..6,
+    // a YYMMDD date at 7..12.
+    const dateCoded = (over: Partial<CatalogueSnapshot> = {}) => new CatalogueCache(snapshot({
+      products: [product({ productId: 'p6', sku: '778899', name: 'Fresh Milk' })],
+      barcodes: [],
+      embeddedRules: [{ prefix: '3', itemStart: 1, itemLength: 6, valueStart: 7, valueLength: 6, valueKind: 'expiry' }],
+      ...over,
+    }));
+    const code = (yymmdd: string) => `3778899${yymmdd}`; // prefix + SKU 778899 + YYMMDD
+
+    it('refuses a scan whose encoded use-by is before today', () => {
+      const cache = dateCoded();
+      expect(() => cache.scan(code('260730'), { asOf: '2026-08-02' })).toThrow(ExpiredItemError); // use-by 30 Jul
+    });
+
+    it('rings up a date-coded item that is still in date, as one unit', () => {
+      const cache = dateCoded();
+      const hit = cache.scan(code('261231'), { asOf: '2026-08-02' }); // use-by 31 Dec
+      expect(hit.product.sku).toBe('778899');
+      expect(hit.quantityMinor).toBe(1);
+    });
+
+    it('does not block when today is unknown (a plain scan of the same code)', () => {
+      const cache = dateCoded();
+      expect(cache.scan(code('260730')).product.sku).toBe('778899'); // no asOf → cannot judge → no block
     });
   });
 
