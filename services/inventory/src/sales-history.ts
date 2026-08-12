@@ -11,6 +11,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { salesHistory, InvalidDemandWindowError, type SoldLine } from '../../../packages/demand/src/sales-history';
 import { forecastDemand, backtestForecast, InvalidForecastInputError, type DailyDemand } from '../../../packages/demand/src/forecast';
+import { proposeMarkdown, InvalidMarkdownInputError, type MarkdownPolicy } from '../../../packages/demand/src/markdown';
 
 export interface SalesHistoryDeps {
   /** The sold lines whose `occurredAt` falls in [fromIso, toIso). The engine filters to the trading-day window. */
@@ -126,6 +127,101 @@ export function salesHistoryRoutes(deps: SalesHistoryDeps): readonly Route[] {
               whatHappened: e.message,
               wasItSaved: 'not_saved',
               nextSafeAction: 'Correct the window/horizon and re-send. Nothing was changed.',
+            });
+          }
+          throw e;
+        }
+      },
+    },
+    {
+      // D-4: propose expiry markdowns for near-expiry batches — from remaining shelf life (how deep) and
+      // sell-through (whether at all). ADVISORY ONLY: a person commits the price change via the price-change
+      // approval path (hard rule #5). `avgDailyDemand` is derived from the store's own sales when not given.
+      api: 'API-04', method: 'POST', path: '/v1/pricing/markdown/propose',
+      permission: 'price.change.propose', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as { items?: unknown; policy?: unknown };
+        if (!Array.isArray(b.items)) {
+          throw apiError(400, {
+            code: 'not_readable_as_markdown_items',
+            whatHappened: 'Markdown proposals need an items list, each with a productId and whole remainingShelfLifeDays, onHandMinor and currentPriceMinor (batchId and avgDailyDemand optional).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { "items": [ … ] }. Nothing was changed; this only reads.',
+          });
+        }
+        const isInt = (v: unknown): v is number => Number.isInteger(v);
+        const items: Array<{ productId: string; batchId?: string; remainingShelfLifeDays: number; onHandMinor: number; currentPriceMinor: number; avgDailyDemand?: number }> = [];
+        for (const raw of b.items) {
+          const r = raw as Record<string, unknown> | null;
+          if (r === null || typeof r !== 'object' || Array.isArray(r)
+            || typeof r['productId'] !== 'string' || r['productId'].trim() === ''
+            || !isInt(r['remainingShelfLifeDays']) || !isInt(r['onHandMinor']) || !isInt(r['currentPriceMinor'])) {
+            throw apiError(400, {
+              code: 'not_readable_as_a_markdown_item',
+              whatHappened: 'Each item needs a productId and whole numbers for remainingShelfLifeDays, onHandMinor and currentPriceMinor.',
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Fix the items and re-send. Nothing was changed.',
+            });
+          }
+          items.push({
+            productId: r['productId'] as string,
+            remainingShelfLifeDays: r['remainingShelfLifeDays'] as number,
+            onHandMinor: r['onHandMinor'] as number,
+            currentPriceMinor: r['currentPriceMinor'] as number,
+            ...(typeof r['batchId'] === 'string' && r['batchId'] !== '' ? { batchId: r['batchId'] as string } : {}),
+            ...(isInt(r['avgDailyDemand']) ? { avgDailyDemand: r['avgDailyDemand'] as number } : {}),
+          });
+        }
+        const policy = b.policy as MarkdownPolicy | undefined;
+
+        // Fill a missing avgDailyDemand from the store's own sales (sell-through), the same trailing window
+        // as replenishment; an item with no sales resolves to 0/day — its whole holding is surplus.
+        let rate = new Map<string, number>();
+        let demandWindow: { readonly from: string; readonly to: string; readonly days: number } | undefined;
+        if (items.some((it) => it.avgDailyDemand === undefined)) {
+          let windowDays = 28;
+          const rawW = ctx.query['demandWindowDays'];
+          if (rawW !== undefined) {
+            const n = Number(rawW);
+            if (!Number.isInteger(n) || n < 1) {
+              throw apiError(400, {
+                code: 'bad_demand_window',
+                whatHappened: 'demandWindowDays must be a whole number of days, 1 or more.',
+                wasItSaved: 'not_saved',
+                nextSafeAction: 'Fix demandWindowDays (or omit it for the trailing 28 days) and re-send. Nothing was changed.',
+              });
+            }
+            windowDays = n;
+          }
+          const to = deps.now().slice(0, 10);
+          const from = addDays(to, -(windowDays - 1));
+          const lines = await deps.soldLines(ctx.tenantId, `${from}T00:00:00.000Z`, `${addDays(to, 2)}T00:00:00.000Z`);
+          rate = new Map(salesHistory({ lines, from, to }).products.map((p) => [p.productId, p.avgDailyDemandMinor]));
+          demandWindow = { from, to, days: windowDays };
+        }
+
+        try {
+          const proposals = items.map((it) => proposeMarkdown({
+            productId: it.productId,
+            ...(it.batchId === undefined ? {} : { batchId: it.batchId }),
+            remainingShelfLifeDays: it.remainingShelfLifeDays,
+            onHandMinor: it.onHandMinor,
+            avgDailyDemandMinor: it.avgDailyDemand ?? rate.get(it.productId) ?? 0,
+            currentPriceMinor: it.currentPriceMinor,
+            ...(policy === undefined ? {} : { policy }),
+          }));
+          const markedDownCount = proposals.filter((p) => p.reason === 'marked_down').length;
+          return {
+            status: 200,
+            body: { proposals, count: proposals.length, markedDownCount, ...(demandWindow === undefined ? {} : { demandWindow }), asAt: deps.now() },
+          };
+        } catch (e) {
+          if (e instanceof InvalidMarkdownInputError) {
+            throw apiError(400, {
+              code: 'invalid_markdown_input',
+              whatHappened: e.message,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Correct the item or policy and re-send. Nothing was changed.',
             });
           }
           throw e;
