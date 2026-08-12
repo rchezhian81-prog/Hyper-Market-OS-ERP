@@ -183,6 +183,12 @@ export interface NetHsnRow {
   /** sales − returns, the figure filed for this HSN/rate. May be negative if returns exceed sales. */
   readonly netTaxableMinor: number;
   readonly netTaxMinor: number;
+  /** The netted tax split — what the portal file needs (CGST + SGST for intra-State, IGST for inter). */
+  readonly netCgstMinor: number;
+  readonly netSgstMinor: number;
+  readonly netIgstMinor: number;
+  /** Net quantity (sales − returns), for the HSN summary. */
+  readonly netQuantityMinor: number;
 }
 
 export interface NetGstr1Table12 {
@@ -198,23 +204,50 @@ export interface NetGstr1Table12 {
 
 const rowTax = (r: HsnSummaryRow): number => r.cgstMinor + r.sgstMinor + r.igstMinor;
 
+interface NetAcc {
+  hsnCode: string; rateBps: number;
+  salesTaxableMinor: number; salesTaxMinor: number; salesCgstMinor: number; salesSgstMinor: number; salesIgstMinor: number; salesQtyMinor: number;
+  returnsTaxableMinor: number; returnsTaxMinor: number; returnsCgstMinor: number; returnsSgstMinor: number; returnsIgstMinor: number; returnsQtyMinor: number;
+}
+
 /**
- * Net a returns Table-12 against a sales Table-12, per HSN/rate: the filed taxable value and tax are
- * `sales − returns`. Rows present on either side appear, ordered by HSN then rate (stable, diffable). Pure.
+ * Net a returns Table-12 against a sales Table-12, per HSN/rate: the filed taxable value, tax split and
+ * quantity are `sales − returns`. Rows present on either side appear, ordered by HSN then rate (stable,
+ * diffable). Pure.
  */
 export function netTable12(sales: Gstr1Table12, returns: Gstr1Table12): NetGstr1Table12 {
-  const acc = new Map<string, { hsnCode: string; rateBps: number; salesTaxableMinor: number; salesTaxMinor: number; returnsTaxableMinor: number; returnsTaxMinor: number }>();
+  const acc = new Map<string, NetAcc>();
   const key = (r: HsnSummaryRow): string => `${r.hsnCode}|${r.rateBps}`;
-  const seed = (r: HsnSummaryRow) => acc.get(key(r)) ?? { hsnCode: r.hsnCode, rateBps: r.rateBps, salesTaxableMinor: 0, salesTaxMinor: 0, returnsTaxableMinor: 0, returnsTaxMinor: 0 };
+  const seed = (r: HsnSummaryRow): NetAcc => acc.get(key(r)) ?? {
+    hsnCode: r.hsnCode, rateBps: r.rateBps,
+    salesTaxableMinor: 0, salesTaxMinor: 0, salesCgstMinor: 0, salesSgstMinor: 0, salesIgstMinor: 0, salesQtyMinor: 0,
+    returnsTaxableMinor: 0, returnsTaxMinor: 0, returnsCgstMinor: 0, returnsSgstMinor: 0, returnsIgstMinor: 0, returnsQtyMinor: 0,
+  };
   for (const r of sales.rows) {
-    const row = seed(r); row.salesTaxableMinor += r.taxableMinor; row.salesTaxMinor += rowTax(r); acc.set(key(r), row);
+    const row = seed(r);
+    row.salesTaxableMinor += r.taxableMinor; row.salesTaxMinor += rowTax(r);
+    row.salesCgstMinor += r.cgstMinor; row.salesSgstMinor += r.sgstMinor; row.salesIgstMinor += r.igstMinor; row.salesQtyMinor += r.quantityMinor;
+    acc.set(key(r), row);
   }
   for (const r of returns.rows) {
-    const row = seed(r); row.returnsTaxableMinor += r.taxableMinor; row.returnsTaxMinor += rowTax(r); acc.set(key(r), row);
+    const row = seed(r);
+    row.returnsTaxableMinor += r.taxableMinor; row.returnsTaxMinor += rowTax(r);
+    row.returnsCgstMinor += r.cgstMinor; row.returnsSgstMinor += r.sgstMinor; row.returnsIgstMinor += r.igstMinor; row.returnsQtyMinor += r.quantityMinor;
+    acc.set(key(r), row);
   }
   const rows: NetHsnRow[] = [...acc.values()]
     .sort((a, b) => a.hsnCode.localeCompare(b.hsnCode) || a.rateBps - b.rateBps)
-    .map((r) => ({ ...r, netTaxableMinor: r.salesTaxableMinor - r.returnsTaxableMinor, netTaxMinor: r.salesTaxMinor - r.returnsTaxMinor }));
+    .map((r) => ({
+      hsnCode: r.hsnCode, rateBps: r.rateBps,
+      salesTaxableMinor: r.salesTaxableMinor, salesTaxMinor: r.salesTaxMinor,
+      returnsTaxableMinor: r.returnsTaxableMinor, returnsTaxMinor: r.returnsTaxMinor,
+      netTaxableMinor: r.salesTaxableMinor - r.returnsTaxableMinor,
+      netTaxMinor: r.salesTaxMinor - r.returnsTaxMinor,
+      netCgstMinor: r.salesCgstMinor - r.returnsCgstMinor,
+      netSgstMinor: r.salesSgstMinor - r.returnsSgstMinor,
+      netIgstMinor: r.salesIgstMinor - r.returnsIgstMinor,
+      netQuantityMinor: r.salesQtyMinor - r.returnsQtyMinor,
+    }));
   const salesTaxableMinor = sales.totalTaxableMinor;
   const salesTaxMinor = sales.totalTaxMinor;
   const returnsTaxableMinor = returns.totalTaxableMinor;
@@ -226,4 +259,48 @@ export function netTable12(sales: Gstr1Table12, returns: Gstr1Table12): NetGstr1
     netTaxMinor: salesTaxMinor - returnsTaxMinor,
     detail: `net taxable ${salesTaxableMinor - returnsTaxableMinor} (sales ${salesTaxableMinor} − returns ${returnsTaxableMinor}), net tax ${salesTaxMinor - returnsTaxMinor}`,
   };
+}
+
+// --- The GSTN portal JSON for a B2C-from-sales return (the file the portal ingests) ----------------
+//
+// The net Table-12 above is our clean shape; this serialises it into the GSTN GSTR-1 JSON for a B2C
+// filer — `b2cs` (rate-wise B2C summary, netted) and `hsn.data` (HSN summary, netted). Money is stored in
+// paise and the portal wants rupees (÷100). A net line may be NEGATIVE where returns exceeded sales in the
+// period — the filer reviews that against the portal's amendment rules before submission, the same owner
+// check the document-path export already carries. Faithful to the documented schema; the portal's offline
+// tool is the authority.
+
+export interface GstnB2csLine { readonly sply_ty: 'INTRA' | 'INTER'; readonly typ: 'OE'; readonly rt: number; readonly txval: number; readonly camt: number; readonly samt: number; readonly iamt: number; }
+export interface GstnHsnLine { readonly num: number; readonly hsn_sc: string; readonly rt: number; readonly qty: number; readonly txval: number; readonly camt: number; readonly samt: number; readonly iamt: number; }
+export interface GstnB2cGstr1 {
+  readonly gstin: string;
+  readonly fp: string;
+  readonly b2cs: readonly GstnB2csLine[];
+  readonly hsn: { readonly data: readonly GstnHsnLine[] };
+}
+
+const rupees2 = (minor: number): number => Math.round(minor) / 100;
+
+/**
+ * Serialise a netted B2C from-sales return into the GSTN GSTR-1 portal JSON. `gstin` is the supplier's own
+ * GSTIN and `fp` the filing period `MMYYYY`. `b2cs` aggregates the net rows by rate; `hsn.data` is the net
+ * HSN summary. Intra vs inter is read per row from where the tax fell (IGST ⇒ inter). Pure.
+ */
+export function toGstnB2cFromSales(net: NetGstr1Table12, meta: { readonly gstin: string; readonly fp: string }): GstnB2cGstr1 {
+  const byRate = new Map<string, { sply_ty: 'INTRA' | 'INTER'; rt: number; txval: number; camt: number; samt: number; iamt: number }>();
+  for (const r of net.rows) {
+    const inter = r.netIgstMinor !== 0 && r.netCgstMinor === 0 && r.netSgstMinor === 0;
+    const k = `${inter ? 'INTER' : 'INTRA'}|${r.rateBps}`;
+    const row = byRate.get(k) ?? { sply_ty: inter ? 'INTER' as const : 'INTRA' as const, rt: r.rateBps / 100, txval: 0, camt: 0, samt: 0, iamt: 0 };
+    row.txval += r.netTaxableMinor; row.camt += r.netCgstMinor; row.samt += r.netSgstMinor; row.iamt += r.netIgstMinor;
+    byRate.set(k, row);
+  }
+  const b2cs: GstnB2csLine[] = [...byRate.values()]
+    .sort((a, b) => a.sply_ty.localeCompare(b.sply_ty) || a.rt - b.rt)
+    .map((r) => ({ sply_ty: r.sply_ty, typ: 'OE', rt: r.rt, txval: rupees2(r.txval), camt: rupees2(r.camt), samt: rupees2(r.samt), iamt: rupees2(r.iamt) }));
+  const data: GstnHsnLine[] = net.rows.map((r, i) => ({
+    num: i + 1, hsn_sc: r.hsnCode, rt: r.rateBps / 100, qty: r.netQuantityMinor / 1000,
+    txval: rupees2(r.netTaxableMinor), camt: rupees2(r.netCgstMinor), samt: rupees2(r.netSgstMinor), iamt: rupees2(r.netIgstMinor),
+  }));
+  return { gstin: meta.gstin, fp: meta.fp, b2cs, hsn: { data } };
 }

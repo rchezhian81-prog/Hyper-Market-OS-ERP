@@ -54,6 +54,7 @@ interface Table12Body {
   table12: { rows: Row[]; totalTaxableMinor: number; totalTaxMinor: number; b2bTaxableMinor: number; b2cTaxableMinor: number };
   returns: { rows: Row[]; totalTaxableMinor: number; totalTaxMinor: number };
   net: { rows: NetRow[]; salesTaxableMinor: number; returnsTaxableMinor: number; netTaxableMinor: number; netTaxMinor: number };
+  gstn?: { gstin: string; fp: string; b2cs: { sply_ty: string; rt: number; txval: number; camt: number; samt: number; iamt: number }[]; hsn: { data: { hsn_sc: string; rt: number; txval: number }[] } };
   unmapped: { productId: string; quantityMinor: number; reason: string }[];
 }
 
@@ -223,5 +224,36 @@ describe('GSTR-1 Table 12 folded from banked till sales (A5)', () => {
     expect(r.returnedLineCount).toBe(0);
     expect(r.net.returnsTaxableMinor).toBe(0);
     expect(r.net.netTaxableMinor).toBe(10_000); // unchanged by the out-of-period return
+  });
+
+  // ── The GSTN portal file: the actual JSON uploaded to the government, from real sales net of returns. ──
+
+  it('emits the GSTN portal JSON (net of returns) when a gstin + filing period are supplied', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await bankSale(h, 'u-owner', 'gx1', 'MILK', 11_800, '2026-08-05', { hsnCode: '0401', taxRateBps: 1800 });
+    await bankSale(h, 'u-owner', 'gx2', 'MILK', 11_800, '2026-08-06', { hsnCode: '0401', taxRateBps: 1800 });
+    await bankSale(h, 'u-owner', 'gx3', 'MILK', 11_800, '2026-08-07', { hsnCode: '0401', taxRateBps: 1800 });
+    await recordReturn(h, 'u-owner', 'gx1', 'RET-GX', 'MILK', 1, 11_800, '2026-08-10T10:00:00Z');
+
+    const r = (await fromSales(h, 'u-owner', { from: '2026-08-01', to: '2026-08-31', annualTurnoverMinor: SMALL, gstin: '33ABCDE1234F1Z5', fp: '082026' }, 'fs-gstn')).body as Table12Body;
+    const gstn = r.gstn!;
+    expect(gstn.gstin).toBe('33ABCDE1234F1Z5');
+    expect(gstn.fp).toBe('082026');
+    // 3 sold − 1 returned = net ₹200 taxable, CGST ₹18, SGST ₹18 (in rupees on the portal file).
+    expect(gstn.b2cs).toHaveLength(1);
+    expect(gstn.b2cs[0]).toMatchObject({ sply_ty: 'INTRA', rt: 18, txval: 200, camt: 18, samt: 18, iamt: 0 });
+    expect(gstn.hsn.data[0]).toMatchObject({ hsn_sc: '0401', rt: 18, txval: 200 });
+  });
+
+  it('omits the GSTN file by default and refuses a half-supplied export', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await bankSale(h, 'u-owner', 'gy1', 'MILK', 11_800, '2026-08-05', { hsnCode: '0401', taxRateBps: 1800 });
+
+    const summaryOnly = (await fromSales(h, 'u-owner', { from: '2026-08-01', to: '2026-08-31', annualTurnoverMinor: SMALL }, 'fs-nogstn')).body as Table12Body;
+    expect(summaryOnly.gstn).toBeUndefined(); // no gstin/fp → summary only
+    // gstin without fp → refused (both are needed for the portal file).
+    expect((await fromSales(h, 'u-owner', { from: '2026-08-01', to: '2026-08-31', annualTurnoverMinor: SMALL, gstin: '33ABCDE1234F1Z5' }, 'fs-halfgstn')).status).toBe(400);
   });
 });

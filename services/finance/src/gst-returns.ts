@@ -14,7 +14,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
   validateOutwardLine, gstr1Table12, gstr1Return, toGstnGstr1,
-  salesToOutwardSupplies, netTable12, InvalidSalesToOutwardInput,
+  salesToOutwardSupplies, netTable12, toGstnB2cFromSales, InvalidSalesToOutwardInput,
   type OutwardSupplyLine, type ClassifiedLine, type SupplyKind,
   type SoldTaxLine, type ProductTaxEntry, type PlaceOfSupply,
 } from '../../../packages/finance/src/index';
@@ -167,6 +167,14 @@ export function gstReturnsRoutes(deps: GstReturnsDeps): readonly Route[] {
         if (pos !== undefined && pos !== 'intra_state' && pos !== 'inter_state') {
           throw apiError(400, { code: 'invalid_place_of_supply', whatHappened: "placeOfSupply must be 'intra_state' or 'inter_state'.", wasItSaved: 'not_saved', nextSafeAction: 'Omit it (defaults to intra-State, a counter sale) or send a valid value.' });
         }
+        // Optional GSTN portal export: with the supplier gstin + filing period (MMYYYY), the response also
+        // carries the GSTN B2C GSTR-1 JSON the portal ingests. Both must be well-formed if either is present.
+        const gstin = b['gstin'];
+        const fp = b['fp'];
+        const wantsExport = gstin !== undefined || fp !== undefined;
+        if (wantsExport && (typeof gstin !== 'string' || !GSTIN.test(gstin) || typeof fp !== 'string' || !/^\d{6}$/.test(fp))) {
+          throw apiError(400, { code: 'export_needs_gstin_and_fp', whatHappened: 'To export the GSTN portal file, send both gstin (the supplier’s own GSTIN) and fp (the filing period MMYYYY).', wasItSaved: 'not_saved', nextSafeAction: 'Send a valid gstin and fp, or omit both to get the summary only.' });
+        }
 
         // Fold banked sales committed in a window generously covering the period, then filter to the return
         // period by trading day (the GST time of supply) so a late-synced sale still lands in its own month.
@@ -194,11 +202,13 @@ export function gstReturnsRoutes(deps: GstReturnsDeps): readonly Route[] {
           const result = salesToOutwardSupplies({ sales, taxTable, annualTurnoverMinor: turnover, ...posArg });
           const returnsResult = salesToOutwardSupplies({ sales: returnedLines, taxTable, annualTurnoverMinor: turnover, ...posArg });
           const net = netTable12(result.table12, returnsResult.table12);
+          const gstn = wantsExport ? toGstnB2cFromSales(net, { gstin: gstin as string, fp: fp as string }) : undefined;
           return { status: 200, body: {
             from, to, soldLineCount: period.length, returnedLineCount: returnsPeriod.length,
             taxTableSize: taxTable.length, overrideCount: supplied.length, frozenLineCount: result.frozenLineCount,
             table12: result.table12, unmapped: result.unmapped, mappedLineCount: result.mappedLineCount,
-            returns: returnsResult.table12, returnsUnmapped: returnsResult.unmapped, net, detail: net.detail,
+            returns: returnsResult.table12, returnsUnmapped: returnsResult.unmapped, net,
+            ...(gstn !== undefined ? { gstn } : {}), detail: net.detail,
           } };
         } catch (e) {
           if (e instanceof InvalidSalesToOutwardInput) {
