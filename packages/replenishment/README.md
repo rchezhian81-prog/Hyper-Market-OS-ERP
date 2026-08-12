@@ -24,6 +24,23 @@ per-product parameters — as a **proposal a buyer approves**, never an automati
   - **`advisoryOnly: true`** on every proposal: this can **never** become a purchase order by
     itself — an authorised human commits the PO (**hard rule #5 / AI-NFR-12**). **Parameters
     drive every number** (M09-FR-02 acceptance).
+- **`src/constrained-order.ts`** — **forecast-driven, constraint-aware order proposal (D-2,
+  M09·M06).** Where `proposeReplenishment` answers "are we below the line," this answers the
+  buyer's real question: **given how much we expect to sell, and when the supplier next delivers,
+  how big should this order be?**
+  - `proposeConstrainedOrder(input)` — an order placed now arrives at the **next** delivery and
+    must last until the **one after**, so it covers exactly that window's forecast demand (from
+    D-1) — no fixed max level. It nets **on-hand + on-order** that will still be there at arrival
+    (`projectedOnHandAtArrival = onHand + onOrder − demand-until-arrival`), rounds the shortfall
+    **up to whole cases** (`unitsPerCase`, else `orderMultiple`), raises to the supplier
+    `minOrderQty` still in whole cases, and reports the **pallet + loose-case** breakdown a buyer
+    actually places. `reason` is `ordered`, `covered` (stock at arrival already meets the window),
+    or `no_supplier_calendar` (fewer than two upcoming deliveries — it will not guess a cadence).
+  - Both constraints — the supplier **calendar** and case/pallet **packaging** — are DATA the
+    caller supplies, never inferred here. `advisoryOnly: true`; an authorised human commits the PO
+    (**hard rule #5**). Tested in `tests/unit/constrained-order.test.ts`; wired end-to-end (forecast
+    folded from banked sales) at `POST /v1/replenishment/order-proposal`, tested in
+    `tests/integration/order-proposal.test.ts`.
 
 > Pure and deterministic — no storage, no I/O — so it runs the same on the store edge or in
 > the cloud. Composes nothing but plain maths. Tested in `tests/unit/replenishment.test.ts`.

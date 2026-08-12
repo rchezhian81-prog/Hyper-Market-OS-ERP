@@ -4,3 +4,4 @@
 // deterministic. Grows one reviewed, tested unit at a time.
 
 export * from './replenishment';
+export * from './constrained-order';
