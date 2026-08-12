@@ -21,13 +21,32 @@ export interface DailyDemand {
   readonly qty: number;
 }
 
+/**
+ * A known upcoming event that lifts (or dampens) demand beyond the weekly pattern — a festival, a
+ * promotion, a heatwave. All three are the same shape: on a range of days, demand is × a multiplier. The
+ * calendar is DATA the caller supplies (public festival dates, the shop's own promo diary, a weather feed),
+ * never hard-coded here.
+ */
+export interface DemandSignal {
+  /** YYYY-MM-DD, inclusive. */
+  readonly from: string;
+  readonly to: string;
+  /** > 0. 1.8 = +80% on those days; 0.7 = −30%. */
+  readonly multiplier: number;
+  readonly label?: string;
+}
+
 /** One forecast day. */
 export interface ForecastDay {
   readonly day: string;
   /** 0 = Sunday … 6 = Saturday. */
   readonly dow: number;
-  /** baseline × the day's seasonality factor, rounded, never negative. */
+  /** baseline × the day's seasonality factor × any active signals, rounded, never negative. */
   readonly forecastQty: number;
+  /** The combined multiplier of the signals active on this day (1 = none). */
+  readonly signalMultiplier: number;
+  /** The labels of the signals active on this day (a range with no label reads as `from..to`). */
+  readonly appliedSignals: readonly string[];
 }
 
 export interface DemandForecast {
@@ -40,6 +59,8 @@ export interface DemandForecast {
   readonly dowFactors: readonly number[];
   /** The projected days after `to`. */
   readonly horizon: readonly ForecastDay[];
+  /** The exogenous signals applied to the horizon (echoed for transparency). */
+  readonly signals: readonly DemandSignal[];
   readonly method: 'baseline_x_dow';
 }
 
@@ -72,6 +93,24 @@ const dayOf = (index: number): string => new Date(index * 86_400_000).toISOStrin
 /** 0 = Sunday … 6 = Saturday, from a day index, using UTC so it never depends on the machine's zone. */
 const dowOfIndex = (index: number): number => new Date(index * 86_400_000).getUTCDay();
 
+/** Validate the signals and return them with their day indices resolved, or throw. */
+function resolveSignals(signals: readonly DemandSignal[]): ReadonlyArray<{ fromIdx: number; toIdx: number; multiplier: number; label: string }> {
+  return signals.map((s) => {
+    if (!DAY.test(s.from) || !DAY.test(s.to)) {
+      throw new InvalidForecastInputError('a signal needs from and to as YYYY-MM-DD dates');
+    }
+    const fromIdx = dayIndex(s.from);
+    const toIdx = dayIndex(s.to);
+    if (Number.isNaN(fromIdx) || Number.isNaN(toIdx) || toIdx < fromIdx) {
+      throw new InvalidForecastInputError('a signal needs real dates with from on or before to');
+    }
+    if (!Number.isFinite(s.multiplier) || s.multiplier <= 0) {
+      throw new InvalidForecastInputError('a signal multiplier must be a finite number greater than 0');
+    }
+    return { fromIdx, toIdx, multiplier: s.multiplier, label: s.label ?? `${s.from}..${s.to}` };
+  });
+}
+
 /**
  * Fit a baseline + day-of-week forecast on `[from, to]` and project `horizonDays` days after `to`.
  *
@@ -84,6 +123,8 @@ export function forecastDemand(input: {
   readonly from: string;
   readonly to: string;
   readonly horizonDays: number;
+  /** Known upcoming events (festival / promo / weather) that lift or dampen demand on their days. */
+  readonly signals?: readonly DemandSignal[];
 }): DemandForecast {
   if (!DAY.test(input.from) || !DAY.test(input.to)) {
     throw new InvalidForecastInputError('from and to must be YYYY-MM-DD dates');
@@ -97,6 +138,7 @@ export function forecastDemand(input: {
   if (!Number.isInteger(input.horizonDays) || input.horizonDays < 1) {
     throw new InvalidForecastInputError('horizonDays must be a whole number of days, 1 or more');
   }
+  const signals = resolveSignals(input.signals ?? []);
 
   const windowDays = toIdx - fromIdx + 1;
 
@@ -134,10 +176,18 @@ export function forecastDemand(input: {
     const idx = toIdx + i;
     const dow = dowOfIndex(idx);
     const factor = dowFactors[dow] ?? 1;
-    horizon.push({ day: dayOf(idx), dow, forecastQty: Math.max(0, Math.round(baselinePerDay * factor)) });
+    const active = signals.filter((s) => idx >= s.fromIdx && idx <= s.toIdx);
+    const signalMultiplier = active.reduce((m, s) => m * s.multiplier, 1);
+    horizon.push({
+      day: dayOf(idx),
+      dow,
+      forecastQty: Math.max(0, Math.round(baselinePerDay * factor * signalMultiplier)),
+      signalMultiplier,
+      appliedSignals: active.map((s) => s.label),
+    });
   }
 
-  return { from: input.from, to: input.to, baselinePerDay, dowFactors, horizon, method: 'baseline_x_dow' };
+  return { from: input.from, to: input.to, baselinePerDay, dowFactors, horizon, signals: input.signals ?? [], method: 'baseline_x_dow' };
 }
 
 /**
@@ -150,6 +200,8 @@ export function backtestForecast(input: {
   readonly from: string;
   readonly to: string;
   readonly holdoutDays: number;
+  /** The same signals the live forecast would carry — so a known event in the holdout is scored fairly. */
+  readonly signals?: readonly DemandSignal[];
 }): Backtest {
   if (!DAY.test(input.from) || !DAY.test(input.to)) {
     throw new InvalidForecastInputError('from and to must be YYYY-MM-DD dates');
@@ -165,7 +217,10 @@ export function backtestForecast(input: {
   }
 
   const trainToIdx = toIdx - input.holdoutDays;
-  const fit = forecastDemand({ history: input.history, from: input.from, to: dayOf(trainToIdx), horizonDays: input.holdoutDays });
+  const fit = forecastDemand({
+    history: input.history, from: input.from, to: dayOf(trainToIdx), horizonDays: input.holdoutDays,
+    ...(input.signals === undefined ? {} : { signals: input.signals }),
+  });
 
   // Actual demand on each held-out day.
   const actualByDay = new Map<string, number>();

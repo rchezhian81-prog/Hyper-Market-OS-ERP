@@ -83,3 +83,64 @@ describe('backtestForecast', () => {
     expect(() => backtestForecast({ history: HISTORY, from: FROM, to: TO, holdoutDays: 0 })).toThrow(InvalidForecastInputError);
   });
 });
+
+const flatSeries = (startDay: string, days: number, qty: number): DailyDemand[] =>
+  Array.from({ length: days }, (_, i) => ({ day: dayOf(indexOf(startDay) + i), qty }));
+
+describe('exogenous demand signals (festival / promo / weather)', () => {
+  const FLAT_FROM = '2026-06-01';
+  const FLAT_TO = dayOf(indexOf(FLAT_FROM) + 27); // 28 flat days at 10/day → baseline 10, dow factors ~1
+  const FLAT = flatSeries(FLAT_FROM, 28, 10);
+
+  it('lifts the forecast on a signal’s days and leaves the rest untouched', () => {
+    const eventFrom = dayOf(indexOf(FLAT_TO) + 2); // two days inside the 7-day horizon
+    const eventTo = dayOf(indexOf(FLAT_TO) + 3);
+    const f = forecastDemand({
+      history: FLAT, from: FLAT_FROM, to: FLAT_TO, horizonDays: 7,
+      signals: [{ from: eventFrom, to: eventTo, multiplier: 2, label: 'Diwali' }],
+    });
+    const onEvent = f.horizon.filter((d) => d.day >= eventFrom && d.day <= eventTo);
+    const offEvent = f.horizon.filter((d) => d.day < eventFrom || d.day > eventTo);
+    expect(onEvent.every((d) => d.signalMultiplier === 2 && d.appliedSignals.includes('Diwali'))).toBe(true);
+    expect(offEvent.every((d) => d.signalMultiplier === 1 && d.appliedSignals.length === 0)).toBe(true);
+    expect(onEvent[0]!.forecastQty).toBe(20); // 10 baseline × 2
+    expect(offEvent[0]!.forecastQty).toBe(10);
+    expect(f.signals).toHaveLength(1);
+  });
+
+  it('composes overlapping signals by multiplying them', () => {
+    const day = dayOf(indexOf(FLAT_TO) + 2);
+    const f = forecastDemand({
+      history: FLAT, from: FLAT_FROM, to: FLAT_TO, horizonDays: 7,
+      signals: [
+        { from: day, to: day, multiplier: 2, label: 'Festival' },
+        { from: day, to: day, multiplier: 1.5, label: 'Promo' },
+      ],
+    });
+    const d = f.horizon.find((h) => h.day === day)!;
+    expect(d.signalMultiplier).toBe(3); // 2 × 1.5
+    expect(d.appliedSignals).toEqual(['Festival', 'Promo']);
+    expect(d.forecastQty).toBe(30); // 10 × 3
+  });
+
+  it('scores a known event in the holdout fairly — the back-test improves with the signal', () => {
+    // Seven weeks flat at 10, then a festival spike week at 20 as the holdout.
+    const spike: DailyDemand[] = [...flatSeries(FROM, 49, 10), ...flatSeries(dayOf(indexOf(FROM) + 49), 7, 20)];
+    const holdFrom = dayOf(indexOf(FROM) + 49);
+
+    const without = backtestForecast({ history: spike, from: FROM, to: TO, holdoutDays: 7 });
+    const withSignal = backtestForecast({
+      history: spike, from: FROM, to: TO, holdoutDays: 7,
+      signals: [{ from: holdFrom, to: TO, multiplier: 2, label: 'Festival' }],
+    });
+    expect(without.wape).toBeGreaterThan(0.4); // blind to the spike, it misses by half
+    expect(withSignal.wape).toBeLessThan(0.05); // told about the festival, it nails it
+  });
+
+  it('rejects a malformed signal', () => {
+    const bad = (signals: unknown[]) => () => forecastDemand({ history: FLAT, from: FLAT_FROM, to: FLAT_TO, horizonDays: 3, signals: signals as never });
+    expect(bad([{ from: 'nope', to: FLAT_TO, multiplier: 2 }])).toThrow(InvalidForecastInputError);
+    expect(bad([{ from: FLAT_FROM, to: FLAT_TO, multiplier: 0 }])).toThrow(InvalidForecastInputError);   // multiplier ≤ 0
+    expect(bad([{ from: FLAT_TO, to: FLAT_FROM, multiplier: 2 }])).toThrow(InvalidForecastInputError);   // from after to
+  });
+});

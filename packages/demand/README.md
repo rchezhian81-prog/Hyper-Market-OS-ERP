@@ -25,8 +25,14 @@ and the foundation the forecast (**D-1**) and the expiry-markdown ladder (**D-4*
     held-out tail, and scores it (**WAPE** = Σ|actual − forecast| ÷ Σ actual, plus MAE), so "the
     forecast is good" is a bounded number, not a claim (the D-1 acceptance). `InvalidForecastInputError`
     for a malformed window/horizon, or a holdout with no training days left.
-  - Richer signals the roadmap names — promotions, festivals, weather, new-item cold-start — layer ON
-    this baseline and are **follow-on** work, named here so they are deferred openly, not dropped.
+  - **Exogenous signals (festival / promo / weather)** — `forecastDemand` and `backtestForecast` take an
+    optional `signals: DemandSignal[]`, each a **date range × a multiplier** (with a label). Festivals,
+    promotions and weather are the same shape — "on these days, demand is × this factor" — so one mechanism
+    covers all three; overlapping signals multiply, and each horizon day reports its `signalMultiplier` and
+    the `appliedSignals`. The calendar is **data the caller supplies** (public festival dates, the shop's
+    promo diary, a weather feed), never hard-coded. Threaded through the back-test too, so a known event in
+    the holdout is scored fairly. Still **deferred**: new-item cold-start (a product with too little history
+    to fit) — named here, not dropped.
 
 - **`src/markdown.ts`** (D-4) — the expiry markdown ladder, the commercial partner to the perishables work.
   - `proposeMarkdown({ …, remainingShelfLifeDays, onHandMinor, avgDailyDemandMinor, currentPriceMinor,

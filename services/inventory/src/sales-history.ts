@@ -10,7 +10,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { salesHistory, InvalidDemandWindowError, type SoldLine } from '../../../packages/demand/src/sales-history';
-import { forecastDemand, backtestForecast, InvalidForecastInputError, type DailyDemand } from '../../../packages/demand/src/forecast';
+import { forecastDemand, backtestForecast, InvalidForecastInputError, type DailyDemand, type DemandSignal } from '../../../packages/demand/src/forecast';
 import { proposeMarkdown, InvalidMarkdownInputError, type MarkdownPolicy } from '../../../packages/demand/src/markdown';
 
 export interface SalesHistoryDeps {
@@ -109,16 +109,35 @@ export function salesHistoryRoutes(deps: SalesHistoryDeps): readonly Route[] {
           horizonDays = n;
         }
 
+        // Known upcoming events (festival / promo / weather), compact-encoded as
+        // `?events=FROM~TO~MULT~LABEL,…` — the calendar is data the caller supplies. Parsed leniently here;
+        // the engine validates the dates and multipliers (an invalid one is a 400 below).
+        let signals: DemandSignal[] = [];
+        const rawEvents = ctx.query['events'];
+        if (rawEvents !== undefined && rawEvents !== '') {
+          signals = rawEvents.split(',').map((entry) => {
+            const parts = entry.split('~');
+            return {
+              from: parts[0] ?? '',
+              to: parts[1] ?? '',
+              multiplier: Number(parts[2]),
+              ...(parts[3] !== undefined && parts[3] !== '' ? { label: parts[3] } : {}),
+            };
+          });
+        }
+
         const lines = (await deps.soldLines(ctx.tenantId, `${from}T00:00:00.000Z`, `${addDays(to, 2)}T00:00:00.000Z`))
           .filter((l) => l.productId === productId);
         const byDay = salesHistory({ lines, from, to }).products.find((p) => p.productId === productId)?.byDay ?? [];
         const history: DailyDemand[] = byDay.map((d) => ({ day: d.day, qty: d.qtyMinor }));
 
         try {
-          const forecast = forecastDemand({ history, from, to, horizonDays });
+          const forecast = forecastDemand({ history, from, to, horizonDays, ...(signals.length === 0 ? {} : { signals }) });
           // Score it only when there is enough history to hold out a week and still train on at least a week.
           const windowDays = Math.round((Date.parse(`${to}T00:00:00.000Z`) - Date.parse(`${from}T00:00:00.000Z`)) / 86_400_000) + 1;
-          const quality = windowDays >= 14 ? backtestForecast({ history, from, to, holdoutDays: 7 }) : undefined;
+          const quality = windowDays >= 14
+            ? backtestForecast({ history, from, to, holdoutDays: 7, ...(signals.length === 0 ? {} : { signals }) })
+            : undefined;
           return { status: 200, body: { productId, ...forecast, ...(quality === undefined ? {} : { quality }), asAt: deps.now() } };
         } catch (e) {
           if (e instanceof InvalidForecastInputError) {
