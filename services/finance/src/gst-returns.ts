@@ -14,7 +14,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
   validateOutwardLine, gstr1Table12, gstr1Return, toGstnGstr1,
-  salesToOutwardSupplies, InvalidSalesToOutwardInput,
+  salesToOutwardSupplies, netTable12, InvalidSalesToOutwardInput,
   type OutwardSupplyLine, type ClassifiedLine, type SupplyKind,
   type SoldTaxLine, type ProductTaxEntry, type PlaceOfSupply,
 } from '../../../packages/finance/src/index';
@@ -48,6 +48,13 @@ export interface GstReturnsDeps {
    * the sales stream — the route filters to the return period by trading day. Used by GSTR-1-from-sales.
    */
   readonly soldTaxLines: (tenantId: string, fromIso: string, toIso: string) => Promise<readonly PeriodSoldLine[]> | readonly PeriodSoldLine[];
+  /**
+   * The RETURNED tax-relevant lines whose return was processed (issued) in [fromIso, toIso) — a return
+   * reverses the tax it was charged (CGST s.34), so these NET against the outward supplies. Each carries the
+   * HSN/rate frozen on the ORIGINAL sale (a return reverses at the rate it was sold), and the tax-inclusive
+   * refund allocated to the line. Same shape as `soldTaxLines`; `tradingDay` is the return's processed day.
+   */
+  readonly returnedTaxLines: (tenantId: string, fromIso: string, toIso: string) => Promise<readonly PeriodSoldLine[]> | readonly PeriodSoldLine[];
   /**
    * The product→{HSN, rate} table read from the published catalogue (M03 master) — the DEFAULT tax mapping
    * for GSTR-1-from-sales, so the return builds without hand-keying each product's HSN. A caller-supplied
@@ -167,19 +174,32 @@ export function gstReturnsRoutes(deps: GstReturnsDeps): readonly Route[] {
         const windowTo = new Date(Date.parse(`${to}T00:00:00.000Z`) + 3 * 86_400_000).toISOString();
         const period = (await deps.soldTaxLines(ctx.tenantId, windowFrom, windowTo))
           .filter((l) => l.tradingDay >= from && l.tradingDay <= to);
-        const sales: SoldTaxLine[] = period.map((l) => ({
+        const toSoldTaxLine = (l: PeriodSoldLine): SoldTaxLine => ({
           productId: l.productId, quantityMinor: l.quantityMinor, uom: l.uom, lineTotalMinor: l.lineTotalMinor,
           // A line that carries its own tax facts (frozen at supply) is filed under those, not the table.
           ...(l.hsnCode !== undefined ? { hsnCode: l.hsnCode } : {}),
           ...(l.rateBps !== undefined ? { rateBps: l.rateBps } : {}),
-        }));
+        });
+        const sales: SoldTaxLine[] = period.map(toSoldTaxLine);
+
+        // Returns issued in the period NET against the outward supplies (CGST s.34) — folded through the SAME
+        // engine (a returned line is an outward supply reversed), then subtracted per HSN/rate.
+        const returnsPeriod = (await deps.returnedTaxLines(ctx.tenantId, windowFrom, windowTo))
+          .filter((l) => l.tradingDay >= from && l.tradingDay <= to);
+        const returnedLines: SoldTaxLine[] = returnsPeriod.map(toSoldTaxLine);
 
         try {
-          const result = salesToOutwardSupplies({
-            sales, taxTable, annualTurnoverMinor: b['annualTurnoverMinor'] as number,
-            ...(pos !== undefined ? { placeOfSupply: pos as PlaceOfSupply } : {}),
-          });
-          return { status: 200, body: { from, to, soldLineCount: period.length, taxTableSize: taxTable.length, overrideCount: supplied.length, frozenLineCount: result.frozenLineCount, table12: result.table12, unmapped: result.unmapped, mappedLineCount: result.mappedLineCount, detail: result.detail } };
+          const turnover = b['annualTurnoverMinor'] as number;
+          const posArg = pos !== undefined ? { placeOfSupply: pos as PlaceOfSupply } : {};
+          const result = salesToOutwardSupplies({ sales, taxTable, annualTurnoverMinor: turnover, ...posArg });
+          const returnsResult = salesToOutwardSupplies({ sales: returnedLines, taxTable, annualTurnoverMinor: turnover, ...posArg });
+          const net = netTable12(result.table12, returnsResult.table12);
+          return { status: 200, body: {
+            from, to, soldLineCount: period.length, returnedLineCount: returnsPeriod.length,
+            taxTableSize: taxTable.length, overrideCount: supplied.length, frozenLineCount: result.frozenLineCount,
+            table12: result.table12, unmapped: result.unmapped, mappedLineCount: result.mappedLineCount,
+            returns: returnsResult.table12, returnsUnmapped: returnsResult.unmapped, net, detail: net.detail,
+          } };
         } catch (e) {
           if (e instanceof InvalidSalesToOutwardInput) {
             throw apiError(400, { code: 'invalid_from_sales_request', whatHappened: e.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the request and re-send. Nothing was changed.' });
