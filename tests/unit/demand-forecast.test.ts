@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   forecastDemand,
   backtestForecast,
+  coldStartBaseline,
   InvalidForecastInputError,
   type DailyDemand,
 } from '../../packages/demand/src/forecast';
@@ -142,5 +143,56 @@ describe('exogenous demand signals (festival / promo / weather)', () => {
     expect(bad([{ from: 'nope', to: FLAT_TO, multiplier: 2 }])).toThrow(InvalidForecastInputError);
     expect(bad([{ from: FLAT_FROM, to: FLAT_TO, multiplier: 0 }])).toThrow(InvalidForecastInputError);   // multiplier ≤ 0
     expect(bad([{ from: FLAT_TO, to: FLAT_FROM, multiplier: 2 }])).toThrow(InvalidForecastInputError);   // from after to
+  });
+});
+
+describe('coldStartBaseline', () => {
+  it('is the peer rate with no history, and the item’s own rate once history dominates', () => {
+    expect(coldStartBaseline({ totalQty: 0, observedDays: 0, peerBaselinePerDay: 8 })).toBe(8); // brand new → peer
+    // 900 sold over 90 days (10/day of its own) with a 14-day prior at 8 → (900 + 112)/104 ≈ 9.73, near its own 10
+    expect(coldStartBaseline({ totalQty: 900, observedDays: 90, peerBaselinePerDay: 8 })).toBeCloseTo(9.73, 1);
+  });
+
+  it('blends own and peer weighted by evidence', () => {
+    // 20 sold over 2 days, peer 8/day, prior 14 → (20 + 14×8) / (2 + 14) = 132/16 = 8.25
+    expect(coldStartBaseline({ totalQty: 20, observedDays: 2, peerBaselinePerDay: 8, priorDays: 14 })).toBe(8.25);
+  });
+
+  it('rejects bad input', () => {
+    expect(() => coldStartBaseline({ totalQty: -1, observedDays: 2, peerBaselinePerDay: 8 })).toThrow(InvalidForecastInputError);
+    expect(() => coldStartBaseline({ totalQty: 20, observedDays: 2, peerBaselinePerDay: -8 })).toThrow(InvalidForecastInputError);
+    expect(() => coldStartBaseline({ totalQty: 20, observedDays: 2, peerBaselinePerDay: 8, priorDays: 0 })).toThrow(InvalidForecastInputError);
+  });
+});
+
+describe('forecastDemand with new-item cold-start', () => {
+  // A brand-new SKU: two days of 10/day inside a 28-day window — far too little to forecast on its own.
+  const NEW_FROM = '2026-06-01';
+  const NEW_TO = dayOf(indexOf(NEW_FROM) + 27);
+  const NEW_ITEM: DailyDemand[] = [
+    { day: dayOf(indexOf(NEW_TO) - 1), qty: 10 },
+    { day: NEW_TO, qty: 10 },
+  ];
+
+  it('seeds a thin history from the peer rate instead of forecasting near zero', () => {
+    const bare = forecastDemand({ history: NEW_ITEM, from: NEW_FROM, to: NEW_TO, horizonDays: 7 });
+    expect(bare.baselineSource).toBe('history');
+    expect(bare.baselinePerDay).toBeLessThan(1); // 20 / 28 — uselessly low for a new item
+
+    const cold = forecastDemand({ history: NEW_ITEM, from: NEW_FROM, to: NEW_TO, horizonDays: 7, coldStart: { peerBaselinePerDay: 8 } });
+    expect(cold.baselineSource).toBe('cold_start');
+    expect(cold.baselinePerDay).toBeCloseTo(8.25); // (20 + 14×8) / (2 + 14)
+    expect(cold.horizon.every((d) => d.forecastQty === 8)).toBe(true); // flat at round(8.25), no noisy weekly shape
+    expect(cold.dowFactors.every((f) => f === 1)).toBe(true);
+  });
+
+  it('still applies event signals on top of a cold-start baseline', () => {
+    const eventDay = dayOf(indexOf(NEW_TO) + 2);
+    const cold = forecastDemand({
+      history: NEW_ITEM, from: NEW_FROM, to: NEW_TO, horizonDays: 7,
+      coldStart: { peerBaselinePerDay: 8 }, signals: [{ from: eventDay, to: eventDay, multiplier: 2, label: 'Launch' }],
+    });
+    const d = cold.horizon.find((h) => h.day === eventDay)!;
+    expect(d.forecastQty).toBe(17); // round(8.25 × 2) = round(16.5) = 17
   });
 });

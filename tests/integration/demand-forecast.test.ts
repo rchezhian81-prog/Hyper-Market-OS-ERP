@@ -27,7 +27,7 @@ const forecast = (h: ApiHarness, u: string, query: Record<string, string>) =>
   h.request({ method: 'GET', path: '/v1/inventory/demand-forecast', userId: u, tenantId: A, query });
 
 interface ForecastBody {
-  productId: string; baselinePerDay: number; dowFactors: number[]; method: string;
+  productId: string; baselinePerDay: number; baselineSource: string; dowFactors: number[]; method: string;
   horizon: { day: string; dow: number; forecastQty: number; signalMultiplier: number; appliedSignals: string[] }[];
   signals: { from: string; to: string; multiplier: number; label?: string }[];
   quality?: { testedDays: number; wape: number };
@@ -87,6 +87,27 @@ describe('demand forecast on the live API (D-1)', () => {
     const h = apiHarness();
     await seedTwoWeeks(h);
     expect(codeOf(await forecast(h, 'u-owner', { productId: 'BREAD', from: FROM, to: TO, events: 'notadate~x~2' }))).toBe('invalid_forecast_input');
+  });
+
+  it('cold-starts a new product from a peer rate via ?peerBaselinePerDay=', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    const cFrom = '2026-05-01';
+    const cTo = dayOf(indexOf(cFrom) + 27); // a 28-day window
+    // A brand-new SKU: two days of 10/day — far too little to forecast on its own.
+    await bankSale(h, 'u-owner', 'N1', 'NEWSKU', 10, dayOf(indexOf(cTo) - 1));
+    await bankSale(h, 'u-owner', 'N2', 'NEWSKU', 10, cTo);
+
+    const bare = (await forecast(h, 'u-owner', { productId: 'NEWSKU', from: cFrom, to: cTo, horizonDays: '7' })).body as ForecastBody;
+    expect(bare.baselineSource).toBe('history');
+    expect(bare.baselinePerDay).toBeLessThan(1); // 20 / 28 — uselessly low
+
+    const cold = (await forecast(h, 'u-owner', { productId: 'NEWSKU', from: cFrom, to: cTo, horizonDays: '7', peerBaselinePerDay: '8' })).body as ForecastBody;
+    expect(cold.baselineSource).toBe('cold_start');
+    expect(cold.baselinePerDay).toBeCloseTo(8.25); // (20 + 14×8) / (2 + 14)
+    expect(cold.horizon.every((d) => d.forecastQty === 8)).toBe(true);
+
+    expect(codeOf(await forecast(h, 'u-owner', { productId: 'NEWSKU', from: cFrom, to: cTo, peerBaselinePerDay: '-3' }))).toBe('bad_cold_start');
   });
 
   it('needs a product, rejects a bad horizon, and is authorized', async () => {

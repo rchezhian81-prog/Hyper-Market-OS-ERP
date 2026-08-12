@@ -131,8 +131,38 @@ export function salesHistoryRoutes(deps: SalesHistoryDeps): readonly Route[] {
         const byDay = salesHistory({ lines, from, to }).products.find((p) => p.productId === productId)?.byDay ?? [];
         const history: DailyDemand[] = byDay.map((d) => ({ day: d.day, qty: d.qtyMinor }));
 
+        // New-item cold-start: a product too new to have its own pattern leans on a peer / category rate
+        // (?peerBaselinePerDay=&priorDays=), which its own sales take over as they accumulate.
+        let coldStart: { peerBaselinePerDay: number; priorDays?: number } | undefined;
+        const rawPeer = ctx.query['peerBaselinePerDay'];
+        if (rawPeer !== undefined && rawPeer !== '') {
+          const peer = Number(rawPeer);
+          if (!Number.isFinite(peer) || peer < 0) {
+            throw apiError(400, {
+              code: 'bad_cold_start',
+              whatHappened: 'peerBaselinePerDay must be a number of at least 0.',
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Fix peerBaselinePerDay (or omit it) and re-send. Nothing was changed.',
+            });
+          }
+          coldStart = { peerBaselinePerDay: peer };
+          const rawPrior = ctx.query['priorDays'];
+          if (rawPrior !== undefined && rawPrior !== '') {
+            const prior = Number(rawPrior);
+            if (!Number.isInteger(prior) || prior < 1) {
+              throw apiError(400, {
+                code: 'bad_cold_start',
+                whatHappened: 'priorDays must be a whole number of at least 1.',
+                wasItSaved: 'not_saved',
+                nextSafeAction: 'Fix priorDays (or omit it for 14) and re-send. Nothing was changed.',
+              });
+            }
+            coldStart = { peerBaselinePerDay: peer, priorDays: prior };
+          }
+        }
+
         try {
-          const forecast = forecastDemand({ history, from, to, horizonDays, ...(signals.length === 0 ? {} : { signals }) });
+          const forecast = forecastDemand({ history, from, to, horizonDays, ...(signals.length === 0 ? {} : { signals }), ...(coldStart === undefined ? {} : { coldStart }) });
           // Score it only when there is enough history to hold out a week and still train on at least a week.
           const windowDays = Math.round((Date.parse(`${to}T00:00:00.000Z`) - Date.parse(`${from}T00:00:00.000Z`)) / 86_400_000) + 1;
           const quality = windowDays >= 14

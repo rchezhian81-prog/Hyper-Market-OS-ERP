@@ -49,13 +49,30 @@ export interface ForecastDay {
   readonly appliedSignals: readonly string[];
 }
 
+/**
+ * New-item cold-start (D-1): a product too new to have its own pattern borrows a **peer / category** rate,
+ * which its own sales take over as they accumulate (credibility shrinkage). The peer rate is DATA the
+ * caller supplies (a similar SKU's demand, a category average), never inferred here.
+ */
+export interface ColdStart {
+  /** The peer / category baseline demand per day to lean on while the item's own history is thin. */
+  readonly peerBaselinePerDay: number;
+  /**
+   * How many days of peer "evidence" the prior is worth — the item's own history outweighs it past this.
+   * Default 14 (two weeks). Higher = trust the peer longer.
+   */
+  readonly priorDays?: number;
+}
+
 export interface DemandForecast {
   /** The fit window (YYYY-MM-DD, inclusive) the forecast learned from. */
   readonly from: string;
   readonly to: string;
-  /** The average daily demand over the fit window — the level the seasonality multiplies. */
+  /** The average daily demand — the level the seasonality multiplies (a peer-blended level under cold-start). */
   readonly baselinePerDay: number;
-  /** Seven day-of-week multipliers, index 0 = Sunday … 6 = Saturday; ~1 is an average day. */
+  /** Whether the baseline came from the item's own history or a cold-start peer blend. */
+  readonly baselineSource: 'history' | 'cold_start';
+  /** Seven day-of-week multipliers, index 0 = Sunday … 6 = Saturday; ~1 is an average day (flat under cold-start). */
   readonly dowFactors: readonly number[];
   /** The projected days after `to`. */
   readonly horizon: readonly ForecastDay[];
@@ -112,6 +129,34 @@ function resolveSignals(signals: readonly DemandSignal[]): ReadonlyArray<{ fromI
 }
 
 /**
+ * Blend an item's own demand with a peer / category rate, weighted by how much of its own history exists
+ * (credibility shrinkage). With no history the peer rate stands alone; as sales accumulate, the item's own
+ * rate takes over. `blended = (totalQty + priorDays × peerBaselinePerDay) / (observedDays + priorDays)`.
+ * Throws `InvalidForecastInputError` on bad input.
+ */
+export function coldStartBaseline(input: {
+  readonly totalQty: number;
+  readonly observedDays: number;
+  readonly peerBaselinePerDay: number;
+  readonly priorDays?: number;
+}): number {
+  if (!Number.isFinite(input.totalQty) || input.totalQty < 0) {
+    throw new InvalidForecastInputError('totalQty must be a finite number of at least 0');
+  }
+  if (!Number.isInteger(input.observedDays) || input.observedDays < 0) {
+    throw new InvalidForecastInputError('observedDays must be a whole number of at least 0');
+  }
+  if (!Number.isFinite(input.peerBaselinePerDay) || input.peerBaselinePerDay < 0) {
+    throw new InvalidForecastInputError('peerBaselinePerDay must be a finite number of at least 0');
+  }
+  const priorDays = input.priorDays ?? 14;
+  if (!Number.isInteger(priorDays) || priorDays < 1) {
+    throw new InvalidForecastInputError('priorDays must be a whole number of at least 1');
+  }
+  return (input.totalQty + priorDays * input.peerBaselinePerDay) / (input.observedDays + priorDays);
+}
+
+/**
  * Fit a baseline + day-of-week forecast on `[from, to]` and project `horizonDays` days after `to`.
  *
  * The history is folded onto a dense daily series over the window (a day with no entry is zero demand —
@@ -125,6 +170,8 @@ export function forecastDemand(input: {
   readonly horizonDays: number;
   /** Known upcoming events (festival / promo / weather) that lift or dampen demand on their days. */
   readonly signals?: readonly DemandSignal[];
+  /** New-item cold-start: seed a thin history from a peer / category rate. */
+  readonly coldStart?: ColdStart;
 }): DemandForecast {
   if (!DAY.test(input.from) || !DAY.test(input.to)) {
     throw new InvalidForecastInputError('from and to must be YYYY-MM-DD dates');
@@ -163,13 +210,26 @@ export function forecastDemand(input: {
     dowCount[dow] = (dowCount[dow] ?? 0) + 1;
   }
 
-  const baselinePerDay = total / windowDays;
-  // factor = this weekday's mean ÷ the overall mean. Baseline 0 (or a weekday never seen in the window)
-  // carries no signal, so its factor is a neutral 1.
-  const dowFactors = dowSum.map((sum, d) => {
-    const count = dowCount[d] ?? 0;
-    return baselinePerDay === 0 || count === 0 ? 1 : (sum / count) / baselinePerDay;
-  });
+  const historyBaseline = total / windowDays;
+  const observedDays = perDay.size; // distinct days in the window on which the item actually sold
+  // Cold-start: a new item with a thin history leans on a peer / category rate. Otherwise the baseline is
+  // the item's own average over the window.
+  const baselinePerDay = input.coldStart === undefined
+    ? historyBaseline
+    : coldStartBaseline({
+        totalQty: total, observedDays, peerBaselinePerDay: input.coldStart.peerBaselinePerDay,
+        ...(input.coldStart.priorDays === undefined ? {} : { priorDays: input.coldStart.priorDays }),
+      });
+  const baselineSource: 'history' | 'cold_start' = input.coldStart === undefined ? 'history' : 'cold_start';
+  // factor = this weekday's mean ÷ the overall mean. A cold-start item has too little history for a
+  // reliable weekly shape, so it forecasts FLAT at the blended level until it has its own history. A
+  // baseline of 0 (or a weekday never seen) carries no signal, so its factor is a neutral 1.
+  const dowFactors = input.coldStart !== undefined
+    ? [1, 1, 1, 1, 1, 1, 1]
+    : dowSum.map((sum, d) => {
+        const count = dowCount[d] ?? 0;
+        return historyBaseline === 0 || count === 0 ? 1 : (sum / count) / historyBaseline;
+      });
 
   const horizon: ForecastDay[] = [];
   for (let i = 1; i <= input.horizonDays; i += 1) {
@@ -187,7 +247,7 @@ export function forecastDemand(input: {
     });
   }
 
-  return { from: input.from, to: input.to, baselinePerDay, dowFactors, horizon, signals: input.signals ?? [], method: 'baseline_x_dow' };
+  return { from: input.from, to: input.to, baselinePerDay, baselineSource, dowFactors, horizon, signals: input.signals ?? [], method: 'baseline_x_dow' };
 }
 
 /**
