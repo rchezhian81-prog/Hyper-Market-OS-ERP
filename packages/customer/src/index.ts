@@ -9,6 +9,9 @@
 //   • `segments.ts`   (M16-FR-04) — segments and lifetime value as **derived opinions
 //     about a person**: no profiling without a lawful basis, service kept separate from
 //     marketing, and value measured in margin rather than revenue.
+//   • `child-data-guard.ts` (C4 / DPDP s.9) — a child's data (under 18) is processed only
+//     with verifiable parental consent, and tracking / targeted advertising of a child is
+//     prohibited outright; age unproven refuses a child-restricted activity.
 //
 // Pure and deterministic. Grows one reviewed, tested unit at a time.
 
@@ -16,3 +19,4 @@ export * from './matching';
 export * from './consent';
 export * from './data-rights';
 export * from './segments';
+export * from './child-data-guard';

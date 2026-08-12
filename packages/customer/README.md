@@ -36,6 +36,15 @@ data.
   **historic only**, because a projected lifetime value is a guess dressed as a figure.
   `buildAudience` always reports **who it could not reach**, and requires marketing consent as
   well as profiling consent: agreeing to be analysed is not agreeing to be messaged.
+- **`src/child-data-guard.ts`** (C4 / **DPDP Act 2023 s.9**) — a **child** is anyone under 18.
+  `assessChildDataProcessing` is a pure overlay on the consent regime: a child's data may be
+  enrolled / marketed / profiled **only with the verifiable consent of a parent or guardian**
+  (s.9(1)), and **behavioural tracking and advertising targeted at a child are prohibited
+  outright** — parental consent **cannot cure** them (s.9(3)). Transactional / service messages
+  are unrestricted (a child is still owed the message about what they bought). It **never guesses
+  an adult**: with the age unproven a child-restricted activity is refused (`age_unverified`).
+  `ageInYears` turns a date of birth into whole years (18 on the birthday, not the day before),
+  returning "unknown" for a malformed date rather than a silent zero.
 
 > Pure and deterministic. PII is minimized and compared via normalized values only. Tested in
 > `tests/unit/customer.test.ts` (9), `tests/unit/customer-data-rights.test.ts` (12) and
