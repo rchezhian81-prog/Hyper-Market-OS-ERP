@@ -36,6 +36,12 @@ data.
   **historic only**, because a projected lifetime value is a guess dressed as a figure.
   `buildAudience` always reports **who it could not reach**, and requires marketing consent as
   well as profiling consent: agreeing to be analysed is not agreeing to be messaged.
+- **`src/consent-notice.ts`** (C1 / **DPDP Act 2023 s.5–6**) — is a consent notice complete?
+  `checkConsentNotice` validates that a notice **itemises each data category with its purpose** (data with
+  no stated *why* is a defect) and carries, in the notice, the three ways out the Act requires — **withdraw**,
+  **grievance** redressal, and complaining to the **Data Protection Board** — with **withdrawal no harder
+  than giving** (s.6(6), the commonest dark pattern, checked as `withdrawSteps ≤ giveSteps`). Every gap is a
+  named defect and it reports **all** at once, not just the first. Pure — it validates the notice it is handed.
 - **`src/breach-notification.ts`** (C2 / **DPDP Act 2023 s.8(6)**) — a personal-data breach becomes the
   notification **workflow** the law requires. `assessBreachNotification` turns a breach event into three
   obligations: the Data Protection Board's **immediate intimation**, its **72-hour detailed report** (deadline
