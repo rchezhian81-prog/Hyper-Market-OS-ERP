@@ -15,6 +15,9 @@
 //   • `breach-notification.ts` (C2 / DPDP s.8(6)) — a personal-data breach becomes the
 //     notification workflow the law requires: the Data Protection Board (immediate + a
 //     72-hour report) and every affected person, each with prescribed content; a person sends.
+//   • `consent-notice.ts` (C1 / DPDP s.5–6) — a consent notice must itemise each data
+//     category with its purpose and carry in-notice withdraw / grievance / Board links, with
+//     withdrawal as easy as giving; every gap is a named defect.
 //
 // Pure and deterministic. Grows one reviewed, tested unit at a time.
 
@@ -24,3 +27,4 @@ export * from './data-rights';
 export * from './segments';
 export * from './child-data-guard';
 export * from './breach-notification';
+export * from './consent-notice';

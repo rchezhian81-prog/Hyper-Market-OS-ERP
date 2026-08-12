@@ -14,6 +14,7 @@ import { apiError } from '../../kernel/src/index';
 import { assessPointsMovement, type PointsKind, type StoredPointsMovement } from '../../../packages/loyalty/src/assess-points';
 import { assessChildDataProcessing, type ChildDataActivity } from '../../../packages/customer/src/child-data-guard';
 import { assessBreachNotification, InvalidBreachInputError, type BreachInput } from '../../../packages/customer/src/breach-notification';
+import { checkConsentNotice, type ConsentNotice } from '../../../packages/customer/src/consent-notice';
 
 const CHILD_DATA_ACTIVITIES: readonly ChildDataActivity[] = [
   'account_enrolment', 'marketing', 'profiling', 'behavioural_tracking', 'targeted_advertising', 'transactional', 'service',
@@ -252,6 +253,46 @@ export function customerRoutes(deps: CustomerDeps): readonly Route[] {
           }
           throw e;
         }
+      },
+    },
+    {
+      // C1 / DPDP s.5–6 — is a consent notice complete? It must itemise each data category with its purpose
+      // and carry, in the notice, the ways to withdraw, raise a grievance, and complain to the Data
+      // Protection Board — with withdrawal no harder than giving (s.6(6)). Every gap comes back named. A
+      // pure design-time validation; it commits nothing.
+      api: 'API-06', method: 'POST', path: '/v1/privacy/consent-notice/check',
+      permission: 'customer.consent.read', idempotent: true,
+      handler: (ctx) => {
+        const b = (ctx.body ?? {}) as {
+          items?: unknown; withdrawMethod?: unknown; grievanceContact?: unknown;
+          boardComplaintLink?: unknown; giveSteps?: unknown; withdrawSteps?: unknown;
+        };
+        if (b.items !== undefined && !Array.isArray(b.items)) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_consent_notice',
+            whatHappened: 'A consent notice needs an items list, each with a dataCategory and a purpose.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { "items": [ { "dataCategory": …, "purpose": … } ], … }. Nothing was changed; this only checks.',
+          });
+        }
+        const items = Array.isArray(b.items)
+          ? b.items.map((raw) => {
+              const r = (raw ?? {}) as Record<string, unknown>;
+              return {
+                dataCategory: typeof r['dataCategory'] === 'string' ? (r['dataCategory'] as string) : '',
+                purpose: typeof r['purpose'] === 'string' ? (r['purpose'] as string) : '',
+              };
+            })
+          : [];
+        const notice: ConsentNotice = {
+          items,
+          ...(typeof b.withdrawMethod === 'string' ? { withdrawMethod: b.withdrawMethod } : {}),
+          ...(typeof b.grievanceContact === 'string' ? { grievanceContact: b.grievanceContact } : {}),
+          ...(typeof b.boardComplaintLink === 'string' ? { boardComplaintLink: b.boardComplaintLink } : {}),
+          ...(Number.isInteger(b.giveSteps) ? { giveSteps: b.giveSteps as number } : {}),
+          ...(Number.isInteger(b.withdrawSteps) ? { withdrawSteps: b.withdrawSteps as number } : {}),
+        };
+        return { status: 200, body: checkConsentNotice(notice) };
       },
     },
     {
