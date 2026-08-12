@@ -68,6 +68,8 @@ export type SaleExceptionKind =
   | 'price_differs_from_catalogue'
   /** The lane sold something since recalled. **Critical**: it is in a customer's hands. */
   | 'sold_a_recalled_product'
+  /** A line was charged ABOVE the product's printed MRP. **Critical**: MRP is a legal ceiling in India. */
+  | 'sold_above_mrp'
   /** A batch-tracked product was sold with no batch captured — the sale cannot be traced in a recall. */
   | 'batch_tracked_sold_without_batch'
   /** The tenders do not add up to the total. Somebody's day will not balance. */
@@ -201,8 +203,22 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
         { productId: line.productId });
     }
 
+    // Charged ABOVE the printed MRP (B1 / M03·M12). MRP is a LEGAL CEILING in India, not a shop policy,
+    // so this is never an ordinary price variance and never a stale-pack excuse — it is a prosecution
+    // risk with a customer overcharged right now. The sale still stands (the money is in the drawer, hard
+    // rule #1), but it is surfaced CRITICAL, ranked with a recall, and no approval can bless it (there is
+    // no override anywhere — the price-setting surface refuses it too, price-guard `above_mrp`). It
+    // subsumes the ordinary price-difference finding for this line, so the overcharge is not buried in it.
+    const aboveMrp = product.mrpMinor !== undefined && line.unitPriceMinor > product.mrpMinor;
+    if (aboveMrp) {
+      add('sold_above_mrp', 'critical',
+        `${product.sku} was charged at ${line.unitPriceMinor}, above its printed MRP of ${product.mrpMinor} — an illegal overcharge`,
+        `ACT NOW: the customer was charged above MRP, which is a legal breach. Refund the difference and keep the receipt, then find how a price above MRP reached this lane (a pack must never carry one).`,
+        { productId: line.productId, differenceMinor: line.unitPriceMinor - (product.mrpMinor ?? 0) });
+    }
+
     const difference = line.unitPriceMinor - product.unitPriceMinor;
-    if (Math.abs(difference) > priceTolerance) {
+    if (!aboveMrp && Math.abs(difference) > priceTolerance) {
       // Usually nobody's fault: the lane priced from the pack it held, which is exactly what it is
       // supposed to do offline. The pack version says whether that explains it.
       const behind = ctx.currentPackVersion - sale.packVersion;
