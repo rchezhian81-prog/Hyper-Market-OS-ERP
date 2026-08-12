@@ -214,7 +214,7 @@ export function buildSurface(deps: {
     ...transfersRoutes(store === undefined ? {
       transfer: empty(undefined), recordProposed: () => {}, recordDispatched: () => {}, recordReceived: () => {}, now,
     } : transfersAdapter({ store, now })),
-    ...replenishmentRoutes({ now }),
+    ...replenishmentRoutes(store === undefined ? { now } : { now, soldLines: salesHistoryAdapter({ store, now }).soldLines }),
     ...salesHistoryRoutes(store === undefined ? { soldLines: empty([]), now } : salesHistoryAdapter({ store, now })),
     ...countsRoutes(store === undefined ? {
       onHand: empty(0), reconciliations: empty([]), countExists: empty(false), recordReconciliation: () => {}, now,
