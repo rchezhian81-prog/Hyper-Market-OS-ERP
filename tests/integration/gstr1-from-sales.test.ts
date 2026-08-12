@@ -20,14 +20,15 @@ const seedCatalogue = (h: ApiHarness, products: { productId: string; hsnCode: st
     payload: { snapshot: { tenantId: A, version: 1, builtAt: '2026-08-01T00:00:00Z', products, barcodes: [] } },
   }));
 
-// A banked sale: what the till charged (the MRP-inclusive line total). No HSN or tax split on the line.
-const bankSale = (h: ApiHarness, u: string, saleId: string, productId: string, lineTotalMinor: number, tradingDay: string) =>
+// A banked sale: what the till charged (the MRP-inclusive line total). No HSN or tax split on the line,
+// unless the lane stamped the frozen tax facts (hsnCode + taxRateBps) — passed through `frozen`.
+const bankSale = (h: ApiHarness, u: string, saleId: string, productId: string, lineTotalMinor: number, tradingDay: string, frozen: { hsnCode?: string; taxRateBps?: number } = {}) =>
   h.request({
     method: 'POST', path: '/v1/sales', userId: u, tenantId: A, idempotencyKey: `gs-${saleId}`,
     body: {
       saleId, receiptNumber: `R-${saleId}`, laneId: 'lane-1', cashierId: u,
       tradingDay, committedAt: `${tradingDay}T09:00:00Z`, totalMinor: lineTotalMinor, currency: 'INR', packVersion: 1,
-      lines: [{ productId, quantityMinor: 1, uom: 'each', unitPriceMinor: lineTotalMinor, lineTotalMinor }],
+      lines: [{ productId, quantityMinor: 1, uom: 'each', unitPriceMinor: lineTotalMinor, lineTotalMinor, ...frozen }],
       tenders: [{ kind: 'cash', amountMinor: lineTotalMinor }],
     },
   });
@@ -36,7 +37,7 @@ const fromSales = (h: ApiHarness, u: string, body: unknown, key: string) =>
   h.request({ method: 'POST', path: '/v1/finance/gstr1/from-sales/table-12', userId: u, tenantId: A, idempotencyKey: key, body });
 
 interface Table12Body {
-  from: string; to: string; soldLineCount: number; mappedLineCount: number; taxTableSize: number; overrideCount: number;
+  from: string; to: string; soldLineCount: number; mappedLineCount: number; taxTableSize: number; overrideCount: number; frozenLineCount: number;
   table12: { rows: { hsnCode: string; rateBps: number; taxableMinor: number; cgstMinor: number; sgstMinor: number; igstMinor: number; b2cTaxableMinor: number }[]; totalTaxableMinor: number; totalTaxMinor: number; b2bTaxableMinor: number; b2cTaxableMinor: number };
   unmapped: { productId: string; quantityMinor: number; reason: string }[];
 }
@@ -138,5 +139,37 @@ describe('GSTR-1 Table 12 folded from banked till sales (A5)', () => {
     expect(r.overrideCount).toBe(1);
     expect(r.table12.rows).toHaveLength(1);
     expect(r.table12.rows[0]!.hsnCode).toBe('040110'); // the override, not the catalogue's 0401
+  });
+
+  // ── Freeze-at-supply: a sale can carry the HSN/rate it was actually sold under, and the return honours it. ──
+
+  it('files a sale under the tax facts FROZEN on its line, with no catalogue or products[] at all', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    // No catalogue, no products[] — but the lane stamped the HSN + rate it charged.
+    await bankSale(h, 'u-owner', 'fz1', 'MILK', 11_800, '2026-08-05', { hsnCode: '0401', taxRateBps: 1800 });
+
+    const r = (await fromSales(h, 'u-owner', { from: '2026-08-01', to: '2026-08-31', annualTurnoverMinor: SMALL }, 'fs-frozen')).body as Table12Body;
+    expect(r.frozenLineCount).toBe(1);
+    expect(r.mappedLineCount).toBe(1);
+    expect(r.unmapped).toEqual([]);
+    expect(r.table12.rows[0]!.hsnCode).toBe('0401');
+    expect(r.table12.rows[0]!.taxableMinor).toBe(10_000);
+  });
+
+  it('files a mid-period rate change correctly — each sale under the rate it was sold at', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    // The catalogue now says 12% (the new rate), but the earlier sale was frozen at 5% when it happened.
+    await seedCatalogue(h, [{ productId: 'X', hsnCode: '1006', taxBps: 1200 }]);
+    await bankSale(h, 'u-owner', 'mp1', 'X', 10_500, '2026-08-05', { hsnCode: '1006', taxRateBps: 500 });  // sold at 5%
+    await bankSale(h, 'u-owner', 'mp2', 'X', 11_200, '2026-08-20', { hsnCode: '1006', taxRateBps: 1200 }); // sold at 12%
+
+    const r = (await fromSales(h, 'u-owner', { from: '2026-08-01', to: '2026-08-31', annualTurnoverMinor: SMALL }, 'fs-midperiod')).body as Table12Body;
+    expect(r.frozenLineCount).toBe(2);
+    expect(r.table12.rows).toHaveLength(2); // 1006@500 and 1006@1200 kept apart, not blended to the catalogue's 12%
+    const byRate = Object.fromEntries(r.table12.rows.map((row) => [row.rateBps, row.taxableMinor]));
+    expect(byRate[500]).toBe(10_000);
+    expect(byRate[1200]).toBe(10_000);
   });
 });

@@ -167,14 +167,19 @@ export function gstReturnsRoutes(deps: GstReturnsDeps): readonly Route[] {
         const windowTo = new Date(Date.parse(`${to}T00:00:00.000Z`) + 3 * 86_400_000).toISOString();
         const period = (await deps.soldTaxLines(ctx.tenantId, windowFrom, windowTo))
           .filter((l) => l.tradingDay >= from && l.tradingDay <= to);
-        const sales: SoldTaxLine[] = period.map((l) => ({ productId: l.productId, quantityMinor: l.quantityMinor, uom: l.uom, lineTotalMinor: l.lineTotalMinor }));
+        const sales: SoldTaxLine[] = period.map((l) => ({
+          productId: l.productId, quantityMinor: l.quantityMinor, uom: l.uom, lineTotalMinor: l.lineTotalMinor,
+          // A line that carries its own tax facts (frozen at supply) is filed under those, not the table.
+          ...(l.hsnCode !== undefined ? { hsnCode: l.hsnCode } : {}),
+          ...(l.rateBps !== undefined ? { rateBps: l.rateBps } : {}),
+        }));
 
         try {
           const result = salesToOutwardSupplies({
             sales, taxTable, annualTurnoverMinor: b['annualTurnoverMinor'] as number,
             ...(pos !== undefined ? { placeOfSupply: pos as PlaceOfSupply } : {}),
           });
-          return { status: 200, body: { from, to, soldLineCount: period.length, taxTableSize: taxTable.length, overrideCount: supplied.length, table12: result.table12, unmapped: result.unmapped, mappedLineCount: result.mappedLineCount, detail: result.detail } };
+          return { status: 200, body: { from, to, soldLineCount: period.length, taxTableSize: taxTable.length, overrideCount: supplied.length, frozenLineCount: result.frozenLineCount, table12: result.table12, unmapped: result.unmapped, mappedLineCount: result.mappedLineCount, detail: result.detail } };
         } catch (e) {
           if (e instanceof InvalidSalesToOutwardInput) {
             throw apiError(400, { code: 'invalid_from_sales_request', whatHappened: e.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the request and re-send. Nothing was changed.' });
