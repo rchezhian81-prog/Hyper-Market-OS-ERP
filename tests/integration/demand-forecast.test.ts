@@ -28,7 +28,8 @@ const forecast = (h: ApiHarness, u: string, query: Record<string, string>) =>
 
 interface ForecastBody {
   productId: string; baselinePerDay: number; dowFactors: number[]; method: string;
-  horizon: { day: string; dow: number; forecastQty: number }[];
+  horizon: { day: string; dow: number; forecastQty: number; signalMultiplier: number; appliedSignals: string[] }[];
+  signals: { from: string; to: string; multiplier: number; label?: string }[];
   quality?: { testedDays: number; wape: number };
 }
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
@@ -63,6 +64,29 @@ describe('demand forecast on the live API (D-1)', () => {
     // Two weeks is enough to hold out a week and score it.
     expect(b.quality?.testedDays).toBe(7);
     expect(b.quality?.wape).toBeLessThan(0.05);
+  });
+
+  it('applies an exogenous event signal passed as ?events=FROM~TO~MULT~LABEL', async () => {
+    const h = apiHarness();
+    await seedTwoWeeks(h);
+    const eventDay = dayOf(indexOf(TO) + 2); // a day inside the 7-day horizon
+
+    const base = (res: ForecastBody) => res.horizon.find((d) => d.day === eventDay)!.forecastQty;
+    const plain = await forecast(h, 'u-owner', { productId: 'BREAD', from: FROM, to: TO, horizonDays: '7' });
+    const withEvent = await forecast(h, 'u-owner', { productId: 'BREAD', from: FROM, to: TO, horizonDays: '7', events: `${eventDay}~${eventDay}~2~Diwali` });
+
+    const b = withEvent.body as ForecastBody;
+    const ev = b.horizon.find((d) => d.day === eventDay)!;
+    expect(ev.signalMultiplier).toBe(2);
+    expect(ev.appliedSignals).toContain('Diwali');
+    expect(ev.forecastQty).toBe(base(plain.body as ForecastBody) * 2); // the festival doubles that day
+    expect(b.signals).toHaveLength(1);
+  });
+
+  it('rejects a malformed events string', async () => {
+    const h = apiHarness();
+    await seedTwoWeeks(h);
+    expect(codeOf(await forecast(h, 'u-owner', { productId: 'BREAD', from: FROM, to: TO, events: 'notadate~x~2' }))).toBe('invalid_forecast_input');
   });
 
   it('needs a product, rejects a bad horizon, and is authorized', async () => {
