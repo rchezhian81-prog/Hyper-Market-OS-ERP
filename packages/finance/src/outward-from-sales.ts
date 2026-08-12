@@ -18,7 +18,7 @@
 
 import { extractInclusiveGst, InvalidInclusiveTaxInput, type PlaceOfSupply } from './inclusive-tax';
 import { validateHsnForTurnover, InvalidHsnInput } from './hsn';
-import { gstr1Table12, type OutwardSupplyLine, type ClassifiedLine, type Gstr1Table12 } from './gstr1';
+import { gstr1Table12, type OutwardSupplyLine, type ClassifiedLine, type Gstr1Table12, type HsnSummaryRow } from './gstr1';
 
 /** A sold line as it appears on a banked `SaleCommitted` event: what the till actually charged. */
 export interface SoldTaxLine {
@@ -161,5 +161,69 @@ export function salesToOutwardSupplies(input: {
     mappedLineCount: lines.length,
     frozenLineCount,
     detail: `${lines.length} sold line(s) filed across ${table12.rows.length} HSN/rate row(s)${frozenLineCount > 0 ? ` (${frozenLineCount} at a rate frozen on the sale)` : ''}; taxable ${table12.totalTaxableMinor}, tax ${table12.totalTaxMinor}${unmapped.length > 0 ? `; ${unmapped.length} product(s) unmapped and NOT on the return` : ''}`,
+  };
+}
+
+// --- Netting returns (credit notes) against the outward supplies (A5, CGST s.34) -------------------
+//
+// A GSTR-1 for B2C reports outward supplies NET of the credit notes for returns issued in the period: a
+// return reverses the tax in the proportion it was charged, so the liability falls. Both sides are the same
+// shape — a returned line is just an outward supply reversed — so `salesToOutwardSupplies` produces BOTH the
+// sales Table-12 and the returns Table-12 (from the returned lines), and this nets them per HSN/rate. A
+// return declared in a period whose original sale is not on file, or whose line has no HSN, surfaces as
+// `unmapped` on the returns side exactly as a sale does — never silently dropped.
+
+export interface NetHsnRow {
+  readonly hsnCode: string;
+  readonly rateBps: number;
+  readonly salesTaxableMinor: number;
+  readonly salesTaxMinor: number;
+  readonly returnsTaxableMinor: number;
+  readonly returnsTaxMinor: number;
+  /** sales − returns, the figure filed for this HSN/rate. May be negative if returns exceed sales. */
+  readonly netTaxableMinor: number;
+  readonly netTaxMinor: number;
+}
+
+export interface NetGstr1Table12 {
+  readonly rows: readonly NetHsnRow[];
+  readonly salesTaxableMinor: number;
+  readonly salesTaxMinor: number;
+  readonly returnsTaxableMinor: number;
+  readonly returnsTaxMinor: number;
+  readonly netTaxableMinor: number;
+  readonly netTaxMinor: number;
+  readonly detail: string;
+}
+
+const rowTax = (r: HsnSummaryRow): number => r.cgstMinor + r.sgstMinor + r.igstMinor;
+
+/**
+ * Net a returns Table-12 against a sales Table-12, per HSN/rate: the filed taxable value and tax are
+ * `sales − returns`. Rows present on either side appear, ordered by HSN then rate (stable, diffable). Pure.
+ */
+export function netTable12(sales: Gstr1Table12, returns: Gstr1Table12): NetGstr1Table12 {
+  const acc = new Map<string, { hsnCode: string; rateBps: number; salesTaxableMinor: number; salesTaxMinor: number; returnsTaxableMinor: number; returnsTaxMinor: number }>();
+  const key = (r: HsnSummaryRow): string => `${r.hsnCode}|${r.rateBps}`;
+  const seed = (r: HsnSummaryRow) => acc.get(key(r)) ?? { hsnCode: r.hsnCode, rateBps: r.rateBps, salesTaxableMinor: 0, salesTaxMinor: 0, returnsTaxableMinor: 0, returnsTaxMinor: 0 };
+  for (const r of sales.rows) {
+    const row = seed(r); row.salesTaxableMinor += r.taxableMinor; row.salesTaxMinor += rowTax(r); acc.set(key(r), row);
+  }
+  for (const r of returns.rows) {
+    const row = seed(r); row.returnsTaxableMinor += r.taxableMinor; row.returnsTaxMinor += rowTax(r); acc.set(key(r), row);
+  }
+  const rows: NetHsnRow[] = [...acc.values()]
+    .sort((a, b) => a.hsnCode.localeCompare(b.hsnCode) || a.rateBps - b.rateBps)
+    .map((r) => ({ ...r, netTaxableMinor: r.salesTaxableMinor - r.returnsTaxableMinor, netTaxMinor: r.salesTaxMinor - r.returnsTaxMinor }));
+  const salesTaxableMinor = sales.totalTaxableMinor;
+  const salesTaxMinor = sales.totalTaxMinor;
+  const returnsTaxableMinor = returns.totalTaxableMinor;
+  const returnsTaxMinor = returns.totalTaxMinor;
+  return {
+    rows,
+    salesTaxableMinor, salesTaxMinor, returnsTaxableMinor, returnsTaxMinor,
+    netTaxableMinor: salesTaxableMinor - returnsTaxableMinor,
+    netTaxMinor: salesTaxMinor - returnsTaxMinor,
+    detail: `net taxable ${salesTaxableMinor - returnsTaxableMinor} (sales ${salesTaxableMinor} − returns ${returnsTaxableMinor}), net tax ${salesTaxMinor - returnsTaxMinor}`,
   };
 }

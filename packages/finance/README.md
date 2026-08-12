@@ -44,8 +44,15 @@ totals** (QG-07).
     and aggregated by `gstr1Table12`. A product that sold but is **not** in the table, or whose HSN is
     malformed, is returned in `unmapped` (aggregated per product) — **counted and named, never silently
     off the return** (P-08 / hard rule #10).
-  - Pure and deterministic. Wired end-to-end (a read-only fold of the banked sales stream — hard rule
-    #1 untouched) at `POST /v1/finance/gstr1/from-sales/table-12`. Tested in
+  - **Returns netted (CGST s.34)** — `netTable12(sales, returns)`: a GSTR-1 for B2C reports outward
+    supplies **net of the credit notes** for returns issued in the period. A returned line is just an
+    outward supply reversed, so `salesToOutwardSupplies` builds BOTH the sales and the returns Table-12
+    (the returned lines reverse the tax at the rate they were **sold**, off the original sale's frozen
+    facts), and this nets them per HSN/rate — `sales − returns` filed. A return whose original sale is not
+    on file, or a line whose original carried no HSN, surfaces as `unmapped` on the returns side, never
+    dropped. The route returns `table12` (sales), `returns`, and `net`.
+  - Pure and deterministic. Wired end-to-end (a read-only fold of the banked sales + returns streams —
+    hard rule #1 untouched) at `POST /v1/finance/gstr1/from-sales/table-12`. Tested in
     `tests/unit/finance-outward-from-sales.test.ts` and `tests/integration/gstr1-from-sales.test.ts`.
 
 > Example sale rule: Dr `cash` [total], Cr `sales_revenue` [net], Cr `gst_output` [tax] —

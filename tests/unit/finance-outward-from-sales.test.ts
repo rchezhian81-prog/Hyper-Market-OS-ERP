@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   salesToOutwardSupplies,
+  netTable12,
   InvalidSalesToOutwardInput,
   type SoldTaxLine,
   type ProductTaxEntry,
@@ -150,5 +151,48 @@ describe('salesToOutwardSupplies', () => {
     const good = { sales: [], taxTable: [], annualTurnoverMinor: SMALL };
     expect(() => salesToOutwardSupplies({ ...good, annualTurnoverMinor: -1 })).toThrow(InvalidSalesToOutwardInput);
     expect(() => salesToOutwardSupplies({ ...good, placeOfSupply: 'moon' as never })).toThrow(InvalidSalesToOutwardInput);
+  });
+});
+
+describe('netTable12 (returns netted against sales, CGST s.34)', () => {
+  const table = [{ productId: 'MILK', hsnCode: '0401', rateBps: 1800 }];
+  const build = (lineTotals: number[]) => salesToOutwardSupplies({
+    sales: lineTotals.map((lineTotalMinor) => ({ productId: 'MILK', quantityMinor: 1, uom: 'each', lineTotalMinor })),
+    taxTable: table, annualTurnoverMinor: SMALL,
+  }).table12;
+
+  it('files the outward supplies NET of the returns, per HSN/rate', () => {
+    // Sold 3 × ₹118 (taxable 30000, tax 5400); returned 1 × ₹118 (taxable 10000, tax 1800). Net 20000 / 3600.
+    const net = netTable12(build([11_800, 11_800, 11_800]), build([11_800]));
+    expect(net.salesTaxableMinor).toBe(30_000);
+    expect(net.returnsTaxableMinor).toBe(10_000);
+    expect(net.netTaxableMinor).toBe(20_000);
+    expect(net.netTaxMinor).toBe(3_600); // 5400 − 1800
+    expect(net.rows).toHaveLength(1);
+    const row = net.rows[0]!;
+    expect(row.hsnCode).toBe('0401');
+    expect(row.salesTaxableMinor).toBe(30_000);
+    expect(row.returnsTaxableMinor).toBe(10_000);
+    expect(row.netTaxableMinor).toBe(20_000);
+  });
+
+  it('nets each HSN/rate independently and shows a return with no matching sale as negative', () => {
+    const sales = build([11_800]); // MILK 0401@18%
+    const returns = salesToOutwardSupplies({
+      sales: [{ productId: 'RICE', quantityMinor: 1, uom: 'each', lineTotalMinor: 10_500 }],
+      taxTable: [{ productId: 'RICE', hsnCode: '1006', rateBps: 500 }], annualTurnoverMinor: SMALL,
+    }).table12; // RICE 1006@5%
+    const net = netTable12(sales, returns);
+    expect(net.rows).toHaveLength(2); // two distinct HSN/rate rows
+    const rice = net.rows.find((r) => r.hsnCode === '1006')!;
+    expect(rice.salesTaxableMinor).toBe(0);
+    expect(rice.returnsTaxableMinor).toBe(10_000);
+    expect(rice.netTaxableMinor).toBe(-10_000); // a return with no sale this period nets negative (visible)
+  });
+
+  it('is a no-op when there are no returns', () => {
+    const net = netTable12(build([11_800]), build([]));
+    expect(net.returnsTaxableMinor).toBe(0);
+    expect(net.netTaxableMinor).toBe(net.salesTaxableMinor);
   });
 });

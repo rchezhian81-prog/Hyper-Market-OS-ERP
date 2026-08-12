@@ -36,9 +36,24 @@ const bankSale = (h: ApiHarness, u: string, saleId: string, productId: string, l
 const fromSales = (h: ApiHarness, u: string, body: unknown, key: string) =>
   h.request({ method: 'POST', path: '/v1/finance/gstr1/from-sales/table-12', userId: u, tenantId: A, idempotencyKey: key, body });
 
+// Record a return against a banked sale, through the real API (which appends the returns projection).
+const recordReturn = (h: ApiHarness, u: string, saleId: string, returnId: string, productId: string, quantityMinor: number, refundMinor: number, processedAt: string) =>
+  h.request({
+    method: 'POST', path: `/v1/sales/${saleId}/returns`, userId: u, tenantId: A, idempotencyKey: `ret-${returnId}`,
+    body: {
+      returnId, number: returnId, processedBy: u, reasonCode: 'changed_mind', refundMinor, refundTender: 'cash',
+      approvalThresholdMinor: 10_000_000, processedAt,
+      lines: [{ productId, quantityMinor, uom: 'each', disposition: 'resell' }],
+    },
+  });
+
+interface Row { hsnCode: string; rateBps: number; taxableMinor: number; cgstMinor: number; sgstMinor: number; igstMinor: number; b2cTaxableMinor: number }
+interface NetRow { hsnCode: string; rateBps: number; salesTaxableMinor: number; returnsTaxableMinor: number; netTaxableMinor: number; netTaxMinor: number }
 interface Table12Body {
-  from: string; to: string; soldLineCount: number; mappedLineCount: number; taxTableSize: number; overrideCount: number; frozenLineCount: number;
-  table12: { rows: { hsnCode: string; rateBps: number; taxableMinor: number; cgstMinor: number; sgstMinor: number; igstMinor: number; b2cTaxableMinor: number }[]; totalTaxableMinor: number; totalTaxMinor: number; b2bTaxableMinor: number; b2cTaxableMinor: number };
+  from: string; to: string; soldLineCount: number; returnedLineCount: number; mappedLineCount: number; taxTableSize: number; overrideCount: number; frozenLineCount: number;
+  table12: { rows: Row[]; totalTaxableMinor: number; totalTaxMinor: number; b2bTaxableMinor: number; b2cTaxableMinor: number };
+  returns: { rows: Row[]; totalTaxableMinor: number; totalTaxMinor: number };
+  net: { rows: NetRow[]; salesTaxableMinor: number; returnsTaxableMinor: number; netTaxableMinor: number; netTaxMinor: number };
   unmapped: { productId: string; quantityMinor: number; reason: string }[];
 }
 
@@ -171,5 +186,42 @@ describe('GSTR-1 Table 12 folded from banked till sales (A5)', () => {
     const byRate = Object.fromEntries(r.table12.rows.map((row) => [row.rateBps, row.taxableMinor]));
     expect(byRate[500]).toBe(10_000);
     expect(byRate[1200]).toBe(10_000);
+  });
+
+  // ── Returns netting: a return issued in the period reverses the tax it was charged (CGST s.34). ──
+
+  it('nets a return against the outward supplies, reversing the tax at the rate it was sold', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    // Sold 3 × ₹118 (MILK 0401 @18%); one is returned this period. The return reverses ₹10000 taxable / ₹1800 tax.
+    await bankSale(h, 'u-owner', 'ns1', 'MILK', 11_800, '2026-08-05', { hsnCode: '0401', taxRateBps: 1800 });
+    await bankSale(h, 'u-owner', 'ns2', 'MILK', 11_800, '2026-08-06', { hsnCode: '0401', taxRateBps: 1800 });
+    await bankSale(h, 'u-owner', 'ns3', 'MILK', 11_800, '2026-08-07', { hsnCode: '0401', taxRateBps: 1800 });
+    expect((await recordReturn(h, 'u-owner', 'ns1', 'RET-1', 'MILK', 1, 11_800, '2026-08-10T10:00:00Z')).status).toBeLessThan(300);
+
+    const r = (await fromSales(h, 'u-owner', { from: '2026-08-01', to: '2026-08-31', annualTurnoverMinor: SMALL }, 'fs-net')).body as Table12Body;
+    expect(r.soldLineCount).toBe(3);
+    expect(r.returnedLineCount).toBe(1);
+    expect(r.table12.totalTaxableMinor).toBe(30_000);   // sales
+    expect(r.returns.totalTaxableMinor).toBe(10_000);    // the one return, reversed at 18%
+    expect(r.net.netTaxableMinor).toBe(20_000);          // 30000 − 10000
+    expect(r.net.netTaxMinor).toBe(3_600);               // 5400 − 1800
+    const netRow = r.net.rows.find((row) => row.hsnCode === '0401')!;
+    expect(netRow.salesTaxableMinor).toBe(30_000);
+    expect(netRow.returnsTaxableMinor).toBe(10_000);
+    expect(netRow.netTaxableMinor).toBe(20_000);
+  });
+
+  it('excludes a return processed outside the period', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await bankSale(h, 'u-owner', 'nx1', 'MILK', 11_800, '2026-08-05', { hsnCode: '0401', taxRateBps: 1800 });
+    // Return processed in September — must not appear in the August return.
+    await recordReturn(h, 'u-owner', 'nx1', 'RET-SEP', 'MILK', 1, 11_800, '2026-09-02T10:00:00Z');
+
+    const r = (await fromSales(h, 'u-owner', { from: '2026-08-01', to: '2026-08-31', annualTurnoverMinor: SMALL }, 'fs-net-oob')).body as Table12Body;
+    expect(r.returnedLineCount).toBe(0);
+    expect(r.net.returnsTaxableMinor).toBe(0);
+    expect(r.net.netTaxableMinor).toBe(10_000); // unchanged by the out-of-period return
   });
 });

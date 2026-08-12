@@ -402,6 +402,52 @@ export function gstReturnsAdapter(input: {
       return lines;
     },
 
+    // RETURNS-netting for GSTR-1 (A5, CGST s.34): the returned tax lines whose return was PROCESSED in the
+    // window, each reversing the tax at the rate it was SOLD. A return reverses in the proportion it was
+    // charged, so the ACTUAL refund is allocated across the return's lines by their original sale value, and
+    // the HSN + rate come off the ORIGINAL sale's frozen line (a rate change since the sale must not rewrite
+    // the reversal). A return whose original sale is not on file, or a line whose original carried no HSN,
+    // has no frozen facts here and falls to the catalogue table / `unmapped` on the returns side — surfaced,
+    // never silently dropped. `occurredAt` on the returns projection IS the return's processedAt.
+    returnedTaxLines: async (tenantId, fromIso, toIso) => {
+      const returns = await input.store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded', from: fromIso, to: toIso });
+      const out: PeriodSoldLine[] = [];
+      for (const e of returns) {
+        const ret = payloadOf<{
+          readonly originalSaleId: string | null; readonly refundMinor: number; readonly processedAt: string;
+          readonly lines: readonly { readonly productId: string; readonly uom: string; readonly quantityMinor: number }[];
+        }>(e);
+        const day = ret.processedAt.slice(0, 10);
+        const held = ret.originalSaleId === null ? undefined : await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${ret.originalSaleId}`);
+        const saleLines = held === undefined ? [] : (held.event.payload as {
+          readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly unitPriceMinor: number; readonly lineTotalMinor: number; readonly hsnCode?: string; readonly taxRateBps?: number }[];
+        }).lines;
+        const origByProduct = new Map(saleLines.map((l) => [l.productId, l]));
+        // Weight each returned line by the returned portion's value at the ORIGINAL price (per-unit incl × qty).
+        const weights = ret.lines.map((l) => {
+          const o = origByProduct.get(l.productId);
+          const perUnit = o !== undefined && o.quantityMinor > 0 ? o.lineTotalMinor / o.quantityMinor : 0;
+          return Math.max(0, Math.round(perUnit * l.quantityMinor));
+        });
+        const totalWeight = weights.reduce((s, w) => s + w, 0);
+        let allocated = 0;
+        ret.lines.forEach((l, i) => {
+          const lineRefund = totalWeight <= 0 ? 0
+            : (i === ret.lines.length - 1 ? ret.refundMinor - allocated : Math.round((ret.refundMinor * weights[i]!) / totalWeight));
+          allocated += lineRefund;
+          if (lineRefund <= 0) return; // nothing to reverse on this line
+          const o = origByProduct.get(l.productId);
+          out.push({
+            productId: l.productId, quantityMinor: l.quantityMinor, uom: l.uom,
+            lineTotalMinor: lineRefund, tradingDay: day,
+            ...(typeof o?.hsnCode === 'string' ? { hsnCode: o.hsnCode } : {}),
+            ...(Number.isInteger(o?.taxRateBps) ? { rateBps: o!.taxRateBps } : {}),
+          });
+        });
+      }
+      return out;
+    },
+
     // The DEFAULT product→{HSN, rate} table for GSTR-1-from-sales (A5 Option A): read from the latest
     // published catalogue pack (the M03 master's persisted form). Each product carries its rate (`taxBps`)
     // and — since the snapshot now carries it — its HSN (`hsnCode`). A product with no HSN on the pack is
