@@ -59,6 +59,7 @@ import { scrapRoutes } from '../../finance/src/scrap';
 import { refundExceptionsRoutes } from '../../finance/src/refund-exceptions';
 import { eInvoiceRoutes } from '../../finance/src/e-invoice';
 import { eInvoiceRegisterRoutes } from '../../finance/src/e-invoice-register';
+import { eInvoiceSandboxRoutes } from '../../finance/src/e-invoice-sandbox';
 import { gstReturnsRoutes } from '../../finance/src/gst-returns';
 import { facilitiesRoutes } from '../../platform/src/facilities';
 import { facilitiesAssetsRoutes } from '../../platform/src/facilities-assets';
@@ -365,6 +366,10 @@ export function buildSurface(deps: {
     ...eInvoiceRegisterRoutes(store === undefined ? {
       load: () => undefined, recordSubmit: () => {}, recordResponse: () => {}, recordCancel: () => {}, now,
     } : eInvoiceAdapter({ store, now })),
+    // GST e-invoicing sandbox GSP (A20) — a deterministic simulator on the same EInvoiceProvider port a real
+    // certified GSP uses, so the submit → register → apply loop can be driven without live credentials. Its
+    // IRN/QR are SANDBOX-marked and never valid for a real filing.
+    ...eInvoiceSandboxRoutes(),
     // GST returns write path (A5) — persist outward-supply tax lines; GSTR-1 Table 12 folds over them.
     ...gstReturnsRoutes(store === undefined ? {
       documents: empty([]), record: () => {}, soldTaxLines: empty([]), returnedTaxLines: empty([]), productTaxTable: empty([]), now,
