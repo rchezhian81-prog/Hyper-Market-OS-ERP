@@ -29,6 +29,8 @@ import type { SignedPack } from '../../catalogue/src/index';
 import type { CatalogueDeps } from '../../catalogue/src/index';
 import type { IncomingSale, IncomingTender, SaleException, PosDeps } from '../../pos/src/index';
 import type { LotTraceDeps } from '../../inventory/src/lot-trace';
+import type { SalesHistoryDeps } from '../../inventory/src/sales-history';
+import type { SoldLine } from '../../../packages/demand/src/sales-history';
 import type { OutboundLotRecord } from '../../../packages/quality/src/index';
 import { attributeSalesFifo, type BatchReceipt, type HistoricalSaleLine } from '../../../packages/fefo/src/index';
 import type { ReturnsDeps, ReturnRecord, RecordedRefund, OriginalSale, RecordedReturn } from '../../pos/src/returns';
@@ -697,6 +699,29 @@ export function lotTraceAdapter(input: { readonly store: EventStore }): LotTrace
       }
 
       return [...captured, ...estimated];
+    },
+  };
+}
+
+/**
+ * Sales-history demand read (M09 — the demand foundation for D-3/D-1/D-4). A **windowed** fold of the
+ * sales stream into sold lines: each `SaleCommitted` in [from, to) contributes its lines (productId,
+ * quantity, trading day) to the pure `salesHistory` engine. Read-only, and windowed on `occurredAt` so
+ * it costs a window rather than the whole history — the same shape as `electronicTenders`.
+ */
+export function salesHistoryAdapter(input: { readonly store: EventStore; readonly now: () => string }): SalesHistoryDeps {
+  return {
+    now: input.now,
+    soldLines: async (tenantId, fromIso, toIso) => {
+      const sales = await input.store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from: fromIso, to: toIso });
+      const lines: SoldLine[] = [];
+      for (const e of sales) {
+        const sale = payloadOf<IncomingSale>(e);
+        for (const line of sale.lines ?? []) {
+          lines.push({ productId: line.productId, quantityMinor: line.quantityMinor, tradingDay: sale.tradingDay });
+        }
+      }
+      return lines;
     },
   };
 }
