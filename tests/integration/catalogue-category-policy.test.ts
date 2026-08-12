@@ -55,7 +55,28 @@ describe('POST /v1/catalogue/category-policy/resolve — category rules as effec
     expect(body.inForce).toBe(false);
   });
 
-  it('rejects a missing date, a missing history, and a bad date; and gates on the catalogue read', async () => {
+  it('previews a shipped preset by kind — gold is off until enabled, an unknown kind is refused', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+
+    const gold = (await resolve(h, 'u-owner', { kind: 'gold_jewellery', onDate: '2026-08-12', sale: { kycOnFile: true, serialCaptured: true } })).body as {
+      inForce: boolean; rules: { enabledByDefault: boolean; traceability: string }; sale: { allowed: boolean; refusals: { reason: string }[] };
+    };
+    expect(gold.inForce).toBe(true);
+    expect(gold.rules.enabledByDefault).toBe(false);
+    expect(gold.rules.traceability).toBe('serial');
+    expect(gold.sale.allowed).toBe(false);
+    expect(gold.sale.refusals.map((r) => r.reason)).toContain('category_not_enabled');
+
+    // A grocery preset sells clean.
+    const grocery = (await resolve(h, 'u-owner', { kind: 'grocery_fmcg', onDate: '2026-08-12', sale: {} })).body as { sale: { allowed: boolean } };
+    expect(grocery.sale.allowed).toBe(true);
+
+    // An unknown kind is a 400.
+    expect((await resolve(h, 'u-owner', { kind: 'diamonds', onDate: '2026-08-12' })).status).toBe(400);
+  });
+
+  it('rejects a missing date, a missing history/kind, and a bad date; and gates on the catalogue read', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     await h.provisionRole(A, 'u-acct', 'accountant'); // no catalogue.pack.read
