@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { PosSession, taxRateFromPercent, createPosView, type PosView } from '../../apps/pos/src/index';
 import { Ledger, InMemoryLedgerStore } from '../../packages/ledger/src/index';
 import { SyncOutbox } from '../../packages/sync/src/index';
+import { CatalogueCache, type CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 
 // The view adapter is the surface the bundled shell attaches as window.posSession.
 // It converts display primitives only — every rule stays in the tested model.
@@ -83,5 +84,25 @@ describe('createPosView', () => {
     view.newSale();
     expect(view.basket()).toHaveLength(0);
     expect(view.payableMinor()).toBe(0);
+  });
+
+  it('freezes the scanned product\'s HSN onto the basket line, for the GST return (A5)', () => {
+    const ledger = new Ledger(new InMemoryLedgerStore());
+    const session = new PosSession(
+      { laneId: 'lane-1', cashierId: 'clerk-1', tradingDay: '2026-08-02', currency: 'INR', defaultTaxRate: taxRateFromPercent(18) },
+      ledger, new SyncOutbox(),
+      () => Promise.resolve({ committed: true as const, durable: true as const, detail: 'ok', laneMessage: 'Sale complete.' }),
+    );
+    const snapshot: CatalogueSnapshot = {
+      tenantId: 't1', version: 1, builtAt: AT,
+      products: [{ productId: 'p1', sku: 'RICE1', name: 'Rice 1kg', baseUom: 'ea', unitPriceMinor: 100_00, taxBps: 1800, hsnCode: '1006', status: 'active' }],
+      barcodes: [{ code: '890111', productId: 'p1', kind: 'standard' }],
+    };
+    const view = createPosView(session, 'INR', new CatalogueCache(snapshot));
+
+    view.scanBarcode('890111');
+    // The HSN off the pack is frozen on the underlying basket entry (a record only — it never blocks a scan).
+    expect(session.basket()[0]!.hsnCode).toBe('1006');
+    expect(session.basket()[0]!.taxRate.bps).toBe(1800);
   });
 });

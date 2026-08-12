@@ -33,10 +33,12 @@ totals** (QG-07).
     each product's `hsnCode` alongside its rate), so the return builds **with nothing to key by hand**; a
     caller-supplied table **overrides** it per product (an exception the filer is handling).
   - **Frozen-at-supply (mid-period rate change):** a sold line may carry its **own** `hsnCode`/`rateBps`
-    — the tax facts captured **at the time of supply** (from the pack the lane priced from, or from an
-    import of historical sales). When present, those win over the period table, so a product whose GST rate
-    changed **mid-period** files each sale under the rate that actually applied when it sold (the two rates
-    stay as separate HSN/rate rows, never blended). `frozenLineCount` reports how many lines used them.
+    — the tax facts captured **at the time of supply**. The offline till now **stamps them onto every sale
+    line at commit** (read off the pack it priced from — a record only, never a control, so it adds no
+    network call and can never refuse a sale, hard rule #1); an import of historical sales can set them too.
+    When present, those win over the period table, so a product whose GST rate changed **mid-period** files
+    each sale under the rate that actually applied when it sold (the two rates stay as separate HSN/rate
+    rows, never blended). `frozenLineCount` reports how many lines used them.
   - From there it is the tested `extractInclusiveGst` primitive — the GST is pulled **back out** of
     each inclusive total (A9), split by place of supply (A8; a counter sale is intra-State CGST+SGST),
     and aggregated by `gstr1Table12`. A product that sold but is **not** in the table, or whose HSN is

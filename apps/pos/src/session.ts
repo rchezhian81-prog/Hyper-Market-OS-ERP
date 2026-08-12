@@ -38,6 +38,9 @@ export interface ScanInput {
   readonly uom: Uom;
   /** Line tax rate; falls back to the session default. */
   readonly taxRate?: Rate;
+  /** The product's HSN / tax-class code, from the pack the lane priced from. Carried so the sale FREEZES
+   *  the HSN it was sold under, for the GST return (A5) — a record only, never a control (hard rule #1). */
+  readonly hsnCode?: string;
   /** Optional promotion grouping tag (mix-match). */
   readonly group?: string;
 }
@@ -51,6 +54,8 @@ export interface BasketEntry {
   readonly quantityMinor: number;
   readonly uom: Uom;
   readonly taxRate: Rate;
+  /** The HSN / tax-class code the line was priced under (frozen at supply for the GST return, A5). */
+  readonly hsnCode?: string;
   readonly group?: string;
   readonly voided: boolean;
   readonly voidReason?: string;
@@ -188,6 +193,7 @@ export class PosSession {
       quantityMinor: input.quantityMinor,
       uom: input.uom,
       taxRate: input.taxRate ?? this.config.defaultTaxRate,
+      ...(input.hsnCode !== undefined ? { hsnCode: input.hsnCode } : {}),
       group: input.group,
       voided: false,
     });
@@ -327,6 +333,7 @@ export class PosSession {
       throw new EmptyBasketError();
     }
 
+    const active = this.activeLines();
     const input = {
         id: saleId,
         number,
@@ -334,13 +341,34 @@ export class PosSession {
         cashierId: this.config.cashierId,
         tradingDay: this.config.tradingDay,
         committedAt,
-        lines: this.activeLines().map((l) => ({
+        lines: active.map((l) => ({
           productId: l.productId,
           quantityMinor: l.quantityMinor,
           uom: l.uom,
         })),
         tenders,
     };
+
+    // The lines the CLOUD sees carry more than the local ledger needs: the unit price and the
+    // tax-inclusive line total (so the day's figures and the GST return can be projected without
+    // guessing), and the HSN + rate the line was priced under, FROZEN at the moment of sale so the
+    // GST return files each sale under what actually applied — even across a mid-period rate change
+    // (A5). These are a record, never a control: they are read off the pack the lane already holds,
+    // add no network call and no new way for a sale to fail (hard rule #1). A basket-level promotion
+    // discount is not allocated to lines here (it is a bill-level figure); the sale total still
+    // carries it, and per-line promo allocation is a separate concern.
+    const recordLines = active.map((l) => {
+      const priced = priceLine({ unitPrice: l.unitPrice, quantity: quantity(l.quantityMinor, l.uom), taxRate: l.taxRate });
+      return {
+        productId: l.productId,
+        quantityMinor: l.quantityMinor,
+        uom: l.uom,
+        unitPriceMinor: l.unitPrice.minor,
+        lineTotalMinor: priced.total.minor,
+        taxRateBps: l.taxRate.bps,
+        ...(l.hsnCode !== undefined ? { hsnCode: l.hsnCode } : {}),
+      };
+    });
 
     // **Is this a sale at all? Ask before the disk, not after.**
     //
@@ -381,6 +409,7 @@ export class PosSession {
     // used to take the money, and then dropped on the floor.
     const outcome = await this.durable(saleId, JSON.stringify({
       ...input,
+      lines: recordLines, // the cloud sees the rich lines (prices + frozen HSN/rate); commitSale keeps the ledger shape
       total: totals.payable.minor,
       netMinor: totals.net.minor,
       taxMinor: totals.tax.minor,

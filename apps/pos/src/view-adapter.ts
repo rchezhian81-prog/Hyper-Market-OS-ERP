@@ -161,6 +161,8 @@ export function createPosView(
         quantityMinor: hit.quantityMinor,
         uom: hit.product.baseUom as Uom,
         taxRate: rate(hit.product.taxBps),
+        // Freeze the HSN the lane priced under (from the pack), for the GST return (A5). Record only.
+        ...(hit.product.hsnCode !== undefined ? { hsnCode: hit.product.hsnCode } : {}),
       });
       return {
         lineId: entry.lineId,
