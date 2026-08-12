@@ -14,7 +14,7 @@ const propose = (h: ApiHarness, t: string, u: string, items: unknown, key?: stri
   h.request({ method: 'POST', path: `/v1/replenishment/propose`, userId: u, tenantId: t, idempotencyKey: key ?? `rp-${u}-${String((items as unknown[]).length)}`, body: { items } });
 
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
-interface Proposal { productId: string; position: number; reorderPoint: number; suggestedQty: number; reason: string; advisoryOnly: boolean }
+interface Proposal { productId: string; position: number; reorderPoint: number; suggestedQty: number; reason: string; advisoryOnly: boolean; shelfLifeCap?: number; shelfLifeCapped?: boolean }
 const proposals = (res: { body: unknown }): Proposal[] => (res.body as { proposals: Proposal[] }).proposals;
 
 describe('replenishment: advisory reorder proposals up to max level, pack/MOQ rounding, blocked suppressed (M09-FR-02)', () => {
@@ -52,6 +52,28 @@ describe('replenishment: advisory reorder proposals up to max level, pack/MOQ ro
       { productId: 'P1', onHand: 10, maxLevel: 100, avgDailyDemand: 5, leadTimeDays: 3, safetyStock: 4 },  // ROP = 4 + 15 = 19
     ], 'rp-computed'));
     expect(out[0]).toMatchObject({ productId: 'P1', reorderPoint: 19, suggestedQty: 90 });
+  });
+
+  it('bounds a perishable order by remaining shelf life, and surfaces an over-order as an exception (D-3)', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+
+    const out = proposals(await propose(h, A, 'u-owner', [
+      // 10/day × 3 days left = 30 sellable; max 100 → capped to 30, so order 30 − 0
+      { productId: 'FRESH', onHand: 0, maxLevel: 100, reorderPoint: 50, avgDailyDemand: 10, remainingShelfLifeDays: 3 },
+      // 5/day × 2 days = 10 sellable, but 15 on hand → ordering anything over-stocks it → held exception
+      { productId: 'HELD', onHand: 15, maxLevel: 100, reorderPoint: 50, avgDailyDemand: 5, remainingShelfLifeDays: 2 },
+    ], 'rp-shelf'));
+
+    const fresh = out.find((p) => p.productId === 'FRESH');
+    expect(fresh?.suggestedQty).toBe(30);
+    expect(fresh?.shelfLifeCap).toBe(30);
+    expect(fresh?.shelfLifeCapped).toBe(true);
+
+    const held = out.find((p) => p.productId === 'HELD');
+    expect(held?.suggestedQty).toBe(0);
+    expect(held?.reason).toBe('held_shelf_life');
+    expect(held?.shelfLifeCapped).toBe(true);
   });
 
   it('is authorized and refuses malformed input', async () => {

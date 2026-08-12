@@ -5,6 +5,10 @@
 // number, a blocked/discontinued item is suppressed, and the maths is pure — the same on the edge or in
 // the cloud. The rule is the pure `proposeReplenishmentBatch` engine in `packages/replenishment`; this
 // surface is a stateless what-if over the supplied stock/parameter inputs (it reads, it never commits).
+//
+// D-3 (perishables): when an item carries a `remainingShelfLifeDays` (with a demand rate), the order-up-to is
+// bounded by what can sell before the batch expires — an over-order is prevented, and an item whose whole
+// due order would over-stock comes back as a visible `held_shelf_life` exception (suggestedQty 0).
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
@@ -18,7 +22,7 @@ export interface ReplenishmentRoutesDeps {
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isInt = (v: unknown): v is number => Number.isInteger(v);
-const OPTIONAL_INTS = ['onOrder', 'reserved', 'maxLevel', 'safetyStock', 'reorderPoint', 'avgDailyDemand', 'leadTimeDays', 'minOrderQty', 'orderMultiple'] as const;
+const OPTIONAL_INTS = ['onOrder', 'reserved', 'maxLevel', 'safetyStock', 'reorderPoint', 'avgDailyDemand', 'leadTimeDays', 'minOrderQty', 'orderMultiple', 'remainingShelfLifeDays'] as const;
 
 /** Read one item as a ReplenishmentInput, or null if malformed (a 400, not an engine refusal). */
 function readItem(v: unknown): ReplenishmentInput | null {
@@ -37,6 +41,7 @@ function readItem(v: unknown): ReplenishmentInput | null {
     ...(isInt(r['leadTimeDays']) ? { leadTimeDays: r['leadTimeDays'] as number } : {}),
     ...(isInt(r['minOrderQty']) ? { minOrderQty: r['minOrderQty'] as number } : {}),
     ...(isInt(r['orderMultiple']) ? { orderMultiple: r['orderMultiple'] as number } : {}),
+    ...(isInt(r['remainingShelfLifeDays']) ? { remainingShelfLifeDays: r['remainingShelfLifeDays'] as number } : {}),
     ...(r['blocked'] === true ? { blocked: true } : {}),
   };
 }
