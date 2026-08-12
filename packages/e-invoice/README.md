@@ -12,3 +12,22 @@ canonical **IRP request** build (a Rule-46-invalid invoice is refused, not sent)
 a well-formed IRN and signed QR, and an `unknown` answer is a first-class state, never a
 silent success. The live IRP submission is a certified-GSP deployment adapter (the
 `EInvoiceProvider` port), the same shape as the payment-reversal provider.
+
+## The sandbox GSP (`src/sandbox-gsp.ts`, WP2 inc1)
+
+The engine defined the `EInvoiceProvider` port but nothing in the repo implemented it, so the
+submit → register → apply loop could only be closed by a live, credentialed GSP. `sandboxGspProvider`
+is a **deterministic simulator** of that port — a bring-up and testing tool that closes the loop with
+no credentials and no network. Its answers are real in shape but unmistakably a sandbox: the IRN is
+`sha256` of the invoice's identity basis (so the same invoice always yields the same IRN and a repeat
+is a genuine `duplicate`), the signed QR is prefixed `SANDBOX.`, and there is no clock or randomness.
+A non-positive taxable value is rejected even here, and `forceOutcome` drives the `unknown` (timeout)
+and `rejected` branches for tests. `registerViaProvider(request, provider)` closes register →
+`applyIrpResult` **provider-neutrally** — swap the sandbox for a real certified-GSP connector on the
+same port and the downstream discipline (never fabricating a signature, `unknown` as its own state) is
+identical. Wired at `POST /v1/finance/e-invoice/sandbox/register`. Tested in
+`tests/unit/e-invoice-sandbox.test.ts` (8) and `tests/integration/e-invoice-sandbox.test.ts` (3).
+
+**A live filing** still needs a certified GSP's credentials (from a vault), the e-invoicing feature
+flag / kill-switch (a later increment), and CA/legal sign-off — the sandbox never produces a fileable
+IRN.
