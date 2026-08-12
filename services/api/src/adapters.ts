@@ -638,12 +638,29 @@ export function lotTraceAdapter(input: { readonly store: EventStore }): LotTrace
     soldOfBatch: async (tenantId, batchId) => {
       const sales = await allOf<IncomingSale>(input.store, tenantId, STREAM.sales, 'SaleCommitted');
 
+      // Identified customers (M16, minimal ref): a sale carries no customer, but the loyalty/stored-value
+      // ledger links a sale to the member who transacted on it (`{saleId, customerRef}`). Resolve that
+      // link so a recall names the customers it can — no new data collection, and only the reference is
+      // surfaced (actual contact stays consent-gated, PRV / the recall runbook).
+      const instruments = await allOf<Instrument>(input.store, tenantId, STORED_VALUE_INDEX, 'StoredValueIssued');
+      const movementLists = await Promise.all(
+        instruments.map((i) => allOf<ValueMovement>(input.store, tenantId, forInstrument(i.instrumentId), 'StoredValueMovement')),
+      );
+      const customerBySale = new Map<string, string>();
+      for (const mv of movementLists.flat()) {
+        if (typeof mv.saleId === 'string' && mv.saleId !== '' && typeof mv.customerRef === 'string' && mv.customerRef !== '' && !customerBySale.has(mv.saleId)) {
+          customerBySale.set(mv.saleId, mv.customerRef);
+        }
+      }
+      const withCustomer = (saleId: string): { customerId: string } | Record<string, never> =>
+        customerBySale.has(saleId) ? { customerId: customerBySale.get(saleId)! } : {};
+
       // Captured: the till recorded this exact batch on the line.
       const captured: OutboundLotRecord[] = [];
       for (const sale of sales) {
         for (const line of sale.lines ?? []) {
           if (line.batchId === batchId) {
-            captured.push({ saleId: sale.saleId, soldDate: sale.tradingDay, quantityMinor: line.quantityMinor, source: 'captured' });
+            captured.push({ saleId: sale.saleId, soldDate: sale.tradingDay, quantityMinor: line.quantityMinor, source: 'captured', ...withCustomer(sale.saleId) });
           }
         }
       }
@@ -675,7 +692,7 @@ export function lotTraceAdapter(input: { readonly store: EventStore }): LotTrace
           const { estimates } = attributeSalesFifo({ receipts, sales: history });
           estimated = estimates
             .filter((e) => e.batchId === batchId)
-            .map((e) => ({ saleId: e.saleId, soldDate: e.soldDate, quantityMinor: e.qty, source: 'fifo_receipt_estimate' as const }));
+            .map((e) => ({ saleId: e.saleId, soldDate: e.soldDate, quantityMinor: e.qty, source: 'fifo_receipt_estimate' as const, ...withCustomer(e.saleId) }));
         }
       }
 
