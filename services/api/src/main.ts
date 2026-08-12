@@ -35,6 +35,7 @@ import type { TargetKind } from '../../../packages/migration/src/trial';
 import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
 import { labellingRoutes } from '../../catalogue/src/labelling';
 import { masterDataRoutes } from '../../catalogue/src/master-data';
+import { categoryPolicyRoutes } from '../../catalogue/src/category-policy';
 import { pricingRoutes } from '../../pricing/src/index';
 import { priceListRoutes } from '../../pricing/src/price-list';
 import { promotionCatalogueRoutes } from '../../pricing/src/promotion-catalogue';
@@ -183,6 +184,8 @@ export function buildSurface(deps: {
     ...labellingRoutes(),
     // Master-data commit guards (B2 dual-MRP) — stateless product-master validation.
     ...masterDataRoutes(),
+    // Category-policy preview (category rules as effective-dated config) — stateless over @sre/product.
+    ...categoryPolicyRoutes(),
     ...pricingRoutes(store === undefined
       ? { recordPriceChange: () => {}, canApprove: () => Promise.resolve(false), now }
       : pricingAdapter({ store, now })),
