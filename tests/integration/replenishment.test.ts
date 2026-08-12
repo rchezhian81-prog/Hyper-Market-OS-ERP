@@ -90,3 +90,78 @@ describe('replenishment: advisory reorder proposals up to max level, pack/MOQ ro
     expect(codeOf(await propose(h, A, 'u-owner', [{ productId: 'P1', onHand: 1, maxLevel: 0, reorderPoint: 5 }], 'rp-bad3'))).toBe('invalid_replenishment_parameter');  // maxLevel < 1
   });
 });
+
+// M09 loop: the route DERIVES avgDailyDemand from the store's own banked sales for any item that did not
+// supply one, so REAL demand drives the reorder point and the D-3 shelf-life cap. Sales are banked relative
+// to the surface clock ("today"), so they land in the trailing derivation window.
+const bankSale = (h: ApiHarness, u: string, saleId: string, productId: string, qty: number, tradingDay: string) =>
+  h.request({
+    method: 'POST', path: '/v1/sales', userId: u, tenantId: A, idempotencyKey: `rp-sale-${saleId}`,
+    body: {
+      saleId, receiptNumber: `R-${saleId}`, laneId: 'lane-1', cashierId: u,
+      tradingDay, committedAt: `${tradingDay}T09:00:00Z`, totalMinor: qty * 100, currency: 'INR', packVersion: 1,
+      lines: [{ productId, quantityMinor: qty, uom: 'each', unitPriceMinor: 100, lineTotalMinor: qty * 100 }],
+      tenders: [{ kind: 'cash', amountMinor: qty * 100 }],
+    },
+  });
+
+const proposeQ = (h: ApiHarness, u: string, items: unknown, key: string, query?: Record<string, string>) =>
+  h.request({ method: 'POST', path: '/v1/replenishment/propose', userId: u, tenantId: A, idempotencyKey: key, body: { items }, ...(query === undefined ? {} : { query }) });
+
+const isoDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+const YESTERDAY = isoDay(Date.now() - 86_400_000);
+
+describe('replenishment derives real demand from banked sales (M09 loop)', () => {
+  it('fills a missing avgDailyDemand from sales history — driving both the reorder point and the shelf-life cap', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await bankSale(h, 'u-owner', 'D1', 'FRESH', 280, YESTERDAY); // 280 sold → over the trailing 28 days, 10/day
+
+    const res = await proposeQ(h, 'u-owner', [
+      // No avgDailyDemand and no reorderPoint — both are now derived from the real 10/day.
+      { productId: 'FRESH', onHand: 5, maxLevel: 100, leadTimeDays: 3, safetyStock: 4, remainingShelfLifeDays: 5 },
+    ], 'rp-derive');
+    const fresh = proposals(res).find((p) => p.productId === 'FRESH')!;
+
+    expect(fresh.reorderPoint).toBe(34);   // 4 + ceil(10 × 3) — derived demand drove the reorder point
+    expect(fresh.shelfLifeCap).toBe(50);   // 10 × 5 — derived demand drove the D-3 shelf-life cap
+    expect(fresh.shelfLifeCapped).toBe(true);
+    expect(fresh.suggestedQty).toBe(45);   // up to min(100, 50) from a position of 5
+    expect((res.body as { demandWindow?: { days: number } }).demandWindow?.days).toBe(28);
+  });
+
+  it('a supplied avgDailyDemand still wins over the derived one', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await bankSale(h, 'u-owner', 'D2', 'FRESH', 280, YESTERDAY); // would derive 10/day
+
+    const out = proposals(await proposeQ(h, 'u-owner', [
+      { productId: 'FRESH', onHand: 0, maxLevel: 100, reorderPoint: 50, avgDailyDemand: 2, remainingShelfLifeDays: 5 },
+    ], 'rp-supplied'));
+    expect(out[0]!.shelfLifeCap).toBe(10); // supplied 2/day → 2 × 5, not the derived 10 × 5
+  });
+
+  it('honours a custom demand window, and rejects a bad one', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await bankSale(h, 'u-owner', 'D3', 'FRESH', 70, YESTERDAY); // 70 sold yesterday
+
+    // Over 7 days that is 10/day (not 70/28 ≈ 3): the window changes the divisor.
+    const out = proposals(await proposeQ(h, 'u-owner', [
+      { productId: 'FRESH', onHand: 0, maxLevel: 100, reorderPoint: 50, remainingShelfLifeDays: 5 },
+    ], 'rp-window', { demandWindowDays: '7' }));
+    expect(out[0]!.shelfLifeCap).toBe(50); // 10/day × 5
+
+    expect(codeOf(await proposeQ(h, 'u-owner', [{ productId: 'FRESH', onHand: 0, maxLevel: 10, reorderPoint: 5 }], 'rp-badwin', { demandWindowDays: '0' }))).toBe('bad_demand_window');
+  });
+
+  it('with no sales, derivation changes nothing (the pure what-if is preserved)', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    const out = proposals(await proposeQ(h, 'u-owner', [
+      { productId: 'NOSALE', onHand: 5, maxLevel: 50, reorderPoint: 10 },
+    ], 'rp-nosale'));
+    expect(out[0]!.suggestedQty).toBe(45); // 50 − 5, exactly as before
+    expect(out[0]!.shelfLifeCap).toBeUndefined();
+  });
+});
