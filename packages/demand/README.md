@@ -28,6 +28,17 @@ and the foundation the forecast (**D-1**) and the expiry-markdown ladder (**D-4*
   - Richer signals the roadmap names — promotions, festivals, weather, new-item cold-start — layer ON
     this baseline and are **follow-on** work, named here so they are deferred openly, not dropped.
 
+- **`src/markdown.ts`** (D-4) — the expiry markdown ladder, the commercial partner to the perishables work.
+  - `proposeMarkdown({ …, remainingShelfLifeDays, onHandMinor, avgDailyDemandMinor, currentPriceMinor,
+    policy? })` proposes a marked-down price from **two** inputs the roadmap names: **sell-through** decides
+    *whether* (projected sales = demand × days left; only the **surplus** that will not clear needs a cut —
+    a markdown on stock that would sell anyway is margin given away), and **remaining shelf life** decides
+    *how deep* (a ladder that deepens as the use-by nears). The ladder is **data** (`DEFAULT_MARKDOWN_LADDER`:
+    10% within a week, 25% within three days, 50% on the last day), so a rule change is a config edit.
+  - **Advisory only** — every proposal is `advisoryOnly: true`, and there is **no** function here that
+    changes a price: committing goes through the real price-change approval path (hard rule #5), and a test
+    reads the module's exports to prove no shortcut exists. `InvalidMarkdownInputError` on bad input/policy.
+
 > **Not a write path.** The store already keeps every sale as an append-only `SaleCommitted` event
 > (the events ARE the record — hard rule #2). This turns those banked lines into a demand read; it
 > stores nothing and never touches the sale-commit path (hard rule #1). Pure and deterministic — no

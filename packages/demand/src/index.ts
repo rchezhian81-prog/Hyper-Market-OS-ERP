@@ -4,3 +4,4 @@
 
 export * from './sales-history';
 export * from './forecast';
+export * from './markdown';
