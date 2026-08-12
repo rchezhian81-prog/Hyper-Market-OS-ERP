@@ -36,6 +36,13 @@ data.
   **historic only**, because a projected lifetime value is a guess dressed as a figure.
   `buildAudience` always reports **who it could not reach**, and requires marketing consent as
   well as profiling consent: agreeing to be analysed is not agreeing to be messaged.
+- **`src/retention-clock.ts`** (C3 / **DPDP Act 2023 s.8(7)**) — the automated retention clock.
+  `assessRetention` runs over the categories held for a person: each one whose **purpose is served** or whose
+  **consent is withdrawn** (the clock starts at the earlier) moves toward erasure — through a **pre-erasure
+  notice window** first (`notice` → then `erase` once the window elapses) — unless the law requires it kept,
+  in which case it is **minimised** (identity stripped, record kept) or **retained in full** for audit
+  evidence / a legal hold (hard rule #6, never erased). It honours the same statutes `planErasure` does, and
+  emits the customer-facing pre-erasure notice. Pure — the clock is injected; nothing is deleted here.
 - **`src/consent-notice.ts`** (C1 / **DPDP Act 2023 s.5–6**) — is a consent notice complete?
   `checkConsentNotice` validates that a notice **itemises each data category with its purpose** (data with
   no stated *why* is a defect) and carries, in the notice, the three ways out the Act requires — **withdraw**,
