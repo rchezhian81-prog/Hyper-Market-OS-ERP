@@ -182,6 +182,32 @@ describe('PosSession — the Sale screen', () => {
     });
   });
 
+  it('subtracts a targeted promotion from its OWN line, so the record lines sum to what was paid (A5)', async () => {
+    let record = '';
+    const session = new PosSession(
+      { laneId: 'lane-1', cashierId: 'clerk-1', tradingDay: '2026-08-02', currency: 'INR', defaultTaxRate: taxRateFromPercent(18) },
+      new Ledger(new InMemoryLedgerStore()), new SyncOutbox(),
+      (_id, r) => { record = r; return Promise.resolve({ committed: true as const, durable: true as const, detail: 'ok', laneMessage: 'Sale complete.' }); },
+    );
+    session.setNow(AT);
+    // 10% off p1 only. p1 ₹100 @18% → line ₹118; p2 ₹200 @18% → line ₹236. Promo = ₹10 off p1's gross.
+    session.loadPromotions([
+      { id: 'p1-10', kind: 'percent_off', startsAt: '2026-08-01T00:00:00Z', endsAt: '2026-08-31T23:59:59Z', status: 'active', productIds: ['p1'], percentBps: 1000 } as Promotion,
+    ]);
+    session.scan({ productId: 'p1', description: 'A', unitPrice: money(100_00, 'INR'), quantityMinor: 1, uom: 'ea', taxRate: taxRateFromPercent(18), hsnCode: '1001' });
+    session.scan({ productId: 'p2', description: 'B', unitPrice: money(200_00, 'INR'), quantityMinor: 1, uom: 'ea', taxRate: taxRateFromPercent(18), hsnCode: '1002' });
+    const payable = session.totals().payable.minor; // (118 + 236) − 10 = 344_00
+    await session.commit('sale-1', 'S-0001', AT, [cash(payable)]);
+
+    const parsed = JSON.parse(record) as { total: number; lines: Array<{ productId: string; lineTotalMinor: number }> };
+    const byProduct = Object.fromEntries(parsed.lines.map((l) => [l.productId, l.lineTotalMinor]));
+    expect(byProduct['p1']).toBe(108_00); // ₹118 − ₹10 (the promo came off p1)
+    expect(byProduct['p2']).toBe(236_00); // p2 untouched
+    // The line totals sum to exactly what the customer paid — no line-sum exception on the cloud.
+    expect(parsed.lines.reduce((s, l) => s + l.lineTotalMinor, 0)).toBe(payable);
+    expect(parsed.total).toBe(payable);
+  });
+
   it('omits the HSN on a line whose pack carried none — the return falls back, never guesses', async () => {
     let record = '';
     const session = new PosSession(

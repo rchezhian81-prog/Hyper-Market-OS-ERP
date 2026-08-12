@@ -12,7 +12,7 @@ import { quantity, type Uom } from '../../../packages/contracts/src/quantity';
 import { rate, type Rate } from '../../../packages/contracts/src/rate';
 import type { ConnectionState } from '../../../packages/contracts/src/enums';
 import { priceLine, sumLines, type LinePricing, type BillTotals } from '../../../packages/pricing/src/pricing';
-import { bestPrice, type Promotion, type BasketLine } from '../../../packages/promotions/src/promotions';
+import { bestPrice, type Promotion, type BasketLine, type PromotionResult } from '../../../packages/promotions/src/promotions';
 import { settle, type Tender, type Settlement } from '../../../packages/tender/src/tender';
 import { commitSale, UnpaidSaleError, type CommittedSale } from '../../../packages/sale/src/sale';
 import type { Ledger } from '../../../packages/ledger/src/ledger';
@@ -276,12 +276,9 @@ export class PosSession {
     };
   }
 
-  /** Deterministic promotion discount for the basket (M05-FR-03), or zero. */
-  private promotionDiscount(): Money {
-    const currency = this.config.currency;
-    if (this.promotions.length === 0) {
-      return money(0, currency);
-    }
+  /** The deterministic best-price result for the current basket, or null when no promotion is loaded. */
+  private promotionResult(): PromotionResult | null {
+    if (this.promotions.length === 0) return null;
     const basket: BasketLine[] = this.activeLines().map((l) => ({
       lineId: l.lineId,
       productId: l.productId,
@@ -290,7 +287,22 @@ export class PosSession {
       qty: l.uom === 'ea' ? l.quantityMinor : 1,
       group: l.group,
     }));
-    return bestPrice(basket, this.promotions, { at: this.nowRef, currency }).discount;
+    return bestPrice(basket, this.promotions, { at: this.nowRef, currency: this.config.currency });
+  }
+
+  /** Deterministic promotion discount for the basket (M05-FR-03), or zero. */
+  private promotionDiscount(): Money {
+    const result = this.promotionResult();
+    return result === null ? money(0, this.config.currency) : result.discount;
+  }
+
+  /** The promotion discount ATTRIBUTED to each active line (keyed by lineId), so a targeted promotion
+   *  reduces only the lines it applied to — the per-line taxable value the GST return needs (CGST s.15(3)). */
+  private promotionDiscountByLine(): ReadonlyMap<string, number> {
+    const result = this.promotionResult();
+    const map = new Map<string, number>();
+    if (result !== null) for (const p of result.perLine) map.set(p.lineId, p.discountMinor);
+    return map;
   }
 
   /** Set the evaluation instant used for effective-dated promotions. */
@@ -354,17 +366,22 @@ export class PosSession {
     // guessing), and the HSN + rate the line was priced under, FROZEN at the moment of sale so the
     // GST return files each sale under what actually applied — even across a mid-period rate change
     // (A5). These are a record, never a control: they are read off the pack the lane already holds,
-    // add no network call and no new way for a sale to fail (hard rule #1). A basket-level promotion
-    // discount is not allocated to lines here (it is a bill-level figure); the sale total still
-    // carries it, and per-line promo allocation is a separate concern.
+    // add no network call and no new way for a sale to fail (hard rule #1).
+    //
+    // A promotion discount is ATTRIBUTED to the lines it actually reduced (CGST s.15(3): a discount known
+    // at supply reduces the taxable value): a targeted promotion comes off its own lines, a basket-wide one
+    // is spread by value — the promotions engine decides which, per line. Each line's total is then the
+    // post-discount amount actually charged, so the line totals sum to what the customer paid and the GST is
+    // pulled from the correct reduced value.
+    const perLineDiscount = this.promotionDiscountByLine();
     const recordLines = active.map((l) => {
-      const priced = priceLine({ unitPrice: l.unitPrice, quantity: quantity(l.quantityMinor, l.uom), taxRate: l.taxRate });
+      const lineTotalMinor = priceLine({ unitPrice: l.unitPrice, quantity: quantity(l.quantityMinor, l.uom), taxRate: l.taxRate }).total.minor;
       return {
         productId: l.productId,
         quantityMinor: l.quantityMinor,
         uom: l.uom,
         unitPriceMinor: l.unitPrice.minor,
-        lineTotalMinor: priced.total.minor,
+        lineTotalMinor: lineTotalMinor - (perLineDiscount.get(l.lineId) ?? 0),
         taxRateBps: l.taxRate.bps,
         ...(l.hsnCode !== undefined ? { hsnCode: l.hsnCode } : {}),
       };

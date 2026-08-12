@@ -21,6 +21,7 @@ import {
   type Money,
   type CurrencyCode,
 } from '../../contracts/src/money';
+import { allocateDiscount } from '../../contracts/src/allocate';
 
 export type PromotionKind = 'percent_off' | 'amount_off' | 'buy_x_get_y' | 'member_price';
 
@@ -84,12 +85,24 @@ export interface AppliedPromotion {
   readonly discount: Money;
 }
 
+/** How much of the total discount fell on one basket line — its SHARE of the saving. */
+export interface PerLineDiscount {
+  readonly lineId: string;
+  readonly discountMinor: number;
+}
+
 export interface PromotionResult {
   readonly grossTotal: Money;
   readonly discount: Money;
   readonly netTotal: Money;
   /** The promotions that applied, ordered by promotion id (deterministic). */
   readonly applied: readonly AppliedPromotion[];
+  /**
+   * The total discount attributed to each basket line (one entry per line, in input order). A targeted
+   * promotion reduces only the lines it applied to, so a line's taxable value / GST can be computed
+   * exactly per line (CGST s.15(3)). The shares sum to `discount` and no line's share exceeds its gross.
+   */
+  readonly perLine: readonly PerLineDiscount[];
 }
 
 function lineGross(line: BasketLine): Money {
@@ -239,10 +252,36 @@ export function bestPrice(
     .map((c) => ({ promotionId: c.promo.id, kind: c.promo.kind, discount: c.discount }))
     .sort((a, b) => (a.promotionId < b.promotionId ? -1 : a.promotionId > b.promotionId ? 1 : 0));
 
+  // Attribute the discount to the LINES it actually reduced, so a per-line / per-HSN taxable value is exact
+  // (CGST s.15(3)): split each chosen promotion's discount across ITS eligible lines in proportion to gross,
+  // accumulating per line. A discount can never exceed a promotion's eligible spend, so each split is valid.
+  // If a pathological input (an overall discount capped at the basket, or stacking that would take a line
+  // below zero) breaks the accumulation, fall back to spreading the final capped discount across the whole
+  // basket by gross — always exact-summing and never negative.
+  const grosses = lines.map((l) => lineGross(l).minor);
+  const byLine = new Map<string, number>(lines.map((l) => [l.lineId, 0]));
+  for (const c of chosen) {
+    const elig = eligibleLines(c.promo, lines);
+    if (elig.length === 0) continue;
+    const shares = allocateDiscount(elig.map((l) => lineGross(l).minor), c.discount.minor);
+    elig.forEach((l, i) => byLine.set(l.lineId, (byLine.get(l.lineId) ?? 0) + shares[i]!));
+  }
+  const attributedTotal = [...byLine.values()].reduce((a, b) => a + b, 0);
+  const withinGross = lines.every((l, i) => (byLine.get(l.lineId) ?? 0) <= grosses[i]!);
+  let perLineMap: Map<string, number>;
+  if (attributedTotal === discount.minor && withinGross) {
+    perLineMap = byLine;
+  } else {
+    const shares = allocateDiscount(grosses, discount.minor);
+    perLineMap = new Map(lines.map((l, i) => [l.lineId, shares[i]!]));
+  }
+  const perLine: PerLineDiscount[] = lines.map((l) => ({ lineId: l.lineId, discountMinor: perLineMap.get(l.lineId) ?? 0 }));
+
   return {
     grossTotal,
     discount,
     netTotal: subtract(grossTotal, discount),
     applied,
+    perLine,
   };
 }
