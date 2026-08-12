@@ -31,6 +31,15 @@ export interface SandboxGspOptions {
   readonly unknownReason?: string;
 }
 
+/**
+ * The sandbox provider. It is the `EInvoiceProvider` port, narrowed to say what a real network connector
+ * cannot promise: `register` is **synchronous and deterministic** — no clock, no I/O, no `Promise`. Callers
+ * that hold a `SandboxGspProvider` can read the answer directly; callers that hold the wider port `await` it.
+ */
+export interface SandboxGspProvider extends EInvoiceProvider {
+  register(request: IrnRequest): IrpResult;
+}
+
 /** The idempotency basis the IRP itself uses: supplier GSTIN + doc type + number + FY. */
 export function sandboxIdempotencyKey(request: IrnRequest): string {
   return `${request.supplierGstin}|${request.documentType}|${request.documentNumber}|${request.financialYear}`;
@@ -49,7 +58,7 @@ export function sandboxIrn(request: IrnRequest): string {
  * exercise the timeout/rejection branches. Stateful only in remembering which invoices it has seen — which
  * is exactly what makes duplicate detection real. Never contacts a network.
  */
-export function sandboxGspProvider(options: SandboxGspOptions = {}): EInvoiceProvider {
+export function sandboxGspProvider(options: SandboxGspOptions = {}): SandboxGspProvider {
   const seen = new Set<string>();
   return {
     register(request: IrnRequest): IrpResult {
