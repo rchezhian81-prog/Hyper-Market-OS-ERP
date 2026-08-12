@@ -109,6 +109,21 @@ export class RecalledItemError extends Error {
   }
 }
 
+export class ExpiredItemError extends Error {
+  constructor(name: string, expiry: string) {
+    super(`"${name}" is past its use-by date (${expiry}) and cannot be sold (B8 / M10 · M12) — even offline.`);
+    this.name = 'ExpiredItemError';
+  }
+}
+
+/** What the lane knows about the specific batch being scanned, where it captured it. */
+export interface ScanBatchContext {
+  /** Today, at the lane (ISO date or datetime). Injected — the scan stays clockless (offline-deterministic). */
+  readonly asOf?: string;
+  /** The scanned batch's use-by date (YYYY-MM-DD), the LAST sellable day. */
+  readonly batchExpiry?: string;
+}
+
 /** Statuses a lane may sell. Draft and discontinued items are refused. */
 const SELLABLE: readonly ProductStatus[] = ['active', 'clearance'];
 
@@ -192,6 +207,21 @@ export class CatalogueCache {
     }
   }
 
+  /**
+   * Refuse a batch past its use-by date at the lane (B8 / M10·M12 / FSSAI) — the offline HARD BLOCK, the
+   * sibling of the recall block. The expiry date is the LAST sellable day, so only a sale strictly after
+   * it is refused. Judged only when the lane actually knows the batch's expiry AND the date; with neither
+   * it cannot block (and does not guess — the cloud backstop catches what slips, hard rule #1/#10).
+   */
+  private assertNotExpired(product: CatalogueProduct, ctx?: ScanBatchContext): void {
+    if (ctx?.batchExpiry === undefined || ctx.asOf === undefined) return;
+    const today = /^\d{4}-\d{2}-\d{2}/.exec(ctx.asOf)?.[0];
+    if (today === undefined || !/^\d{4}-\d{2}-\d{2}$/.test(ctx.batchExpiry)) return; // unjudgeable → do not block
+    if (ctx.batchExpiry < today) {
+      throw new ExpiredItemError(product.name, ctx.batchExpiry);
+    }
+  }
+
   private ageCheck(product: CatalogueProduct): boolean {
     const minimumAge = product.regulatedFlags?.['minimumAge'];
     return typeof minimumAge === 'number' && minimumAge > 0;
@@ -200,10 +230,13 @@ export class CatalogueCache {
   /**
    * Resolve a scanned barcode to a priced line. Handles plain barcodes and
    * variable-weight/price barcodes (the embedded value becomes the quantity or the
-   * line price). Refuses an unknown code, a non-sellable status, or a recalled item
-   * — offline included. O(1).
+   * line price). Refuses an unknown code, a non-sellable status, a recalled item, or — when the lane
+   * knows the scanned batch's use-by date — a past-use-by batch (B8), all offline. O(1).
+   *
+   * `batch` is optional and backward-compatible: a plain `scan(code)` behaves exactly as before. When the
+   * lane passes the scanned batch's expiry and today's date, an expired batch is refused at the lane.
    */
-  scan(code: string): ScanResult {
+  scan(code: string, batch?: ScanBatchContext): ScanResult {
     const trimmed = code.trim();
 
     // 1. A direct barcode hit (the common case) — one map lookup.
@@ -214,6 +247,7 @@ export class CatalogueCache {
         throw new UnknownBarcodeError(trimmed);
       }
       this.assertSellable(product);
+      this.assertNotExpired(product, batch);
       return {
         product,
         barcodeKind: direct.kind,
@@ -232,6 +266,7 @@ export class CatalogueCache {
         this.bySku.get(embedded.itemCode);
       if (product !== undefined) {
         this.assertSellable(product);
+        this.assertNotExpired(product, batch);
         const isWeight = embedded.rule.valueKind === 'weight';
         return {
           product,
