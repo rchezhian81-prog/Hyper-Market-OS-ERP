@@ -135,6 +135,35 @@ const receive = (h: ApiHarness, batchId: string, receivedDate: string, qtyMinor:
     payload: { movementId: `mv-${i}`, productId: 'milk-1l', locationId: 'store-1', kind: 'received', quantityMinor: qtyMinor, uom: 'each', occurredAt: `${receivedDate}T06:00:00Z`, batchId, enteredBy: 'u-recv' },
   }));
 
+// M16: a recall names the customers it can. A sale carries no customer, but the stored-value ledger links
+// a sale to the member who transacted on it; the trace resolves that link (minimal ref, contact stays
+// consent-gated).
+const issueInstrument = (h: ApiHarness, u: string, instrumentId: string, ownerRef: string) =>
+  h.request({ method: 'POST', path: '/v1/stored-value/instruments', userId: u, tenantId: A, idempotencyKey: `iss-${instrumentId}`,
+    body: { instrumentId, kind: 'gift_card', ownerRef, faceValueMinor: 100000 } });
+const redeemOnSale = (h: ApiHarness, u: string, instrumentId: string, saleId: string, customerRef: string, key: string) =>
+  h.request({ method: 'POST', path: `/v1/stored-value/instruments/${instrumentId}/redeem`, userId: u, tenantId: A, idempotencyKey: key,
+    body: { movementId: `mv-${key}`, amountMinor: 500, channel: 'store', saleId, customerRef } });
+
+describe('lot-trace names identified customers from the loyalty link (M16)', () => {
+  it('resolves the customer for a sale linked through stored value, and counts it identified', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+
+    await bankSale(h, 'u-owner', 'S-CUST', 'LOT-9', 'bs-cust');   // a sale that captured LOT-9
+    await bankSale(h, 'u-owner', 'S-ANON', 'LOT-9', 'bs-anon');   // another, with no loyalty link
+    await issueInstrument(h, 'u-owner', 'INST-1', 'cust-42');
+    await redeemOnSale(h, 'u-owner', 'INST-1', 'S-CUST', 'cust-42', 'rd-1'); // links S-CUST ↔ cust-42
+
+    const r = (await sold(h, 'u-owner', 'LOT-9')).body as { saleCount: number; identifiedRecipientCount: number; anonymousSaleCount: number; outbound: { saleId: string; customerId?: string }[] };
+    expect(r.saleCount).toBe(2);
+    expect(r.identifiedRecipientCount).toBe(1);            // S-CUST resolved, S-ANON not
+    expect(r.anonymousSaleCount).toBe(1);
+    expect(r.outbound.find((x) => x.saleId === 'S-CUST')!.customerId).toBe('cust-42');
+    expect(r.outbound.find((x) => x.saleId === 'S-ANON')!.customerId).toBeUndefined();
+  });
+});
+
 describe('lot-trace estimates un-captured sales at head office (batch-on-sale inc3b / ADR-0006)', () => {
   it('attributes a FIFO-by-receipt best-estimate batch, labelled, to an un-batched sale', async () => {
     const h = apiHarness();
