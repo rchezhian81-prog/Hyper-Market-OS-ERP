@@ -15,6 +15,8 @@ import { assessPointsMovement, type PointsKind, type StoredPointsMovement } from
 import { assessChildDataProcessing, type ChildDataActivity } from '../../../packages/customer/src/child-data-guard';
 import { assessBreachNotification, InvalidBreachInputError, type BreachInput } from '../../../packages/customer/src/breach-notification';
 import { checkConsentNotice, type ConsentNotice } from '../../../packages/customer/src/consent-notice';
+import { assessRetention, InvalidRetentionInputError, type RetainedCategory } from '../../../packages/customer/src/retention-clock';
+import type { RetentionBasis } from '../../../packages/customer/src/data-rights';
 
 const CHILD_DATA_ACTIVITIES: readonly ChildDataActivity[] = [
   'account_enrolment', 'marketing', 'profiling', 'behavioural_tracking', 'targeted_advertising', 'transactional', 'service',
@@ -293,6 +295,64 @@ export function customerRoutes(deps: CustomerDeps): readonly Route[] {
           ...(Number.isInteger(b.withdrawSteps) ? { withdrawSteps: b.withdrawSteps as number } : {}),
         };
         return { status: 200, body: checkConsentNotice(notice) };
+      },
+    },
+    {
+      // C3 / DPDP s.8(7) — the retention clock: run it over the categories held for a person and each one
+      // whose purpose is served or whose consent is withdrawn moves toward erasure — through a pre-erasure
+      // notice window first — unless the law requires it kept (then minimised, or retained in full for audit
+      // evidence; hard rule #6). `asOf` is the server clock. It produces the sweep; a fulfilment step executes it.
+      api: 'API-06', method: 'POST', path: '/v1/privacy/retention/sweep',
+      permission: 'customer.consent.write', idempotent: true,
+      handler: (ctx) => {
+        const b = (ctx.body ?? {}) as { categories?: unknown; noticeLeadDays?: unknown };
+        if (!Array.isArray(b.categories)) {
+          throw apiError(400, {
+            code: 'not_readable_as_retention_categories',
+            whatHappened: 'A retention sweep needs a categories list, each with a category and a whole recordCount.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { "categories": [ … ] }. Nothing was changed; this only assesses.',
+          });
+        }
+        const categories: RetainedCategory[] = [];
+        for (const raw of b.categories) {
+          const r = (raw ?? {}) as Record<string, unknown>;
+          if (typeof r['category'] !== 'string' || r['category'].trim() === '' || !Number.isInteger(r['recordCount'])) {
+            throw apiError(400, {
+              code: 'not_readable_as_a_retention_category',
+              whatHappened: 'Each category needs a category name and a whole recordCount (retentionBasis, retainUntil, minimisable, purposeServedAt and consentWithdrawnAt optional).',
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Fix the categories and re-send. Nothing was changed.',
+            });
+          }
+          categories.push({
+            category: r['category'] as string,
+            recordCount: r['recordCount'] as number,
+            ...(typeof r['retentionBasis'] === 'string' ? { retentionBasis: r['retentionBasis'] as RetentionBasis } : {}),
+            ...(typeof r['retainUntil'] === 'string' ? { retainUntil: r['retainUntil'] as string } : {}),
+            ...(r['minimisable'] === true ? { minimisable: true } : {}),
+            ...(typeof r['purposeServedAt'] === 'string' ? { purposeServedAt: r['purposeServedAt'] as string } : {}),
+            ...(typeof r['consentWithdrawnAt'] === 'string' ? { consentWithdrawnAt: r['consentWithdrawnAt'] as string } : {}),
+          });
+        }
+        try {
+          const sweep = assessRetention({
+            categories,
+            asOf: deps.now(),
+            ...(Number.isInteger(b.noticeLeadDays) ? { noticeLeadDays: b.noticeLeadDays as number } : {}),
+          });
+          return { status: 200, body: sweep };
+        } catch (e) {
+          if (e instanceof InvalidRetentionInputError) {
+            throw apiError(400, {
+              code: 'invalid_retention_input',
+              whatHappened: e.message,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Correct the input and re-send. Nothing was changed.',
+            });
+          }
+          throw e;
+        }
       },
     },
     {

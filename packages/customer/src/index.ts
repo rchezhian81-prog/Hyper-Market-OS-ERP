@@ -18,6 +18,9 @@
 //   • `consent-notice.ts` (C1 / DPDP s.5–6) — a consent notice must itemise each data
 //     category with its purpose and carry in-notice withdraw / grievance / Board links, with
 //     withdrawal as easy as giving; every gap is a named defect.
+//   • `retention-clock.ts` (C3 / DPDP s.8(7)) — the automated clock that erases personal data
+//     once its purpose is served or consent is withdrawn, through a pre-erasure notice, keeping
+//     what the law requires (minimise / retain) as `planErasure` does.
 //
 // Pure and deterministic. Grows one reviewed, tested unit at a time.
 
@@ -28,3 +31,4 @@ export * from './segments';
 export * from './child-data-guard';
 export * from './breach-notification';
 export * from './consent-notice';
+export * from './retention-clock';
