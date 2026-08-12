@@ -364,7 +364,7 @@ export function buildSurface(deps: {
     } : eInvoiceAdapter({ store, now })),
     // GST returns write path (A5) — persist outward-supply tax lines; GSTR-1 Table 12 folds over them.
     ...gstReturnsRoutes(store === undefined ? {
-      documents: empty([]), record: () => {}, now,
+      documents: empty([]), record: () => {}, soldTaxLines: empty([]), now,
     } : gstReturnsAdapter({ store, now })),
     // Price integrity across shelf/POS/app/ESL (D06/D14, ratified R2 B25) — stateless audit; the till is
     // the reference and a shelf underpricing it is ranked first as a legal exposure.

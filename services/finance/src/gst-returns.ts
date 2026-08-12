@@ -14,7 +14,9 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
   validateOutwardLine, gstr1Table12, gstr1Return, toGstnGstr1,
+  salesToOutwardSupplies, InvalidSalesToOutwardInput,
   type OutwardSupplyLine, type ClassifiedLine, type SupplyKind,
+  type SoldTaxLine, type ProductTaxEntry, type PlaceOfSupply,
 } from '../../../packages/finance/src/index';
 
 const GSTIN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
@@ -30,11 +32,22 @@ export interface StoredOutwardDoc {
   readonly lines: readonly OutwardSupplyLine[];
 }
 
+/** A tax-relevant sold line from a banked sale, tagged with its supply date, for the GSTR-1-from-sales fold. */
+export interface PeriodSoldLine extends SoldTaxLine {
+  /** The trading day the sale was made — the GST time of supply, what the return period filters on. */
+  readonly tradingDay: string;
+}
+
 export interface GstReturnsDeps {
   /** Every outward-supply document recorded (deduped by id) — GSTR-1 folds over these. */
   readonly documents: (tenantId: string) => Promise<readonly StoredOutwardDoc[]> | readonly StoredOutwardDoc[];
   /** Persist a document's outward-supply lines. Idempotent per document id. */
   readonly record: (tenantId: string, doc: StoredOutwardDoc) => Promise<void> | void;
+  /**
+   * Tax-relevant sold lines from banked sales whose commit falls in [fromIso, toIso). A read-only fold of
+   * the sales stream — the route filters to the return period by trading day. Used by GSTR-1-from-sales.
+   */
+  readonly soldTaxLines: (tenantId: string, fromIso: string, toIso: string) => Promise<readonly PeriodSoldLine[]> | readonly PeriodSoldLine[];
   readonly now: () => string;
 }
 
@@ -96,6 +109,64 @@ export function gstReturnsRoutes(deps: GstReturnsDeps): readonly Route[] {
         const docs = (await deps.documents(ctx.tenantId)).filter((d) => d.documentDate >= from && d.documentDate <= to);
         const classified: ClassifiedLine[] = docs.flatMap((d) => d.lines.map((l) => ({ ...l, supplyKind: d.supplyType })));
         return { status: 200, body: { from, to, documentCount: docs.length, ...gstr1Table12(classified) } };
+      },
+    },
+    {
+      // GSTR-1 Table 12 folded straight from the store's own banked B2C till sales — no re-keying. The GST
+      // is pulled BACK OUT of each MRP-inclusive line total against the filer's product→{HSN, rate} table
+      // (supplied in the body — the mapping being filed this period). A sold product with no mapping or a
+      // bad HSN comes back in `unmapped`, never silently off the return. Read-only fold (idempotent).
+      api: 'API-09', method: 'POST', path: '/v1/finance/gstr1/from-sales/table-12',
+      permission: 'finance.gstr.read', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const from = b['from'];
+        const to = b['to'];
+        if (typeof from !== 'string' || typeof to !== 'string' || !DATE.test(from) || !DATE.test(to) || to < from) {
+          throw apiError(400, { code: 'from_sales_needs_period', whatHappened: 'GSTR-1 from sales needs from and to (YYYY-MM-DD), with to on or after from.', wasItSaved: 'not_saved', nextSafeAction: 'Send the return period’s from and to dates.' });
+        }
+        if (!Number.isInteger(b['annualTurnoverMinor']) || !Array.isArray(b['products'])) {
+          throw apiError(400, { code: 'from_sales_needs_turnover_products', whatHappened: 'It needs annualTurnoverMinor (sets the HSN digit rule) and a products[] tax table of { productId, hsnCode, rateBps }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the shop’s turnover and the product→HSN/rate table for the period.' });
+        }
+        const products = b['products'] as unknown[];
+        const taxTable: ProductTaxEntry[] = [];
+        for (let i = 0; i < products.length; i += 1) {
+          const p = products[i];
+          if (!isObj(p) || typeof p['productId'] !== 'string' || p['productId'].trim() === ''
+            || typeof p['hsnCode'] !== 'string' || !Number.isInteger(p['rateBps']) || (p['rateBps'] as number) < 0
+            || (p['placeOfSupply'] !== undefined && p['placeOfSupply'] !== 'intra_state' && p['placeOfSupply'] !== 'inter_state')) {
+            throw apiError(422, { code: 'invalid_product_tax_row', whatHappened: `products[${i}] must be { productId, hsnCode, rateBps (whole, non-negative), placeOfSupply? }.`, wasItSaved: 'not_saved', nextSafeAction: 'Fix the named row — each product needs an HSN and a whole rate.' });
+          }
+          taxTable.push({
+            productId: p['productId'], hsnCode: p['hsnCode'], rateBps: p['rateBps'] as number,
+            ...(p['placeOfSupply'] !== undefined ? { placeOfSupply: p['placeOfSupply'] as PlaceOfSupply } : {}),
+          });
+        }
+        const pos = b['placeOfSupply'];
+        if (pos !== undefined && pos !== 'intra_state' && pos !== 'inter_state') {
+          throw apiError(400, { code: 'invalid_place_of_supply', whatHappened: "placeOfSupply must be 'intra_state' or 'inter_state'.", wasItSaved: 'not_saved', nextSafeAction: 'Omit it (defaults to intra-State, a counter sale) or send a valid value.' });
+        }
+
+        // Fold banked sales committed in a window generously covering the period, then filter to the return
+        // period by trading day (the GST time of supply) so a late-synced sale still lands in its own month.
+        const windowFrom = `${from}T00:00:00.000Z`;
+        const windowTo = new Date(Date.parse(`${to}T00:00:00.000Z`) + 3 * 86_400_000).toISOString();
+        const period = (await deps.soldTaxLines(ctx.tenantId, windowFrom, windowTo))
+          .filter((l) => l.tradingDay >= from && l.tradingDay <= to);
+        const sales: SoldTaxLine[] = period.map((l) => ({ productId: l.productId, quantityMinor: l.quantityMinor, uom: l.uom, lineTotalMinor: l.lineTotalMinor }));
+
+        try {
+          const result = salesToOutwardSupplies({
+            sales, taxTable, annualTurnoverMinor: b['annualTurnoverMinor'] as number,
+            ...(pos !== undefined ? { placeOfSupply: pos as PlaceOfSupply } : {}),
+          });
+          return { status: 200, body: { from, to, soldLineCount: period.length, table12: result.table12, unmapped: result.unmapped, mappedLineCount: result.mappedLineCount, detail: result.detail } };
+        } catch (e) {
+          if (e instanceof InvalidSalesToOutwardInput) {
+            throw apiError(400, { code: 'invalid_from_sales_request', whatHappened: e.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the request and re-send. Nothing was changed.' });
+          }
+          throw e;
+        }
       },
     },
     {

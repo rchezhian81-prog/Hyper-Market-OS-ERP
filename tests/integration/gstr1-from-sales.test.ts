@@ -1,0 +1,99 @@
+import { describe, it, expect } from 'vitest';
+import { apiHarness, type ApiHarness } from '../support/api-harness';
+
+// A5 — GSTR-1 Table 12 folded straight from the store's own banked B2C till sales (no re-keying). The GST
+// is pulled BACK OUT of each MRP-inclusive line total against the filer's product→{HSN, rate} table. A
+// sold product with no mapping is surfaced in `unmapped`, never silently off the return. Proven end-to-end
+// over the real sale-intake → sales stream → finance fold pipeline.
+
+const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const SMALL = 1_000_000; // < ₹5cr → 4-digit HSN accepted
+
+// A banked sale: what the till charged (the MRP-inclusive line total). No HSN or tax split on the line.
+const bankSale = (h: ApiHarness, u: string, saleId: string, productId: string, lineTotalMinor: number, tradingDay: string) =>
+  h.request({
+    method: 'POST', path: '/v1/sales', userId: u, tenantId: A, idempotencyKey: `gs-${saleId}`,
+    body: {
+      saleId, receiptNumber: `R-${saleId}`, laneId: 'lane-1', cashierId: u,
+      tradingDay, committedAt: `${tradingDay}T09:00:00Z`, totalMinor: lineTotalMinor, currency: 'INR', packVersion: 1,
+      lines: [{ productId, quantityMinor: 1, uom: 'each', unitPriceMinor: lineTotalMinor, lineTotalMinor }],
+      tenders: [{ kind: 'cash', amountMinor: lineTotalMinor }],
+    },
+  });
+
+const fromSales = (h: ApiHarness, u: string, body: unknown, key: string) =>
+  h.request({ method: 'POST', path: '/v1/finance/gstr1/from-sales/table-12', userId: u, tenantId: A, idempotencyKey: key, body });
+
+interface Table12Body {
+  from: string; to: string; soldLineCount: number; mappedLineCount: number;
+  table12: { rows: { hsnCode: string; rateBps: number; taxableMinor: number; cgstMinor: number; sgstMinor: number; igstMinor: number; b2cTaxableMinor: number }[]; totalTaxableMinor: number; totalTaxMinor: number; b2bTaxableMinor: number; b2cTaxableMinor: number };
+  unmapped: { productId: string; quantityMinor: number; reason: string }[];
+}
+
+const MILK = [{ productId: 'MILK', hsnCode: '0401', rateBps: 1800 }];
+
+async function seedAugustSales(h: ApiHarness): Promise<void> {
+  await h.seedOwner(A, 'u-owner');
+  await bankSale(h, 'u-owner', 's1', 'MILK', 11_800, '2026-08-05'); // ₹118 incl @18% → taxable 100
+  await bankSale(h, 'u-owner', 's2', 'MILK', 11_800, '2026-08-06');
+  await bankSale(h, 'u-owner', 's3', 'MILK', 11_800, '2026-08-20');
+  await bankSale(h, 'u-owner', 'sjul', 'MILK', 99_900, '2026-07-31'); // out of period — must not appear
+}
+
+describe('GSTR-1 Table 12 folded from banked till sales (A5)', () => {
+  it('pulls GST out of the MRP-inclusive line totals and folds the period sales into a B2C Table-12', async () => {
+    const h = apiHarness();
+    await seedAugustSales(h);
+
+    const r = (await fromSales(h, 'u-owner', { from: '2026-08-01', to: '2026-08-31', annualTurnoverMinor: SMALL, products: MILK }, 'fs-1')).body as Table12Body;
+    expect(r.soldLineCount).toBe(3);   // July excluded by trading day
+    expect(r.mappedLineCount).toBe(3);
+    expect(r.unmapped).toEqual([]);
+    expect(r.table12.rows).toHaveLength(1);
+    const row = r.table12.rows[0]!;
+    expect(row.hsnCode).toBe('0401');
+    expect(row.taxableMinor).toBe(30_000); // 3 × 10000
+    expect(row.cgstMinor).toBe(2_700);     // 3 × 900
+    expect(row.sgstMinor).toBe(2_700);
+    expect(row.igstMinor).toBe(0);
+    expect(r.table12.b2cTaxableMinor).toBe(30_000); // counter sales are all B2C
+    expect(r.table12.b2bTaxableMinor).toBe(0);
+    // A9 invariant end-to-end: taxable + tax reconciles to the gross the till charged (3 × 11800).
+    expect(row.taxableMinor + row.cgstMinor + row.sgstMinor + row.igstMinor).toBe(35_400);
+  });
+
+  it('surfaces a sold product that has no tax mapping — counted, named, and NOT on the return', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await bankSale(h, 'u-owner', 'm1', 'MILK', 11_800, '2026-08-05');
+    await bankSale(h, 'u-owner', 'b1', 'BREAD', 4_000, '2026-08-05'); // not in the tax table
+
+    const r = (await fromSales(h, 'u-owner', { from: '2026-08-01', to: '2026-08-31', annualTurnoverMinor: SMALL, products: MILK }, 'fs-unmapped')).body as Table12Body;
+    expect(r.soldLineCount).toBe(2);
+    expect(r.mappedLineCount).toBe(1);              // only MILK filed
+    expect(r.table12.totalTaxableMinor).toBe(10_000);
+    expect(r.unmapped).toHaveLength(1);
+    expect(r.unmapped[0]!.productId).toBe('BREAD');
+    expect(r.unmapped[0]!.reason).toBe('no_tax_mapping');
+  });
+
+  it('is gated on the finance GSTR read — owner and manager may fold; the till may not', async () => {
+    const h = apiHarness();
+    await seedAugustSales(h);
+    await h.provisionRole(A, 'u-mgr', 'store_manager'); // holds finance.gstr.read
+    await h.provisionRole(A, 'u-cash', 'cashier');       // does not
+
+    const body = { from: '2026-08-01', to: '2026-08-31', annualTurnoverMinor: SMALL, products: MILK };
+    expect((await fromSales(h, 'u-mgr', body, 'fs-mgr')).status).toBe(200);
+    expect((await fromSales(h, 'u-cash', body, 'fs-cash')).status).toBe(403);
+  });
+
+  it('refuses a malformed request — a bad period, a missing tax table, and a bad product row', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+
+    expect((await fromSales(h, 'u-owner', { from: '2026-08-31', to: '2026-08-01', annualTurnoverMinor: SMALL, products: MILK }, 'fs-badperiod')).status).toBe(400); // to before from
+    expect((await fromSales(h, 'u-owner', { from: '2026-08-01', to: '2026-08-31', products: MILK }, 'fs-noturn')).status).toBe(400); // no turnover
+    expect((await fromSales(h, 'u-owner', { from: '2026-08-01', to: '2026-08-31', annualTurnoverMinor: SMALL, products: [{ productId: 'X', rateBps: 500 }] }, 'fs-badrow')).status).toBe(422); // no hsnCode
+  });
+});

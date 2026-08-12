@@ -67,7 +67,7 @@ import type { ComplianceDeps, Obligation } from '../../compliance/src/index';
 import type { DocumentsDeps, TemplateVersion } from '../../platform/src/documents';
 import type { SuspendedBillsDeps, SuspendedBill } from '../../pos/src/suspended-bills';
 import type { EInvoiceRegisterDeps } from '../../finance/src/e-invoice-register';
-import type { GstReturnsDeps, StoredOutwardDoc } from '../../finance/src/gst-returns';
+import type { GstReturnsDeps, StoredOutwardDoc, PeriodSoldLine } from '../../finance/src/gst-returns';
 import { foldEInvoice, type EInvoiceEvent, type IrnRequest as EInvoiceIrnRequest, type EInvoiceRecord } from '../../../packages/e-invoice/src/index';
 import type { WasteDeps, WasteRecord, WasteCoverage } from '../../inventory/src/waste';
 import type { IntegrationDeps, CertifiedEntry, AdapterConfig, AdapterHeartbeat } from '../../platform/src/integration';
@@ -377,6 +377,23 @@ export function gstReturnsAdapter(input: {
         source: 'api/finance',
         payload: doc,
       }));
+    },
+
+    // GSTR-1-from-sales (A5): a windowed, read-only fold of the sales stream into the tax-relevant sold
+    // lines (productId, quantity, uom, the MRP-inclusive line total, and the trading day). The route pulls
+    // the GST out of the line totals against the filer's HSN/rate table — the sale itself never carried a
+    // tax split (hard rule #1 untouched; the events ARE the record, hard rule #2). Same window shape as
+    // `salesHistoryAdapter.soldLines`, costing a window rather than the whole history.
+    soldTaxLines: async (tenantId, fromIso, toIso) => {
+      const sales = await input.store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from: fromIso, to: toIso });
+      const lines: PeriodSoldLine[] = [];
+      for (const e of sales) {
+        const sale = payloadOf<IncomingSale>(e);
+        for (const line of sale.lines ?? []) {
+          lines.push({ productId: line.productId, quantityMinor: line.quantityMinor, uom: line.uom, lineTotalMinor: line.lineTotalMinor, tradingDay: sale.tradingDay });
+        }
+      }
+      return lines;
     },
   };
 }
