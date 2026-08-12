@@ -83,7 +83,7 @@ import { agedStockLots, type DatedMovement } from '../../../packages/stock/src/a
 import type { MatchResult, BankChangeRequest, PurchaseDeps } from '../../purchase/src/index';
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
 import type { CreditNoteDeps } from '../../finance/src/credit-notes';
-import type { CreditNote } from '../../../packages/finance/src/index';
+import type { CreditNote, ProductTaxEntry } from '../../../packages/finance/src/index';
 import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
 import type { StoredPointsMovement } from '../../../packages/loyalty/src/assess-points';
 import type { StoredValueDeps, Instrument, ValueMovement } from '../../customer/src/stored-value';
@@ -394,6 +394,21 @@ export function gstReturnsAdapter(input: {
         }
       }
       return lines;
+    },
+
+    // The DEFAULT product→{HSN, rate} table for GSTR-1-from-sales (A5 Option A): read from the latest
+    // published catalogue pack (the M03 master's persisted form). Each product carries its rate (`taxBps`)
+    // and — since the snapshot now carries it — its HSN (`hsnCode`). A product with no HSN on the pack is
+    // omitted here; if it sold, the return surfaces it as `unmapped` (never filed under a guessed HSN).
+    productTaxTable: async (tenantId) => {
+      const pack = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
+      const table: ProductTaxEntry[] = [];
+      for (const p of pack?.snapshot.products ?? []) {
+        if (typeof p.hsnCode === 'string' && p.hsnCode.trim() !== '') {
+          table.push({ productId: p.productId, hsnCode: p.hsnCode, rateBps: p.taxBps });
+        }
+      }
+      return table;
     },
   };
 }

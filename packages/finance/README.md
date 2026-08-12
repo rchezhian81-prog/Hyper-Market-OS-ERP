@@ -28,9 +28,12 @@ totals** (QG-07).
   banks, and nobody re-keys each one as an outward-supply document. `salesToOutwardSupplies` turns
   banked sale lines **into** the return:
   - A banked sale line carries only what the till charged — the **MRP-inclusive line total** — not
-    the HSN or the tax split. So the caller supplies a **product→{HSN, rate} table** (the house idiom:
-    a constraint is DATA the caller supplies) — which is also the freeze-safe answer to "capture the
-    tax as it was": the filer states the mapping they are filing this period under.
+    the HSN or the tax split. So the derivation needs a **product→{HSN, rate} table**. That table
+    **defaults from the published catalogue** (the M03 master's persisted form — the snapshot now carries
+    each product's `hsnCode` alongside its rate), so the return builds **with nothing to key by hand**; a
+    caller-supplied table **overrides** it per product (an exception the filer is handling). Supplying the
+    mapping explicitly is also the freeze-safe answer to "capture the tax as it was": the filer states the
+    mapping they are filing this period under.
   - From there it is the tested `extractInclusiveGst` primitive — the GST is pulled **back out** of
     each inclusive total (A9), split by place of supply (A8; a counter sale is intra-State CGST+SGST),
     and aggregated by `gstr1Table12`. A product that sold but is **not** in the table, or whose HSN is
