@@ -63,3 +63,31 @@ the links to the surviving record — and stops following once a merge is revers
 Pure and deterministic — no clock, no I/O. Tested in `tests/unit/product-master.test.ts`
 (19), `tests/unit/product-pack.test.ts` (9) and `tests/unit/product-duplicates.test.ts`
 (13). Part of the repository layout in `CLAUDE.md`.
+
+## Category policy — the rules per category, as effective-dated configuration (`src/category-policy.ts`)
+
+A hypermarket is not one shop. Milk, a ring of gold, a strip of paracetamol and a phone
+obey different rules for how each unit is traced, how it is valued, whether it may be sold
+at all, how it is returned, and who must approve a price. Those rules are **dated
+configuration the owner can change, not code**: every category carries a `CategoryPolicy`
+— a dated history of `CategoryPolicyRules` — and `resolvePolicy(history, onDate)` returns
+the rules in force on a date (the same filter/sort/last shape as `mrpOn`, so a decision
+made last month can still be explained; nothing is overwritten).
+
+`CategoryPolicyRules` covers **traceability** (none / batch / serial), **quantityMode**
+(each / weighed / catch-weight), **valuation** (retail MRP / rate-per-unit-weight /
+weighted-average cost / cost-plus), **shelf life** (perishable, block-sale-after-use-by,
+near-expiry alert days), **returns** (returnable, window, approval), **controlled sale**
+(hard block, minimum age, and required controls — age / KYC / PAN / prescription / serial
+capture), **approvals**, and **enabledByDefault** — a controlled vertical (gold,
+pharmacy-lite) ships **off** and will not sell until the store switches it on.
+
+The decisions are pure. `categorySaleDecision` names every refusal at once and **composes
+with** the till's age gate (`packages/restricted-sales`) rather than duplicating it — a
+blocked category short-circuits, a not-yet-enabled vertical is refused by name, an expired
+unit is refused only where the category says so. `categoryReturnDecision`, `needsApproval`
+and `describePolicy` (a plain-English one-liner for the owner) round it out. Wired
+read-only for preview at `POST /v1/catalogue/category-policy/resolve`. Tested in
+`tests/unit/product-category-policy.test.ts` (14) and
+`tests/integration/catalogue-category-policy.test.ts` (4). Foundation for the per-category
+presets (grocery, fresh produce, gold, pharmacy-lite, cosmetics, electronics, apparel).
