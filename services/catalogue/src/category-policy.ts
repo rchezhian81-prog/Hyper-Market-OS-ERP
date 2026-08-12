@@ -16,31 +16,41 @@ import {
   categorySaleDecision,
   categoryReturnDecision,
   describePolicy,
+  presetFor,
+  CATEGORY_KINDS,
   InvalidCategoryPolicy,
   type CategoryPolicyRules,
+  type CategoryKind,
   type SaleContext,
   type EffectiveValue,
 } from '../../../packages/product/src/index';
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+const isKind = (v: unknown): v is CategoryKind => typeof v === 'string' && (CATEGORY_KINDS as readonly string[]).includes(v);
 
 export function categoryPolicyRoutes(): readonly Route[] {
   return [
     {
-      // Resolve a category's rules in force on a date and preview the sale/return decisions.
-      // Body: { history: EffectiveValue<CategoryPolicyRules>[], onDate: "YYYY-MM-DD",
+      // Resolve a category's rules in force on a date and preview the sale/return decisions. Either supply
+      // the category's own effective-dated `history`, OR a preset `kind` to preview a shipped default.
+      // Body: { onDate: "YYYY-MM-DD", history?: EffectiveValue<CategoryPolicyRules>[], kind?: CategoryKind,
       //         sale?: SaleContext, returnAfterDays?: number }
       api: 'API-02', method: 'POST', path: '/v1/catalogue/category-policy/resolve',
       permission: 'catalogue.pack.read', idempotent: true,
       handler: async (ctx) => {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         const onDate = b['onDate'];
-        const history = b['history'];
         if (typeof onDate !== 'string' || onDate === '') {
-          throw apiError(400, { code: 'category_policy_needs_date', whatHappened: 'The policy preview needs onDate as YYYY-MM-DD.', wasItSaved: 'not_saved', nextSafeAction: 'Send onDate (the business date) and the category’s policy history.' });
+          throw apiError(400, { code: 'category_policy_needs_date', whatHappened: 'The policy preview needs onDate as YYYY-MM-DD.', wasItSaved: 'not_saved', nextSafeAction: 'Send onDate (the business date) and either the category’s policy history or a preset kind.' });
         }
+        // A preset kind seeds a one-entry history effective on the business date; otherwise use the supplied history.
+        const history = b['kind'] !== undefined
+          ? (isKind(b['kind'])
+            ? [{ effectiveFrom: onDate, value: presetFor(b['kind']) }]
+            : (() => { throw apiError(400, { code: 'category_policy_unknown_kind', whatHappened: `kind must be one of: ${CATEGORY_KINDS.join(', ')}.`, wasItSaved: 'not_saved', nextSafeAction: 'Send a known preset kind, or send an explicit history instead.' }); })())
+          : b['history'];
         if (!Array.isArray(history)) {
-          throw apiError(400, { code: 'category_policy_needs_history', whatHappened: 'The policy preview needs history: an array of effective-dated rule entries.', wasItSaved: 'not_saved', nextSafeAction: 'Send history as [{ effectiveFrom, value: { …rules } }, …].' });
+          throw apiError(400, { code: 'category_policy_needs_history_or_kind', whatHappened: 'The policy preview needs either history (effective-dated rule entries) or a preset kind.', wasItSaved: 'not_saved', nextSafeAction: 'Send history as [{ effectiveFrom, value: { …rules } }, …], or kind: "grocery_fmcg" (etc.).' });
         }
         try {
           const rules = resolvePolicy(history as readonly EffectiveValue<CategoryPolicyRules>[], onDate);

@@ -91,3 +91,16 @@ read-only for preview at `POST /v1/catalogue/category-policy/resolve`. Tested in
 `tests/unit/product-category-policy.test.ts` (14) and
 `tests/integration/catalogue-category-policy.test.ts` (4). Foundation for the per-category
 presets (grocery, fresh produce, gold, pharmacy-lite, cosmetics, electronics, apparel).
+
+### Category presets — a correct starting point per aisle (`src/category-presets.ts`)
+
+Each of the owner's categories A–G ships a **default** `CategoryPolicyRules` — grocery/FMCG,
+fresh produce, packaged perishables, gold/jewellery, OTC pharmacy-lite, prescription-blocked,
+cosmetics, electronics, apparel/footwear. A preset is a starting point the store dates and
+overrides (`presetFor(kind)` returns a fresh copy; `presetPolicy(categoryId, kind, effectiveFrom)`
+wraps it in an effective-dated `CategoryPolicy`), **never a hard-coded law**. The two controlled
+verticals — **gold** and **OTC pharmacy-lite** — ship `enabledByDefault: false` (off until the
+owner switches them on with CA/legal sign-off), and **prescription / Schedule-H·H1·X** items are a
+`controlledSale.blocked` preset so they are refused outright until a separately-approved
+regulated-pharmacy extension replaces it. The preview route accepts `kind` as an alternative to a
+full `history`. Tested in `tests/unit/product-category-presets.test.ts` (11).
