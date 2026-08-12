@@ -159,6 +159,34 @@ describe('a batch-tracked good must carry its batch for the recall trace (M10-FR
   });
 });
 
+describe('a sale of an expired batch is a food-safety breach (B8 / M10·M12)', () => {
+  // The sale helper's trading day is 2026-08-07. A batch's expiry is the LAST sellable day.
+  const line = (batchExpiry?: string) => ({ productId: 'P1', quantityMinor: 1, uom: 'each', unitPriceMinor: 5_000, lineTotalMinor: 5_000, batchId: 'LOT-7', ...(batchExpiry === undefined ? {} : { batchExpiry }) });
+
+  it('flags a batch sold PAST its use-by as CRITICAL and banks it', () => {
+    const r = acceptSale(sale({ lines: [line('2026-08-01')] }), ctx()); // expired six days before the sale
+    expect(r.banked).toBe(true);
+    const e = r.exceptions.find((x) => x.kind === 'sold_expired_batch')!;
+    expect(e.severity).toBe('critical');
+    expect(e.ownerAction).toContain('ACT NOW');
+  });
+
+  it('allows a sale ON the expiry date (the last sellable day)', () => {
+    expect(kinds(acceptSale(sale({ lines: [line('2026-08-07')] }), ctx()).exceptions)).not.toContain('sold_expired_batch');
+  });
+
+  it('does not flag a batch that is still in date, or a line with no expiry', () => {
+    expect(kinds(acceptSale(sale({ lines: [line('2026-08-20')] }), ctx()).exceptions)).not.toContain('sold_expired_batch');
+    expect(kinds(acceptSale(sale({ lines: [line(undefined)] }), ctx()).exceptions)).not.toContain('sold_expired_batch');
+  });
+
+  it('ranks the expired-stock breach first, above a tender mismatch', () => {
+    const r = acceptSale(sale({ lines: [line('2026-08-01')], tenders: [{ kind: 'cash', amountMinor: 4_900 }] }), ctx());
+    expect(r.exceptions[0]?.kind).toBe('sold_expired_batch');
+    expect(r.exceptions[0]?.severity).toBe('critical');
+  });
+});
+
 describe('a price above MRP is a legal breach, not a variance (B1 / M03·M12)', () => {
   it('flags a line charged above MRP as CRITICAL and banks it (the money is in the drawer)', () => {
     // P1: MRP 9000, charged 9500.

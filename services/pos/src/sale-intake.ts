@@ -72,6 +72,8 @@ export type SaleExceptionKind =
   | 'sold_above_mrp'
   /** A batch-tracked product was sold with no batch captured — the sale cannot be traced in a recall. */
   | 'batch_tracked_sold_without_batch'
+  /** A line's captured batch was PAST its use-by date on the day it sold. **Critical**: a food-safety breach. */
+  | 'sold_expired_batch'
   /** The tenders do not add up to the total. Somebody's day will not balance. */
   | 'tender_does_not_sum_to_total'
   /** Priced from a pack far behind the current one. */
@@ -200,6 +202,18 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
       add('batch_tracked_sold_without_batch', 'material',
         `${product.sku} is lot/batch-tracked and was sold with no batch captured`,
         'This unit cannot be traced to a batch, so a recall could not tell whether it was affected. Check that the lane is capturing the batch for this product.',
+        { productId: line.productId });
+    }
+
+    // A batch sold PAST its use-by date (B8 / M10·M12). The expiry date is the LAST sellable day, so a
+    // sale strictly after it is expired stock in a customer's hands — a food-safety breach (FSSAI), not a
+    // stock note. The sale still stands (the money is in the drawer, hard rule #1), but it is surfaced
+    // CRITICAL, ranked with a recall. The offline till's own FEFO-at-scan block is the primary defence;
+    // this is the cloud's backstop, catching anything that slipped it.
+    if (/^\d{4}-\d{2}-\d{2}$/.test(line.batchExpiry ?? '') && (line.batchExpiry as string) < sale.tradingDay) {
+      add('sold_expired_batch', 'critical',
+        `${product.sku} batch ${line.batchId ?? '(unnamed)'} expired on ${line.batchExpiry} and was sold on ${sale.tradingDay} — past-use-by stock`,
+        `ACT NOW: expired stock reached a customer. Check whether the receipt identifies them, pull the batch from the shelf, and find why the lane did not block it at scan.`,
         { productId: line.productId });
     }
 
