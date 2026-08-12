@@ -88,6 +88,78 @@ describe('proposeReplenishment', () => {
       InvalidReplenishmentParameterError,
     );
   });
+
+  describe('bounds a perishable order by remaining shelf life (D-3)', () => {
+    // The order-up-to is capped at what can sell before the batch expires:
+    // avgDailyDemand × remainingShelfLifeDays. An over-order is prevented.
+    it('caps the order-up-to at days-of-supply when the cap is below the max level', () => {
+      // demand 10/day × 3 days left = 30 sellable; max 50 → target is 30, not 50
+      const proposal = proposeReplenishment(baseInput({
+        onHand: 5, reorderPoint: 40, avgDailyDemand: 10, remainingShelfLifeDays: 3,
+      }));
+      expect(proposal?.suggestedQty).toBe(25); // 30 − 5, not 45
+      expect(proposal?.reason).toBe('below_reorder_point');
+      expect(proposal?.shelfLifeCap).toBe(30);
+      expect(proposal?.shelfLifeCapped).toBe(true);
+    });
+
+    it('does not bind when the shelf-life ceiling is above the max level', () => {
+      // 100/day × 5 days = 500 sellable, well above max 50 → the max binds, order is normal
+      const proposal = proposeReplenishment(baseInput({
+        onHand: 5, avgDailyDemand: 100, remainingShelfLifeDays: 5,
+      }));
+      expect(proposal?.suggestedQty).toBe(45); // 50 − 5, unchanged
+      expect(proposal?.shelfLifeCap).toBe(500);
+      expect(proposal?.shelfLifeCapped).toBeUndefined();
+    });
+
+    it('prevents an over-order: holds when the holding already covers the shelf life', () => {
+      // 5/day × 2 days = 10 sellable, but 15 already on hand → ordering anything over-stocks a perishable
+      const proposal = proposeReplenishment(baseInput({
+        onHand: 15, reorderPoint: 40, avgDailyDemand: 5, remainingShelfLifeDays: 2,
+      }));
+      expect(proposal?.suggestedQty).toBe(0);
+      expect(proposal?.reason).toBe('held_shelf_life'); // a visible exception, not a silent null
+      expect(proposal?.shelfLifeCap).toBe(10);
+      expect(proposal?.shelfLifeCapped).toBe(true);
+    });
+
+    it('holds a batch that expires today (nothing can sell before it expires)', () => {
+      const proposal = proposeReplenishment(baseInput({
+        onHand: 5, reorderPoint: 40, avgDailyDemand: 5, remainingShelfLifeDays: 0,
+      }));
+      expect(proposal?.reason).toBe('held_shelf_life');
+      expect(proposal?.shelfLifeCap).toBe(0);
+    });
+
+    it('fits whole packs under the ceiling rather than letting a pack round-up breach it', () => {
+      // 10/day × 4 days = 40 sellable; need 40, pack 12 rounds to 48 which breaches → fit 36 (3 packs)
+      const proposal = proposeReplenishment(baseInput({
+        onHand: 0, reorderPoint: 50, avgDailyDemand: 10, remainingShelfLifeDays: 4, orderMultiple: 12,
+      }));
+      expect(proposal?.suggestedQty).toBe(36); // largest full-pack quantity that stays ≤ 40
+      expect(proposal?.shelfLifeCapped).toBe(true);
+    });
+
+    it('holds when even the supplier minimum would over-order the perishable', () => {
+      // 5/day × 2 days = 10 sellable, but MOQ 20 → no compliant order fits under the ceiling → held
+      const proposal = proposeReplenishment(baseInput({
+        onHand: 0, reorderPoint: 50, avgDailyDemand: 5, remainingShelfLifeDays: 2, minOrderQty: 20,
+      }));
+      expect(proposal?.suggestedQty).toBe(0);
+      expect(proposal?.reason).toBe('held_shelf_life');
+    });
+
+    it('does not cap when the demand rate is unknown (never guesses)', () => {
+      // shelf life supplied but no demand → cannot compute days-of-supply → no bound, ordinary order
+      const proposal = proposeReplenishment(baseInput({
+        onHand: 5, reorderPoint: 40, remainingShelfLifeDays: 2,
+      }));
+      expect(proposal?.suggestedQty).toBe(45);
+      expect(proposal?.shelfLifeCap).toBeUndefined();
+      expect(proposal?.shelfLifeCapped).toBeUndefined();
+    });
+  });
 });
 
 describe('proposeReplenishmentBatch', () => {

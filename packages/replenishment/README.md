@@ -11,8 +11,16 @@ per-product parameters — as a **proposal a buyer approves**, never an automati
     supplier **minimum order quantity**. The **reorder point** is explicit, or computed as
     `safety stock + ceil(avg daily demand × lead time)` (safety stock respects lead time). A
     **blocked/discontinued** item is suppressed.
+  - **Shelf-life bound (D-3, perishables)** — when an item carries a `remainingShelfLifeDays`
+    (with an `avgDailyDemand`), the order-up-to is additionally capped at what can sell before
+    the batch expires (`avgDailyDemand × remainingShelfLifeDays`), and the order never lifts the
+    holding above that ceiling — a pack/MOQ round-up fits **whole packs under** it. If even the
+    smallest compliant order would over-stock, **no order is placed** and the item comes back as a
+    visible `held_shelf_life` exception (`suggestedQty 0`) rather than a silent skip. With the
+    demand rate unknown it does **not** cap (it never guesses). `shelfLifeCap` / `shelfLifeCapped`
+    on the proposal say what the ceiling was and whether it bit.
   - `proposeReplenishmentBatch(inputs)` — the same across many products, returning only those
-    that need a reorder.
+    that need a reorder (plus any `held_shelf_life` exceptions).
   - **`advisoryOnly: true`** on every proposal: this can **never** become a purchase order by
     itself — an authorised human commits the PO (**hard rule #5 / AI-NFR-12**). **Parameters
     drive every number** (M09-FR-02 acceptance).
