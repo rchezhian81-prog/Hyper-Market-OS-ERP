@@ -3,3 +3,4 @@
 // what has already happened, and stores nothing new (hard rule #1 — the sale-commit path is untouched).
 
 export * from './sales-history';
+export * from './forecast';

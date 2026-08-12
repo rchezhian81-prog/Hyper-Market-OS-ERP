@@ -15,6 +15,19 @@ and the foundation the forecast (**D-1**) and the expiry-markdown ladder (**D-4*
     event window and let this be exact); a malformed day or a non-positive quantity is skipped, not
     fatal. `InvalidDemandWindowError` for a malformed window or `from` after `to`.
 
+- **`src/forecast.ts`** (D-1) — a forward-looking demand forecast, decomposed and explainable.
+  - `forecastDemand({ history, from, to, horizonDays })` — fits **baseline × day-of-week seasonality**
+    on the window and projects `horizonDays` ahead. A hypermarket's steadiest signal is the week, so
+    the forecast is a baseline level times a learned per-weekday multiplier — a number a buyer can
+    read, not a black box. A day with no history is zero demand (real information), and an empty
+    history forecasts zero rather than guessing.
+  - `backtestForecast({ history, from, to, holdoutDays })` — fits on the earlier part, forecasts the
+    held-out tail, and scores it (**WAPE** = Σ|actual − forecast| ÷ Σ actual, plus MAE), so "the
+    forecast is good" is a bounded number, not a claim (the D-1 acceptance). `InvalidForecastInputError`
+    for a malformed window/horizon, or a holdout with no training days left.
+  - Richer signals the roadmap names — promotions, festivals, weather, new-item cold-start — layer ON
+    this baseline and are **follow-on** work, named here so they are deferred openly, not dropped.
+
 > **Not a write path.** The store already keeps every sale as an append-only `SaleCommitted` event
 > (the events ARE the record — hard rule #2). This turns those banked lines into a demand read; it
 > stores nothing and never touches the sale-commit path (hard rule #1). Pure and deterministic — no

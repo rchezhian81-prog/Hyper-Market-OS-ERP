@@ -10,6 +10,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { salesHistory, InvalidDemandWindowError, type SoldLine } from '../../../packages/demand/src/sales-history';
+import { forecastDemand, backtestForecast, InvalidForecastInputError, type DailyDemand } from '../../../packages/demand/src/forecast';
 
 export interface SalesHistoryDeps {
   /** The sold lines whose `occurredAt` falls in [fromIso, toIso). The engine filters to the trading-day window. */
@@ -58,6 +59,73 @@ export function salesHistoryRoutes(deps: SalesHistoryDeps): readonly Route[] {
               whatHappened: e.message,
               wasItSaved: 'not_saved',
               nextSafeAction: 'Correct the window and re-send. Nothing was changed.',
+            });
+          }
+          throw e;
+        }
+      },
+    },
+    {
+      // Demand forecast for ONE product (D-1): baseline × day-of-week seasonality, projected `horizonDays`
+      // days ahead from the store's own sales, and — when there is enough history — scored by a back-test on
+      // the recent tail so the quality is a number, not a claim. `?productId=` (required), `?from=&to=`
+      // (default the trailing 8 weeks), `?horizonDays=` (default 7).
+      api: 'API-04', method: 'GET', path: '/v1/inventory/demand-forecast',
+      permission: 'inventory.availability.read',
+      handler: async (ctx) => {
+        const productId = ctx.query['productId'];
+        if (productId === undefined || productId === '') {
+          throw apiError(400, {
+            code: 'forecast_needs_a_product',
+            whatHappened: 'A demand forecast is per product — it needs ?productId=.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send ?productId=… (with ?from=&to=&horizonDays= optional). Nothing was changed; this only reads.',
+          });
+        }
+        const today = deps.now().slice(0, 10);
+        const to = ctx.query['to'] ?? today;
+        const from = ctx.query['from'] ?? addDays(to, -55); // trailing 8 weeks — a weekly pattern plus a holdout
+        if (!DAY.test(from) || !DAY.test(to)) {
+          throw apiError(400, {
+            code: 'not_a_date_window',
+            whatHappened: 'A forecast needs from and to as YYYY-MM-DD dates.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send ?from=YYYY-MM-DD&to=YYYY-MM-DD (or neither for the trailing 8 weeks). Nothing was changed.',
+          });
+        }
+        let horizonDays = 7;
+        const rawH = ctx.query['horizonDays'];
+        if (rawH !== undefined) {
+          const n = Number(rawH);
+          if (!Number.isInteger(n) || n < 1 || n > 92) {
+            throw apiError(400, {
+              code: 'bad_forecast_horizon',
+              whatHappened: 'horizonDays must be a whole number between 1 and 92.',
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Fix horizonDays (or omit it for 7) and re-send. Nothing was changed.',
+            });
+          }
+          horizonDays = n;
+        }
+
+        const lines = (await deps.soldLines(ctx.tenantId, `${from}T00:00:00.000Z`, `${addDays(to, 2)}T00:00:00.000Z`))
+          .filter((l) => l.productId === productId);
+        const byDay = salesHistory({ lines, from, to }).products.find((p) => p.productId === productId)?.byDay ?? [];
+        const history: DailyDemand[] = byDay.map((d) => ({ day: d.day, qty: d.qtyMinor }));
+
+        try {
+          const forecast = forecastDemand({ history, from, to, horizonDays });
+          // Score it only when there is enough history to hold out a week and still train on at least a week.
+          const windowDays = Math.round((Date.parse(`${to}T00:00:00.000Z`) - Date.parse(`${from}T00:00:00.000Z`)) / 86_400_000) + 1;
+          const quality = windowDays >= 14 ? backtestForecast({ history, from, to, holdoutDays: 7 }) : undefined;
+          return { status: 200, body: { productId, ...forecast, ...(quality === undefined ? {} : { quality }), asAt: deps.now() } };
+        } catch (e) {
+          if (e instanceof InvalidForecastInputError) {
+            throw apiError(400, {
+              code: 'invalid_forecast_input',
+              whatHappened: e.message,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Correct the window/horizon and re-send. Nothing was changed.',
             });
           }
           throw e;
