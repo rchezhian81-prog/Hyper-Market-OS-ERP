@@ -60,6 +60,7 @@ import { refundExceptionsRoutes } from '../../finance/src/refund-exceptions';
 import { eInvoiceRoutes } from '../../finance/src/e-invoice';
 import { eInvoiceRegisterRoutes } from '../../finance/src/e-invoice-register';
 import { eInvoiceSandboxRoutes } from '../../finance/src/e-invoice-sandbox';
+import { eWayBillRoutes } from '../../finance/src/e-way-bill';
 import { gstReturnsRoutes } from '../../finance/src/gst-returns';
 import { facilitiesRoutes } from '../../platform/src/facilities';
 import { facilitiesAssetsRoutes } from '../../platform/src/facilities-assets';
@@ -370,6 +371,10 @@ export function buildSurface(deps: {
     // certified GSP uses, so the submit → register → apply loop can be driven without live credentials. Its
     // IRN/QR are SANDBOX-marked and never valid for a real filing.
     ...eInvoiceSandboxRoutes(),
+    // GST e-way bill (A23, Rule 138) — threshold eligibility (inter-State ₹50k / intra-TN ₹1L), validity by
+    // distance, and a deterministic sandbox portal so the build → generate → apply loop runs without live
+    // credentials; its EWB number is SANDBOX-derived and never valid to travel with real goods.
+    ...eWayBillRoutes(),
     // GST returns write path (A5) — persist outward-supply tax lines; GSTR-1 Table 12 folds over them.
     ...gstReturnsRoutes(store === undefined ? {
       documents: empty([]), record: () => {}, soldTaxLines: empty([]), returnedTaxLines: empty([]), productTaxTable: empty([]), now,
