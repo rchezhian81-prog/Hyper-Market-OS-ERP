@@ -175,5 +175,33 @@ Gated on a **new, narrow, widely-held** permission — **`payroll.ess.self`** (g
 role: owner, store manager, cashier, accountant), **not** the confidential `payroll.statutory.read`.
 Wired at `POST /v1/hr/payroll/ess/self` (`{ employeeId, payslip, settlement? }`; the subject `employeeId`
 must equal the caller — else 403). Pure, reads only. Tested in `tests/unit/payroll-ess.test.ts` (7) and
-`tests/integration/payroll-ess.test.ts` (4). The durable pay-run SQL event store — which will let ESS
-look a payslip up rather than be handed one — is the remaining increment.
+`tests/integration/payroll-ess.test.ts` (4).
+
+## The durable pay-run store (WP3 inc9)
+
+Increment 4 gave the pay-run lifecycle as a **pure** fold + transition guard, served statelessly (the
+`…/pay-run/evaluate` route folds caller-supplied events). This increment makes a run **durable**: each
+lifecycle step is appended to the tenant's **append-only event log** — the same `event_ledger` every other
+domain writes to, one stream per pay run (`payroll` + the run id) — so a run's state, its submitter and its
+approver **survive a restart**, and "current" is always a fold of the stored facts (hard rule #2). No new
+table or migration: durability rides the shared, already-SQL-backed `EventStore`, exactly as the e-invoice
+register and GST-returns stores do ("everything is an event").
+
+The store is `payRunAdapter` (`services/api/src/adapters.ts`) — `load` reads the run's stream and folds it
+with `foldPayRun`; `append` writes one lifecycle fact idempotently (keyed on kind + actor + at). Wired at:
+
+- `POST /v1/hr/payroll/pay-run/:payRunId/append` — append one step (`draft`/`submit`/`approve`/`reject`/
+  `lock`/`reverse`). The proposed step is checked against the **stored** state with
+  `evaluatePayRunTransition` **before** anything is written, so **maker ≠ checker is enforced at the write
+  boundary** (a submitter approving their own run is refused 422, not stored); the fold enforces it again on
+  read (defence in depth). A locked run is final; a correction is a reversal + a new run.
+- `GET /v1/hr/payroll/pay-run/:payRunId` — the current state, folded from the stored events (404 if none).
+
+Both gated `payroll.statutory.read`; the stateless `…/pay-run/evaluate` preview route stays (backward
+compatible). Tested in `tests/unit/payroll-pay-run-store.test.ts` (5 — the adapter over an
+`InMemoryEventStore`: append+fold, restart replay, a self-approval the fold ignores, idempotency,
+stream-per-run) and `tests/integration/payroll-pay-run-store.test.ts` (4 — the routes: full lifecycle,
+self-approval refused at the boundary, **survives a restart** via a fresh surface over the same store,
+malformed/unknown/permission). **This completes WP3 payroll** — statutory deductions → payslip → TDS →
+approve/lock → bank file → journal → F&F settlement → ESS → durable pay-run store (all still preview/review;
+a live pay run needs CA/HR/legal GO).
