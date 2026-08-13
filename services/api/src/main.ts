@@ -370,7 +370,7 @@ export function buildSurface(deps: {
     // GST e-invoicing lifecycle store (A20 inc2) — durable submit → IRP response → cancel; the credentialed
     // GSP connector posts responses back here (that connector is the deployment step).
     ...eInvoiceRegisterRoutes(store === undefined ? {
-      load: () => undefined, recordSubmit: () => {}, recordResponse: () => {}, recordCancel: () => {}, listInvoiceIds: () => [], now,
+      load: () => undefined, recordSubmit: () => {}, recordResponse: () => {}, recordCancel: () => {}, recordMismatch: () => {}, listInvoiceIds: () => [], now,
     } : eInvoiceAdapter({ store, now })),
     // GST e-invoicing sandbox GSP (A20) — a deterministic simulator on the same EInvoiceProvider port a real
     // certified GSP uses, so the submit → register → apply loop can be driven without live credentials. Its
@@ -383,7 +383,7 @@ export function buildSurface(deps: {
     // GST e-way-bill DURABLE lifecycle store (A23, item 2) — submit → portal response → cancel per movement,
     // one stream each, so an e-way bill survives a restart; the transport twin of the e-invoice register.
     ...eWayBillRegisterRoutes(store === undefined ? {
-      load: () => undefined, recordSubmit: () => {}, recordResponse: () => {}, recordCancel: () => {}, listMovementIds: () => [], now,
+      load: () => undefined, recordSubmit: () => {}, recordResponse: () => {}, recordCancel: () => {}, recordMismatch: () => {}, listMovementIds: () => [], now,
     } : eWayBillAdapter({ store, now })),
     // GST government-portal switch — the feature flag + kill switch keeping LIVE e-invoice/e-way-bill portal
     // calls OFF by default and killable; the gate a deployment consults before the real connector. Sandbox

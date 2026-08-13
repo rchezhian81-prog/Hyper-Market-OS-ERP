@@ -84,9 +84,12 @@ describe('durable e-way-bill register (A23 item 2 inc2)', () => {
 
 const poll = (h: ApiHarness, u: string, id: string, body: unknown, key: string) =>
   h.request({ method: 'POST', path: `/v1/finance/e-way-bill/movements/${id}/poll`, userId: u, tenantId: A, idempotencyKey: key, body });
+const verify = (h: ApiHarness, u: string, id: string, body: unknown, key: string) =>
+  h.request({ method: 'POST', path: `/v1/finance/e-way-bill/movements/${id}/verify`, userId: u, tenantId: A, idempotencyKey: key, body });
 const queue = (h: ApiHarness, u: string, state?: string) =>
   h.request({ method: 'GET', path: '/v1/finance/e-way-bill/register', userId: u, tenantId: A, ...(state !== undefined ? { query: { state } } : {}) });
 const stateOf = async (h: ApiHarness, id: string) => ((await get(h, 'u-owner', id)).body as { state: string }).state;
+const mvIds = (b: unknown) => ((b as { movements: { movementId: string }[] }).movements).map((m) => m.movementId).sort();
 
 describe('e-way-bill reconciliation — poll + exception queue', () => {
   it('polls a stuck (pending_unknown) movement to a generated e-way bill', async () => {
@@ -126,5 +129,56 @@ describe('e-way-bill reconciliation — poll + exception queue', () => {
     const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
     await h.seedOwner(B, 'u-b');
     expect(((await h.request({ method: 'GET', path: '/v1/finance/e-way-bill/register', userId: 'u-b', tenantId: B })).body as { count: number }).count).toBe(0);
+  });
+});
+
+// --- verify + mismatch detection (item 2 inc4) --------------------------------------------------------
+
+const DIFF_EWB = '999999999999'; // a well-formed but DIFFERENT 12-digit number than the sandbox would issue
+
+describe('e-way-bill verify — mismatch detection (rule #10: never a silent overwrite)', () => {
+  it('agrees when the portal re-query returns the same number, and flags nothing', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await submit(h, 'u-owner', 'mv-vok', { request: REQ }, 'vok');
+    const ewbNo = ((await poll(h, 'u-owner', 'mv-vok', {}, 'vokp')).body as { current: { ewbNo: string } }).current.ewbNo;
+    const res = (await verify(h, 'u-owner', 'mv-vok', {}, 'vokv')).body as { agrees: boolean; current: { ewbNo: string; mismatch?: unknown } };
+    expect(res.agrees).toBe(true);
+    expect(res.current.ewbNo).toBe(ewbNo);
+    expect(res.current.mismatch).toBeUndefined();
+  });
+
+  it('flags a portal rejection of a generated movement WITHOUT overwriting the stored number', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await submit(h, 'u-owner', 'mv-vrej', { request: { ...REQ, documentNumber: 'INV/2627/000030' } }, 'vrej');
+    const ewbNo = ((await poll(h, 'u-owner', 'mv-vrej', {}, 'vrejp')).body as { current: { ewbNo: string } }).current.ewbNo;
+    const res = (await verify(h, 'u-owner', 'mv-vrej', { sandbox: { forceOutcome: 'rejected' } }, 'vrejv')).body as { agrees: boolean; mismatch: { observedState: string }; current: { state: string; ewbNo: string; mismatch?: unknown } };
+    expect(res.agrees).toBe(false);
+    expect(res.mismatch.observedState).toBe('rejected');
+    expect(res.current.state).toBe('generated');   // state unchanged — still terminal
+    expect(res.current.ewbNo).toBe(ewbNo);          // stored number unchanged
+    expect(res.current.mismatch).toBeDefined();
+    // It now sits in the mismatch queue (and exceptions), and NOT in the clean generated list.
+    expect(mvIds((await queue(h, 'u-owner', 'mismatch')).body)).toEqual(['mv-vrej']);
+    expect(mvIds((await queue(h, 'u-owner', 'exceptions')).body)).toEqual(['mv-vrej']);
+    expect(mvIds((await queue(h, 'u-owner', 'generated')).body)).toEqual([]);
+  });
+
+  it('flags a DIFFERENT number via a connector observation, refuses verifying an in-flight movement, and gates RBAC', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-cash', 'cashier');
+    await submit(h, 'u-owner', 'mv-vdiff', { request: { ...REQ, documentNumber: 'INV/2627/000031' } }, 'vdiff');
+    const ewbNo = ((await poll(h, 'u-owner', 'mv-vdiff', {}, 'vdiffp')).body as { current: { ewbNo: string } }).current.ewbNo;
+    const res = (await verify(h, 'u-owner', 'mv-vdiff', { observed: { status: 'generated', ewbNo: DIFF_EWB, ewbDate: '2026-08-11', validUpto: '2026-08-12' } }, 'vdiffv')).body as { agrees: boolean; mismatch: { observedEwbNo: string }; current: { ewbNo: string } };
+    expect(res.agrees).toBe(false);
+    expect(res.mismatch.observedEwbNo).toBe(DIFF_EWB);
+    expect(res.current.ewbNo).toBe(ewbNo);          // the differing number is NOT written
+    // Verify only applies to a terminal movement — an in-flight one points you at poll.
+    await submit(h, 'u-owner', 'mv-vinflight', { request: { ...REQ, documentNumber: 'INV/2627/000032' } }, 'vinf'); // pending_unknown
+    expect((await verify(h, 'u-owner', 'mv-vinflight', {}, 'vinfv')).status).toBe(422);
+    // RBAC: a cashier cannot verify (it re-queries the portal).
+    expect((await verify(h, 'u-cash', 'mv-vdiff', {}, 'v-rbac')).status).toBe(403);
   });
 });

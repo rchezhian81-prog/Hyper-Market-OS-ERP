@@ -201,6 +201,21 @@ export const IRN_CANCEL_WINDOW_HOURS = 24;
 
 export type EInvoiceLifecycleState = 'submitted' | 'registered' | 'rejected' | 'pending_unknown' | 'provider_error' | 'cancelled';
 
+/**
+ * A MISMATCH: a later re-query of the IRP disagreed with the IRN already on file. It is recorded as an
+ * additive flag — never a state change and never an overwrite of the stored IRN (hard rule #10: a conflict
+ * becomes a visible exception, never a silent last-write-wins). A human reconciles it out of band.
+ */
+export interface EInvoiceMismatch {
+  /** What the IRP reported on the re-query — the disagreeing answer. */
+  readonly observedState: EInvoiceState;
+  /** The differing IRN the IRP returned, if it returned one at all. */
+  readonly observedIrn?: string;
+  /** Plain-language description of the disagreement, for the operator. */
+  readonly note: string;
+  readonly observedAt: string;
+}
+
 export interface EInvoiceAggregate {
   readonly invoiceId: string;
   readonly state: EInvoiceLifecycleState;
@@ -213,13 +228,16 @@ export interface EInvoiceAggregate {
   readonly registeredAt?: string;
   readonly cancelledAt?: string;
   readonly cancelReason?: string;
+  /** Set when a re-query disagreed with the stored IRN — an exception for a human, never an overwrite. */
+  readonly mismatch?: EInvoiceMismatch;
   readonly detail: string;
 }
 
 export type EInvoiceEvent =
   | { readonly kind: 'submitted'; readonly request: IrnRequest; readonly at: string }
   | { readonly kind: 'response'; readonly record: EInvoiceRecord; readonly at: string }
-  | { readonly kind: 'cancelled'; readonly reason: string; readonly at: string };
+  | { readonly kind: 'cancelled'; readonly reason: string; readonly at: string }
+  | { readonly kind: 'mismatch'; readonly mismatch: EInvoiceMismatch; readonly at: string };
 
 /** Fold an invoice's append-only e-invoice events into its current state. `undefined` if never submitted. */
 export function foldEInvoice(invoiceId: string, events: readonly EInvoiceEvent[]): EInvoiceAggregate | undefined {
@@ -245,18 +263,56 @@ export function foldEInvoice(invoiceId: string, events: readonly EInvoiceEvent[]
       };
     } else if (e.kind === 'cancelled') {
       if (agg?.state === 'registered') agg = { ...agg, state: 'cancelled', cancelledAt: e.at, cancelReason: e.reason, detail: `cancelled within the ${IRN_CANCEL_WINDOW_HOURS}h window: ${e.reason}` };
+    } else if (e.kind === 'mismatch') {
+      // Additive only: flag the aggregate, never touch the stored IRN or the lifecycle state. Replay-safe —
+      // the latest mismatch fact stands, and one recorded twice is idempotent.
+      if (agg !== undefined) agg = { ...agg, mismatch: e.mismatch };
     }
   }
   return agg;
 }
 
+/**
+ * Compare the IRP's re-query answer against the IRN already on file. Returns a mismatch descriptor when the
+ * answer DEFINITELY disagrees, `undefined` when it agrees or is inconclusive. The rules:
+ *   • an inconclusive answer (`pending_unknown`/`provider_error`) is NOT a disagreement — a non-answer never
+ *     unseats a stored IRN;
+ *   • against a stored `registered` IRN: a `registered` answer carrying a DIFFERENT IRN is a mismatch, and a
+ *     `rejected` answer (the portal disowns an invoice we hold as registered) is a mismatch; the SAME IRN
+ *     agrees;
+ *   • against a `cancelled` invoice: a `registered` answer (the portal still shows it live) is a mismatch.
+ * It never fabricates: the stored IRN is the truth of record; this only raises a flag for a human.
+ */
+export function detectEInvoiceMismatch(agg: EInvoiceAggregate, observed: EInvoiceRecord, at: string): EInvoiceMismatch | undefined {
+  if (observed.state === 'pending_unknown' || observed.state === 'provider_error') return undefined; // a non-answer is not a disagreement
+  const base = (note: string): EInvoiceMismatch => ({ observedState: observed.state, ...(observed.irn !== undefined ? { observedIrn: observed.irn } : {}), note, observedAt: at });
+  if (agg.state === 'registered') {
+    if (observed.state === 'registered' && observed.irn !== undefined && observed.irn !== agg.irn) {
+      return base(`the IRP returned a different IRN (${observed.irn}) than the one on file (${agg.irn ?? 'none'})`);
+    }
+    if (observed.state === 'rejected') {
+      return base('the IRP now reports this invoice as REJECTED, but a registered IRN is on file — do not re-issue without reconciling');
+    }
+    return undefined;
+  }
+  if (agg.state === 'cancelled' && observed.state === 'registered') {
+    return base(`the IRP still reports this invoice as registered (${observed.irn ?? 'no IRN'}), but it was cancelled here`);
+  }
+  return undefined;
+}
+
 // --- the operator reconciliation queue (item 2) -----------------------------------------------------
 
-/** The operator-facing status category an e-invoice falls into — the exception-queue vocabulary. */
-export type EInvoiceQueueCategory = 'processing' | 'registered' | 'rejected' | 'unknown' | 'error' | 'cancelled';
+/**
+ * The operator-facing status category an e-invoice falls into — the exception-queue vocabulary.
+ * `mismatch` is not a lifecycle state: it is the flag a terminal invoice carries when a re-query disagreed
+ * with the stored IRN (see `detectEInvoiceMismatch`). `eInvoiceQueueCategory` (state → category) never
+ * returns it; `eInvoiceRowCategory` (whole aggregate → category) does when the flag is set.
+ */
+export type EInvoiceQueueCategory = 'processing' | 'registered' | 'rejected' | 'unknown' | 'error' | 'cancelled' | 'mismatch';
 
 /** Map an e-invoice lifecycle state to its operator-facing queue category. Pure, total. */
-export function eInvoiceQueueCategory(state: EInvoiceLifecycleState): EInvoiceQueueCategory {
+export function eInvoiceQueueCategory(state: EInvoiceLifecycleState): Exclude<EInvoiceQueueCategory, 'mismatch'> {
   switch (state) {
     case 'submitted': return 'processing';
     case 'registered': return 'registered';
@@ -268,12 +324,24 @@ export function eInvoiceQueueCategory(state: EInvoiceLifecycleState): EInvoiceQu
 }
 
 /**
- * Does this e-invoice need operator attention? An UNKNOWN outcome (poll/reconcile), a provider ERROR
+ * Does this e-invoice STATE need operator attention? An UNKNOWN outcome (poll/reconcile), a provider ERROR
  * (a signature that did not verify), or a REJECTION (fix and re-issue). `submitted` is in-flight, and
- * `registered`/`cancelled` are terminal — none of those is an exception.
+ * `registered`/`cancelled` are terminal — none of those states is an exception. (A terminal invoice can
+ * still become an exception via a MISMATCH — that is a property of the whole aggregate, not the state; see
+ * `eInvoiceNeedsAttention`.)
  */
 export function isEInvoiceException(state: EInvoiceLifecycleState): boolean {
   return state === 'pending_unknown' || state === 'provider_error' || state === 'rejected';
+}
+
+/** The queue category for a whole aggregate: `mismatch` wins over the state category when flagged. */
+export function eInvoiceRowCategory(agg: EInvoiceAggregate): EInvoiceQueueCategory {
+  return agg.mismatch !== undefined ? 'mismatch' : eInvoiceQueueCategory(agg.state);
+}
+
+/** Does this whole e-invoice aggregate need attention? An exception STATE, or a flagged MISMATCH. */
+export function eInvoiceNeedsAttention(agg: EInvoiceAggregate): boolean {
+  return agg.mismatch !== undefined || isEInvoiceException(agg.state);
 }
 
 /** May a registered IRN still be cancelled? Within 24 hours of registration; otherwise a credit note. */

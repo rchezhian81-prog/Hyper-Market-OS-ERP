@@ -97,3 +97,25 @@ way the e-invoice register does, so the two read alike:
 Tested in `tests/integration/e-way-bill-register.test.ts` (poll `pending_unknown` → generated + terminal
 no-op; a forced timeout staying unknown and an outage classifying rejected; the exception queue listing
 unknown + rejected while generated is separate, with RBAC 403 and tenant isolation).
+
+## Mismatch detection (A23, item 2 inc4)
+
+Poll resolves a *stuck* movement; it deliberately leaves a **terminal** one alone. But a stored EWB number
+can silently drift from what the portal holds — the portal corrects a record, a wrong document is
+generated, a re-query returns a different number. `POST …/movements/:movementId/verify` closes that:
+
+- It re-queries the portal for a **generated/cancelled** movement (an in-flight one is refused with a 422
+  pointing at poll) and **compares** the answer against the stored number via the pure `detectEwbMismatch`.
+- On **agreement** (same number) it is a no-op — nothing written.
+- On a **disagreement** (a different generated number, or the portal now reporting the movement as rejected
+  while an EWB is on file) it records a `MismatchObserved` fact — an **additive flag**, never an overwrite
+  of the stored number (**hard rule #10**: a conflict becomes a visible exception, not a silent
+  last-write-wins). `foldEwayBill` applies the flag without changing the lifecycle state or the number, and
+  `ewbRowCategory`/`ewbNeedsAttention` move the movement into the **`mismatch`** queue category (and the
+  `exceptions` filter). A human reconciles it out of band; the software never picks a winner.
+
+The connector's own observation can be posted directly (`observed`), or the sandbox is re-queried
+(`sandbox.forceOutcome`). Tested in `tests/unit/e-way-bill-reconciliation.test.ts` (detector + additive,
+replay-safe fold) and `tests/integration/e-way-bill-register.test.ts` (agreement no-ops; a forced rejection
+and a connector-observed different number both flag without overwriting; `mismatch`/`exceptions` queue;
+in-flight 422; RBAC 403).
