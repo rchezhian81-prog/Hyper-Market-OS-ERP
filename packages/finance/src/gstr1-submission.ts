@@ -75,10 +75,11 @@ export type Gstr1SubmissionState =
   | 'submitting'  // handed to the portal; awaiting an answer (in-flight)
   | 'filed'       // portal acknowledged (ARN) — terminal success
   | 'failed'      // portal rejected — recoverable by a corrected return
-  | 'unknown';    // no clear answer — needs reconciliation
+  | 'unknown'     // no clear answer — needs reconciliation
+  | 'cancelled';  // withdrawn before filing — terminal; a fresh return re-previews
 
 export type Gstr1SubmissionAction =
-  | 'preview' | 'approve' | 'submit' | 'acknowledge' | 'markFailed' | 'markUnknown' | 'reconcile';
+  | 'preview' | 'approve' | 'submit' | 'acknowledge' | 'markFailed' | 'markUnknown' | 'reconcile' | 'cancel';
 
 export type Gstr1SubmissionEvent =
   | { readonly kind: 'previewed'; readonly period: string; readonly returnDigest: string; readonly by: string; readonly at: string; readonly summary?: string }
@@ -87,7 +88,28 @@ export type Gstr1SubmissionEvent =
   | { readonly kind: 'acknowledged'; readonly arn: string; readonly at: string }
   | { readonly kind: 'failed'; readonly errorCode: string; readonly errorClass: GstnErrorClass; readonly at: string }
   | { readonly kind: 'unknownResponse'; readonly detail: string; readonly at: string }
-  | { readonly kind: 'reconciled'; readonly resolvedState: 'filed' | 'failed'; readonly by: string; readonly note: string; readonly at: string; readonly arn?: string };
+  | { readonly kind: 'reconciled'; readonly resolvedState: 'filed' | 'failed'; readonly by: string; readonly note: string; readonly at: string; readonly arn?: string }
+  | { readonly kind: 'cancelled'; readonly by: string; readonly reason: string; readonly at: string };
+
+/** The operator-facing status category a submission falls into — the exception-queue vocabulary. */
+export type Gstr1SubmissionQueueCategory = 'pending' | 'processing' | 'success' | 'failed' | 'cancelled' | 'unknown';
+
+/** Map an internal lifecycle state to its operator-facing queue category. Pure, total. */
+export function queueCategory(state: Gstr1SubmissionState): Gstr1SubmissionQueueCategory {
+  switch (state) {
+    case 'previewed': case 'approved': return 'pending';
+    case 'submitting': return 'processing';
+    case 'filed': return 'success';
+    case 'failed': return 'failed';
+    case 'cancelled': return 'cancelled';
+    case 'unknown': return 'unknown';
+  }
+}
+
+/** Does this submission need operator attention — a rejection or an unresolved outcome? */
+export function isSubmissionException(state: Gstr1SubmissionState): boolean {
+  return state === 'unknown' || state === 'failed';
+}
 
 export interface Gstr1SubmissionAggregate {
   /** The filing period, MMYYYY. */
@@ -114,8 +136,8 @@ export function foldGstr1Submission(period: string, events: readonly Gstr1Submis
   for (const e of events) {
     if (e.kind === 'previewed') {
       // A first preview creates the submission; a re-preview is allowed only while not yet locked (previewed,
-      // failed, or unknown-resolved-to-failed) and replaces the digest, resetting any approval.
-      if (agg === undefined || agg.state === 'previewed' || agg.state === 'failed') {
+      // failed, or cancelled) and replaces the digest, resetting any approval.
+      if (agg === undefined || agg.state === 'previewed' || agg.state === 'failed' || agg.state === 'cancelled') {
         agg = {
           period: e.period, state: 'previewed', returnDigest: e.returnDigest, previewedBy: e.by,
           detail: `previewed by ${e.by}${e.summary ? ` — ${e.summary}` : ''}`,
@@ -142,6 +164,11 @@ export function foldGstr1Submission(period: string, events: readonly Gstr1Submis
           ? { ...agg, state: 'filed', ...(e.arn !== undefined ? { arn: e.arn } : {}), detail: `reconciled to filed by ${e.by}: ${e.note}` }
           : { ...agg, state: 'failed', detail: `reconciled to failed by ${e.by}: ${e.note}` };
       }
+    } else if (e.kind === 'cancelled') {
+      // A return not yet filed can be withdrawn; a filed one cannot (an amendment is a later period).
+      if (agg.state === 'previewed' || agg.state === 'approved') {
+        agg = { ...agg, state: 'cancelled', detail: `cancelled by ${e.by}: ${e.reason} — withdrawn before filing` };
+      }
     }
   }
   return agg;
@@ -155,6 +182,7 @@ export type Gstr1SubmissionRefusal =
   | 'not_approved'
   | 'not_submitting'
   | 'not_unknown'
+  | 'not_cancellable'
   | 'self_approval'
   | 'digest_mismatch'
   | 'invalid_period'
@@ -228,6 +256,10 @@ export function evaluateGstr1SubmissionTransition(input: Gstr1SubmissionTransiti
       if (current.state !== 'unknown') return deny('not_unknown', `only a submission whose outcome is unknown can be reconciled — this one is ${current.state}`);
       if ((input.note ?? '').trim() === '') return deny('reason_required', 'reconciliation needs evidence/a note — a stuck return is resolved by a recorded fact, never a silent rewrite');
       return allow(`reconcile: ${input.note}`, 'filed'); // resolvedState decided by the caller (filed|failed)
+    case 'cancel':
+      if (current.state !== 'previewed' && current.state !== 'approved') return deny('not_cancellable', `only a return not yet filed can be cancelled — this one is ${current.state} (a filed return is corrected by an amendment in a later period)`);
+      if ((input.note ?? '').trim() === '') return deny('reason_required', 'cancelling a return needs a reason — the withdrawal is a recorded fact');
+      return allow(`cancel (withdraw) the return before filing: ${input.note}`, 'cancelled');
     default:
       return deny('no_submission', `unknown action ${String(action)}`);
   }

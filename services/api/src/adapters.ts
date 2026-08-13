@@ -417,14 +417,39 @@ export function gstr1SubmissionAdapter(input: {
       // A given step at a given instant is one fact — keyed on kind + actor + at, so a retry collapses.
       const at = 'at' in event ? event.at : input.now();
       const actor = 'by' in event ? event.by : 'portal';
-      await input.store.append(tenantId, streamFor(period), makeEvent({
+      const lifecycle = makeEvent({
         id: `gstr1sub-${period}-${event.kind}-${actor}-${at}`,
         type: 'Gstr1SubmissionRecorded',
         occurredAt: input.now(),
         idempotencyKey: `gstr1sub-${tenantId}-${period}-${event.kind}-${actor}-${at}`,
         source: 'api/finance',
         payload: event,
-      }));
+      });
+      if (event.kind === 'previewed') {
+        // The FIRST preview of a period indexes it (idempotent per period), so the exception queue can find
+        // it without scanning the whole ledger. Batched with the lifecycle fact so both land or neither.
+        await input.store.appendBatch(tenantId, [
+          { stream: streamFor(period), event: lifecycle },
+          {
+            stream: GSTR1_SUBMISSION_INDEX,
+            event: makeEvent({
+              id: `gstr1sub-index-${period}`,
+              type: 'Gstr1SubmissionIndexed',
+              occurredAt: input.now(),
+              idempotencyKey: `gstr1sub-index-${tenantId}-${period}`, // one index fact per period
+              source: 'api/finance',
+              payload: { period },
+            }),
+          },
+        ]);
+        return;
+      }
+      await input.store.append(tenantId, streamFor(period), lifecycle);
+    },
+
+    listPeriods: async (tenantId) => {
+      const indexed = await allOf<{ period: string }>(input.store, tenantId, GSTR1_SUBMISSION_INDEX, 'Gstr1SubmissionIndexed');
+      return [...new Set(indexed.map((i) => i.period))];
     },
   };
 }
@@ -638,6 +663,8 @@ const forConnectorMapping = (connectorId: string, version: string): string => st
 const forPayRun = (payRunId: string): string => streamName(STREAM.payroll, payRunId);
 /** Each filing period's GSTR-1 submission folds one stream — one period's preview→approve→file history. */
 const forGstr1Submission = (period: string): string => streamName(STREAM.gstreturns, 'submission', period);
+/** A tenant-wide index of the periods that have a submission — the exception queue folds each one. */
+const GSTR1_SUBMISSION_INDEX = streamName(STREAM.gstreturns, 'submission-index');
 
 export const STREAM_FOR = { forCustomer, forDriverRun, forLocation, forInvoice, forSaleReturns } as const;
 

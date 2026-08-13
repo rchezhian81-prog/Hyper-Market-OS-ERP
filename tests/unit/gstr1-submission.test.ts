@@ -3,6 +3,8 @@ import {
   foldGstr1Submission,
   evaluateGstr1SubmissionTransition,
   classifyGstnError,
+  queueCategory,
+  isSubmissionException,
   InvalidGstr1Submission,
   assertFilingPeriod,
   type Gstr1SubmissionEvent,
@@ -105,6 +107,41 @@ describe('classifyGstnError — recovery class for operators', () => {
     expect(classifyGstnError('RET_VALIDATION_ERROR')).toBe('validation');
     expect(classifyGstnError('something-nobody-mapped')).toBe('unknown');
     expect(classifyGstnError('')).toBe('unknown');
+  });
+});
+
+describe('cancel — withdraw a return before filing', () => {
+  it('cancels a previewed/approved return with a reason, and refuses to cancel a filed one', () => {
+    const previewedAgg = fold([previewed]);
+    expect(evaluateGstr1SubmissionTransition({ current: previewedAgg, action: 'cancel', actor: 'maker', note: 'wrong period' })).toMatchObject({ allowed: true, resultingState: 'cancelled' });
+    expect(evaluateGstr1SubmissionTransition({ current: previewedAgg, action: 'cancel', actor: 'maker' })).toMatchObject({ allowed: false, refusal: 'reason_required' });
+    const cancelled = fold([previewed, { kind: 'cancelled', by: 'maker', reason: 'wrong period', at: '2026-09-01T10:06:00Z' }]);
+    expect(cancelled?.state).toBe('cancelled');
+    const filed = fold([previewed, approved, submitted, { kind: 'acknowledged', arn: 'AA1', at: '2026-09-01T10:12:00Z' }]);
+    expect(evaluateGstr1SubmissionTransition({ current: filed, action: 'cancel', actor: 'x', note: 'oops' })).toMatchObject({ allowed: false, refusal: 'not_cancellable' });
+  });
+
+  it('lets a cancelled return be re-previewed (start over)', () => {
+    const agg = fold([previewed, { kind: 'cancelled', by: 'maker', reason: 'wrong period', at: '2026-09-01T10:06:00Z' },
+      { kind: 'previewed', period: '082026', returnDigest: 'sha256:fresh', by: 'maker', at: '2026-09-01T12:00:00Z' }]);
+    expect(agg?.state).toBe('previewed');
+    expect(agg?.returnDigest).toBe('sha256:fresh');
+  });
+});
+
+describe('queueCategory + isSubmissionException — the operator queue vocabulary', () => {
+  it('maps each state to its operator category and flags exceptions', () => {
+    expect(queueCategory('previewed')).toBe('pending');
+    expect(queueCategory('approved')).toBe('pending');
+    expect(queueCategory('submitting')).toBe('processing');
+    expect(queueCategory('filed')).toBe('success');
+    expect(queueCategory('failed')).toBe('failed');
+    expect(queueCategory('cancelled')).toBe('cancelled');
+    expect(queueCategory('unknown')).toBe('unknown');
+    expect(isSubmissionException('unknown')).toBe(true);
+    expect(isSubmissionException('failed')).toBe(true);
+    expect(isSubmissionException('filed')).toBe(false);
+    expect(isSubmissionException('pending' as never)).toBe(false);
   });
 });
 

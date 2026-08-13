@@ -110,9 +110,32 @@ Otherwise the deterministic **sandbox GSTN provider** (`src/gstn-sandbox.ts`) ru
 duplicate detection and forced failed/unknown outcomes for testing. The **async/webhook path** is covered
 too (`submit {async:true}` → `submitting`, then `record-response` applies the portal's answer; an unknown
 outcome routes to reconciliation, never straight to filed). Tested in `tests/unit/gstn-sandbox.test.ts` (3)
-and `tests/integration/gstr1-submission.test.ts` (6). The reconciliation/exception queue and polling are the
-next increment. Live filing stays externally blocked pending CA/legal sign-off, production credentials and
-owner GO.
+and `tests/integration/gstr1-submission.test.ts`. Live filing stays externally blocked pending CA/legal
+sign-off, production credentials and owner GO.
+
+### Reconciliation + the exception queue (WP4 inc3)
+
+The submission can get stuck — a portal timeout leaves it `unknown`, a rejection leaves it `failed` — so
+inc3 gives operators the tools to resolve those safely, plus a `cancelled` state to withdraw a return
+before filing (a filed return is corrected by an amendment in a later period, never cancelled). The queue
+vocabulary is `queueCategory(state)` → pending/processing/success/failed/cancelled/unknown, and
+`isSubmissionException(state)` flags the two that need attention (failed + unknown). Routes:
+
+- `POST …/:period/reconcile` — an operator resolves a stuck **unknown** to filed or failed **with
+  evidence**: the resolution is a recorded `reconciled` fact (who, the note, the time), never a silent
+  rewrite; refused unless the outcome is unknown, and refused without a note.
+- `POST …/:period/poll` — re-queries the portal for a `submitting` or `unknown` submission and applies the
+  answer, so a **lost acknowledgement is recovered** without manual entry. Safe to repeat — a terminal
+  submission is a no-op.
+- `POST …/:period/cancel` (gated `finance.gstr.approve`) — withdraw a not-yet-filed return with a reason.
+- `GET /v1/finance/gstr1/submissions?state=` — the **exception queue**: every period's submission and its
+  operator status, filterable by queue category or `exceptions` (failed + unknown). It folds a tenant-wide
+  period index (`gstr1SubmissionAdapter` writes a `Gstr1SubmissionIndexed` fact on first preview) so the
+  queue is cheap. Tenant-isolated, read-gated, and (like everything here) restart/replay-safe.
+
+Tested in `tests/unit/gstr1-submission.test.ts` and `tests/integration/gstr1-submission.test.ts`. This
+completes owner-directive **item 1** (GST return submission safety); live filing stays externally blocked
+pending CA/legal sign-off, production credentials and owner GO.
 
 > Example sale rule: Dr `cash` [total], Cr `sales_revenue` [net], Cr `gst_output` [tax] —
 > `postJournal` checks it balances. Pure and deterministic; composes the `Money` primitive.
