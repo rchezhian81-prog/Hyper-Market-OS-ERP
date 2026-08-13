@@ -167,6 +167,8 @@ export interface StatutoryDeductionInput {
   readonly esiCoveredForPeriod?: boolean;
   /** This month's apportioned Professional Tax in paise (PT is a half-yearly levy spread over months). */
   readonly professionalTaxMonthlyMinor?: number;
+  /** This month's TDS (income tax) in paise, from the TDS engine. Default 0 (backward compatible). */
+  readonly tdsMonthlyMinor?: number;
 }
 
 export interface StatutoryDeductionResult {
@@ -176,7 +178,9 @@ export interface StatutoryDeductionResult {
   readonly esiEmployeeMinor: number;
   readonly esiEmployerMinor: number;
   readonly professionalTaxMinor: number;
-  /** What the employee has withheld this month: PF + ESI + PT. */
+  /** This month's TDS (income tax) withheld. */
+  readonly tdsMinor: number;
+  /** What the employee has withheld this month: PF + ESI + PT + TDS. */
   readonly totalEmployeeDeductionMinor: number;
   /** The employer's own statutory cost this month (PF + ESI employer shares) — a cost, not a deduction. */
   readonly totalEmployerContributionMinor: number;
@@ -211,8 +215,12 @@ export function computeStatutoryDeductions(input: StatutoryDeductionInput): Stat
   if (!Number.isInteger(professionalTaxMinor) || professionalTaxMinor < 0) {
     throw new InvalidStatutorySchedule('the monthly PT must be a whole, non-negative paise amount');
   }
+  const tdsMinor = input.tdsMonthlyMinor ?? 0;
+  if (!Number.isInteger(tdsMinor) || tdsMinor < 0) {
+    throw new InvalidStatutorySchedule('the monthly TDS must be a whole, non-negative paise amount');
+  }
 
-  const totalEmployeeDeductionMinor = pfEmployeeMinor + esiEmployeeMinor + professionalTaxMinor;
+  const totalEmployeeDeductionMinor = pfEmployeeMinor + esiEmployeeMinor + professionalTaxMinor + tdsMinor;
   const totalEmployerContributionMinor = pfEmployerMinor + esiEmployerMinor;
   const netPayMinor = grossMinor - totalEmployeeDeductionMinor;
 
@@ -223,9 +231,10 @@ export function computeStatutoryDeductions(input: StatutoryDeductionInput): Stat
     esiEmployeeMinor,
     esiEmployerMinor,
     professionalTaxMinor,
+    tdsMinor,
     totalEmployeeDeductionMinor,
     totalEmployerContributionMinor,
     netPayMinor,
-    detail: `gross ${grossMinor} − (PF ${pfEmployeeMinor} + ESI ${esiEmployeeMinor}${esiApplicable ? '' : ' n/a'} + PT ${professionalTaxMinor}) = net ${netPayMinor}`,
+    detail: `gross ${grossMinor} − (PF ${pfEmployeeMinor} + ESI ${esiEmployeeMinor}${esiApplicable ? '' : ' n/a'} + PT ${professionalTaxMinor} + TDS ${tdsMinor}) = net ${netPayMinor}`,
   };
 }

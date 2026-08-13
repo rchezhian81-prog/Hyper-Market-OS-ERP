@@ -14,9 +14,11 @@ import { apiError } from '../../kernel/src/index';
 import {
   resolveStatutoryParams, computeStatutoryDeductions, professionalTaxTamilNadu,
   resolveCompensation, buildPayslip,
+  resolveTdsParams, computeTds, DEFAULT_TDS_SCHEDULE,
   DEFAULT_STATUTORY_SCHEDULE, InvalidStatutorySchedule,
   type StatutoryScheduleEntry, type PtSlab,
   type CompensationComponent, type CompensationStructureEntry,
+  type TdsScheduleEntry, type TaxRegime,
 } from '../../../packages/payroll/src/index';
 
 const isInt = (v: unknown): v is number => Number.isInteger(v);
@@ -101,10 +103,40 @@ export function payrollRoutes(): readonly Route[] {
             params,
             ...(typeof b['esiCoveredForPeriod'] === 'boolean' ? { esiCoveredForPeriod: b['esiCoveredForPeriod'] } : {}),
             ...(isInt(b['professionalTaxMonthlyMinor']) ? { professionalTaxMonthlyMinor: b['professionalTaxMonthlyMinor'] as number } : {}),
+            ...(isInt(b['tdsMonthlyMinor']) ? { tdsMonthlyMinor: b['tdsMonthlyMinor'] as number } : {}),
           });
           return { status: 200, body: payslip };
         } catch (err) {
           if (err instanceof InvalidStatutorySchedule) throw apiError(400, { code: 'payslip_invalid', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the date, attendance, compensation or schedule and try again.' });
+          throw err;
+        }
+      },
+    },
+    {
+      // This month's TDS (income tax). Body: { onDate, regime, annualGrossIncomeMinor, declaredDeductionsMinor?,
+      //   tdsAlreadyDeductedMinor?, monthsRemaining?, schedule? }. Feed the result's tdsMonthlyMinor to the payslip.
+      api: 'API-09', method: 'POST', path: '/v1/hr/payroll/tds',
+      permission: 'payroll.statutory.read', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const regime = b['regime'];
+        if (typeof b['onDate'] !== 'string' || (regime !== 'new' && regime !== 'old') || !isInt(b['annualGrossIncomeMinor'])) {
+          throw apiError(400, { code: 'tds_needs_date_regime_income', whatHappened: 'TDS needs onDate (YYYY-MM-DD), regime ("new"/"old") and annualGrossIncomeMinor (integer paise).', wasItSaved: 'not_saved', nextSafeAction: 'Send the pay date, the chosen tax regime and the projected annual gross income.' });
+        }
+        const schedule = Array.isArray(b['schedule']) ? (b['schedule'] as TdsScheduleEntry[]) : DEFAULT_TDS_SCHEDULE;
+        try {
+          const params = resolveTdsParams(schedule, b['onDate']);
+          const result = computeTds({
+            annualGrossIncomeMinor: b['annualGrossIncomeMinor'] as number,
+            regime: regime as TaxRegime,
+            params,
+            ...(isInt(b['declaredDeductionsMinor']) ? { declaredDeductionsMinor: b['declaredDeductionsMinor'] as number } : {}),
+            ...(isInt(b['tdsAlreadyDeductedMinor']) ? { tdsAlreadyDeductedMinor: b['tdsAlreadyDeductedMinor'] as number } : {}),
+            ...(isInt(b['monthsRemaining']) ? { monthsRemaining: b['monthsRemaining'] as number } : {}),
+          });
+          return { status: 200, body: result };
+        } catch (err) {
+          if (err instanceof InvalidStatutorySchedule) throw apiError(400, { code: 'tds_invalid', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the date, regime, income or schedule and try again.' });
           throw err;
         }
       },
