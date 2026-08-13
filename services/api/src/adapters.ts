@@ -69,6 +69,8 @@ import type { SuspendedBillsDeps, SuspendedBill } from '../../pos/src/suspended-
 import type { EInvoiceRegisterDeps } from '../../finance/src/e-invoice-register';
 import type { PayRunStoreDeps } from '../../finance/src/pay-run-store';
 import { foldPayRun, type PayRunEvent } from '../../../packages/payroll/src/index';
+import type { Gstr1SubmissionStoreDeps } from '../../finance/src/gstr1-submission-store';
+import { foldGstr1Submission, type Gstr1SubmissionEvent } from '../../../packages/finance/src/index';
 import type { GstReturnsDeps, StoredOutwardDoc, PeriodSoldLine } from '../../finance/src/gst-returns';
 import { foldEInvoice, type EInvoiceEvent, type IrnRequest as EInvoiceIrnRequest, type EInvoiceRecord } from '../../../packages/e-invoice/src/index';
 import type { WasteDeps, WasteRecord, WasteCoverage } from '../../inventory/src/waste';
@@ -391,6 +393,43 @@ export function payRunAdapter(input: {
 }
 
 /**
+ * The DURABLE GSTR-1 submission-safety store (WP4 inc2). Each filing period's submission is its own stream
+ * of append-only lifecycle facts — previewed, approved, submitted, the portal's answer, a reconciliation —
+ * folded by the tested engine into the current state. Nothing is overwritten (hard rule #2): a correction
+ * is an amendment in a later period. Maker ≠ checker, duplicate-prevention and the digest match are
+ * enforced by the route (before the append) and the fold (on read).
+ */
+export function gstr1SubmissionAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): Gstr1SubmissionStoreDeps {
+  const streamFor = (period: string): string => forGstr1Submission(period);
+  return {
+    now: input.now,
+
+    load: async (tenantId, period) => {
+      const persisted = await input.store.readStream(tenantId, streamFor(period));
+      const events = persisted.map((e) => e.event.payload as Gstr1SubmissionEvent);
+      return foldGstr1Submission(period, events);
+    },
+
+    append: async (tenantId, period, event) => {
+      // A given step at a given instant is one fact — keyed on kind + actor + at, so a retry collapses.
+      const at = 'at' in event ? event.at : input.now();
+      const actor = 'by' in event ? event.by : 'portal';
+      await input.store.append(tenantId, streamFor(period), makeEvent({
+        id: `gstr1sub-${period}-${event.kind}-${actor}-${at}`,
+        type: 'Gstr1SubmissionRecorded',
+        occurredAt: input.now(),
+        idempotencyKey: `gstr1sub-${tenantId}-${period}-${event.kind}-${actor}-${at}`,
+        source: 'api/finance',
+        payload: event,
+      }));
+    },
+  };
+}
+
+/**
  * GST returns — the outward-supply line store (A5). Each document's tax lines are an append-only
  * `OutwardSupplyRecorded` fact; GSTR-1 folds over them. Idempotent per document — a re-record collapses,
  * and a correction is a new document / credit note, never an overwrite (hard rule #2).
@@ -597,6 +636,8 @@ const forWebhook = (provider: string): string => streamName(STREAM.integration, 
 const forConnectorMapping = (connectorId: string, version: string): string => streamName(STREAM.integration, 'mapping', connectorId, version);
 /** Each pay run's lifecycle folds one stream — one run's history (drafted→…→locked), not the whole shop's. */
 const forPayRun = (payRunId: string): string => streamName(STREAM.payroll, payRunId);
+/** Each filing period's GSTR-1 submission folds one stream — one period's preview→approve→file history. */
+const forGstr1Submission = (period: string): string => streamName(STREAM.gstreturns, 'submission', period);
 
 export const STREAM_FOR = { forCustomer, forDriverRun, forLocation, forInvoice, forSaleReturns } as const;
 
