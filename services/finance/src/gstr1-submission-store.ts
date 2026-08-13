@@ -17,8 +17,9 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
-  evaluateGstr1SubmissionTransition, sandboxGstnProvider,
+  evaluateGstr1SubmissionTransition, sandboxGstnProvider, queueCategory, isSubmissionException,
   type Gstr1SubmissionAggregate, type Gstr1SubmissionEvent, type GstnSubmitStatus, type GstnSubmitResult,
+  type Gstr1SubmissionQueueCategory,
 } from '../../../packages/finance/src/index';
 import { requireGstPortalLive, GstPortalDisabledError, type GstPortalControls } from '../../../packages/e-invoice/src/index';
 
@@ -30,6 +31,8 @@ const OUTCOMES: readonly GstnSubmitStatus[] = ['acknowledged', 'failed', 'unknow
 export interface Gstr1SubmissionStoreDeps {
   readonly load: (tenantId: string, period: string) => Promise<Gstr1SubmissionAggregate | undefined> | Gstr1SubmissionAggregate | undefined;
   readonly append: (tenantId: string, period: string, event: Gstr1SubmissionEvent) => Promise<void> | void;
+  /** The distinct filing periods that have a submission — the index the exception queue folds over. */
+  readonly listPeriods: (tenantId: string) => Promise<readonly string[]> | readonly string[];
   readonly now: () => string;
 }
 
@@ -145,6 +148,106 @@ export function gstr1SubmissionRoutes(deps: Gstr1SubmissionStoreDeps): readonly 
               : { status: 'unknown', detail: typeof b['detail'] === 'string' ? (b['detail'] as string) : 'no clear answer from the portal' };
         await deps.append(ctx.tenantId, period, eventForResult(result, deps.now()));
         return { status: 200, body: { period, current: await deps.load(ctx.tenantId, period) } };
+      },
+    },
+    {
+      // Reconcile a stuck submission whose outcome is UNKNOWN — an operator resolves it to filed or failed
+      // WITH EVIDENCE. Body: { resolvedState: filed|failed, note (required), arn? }. Never a silent rewrite:
+      // the resolution is a recorded fact (who, the note, the time). Gated `finance.gstr.submit`.
+      api: 'API-09', method: 'POST', path: '/v1/finance/gstr1/submission/:period/reconcile',
+      permission: 'finance.gstr.submit', idempotent: true,
+      handler: async (ctx) => {
+        const period = ctx.params['period'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const resolvedState = b['resolvedState'];
+        if (resolvedState !== 'filed' && resolvedState !== 'failed') {
+          throw apiError(400, { code: 'reconcile_needs_resolution', whatHappened: 'Reconciliation needs resolvedState (filed or failed) and a note (the evidence).', wasItSaved: 'not_saved', nextSafeAction: 'Send resolvedState with the evidence in note, plus arn if you found one.' });
+        }
+        if (typeof b['note'] !== 'string' || b['note'].trim() === '') {
+          throw apiError(400, { code: 'reconcile_needs_note', whatHappened: 'Reconciliation needs a note — the evidence for the resolution (a stuck return is never silently rewritten).', wasItSaved: 'not_saved', nextSafeAction: 'Send the evidence you resolved it on (e.g. “ARN found on the portal”).' });
+        }
+        const current = await deps.load(ctx.tenantId, period);
+        const decision = evaluateGstr1SubmissionTransition({ ...(current !== undefined ? { current } : {}), action: 'reconcile', actor: ctx.userId, note: b['note'] });
+        if (!decision.allowed) throw apiError(statusFor(decision.refusal), { code: `submission_${decision.refusal}`, whatHappened: decision.reason, wasItSaved: 'not_saved', nextSafeAction: 'Only a submission whose outcome is unknown can be reconciled.' });
+        await deps.append(ctx.tenantId, period, {
+          kind: 'reconciled', resolvedState, by: ctx.userId, note: b['note'], at: deps.now(),
+          ...(typeof b['arn'] === 'string' && b['arn'].trim() !== '' ? { arn: b['arn'] } : {}),
+        });
+        return { status: 200, body: { period, current: await deps.load(ctx.tenantId, period) } };
+      },
+    },
+    {
+      // Poll the portal for a still-in-flight or unknown submission and apply the answer — recovers a lost
+      // acknowledgement without manual data entry. Body: { gstin }. Safe to repeat (a terminal submission is
+      // a no-op). Sandbox only (live is blocked). Gated `finance.gstr.submit`.
+      api: 'API-09', method: 'POST', path: '/v1/finance/gstr1/submission/:period/poll',
+      permission: 'finance.gstr.submit', idempotent: true,
+      handler: async (ctx) => {
+        const period = ctx.params['period'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (typeof b['gstin'] !== 'string' || !GSTIN.test(b['gstin'])) {
+          throw apiError(400, { code: 'poll_needs_gstin', whatHappened: 'Polling needs the supplier gstin to re-query the return.', wasItSaved: 'not_saved', nextSafeAction: 'Send the supplier’s own GSTIN.' });
+        }
+        const current = await deps.load(ctx.tenantId, period);
+        if (current === undefined) throw notFound(`a GSTR-1 submission for ${period}`);
+        if (current.state !== 'submitting' && current.state !== 'unknown') {
+          return { status: 200, body: { period, polled: false, reason: `nothing to poll — the submission is ${current.state}`, current } };
+        }
+        const sandbox = isObj(b['sandbox']) ? b['sandbox'] : {};
+        const provider = sandboxGstnProvider({
+          ...(typeof sandbox['forceOutcome'] === 'string' && OUTCOMES.includes(sandbox['forceOutcome'] as GstnSubmitStatus) ? { forceOutcome: sandbox['forceOutcome'] as GstnSubmitStatus } : {}),
+          ...(typeof sandbox['failCode'] === 'string' ? { failCode: sandbox['failCode'] as string } : {}),
+        });
+        const result = provider.submit({ gstin: b['gstin'], period, returnType: 'GSTR1', returnDigest: current.returnDigest });
+        if (current.state === 'submitting') {
+          await deps.append(ctx.tenantId, period, eventForResult(result, deps.now()));
+        } else if (result.status === 'acknowledged') {
+          // Acknowledgement recovery: the portal DID file it — reconcile the unknown to filed with the ARN.
+          await deps.append(ctx.tenantId, period, { kind: 'reconciled', resolvedState: 'filed', by: ctx.userId, note: 'recovered via poll — portal returned the acknowledgement', at: deps.now(), arn: result.arn ?? '' });
+        } else if (result.status === 'failed') {
+          await deps.append(ctx.tenantId, period, { kind: 'reconciled', resolvedState: 'failed', by: ctx.userId, note: `recovered via poll — portal reports ${result.errorCode ?? 'a rejection'}`, at: deps.now() });
+        } // still unknown → leave it for manual reconciliation
+        return { status: 200, body: { period, polled: true, result, current: await deps.load(ctx.tenantId, period) } };
+      },
+    },
+    {
+      // Cancel (withdraw) a return that has NOT been filed. Body: { reason }. A filed return cannot be
+      // cancelled — it is corrected by an amendment in a later period. Gated `finance.gstr.approve`.
+      api: 'API-09', method: 'POST', path: '/v1/finance/gstr1/submission/:period/cancel',
+      permission: 'finance.gstr.approve', idempotent: true,
+      handler: async (ctx) => {
+        const period = ctx.params['period'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (typeof b['reason'] !== 'string' || b['reason'].trim() === '') {
+          throw apiError(400, { code: 'cancel_needs_reason', whatHappened: 'Cancelling a return needs a reason (the withdrawal is a recorded fact).', wasItSaved: 'not_saved', nextSafeAction: 'Send a reason for withdrawing the return.' });
+        }
+        const current = await deps.load(ctx.tenantId, period);
+        const decision = evaluateGstr1SubmissionTransition({ ...(current !== undefined ? { current } : {}), action: 'cancel', actor: ctx.userId, note: b['reason'] });
+        if (!decision.allowed) throw apiError(statusFor(decision.refusal), { code: `submission_${decision.refusal}`, whatHappened: decision.reason, wasItSaved: 'not_saved', nextSafeAction: 'Only a return not yet filed can be cancelled.' });
+        await deps.append(ctx.tenantId, period, { kind: 'cancelled', by: ctx.userId, reason: b['reason'], at: deps.now() });
+        return { status: 200, body: { period, current: await deps.load(ctx.tenantId, period) } };
+      },
+    },
+    {
+      // The submission exception queue — every period's submission and its operator status. ?state= filters
+      // to a queue category (pending/processing/success/failed/cancelled/unknown) or `exceptions` (failed +
+      // unknown, the ones needing attention). Gated `finance.gstr.read`.
+      api: 'API-09', method: 'GET', path: '/v1/finance/gstr1/submissions',
+      permission: 'finance.gstr.read',
+      handler: async (ctx) => {
+        const filter = ctx.query['state'];
+        const periods = await deps.listPeriods(ctx.tenantId);
+        const rows: { period: string; state: string; queue: Gstr1SubmissionQueueCategory; exception: boolean; arn?: string; detail: string }[] = [];
+        for (const period of periods) {
+          const agg = await deps.load(ctx.tenantId, period);
+          if (agg === undefined) continue;
+          rows.push({ period, state: agg.state, queue: queueCategory(agg.state), exception: isSubmissionException(agg.state), ...(agg.arn !== undefined ? { arn: agg.arn } : {}), detail: agg.detail });
+        }
+        const filtered = filter === undefined || filter === 'all' ? rows
+          : filter === 'exceptions' ? rows.filter((r) => r.exception)
+            : rows.filter((r) => r.queue === filter);
+        filtered.sort((a, b) => a.period.localeCompare(b.period));
+        return { status: 200, body: { count: filtered.length, filter: filter ?? 'all', submissions: filtered } };
       },
     },
     {

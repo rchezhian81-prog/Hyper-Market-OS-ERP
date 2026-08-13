@@ -111,3 +111,86 @@ describe('GSTR-1 submission safety routes', () => {
     expect((await h1.request({ method: 'GET', path: `/v1/finance/gstr1/submission/${P}`, userId: 'u-b', tenantId: B })).status).toBe(404);
   });
 });
+
+// --- reconciliation, polling, cancel and the exception queue (WP4 inc3) ------------------------------
+
+const req = (h: ApiHarness, method: 'POST' | 'GET', path: string, userId: string, body?: unknown, idem?: string) =>
+  h.request({ method, path, userId, tenantId: A, ...(body !== undefined ? { body } : {}), ...(idem !== undefined ? { idempotencyKey: idem } : {}) });
+const pre = (h: ApiHarness, u: string, per: string, k: string) => req(h, 'POST', `/v1/finance/gstr1/submission/${per}/preview`, u, { returnDigest: DIGEST }, k);
+const app = (h: ApiHarness, u: string, per: string, k: string) => req(h, 'POST', `/v1/finance/gstr1/submission/${per}/approve`, u, {}, k);
+const sub = (h: ApiHarness, u: string, per: string, body: unknown, k: string) => req(h, 'POST', `/v1/finance/gstr1/submission/${per}/submit`, u, body, k);
+const rr = (h: ApiHarness, u: string, per: string, body: unknown, k: string) => req(h, 'POST', `/v1/finance/gstr1/submission/${per}/record-response`, u, body, k);
+const stateOf = async (h: ApiHarness, u: string, per: string) => ((await req(h, 'GET', `/v1/finance/gstr1/submission/${per}`, u)).body as { state: string }).state;
+
+describe('GSTR-1 submission reconciliation (WP4 inc3)', () => {
+  it('reconciles a stuck unknown submission to filed with operator evidence', async () => {
+    const h = apiHarness();
+    await seed(h);
+    await pre(h, 'u-maker', P, 'rp1'); await app(h, 'u-owner', P, 'ra1');
+    await sub(h, 'u-owner', P, { gstin: GSTIN, digest: DIGEST, async: true }, 'rs1');
+    await rr(h, 'u-owner', P, { status: 'unknown', detail: 'timeout' }, 'rr1');
+    expect(await stateOf(h, 'u-owner', P)).toBe('unknown');
+    // Missing evidence is refused; with a note it resolves.
+    expect((await req(h, 'POST', `/v1/finance/gstr1/submission/${P}/reconcile`, 'u-owner', { resolvedState: 'filed' }, 'rc1a')).status).toBe(400);
+    const done = await req(h, 'POST', `/v1/finance/gstr1/submission/${P}/reconcile`, 'u-owner', { resolvedState: 'filed', note: 'ARN found on portal', arn: 'AA0826REAL' }, 'rc1b');
+    expect(done.status).toBe(200);
+    expect((done.body as { current: { state: string; arn: string } }).current.state).toBe('filed');
+    expect((done.body as { current: { arn: string } }).current.arn).toBe('AA0826REAL');
+    // Reconcile is refused once the return is no longer unknown.
+    expect((await req(h, 'POST', `/v1/finance/gstr1/submission/${P}/reconcile`, 'u-owner', { resolvedState: 'failed', note: 'x' }, 'rc1c')).status).toBe(422);
+  });
+
+  it('poll recovers a lost acknowledgement (submitting → filed) and resolves an unknown', async () => {
+    const h = apiHarness();
+    await seed(h);
+    // Async submit leaves it submitting; poll re-queries the sandbox and files it.
+    await pre(h, 'u-maker', P, 'pp1'); await app(h, 'u-owner', P, 'pa1');
+    await sub(h, 'u-owner', P, { gstin: GSTIN, digest: DIGEST, async: true }, 'ps1');
+    expect(await stateOf(h, 'u-owner', P)).toBe('submitting');
+    const polled = await req(h, 'POST', `/v1/finance/gstr1/submission/${P}/poll`, 'u-owner', { gstin: GSTIN }, 'pl1');
+    expect(polled.status).toBe(200);
+    expect((polled.body as { current: { state: string } }).current.state).toBe('filed');
+    // A poll on a terminal submission is a safe no-op.
+    const again = await req(h, 'POST', `/v1/finance/gstr1/submission/${P}/poll`, 'u-owner', { gstin: GSTIN }, 'pl2');
+    expect((again.body as { polled: boolean }).polled).toBe(false);
+  });
+
+  it('cancels a return before filing (approver), and refuses to cancel a filed one', async () => {
+    const h = apiHarness();
+    await seed(h);
+    await pre(h, 'u-maker', P, 'cp1');
+    // A maker (no approve) cannot cancel; the approver can.
+    expect((await req(h, 'POST', `/v1/finance/gstr1/submission/${P}/cancel`, 'u-maker', { reason: 'wrong period' }, 'cc1a')).status).toBe(403);
+    expect((await req(h, 'POST', `/v1/finance/gstr1/submission/${P}/cancel`, 'u-owner', { reason: 'wrong period' }, 'cc1b')).status).toBe(200);
+    expect(await stateOf(h, 'u-owner', P)).toBe('cancelled');
+    // Re-file the period fresh, then a filed return cannot be cancelled.
+    await pre(h, 'u-maker', P, 'cp2'); await app(h, 'u-owner', P, 'ca2');
+    await sub(h, 'u-owner', P, { gstin: GSTIN, digest: DIGEST }, 'cs2');
+    expect((await req(h, 'POST', `/v1/finance/gstr1/submission/${P}/cancel`, 'u-owner', { reason: 'too late' }, 'cc2')).status).toBe(422);
+  });
+
+  it('lists the exception queue — failed + unknown need attention, filed and pending are separate', async () => {
+    const h = apiHarness();
+    await seed(h);
+    // P1 filed (success)
+    await pre(h, 'u-maker', '012026', 'q1'); await app(h, 'u-owner', '012026', 'q2'); await sub(h, 'u-owner', '012026', { gstin: GSTIN, digest: DIGEST }, 'q3');
+    // P2 failed
+    await pre(h, 'u-maker', '022026', 'q4'); await app(h, 'u-owner', '022026', 'q5'); await sub(h, 'u-owner', '022026', { gstin: GSTIN, digest: DIGEST, async: true }, 'q6');
+    await rr(h, 'u-owner', '022026', { status: 'failed', errorCode: 'RET_VALIDATION' }, 'q7');
+    // P3 unknown
+    await pre(h, 'u-maker', '032026', 'q8'); await app(h, 'u-owner', '032026', 'q9'); await sub(h, 'u-owner', '032026', { gstin: GSTIN, digest: DIGEST, async: true }, 'q10');
+    await rr(h, 'u-owner', '032026', { status: 'unknown', detail: 't/o' }, 'q11');
+    // P4 pending (previewed only)
+    await pre(h, 'u-maker', '042026', 'q12');
+
+    const list = async (state?: string) => (await h.request({ method: 'GET', path: '/v1/finance/gstr1/submissions', userId: 'u-owner', tenantId: A, ...(state !== undefined ? { query: { state } } : {}) })).body as { count: number; submissions: { period: string; queue: string }[] };
+    expect((await list()).count).toBe(4);
+    const exceptions = await list('exceptions');
+    expect(exceptions.submissions.map((s) => s.period).sort()).toEqual(['022026', '032026']);
+    expect((await list('success')).submissions.map((s) => s.period)).toEqual(['012026']);
+    expect((await list('pending')).submissions.map((s) => s.period)).toEqual(['042026']);
+    // The queue is owner/read-gated; a cashier cannot read it.
+    await h.provisionRole(A, 'u-cash2', 'cashier');
+    expect((await req(h, 'GET', '/v1/finance/gstr1/submissions', 'u-cash2')).status).toBe(403);
+  });
+});

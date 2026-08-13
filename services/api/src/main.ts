@@ -400,7 +400,7 @@ export function buildSurface(deps: {
     // period (one stream each), maker ≠ checker + duplicate-prevention + digest-match at the write boundary.
     // The LIVE portal path stays off-by-default + killable; the deterministic sandbox runs otherwise.
     ...gstr1SubmissionRoutes(store === undefined ? {
-      load: () => undefined, append: () => {}, now,
+      load: () => undefined, append: () => {}, listPeriods: () => [], now,
     } : gstr1SubmissionAdapter({ store, now })),
     // Price integrity across shelf/POS/app/ESL (D06/D14, ratified R2 B25) — stateless audit; the till is
     // the reference and a shelf underpricing it is ranked first as a legal exposure.
