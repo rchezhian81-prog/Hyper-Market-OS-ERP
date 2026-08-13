@@ -151,4 +151,29 @@ schedule (`resolveSettlementParams`, resolve-on-the-exit-date, refuses a gap) an
 15/26 multiply, rounded to the nearest rupee); pure and deterministic. Wired for **review** at
 `POST /v1/hr/payroll/settlement`, gated `payroll.statutory.read`, `confirmWithCa: true`. Tested in
 `tests/unit/payroll-settlement.test.ts` (6) and `tests/integration/payroll-settlement.test.ts` (3).
-Employee self-service and the durable pay-run SQL event store are the remaining increments.
+
+## Employee self-service (`src/ess.ts`, WP3 inc8)
+
+Every earlier increment served HR/finance behind the confidential `payroll.statutory.read`. This is the
+**other side** of payroll: letting an employee see **their own** payslip (and, if they are leaving,
+their own final settlement) — and **nothing about anyone else**. Two controls make that safe, and they
+are deliberately separate:
+
+- **Self-scope** — `assertSelfScope({ requesterEmployeeId, subjectEmployeeId })` refuses (throws
+  `EssAccessDenied`) unless the subject is the caller's own identity. The route feeds the **authenticated
+  principal** (`ctx.userId`) as the requester, so this is **forge-proof**: holding the self-service
+  permission still does not let you name a colleague. `employeeSelfView` calls the guard internally too,
+  so the engine cannot produce a cross-employee view even if a caller forgets the route check.
+- **Redaction** — `employeeSelfView` builds a purpose-shaped, employee-facing view: the employee's own
+  earnings, the deductions taken **from them** (PF/ESI employee share, PT, TDS — zero lines omitted),
+  their net, and the **employer's contributions shown separately** and labelled a company cost, never a
+  deduction. It carries no approver identity, no cost-centre, no bank detail, no other employee — those
+  are simply not in the shape it produces. A leaver's `settlement` summary (own earnings, recoveries, net)
+  is included only when supplied.
+
+Gated on a **new, narrow, widely-held** permission — **`payroll.ess.self`** (granted to every employee
+role: owner, store manager, cashier, accountant), **not** the confidential `payroll.statutory.read`.
+Wired at `POST /v1/hr/payroll/ess/self` (`{ employeeId, payslip, settlement? }`; the subject `employeeId`
+must equal the caller — else 403). Pure, reads only. Tested in `tests/unit/payroll-ess.test.ts` (7) and
+`tests/integration/payroll-ess.test.ts` (4). The durable pay-run SQL event store — which will let ESS
+look a payslip up rather than be handed one — is the remaining increment.

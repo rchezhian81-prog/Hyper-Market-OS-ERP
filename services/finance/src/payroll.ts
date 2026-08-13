@@ -19,6 +19,7 @@ import {
   buildBankFile, InvalidBankFileInput,
   buildPayrollJournal, InvalidPayrollJournal,
   computeSettlement, resolveSettlementParams, DEFAULT_SETTLEMENT_SCHEDULE,
+  employeeSelfView, EssAccessDenied, InvalidEssInput,
   DEFAULT_STATUTORY_SCHEDULE, InvalidStatutorySchedule,
   type StatutoryScheduleEntry, type PtSlab,
   type CompensationComponent, type CompensationStructureEntry,
@@ -27,6 +28,7 @@ import {
   type BankPaymentLine, type BankPaymentType,
   type PayrollTotals, type CostCentreGross,
   type SettlementScheduleEntry, type SettlementInput,
+  type Payslip, type Settlement,
 } from '../../../packages/payroll/src/index';
 
 const isInt = (v: unknown): v is number => Number.isInteger(v);
@@ -259,6 +261,34 @@ export function payrollRoutes(): readonly Route[] {
           return { status: 200, body: settlement };
         } catch (err) {
           if (err instanceof InvalidStatutorySchedule) throw apiError(400, { code: 'settlement_invalid', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the exit date, amounts, gratuity/leave inputs or schedule and try again.' });
+          throw err;
+        }
+      },
+    },
+    {
+      // Employee self-service: an employee's OWN payslip (and their own final settlement, if leaving), for
+      // review. Body: { employeeId, payslip, settlement? }. Two controls: (1) self-scope — `employeeId` MUST
+      // equal the authenticated caller (`ctx.userId`); asking for anyone else is refused (403). (2) redaction
+      // — only the employee's own money is returned, employer cost shown separately. Gated on the narrow,
+      // widely-held `payroll.ess.self`, NOT the confidential `payroll.statutory.read`.
+      api: 'API-09', method: 'POST', path: '/v1/hr/payroll/ess/self',
+      permission: 'payroll.ess.self', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (typeof b['employeeId'] !== 'string' || !isObj(b['payslip'])) {
+          throw apiError(400, { code: 'ess_needs_employee_and_payslip', whatHappened: 'A self-service view needs employeeId (your own) and payslip (your own payslip).', wasItSaved: 'not_saved', nextSafeAction: 'Send your employeeId and your payslip; add settlement if you are leaving.' });
+        }
+        try {
+          const view = employeeSelfView({
+            requesterEmployeeId: ctx.userId,
+            subjectEmployeeId: b['employeeId'],
+            payslip: b['payslip'] as unknown as Payslip,
+            ...(isObj(b['settlement']) ? { settlement: b['settlement'] as unknown as Settlement } : {}),
+          });
+          return { status: 200, body: view };
+        } catch (err) {
+          if (err instanceof EssAccessDenied) throw apiError(403, { code: 'ess_not_your_record', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'You may only view your own payslip. Ask HR for anyone else’s.' });
+          if (err instanceof InvalidEssInput) throw apiError(400, { code: 'ess_invalid_payslip', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Send a well-formed payslip (earnings, statutory breakdown, gross and net).' });
           throw err;
         }
       },
