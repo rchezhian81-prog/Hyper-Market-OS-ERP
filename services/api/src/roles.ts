@@ -67,6 +67,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'pos.suspend.write', 'pos.suspend.read',
       'finance.einvoice.generate', 'finance.einvoice.read',
       'finance.gstr.generate', 'finance.gstr.read',
+      'payroll.statutory.read',
       'migration.verification.read', 'migration.exception.accept',
       'ai.agent.run', 'ai.proposal.read', 'ai.budget.read', 'ai.killswitch.set',
     ],

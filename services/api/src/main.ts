@@ -62,6 +62,7 @@ import { eInvoiceRegisterRoutes } from '../../finance/src/e-invoice-register';
 import { eInvoiceSandboxRoutes } from '../../finance/src/e-invoice-sandbox';
 import { eWayBillRoutes } from '../../finance/src/e-way-bill';
 import { gstPortalRoutes } from '../../finance/src/gst-portal';
+import { payrollRoutes } from '../../finance/src/payroll';
 import { gstReturnsRoutes } from '../../finance/src/gst-returns';
 import { facilitiesRoutes } from '../../platform/src/facilities';
 import { facilitiesAssetsRoutes } from '../../platform/src/facilities-assets';
@@ -380,6 +381,9 @@ export function buildSurface(deps: {
     // calls OFF by default and killable; the gate a deployment consults before the real connector. Sandbox
     // routes are exempt.
     ...gstPortalRoutes(),
+    // Payroll (priority 16) — statutory-deduction preview (PF/ESI/TN Professional Tax) on effective-dated
+    // configurable rate tables; for review, commits nothing. Confidential — owner-gated.
+    ...payrollRoutes(),
     // GST returns write path (A5) — persist outward-supply tax lines; GSTR-1 Table 12 folds over them.
     ...gstReturnsRoutes(store === undefined ? {
       documents: empty([]), record: () => {}, soldTaxLines: empty([]), returnedTaxLines: empty([]), productTaxTable: empty([]), now,
