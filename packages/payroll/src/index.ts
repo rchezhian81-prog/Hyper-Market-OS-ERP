@@ -5,3 +5,4 @@
 
 export * from './statutory';
 export * from './payslip';
+export * from './tds';

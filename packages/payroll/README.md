@@ -58,3 +58,24 @@ reimbursement can be listed without inflating gross). Wired for **review** at
 gated `payroll.statutory.read`, `confirmWithCa: true`. Tested in `tests/unit/payroll-payslip.test.ts`
 (6) and `tests/integration/payroll-payslip.test.ts` (4). Still not a live pay run — the append-only
 run, maker-checker + lock, and correction-by-reversal lifecycle are later increments.
+
+## TDS — income tax deducted at source (`src/tds.ts`, WP3 inc3)
+
+From an employee's **projected annual income** the year's income tax is computed under the chosen
+regime — slabs, standard deduction, the section-87A rebate and the 4% health-&-education cess — and the
+remaining tax is spread across the months left, giving this month's TDS. Income-tax figures change with
+every Finance Act, so the regime parameters are an **effective-dated, configurable** schedule
+(`resolveTdsParams`, resolve-on-date, refuses a gap) and `DEFAULT_TDS_SCHEDULE` ships the FY 2025-26
+figures — every number a **`CONFIRM-WITH-CA`** constant (the exact slabs, the 288B ₹10 rounding, and an
+employee's declared deductions are precisely what a CA confirms).
+
+- `computeTds` — taxable income = annual gross − standard deduction − (old regime: declared deductions);
+  the regime slabs give the gross tax; **section 87A** rebates it to nil where income is within the
+  ceiling; **4% cess**; the balance after tax-already-deducted is spread over the remaining months.
+  Never negative. Exact integer paise (BigInt slab accumulation).
+- **New regime is the default**; the **old regime** honours declared deductions (80C, etc.).
+- Folded into the payslip: `computeStatutoryDeductions`/`buildPayslip` now accept `tdsMonthlyMinor`
+  (default 0, backward compatible) and add it to the total employee deduction and net.
+
+Wired for **review** at `POST /v1/hr/payroll/tds`, gated `payroll.statutory.read`, `confirmWithCa: true`.
+Tested in `tests/unit/payroll-tds.test.ts` (7) and `tests/integration/payroll-tds.test.ts` (3).

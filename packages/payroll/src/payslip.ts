@@ -108,6 +108,8 @@ export interface BuildPayslipInput {
   readonly attendance: Attendance;
   readonly params: StatutoryParams;
   readonly professionalTaxMonthlyMinor?: number;
+  /** This month's TDS (income tax) in paise, from the TDS engine. */
+  readonly tdsMonthlyMinor?: number;
   readonly esiCoveredForPeriod?: boolean;
 }
 
@@ -151,6 +153,7 @@ export function buildPayslip(input: BuildPayslipInput): Payslip {
     params: input.params,
     ...(input.esiCoveredForPeriod !== undefined ? { esiCoveredForPeriod: input.esiCoveredForPeriod } : {}),
     ...(input.professionalTaxMonthlyMinor !== undefined ? { professionalTaxMonthlyMinor: input.professionalTaxMonthlyMinor } : {}),
+    ...(input.tdsMonthlyMinor !== undefined ? { tdsMonthlyMinor: input.tdsMonthlyMinor } : {}),
   });
 
   const lopDays = calendarDaysInMonth - paidDays;
