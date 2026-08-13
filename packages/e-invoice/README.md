@@ -31,3 +31,20 @@ identical. Wired at `POST /v1/finance/e-invoice/sandbox/register`. Tested in
 **A live filing** still needs a certified GSP's credentials (from a vault), the e-invoicing feature
 flag / kill-switch (a later increment), and CA/legal sign-off — the sandbox never produces a fileable
 IRN.
+
+## The GST-portal switch — feature flag + kill switch (`src/portal-switch.ts`, WP2 inc3)
+
+The LIVE (non-sandbox) e-invoice and e-way-bill portal integrations ship **off by default** and must be
+**killable instantly**. `assessGstPortalGate(controls, channel)` is the decision: two independent
+controls — `enabled` (absent = not enabled, the safe default: off until certified-GSP credentials and
+CA/legal sign-off are in place) and `killed` (an emergency stop that **overrides** `enabled`). Killed
+beats enabled; absent flags mean not-live. `requireGstPortalLive` is the throw-style guard
+(`GstPortalDisabledError`) a caller uses immediately before a real portal call.
+
+The **sandbox routes are exempt** — they contact no portal and their output is non-fileable, so practice
+mode is always available regardless of this switch. Where the two flags are stored is the deployment's
+concern: per-tenant versioned config already exists (M01-FR-03). Wired at `POST /v1/finance/gst-portal/
+gate` (`services/finance/src/gst-portal.ts`), gated `finance.einvoice.read`. Tested in
+`tests/unit/e-invoice-portal-switch.test.ts` (5) and `tests/integration/gst-portal-switch.test.ts` (2).
+This is the gate a deployment consults in front of the real GSP/portal connector; enforcing it on the
+live submit path (default-off, with the tenant flag seeded in those tests) is a follow-up increment.

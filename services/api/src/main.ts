@@ -61,6 +61,7 @@ import { eInvoiceRoutes } from '../../finance/src/e-invoice';
 import { eInvoiceRegisterRoutes } from '../../finance/src/e-invoice-register';
 import { eInvoiceSandboxRoutes } from '../../finance/src/e-invoice-sandbox';
 import { eWayBillRoutes } from '../../finance/src/e-way-bill';
+import { gstPortalRoutes } from '../../finance/src/gst-portal';
 import { gstReturnsRoutes } from '../../finance/src/gst-returns';
 import { facilitiesRoutes } from '../../platform/src/facilities';
 import { facilitiesAssetsRoutes } from '../../platform/src/facilities-assets';
@@ -375,6 +376,10 @@ export function buildSurface(deps: {
     // distance, and a deterministic sandbox portal so the build → generate → apply loop runs without live
     // credentials; its EWB number is SANDBOX-derived and never valid to travel with real goods.
     ...eWayBillRoutes(),
+    // GST government-portal switch — the feature flag + kill switch keeping LIVE e-invoice/e-way-bill portal
+    // calls OFF by default and killable; the gate a deployment consults before the real connector. Sandbox
+    // routes are exempt.
+    ...gstPortalRoutes(),
     // GST returns write path (A5) — persist outward-supply tax lines; GSTR-1 Table 12 folds over them.
     ...gstReturnsRoutes(store === undefined ? {
       documents: empty([]), record: () => {}, soldTaxLines: empty([]), returnedTaxLines: empty([]), productTaxTable: empty([]), now,
