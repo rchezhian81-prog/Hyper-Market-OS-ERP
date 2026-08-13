@@ -79,3 +79,21 @@ employee's declared deductions are precisely what a CA confirms).
 
 Wired for **review** at `POST /v1/hr/payroll/tds`, gated `payroll.statutory.read`, `confirmWithCa: true`.
 Tested in `tests/unit/payroll-tds.test.ts` (7) and `tests/integration/payroll-tds.test.ts` (3).
+
+## The pay-run lifecycle (`src/pay-run.ts`, WP3 inc4)
+
+A pay run moves money to real people, so it carries the spine of payroll controls as a small
+event-sourced state machine: **draft → submitted → approved → locked**, plus **reversed**. The control
+that matters most — **the approver may not be the submitter** (maker ≠ checker, §28) — is enforced in
+BOTH `evaluatePayRunTransition` (before an action) and `foldPayRun` (so a hand-crafted event stream
+cannot self-approve). A **locked run is final**; a mistake found afterwards is fixed by a **visible
+reversal and a fresh run**, never a silent rewrite ("correction by reversal, never rewriting"). A
+checker may `reject` a submitted run back to draft; a `reverse` needs a reason.
+
+`foldPayRun(payRunId, events)` folds the append-only history to the current aggregate (ignoring
+out-of-order or self-approval events); `evaluatePayRunTransition({ current, action, actor, reason? })`
+says whether a proposed transition is allowed and why. Wired for **review** at
+`POST /v1/hr/payroll/pay-run/evaluate` (fold supplied events + a proposed action → allow/deny), gated
+`payroll.statutory.read`. Tested in `tests/unit/payroll-pay-run.test.ts` (8) and
+`tests/integration/payroll-pay-run.test.ts` (3). The durable event store, the bank-transfer file, the
+accounting journal + cost-centre posting, and full-and-final settlement are the remaining increments.

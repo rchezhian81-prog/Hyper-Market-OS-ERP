@@ -15,10 +15,12 @@ import {
   resolveStatutoryParams, computeStatutoryDeductions, professionalTaxTamilNadu,
   resolveCompensation, buildPayslip,
   resolveTdsParams, computeTds, DEFAULT_TDS_SCHEDULE,
+  foldPayRun, evaluatePayRunTransition,
   DEFAULT_STATUTORY_SCHEDULE, InvalidStatutorySchedule,
   type StatutoryScheduleEntry, type PtSlab,
   type CompensationComponent, type CompensationStructureEntry,
   type TdsScheduleEntry, type TaxRegime,
+  type PayRunEvent, type PayRunAction,
 } from '../../../packages/payroll/src/index';
 
 const isInt = (v: unknown): v is number => Number.isInteger(v);
@@ -139,6 +141,28 @@ export function payrollRoutes(): readonly Route[] {
           if (err instanceof InvalidStatutorySchedule) throw apiError(400, { code: 'tds_invalid', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the date, regime, income or schedule and try again.' });
           throw err;
         }
+      },
+    },
+    {
+      // Evaluate a pay-run lifecycle transition. Body: { payRunId, events: PayRunEvent[], action, actor,
+      // reason? }. Folds the append-only events to the current state, then says whether the action is
+      // allowed — enforcing maker ≠ checker and lock-is-final. Preview: the caller appends the event on OK.
+      api: 'API-09', method: 'POST', path: '/v1/hr/payroll/pay-run/evaluate',
+      permission: 'payroll.statutory.read', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const ACTIONS: readonly PayRunAction[] = ['submit', 'approve', 'reject', 'lock', 'reverse'];
+        if (typeof b['payRunId'] !== 'string' || !Array.isArray(b['events']) || !ACTIONS.includes(b['action'] as PayRunAction) || typeof b['actor'] !== 'string') {
+          throw apiError(400, { code: 'pay_run_needs_events_action_actor', whatHappened: 'Evaluating a pay-run transition needs payRunId, events[] (the append-only history), action (submit/approve/reject/lock/reverse) and actor.', wasItSaved: 'not_saved', nextSafeAction: 'Send the run’s events, the proposed action and who is taking it.' });
+        }
+        const current = foldPayRun(b['payRunId'], b['events'] as PayRunEvent[]);
+        const decision = evaluatePayRunTransition({
+          ...(current !== undefined ? { current } : {}),
+          action: b['action'] as PayRunAction,
+          actor: b['actor'],
+          ...(typeof b['reason'] === 'string' ? { reason: b['reason'] } : {}),
+        });
+        return { status: 200, body: { current: current ?? null, decision } };
       },
     },
   ];
