@@ -16,11 +16,13 @@ import {
   resolveCompensation, buildPayslip,
   resolveTdsParams, computeTds, DEFAULT_TDS_SCHEDULE,
   foldPayRun, evaluatePayRunTransition,
+  buildBankFile, InvalidBankFileInput,
   DEFAULT_STATUTORY_SCHEDULE, InvalidStatutorySchedule,
   type StatutoryScheduleEntry, type PtSlab,
   type CompensationComponent, type CompensationStructureEntry,
   type TdsScheduleEntry, type TaxRegime,
   type PayRunEvent, type PayRunAction,
+  type BankPaymentLine, type BankPaymentType,
 } from '../../../packages/payroll/src/index';
 
 const isInt = (v: unknown): v is number => Number.isInteger(v);
@@ -163,6 +165,35 @@ export function payrollRoutes(): readonly Route[] {
           ...(typeof b['reason'] === 'string' ? { reason: b['reason'] } : {}),
         });
         return { status: 200, body: { current: current ?? null, decision } };
+      },
+    },
+    {
+      // Build the salary bank-transfer file from a LOCKED pay run. Body: { payRunId, events, lines[],
+      // valueDate?, paymentType? }. The events are folded to confirm the run is locked before the file builds.
+      api: 'API-09', method: 'POST', path: '/v1/hr/payroll/bank-file',
+      permission: 'payroll.statutory.read', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (typeof b['payRunId'] !== 'string' || !Array.isArray(b['events']) || !Array.isArray(b['lines'])) {
+          throw apiError(400, { code: 'bank_file_needs_run_and_lines', whatHappened: 'The bank file needs payRunId, the pay run’s events[] (to confirm it is locked) and lines[] (per-employee net pay).', wasItSaved: 'not_saved', nextSafeAction: 'Send the pay run history and the net-pay lines (name, account, IFSC, amount).' });
+        }
+        const run = foldPayRun(b['payRunId'], b['events'] as PayRunEvent[]);
+        if (run === undefined) {
+          throw apiError(422, { code: 'bank_file_no_run', whatHappened: 'There is no pay run for those events — a bank file needs a locked run.', wasItSaved: 'not_saved', nextSafeAction: 'Draft, submit, approve and lock the pay run first.' });
+        }
+        try {
+          const file = buildBankFile({
+            payRunState: run.state,
+            payPeriod: run.payPeriod,
+            lines: b['lines'] as BankPaymentLine[],
+            ...(typeof b['valueDate'] === 'string' ? { valueDate: b['valueDate'] } : {}),
+            ...(typeof b['paymentType'] === 'string' ? { paymentType: b['paymentType'] as BankPaymentType } : {}),
+          });
+          return { status: 200, body: file };
+        } catch (err) {
+          if (err instanceof InvalidBankFileInput) throw apiError(422, { code: 'bank_file_invalid', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Lock the run and fix the named lines, then rebuild — a bad line in a bulk file is a failed payment.' });
+          throw err;
+        }
       },
     },
   ];
