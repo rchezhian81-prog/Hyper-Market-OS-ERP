@@ -71,6 +71,8 @@ import type { PayRunStoreDeps } from '../../finance/src/pay-run-store';
 import { foldPayRun, type PayRunEvent } from '../../../packages/payroll/src/index';
 import type { Gstr1SubmissionStoreDeps } from '../../finance/src/gstr1-submission-store';
 import { foldGstr1Submission, type Gstr1SubmissionEvent } from '../../../packages/finance/src/index';
+import type { EwayBillRegisterDeps } from '../../finance/src/e-way-bill-register';
+import { foldEwayBill, type EwbEvent, type EwayBillRequest, type EwbRecord } from '../../../packages/e-way-bill/src/index';
 import type { GstReturnsDeps, StoredOutwardDoc, PeriodSoldLine } from '../../finance/src/gst-returns';
 import { foldEInvoice, type EInvoiceEvent, type IrnRequest as EInvoiceIrnRequest, type EInvoiceRecord } from '../../../packages/e-invoice/src/index';
 import type { WasteDeps, WasteRecord, WasteCoverage } from '../../inventory/src/waste';
@@ -158,6 +160,7 @@ export const STREAM = {
   documents: 'documents',
   suspended: 'suspended',
   einvoice: 'einvoice',
+  ewaybill: 'ewaybill',
   gstreturns: 'gstreturns',
   payroll: 'payroll',
   packaging: 'packaging',
@@ -372,6 +375,75 @@ export function eInvoiceAdapter(input: {
         type: 'EInvoiceCancelled',
         occurredAt: input.now(),
         idempotencyKey: `einv-cancel-${tenantId}-${invoiceId}`,
+        source: 'api/finance',
+        payload: { reason, at },
+      }));
+    },
+  };
+}
+
+/**
+ * The DURABLE e-way-bill lifecycle store (item 2 inc2). The transport twin of the e-invoice register: each
+ * movement has its own stream of append-only facts — submitted, the portal's response(s), a cancellation —
+ * folded by the tested engine into the current state. The portal's 12-digit EWB number is only ever what the
+ * portal returned (never fabricated), and nothing is deleted (hard rule #6). A tenant-wide index makes the
+ * reconciliation queue cheap.
+ */
+export function eWayBillAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): EwayBillRegisterDeps {
+  const streamFor = (movementId: string): string => streamName(STREAM.ewaybill, movementId);
+  // Three-part name so it can never collide with a two-part per-movement stream.
+  const indexStream = streamName(STREAM.ewaybill, 'lifecycle', 'index');
+  return {
+    now: input.now,
+
+    listMovementIds: async (tenantId) => {
+      const indexed = await allOf<{ movementId: string }>(input.store, tenantId, indexStream, 'EwayBillIndexed');
+      return [...new Set(indexed.map((i) => i.movementId))];
+    },
+
+    load: async (tenantId, movementId) => {
+      const persisted = await input.store.readStream(tenantId, streamFor(movementId));
+      const events: EwbEvent[] = [];
+      for (const e of persisted) {
+        const p = e.event.payload as Record<string, unknown>;
+        const at = (p['at'] as string | undefined) ?? e.event.occurredAt;
+        if (e.event.type === 'EwayBillSubmitted') events.push({ kind: 'submitted', request: p['request'] as EwayBillRequest, at });
+        else if (e.event.type === 'EwayBillResponseRecorded') events.push({ kind: 'response', record: p['record'] as EwbRecord, at });
+        else if (e.event.type === 'EwayBillCancelled') events.push({ kind: 'cancelled', reason: p['reason'] as string, at });
+      }
+      return foldEwayBill(movementId, events);
+    },
+
+    recordSubmit: async (tenantId, movementId, request, at) => {
+      // The submission and the tenant-wide index fact are ONE atomic batch (the queue never lists a movement
+      // with no lifecycle, nor loses a submitted one). Both keyed idempotently.
+      await input.store.appendBatch(tenantId, [
+        { stream: streamFor(movementId), event: makeEvent({ id: `ewb-submit-${movementId}`, type: 'EwayBillSubmitted', occurredAt: input.now(), idempotencyKey: `ewb-submit-${tenantId}-${movementId}`, source: 'api/finance', payload: { request, at } }) },
+        { stream: indexStream, event: makeEvent({ id: `ewb-index-${movementId}`, type: 'EwayBillIndexed', occurredAt: input.now(), idempotencyKey: `ewb-index-${tenantId}-${movementId}`, source: 'api/finance', payload: { movementId } }) },
+      ]);
+    },
+
+    recordResponse: async (tenantId, movementId, record, at) => {
+      await input.store.append(tenantId, streamFor(movementId), makeEvent({
+        id: `ewb-resp-${movementId}-${record.state}-${record.ewbNo ?? 'none'}`,
+        type: 'EwayBillResponseRecorded',
+        occurredAt: input.now(),
+        // The same answer collapses; a distinct state/number is its own fact.
+        idempotencyKey: `ewb-resp-${tenantId}-${movementId}-${record.state}-${record.ewbNo ?? 'none'}`,
+        source: 'api/finance',
+        payload: { record, at },
+      }));
+    },
+
+    recordCancel: async (tenantId, movementId, reason, at) => {
+      await input.store.append(tenantId, streamFor(movementId), makeEvent({
+        id: `ewb-cancel-${movementId}`,
+        type: 'EwayBillCancelled',
+        occurredAt: input.now(),
+        idempotencyKey: `ewb-cancel-${tenantId}-${movementId}`,
         source: 'api/finance',
         payload: { reason, at },
       }));
