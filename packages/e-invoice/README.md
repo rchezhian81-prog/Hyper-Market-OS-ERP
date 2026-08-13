@@ -48,3 +48,25 @@ gate` (`services/finance/src/gst-portal.ts`), gated `finance.einvoice.read`. Tes
 `tests/unit/e-invoice-portal-switch.test.ts` (5) and `tests/integration/gst-portal-switch.test.ts` (2).
 This is the gate a deployment consults in front of the real GSP/portal connector; enforcing it on the
 live submit path (default-off, with the tenant flag seeded in those tests) is a follow-up increment.
+
+## Reconciliation for stuck / async e-invoices (item 2 inc1)
+
+The IRP is asynchronous and can time out: an invoice can sit `submitted` with no answer, or land in
+`pending_unknown` (a timeout — the IRN status is genuinely unknown, and the invoice is **not** e-invoiced
+until the IRP confirms it). This adds the operator tools to resolve those safely, without ever fabricating
+the government's signature.
+
+- **Queue vocabulary** — `eInvoiceQueueCategory(state)` maps the lifecycle to an operator category
+  (`processing` / `registered` / `rejected` / `unknown` / `error` / `cancelled`); `isEInvoiceException(state)`
+  flags the three that need attention (`pending_unknown`, `provider_error`, `rejected`).
+- **Poll (acknowledgement recovery)** — `POST /v1/finance/e-invoice/invoices/:id/poll` re-queries the
+  (sandbox) IRP for a `submitted`/`pending_unknown` invoice and applies the answer through the
+  never-fabricate `applyIrpResult`, so a lost acknowledgement is recovered without manual data entry. A
+  terminal invoice (`registered`/`cancelled`/`rejected`) is a **safe no-op** — no duplicate registration.
+- **Exception queue** — `GET /v1/finance/e-invoice/register?state=` lists every invoice's operator status,
+  filterable by category or `exceptions`. It folds a tenant-wide index (`eInvoiceAdapter` writes an atomic
+  `EInvoiceIndexed` fact beside each submit), so the queue is cheap; tenant-isolated and read-gated.
+
+Sandbox only — a live GSP/IRP connection stays externally blocked and off-by-default (portal switch above).
+Tested in `tests/unit/e-invoice-reconciliation.test.ts` and `tests/integration/e-invoice-reconciliation.test.ts`.
+The e-way-bill equivalent is the next increment.

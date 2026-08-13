@@ -31,7 +31,7 @@
     {"id": "M20", "label": "PARTIALLY_WIRED", "evidence": "RTM: guest/cart/checkout wired; privacy centre partial"},
     {"id": "M21", "label": "PARTIALLY_WIRED", "evidence": "RTM: refund guard/returnable wired; exchanges pending"},
     {"id": "M22", "label": "PARTIALLY_WIRED", "evidence": "RTM: credit/collections/commission/docs wired; portal needs external auth"},
-    {"id": "M23", "label": "PARTIALLY_WIRED", "externalBlocker": "live GST-return filing + e-invoice/e-way-bill live portal need production credentials + CA/legal sign-off", "evidence": "RTM: credit-notes wired; GST submission safety integration-tested; close totals refuse (need second source)"},
+    {"id": "M23", "label": "PARTIALLY_WIRED", "externalBlocker": "live GST-return filing + e-invoice/e-way-bill live portal need production credentials + CA/legal sign-off", "evidence": "RTM: credit-notes wired; GST submission safety + e-invoice reconciliation integration-tested; close totals refuse (need second source)"},
     {"id": "M24", "label": "PARTIALLY_WIRED", "evidence": "RTM: submissions/compliance/statement wired; scoping engine-only"},
     {"id": "M25", "label": "PARTIALLY_WIRED", "evidence": "RTM: workforce PARTIALLY WIRED (edge)"},
     {"id": "M26", "label": "WIRED", "evidence": "RTM: WIRED, every FR integration-tested; IoT pending"},

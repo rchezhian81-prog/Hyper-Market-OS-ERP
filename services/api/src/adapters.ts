@@ -302,8 +302,15 @@ export function eInvoiceAdapter(input: {
   readonly now: () => string;
 }): EInvoiceRegisterDeps {
   const streamFor = (invoiceId: string): string => streamName(STREAM.einvoice, invoiceId);
+  // Three-part name so it can never collide with a two-part per-invoice stream (an invoiceId is one part).
+  const indexStream = streamName(STREAM.einvoice, 'lifecycle', 'index');
   return {
     now: input.now,
+
+    listInvoiceIds: async (tenantId) => {
+      const indexed = await allOf<{ invoiceId: string }>(input.store, tenantId, indexStream, 'EInvoiceIndexed');
+      return [...new Set(indexed.map((i) => i.invoiceId))];
+    },
 
     load: async (tenantId, invoiceId) => {
       const persisted = await input.store.readStream(tenantId, streamFor(invoiceId));
@@ -319,14 +326,32 @@ export function eInvoiceAdapter(input: {
     },
 
     recordSubmit: async (tenantId, invoiceId, request, at) => {
-      await input.store.append(tenantId, streamFor(invoiceId), makeEvent({
-        id: `einv-submit-${invoiceId}`,
-        type: 'EInvoiceSubmitted',
-        occurredAt: input.now(),
-        idempotencyKey: `einv-submit-${tenantId}-${invoiceId}`, // one submission per invoice
-        source: 'api/finance',
-        payload: { request, at },
-      }));
+      // The submission and the tenant-wide index fact are ONE atomic batch: the reconciliation queue can
+      // never list an invoice with no lifecycle, nor lose one that was submitted. Both keyed idempotently.
+      await input.store.appendBatch(tenantId, [
+        {
+          stream: streamFor(invoiceId),
+          event: makeEvent({
+            id: `einv-submit-${invoiceId}`,
+            type: 'EInvoiceSubmitted',
+            occurredAt: input.now(),
+            idempotencyKey: `einv-submit-${tenantId}-${invoiceId}`, // one submission per invoice
+            source: 'api/finance',
+            payload: { request, at },
+          }),
+        },
+        {
+          stream: indexStream,
+          event: makeEvent({
+            id: `einv-index-${invoiceId}`,
+            type: 'EInvoiceIndexed',
+            occurredAt: input.now(),
+            idempotencyKey: `einv-index-${tenantId}-${invoiceId}`, // one index fact per invoice
+            source: 'api/finance',
+            payload: { invoiceId },
+          }),
+        },
+      ]);
     },
 
     recordResponse: async (tenantId, invoiceId, record, at) => {
