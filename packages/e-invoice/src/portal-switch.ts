@@ -15,7 +15,7 @@
 // This is the DECISION. Where the two flags are stored is the deployment's concern — per-tenant versioned
 // config already exists (M01-FR-03). Pure and deterministic: controls in, verdict out.
 
-export type GstPortalChannel = 'e_invoice' | 'e_way_bill';
+export type GstPortalChannel = 'e_invoice' | 'e_way_bill' | 'gst_return';
 
 export interface GstPortalControls {
   /** The tenant has enabled the live portal integration. Absent = not enabled (the safe default). */
@@ -34,7 +34,8 @@ export interface GstPortalGate {
   readonly detail: string;
 }
 
-const label = (channel: GstPortalChannel): string => (channel === 'e_way_bill' ? 'e-way-bill' : 'e-invoicing');
+const label = (channel: GstPortalChannel): string =>
+  channel === 'e_way_bill' ? 'e-way-bill' : channel === 'gst_return' ? 'GST-return filing' : 'e-invoicing';
 
 /**
  * May the LIVE portal integration be used for this channel, given the tenant's controls? The kill switch

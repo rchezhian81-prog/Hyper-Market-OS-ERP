@@ -66,7 +66,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'document.template.manage', 'document.template.read',
       'pos.suspend.write', 'pos.suspend.read',
       'finance.einvoice.generate', 'finance.einvoice.read',
-      'finance.gstr.generate', 'finance.gstr.read',
+      'finance.gstr.generate', 'finance.gstr.read', 'finance.gstr.approve', 'finance.gstr.submit',
       'payroll.statutory.read', 'payroll.ess.self',
       'migration.verification.read', 'migration.exception.accept',
       'ai.agent.run', 'ai.proposal.read', 'ai.budget.read', 'ai.killswitch.set',

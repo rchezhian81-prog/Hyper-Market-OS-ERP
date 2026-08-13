@@ -88,11 +88,31 @@ Lifecycle: **previewed → approved → submitting → filed**, plus **failed** 
   `duplicate` / `rate_limit` / `timeout` / `portal_outage` / `unknown`) an operator runbook keys off —
   conservative, so an unrecognised code is `unknown` (investigate), never assumed retryable.
 
-Pure and deterministic. **No live submission happens here** — this is the safety core; the durable store +
-routes, the sandbox/mock GSTN adapter, the kill-switch on the live submit path, the credential-vault
-interface, the reconciliation queue and RBAC/tenant/E2E coverage are the following increments. Live filing
-stays externally blocked pending CA/legal sign-off, production credentials and owner GO. Tested in
+Pure and deterministic. **No live submission happens here** — this is the safety core. Tested in
 `tests/unit/gstr1-submission.test.ts` (12).
+
+### Wired durably + a sandbox portal (WP4 inc2)
+
+The engine is now on the live surface. `services/api/src/adapters.ts` `gstr1SubmissionAdapter` appends each
+lifecycle step to the shared append-only `event_ledger` (one stream per filing period) and folds it with
+`foldGstr1Submission`, so a submission **survives a restart**. `services/finance/src/gstr1-submission-store.ts`
+hosts the routes — `POST /v1/finance/gstr1/submission/:period/{preview,approve,submit,record-response}` and
+`GET …/:period` — and every transition is checked against the **stored** state before the append, so
+**maker ≠ checker, duplicate-prevention, digest-match and period-lock hold at the write boundary**.
+Maker-checker is also **RBAC-separated**: preview needs `finance.gstr.generate` (a store manager can
+prepare), approve needs the new `finance.gstr.approve`, submit the new `finance.gstr.submit` (owner-held).
+
+The **live path stays off by default and killable**: a `live:true` submit calls
+`requireGstPortalLive(controls, 'gst_return')` (a new portal-switch channel) → refused while
+disabled/killed, and refused as not-yet-wired even when the gate is open (no certified connector exists).
+Otherwise the deterministic **sandbox GSTN provider** (`src/gstn-sandbox.ts`) runs — a provider-neutral
+`GstnReturnProvider` a real GSP will share, returning a `SANDBOX-`-prefixed, **non-fileable** ARN, with real
+duplicate detection and forced failed/unknown outcomes for testing. The **async/webhook path** is covered
+too (`submit {async:true}` → `submitting`, then `record-response` applies the portal's answer; an unknown
+outcome routes to reconciliation, never straight to filed). Tested in `tests/unit/gstn-sandbox.test.ts` (3)
+and `tests/integration/gstr1-submission.test.ts` (6). The reconciliation/exception queue and polling are the
+next increment. Live filing stays externally blocked pending CA/legal sign-off, production credentials and
+owner GO.
 
 > Example sale rule: Dr `cash` [total], Cr `sales_revenue` [net], Cr `gst_output` [tax] —
 > `postJournal` checks it balances. Pure and deterministic; composes the `Money` primitive.
