@@ -97,3 +97,23 @@ says whether a proposed transition is allowed and why. Wired for **review** at
 `payroll.statutory.read`. Tested in `tests/unit/payroll-pay-run.test.ts` (8) and
 `tests/integration/payroll-pay-run.test.ts` (3). The durable event store, the bank-transfer file, the
 accounting journal + cost-centre posting, and full-and-final settlement are the remaining increments.
+
+## The salary bank-transfer file (`src/bank-file.ts`, WP3 inc5)
+
+The output that actually moves money: a **locked** pay run's per-employee net pay becomes the
+bulk-salary upload a bank ingests (NEFT/IMPS/RTGS). Two hard constraints, because this file is a
+payment instruction:
+
+- **Only from a locked run** — `buildBankFile` refuses a draft, submitted or even approved run; it must
+  be locked (approved and final), tying the payment to the maker-checker lifecycle.
+- **Every line must be payable** — a blank name, a malformed account number (`\d{9,18}`) or IFSC
+  (`[A-Z]{4}0[A-Z0-9]{6}`), a non-positive amount, or the **same account twice** is refused with the
+  reason (a bad line in a bulk file is a payment that bounces or pays the wrong person).
+
+A **control total** (record count + sum of net) travels with the file so the bank upload and the
+payroll agree before release. Exact integer paise; the file renders rupees to two decimals; the
+beneficiary name is CSV-escaped. The exact column layout differs by bank, so this produces a
+widely-supported generic layout and marks it `confirmWithBank`. Wired at `POST /v1/hr/payroll/bank-file`
+(folds the run's events to confirm it is locked, then builds), gated `payroll.statutory.read`. Tested in
+`tests/unit/payroll-bank-file.test.ts` (4) and `tests/integration/payroll-bank-file.test.ts` (3). The
+accounting journal + cost-centre posting and F&F settlement are the remaining increments.
