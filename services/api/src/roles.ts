@@ -67,7 +67,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'pos.suspend.write', 'pos.suspend.read',
       'finance.einvoice.generate', 'finance.einvoice.read',
       'finance.gstr.generate', 'finance.gstr.read',
-      'payroll.statutory.read',
+      'payroll.statutory.read', 'payroll.ess.self',
       'migration.verification.read', 'migration.exception.accept',
       'ai.agent.run', 'ai.proposal.read', 'ai.budget.read', 'ai.killswitch.set',
     ],
@@ -78,7 +78,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     // Everything needed to run the shop, and **nothing that closes a month or grants a role**.
     // Separation of duties is not a policy document; it is which codes are absent from this list.
     permissions: [
-      'identity.self.read', 'org.branch.read',
+      'identity.self.read', 'org.branch.read', 'payroll.ess.self',
       'catalogue.pack.read',
       'price.change.propose',
       'promotion.simulate', 'promotion.launch', 'promotion.read',
@@ -117,7 +117,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     name: 'Cashier',
     // The narrowest role in the product, and the one most people hold (P-07).
     permissions: [
-      'identity.self.read', 'catalogue.pack.read',
+      'identity.self.read', 'payroll.ess.self', 'catalogue.pack.read',
       'pos.sale.sync', 'pos.sale.read', 'pos.return.record', 'pos.restricted.check',
       'cash.movement.record', 'cash.till.read', 'till.shift.close', 'till.shift.read',
       'customer.consent.read', 'loyalty.points.read', 'loyalty.points.write',
@@ -130,7 +130,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     // Posts journals; **cannot close the period they posted into** — that refusal is in the
     // finance service and this list is what makes it reachable rather than theoretical.
     permissions: [
-      'identity.self.read',
+      'identity.self.read', 'payroll.ess.self',
       'finance.journal.post', 'finance.period.read', 'finance.creditnote.issue',
       'settlement.batch.import', 'settlement.review.read', 'settlement.investigation.manage',
       'lp.case.read',
