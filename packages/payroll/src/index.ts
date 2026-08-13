@@ -4,3 +4,4 @@
 // Rates/ceilings/slabs are CONFIRM-WITH-CA constants; a live pay run needs CA/HR/legal sign-off.
 
 export * from './statutory';
+export * from './payslip';

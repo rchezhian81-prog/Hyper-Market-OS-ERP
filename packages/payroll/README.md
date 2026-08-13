@@ -38,3 +38,23 @@ permission; every response carries `confirmWithCa: true`. Tested in
 sign-off (an externally-blocked GO). Increments to follow: attendance / loss-of-pay, earnings &
 allowance structures, TDS, maker-checker approval + lock, payslips, the bank-transfer file, the
 accounting journal & cost-centre posting, and full-and-final settlement — each a tested increment.
+
+## The payslip builder (`src/payslip.ts`, WP3 inc2)
+
+Increment 1 computed deductions from a gross and a PF wage; this builds those two figures from the
+employee's **compensation structure** and the month's **attendance**, then assembles the full payslip
+(earnings − statutory deductions = net). Two things it gets right:
+
+- **The compensation structure is effective-dated** — `resolveCompensation(history, onDate)` uses the
+  structure in force on the pay date (a July raise never rewrites June), refusing a date before the
+  earliest entry rather than guessing.
+- **Loss of pay prorates earnings, not just the total** — `buildPayslip` prorates every earning *and*
+  the PF wage by paid days, so a month with LOP feeds a smaller gross **and** a smaller PF wage into the
+  tested deduction engine. Each earning is prorated and rounded independently; a full month is exact.
+
+`CompensationComponent` carries `partOfPfWage` (basic + DA) and `partOfGross` (default true, so a
+reimbursement can be listed without inflating gross). Wired for **review** at
+`POST /v1/hr/payroll/payslip` (accepts `components` in force or a `compensationHistory` to resolve),
+gated `payroll.statutory.read`, `confirmWithCa: true`. Tested in `tests/unit/payroll-payslip.test.ts`
+(6) and `tests/integration/payroll-payslip.test.ts` (4). Still not a live pay run — the append-only
+run, maker-checker + lock, and correction-by-reversal lifecycle are later increments.
