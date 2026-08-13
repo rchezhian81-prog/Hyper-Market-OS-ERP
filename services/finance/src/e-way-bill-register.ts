@@ -19,6 +19,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
   assessEwayBillRequirement, buildEwayBillRequest, applyEwbResult, assessEwbCancellation,
+  generateViaProvider, sandboxEwbProvider, ewbQueueCategory, isEwbException,
   type SupplyRoute, type EwayBillRequest, type EwbResult, type EwbRecord, type EwbAggregate,
 } from '../../../packages/e-way-bill/src/index';
 
@@ -115,6 +116,58 @@ export function eWayBillRegisterRoutes(deps: EwayBillRegisterDeps): readonly Rou
         }
         await deps.recordCancel(ctx.tenantId, movementId, b['reason'], at);
         return { status: 200, body: { movementId, state: 'cancelled', detail: `cancelled: ${b['reason']}` } };
+      },
+    },
+    {
+      // Poll the portal for a stuck movement — one still awaiting its answer (pending_unknown) — and apply
+      // the result. ACKNOWLEDGEMENT RECOVERY: a timeout left the e-way-bill status unknown, and re-querying
+      // resolves it without manual entry. The 12-digit number is still only ever what the portal returned;
+      // a generated/cancelled/rejected movement is terminal (a safe no-op). Sandbox only. Idempotent.
+      api: 'API-09', method: 'POST', path: '/v1/finance/e-way-bill/movements/:movementId/poll',
+      permission: 'finance.einvoice.generate', idempotent: true,
+      handler: async (ctx) => {
+        const movementId = ctx.params['movementId'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const existing = await deps.load(ctx.tenantId, movementId);
+        if (existing === undefined) throw notFound(`a submitted e-way bill for ${movementId}`);
+        if (existing.state === 'generated' || existing.state === 'cancelled' || existing.state === 'rejected') {
+          return { status: 200, body: { movementId, polled: false, reason: `nothing to poll — the movement is ${existing.state}`, current: existing } };
+        }
+        if (existing.request === undefined) {
+          throw apiError(422, { code: 'ewb_poll_no_request', whatHappened: 'there is no stored request to re-query for this movement', wasItSaved: 'not_saved', nextSafeAction: 'Submit the e-way bill first.' });
+        }
+        const sandbox = isObj(b['sandbox']) ? b['sandbox'] : {};
+        const force = sandbox['forceOutcome'];
+        const provider = sandboxEwbProvider(
+          force === 'generated' || force === 'unknown' || force === 'rejected'
+            ? { forceOutcome: force, ...(Array.isArray(sandbox['rejectReasons']) ? { rejectReasons: sandbox['rejectReasons'] as string[] } : {}) }
+            : {},
+        );
+        const { result, record } = await generateViaProvider({ movementId, request: existing.request, provider });
+        await deps.recordResponse(ctx.tenantId, movementId, record, deps.now());
+        return { status: 200, body: { movementId, polled: true, portalStatus: result.status, current: await deps.load(ctx.tenantId, movementId) } };
+      },
+    },
+    {
+      // The e-way-bill reconciliation / exception queue — every movement in the lifecycle and its operator
+      // status. ?state= filters to a queue category (generated/rejected/unknown/error/cancelled) or
+      // `exceptions` (unknown + error + rejected — the ones needing attention). Read-gated.
+      api: 'API-09', method: 'GET', path: '/v1/finance/e-way-bill/register',
+      permission: 'finance.einvoice.read',
+      handler: async (ctx) => {
+        const filter = ctx.query['state'];
+        const ids = await deps.listMovementIds(ctx.tenantId);
+        const rows: { movementId: string; state: string; queue: string; exception: boolean; ewbNo?: string; detail: string }[] = [];
+        for (const movementId of ids) {
+          const agg = await deps.load(ctx.tenantId, movementId);
+          if (agg === undefined) continue;
+          rows.push({ movementId, state: agg.state, queue: ewbQueueCategory(agg.state), exception: isEwbException(agg.state), ...(agg.ewbNo !== undefined ? { ewbNo: agg.ewbNo } : {}), detail: agg.detail });
+        }
+        const filtered = filter === undefined || filter === 'all' ? rows
+          : filter === 'exceptions' ? rows.filter((r) => r.exception)
+            : rows.filter((r) => r.queue === filter);
+        filtered.sort((a, b) => a.movementId.localeCompare(b.movementId));
+        return { status: 200, body: { count: filtered.length, filter: filter ?? 'all', movements: filtered } };
       },
     },
     {
