@@ -4,3 +4,4 @@
 
 export * from './e-invoice';
 export * from './sandbox-gsp';
+export * from './portal-switch';
