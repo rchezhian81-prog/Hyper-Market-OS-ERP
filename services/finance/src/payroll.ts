@@ -13,11 +13,14 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
   resolveStatutoryParams, computeStatutoryDeductions, professionalTaxTamilNadu,
+  resolveCompensation, buildPayslip,
   DEFAULT_STATUTORY_SCHEDULE, InvalidStatutorySchedule,
   type StatutoryScheduleEntry, type PtSlab,
+  type CompensationComponent, type CompensationStructureEntry,
 } from '../../../packages/payroll/src/index';
 
 const isInt = (v: unknown): v is number => Number.isInteger(v);
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 
 export function payrollRoutes(): readonly Route[] {
   return [
@@ -64,6 +67,44 @@ export function payrollRoutes(): readonly Route[] {
           return { status: 200, body: { ...result, confirmWithCa: true } };
         } catch (err) {
           if (err instanceof InvalidStatutorySchedule) throw apiError(400, { code: 'pt_invalid', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the date, income or schedule and try again.' });
+          throw err;
+        }
+      },
+    },
+    {
+      // A full payslip for review: earnings prorated for paid days → gross + PF wage → statutory → net.
+      // Body: { onDate, attendance:{calendarDaysInMonth,paidDays}, components? | compensationHistory?,
+      //         schedule?, professionalTaxMonthlyMinor?, esiCoveredForPeriod? }.
+      api: 'API-09', method: 'POST', path: '/v1/hr/payroll/payslip',
+      permission: 'payroll.statutory.read', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const att = b['attendance'];
+        if (typeof b['onDate'] !== 'string' || !isObj(att) || !isInt(att['calendarDaysInMonth']) || !isInt(att['paidDays'])) {
+          throw apiError(400, { code: 'payslip_needs_date_and_attendance', whatHappened: 'A payslip needs onDate (YYYY-MM-DD) and attendance { calendarDaysInMonth, paidDays }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the pay date, the month’s calendar days and the paid days, plus the compensation.' });
+        }
+        const hasHistory = Array.isArray(b['compensationHistory']);
+        const hasComponents = Array.isArray(b['components']);
+        if (!hasHistory && !hasComponents) {
+          throw apiError(400, { code: 'payslip_needs_compensation', whatHappened: 'A payslip needs the compensation — either components (in force) or a compensationHistory to resolve on the pay date.', wasItSaved: 'not_saved', nextSafeAction: 'Send components: [{ code, monthlyMinor, partOfPfWage?, partOfGross? }, …] or compensationHistory.' });
+        }
+        const schedule = Array.isArray(b['schedule']) ? (b['schedule'] as StatutoryScheduleEntry[]) : DEFAULT_STATUTORY_SCHEDULE;
+        try {
+          const params = resolveStatutoryParams(schedule, b['onDate']);
+          const components = hasHistory
+            ? resolveCompensation(b['compensationHistory'] as CompensationStructureEntry[], b['onDate'])
+            : (b['components'] as CompensationComponent[]);
+          const payslip = buildPayslip({
+            onDate: b['onDate'],
+            components,
+            attendance: { calendarDaysInMonth: att['calendarDaysInMonth'] as number, paidDays: att['paidDays'] as number },
+            params,
+            ...(typeof b['esiCoveredForPeriod'] === 'boolean' ? { esiCoveredForPeriod: b['esiCoveredForPeriod'] } : {}),
+            ...(isInt(b['professionalTaxMonthlyMinor']) ? { professionalTaxMonthlyMinor: b['professionalTaxMonthlyMinor'] as number } : {}),
+          });
+          return { status: 200, body: payslip };
+        } catch (err) {
+          if (err instanceof InvalidStatutorySchedule) throw apiError(400, { code: 'payslip_invalid', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the date, attendance, compensation or schedule and try again.' });
           throw err;
         }
       },
