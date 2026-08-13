@@ -17,12 +17,14 @@ import {
   resolveTdsParams, computeTds, DEFAULT_TDS_SCHEDULE,
   foldPayRun, evaluatePayRunTransition,
   buildBankFile, InvalidBankFileInput,
+  buildPayrollJournal, InvalidPayrollJournal,
   DEFAULT_STATUTORY_SCHEDULE, InvalidStatutorySchedule,
   type StatutoryScheduleEntry, type PtSlab,
   type CompensationComponent, type CompensationStructureEntry,
   type TdsScheduleEntry, type TaxRegime,
   type PayRunEvent, type PayRunAction,
   type BankPaymentLine, type BankPaymentType,
+  type PayrollTotals, type CostCentreGross,
 } from '../../../packages/payroll/src/index';
 
 const isInt = (v: unknown): v is number => Number.isInteger(v);
@@ -192,6 +194,34 @@ export function payrollRoutes(): readonly Route[] {
           return { status: 200, body: file };
         } catch (err) {
           if (err instanceof InvalidBankFileInput) throw apiError(422, { code: 'bank_file_invalid', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Lock the run and fix the named lines, then rebuild — a bad line in a bulk file is a failed payment.' });
+          throw err;
+        }
+      },
+    },
+    {
+      // Build the balanced double-entry accounting journal from a LOCKED pay run. Body: { payRunId, events,
+      // totals, costCentres? }. The events are folded to confirm the run is locked before the journal builds.
+      api: 'API-09', method: 'POST', path: '/v1/hr/payroll/journal',
+      permission: 'payroll.statutory.read', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (typeof b['payRunId'] !== 'string' || !Array.isArray(b['events']) || !isObj(b['totals'])) {
+          throw apiError(400, { code: 'journal_needs_run_and_totals', whatHappened: 'The payroll journal needs payRunId, the pay run’s events[] (to confirm it is locked) and totals (gross, PF/ESI employee+employer, PT, TDS, net).', wasItSaved: 'not_saved', nextSafeAction: 'Send the pay run history and the run’s money totals.' });
+        }
+        const run = foldPayRun(b['payRunId'], b['events'] as PayRunEvent[]);
+        if (run === undefined) {
+          throw apiError(422, { code: 'journal_no_run', whatHappened: 'There is no pay run for those events — a journal needs a locked run.', wasItSaved: 'not_saved', nextSafeAction: 'Draft, submit, approve and lock the pay run first.' });
+        }
+        try {
+          const journal = buildPayrollJournal({
+            payRunState: run.state,
+            payPeriod: run.payPeriod,
+            totals: b['totals'] as unknown as PayrollTotals,
+            ...(Array.isArray(b['costCentres']) ? { costCentres: b['costCentres'] as CostCentreGross[] } : {}),
+          });
+          return { status: 200, body: journal };
+        } catch (err) {
+          if (err instanceof InvalidPayrollJournal) throw apiError(422, { code: 'journal_invalid', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Lock the run and send consistent totals (net = gross − employee deductions; cost-centres sum to gross).' });
           throw err;
         }
       },
