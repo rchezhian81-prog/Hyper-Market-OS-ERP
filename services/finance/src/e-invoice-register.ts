@@ -15,6 +15,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
   assessEInvoiceEligibility, buildIrnRequest, applyIrpResult, assessCancellation,
+  eInvoiceQueueCategory, isEInvoiceException, registerViaProvider, sandboxGspProvider,
   type SupplyType, type EInvoiceDocType, type IrpResult, type IrnRequest, type EInvoiceRecord, type EInvoiceAggregate,
 } from '../../../packages/e-invoice/src/index';
 import type { TaxInvoiceFields } from '../../../packages/finance/src/index';
@@ -29,6 +30,8 @@ export interface EInvoiceRegisterDeps {
   readonly recordSubmit: (tenantId: string, invoiceId: string, request: IrnRequest, at: string) => Promise<void> | void;
   readonly recordResponse: (tenantId: string, invoiceId: string, record: EInvoiceRecord, at: string) => Promise<void> | void;
   readonly recordCancel: (tenantId: string, invoiceId: string, reason: string, at: string) => Promise<void> | void;
+  /** The invoice ids that have entered the lifecycle — the reconciliation queue folds each one. */
+  readonly listInvoiceIds: (tenantId: string) => Promise<readonly string[]> | readonly string[];
   readonly now: () => string;
 }
 
@@ -119,6 +122,60 @@ export function eInvoiceRegisterRoutes(deps: EInvoiceRegisterDeps): readonly Rou
         }
         await deps.recordCancel(ctx.tenantId, invoiceId, b['reason'], at);
         return { status: 200, body: { invoiceId, state: 'cancelled', detail: `cancelled: ${b['reason']}` } };
+      },
+    },
+    {
+      // Poll the IRP for a stuck invoice — submitted-but-no-answer, or a pending_unknown — and apply the
+      // result. This is ACKNOWLEDGEMENT RECOVERY: a timeout left the IRN status unknown, and re-querying
+      // resolves it without manual data entry. The IRN is still only ever what the IRP returned (never
+      // fabricated), and a registered/cancelled invoice is terminal (a safe no-op). Sandbox only — a live
+      // connector is the deployment step. Idempotent.
+      api: 'API-09', method: 'POST', path: '/v1/finance/e-invoice/invoices/:invoiceId/poll',
+      permission: 'finance.einvoice.generate', idempotent: true,
+      handler: async (ctx) => {
+        const invoiceId = ctx.params['invoiceId'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const existing = await deps.load(ctx.tenantId, invoiceId);
+        if (existing === undefined) throw notFound(`a submitted e-invoice for ${invoiceId}`);
+        // Terminal or not-yet-submitted states have nothing to poll — a safe, repeatable no-op.
+        if (existing.state === 'registered' || existing.state === 'cancelled' || existing.state === 'rejected') {
+          return { status: 200, body: { invoiceId, polled: false, reason: `nothing to poll — the invoice is ${existing.state}`, current: existing } };
+        }
+        if (existing.request === undefined) {
+          throw apiError(422, { code: 'poll_no_request', whatHappened: 'there is no stored IRP request to re-query for this invoice', wasItSaved: 'not_saved', nextSafeAction: 'Submit the invoice first.' });
+        }
+        const sandbox = isObj(b['sandbox']) ? b['sandbox'] : {};
+        const force = sandbox['forceOutcome'];
+        const provider = sandboxGspProvider(
+          force === 'registered' || force === 'unknown' || force === 'rejected'
+            ? { forceOutcome: force, ...(Array.isArray(sandbox['rejectReasons']) ? { rejectReasons: sandbox['rejectReasons'] as string[] } : {}) }
+            : {},
+        );
+        const { result, record } = await registerViaProvider({ invoiceId, request: existing.request, provider });
+        await deps.recordResponse(ctx.tenantId, invoiceId, record, deps.now());
+        return { status: 200, body: { invoiceId, polled: true, irpStatus: result.status, current: await deps.load(ctx.tenantId, invoiceId) } };
+      },
+    },
+    {
+      // The e-invoice reconciliation / exception queue — every invoice in the lifecycle and its operator
+      // status. ?state= filters to a queue category (processing/registered/rejected/unknown/error/cancelled)
+      // or `exceptions` (unknown + error + rejected — the ones needing attention). Read-gated.
+      api: 'API-09', method: 'GET', path: '/v1/finance/e-invoice/register',
+      permission: 'finance.einvoice.read',
+      handler: async (ctx) => {
+        const filter = ctx.query['state'];
+        const ids = await deps.listInvoiceIds(ctx.tenantId);
+        const rows: { invoiceId: string; state: string; queue: string; exception: boolean; irn?: string; detail: string }[] = [];
+        for (const invoiceId of ids) {
+          const agg = await deps.load(ctx.tenantId, invoiceId);
+          if (agg === undefined) continue;
+          rows.push({ invoiceId, state: agg.state, queue: eInvoiceQueueCategory(agg.state), exception: isEInvoiceException(agg.state), ...(agg.irn !== undefined ? { irn: agg.irn } : {}), detail: agg.detail });
+        }
+        const filtered = filter === undefined || filter === 'all' ? rows
+          : filter === 'exceptions' ? rows.filter((r) => r.exception)
+            : rows.filter((r) => r.queue === filter);
+        filtered.sort((a, b) => a.invoiceId.localeCompare(b.invoiceId));
+        return { status: 200, body: { count: filtered.length, filter: filter ?? 'all', invoices: filtered } };
       },
     },
     {

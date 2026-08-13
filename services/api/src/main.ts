@@ -369,7 +369,7 @@ export function buildSurface(deps: {
     // GST e-invoicing lifecycle store (A20 inc2) — durable submit → IRP response → cancel; the credentialed
     // GSP connector posts responses back here (that connector is the deployment step).
     ...eInvoiceRegisterRoutes(store === undefined ? {
-      load: () => undefined, recordSubmit: () => {}, recordResponse: () => {}, recordCancel: () => {}, now,
+      load: () => undefined, recordSubmit: () => {}, recordResponse: () => {}, recordCancel: () => {}, listInvoiceIds: () => [], now,
     } : eInvoiceAdapter({ store, now })),
     // GST e-invoicing sandbox GSP (A20) — a deterministic simulator on the same EInvoiceProvider port a real
     // certified GSP uses, so the submit → register → apply loop can be driven without live credentials. Its

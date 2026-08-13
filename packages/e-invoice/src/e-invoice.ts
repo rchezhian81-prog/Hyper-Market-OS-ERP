@@ -250,6 +250,32 @@ export function foldEInvoice(invoiceId: string, events: readonly EInvoiceEvent[]
   return agg;
 }
 
+// --- the operator reconciliation queue (item 2) -----------------------------------------------------
+
+/** The operator-facing status category an e-invoice falls into — the exception-queue vocabulary. */
+export type EInvoiceQueueCategory = 'processing' | 'registered' | 'rejected' | 'unknown' | 'error' | 'cancelled';
+
+/** Map an e-invoice lifecycle state to its operator-facing queue category. Pure, total. */
+export function eInvoiceQueueCategory(state: EInvoiceLifecycleState): EInvoiceQueueCategory {
+  switch (state) {
+    case 'submitted': return 'processing';
+    case 'registered': return 'registered';
+    case 'rejected': return 'rejected';
+    case 'pending_unknown': return 'unknown';
+    case 'provider_error': return 'error';
+    case 'cancelled': return 'cancelled';
+  }
+}
+
+/**
+ * Does this e-invoice need operator attention? An UNKNOWN outcome (poll/reconcile), a provider ERROR
+ * (a signature that did not verify), or a REJECTION (fix and re-issue). `submitted` is in-flight, and
+ * `registered`/`cancelled` are terminal — none of those is an exception.
+ */
+export function isEInvoiceException(state: EInvoiceLifecycleState): boolean {
+  return state === 'pending_unknown' || state === 'provider_error' || state === 'rejected';
+}
+
 /** May a registered IRN still be cancelled? Within 24 hours of registration; otherwise a credit note. */
 export function assessCancellation(input: { readonly registeredAt: string; readonly at: string }): { readonly cancellable: boolean; readonly reason: string } {
   const hours = (Date.parse(input.at) - Date.parse(input.registeredAt)) / 3_600_000;
