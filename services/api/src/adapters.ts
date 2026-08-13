@@ -67,6 +67,8 @@ import type { ComplianceDeps, Obligation } from '../../compliance/src/index';
 import type { DocumentsDeps, TemplateVersion } from '../../platform/src/documents';
 import type { SuspendedBillsDeps, SuspendedBill } from '../../pos/src/suspended-bills';
 import type { EInvoiceRegisterDeps } from '../../finance/src/e-invoice-register';
+import type { PayRunStoreDeps } from '../../finance/src/pay-run-store';
+import { foldPayRun, type PayRunEvent } from '../../../packages/payroll/src/index';
 import type { GstReturnsDeps, StoredOutwardDoc, PeriodSoldLine } from '../../finance/src/gst-returns';
 import { foldEInvoice, type EInvoiceEvent, type IrnRequest as EInvoiceIrnRequest, type EInvoiceRecord } from '../../../packages/e-invoice/src/index';
 import type { WasteDeps, WasteRecord, WasteCoverage } from '../../inventory/src/waste';
@@ -155,6 +157,7 @@ export const STREAM = {
   suspended: 'suspended',
   einvoice: 'einvoice',
   gstreturns: 'gstreturns',
+  payroll: 'payroll',
   packaging: 'packaging',
   waste: 'waste',
   integration: 'integration',
@@ -344,6 +347,44 @@ export function eInvoiceAdapter(input: {
         idempotencyKey: `einv-cancel-${tenantId}-${invoiceId}`,
         source: 'api/finance',
         payload: { reason, at },
+      }));
+    },
+  };
+}
+
+/**
+ * The DURABLE pay-run lifecycle store (WP3 inc9). Each pay run has its own stream of append-only lifecycle
+ * facts — drafted, submitted, approved, rejected, locked, reversed — folded by the tested engine into the
+ * current state, so a run survives a restart. Nothing is overwritten (hard rule #2): a correction is a
+ * reversal + a new run. Maker ≠ checker is enforced by the route (before the append) AND the fold (on read).
+ */
+export function payRunAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): PayRunStoreDeps {
+  const streamFor = (payRunId: string): string => forPayRun(payRunId);
+  return {
+    now: input.now,
+
+    load: async (tenantId, payRunId) => {
+      const persisted = await input.store.readStream(tenantId, streamFor(payRunId));
+      const events = persisted.map((e) => e.event.payload as PayRunEvent);
+      return foldPayRun(payRunId, events);
+    },
+
+    append: async (tenantId, payRunId, event) => {
+      // A given lifecycle step at a given instant is one fact — keyed on kind + actor + at, so a retry
+      // collapses while a distinct step is its own append. `occurredAt` is the append time (always valid
+      // ISO); the caller's `at` lives in the payload and drives the key.
+      const at = 'at' in event ? event.at : input.now();
+      const actor = 'by' in event ? event.by : 'system';
+      await input.store.append(tenantId, streamFor(payRunId), makeEvent({
+        id: `payrun-${payRunId}-${event.kind}-${actor}-${at}`,
+        type: 'PayRunLifecycleRecorded',
+        occurredAt: input.now(),
+        idempotencyKey: `payrun-${tenantId}-${payRunId}-${event.kind}-${actor}-${at}`,
+        source: 'api/finance',
+        payload: event,
       }));
     },
   };
@@ -554,6 +595,8 @@ const forPackaging = (packagingId: string): string => streamName(STREAM.packagin
 const forWebhook = (provider: string): string => streamName(STREAM.integration, 'webhook', provider);
 /** Each connector mapping version folds one stream — one (connector, version), not every mapping. */
 const forConnectorMapping = (connectorId: string, version: string): string => streamName(STREAM.integration, 'mapping', connectorId, version);
+/** Each pay run's lifecycle folds one stream — one run's history (drafted→…→locked), not the whole shop's. */
+const forPayRun = (payRunId: string): string => streamName(STREAM.payroll, payRunId);
 
 export const STREAM_FOR = { forCustomer, forDriverRun, forLocation, forInvoice, forSaleReturns } as const;
 
