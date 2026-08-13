@@ -25,6 +25,9 @@ const get = (h: ApiHarness, u: string, id: string) =>
   h.request({ method: 'GET', path: `/v1/finance/e-invoice/invoices/${id}`, userId: u, tenantId: A });
 const queue = (h: ApiHarness, u: string, state?: string) =>
   h.request({ method: 'GET', path: '/v1/finance/e-invoice/register', userId: u, tenantId: A, ...(state !== undefined ? { query: { state } } : {}) });
+const verify = (h: ApiHarness, u: string, id: string, body: unknown, key: string) =>
+  h.request({ method: 'POST', path: `/v1/finance/e-invoice/invoices/${id}/verify`, userId: u, tenantId: A, idempotencyKey: key, body });
+const ids = (b: unknown) => ((b as { invoices: { invoiceId: string }[] }).invoices).map((i) => i.invoiceId).sort();
 
 describe('e-invoice poll — acknowledgement recovery', () => {
   it('recovers a pending_unknown invoice by re-querying the sandbox', async () => {
@@ -101,5 +104,57 @@ describe('e-invoice exception queue', () => {
     const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
     await h1.seedOwner(B, 'u-b');
     expect(((await h1.request({ method: 'GET', path: '/v1/finance/e-invoice/register', userId: 'u-b', tenantId: B })).body as { count: number }).count).toBe(0);
+  });
+});
+
+// --- verify + mismatch detection (item 2 inc4) --------------------------------------------------------
+
+const DIFF_IRN = 'a'.repeat(64); // a well-formed but DIFFERENT IRN than the sandbox would issue
+
+describe('e-invoice verify — mismatch detection (rule #10: never a silent overwrite)', () => {
+  it('agrees when the portal re-query returns the same IRN, and flags nothing', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await submit(h, 'u-owner', 'v-ok', b2b('000020'), 'v1');
+    const irn = ((await poll(h, 'u-owner', 'v-ok', {}, 'v1p')).body as { current: { irn: string } }).current.irn;
+    const res = (await verify(h, 'u-owner', 'v-ok', {}, 'v1v')).body as { agrees: boolean; current: { irn: string; mismatch?: unknown } };
+    expect(res.agrees).toBe(true);
+    expect(res.current.irn).toBe(irn);        // unchanged
+    expect(res.current.mismatch).toBeUndefined();
+  });
+
+  it('flags a portal rejection of a registered invoice WITHOUT overwriting the stored IRN', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await submit(h, 'u-owner', 'v-rej', b2b('000021'), 'v2');
+    const irn = ((await poll(h, 'u-owner', 'v-rej', {}, 'v2p')).body as { current: { irn: string } }).current.irn;
+    const res = (await verify(h, 'u-owner', 'v-rej', { sandbox: { forceOutcome: 'rejected' } }, 'v2v')).body as { agrees: boolean; mismatch: { observedState: string }; current: { state: string; irn: string; mismatch?: unknown } };
+    expect(res.agrees).toBe(false);
+    expect(res.mismatch.observedState).toBe('rejected');
+    expect(res.current.state).toBe('registered');   // state unchanged — still terminal
+    expect(res.current.irn).toBe(irn);              // stored IRN unchanged
+    expect(res.current.mismatch).toBeDefined();     // flagged for a human
+    // It now sits in the mismatch queue (and exceptions), and NOT in the clean registered list.
+    expect(ids((await queue(h, 'u-owner', 'mismatch')).body)).toEqual(['v-rej']);
+    expect(ids((await queue(h, 'u-owner', 'exceptions')).body)).toEqual(['v-rej']);
+    expect(ids((await queue(h, 'u-owner', 'registered')).body)).toEqual([]);
+  });
+
+  it('flags a DIFFERENT IRN via a connector observation, refuses verifying an in-flight invoice, and gates RBAC', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-cash', 'cashier');
+    await submit(h, 'u-owner', 'v-diff', b2b('000022'), 'v3');
+    const irn = ((await poll(h, 'u-owner', 'v-diff', {}, 'v3p')).body as { current: { irn: string } }).current.irn;
+    const res = (await verify(h, 'u-owner', 'v-diff', { observed: { status: 'registered', irn: DIFF_IRN, signedQr: 'QR', ackNo: 'ACK', ackDate: '2026-08-11' } }, 'v3v')).body as { agrees: boolean; mismatch: { observedIrn: string }; current: { irn: string } };
+    expect(res.agrees).toBe(false);
+    expect(res.mismatch.observedIrn).toBe(DIFF_IRN);
+    expect(res.current.irn).toBe(irn);              // the differing IRN is NOT written — the original stands
+    // Verify only applies to a terminal invoice — an in-flight one points you at poll.
+    await submit(h, 'u-owner', 'v-inflight', b2b('000023'), 'v4');
+    await record(h, 'u-owner', 'v-inflight', { result: { status: 'unknown', reason: 't/o' } }, 'v4u');
+    expect((await verify(h, 'u-owner', 'v-inflight', {}, 'v4v')).status).toBe(422);
+    // RBAC: a cashier cannot verify (it re-queries the portal).
+    expect((await verify(h, 'u-cash', 'v-diff', {}, 'v-rbac')).status).toBe(403);
   });
 });

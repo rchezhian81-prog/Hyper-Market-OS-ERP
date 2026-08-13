@@ -70,3 +70,23 @@ the government's signature.
 Sandbox only — a live GSP/IRP connection stays externally blocked and off-by-default (portal switch above).
 Tested in `tests/unit/e-invoice-reconciliation.test.ts` and `tests/integration/e-invoice-reconciliation.test.ts`.
 The e-way-bill equivalent is the next increment.
+
+## Mismatch detection (item 2 inc4)
+
+Poll resolves a *stuck* invoice; it deliberately leaves a **terminal** one alone. But a stored IRN can
+silently drift from what the IRP holds. `POST /v1/finance/e-invoice/invoices/:id/verify` closes that:
+
+- It re-queries the IRP for a **registered/cancelled** invoice (an in-flight one is refused with a 422
+  pointing at poll) and **compares** the answer against the stored IRN via the pure `detectEInvoiceMismatch`.
+- On **agreement** (same IRN) it is a no-op — nothing written.
+- On a **disagreement** (a different registered IRN, or the IRP now reporting the invoice as rejected while
+  an IRN is on file) it records a `MismatchObserved` fact — an **additive flag**, never an overwrite of the
+  stored IRN (**hard rule #10**). `foldEInvoice` applies the flag without changing the state or the IRN, and
+  `eInvoiceRowCategory`/`eInvoiceNeedsAttention` move the invoice into the **`mismatch`** queue category
+  (and the `exceptions` filter). A human reconciles it out of band; the software never picks a winner.
+
+The connector's own observation can be posted directly (`observed`), or the sandbox is re-queried
+(`sandbox.forceOutcome`). Tested in the same two files (detector + additive replay-safe fold; agreement
+no-ops; a forced rejection and a connector-observed different IRN both flag without overwriting;
+`mismatch`/`exceptions` queue; in-flight 422; RBAC 403). The e-way-bill twin (`detectEwbMismatch` +
+`…/verify`) mirrors it exactly.

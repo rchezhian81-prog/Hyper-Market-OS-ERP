@@ -15,8 +15,8 @@ import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
   assessEInvoiceEligibility, buildIrnRequest, applyIrpResult, assessCancellation,
-  eInvoiceQueueCategory, isEInvoiceException, registerViaProvider, sandboxGspProvider,
-  type SupplyType, type EInvoiceDocType, type IrpResult, type IrnRequest, type EInvoiceRecord, type EInvoiceAggregate,
+  eInvoiceRowCategory, eInvoiceNeedsAttention, detectEInvoiceMismatch, registerViaProvider, sandboxGspProvider,
+  type SupplyType, type EInvoiceDocType, type IrpResult, type IrnRequest, type EInvoiceRecord, type EInvoiceAggregate, type EInvoiceMismatch,
 } from '../../../packages/e-invoice/src/index';
 import type { TaxInvoiceFields } from '../../../packages/finance/src/index';
 
@@ -30,6 +30,8 @@ export interface EInvoiceRegisterDeps {
   readonly recordSubmit: (tenantId: string, invoiceId: string, request: IrnRequest, at: string) => Promise<void> | void;
   readonly recordResponse: (tenantId: string, invoiceId: string, record: EInvoiceRecord, at: string) => Promise<void> | void;
   readonly recordCancel: (tenantId: string, invoiceId: string, reason: string, at: string) => Promise<void> | void;
+  /** Record a re-query disagreement as an ADDITIVE flag — never an overwrite of the stored IRN (rule #10). */
+  readonly recordMismatch: (tenantId: string, invoiceId: string, mismatch: EInvoiceMismatch, at: string) => Promise<void> | void;
   /** The invoice ids that have entered the lifecycle — the reconciliation queue folds each one. */
   readonly listInvoiceIds: (tenantId: string) => Promise<readonly string[]> | readonly string[];
   readonly now: () => string;
@@ -157,19 +159,64 @@ export function eInvoiceRegisterRoutes(deps: EInvoiceRegisterDeps): readonly Rou
       },
     },
     {
+      // VERIFY a terminal invoice against the portal — MISMATCH DETECTION. A registered/cancelled invoice
+      // is normally left alone (poll no-ops on it), but a stored IRN can silently drift from what the portal
+      // holds (a wrong document, a portal-side correction). This re-queries and COMPARES: if the answer
+      // disagrees with the stored IRN, it records a mismatch flag (append-only) and surfaces it in the queue
+      // — the stored IRN is NEVER overwritten (hard rule #10: a conflict is a visible exception, not a silent
+      // last-write-wins). The connector's observation may be posted directly (`observed`), else the sandbox
+      // is re-queried. Gated the same as the portal-touching routes; idempotent.
+      api: 'API-09', method: 'POST', path: '/v1/finance/e-invoice/invoices/:invoiceId/verify',
+      permission: 'finance.einvoice.generate', idempotent: true,
+      handler: async (ctx) => {
+        const invoiceId = ctx.params['invoiceId'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const existing = await deps.load(ctx.tenantId, invoiceId);
+        if (existing === undefined) throw notFound(`a submitted e-invoice for ${invoiceId}`);
+        if (existing.state !== 'registered' && existing.state !== 'cancelled') {
+          throw apiError(422, { code: 'nothing_to_verify', whatHappened: `verify compares a terminal invoice against the portal — this invoice is ${existing.state}`, wasItSaved: 'not_saved', nextSafeAction: 'Poll the invoice to resolve an in-flight state; verify is for a registered or cancelled one.' });
+        }
+        // The observed answer: either the connector's own observation, or a sandbox re-query.
+        let observed: EInvoiceRecord;
+        if (isObj(b['observed']) && STATUSES.includes((b['observed'] as Record<string, unknown>)['status'] as typeof STATUSES[number])) {
+          observed = applyIrpResult({ invoiceId, result: b['observed'] as unknown as IrpResult });
+        } else {
+          if (existing.request === undefined) {
+            throw apiError(422, { code: 'verify_no_request', whatHappened: 'there is no stored IRP request to re-query, and no observed result was supplied', wasItSaved: 'not_saved', nextSafeAction: 'Supply the portal’s observed result under "observed".' });
+          }
+          const sandbox = isObj(b['sandbox']) ? b['sandbox'] : {};
+          const force = sandbox['forceOutcome'];
+          const provider = sandboxGspProvider(
+            force === 'registered' || force === 'unknown' || force === 'rejected'
+              ? { forceOutcome: force, ...(Array.isArray(sandbox['rejectReasons']) ? { rejectReasons: sandbox['rejectReasons'] as string[] } : {}) }
+              : {},
+          );
+          observed = (await registerViaProvider({ invoiceId, request: existing.request, provider })).record;
+        }
+        const at = deps.now();
+        const mismatch = detectEInvoiceMismatch(existing, observed, at);
+        if (mismatch === undefined) {
+          return { status: 200, body: { invoiceId, verified: true, agrees: true, observedState: observed.state, current: existing } };
+        }
+        await deps.recordMismatch(ctx.tenantId, invoiceId, mismatch, at);
+        return { status: 200, body: { invoiceId, verified: true, agrees: false, mismatch, current: await deps.load(ctx.tenantId, invoiceId) } };
+      },
+    },
+    {
       // The e-invoice reconciliation / exception queue — every invoice in the lifecycle and its operator
-      // status. ?state= filters to a queue category (processing/registered/rejected/unknown/error/cancelled)
-      // or `exceptions` (unknown + error + rejected — the ones needing attention). Read-gated.
+      // status. ?state= filters to a queue category (processing/registered/rejected/unknown/error/cancelled/
+      // mismatch) or `exceptions` (everything needing attention — unknown + error + rejected + mismatch).
+      // Read-gated.
       api: 'API-09', method: 'GET', path: '/v1/finance/e-invoice/register',
       permission: 'finance.einvoice.read',
       handler: async (ctx) => {
         const filter = ctx.query['state'];
         const ids = await deps.listInvoiceIds(ctx.tenantId);
-        const rows: { invoiceId: string; state: string; queue: string; exception: boolean; irn?: string; detail: string }[] = [];
+        const rows: { invoiceId: string; state: string; queue: string; exception: boolean; irn?: string; mismatch?: EInvoiceMismatch; detail: string }[] = [];
         for (const invoiceId of ids) {
           const agg = await deps.load(ctx.tenantId, invoiceId);
           if (agg === undefined) continue;
-          rows.push({ invoiceId, state: agg.state, queue: eInvoiceQueueCategory(agg.state), exception: isEInvoiceException(agg.state), ...(agg.irn !== undefined ? { irn: agg.irn } : {}), detail: agg.detail });
+          rows.push({ invoiceId, state: agg.state, queue: eInvoiceRowCategory(agg), exception: eInvoiceNeedsAttention(agg), ...(agg.irn !== undefined ? { irn: agg.irn } : {}), ...(agg.mismatch !== undefined ? { mismatch: agg.mismatch } : {}), detail: agg.detail });
         }
         const filtered = filter === undefined || filter === 'all' ? rows
           : filter === 'exceptions' ? rows.filter((r) => r.exception)

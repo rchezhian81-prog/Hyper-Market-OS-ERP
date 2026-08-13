@@ -285,11 +285,16 @@ export type EwbLifecycleState = 'generated' | 'rejected' | 'pending_unknown' | '
 
 // --- the operator reconciliation queue (item 2) -----------------------------------------------------
 
-/** The operator-facing status category an e-way bill falls into — the exception-queue vocabulary. */
-export type EwbQueueCategory = 'generated' | 'rejected' | 'unknown' | 'error' | 'cancelled';
+/**
+ * The operator-facing status category an e-way bill falls into — the exception-queue vocabulary.
+ * `mismatch` is not a lifecycle state: it is the flag a terminal movement carries when a re-query disagreed
+ * with the stored EWB number (see `detectEwbMismatch`). `ewbQueueCategory` (state → category) never returns
+ * it; `ewbRowCategory` (whole aggregate → category) does when the flag is set.
+ */
+export type EwbQueueCategory = 'generated' | 'rejected' | 'unknown' | 'error' | 'cancelled' | 'mismatch';
 
 /** Map an e-way-bill lifecycle state to its operator-facing queue category. Pure, total. */
-export function ewbQueueCategory(state: EwbLifecycleState): EwbQueueCategory {
+export function ewbQueueCategory(state: EwbLifecycleState): Exclude<EwbQueueCategory, 'mismatch'> {
   switch (state) {
     case 'generated': return 'generated';
     case 'rejected': return 'rejected';
@@ -300,12 +305,39 @@ export function ewbQueueCategory(state: EwbLifecycleState): EwbQueueCategory {
 }
 
 /**
- * Does this e-way bill need operator attention? An UNKNOWN outcome (awaiting/timeout — poll or reconcile),
- * a provider ERROR (a number that did not verify), or a REJECTION (fix and re-generate). `generated` and
- * `cancelled` are terminal — neither is an exception.
+ * Does this e-way-bill STATE need operator attention? An UNKNOWN outcome (awaiting/timeout — poll or
+ * reconcile), a provider ERROR (a number that did not verify), or a REJECTION (fix and re-generate).
+ * `generated` and `cancelled` are terminal — neither state is an exception. (A terminal movement can still
+ * become an exception via a MISMATCH — a property of the whole aggregate, not the state; see
+ * `ewbNeedsAttention`.)
  */
 export function isEwbException(state: EwbLifecycleState): boolean {
   return state === 'pending_unknown' || state === 'provider_error' || state === 'rejected';
+}
+
+/** The queue category for a whole aggregate: `mismatch` wins over the state category when flagged. */
+export function ewbRowCategory(agg: EwbAggregate): EwbQueueCategory {
+  return agg.mismatch !== undefined ? 'mismatch' : ewbQueueCategory(agg.state);
+}
+
+/** Does this whole e-way-bill aggregate need attention? An exception STATE, or a flagged MISMATCH. */
+export function ewbNeedsAttention(agg: EwbAggregate): boolean {
+  return agg.mismatch !== undefined || isEwbException(agg.state);
+}
+
+/**
+ * A MISMATCH: a later re-query of the portal disagreed with the EWB number already on file. Recorded as an
+ * additive flag — never a state change and never an overwrite of the stored number (hard rule #10: a
+ * conflict becomes a visible exception, never a silent last-write-wins). A human reconciles it out of band.
+ */
+export interface EwbMismatch {
+  /** What the portal reported on the re-query — the disagreeing answer. */
+  readonly observedState: EwbState;
+  /** The differing EWB number the portal returned, if it returned one at all. */
+  readonly observedEwbNo?: string;
+  /** Plain-language description of the disagreement, for the operator. */
+  readonly note: string;
+  readonly observedAt: string;
 }
 
 export interface EwbAggregate {
@@ -319,13 +351,16 @@ export interface EwbAggregate {
   readonly generatedAt?: string;
   readonly cancelledAt?: string;
   readonly cancelReason?: string;
+  /** Set when a re-query disagreed with the stored EWB number — an exception for a human, never an overwrite. */
+  readonly mismatch?: EwbMismatch;
   readonly detail: string;
 }
 
 export type EwbEvent =
   | { readonly kind: 'submitted'; readonly request: EwayBillRequest; readonly at: string }
   | { readonly kind: 'response'; readonly record: EwbRecord; readonly at: string }
-  | { readonly kind: 'cancelled'; readonly reason: string; readonly at: string };
+  | { readonly kind: 'cancelled'; readonly reason: string; readonly at: string }
+  | { readonly kind: 'mismatch'; readonly mismatch: EwbMismatch; readonly at: string };
 
 /** Fold a movement's append-only e-way-bill events into its current state. `undefined` if never submitted. */
 export function foldEwayBill(movementId: string, events: readonly EwbEvent[]): EwbAggregate | undefined {
@@ -349,7 +384,38 @@ export function foldEwayBill(movementId: string, events: readonly EwbEvent[]): E
       };
     } else if (e.kind === 'cancelled') {
       if (agg?.state === 'generated') agg = { ...agg, state: 'cancelled', cancelledAt: e.at, cancelReason: e.reason, detail: `cancelled within the ${EWB_CANCEL_WINDOW_HOURS}h window: ${e.reason}` };
+    } else if (e.kind === 'mismatch') {
+      // Additive only: flag the aggregate, never touch the stored number or the lifecycle state. Replay-safe.
+      if (agg !== undefined) agg = { ...agg, mismatch: e.mismatch };
     }
   }
   return agg;
+}
+
+/**
+ * Compare the portal's re-query answer against the EWB number already on file. Returns a mismatch descriptor
+ * when the answer DEFINITELY disagrees, `undefined` when it agrees or is inconclusive. The rules mirror the
+ * e-invoice detector:
+ *   • an inconclusive answer (`pending_unknown`/`provider_error`) is NOT a disagreement;
+ *   • against a stored `generated` EWB: a `generated` answer carrying a DIFFERENT number is a mismatch, and a
+ *     `rejected` answer (the portal disowns a bill we hold) is a mismatch; the SAME number agrees;
+ *   • against a `cancelled` movement: a `generated` answer (the portal still shows it live) is a mismatch.
+ * The stored number is the truth of record; this only raises a flag for a human.
+ */
+export function detectEwbMismatch(agg: EwbAggregate, observed: EwbRecord, at: string): EwbMismatch | undefined {
+  if (observed.state === 'pending_unknown' || observed.state === 'provider_error') return undefined; // a non-answer is not a disagreement
+  const base = (note: string): EwbMismatch => ({ observedState: observed.state, ...(observed.ewbNo !== undefined ? { observedEwbNo: observed.ewbNo } : {}), note, observedAt: at });
+  if (agg.state === 'generated') {
+    if (observed.state === 'generated' && observed.ewbNo !== undefined && observed.ewbNo !== agg.ewbNo) {
+      return base(`the portal returned a different EWB number (${observed.ewbNo}) than the one on file (${agg.ewbNo ?? 'none'})`);
+    }
+    if (observed.state === 'rejected') {
+      return base('the portal now reports this movement as REJECTED, but a generated EWB is on file — do not re-generate without reconciling');
+    }
+    return undefined;
+  }
+  if (agg.state === 'cancelled' && observed.state === 'generated') {
+    return base(`the portal still reports this movement as generated (${observed.ewbNo ?? 'no number'}), but it was cancelled here`);
+  }
+  return undefined;
 }

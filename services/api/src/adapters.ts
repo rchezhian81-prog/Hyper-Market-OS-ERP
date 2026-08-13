@@ -72,9 +72,9 @@ import { foldPayRun, type PayRunEvent } from '../../../packages/payroll/src/inde
 import type { Gstr1SubmissionStoreDeps } from '../../finance/src/gstr1-submission-store';
 import { foldGstr1Submission, type Gstr1SubmissionEvent } from '../../../packages/finance/src/index';
 import type { EwayBillRegisterDeps } from '../../finance/src/e-way-bill-register';
-import { foldEwayBill, type EwbEvent, type EwayBillRequest, type EwbRecord } from '../../../packages/e-way-bill/src/index';
+import { foldEwayBill, type EwbEvent, type EwayBillRequest, type EwbRecord, type EwbMismatch } from '../../../packages/e-way-bill/src/index';
 import type { GstReturnsDeps, StoredOutwardDoc, PeriodSoldLine } from '../../finance/src/gst-returns';
-import { foldEInvoice, type EInvoiceEvent, type IrnRequest as EInvoiceIrnRequest, type EInvoiceRecord } from '../../../packages/e-invoice/src/index';
+import { foldEInvoice, type EInvoiceEvent, type IrnRequest as EInvoiceIrnRequest, type EInvoiceRecord, type EInvoiceMismatch } from '../../../packages/e-invoice/src/index';
 import type { WasteDeps, WasteRecord, WasteCoverage } from '../../inventory/src/waste';
 import type { IntegrationDeps, CertifiedEntry, AdapterConfig, AdapterHeartbeat } from '../../platform/src/integration';
 import type { WebhookDeps, WebhookConfig } from '../../platform/src/webhooks';
@@ -324,6 +324,7 @@ export function eInvoiceAdapter(input: {
         if (e.event.type === 'EInvoiceSubmitted') events.push({ kind: 'submitted', request: p['request'] as EInvoiceIrnRequest, at });
         else if (e.event.type === 'EInvoiceResponseRecorded') events.push({ kind: 'response', record: p['record'] as EInvoiceRecord, at });
         else if (e.event.type === 'EInvoiceCancelled') events.push({ kind: 'cancelled', reason: p['reason'] as string, at });
+        else if (e.event.type === 'EInvoiceMismatchObserved') events.push({ kind: 'mismatch', mismatch: p['mismatch'] as EInvoiceMismatch, at });
       }
       return foldEInvoice(invoiceId, events);
     },
@@ -379,6 +380,18 @@ export function eInvoiceAdapter(input: {
         payload: { reason, at },
       }));
     },
+
+    recordMismatch: async (tenantId, invoiceId, mismatch, at) => {
+      await input.store.append(tenantId, streamFor(invoiceId), makeEvent({
+        id: `einv-mismatch-${invoiceId}-${mismatch.observedState}-${mismatch.observedIrn ?? 'none'}`,
+        type: 'EInvoiceMismatchObserved',
+        occurredAt: input.now(),
+        // The same disagreement collapses; a distinct observed state/IRN is its own fact (append-only).
+        idempotencyKey: `einv-mismatch-${tenantId}-${invoiceId}-${mismatch.observedState}-${mismatch.observedIrn ?? 'none'}`,
+        source: 'api/finance',
+        payload: { mismatch, at },
+      }));
+    },
   };
 }
 
@@ -413,6 +426,7 @@ export function eWayBillAdapter(input: {
         if (e.event.type === 'EwayBillSubmitted') events.push({ kind: 'submitted', request: p['request'] as EwayBillRequest, at });
         else if (e.event.type === 'EwayBillResponseRecorded') events.push({ kind: 'response', record: p['record'] as EwbRecord, at });
         else if (e.event.type === 'EwayBillCancelled') events.push({ kind: 'cancelled', reason: p['reason'] as string, at });
+        else if (e.event.type === 'EwayBillMismatchObserved') events.push({ kind: 'mismatch', mismatch: p['mismatch'] as EwbMismatch, at });
       }
       return foldEwayBill(movementId, events);
     },
@@ -446,6 +460,18 @@ export function eWayBillAdapter(input: {
         idempotencyKey: `ewb-cancel-${tenantId}-${movementId}`,
         source: 'api/finance',
         payload: { reason, at },
+      }));
+    },
+
+    recordMismatch: async (tenantId, movementId, mismatch, at) => {
+      await input.store.append(tenantId, streamFor(movementId), makeEvent({
+        id: `ewb-mismatch-${movementId}-${mismatch.observedState}-${mismatch.observedEwbNo ?? 'none'}`,
+        type: 'EwayBillMismatchObserved',
+        occurredAt: input.now(),
+        // The same disagreement collapses; a distinct observed state/number is its own fact (append-only).
+        idempotencyKey: `ewb-mismatch-${tenantId}-${movementId}-${mismatch.observedState}-${mismatch.observedEwbNo ?? 'none'}`,
+        source: 'api/finance',
+        payload: { mismatch, at },
       }));
     },
   };
