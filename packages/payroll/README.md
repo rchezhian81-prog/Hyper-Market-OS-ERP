@@ -117,3 +117,19 @@ widely-supported generic layout and marks it `confirmWithBank`. Wired at `POST /
 (folds the run's events to confirm it is locked, then builds), gated `payroll.statutory.read`. Tested in
 `tests/unit/payroll-bank-file.test.ts` (4) and `tests/integration/payroll-bank-file.test.ts` (3). The
 accounting journal + cost-centre posting and F&F settlement are the remaining increments.
+
+## The accounting journal + cost-centre posting (`src/journal.ts`, WP3 inc6)
+
+A locked pay run is not finished when the bank file is made — the books must record it.
+`buildPayrollJournal` turns a run's totals into a **balanced double-entry journal**: the salary expense
+(optionally split across cost-centres that must sum to gross) and the employer's own PF/ESI cost on the
+**debit** side; the net pay owed and each statutory payable (PF, ESI, PT, TDS) on the **credit** side.
+
+One invariant governs everything: **total debits === total credits**. It is asserted, and a run whose
+net does not equal `gross − (employee PF + ESI + PT + TDS)` makes the journal fail to balance and is
+**refused** — a payroll that posts an unbalanced journal has silently corrupted the books. PF/ESI
+payables carry both the employee and employer shares; zero lines are omitted. Produced only from a
+**locked** run; exact integer paise. Wired at `POST /v1/hr/payroll/journal` (folds the run's events to
+confirm locked, then builds), gated `payroll.statutory.read`, `confirmWithCa`. Tested in
+`tests/unit/payroll-journal.test.ts` (5) and `tests/integration/payroll-journal.test.ts` (3). F&F
+settlement, employee self-service, and the durable pay-run SQL event store are the remaining increments.

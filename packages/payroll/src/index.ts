@@ -8,3 +8,4 @@ export * from './payslip';
 export * from './tds';
 export * from './pay-run';
 export * from './bank-file';
+export * from './journal';
