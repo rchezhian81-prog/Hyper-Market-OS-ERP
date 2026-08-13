@@ -61,6 +61,7 @@ import { eInvoiceRoutes } from '../../finance/src/e-invoice';
 import { eInvoiceRegisterRoutes } from '../../finance/src/e-invoice-register';
 import { eInvoiceSandboxRoutes } from '../../finance/src/e-invoice-sandbox';
 import { eWayBillRoutes } from '../../finance/src/e-way-bill';
+import { eWayBillRegisterRoutes } from '../../finance/src/e-way-bill-register';
 import { gstPortalRoutes } from '../../finance/src/gst-portal';
 import { payrollRoutes } from '../../finance/src/payroll';
 import { payRunStoreRoutes } from '../../finance/src/pay-run-store';
@@ -109,7 +110,7 @@ import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, warehouseAdapter, transfersAdapter, countsAdapter, productionAdapter, packagingAdapter, wasteAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
-  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, eInvoiceAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter, lotTraceAdapter, salesHistoryAdapter,
+  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter, lotTraceAdapter, salesHistoryAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
@@ -379,6 +380,11 @@ export function buildSurface(deps: {
     // distance, and a deterministic sandbox portal so the build → generate → apply loop runs without live
     // credentials; its EWB number is SANDBOX-derived and never valid to travel with real goods.
     ...eWayBillRoutes(),
+    // GST e-way-bill DURABLE lifecycle store (A23, item 2) — submit → portal response → cancel per movement,
+    // one stream each, so an e-way bill survives a restart; the transport twin of the e-invoice register.
+    ...eWayBillRegisterRoutes(store === undefined ? {
+      load: () => undefined, recordSubmit: () => {}, recordResponse: () => {}, recordCancel: () => {}, listMovementIds: () => [], now,
+    } : eWayBillAdapter({ store, now })),
     // GST government-portal switch — the feature flag + kill switch keeping LIVE e-invoice/e-way-bill portal
     // calls OFF by default and killable; the gate a deployment consults before the real connector. Sandbox
     // routes are exempt.

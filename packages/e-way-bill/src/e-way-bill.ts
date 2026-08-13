@@ -283,6 +283,31 @@ export function assessEwbCancellation(input: {
 
 export type EwbLifecycleState = 'generated' | 'rejected' | 'pending_unknown' | 'provider_error' | 'cancelled';
 
+// --- the operator reconciliation queue (item 2) -----------------------------------------------------
+
+/** The operator-facing status category an e-way bill falls into — the exception-queue vocabulary. */
+export type EwbQueueCategory = 'generated' | 'rejected' | 'unknown' | 'error' | 'cancelled';
+
+/** Map an e-way-bill lifecycle state to its operator-facing queue category. Pure, total. */
+export function ewbQueueCategory(state: EwbLifecycleState): EwbQueueCategory {
+  switch (state) {
+    case 'generated': return 'generated';
+    case 'rejected': return 'rejected';
+    case 'pending_unknown': return 'unknown';
+    case 'provider_error': return 'error';
+    case 'cancelled': return 'cancelled';
+  }
+}
+
+/**
+ * Does this e-way bill need operator attention? An UNKNOWN outcome (awaiting/timeout — poll or reconcile),
+ * a provider ERROR (a number that did not verify), or a REJECTION (fix and re-generate). `generated` and
+ * `cancelled` are terminal — neither is an exception.
+ */
+export function isEwbException(state: EwbLifecycleState): boolean {
+  return state === 'pending_unknown' || state === 'provider_error' || state === 'rejected';
+}
+
 export interface EwbAggregate {
   readonly movementId: string;
   readonly state: EwbLifecycleState;

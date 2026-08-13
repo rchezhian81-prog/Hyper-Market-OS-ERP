@@ -51,3 +51,26 @@ src/e-way-bill.ts`), gated on the GST-portal permissions. Tested in `tests/unit/
 **A live run** still needs the certified portal/GSP credentials (from a vault), a feature flag /
 kill-switch, and CA confirmation of the intra-TN threshold — the sandbox never produces a fileable
 number.
+
+## The durable lifecycle store (A23, item 2 inc2)
+
+The e-way bill was stateless (eligibility / validity / a sandbox generate). This adds the **durable
+register** — the transport twin of the e-invoice register — so a movement's e-way-bill state survives a
+restart and "current" is a fold of the stored facts:
+
+- `POST /v1/finance/e-way-bill/movements/:movementId/submit` — build the Part-A request from
+  `assessEwayBillRequirement` + `buildEwayBillRequest` (a not-required movement returns 200 with no store; a
+  malformed request is 422 **before** anything is stored) and record the intent.
+- `POST …/:movementId/record-response` — the portal connector posts the answer; `applyEwbResult` turns it
+  into the record, **never fabricating the 12-digit EWB number**. A `generated` EWB is FINAL; `unknown`
+  stays retryable; a re-posted answer collapses.
+- `POST …/:movementId/cancel` — cancel a generated EWB within the 24-hour window (`assessEwbCancellation`,
+  and never once verified in transit).
+- `GET …/:movementId` — the current folded state.
+
+Wired via `eWayBillAdapter` (`services/api/src/adapters.ts`) — a per-movement event stream plus an atomic
+tenant-wide `EwayBillIndexed` index (so the reconciliation queue is cheap). Gated the same operator
+permissions as e-invoicing (`finance.einvoice.generate`/`.read`). The operator queue vocabulary
+(`ewbQueueCategory` / `isEwbException`) is added here and consumed by the **poll + exception queue**
+increment (inc3). Sandbox only — a live portal connection stays externally blocked and off-by-default.
+Tested in `tests/unit/e-way-bill-reconciliation.test.ts` and `tests/integration/e-way-bill-register.test.ts`.
