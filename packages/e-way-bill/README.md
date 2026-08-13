@@ -74,3 +74,26 @@ permissions as e-invoicing (`finance.einvoice.generate`/`.read`). The operator q
 (`ewbQueueCategory` / `isEwbException`) is added here and consumed by the **poll + exception queue**
 increment (inc3). Sandbox only — a live portal connection stays externally blocked and off-by-default.
 Tested in `tests/unit/e-way-bill-reconciliation.test.ts` and `tests/integration/e-way-bill-register.test.ts`.
+
+## Reconciliation — poll + exception queue (A23, item 2 inc3)
+
+A `submit` that timed out lands `pending_unknown` — the portal may or may not have generated the bill,
+and a manual retry risks a second number for the same movement. This increment closes that gap the same
+way the e-invoice register does, so the two read alike:
+
+- `POST /v1/finance/e-way-bill/movements/:movementId/poll` — **acknowledgement recovery**. Re-query the
+  portal for a stuck (`pending_unknown`) movement and apply the answer through the same `applyEwbResult`
+  path, so the 12-digit number is still only ever what the portal returned. A `generated`, `cancelled`
+  or `rejected` movement is terminal — a poll on it is a **safe no-op** (`polled: false`), never a second
+  submission. Gated `finance.einvoice.generate`; idempotent. Sandbox-driven (`?sandbox.forceOutcome=` in
+  the body exercises the timeout/rejection branches); a live portal poll stays externally blocked.
+- `GET /v1/finance/e-way-bill/register?state=` — the **reconciliation / exception queue**. Every movement
+  in the lifecycle with its operator category (`ewbQueueCategory`); `?state=exceptions` narrows to the
+  ones needing attention (`pending_unknown` + `provider_error` + `rejected` — `isEwbException`), or a
+  single category (`generated`/`rejected`/`unknown`/…). Read-gated (`finance.einvoice.read`) and
+  tenant-isolated. Nothing is rewritten — an exception is surfaced for a human to work, never
+  auto-corrected.
+
+Tested in `tests/integration/e-way-bill-register.test.ts` (poll `pending_unknown` → generated + terminal
+no-op; a forced timeout staying unknown and an outage classifying rejected; the exception queue listing
+unknown + rejected while generated is separate, with RBAC 403 and tenant isolation).

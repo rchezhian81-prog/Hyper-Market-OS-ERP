@@ -79,3 +79,52 @@ describe('durable e-way-bill register (A23 item 2 inc2)', () => {
     expect((await get(h1, 'u-owner', 'nope')).status).toBe(404);
   });
 });
+
+// --- reconciliation: poll + exception queue (item 2 inc3) --------------------------------------------
+
+const poll = (h: ApiHarness, u: string, id: string, body: unknown, key: string) =>
+  h.request({ method: 'POST', path: `/v1/finance/e-way-bill/movements/${id}/poll`, userId: u, tenantId: A, idempotencyKey: key, body });
+const queue = (h: ApiHarness, u: string, state?: string) =>
+  h.request({ method: 'GET', path: '/v1/finance/e-way-bill/register', userId: u, tenantId: A, ...(state !== undefined ? { query: { state } } : {}) });
+const stateOf = async (h: ApiHarness, id: string) => ((await get(h, 'u-owner', id)).body as { state: string }).state;
+
+describe('e-way-bill reconciliation — poll + exception queue', () => {
+  it('polls a stuck (pending_unknown) movement to a generated e-way bill', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await submit(h, 'u-owner', 'pv-1', { request: REQ }, 'pv1-sub'); // lands pending_unknown
+    expect(await stateOf(h, 'pv-1')).toBe('pending_unknown');
+    const polled = (await poll(h, 'u-owner', 'pv-1', {}, 'pv1-poll')).body as { polled: boolean; current: { state: string; ewbNo: string } };
+    expect(polled.polled).toBe(true);
+    expect(polled.current.state).toBe('generated');
+    expect(polled.current.ewbNo).toMatch(/^\d{12}$/);
+    // A poll on the now-terminal movement is a safe no-op (no second number).
+    expect(((await poll(h, 'u-owner', 'pv-1', {}, 'pv1-poll2')).body as { polled: boolean }).polled).toBe(false);
+  });
+
+  it('simulates a timeout staying unknown and an outage classifying rejected', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await submit(h, 'u-owner', 'pv-2', { request: REQ }, 'pv2-sub');
+    expect(((await poll(h, 'u-owner', 'pv-2', { sandbox: { forceOutcome: 'unknown' } }, 'pv2-t')).body as { current: { state: string } }).current.state).toBe('pending_unknown');
+    expect(((await poll(h, 'u-owner', 'pv-2', { sandbox: { forceOutcome: 'rejected', rejectReasons: ['portal outage'] } }, 'pv2-o')).body as { current: { state: string } }).current.state).toBe('rejected');
+  });
+
+  it('lists the exception queue — unknown + rejected need attention, generated is separate', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-cash', 'cashier');
+    await submit(h, 'u-owner', 'q-gen', { request: { ...REQ, documentNumber: 'INV/2627/000010' } }, 'qg'); await poll(h, 'u-owner', 'q-gen', {}, 'qgp');
+    await submit(h, 'u-owner', 'q-unk', { request: { ...REQ, documentNumber: 'INV/2627/000011' } }, 'qu'); // pending_unknown, not polled
+    await submit(h, 'u-owner', 'q-rej', { request: { ...REQ, documentNumber: 'INV/2627/000012' } }, 'qr'); await poll(h, 'u-owner', 'q-rej', { sandbox: { forceOutcome: 'rejected' } }, 'qrp');
+    expect(((await queue(h, 'u-owner')).body as { count: number }).count).toBe(3);
+    const exc = (await queue(h, 'u-owner', 'exceptions')).body as { movements: { movementId: string }[] };
+    expect(exc.movements.map((m) => m.movementId).sort()).toEqual(['q-rej', 'q-unk']);
+    expect(((await queue(h, 'u-owner', 'generated')).body as { movements: { movementId: string }[] }).movements.map((m) => m.movementId)).toEqual(['q-gen']);
+    // Read-gated + tenant-isolated.
+    expect((await queue(h, 'u-cash')).status).toBe(403);
+    const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    await h.seedOwner(B, 'u-b');
+    expect(((await h.request({ method: 'GET', path: '/v1/finance/e-way-bill/register', userId: 'u-b', tenantId: B })).body as { count: number }).count).toBe(0);
+  });
+});
