@@ -131,5 +131,24 @@ net does not equal `gross − (employee PF + ESI + PT + TDS)` makes the journal 
 payables carry both the employee and employer shares; zero lines are omitted. Produced only from a
 **locked** run; exact integer paise. Wired at `POST /v1/hr/payroll/journal` (folds the run's events to
 confirm locked, then builds), gated `payroll.statutory.read`, `confirmWithCa`. Tested in
-`tests/unit/payroll-journal.test.ts` (5) and `tests/integration/payroll-journal.test.ts` (3). F&F
-settlement, employee self-service, and the durable pay-run SQL event store are the remaining increments.
+`tests/unit/payroll-journal.test.ts` (5) and `tests/integration/payroll-journal.test.ts` (3).
+
+## Full-and-final settlement (`src/settlement.ts`, WP3 inc7)
+
+When an employee leaves, one statement squares everything up. `computeSettlement` itemises the
+**earnings** — pending salary for the final part-month, unused **leave encashment** (days × per-day
+basic, optionally capped), **gratuity** where eligible, and any other earning — minus the
+**recoveries** — a notice-period shortfall, an outstanding advance/loan, other deductions, and the tax
+on it — netting to a **signed** result: **positive is payable to the employee, negative is recoverable
+from them** when the recoveries exceed the dues. Getting this wrong underpays someone on their way out
+or writes off money owed, so every line is itemised (zero lines omitted) and exact.
+
+**Gratuity** is the piece with a formula and a statutory ceiling: `computeGratuity` pays
+`15/26 × last-drawn basic+DA × completed years` for **five or more** completed years, **capped at
+₹20,00,000**. Those numbers change by notification, so they are an **effective-dated, configurable**
+schedule (`resolveSettlementParams`, resolve-on-the-exit-date, refuses a gap) and every value in
+`DEFAULT_SETTLEMENT_SCHEDULE` is a **`CONFIRM-WITH-CA`** constant. Exact integer paise (BigInt for the
+15/26 multiply, rounded to the nearest rupee); pure and deterministic. Wired for **review** at
+`POST /v1/hr/payroll/settlement`, gated `payroll.statutory.read`, `confirmWithCa: true`. Tested in
+`tests/unit/payroll-settlement.test.ts` (6) and `tests/integration/payroll-settlement.test.ts` (3).
+Employee self-service and the durable pay-run SQL event store are the remaining increments.

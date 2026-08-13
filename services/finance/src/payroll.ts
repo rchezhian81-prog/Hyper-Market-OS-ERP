@@ -18,6 +18,7 @@ import {
   foldPayRun, evaluatePayRunTransition,
   buildBankFile, InvalidBankFileInput,
   buildPayrollJournal, InvalidPayrollJournal,
+  computeSettlement, resolveSettlementParams, DEFAULT_SETTLEMENT_SCHEDULE,
   DEFAULT_STATUTORY_SCHEDULE, InvalidStatutorySchedule,
   type StatutoryScheduleEntry, type PtSlab,
   type CompensationComponent, type CompensationStructureEntry,
@@ -25,6 +26,7 @@ import {
   type PayRunEvent, type PayRunAction,
   type BankPaymentLine, type BankPaymentType,
   type PayrollTotals, type CostCentreGross,
+  type SettlementScheduleEntry, type SettlementInput,
 } from '../../../packages/payroll/src/index';
 
 const isInt = (v: unknown): v is number => Number.isInteger(v);
@@ -222,6 +224,41 @@ export function payrollRoutes(): readonly Route[] {
           return { status: 200, body: journal };
         } catch (err) {
           if (err instanceof InvalidPayrollJournal) throw apiError(422, { code: 'journal_invalid', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Lock the run and send consistent totals (net = gross − employee deductions; cost-centres sum to gross).' });
+          throw err;
+        }
+      },
+    },
+    {
+      // A leaver's full-and-final settlement, for REVIEW: pending salary + leave encashment + gratuity (where
+      // eligible) + other earnings, minus notice/loan/other recoveries and tax → a signed net (payable to, or
+      // recoverable from, the employee). Body: { onDate, pendingSalaryMinor, leaveEncashment?, gratuity?,
+      // noticeRecoveryMinor?, loanRecoveryMinor?, otherEarningsMinor?, otherDeductionsMinor?,
+      // statutoryDeductionMinor?, schedule? }. Gratuity params (15/26, ≥5 yr, ₹20L cap) are CONFIRM-WITH-CA.
+      api: 'API-09', method: 'POST', path: '/v1/hr/payroll/settlement',
+      permission: 'payroll.statutory.read', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (typeof b['onDate'] !== 'string' || !isInt(b['pendingSalaryMinor'])) {
+          throw apiError(400, { code: 'settlement_needs_date_and_pending', whatHappened: 'A full-and-final settlement needs onDate (the exit date, YYYY-MM-DD) and pendingSalaryMinor (the final part-month salary, integer paise).', wasItSaved: 'not_saved', nextSafeAction: 'Send the exit date and the pending salary; add leaveEncashment, gratuity, recoveries and tax as needed.' });
+        }
+        const schedule = Array.isArray(b['schedule']) ? (b['schedule'] as SettlementScheduleEntry[]) : DEFAULT_SETTLEMENT_SCHEDULE;
+        try {
+          const params = resolveSettlementParams(schedule, b['onDate']);
+          const input: SettlementInput = {
+            pendingSalaryMinor: b['pendingSalaryMinor'] as number,
+            params,
+            ...(isObj(b['leaveEncashment']) ? { leaveEncashment: b['leaveEncashment'] as SettlementInput['leaveEncashment'] } : {}),
+            ...(isObj(b['gratuity']) ? { gratuity: b['gratuity'] as SettlementInput['gratuity'] } : {}),
+            ...(isInt(b['noticeRecoveryMinor']) ? { noticeRecoveryMinor: b['noticeRecoveryMinor'] as number } : {}),
+            ...(isInt(b['loanRecoveryMinor']) ? { loanRecoveryMinor: b['loanRecoveryMinor'] as number } : {}),
+            ...(isInt(b['otherEarningsMinor']) ? { otherEarningsMinor: b['otherEarningsMinor'] as number } : {}),
+            ...(isInt(b['otherDeductionsMinor']) ? { otherDeductionsMinor: b['otherDeductionsMinor'] as number } : {}),
+            ...(isInt(b['statutoryDeductionMinor']) ? { statutoryDeductionMinor: b['statutoryDeductionMinor'] as number } : {}),
+          };
+          const settlement = computeSettlement(input);
+          return { status: 200, body: settlement };
+        } catch (err) {
+          if (err instanceof InvalidStatutorySchedule) throw apiError(400, { code: 'settlement_invalid', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the exit date, amounts, gratuity/leave inputs or schedule and try again.' });
           throw err;
         }
       },
