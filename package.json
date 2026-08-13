@@ -19,6 +19,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "secret-scan": "node scripts/secret-scan.mjs",
+    "completion": "node scripts/completion-report.mjs",
     "db:migrate": "node scripts/migrate.mjs",
     "build:pos": "node scripts/build-app.mjs pos",
     "build:owner": "node scripts/build-app.mjs owner-app",
