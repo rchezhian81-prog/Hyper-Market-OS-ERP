@@ -61,6 +61,39 @@ totals** (QG-07).
     hard rule #1 untouched) at `POST /v1/finance/gstr1/from-sales/table-12`. Tested in
     `tests/unit/finance-outward-from-sales.test.ts` and `tests/integration/gstr1-from-sales.test.ts`.
 
+## GSTR-1 submission safety (`src/gstr1-submission.ts`, WP4 inc1)
+
+Producing the GSTR-1 JSON is one thing; **filing it to the government portal** is irreversible and
+legally binding, so the act of submission is wrapped in a spine of controls. This module is the
+deterministic, event-sourced **state machine** that governs that act — no clock, no I/O, no network (the
+live portal call itself stays off-by-default and killable via `packages/e-invoice/src/portal-switch.ts`).
+
+Lifecycle: **previewed → approved → submitting → filed**, plus **failed** and **unknown**.
+
+- `foldGstr1Submission(period, events)` folds the append-only history to the current state, and is
+  **replay-safe**: an event that does not fit the current state is ignored (a re-posted acknowledgement on
+  a filed return, an approval before a preview), so a duplicate or out-of-order delivery cannot corrupt
+  state.
+- `evaluateGstr1SubmissionTransition(input)` enforces the safety controls before any step:
+  - **maker ≠ checker** — the approver of the previewed figures must differ from the preparer (§28);
+  - **duplicate-submission prevention** — a `filed` or in-flight `submitting` period refuses a new submit
+    *or* preview (a return is never filed twice);
+  - **preview-and-reconcile-before-commit** with a **digest match** — `submit` is refused unless the
+    figures still equal the digest that was approved, so nothing changes silently between approval and
+    filing; once approved the period is **locked** to that digest;
+  - an **unknown** outcome (timeout/outage) routes to **reconciliation**, never straight to filed;
+  - **reconcile needs evidence** — a stuck return is resolved to filed/failed by a recorded operator fact
+    and note, never a silent rewrite.
+- `classifyGstnError(code)` maps a raw portal code to a recovery class (`auth` / `validation` /
+  `duplicate` / `rate_limit` / `timeout` / `portal_outage` / `unknown`) an operator runbook keys off —
+  conservative, so an unrecognised code is `unknown` (investigate), never assumed retryable.
+
+Pure and deterministic. **No live submission happens here** — this is the safety core; the durable store +
+routes, the sandbox/mock GSTN adapter, the kill-switch on the live submit path, the credential-vault
+interface, the reconciliation queue and RBAC/tenant/E2E coverage are the following increments. Live filing
+stays externally blocked pending CA/legal sign-off, production credentials and owner GO. Tested in
+`tests/unit/gstr1-submission.test.ts` (12).
+
 > Example sale rule: Dr `cash` [total], Cr `sales_revenue` [net], Cr `gst_output` [tax] —
 > `postJournal` checks it balances. Pure and deterministic; composes the `Money` primitive.
 > Tested in `tests/unit/finance-posting.test.ts`. Part of the repository layout in `CLAUDE.md`.
