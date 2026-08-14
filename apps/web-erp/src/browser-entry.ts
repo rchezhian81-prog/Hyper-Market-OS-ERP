@@ -90,6 +90,9 @@ import {
 import {
   createWasteReviewSession, type WasteReviewPorts, type WasteReviewSession, type WriteOffRow,
 } from './waste-review-session';
+import {
+  createCountsReviewSession, type CountsReviewPorts, type CountsReviewSession, type CountRow,
+} from './counts-session';
 import type { CategoryPolicy } from '../../../packages/product/src/index';
 import {
   foldPayRun, buildPayslip, resolveStatutoryParams, DEFAULT_STATUTORY_SCHEDULE,
@@ -568,6 +571,34 @@ export function bootWaste(data: WasteData | undefined): WasteReviewSession | nul
   return createWasteReviewSession(
     { userId: data.userId === undefined ? null : data.userId },
     wastePortsFromData(data),
+  );
+}
+
+/** What the box tells the stock-count review screen — the last-synced reconciled counts plus who is looking. */
+export interface CountsData {
+  readonly userId?: string;
+  /** The reconciled blind counts, each folded to a review row. */
+  readonly rows?: readonly CountRow[];
+  /** The permission codes this user holds — `count.view` to review counts. Never defaulted. */
+  readonly permissions?: readonly string[];
+}
+
+const COUNTS_READ_PERMISSION = 'count.view';
+
+export function countsPortsFromData(data: CountsData | undefined): CountsReviewPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    rows: () => data?.rows ?? [],
+    mayRead: () => held.has(COUNTS_READ_PERMISSION),
+  };
+}
+
+/** Build the stock-count review screen, or `null` when the box carried no payload for it. */
+export function bootCounts(data: CountsData | undefined): CountsReviewSession | null {
+  if (data === undefined) return null;
+  return createCountsReviewSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    countsPortsFromData(data),
   );
 }
 
@@ -1062,6 +1093,8 @@ interface ManagerWindow {
   gstReturnsOutbox?: SyncOutbox;
   wasteData?: WasteData;
   wasteSession?: WasteReviewSession;
+  countsData?: CountsData;
+  countsSession?: CountsReviewSession;
   payrollData?: PayrollData;
   payrollSession?: PayrollSession;
   payrollEssData?: PayrollEssData;
@@ -1561,6 +1594,8 @@ if (browserWindow !== undefined) {
   }
   const waste = bootWaste(browserWindow.wasteData);
   if (waste !== null) browserWindow.wasteSession = waste;
+  const counts = bootCounts(browserWindow.countsData);
+  if (counts !== null) browserWindow.countsSession = counts;
   // Payroll always boots a session (real from a payload, or a flagged DEMO one) — never blank.
   browserWindow.payrollSession = bootPayroll(browserWindow.payrollData);
   browserWindow.payrollEssSession = bootPayrollEss(browserWindow.payrollEssData);
