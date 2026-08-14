@@ -103,6 +103,20 @@
         <div class="depts" id="depts"></div>
       </div>
 
+      <!-- Locked-run outputs: the bank-file summary and the journal reconciliation. Shown only when locked. -->
+      <section id="locked" hidden aria-label="Locked-run outputs">
+        <h3 id="locked-title"></h3>
+        <div class="depts">
+          <div class="row"><span id="bank-records-label"></span><span id="bank-records"></span></div>
+          <div class="row"><span id="bank-total-label"></span><span id="bank-total"></span></div>
+          <div class="row"><span class="status" id="bank-reconciled"></span></div>
+          <div class="row"><span id="journal-debit-label"></span><span id="journal-debit"></span></div>
+          <div class="row"><span id="journal-credit-label"></span><span id="journal-credit"></span></div>
+          <div class="row"><span class="status" id="journal-balanced"></span></div>
+        </div>
+      </section>
+
+      <div class="actions" id="reauth"></div>
       <div class="actions" id="actions"></div>
       <p class="muted" id="masked-note"></p>
     </main>

@@ -24,8 +24,9 @@
 // the outcome, exactly as the finance screen does; the actual commit is the audited API path.
 
 import {
-  evaluatePayRunTransition, maskIdentifiers,
+  evaluatePayRunTransition, maskIdentifiers, buildPayrollJournal, InvalidPayrollJournal,
   type PayRunAggregate, type PayRunState, type PayRunAction, type PayRunRefusalReason, type MaskedIdentifiers,
+  type PayrollTotals,
 } from '../../../packages/payroll/src/index';
 import { translator, presentScreenState, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
 import { presentStatus, type StatusPresentation } from '../../../packages/a11y/src/signals';
@@ -68,11 +69,19 @@ export interface PayrollPorts {
   run(): PayRunAggregate | undefined;
   /** The employees in this run, with their raw money and identifiers. */
   employees(): readonly EmployeeInput[];
+  /** The run's aggregated statutory money (the journal input). Absent → the journal cannot be shown. */
+  totals(): PayrollTotals | undefined;
   /**
    * Whether the screen has a live connection RIGHT NOW. Read fresh on every render and every action, because
    * it changes under the user's feet and offline blocks every state change — a function, never a snapshot.
    */
   online(): boolean;
+  /**
+   * How many seconds ago the user last re-authenticated (MFA), or `undefined` if never this session. Read
+   * live: the sensitive actions (approve, lock, reverse, bank file, bulk payslip download, export) require a
+   * FRESH re-auth, so a token that was fresh a minute ago must be able to go stale before the next action.
+   */
+  reauthAgeSeconds(): number | undefined;
   readonly payPeriod: string;
 }
 
@@ -81,7 +90,23 @@ export interface PayrollConfig {
   readonly userId: string | null;
   /** True when this is sample/demo data — the shell shows "DEMO DATA — NOT REAL PAYROLL". */
   readonly demo: boolean;
+  /** How fresh a re-auth must be to permit a sensitive action, in seconds (e.g. 120). */
+  readonly reauthFreshWithinSeconds: number;
 }
+
+/** A sensitive action moves money or exposes/exports sensitive data, so it needs a fresh re-auth (MFA). */
+export type SensitiveScreenAction = 'generateBankFile' | 'bulkPayslipDownload' | 'export';
+export type PayrollAction = PayRunAction | SensitiveScreenAction;
+
+/**
+ * The actions that require a fresh re-authentication (owner directive: "Re-authentication/MFA for approval,
+ * locking, bank-file generation, payslip bulk download and sensitive exports"). `submit` and `reject` are
+ * not on the list — they prepare or send back, they do not release money or data.
+ */
+export const SENSITIVE_ACTIONS: readonly PayrollAction[] = ['approve', 'lock', 'reverse', 'generateBankFile', 'bulkPayslipDownload', 'export'];
+const SENSITIVE = new Set<PayrollAction>(SENSITIVE_ACTIONS);
+/** The three that also require a LOCKED run (they are artifacts OF a locked run). */
+const LOCKED_RUN_ACTIONS = new Set<PayrollAction>(['generateBankFile', 'bulkPayslipDownload', 'export']);
 
 // ── the copy: ONE bilingual object for the whole screen (a guardrail binds to it) ────────────────────────
 
@@ -96,8 +121,11 @@ export type CopyKey =
   | 'departmentSummary' | 'totals' | 'blockingCount' | 'allClear'
   | 'stateReady' | 'stateEmpty' | 'stateNotPermitted' | 'stateAwaiting' | 'stateLocked' | 'stateReversed'
   | 'nobodyNamed'
+  | 'lockedTitle' | 'bankFileTitle' | 'bankFileRecords' | 'bankFileTotal' | 'bankFileReconciled' | 'bankFileNotReconciled'
+  | 'journalTitle' | 'journalDebit' | 'journalCredit' | 'journalBalanced' | 'journalNotBalanced' | 'journalUnavailable'
+  | 'actGenerateBankFile' | 'actBulkPayslip' | 'actExport' | 'reauthNeeded' | 'reauthFresh'
   | 'rOffline' | 'rNotPermitted' | 'rBlocking' | 'rSelfApproval' | 'rNoRun' | 'rNotDraft' | 'rNotSubmitted'
-  | 'rNotApproved' | 'rNotLocked' | 'rReasonRequired';
+  | 'rNotApproved' | 'rNotLocked' | 'rReasonRequired' | 'rNeedsReauth';
 
 export const PAYROLL_COPY: BilingualCopy<CopyKey> = {
   en: {
@@ -122,14 +150,23 @@ export const PAYROLL_COPY: BilingualCopy<CopyKey> = {
     stateNotPermitted: 'You do not have permission to see payroll.',
     stateAwaiting: 'Awaiting a second person', stateLocked: 'Locked — this run is final', stateReversed: 'Reversed — a corrected run is needed',
     nobodyNamed: 'This screen has not been told who is using it, so nothing can be submitted or approved.',
+    lockedTitle: 'Locked-run outputs', bankFileTitle: 'Bank file',
+    bankFileRecords: 'Payments', bankFileTotal: 'Total to disburse',
+    bankFileReconciled: 'Agrees with the run total', bankFileNotReconciled: 'DOES NOT agree with the run total — do not release',
+    journalTitle: 'Accounting journal', journalDebit: 'Total debits', journalCredit: 'Total credits',
+    journalBalanced: 'Balances — debits equal credits', journalNotBalanced: 'DOES NOT balance — the books would be wrong; do not post',
+    journalUnavailable: 'The run totals needed for the journal have not been provided.',
+    actGenerateBankFile: 'Generate bank file', actBulkPayslip: 'Download all payslips', actExport: 'Export',
+    reauthNeeded: 'Confirm your identity (MFA) to release this', reauthFresh: 'Identity confirmed',
     rOffline: 'You are offline — this cannot be done until you are back online.',
     rNotPermitted: 'You do not have permission to do this.',
     rBlocking: 'Resolve every exception first — an employee cannot be paid zero, a negative amount, or with no bank account.',
     rSelfApproval: 'The person who submitted a run cannot approve it — a second, different person must.',
     rNoRun: 'There is no pay run to act on — draft one first.',
     rNotDraft: 'Only a draft run can be submitted.', rNotSubmitted: 'Only a submitted run can be approved or sent back.',
-    rNotApproved: 'Only an approved run can be locked.', rNotLocked: 'Only a locked run can be reversed.',
+    rNotApproved: 'Only an approved run can be locked.', rNotLocked: 'Only a locked run can be reversed, and a bank file / payslips / export come from a locked run.',
     rReasonRequired: 'A reversal needs a reason.',
+    rNeedsReauth: 'Confirm your identity (MFA) again before releasing this — your last confirmation is too old.',
   },
   ta: {
     title: 'ஊதியம்', langName: 'English',
@@ -153,14 +190,23 @@ export const PAYROLL_COPY: BilingualCopy<CopyKey> = {
     stateNotPermitted: 'ஊதியத்தைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.',
     stateAwaiting: 'இரண்டாவது நபருக்குக் காத்திருக்கிறது', stateLocked: 'பூட்டப்பட்டது — இது இறுதி', stateReversed: 'திரும்பப்பெறப்பட்டது — திருத்திய பட்டியல் தேவை',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று தெரியவில்லை, எனவே எதையும் சமர்ப்பிக்கவோ அனுமதிக்கவோ முடியாது.',
+    lockedTitle: 'பூட்டிய பட்டியலின் வெளியீடுகள்', bankFileTitle: 'வங்கிக் கோப்பு',
+    bankFileRecords: 'கட்டணங்கள்', bankFileTotal: 'மொத்தம் வழங்க வேண்டியது',
+    bankFileReconciled: 'பட்டியல் மொத்தத்துடன் பொருந்துகிறது', bankFileNotReconciled: 'பட்டியல் மொத்தத்துடன் பொருந்தவில்லை — வெளியிட வேண்டாம்',
+    journalTitle: 'கணக்குப் பதிவு', journalDebit: 'மொத்த பற்று', journalCredit: 'மொத்த வரவு',
+    journalBalanced: 'சமநிலை — பற்றும் வரவும் சமம்', journalNotBalanced: 'சமநிலை இல்லை — கணக்குகள் தவறாகும்; பதிவு செய்ய வேண்டாம்',
+    journalUnavailable: 'கணக்குப் பதிவுக்குத் தேவையான மொத்தங்கள் வழங்கப்படவில்லை.',
+    actGenerateBankFile: 'வங்கிக் கோப்பை உருவாக்கு', actBulkPayslip: 'அனைத்து ஊதியச் சீட்டுகளையும் பதிவிறக்கு', actExport: 'ஏற்றுமதி',
+    reauthNeeded: 'இதை வெளியிட உங்கள் அடையாளத்தை உறுதிப்படுத்தவும் (MFA)', reauthFresh: 'அடையாளம் உறுதிப்படுத்தப்பட்டது',
     rOffline: 'நீங்கள் ஆஃப்லைனில் உள்ளீர்கள் — மீண்டும் ஆன்லைனில் வரும் வரை இதைச் செய்ய முடியாது.',
     rNotPermitted: 'இதைச் செய்ய உங்களுக்கு அனுமதி இல்லை.',
     rBlocking: 'முதலில் ஒவ்வொரு விதிவிலக்கையும் தீர்க்கவும் — ஒரு ஊழியருக்கு பூஜ்ஜியம், எதிர்மறை அல்லது வங்கிக் கணக்கு இல்லாமல் செலுத்த முடியாது.',
     rSelfApproval: 'பட்டியலைச் சமர்ப்பித்தவர் அதை அனுமதிக்க முடியாது — வேறு இரண்டாவது நபர் அனுமதிக்க வேண்டும்.',
     rNoRun: 'செயல்பட ஊதியப் பட்டியல் இல்லை — முதலில் ஒன்றை வரையவும்.',
     rNotDraft: 'வரைவுப் பட்டியலை மட்டுமே சமர்ப்பிக்க முடியும்.', rNotSubmitted: 'சமர்ப்பித்த பட்டியலை மட்டுமே அனுமதிக்கவோ திரும்ப அனுப்பவோ முடியும்.',
-    rNotApproved: 'அனுமதிக்கப்பட்ட பட்டியலை மட்டுமே பூட்ட முடியும்.', rNotLocked: 'பூட்டிய பட்டியலை மட்டுமே திரும்பப்பெற முடியும்.',
+    rNotApproved: 'அனுமதிக்கப்பட்ட பட்டியலை மட்டுமே பூட்ட முடியும்.', rNotLocked: 'பூட்டிய பட்டியலை மட்டுமே திரும்பப்பெற முடியும்; வங்கிக் கோப்பு / ஊதியச் சீட்டு / ஏற்றுமதி பூட்டிய பட்டியலிலிருந்து வரும்.',
     rReasonRequired: 'திரும்பப்பெற ஒரு காரணம் தேவை.',
+    rNeedsReauth: 'இதை வெளியிடும் முன் உங்கள் அடையாளத்தை (MFA) மீண்டும் உறுதிப்படுத்தவும் — உங்கள் கடைசி உறுதிப்படுத்தல் மிகவும் பழையது.',
   },
 };
 
@@ -173,11 +219,12 @@ const EXCEPTION_LABEL: Readonly<Record<ExceptionKind, CopyKey>> = {
 
 /** Every refusal the screen can give for an action. Engine reasons plus the screen's own gates. */
 export type PayrollRefusal =
-  | 'offline' | 'not_permitted' | 'nobody_named' | 'has_blocking_exceptions'
+  | 'offline' | 'not_permitted' | 'nobody_named' | 'has_blocking_exceptions' | 'needs_reauth'
   | PayRunRefusalReason;
 
 const REFUSAL_LABEL: Readonly<Record<PayrollRefusal, CopyKey>> = {
   offline: 'rOffline', not_permitted: 'rNotPermitted', nobody_named: 'nobodyNamed', has_blocking_exceptions: 'rBlocking',
+  needs_reauth: 'rNeedsReauth',
   self_approval: 'rSelfApproval', no_pay_run: 'rNoRun', not_in_draft: 'rNotDraft', not_submitted: 'rNotSubmitted',
   not_approved: 'rNotApproved', not_locked: 'rNotLocked', reason_required: 'rReasonRequired',
 };
@@ -208,11 +255,39 @@ export interface DepartmentSummary {
   readonly netMinor: number;
 }
 
+/** The bank-file SUMMARY — count + total, and whether it agrees with the run. NO account numbers here: the
+ *  file itself (with full accounts) is generated server-side under re-auth, never in the browser. */
+export interface BankFileSummary {
+  readonly recordCount: number;
+  readonly totalNetMinor: number;
+  /** True when the total to disburse equals the run's net total — the control-total check before release. */
+  readonly reconciledWithRun: boolean;
+}
+
+/** The accounting journal's balance check — total debits vs total credits (the reconciliation invariant). */
+export interface JournalCheck {
+  readonly available: boolean;
+  readonly balanced: boolean;
+  readonly totalDebitMinor: number;
+  readonly totalCreditMinor: number;
+  readonly detail: string;
+}
+
+/** What a LOCKED run produces: the bank-file summary, the journal balance, and whether everything reconciles. */
+export interface LockedArtifacts {
+  readonly bankFile: BankFileSummary;
+  readonly journal: JournalCheck;
+  /** All three agree (bank total = run net, journal balances) — the go/no-go for release. */
+  readonly reconciled: boolean;
+}
+
 export interface PayrollView {
   readonly demo: boolean;
   readonly online: boolean;
   readonly mayView: boolean;
   readonly nobodyNamed: boolean;
+  /** Whether the user has a FRESH re-auth right now — drives the MFA prompt on sensitive actions. */
+  readonly reauthFresh: boolean;
   readonly payPeriod: string;
   readonly stage: PayRunState | 'none';
   readonly stageLabelKey: CopyKey;
@@ -222,10 +297,10 @@ export interface PayrollView {
   readonly departments: readonly DepartmentSummary[];
   readonly totals: { readonly count: number; readonly grossMinor: number; readonly totalDeductionsMinor: number; readonly netMinor: number };
   readonly blockingExceptionCount: number;
+  /** Present only when the run is LOCKED — the bank-file summary + journal reconciliation. */
+  readonly lockedArtifacts?: LockedArtifacts;
   readonly screenState: StatusPresentation;
 }
-
-export type PayrollAction = PayRunAction;
 
 export interface ActionOutcome {
   readonly ok: boolean;
@@ -302,6 +377,44 @@ export function createPayrollSession(config: PayrollConfig, ports: PayrollPorts)
     }
   };
 
+  /** A fresh re-auth: the user re-authenticated within the configured window, and not never. */
+  const reauthFresh = (): boolean => {
+    const age = ports.reauthAgeSeconds();
+    return age !== undefined && age >= 0 && age <= config.reauthFreshWithinSeconds;
+  };
+
+  /** The bank-file summary + journal balance for a LOCKED run — the reconciliation before release. */
+  const lockedArtifactsFor = (employees: readonly PresentedEmployee[], runNetMinor: number): LockedArtifacts => {
+    // Bank-file SUMMARY only — count of payable lines and their total. No account numbers here; the file
+    // itself is generated server-side under re-auth. Every payable line has net > 0 (a locked run's
+    // blocking exceptions were resolved before submission).
+    const payable = employees.filter((e) => e.netPayMinor > 0);
+    const totalNetMinor = payable.reduce((s, e) => s + e.netPayMinor, 0);
+    const bankFile: BankFileSummary = {
+      recordCount: payable.length,
+      totalNetMinor,
+      reconciledWithRun: totalNetMinor === runNetMinor,
+    };
+
+    // The journal balances iff debits === credits — computed by the tested engine. It carries no PII, so it
+    // is safe to run in the browser. Absent totals → unavailable; a total set that does not balance → the
+    // engine throws and we surface a reconciliation FAILURE rather than a silent pass.
+    const totals = ports.totals();
+    let journal: JournalCheck;
+    if (totals === undefined) {
+      journal = { available: false, balanced: false, totalDebitMinor: 0, totalCreditMinor: 0, detail: 'no totals' };
+    } else {
+      try {
+        const j = buildPayrollJournal({ payRunState: 'locked', payPeriod: ports.payPeriod, totals });
+        journal = { available: true, balanced: true, totalDebitMinor: j.totalDebitMinor, totalCreditMinor: j.totalCreditMinor, detail: j.detail };
+      } catch (err) {
+        const detail = err instanceof InvalidPayrollJournal ? err.message : 'journal could not be built';
+        journal = { available: true, balanced: false, totalDebitMinor: totals.grossMinor + totals.pfEmployerMinor + totals.esiEmployerMinor, totalCreditMinor: totals.netMinor + totals.pfEmployeeMinor + totals.pfEmployerMinor + totals.esiEmployeeMinor + totals.esiEmployerMinor + totals.professionalTaxMinor + totals.tdsMinor, detail };
+      }
+    }
+    return { bankFile, journal, reconciled: bankFile.reconciledWithRun && journal.available && journal.balanced };
+  };
+
   return {
     text,
 
@@ -312,7 +425,7 @@ export function createPayrollSession(config: PayrollConfig, ports: PayrollPorts)
       if (!mayView) {
         // Nothing leaks: no employees, no totals, no names.
         return {
-          demo: config.demo, online: ports.online(), mayView: false, nobodyNamed: config.userId === null,
+          demo: config.demo, online: ports.online(), mayView: false, nobodyNamed: config.userId === null, reauthFresh: false,
           payPeriod: ports.payPeriod, stage: 'none', stageLabelKey: STAGE_LABEL.none,
           employees: [], departments: [],
           totals: { count: 0, grossMinor: 0, totalDeductionsMinor: 0, netMinor: 0 },
@@ -334,7 +447,7 @@ export function createPayrollSession(config: PayrollConfig, ports: PayrollPorts)
         return a.employeeId.localeCompare(b.employeeId);
       });
       return {
-        demo: config.demo, online: ports.online(), mayView: true, nobodyNamed: config.userId === null,
+        demo: config.demo, online: ports.online(), mayView: true, nobodyNamed: config.userId === null, reauthFresh: reauthFresh(),
         payPeriod: ports.payPeriod, stage, stageLabelKey: STAGE_LABEL[stage],
         ...(run?.submittedBy === undefined ? {} : { submittedBy: run.submittedBy }),
         ...(run?.approvedBy === undefined ? {} : { approvedBy: run.approvedBy }),
@@ -342,6 +455,8 @@ export function createPayrollSession(config: PayrollConfig, ports: PayrollPorts)
         departments: [...byDept.values()].sort((a, b) => a.department.localeCompare(b.department)),
         totals: { count: employees.length, grossMinor, totalDeductionsMinor, netMinor },
         blockingExceptionCount: employees.filter((e) => e.needsAttention).length,
+        // Only a LOCKED run has a bank file and a journal to reconcile before release.
+        ...(stage === 'locked' ? { lockedArtifacts: lockedArtifactsFor(ordered, run?.netTotalMinor ?? netMinor) } : {}),
         screenState: screenStateFor(lang, stage, true),
       };
     },
@@ -355,6 +470,19 @@ export function createPayrollSession(config: PayrollConfig, ports: PayrollPorts)
       // Offline blocks every state change — the directive's hard line for sensitive administrative data.
       if (!ports.online()) return refuse('offline', 'the screen is offline; a state change is not allowed until it is back online.');
 
+      // Sensitive actions (approve, lock, reverse, bank file, bulk payslips, export) need a FRESH re-auth
+      // (MFA) — the owner directive. Checked here, before anything else action-specific.
+      if (SENSITIVE.has(action) && !reauthFresh()) {
+        return refuse('needs_reauth', 'a fresh identity confirmation (MFA) is required to release this.');
+      }
+
+      // The locked-run artifacts (bank file, bulk payslips, export) are not lifecycle transitions — they are
+      // produced FROM a locked run, so they gate on the run being locked, not on the transition engine.
+      if (LOCKED_RUN_ACTIONS.has(action)) {
+        if (ports.run()?.state !== 'locked') return refuse('not_locked', 'this can only be produced from a locked pay run.');
+        return { ok: true, detail: `${action} from the locked run` };
+      }
+
       // A run cannot be SUBMITTED while any employee cannot be paid. Checked before the engine so the reason
       // is the real one ("resolve the exceptions") rather than a generic state error.
       if (action === 'submit') {
@@ -364,7 +492,7 @@ export function createPayrollSession(config: PayrollConfig, ports: PayrollPorts)
 
       const decision = evaluatePayRunTransition({
         current: ports.run(),
-        action,
+        action: action as PayRunAction,
         actor: config.userId,
         ...(opts?.reason === undefined ? {} : { reason: opts.reason }),
       });
