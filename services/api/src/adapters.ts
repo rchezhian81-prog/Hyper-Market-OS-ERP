@@ -54,6 +54,7 @@ import type { StockMovement } from '../../../packages/stock/src/position';
 import type { TransfersDeps } from '../../inventory/src/warehouse-transfers';
 import type { Transfer } from '../../../packages/warehouse/src/transfers';
 import type { CountsDeps, StoredReconciliation } from '../../inventory/src/counts';
+import type { WriteOffDeps, StoredWriteOff } from '../../inventory/src/write-off';
 import type { ProductionDeps, StoredRun, StoredRelease } from '../../inventory/src/production';
 import type { Recipe } from '../../../packages/production/src/recipe';
 import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord, StatementLine } from '../../purchase/src/supplier-portal';
@@ -2230,6 +2231,34 @@ export function countsAdapter(input: {
         // The count's own id — a re-sent reconciliation of the same count collapses rather than
         // layering the correction twice (append-only, #2). A re-count is a NEW count id.
         idempotencyKey: `count-${tenantId}-${rec.countId}`,
+        source: 'api/inventory',
+        payload: rec,
+      }));
+    },
+  };
+}
+
+export function writeOffAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): WriteOffDeps {
+  // Committed write-offs live on their own append-only stream. `recordWriteOff` is idempotent on the
+  // write-off id — a re-sent write-off of the same id collapses rather than recording the loss twice
+  // (append-only, hard rule #2). A correction is a NEW, compensating write-off with its own id.
+  const writeOffStream = streamName(STREAM.inventory, 'write-offs');
+  const fold = async (tenantId: string): Promise<readonly StoredWriteOff[]> =>
+    allOf<StoredWriteOff>(input.store, tenantId, writeOffStream, 'WriteOffCommitted');
+
+  return {
+    now: input.now,
+    writeOffs: (tenantId) => fold(tenantId),
+    writeOffExists: async (tenantId, id) => (await fold(tenantId)).some((r) => r.id === id),
+    recordWriteOff: async (tenantId, rec) => {
+      await input.store.append(tenantId, writeOffStream, makeEvent({
+        id: `write-off-${rec.id}`,
+        type: 'WriteOffCommitted',
+        occurredAt: rec.at,
+        idempotencyKey: `write-off-${tenantId}-${rec.id}`,
         source: 'api/inventory',
         payload: rec,
       }));
