@@ -213,6 +213,14 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
     journalPrefixes: { takings: 'SALES', tax: 'GST', refunds: 'REFUND' },
     userId: 'u-finance',
   }),
+  // GST reconciliation (API-09). Who is looking, what they may do, and the last-synced queue.
+  gstReconciliationQueue: known([
+    { documentType: 'e_invoice', id: 'INV-1', category: 'registered', number: 'IRN-1' },
+    { documentType: 'e_way_bill', id: 'MV-1', category: 'unknown' },
+  ]),
+  gstReconciliationPolicy: known({
+    userId: 'u-finance', permissions: ['finance.einvoice.read', 'finance.einvoice.generate'],
+  }),
   // Admin and security (M01/M02/M33/M34). Support access is never pruned (hard rule #6).
   accounts: known([{
     userId: 'u-meena', tenantId: 't1', username: 'meena',
@@ -704,6 +712,7 @@ describe('a box that has been told nothing tells every screen so', () => {
       expiryPolicy: notKnown('never'),
       tallyPostings: notKnown('never'), financeLedger: notKnown('never'),
       periodState: notKnown('never'), financePolicy: notKnown('never'),
+      gstReconciliationQueue: notKnown('never'), gstReconciliationPolicy: notKnown('never'),
       accounts: notKnown('never'), supportSessions: notKnown('never'),
       devices: notKnown('never'), versionPolicy: notKnown('never'),
       auditRecords: notKnown('never'), retentionPolicies: notKnown('never'),
