@@ -185,6 +185,8 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   }),
   gstReconciliationQueue: known([{ documentType: 'e_invoice', id: 'INV-1', category: 'registered', number: 'IRN-1' }]),
   gstReconciliationPolicy: known({ userId: 'u-finance', permissions: ['finance.einvoice.read', 'finance.einvoice.generate'] }),
+  categoryPolicyCategories: known([{ categoryId: 'grocery', history: [{ effectiveFrom: '2026-01-01', value: { traceability: 'none', quantityMode: 'each', valuation: 'retail_mrp', shelfLife: { perishable: false, blockSaleAfterExpiry: false }, returns: { returnable: true }, controlledSale: {}, approvals: [], enabledByDefault: true } }] }]),
+  categoryPolicyPolicy: known({ userId: 'u-cat', permissions: ['catalogue.pack.read'] }),
   // Admin and security (M01/M02/M33/M34). Support access is never pruned (hard rule #6).
   accounts: known([{
     userId: 'u-meena', tenantId: 't1', username: 'meena',
