@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE My payslip</title>
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      Employee self-service payslip (owner directive; docs/design/screens/payroll.md; WP3 ESS).
+      Own-record ONLY: the tested packages/payroll ess engine refuses anything but the signed-in person's own
+      payslip, using the authenticated principal (never a page value). Same posture as the admin payroll
+      screen: online-first, NO service worker, nothing sensitive stored on the device, DEMO flagged, bilingual.
+    -->
+    <style>
+      :root { --bg:#0f172a; --panel:#1e293b; --ink:#f8fafc; --muted:#94a3b8; --ok:#22c55e; --degraded:#f59e0b; --error:#ef4444; --idle:#64748b; --info:#38bdf8; --line:#334155; --tap:48px; }
+      * { box-sizing: border-box; }
+      body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; min-height:100dvh; display:flex; flex-direction:column; }
+      header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; background:var(--panel); flex-wrap:wrap; }
+      .who { font-weight:600; } .who small { display:block; color:var(--muted); font-weight:400; font-size:14px; }
+      .lang { background:var(--line); color:var(--ink); min-height:40px; padding:0 14px; font-size:15px; border:0; border-radius:10px; }
+      .demo,.offline,.nobody { margin:0; padding:10px 16px; font-size:15px; font-weight:700; }
+      .demo { background:repeating-linear-gradient(45deg,#7c2d12,#7c2d12 12px,#9a3412 12px,#9a3412 24px); color:#fff; letter-spacing:.04em; text-align:center; }
+      .offline { background:var(--error); color:#fff; } .nobody { background:#3f2d12; color:#fde68a; font-weight:600; }
+      .demo[hidden],.offline[hidden],.nobody[hidden] { display:none; }
+      main { flex:1; padding:16px; display:grid; gap:16px; align-content:start; max-width:720px; width:100%; }
+      h2 { margin:0 0 4px; font-size:20px; } h3 { margin:8px 0 6px; font-size:16px; }
+      p.lead { margin:0; color:var(--muted); font-size:15px; }
+      .rows { display:grid; gap:4px; } .rows .row { display:flex; justify-content:space-between; gap:12px; font-size:15px; font-variant-numeric:tabular-nums; }
+      .rows .row.total { font-weight:700; border-top:1px solid var(--line); padding-top:4px; }
+      .card { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; }
+      .employer { border-left:6px solid var(--info); } .employer .note { color:var(--muted); font-size:13px; }
+      p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:16px; display:inline-flex; gap:8px; align-items:center; }
+      p.state.tone-error { color:#fecaca; } p.state .icon { font-size:18px; }
+      .actions { display:flex; gap:8px; flex-wrap:wrap; }
+      .actions button { min-height:var(--tap); padding:0 18px; border:0; border-radius:12px; background:var(--info); color:#04283a; font-size:16px; font-weight:700; }
+      .actions button[disabled] { background:var(--line); color:var(--muted); }
+      .muted { color:var(--muted); font-size:13px; }
+      #banner { position:sticky; bottom:0; background:var(--panel); border-top:2px solid var(--info); padding:14px 16px; display:grid; gap:8px; }
+      #banner[hidden] { display:none; } #banner.good { border-top-color:var(--ok); }
+      #banner button { min-height:44px; padding:0 16px; border:0; border-radius:10px; background:var(--ink); color:#0f172a; font-weight:700; justify-self:start; }
+    </style>
+  </head>
+  <body>
+    <p class="demo" id="demo" hidden></p>
+    <p class="offline" id="offline" hidden></p>
+    <p class="nobody" id="nobody" hidden></p>
+
+    <header>
+      <span class="who" id="who">My payslip <small id="whoami"></small></span>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+
+    <main>
+      <div>
+        <h2 id="title">My payslip</h2>
+        <p class="lead" id="lead"></p>
+      </div>
+
+      <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+
+      <section id="payslip" hidden aria-label="My payslip">
+        <div class="card">
+          <h3 id="earnings-title"></h3>
+          <div class="rows" id="earnings"></div>
+          <div class="rows"><div class="row total"><span id="gross-label"></span><span id="gross"></span></div></div>
+        </div>
+        <div class="card">
+          <h3 id="deductions-title"></h3>
+          <div class="rows" id="deductions"></div>
+          <div class="rows"><div class="row total"><span id="total-deductions-label"></span><span id="total-deductions"></span></div></div>
+        </div>
+        <div class="card">
+          <div class="rows"><div class="row total"><span id="net-label"></span><span id="net"></span></div></div>
+        </div>
+        <div class="card employer">
+          <h3 id="employer-title"></h3>
+          <div class="rows" id="employer"></div>
+          <p class="note" id="employer-note"></p>
+        </div>
+        <section id="settlement" class="card" hidden aria-label="My final settlement">
+          <h3 id="settlement-title"></h3>
+          <div class="rows" id="settlement-rows"></div>
+          <div class="rows"><div class="row total"><span id="settlement-net-label"></span><span id="settlement-net"></span></div></div>
+        </section>
+        <p class="muted" id="confirm-ca"></p>
+        <div class="actions" id="reauth"></div>
+        <div class="actions" id="actions"></div>
+      </section>
+    </main>
+
+    <div id="banner" hidden aria-live="assertive">
+      <strong id="banner-title"></strong>
+      <span id="banner-text"></span>
+      <button id="banner-ok" type="button">OK</button>
+    </div>
+
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./payroll-payslip.js" type="module"></script>
+  </body>
+</html>

@@ -91,7 +91,15 @@ The whole flow is large; it is built in security-first increments on the proven 
   NOT a pay-run blocking exception; release gated by re-auth. **Arrears / loan / advance** shown as visible
   flag badges on the line (never folded silently into base pay). **Reversal** names its reason on-screen; a
   draft/version **delta** vs the previous version. `releaseSettlement` joined the re-auth-gated set.
-- **inc4 —** employee self-service payslip (strict own-record isolation) + printable/exportable-with-audit.
+- **inc4 — DONE (14 Aug).** Employee self-service payslip — a SEPARATE surface (own file
+  `apps/web-erp/src/payroll-ess-session.ts` + own shell `apps/web-erp/web/payroll-payslip.{html,js}` + own
+  nav item gated `payroll.ess.self`). **Strict own-record isolation** on the tested `ess.employeeSelfView` /
+  `assertSelfScope`: the requester identity is the AUTHENTICATED principal (`config.requesterEmployeeId`),
+  NEVER a page value, so holding the permission cannot read a colleague — a cross-employee request is refused
+  and shows NOTHING. The redacted view carries the employee's own earnings/deductions/net + the employer's
+  contribution shown separately, with no approver, cost-centre, bank detail or other employee in the shape.
+  Print/export is an audited action behind a fresh re-auth. Same posture as the admin screen (online-first,
+  no service worker, no browser storage, DEMO banner, English/Tamil, a11y).
 - **inc5 (opt-in) —** encrypted device-bound tenant-bound offline vault, only if genuinely required.
 
 After payroll: category-policy UI, then e-invoice/e-way-bill (action-wiring) UI, then the next

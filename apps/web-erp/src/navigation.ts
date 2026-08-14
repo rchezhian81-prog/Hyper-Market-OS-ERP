@@ -61,6 +61,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // so cashier/warehouse/floor/ordinary-manager roles never see it and the menu can never offer a screen the
   // server would refuse (owner directive; §27 least-privilege surfaces).
   { id: 'payroll', label: 'Payroll', path: '/payroll', requires: 'payroll.statutory.read', group: 'Payroll' },
+  // Employee self-service — own payslip only. Gated on `payroll.ess.self`, which ordinary staff MAY hold for
+  // themselves (it is own-record only; the engine refuses any other employee), so it is a separate item.
+  { id: 'my-payslip', label: 'My payslip', path: '/my-payslip', requires: 'payroll.ess.self', group: 'Payroll' },
 
   { id: 'users', label: 'Users & roles', path: '/admin/users', requires: 'admin.users.manage', group: 'Administration' },
   { id: 'store-setup', label: 'Store setup', path: '/admin/setup', requires: 'platform.setup.read', group: 'Administration' },
