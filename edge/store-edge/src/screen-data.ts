@@ -49,13 +49,13 @@ import {
   basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
-import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy } from './store-pack';
+import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy } from './store-pack';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
+  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1213,6 +1213,25 @@ export function gstReconciliationPayload(input: ScreenInput): Record<string, unk
 }
 
 /**
+ * The category-rules payload (M03-FR-01·CAT-POLICY).
+ *
+ * `null` when the box has not been told who is on the screen — a screen inventing its own permissions would
+ * decide, on its own authority, who may see the store's category configuration. The categories are served
+ * only when the box has them, and the policies are RESOLVED on this box's own trading day (§32) — never the
+ * browser's clock, which would show tomorrow's rules today.
+ */
+export function categoryPolicyPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.categoryPolicyPolicy.known) return null;
+  const policy: PackCategoryPolicyPolicy = input.pack.categoryPolicyPolicy.value;
+
+  const payload: Record<string, unknown> = { permissions: policy.permissions, onDate: input.tradingDay };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+  if (input.pack.categoryPolicyCategories.known) payload['categories'] = input.pack.categoryPolicyCategories.value;
+
+  return payload;
+}
+
+/**
  * The admin and security payload (M01 · M02 · M33 · M34 · D12).
  *
  * `null` when the box has not been told who administers this shop and by what windows — a screen
@@ -1354,6 +1373,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   expiry: 'expiryData',
   finance: 'financeData',
   'gst-reconciliation': 'gstReconciliationData',
+  'category-policy': 'categoryPolicyData',
   admin: 'adminData',
   ai: 'aiData',
   migration: 'migrationData',
@@ -1376,6 +1396,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   expiry: expiryPayload,
   finance: financePayload,
   'gst-reconciliation': gstReconciliationPayload,
+  'category-policy': categoryPolicyPayload,
   admin: adminPayload,
   ai: aiPayload,
   migration: migrationPayload,

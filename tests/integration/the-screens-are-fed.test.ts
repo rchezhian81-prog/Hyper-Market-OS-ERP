@@ -221,6 +221,11 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
   gstReconciliationPolicy: known({
     userId: 'u-finance', permissions: ['finance.einvoice.read', 'finance.einvoice.generate'],
   }),
+  // Category rules (M03-FR-01). The categories and their dated policies, and who may read them.
+  categoryPolicyCategories: known([
+    { categoryId: 'grocery', history: [{ effectiveFrom: '2026-01-01', value: { traceability: 'none', quantityMode: 'each', valuation: 'retail_mrp', shelfLife: { perishable: false, blockSaleAfterExpiry: false }, returns: { returnable: true, windowDays: 7 }, controlledSale: {}, approvals: [], enabledByDefault: true } }] },
+  ]),
+  categoryPolicyPolicy: known({ userId: 'u-cat', permissions: ['catalogue.pack.read'] }),
   // Admin and security (M01/M02/M33/M34). Support access is never pruned (hard rule #6).
   accounts: known([{
     userId: 'u-meena', tenantId: 't1', username: 'meena',
@@ -713,6 +718,7 @@ describe('a box that has been told nothing tells every screen so', () => {
       tallyPostings: notKnown('never'), financeLedger: notKnown('never'),
       periodState: notKnown('never'), financePolicy: notKnown('never'),
       gstReconciliationQueue: notKnown('never'), gstReconciliationPolicy: notKnown('never'),
+      categoryPolicyCategories: notKnown('never'), categoryPolicyPolicy: notKnown('never'),
       accounts: notKnown('never'), supportSessions: notKnown('never'),
       devices: notKnown('never'), versionPolicy: notKnown('never'),
       auditRecords: notKnown('never'), retentionPolicies: notKnown('never'),

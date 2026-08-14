@@ -38,6 +38,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'products', label: 'Products', path: '/products', requires: 'catalogue.view', group: 'Catalogue' },
   { id: 'pricing', label: 'Pricing', path: '/pricing', requires: 'price.view', group: 'Catalogue' },
   { id: 'promotions', label: 'Promotions', path: '/promotions', requires: 'promotion.view', group: 'Catalogue' },
+  // Category rules — gated on the SAME permission the resolve route checks (`catalogue.pack.read`), so the
+  // menu never offers a screen the server would refuse (M03-FR-01·CAT-POLICY).
+  { id: 'category-policy', label: 'Category rules', path: '/category-policy', requires: 'catalogue.pack.read', group: 'Catalogue' },
 
   { id: 'suppliers', label: 'Suppliers', path: '/suppliers', requires: 'supplier.view', group: 'Purchasing' },
   { id: 'purchase-orders', label: 'Purchase orders', path: '/purchase-orders', requires: 'po.view', group: 'Purchasing' },

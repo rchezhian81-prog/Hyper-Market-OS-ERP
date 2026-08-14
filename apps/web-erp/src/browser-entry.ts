@@ -81,6 +81,10 @@ import {
   createPayrollEssSession, type PayrollEssPorts, type PayrollEssSession,
 } from './payroll-ess-session';
 import {
+  createCategoryPolicySession, type CategoryPolicyPorts, type CategoryPolicySession,
+} from './category-policy-session';
+import type { CategoryPolicy } from '../../../packages/product/src/index';
+import {
   foldPayRun, buildPayslip, resolveStatutoryParams, DEFAULT_STATUTORY_SCHEDULE,
   type PayRunAggregate, type PayrollTotals, type SettlementInput as PayrollSettlementInput,
   type Payslip as PayrollPayslip, type Settlement as PayrollSettlement,
@@ -437,6 +441,35 @@ export function bootGstReconciliation(data: GstReconciliationData | undefined): 
   return createGstReconciliationSession(
     { userId: data.userId === undefined ? null : data.userId },
     gstReconciliationPortsFromData(data),
+  );
+}
+
+/** What the box tells the category-rules screen — the categories, their dated policies, and who is looking. */
+export interface CategoryPolicyData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+  /** The store's trading day the policies are resolved on. */
+  readonly onDate?: string;
+  readonly categories?: readonly CategoryPolicy[];
+}
+
+const CATEGORY_POLICY_PERMISSION = 'catalogue.pack.read';
+
+export function categoryPolicyPortsFromData(data: CategoryPolicyData | undefined): CategoryPolicyPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    mayRead: () => held.has(CATEGORY_POLICY_PERMISSION),
+    categories: () => data?.categories ?? [],
+    onDate: data?.onDate ?? '1970-01-01',
+  };
+}
+
+/** Build the category-rules screen, or `null` when the box carried no payload for it. */
+export function bootCategoryPolicy(data: CategoryPolicyData | undefined): CategoryPolicySession | null {
+  if (data === undefined) return null;
+  return createCategoryPolicySession(
+    { userId: data.userId === undefined ? null : data.userId },
+    categoryPolicyPortsFromData(data),
   );
 }
 
@@ -911,6 +944,8 @@ interface ManagerWindow {
   financeSession?: FinanceSession;
   gstReconciliationData?: GstReconciliationData;
   gstReconciliationSession?: GstReconciliationSession;
+  categoryPolicyData?: CategoryPolicyData;
+  categoryPolicySession?: CategoryPolicySession;
   payrollData?: PayrollData;
   payrollSession?: PayrollSession;
   payrollEssData?: PayrollEssData;
@@ -1391,6 +1426,8 @@ if (browserWindow !== undefined) {
   if (finance !== null) browserWindow.financeSession = finance;
   const gstReconciliation = bootGstReconciliation(browserWindow.gstReconciliationData);
   if (gstReconciliation !== null) browserWindow.gstReconciliationSession = gstReconciliation;
+  const categoryPolicy = bootCategoryPolicy(browserWindow.categoryPolicyData);
+  if (categoryPolicy !== null) browserWindow.categoryPolicySession = categoryPolicy;
   // Payroll always boots a session (real from a payload, or a flagged DEMO one) — never blank.
   browserWindow.payrollSession = bootPayroll(browserWindow.payrollData);
   browserWindow.payrollEssSession = bootPayrollEss(browserWindow.payrollEssData);
