@@ -442,6 +442,13 @@ export interface PackWastePolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the stock-count review screen and what they may do (M09-FR-04). */
+export interface PackCountsPolicy {
+  readonly userId?: string;
+  /** The permission codes this user holds — `count.view` to review counts. Never defaulted. */
+  readonly permissions: readonly string[];
+}
+
 /** Who administers this shop, and the windows it judges accounts and devices by. */
 export interface PackAdminPolicy {
   /** Days without a login after which an account is stale enough to review. Per-tenant. */
@@ -791,6 +798,15 @@ export interface StorePack {
   readonly wasteWriteOffs: Register<readonly unknown[]>;
   /** Who is on the waste review screen and what they may do there. */
   readonly wastePolicy: Register<PackWastePolicy>;
+  /**
+   * Every reconciled blind count folded to a review row, for the stock-count screen (M09-FR-04).
+   *
+   * **Absent means the box has never been told**, shown as the sample stand-in — not an empty list, which
+   * would read as "every count matched" (P-08).
+   */
+  readonly countsQueue: Register<readonly unknown[]>;
+  /** Who is on the stock-count review screen and what they may do there. */
+  readonly countsPolicy: Register<PackCountsPolicy>;
   /** Every account, so joiners, movers and leavers can be reviewed (M02-FR-04). */
   readonly accounts: Register<readonly unknown[]>;
   /**
@@ -926,6 +942,8 @@ export function emptyPack(why: string = NEVER): StorePack {
     gstReturnsPolicy: notKnown(why),
     wasteWriteOffs: notKnown(why),
     wastePolicy: notKnown(why),
+    countsQueue: notKnown(why),
+    countsPolicy: notKnown(why),
     accounts: notKnown(why),
     supportSessions: notKnown(why),
     devices: notKnown(why),
@@ -1030,6 +1048,8 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     gstReturnsPolicy: section<PackGstReturnsPolicy>('gstReturnsPolicy'),
     wasteWriteOffs: section<readonly unknown[]>('wasteWriteOffs'),
     wastePolicy: section<PackWastePolicy>('wastePolicy'),
+    countsQueue: section<readonly unknown[]>('countsQueue'),
+    countsPolicy: section<PackCountsPolicy>('countsPolicy'),
     accounts: section<readonly unknown[]>('accounts'),
     supportSessions: section<readonly unknown[]>('supportSessions'),
     devices: section<readonly unknown[]>('devices'),

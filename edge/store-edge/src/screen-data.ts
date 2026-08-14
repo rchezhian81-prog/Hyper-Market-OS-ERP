@@ -49,13 +49,13 @@ import {
   basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
-import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy } from './store-pack';
+import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackCountsPolicy } from './store-pack';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
+  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'counts', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1270,6 +1270,25 @@ export function wastePayload(input: ScreenInput): Record<string, unknown> | null
 }
 
 /**
+ * The stock-count review payload (M09-FR-04).
+ *
+ * `null` when the box has not been told who is on the screen — a screen inventing its own permissions would
+ * decide, on its own authority, who may review the shop's counts. The reconciled counts (each already folded
+ * from the blind-count reconciliations) are served only when the box has them; absent means the shell shows
+ * its sample stand-in, never an empty list that would read as "every count matched".
+ */
+export function countsPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.countsPolicy.known) return null;
+  const policy: PackCountsPolicy = input.pack.countsPolicy.value;
+
+  const payload: Record<string, unknown> = { permissions: policy.permissions };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+  if (input.pack.countsQueue.known) payload['rows'] = input.pack.countsQueue.value;
+
+  return payload;
+}
+
+/**
  * The admin and security payload (M01 · M02 · M33 · M34 · D12).
  *
  * `null` when the box has not been told who administers this shop and by what windows — a screen
@@ -1414,6 +1433,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   'category-policy': 'categoryPolicyData',
   'gst-returns': 'gstReturnsData',
   waste: 'wasteData',
+  counts: 'countsData',
   admin: 'adminData',
   ai: 'aiData',
   migration: 'migrationData',
@@ -1439,6 +1459,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   'category-policy': categoryPolicyPayload,
   'gst-returns': gstReturnsPayload,
   waste: wastePayload,
+  counts: countsPayload,
   admin: adminPayload,
   ai: aiPayload,
   migration: migrationPayload,

@@ -191,6 +191,8 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   gstReturnsPolicy: known({ userId: 'u-finance', permissions: ['finance.gstr.read'] }),
   wasteWriteOffs: known([{ id: 'wo-1', productId: 'RICE-5', lossType: 'damage', qtyRemoved: 4, uom: 'ea', valueMinor: 240_000, currency: 'INR', requiredApproval: true, evidenceRef: 'photo-1' }]),
   wastePolicy: known({ userId: 'u-mgr', permissions: ['waste.view'] }),
+  countsQueue: known([{ id: 'c-1', productId: 'RICE-5', expectedMinor: 20, countedMinor: 16, varianceMinor: -4, valueMinor: 240_000, currency: 'INR', uom: 'ea', requiredApproval: true, adjusted: true, counterId: 'u-floor', approvedBy: 'u-mgr' }]),
+  countsPolicy: known({ userId: 'u-mgr', permissions: ['count.view'] }),
   // Admin and security (M01/M02/M33/M34). Support access is never pruned (hard rule #6).
   accounts: known([{
     userId: 'u-meena', tenantId: 't1', username: 'meena',

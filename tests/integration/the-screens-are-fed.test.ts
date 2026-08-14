@@ -238,6 +238,12 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
     { id: 'wo-2', productId: 'MILK-1', lossType: 'expiry', qtyRemoved: 6, uom: 'ea', valueMinor: 30_000, currency: 'INR', requiredApproval: false },
   ]),
   wastePolicy: known({ userId: 'u-mgr', permissions: ['waste.view'] }),
+  // Stock counts (M09-FR-04). The reconciled blind counts folded to review rows, and who may review them.
+  countsQueue: known([
+    { id: 'c-1', productId: 'RICE-5', expectedMinor: 20, countedMinor: 16, varianceMinor: -4, valueMinor: 240_000, currency: 'INR', uom: 'ea', requiredApproval: true, adjusted: true, counterId: 'u-floor', approvedBy: 'u-mgr' },
+    { id: 'c-2', productId: 'MILK-1', expectedMinor: 12, countedMinor: 12, varianceMinor: 0, valueMinor: 0, currency: 'INR', uom: 'ea', requiredApproval: false, adjusted: false },
+  ]),
+  countsPolicy: known({ userId: 'u-mgr', permissions: ['count.view'] }),
   // Admin and security (M01/M02/M33/M34). Support access is never pruned (hard rule #6).
   accounts: known([{
     userId: 'u-meena', tenantId: 't1', username: 'meena',
@@ -733,6 +739,7 @@ describe('a box that has been told nothing tells every screen so', () => {
       categoryPolicyCategories: notKnown('never'), categoryPolicyPolicy: notKnown('never'),
       gstReturnsQueue: notKnown('never'), gstReturnsPolicy: notKnown('never'),
       wasteWriteOffs: notKnown('never'), wastePolicy: notKnown('never'),
+      countsQueue: notKnown('never'), countsPolicy: notKnown('never'),
       accounts: notKnown('never'), supportSessions: notKnown('never'),
       devices: notKnown('never'), versionPolicy: notKnown('never'),
       auditRecords: notKnown('never'), retentionPolicies: notKnown('never'),
