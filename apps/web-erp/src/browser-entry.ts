@@ -19,6 +19,7 @@
 
 import { InMemoryLedgerStore, Ledger } from '../../../packages/ledger/src/ledger';
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
+import { openDeviceOutbox, guardedStore } from '../../../packages/sync/src/device-outbox';
 import { makeTradingDayRule } from '../../../packages/calendar/src/trading-day';
 import {
   APPROVE_REASONS,
@@ -425,23 +426,45 @@ export interface GstReconciliationData {
 const GST_READ_PERMISSION = 'finance.einvoice.read';
 const GST_ACT_PERMISSION = 'finance.einvoice.generate';
 
-export function gstReconciliationPortsFromData(data: GstReconciliationData | undefined): GstReconciliationPorts {
+export function gstReconciliationPortsFromData(
+  data: GstReconciliationData | undefined,
+  outbox: SyncOutbox = new SyncOutbox(),
+): GstReconciliationPorts {
   const held = new Set(data?.permissions ?? []);
   return {
     rows: () => data?.rows ?? [],
     // Default-deny: an absent permission list can read nothing (the server would refuse it anyway).
     mayRead: () => held.has(GST_READ_PERMISSION),
     mayAct: () => held.has(GST_ACT_PERMISSION),
+    outbox: () => outbox,
   };
 }
 
 /** Build the GST reconciliation screen, or `null` when the box carried no payload for it. */
-export function bootGstReconciliation(data: GstReconciliationData | undefined): GstReconciliationSession | null {
+export function bootGstReconciliation(
+  data: GstReconciliationData | undefined,
+  outbox: SyncOutbox = new SyncOutbox(),
+): GstReconciliationSession | null {
   if (data === undefined) return null;
   return createGstReconciliationSession(
     { userId: data.userId === undefined ? null : data.userId },
-    gstReconciliationPortsFromData(data),
+    gstReconciliationPortsFromData(data, outbox),
   );
+}
+
+/** The last storage problem the GST outbox hit, so the shell can show it — never a silent failure (P-08). */
+export let gstReconciliationStorageProblem: string | undefined;
+
+/**
+ * Open the device-backed outbox the GST reconciliation screen queues portal actions to. It restores whatever
+ * is already saved (so an unsynced request survives a reload) and keeps writing itself back on every change.
+ * Where the device offers no usable storage it degrades to in-memory and records why — the request still
+ * queues and still syncs, it just will not survive a restart, and that fact is made visible rather than hidden.
+ */
+function openGstReconciliationOutbox(): SyncOutbox {
+  const storage = (globalThis as { localStorage?: { getItem(k: string): string | null; setItem(k: string, v: string): void } }).localStorage;
+  const onProblem = (why: string): void => { gstReconciliationStorageProblem = why; };
+  return openDeviceOutbox(guardedStore('sre.gst-portal-outbox', storage, onProblem), onProblem);
 }
 
 /** What the box tells the category-rules screen — the categories, their dated policies, and who is looking. */
@@ -944,6 +967,8 @@ interface ManagerWindow {
   financeSession?: FinanceSession;
   gstReconciliationData?: GstReconciliationData;
   gstReconciliationSession?: GstReconciliationSession;
+  /** Where a portal action (poll/verify) queues for the sync agent to drain — device-backed, survives a reload. */
+  gstReconciliationOutbox?: SyncOutbox;
   categoryPolicyData?: CategoryPolicyData;
   categoryPolicySession?: CategoryPolicySession;
   payrollData?: PayrollData;
@@ -1424,8 +1449,15 @@ if (browserWindow !== undefined) {
   if (expiry !== null) browserWindow.expirySession = expiry;
   const finance = bootFinance(browserWindow.financeData);
   if (finance !== null) browserWindow.financeSession = finance;
-  const gstReconciliation = bootGstReconciliation(browserWindow.gstReconciliationData);
-  if (gstReconciliation !== null) browserWindow.gstReconciliationSession = gstReconciliation;
+  // The portal actions this screen commits queue in a DEVICE-backed outbox, so a poll/verify requested while
+  // the link is down survives the operator closing and reopening the tab before it syncs (P-01, §31). A device
+  // with no usable storage degrades to in-memory rather than failing — and says so, never silently.
+  const gstReconciliationOutbox = browserWindow.gstReconciliationOutbox ?? openGstReconciliationOutbox();
+  const gstReconciliation = bootGstReconciliation(browserWindow.gstReconciliationData, gstReconciliationOutbox);
+  if (gstReconciliation !== null) {
+    browserWindow.gstReconciliationSession = gstReconciliation;
+    browserWindow.gstReconciliationOutbox = gstReconciliationOutbox;
+  }
   const categoryPolicy = bootCategoryPolicy(browserWindow.categoryPolicyData);
   if (categoryPolicy !== null) browserWindow.categoryPolicySession = categoryPolicy;
   // Payroll always boots a session (real from a payload, or a flagged DEMO one) — never blank.
