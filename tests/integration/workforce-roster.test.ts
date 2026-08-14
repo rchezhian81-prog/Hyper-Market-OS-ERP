@@ -112,3 +112,75 @@ describe('roster-gap route (M25-FR-01)', () => {
     expect(res.status).toBe(403);
   });
 });
+
+// API-11 M25-FR-03 — task certification-gating. The gate is on the TASK, never the person: a lapsed
+// food-handling certificate blocks the deli counter but not shelf-stacking (`stillAllowed` says so). An
+// expired / missing / unverified certificate blocks the task; a needed role the person lacks blocks it; a
+// leaver is blocked outright. Stateless — the caller supplies the person + certs; nothing is stored.
+
+const DELI = { employeeId: 'u-d1', name: 'Deepa', branchId: 'b1', roles: ['deli'], active: true };
+const cert = (over: Record<string, unknown> = {}) => ({
+  certificationId: 'cert-1', employeeId: 'u-d1', kind: 'food-handling', issuedOn: '2025-01-01', validUntil: '2026-12-31', verifiedBy: 'u-mgr', ...over,
+});
+const gate = (h: ApiHarness, u: string, body: Record<string, unknown>, key = 'g1') =>
+  h.request({ method: 'POST', path: '/v1/hr/workforce/task-gate', userId: u, tenantId: A, idempotencyKey: key, body });
+
+const base = (over: Record<string, unknown> = {}) => ({
+  employee: DELI, task: 'work the deli counter', requiresRole: 'deli', requiresCertification: 'food-handling',
+  certifications: [cert()], today: '2026-08-14', ...over,
+});
+
+describe('task-gate route (M25-FR-03)', () => {
+  it('allows the task when the person is active, in-role, and holds a verified in-date certificate', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    const res = await gate(h, 'u-owner', base());
+    expect(res.status).toBe(200);
+    const body = res.body as { allowed: boolean; outcome: string };
+    expect(body.allowed).toBe(true);
+    expect(body.outcome).toBe('allowed');
+  });
+
+  it('blocks the TASK (not the person) on an EXPIRED certificate — and says what they may still do', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    const res = await gate(h, 'u-owner', base({ certifications: [cert({ validUntil: '2026-08-01' })] }));
+    expect(res.status).toBe(200);
+    const body = res.body as { allowed: boolean; outcome: string; stillAllowed?: string };
+    expect(body.allowed).toBe(false);
+    expect(body.outcome).toBe('certification_expired');
+    expect(body.stillAllowed).toBeTruthy(); // the gate is on the task, not the person
+  });
+
+  it('treats an UNVERIFIED certificate as none on file (missing), never as cover', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    const res = await gate(h, 'u-owner', base({ certifications: [cert({ verifiedBy: undefined })] }));
+    expect(res.status).toBe(200);
+    expect((res.body as { outcome: string }).outcome).toBe('certification_missing');
+  });
+
+  it('blocks a task whose required role the person is not assigned, and a task for a leaver', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    const notInRole = await gate(h, 'u-owner', base({ employee: { ...DELI, roles: ['cashier'] } }), 'g2');
+    expect((notInRole.body as { outcome: string }).outcome).toBe('not_assigned');
+    const leaver = await gate(h, 'u-owner', base({ employee: { ...DELI, active: false } }), 'g3');
+    expect((leaver.body as { outcome: string }).outcome).toBe('inactive');
+  });
+
+  it('refuses a malformed task gate (no employee / no today)', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    const bad = await gate(h, 'u-owner', { task: 'x', certifications: [], today: '2026-08-14' }); // no employee
+    expect(bad.status).toBe(400);
+    expect(codeOf(bad)).toBe('not_readable_as_a_task_gate');
+  });
+
+  it('gates on workforce.task.read — a cashier is refused (default-deny)', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-cash', 'cashier');
+    expect((await gate(h, 'u-cash', base())).status).toBe(403);
+  });
+});
