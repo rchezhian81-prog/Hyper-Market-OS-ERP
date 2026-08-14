@@ -74,6 +74,10 @@ import {
 import {
   createGstReconciliationSession, type GstReconciliationPorts, type GstReconciliationSession, type QueueRow as GstQueueRow,
 } from './gst-reconciliation-session';
+import {
+  createPayrollSession, type PayrollPorts, type PayrollSession, type EmployeeInput as PayrollEmployeeInput,
+} from './payroll-session';
+import { foldPayRun, type PayRunAggregate } from '../../../packages/payroll/src/index';
 import type { LedgerSide, QueuedPosting } from '../../../packages/period-close/src/index';
 import { createAdminSession, type AdminPorts, type AdminSession } from './admin-session';
 import { createSetupSession, type SetupSession } from './setup-session';
@@ -429,6 +433,77 @@ export function bootGstReconciliation(data: GstReconciliationData | undefined): 
   );
 }
 
+// ── Payroll (owner directive; docs/design/screens/payroll.md) ────────────────────────────────────────────
+//
+// Payroll is deliberately UNLIKE the other screens: it is served ONLINE-FIRST, holds the most sensitive data
+// in the shop, and is NEVER put on the offline store box that feeds shared floor devices. So there is no
+// store-pack section, no offline-cache, and `online` is read live from the browser. When no payload is
+// injected the screen boots a clearly-marked DEMO session on the SAME tested model — so the copy and rules
+// are single-sourced and a person is never shown real payroll by accident.
+
+/** What an online payroll server tells the screen. Sensitive identifiers should already be masked upstream. */
+export interface PayrollData {
+  readonly userId?: string;
+  /** Permission codes this user holds — gates visibility the same way the server does. */
+  readonly permissions?: readonly string[];
+  readonly demo?: boolean;
+  readonly payPeriod?: string;
+  readonly run?: PayRunAggregate;
+  readonly employees?: readonly PayrollEmployeeInput[];
+}
+
+const PAYROLL_VIEW_PERMISSION = 'payroll.statutory.read';
+
+/** Live connectivity, read from the browser where present; assumed online off-browser (tests supply their own). */
+function browserOnline(): boolean {
+  const nav = (globalThis as { navigator?: { onLine?: boolean } }).navigator;
+  return nav?.onLine !== false; // undefined (off-browser) → treated as online
+}
+
+export function payrollPortsFromData(data: PayrollData): PayrollPorts {
+  const held = new Set(data.permissions ?? []);
+  return {
+    mayView: () => held.has(PAYROLL_VIEW_PERMISSION),
+    run: () => data.run,
+    employees: () => data.employees ?? [],
+    online: browserOnline,
+    payPeriod: data.payPeriod ?? '',
+  };
+}
+
+/** The DEMO run shown when no real payload is injected — two payable staff and one deliberately blocked. */
+const DEMO_PAYROLL_EMPLOYEES: readonly PayrollEmployeeInput[] = Object.freeze([
+  { employeeId: 'DEMO-1', name: 'Asha (demo)', department: 'Grocery', grossMinor: 30_000_00, totalDeductionsMinor: 3_600_00, netPayMinor: 26_400_00, bankAccount: '000000000001', bankIfsc: 'DEMO0000001', pan: 'DEMOP1234D', uan: '100000000001', aadhaar: '000000000001' },
+  { employeeId: 'DEMO-2', name: 'Bala (demo)', department: 'Chill', grossMinor: 22_000_00, totalDeductionsMinor: 2_100_00, netPayMinor: 19_900_00, bankAccount: '000000000002', bankIfsc: 'DEMO0000001', pan: 'DEMOP5678D', uan: '100000000002', aadhaar: '000000000002' },
+  { employeeId: 'DEMO-3', name: 'Chandra (demo)', department: 'Grocery', grossMinor: 18_000_00, totalDeductionsMinor: 18_500_00, netPayMinor: -500_00, bankAccount: '', pan: 'DEMOP9012D', uan: '100000000003', aadhaar: '000000000003' },
+]);
+
+/**
+ * Build the payroll screen. **Always returns a session** — a real one from an injected payload, or a
+ * DEMO session (clearly flagged) on the same tested model when nothing was injected — so the screen is never
+ * blank and never accidentally shows real payroll.
+ */
+export function bootPayroll(data: PayrollData | undefined): PayrollSession {
+  if (data === undefined) {
+    // A DEMO draft on the real model. `demo: true` makes the shell show "DEMO DATA — NOT REAL PAYROLL".
+    const demoRun = foldPayRun('DEMO', [{ kind: 'drafted', payPeriod: '2026-08', by: 'demo-user', at: '2026-08-31T00:00:00.000Z', netTotalMinor: 46_300_00, employeeCount: 3 }]);
+    return createPayrollSession(
+      { userId: 'demo-user', demo: true },
+      {
+        mayView: () => true,
+        run: () => demoRun,
+        employees: () => DEMO_PAYROLL_EMPLOYEES,
+        online: browserOnline,
+        payPeriod: '2026-08',
+      },
+    );
+  }
+  return createPayrollSession(
+    { userId: data.userId === undefined ? null : data.userId, demo: data.demo === true },
+    payrollPortsFromData(data),
+  );
+}
+
 /** What the box tells the admin and security screen. */
 export interface AdminData {
   readonly userId?: string;
@@ -733,6 +808,8 @@ interface ManagerWindow {
   financeSession?: FinanceSession;
   gstReconciliationData?: GstReconciliationData;
   gstReconciliationSession?: GstReconciliationSession;
+  payrollData?: PayrollData;
+  payrollSession?: PayrollSession;
   adminData?: AdminData;
   adminSession?: AdminSession;
   setupData?: SetupData;
@@ -1207,6 +1284,8 @@ if (browserWindow !== undefined) {
   if (finance !== null) browserWindow.financeSession = finance;
   const gstReconciliation = bootGstReconciliation(browserWindow.gstReconciliationData);
   if (gstReconciliation !== null) browserWindow.gstReconciliationSession = gstReconciliation;
+  // Payroll always boots a session (real from a payload, or a flagged DEMO one) — never blank.
+  browserWindow.payrollSession = bootPayroll(browserWindow.payrollData);
   const admin = bootAdmin(browserWindow.adminData);
   if (admin !== null) browserWindow.adminSession = admin;
   const setup = bootSetup(browserWindow.setupData);
