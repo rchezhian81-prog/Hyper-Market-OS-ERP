@@ -11,3 +11,4 @@ export * from './bank-file';
 export * from './journal';
 export * from './settlement';
 export * from './ess';
+export * from './mask';

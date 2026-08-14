@@ -57,6 +57,11 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // (`finance.einvoice.read`), so the menu can never offer a screen the server would refuse (item 3 inc2).
   { id: 'gst-reconciliation', label: 'GST reconciliation', path: '/gst-reconciliation', requires: 'finance.einvoice.read', group: 'Finance' },
 
+  // Payroll — its OWN group, gated on the payroll permission the server enforces (`payroll.statutory.read`),
+  // so cashier/warehouse/floor/ordinary-manager roles never see it and the menu can never offer a screen the
+  // server would refuse (owner directive; §27 least-privilege surfaces).
+  { id: 'payroll', label: 'Payroll', path: '/payroll', requires: 'payroll.statutory.read', group: 'Payroll' },
+
   { id: 'users', label: 'Users & roles', path: '/admin/users', requires: 'admin.users.manage', group: 'Administration' },
   { id: 'store-setup', label: 'Store setup', path: '/admin/setup', requires: 'platform.setup.read', group: 'Administration' },
   { id: 'settings', label: 'Settings', path: '/admin/settings', requires: 'admin.settings.manage', group: 'Administration' },
