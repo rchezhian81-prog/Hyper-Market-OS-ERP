@@ -226,6 +226,12 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
     { categoryId: 'grocery', history: [{ effectiveFrom: '2026-01-01', value: { traceability: 'none', quantityMode: 'each', valuation: 'retail_mrp', shelfLife: { perishable: false, blockSaleAfterExpiry: false }, returns: { returnable: true, windowDays: 7 }, controlledSale: {}, approvals: [], enabledByDefault: true } }] },
   ]),
   categoryPolicyPolicy: known({ userId: 'u-cat', permissions: ['catalogue.pack.read'] }),
+  // GST returns (item 3, 4th UI domain; M23). Every filing period folded to its submission state, and who may read them.
+  gstReturnsQueue: known([
+    { period: '062026', state: 'filed', arn: 'ARN-062026' },
+    { period: '072026', state: 'unknown', detail: 'no clear answer from the portal' },
+  ]),
+  gstReturnsPolicy: known({ userId: 'u-finance', permissions: ['finance.gstr.read'] }),
   // Admin and security (M01/M02/M33/M34). Support access is never pruned (hard rule #6).
   accounts: known([{
     userId: 'u-meena', tenantId: 't1', username: 'meena',
@@ -719,6 +725,7 @@ describe('a box that has been told nothing tells every screen so', () => {
       periodState: notKnown('never'), financePolicy: notKnown('never'),
       gstReconciliationQueue: notKnown('never'), gstReconciliationPolicy: notKnown('never'),
       categoryPolicyCategories: notKnown('never'), categoryPolicyPolicy: notKnown('never'),
+      gstReturnsQueue: notKnown('never'), gstReturnsPolicy: notKnown('never'),
       accounts: notKnown('never'), supportSessions: notKnown('never'),
       devices: notKnown('never'), versionPolicy: notKnown('never'),
       auditRecords: notKnown('never'), retentionPolicies: notKnown('never'),

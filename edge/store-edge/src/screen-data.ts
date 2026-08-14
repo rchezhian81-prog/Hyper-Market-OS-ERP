@@ -49,13 +49,13 @@ import {
   basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
-import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy } from './store-pack';
+import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy } from './store-pack';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
+  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1232,6 +1232,25 @@ export function categoryPolicyPayload(input: ScreenInput): Record<string, unknow
 }
 
 /**
+ * The GST-returns payload (owner directive item 3, the 4th UI domain; API-09; M23).
+ *
+ * `null` when the box has not been told who is on the screen — a screen inventing its own permissions would
+ * decide, on its own authority, who may see the filing queue. The filing periods (each already folded to its
+ * current submission state by the cloud) are served only when the box has them; absent means the shell shows
+ * its sample stand-in, never an empty queue that would read as "every return filed".
+ */
+export function gstReturnsPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.gstReturnsPolicy.known) return null;
+  const policy: PackGstReturnsPolicy = input.pack.gstReturnsPolicy.value;
+
+  const payload: Record<string, unknown> = { permissions: policy.permissions };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+  if (input.pack.gstReturnsQueue.known) payload['rows'] = input.pack.gstReturnsQueue.value;
+
+  return payload;
+}
+
+/**
  * The admin and security payload (M01 · M02 · M33 · M34 · D12).
  *
  * `null` when the box has not been told who administers this shop and by what windows — a screen
@@ -1374,6 +1393,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   finance: 'financeData',
   'gst-reconciliation': 'gstReconciliationData',
   'category-policy': 'categoryPolicyData',
+  'gst-returns': 'gstReturnsData',
   admin: 'adminData',
   ai: 'aiData',
   migration: 'migrationData',
@@ -1397,6 +1417,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   finance: financePayload,
   'gst-reconciliation': gstReconciliationPayload,
   'category-policy': categoryPolicyPayload,
+  'gst-returns': gstReturnsPayload,
   admin: adminPayload,
   ai: aiPayload,
   migration: migrationPayload,
