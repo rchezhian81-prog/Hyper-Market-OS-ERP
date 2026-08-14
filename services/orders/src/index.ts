@@ -15,7 +15,8 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { OrderState, OrderEvent } from '../../../packages/orders/src/lifecycle';
-import { transitionOrder, canTransition } from '../../../packages/orders/src/lifecycle';
+import { transitionOrder, canTransition, isTerminal } from '../../../packages/orders/src/lifecycle';
+import { applySubstitution, type SubstitutionOffer, type SubstitutionDecision, type SubstitutionOutcome } from '../../../packages/orders/src/amendments';
 
 export interface Reservation {
   readonly reservationId: string;
@@ -143,6 +144,22 @@ export interface OrderStateView {
   readonly lines: readonly OrderLine[];
 }
 
+/** A recorded substitution decision on one order line (M18-FR-04), append-only — a line is substituted once. */
+export interface StoredSubstitution {
+  readonly orderId: string;
+  readonly lineId: string;
+  readonly decision: SubstitutionDecision;
+  readonly outcome: SubstitutionOutcome;
+  /** The product the picker put in the crate, when the substitute was confirmed. */
+  readonly pickProductId: string | null;
+  readonly pickQuantityMinor: number;
+  readonly chargeMinor: number;
+  /** Refund due to the customer where the substitute was cheaper — a fact recorded here; the refund is
+   *  ISSUED downstream by the finance/refund surface, never kept. */
+  readonly refundMinor: number;
+  readonly at: string;
+}
+
 export interface OrdersDeps {
   readonly onHand: (tenantId: string, locationId: string) => Promise<ReadonlyMap<string, number>> | ReadonlyMap<string, number>;
   readonly outstanding: (tenantId: string, locationId: string) => Promise<readonly Reservation[]> | readonly Reservation[];
@@ -155,7 +172,25 @@ export interface OrdersDeps {
   readonly orderReservations: (tenantId: string, orderId: string, locationId: string) => Promise<readonly Reservation[]> | readonly Reservation[];
   readonly recordTransition: (tenantId: string, t: OrderTransition) => Promise<void> | void;
   readonly releaseReservations: (tenantId: string, rs: readonly Reservation[]) => Promise<void> | void;
+  // Substitution (M18-FR-04): record the picker's substitution decision on a line, append-only.
+  readonly recordSubstitution: (tenantId: string, sub: StoredSubstitution) => Promise<void> | void;
+  readonly orderSubstitutions: (tenantId: string, orderId: string) => Promise<readonly StoredSubstitution[]> | readonly StoredSubstitution[];
 }
+
+const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+const isNonNegInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0;
+const isPosInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) > 0;
+const SUB_DECISIONS: readonly SubstitutionDecision[] = ['confirmed', 'declined', 'no_answer'];
+
+/** A substitution offer the engine can price: the ordered line and the substitute, both with a price and qty. */
+const isOffer = (v: unknown): v is SubstitutionOffer =>
+  typeof v === 'object' && v !== null
+  && isStr((v as Record<string, unknown>)['lineId'])
+  && isStr((v as Record<string, unknown>)['orderedProductId']) && isStr((v as Record<string, unknown>)['orderedName'])
+  && isNonNegInt((v as Record<string, unknown>)['orderedUnitPriceMinor']) && isPosInt((v as Record<string, unknown>)['orderedQuantityMinor'])
+  && isStr((v as Record<string, unknown>)['substituteProductId']) && isStr((v as Record<string, unknown>)['substituteName'])
+  && isNonNegInt((v as Record<string, unknown>)['substituteUnitPriceMinor']) && isPosInt((v as Record<string, unknown>)['substituteQuantityMinor'])
+  && isStr((v as Record<string, unknown>)['offeredAt']);
 
 export function ordersRoutes(deps: OrdersDeps): readonly Route[] {
   return [
@@ -278,6 +313,73 @@ export function ordersRoutes(deps: OrdersDeps): readonly Route[] {
         return {
           status: 200,
           body: { orderId, event: body.event, from: current.state, state: to, released },
+        };
+      },
+    },
+    // Record a substitution decision on an order line while picking (M18-FR-04). The picker offers a
+    // substitute; the customer confirms, declines, or does not answer. **`no_answer` is NOT a yes** —
+    // silence short-picks the line and charges nothing (the engine enforces it). The customer NEVER pays
+    // more for our failure to stock the item; where the substitute is cheaper a refund is due, recorded as
+    // a fact here and ISSUED downstream by the finance/refund surface (never kept). Append-only: a line is
+    // substituted once (a re-decision is refused), and a substitution on a finished order is refused.
+    {
+      api: 'API-07', method: 'POST', path: '/v1/orders/:orderId/substitute',
+      permission: 'order.lifecycle.manage', idempotent: true,
+      handler: async (ctx) => {
+        const orderId = ctx.params['orderId'] ?? '';
+        const b = (ctx.body ?? {}) as { offer?: unknown; decision?: unknown };
+        if (!isOffer(b.offer) || !SUB_DECISIONS.includes(b.decision as SubstitutionDecision)) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_substitution',
+            whatHappened: 'A substitution needs an offer (lineId, the ordered product/name/price/qty and the substitute product/name/price/qty, offeredAt) and a decision (confirmed, declined or no_answer).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the offer and the customer’s decision. Nothing was changed.',
+          });
+        }
+        const current = await deps.orderState(ctx.tenantId, orderId);
+        if (current === undefined) {
+          throw apiError(404, {
+            code: 'order_unknown',
+            whatHappened: `No order "${orderId}" has been placed.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Check the order reference. Nothing was changed.',
+          });
+        }
+        if (isTerminal(current.state)) {
+          throw apiError(409, {
+            code: 'order_finished',
+            whatHappened: `Order "${orderId}" is ${current.state} — a substitution cannot be recorded against a finished order.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was changed. A change to a finished order is a return or a new order.',
+          });
+        }
+        const offer = b.offer;
+        const already = await deps.orderSubstitutions(ctx.tenantId, orderId);
+        if (already.some((s) => s.lineId === offer.lineId)) {
+          throw apiError(409, {
+            code: 'line_already_substituted',
+            whatHappened: `Line "${offer.lineId}" already has a recorded substitution decision — a line is substituted once (append-only).`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was changed. A further change is a return or a re-pick, not a second substitution.',
+          });
+        }
+
+        const result = applySubstitution({ offer, decision: b.decision as SubstitutionDecision });
+        const at = deps.now();
+        const sub: StoredSubstitution = {
+          orderId, lineId: result.lineId, decision: b.decision as SubstitutionDecision, outcome: result.outcome,
+          pickProductId: result.pickProductId ?? null, pickQuantityMinor: result.pickQuantityMinor,
+          chargeMinor: result.chargeMinor, refundMinor: result.refundMinor, at,
+        };
+        await deps.recordSubstitution(ctx.tenantId, sub);
+        return {
+          status: 201,
+          body: {
+            orderId, lineId: result.lineId, outcome: result.outcome,
+            pickProductId: result.pickProductId ?? null, pickQuantityMinor: result.pickQuantityMinor,
+            chargeMinor: result.chargeMinor, refundMinor: result.refundMinor,
+            refundDue: result.refundMinor > 0, tellTheCustomer: result.tellTheCustomer,
+          },
         };
       },
     },

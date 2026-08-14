@@ -99,7 +99,7 @@ import type { PromotionCatalogueDeps } from '../../pricing/src/promotion-catalog
 import type { Promotion } from '../../../packages/promotions/src/promotions';
 import { expired } from '../../orders/src/index';
 import type {
-  Reservation, OrdersDeps, PlacedOrder, OrderTransition, OrderStateView,
+  Reservation, OrdersDeps, PlacedOrder, OrderTransition, OrderStateView, StoredSubstitution,
 } from '../../orders/src/index';
 import type { DeliveryAttempt, FulfilmentDeps } from '../../fulfilment/src/index';
 import type { IdentityDeps } from '../../identity/src/index';
@@ -3360,6 +3360,23 @@ export function ordersAdapter(input: {
         }));
       }
     },
+
+    /** Record a substitution decision on a line, append-only (M18-FR-04). Idempotent on order+line — a line
+     *  is substituted once, so a replay is one fact, never a second substitution. */
+    recordSubstitution: async (tenantId, sub: StoredSubstitution) => {
+      await input.store.append(tenantId, forOrder(sub.orderId), makeEvent({
+        id: `ord-sub-${sub.orderId}-${sub.lineId}`,
+        type: 'LineSubstituted',
+        occurredAt: sub.at,
+        idempotencyKey: `ord-sub-${tenantId}-${sub.orderId}-${sub.lineId}`,
+        source: 'api/orders',
+        payload: sub,
+      }));
+    },
+
+    /** The substitution decisions recorded on an order — a fold of its `LineSubstituted` events. */
+    orderSubstitutions: async (tenantId, orderId) =>
+      allOf<StoredSubstitution>(input.store, tenantId, forOrder(orderId), 'LineSubstituted'),
   };
 }
 

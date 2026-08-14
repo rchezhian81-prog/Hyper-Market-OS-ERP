@@ -293,6 +293,7 @@ export function buildSurface(deps: {
       holdMinutes: HOLD_MINUTES, now,
       recordPlaced: () => {}, orderState: empty(undefined), orderReservations: empty([]),
       recordTransition: () => {}, releaseReservations: () => {},
+      recordSubstitution: () => {}, orderSubstitutions: empty([]),
     } : ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES })),
     ...fulfilmentRoutes(store === undefined
       ? { appendAttempt: () => {}, attempts: empty([]), assigned: empty([]), now }

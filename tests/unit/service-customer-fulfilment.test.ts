@@ -230,6 +230,7 @@ describe('all three register cleanly on the kernel', () => {
       holdMinutes: 60, now: () => NOW,
       recordPlaced: () => {}, orderState: () => undefined, orderReservations: () => [],
       recordTransition: () => {}, releaseReservations: () => {},
+      recordSubstitution: () => {}, orderSubstitutions: () => [],
     };
     const fulfilment: FulfilmentDeps = {
       appendAttempt: () => {}, attempts: () => [], assigned: () => [], now: () => NOW,
