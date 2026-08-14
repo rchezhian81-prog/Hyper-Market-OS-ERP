@@ -20,7 +20,7 @@ function sampleSession() {
   };
   const row = (period, tone, icon, statusLabel, actionLabel, needsAttention, arn) => ({
     period, status: { tone, icon, label: statusLabel, announcement: `${period}: ${statusLabel}`, needsAttention },
-    action: 'none', actionLabel, needsAttention, detail: '', ...(arn ? { arn } : {}),
+    action: 'none', actionLabel, needsAttention, detail: '', actions: [], ...(arn ? { arn } : {}),
   });
   const rows = (l) => l === 'ta'
     ? [row('062026', 'error', '✕', 'போர்ட்டல் மறுத்தது', 'எண்களைச் சரிசெய்து மீண்டும் தாக்கல் செய்யவும்', true),
@@ -63,7 +63,32 @@ function rowNode(r) {
 
   const action = document.createElement('div');
   action.className = 'action';
-  action.textContent = r.actionLabel;
+  const guidance = document.createElement('span');
+  guidance.textContent = r.actionLabel;
+  action.append(guidance);
+
+  // The clickable governance buttons. The MODEL decides which rows offer one and whether it is enabled
+  // (right role, maker ≠ checker for approve) — this only draws the button and, on click, hands the intent
+  // back to the session, which enqueues an offline command. It never calls the portal from here. A stuck
+  // return carries no actions, so it gets no button — a person handles it (hard rule #10).
+  for (const a of r.actions ?? []) {
+    const wrap = document.createElement('div');
+    wrap.className = 'do';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'do-btn';
+    btn.textContent = a.label;
+    btn.disabled = !a.enabled;
+    btn.addEventListener('click', () => runAction(a));
+    wrap.append(btn);
+    if (a.note) {
+      const note = document.createElement('span');
+      note.className = 'do-note';
+      note.textContent = a.note;
+      wrap.append(note);
+    }
+    action.append(wrap);
+  }
   li.append(action);
 
   if (r.arn || r.preparedBy || r.approvedByName) {
@@ -77,6 +102,18 @@ function rowNode(r) {
 
   if (r.detail) { const d = document.createElement('p'); d.className = 'detail'; d.textContent = r.detail; li.append(d); }
   return li;
+}
+
+/**
+ * Ask the session to run a governance action. The session re-checks the guards (right role, maker ≠ checker)
+ * and commits the command to the offline outbox — this file never touches the network (no fetch / XHR / portal
+ * call). We supply the wall clock and repaint so the row shows its new "requested" state. Only the real session
+ * can act; the sample stand-in offers no buttons.
+ */
+function runAction(a) {
+  if (!real || typeof real.requestAction !== 'function') return;
+  real.requestAction({ period: a.period, action: a.action, at: new Date().toISOString() });
+  paint();
 }
 
 function paint() {

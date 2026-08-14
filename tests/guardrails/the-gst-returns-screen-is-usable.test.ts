@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
-  GST_RETURNS_COPY, COPY_KEYS, STATE_LABEL, ACTION_LABEL, RETURN_ACTIONS, recommendedAction,
+  GST_RETURNS_COPY, COPY_KEYS, STATE_LABEL, ACTION_LABEL, RETURN_ACTIONS, recommendedAction, commandActionsFor,
 } from '../../apps/web-erp/src/gst-returns-session';
 import { bilingualGaps } from '../../packages/ui/src/index';
 
@@ -79,5 +79,34 @@ describe('the GST-returns view defers to the model and uses no browser dialogs',
   it('every rendered status carries a screen-reader announcement and an aria-hidden icon', () => {
     expect(VIEW).toMatch(/status\.setAttribute\('aria-label'/);
     expect(VIEW).toMatch(/icon\.setAttribute\('aria-hidden', 'true'\)/);
+  });
+});
+
+describe('a governance action goes through the offline outbox, never a raw network call (P-01, hard rule #1)', () => {
+  const VIEW = readFileSync('apps/web-erp/web/gst-returns.js', 'utf8');
+
+  it('the shell fires NO raw network call — the button only commits an offline command', () => {
+    // The one permitted platform call is `navigator.serviceWorker.register('./sw.js')`; a call to the portal
+    // or the API from this screen would break hard rule #1 and bypass the durable, idempotent outbox.
+    expect(/\bfetch\s*\(/.test(VIEW), 'shell calls fetch directly').toBe(false);
+    expect(/XMLHttpRequest/.test(VIEW), 'shell uses XMLHttpRequest').toBe(false);
+    expect(/\.sendBeacon\s*\(/.test(VIEW), 'shell uses sendBeacon').toBe(false);
+    expect(/new\s+WebSocket/.test(VIEW), 'shell opens a WebSocket').toBe(false);
+    expect(/new\s+EventSource/.test(VIEW), 'shell opens an EventSource').toBe(false);
+  });
+
+  it('a click hands the intent to the session, which enqueues the command — the shell never decides', () => {
+    expect(VIEW, 'button is not wired to the session').toMatch(/addEventListener\('click', \(\) => runAction/);
+    expect(VIEW, 'the action does not go through requestAction').toMatch(/real\.requestAction\s*\(/);
+    expect(VIEW).toMatch(/new Date\(\)\.toISOString\(\)/);
+  });
+
+  it('only a prepared or approved return offers a one-click button — a stuck one never does (rule #10)', () => {
+    // Bound in the model, not the view: even if the shell tried to draw one, the model offers no action here.
+    expect(commandActionsFor('previewed')).toEqual(['approve']);
+    expect(commandActionsFor('approved')).toEqual(['submit']);
+    expect(commandActionsFor('failed')).toEqual([]);
+    expect(commandActionsFor('unknown')).toEqual([]);
+    expect(commandActionsFor('filed')).toEqual([]);
   });
 });

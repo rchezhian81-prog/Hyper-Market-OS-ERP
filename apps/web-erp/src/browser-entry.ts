@@ -509,24 +509,45 @@ export interface GstReturnsData {
 }
 
 const GST_RETURNS_READ_PERMISSION = 'finance.gstr.read';
+const GST_RETURNS_APPROVE_PERMISSION = 'finance.gstr.approve';
+const GST_RETURNS_SUBMIT_PERMISSION = 'finance.gstr.submit';
 
-export function gstReturnsPortsFromData(data: GstReturnsData | undefined): GstReturnsPorts {
+export function gstReturnsPortsFromData(
+  data: GstReturnsData | undefined,
+  outbox: SyncOutbox = new SyncOutbox(),
+): GstReturnsPorts {
   const held = new Set(data?.permissions ?? []);
   return {
     rows: () => data?.rows ?? [],
-    // Default-deny: an absent permission list can read nothing (the server would refuse it anyway).
+    // Default-deny: an absent permission list can read/act on nothing (the server would refuse it anyway).
     mayRead: () => held.has(GST_RETURNS_READ_PERMISSION),
+    mayApprove: () => held.has(GST_RETURNS_APPROVE_PERMISSION),
+    maySubmit: () => held.has(GST_RETURNS_SUBMIT_PERMISSION),
+    outbox: () => outbox,
   };
 }
 
 /** Build the GST-returns screen, or `null` when the box carried no payload for it. */
-export function bootGstReturns(data: GstReturnsData | undefined): GstReturnsSession | null {
+export function bootGstReturns(
+  data: GstReturnsData | undefined,
+  outbox: SyncOutbox = new SyncOutbox(),
+): GstReturnsSession | null {
   if (data === undefined) return null;
   return createGstReturnsSession(
     { userId: data.userId === undefined ? null : data.userId },
-    gstReturnsPortsFromData(data),
+    gstReturnsPortsFromData(data, outbox),
   );
 }
+
+/** The device-backed outbox the GST-returns screen queues governance actions to — survives a reload (§31). */
+function openGstReturnsOutbox(): SyncOutbox {
+  const storage = (globalThis as { localStorage?: { getItem(k: string): string | null; setItem(k: string, v: string): void } }).localStorage;
+  const onProblem = (why: string): void => { gstReturnsStorageProblem = why; };
+  return openDeviceOutbox(guardedStore('sre.gst-returns-outbox', storage, onProblem), onProblem);
+}
+
+/** The last storage problem the GST-returns outbox hit, so the shell can show it — never silent (P-08). */
+export let gstReturnsStorageProblem: string | undefined;
 
 // ── Payroll (owner directive; docs/design/screens/payroll.md) ────────────────────────────────────────────
 //
@@ -1005,6 +1026,8 @@ interface ManagerWindow {
   categoryPolicySession?: CategoryPolicySession;
   gstReturnsData?: GstReturnsData;
   gstReturnsSession?: GstReturnsSession;
+  /** Where a governance action (approve/submit) queues for the sync agent — device-backed, survives a reload. */
+  gstReturnsOutbox?: SyncOutbox;
   payrollData?: PayrollData;
   payrollSession?: PayrollSession;
   payrollEssData?: PayrollEssData;
@@ -1494,8 +1517,14 @@ if (browserWindow !== undefined) {
   }
   const categoryPolicy = bootCategoryPolicy(browserWindow.categoryPolicyData);
   if (categoryPolicy !== null) browserWindow.categoryPolicySession = categoryPolicy;
-  const gstReturns = bootGstReturns(browserWindow.gstReturnsData);
-  if (gstReturns !== null) browserWindow.gstReturnsSession = gstReturns;
+  // The governance actions this screen commits queue in a DEVICE-backed outbox, so an approve/submit requested
+  // while the link is down survives the operator closing and reopening the tab before it syncs (P-01, §31).
+  const gstReturnsOutbox = browserWindow.gstReturnsOutbox ?? openGstReturnsOutbox();
+  const gstReturns = bootGstReturns(browserWindow.gstReturnsData, gstReturnsOutbox);
+  if (gstReturns !== null) {
+    browserWindow.gstReturnsSession = gstReturns;
+    browserWindow.gstReturnsOutbox = gstReturnsOutbox;
+  }
   // Payroll always boots a session (real from a payload, or a flagged DEMO one) — never blank.
   browserWindow.payrollSession = bootPayroll(browserWindow.payrollData);
   browserWindow.payrollEssSession = bootPayrollEss(browserWindow.payrollEssData);
