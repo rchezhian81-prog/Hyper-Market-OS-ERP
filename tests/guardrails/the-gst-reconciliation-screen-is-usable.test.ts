@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
-  GST_RECON_COPY, COPY_KEYS, CATEGORY_LABEL, ACTION_LABEL, RECOMMENDED_ACTIONS,
+  GST_RECON_COPY, COPY_KEYS, CATEGORY_LABEL, ACTION_LABEL, RECOMMENDED_ACTIONS, portalActionsFor,
 } from '../../apps/web-erp/src/gst-reconciliation-session';
 import { QUEUE_CATEGORIES, bilingualGaps } from '../../packages/ui/src/index';
 
@@ -64,6 +64,34 @@ describe('the GST reconciliation view defers to the model and uses no browser di
     const HTML = readFileSync('apps/web-erp/web/gst-reconciliation.html', 'utf8');
     expect(HTML).toMatch(/web-erp\.bundle\.js/);
     expect(HTML).toMatch(/id="lang"/);
+  });
+});
+
+describe('a portal action goes through the offline outbox, never a raw network call (item 3 inc-e; P-01, hard rule #1)', () => {
+  const VIEW = readFileSync('apps/web-erp/web/gst-reconciliation.js', 'utf8');
+
+  it('the shell fires NO raw network call — the button only commits an offline command', () => {
+    // The one permitted platform call is `navigator.serviceWorker.register('./sw.js')` (offline shell); a call
+    // to the portal or the API from this screen would break hard rule #1 (a user action must not block on the
+    // network) and bypass the durable, idempotent outbox.
+    expect(/\bfetch\s*\(/.test(VIEW), 'shell calls fetch directly').toBe(false);
+    expect(/XMLHttpRequest/.test(VIEW), 'shell uses XMLHttpRequest').toBe(false);
+    expect(/\.sendBeacon\s*\(/.test(VIEW), 'shell uses sendBeacon').toBe(false);
+    expect(/new\s+WebSocket/.test(VIEW), 'shell opens a WebSocket').toBe(false);
+    expect(/new\s+EventSource/.test(VIEW), 'shell opens an EventSource').toBe(false);
+  });
+
+  it('a click hands the intent to the session, which enqueues the command — the shell never decides', () => {
+    expect(VIEW, 'button is not wired to the session').toMatch(/addEventListener\('click', \(\) => runAction/);
+    expect(VIEW, 'the action does not go through requestAction').toMatch(/real\.requestAction\s*\(/);
+    // The command's timestamp is the wall clock the model stamps onto the event — supplied, not invented in the model.
+    expect(VIEW).toMatch(/new Date\(\)\.toISOString\(\)/);
+  });
+
+  it('a disagreement or a bad signature is NEVER given a button — a person investigates it (hard rule #10)', () => {
+    // Bound in the model, not the view: even if the shell tried to draw one, the model offers no action here.
+    expect(portalActionsFor('mismatch')).toEqual([]);
+    expect(portalActionsFor('error')).toEqual([]);
   });
 });
 

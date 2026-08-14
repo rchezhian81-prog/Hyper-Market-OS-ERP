@@ -23,7 +23,7 @@ function sampleSession() {
   };
   const row = (documentLabel, id, num, tone, icon, statusLabel, actionLabel, needsAttention, mismatchNote) => ({
     documentLabel, id, number: num, status: { tone, icon, label: statusLabel, announcement: statusLabel, needsAttention },
-    actionLabel, needsAttention, permitted: true, detail: '', ...(mismatchNote ? { mismatchNote } : {}),
+    actionLabel, needsAttention, permitted: true, detail: '', actions: [], ...(mismatchNote ? { mismatchNote } : {}),
   });
   const rows = (l) => l === 'ta'
     ? [row('மின்-வழிச்சீட்டு', 'MV-2001', '—', 'degraded', '?', 'தெரியவில்லை', 'போர்ட்டலைப் பின்தொடரவும்', true),
@@ -95,6 +95,29 @@ function rowNode(r) {
     action.append(chip);
   }
 
+  // The clickable portal actions. The MODEL decides which rows offer one and whether it is enabled — this
+  // only draws the button and, on click, hands the intent back to the session (which enqueues an offline
+  // command; it never calls the portal from here). A mismatch/error row carries no actions, so it gets no
+  // button — a person handles it (hard rule #10).
+  for (const a of r.actions ?? []) {
+    const wrap = document.createElement('div');
+    wrap.className = 'do';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'do-btn';
+    btn.textContent = a.label;
+    btn.disabled = !a.enabled;
+    btn.addEventListener('click', () => runAction(a));
+    wrap.append(btn);
+    if (a.note) {
+      const note = document.createElement('span');
+      note.className = 'do-note';
+      note.textContent = a.note;                  // "Requested — will be sent…" / "Needs the GST-portal role"
+      wrap.append(note);
+    }
+    action.append(wrap);
+  }
+
   li.append(head, status, action);
   if (r.mismatchNote) {
     const mm = document.createElement('p');
@@ -109,6 +132,18 @@ function rowNode(r) {
     li.append(d);
   }
   return li;
+}
+
+/**
+ * Ask the session to run a portal action. The session re-checks the guards and commits the command to the
+ * offline outbox — this file never touches the network (no fetch / XHR / portal call). We supply the wall
+ * clock and repaint so the row shows its new "requested" state. Only the real session can act; the sample
+ * stand-in offers no buttons.
+ */
+function runAction(a) {
+  if (!real || typeof real.requestAction !== 'function') return;
+  real.requestAction({ documentType: a.documentType, id: a.id, action: a.action, at: new Date().toISOString() });
+  paint();
 }
 
 function paint() {

@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   createGstReconciliationSession, recommendedAction, GST_RECON_COPY, COPY_KEYS,
-  type GstReconciliationPorts, type QueueRow,
+  portalActionsFor, portalCommandKey, buildPortalCommand, GST_PORTAL_ACTION_EVENT,
+  type GstReconciliationPorts, type QueueRow, type GstPortalActionPayload,
 } from '../../apps/web-erp/src/gst-reconciliation-session';
 import { bilingualGaps } from '../../packages/ui/src/index';
+import { SyncOutbox } from '../../packages/sync/src/outbox';
 
 /**
  * **GST e-invoice / e-way-bill reconciliation — the operator triage view (item 3 inc2).**
@@ -21,12 +23,16 @@ const ROWS: QueueRow[] = [
   { documentType: 'e_invoice', id: 'INV-mm', category: 'mismatch', number: 'IRN-2', mismatch: { observedState: 'rejected', note: 'portal now rejects it' } },
 ];
 
-const ports = (over: Partial<GstReconciliationPorts> = {}): GstReconciliationPorts => ({
-  rows: () => ROWS,
-  mayRead: () => true,
-  mayAct: () => true,
-  ...over,
-});
+const ports = (over: Partial<GstReconciliationPorts> = {}): GstReconciliationPorts => {
+  const box = new SyncOutbox();
+  return {
+    rows: () => ROWS,
+    mayRead: () => true,
+    mayAct: () => true,
+    outbox: () => box,
+    ...over,
+  };
+};
 
 const session = (over: Partial<GstReconciliationPorts> = {}, userId: string | null = 'u-fin') =>
   createGstReconciliationSession({ userId }, ports(over));
@@ -103,6 +109,118 @@ describe('view', () => {
     expect(en).toBeTruthy();
     expect(ta).toBeTruthy();
     expect(ta).not.toBe(en);
+  });
+});
+
+// ── item 3 inc-e: wiring poll/verify to an offline outbox command ────────────────────────────────────────
+
+/** A session sharing one outbox with the test, so an enqueue is observable. */
+const acting = (over: Partial<GstReconciliationPorts> = {}, userId: string | null = 'u-fin') => {
+  const box = new SyncOutbox();
+  const s = createGstReconciliationSession({ userId }, ports({ outbox: () => box, ...over }));
+  return { s, box };
+};
+const AT = '2026-08-14T10:00:00.000Z';
+
+describe('portalActionsFor — only the two portal-touching actions, and never on a row a person must handle', () => {
+  it('offers poll on a stuck document, verify on a settled one, and NOTHING on mismatch/error/rejected/processing', () => {
+    expect(portalActionsFor('unknown')).toEqual(['poll']);
+    expect(portalActionsFor('registered')).toEqual(['verify']);
+    expect(portalActionsFor('generated')).toEqual(['verify']);
+    expect(portalActionsFor('cancelled')).toEqual(['verify']);
+    // A disagreement or a bad signature is investigated by a person — never a one-click button (hard rule #10).
+    expect(portalActionsFor('mismatch')).toEqual([]);
+    expect(portalActionsFor('error')).toEqual([]);
+    // Reissue is a separate workflow; an in-flight one is simply waited on.
+    expect(portalActionsFor('rejected')).toEqual([]);
+    expect(portalActionsFor('processing')).toEqual([]);
+  });
+});
+
+describe('view — the clickable actions each row offers', () => {
+  it('the stuck row offers an enabled poll button; the settled row a verify button', () => {
+    const v = session().view('en');
+    const stuck = v.rows.find((r) => r.id === 'MV-stuck');
+    expect(stuck?.actions.map((a) => a.action)).toEqual(['poll']);
+    expect(stuck?.actions[0]?.enabled).toBe(true);
+    const done = v.rows.find((r) => r.id === 'INV-done');
+    expect(done?.actions.map((a) => a.action)).toEqual(['verify']);
+    expect(done?.actions[0]?.enabled).toBe(true);
+  });
+
+  it('a mismatch and a rejected row offer NO button — those are handled by a person', () => {
+    const v = session().view('en');
+    expect(v.rows.find((r) => r.id === 'INV-mm')?.actions).toEqual([]);   // hard rule #10
+    expect(v.rows.find((r) => r.id === 'INV-rej')?.actions).toEqual([]);
+  });
+
+  it('a reader without the portal role sees the button disabled and told why — never enabled', () => {
+    const v = session({ mayAct: () => false }).view('en');
+    const stuck = v.rows.find((r) => r.id === 'MV-stuck');
+    expect(stuck?.actions[0]?.permitted).toBe(false);
+    expect(stuck?.actions[0]?.enabled).toBe(false);
+    expect(stuck?.actions[0]?.note).toBeTruthy();
+  });
+});
+
+describe('requestAction — commits an offline command, never a network call', () => {
+  it('enqueues a well-formed, PII-free command for a stuck document and marks the row requested', () => {
+    const { s, box } = acting();
+    const res = s.requestAction({ documentType: 'e_way_bill', id: 'MV-stuck', action: 'poll', at: AT });
+    expect(res.ok).toBe(true);
+    expect(box.unsentCount()).toBe(1);
+    const item = box.pending()[0]!;
+    expect(item.event.type).toBe(GST_PORTAL_ACTION_EVENT);
+    expect(item.event.source).toBe('web-erp/gst-reconciliation');
+    const payload = item.event.payload as GstPortalActionPayload;
+    expect(payload).toEqual({ documentType: 'e_way_bill', id: 'MV-stuck', action: 'poll', requestedBy: 'u-fin', observedCategory: 'unknown' });
+    expect(item.event.idempotencyKey).toBe(portalCommandKey('e_way_bill', 'MV-stuck', 'poll', 'unknown'));
+    // The very same session now shows the row as requested/pending, disabled against a second click.
+    const action = s.view('en').rows.find((r) => r.id === 'MV-stuck')?.actions[0];
+    expect(action?.queued).toBe('pending');
+    expect(action?.enabled).toBe(false);
+  });
+
+  it('is idempotent — a double click collapses to ONE command', () => {
+    const { s, box } = acting();
+    const a = s.requestAction({ documentType: 'e_way_bill', id: 'MV-stuck', action: 'poll', at: AT });
+    const b = s.requestAction({ documentType: 'e_way_bill', id: 'MV-stuck', action: 'poll', at: AT });
+    expect(a.ok).toBe(true);
+    expect(b).toEqual({ ok: false, reason: 'already_queued' });
+    expect(box.unsentCount()).toBe(1);
+  });
+
+  it('refuses to act on a mismatch or an error row — a person investigates, it is never auto-corrected (rule #10)', () => {
+    const { s, box } = acting();
+    expect(s.requestAction({ documentType: 'e_invoice', id: 'INV-mm', action: 'verify', at: AT })).toEqual({ ok: false, reason: 'not_actionable' });
+    expect(s.requestAction({ documentType: 'e_invoice', id: 'INV-mm', action: 'poll', at: AT })).toEqual({ ok: false, reason: 'not_actionable' });
+    expect(box.unsentCount()).toBe(0); // nothing queued for a row a person must handle
+  });
+
+  it('refuses without the portal role, without a named operator, and for an unknown row — and queues nothing', () => {
+    const noRole = acting({ mayAct: () => false });
+    expect(noRole.s.requestAction({ documentType: 'e_way_bill', id: 'MV-stuck', action: 'poll', at: AT })).toEqual({ ok: false, reason: 'not_permitted' });
+    expect(noRole.box.unsentCount()).toBe(0);
+
+    const nobody = acting({}, null);
+    expect(nobody.s.requestAction({ documentType: 'e_way_bill', id: 'MV-stuck', action: 'poll', at: AT })).toEqual({ ok: false, reason: 'not_permitted' });
+    expect(nobody.box.unsentCount()).toBe(0);
+
+    const { s } = acting();
+    expect(s.requestAction({ documentType: 'e_invoice', id: 'NOPE', action: 'verify', at: AT })).toEqual({ ok: false, reason: 'unknown_row' });
+  });
+
+  it('a re-request after the portal has moved the document to a new state is a DISTINCT command', () => {
+    // Same document + action but a different observed category ⇒ a different dedupe key, so it is legitimately
+    // re-actable once the state has moved (it does not collapse into the earlier request).
+    expect(portalCommandKey('e_invoice', 'INV-1', 'verify', 'registered'))
+      .not.toBe(portalCommandKey('e_invoice', 'INV-1', 'verify', 'cancelled'));
+  });
+
+  it('buildPortalCommand uses its idempotency key as the event id, so a duplicate can only collapse', () => {
+    const cmd = buildPortalCommand({ documentType: 'e_invoice', id: 'INV-1', action: 'verify', observedCategory: 'registered', requestedBy: 'u-fin', at: AT });
+    expect(cmd.id).toBe(cmd.idempotencyKey);
+    expect(cmd.occurredAt).toBe(AT);
   });
 });
 
