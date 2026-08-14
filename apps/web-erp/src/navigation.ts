@@ -53,6 +53,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
 
   { id: 'finance', label: 'Finance', path: '/finance', requires: 'finance.view', group: 'Finance' },
   { id: 'reconciliation', label: 'Reconciliation', path: '/reconciliation', requires: 'reconciliation.view', group: 'Finance' },
+  // GST e-invoice / e-way-bill reconciliation — gated on the SAME permission the queue route checks
+  // (`finance.einvoice.read`), so the menu can never offer a screen the server would refuse (item 3 inc2).
+  { id: 'gst-reconciliation', label: 'GST reconciliation', path: '/gst-reconciliation', requires: 'finance.einvoice.read', group: 'Finance' },
 
   { id: 'users', label: 'Users & roles', path: '/admin/users', requires: 'admin.users.manage', group: 'Administration' },
   { id: 'store-setup', label: 'Store setup', path: '/admin/setup', requires: 'platform.setup.read', group: 'Administration' },

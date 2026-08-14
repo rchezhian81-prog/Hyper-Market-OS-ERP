@@ -71,6 +71,9 @@ import type { Batch } from '../../../packages/fefo/src/index';
 import {
   createFinanceSession, type FinancePorts, type FinanceSession,
 } from './finance-session';
+import {
+  createGstReconciliationSession, type GstReconciliationPorts, type GstReconciliationSession, type QueueRow as GstQueueRow,
+} from './gst-reconciliation-session';
 import type { LedgerSide, QueuedPosting } from '../../../packages/period-close/src/index';
 import { createAdminSession, type AdminPorts, type AdminSession } from './admin-session';
 import { createSetupSession, type SetupSession } from './setup-session';
@@ -395,6 +398,37 @@ export function bootFinance(data: FinanceData | undefined): FinanceSession | nul
   );
 }
 
+/** What the box tells the GST reconciliation screen — the last-synced queue plus who is looking. */
+export interface GstReconciliationData {
+  readonly userId?: string;
+  /** The queue snapshot (both documents), folded from the item-2 registers. */
+  readonly rows?: readonly GstQueueRow[];
+  /** The permission codes this user holds — the menu and the actions are gated the same way the server is. */
+  readonly permissions?: readonly string[];
+}
+
+const GST_READ_PERMISSION = 'finance.einvoice.read';
+const GST_ACT_PERMISSION = 'finance.einvoice.generate';
+
+export function gstReconciliationPortsFromData(data: GstReconciliationData | undefined): GstReconciliationPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    rows: () => data?.rows ?? [],
+    // Default-deny: an absent permission list can read nothing (the server would refuse it anyway).
+    mayRead: () => held.has(GST_READ_PERMISSION),
+    mayAct: () => held.has(GST_ACT_PERMISSION),
+  };
+}
+
+/** Build the GST reconciliation screen, or `null` when the box carried no payload for it. */
+export function bootGstReconciliation(data: GstReconciliationData | undefined): GstReconciliationSession | null {
+  if (data === undefined) return null;
+  return createGstReconciliationSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    gstReconciliationPortsFromData(data),
+  );
+}
+
 /** What the box tells the admin and security screen. */
 export interface AdminData {
   readonly userId?: string;
@@ -697,6 +731,8 @@ interface ManagerWindow {
   expirySession?: ExpirySession;
   financeData?: FinanceData;
   financeSession?: FinanceSession;
+  gstReconciliationData?: GstReconciliationData;
+  gstReconciliationSession?: GstReconciliationSession;
   adminData?: AdminData;
   adminSession?: AdminSession;
   setupData?: SetupData;
@@ -1169,6 +1205,8 @@ if (browserWindow !== undefined) {
   if (expiry !== null) browserWindow.expirySession = expiry;
   const finance = bootFinance(browserWindow.financeData);
   if (finance !== null) browserWindow.financeSession = finance;
+  const gstReconciliation = bootGstReconciliation(browserWindow.gstReconciliationData);
+  if (gstReconciliation !== null) browserWindow.gstReconciliationSession = gstReconciliation;
   const admin = bootAdmin(browserWindow.adminData);
   if (admin !== null) browserWindow.adminSession = admin;
   const setup = bootSetup(browserWindow.setupData);
