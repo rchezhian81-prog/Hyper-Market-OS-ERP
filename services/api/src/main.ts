@@ -65,6 +65,7 @@ import { eWayBillRegisterRoutes } from '../../finance/src/e-way-bill-register';
 import { gstPortalRoutes } from '../../finance/src/gst-portal';
 import { payrollRoutes } from '../../finance/src/payroll';
 import { payRunStoreRoutes } from '../../finance/src/pay-run-store';
+import { workforceRoutes } from '../../finance/src/workforce';
 import { gstr1SubmissionRoutes } from '../../finance/src/gstr1-submission-store';
 import { gstReturnsRoutes } from '../../finance/src/gst-returns';
 import { facilitiesRoutes } from '../../platform/src/facilities';
@@ -396,6 +397,10 @@ export function buildSurface(deps: {
     // Payroll (priority 16) — statutory-deduction preview (PF/ESI/TN Professional Tax) on effective-dated
     // configurable rate tables; for review, commits nothing. Confidential — owner-gated.
     ...payrollRoutes(),
+    // Workforce (M25-FR-01) — roster-gap detection: the named gaps in a proposed roster (per role per shift,
+    // with the hour), plus the unstaffed-critical count. Stateless what-if over the tested engine, commits
+    // nothing; the durable roster/attendance store is a later increment. Manager-gated (workforce.roster.read).
+    ...workforceRoutes(),
     // Payroll pay-run DURABLE lifecycle store (WP3 inc9) — append draft→submit→approve→lock→reverse to the
     // append-only ledger (one stream per run) so a run survives a restart; maker ≠ checker enforced at the
     // write boundary. Confidential — owner-gated. The stateless /pay-run/evaluate route stays for previews.
