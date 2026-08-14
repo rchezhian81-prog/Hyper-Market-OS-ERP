@@ -77,7 +77,7 @@ import {
 import {
   createPayrollSession, type PayrollPorts, type PayrollSession, type EmployeeInput as PayrollEmployeeInput,
 } from './payroll-session';
-import { foldPayRun, type PayRunAggregate } from '../../../packages/payroll/src/index';
+import { foldPayRun, type PayRunAggregate, type PayrollTotals } from '../../../packages/payroll/src/index';
 import type { LedgerSide, QueuedPosting } from '../../../packages/period-close/src/index';
 import { createAdminSession, type AdminPorts, type AdminSession } from './admin-session';
 import { createSetupSession, type SetupSession } from './setup-session';
@@ -450,14 +450,34 @@ export interface PayrollData {
   readonly payPeriod?: string;
   readonly run?: PayRunAggregate;
   readonly employees?: readonly PayrollEmployeeInput[];
+  /** The run's aggregated statutory money (the journal input). PII-free. */
+  readonly totals?: PayrollTotals;
 }
 
 const PAYROLL_VIEW_PERMISSION = 'payroll.statutory.read';
+/** How fresh an MFA re-auth must be to release a sensitive payroll action. */
+const PAYROLL_REAUTH_FRESH_SECONDS = 120;
 
 /** Live connectivity, read from the browser where present; assumed online off-browser (tests supply their own). */
 function browserOnline(): boolean {
   const nav = (globalThis as { navigator?: { onLine?: boolean } }).navigator;
   return nav?.onLine !== false; // undefined (off-browser) → treated as online
+}
+
+function nowMs(): number {
+  return (globalThis as { Date?: { now(): number } }).Date?.now?.() ?? 0;
+}
+
+/**
+ * The client-side re-auth clock. A sensitive payroll action needs a FRESH MFA confirmation; the shell calls
+ * `window.payrollReauth()` when the person completes the MFA step, which stamps `reauthAt`. The session reads
+ * the age live, so a confirmation that was fresh a minute ago goes stale on its own. Deliberately in memory
+ * only — never persisted (payroll stores nothing on the device).
+ */
+let payrollReauthAt: number | undefined;
+export function markPayrollReauthenticated(): void { payrollReauthAt = nowMs(); }
+function payrollReauthAgeSeconds(): number | undefined {
+  return payrollReauthAt === undefined ? undefined : Math.max(0, (nowMs() - payrollReauthAt) / 1000);
 }
 
 export function payrollPortsFromData(data: PayrollData): PayrollPorts {
@@ -466,7 +486,9 @@ export function payrollPortsFromData(data: PayrollData): PayrollPorts {
     mayView: () => held.has(PAYROLL_VIEW_PERMISSION),
     run: () => data.run,
     employees: () => data.employees ?? [],
+    totals: () => data.totals,
     online: browserOnline,
+    reauthAgeSeconds: payrollReauthAgeSeconds,
     payPeriod: data.payPeriod ?? '',
   };
 }
@@ -488,18 +510,20 @@ export function bootPayroll(data: PayrollData | undefined): PayrollSession {
     // A DEMO draft on the real model. `demo: true` makes the shell show "DEMO DATA — NOT REAL PAYROLL".
     const demoRun = foldPayRun('DEMO', [{ kind: 'drafted', payPeriod: '2026-08', by: 'demo-user', at: '2026-08-31T00:00:00.000Z', netTotalMinor: 46_300_00, employeeCount: 3 }]);
     return createPayrollSession(
-      { userId: 'demo-user', demo: true },
+      { userId: 'demo-user', demo: true, reauthFreshWithinSeconds: PAYROLL_REAUTH_FRESH_SECONDS },
       {
         mayView: () => true,
         run: () => demoRun,
         employees: () => DEMO_PAYROLL_EMPLOYEES,
+        totals: () => undefined,
         online: browserOnline,
+        reauthAgeSeconds: payrollReauthAgeSeconds,
         payPeriod: '2026-08',
       },
     );
   }
   return createPayrollSession(
-    { userId: data.userId === undefined ? null : data.userId, demo: data.demo === true },
+    { userId: data.userId === undefined ? null : data.userId, demo: data.demo === true, reauthFreshWithinSeconds: PAYROLL_REAUTH_FRESH_SECONDS },
     payrollPortsFromData(data),
   );
 }
@@ -810,6 +834,8 @@ interface ManagerWindow {
   gstReconciliationSession?: GstReconciliationSession;
   payrollData?: PayrollData;
   payrollSession?: PayrollSession;
+  /** The shell calls this after a successful MFA step to refresh the sensitive-action re-auth window. */
+  payrollReauth?: () => void;
   adminData?: AdminData;
   adminSession?: AdminSession;
   setupData?: SetupData;
@@ -1286,6 +1312,7 @@ if (browserWindow !== undefined) {
   if (gstReconciliation !== null) browserWindow.gstReconciliationSession = gstReconciliation;
   // Payroll always boots a session (real from a payload, or a flagged DEMO one) — never blank.
   browserWindow.payrollSession = bootPayroll(browserWindow.payrollData);
+  browserWindow.payrollReauth = markPayrollReauthenticated;
   const admin = bootAdmin(browserWindow.adminData);
   if (admin !== null) browserWindow.adminSession = admin;
   const setup = bootSetup(browserWindow.setupData);

@@ -37,7 +37,10 @@ const ports = (over: Partial<PayrollPorts> = {}): PayrollPorts => ({
   mayView: () => true,
   run: () => runIn('draft'),
   employees: () => [emp()],
+  totals: () => undefined,
   online: () => true,
+  // Fresh re-auth by default, so inc1 sensitive actions (approve/lock) are not blocked unless a test opts out.
+  reauthAgeSeconds: () => 5,
   payPeriod: '2026-08',
   ...over,
 });
@@ -49,7 +52,7 @@ const session = (
 ) => {
   const { online, ...config } = cfg;
   return createPayrollSession(
-    { userId: MAKER, demo: false, ...config },
+    { userId: MAKER, demo: false, reauthFreshWithinSeconds: 120, ...config },
     ports({ ...(online === undefined ? {} : { online: () => online }), ...portsOver }),
   );
 };
@@ -161,5 +164,85 @@ describe('demo flag + bilingual + department summary', () => {
     const gaps = bilingualGaps(PAYROLL_COPY, COPY_KEYS);
     expect(gaps.en).toEqual([]);
     expect(gaps.ta).toEqual([]);
+  });
+});
+
+// ── inc2: locked-run artifacts (bank file + journal) and the re-auth gate ────────────────────────────────
+
+/** A balanced totals for the default locked run (net 26,400): gross = net + employee deductions. */
+const BALANCED_TOTALS = {
+  grossMinor: 28_400_00, pfEmployeeMinor: 1_800_00, pfEmployerMinor: 1_800_00,
+  esiEmployeeMinor: 0, esiEmployerMinor: 0, professionalTaxMinor: 200_00, tdsMinor: 0, netMinor: 26_400_00,
+};
+
+describe('a locked run surfaces the bank-file summary and a balanced journal', () => {
+  it('reconciles the bank-file total against the run net — and carries no account numbers', () => {
+    const s = session({ userId: CHECKER }, { run: () => runIn('locked'), totals: () => BALANCED_TOTALS });
+    const art = s.view('en').lockedArtifacts!;
+    expect(art).toBeDefined();
+    expect(art.bankFile.recordCount).toBe(1);
+    expect(art.bankFile.totalNetMinor).toBe(26_400_00);
+    expect(art.bankFile.reconciledWithRun).toBe(true);
+    // The summary is count + total only; no masked/raw account fields on it.
+    expect(new Set(Object.keys(art.bankFile))).toEqual(new Set(['recordCount', 'totalNetMinor', 'reconciledWithRun']));
+    expect(art.journal.available).toBe(true);
+    expect(art.journal.balanced).toBe(true);
+    expect(art.journal.totalDebitMinor).toBe(art.journal.totalCreditMinor);
+    expect(art.reconciled).toBe(true);
+  });
+
+  it('flags an UNBALANCED journal as a reconciliation failure, never a silent pass', () => {
+    const unbalanced = { ...BALANCED_TOTALS, netMinor: 25_000_00 }; // net no longer = gross - deductions
+    const s = session({ userId: CHECKER }, { run: () => runIn('locked'), totals: () => unbalanced });
+    const art = s.view('en').lockedArtifacts!;
+    expect(art.journal.available).toBe(true);
+    expect(art.journal.balanced).toBe(false);
+    expect(art.reconciled).toBe(false);
+  });
+
+  it('says the journal is unavailable when the run totals were not provided', () => {
+    const s = session({ userId: CHECKER }, { run: () => runIn('locked'), totals: () => undefined });
+    expect(s.view('en').lockedArtifacts!.journal.available).toBe(false);
+  });
+
+  it('shows no locked artifacts before the run is locked', () => {
+    expect(session({}, { run: () => runIn('draft') }).view('en').lockedArtifacts).toBeUndefined();
+  });
+});
+
+describe('re-authentication (MFA) gates every sensitive action', () => {
+  const stale = { reauthAgeSeconds: () => 999 };
+  const fresh = { reauthAgeSeconds: () => 3 };
+  const never = { reauthAgeSeconds: () => undefined };
+
+  it('refuses approve / lock / reverse without a fresh re-auth', () => {
+    expect(session({ userId: CHECKER }, { run: () => runIn('submitted'), ...stale }).can('approve').refusal).toBe('needs_reauth');
+    expect(session({ userId: CHECKER }, { run: () => runIn('approved'), ...never }).can('lock').refusal).toBe('needs_reauth');
+    expect(session({ userId: CHECKER }, { run: () => runIn('locked'), ...stale }).can('reverse', { reason: 'x' }).refusal).toBe('needs_reauth');
+  });
+
+  it('refuses bank-file / bulk-payslip / export without a fresh re-auth', () => {
+    for (const action of ['generateBankFile', 'bulkPayslipDownload', 'export'] as const) {
+      expect(session({ userId: CHECKER }, { run: () => runIn('locked'), ...stale }).can(action).refusal, action).toBe('needs_reauth');
+    }
+  });
+
+  it('allows the locked-run artifacts once re-authenticated AND the run is locked', () => {
+    const s = session({ userId: CHECKER }, { run: () => runIn('locked'), ...fresh });
+    expect(s.can('generateBankFile').ok).toBe(true);
+    expect(s.view('en').reauthFresh).toBe(true);
+  });
+
+  it('refuses the bank file when re-authenticated but the run is NOT locked', () => {
+    const s = session({ userId: CHECKER }, { run: () => runIn('approved'), ...fresh });
+    expect(s.can('generateBankFile').refusal).toBe('not_locked');
+  });
+
+  it('does NOT require re-auth for submit (it prepares, it does not release)', () => {
+    expect(session({ userId: MAKER }, { run: () => runIn('draft'), ...never }).can('submit').ok).toBe(true);
+  });
+
+  it('offline still beats a fresh re-auth — no release while offline', () => {
+    expect(session({ userId: CHECKER, online: false }, { run: () => runIn('locked'), ...fresh }).can('generateBankFile').refusal).toBe('offline');
   });
 });

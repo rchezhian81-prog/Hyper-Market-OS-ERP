@@ -78,8 +78,13 @@ The whole flow is large; it is built in security-first increments on the proven 
   payload, never persists sensitive data) with the **DEMO-DATA** banner, offline/stale banner that blocks
   finalization, English/Tamil, a11y. Nav item gated on the payroll permission. Dedicated **security guardrail**
   (no payload in the SW cache; masking; offline blocks finalization; restricted nav; maker≠checker).
-- **inc2 —** lock + payslips + bank-file totals + journal reconciliation, with re-auth/MFA gates on the
-  sensitive actions.
+- **inc2 — DONE (14 Aug).** Locked-run surface: **bank-file summary** (record count + total net, reconciled
+  against the run net — no account numbers in the browser; the file itself is generated server-side) and the
+  **balanced accounting journal** (`buildPayrollJournal`, debits === credits — an unbalanced total set is
+  surfaced as a reconciliation FAILURE, never a silent pass). **Re-auth/MFA gate**: approve, lock, reverse,
+  bank-file generation, bulk payslip download and export all require a FRESH re-auth (`reauthAgeSeconds` port
+  + `reauthFreshWithinSeconds` window); the MFA step is a step (`window.payrollReauth`), never a browser
+  dialog; offline still beats a fresh re-auth. All inc1 controls kept.
 - **inc3 —** statutory reports + arrears/retrospective + loan/advance recovery + full-and-final settlement +
   reversal-not-edit + draft/version comparison.
 - **inc4 —** employee self-service payslip (strict own-record isolation) + printable/exportable-with-audit.

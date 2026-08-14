@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { PAYROLL_COPY, COPY_KEYS } from '../../apps/web-erp/src/payroll-session';
+import { PAYROLL_COPY, COPY_KEYS, SENSITIVE_ACTIONS } from '../../apps/web-erp/src/payroll-session';
 import { bilingualGaps } from '../../packages/ui/src/index';
 import { ERP_NAVIGATION } from '../../apps/web-erp/src/navigation';
 import { SCREENS } from '../../edge/store-edge/src/screen-data';
@@ -93,5 +93,28 @@ describe('least-privilege navigation + bilingual copy', () => {
     const gaps = bilingualGaps(PAYROLL_COPY, COPY_KEYS);
     expect(gaps.en, `English missing: ${gaps.en.join(', ')}`).toEqual([]);
     expect(gaps.ta, `Tamil missing: ${gaps.ta.join(', ')}`).toEqual([]);
+  });
+});
+
+describe('inc2: re-auth (MFA) gates every sensitive action', () => {
+  it('the sensitive-action set covers approval, locking, reversal, bank file, bulk payslips and export', () => {
+    // The owner directive: "Re-authentication/MFA for approval, locking, bank-file generation, payslip bulk
+    // download and sensitive exports." If any is dropped from the gated set, this fails.
+    for (const a of ['approve', 'lock', 'reverse', 'generateBankFile', 'bulkPayslipDownload', 'export']) {
+      expect(SENSITIVE_ACTIONS.includes(a as (typeof SENSITIVE_ACTIONS)[number]), `${a} is not re-auth gated`).toBe(true);
+    }
+    // submit is NOT sensitive — it prepares, it does not release money or data.
+    expect(SENSITIVE_ACTIONS.includes('submit' as (typeof SENSITIVE_ACTIONS)[number])).toBe(false);
+  });
+
+  it('the MFA step is a step, not a browser dialog, and refreshes the client re-auth window', () => {
+    expect(code, 'the view does not model the MFA re-auth step').toMatch(/payrollReauth/);
+    expect(/\b(alert|confirm|prompt)\s*\(/.test(code)).toBe(false);
+  });
+
+  it('the locked-run bank panel shows only a summary — never an account number', () => {
+    // recordCount + total, reconciled against the run; the file itself is generated server-side.
+    expect(code).toMatch(/bankFile\.recordCount/);
+    expect(code).toMatch(/bankFile\.totalNetMinor/);
   });
 });

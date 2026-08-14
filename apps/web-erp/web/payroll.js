@@ -38,9 +38,13 @@ const STAGE_ACTIONS = {
   draft: ['submit'],
   submitted: ['approve', 'reject'],
   approved: ['lock'],
-  locked: ['reverse'],
+  locked: ['generateBankFile', 'bulkPayslipDownload', 'export', 'reverse'],
   reversed: [],
   none: [],
+};
+const ACTION_LABEL_KEY = {
+  submit: 'submit', approve: 'approve', reject: 'reject', lock: 'lock', reverse: 'reverse',
+  generateBankFile: 'actGenerateBankFile', bulkPayslipDownload: 'actBulkPayslip', export: 'actExport',
 };
 
 function personNode(p) {
@@ -105,21 +109,67 @@ function renderActions(view) {
   for (const action of actions) {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.textContent = t(action === 'submit' ? 'submit' : action === 'approve' ? 'approve' : action === 'reject' ? 'reject' : action === 'lock' ? 'lock' : 'reverse');
+    btn.textContent = t(ACTION_LABEL_KEY[action] ?? action);
     // Offline disables every state change — the directive's hard line.
     btn.disabled = !view.online;
     btn.addEventListener('click', () => {
       const opts = action === 'reverse' && reasonInput ? { reason: reasonInput.value } : undefined;
       const outcome = session.can(action, opts);
       if (outcome.ok) {
-        // inc1 previews the DECISION; the audited commit is the API path (a later increment).
-        tell(t(action === 'submit' ? 'submit' : action === 'approve' ? 'approve' : action === 'reject' ? 'reject' : action === 'lock' ? 'lock' : 'reverse'), outcome.detail, true);
+        // inc1/inc2 preview the DECISION; the audited commit + real MFA + file generation are the API path.
+        tell(t(ACTION_LABEL_KEY[action] ?? action), outcome.detail, true);
       } else {
         tell(t('title'), outcome.refusalLabelKey ? t(outcome.refusalLabelKey) : outcome.detail);
       }
     });
     box.append(btn);
   }
+}
+
+/** The MFA re-auth step — a step, never a browser dialog. Confirming refreshes the sensitive-action window. */
+function renderReauth(view) {
+  const box = el('reauth');
+  box.replaceChildren();
+  // Only meaningful when there is a sensitive action available (a locked run, or a run awaiting approve/lock).
+  const hasSensitive = ['submitted', 'approved', 'locked'].includes(view.stage);
+  if (!hasSensitive || !view.mayView) return;
+  if (view.reauthFresh) {
+    const chip = document.createElement('span');
+    chip.className = 'status';
+    chip.textContent = `✓ ${t('reauthFresh')}`;
+    box.append(chip);
+    return;
+  }
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.textContent = t('reauthNeeded');
+  btn.disabled = !view.online;
+  btn.addEventListener('click', () => {
+    // Model the MFA success. The real MFA challenge is the API path; here it refreshes the client window.
+    globalThis.payrollReauth?.();
+    render();
+  });
+  box.append(btn);
+}
+
+function renderLocked(view) {
+  const box = el('locked');
+  const art = view.lockedArtifacts;
+  if (!art) { box.hidden = true; return; }
+  box.hidden = false;
+  el('locked-title').textContent = t('lockedTitle');
+  el('bank-records-label').textContent = t('bankFileRecords');
+  el('bank-records').textContent = String(art.bankFile.recordCount);
+  el('bank-total-label').textContent = t('bankFileTotal');
+  el('bank-total').textContent = inr(art.bankFile.totalNetMinor);
+  const rec = el('bank-reconciled');
+  rec.textContent = `${art.bankFile.reconciledWithRun ? '✓' : '✕'} ${t(art.bankFile.reconciledWithRun ? 'bankFileReconciled' : 'bankFileNotReconciled')}`;
+  el('journal-debit-label').textContent = t('journalDebit');
+  el('journal-debit').textContent = art.journal.available ? inr(art.journal.totalDebitMinor) : '—';
+  el('journal-credit-label').textContent = t('journalCredit');
+  el('journal-credit').textContent = art.journal.available ? inr(art.journal.totalCreditMinor) : '—';
+  const bal = el('journal-balanced');
+  bal.textContent = !art.journal.available ? `— ${t('journalUnavailable')}` : `${art.journal.balanced ? '✓' : '✕'} ${t(art.journal.balanced ? 'journalBalanced' : 'journalNotBalanced')}`;
 }
 
 function render() {
@@ -160,6 +210,8 @@ function render() {
   }));
 
   el('masked-note').textContent = t('maskedNote');
+  renderLocked(view);
+  renderReauth(view);
   renderActions(view);
 }
 
