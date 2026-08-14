@@ -74,6 +74,66 @@ describe('a sale goes through the same door as one that synced immediately', () 
   });
 });
 
+// A resolver route, not a fixed template: the target depends on the DOCUMENT (e-invoice vs e-way-bill) AND the
+// ACTION (poll vs verify), so a drained GST-reconciliation command reaches the very route that would have
+// handled it online. Only these two idempotent, non-governance actions are relayed under the store's token.
+describe('a drained portal-action command reaches the poll/verify route it would have online', () => {
+  const portal = (payload: Record<string, unknown>): DomainEvent => makeEvent({
+    id: 'pk', type: 'GstPortalActionRequested', occurredAt: '2026-08-14T10:00:00.000Z',
+    idempotencyKey: 'gst-portal|poll|e_invoice|INV-1|unknown', source: 'web-erp/gst-reconciliation', payload,
+  });
+
+  it('routes an e-invoice poll to the invoice poll route, and verify to verify', async () => {
+    const poll = fakeFetch(200);
+    await transportOn(poll.fn).send(portal({ documentType: 'e_invoice', id: 'INV-1', action: 'poll' }));
+    expect(poll.calls[0]?.url).toBe('https://api.example.test/v1/finance/e-invoice/invoices/INV-1/poll');
+    const verify = fakeFetch(200);
+    await transportOn(verify.fn).send(portal({ documentType: 'e_invoice', id: 'INV-1', action: 'verify' }));
+    expect(verify.calls[0]?.url).toBe('https://api.example.test/v1/finance/e-invoice/invoices/INV-1/verify');
+  });
+
+  it('routes an e-way-bill poll and verify to the movement routes', async () => {
+    const poll = fakeFetch(200);
+    await transportOn(poll.fn).send(portal({ documentType: 'e_way_bill', id: 'MV-1', action: 'poll' }));
+    expect(poll.calls[0]?.url).toBe('https://api.example.test/v1/finance/e-way-bill/movements/MV-1/poll');
+    const verify = fakeFetch(200);
+    await transportOn(verify.fn).send(portal({ documentType: 'e_way_bill', id: 'MV-1', action: 'verify' }));
+    expect(verify.calls[0]?.url).toBe('https://api.example.test/v1/finance/e-way-bill/movements/MV-1/verify');
+  });
+
+  it('carries the command\'s own idempotency key, so a replay collapses to one effect', async () => {
+    const { fn, calls } = fakeFetch(200);
+    await transportOn(fn).send(portal({ documentType: 'e_invoice', id: 'INV-1', action: 'poll' }));
+    expect((calls[0]?.init.headers as Record<string, string>)['idempotency-key']).toBe('gst-portal|poll|e_invoice|INV-1|unknown');
+  });
+
+  it('REJECTS a governance action (approve/submit/reissue) — those are NEVER relayed under the store token', async () => {
+    // reissue/approve/submit have no resolver path → rejected by name → dead-lettered for a person (rule #6).
+    for (const action of ['reissue', 'approve', 'submit', 'investigate']) {
+      const r = await transportOn(fakeFetch(200).fn).send(portal({ documentType: 'e_invoice', id: 'INV-1', action }));
+      expect(r.status, `${action} should not route`).toBe('rejected');
+    }
+  });
+
+  it('REJECTS an unknown document type or a missing id, rather than posting to a wrong URL', async () => {
+    const noDoc = await transportOn(fakeFetch(200).fn).send(portal({ documentType: 'mystery', id: 'X', action: 'poll' }));
+    expect(noDoc.status).toBe('rejected');
+    const noId = await transportOn(fakeFetch(200).fn).send(portal({ documentType: 'e_invoice', id: '', action: 'poll' }));
+    expect(noId.status).toBe('rejected');
+  });
+
+  it('the GOVERNANCE command GstReturnActionRequested has NO route — it dead-letters, never applied as the store', async () => {
+    // Draining approve/submit under the store token would break maker ≠ checker (§28); until a dedicated
+    // relayed-actor route exists, the honest outcome is a visible dead-letter (hard rule #6), not a wrong apply.
+    const r = await transportOn(fakeFetch(200).fn).send(makeEvent({
+      id: 'r-1', type: 'GstReturnActionRequested', occurredAt: '2026-08-14T10:00:00.000Z',
+      idempotencyKey: 'gst-return|approve|062026|previewed', source: 'web-erp/gst-returns',
+      payload: { period: '062026', action: 'approve', requestedBy: 'u-fin', observedState: 'previewed' },
+    }));
+    expect(r.status).toBe('rejected');
+  });
+});
+
 describe('retryable versus rejected — the distinction that decides whether a sale survives', () => {
   it('treats a TIMEOUT as retryable, because a slow line says nothing about the sale', async () => {
     // A shop on a rural line times out several times a day. This is the branch that decides

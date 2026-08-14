@@ -47,26 +47,61 @@
 import type { DomainEvent } from '../../../packages/contracts/src/event';
 import type { SendOutcome, SyncTransport } from './transport';
 
+/** A route is either a fixed template with `:name` segments, or a resolver that reads the payload. */
+export type EventRoute = string | ((payload: Record<string, unknown>) => string | undefined);
+
+/**
+ * Where each drained portal-action command goes. Its target route depends on TWO payload fields — the
+ * document (e-invoice vs e-way-bill picks the URL base) and the action (poll vs verify picks the suffix) —
+ * which a single `:name` template cannot express, so it is a resolver.
+ *
+ * ONLY the two portal-touching, idempotent, non-governance actions are routed here — poll (acknowledgement
+ * recovery) and verify (mismatch detection). They carry no maker≠checker decision, so the store's own service
+ * identity may safely relay the operator's request; the route re-authorizes on `finance.einvoice.generate`.
+ * An unrecognised action or document has NO route and is therefore rejected by name → dead-lettered for a
+ * person (hard rule #6), never posted somewhere in hope.
+ */
+export function gstPortalActionRoute(payload: Record<string, unknown>): string | undefined {
+  const id = payload['id'];
+  const action = payload['action'];
+  const documentType = payload['documentType'];
+  if (typeof id !== 'string' || id === '') return undefined;
+  if (action !== 'poll' && action !== 'verify') return undefined;
+  const base = documentType === 'e_invoice' ? `/v1/finance/e-invoice/invoices/${encodeURIComponent(id)}`
+    : documentType === 'e_way_bill' ? `/v1/finance/e-way-bill/movements/${encodeURIComponent(id)}`
+      : undefined;
+  return base === undefined ? undefined : `${base}/${action}`;
+}
+
 /**
  * Where each event type goes. Explicit, and small on purpose.
  *
  * The alternative — deriving a path from the type name — is a rule nobody can read and a silent
  * 404 the first time a type is renamed.
+ *
+ * NOT here on purpose: the GOVERNANCE commands `GstReturnActionRequested` (approve/submit) and the warehouse
+ * decisions. Their internal routes decide maker ≠ checker from the AUTHENTICATED principal (`ctx.userId`), so
+ * relaying them under the store's own service token would file/approve as the store, not the operator who
+ * clicked — breaking §28. They need a dedicated "apply a synced governance command" route that trusts the
+ * relayed operator identity, which is a separate, security-reviewed increment. Until then they dead-letter
+ * (visible, hard rule #6), which is the honest state — never silently applied as the wrong actor.
  */
-export const EVENT_ROUTES: Readonly<Record<string, string>> = {
+export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   SaleCommitted: '/v1/sales',
   InventoryMoved: '/v1/inventory/movements',
   DeliveryAttempted: '/v1/delivery/attempts',
   ConsentRecorded: '/v1/customers/:customerId/consent',
+  GstPortalActionRequested: gstPortalActionRoute,
 };
 
-/** Fill `:name` segments from the payload, so a route can address a thing. */
+/** Fill `:name` segments from the payload, or run a resolver, so a route can address a thing. */
 function pathFor(event: DomainEvent): string | undefined {
-  const template = EVENT_ROUTES[event.type];
-  if (template === undefined) return undefined;
+  const route = EVENT_ROUTES[event.type];
+  if (route === undefined) return undefined;
   const payload = (event.payload ?? {}) as Record<string, unknown>;
-  let path = template;
-  for (const match of template.matchAll(/:(\w+)/g)) {
+  if (typeof route === 'function') return route(payload);
+  let path = route;
+  for (const match of route.matchAll(/:(\w+)/g)) {
     const value = payload[match[1]!];
     if (typeof value !== 'string' || value === '') return undefined;
     path = path.replace(match[0], encodeURIComponent(value));
