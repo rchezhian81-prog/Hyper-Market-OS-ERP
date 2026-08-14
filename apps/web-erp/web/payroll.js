@@ -45,6 +45,7 @@ const STAGE_ACTIONS = {
 const ACTION_LABEL_KEY = {
   submit: 'submit', approve: 'approve', reject: 'reject', lock: 'lock', reverse: 'reverse',
   generateBankFile: 'actGenerateBankFile', bulkPayslipDownload: 'actBulkPayslip', export: 'actExport',
+  releaseSettlement: 'actReleaseSettlement',
 };
 
 function personNode(p) {
@@ -86,14 +87,81 @@ function personNode(p) {
     pay.append(s);
   }
 
-  li.append(top, money, pay);
+  // Arrears / loan / advance adjustments are shown as badges on the row — never folded silently into base pay.
+  const flags = [...(p.earnings ?? []), ...(p.deductions ?? []), ...(p.statutory ?? [])]
+    .map((l) => l.flag).filter((f, i, a) => f && a.indexOf(f) === i);
+  if (flags.length > 0) {
+    const badges = document.createElement('div');
+    badges.className = 'pay';
+    for (const f of flags) {
+      const b = document.createElement('b');
+      b.textContent = t(FLAG_LABEL_KEY[f] ?? f);
+      badges.append(b);
+    }
+    li.append(top, money, pay, badges);
+  } else {
+    li.append(top, money, pay);
+  }
   return li;
+}
+
+const FLAG_LABEL_KEY = { arrears: 'flagArrears', loan_recovery: 'flagLoanRecovery', advance_recovery: 'flagAdvanceRecovery' };
+
+function renderStatutory(view) {
+  const box = el('statutory');
+  const st = view.statutory;
+  if (!st) { box.hidden = true; return; }
+  box.hidden = false;
+  el('statutory-title').textContent = t('statutoryTitle');
+  const rows = [
+    [t('stPf'), `${t('stEmployee')} ${inr(st.pfEmployeeMinor)} · ${t('stEmployer')} ${inr(st.pfEmployerMinor)}`],
+    [t('stEsi'), `${t('stEmployee')} ${inr(st.esiEmployeeMinor)} · ${t('stEmployer')} ${inr(st.esiEmployerMinor)}`],
+    [t('stPt'), inr(st.professionalTaxMinor)],
+    [t('stTds'), inr(st.tdsMinor)],
+    [t('stTotalEmployee'), inr(st.totalEmployeeMinor)],
+    [t('stTotalEmployer'), inr(st.totalEmployerMinor)],
+  ];
+  el('statutory-rows').replaceChildren(...rows.map(([a, b]) => {
+    const row = document.createElement('div'); row.className = 'row';
+    const l = document.createElement('span'); l.textContent = a;
+    const v = document.createElement('span'); v.textContent = b;
+    row.append(l, v); return row;
+  }));
+  el('statutory-ca').textContent = t('confirmWithCa');
+}
+
+function renderSettlement(view) {
+  const box = el('settlement');
+  const s = view.settlement;
+  if (!s) { box.hidden = true; return; }
+  box.hidden = false;
+  el('settlement-title').textContent = t('settlementTitle');
+  if (!s.available) {
+    el('settlement-rows').replaceChildren();
+    el('settlement-net').textContent = `✕ ${t('settlementUnavailable')}`;
+    return;
+  }
+  const lines = [
+    ...s.earnings.map((l) => [`${t('settlementEarnings')}: ${l.label}`, inr(l.amountMinor)]),
+    ...s.recoveries.map((l) => [`${t('settlementRecoveries')}: ${l.label}`, `- ${inr(l.amountMinor)}`]),
+    [t('settlementGratuity'), s.gratuity.eligible ? inr(s.gratuity.gratuityMinor) : t('settlementGratuityIneligible')],
+  ];
+  el('settlement-rows').replaceChildren(...lines.map(([a, b]) => {
+    const row = document.createElement('div'); row.className = 'row';
+    const l = document.createElement('span'); l.textContent = a;
+    const v = document.createElement('span'); v.textContent = b;
+    row.append(l, v); return row;
+  }));
+  // A negative net is EXPECTED (recoverable) — shown as its own state, not an error.
+  el('settlement-net').textContent = `${t('settlementNet')} ${inr(s.netSettlementMinor)} — ${t(s.payableToEmployee ? 'settlementPayable' : 'settlementRecoverable')}`;
 }
 
 function renderActions(view) {
   const box = el('actions');
   box.replaceChildren();
-  const actions = STAGE_ACTIONS[view.stage] ?? [];
+  const actions = [...(STAGE_ACTIONS[view.stage] ?? [])];
+  // A leaver's settlement can be released independently of the pay-run lifecycle.
+  if (view.settlement?.available) actions.push('releaseSettlement');
   if (actions.length === 0) return;
 
   let reasonInput = null;
@@ -130,8 +198,9 @@ function renderActions(view) {
 function renderReauth(view) {
   const box = el('reauth');
   box.replaceChildren();
-  // Only meaningful when there is a sensitive action available (a locked run, or a run awaiting approve/lock).
-  const hasSensitive = ['submitted', 'approved', 'locked'].includes(view.stage);
+  // Only meaningful when there is a sensitive action available (awaiting approve/lock, a locked run, or a
+  // settlement to release).
+  const hasSensitive = ['submitted', 'approved', 'locked'].includes(view.stage) || Boolean(view.settlement?.available);
   if (!hasSensitive || !view.mayView) return;
   if (view.reauthFresh) {
     const chip = document.createElement('span');
@@ -211,6 +280,18 @@ function render() {
 
   el('masked-note').textContent = t('maskedNote');
   renderLocked(view);
+  renderStatutory(view);
+  renderSettlement(view);
+
+  const vd = el('version-delta');
+  vd.hidden = view.versionDeltaMinor === undefined;
+  if (view.versionDeltaMinor !== undefined) {
+    vd.textContent = view.versionDeltaMinor === 0 ? t('versionNoChange') : `${t('versionDeltaTitle')}: ${inr(view.versionDeltaMinor)}`;
+  }
+  const rv = el('reversed');
+  rv.hidden = !view.reversedReason;
+  rv.textContent = view.reversedReason ? `${t('reversedBy')} ${view.reversedReason}` : '';
+
   renderReauth(view);
   renderActions(view);
 }

@@ -4,6 +4,7 @@ import {
   type PayrollPorts, type PayrollConfig, type EmployeeInput,
 } from '../../apps/web-erp/src/payroll-session';
 import { foldPayRun, type PayRunAggregate, type PayRunEvent } from '../../packages/payroll/src/pay-run';
+import { resolveSettlementParams, DEFAULT_SETTLEMENT_SCHEDULE, type SettlementInput } from '../../packages/payroll/src/index';
 import { bilingualGaps } from '../../packages/ui/src/index';
 
 /**
@@ -38,6 +39,8 @@ const ports = (over: Partial<PayrollPorts> = {}): PayrollPorts => ({
   run: () => runIn('draft'),
   employees: () => [emp()],
   totals: () => undefined,
+  settlement: () => undefined,
+  previousNetMinor: () => undefined,
   online: () => true,
   // Fresh re-auth by default, so inc1 sensitive actions (approve/lock) are not blocked unless a test opts out.
   reauthAgeSeconds: () => 5,
@@ -244,5 +247,82 @@ describe('re-authentication (MFA) gates every sensitive action', () => {
 
   it('offline still beats a fresh re-auth — no release while offline', () => {
     expect(session({ userId: CHECKER, online: false }, { run: () => runIn('locked'), ...fresh }).can('generateBankFile').refusal).toBe('offline');
+  });
+});
+
+// ── inc3: statutory report, settlement, arrears/recovery flags, reversal detail, version delta ───────────
+
+const SETTLEMENT_PARAMS = resolveSettlementParams(DEFAULT_SETTLEMENT_SCHEDULE, '2026-08-31');
+
+describe('the statutory report is derived from the run totals, marked CONFIRM-WITH-CA', () => {
+  it('splits employee and employer shares and totals them', () => {
+    const st = session({ userId: CHECKER }, { run: () => runIn('locked'), totals: () => BALANCED_TOTALS }).view('en').statutory!;
+    expect(st).toBeDefined();
+    expect(st.pfEmployeeMinor).toBe(1_800_00);
+    expect(st.totalEmployeeMinor).toBe(2_000_00); // pf 1800 + pt 200
+    expect(st.totalEmployerMinor).toBe(1_800_00); // pf employer 1800
+    expect(st.confirmWithCa).toBe(true);
+  });
+  it('is absent when the totals were not provided', () => {
+    expect(session({}, { totals: () => undefined }).view('en').statutory).toBeUndefined();
+  });
+});
+
+describe('full-and-final settlement — a leaver, where a NEGATIVE net is expected (recoverable)', () => {
+  const payableInput: SettlementInput = { pendingSalaryMinor: 10_000_00, params: SETTLEMENT_PARAMS };
+  const recoverableInput: SettlementInput = { pendingSalaryMinor: 1_000_00, noticeRecoveryMinor: 5_000_00, loanRecoveryMinor: 3_000_00, params: SETTLEMENT_PARAMS };
+
+  it('shows a positive net as payable to the employee', () => {
+    const s = session({ userId: CHECKER }, { settlement: () => payableInput }).view('en').settlement!;
+    expect(s.available).toBe(true);
+    expect(s.netSettlementMinor).toBeGreaterThan(0);
+    expect(s.payableToEmployee).toBe(true);
+  });
+
+  it('shows a negative net as RECOVERABLE from the employee — NOT a blocking exception', () => {
+    const view = session({ userId: CHECKER }, { settlement: () => recoverableInput }).view('en');
+    expect(view.settlement!.netSettlementMinor).toBeLessThan(0);
+    expect(view.settlement!.payableToEmployee).toBe(false);
+    // A settlement's negative net must NOT be counted among the pay-run blocking exceptions.
+    expect(view.blockingExceptionCount).toBe(0);
+  });
+
+  it('gates a settlement release on re-auth and on there BEING a settlement', () => {
+    expect(session({ userId: CHECKER }, { settlement: () => payableInput }).can('releaseSettlement').ok).toBe(true);
+    expect(session({ userId: CHECKER }, { settlement: () => undefined }).can('releaseSettlement').refusal).toBe('no_settlement');
+    expect(session({ userId: CHECKER }, { settlement: () => payableInput, reauthAgeSeconds: () => 999 }).can('releaseSettlement').refusal).toBe('needs_reauth');
+  });
+
+  it('says unavailable rather than guessing when the inputs cannot be settled', () => {
+    const bad = { pendingSalaryMinor: -1, params: SETTLEMENT_PARAMS } as SettlementInput;
+    expect(session({ userId: CHECKER }, { settlement: () => bad }).view('en').settlement!.available).toBe(false);
+  });
+});
+
+describe('arrears / loan / advance are flagged adjustments, never silent', () => {
+  it('carries the flag through onto the presented line', () => {
+    const withArrears = emp({ earnings: [{ label: 'Back pay (June)', amountMinor: 2_000_00, flag: 'arrears' }] });
+    const row = session({}, { employees: () => [withArrears] }).view('en').employees[0]!;
+    expect(row.earnings[0]!.flag).toBe('arrears');
+  });
+});
+
+describe('a reversal names its reason, and a version delta is shown', () => {
+  it('surfaces why a reversed run was reversed', () => {
+    const reversed = foldPayRun('PR-R', [
+      { kind: 'drafted', payPeriod: '2026-08', by: MAKER, at: '2026-08-31T00:00:00.000Z' },
+      { kind: 'submitted', by: MAKER, at: '2026-08-31T01:00:00.000Z' },
+      { kind: 'approved', by: CHECKER, at: '2026-08-31T02:00:00.000Z' },
+      { kind: 'locked', at: '2026-08-31T03:00:00.000Z' },
+      { kind: 'reversed', by: CHECKER, reason: 'overtime keyed twice', at: '2026-08-31T04:00:00.000Z' },
+    ]);
+    const view = session({ userId: CHECKER }, { run: () => reversed }).view('en');
+    expect(view.stage).toBe('reversed');
+    expect(view.reversedReason).toMatch(/overtime keyed twice/);
+  });
+
+  it('shows how this version differs from the previous one', () => {
+    const view = session({}, { employees: () => [emp({ netPayMinor: 26_400_00 })], previousNetMinor: () => 25_000_00 }).view('en');
+    expect(view.versionDeltaMinor).toBe(1_400_00);
   });
 });

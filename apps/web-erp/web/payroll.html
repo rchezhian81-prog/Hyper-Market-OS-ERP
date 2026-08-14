@@ -116,6 +116,23 @@
         </div>
       </section>
 
+      <!-- Statutory deductions report (PF/ESI/PT/TDS), employee + employer shares. CONFIRM-WITH-CA. -->
+      <section id="statutory" hidden aria-label="Statutory deductions">
+        <h3 id="statutory-title"></h3>
+        <div class="depts" id="statutory-rows"></div>
+        <p class="muted" id="statutory-ca"></p>
+      </section>
+
+      <!-- Full-and-final settlement for a leaver. A negative net is EXPECTED here (recoverable). -->
+      <section id="settlement" hidden aria-label="Full-and-final settlement">
+        <h3 id="settlement-title"></h3>
+        <div class="depts" id="settlement-rows"></div>
+        <div class="row"><span class="status" id="settlement-net"></span></div>
+      </section>
+
+      <p class="lead" id="version-delta" hidden></p>
+      <p class="lead" id="reversed" hidden></p>
+
       <div class="actions" id="reauth"></div>
       <div class="actions" id="actions"></div>
       <p class="muted" id="masked-note"></p>

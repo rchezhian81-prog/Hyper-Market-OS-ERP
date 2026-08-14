@@ -85,8 +85,12 @@ The whole flow is large; it is built in security-first increments on the proven 
   bank-file generation, bulk payslip download and export all require a FRESH re-auth (`reauthAgeSeconds` port
   + `reauthFreshWithinSeconds` window); the MFA step is a step (`window.payrollReauth`), never a browser
   dialog; offline still beats a fresh re-auth. All inc1 controls kept.
-- **inc3 —** statutory reports + arrears/retrospective + loan/advance recovery + full-and-final settlement +
-  reversal-not-edit + draft/version comparison.
+- **inc3 — DONE (14 Aug).** Statutory-deduction report (PF/ESI/PT/TDS, employee + employer shares, from the
+  run totals, marked CONFIRM-WITH-CA). Full-and-final **settlement** for a leaver on the tested
+  `computeSettlement` — signed net where a **negative net is EXPECTED** (recoverable from the employee) and is
+  NOT a pay-run blocking exception; release gated by re-auth. **Arrears / loan / advance** shown as visible
+  flag badges on the line (never folded silently into base pay). **Reversal** names its reason on-screen; a
+  draft/version **delta** vs the previous version. `releaseSettlement` joined the re-auth-gated set.
 - **inc4 —** employee self-service payslip (strict own-record isolation) + printable/exportable-with-audit.
 - **inc5 (opt-in) —** encrypted device-bound tenant-bound offline vault, only if genuinely required.
 
