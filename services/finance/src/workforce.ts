@@ -1,22 +1,26 @@
-// HR/Workforce — roster-gap detection (M25-FR-01), on the tested `packages/workforce` engine. Given a
-// proposed roster — the shifts a branch must cover, who is assigned to each, and the employee list — name
-// what is ACTUALLY missing: reported per role per shift, WITH THE HOUR, never averaged ("14 of 16 covered"
-// is a number nobody acts on; "Sunday 06:00 has nobody who can open the shop" is). A leaver still on the grid
-// is not cover. This is the M25-FR-01 acceptance ("a roster gap is visible; an unstaffed critical role flags
-// an exception") made a live surface.
+// HR/Workforce — roster-gap detection and task certification-gating (M25-FR-01 / M25-FR-03), on the tested
+// `packages/workforce` engine.
 //
-//   • `POST /v1/hr/workforce/roster-gaps` — the named gaps in a proposed roster, plus the unstaffed count.
+//   • `POST /v1/hr/workforce/roster-gaps` — what a proposed roster is ACTUALLY missing: reported per role per
+//     shift, WITH THE HOUR, never averaged ("14 of 16 covered" is a number nobody acts on; "Sunday 06:00 has
+//     nobody who can open the shop" is). A leaver still on the grid is not cover. Plus the unstaffed count.
+//   • `POST /v1/hr/workforce/task-gate` — may this person do a GATED task, given their certifications, today?
+//     The gate is on the TASK, never on the person: someone whose food-handling certificate lapsed cannot work
+//     the deli counter but can still stack shelves (`stillAllowed` says so), because a control people route
+//     around on a busy Saturday is not a control. An expired OR missing OR unverified certificate blocks the
+//     task; a role the task needs and the person lacks blocks it; a leaver is blocked outright. This is the
+//     M25-FR-03 acceptance ("an expired certification blocks the gated task") made a live surface.
 //
-// STATELESS over the tested engine (the caller supplies the roster as a what-if — the payroll-review pattern);
-// it commits NOTHING and the durable roster/attendance store is a later increment. Co-located with payroll —
-// the other HR surface — under `/v1/hr`. Gated on the manager-held `workforce.roster.read` (§28: managers
-// within scope; P-04 least privilege).
+// STATELESS over the tested engine (the caller supplies the roster / the person + certs as a what-if — the
+// payroll-review pattern); both commit NOTHING and the durable roster/attendance/certification store is a
+// later increment. Co-located with payroll — the other HR surface — under `/v1/hr`. Gated on the manager-held
+// `workforce.roster.read` / `workforce.task.read` (§28: managers within scope; P-04 least privilege).
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  rosterGaps,
-  type ShiftRequirement, type ShiftAssignment, type Employee,
+  rosterGaps, canPerformTask,
+  type ShiftRequirement, type ShiftAssignment, type Employee, type Certification,
 } from '../../../packages/workforce/src/workforce';
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -38,6 +42,12 @@ const isAssignment = (v: unknown): v is ShiftAssignment =>
 const isEmployee = (v: unknown): v is Employee =>
   isObj(v) && isStr(v['employeeId']) && isStr(v['name']) && isStr(v['branchId'])
   && isArr(v['roles']) && (v['roles'] as unknown[]).every(isStr) && typeof v['active'] === 'boolean';
+
+/** A certificate on file — only a `verifiedBy` one counts as cover, and its `validUntil` is checked against today. */
+const isCertification = (v: unknown): v is Certification =>
+  isObj(v) && isStr(v['certificationId']) && isStr(v['employeeId']) && isStr(v['kind'])
+  && isStr(v['issuedOn']) && isStr(v['validUntil'])
+  && (v['verifiedBy'] === undefined || isStr(v['verifiedBy']));
 
 export function workforceRoutes(): readonly Route[] {
   return [
@@ -71,6 +81,38 @@ export function workforceRoutes(): readonly Route[] {
           status: 200,
           body: { gaps, gapCount: gaps.length, unstaffed, shiftsChecked: (b['shifts'] as unknown[]).length },
         };
+      },
+    },
+    {
+      // May this person do a gated task, today? Body: { employee: Employee, task: string,
+      // requiresCertification?: string, requiresRole?: string, certifications: Certification[], today: 'YYYY-MM-DD' }.
+      // Returns the decision (allowed + outcome + plain-language detail + what they may still do). The gate is on
+      // the TASK, never the person — a lapsed certificate blocks the deli counter, not shelf-stacking (M25-FR-03).
+      api: 'API-11', method: 'POST', path: '/v1/hr/workforce/task-gate',
+      permission: 'workforce.task.read', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (!isEmployee(b['employee']) || !isStr(b['task']) || !isStr(b['today'])
+          || !isArr(b['certifications']) || !b['certifications'].every(isCertification)
+          || (b['requiresCertification'] !== undefined && !isStr(b['requiresCertification']))
+          || (b['requiresRole'] !== undefined && !isStr(b['requiresRole']))) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_task_gate',
+            whatHappened: 'A task gate needs an employee (employeeId, name, branchId, roles, active), a task, today (YYYY-MM-DD), a certifications list, and optionally the requiresCertification / requiresRole the task gates on.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the person, the task and their certificates. Nothing is stored — this only decides whether the task is allowed.',
+          });
+        }
+
+        const decision = canPerformTask({
+          employee: b['employee'] as Employee,
+          task: b['task'] as string,
+          certifications: b['certifications'] as Certification[],
+          today: b['today'] as string,
+          ...(isStr(b['requiresCertification']) ? { requiresCertification: b['requiresCertification'] as string } : {}),
+          ...(isStr(b['requiresRole']) ? { requiresRole: b['requiresRole'] as string } : {}),
+        });
+        return { status: 200, body: decision };
       },
     },
   ];
