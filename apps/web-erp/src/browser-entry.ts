@@ -77,7 +77,7 @@ import {
 import {
   createPayrollSession, type PayrollPorts, type PayrollSession, type EmployeeInput as PayrollEmployeeInput,
 } from './payroll-session';
-import { foldPayRun, type PayRunAggregate, type PayrollTotals } from '../../../packages/payroll/src/index';
+import { foldPayRun, type PayRunAggregate, type PayrollTotals, type SettlementInput as PayrollSettlementInput } from '../../../packages/payroll/src/index';
 import type { LedgerSide, QueuedPosting } from '../../../packages/period-close/src/index';
 import { createAdminSession, type AdminPorts, type AdminSession } from './admin-session';
 import { createSetupSession, type SetupSession } from './setup-session';
@@ -452,6 +452,10 @@ export interface PayrollData {
   readonly employees?: readonly PayrollEmployeeInput[];
   /** The run's aggregated statutory money (the journal input). PII-free. */
   readonly totals?: PayrollTotals;
+  /** A leaver's full-and-final settlement inputs, when the screen is showing a settlement. PII-free. */
+  readonly settlement?: PayrollSettlementInput;
+  /** The net of the previous version of this run, for a draft/version comparison. */
+  readonly previousNetMinor?: number;
 }
 
 const PAYROLL_VIEW_PERMISSION = 'payroll.statutory.read';
@@ -487,6 +491,8 @@ export function payrollPortsFromData(data: PayrollData): PayrollPorts {
     run: () => data.run,
     employees: () => data.employees ?? [],
     totals: () => data.totals,
+    settlement: () => data.settlement,
+    previousNetMinor: () => data.previousNetMinor,
     online: browserOnline,
     reauthAgeSeconds: payrollReauthAgeSeconds,
     payPeriod: data.payPeriod ?? '',
@@ -516,6 +522,8 @@ export function bootPayroll(data: PayrollData | undefined): PayrollSession {
         run: () => demoRun,
         employees: () => DEMO_PAYROLL_EMPLOYEES,
         totals: () => undefined,
+        settlement: () => undefined,
+        previousNetMinor: () => undefined,
         online: browserOnline,
         reauthAgeSeconds: payrollReauthAgeSeconds,
         payPeriod: '2026-08',

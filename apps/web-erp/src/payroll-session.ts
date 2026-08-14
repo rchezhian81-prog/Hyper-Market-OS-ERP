@@ -25,8 +25,9 @@
 
 import {
   evaluatePayRunTransition, maskIdentifiers, buildPayrollJournal, InvalidPayrollJournal,
+  computeSettlement, InvalidStatutorySchedule,
   type PayRunAggregate, type PayRunState, type PayRunAction, type PayRunRefusalReason, type MaskedIdentifiers,
-  type PayrollTotals,
+  type PayrollTotals, type SettlementInput, type SettlementLine, type GratuityResult,
 } from '../../../packages/payroll/src/index';
 import { translator, presentScreenState, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
 import { presentStatus, type StatusPresentation } from '../../../packages/a11y/src/signals';
@@ -35,12 +36,18 @@ import { presentStatus, type StatusPresentation } from '../../../packages/a11y/s
 export type ExceptionKind = 'negative_or_zero_net' | 'missing_bank_account';
 export const EXCEPTION_KINDS: readonly ExceptionKind[] = ['negative_or_zero_net', 'missing_bank_account'];
 
+/** A retrospective / recovery flag on a money line, so an adjustment is NEVER a silent edit to base pay. */
+export type LineFlag = 'arrears' | 'loan_recovery' | 'advance_recovery';
+export const LINE_FLAGS: readonly LineFlag[] = ['arrears', 'loan_recovery', 'advance_recovery'];
+
 /** One money line on a payslip preview (an earning, a deduction, or a statutory item with its explanation). */
 export interface MoneyLine {
   readonly label: string;
   readonly amountMinor: number;
   /** Present on statutory lines: how the figure was worked out, so a reviewer can re-derive it. */
   readonly explanation?: string;
+  /** An arrears / loan / advance adjustment — surfaced as a badge, so it is visible, never folded silently. */
+  readonly flag?: LineFlag;
 }
 
 /** One employee's row as the box hands it over. Sensitive identifiers are RAW here and masked on the way out. */
@@ -69,8 +76,12 @@ export interface PayrollPorts {
   run(): PayRunAggregate | undefined;
   /** The employees in this run, with their raw money and identifiers. */
   employees(): readonly EmployeeInput[];
-  /** The run's aggregated statutory money (the journal input). Absent → the journal cannot be shown. */
+  /** The run's aggregated statutory money (the journal input + statutory report). Absent → both hidden. */
   totals(): PayrollTotals | undefined;
+  /** A leaver's full-and-final settlement inputs, or undefined when this is an ordinary pay run. */
+  settlement(): SettlementInput | undefined;
+  /** The net of the PREVIOUS version of this run, for a draft/version comparison. Undefined → no prior. */
+  previousNetMinor(): number | undefined;
   /**
    * Whether the screen has a live connection RIGHT NOW. Read fresh on every render and every action, because
    * it changes under the user's feet and offline blocks every state change — a function, never a snapshot.
@@ -95,17 +106,18 @@ export interface PayrollConfig {
 }
 
 /** A sensitive action moves money or exposes/exports sensitive data, so it needs a fresh re-auth (MFA). */
-export type SensitiveScreenAction = 'generateBankFile' | 'bulkPayslipDownload' | 'export';
+export type SensitiveScreenAction = 'generateBankFile' | 'bulkPayslipDownload' | 'export' | 'releaseSettlement';
 export type PayrollAction = PayRunAction | SensitiveScreenAction;
 
 /**
  * The actions that require a fresh re-authentication (owner directive: "Re-authentication/MFA for approval,
- * locking, bank-file generation, payslip bulk download and sensitive exports"). `submit` and `reject` are
- * not on the list — they prepare or send back, they do not release money or data.
+ * locking, bank-file generation, payslip bulk download and sensitive exports" — and a settlement pays a
+ * leaver, so its release is the same kind of act). `submit` and `reject` are not on the list — they prepare
+ * or send back, they do not release money or data.
  */
-export const SENSITIVE_ACTIONS: readonly PayrollAction[] = ['approve', 'lock', 'reverse', 'generateBankFile', 'bulkPayslipDownload', 'export'];
+export const SENSITIVE_ACTIONS: readonly PayrollAction[] = ['approve', 'lock', 'reverse', 'generateBankFile', 'bulkPayslipDownload', 'export', 'releaseSettlement'];
 const SENSITIVE = new Set<PayrollAction>(SENSITIVE_ACTIONS);
-/** The three that also require a LOCKED run (they are artifacts OF a locked run). */
+/** The ones that also require a LOCKED run (they are artifacts OF a locked run). */
 const LOCKED_RUN_ACTIONS = new Set<PayrollAction>(['generateBankFile', 'bulkPayslipDownload', 'export']);
 
 // ── the copy: ONE bilingual object for the whole screen (a guardrail binds to it) ────────────────────────
@@ -124,8 +136,13 @@ export type CopyKey =
   | 'lockedTitle' | 'bankFileTitle' | 'bankFileRecords' | 'bankFileTotal' | 'bankFileReconciled' | 'bankFileNotReconciled'
   | 'journalTitle' | 'journalDebit' | 'journalCredit' | 'journalBalanced' | 'journalNotBalanced' | 'journalUnavailable'
   | 'actGenerateBankFile' | 'actBulkPayslip' | 'actExport' | 'reauthNeeded' | 'reauthFresh'
+  | 'statutoryTitle' | 'stPf' | 'stEsi' | 'stPt' | 'stTds' | 'stEmployee' | 'stEmployer' | 'stTotalEmployee' | 'stTotalEmployer' | 'confirmWithCa'
+  | 'flagArrears' | 'flagLoanRecovery' | 'flagAdvanceRecovery'
+  | 'settlementTitle' | 'settlementEarnings' | 'settlementRecoveries' | 'settlementNet' | 'settlementPayable' | 'settlementRecoverable'
+  | 'settlementGratuity' | 'settlementGratuityIneligible' | 'settlementUnavailable' | 'actReleaseSettlement'
+  | 'versionDeltaTitle' | 'versionNoChange' | 'reversedBy'
   | 'rOffline' | 'rNotPermitted' | 'rBlocking' | 'rSelfApproval' | 'rNoRun' | 'rNotDraft' | 'rNotSubmitted'
-  | 'rNotApproved' | 'rNotLocked' | 'rReasonRequired' | 'rNeedsReauth';
+  | 'rNotApproved' | 'rNotLocked' | 'rReasonRequired' | 'rNeedsReauth' | 'rNoSettlement';
 
 export const PAYROLL_COPY: BilingualCopy<CopyKey> = {
   en: {
@@ -158,6 +175,16 @@ export const PAYROLL_COPY: BilingualCopy<CopyKey> = {
     journalUnavailable: 'The run totals needed for the journal have not been provided.',
     actGenerateBankFile: 'Generate bank file', actBulkPayslip: 'Download all payslips', actExport: 'Export',
     reauthNeeded: 'Confirm your identity (MFA) to release this', reauthFresh: 'Identity confirmed',
+    statutoryTitle: 'Statutory deductions', stPf: 'Provident Fund (PF)', stEsi: 'ESI', stPt: 'Professional Tax', stTds: 'Income tax (TDS)',
+    stEmployee: 'From employee', stEmployer: 'Employer’s share', stTotalEmployee: 'Total from employees', stTotalEmployer: 'Total employer contribution',
+    confirmWithCa: 'These rates are to be confirmed with your CA before filing.',
+    flagArrears: 'ARREARS', flagLoanRecovery: 'LOAN RECOVERY', flagAdvanceRecovery: 'ADVANCE RECOVERY',
+    settlementTitle: 'Full-and-final settlement', settlementEarnings: 'Earnings', settlementRecoveries: 'Recoveries', settlementNet: 'Net settlement',
+    settlementPayable: 'Payable to the employee', settlementRecoverable: 'Recoverable FROM the employee',
+    settlementGratuity: 'Gratuity', settlementGratuityIneligible: 'Not eligible for gratuity',
+    settlementUnavailable: 'The settlement figures could not be worked out from what was provided.',
+    actReleaseSettlement: 'Release settlement',
+    versionDeltaTitle: 'Change from the previous version', versionNoChange: 'No change from the previous version', reversedBy: 'Reversed —',
     rOffline: 'You are offline — this cannot be done until you are back online.',
     rNotPermitted: 'You do not have permission to do this.',
     rBlocking: 'Resolve every exception first — an employee cannot be paid zero, a negative amount, or with no bank account.',
@@ -167,6 +194,7 @@ export const PAYROLL_COPY: BilingualCopy<CopyKey> = {
     rNotApproved: 'Only an approved run can be locked.', rNotLocked: 'Only a locked run can be reversed, and a bank file / payslips / export come from a locked run.',
     rReasonRequired: 'A reversal needs a reason.',
     rNeedsReauth: 'Confirm your identity (MFA) again before releasing this — your last confirmation is too old.',
+    rNoSettlement: 'There is no settlement to release.',
   },
   ta: {
     title: 'ஊதியம்', langName: 'English',
@@ -198,6 +226,16 @@ export const PAYROLL_COPY: BilingualCopy<CopyKey> = {
     journalUnavailable: 'கணக்குப் பதிவுக்குத் தேவையான மொத்தங்கள் வழங்கப்படவில்லை.',
     actGenerateBankFile: 'வங்கிக் கோப்பை உருவாக்கு', actBulkPayslip: 'அனைத்து ஊதியச் சீட்டுகளையும் பதிவிறக்கு', actExport: 'ஏற்றுமதி',
     reauthNeeded: 'இதை வெளியிட உங்கள் அடையாளத்தை உறுதிப்படுத்தவும் (MFA)', reauthFresh: 'அடையாளம் உறுதிப்படுத்தப்பட்டது',
+    statutoryTitle: 'சட்டப்பூர்வப் பிடித்தங்கள்', stPf: 'வருங்கால வைப்பு நிதி (PF)', stEsi: 'ESI', stPt: 'தொழில் வரி', stTds: 'வருமான வரி (TDS)',
+    stEmployee: 'ஊழியரிடமிருந்து', stEmployer: 'முதலாளியின் பங்கு', stTotalEmployee: 'ஊழியர்களிடமிருந்து மொத்தம்', stTotalEmployer: 'முதலாளி பங்களிப்பு மொத்தம்',
+    confirmWithCa: 'இந்த விகிதங்களை தாக்கல் செய்வதற்கு முன் உங்கள் CA உடன் உறுதிப்படுத்தவும்.',
+    flagArrears: 'நிலுவை', flagLoanRecovery: 'கடன் மீட்பு', flagAdvanceRecovery: 'முன்பணம் மீட்பு',
+    settlementTitle: 'முழு இறுதித் தீர்வு', settlementEarnings: 'வருமானம்', settlementRecoveries: 'மீட்புகள்', settlementNet: 'நிகரத் தீர்வு',
+    settlementPayable: 'ஊழியருக்குச் செலுத்த வேண்டியது', settlementRecoverable: 'ஊழியரிடமிருந்து மீட்க வேண்டியது',
+    settlementGratuity: 'பணிக்கொடை', settlementGratuityIneligible: 'பணிக்கொடைக்குத் தகுதியில்லை',
+    settlementUnavailable: 'வழங்கப்பட்டதிலிருந்து தீர்வுத் தொகைகளைக் கணக்கிட முடியவில்லை.',
+    actReleaseSettlement: 'தீர்வை வெளியிடு',
+    versionDeltaTitle: 'முந்தைய பதிப்பிலிருந்து மாற்றம்', versionNoChange: 'முந்தைய பதிப்பிலிருந்து மாற்றம் இல்லை', reversedBy: 'திரும்பப்பெறப்பட்டது —',
     rOffline: 'நீங்கள் ஆஃப்லைனில் உள்ளீர்கள் — மீண்டும் ஆன்லைனில் வரும் வரை இதைச் செய்ய முடியாது.',
     rNotPermitted: 'இதைச் செய்ய உங்களுக்கு அனுமதி இல்லை.',
     rBlocking: 'முதலில் ஒவ்வொரு விதிவிலக்கையும் தீர்க்கவும் — ஒரு ஊழியருக்கு பூஜ்ஜியம், எதிர்மறை அல்லது வங்கிக் கணக்கு இல்லாமல் செலுத்த முடியாது.',
@@ -207,6 +245,7 @@ export const PAYROLL_COPY: BilingualCopy<CopyKey> = {
     rNotApproved: 'அனுமதிக்கப்பட்ட பட்டியலை மட்டுமே பூட்ட முடியும்.', rNotLocked: 'பூட்டிய பட்டியலை மட்டுமே திரும்பப்பெற முடியும்; வங்கிக் கோப்பு / ஊதியச் சீட்டு / ஏற்றுமதி பூட்டிய பட்டியலிலிருந்து வரும்.',
     rReasonRequired: 'திரும்பப்பெற ஒரு காரணம் தேவை.',
     rNeedsReauth: 'இதை வெளியிடும் முன் உங்கள் அடையாளத்தை (MFA) மீண்டும் உறுதிப்படுத்தவும் — உங்கள் கடைசி உறுதிப்படுத்தல் மிகவும் பழையது.',
+    rNoSettlement: 'வெளியிட எந்தத் தீர்வும் இல்லை.',
   },
 };
 
@@ -219,14 +258,19 @@ const EXCEPTION_LABEL: Readonly<Record<ExceptionKind, CopyKey>> = {
 
 /** Every refusal the screen can give for an action. Engine reasons plus the screen's own gates. */
 export type PayrollRefusal =
-  | 'offline' | 'not_permitted' | 'nobody_named' | 'has_blocking_exceptions' | 'needs_reauth'
+  | 'offline' | 'not_permitted' | 'nobody_named' | 'has_blocking_exceptions' | 'needs_reauth' | 'no_settlement'
   | PayRunRefusalReason;
 
 const REFUSAL_LABEL: Readonly<Record<PayrollRefusal, CopyKey>> = {
   offline: 'rOffline', not_permitted: 'rNotPermitted', nobody_named: 'nobodyNamed', has_blocking_exceptions: 'rBlocking',
-  needs_reauth: 'rNeedsReauth',
+  needs_reauth: 'rNeedsReauth', no_settlement: 'rNoSettlement',
   self_approval: 'rSelfApproval', no_pay_run: 'rNoRun', not_in_draft: 'rNotDraft', not_submitted: 'rNotSubmitted',
   not_approved: 'rNotApproved', not_locked: 'rNotLocked', reason_required: 'rReasonRequired',
+};
+
+/** An arrears / loan / advance flag → its copy key, so the badge is bilingual. */
+export const LINE_FLAG_LABEL: Readonly<Record<LineFlag, CopyKey>> = {
+  arrears: 'flagArrears', loan_recovery: 'flagLoanRecovery', advance_recovery: 'flagAdvanceRecovery',
 };
 
 // ── presented shapes ─────────────────────────────────────────────────────────────────────────────────
@@ -281,6 +325,33 @@ export interface LockedArtifacts {
   readonly reconciled: boolean;
 }
 
+/** The statutory deduction totals for the period — employee + employer shares, for the returns. CONFIRM-WITH-CA. */
+export interface StatutoryReport {
+  readonly pfEmployeeMinor: number;
+  readonly pfEmployerMinor: number;
+  readonly esiEmployeeMinor: number;
+  readonly esiEmployerMinor: number;
+  readonly professionalTaxMinor: number;
+  readonly tdsMinor: number;
+  readonly totalEmployeeMinor: number;
+  readonly totalEmployerMinor: number;
+  readonly confirmWithCa: true;
+}
+
+/** A leaver's full-and-final settlement, presented. Negative net is EXPECTED here (recoverable), not a fault. */
+export interface PresentedSettlement {
+  readonly available: boolean;
+  readonly earnings: readonly SettlementLine[];
+  readonly recoveries: readonly SettlementLine[];
+  readonly grossEarningsMinor: number;
+  readonly totalRecoveriesMinor: number;
+  /** Signed: positive is payable to the employee, negative is recoverable FROM them. */
+  readonly netSettlementMinor: number;
+  readonly payableToEmployee: boolean;
+  readonly gratuity: GratuityResult;
+  readonly detail: string;
+}
+
 export interface PayrollView {
   readonly demo: boolean;
   readonly online: boolean;
@@ -299,6 +370,14 @@ export interface PayrollView {
   readonly blockingExceptionCount: number;
   /** Present only when the run is LOCKED — the bank-file summary + journal reconciliation. */
   readonly lockedArtifacts?: LockedArtifacts;
+  /** The period's statutory deduction totals, when the run totals are known. */
+  readonly statutory?: StatutoryReport;
+  /** A leaver's full-and-final settlement, when this screen is showing one. */
+  readonly settlement?: PresentedSettlement;
+  /** How this version's net differs from the previous version, when there is a prior to compare. */
+  readonly versionDeltaMinor?: number;
+  /** Why a reversed run was reversed — surfaced, so a correction is never invisible. */
+  readonly reversedReason?: string;
   readonly screenState: StatusPresentation;
 }
 
@@ -415,6 +494,40 @@ export function createPayrollSession(config: PayrollConfig, ports: PayrollPorts)
     return { bankFile, journal, reconciled: bankFile.reconciledWithRun && journal.available && journal.balanced };
   };
 
+  /** The statutory report from the run's totals — employee + employer shares, for the returns. */
+  const statutoryFor = (totals: PayrollTotals): StatutoryReport => ({
+    pfEmployeeMinor: totals.pfEmployeeMinor,
+    pfEmployerMinor: totals.pfEmployerMinor,
+    esiEmployeeMinor: totals.esiEmployeeMinor,
+    esiEmployerMinor: totals.esiEmployerMinor,
+    professionalTaxMinor: totals.professionalTaxMinor,
+    tdsMinor: totals.tdsMinor,
+    totalEmployeeMinor: totals.pfEmployeeMinor + totals.esiEmployeeMinor + totals.professionalTaxMinor + totals.tdsMinor,
+    totalEmployerMinor: totals.pfEmployerMinor + totals.esiEmployerMinor,
+    confirmWithCa: true,
+  });
+
+  /** Run the tested settlement engine over a leaver's inputs. A bad input → available:false, never a guess. */
+  const settlementFor = (input: SettlementInput): PresentedSettlement => {
+    try {
+      const s = computeSettlement(input);
+      return {
+        available: true, earnings: s.earnings, recoveries: s.recoveries,
+        grossEarningsMinor: s.grossEarningsMinor, totalRecoveriesMinor: s.totalRecoveriesMinor,
+        // Signed net is expected to go negative here (recoverable) — that is NOT a blocking exception.
+        netSettlementMinor: s.netSettlementMinor, payableToEmployee: s.payableToEmployee,
+        gratuity: s.gratuity, detail: s.detail,
+      };
+    } catch (err) {
+      const detail = err instanceof InvalidStatutorySchedule ? err.message : 'settlement could not be computed';
+      return {
+        available: false, earnings: [], recoveries: [], grossEarningsMinor: 0, totalRecoveriesMinor: 0,
+        netSettlementMinor: 0, payableToEmployee: false,
+        gratuity: { eligible: false, gratuityMinor: 0, cappedAtCeiling: false, detail: 'n/a' }, detail,
+      };
+    }
+  };
+
   return {
     text,
 
@@ -434,6 +547,9 @@ export function createPayrollSession(config: PayrollConfig, ports: PayrollPorts)
       }
 
       const employees = ports.employees().map((e) => presentEmployee(lang, e));
+      const totals = ports.totals();
+      const settlementInput = ports.settlement();
+      const previousNet = ports.previousNetMinor();
       const byDept = new Map<string, DepartmentSummary>();
       let grossMinor = 0, totalDeductionsMinor = 0, netMinor = 0;
       for (const e of employees) {
@@ -457,6 +573,10 @@ export function createPayrollSession(config: PayrollConfig, ports: PayrollPorts)
         blockingExceptionCount: employees.filter((e) => e.needsAttention).length,
         // Only a LOCKED run has a bank file and a journal to reconcile before release.
         ...(stage === 'locked' ? { lockedArtifacts: lockedArtifactsFor(ordered, run?.netTotalMinor ?? netMinor) } : {}),
+        ...(totals === undefined ? {} : { statutory: statutoryFor(totals) }),
+        ...(settlementInput === undefined ? {} : { settlement: settlementFor(settlementInput) }),
+        ...(previousNet === undefined ? {} : { versionDeltaMinor: netMinor - previousNet }),
+        ...(run?.reversedReason === undefined ? {} : { reversedReason: run.reversedReason }),
         screenState: screenStateFor(lang, stage, true),
       };
     },
@@ -474,6 +594,12 @@ export function createPayrollSession(config: PayrollConfig, ports: PayrollPorts)
       // (MFA) — the owner directive. Checked here, before anything else action-specific.
       if (SENSITIVE.has(action) && !reauthFresh()) {
         return refuse('needs_reauth', 'a fresh identity confirmation (MFA) is required to release this.');
+      }
+
+      // Releasing a leaver's settlement — sensitive (re-auth checked above), and only when there IS one.
+      if (action === 'releaseSettlement') {
+        if (ports.settlement() === undefined) return refuse('no_settlement', 'there is no settlement to release.');
+        return { ok: true, detail: 'release the full-and-final settlement' };
       }
 
       // The locked-run artifacts (bank file, bulk payslips, export) are not lifecycle transitions — they are

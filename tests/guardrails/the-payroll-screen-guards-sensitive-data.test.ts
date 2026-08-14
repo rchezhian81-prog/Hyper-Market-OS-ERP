@@ -117,4 +117,20 @@ describe('inc2: re-auth (MFA) gates every sensitive action', () => {
     expect(code).toMatch(/bankFile\.recordCount/);
     expect(code).toMatch(/bankFile\.totalNetMinor/);
   });
+
+  it('a settlement release is in the re-auth-gated set (a leaver is paid the same careful way)', () => {
+    expect(SENSITIVE_ACTIONS.includes('releaseSettlement' as (typeof SENSITIVE_ACTIONS)[number])).toBe(true);
+  });
+});
+
+describe('inc3: statutory report is CONFIRM-WITH-CA, and adjustments are never silent', () => {
+  it('the statutory report is marked to be confirmed with a CA before filing', () => {
+    expect(PAYROLL_COPY.en.confirmWithCa).toMatch(/confirmed with your CA/i);
+  });
+
+  it('the view surfaces arrears / loan / advance as visible flags, never folded into base pay', () => {
+    // The flag badges are rendered from the line flags; a flagged line cannot pass silently.
+    expect(code).toMatch(/FLAG_LABEL_KEY/);
+    expect(code).toMatch(/\.flag/);
+  });
 });
