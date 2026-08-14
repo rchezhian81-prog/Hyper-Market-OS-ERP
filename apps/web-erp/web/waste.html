@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Waste &amp; write-off</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      Waste & write-off review — the shrinkage triage view (M28-FR-01). Every rule lives in the tested session
+      model (apps/web-erp/src/waste-review-session.ts), attached as window.wasteSession and built on the shared
+      packages/ui primitives + the tested packages/waste loss-type vocabulary. Read-only: the day's losses with
+      the material ones (which needed a second person's approval) first, each with a status that is never a bare
+      colour (an icon and a word ride with it), the value, and whether evidence is on file. Nothing here records
+      a write-off — that is done where it is approved.
+    -->
+    <style>
+      :root { --bg:#0f172a; --panel:#1e293b; --ink:#f8fafc; --muted:#94a3b8; --ok:#22c55e; --degraded:#f59e0b; --error:#ef4444; --idle:#64748b; --info:#38bdf8; --line:#334155; --tap:48px; }
+      * { box-sizing: border-box; }
+      body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; min-height:100dvh; display:flex; flex-direction:column; }
+      header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; background:var(--panel); flex-wrap:wrap; }
+      .who { font-weight:600; } .who small { display:block; color:var(--muted); font-weight:400; font-size:14px; }
+      .lang { background:var(--line); color:var(--ink); min-height:40px; padding:0 14px; font-size:15px; border:0; border-radius:10px; }
+      .sample,.stale,.nobody { margin:0; padding:10px 16px; font-size:15px; font-weight:600; }
+      .sample { background:var(--degraded); color:#451a03; } .stale { background:#1e3a5f; color:#dbeafe; border-bottom:2px solid var(--info); font-weight:400; }
+      .nobody { background:#3f2d12; color:#fde68a; border-bottom:2px solid var(--degraded); }
+      .sample[hidden],.stale[hidden],.nobody[hidden] { display:none; }
+      main { flex:1; padding:16px; display:grid; gap:16px; align-content:start; max-width:900px; width:100%; }
+      h2 { margin:0 0 4px; font-size:20px; } p.lead { margin:0 0 4px; color:var(--muted); font-size:15px; }
+      .summary { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+      .summary .count { font-size:18px; font-weight:700; } .summary .count.attention { color:var(--degraded); }
+      .summary .total { color:var(--muted); font-size:15px; } .summary .total b { color:var(--ink); font-variant-numeric:tabular-nums; }
+      .filter { min-height:40px; padding:0 14px; border:0; border-radius:10px; background:var(--line); color:var(--ink); font-size:15px; }
+      .filter[aria-pressed='true'] { background:var(--ink); color:#0f172a; }
+      ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
+      li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); }
+      li.row.tone-ok { border-left-color:var(--ok); } li.row.tone-degraded { border-left-color:var(--degraded); }
+      li.row.tone-error { border-left-color:var(--error); } li.row.tone-idle { border-left-color:var(--idle); }
+      .row .head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+      .row .prod { font-weight:600; } .row .val { color:var(--ink); font-variant-numeric:tabular-nums; font-weight:600; }
+      .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; }
+      .status .icon { font-size:18px; width:1.4em; text-align:center; }
+      .meta { color:var(--muted); font-size:14px; display:flex; gap:14px; flex-wrap:wrap; }
+      .badges { display:flex; gap:8px; flex-wrap:wrap; }
+      .badges b { font-size:12px; padding:2px 8px; border-radius:999px; background:var(--line); color:var(--ink); font-weight:600; }
+      .badges b.warn { background:#3f2d12; color:#fde68a; } .badges b.muted { background:#0b1220; color:var(--muted); font-weight:500; }
+      p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
+      p.state .icon { font-size:18px; } p.state.tone-error { color:#fecaca; }
+    </style>
+  </head>
+  <body>
+    <p class="stale" id="stale" hidden></p>
+    <p class="sample" id="sample" hidden></p>
+    <p class="nobody" id="nobody" hidden></p>
+
+    <header>
+      <span class="who" id="who">Waste &amp; write-off <small id="whoami"></small></span>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+
+    <main>
+      <div>
+        <h2 id="title">Waste &amp; write-off</h2>
+        <p class="lead" id="lead"></p>
+      </div>
+
+      <div class="summary" role="status" aria-live="polite">
+        <span class="count attention" id="attention-count"></span>
+        <span class="total" id="total"></span>
+        <button class="filter" id="filter" type="button" aria-pressed="false"></button>
+      </div>
+
+      <ul class="rows" id="rows" aria-label="Recorded losses"></ul>
+      <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+    </main>
+
+    <!--SCREEN-DATA-->
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./waste.js" type="module"></script>
+  </body>
+</html>

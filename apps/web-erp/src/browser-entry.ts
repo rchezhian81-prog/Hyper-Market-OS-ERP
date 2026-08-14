@@ -87,6 +87,9 @@ import {
 import {
   createGstReturnsSession, type GstReturnsPorts, type GstReturnsSession, type ReturnRow as GstReturnRow,
 } from './gst-returns-session';
+import {
+  createWasteReviewSession, type WasteReviewPorts, type WasteReviewSession, type WriteOffRow,
+} from './waste-review-session';
 import type { CategoryPolicy } from '../../../packages/product/src/index';
 import {
   foldPayRun, buildPayslip, resolveStatutoryParams, DEFAULT_STATUTORY_SCHEDULE,
@@ -536,6 +539,35 @@ export function bootGstReturns(
   return createGstReturnsSession(
     { userId: data.userId === undefined ? null : data.userId },
     gstReturnsPortsFromData(data, outbox),
+  );
+}
+
+/** What the box tells the waste review screen — the last-synced losses plus who is looking. */
+export interface WasteData {
+  readonly userId?: string;
+  /** The recorded write-offs, each folded to a review row. */
+  readonly rows?: readonly WriteOffRow[];
+  /** The permission codes this user holds — the menu and the screen are gated the same way the server is. */
+  readonly permissions?: readonly string[];
+}
+
+const WASTE_READ_PERMISSION = 'waste.view';
+
+export function wastePortsFromData(data: WasteData | undefined): WasteReviewPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    rows: () => data?.rows ?? [],
+    // Default-deny: an absent permission list can read nothing (the server would refuse it anyway).
+    mayRead: () => held.has(WASTE_READ_PERMISSION),
+  };
+}
+
+/** Build the waste review screen, or `null` when the box carried no payload for it. */
+export function bootWaste(data: WasteData | undefined): WasteReviewSession | null {
+  if (data === undefined) return null;
+  return createWasteReviewSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    wastePortsFromData(data),
   );
 }
 
@@ -1028,6 +1060,8 @@ interface ManagerWindow {
   gstReturnsSession?: GstReturnsSession;
   /** Where a governance action (approve/submit) queues for the sync agent — device-backed, survives a reload. */
   gstReturnsOutbox?: SyncOutbox;
+  wasteData?: WasteData;
+  wasteSession?: WasteReviewSession;
   payrollData?: PayrollData;
   payrollSession?: PayrollSession;
   payrollEssData?: PayrollEssData;
@@ -1525,6 +1559,8 @@ if (browserWindow !== undefined) {
     browserWindow.gstReturnsSession = gstReturns;
     browserWindow.gstReturnsOutbox = gstReturnsOutbox;
   }
+  const waste = bootWaste(browserWindow.wasteData);
+  if (waste !== null) browserWindow.wasteSession = waste;
   // Payroll always boots a session (real from a payload, or a flagged DEMO one) — never blank.
   browserWindow.payrollSession = bootPayroll(browserWindow.payrollData);
   browserWindow.payrollEssSession = bootPayrollEss(browserWindow.payrollEssData);

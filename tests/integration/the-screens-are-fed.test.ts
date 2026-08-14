@@ -232,6 +232,12 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
     { period: '072026', state: 'unknown', detail: 'no clear answer from the portal' },
   ]),
   gstReturnsPolicy: known({ userId: 'u-finance', permissions: ['finance.gstr.read'] }),
+  // Waste & write-off review (M28-FR-01). The recorded losses folded to review rows, and who may review them.
+  wasteWriteOffs: known([
+    { id: 'wo-1', productId: 'RICE-5', lossType: 'damage', qtyRemoved: 4, uom: 'ea', valueMinor: 240_000, currency: 'INR', requiredApproval: true, evidenceRef: 'photo-1' },
+    { id: 'wo-2', productId: 'MILK-1', lossType: 'expiry', qtyRemoved: 6, uom: 'ea', valueMinor: 30_000, currency: 'INR', requiredApproval: false },
+  ]),
+  wastePolicy: known({ userId: 'u-mgr', permissions: ['waste.view'] }),
   // Admin and security (M01/M02/M33/M34). Support access is never pruned (hard rule #6).
   accounts: known([{
     userId: 'u-meena', tenantId: 't1', username: 'meena',
@@ -726,6 +732,7 @@ describe('a box that has been told nothing tells every screen so', () => {
       gstReconciliationQueue: notKnown('never'), gstReconciliationPolicy: notKnown('never'),
       categoryPolicyCategories: notKnown('never'), categoryPolicyPolicy: notKnown('never'),
       gstReturnsQueue: notKnown('never'), gstReturnsPolicy: notKnown('never'),
+      wasteWriteOffs: notKnown('never'), wastePolicy: notKnown('never'),
       accounts: notKnown('never'), supportSessions: notKnown('never'),
       devices: notKnown('never'), versionPolicy: notKnown('never'),
       auditRecords: notKnown('never'), retentionPolicies: notKnown('never'),
