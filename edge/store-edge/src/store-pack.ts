@@ -435,6 +435,13 @@ export interface PackGstReturnsPolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the waste & write-off review screen and what they may do (M28-FR-01). */
+export interface PackWastePolicy {
+  readonly userId?: string;
+  /** The permission codes this user holds — `waste.view` to review losses. Never defaulted. */
+  readonly permissions: readonly string[];
+}
+
 /** Who administers this shop, and the windows it judges accounts and devices by. */
 export interface PackAdminPolicy {
   /** Days without a login after which an account is stale enough to review. Per-tenant. */
@@ -775,6 +782,15 @@ export interface StorePack {
   readonly gstReturnsQueue: Register<readonly unknown[]>;
   /** Who is on the GST-returns screen and what they may do there. */
   readonly gstReturnsPolicy: Register<PackGstReturnsPolicy>;
+  /**
+   * Every recorded write-off folded to a review row, for the waste screen.
+   *
+   * **Absent means the box has never been told**, shown as the sample stand-in — not an empty list, which
+   * would read as "no losses today" (P-08).
+   */
+  readonly wasteWriteOffs: Register<readonly unknown[]>;
+  /** Who is on the waste review screen and what they may do there. */
+  readonly wastePolicy: Register<PackWastePolicy>;
   /** Every account, so joiners, movers and leavers can be reviewed (M02-FR-04). */
   readonly accounts: Register<readonly unknown[]>;
   /**
@@ -908,6 +924,8 @@ export function emptyPack(why: string = NEVER): StorePack {
     categoryPolicyPolicy: notKnown(why),
     gstReturnsQueue: notKnown(why),
     gstReturnsPolicy: notKnown(why),
+    wasteWriteOffs: notKnown(why),
+    wastePolicy: notKnown(why),
     accounts: notKnown(why),
     supportSessions: notKnown(why),
     devices: notKnown(why),
@@ -1010,6 +1028,8 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     categoryPolicyPolicy: section<PackCategoryPolicyPolicy>('categoryPolicyPolicy'),
     gstReturnsQueue: section<readonly unknown[]>('gstReturnsQueue'),
     gstReturnsPolicy: section<PackGstReturnsPolicy>('gstReturnsPolicy'),
+    wasteWriteOffs: section<readonly unknown[]>('wasteWriteOffs'),
+    wastePolicy: section<PackWastePolicy>('wastePolicy'),
     accounts: section<readonly unknown[]>('accounts'),
     supportSessions: section<readonly unknown[]>('supportSessions'),
     devices: section<readonly unknown[]>('devices'),
