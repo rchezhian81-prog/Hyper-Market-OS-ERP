@@ -166,6 +166,8 @@ function paintStale() {
   strip.textContent = `${session.text(lang, 'staleShell')} ${new Date(at).toLocaleString()}`;
 }
 paintStale();
+// Repaint the stale strip in the newly chosen language too (the strip carries its own copy).
+el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

@@ -66,3 +66,28 @@ describe('the GST reconciliation view defers to the model and uses no browser di
     expect(HTML).toMatch(/id="lang"/);
   });
 });
+
+describe('the GST reconciliation screen is accessible (item 3 inc3, browser-free checks)', () => {
+  const HTML = readFileSync('apps/web-erp/web/gst-reconciliation.html', 'utf8');
+  const VIEW = readFileSync('apps/web-erp/web/gst-reconciliation.js', 'utf8');
+
+  it('labels the language toggle and the queue list for screen readers', () => {
+    expect(HTML, 'language toggle has no aria-label').toMatch(/id="lang"[^>]*aria-label=/);
+    expect(HTML, 'queue list has no aria-label').toMatch(/id="rows"[^>]*aria-label=/);
+  });
+
+  it('announces the attention count in a live region, so a screen reader is told when it changes', () => {
+    expect(HTML).toMatch(/aria-live=/);
+  });
+
+  it('gives every status a screen-reader announcement AND a visible word, never colour alone', () => {
+    // The tone drives a CSS class; the WORD and the announcement are what a colour-blind operator,
+    // or one under glare, actually reads. Both must be set on the status the view builds.
+    expect(VIEW, 'status carries no aria-label').toMatch(/status\.setAttribute\('aria-label'/);
+    expect(VIEW, 'status shows no word').toMatch(/slabel\.textContent = r\.status\.label/);
+  });
+
+  it('hides the decorative status icon from screen readers (the word already carries the meaning)', () => {
+    expect(VIEW).toMatch(/icon\.setAttribute\('aria-hidden', 'true'\)/);
+  });
+});

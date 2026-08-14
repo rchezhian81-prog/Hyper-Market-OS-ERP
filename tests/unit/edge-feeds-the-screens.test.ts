@@ -183,6 +183,8 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
     journalPrefixes: { takings: 'SALES', tax: 'GST', refunds: 'REFUND' },
     userId: 'u-finance',
   }),
+  gstReconciliationQueue: known([{ documentType: 'e_invoice', id: 'INV-1', category: 'registered', number: 'IRN-1' }]),
+  gstReconciliationPolicy: known({ userId: 'u-finance', permissions: ['finance.einvoice.read', 'finance.einvoice.generate'] }),
   // Admin and security (M01/M02/M33/M34). Support access is never pruned (hard rule #6).
   accounts: known([{
     userId: 'u-meena', tenantId: 't1', username: 'meena',

@@ -48,6 +48,17 @@ interface BrowserWindow {
   readonly shellCachedAt?: unknown;
 }
 
+/** The tiny slice of the DOM the accessibility check touches, cast structurally like `BrowserWindow`. */
+interface A11yEl {
+  getAttribute(name: string): string | null;
+  readonly textContent: string | null;
+  querySelector(selector: string): A11yEl | null;
+}
+interface A11yDoc {
+  getElementById(id: string): A11yEl | null;
+  querySelectorAll(selector: string): ArrayLike<A11yEl>;
+}
+
 describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06)', () => {
   let browser: Browser;
   let server: ScreenServer;
@@ -87,6 +98,53 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
       expect((await page.title()).trim().length, `${screen} showed no page offline`).toBeGreaterThan(0);
       expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string'), `${screen} was not served from cache`).toBe(true);
       expect(((await page.textContent('body')) ?? '').trim().length, `${screen} rendered an empty body`).toBeGreaterThan(0);
+    } finally {
+      await context.close();
+    }
+  });
+
+  it('the GST reconciliation screen opens offline AND is accessible (item 3 inc3)', async () => {
+    // A web-erp shell shares the manager service worker, so the SW contract is exercised by 'manager'
+    // above. This proves the NEW shell in particular opens with the cable out and — the point of the
+    // whole design-system foundation — that what it renders is accessible: colour is never the only
+    // signal (every status carries a word and a screen-reader announcement), and the chrome is labelled.
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.goto(`${base}/gst-reconciliation`, { waitUntil: 'load' });
+      await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.serviceWorker.ready.then(() => true));
+      await page.waitForFunction(() => (globalThis as unknown as BrowserWindow).navigator.serviceWorker.controller !== null, { timeout: 15_000 });
+
+      await context.setOffline(true);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+
+      // Offline, opened from cache, and not empty.
+      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine)).toBe(false);
+      expect(await page.title()).toContain('GST reconciliation');
+      expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
+      expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
+
+      // Accessible: the language toggle and the queue list are labelled, and EVERY rendered status
+      // carries a screen-reader announcement, a visible word (not colour alone), and an aria-hidden icon.
+      const a11y = await page.evaluate(() => {
+        const doc = (globalThis as unknown as { document: A11yDoc }).document;
+        const nonEmpty = (v: string | null) => typeof v === 'string' && v.trim().length > 0;
+        const statuses = Array.from(doc.querySelectorAll('.status'));
+        return {
+          langLabelled: nonEmpty(doc.getElementById('lang')?.getAttribute('aria-label') ?? null),
+          listLabelled: nonEmpty(doc.getElementById('rows')?.getAttribute('aria-label') ?? null),
+          statusCount: statuses.length,
+          everyStatusAnnounced: statuses.every((s) => nonEmpty(s.getAttribute('aria-label'))),
+          everyStatusHasWord: statuses.every((s) => nonEmpty(s.textContent)),
+          everyIconHidden: statuses.every((s) => s.querySelector('.icon')?.getAttribute('aria-hidden') === 'true'),
+        };
+      });
+      expect(a11y.langLabelled, 'language toggle has no aria-label').toBe(true);
+      expect(a11y.listLabelled, 'queue list has no aria-label').toBe(true);
+      expect(a11y.statusCount, 'no status rows rendered to check').toBeGreaterThan(0);
+      expect(a11y.everyStatusAnnounced, 'a status has no screen-reader announcement').toBe(true);
+      expect(a11y.everyStatusHasWord, 'a status conveys state by colour alone').toBe(true);
+      expect(a11y.everyIconHidden, 'a status icon is not hidden from screen readers').toBe(true);
     } finally {
       await context.close();
     }

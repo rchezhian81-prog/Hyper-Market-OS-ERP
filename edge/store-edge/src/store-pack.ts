@@ -406,6 +406,21 @@ export interface PackFinancePolicy {
   readonly userId?: string;
 }
 
+/**
+ * Who is on the GST reconciliation screen, and what they may do there (API-09 · A20/A23).
+ *
+ * The permissions travel with the payload so the screen gates itself the SAME way the server does —
+ * `finance.einvoice.read` to see the queue, `finance.einvoice.generate` to run a portal action. A
+ * screen inventing its own permission set would be deciding, on its own authority, who may chase up
+ * a stuck e-invoice.
+ */
+export interface PackGstReconciliationPolicy {
+  /** Who is looking. Absent means the queue is read-only and says so. */
+  readonly userId?: string;
+  /** The permission codes this user holds — never defaulted; an absent grant denies. */
+  readonly permissions: readonly string[];
+}
+
 /** Who administers this shop, and the windows it judges accounts and devices by. */
 export interface PackAdminPolicy {
   /** Days without a login after which an account is stale enough to review. Per-tenant. */
@@ -724,6 +739,15 @@ export interface StorePack {
   readonly periodState: Register<unknown>;
   /** The shop's own chart-of-accounts headings and the month being worked on. */
   readonly financePolicy: Register<PackFinancePolicy>;
+  /**
+   * The last-synced GST reconciliation queue (e-invoices + e-way bills), as rows the screen renders.
+   *
+   * **Absent means the box has never been told**, which the screen shows as its sample stand-in — not
+   * an empty queue, which would read as "every document is settled" (P-08).
+   */
+  readonly gstReconciliationQueue: Register<readonly unknown[]>;
+  /** Who is on the GST reconciliation screen and what they may do there. */
+  readonly gstReconciliationPolicy: Register<PackGstReconciliationPolicy>;
   /** Every account, so joiners, movers and leavers can be reviewed (M02-FR-04). */
   readonly accounts: Register<readonly unknown[]>;
   /**
@@ -851,6 +875,8 @@ export function emptyPack(why: string = NEVER): StorePack {
     financeLedger: notKnown(why),
     periodState: notKnown(why),
     financePolicy: notKnown(why),
+    gstReconciliationQueue: notKnown(why),
+    gstReconciliationPolicy: notKnown(why),
     accounts: notKnown(why),
     supportSessions: notKnown(why),
     devices: notKnown(why),
@@ -947,6 +973,8 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     financeLedger: section<unknown>('financeLedger'),
     periodState: section<unknown>('periodState'),
     financePolicy: section<PackFinancePolicy>('financePolicy'),
+    gstReconciliationQueue: section<readonly unknown[]>('gstReconciliationQueue'),
+    gstReconciliationPolicy: section<PackGstReconciliationPolicy>('gstReconciliationPolicy'),
     accounts: section<readonly unknown[]>('accounts'),
     supportSessions: section<readonly unknown[]>('supportSessions'),
     devices: section<readonly unknown[]>('devices'),
