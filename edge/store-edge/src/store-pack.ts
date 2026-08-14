@@ -428,6 +428,13 @@ export interface PackCategoryPolicyPolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the GST-returns screen and what they may do (owner directive item 3; M23). */
+export interface PackGstReturnsPolicy {
+  readonly userId?: string;
+  /** The permission codes this user holds — `finance.gstr.read` to see the filing queue. Never defaulted. */
+  readonly permissions: readonly string[];
+}
+
 /** Who administers this shop, and the windows it judges accounts and devices by. */
 export interface PackAdminPolicy {
   /** Days without a login after which an account is stale enough to review. Per-tenant. */
@@ -759,6 +766,15 @@ export interface StorePack {
   readonly categoryPolicyCategories: Register<readonly unknown[]>;
   /** Who is on the category-rules screen and what they may do there. */
   readonly categoryPolicyPolicy: Register<PackCategoryPolicyPolicy>;
+  /**
+   * Every GSTR-1 filing period folded to its current submission state, for the GST-returns screen.
+   *
+   * **Absent means the box has never been told**, shown as the sample stand-in — not an empty queue, which
+   * would read as "every return filed" (P-08).
+   */
+  readonly gstReturnsQueue: Register<readonly unknown[]>;
+  /** Who is on the GST-returns screen and what they may do there. */
+  readonly gstReturnsPolicy: Register<PackGstReturnsPolicy>;
   /** Every account, so joiners, movers and leavers can be reviewed (M02-FR-04). */
   readonly accounts: Register<readonly unknown[]>;
   /**
@@ -890,6 +906,8 @@ export function emptyPack(why: string = NEVER): StorePack {
     gstReconciliationPolicy: notKnown(why),
     categoryPolicyCategories: notKnown(why),
     categoryPolicyPolicy: notKnown(why),
+    gstReturnsQueue: notKnown(why),
+    gstReturnsPolicy: notKnown(why),
     accounts: notKnown(why),
     supportSessions: notKnown(why),
     devices: notKnown(why),
@@ -990,6 +1008,8 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     gstReconciliationPolicy: section<PackGstReconciliationPolicy>('gstReconciliationPolicy'),
     categoryPolicyCategories: section<readonly unknown[]>('categoryPolicyCategories'),
     categoryPolicyPolicy: section<PackCategoryPolicyPolicy>('categoryPolicyPolicy'),
+    gstReturnsQueue: section<readonly unknown[]>('gstReturnsQueue'),
+    gstReturnsPolicy: section<PackGstReturnsPolicy>('gstReturnsPolicy'),
     accounts: section<readonly unknown[]>('accounts'),
     supportSessions: section<readonly unknown[]>('supportSessions'),
     devices: section<readonly unknown[]>('devices'),

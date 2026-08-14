@@ -59,6 +59,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // GST e-invoice / e-way-bill reconciliation — gated on the SAME permission the queue route checks
   // (`finance.einvoice.read`), so the menu can never offer a screen the server would refuse (item 3 inc2).
   { id: 'gst-reconciliation', label: 'GST reconciliation', path: '/gst-reconciliation', requires: 'finance.einvoice.read', group: 'Finance' },
+  // GST returns — the GSTR-1 filing-status queue, gated on the SAME permission the queue route checks
+  // (`finance.gstr.read`), so the menu can never offer a screen the server would refuse (item 3, 4th domain).
+  { id: 'gst-returns', label: 'GST returns', path: '/gst-returns', requires: 'finance.gstr.read', group: 'Finance' },
 
   // Payroll — its OWN group, gated on the payroll permission the server enforces (`payroll.statutory.read`),
   // so cashier/warehouse/floor/ordinary-manager roles never see it and the menu can never offer a screen the

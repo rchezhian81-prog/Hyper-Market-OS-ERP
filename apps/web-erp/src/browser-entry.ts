@@ -84,6 +84,9 @@ import {
 import {
   createCategoryPolicySession, type CategoryPolicyPorts, type CategoryPolicySession,
 } from './category-policy-session';
+import {
+  createGstReturnsSession, type GstReturnsPorts, type GstReturnsSession, type ReturnRow as GstReturnRow,
+} from './gst-returns-session';
 import type { CategoryPolicy } from '../../../packages/product/src/index';
 import {
   foldPayRun, buildPayslip, resolveStatutoryParams, DEFAULT_STATUTORY_SCHEDULE,
@@ -493,6 +496,35 @@ export function bootCategoryPolicy(data: CategoryPolicyData | undefined): Catego
   return createCategoryPolicySession(
     { userId: data.userId === undefined ? null : data.userId },
     categoryPolicyPortsFromData(data),
+  );
+}
+
+/** What the box tells the GST-returns screen — the last-synced filing queue plus who is looking. */
+export interface GstReturnsData {
+  readonly userId?: string;
+  /** Every filing period folded to its current submission state (from the item-1 submission store). */
+  readonly rows?: readonly GstReturnRow[];
+  /** The permission codes this user holds — the menu and the screen are gated the same way the server is. */
+  readonly permissions?: readonly string[];
+}
+
+const GST_RETURNS_READ_PERMISSION = 'finance.gstr.read';
+
+export function gstReturnsPortsFromData(data: GstReturnsData | undefined): GstReturnsPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    rows: () => data?.rows ?? [],
+    // Default-deny: an absent permission list can read nothing (the server would refuse it anyway).
+    mayRead: () => held.has(GST_RETURNS_READ_PERMISSION),
+  };
+}
+
+/** Build the GST-returns screen, or `null` when the box carried no payload for it. */
+export function bootGstReturns(data: GstReturnsData | undefined): GstReturnsSession | null {
+  if (data === undefined) return null;
+  return createGstReturnsSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    gstReturnsPortsFromData(data),
   );
 }
 
@@ -971,6 +1003,8 @@ interface ManagerWindow {
   gstReconciliationOutbox?: SyncOutbox;
   categoryPolicyData?: CategoryPolicyData;
   categoryPolicySession?: CategoryPolicySession;
+  gstReturnsData?: GstReturnsData;
+  gstReturnsSession?: GstReturnsSession;
   payrollData?: PayrollData;
   payrollSession?: PayrollSession;
   payrollEssData?: PayrollEssData;
@@ -1460,6 +1494,8 @@ if (browserWindow !== undefined) {
   }
   const categoryPolicy = bootCategoryPolicy(browserWindow.categoryPolicyData);
   if (categoryPolicy !== null) browserWindow.categoryPolicySession = categoryPolicy;
+  const gstReturns = bootGstReturns(browserWindow.gstReturnsData);
+  if (gstReturns !== null) browserWindow.gstReturnsSession = gstReturns;
   // Payroll always boots a session (real from a payload, or a flagged DEMO one) — never blank.
   browserWindow.payrollSession = bootPayroll(browserWindow.payrollData);
   browserWindow.payrollEssSession = bootPayrollEss(browserWindow.payrollEssData);

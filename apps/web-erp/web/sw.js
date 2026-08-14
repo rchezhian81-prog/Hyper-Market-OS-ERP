@@ -1,9 +1,9 @@
 // Back-office service worker — makes the ERP open with no internet (§31), including at the goods-in
 // door and in the cash office, which are the worst two places for wifi in the building.
 //
-// **This folder serves thirteen screens** — the manager's, the buyer's, prices, shelves and space,
-// reports, customer service, expiry and recall, finance, GST reconciliation, category rules, admin and
-// security, AI control, and moving off the old system —
+// **This folder serves fourteen screens** — the manager's, the buyer's, prices, shelves and space,
+// reports, customer service, expiry and recall, finance, GST reconciliation, category rules, GST returns,
+// admin and security, AI control, and moving off the old system —
 // sharing one bundle. Each is registered separately by the store box under its own path, so each
 // gets its own scope and `./` is always that screen's own page. There is no way for one to be
 // served in place of another.
@@ -32,10 +32,10 @@
 // gives the browser a syntax error, and the screen then boots into its sample stand-in for a reason
 // nobody can see.
 
-const CACHE = 'sre-erp-shell-v10';
+const CACHE = 'sre-erp-shell-v11';
 
 /** Committed files. A missing one is a packaging fault and should fail the install loudly. */
-const SHELL = ['./app.js', './buying.js', './catalogue.js', './merchandising.js', './reporting.js', './service.js', './expiry.js', './finance.js', './gst-reconciliation.js', './category-policy.js', './admin.js', './ai.js', './migration.js', './manifest.webmanifest'];
+const SHELL = ['./app.js', './buying.js', './catalogue.js', './merchandising.js', './reporting.js', './service.js', './expiry.js', './finance.js', './gst-reconciliation.js', './category-policy.js', './gst-returns.js', './admin.js', './ai.js', './migration.js', './manifest.webmanifest'];
 
 /** Build artefacts. Added tolerantly: `addAll` is all-or-nothing and a missing build must not
  *  stop the rest of the shell being cached. Without the bundle the screen opens into its SAMPLE
