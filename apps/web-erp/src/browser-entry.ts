@@ -77,7 +77,14 @@ import {
 import {
   createPayrollSession, type PayrollPorts, type PayrollSession, type EmployeeInput as PayrollEmployeeInput,
 } from './payroll-session';
-import { foldPayRun, type PayRunAggregate, type PayrollTotals, type SettlementInput as PayrollSettlementInput } from '../../../packages/payroll/src/index';
+import {
+  createPayrollEssSession, type PayrollEssPorts, type PayrollEssSession,
+} from './payroll-ess-session';
+import {
+  foldPayRun, buildPayslip, resolveStatutoryParams, DEFAULT_STATUTORY_SCHEDULE,
+  type PayRunAggregate, type PayrollTotals, type SettlementInput as PayrollSettlementInput,
+  type Payslip as PayrollPayslip, type Settlement as PayrollSettlement,
+} from '../../../packages/payroll/src/index';
 import type { LedgerSide, QueuedPosting } from '../../../packages/period-close/src/index';
 import { createAdminSession, type AdminPorts, type AdminSession } from './admin-session';
 import { createSetupSession, type SetupSession } from './setup-session';
@@ -536,6 +543,70 @@ export function bootPayroll(data: PayrollData | undefined): PayrollSession {
   );
 }
 
+// ── Payroll employee self-service (own payslip) — a SEPARATE surface, permission and shell ───────────────
+
+const PAYROLL_ESS_PERMISSION = 'payroll.ess.self';
+
+/**
+ * What the online payroll server tells the self-service screen. `requesterEmployeeId` is the AUTHENTICATED
+ * principal the box was told from the signed-in session — never a value the page can set. The session refuses
+ * unless it equals `subjectEmployeeId`, so this is the forge-proof own-record control.
+ */
+export interface PayrollEssData {
+  readonly requesterEmployeeId?: string;
+  readonly subjectEmployeeId?: string;
+  readonly permissions?: readonly string[];
+  readonly demo?: boolean;
+  readonly payslip?: PayrollPayslip;
+  readonly settlement?: PayrollSettlement;
+}
+
+export function payrollEssPortsFromData(data: PayrollEssData): PayrollEssPorts {
+  const held = new Set(data.permissions ?? []);
+  return {
+    mayView: () => held.has(PAYROLL_ESS_PERMISSION),
+    payslip: () => data.payslip,
+    settlement: () => data.settlement,
+    online: browserOnline,
+    reauthAgeSeconds: payrollReauthAgeSeconds,
+  };
+}
+
+/** A DEMO own-payslip, built on the real engine, shown when no real payload is injected. */
+function demoEssPayslip(): PayrollPayslip {
+  const params = resolveStatutoryParams(DEFAULT_STATUTORY_SCHEDULE, '2026-08-31');
+  return buildPayslip({
+    onDate: '2026-08-31',
+    components: [
+      { code: 'BASIC', monthlyMinor: 20_000_00, partOfPfWage: true, partOfGross: true },
+      { code: 'HRA', monthlyMinor: 10_000_00, partOfGross: true },
+    ],
+    attendance: { calendarDaysInMonth: 31, paidDays: 31 },
+    params,
+  });
+}
+
+/** Build the self-service screen. Always returns a session — a DEMO own-payslip when nothing was injected. */
+export function bootPayrollEss(data: PayrollEssData | undefined): PayrollEssSession {
+  if (data === undefined) {
+    const payslip = demoEssPayslip();
+    return createPayrollEssSession(
+      { requesterEmployeeId: 'DEMO-EMP', subjectEmployeeId: 'DEMO-EMP', demo: true, reauthFreshWithinSeconds: PAYROLL_REAUTH_FRESH_SECONDS },
+      { mayView: () => true, payslip: () => payslip, settlement: () => undefined, online: browserOnline, reauthAgeSeconds: payrollReauthAgeSeconds },
+    );
+  }
+  return createPayrollEssSession(
+    {
+      // The requester is the authenticated principal — never a page-settable value.
+      requesterEmployeeId: data.requesterEmployeeId === undefined ? null : data.requesterEmployeeId,
+      subjectEmployeeId: data.subjectEmployeeId ?? '',
+      demo: data.demo === true,
+      reauthFreshWithinSeconds: PAYROLL_REAUTH_FRESH_SECONDS,
+    },
+    payrollEssPortsFromData(data),
+  );
+}
+
 /** What the box tells the admin and security screen. */
 export interface AdminData {
   readonly userId?: string;
@@ -842,6 +913,8 @@ interface ManagerWindow {
   gstReconciliationSession?: GstReconciliationSession;
   payrollData?: PayrollData;
   payrollSession?: PayrollSession;
+  payrollEssData?: PayrollEssData;
+  payrollEssSession?: PayrollEssSession;
   /** The shell calls this after a successful MFA step to refresh the sensitive-action re-auth window. */
   payrollReauth?: () => void;
   adminData?: AdminData;
@@ -1320,6 +1393,7 @@ if (browserWindow !== undefined) {
   if (gstReconciliation !== null) browserWindow.gstReconciliationSession = gstReconciliation;
   // Payroll always boots a session (real from a payload, or a flagged DEMO one) — never blank.
   browserWindow.payrollSession = bootPayroll(browserWindow.payrollData);
+  browserWindow.payrollEssSession = bootPayrollEss(browserWindow.payrollEssData);
   browserWindow.payrollReauth = markPayrollReauthenticated;
   const admin = bootAdmin(browserWindow.adminData);
   if (admin !== null) browserWindow.adminSession = admin;
