@@ -65,7 +65,7 @@ import type { FacilitiesAssetsDeps, Asset, ServiceLog, DowntimeEvent, EnergyRead
 import type { FacilitiesMonitoringDeps, EquipmentRangeReg, EquipmentContents, EquipmentReading, PowerEvent } from '../../platform/src/facilities-monitoring';
 import type { PackagingDeps, PackagingItem, PackagingMovement } from '../../inventory/src/packaging';
 import type { ComplianceDeps, Obligation } from '../../compliance/src/index';
-import type { DocumentsDeps, TemplateVersion } from '../../platform/src/documents';
+import type { DocumentsDeps, TemplateVersion, IssuedDocument } from '../../platform/src/documents';
 import type { SuspendedBillsDeps, SuspendedBill } from '../../pos/src/suspended-bills';
 import type { EInvoiceRegisterDeps } from '../../finance/src/e-invoice-register';
 import type { PayRunStoreDeps } from '../../finance/src/pay-run-store';
@@ -255,6 +255,25 @@ export function documentsAdapter(input: {
         idempotencyKey: `doc-tmpl-${tenantId}-${template.templateId}-v${template.version}`,
         source: 'api/platform',
         payload: template,
+      }));
+    },
+
+    /** A previously issued document by id — a fold of the `DocumentIssued` facts (M31-FR-02). */
+    issued: async (tenantId, documentId) => {
+      const all = await allOf<IssuedDocument>(input.store, tenantId, STREAM.documents, 'DocumentIssued');
+      return all.find((d) => d.documentId === documentId);
+    },
+
+    /** Store an issued document with its FROZEN content, append-only. Idempotent on the document id — a
+     *  re-issue collapses to one fact, never a second copy under a later template version (hard rule #6). */
+    recordIssued: async (tenantId, doc: IssuedDocument) => {
+      await input.store.append(tenantId, STREAM.documents, makeEvent({
+        id: `doc-issued-${doc.documentId}`,
+        type: 'DocumentIssued',
+        occurredAt: doc.issuedAt,
+        idempotencyKey: `doc-issued-${tenantId}-${doc.documentId}`,
+        source: 'api/platform',
+        payload: doc,
       }));
     },
   };
