@@ -16,7 +16,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { OrderState, OrderEvent } from '../../../packages/orders/src/lifecycle';
 import { transitionOrder, canTransition, isTerminal } from '../../../packages/orders/src/lifecycle';
-import { applySubstitution, type SubstitutionOffer, type SubstitutionDecision, type SubstitutionOutcome } from '../../../packages/orders/src/amendments';
+import { applySubstitution, reconcileChannel, type SubstitutionOffer, type SubstitutionDecision, type SubstitutionOutcome, type ChannelOrder } from '../../../packages/orders/src/amendments';
 
 export interface Reservation {
   readonly reservationId: string;
@@ -191,6 +191,14 @@ const isOffer = (v: unknown): v is SubstitutionOffer =>
   && isStr((v as Record<string, unknown>)['substituteProductId']) && isStr((v as Record<string, unknown>)['substituteName'])
   && isNonNegInt((v as Record<string, unknown>)['substituteUnitPriceMinor']) && isPosInt((v as Record<string, unknown>)['substituteQuantityMinor'])
   && isStr((v as Record<string, unknown>)['offeredAt']);
+
+/** One order as a channel or our ledger reports it: an id, a value, and a state — the three things
+ *  reconciliation compares. */
+const isChannelOrder = (v: unknown): v is ChannelOrder =>
+  typeof v === 'object' && v !== null
+  && isStr((v as Record<string, unknown>)['orderId'])
+  && isNonNegInt((v as Record<string, unknown>)['valueMinor'])
+  && isStr((v as Record<string, unknown>)['state']);
 
 export function ordersRoutes(deps: OrdersDeps): readonly Route[] {
   return [
@@ -381,6 +389,34 @@ export function ordersRoutes(deps: OrdersDeps): readonly Route[] {
             refundDue: result.refundMinor > 0, tellTheCustomer: result.tellTheCustomer,
           },
         };
+      },
+    },
+    // Reconcile a sales channel against our own ledger, in BOTH directions (M18-FR-04). The two failures are
+    // different and a one-way check misses one entirely: an order the CHANNEL has and we do NOT is revenue we
+    // never fulfilled (a customer waiting); an order WE have and the channel does not is a phantom that will
+    // never be paid for. A value or state mismatch on a matched order is surfaced too — the customer reads the
+    // channel. Stateless: the caller supplies both order lists (a marketplace export vs our own); nothing is
+    // stored. Gated `order.read` (reading order data to reconcile it).
+    {
+      api: 'API-07', method: 'POST', path: '/v1/orders/channel-reconcile',
+      permission: 'order.read', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as { channel?: unknown; channelOrders?: unknown; ledgerOrders?: unknown };
+        if (!isStr(b.channel) || !Array.isArray(b.channelOrders) || !Array.isArray(b.ledgerOrders)
+          || !b.channelOrders.every(isChannelOrder) || !b.ledgerOrders.every(isChannelOrder)) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_channel_reconciliation',
+            whatHappened: 'A channel reconciliation needs a channel name, channelOrders and ledgerOrders — each order an { orderId, whole valueMinor, state }.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the two order lists. Nothing is stored — this only reports where they disagree.',
+          });
+        }
+        const result = reconcileChannel({
+          channel: b.channel,
+          channelOrders: b.channelOrders as ChannelOrder[],
+          ledgerOrders: b.ledgerOrders as ChannelOrder[],
+        });
+        return { status: 200, body: result };
       },
     },
   ];
