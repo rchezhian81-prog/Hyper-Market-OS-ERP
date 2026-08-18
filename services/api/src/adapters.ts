@@ -27,6 +27,8 @@ import { InMemorySnapshotStore, projectFromSnapshot, type Projection, type Snaps
 import type { CatalogueProduct } from '../../../packages/catalogue/src/catalogue';
 import type { SignedPack } from '../../catalogue/src/index';
 import type { CatalogueDeps } from '../../catalogue/src/index';
+import type { ProductMasterDeps } from '../../catalogue/src/product-master';
+import type { ProductRecord } from '../../../packages/product/src/index';
 import type { IncomingSale, IncomingTender, SaleException, PosDeps } from '../../pos/src/index';
 import type { LotTraceDeps } from '../../inventory/src/lot-trace';
 import type { SalesHistoryDeps } from '../../inventory/src/sales-history';
@@ -854,6 +856,45 @@ export function catalogueAdapter(input: {
     },
 
     approvalsSince: () => [],
+  };
+}
+
+/**
+ * The product-master store (M03-FR-01) — the persistence the catalogue pack build has waited for.
+ * Each published product is a `ProductPublished` event on the tenant's product-master stream; the current
+ * master is the latest event per product id (a change is a new version, never an overwrite — hard rule #2),
+ * so a product master survives a restart and reads as what happened.
+ */
+export function productMasterAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): ProductMasterDeps {
+  const stream = streamName(STREAM.catalogue, 'products');
+  const foldLatest = async (tenantId: string): Promise<Map<string, ProductRecord>> => {
+    const events = await input.store.readStream(tenantId, stream, { type: 'ProductPublished' });
+    const byId = new Map<string, ProductRecord>();
+    for (const e of events) {
+      const r = payloadOf<ProductRecord>(e);
+      byId.set(r.productId, r); // occurrence order → the last publish of an id wins
+    }
+    return byId;
+  };
+  return {
+    publish: async (tenantId, record, key) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `product-${record.productId}-${key}`,
+        type: 'ProductPublished',
+        occurredAt: input.now(),
+        // Keyed on the caller's idempotency key so a retry dedups to one version; a deliberate re-publish
+        // (a new key) is a new version.
+        idempotencyKey: `product-${tenantId}-${record.productId}-${key}`,
+        source: 'api/catalogue',
+        payload: record,
+      }));
+    },
+    product: async (tenantId, productId) => (await foldLatest(tenantId)).get(productId),
+    products: async (tenantId) =>
+      [...(await foldLatest(tenantId)).values()].sort((a, b) => (a.productId < b.productId ? -1 : a.productId > b.productId ? 1 : 0)),
   };
 }
 
