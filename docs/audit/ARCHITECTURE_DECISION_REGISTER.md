@@ -5,6 +5,15 @@ decisions this audit recommends. New decisions are **Proposed** — they are rec
 several depend on the owner decisions in EXECUTIVE_ARCHITECTURE_AUDIT.md. Format per decision: Decision · Reason
 · Alternatives · Benefits · Costs · Risks · Migration impact · Reconsider-when._
 
+> **Update (18 August 2026, Phase 2 architecture closure).** `docs/adr/` now holds **twelve** ADRs, not
+> four. ADR-0005 (projection snapshots) and ADR-0006 (batch-on-sale attribution) were added during the
+> build; ADRs **0007–0011** were added to discharge the CLAUDE.md §19 mandate that every technology-baseline
+> substitution carry a covering ADR (ERP no-framework shell, Postgres-outbox messaging, Redis deferred,
+> documents-as-events, edge file-log). **ADR-A01** below (modular monolith) is promoted as **ADR-0012**, and
+> **ADR-A02** (the single-`pg.Client` SPOF) is resolved in code (`services/api/src/main.ts` now uses a
+> `pg.Pool`). The remaining A03–A12 stay as recommendations for later phases; the table below is the
+> original 2026-08-09 snapshot, kept for the record.
+
 ## Existing ADRs (verified in `docs/adr/`)
 | ID | Title | Status (verified) | Note |
 |---|---|---|---|
