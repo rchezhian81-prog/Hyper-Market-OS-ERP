@@ -17,7 +17,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  buildCatalogueSnapshot, type MasterProduct,
+  buildCatalogueSnapshot, type MasterProduct, type BuildSnapshotResult,
 } from '../../../packages/catalogue/src/snapshot-builder';
 import type { CatalogueBarcode, ProductStatus } from '../../../packages/catalogue/src/catalogue';
 import { mrpOn, type ProductRecord, type BarcodeAssignment } from '../../../packages/product/src/index';
@@ -55,6 +55,57 @@ function toMaster(r: ProductRecord, asOf: string): MasterProduct {
   };
 }
 
+/**
+ * Assemble a catalogue snapshot for a store as of a date, from the four master-data stores, through the
+ * tested `buildCatalogueSnapshot`. Shared by the read-only preview route AND the signed pack publish
+ * (`catalogueAdapter.buildSnapshot`), so there is ONE fold path: the same products reach a preview and a
+ * published pack. `version` is the version the snapshot will carry (0 for a preview; previous+1 when publishing).
+ */
+export async function assembleCatalogueSnapshot(
+  deps: CataloguePreviewDeps,
+  opts: { readonly tenantId: string; readonly storeId: string; readonly asOf: string; readonly version: number },
+): Promise<BuildSnapshotResult> {
+  const asOfDate = opts.asOf.slice(0, 10); // date part, for the effective-dated tax + MRP lookups
+  const records = await deps.products(opts.tenantId);
+
+  // Prices: every entry for every product (the engine resolves the one that applies at this store/date).
+  const priceEntries: PriceEntry[] = [];
+  for (const r of records) priceEntries.push(...(await deps.priceEntries(opts.tenantId, r.productId)));
+
+  // Tax rates: resolve each distinct tax class's rate in force on the date. An HSN with no schedule (or a
+  // gap before its earliest rate) is left unset — the engine then excludes its products as 'no_tax_class'
+  // rather than shipping an untaxed line (never a guessed rate).
+  const taxClasses: Record<string, number> = {};
+  for (const hsn of new Set(records.map((r) => r.taxClass).filter((c): c is string => isStr(c)))) {
+    const schedule = await deps.taxSchedule(opts.tenantId, hsn);
+    if (schedule.length === 0) continue;
+    try {
+      taxClasses[hsn] = resolveGstRate({ schedule, supplyDate: asOfDate }).rateBps;
+    } catch (err) {
+      if (!(err instanceof InvalidRateSchedule)) throw err; // a gap → leave unset; anything else is a real fault
+    }
+  }
+
+  // Barcodes: the register, mapped to the snapshot shape (the engine drops any whose product is excluded).
+  // The register records SYMBOLOGY (gtin/ean/upc/internal/case/embedded); the catalogue `kind` is how the
+  // LANE reads the code, where a plain product code is 'standard'. Embedded weight/price barcodes are driven
+  // by per-tenant `EmbeddedBarcodeRule` (a separate pack input not yet sourced on the cloud), so every
+  // register code is carried here as 'standard' for now.
+  const barcodes: CatalogueBarcode[] = (await deps.barcodes(opts.tenantId)).map((b) => ({
+    code: b.code, productId: b.productId, kind: 'standard' as const,
+  }));
+
+  return buildCatalogueSnapshot({
+    scope: { tenantId: opts.tenantId, storeId: opts.storeId },
+    version: opts.version,
+    asOf: opts.asOf,
+    products: records.map((r) => toMaster(r, opts.asOf)),
+    barcodes,
+    priceEntries,
+    taxClasses,
+  });
+}
+
 export function cataloguePreviewRoutes(deps: CataloguePreviewDeps): readonly Route[] {
   return [
     {
@@ -82,47 +133,7 @@ export function cataloguePreviewRoutes(deps: CataloguePreviewDeps): readonly Rou
           });
         }
         const asOf = asOfQ ?? deps.now();
-        const asOfDate = asOf.slice(0, 10); // date part, for the effective-dated tax + MRP lookups
-
-        const records = await deps.products(ctx.tenantId);
-
-        // Prices: every entry for every product (the engine resolves the one that applies at this store/date).
-        const priceEntries: PriceEntry[] = [];
-        for (const r of records) priceEntries.push(...(await deps.priceEntries(ctx.tenantId, r.productId)));
-
-        // Tax rates: resolve each distinct tax class's rate in force on the date. An HSN with no schedule (or
-        // a gap before its earliest rate) is left unset — the engine then excludes its products as
-        // 'no_tax_class' rather than shipping an untaxed line (never a guessed rate).
-        const taxClasses: Record<string, number> = {};
-        for (const hsn of new Set(records.map((r) => r.taxClass).filter((c): c is string => isStr(c)))) {
-          const schedule = await deps.taxSchedule(ctx.tenantId, hsn);
-          if (schedule.length === 0) continue;
-          try {
-            taxClasses[hsn] = resolveGstRate({ schedule, supplyDate: asOfDate }).rateBps;
-          } catch (err) {
-            if (!(err instanceof InvalidRateSchedule)) throw err; // a gap → leave unset; anything else is a real fault
-          }
-        }
-
-        // Barcodes: the register, mapped to the snapshot shape (the engine drops any whose product is
-        // excluded). The register records SYMBOLOGY (gtin/ean/upc/internal/case/embedded); the catalogue
-        // `kind` is how the LANE reads the code, where a plain product code is 'standard'. Embedded
-        // weight/price barcodes are driven by per-tenant `EmbeddedBarcodeRule` (a separate pack input not
-        // yet sourced on the cloud), so every register code is carried here as 'standard' for now.
-        const barcodes: CatalogueBarcode[] = (await deps.barcodes(ctx.tenantId)).map((b) => ({
-          code: b.code, productId: b.productId, kind: 'standard' as const,
-        }));
-
-        const result = buildCatalogueSnapshot({
-          scope: { tenantId: ctx.tenantId, storeId },
-          version: 0, // a preview is not a published version; the signed publish assigns the real version
-          asOf,
-          products: records.map((r) => toMaster(r, asOf)),
-          barcodes,
-          priceEntries,
-          taxClasses,
-        });
-
+        const result = await assembleCatalogueSnapshot(deps, { tenantId: ctx.tenantId, storeId, asOf, version: 0 });
         return {
           status: 200,
           body: {
