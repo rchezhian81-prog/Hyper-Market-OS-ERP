@@ -84,6 +84,7 @@ import { packagingRoutes } from '../../inventory/src/packaging';
 import { wasteRoutes } from '../../inventory/src/waste';
 import { writeOffRoutes } from '../../inventory/src/write-off';
 import { coldChainRoutes } from '../../inventory/src/cold-chain';
+import { expiryRoutes } from '../../inventory/src/expiry';
 import { lotTraceRoutes } from '../../inventory/src/lot-trace';
 import { integrationRoutes } from '../../platform/src/integration';
 import { webhookRoutes, webhookHasher } from '../../platform/src/webhooks';
@@ -424,6 +425,7 @@ export function buildSurface(deps: {
     // Cold-chain assessment (M10-FR-02) — stateless verdict on a perishable batch; no second temperature
     // store (facilities-monitoring owns that truth, P-02), so no deps/stub.
     ...coldChainRoutes(),
+    ...expiryRoutes(),
     // One-up/one-down lot traceability export (B11 / M10-FR-03) — the reconciled supplier→store→recipient
     // trace a recall runs on. The OUTBOUND (who bought it) folds the real banked sales by batch (batch-on-sale
     // inc3a); inbound receipts stay caller-supplied for now.
