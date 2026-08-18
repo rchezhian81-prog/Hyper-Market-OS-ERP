@@ -39,6 +39,7 @@ import { categoryPolicyRoutes } from '../../catalogue/src/category-policy';
 import { productDuplicateRoutes } from '../../catalogue/src/product-duplicates';
 import { productMasterRoutes } from '../../catalogue/src/product-master';
 import { barcodeRoutes } from '../../catalogue/src/barcodes';
+import { taxClassRoutes } from '../../catalogue/src/tax-classes';
 import { pricingRoutes } from '../../pricing/src/index';
 import { priceListRoutes } from '../../pricing/src/price-list';
 import { promotionCatalogueRoutes } from '../../pricing/src/promotion-catalogue';
@@ -114,7 +115,7 @@ import { fulfilmentRoutes } from '../../fulfilment/src/index';
 import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
-  catalogueAdapter, productMasterAdapter, barcodeAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, packagingAdapter, wasteAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
+  catalogueAdapter, productMasterAdapter, barcodeAdapter, taxClassAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, packagingAdapter, wasteAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter, lotTraceAdapter, salesHistoryAdapter,
 } from './adapters';
@@ -208,6 +209,10 @@ export function buildSurface(deps: {
     ...barcodeRoutes(store === undefined
       ? { assign: () => {}, all: empty([]) }
       : barcodeAdapter({ store, now })),
+    // Tax-class GST-rate schedule (M03-FR-03 / A6) — per-HSN effective-dated rate; set/resolve/list.
+    ...taxClassRoutes(store === undefined
+      ? { setRate: () => {}, schedule: empty([]) }
+      : taxClassAdapter({ store, now })),
     ...pricingRoutes(store === undefined
       ? { recordPriceChange: () => {}, canApprove: () => Promise.resolve(false), now }
       : pricingAdapter({ store, now })),
