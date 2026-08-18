@@ -14,7 +14,7 @@
     {"id": "M03", "label": "PARTIALLY_WIRED", "evidence": "RTM: catalogue PARTIALLY WIRED"},
     {"id": "M04", "label": "PARTIALLY_WIRED", "evidence": "RTM: picking PARTIALLY WIRED (app-shell)"},
     {"id": "M05", "label": "WIRED", "evidence": "RTM: WIRED, all four FRs integration-tested"},
-    {"id": "M06", "label": "PARTIALLY_WIRED", "evidence": "RTM: counts/adjustments wired; count-review office screen shipped; recount/blind-count controls follow-on"},
+    {"id": "M06", "label": "PARTIALLY_WIRED", "evidence": "RTM: supplier/procurement — bank-change verification recorded as an event (D03-FR-06 wired); requisition/RFQ/PO/scorecards/open-commitments engine-level (M06-FR-01..04)"},
     {"id": "M07", "label": "PARTIALLY_WIRED", "evidence": "RTM: FR-04 wired, GRN/OCR ingestion pending"},
     {"id": "M08", "label": "INTEGRATION_TESTED", "evidence": "RTM: INTEGRATION TESTED, valuation/ageing/performance wired"},
     {"id": "M09", "label": "WIRED", "evidence": "RTM: WIRED, all four FRs integration-tested"},
