@@ -1,10 +1,13 @@
 # SRE Retail OS — Architecture overview (Stage 4)
 
 - **Roadmap:** §19 (technology baseline), §29 (data model), §30 (APIs/events), §31 (offline/sync), §34 (migration), §35 (security/privacy). Principles **P-01…P-08**.
-- **Purpose:** How the pieces fit so the store keeps trading with no internet (P-01) while the cloud holds one commerce truth (P-02). This overview is the Stage 4 map; the data model, API catalogue, offline-sync and threat-model docs detail each part. It **applies** the §19 baseline fixed in `../adr/0001-baseline-decisions.md` — no substitution (any would need a new ADR).
+- **Purpose:** How the pieces fit so the store keeps trading with no internet (P-01) while the cloud holds one commerce truth (P-02). This overview is the Stage 4 map; the data model, API catalogue, offline-sync and threat-model docs detail each part. It **applies** the §19 baseline fixed in `../adr/0001-baseline-decisions.md`; the deliberate substitutions the pilot ships (edge store, messaging, cache, document storage, ERP framework, cloud topology) are each recorded in **ADRs 0007–0012**.
 
-> No application code yet (coding is on HOLD until D3/D4/D5/D8 close). Stage 4 produces
-> the design that the build implements from Stage 5 onward.
+> **As built (18 August 2026):** the application code is live and test-gated (~40.3% weighted
+> completion — see `../STATUS.md`), not on hold. This overview is kept as the §19 **target** map;
+> where the built system deliberately substitutes a simpler mechanism for the single-store pilot, the
+> text is annotated **[as built → ADR-NNNN]**. The ASCII diagram in §1 shows the §19 target — read the
+> §2 container table and the "As built" note under it for what actually ships today.
 
 ## 1. The three planes
 
@@ -27,18 +30,24 @@
   └───────────────────────────────────────────┘
 ```
 
-- **Store edge** — containerised local services and a local relational database in each
-  store. Serves the LAN-first POS path, holds a **signed, versioned cache** of
-  config/product/price/tax/stock, keeps the durable **outbox**, and syncs idempotently to
-  cloud. The store trades with the internet cut (P-01, hard rule #1).
-- **Cloud** — the modular **domain services** (one bounded context per domain family),
-  PostgreSQL + Redis, object storage for documents, the durable broker, the AI model
-  gateway, Identity/RBAC, and the ERP/Admin SSR web app. System of record and the "one
-  commerce truth" (P-02).
+- **Store edge** — containerised local services with a durable **append-only file-log** in each
+  store (the §19 "local relational database" is deliberately substituted — **ADR-0011**). Serves the
+  LAN-first POS path, holds a **signed, versioned cache** of config/product/price/tax/stock, keeps the
+  durable **outbox**, and syncs idempotently to cloud. The store trades with the internet cut (P-01,
+  hard rule #1).
+- **Cloud** — the modular **domain services** assembled as one deployable process (**modular monolith**,
+  **ADR-0012**); **PostgreSQL** (Redis deferred for the single-instance pilot — **ADR-0009**); documents
+  held as **append-only events** rather than object storage (**ADR-0010**); a durable **Postgres outbox**
+  in place of a message broker (**ADR-0008**); the AI model gateway; Identity/RBAC; and the ERP/Admin web
+  served as a **no-framework static/PWA shell** (production SSR framework deferred — **ADR-0007**). System
+  of record and the "one commerce truth" (P-02).
 - **Clients** — POS (desktop/PWA, edge-first), owner/manager/customer/picker/delivery
   apps (cross-platform, must run on a low-spec Android), and the customer web store.
 
-## 2. Container view (§19 baseline realized)
+## 2. Container view (§19 baseline + as-built)
+
+_The "Baseline (§19)" column is the roadmap target; the "As built" note beneath the table records where
+the pilot deliberately substitutes, each with its ADR._
 
 | Plane | Container | Baseline (§19) | Responsibility |
 | --- | --- | --- | --- |
@@ -51,6 +60,13 @@
 | Cloud | Broker | Durable broker (idempotency/retry/DLQ) | §30.2 domain events; integration backbone |
 | Cloud | AI gateway | Central model gateway | Scoped tools, evidence, budget, kill switch |
 | Delivery | Platform | Containers + IaC + CI/CD | Build, deploy, environments |
+
+**As built (pilot, cross-referenced to the ADRs that record each substitution):** the ERP/Admin web is a
+**no-framework static/PWA shell** (ADR-0007); the edge store is an **append-only file-log**, not a
+relational DB (ADR-0011); cloud data is **PostgreSQL only** — Redis deferred (ADR-0009) and documents held
+as **events**, not object storage (ADR-0010); messaging is a **Postgres outbox**, not a broker (ADR-0008);
+the cloud is a **modular monolith** (ADR-0012). Delivery has containers + CI; **IaC/CD is deferred**
+(ADR-0002, owner decision OA-5). Everything else in the table matches the §19 baseline as written.
 
 ## 3. Domain services (bounded contexts → API-01…13)
 
@@ -72,8 +88,8 @@ level and expanded when their release is reached — nothing invented ahead of t
 | AI gateway | A01–A10 | API-13 | agent registry, runs, budgets, kill switch | R7 |
 
 Contexts are logical bounded contexts with versioned contracts; the physical deployment
-topology (modular monolith first, splittable later) is an infrastructure choice made in
-Stage 5 within the §19 baseline — a commitment that deviates would be recorded as an ADR.
+topology (modular monolith first, splittable later) is recorded in **ADR-0012**: one deployable process
+composing the domain modules, scaled by replication, splittable along the package seams later.
 
 ## 4. Principles → architecture
 
@@ -98,8 +114,8 @@ Stage 5 within the §19 baseline — a commitment that deviates would be recorde
   tenant #1. Cross-tenant access is a critical threat (§35).
 - **Identity & RBAC (M01/M02):** every call scoped to tenant/company/branch; maker-checker
   and separation of duties; **no shared logins** (hard rule #4).
-- **Messaging (§30.2):** durable broker; idempotency keys; retry with **dead-letter that
-  is never dropped** (hard rule #6); consumers idempotent.
+- **Messaging (§30.2):** a durable **Postgres outbox** (ADR-0008, the §19 broker deferred) provides
+  idempotency keys, retry, and a **dead-letter that is never dropped** (hard rule #6); consumers idempotent.
 - **AI gateway (A01–A10):** scoped tools, evidence + confidence, budget cap, kill switch;
   **never writes the database, never commits a critical change** (hard rule #5) — enforced
   by `tests/guardrails/ai-agent-db-write.test.ts`.

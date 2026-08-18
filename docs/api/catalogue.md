@@ -17,9 +17,9 @@
 - **Errors:** structured, typed errors carrying the §27.1 three-part content — *what
   happened · whether data was saved · the next safe action*.
 - **Pagination/filtering:** cursor pagination; filter by company/branch/warehouse/dept.
-- **Events (§30.2):** state changes publish **durable domain events** to the broker
-  (at-least-once, **idempotent consumers**, retry + **dead-letter**). Events — not
-  synchronous call chains — are how domains integrate.
+- **Events (§30.2):** state changes are recorded as **durable domain events** in a Postgres outbox
+  (ADR-0008, the §19 broker deferred) and drained **at-least-once** (**idempotent consumers**, retry +
+  **dead-letter**). Events — not synchronous call chains — are how domains integrate.
 - **Audit/observability:** every write is audited (M34) and traceable (NFR-15).
 - **No card data (hard rule #3):** no PAN/CVV/expiry crosses any API — provider tokens
   and refs only.

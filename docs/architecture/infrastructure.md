@@ -9,11 +9,12 @@
 
 ## 1. Two tiers: store edge (on-prem) + cloud (central)
 - **Store edge — on-prem hardware in the store (capex, NOT part of the ₹15k/month runtime
-  ceiling):** a small fanless mini-server on a UPS, running the containerised edge stack +
-  local PostgreSQL. This keeps the till trading with the internet cut (P-01, hard rule #1).
+  ceiling):** a small fanless mini-server on a UPS, running the containerised edge stack over a durable
+  **append-only file-log** (the §19 "local relational database" is deliberately substituted — ADR-0011).
+  This keeps the till trading with the internet cut (P-01, hard rule #1).
   Spec confirmed against the store's hardware inventory (`⟳ AVR-06`).
-- **Cloud — the central services, data, broker, AI gateway and admin/web app (the
-  ₹15k/month tier).** Hosted in an **India region** for data residency (DPDP Act 2023) and
+- **Cloud — the central services, data, messaging (a Postgres outbox, not a broker — ADR-0008), AI
+  gateway and admin/web app (the ₹15k/month tier).** Hosted in an **India region** for data residency (DPDP Act 2023) and
   GST/tax-evidence locality (`⟳ AVR-14 / AVR-20` confirm region & support model).
 
 ## 2. Monthly cost model (to D3 = ₹15,000/month)
@@ -64,7 +65,7 @@ secrets isolated per environment in a vault (hard rule #4).
   knowledge.
 
 ## 6. Store-edge deployment
-- The edge stack ships as containers with a local Postgres; provisioned by IaC/scripts onto
+- The edge stack ships as containers over a durable append-only file-log (ADR-0011); provisioned by IaC/scripts onto
   the store's mini-server; auto-starts; syncs to cloud via the sync agent (`offline-sync.md`).
 - Health, sync-lag and version are reported to the platform (M35); an edge **keeps trading
   if the cloud/admin plane is unreachable** (P-01).
