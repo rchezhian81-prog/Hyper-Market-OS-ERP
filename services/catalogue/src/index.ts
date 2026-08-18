@@ -48,7 +48,13 @@ export interface CatalogueDeps {
   readonly signer: PackSigner;
   readonly currentPack: (tenantId: string) => Promise<SignedPack | undefined> | SignedPack | undefined;
   readonly storePack: (tenantId: string, pack: SignedPack) => Promise<void> | void;
-  readonly buildSnapshot: (tenantId: string) => Promise<CatalogueSnapshot> | CatalogueSnapshot;
+  /** Build the next snapshot to publish. `options.storeId` names the store the pack is for (prices resolve
+   *  per store); `options.asOf` is the effective moment (defaults to now). A real adapter folds the product
+   *  master + price lists + barcode register + tax-class rates; a test double may ignore the options. */
+  readonly buildSnapshot: (
+    tenantId: string,
+    options: { readonly storeId?: string; readonly asOf?: string },
+  ) => Promise<CatalogueSnapshot> | CatalogueSnapshot;
   readonly approvalsSince: (tenantId: string, version: number) => Promise<readonly PriceApproval[]> | readonly PriceApproval[];
   readonly now: () => string;
 }
@@ -86,9 +92,14 @@ export function catalogueRoutes(deps: CatalogueDeps): readonly Route[] {
       permission: 'catalogue.pack.publish', idempotent: true,
       handler: async (ctx) => {
         const previous = await deps.currentPack(ctx.tenantId);
-        const snapshot = await deps.buildSnapshot(ctx.tenantId);
+        const body = (ctx.body ?? {}) as { acknowledgedRemovals?: number; storeId?: string; asOf?: string };
+        // The pack is built FOR a store (prices resolve per store) as of a moment. A real adapter folds the
+        // master data; a test double ignores these. The adapter decides whether a missing storeId is an error.
+        const snapshot = await deps.buildSnapshot(ctx.tenantId, {
+          ...(typeof body.storeId === 'string' ? { storeId: body.storeId } : {}),
+          ...(typeof body.asOf === 'string' ? { asOf: body.asOf } : {}),
+        });
         const approvals = await deps.approvalsSince(ctx.tenantId, previous?.snapshot.version ?? 0);
-        const body = (ctx.body ?? {}) as { acknowledgedRemovals?: number };
 
         const result = publishPack({
           snapshot,

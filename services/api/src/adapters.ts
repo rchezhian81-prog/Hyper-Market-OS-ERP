@@ -31,6 +31,8 @@ import type { ProductMasterDeps } from '../../catalogue/src/product-master';
 import type { BarcodeRegistryDeps } from '../../catalogue/src/barcodes';
 import type { TaxClassRateDeps } from '../../catalogue/src/tax-classes';
 import type { CataloguePreviewDeps } from '../../catalogue/src/catalogue-preview';
+import { assembleCatalogueSnapshot } from '../../catalogue/src/catalogue-preview';
+import { apiError } from '../../kernel/src/index';
 import type { GstRatePeriod } from '../../../packages/finance/src/rate';
 import type { ProductRecord, BarcodeAssignment } from '../../../packages/product/src/index';
 import type { IncomingSale, IncomingTender, SaleException, PosDeps } from '../../pos/src/index';
@@ -841,22 +843,29 @@ export function catalogueAdapter(input: {
     },
 
     /**
-     * Build the next snapshot from what has been published before.
-     *
-     * A real catalogue is assembled from the product master (M03) and the approved price lists
-     * (M05); until those services have their own persistence this carries the last published set
-     * forward with the version advanced, which keeps the publish path honest — the shrink check
-     * has a real previous pack to compare against rather than nothing.
+     * Build the next snapshot by folding the real master data — the product master (M03), the price lists
+     * (M05), the barcode register and the tax-class rate schedules — for a store, through the tested
+     * `buildCatalogueSnapshot` (via `assembleCatalogueSnapshot`, the same fold the read-only preview uses).
+     * A product with no price at this store, no resolvable tax rate, or a price above its MRP is left out
+     * (the engine's own reason) rather than shipped to a lane unpriceable — the shrink check then makes any
+     * drop in coverage visible (P-08) and refuses a pack much smaller than the shop without acknowledgement.
      */
-    buildSnapshot: async (tenantId) => {
+    buildSnapshot: async (tenantId, options) => {
+      if (options.storeId === undefined || options.storeId.trim() === '') {
+        throw apiError(400, {
+          code: 'not_readable_as_a_pack_publish',
+          whatHappened: 'Publishing a catalogue pack needs the store it is for: send { storeId } in the body. A pack carries the price each lane in that store should charge, resolved per store.',
+          wasItSaved: 'not_saved',
+          nextSafeAction: 'Send { storeId: "<the store>" } (optionally { asOf: "YYYY-MM-DD" }). Nothing was published.',
+        });
+      }
       const previous = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
-      return {
-        tenantId,
-        version: (previous?.snapshot.version ?? 0) + 1,
-        builtAt: input.now(),
-        products: previous?.snapshot.products ?? [],
-        barcodes: previous?.snapshot.barcodes ?? [],
-      };
+      const version = (previous?.snapshot.version ?? 0) + 1;
+      const result = await assembleCatalogueSnapshot(
+        cataloguePreviewAdapter({ store: input.store, now: input.now }),
+        { tenantId, storeId: options.storeId, asOf: options.asOf ?? input.now(), version },
+      );
+      return result.snapshot;
     },
 
     approvalsSince: () => [],
