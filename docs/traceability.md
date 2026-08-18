@@ -230,6 +230,88 @@ text cited.
 | **D03-FR-02** | Bulk supplier-invoice import (OCR/e-invoice) feeding M07 three-way match — **the store's #1 daily pain (audit A-03)** | NOT STARTED | `packages/import` does generic CSV import; no OCR/e-invoice ingestion. Highest-value missing feature |
 | **D03-FR-06** | Supplier bank-change verification (mandatory fraud control, links M06/M15) | **WIRED** | Verified out-of-band, dated, recorded as an event in `services/purchase` + `packages/bank-controls`; not a silent drop in code, only in the RTM |
 
+## Non-module controlling requirements (D / A / WF / QG / MG)
+
+The completion denominator is **104** controlling items: the 36 modules traced above **plus** the 68
+extension / AI-agent / workflow / quality-gate / migration-control items below. Their per-item maturity
+is held in `docs/completion-status.json` — the enforced ledger the completion % is computed from — and
+this table mirrors that status here so the RTM covers the **whole** denominator, not only the modules.
+Twenty of these IDs previously appeared nowhere in this file (a silent gap the roadmap forbids); they
+are all present now. The Status column is kept in lock-step with the ledger by
+`tests/guardrails/the-non-module-requirements-mirror-the-ledger.test.ts`, so it cannot drift silently;
+per-item evidence and any external blocker live in the ledger. Names are from `docs/requirements/index.md`.
+
+| ID | What it is | Status |
+|---|---|---|
+| D01 | Product and catalogue | PARTIALLY WIRED |
+| D02 | Merchandise planning | PARTIALLY WIRED |
+| D03 | Supplier and buying | PARTIALLY WIRED |
+| D04 | POS and cash | PARTIALLY WIRED |
+| D05 | Inventory and quality | PARTIALLY WIRED |
+| D06 | Pricing and promotions | PARTIALLY WIRED |
+| D07 | Customer and loyalty | PARTIALLY WIRED |
+| D08 | Customer app/web | PARTIALLY WIRED |
+| D09 | OMS and delivery | PARTIALLY WIRED |
+| D10 | Finance and tax | PARTIALLY WIRED |
+| D11 | Store and workforce | PARTIALLY WIRED |
+| D12 | Platform/admin | PARTIALLY WIRED |
+| D13 | Reporting/owner | PARTIALLY WIRED |
+| D14 | Hardware/integration | PARTIALLY WIRED |
+| A01 | Owner Intelligence | PARTIALLY WIRED |
+| A02 | Purchase | PARTIALLY WIRED |
+| A03 | Inventory | PARTIALLY WIRED |
+| A04 | Customer Shopping | PARTIALLY WIRED |
+| A05 | Service | ENGINE ONLY |
+| A06 | Operations | ENGINE ONLY |
+| A07 | Security/Fraud | PARTIALLY WIRED |
+| A08 | Data Quality | ENGINE ONLY |
+| A09 | Marketing | ENGINE ONLY |
+| A10 | Workforce/SOP | ENGINE ONLY |
+| WF-01 | Product onboarding | PARTIALLY WIRED |
+| WF-02 | Supplier onboarding | PARTIALLY WIRED |
+| WF-03 | Purchase planning | PARTIALLY WIRED |
+| WF-04 | Receiving | PARTIALLY WIRED |
+| WF-05 | Supplier invoice | PARTIALLY WIRED |
+| WF-06 | Replenishment | PARTIALLY WIRED |
+| WF-07 | Stock transfer | PARTIALLY WIRED |
+| WF-08 | Stock count | PARTIALLY WIRED |
+| WF-09 | Expiry/recall | PARTIALLY WIRED |
+| WF-10 | POS sale | E2E VERIFIED |
+| WF-11 | POS return | PARTIALLY WIRED |
+| WF-12 | Day close | PARTIALLY WIRED |
+| WF-13 | Customer order | PARTIALLY WIRED |
+| WF-14 | Fulfilment | PARTIALLY WIRED |
+| WF-15 | Delivery | PARTIALLY WIRED |
+| WF-16 | Online cancellation/return | PARTIALLY WIRED |
+| WF-17 | Customer service | PARTIALLY WIRED |
+| WF-18 | Finance close | PARTIALLY WIRED |
+| WF-19 | Migration/cutover | ENGINE ONLY |
+| WF-20 | Release/incident | PARTIALLY WIRED |
+| QG-01 | Requirements gate | PARTIALLY WIRED |
+| QG-02 | UX gate | PARTIALLY WIRED |
+| QG-03 | Code gate | PARTIALLY WIRED |
+| QG-04 | Offline gate | INTEGRATION TESTED |
+| QG-05 | Performance gate | PARTIALLY WIRED |
+| QG-06 | Security gate | PARTIALLY WIRED |
+| QG-07 | Data gate | PARTIALLY WIRED |
+| QG-08 | Recovery gate | PARTIALLY WIRED |
+| QG-09 | Adoption gate | PARTIALLY WIRED |
+| QG-10 | Production gate | PARTIALLY WIRED |
+| QG-11 | AI gate | PARTIALLY WIRED |
+| QG-12 | Owner gate | PARTIALLY WIRED |
+| MG-01 | Discovery | ENGINE ONLY |
+| MG-02 | Preservation | PARTIALLY WIRED |
+| MG-03 | Mapping | PARTIALLY WIRED |
+| MG-04 | Cleaning | ENGINE ONLY |
+| MG-05 | Trial loads | ENGINE ONLY |
+| MG-06 | Reconciliation | PARTIALLY WIRED |
+| MG-07 | History | ENGINE ONLY |
+| MG-08 | Opening state | ENGINE ONLY |
+| MG-09 | Delta | ENGINE ONLY |
+| MG-10 | Parallel run | NOT STARTED |
+| MG-11 | Cutover | PARTIALLY WIRED |
+| MG-12 | Archive/retire | ENGINE ONLY |
+
 ## Design artifacts (Stage 3–4)
 
 Store-Core requirements are now covered at **design level** by the artifacts below; the
