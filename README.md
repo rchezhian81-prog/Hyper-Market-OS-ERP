@@ -12,9 +12,26 @@ maker. The project rules that make that possible live in
 
 ## Where the project is right now
 
-**Setup (Part 1 of the Build Pack) — no application code yet, by design.**
-The current state, what is blocked, and what needs an owner decision are always
-in [`docs/STATUS.md`](./docs/STATUS.md). Read that first.
+**Application code is live and under continuous, test-gated development.** The
+apps, cloud services, store edge and shared packages are built and wired
+incrementally, every change merged only through a passing pull request. As of the
+latest baseline the **weighted product completion is ~40.3%** — computed by a
+single reproducible model, not an estimate (see
+[`docs/COMPLETION-MODEL.md`](./docs/COMPLETION-MODEL.md) and
+[`docs/completion-status.json`](./docs/completion-status.json)) — and the full
+test suite is green (thousands of unit, guardrail, integration and end-to-end
+tests, plus offline and accessibility checks).
+
+**This is not pilot-ready or production-ready.** Most modules are
+`PARTIALLY_WIRED`; the pilot and production gates — real-data migration,
+independent penetration testing, certified-hardware and DR rehearsal, live
+provider credentials, and explicit owner GO — are not yet met. Completion is
+reported honestly and never inflated.
+
+The current state, what is blocked, and what needs an owner decision are always in
+[`docs/STATUS.md`](./docs/STATUS.md) and
+[`docs/OWNER-ACTION-REGISTER.md`](./docs/OWNER-ACTION-REGISTER.md). Read those
+first.
 
 ## The one rule that matters most
 

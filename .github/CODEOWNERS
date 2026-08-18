@@ -1,0 +1,17 @@
+# Code owners for SRE Retail OS.
+#
+# The owner — the store's decision maker — is the required reviewer on every
+# pull request. Recorded as owner decision OA-14 (18 August 2026): the
+# repository stays PRIVATE and UNLICENSED (all-rights-reserved) for the pilot,
+# with a named code owner so every change has an accountable sign-off.
+#
+# GitHub automatically requests a review from this owner on any pull request
+# that touches a matching path. The pattern below matches everything, so the
+# owner is requested on every PR.
+#
+# Making that review *blocking* (a PR cannot merge without the code owner's
+# approval) is a one-time branch-protection setting the owner enables in the
+# repository admin UI — "Require review from Code Owners" — see
+# docs/runbooks/branch-protection.md. A file in the repo cannot switch it on.
+
+* @rchezhian81-prog
