@@ -18,7 +18,7 @@
     {"id": "M07", "label": "PARTIALLY_WIRED", "evidence": "RTM: FR-04 wired, GRN/OCR ingestion pending"},
     {"id": "M08", "label": "INTEGRATION_TESTED", "evidence": "RTM: INTEGRATION TESTED, valuation/ageing/performance wired"},
     {"id": "M09", "label": "WIRED", "evidence": "RTM: WIRED, all four FRs integration-tested"},
-    {"id": "M10", "label": "PARTIALLY_WIRED", "evidence": "RTM: FEFO/recall→POS wired, rest partial"},
+    {"id": "M10", "label": "PARTIALLY_WIRED", "evidence": "RTM: recall→POS + cold-chain + lot-trace wired; FEFO expiry action list now wired (POST /v1/inventory/expiry-actions); FEFO lane allocation + expiry screen follow-on"},
     {"id": "M11", "label": "WIRED", "evidence": "RTM: WIRED, all four FRs integration-tested"},
     {"id": "M12", "label": "E2E_VERIFIED", "evidence": "RTM: E2E VERIFIED, offline commit+sync on real PostgreSQL"},
     {"id": "M13", "label": "PARTIALLY_WIRED", "evidence": "RTM: FR-01/03 refund guard wired; tender capture off-cloud"},
