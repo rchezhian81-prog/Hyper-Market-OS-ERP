@@ -16,6 +16,9 @@ branch `main`, and enable:
   **"Type check, lint, tests, secret & dependency scan"** (from `.github/workflows/ci.yml`).
 - **Require branches to be up to date before merging.**
 - **Require conversation resolution before merging.**
+- **Require review from Code Owners.** The owner is named in `.github/CODEOWNERS`
+  (owner decision OA-14), so this makes the owner's approval a blocking requirement
+  on every pull request — the accountable sign-off.
 - **Do not allow bypassing the above settings** (so the rule applies to everyone,
   including administrators — this matches CLAUDE.md: the rule is for everyone,
   every time).

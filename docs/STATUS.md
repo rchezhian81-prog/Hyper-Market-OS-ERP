@@ -32,10 +32,13 @@ decisions for the owner. No feature code changes in this phase.
   decision surface (roster-gaps/task-gate/checklist/incentive/SOP) now wired; M28 write-off write
   path + review screen now wired; M31 issue/reproduce now wired. All stay PARTIALLY_WIRED — net-new
   surfaces on already-counted modules, no maturity threshold crossed, headline held at 40.3%.
-- **Governance posture recorded (OA-14):** no `LICENSE`, no `CODEOWNERS`; `package.json` is
-  `"private": true` with no `license` field; `.github/workflows/ci.yml` present; `main` protected
-  (see `docs/runbooks/branch-protection.md`). These are surfaced for owner decision in the register —
-  a licence is **not invented** and repo admin settings are **not changed** without owner approval.
+- **Governance posture recorded and ANSWERED (OA-14):** the audit found no `LICENSE`, no `CODEOWNERS`;
+  `package.json` is `"private": true` with no `license` field; `.github/workflows/ci.yml` present; `main`
+  protected. The owner decided (18 Aug): **keep the repo PRIVATE and UNLICENSED** (all-rights-reserved)
+  and **add a `CODEOWNERS` naming the owner** as required reviewer. Implemented: `.github/CODEOWNERS`
+  (`* @rchezhian81-prog`); no `LICENSE` added (deliberate, not an invented licence); repo visibility
+  unchanged. One remaining owner admin step — enable *Require review from Code Owners* in the branch
+  ruleset (`docs/runbooks/branch-protection.md`) to make that approval blocking.
 
 **Next after Phase 0:** requirements/traceability closure (Phase 1), then select the first
 implementation milestone by dependency + business-risk priority.
