@@ -24,14 +24,14 @@ Every operation has a class; the UI always shows the current class and connectio
 | **Assigned-work offline** | Picking, delivery | Assigned work cached; scans/proof queue; **location/PII minimized** on device |
 
 ## 3. The store edge
-- Local relational DB + containerised local services (§19).
+- Durable **append-only file-log** + containerised local services (the §19 local relational DB is deliberately substituted — ADR-0011).
 - **Signed, versioned packs** of config/product/price/tax published from cloud (M01-FR-03);
   the store keeps last-known-good and **never activates an unpublished/expired pack**.
 - A durable **outbox** (local events awaiting sync) and **inbox** (cloud updates to apply).
 - A **sync agent**: bidirectional, idempotent, resumable.
 
 ## 4. The sync protocol
-- **Local-first commit:** a transaction is written durably to the local DB **and** appended
+- **Local-first commit:** a transaction is written durably to the local **append-only log** **and** appended
   to the outbox in one atomic step **before the receipt is declared successful** (§4.2,
   hard rule #1). A power cut at commit yields exactly one correct result on restart.
 - **Outbound:** the sync agent drains the outbox to the domain API with an
@@ -67,7 +67,7 @@ numbers**.
 A sync item that repeatedly fails to apply (a "poison" item) moves to a **visible
 dead-letter queue** with its reason — **never dropped, never retried forever silently**; an
 operator resolves it. The same discipline governs the Tally connector (M23-FR-04) and the
-broker.
+sync outbox (ADR-0008).
 
 ## 9. Recovery
 - **Reconnect:** the sync agent resumes from the last watermark; no manual replay.
