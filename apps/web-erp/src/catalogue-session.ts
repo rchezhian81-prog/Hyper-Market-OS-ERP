@@ -49,6 +49,8 @@ import {
   PromotionApprovalRequiredError,
   type BasketLine, type Promotion, type PromotionResult, type SimulationResult,
 } from '../../../packages/promotions/src/index';
+import type { SyncOutbox } from '../../../packages/sync/src/outbox';
+import { queueProductPublish, type PublishQueueResult } from './catalogue-publish-command';
 
 /** What this surface can see about the shop, and what it honestly cannot. */
 export interface CataloguePorts {
@@ -77,6 +79,12 @@ export interface CataloguePorts {
    * unmapped and read as the shelf data having been lost.
    */
   shelfMap(): ShelfMap | null;
+  /**
+   * The offline command queue the Save button commits a publish to (P-01, §31). Optional: a read-only
+   * viewing of the catalogue (or a test that never publishes) need not provide one; `requestPublish` says so
+   * plainly when it is absent rather than dropping the intent silently.
+   */
+  outbox?(): SyncOutbox;
 }
 
 export interface CatalogueConfig {
@@ -143,6 +151,11 @@ const PUBLISH_REFUSALS: Readonly<Record<PublishRefusal, PublishRefusal>> = Objec
 
 export const PUBLISH_REFUSAL_KINDS: readonly PublishRefusal[] = Object.freeze(Object.values(PUBLISH_REFUSALS));
 
+/** The outcome of asking to publish to the cloud — the queue result, or `no_outbox` when there is no queue. */
+export type RequestPublishResult =
+  | PublishQueueResult
+  | { readonly ok: false; readonly refusal: 'no_outbox'; readonly detail: string; readonly missing: readonly string[] };
+
 export interface CatalogueSession {
   /** Every product with its completeness, sellability and today's price. */
   shelf(): readonly ProductView[];
@@ -161,6 +174,15 @@ export interface CatalogueSession {
    * time.
    */
   publish(product: ProductRecord, barcodes?: readonly string[]): PublishOutcome;
+
+  /**
+   * Publish a product to the shared truth (M03-FR-01/03) — the Save that reaches the cloud.
+   *
+   * Validates through the SAME tested engine as `publish` and, if it passes, commits a durable,
+   * deduplicated command to the offline outbox (P-01, §31); the sync agent drains it to the compliance-gated
+   * cloud route. Never touches the network from here. `no_outbox` when this screen was built without a queue.
+   */
+  requestPublish(product: ProductRecord, barcodes?: readonly string[]): RequestPublishResult;
 
   /**
    * Stop an item being sold or ordered anywhere, at once (D01-FR-05).
@@ -328,6 +350,23 @@ export function createCatalogueSession(
         }
         throw e;
       }
+    },
+
+    requestPublish: (product, barcodes = []) => {
+      const queue = ports.outbox?.();
+      if (queue === undefined) {
+        return { ok: false, refusal: 'no_outbox', detail: 'this screen has no queue to publish through.', missing: [] };
+      }
+      // The tested compliance gate runs inside queueProductPublish — an invalid product never queues. The
+      // command carries the record + this tenant's categories so the cloud validates against the same
+      // hierarchy. `today` is the shop's day (never the device clock).
+      return queueProductPublish(queue, {
+        product,
+        categories: ports.categories(),
+        barcodes,
+        requestedBy: config.userId,
+        at: `${config.today}T12:00:00.000Z`,
+      });
     },
 
     setRecallBlock: (product, blocked) => ({ ...product, recallBlocked: blocked }),

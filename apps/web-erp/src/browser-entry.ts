@@ -612,6 +612,16 @@ function openGstReturnsOutbox(): SyncOutbox {
 /** The last storage problem the GST-returns outbox hit, so the shell can show it — never silent (P-08). */
 export let gstReturnsStorageProblem: string | undefined;
 
+/** The device-backed outbox the catalogue screen commits a product publish to — survives a reload (§31). */
+function openCatalogueOutbox(): SyncOutbox {
+  const storage = (globalThis as { localStorage?: { getItem(k: string): string | null; setItem(k: string, v: string): void } }).localStorage;
+  const onProblem = (why: string): void => { catalogueStorageProblem = why; };
+  return openDeviceOutbox(guardedStore('sre.catalogue-outbox', storage, onProblem), onProblem);
+}
+
+/** The last storage problem the catalogue outbox hit, so the shell can show it — never silent (P-08). */
+export let catalogueStorageProblem: string | undefined;
+
 // ── Payroll (owner directive; docs/design/screens/payroll.md) ────────────────────────────────────────────
 //
 // Payroll is deliberately UNLIKE the other screens: it is served ONLINE-FIRST, holds the most sensitive data
@@ -1070,6 +1080,7 @@ interface ManagerWindow {
   catalogueSession?: CatalogueSession;
   catalogueData?: CatalogueData;
   catalogueGaps?: readonly CatalogueGap[];
+  catalogueOutbox?: SyncOutbox;
   merchandisingSession?: MerchandisingSession;
   merchandisingData?: MerchandisingData;
   merchandisingGaps?: readonly MerchandisingGap[];
@@ -1324,7 +1335,7 @@ export function catalogueGaps(data: CatalogueData | undefined): readonly Catalog
  * 100% margin and the floor check then passes, confidently and wrongly, at the moment a buyer is
  * relying on it.
  */
-export function cataloguePortsFromData(data: CatalogueData | undefined): CataloguePorts {
+export function cataloguePortsFromData(data: CatalogueData | undefined, outbox?: SyncOutbox): CataloguePorts {
   const costOf = (productId: string): CostRegister => {
     const minor = data?.costsMinor?.[productId];
     if (minor === undefined) {
@@ -1361,11 +1372,13 @@ export function cataloguePortsFromData(data: CatalogueData | undefined): Catalog
     barcodesInUse: () => data?.barcodes ?? [],
     promotions: () => data?.promotions ?? [],
     shelfMap: () => map,
+    ...(outbox === undefined ? {} : { outbox: () => outbox }),
   };
 }
 
-/** Build the product-and-pricing session, or `null` when this box was told nothing about it. */
-export function bootCatalogue(data: CatalogueData | undefined): CatalogueSession | null {
+/** Build the product-and-pricing session, or `null` when this box was told nothing about it. The outbox, when
+ *  given, is the durable queue the Save button commits a publish to. */
+export function bootCatalogue(data: CatalogueData | undefined, outbox?: SyncOutbox): CatalogueSession | null {
   if (data === undefined) return null;
   return createCatalogueSession(
     {
@@ -1378,7 +1391,7 @@ export function bootCatalogue(data: CatalogueData | undefined): CatalogueSession
       today: data.today ?? '1970-01-01',
       marginFloorBps: data.marginFloorBps ?? 0,
     },
-    cataloguePortsFromData(data),
+    cataloguePortsFromData(data, outbox),
   );
 }
 
@@ -1555,10 +1568,14 @@ if (browserWindow !== undefined) {
     browserWindow.buyingSession = buying;
     browserWindow.buyingGaps = buyingGaps(browserWindow.buyingData);
   }
-  const catalogue = bootCatalogue(browserWindow.catalogueData);
+  // The product publish this screen commits queues in a DEVICE-backed outbox, so a Save made while the link is
+  // down survives the operator closing and reopening the tab before it syncs (P-01, §31).
+  const catalogueOutbox = browserWindow.catalogueOutbox ?? openCatalogueOutbox();
+  const catalogue = bootCatalogue(browserWindow.catalogueData, catalogueOutbox);
   if (catalogue !== null) {
     browserWindow.catalogueSession = catalogue;
     browserWindow.catalogueGaps = catalogueGaps(browserWindow.catalogueData);
+    browserWindow.catalogueOutbox = catalogueOutbox;
   }
   const merchandising = bootMerchandising(browserWindow.merchandisingData);
   if (merchandising !== null) {
