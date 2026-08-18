@@ -15,6 +15,7 @@ import type { DecidedRequest } from '../../packages/approvals/src/index';
 import { money } from '../../packages/contracts/src/money';
 import type { Promotion } from '../../packages/promotions/src/index';
 import { ShelfMap, type ShelfLocation } from '../../packages/merchandising/src/index';
+import { SyncOutbox } from '../../packages/sync/src/outbox';
 
 /**
  * **The product and pricing surface (M03 · M05 · D01 · D06 · §28).**
@@ -653,5 +654,31 @@ describe('shelf addresses, and the walk they produce', () => {
   it('has one home per product and no function that moves it silently', () => {
     // A relocation is a new assignment somebody makes deliberately, never a side-effect.
     expect(Object.keys(session()).filter((k) => /move|relocate/i.test(k))).toEqual([]);
+  });
+});
+
+describe('requestPublish — the Save that reaches the cloud (M03-FR-01/03, §31)', () => {
+  it('queues a durable publish command via the outbox for a compliant product', () => {
+    const ob = new SyncOutbox();
+    const s = session({ outbox: () => ob });
+    const res = s.requestPublish(FINISHED);
+    expect(res.ok).toBe(true);
+    expect(ob.unsentCount()).toBe(1);
+    expect(ob.pending()[0]!.event.type).toBe('ProductPublishRequested');
+  });
+
+  it('a double-click collapses to one queued command', () => {
+    const ob = new SyncOutbox();
+    const s = session({ outbox: () => ob });
+    s.requestPublish(FINISHED);
+    const again = s.requestPublish(FINISHED);
+    expect(again.ok).toBe(false);
+    expect(ob.unsentCount()).toBe(1);
+  });
+
+  it('says so plainly when the screen was built without a queue — never drops the intent silently', () => {
+    const res = session().requestPublish(FINISHED); // no outbox port
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.refusal).toBe('no_outbox');
   });
 });

@@ -559,14 +559,23 @@ function scoreParts(score) {
 
 el('publish').addEventListener('click', () => {
   if (openProduct === null) return;
-  const outcome = session.publish(openProduct);
+  const draft = openProduct;
+  const outcome = session.publish(draft);
   if (!outcome.ok) {
     tell(t('read'), words(PUBLISH_REFUSAL_WORDS, outcome.refusal));
     return;
   }
+  // The Save reaches the shared truth: commit a durable publish command to the offline outbox (P-01, §31).
+  // The session never touches the network from here — the sync agent drains the queue to the cloud.
+  const queued = typeof session.requestPublish === 'function' ? session.requestPublish(draft) : { ok: true };
   openProduct = outcome.product;
   renderItem();
-  tell(t('published'), outcome.product.name, true);
+  if (queued.ok || queued.refusal === 'already_queued') {
+    tell(t('published'), outcome.product.name, true);
+  } else {
+    // A validated product should always queue; if it could not, say so rather than imply it went through.
+    tell(t('read'), words(PUBLISH_REFUSAL_WORDS, 'not_finished'));
+  }
 });
 
 el('recall').addEventListener('click', () => {
