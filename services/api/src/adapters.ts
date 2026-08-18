@@ -29,6 +29,8 @@ import type { SignedPack } from '../../catalogue/src/index';
 import type { CatalogueDeps } from '../../catalogue/src/index';
 import type { ProductMasterDeps } from '../../catalogue/src/product-master';
 import type { BarcodeRegistryDeps } from '../../catalogue/src/barcodes';
+import type { TaxClassRateDeps } from '../../catalogue/src/tax-classes';
+import type { GstRatePeriod } from '../../../packages/finance/src/rate';
 import type { ProductRecord, BarcodeAssignment } from '../../../packages/product/src/index';
 import type { IncomingSale, IncomingTender, SaleException, PosDeps } from '../../pos/src/index';
 import type { LotTraceDeps } from '../../inventory/src/lot-trace';
@@ -924,6 +926,32 @@ export function barcodeAdapter(input: {
       }));
     },
     all: (tenantId) => allOf<BarcodeAssignment>(input.store, tenantId, stream, 'BarcodeAssigned'),
+  };
+}
+
+/**
+ * The tax-class GST-rate schedule store (M03-FR-03 tax side / A6) — each HSN's effective-dated rate periods.
+ * A rate is a `TaxRateSet` event on a per-HSN stream; the schedule is every period ever set (append-only,
+ * a change is a new later-dated period, never an overwrite — hard rule #2). The route enforces the
+ * one-rate-per-date rule before appending, and the tested `resolveGstRate` picks the period in force.
+ */
+export function taxClassAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): TaxClassRateDeps {
+  const forHsn = (hsnCode: string): string => streamName(STREAM.catalogue, 'tax-classes', hsnCode);
+  return {
+    setRate: async (tenantId, hsnCode, period, key) => {
+      await input.store.append(tenantId, forHsn(hsnCode), makeEvent({
+        id: `tax-rate-${hsnCode}-${period.effectiveFrom}-${key}`,
+        type: 'TaxRateSet',
+        occurredAt: input.now(),
+        idempotencyKey: `tax-rate-${tenantId}-${hsnCode}-${period.effectiveFrom}-${key}`,
+        source: 'api/catalogue',
+        payload: period,
+      }));
+    },
+    schedule: (tenantId, hsnCode) => allOf<GstRatePeriod>(input.store, tenantId, forHsn(hsnCode), 'TaxRateSet'),
   };
 }
 
