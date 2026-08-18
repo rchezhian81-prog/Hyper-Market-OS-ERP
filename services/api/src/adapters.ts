@@ -30,6 +30,7 @@ import type { CatalogueDeps } from '../../catalogue/src/index';
 import type { ProductMasterDeps } from '../../catalogue/src/product-master';
 import type { BarcodeRegistryDeps } from '../../catalogue/src/barcodes';
 import type { TaxClassRateDeps } from '../../catalogue/src/tax-classes';
+import type { CataloguePreviewDeps } from '../../catalogue/src/catalogue-preview';
 import type { GstRatePeriod } from '../../../packages/finance/src/rate';
 import type { ProductRecord, BarcodeAssignment } from '../../../packages/product/src/index';
 import type { IncomingSale, IncomingTender, SaleException, PosDeps } from '../../pos/src/index';
@@ -952,6 +953,29 @@ export function taxClassAdapter(input: {
       }));
     },
     schedule: (tenantId, hsnCode) => allOf<GstRatePeriod>(input.store, tenantId, forHsn(hsnCode), 'TaxRateSet'),
+  };
+}
+
+/**
+ * Catalogue-pack ASSEMBLY reader (slice 2) — composes the four master-data stores this session built so the
+ * pack build can fold them: the product master, the price lists, the barcode register and the tax-class
+ * rate schedules. It reuses the tested adapters above rather than re-reading the streams, so there is one
+ * fold path per store.
+ */
+export function cataloguePreviewAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): CataloguePreviewDeps {
+  const pm = productMasterAdapter(input);
+  const pl = priceListAdapter(input);
+  const bc = barcodeAdapter(input);
+  const tc = taxClassAdapter(input);
+  return {
+    products: pm.products,
+    priceEntries: pl.entries,
+    barcodes: bc.all,
+    taxSchedule: tc.schedule,
+    now: input.now,
   };
 }
 
