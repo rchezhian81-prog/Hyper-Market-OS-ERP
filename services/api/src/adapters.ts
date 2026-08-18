@@ -28,7 +28,8 @@ import type { CatalogueProduct } from '../../../packages/catalogue/src/catalogue
 import type { SignedPack } from '../../catalogue/src/index';
 import type { CatalogueDeps } from '../../catalogue/src/index';
 import type { ProductMasterDeps } from '../../catalogue/src/product-master';
-import type { ProductRecord } from '../../../packages/product/src/index';
+import type { BarcodeRegistryDeps } from '../../catalogue/src/barcodes';
+import type { ProductRecord, BarcodeAssignment } from '../../../packages/product/src/index';
 import type { IncomingSale, IncomingTender, SaleException, PosDeps } from '../../pos/src/index';
 import type { LotTraceDeps } from '../../inventory/src/lot-trace';
 import type { SalesHistoryDeps } from '../../inventory/src/sales-history';
@@ -895,6 +896,34 @@ export function productMasterAdapter(input: {
     product: async (tenantId, productId) => (await foldLatest(tenantId)).get(productId),
     products: async (tenantId) =>
       [...(await foldLatest(tenantId)).values()].sort((a, b) => (a.productId < b.productId ? -1 : a.productId > b.productId ? 1 : 0)),
+  };
+}
+
+/**
+ * The barcode register (M03-FR-02) — the durable "one code, one item" map the till depends on. Each
+ * assignment is a `BarcodeAssigned` event on the tenant's barcode stream; the service rebuilds the tested
+ * `BarcodeRegistry` from them (last event per code wins — a same-product re-assign updates kind/level,
+ * a different-product clash is refused at the route before it is ever appended, so replay never throws).
+ */
+export function barcodeAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): BarcodeRegistryDeps {
+  const stream = streamName(STREAM.catalogue, 'barcodes');
+  return {
+    assign: async (tenantId, assignment, key) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `barcode-${assignment.code}-${key}`,
+        type: 'BarcodeAssigned',
+        occurredAt: input.now(),
+        // Keyed on the caller's idempotency key so a retry dedups; a deliberate re-assign (new key) appends
+        // a new version the fold's last-wins picks up.
+        idempotencyKey: `barcode-${tenantId}-${assignment.code}-${key}`,
+        source: 'api/catalogue',
+        payload: assignment,
+      }));
+    },
+    all: (tenantId) => allOf<BarcodeAssignment>(input.store, tenantId, stream, 'BarcodeAssigned'),
   };
 }
 
