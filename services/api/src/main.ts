@@ -36,6 +36,7 @@ import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
 import { labellingRoutes } from '../../catalogue/src/labelling';
 import { masterDataRoutes } from '../../catalogue/src/master-data';
 import { categoryPolicyRoutes } from '../../catalogue/src/category-policy';
+import { productDuplicateRoutes } from '../../catalogue/src/product-duplicates';
 import { pricingRoutes } from '../../pricing/src/index';
 import { priceListRoutes } from '../../pricing/src/price-list';
 import { promotionCatalogueRoutes } from '../../pricing/src/promotion-catalogue';
@@ -196,6 +197,7 @@ export function buildSurface(deps: {
     ...masterDataRoutes(),
     // Category-policy preview (category rules as effective-dated config) — stateless over @sre/product.
     ...categoryPolicyRoutes(),
+    ...productDuplicateRoutes(),
     ...pricingRoutes(store === undefined
       ? { recordPriceChange: () => {}, canApprove: () => Promise.resolve(false), now }
       : pricingAdapter({ store, now })),
