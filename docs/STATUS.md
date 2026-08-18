@@ -40,8 +40,20 @@ decisions for the owner. No feature code changes in this phase.
   unchanged. One remaining owner admin step — enable *Require review from Code Owners* in the branch
   ruleset (`docs/runbooks/branch-protection.md`) to make that approval blocking.
 
-**Next after Phase 0:** requirements/traceability closure (Phase 1), then select the first
-implementation milestone by dependency + business-risk priority.
+**Phase 1 — requirements & traceability closure (in progress).** A read-only RTM survey drove three
+increments:
+- **1.1 (merged, #227):** reconciled the RTM module ladder with the ledger — fixed a M06 mis-attribution
+  (the count-review screen is M09-FR-04; M06 is "Supplier and procurement", not "Counts/adjustments"),
+  refreshed the stale M18/M28/M25/M31 ladder detail, corrected the module-level summary counts, and added
+  `the-module-ladder-matches-the-ledger` guardrail so a rung shown in the RTM can never contradict the
+  completion number.
+- **1.2 (this increment):** the 68 non-module controlling requirements (D/A/WF/QG/MG) — 20 of which
+  appeared **nowhere** in `docs/traceability.md` — are now mirrored into the RTM as a dedicated section,
+  lock-stepped to the ledger by `the-non-module-requirements-mirror-the-ledger` guardrail. The RTM now
+  covers the whole 104-item denominator, not just the 36 modules. No label or % change (40.3% held).
+
+**Next:** complete Phase 1 (spot-check the family-table + FR-row statuses against the reconciled ladder),
+then select the first Phase 2+ implementation milestone by dependency + business-risk priority.
 
 ---
 
