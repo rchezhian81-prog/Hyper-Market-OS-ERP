@@ -30,12 +30,13 @@ import type { CatalogueDeps } from '../../catalogue/src/index';
 import type { ProductMasterDeps } from '../../catalogue/src/product-master';
 import type { BarcodeRegistryDeps } from '../../catalogue/src/barcodes';
 import type { ProductMergeDeps, MergeView, MergeRejection } from '../../catalogue/src/product-merge';
+import type { PackHierarchyDeps } from '../../catalogue/src/pack-hierarchy';
 import type { TaxClassRateDeps } from '../../catalogue/src/tax-classes';
 import type { CataloguePreviewDeps } from '../../catalogue/src/catalogue-preview';
 import { assembleCatalogueSnapshot } from '../../catalogue/src/catalogue-preview';
 import { apiError } from '../../kernel/src/index';
 import type { GstRatePeriod } from '../../../packages/finance/src/rate';
-import type { ProductRecord, BarcodeAssignment, MergeRequest, MergeLink } from '../../../packages/product/src/index';
+import type { ProductRecord, BarcodeAssignment, MergeRequest, MergeLink, PackHierarchy } from '../../../packages/product/src/index';
 import type { IncomingSale, IncomingTender, SaleException, PosDeps } from '../../pos/src/index';
 import type { LotTraceDeps } from '../../inventory/src/lot-trace';
 import type { SalesHistoryDeps } from '../../inventory/src/sales-history';
@@ -1020,6 +1021,42 @@ export function productMergeAdapter(input: {
     view: async (tenantId, mergeId) => (await fold(tenantId)).get(mergeId),
     all: async (tenantId) => [...(await fold(tenantId)).values()],
     now: input.now,
+  };
+}
+
+/**
+ * The pack-hierarchy store (M03-FR-02) — a product's exact, reversible pack ladder (unit → inner → case).
+ * Each definition is a `PackHierarchyDefined` event on the tenant's pack stream; the current hierarchy is the
+ * latest event per product id (a change is a new version, never an overwrite — hard rule #2), so it survives
+ * a restart. The route runs the tested `validatePack` before appending, so an inexact pack is refused at the
+ * boundary and the stream only ever holds packs that convert exactly.
+ */
+export function packHierarchyAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): PackHierarchyDeps {
+  const stream = streamName(STREAM.catalogue, 'pack-hierarchy');
+  const foldLatest = async (tenantId: string): Promise<Map<string, PackHierarchy>> => {
+    const events = await input.store.readStream(tenantId, stream, { type: 'PackHierarchyDefined' });
+    const byId = new Map<string, PackHierarchy>();
+    for (const e of events) {
+      const p = payloadOf<PackHierarchy>(e);
+      byId.set(p.productId, p); // occurrence order → the last definition of a product wins
+    }
+    return byId;
+  };
+  return {
+    define: async (tenantId, pack, key) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `pack-${pack.productId}-${key}`,
+        type: 'PackHierarchyDefined',
+        occurredAt: input.now(),
+        idempotencyKey: `pack-${tenantId}-${pack.productId}-${key}`,
+        source: 'api/catalogue',
+        payload: pack,
+      }));
+    },
+    pack: async (tenantId, productId) => (await foldLatest(tenantId)).get(productId),
   };
 }
 

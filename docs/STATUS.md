@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M03 CATALOGUE MASTER RE-RATED **WIRED** — both tested engines wired (19 August 2026)
+
+**Owner decision:** after the M03 maturity re-assessment (below), the owner ratified **Option A** — hold at
+40% and wire the two remaining tested-but-unwired engines, then re-rate. Done in two increments:
+
+- **PR #248 (inc-A) — reversible product MERGE (M03-FR-04 §28).** `POST /v1/catalogue/merges/:id` proposes
+  (`catalogue.merge.propose`), `POST …/decision` approves-or-rejects (`catalogue.merge.approve`, a distinct
+  permission mirroring the price propose/approve split). The tested `mergeProducts` refuses a self-approval on
+  two server-attributed identities, so the proposer can never be the approver (§28) — even an owner holding
+  both codes. An approved merge is a reversible **link** (`…/reverse`), never a deletion (hard rule #2);
+  `…/canonical` resolves where a merged id now points; event-sourced, kept, restart-safe (hard rule #6).
+  9-case integration test.
+- **inc-B — pack hierarchy + UOM CONVERSION (M03-FR-02).** `POST /v1/catalogue/products/:id/pack` defines a
+  product's pack ladder behind the tested `validatePack` — an inexact pack is refused **at definition time**,
+  before it can make a stock figure wrong at the back door; `…/pack/convert` runs `toBaseUnits`/`fromBaseUnits`/
+  `conversionIsReversible` (a case of 24 ↔ 24 singles, exact and reversible). Event-sourced, restart-safe.
+  8-case integration test.
+
+**Re-rating (NOT a silent bump):** with both ENGINE_ONLY engines the re-assessment named now live on the API —
+on top of the already-wired+integration-tested product-truth core (FR-01/02/03) and the E2E-verified ADR-0013
+publish chain — M03 moves **PARTIALLY_WIRED → WIRED**. Module ladder + summary + `completion-status.json` updated
+together (the guardrail holds them consistent). **Headline: 40.3% → 40.5%.** Remaining M03 follow-ons (NOT
+blocking WIRED; the path onward to INTEGRATION_TESTED/E2E): images + bulk-edit (FR-04), a category-delete-with-
+stock guard, and the D01-attributed embedded weight/price barcode parse.
+
+**Gate:** typecheck ✓, lint ✓, guardrails 698 ✓, `vitest run` **5759 passed / 262 skipped** ✓,
+`pnpm run completion` = **40.5%**.
+
+---
+
 ## ★ PHASE 3 — STORE-CORE: ADR-0013 PRODUCT-PUBLISH DELIVERY CHAIN **COMPLETE** (19 August 2026)
 
 **Latest merged commit on `main`: `36b7f5a`** (PR #246). Working branch `claude/new-session-lw91i4`

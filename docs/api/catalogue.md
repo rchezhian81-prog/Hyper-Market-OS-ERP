@@ -58,6 +58,11 @@
   person** (`POST …/decision`, `catalogue.merge.approve`) → a reversible **link**
   (`MergeProposed`→`MergeApproved`→`MergeReversed`), never a deletion (hard rule #2);
   `GET /v1/catalogue/products/:id/canonical` resolves where a merged id now points.
+- **Pack hierarchy + UOM conversion (API-02, M03-FR-02):** `POST /v1/catalogue/products/:id/pack`
+  **defines** a product's pack ladder (unit → inner → case) behind the tested `validatePack`
+  gate — an inexact pack is refused at definition time, before it can make a stock figure wrong.
+  `GET …/pack/convert?level=&quantity=&direction=to-base|from-base` converts exactly and
+  reversibly (a case of 24 ↔ 24 singles). Event-sourced (`PackHierarchyDefined`, latest-per-product).
 - **Finance reconciliation (API-09):** import bank/gateway statements → match →
   `ReconciliationExceptionRaised` / `…Resolved`; **period close is blocked until control
   totals validate** (QG-07) → `PeriodClosed` / `PeriodReopened`.
