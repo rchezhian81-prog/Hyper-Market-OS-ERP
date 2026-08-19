@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M17 LOYALTY RE-RATED **WIRED** — coupons/referrals wired (19 August 2026)
+
+**Owner direction:** "move to the next module" → after a shortlist survey, the owner chose to take on the
+three shortlisted modules (M17 loyalty coupons, M10 expiry/FEFO, M07 receiving/GRN) **one by one**, starting
+with M17 (the clean quick win).
+
+**What was built (M17-WIRE, M17-FR-02):** the tested coupon engine
+(`packages/loyalty/src/coupons.ts` — `redeemCoupon`/`issuePersonalisedOffer`/`assessReferral`), previously
+wired to no route, is now live on API-06:
+- `POST /v1/loyalty/coupons/:code` **defines** a coupon (`loyalty.coupon.issue`; re-defining a code → 409).
+- `POST …/redemptions/:id` **records a redemption** (`loyalty.coupon.redeem`) running `redeemCoupon` against
+  the **whole** cloud history — the authoritative single-use guard a stale offline lane cache cannot enforce:
+  a cross-lane double-use → `409 coupon_limit_reached` (a visible conflict, hard rule #10); a same-id re-sync
+  is idempotent (200).
+- `POST /v1/loyalty/offers` issues a **personalised offer** only with both profiling + marketing consent
+  (M16-FR-02), else a named 422.
+- `POST /v1/loyalty/referrals/:id` pays a referral only on a qualifying purchase, refuses self-referral,
+  never pays twice.
+- Event-sourced `CouponIssued`/`CouponRedeemed`/`ReferralRewarded`, restart-safe. 8-case integration test.
+
+**Re-rating (owner to confirm on merge):** FR-02 was the **last** engine-only M17 FR — FR-01 (points), FR-03
+(gift cards), FR-04 (household pooling/double-spend) are all already WIRED+integration-tested — so M17 moves
+**PARTIALLY_WIRED → WIRED**. Ladder + summary + `completion-status.json` + evidence registry updated together.
+**Headline: 40.5% → 40.7%.**
+
+**Gate:** typecheck ✓, lint ✓, guardrails 698 ✓, `vitest run` **5767 passed / 262 skipped** ✓, completion **40.7%**.
+
+**Next (owner-directed, in order):** M10 expiry/FEFO, then M07 receiving/GRN.
+
+---
+
 ## ★ M03 CATALOGUE MASTER RE-RATED **WIRED** — both tested engines wired (19 August 2026)
 
 **Owner decision:** after the M03 maturity re-assessment (below), the owner ratified **Option A** — hold at

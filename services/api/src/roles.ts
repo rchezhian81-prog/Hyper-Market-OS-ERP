@@ -40,6 +40,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'lp.case.manage', 'lp.case.read', 'lp.rule.manage',
       'customer.consent.read', 'customer.consent.write', 'loyalty.points.read', 'loyalty.points.write',
       'loyalty.value.issue', 'loyalty.value.redeem', 'loyalty.value.read',
+      'loyalty.coupon.issue', 'loyalty.coupon.redeem', 'loyalty.coupon.read',
       'order.promise', 'order.reservation.read', 'order.read', 'order.lifecycle.manage',
       'delivery.attempt.record', 'delivery.run.read',
       'finance.journal.post', 'finance.period.close', 'finance.period.read', 'finance.creditnote.issue',
@@ -95,6 +96,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'lp.case.manage', 'lp.case.read', 'lp.rule.manage',
       'customer.consent.read', 'customer.consent.write', 'loyalty.points.read', 'loyalty.points.write',
       'loyalty.value.issue', 'loyalty.value.redeem', 'loyalty.value.read',
+      'loyalty.coupon.issue', 'loyalty.coupon.redeem', 'loyalty.coupon.read',
       'order.promise', 'order.reservation.read', 'order.read', 'order.lifecycle.manage',
       'delivery.attempt.record', 'delivery.run.read',
       'finance.period.read', 'reporting.dashboard.read', 'reporting.report.read',
@@ -126,6 +128,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'cash.movement.record', 'cash.till.read', 'till.shift.close', 'till.shift.read',
       'customer.consent.read', 'loyalty.points.read', 'loyalty.points.write',
       'loyalty.value.issue', 'loyalty.value.redeem', 'loyalty.value.read',
+      'loyalty.coupon.redeem', 'loyalty.coupon.read',
     ],
   },
   {
