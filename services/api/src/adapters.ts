@@ -97,6 +97,7 @@ import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTen
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project, EFFECT_ON_HAND } from '../../inventory/src/index';
 import type { Movement, Availability, InventoryDeps } from '../../inventory/src/index';
+import type { GoodsReceiptDeps, GrnRecord } from '../../inventory/src/goods-receipt';
 import { weightedAverageValuation, type ValuationMovement } from '../../../packages/stock/src/valuation';
 import { agedStockLots, type DatedMovement } from '../../../packages/stock/src/ageing-source';
 import type { MatchResult, BankChangeRequest, PurchaseDeps } from '../../purchase/src/index';
@@ -2857,6 +2858,54 @@ export const SNAPSHOT_EVERY = 2_000;
 interface StockSnapshot {
   readonly asOfSeq: number;
   readonly balances: readonly Availability[];
+}
+
+/**
+ * The goods-receipt (GRN) store (M07-FR-01/02/03 · D03-FR-02) — the durable cloud record of every delivery
+ * received. A GRN is a `GoodsReceived` event on the tenant's GRN stream; its SELLABLE lines are inbound
+ * `received` movements on the shared inventory stream (so availability learns about the receipt, M08) — and
+ * the two are ONE atomic append (FND-01), so a GRN never lands with its movements missing. Idempotent on the
+ * GRN id, so a re-scan / re-sync is one effect (§31.1).
+ */
+export function goodsReceiptAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): GoodsReceiptDeps {
+  const grnStream = streamName(STREAM.purchase, 'grn');
+  return {
+    now: input.now,
+    grn: async (tenantId, grnId) =>
+      (await allOf<GrnRecord>(input.store, tenantId, grnStream, 'GoodsReceived')).find((g) => g.grnId === grnId),
+    all: (tenantId) => allOf<GrnRecord>(input.store, tenantId, grnStream, 'GoodsReceived'),
+    commit: async (tenantId, record, movements, key) => {
+      await input.store.appendBatch(tenantId, [
+        {
+          stream: grnStream,
+          event: makeEvent({
+            id: `grn-${record.grnId}-${key}`,
+            type: 'GoodsReceived',
+            occurredAt: input.now(),
+            idempotencyKey: `grn-${tenantId}-${record.grnId}`,
+            source: 'api/inventory',
+            payload: record,
+          }),
+        },
+        // One inbound movement per sellable line, in the SAME format the inventory adapter uses, so the
+        // availability projection folds them exactly as any other movement (mv-<movementId>).
+        ...movements.map((m) => ({
+          stream: STREAM.inventory,
+          event: makeEvent({
+            id: `mv-${m.movementId}`,
+            type: 'InventoryMoved',
+            occurredAt: m.occurredAt,
+            idempotencyKey: `mv-${tenantId}-${m.movementId}`,
+            source: 'api/inventory',
+            payload: m,
+          }),
+        })),
+      ]);
+    },
+  };
 }
 
 export function inventoryAdapter(input: {

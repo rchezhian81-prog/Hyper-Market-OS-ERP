@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M07 GOODS-RECEIPT (GRN) CAPTURE WIRED ON THE CLOUD — D03-FR-02 (19 August 2026)
+
+**Owner direction:** last of the three shortlisted modules. Like M10, the receiving *engine* + edge surfaces
+already existed (`packages/receiving` — `receiveScan`/`captureReceipt`/`commitReceipt`, unit-tested, used by
+the warehouse PWA + manager screen) but were **wired to no cloud route**. The gap (D03-FR-02, "GRN capture off
+the cloud surface, not started") was the durable cloud GRN write path.
+
+**What was built (M07-WIRE, M07-FR-01/02/03):** `POST /v1/inventory/goods-receipt/:grnId` — the back-door
+boundary that turns a delivery into trusted stock:
+- re-runs the tested `captureReceipt` (a boundary trusts no client verdict): a batch-tracked line with **no
+  batch or no expiry is refused** (`422`, you cannot recall what you cannot identify, M10); expired stock is
+  **rejected**; damaged / QC-failed / cold-chain-broken stock is **quarantined** (never available to sell);
+  short / excess / MRP-mismatch / near-expiry raise **valued discrepancies**, and an over-tolerance excess
+  needs a second person (§28);
+- only the **sellable** quantity of each line becomes availability — one inbound `received` movement per
+  sellable line, **GRN + movements ONE atomic append** (FND-01), the delivered unit cost carried so stock
+  re-averages at what it cost (M08-FR-04);
+- **idempotent on the GRN id** — a re-scan / re-sync is one effect (§31.1), so a delivery is never
+  double-counted. Gated `inventory.movement.append` (Receiver/QC; the route never touches the PO price).
+  `GET …` reads the GRN / the approval-needed list first. 7-case integration test incl. a cold-restart rebuild.
+
+**Honest maturity — HELD at PARTIALLY_WIRED (no re-rate):** the GRN *capture* (FR-01/02/03 core) is now live
+and FR-04 (three-way match) was already wired, but M07 is **not** cleanly WIRED — still edge-only / off the
+cloud: dock scheduling + handheld-scan surfaces (warehouse PWA), the discrepancy-**disposition** approval write
+path (accept/return/claim — the GRN flags `requiresApproval` but the decision isn't yet a route), and OCR
+invoice ingestion. So the number is unchanged. **Headline stays 40.9%.**
+
+**Gate:** typecheck ✓, lint ✓, guardrails ✓, `vitest run` **5786 passed / 262 skipped** ✓, completion **40.9%**.
+
+---
+
 ## ★ M10 FEFO/EXPIRY/RECALL RE-RATED **WIRED** — recall lifecycle wired (19 August 2026)
 
 **Owner direction:** third of the three shortlisted modules, taken one-by-one. On opening M10 I found the
