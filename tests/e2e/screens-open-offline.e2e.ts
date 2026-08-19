@@ -310,6 +310,46 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
     }
   });
 
+  it('the products-to-publish review screen opens offline AND is accessible (ADR-0013, M03-FR-01/03)', async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.goto(`${base}/product-publish-review`, { waitUntil: 'load' });
+      await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.serviceWorker.ready.then(() => true));
+      await page.waitForFunction(() => (globalThis as unknown as BrowserWindow).navigator.serviceWorker.controller !== null, { timeout: 15_000 });
+
+      await context.setOffline(true);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+
+      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine)).toBe(false);
+      expect(await page.title()).toContain('Products to publish');
+      expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
+      expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
+
+      const a11y = await page.evaluate(() => {
+        const doc = (globalThis as unknown as { document: A11yDoc }).document;
+        const nonEmpty = (v: string | null) => typeof v === 'string' && v.trim().length > 0;
+        const statuses = Array.from(doc.querySelectorAll('.status'));
+        return {
+          langLabelled: nonEmpty(doc.getElementById('lang')?.getAttribute('aria-label') ?? null),
+          listLabelled: nonEmpty(doc.getElementById('rows')?.getAttribute('aria-label') ?? null),
+          statusCount: statuses.length,
+          everyStatusAnnounced: statuses.every((s) => nonEmpty(s.getAttribute('aria-label'))),
+          everyStatusHasWord: statuses.every((s) => nonEmpty(s.textContent)),
+          everyIconHidden: statuses.every((s) => s.querySelector('.icon')?.getAttribute('aria-hidden') === 'true'),
+        };
+      });
+      expect(a11y.langLabelled).toBe(true);
+      expect(a11y.listLabelled).toBe(true);
+      expect(a11y.statusCount).toBeGreaterThan(0);
+      expect(a11y.everyStatusAnnounced).toBe(true);
+      expect(a11y.everyStatusHasWord).toBe(true);
+      expect(a11y.everyIconHidden).toBe(true);
+    } finally {
+      await context.close();
+    }
+  });
+
   it('the till specifically boots its own shell offline, not a browser error page', async () => {
     const context = await browser.newContext();
     try {

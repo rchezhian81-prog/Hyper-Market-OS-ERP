@@ -93,6 +93,11 @@ import {
 import {
   createCountsReviewSession, type CountsReviewPorts, type CountsReviewSession, type CountRow,
 } from './counts-session';
+import {
+  createProductPublishReviewSession, type ProductPublishReviewPorts, type ProductPublishReviewSession,
+} from './product-publish-review-session';
+import type { PublishDeliveryPort } from './product-publish-delivery';
+import type { ProductPublishPayload } from './catalogue-publish-command';
 import type { CategoryPolicy } from '../../../packages/product/src/index';
 import {
   foldPayRun, buildPayslip, resolveStatutoryParams, DEFAULT_STATUTORY_SCHEDULE,
@@ -622,6 +627,102 @@ function openCatalogueOutbox(): SyncOutbox {
 /** The last storage problem the catalogue outbox hit, so the shell can show it — never silent (P-08). */
 export let catalogueStorageProblem: string | undefined;
 
+// ── Products waiting to publish — the review-queue screen (ADR-0013 slice 4, M03-FR-01/03) ──────────────────
+
+/**
+ * The concrete operator-session delivery port (ADR-0013): POSTs a ready publish to the idempotent cloud route
+ * `POST /v1/catalogue/products/:productId/publish` **under the operator's own session** — `credentials:
+ * 'same-origin'` carries their auth cookie, NEVER a service token. The publish route reads `{ product,
+ * categories }` (the barcode register is a separate route — assigning the command's barcodes there is the
+ * documented follow-up); the idempotency key is the command's own, so a retry cannot create a duplicate
+ * product. Returns the HTTP status, or 0 for a network/timeout failure — which the delivery step treats as
+ * retryable, so a lost link holds the publish pending and never condemns it.
+ */
+function openPublishDeliveryPort(): PublishDeliveryPort {
+  return {
+    post: async (payload: ProductPublishPayload, idempotencyKey: string): Promise<number> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return 0; // off-browser (tests inject their own port) — treat as a lost link
+      try {
+        const res = await fetchFn(`/v1/catalogue/products/${encodeURIComponent(payload.product.productId)}/publish`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': idempotencyKey, accept: 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ product: payload.product, categories: payload.categories }),
+        });
+        return res.status;
+      } catch {
+        return 0; // no line — the delivery step holds it pending and retries; a lost link never loses a publish
+      }
+    },
+  };
+}
+
+/**
+ * What the ERP server tells the products-to-publish screen. The CONTEXT is a LIVE authentication fact — the
+ * operator's CURRENT permissions and session freshness — injected by the signed-in ERP session, NEVER read
+ * from the periodically-pulled offline pack (that would be the stale-authorisation snapshot ADR-0013 control 3
+ * forbids acting on). The queue itself is the device-backed catalogue outbox, not this payload.
+ */
+export interface ProductPublishReviewData {
+  readonly userId?: string;
+  readonly tenantId?: string;
+  /** The permission codes the operator holds RIGHT NOW. */
+  readonly permissions?: readonly string[];
+  /** Is there a live authenticated session? Defaults true (the page was served to a signed-in session). */
+  readonly sessionActive?: boolean;
+  /** Is the operator a current member of the tenant? Defaults true (the ERP served them this tenant's screen). */
+  readonly tenantMember?: boolean;
+  /** Age of the last MFA/re-auth in seconds — a bulk or sensitive publish needs a fresh one (control 4). */
+  readonly mfaFreshSeconds?: number;
+  /** Creators who have since lost the authority / left, so their queued items are routed, not published. */
+  readonly revokedCreators?: readonly string[];
+  /** True when publishing the whole batch at once — bulk needs a fresh re-auth (control 4). */
+  readonly bulk?: boolean;
+}
+
+export function productPublishReviewPortsFromData(
+  data: ProductPublishReviewData,
+  outbox: SyncOutbox<string, ProductPublishPayload>,
+  deliveryPort: PublishDeliveryPort,
+): ProductPublishReviewPorts {
+  return {
+    // Re-read on EVERY render, never captured once — the classifier re-evaluates from this live context.
+    context: () => ({
+      userId: data.userId ?? '',
+      tenantId: data.tenantId ?? 'tenant',
+      // Default-deny: an absent permission list can publish nothing (the server would refuse it anyway).
+      permissions: new Set(data.permissions ?? []),
+      // The page was served to a signed-in session in a tenant, so these default TRUE; the ERP sets them
+      // false when it knows otherwise (a locked session, a tenant the operator was removed from mid-session).
+      sessionActive: data.sessionActive !== false,
+      tenantMember: data.tenantMember !== false,
+      ...(data.mfaFreshSeconds === undefined ? {} : { mfaFreshSeconds: data.mfaFreshSeconds }),
+      ...(data.revokedCreators === undefined ? {} : { revokedCreators: new Set(data.revokedCreators) }),
+      ...(data.bulk === undefined ? {} : { bulk: data.bulk }),
+    }),
+    outbox: () => outbox,
+    deliveryPort: () => deliveryPort,
+  };
+}
+
+/**
+ * Build the products-to-publish screen, or `null` when the ERP told this screen nothing (it then shows its
+ * clearly-marked sample stand-in). The outbox is the SAME device-backed catalogue queue the Save button
+ * commits publishes to, so what was queued there is exactly what is reviewed and delivered here.
+ */
+export function bootProductPublishReview(
+  data: ProductPublishReviewData | undefined,
+  outbox: SyncOutbox<string, ProductPublishPayload>,
+  deliveryPort: PublishDeliveryPort,
+): ProductPublishReviewSession | null {
+  if (data === undefined) return null;
+  return createProductPublishReviewSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    productPublishReviewPortsFromData(data, outbox, deliveryPort),
+  );
+}
+
 // ── Payroll (owner directive; docs/design/screens/payroll.md) ────────────────────────────────────────────
 //
 // Payroll is deliberately UNLIKE the other screens: it is served ONLINE-FIRST, holds the most sensitive data
@@ -1106,6 +1207,11 @@ interface ManagerWindow {
   wasteSession?: WasteReviewSession;
   countsData?: CountsData;
   countsSession?: CountsReviewSession;
+  productPublishReviewData?: ProductPublishReviewData;
+  productPublishReviewSession?: ProductPublishReviewSession;
+  /** The device-backed catalogue outbox the review screen reads and, on the deliver action, drains — the SAME
+   *  queue the catalogue Save commits publishes to. */
+  productPublishReviewOutbox?: SyncOutbox;
   payrollData?: PayrollData;
   payrollSession?: PayrollSession;
   payrollEssData?: PayrollEssData;
@@ -1613,6 +1719,18 @@ if (browserWindow !== undefined) {
   if (waste !== null) browserWindow.wasteSession = waste;
   const counts = bootCounts(browserWindow.countsData);
   if (counts !== null) browserWindow.countsSession = counts;
+  // The products-to-publish review shares the SAME device-backed catalogue outbox the Save button commits to,
+  // so exactly what was queued there is what is reviewed here. Its delivery port POSTs a ready publish under
+  // the operator's own session (ADR-0013). Nothing publishes on boot — only the explicit deliver action does.
+  const productPublishReview = bootProductPublishReview(
+    browserWindow.productPublishReviewData,
+    catalogueOutbox as SyncOutbox<string, ProductPublishPayload>,
+    openPublishDeliveryPort(),
+  );
+  if (productPublishReview !== null) {
+    browserWindow.productPublishReviewSession = productPublishReview;
+    browserWindow.productPublishReviewOutbox = catalogueOutbox;
+  }
   // Payroll always boots a session (real from a payload, or a flagged DEMO one) — never blank.
   browserWindow.payrollSession = bootPayroll(browserWindow.payrollData);
   browserWindow.payrollEssSession = bootPayrollEss(browserWindow.payrollEssData);

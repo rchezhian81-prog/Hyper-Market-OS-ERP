@@ -244,6 +244,8 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
     { id: 'c-2', productId: 'MILK-1', expectedMinor: 12, countedMinor: 12, varianceMinor: 0, valueMinor: 0, currency: 'INR', uom: 'ea', requiredApproval: false, adjusted: false },
   ]),
   countsPolicy: known({ userId: 'u-mgr', permissions: ['count.view'] }),
+  // Products to publish (ADR-0013). Who may deliver a queued product publish; the queue is the device outbox.
+  productPublishReviewPolicy: known({ userId: 'u-owner', permissions: ['catalogue.pack.publish'] }),
   // Admin and security (M01/M02/M33/M34). Support access is never pruned (hard rule #6).
   accounts: known([{
     userId: 'u-meena', tenantId: 't1', username: 'meena',
@@ -740,6 +742,7 @@ describe('a box that has been told nothing tells every screen so', () => {
       gstReturnsQueue: notKnown('never'), gstReturnsPolicy: notKnown('never'),
       wasteWriteOffs: notKnown('never'), wastePolicy: notKnown('never'),
       countsQueue: notKnown('never'), countsPolicy: notKnown('never'),
+      productPublishReviewPolicy: notKnown('never'),
       accounts: notKnown('never'), supportSessions: notKnown('never'),
       devices: notKnown('never'), versionPolicy: notKnown('never'),
       auditRecords: notKnown('never'), retentionPolicies: notKnown('never'),

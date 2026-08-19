@@ -41,6 +41,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Category rules — gated on the SAME permission the resolve route checks (`catalogue.pack.read`), so the
   // menu never offers a screen the server would refuse (M03-FR-01·CAT-POLICY).
   { id: 'category-policy', label: 'Category rules', path: '/category-policy', requires: 'catalogue.pack.read', group: 'Catalogue' },
+  // Products waiting to publish — the operator delivers a queued product publish, as themselves (ADR-0013).
+  // Gated on the SAME authority the publish route checks (`catalogue.pack.publish`), so the menu never offers
+  // it to someone the server would refuse — it is the publisher's action screen (M03-FR-01/03).
+  { id: 'product-publish-review', label: 'Products to publish', path: '/product-publish-review', requires: 'catalogue.pack.publish', group: 'Catalogue' },
 
   { id: 'suppliers', label: 'Suppliers', path: '/suppliers', requires: 'supplier.view', group: 'Purchasing' },
   { id: 'purchase-orders', label: 'Purchase orders', path: '/purchase-orders', requires: 'po.view', group: 'Purchasing' },
