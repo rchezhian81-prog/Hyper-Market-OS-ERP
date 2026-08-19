@@ -38,6 +38,7 @@ const SCREENS = [
   { name: 'the category rules', dir: 'web-erp', view: 'category-policy.js', page: 'category-policy.html', bundle: 'web-erp.bundle.js' },
   { name: 'the GST returns', dir: 'web-erp', view: 'gst-returns.js', page: 'gst-returns.html', bundle: 'web-erp.bundle.js' },
   { name: 'the waste review', dir: 'web-erp', view: 'waste.js', page: 'waste.html', bundle: 'web-erp.bundle.js' },
+  { name: 'the products to publish', dir: 'web-erp', view: 'product-publish-review.js', page: 'product-publish-review.html', bundle: 'web-erp.bundle.js' },
   { name: 'the store setup', dir: 'web-erp', view: 'setup.js', page: 'setup.html', bundle: 'web-erp.bundle.js' },
   { name: 'the owner', dir: 'owner-app', view: 'app.js', page: 'index.html', bundle: 'owner-app.bundle.js' },
   { name: 'the picker', dir: 'picker-app', view: 'app.js', page: 'index.html', bundle: 'picker-app.bundle.js' },

@@ -449,6 +449,15 @@ export interface PackCountsPolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the products-to-publish review screen and what they may do (ADR-0013, M03-FR-01/03). The queue
+ *  itself is the device-backed catalogue outbox, not the pack; this is only who the box was told is looking. */
+export interface PackProductPublishReviewPolicy {
+  readonly userId?: string;
+  /** The permission codes this user holds — `catalogue.pack.publish` to deliver a queued publish. Never
+   *  defaulted. The cloud publish route re-checks it on delivery, so this only shapes the review UI. */
+  readonly permissions: readonly string[];
+}
+
 /** Who administers this shop, and the windows it judges accounts and devices by. */
 export interface PackAdminPolicy {
   /** Days without a login after which an account is stale enough to review. Per-tenant. */
@@ -807,6 +816,8 @@ export interface StorePack {
   readonly countsQueue: Register<readonly unknown[]>;
   /** Who is on the stock-count review screen and what they may do there. */
   readonly countsPolicy: Register<PackCountsPolicy>;
+  /** Who is on the products-to-publish review screen and what they may do there (ADR-0013). */
+  readonly productPublishReviewPolicy: Register<PackProductPublishReviewPolicy>;
   /** Every account, so joiners, movers and leavers can be reviewed (M02-FR-04). */
   readonly accounts: Register<readonly unknown[]>;
   /**
@@ -944,6 +955,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     wastePolicy: notKnown(why),
     countsQueue: notKnown(why),
     countsPolicy: notKnown(why),
+    productPublishReviewPolicy: notKnown(why),
     accounts: notKnown(why),
     supportSessions: notKnown(why),
     devices: notKnown(why),
@@ -1050,6 +1062,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     wastePolicy: section<PackWastePolicy>('wastePolicy'),
     countsQueue: section<readonly unknown[]>('countsQueue'),
     countsPolicy: section<PackCountsPolicy>('countsPolicy'),
+    productPublishReviewPolicy: section<PackProductPublishReviewPolicy>('productPublishReviewPolicy'),
     accounts: section<readonly unknown[]>('accounts'),
     supportSessions: section<readonly unknown[]>('supportSessions'),
     devices: section<readonly unknown[]>('devices'),

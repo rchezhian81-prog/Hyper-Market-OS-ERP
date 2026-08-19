@@ -49,13 +49,13 @@ import {
   basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
-import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackCountsPolicy } from './store-pack';
+import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackCountsPolicy, PackProductPublishReviewPolicy } from './store-pack';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'counts', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
+  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'counts', 'product-publish-review', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1289,6 +1289,27 @@ export function countsPayload(input: ScreenInput): Record<string, unknown> | nul
 }
 
 /**
+ * The products-to-publish review payload (ADR-0013 slice 4, M03-FR-01/03).
+ *
+ * `null` when the box has not been told who is on the screen — a screen inventing its own permissions would
+ * decide, on its own authority, who may publish a product to the shared catalogue. **The queue itself is NOT
+ * in this payload**: it is the device-backed catalogue outbox (client-side), the same queue the catalogue Save
+ * commits to, so the screen reads its own device's pending publishes. This payload carries only the operator's
+ * CURRENT context (who is looking, what they hold now) — re-read every render, never the permissions captured
+ * when an item was queued (ADR-0013 control 3). The cloud publish route re-checks the authority on delivery, so
+ * this only shapes the review UI; it can never let a stale grant actually publish.
+ */
+export function productPublishReviewPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.productPublishReviewPolicy.known) return null;
+  const policy: PackProductPublishReviewPolicy = input.pack.productPublishReviewPolicy.value;
+
+  const payload: Record<string, unknown> = { permissions: policy.permissions };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+
+  return payload;
+}
+
+/**
  * The admin and security payload (M01 · M02 · M33 · M34 · D12).
  *
  * `null` when the box has not been told who administers this shop and by what windows — a screen
@@ -1434,6 +1455,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   'gst-returns': 'gstReturnsData',
   waste: 'wasteData',
   counts: 'countsData',
+  'product-publish-review': 'productPublishReviewData',
   admin: 'adminData',
   ai: 'aiData',
   migration: 'migrationData',
@@ -1460,6 +1482,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   'gst-returns': gstReturnsPayload,
   waste: wastePayload,
   counts: countsPayload,
+  'product-publish-review': productPublishReviewPayload,
   admin: adminPayload,
   ai: aiPayload,
   migration: migrationPayload,
