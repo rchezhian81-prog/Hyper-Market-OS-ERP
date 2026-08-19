@@ -101,6 +101,8 @@ import type { GoodsReceiptDeps, GrnRecord } from '../../inventory/src/goods-rece
 import { weightedAverageValuation, type ValuationMovement } from '../../../packages/stock/src/valuation';
 import { agedStockLots, type DatedMovement } from '../../../packages/stock/src/ageing-source';
 import type { MatchResult, BankChangeRequest, PurchaseDeps } from '../../purchase/src/index';
+import type { PurchaseOrderDeps, StoredPurchaseOrder } from '../../purchase/src/purchase-orders';
+import { computeOpenCommitment } from '../../../packages/purchasing/src/index';
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
 import type { CreditNoteDeps } from '../../finance/src/credit-notes';
 import type { CreditNote, ProductTaxEntry } from '../../../packages/finance/src/index';
@@ -795,6 +797,10 @@ const forOrder = (orderId: string): string => streamName(STREAM.orders, orderId)
 const forInvoice = (invoiceId: string): string => streamName(STREAM.purchase, 'invoice', invoiceId);
 /** Each supplier partner's portal config and submissions fold one stream — one partner, not the shop. */
 const forPortalPartner = (partnerId: string): string => streamName(STREAM.purchase, 'partner', partnerId);
+// Purchase orders and supplier holds live on their own shared streams so a fold can list every PO
+// (and answer the open commitment) and read a supplier's latest block state (M06-FR-01/02/04).
+const PURCHASE_ORDERS_STREAM = streamName(STREAM.purchase, 'orders');
+const SUPPLIER_BLOCK_STREAM = streamName(STREAM.purchase, 'supplier-block');
 /** Returns hang off the sale they are against, so "what came back on this bill?" reads one stream. */
 const forSaleReturns = (saleId: string): string => streamName(STREAM.sales, 'return', saleId);
 /** Each till's cash chain folds one stream — its balance and custodian read one till, not the shop. */
@@ -3181,6 +3187,100 @@ export function inventoryAdapter(input: {
 // Every one of those is a defect that existed before persistence and would have shipped without
 // it — wiring a real store is what made an empty answer visible as an answer.
 
+/**
+ * Fold the purchase-order stream to each PO's current state. A `PurchaseOrderProposed` opens it
+ * (first proposal of an id wins — a re-sync is idempotent); a `PurchaseOrderIssued` moves it to
+ * issued, carrying the approver and issue time. Both `purchaseOrdersAdapter` (reads) and
+ * `purchaseAdapter.openCommitments` (the on-order figure) fold through here, so there is one truth.
+ */
+async function foldPurchaseOrders(store: EventStore, tenantId: string): Promise<Map<string, StoredPurchaseOrder>> {
+  const events = await store.readStream(tenantId, PURCHASE_ORDERS_STREAM); // both types, oldest first
+  const byId = new Map<string, StoredPurchaseOrder>();
+  for (const e of events) {
+    if (e.event.type === 'PurchaseOrderProposed') {
+      const po = payloadOf<StoredPurchaseOrder>(e);
+      if (!byId.has(po.poId)) byId.set(po.poId, po);
+    } else if (e.event.type === 'PurchaseOrderIssued') {
+      const iss = payloadOf<{ poId: string; approvedBy: string; issuedAt: string }>(e);
+      const cur = byId.get(iss.poId);
+      if (cur !== undefined && cur.status === 'proposed') {
+        byId.set(iss.poId, { ...cur, status: 'issued', approvedBy: iss.approvedBy, issuedAt: iss.issuedAt });
+      }
+    }
+  }
+  return byId;
+}
+
+/**
+ * The purchase-order lifecycle store (M06-FR-01/02/04). POs live on one shared stream so the buying
+ * review surface can list them and the open-commitment figure can fold them; supplier holds live on
+ * their own shared stream, latest-wins per supplier. A proposed PO survives a restart and reads as
+ * what happened; an issued one carries its second approver forever (hard rule #2/#6).
+ */
+export function purchaseOrdersAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): PurchaseOrderDeps {
+  return {
+    now: input.now,
+    order: async (tenantId, poId) => (await foldPurchaseOrders(input.store, tenantId)).get(poId),
+    all: async (tenantId) => [...(await foldPurchaseOrders(input.store, tenantId)).values()],
+
+    supplierBlocked: async (tenantId, supplierId) => {
+      const latest = await latestBlock(input.store, tenantId, supplierId);
+      return latest?.blocked ?? false;
+    },
+
+    propose: async (tenantId, po) => {
+      await input.store.append(tenantId, PURCHASE_ORDERS_STREAM, makeEvent({
+        id: `po-${po.poId}-proposed`,
+        type: 'PurchaseOrderProposed',
+        occurredAt: input.now(),
+        // Keyed on the PO id alone: a re-sent proposal of the same PO collapses to one (never two POs).
+        idempotencyKey: `po-${tenantId}-${po.poId}-proposed`,
+        source: 'api/purchase',
+        payload: po,
+      }));
+    },
+
+    issue: async (tenantId, poId, approvedBy, issuedAt, reason) => {
+      await input.store.append(tenantId, PURCHASE_ORDERS_STREAM, makeEvent({
+        id: `po-${poId}-issued`,
+        type: 'PurchaseOrderIssued',
+        occurredAt: issuedAt,
+        // Keyed on the PO id: a re-issue of an already-issued PO collapses (idempotent §31.1).
+        idempotencyKey: `po-${tenantId}-${poId}-issued`,
+        source: 'api/purchase',
+        payload: { poId, approvedBy, issuedAt, reason },
+      }));
+    },
+
+    setSupplierBlocked: async (tenantId, supplierId, blocked, reason, by, at) => {
+      await input.store.append(tenantId, SUPPLIER_BLOCK_STREAM, makeEvent({
+        id: `supplier-block-${supplierId}-${blocked}-${at}`,
+        type: 'SupplierBlockStatusSet',
+        occurredAt: at,
+        // Keyed on the supplier + the new state + when: setting the same state twice collapses, but a
+        // block and a later lift are distinct facts and both stay on the record (hard rule #6).
+        idempotencyKey: `supplier-block-${tenantId}-${supplierId}-${blocked}-${at}`,
+        source: 'api/purchase',
+        payload: { supplierId, blocked, reason, by, at },
+      }));
+    },
+  };
+}
+
+/** The latest block record for a supplier, or undefined if it has never been held. */
+async function latestBlock(store: EventStore, tenantId: string, supplierId: string): Promise<{ readonly blocked: boolean } | undefined> {
+  const events = await store.readStream(tenantId, SUPPLIER_BLOCK_STREAM, { type: 'SupplierBlockStatusSet' });
+  let latest: { readonly supplierId: string; readonly blocked: boolean } | undefined;
+  for (const e of events) {
+    const p = payloadOf<{ supplierId: string; blocked: boolean }>(e);
+    if (p.supplierId === supplierId) latest = p; // occurrence order → last wins
+  }
+  return latest;
+}
+
 export function purchaseAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -3245,8 +3345,19 @@ export function purchaseAdapter(input: {
       }));
     },
 
-    // Not known, and not zero. See the note above.
-    openCommitments: () => undefined,
+    /**
+     * What is on order and not yet received (M06-FR-04). Now that purchase orders ARE recorded,
+     * this is a real number: the tested `computeOpenCommitment` values every ISSUED PO's open lines
+     * and they are summed. A tenant with no issued PO yet still reads *not known* (undefined), which
+     * is a different answer from zero — until a PO exists the shop genuinely cannot state what is on
+     * order. (Receipt/cancellation netting of the figure is the next increment; the engine takes both.)
+     */
+    openCommitments: async (tenantId) => {
+      const issued = [...(await foldPurchaseOrders(input.store, tenantId)).values()].filter((p) => p.status === 'issued');
+      if (issued.length === 0) return undefined;
+      const valueMinor = issued.reduce((sum, po) => sum + computeOpenCommitment(po.lines).totalOpenValue.minor, 0);
+      return { count: issued.length, valueMinor };
+    },
   };
 }
 

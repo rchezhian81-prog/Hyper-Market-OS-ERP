@@ -68,13 +68,23 @@
   re-checks against the **whole** cloud history, so a cross-lane double-use is refused `409` (a visible
   conflict, hard rule #10) and a same-id re-sync is idempotent. Personalised offers (`/v1/loyalty/offers`)
   need both profiling + marketing consent (M16-FR-02); referrals pay only on a qualifying purchase.
+- **Purchase order (API-03, M06-FR-01/02/04 §28):** a buyer **proposes** a PO
+  (`POST /v1/purchase/orders/:id`, `purchase.order.propose` — the requisitioner is the
+  authenticated user) → a **different person approves and issues** it
+  (`POST …/approval`, `purchase.order.approve`) behind the tested `decide`/`issuePurchaseOrder`,
+  which refuse a self-approval (`409 proposer_cannot_approve`) and a **blocked supplier**
+  (`409 supplier_blocked`; the hold is its own `POST /v1/purchase/suppliers/:id/block-status`,
+  latest-wins). The **open commitment** (`GET /v1/purchase/commitments`) is computed from the
+  issued POs by `computeOpenCommitment` — *not known* until a PO exists, a real number after.
+  Event-sourced (`PurchaseOrderProposed`→`PurchaseOrderIssued`, `SupplierBlockStatusSet`).
 - **Finance reconciliation (API-09):** import bank/gateway statements → match →
   `ReconciliationExceptionRaised` / `…Resolved`; **period close is blocked until control
   totals validate** (QG-07) → `PeriodClosed` / `PeriodReopened`.
 
 ## 4. Named domain events (§30.2, confirmed in Store-Core specs)
 `SaleCommitted` · `TenderAuthorized` / `TenderUncertain` / `TenderSettled` ·
-`InventoryMoved` · `InventoryAdjusted` · `ReconciliationExceptionRaised` /
+`InventoryMoved` · `InventoryAdjusted` · `PurchaseOrderProposed` / `PurchaseOrderIssued` ·
+`SupplierBlockStatusSet` · `ReconciliationExceptionRaised` /
 `ReconciliationExceptionResolved` · `PeriodClosed` / `PeriodReopened` ·
 `MigrationTotalSigned` / `MigrationExceptionResolved`.
 *(Additional events are defined per module as each is expanded — this list grows with the
