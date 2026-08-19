@@ -29,12 +29,13 @@ import type { SignedPack } from '../../catalogue/src/index';
 import type { CatalogueDeps } from '../../catalogue/src/index';
 import type { ProductMasterDeps } from '../../catalogue/src/product-master';
 import type { BarcodeRegistryDeps } from '../../catalogue/src/barcodes';
+import type { ProductMergeDeps, MergeView, MergeRejection } from '../../catalogue/src/product-merge';
 import type { TaxClassRateDeps } from '../../catalogue/src/tax-classes';
 import type { CataloguePreviewDeps } from '../../catalogue/src/catalogue-preview';
 import { assembleCatalogueSnapshot } from '../../catalogue/src/catalogue-preview';
 import { apiError } from '../../kernel/src/index';
 import type { GstRatePeriod } from '../../../packages/finance/src/rate';
-import type { ProductRecord, BarcodeAssignment } from '../../../packages/product/src/index';
+import type { ProductRecord, BarcodeAssignment, MergeRequest, MergeLink } from '../../../packages/product/src/index';
 import type { IncomingSale, IncomingTender, SaleException, PosDeps } from '../../pos/src/index';
 import type { LotTraceDeps } from '../../inventory/src/lot-trace';
 import type { SalesHistoryDeps } from '../../inventory/src/sales-history';
@@ -936,6 +937,89 @@ export function barcodeAdapter(input: {
       }));
     },
     all: (tenantId) => allOf<BarcodeAssignment>(input.store, tenantId, stream, 'BarcodeAssigned'),
+  };
+}
+
+/**
+ * The product-merge store (M03-FR-04 §28) — the §28-gated, reversible resolution of a duplicate. A merge's
+ * whole life is a stream of events on the tenant's merge stream (`MergeProposed` → `MergeApproved` /
+ * `MergeRejected` → `MergeReversed`), folded per mergeId into its current `MergeView`. Nothing is deleted —
+ * a rejection and a reversal are recorded, never erased (hard rule #6) — so the register reads as exactly
+ * what was proposed, who decided it, and whether it was later undone.
+ */
+export function productMergeAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): ProductMergeDeps {
+  const stream = streamName(STREAM.catalogue, 'merges');
+  const fold = async (tenantId: string): Promise<Map<string, MergeView>> => {
+    const events = await input.store.readStream(tenantId, stream); // every merge event, oldest first
+    const byId = new Map<string, MergeView>();
+    for (const e of events) {
+      const type = e.event.type;
+      if (type === 'MergeProposed') {
+        const req = payloadOf<MergeRequest>(e);
+        byId.set(req.mergeId, { request: req, status: 'pending' });
+      } else if (type === 'MergeApproved') {
+        const link = payloadOf<MergeLink>(e);
+        const v = byId.get(link.mergeId);
+        if (v) byId.set(link.mergeId, { ...v, status: 'approved', link, decidedBy: link.approvedBy, decidedAt: link.at });
+      } else if (type === 'MergeRejected') {
+        const rej = payloadOf<MergeRejection>(e);
+        const v = byId.get(rej.mergeId);
+        if (v) byId.set(rej.mergeId, { ...v, status: 'rejected', decidedBy: rej.decidedBy, decidedAt: rej.at });
+      } else if (type === 'MergeReversed') {
+        const link = payloadOf<MergeLink>(e);
+        const v = byId.get(link.mergeId);
+        if (v) byId.set(link.mergeId, { ...v, status: 'reversed', link });
+      }
+    }
+    return byId;
+  };
+  return {
+    recordProposal: async (tenantId, request, key) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `merge-${request.mergeId}-proposed-${key}`,
+        type: 'MergeProposed',
+        occurredAt: input.now(),
+        idempotencyKey: `merge-${tenantId}-${request.mergeId}-proposed-${key}`,
+        source: 'api/catalogue',
+        payload: request,
+      }));
+    },
+    recordApproved: async (tenantId, link, key) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `merge-${link.mergeId}-approved-${key}`,
+        type: 'MergeApproved',
+        occurredAt: input.now(),
+        idempotencyKey: `merge-${tenantId}-${link.mergeId}-approved-${key}`,
+        source: 'api/catalogue',
+        payload: link,
+      }));
+    },
+    recordRejected: async (tenantId, rejection, key) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `merge-${rejection.mergeId}-rejected-${key}`,
+        type: 'MergeRejected',
+        occurredAt: input.now(),
+        idempotencyKey: `merge-${tenantId}-${rejection.mergeId}-rejected-${key}`,
+        source: 'api/catalogue',
+        payload: rejection,
+      }));
+    },
+    recordReversed: async (tenantId, link, key) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `merge-${link.mergeId}-reversed-${key}`,
+        type: 'MergeReversed',
+        occurredAt: input.now(),
+        idempotencyKey: `merge-${tenantId}-${link.mergeId}-reversed-${key}`,
+        source: 'api/catalogue',
+        payload: link,
+      }));
+    },
+    view: async (tenantId, mergeId) => (await fold(tenantId)).get(mergeId),
+    all: async (tenantId) => [...(await fold(tenantId)).values()],
+    now: input.now,
   };
 }
 

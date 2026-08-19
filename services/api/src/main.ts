@@ -38,6 +38,7 @@ import { masterDataRoutes } from '../../catalogue/src/master-data';
 import { categoryPolicyRoutes } from '../../catalogue/src/category-policy';
 import { productDuplicateRoutes } from '../../catalogue/src/product-duplicates';
 import { productMasterRoutes } from '../../catalogue/src/product-master';
+import { productMergeRoutes } from '../../catalogue/src/product-merge';
 import { barcodeRoutes } from '../../catalogue/src/barcodes';
 import { taxClassRoutes } from '../../catalogue/src/tax-classes';
 import { cataloguePreviewRoutes } from '../../catalogue/src/catalogue-preview';
@@ -116,7 +117,7 @@ import { fulfilmentRoutes } from '../../fulfilment/src/index';
 import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
-  catalogueAdapter, productMasterAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, packagingAdapter, wasteAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
+  catalogueAdapter, productMasterAdapter, productMergeAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, packagingAdapter, wasteAdapter, purchaseAdapter, financeAdapter, settlementAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter, lotTraceAdapter, salesHistoryAdapter,
 } from './adapters';
@@ -206,6 +207,10 @@ export function buildSurface(deps: {
     ...productMasterRoutes(store === undefined
       ? { publish: () => {}, product: empty(undefined), products: empty([]) }
       : productMasterAdapter({ store, now })),
+    // Product merge (M03-FR-04 §28) — reversible, two-person duplicate resolution; propose/decide/reverse.
+    ...productMergeRoutes(store === undefined
+      ? { recordProposal: () => {}, recordApproved: () => {}, recordRejected: () => {}, recordReversed: () => {}, view: empty(undefined), all: empty([]), now }
+      : productMergeAdapter({ store, now })),
     // Barcode register (M03-FR-02) — durable "one code, one item"; assign/lookup/list-per-product.
     ...barcodeRoutes(store === undefined
       ? { assign: () => {}, all: empty([]) }

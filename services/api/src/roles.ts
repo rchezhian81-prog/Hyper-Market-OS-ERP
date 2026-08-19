@@ -28,6 +28,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'identity.self.read', 'identity.role.read', 'identity.role.grant', 'org.branch.read',
       'documents.number.allocate',
       'catalogue.pack.read', 'catalogue.pack.publish',
+      'catalogue.merge.propose', 'catalogue.merge.approve',
       'price.change.propose', 'price.change.approve',
       'promotion.simulate', 'promotion.launch', 'promotion.read',
       'purchase.invoice.capture', 'purchase.invoice.match', 'purchase.supplier.bank', 'purchase.commitment.read',
@@ -81,6 +82,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     permissions: [
       'identity.self.read', 'org.branch.read', 'payroll.ess.self',
       'catalogue.pack.read',
+      'catalogue.merge.propose',
       'price.change.propose',
       'promotion.simulate', 'promotion.launch', 'promotion.read',
       'b2b.credit.check', 'b2b.account.read', 'b2b.commission.read', 'b2b.document.issue', 'b2b.document.read',
