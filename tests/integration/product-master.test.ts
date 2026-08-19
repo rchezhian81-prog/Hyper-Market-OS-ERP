@@ -69,6 +69,32 @@ describe('product master authoring (M03-FR-01/03)', () => {
     expect(products.products.filter((p) => p.productId === 'p-milk')).toHaveLength(1); // not two
   });
 
+  it('central boundary refuses a SKU already held by a DIFFERENT product (ADR-0013 control 9)', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    // Two devices author offline: each validated its own product, neither could see the other's SKU.
+    expect((await publish(h, 'u-owner', 'p-salt', SALT, [GROCERY], 'k-salt')).status).toBe(201);
+    const clash = await publish(h, 'u-owner', 'p-salt-dup', { ...SALT, name: 'Salt (a different product, same code)' }, [GROCERY], 'k-dup');
+    expect(clash.status).toBe(409);
+    expect(codeOf(clash)).toBe('sku_already_in_use');
+    // The clashing product was NOT stored — the first keeps the SKU (nothing overwritten, hard rule #2).
+    expect((await get(h, 'u-owner', 'p-salt-dup')).status).toBe(404);
+    expect((await get(h, 'u-owner', 'p-salt')).status).toBe(200);
+  });
+
+  it('re-publishing the SAME product keeps its own SKU — a new version is never a self-clash', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await publish(h, 'u-owner', 'p-salt', SALT, [GROCERY], 'k-salt-1');
+    // Same id, same SKU, changed name → a legitimate new version, not a collision with itself.
+    const again = await publish(h, 'u-owner', 'p-salt', { ...SALT, name: 'Tata Salt 1kg (new pack)' }, [GROCERY], 'k-salt-2');
+    expect(again.status).toBe(201);
+    expect((await get(h, 'u-owner', 'p-salt')).status).toBe(200);
+    // And a genuinely distinct product with its OWN SKU still publishes alongside it.
+    const other = await publish(h, 'u-owner', 'p-sugar', { ...SALT, sku: 'SKU-SUGAR', name: 'Sugar 1kg' }, [GROCERY], 'k-sugar');
+    expect(other.status).toBe(201);
+  });
+
   it('gates authoring on catalogue.pack.publish; a manager may read but not publish; malformed → 400', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');

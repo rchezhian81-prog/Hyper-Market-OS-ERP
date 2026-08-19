@@ -73,11 +73,12 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
           });
         }
         const record = readProduct(productId, ctx.tenantId, b['product']);
+        // The per-product compliance gate — the SAME tested rule the screen ran, re-run here because a
+        // central boundary trusts no client verdict (ADR-0013 control 9): mandatory fields, category, HSN/tax
+        // class, MRP/UOM, and a regulated item's safety content (allergen/country-of-origin/min-age).
+        let published: ProductRecord;
         try {
-          // Validate + publish through the tested engine — draft becomes 'new' on first publish.
-          const published = publishProduct(record, b['categories'] as Category[]);
-          await deps.publish(ctx.tenantId, published, ctx.idempotencyKey ?? productId);
-          return { status: 201, body: { product: published } };
+          published = publishProduct(record, b['categories'] as Category[]); // draft → 'new' on first publish
         } catch (err) {
           if (err instanceof NotPublishableError) {
             throw apiError(422, {
@@ -98,6 +99,24 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
           }
           throw err;
         }
+        // The one re-check a single device CANNOT do (ADR-0013 control 9): SKU uniqueness across the WHOLE
+        // tenant. Each device validates the product it holds, but two devices authoring offline each believe
+        // their SKU is free — only here, where every product master lives, can a collision be seen. A SKU
+        // already held by a DIFFERENT product is refused; re-publishing the SAME product (same id) under its
+        // own SKU is not a clash. (Barcodes are enforced one-code-one-item on the barcode route.)
+        const clash = (await deps.products(ctx.tenantId)).find(
+          (p) => p.sku === published.sku && p.productId !== published.productId,
+        );
+        if (clash !== undefined) {
+          throw apiError(409, {
+            code: 'sku_already_in_use',
+            whatHappened: `The SKU "${published.sku}" already belongs to product "${clash.productId}" — one SKU names exactly one product, so this publish would make a barcode or shelf label ambiguous.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Give this product its own SKU, or correct the id if this is the same product under a different code — nothing was saved and the catalogue is unchanged.',
+          });
+        }
+        await deps.publish(ctx.tenantId, published, ctx.idempotencyKey ?? productId);
+        return { status: 201, body: { product: published } };
       },
     },
     {
