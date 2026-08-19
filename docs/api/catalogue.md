@@ -63,6 +63,11 @@
   gate — an inexact pack is refused at definition time, before it can make a stock figure wrong.
   `GET …/pack/convert?level=&quantity=&direction=to-base|from-base` converts exactly and
   reversibly (a case of 24 ↔ 24 singles). Event-sourced (`PackHierarchyDefined`, latest-per-product).
+- **Coupon redemption (API-06, M17-FR-02, offline-first):** a lane redeems a coupon against its **cached**
+  redemption set (single-use enforced offline); on sync `POST /v1/loyalty/coupons/:code/redemptions/:id`
+  re-checks against the **whole** cloud history, so a cross-lane double-use is refused `409` (a visible
+  conflict, hard rule #10) and a same-id re-sync is idempotent. Personalised offers (`/v1/loyalty/offers`)
+  need both profiling + marketing consent (M16-FR-02); referrals pay only on a qualifying purchase.
 - **Finance reconciliation (API-09):** import bank/gateway statements → match →
   `ReconciliationExceptionRaised` / `…Resolved`; **period close is blocked until control
   totals validate** (QG-07) → `PeriodClosed` / `PeriodReopened`.

@@ -104,6 +104,8 @@ import type { CreditNote, ProductTaxEntry } from '../../../packages/finance/src/
 import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
 import type { StoredPointsMovement } from '../../../packages/loyalty/src/assess-points';
 import type { StoredValueDeps, Instrument, ValueMovement } from '../../customer/src/stored-value';
+import type { CouponDeps } from '../../customer/src/coupons';
+import type { Coupon, Redemption } from '../../../packages/loyalty/src/coupons';
 import type { PromotionDeps, LaunchRecord } from '../../pricing/src/promotions';
 import type { PromotionCatalogueDeps } from '../../pricing/src/promotion-catalogue';
 import type { Promotion } from '../../../packages/promotions/src/promotions';
@@ -3512,6 +3514,62 @@ export function storedValueAdapter(input: {
         idempotencyKey: `sv-mv-${tenantId}-${m.movementId}`,
         source: 'api/customer',
         payload: m,
+      }));
+    },
+  };
+}
+
+/**
+ * The coupon register (M17-FR-02) — the small bearer instruments the shop issues and honours. A coupon and
+ * its redemptions live on the code's OWN stream (`CouponIssued` then `CouponRedeemed`), so `redemptions(code)`
+ * reads one stream, and the central `redeemCoupon` runs against the WHOLE history — the authoritative
+ * single-use guard a stale offline lane cache cannot enforce alone (hard rule #10). Referral rewards are a
+ * tenant-wide `ReferralRewarded` stream, the already-paid guard. Nothing is overwritten (hard rule #2).
+ */
+export function couponAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): CouponDeps {
+  const forCode = (code: string): string => streamName(STREAM.loyalty, 'coupon', code);
+  const referralStream = streamName(STREAM.loyalty, 'referrals');
+  return {
+    now: input.now,
+    issue: async (tenantId, coupon, key) => {
+      await input.store.append(tenantId, forCode(coupon.code), makeEvent({
+        id: `coupon-${coupon.code}-${key}`,
+        type: 'CouponIssued',
+        occurredAt: input.now(),
+        idempotencyKey: `coupon-${tenantId}-${coupon.code}-${key}`,
+        source: 'api/customer',
+        payload: coupon,
+      }));
+    },
+    coupon: async (tenantId, code) => {
+      const events = await input.store.readStream(tenantId, forCode(code), { type: 'CouponIssued' });
+      const last = events[events.length - 1]; // latest definition wins (the route refuses a re-define anyway)
+      return last ? payloadOf<Coupon>(last) : undefined;
+    },
+    redemptions: (tenantId, code) => allOf<Redemption>(input.store, tenantId, forCode(code), 'CouponRedeemed'),
+    recordRedemption: async (tenantId, r, key) => {
+      await input.store.append(tenantId, forCode(r.code), makeEvent({
+        id: `redeem-${r.code}-${r.redemptionId}-${key}`,
+        type: 'CouponRedeemed',
+        occurredAt: input.now(),
+        idempotencyKey: `redeem-${tenantId}-${r.code}-${r.redemptionId}`,
+        source: 'api/customer',
+        payload: r,
+      }));
+    },
+    rewardedReferralIds: async (tenantId) =>
+      (await allOf<{ referralId: string }>(input.store, tenantId, referralStream, 'ReferralRewarded')).map((x) => x.referralId),
+    recordReferralReward: async (tenantId, referralId, rewardMinor, at, key) => {
+      await input.store.append(tenantId, referralStream, makeEvent({
+        id: `referral-${referralId}-${key}`,
+        type: 'ReferralRewarded',
+        occurredAt: input.now(),
+        idempotencyKey: `referral-${tenantId}-${referralId}`,
+        source: 'api/customer',
+        payload: { referralId, rewardMinor, at },
       }));
     },
   };
