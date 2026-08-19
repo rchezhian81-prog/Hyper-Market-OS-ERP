@@ -2,9 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { SyncOutbox } from '../../packages/sync/src/outbox';
 import {
   queueProductPublish, buildProductPublishCommand, productPublishKey,
-  PRODUCT_PUBLISH_EVENT, type ProductPublishPayload,
+  PRODUCT_PUBLISH_EVENT, type ProductPublishPayload, type ProductPublishBarcode,
 } from '../../apps/web-erp/src/catalogue-publish-command';
 import type { ProductRecord, Category } from '../../packages/product/src/index';
+
+/** A barcode as authored — the code plus its symbology kind (a plain EAN here). */
+const bc = (code: string): ProductPublishBarcode => ({ code, kind: 'ean' });
 
 // The catalogue screen's Save produces a durable, deduplicated command to publish a product to the cloud —
 // but ONLY a product that would validate, and never a second copy of the same content.
@@ -23,14 +26,14 @@ const AT = '2026-08-18T06:00:00.000Z';
 describe('catalogue screen publish → outbox command (M03-FR-01/03)', () => {
   it('queues a durable command for a compliant product, with the record promoted draft → new', () => {
     const ob = outbox();
-    const res = queueProductPublish(ob, { product: salt(), categories: [GROCERY], barcodes: ['8901058000108'], requestedBy: 'u-owner', at: AT });
+    const res = queueProductPublish(ob, { product: salt(), categories: [GROCERY], barcodes: [bc('8901058000108')], requestedBy: 'u-owner', at: AT });
     expect(res.ok).toBe(true);
     expect(ob.unsentCount()).toBe(1);
     const item = ob.pending()[0]!;
     expect(item.event.type).toBe(PRODUCT_PUBLISH_EVENT);
     const payload = item.event.payload as ProductPublishPayload;
     expect(payload.product.lifecycle).toBe('new'); // promoted on publish, as the cloud will store it
-    expect(payload.barcodes).toEqual(['8901058000108']);
+    expect(payload.barcodes).toEqual([{ code: '8901058000108', kind: 'ean' }]);
     expect(payload.requestedBy).toBe('u-owner');
   });
 
@@ -52,22 +55,22 @@ describe('catalogue screen publish → outbox command (M03-FR-01/03)', () => {
 
   it('collapses a double-click to one command, but an edit is a distinct command', () => {
     const ob = outbox();
-    queueProductPublish(ob, { product: salt(), categories: [GROCERY], barcodes: ['111'], requestedBy: 'u-owner', at: AT });
-    const again = queueProductPublish(ob, { product: salt(), categories: [GROCERY], barcodes: ['111'], requestedBy: 'u-owner', at: AT });
+    queueProductPublish(ob, { product: salt(), categories: [GROCERY], barcodes: [bc('111')], requestedBy: 'u-owner', at: AT });
+    const again = queueProductPublish(ob, { product: salt(), categories: [GROCERY], barcodes: [bc('111')], requestedBy: 'u-owner', at: AT });
     expect(again.ok).toBe(false);
     if (!again.ok) expect(again.refusal).toBe('already_queued');
     expect(ob.unsentCount()).toBe(1); // still one
 
     // A genuine edit (a new name) is different content → a distinct, legitimate command.
-    queueProductPublish(ob, { product: salt({ name: 'Tata Salt 1kg (new pack)' }), categories: [GROCERY], barcodes: ['111'], requestedBy: 'u-owner', at: AT });
+    queueProductPublish(ob, { product: salt({ name: 'Tata Salt 1kg (new pack)' }), categories: [GROCERY], barcodes: [bc('111')], requestedBy: 'u-owner', at: AT });
     expect(ob.unsentCount()).toBe(2);
   });
 
   it('the dedupe key is content-stable regardless of field order, and barcode order does not matter', () => {
-    const a = productPublishKey(salt({ lifecycle: 'new' }), ['a', 'b']);
-    const b = productPublishKey({ ...salt({ lifecycle: 'new' }) }, ['b', 'a']); // reordered barcodes
+    const a = productPublishKey(salt({ lifecycle: 'new' }), [bc('a'), bc('b')]);
+    const b = productPublishKey({ ...salt({ lifecycle: 'new' }) }, [bc('b'), bc('a')]); // reordered barcodes
     expect(a).toBe(b);
-    const c = buildProductPublishCommand({ record: salt({ lifecycle: 'new' }), categories: [GROCERY], barcodes: ['a', 'b'], requestedBy: 'u', at: AT });
+    const c = buildProductPublishCommand({ record: salt({ lifecycle: 'new' }), categories: [GROCERY], barcodes: [bc('a'), bc('b')], requestedBy: 'u', at: AT });
     expect(c.idempotencyKey).toBe(a);
   });
 });

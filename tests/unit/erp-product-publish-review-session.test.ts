@@ -29,7 +29,7 @@ const queueOf = (records: ProductRecord[]): SyncOutbox<string, ProductPublishPay
   const ob = new SyncOutbox<string, ProductPublishPayload>();
   records.forEach((r, i) =>
     ob.enqueue(buildProductPublishCommand({
-      record: r, categories: [GROCERY], barcodes: [`bc-${i}`],
+      record: r, categories: [GROCERY], barcodes: [{ code: `bc-${i}`, kind: 'ean' }],
       requestedBy: 'u-owner', at: `2026-08-18T0${i}:00:00.000Z`,
     })));
   return ob;

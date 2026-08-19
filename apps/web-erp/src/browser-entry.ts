@@ -96,8 +96,8 @@ import {
 import {
   createProductPublishReviewSession, type ProductPublishReviewPorts, type ProductPublishReviewSession,
 } from './product-publish-review-session';
-import type { PublishDeliveryPort } from './product-publish-delivery';
-import type { ProductPublishPayload } from './catalogue-publish-command';
+import { deliverOnePublish, type PublishDeliveryPort, type PublishHttp } from './product-publish-delivery';
+import type { ProductPublishPayload, ProductPublishBarcode } from './catalogue-publish-command';
 import type { CategoryPolicy } from '../../../packages/product/src/index';
 import {
   foldPayRun, buildPayslip, resolveStatutoryParams, DEFAULT_STATUTORY_SCHEDULE,
@@ -639,23 +639,37 @@ export let catalogueStorageProblem: string | undefined;
  * retryable, so a lost link holds the publish pending and never condemns it.
  */
 function openPublishDeliveryPort(): PublishDeliveryPort {
-  return {
-    post: async (payload: ProductPublishPayload, idempotencyKey: string): Promise<number> => {
-      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
-      if (fetchFn === undefined) return 0; // off-browser (tests inject their own port) — treat as a lost link
-      try {
-        const res = await fetchFn(`/v1/catalogue/products/${encodeURIComponent(payload.product.productId)}/publish`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'idempotency-key': idempotencyKey, accept: 'application/json' },
-          credentials: 'same-origin',
-          body: JSON.stringify({ product: payload.product, categories: payload.categories }),
-        });
-        return res.status;
-      } catch {
-        return 0; // no line — the delivery step holds it pending and retries; a lost link never loses a publish
-      }
-    },
+  // One operator-authenticated POST, shared by both legs. `credentials: 'same-origin'` carries the operator's
+  // OWN auth cookie (never a service token — ADR-0013); a network/timeout returns 0, which the delivery leg
+  // treats as retryable so a lost link holds the publish pending and never loses it.
+  const post = async (path: string, body: unknown, idempotencyKey: string): Promise<number> => {
+    const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+    if (fetchFn === undefined) return 0; // off-browser (tests inject their own http) — treat as a lost link
+    try {
+      const res = await fetchFn(path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'idempotency-key': idempotencyKey, accept: 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(body),
+      });
+      return res.status;
+    } catch {
+      return 0;
+    }
   };
+  const http: PublishHttp = {
+    publishProduct: (payload: ProductPublishPayload, key: string) =>
+      post(`/v1/catalogue/products/${encodeURIComponent(payload.product.productId)}/publish`, { product: payload.product, categories: payload.categories }, key),
+    assignBarcode: (productId: string, barcode: ProductPublishBarcode, key: string) =>
+      post(
+        `/v1/catalogue/products/${encodeURIComponent(productId)}/barcodes/${encodeURIComponent(barcode.code)}`,
+        { kind: barcode.kind, ...(barcode.level === undefined ? {} : { level: barcode.level }) },
+        key,
+      ),
+  };
+  // Delivering one command means publishing the product AND assigning its barcodes; deliverOnePublish
+  // sequences the two and collapses the result into one status the outbox transitions on.
+  return { post: (payload, idempotencyKey) => deliverOnePublish(payload, idempotencyKey, http) };
 }
 
 /**

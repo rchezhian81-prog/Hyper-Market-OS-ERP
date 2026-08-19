@@ -50,7 +50,7 @@ import {
   type BasketLine, type Promotion, type PromotionResult, type SimulationResult,
 } from '../../../packages/promotions/src/index';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
-import { queueProductPublish, type PublishQueueResult } from './catalogue-publish-command';
+import { queueProductPublish, type PublishQueueResult, type ProductPublishBarcode } from './catalogue-publish-command';
 
 /** What this surface can see about the shop, and what it honestly cannot. */
 export interface CataloguePorts {
@@ -173,7 +173,7 @@ export interface CatalogueSession {
    * a record at nine in the evening should not have to discover the requirements one save at a
    * time.
    */
-  publish(product: ProductRecord, barcodes?: readonly string[]): PublishOutcome;
+  publish(product: ProductRecord, barcodes?: readonly ProductPublishBarcode[]): PublishOutcome;
 
   /**
    * Publish a product to the shared truth (M03-FR-01/03) — the Save that reaches the cloud.
@@ -182,7 +182,7 @@ export interface CatalogueSession {
    * deduplicated command to the offline outbox (P-01, §31); the sync agent drains it to the compliance-gated
    * cloud route. Never touches the network from here. `no_outbox` when this screen was built without a queue.
    */
-  requestPublish(product: ProductRecord, barcodes?: readonly string[]): RequestPublishResult;
+  requestPublish(product: ProductRecord, barcodes?: readonly ProductPublishBarcode[]): RequestPublishResult;
 
   /**
    * Stop an item being sold or ordered anywhere, at once (D01-FR-05).
@@ -320,14 +320,14 @@ export function createCatalogueSession(
         }
         for (const barcode of barcodes) {
           try {
-            registry.register({ code: barcode, productId: product.productId, kind: 'internal' });
+            registry.register({ code: barcode.code, productId: product.productId, kind: barcode.kind });
           } catch (e) {
             if (e instanceof DuplicateBarcodeError) {
               return {
                 ok: false,
                 refusal: 'barcode_belongs_to_another_item',
-                detail: `barcode ${barcode} already belongs to another item. One barcode rings up one product — otherwise which one it is depends on which record was found first.`,
-                missing: [barcode],
+                detail: `barcode ${barcode.code} already belongs to another item. One barcode rings up one product — otherwise which one it is depends on which record was found first.`,
+                missing: [barcode.code],
               };
             }
             throw e;

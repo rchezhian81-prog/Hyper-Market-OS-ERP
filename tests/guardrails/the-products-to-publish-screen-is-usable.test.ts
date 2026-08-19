@@ -28,7 +28,7 @@ const rec = (over: Partial<ProductRecord> = {}): ProductRecord => ({
 });
 const queueOne = (): SyncOutbox<string, ProductPublishPayload> => {
   const ob = new SyncOutbox<string, ProductPublishPayload>();
-  ob.enqueue(buildProductPublishCommand({ record: rec(), categories: [GROCERY], barcodes: ['bc-0'], requestedBy: 'u-owner', at: '2026-08-18T06:00:00.000Z' }));
+  ob.enqueue(buildProductPublishCommand({ record: rec(), categories: [GROCERY], barcodes: [{ code: 'bc-0', kind: 'ean' }], requestedBy: 'u-owner', at: '2026-08-18T06:00:00.000Z' }));
   return ob;
 };
 const ctx = (over: Partial<PublishReviewContext> = {}): PublishReviewContext => ({

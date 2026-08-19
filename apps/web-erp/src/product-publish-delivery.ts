@@ -18,20 +18,27 @@
 // command's own key, so a retry cannot create a duplicate product (ADR-0013 control 7).
 
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
-import type { ProductPublishPayload } from './catalogue-publish-command';
+import type { ProductPublishPayload, ProductPublishBarcode } from './catalogue-publish-command';
 import {
   summarizePublishQueue,
   type QueuedPublishItem, type PublishReviewContext,
 } from './product-publish-queue';
 
-/** How the delivery reads the cloud's answer — mirrors the edge transport's rule so the two agree. A 0
- *  status stands for a network/timeout failure (retryable — a lost link never condemns a publish). */
+/**
+ * How the delivery reads the cloud's answer.
+ *
+ * A 0 status stands for a network/timeout failure — retryable, so a lost link never condemns a publish. A
+ * **409 is a REAL conflict → rejected**, not an idempotent success: on THIS route a 409 is `sku_already_in_use`
+ * (the product-master route) or `barcode_already_assigned` (the barcode route) — a genuine one-of-a-kind clash
+ * a person must resolve. It is never "already had it": the kernel handles an idempotent REPLAY by returning the
+ * first response's cached status (a 201), not a 409, so a 409 that reaches here is always a true conflict.
+ * (Both legs of a delivery — product and barcode — read the same way, so there is one classifier.)
+ */
 export function classifyPublishResponse(status: number): 'accepted' | 'retryable' | 'rejected' {
   if (status >= 200 && status < 300) return 'accepted';
-  if (status === 409) return 'accepted'; // the idempotent route already had it — success, not a duplicate
   if (status === 0 || status >= 500) return 'retryable';
   if (status === 408 || status === 425 || status === 429 || status === 401) return 'retryable';
-  if (status >= 400) return 'rejected';
+  if (status >= 400) return 'rejected'; // incl. 409 — sku_already_in_use / barcode_already_assigned
   return 'retryable';
 }
 
@@ -43,6 +50,49 @@ export function classifyPublishResponse(status: number): 'accepted' | 'retryable
  */
 export interface PublishDeliveryPort {
   post(payload: ProductPublishPayload, idempotencyKey: string): Promise<number>;
+}
+
+/**
+ * The two operator-authenticated POSTs a full publish takes: the product master, then one barcode. Both carry
+ * the operator's OWN session and an idempotency key derived from the command, and return the HTTP status (or
+ * 0 for a network/timeout). Injected so the delivery leg is tested without a network.
+ */
+export interface PublishHttp {
+  publishProduct(payload: ProductPublishPayload, idempotencyKey: string): Promise<number>;
+  assignBarcode(productId: string, barcode: ProductPublishBarcode, idempotencyKey: string): Promise<number>;
+}
+
+/**
+ * Deliver ONE publish command FULLY, as the operator: publish the product master, THEN assign each of its
+ * barcodes on the one-code-one-item route (the publish route takes product+categories only). The multi-step
+ * result is collapsed into ONE status the outbox can transition on:
+ *   • the product goes in FIRST — if it is not accepted, return that status and touch NO barcodes (a barcode
+ *     names a product that may not exist yet);
+ *   • a barcode REJECTED outright (a real one-code-two-items conflict, or a bad request) → return it, so the
+ *     whole command dead-letters visibly for a person (the product is already published — idempotent — but
+ *     the clash needs a human to resolve which product owns the code);
+ *   • a barcode that failed TRANSIENTLY (a timeout, a 5xx) → return a retryable status, so the whole command
+ *     stays pending and is retried; the re-publish is idempotent and an already-assigned barcode is a no-op
+ *     (201), so a retry converges without duplicating anything.
+ * Each barcode's idempotency key is derived from the command's key, so no retry can create a duplicate.
+ */
+export async function deliverOnePublish(
+  payload: ProductPublishPayload,
+  idempotencyKey: string,
+  http: PublishHttp,
+): Promise<number> {
+  const productStatus = await http.publishProduct(payload, idempotencyKey);
+  if (classifyPublishResponse(productStatus) !== 'accepted') return productStatus;
+
+  let heldStatus: number | undefined;
+  for (const barcode of payload.barcodes) {
+    const status = await http.assignBarcode(payload.product.productId, barcode, `${idempotencyKey}|bc|${barcode.code}`);
+    const outcome = classifyPublishResponse(status);
+    if (outcome === 'rejected') return status;   // a real conflict (409/4xx) — dead-letter the command for a person
+    if (outcome === 'retryable') heldStatus = status; // a transient failure — hold + retry the whole command
+  }
+  // All barcodes in (or none) → the product's own success status; else the transient one so the command holds.
+  return heldStatus ?? productStatus;
 }
 
 export type PublishDeliveryOutcome = 'delivered' | 'held' | 'refused';

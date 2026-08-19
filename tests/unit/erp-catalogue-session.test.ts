@@ -351,14 +351,14 @@ describe('publishing a product', () => {
     // lane happened to find first, which is not a rule anybody can rely on.
     const outcome = session({
       barcodesInUse: () => [{ barcode: '8901', productId: 'p-other' }],
-    }).publish(FINISHED, ['8901']);
+    }).publish(FINISHED, [{ code: '8901', kind: 'ean' }]);
     expect(outcome.ok).toBe(false);
     if (outcome.ok) return;
     expect(outcome.refusal).toBe('barcode_belongs_to_another_item');
   });
 
   it('accepts a barcode the item already owns — re-publishing is not a clash', () => {
-    expect(session().publish(FINISHED, ['8901']).ok).toBe(true);
+    expect(session().publish(FINISHED, [{ code: '8901', kind: 'ean' }]).ok).toBe(true);
   });
 
   it('has words defined for every publish refusal it can return', () => {
