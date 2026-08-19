@@ -24,6 +24,7 @@ CLAUDE.md (Technology baseline, roadmap §19) requires: **"Any substitution requ
 | [0010](./0010-documents-as-events-not-object-storage.md) | Documents stored as append-only events, not object storage (§19 substitution) | Accepted |
 | [0011](./0011-edge-durability-file-log.md) | Edge durability via an append-only file-log, not a local relational DB (§19 substitution) | Accepted |
 | [0012](./0012-modular-monolith-cloud-topology.md) | Modular-monolith cloud topology | Accepted |
+| [0013](./0013-product-publish-delivered-by-the-signed-in-operator.md) | Product publish delivered by the signed-in operator, not a background service identity (owner decision, 18 Aug 2026) | Accepted |
 
 Further de-facto and proposed decisions (transaction boundaries, Postgres RLS, SHA-256 audit chain,
 observability exporters, OpenAPI, DSR API, hosting/IaC/CD) are catalogued as recommendations in
