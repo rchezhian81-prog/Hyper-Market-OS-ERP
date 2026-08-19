@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M10 FEFO/EXPIRY/RECALL RE-RATED **WIRED** — recall lifecycle wired (19 August 2026)
+
+**Owner direction:** third of the three shortlisted modules, taken one-by-one. On opening M10 I found the
+**expiry/recall SCREEN already exists** (built 6 Aug: 14KB session model + 21KB shell, edge-registered,
+offline, bilingual, 22-case unit test) — so "build the expiry screen" would have duplicated finished work. I
+stopped and reported; the owner asked me to choose the best next step. I chose the one genuinely-missing
+backend piece.
+
+**What was built:**
+- **inc-1 (PR #251, merged) — FEFO lane allocation.** `POST /v1/inventory/fefo-allocation` runs the tested
+  `allocateFefo`: draws earliest-expiry-first over the supplied sellable batches (expired/recalled/quarantined/
+  empty/wrong-product excluded), reporting any shortfall honestly. Stateless. 5-case test. (Held at PARTIALLY.)
+- **inc-2 — the recall LIFECYCLE cloud write path (M10-FR-04).** The recall *block* was already carried to
+  every lane on the signed pack (recalled product master → `recallBlock` → POS refuses even offline, guarded);
+  now the recall *record* is durable on the cloud too: `POST /v1/quality/recalls/:batchId` initiates (gated
+  `quality.recall.initiate`, idempotent), `POST …/closure` closes **only with an evidence reference** (`422`
+  otherwise; `409` nothing-open-to-close), `GET …` reads open-first. Runs the tested `RecallRegistry`;
+  event-sourced `RecallInitiated`/`RecallClosed`, retained forever (hard rule #6). 7-case test incl. restart.
+
+**Re-rating (owner to confirm on merge):** with the recall lifecycle wired, **all four M10 FRs are live on the
+API** — FR-01 (expiry + FEFO routes + screen), FR-02 (cold-chain), FR-03 (lot-trace), FR-04 (recall block +
+cloud record). M10 moves **PARTIALLY_WIRED → WIRED**. Ladder + summary + ledger + evidence registry updated
+together. **Headline: 40.7% → 40.9%.** Follow-ons NOT blocking WIRED: an expiry-screen usability guardrail to
+match the other back-office screens, and a dedicated offline e2e.
+
+**Gate:** typecheck ✓, lint ✓, guardrails ✓, `vitest run` **5779 passed / 262 skipped** ✓, completion **40.9%**.
+
+**Next (last of the owner's three):** M07 receiving/GRN capture.
+
+---
+
 ## ★ M17 LOYALTY RE-RATED **WIRED** — coupons/referrals wired (19 August 2026)
 
 **Owner direction:** "move to the next module" → after a shortlist survey, the owner chose to take on the

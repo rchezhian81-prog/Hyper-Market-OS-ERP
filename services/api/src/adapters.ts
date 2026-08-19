@@ -39,6 +39,8 @@ import type { GstRatePeriod } from '../../../packages/finance/src/rate';
 import type { ProductRecord, BarcodeAssignment, MergeRequest, MergeLink, PackHierarchy } from '../../../packages/product/src/index';
 import type { IncomingSale, IncomingTender, SaleException, PosDeps } from '../../pos/src/index';
 import type { LotTraceDeps } from '../../inventory/src/lot-trace';
+import type { RecallDeps } from '../../inventory/src/recall';
+import { RecallRegistry, type RecallRecord } from '../../../packages/traceability/src/index';
 import type { SalesHistoryDeps } from '../../inventory/src/sales-history';
 import type { SoldLine } from '../../../packages/demand/src/sales-history';
 import type { OutboundLotRecord } from '../../../packages/quality/src/index';
@@ -1227,6 +1229,65 @@ export function posAdapter(input: {
  * A recall-time read, not a hot path. A walk-in with no captured customer is kept (customer identity via
  * loyalty/consent is a later M16 linkage).
  */
+/**
+ * The recall register (M10-FR-04) — the durable cloud record of every recall. Each initiation is a
+ * `RecallInitiated` event and each closure a `RecallClosed` event on the tenant's recall stream, each
+ * carrying the resulting `RecallRecord`; nothing is ever deleted (hard rule #6). The write surface replays
+ * them through the tested `RecallRegistry` to get its idempotent-initiate / evidence-required-close /
+ * nothing-open-to-close semantics; the read surface folds the latest record per batch.
+ */
+export function recallAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): RecallDeps {
+  const stream = streamName(STREAM.inventory, 'recalls');
+  const events = (tenantId: string) => input.store.readStream(tenantId, stream); // both types, oldest first
+  return {
+    now: input.now,
+    registry: async (tenantId) => {
+      const registry = new RecallRegistry();
+      for (const e of await events(tenantId)) {
+        const r = payloadOf<RecallRecord>(e);
+        if (e.event.type === 'RecallInitiated') {
+          registry.initiate({ batchId: r.batchId, reason: r.reason, initiatedBy: r.initiatedBy, at: r.initiatedAt });
+        } else if (e.event.type === 'RecallClosed' && r.evidenceRef !== null && r.closedBy !== null && r.closedAt !== null) {
+          registry.close({ batchId: r.batchId, closedBy: r.closedBy, evidenceRef: r.evidenceRef, at: r.closedAt });
+        }
+      }
+      return registry;
+    },
+    records: async (tenantId) => {
+      // Each event's payload IS the resulting record, so the latest per batch is the current state.
+      const byBatch = new Map<string, RecallRecord>();
+      for (const e of await events(tenantId)) {
+        const r = payloadOf<RecallRecord>(e);
+        byBatch.set(r.batchId, r);
+      }
+      return [...byBatch.values()];
+    },
+    recordInitiated: async (tenantId, record, key) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `recall-${record.batchId}-init-${key}`,
+        type: 'RecallInitiated',
+        occurredAt: input.now(),
+        idempotencyKey: `recall-${tenantId}-${record.batchId}-init-${key}`,
+        source: 'api/inventory',
+        payload: record,
+      }));
+    },
+    recordClosed: async (tenantId, record, key) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `recall-${record.batchId}-close-${key}`,
+        type: 'RecallClosed',
+        occurredAt: input.now(),
+        idempotencyKey: `recall-${tenantId}-${record.batchId}-close-${key}`,
+        source: 'api/inventory',
+        payload: record,
+      }));
+    },
+  };
+}
+
 export function lotTraceAdapter(input: { readonly store: EventStore }): LotTraceDeps {
   return {
     soldOfBatch: async (tenantId, batchId) => {
