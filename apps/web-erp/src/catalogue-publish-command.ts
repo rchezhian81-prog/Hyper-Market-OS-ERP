@@ -17,18 +17,29 @@ import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/eve
 import type { SyncOutbox, OutboxState } from '../../../packages/sync/src/outbox';
 import {
   publishProduct, NotPublishableError, CategoryNotFoundError,
-  type ProductRecord, type Category,
+  type ProductRecord, type Category, type BarcodeKind,
 } from '../../../packages/product/src/index';
 
 /** The event type the outbox command carries — the product-authoring write-path identity. */
 export const PRODUCT_PUBLISH_EVENT = 'ProductPublishRequested';
 
+/** One barcode as AUTHORED — the code AND its symbology `kind`, captured at authoring time. The kind is a
+ *  real fact (a weight/price-embedded code is parsed differently at the till than a plain EAN), so it must
+ *  travel with the command rather than be guessed at delivery. The cloud barcode route needs it (ADR-0013). */
+export interface ProductPublishBarcode {
+  readonly code: string;
+  readonly kind: BarcodeKind;
+  /** Packaging level (each/inner/case), where the shop distinguishes them. Optional — absent means unstated. */
+  readonly level?: string;
+}
+
 /** The command the sync agent drains to the compliance-gated publish route. The categories travel with it
- *  so the cloud validates against the same hierarchy the screen did; the barcodes are assigned alongside. */
+ *  so the cloud validates against the same hierarchy the screen did; each barcode (with its kind) is assigned
+ *  alongside on the one-code-one-item barcode route after the product master goes in. */
 export interface ProductPublishPayload {
   readonly product: ProductRecord;
   readonly categories: readonly Category[];
-  readonly barcodes: readonly string[];
+  readonly barcodes: readonly ProductPublishBarcode[];
   /** The authenticated operator who published — recorded for the audit trail. */
   readonly requestedBy: string;
 }
@@ -54,16 +65,18 @@ function signature(value: unknown): string {
   return (h >>> 0).toString(16).padStart(8, '0');
 }
 
-/** The dedupe identity of a publish command — the product AND its exact published content + barcodes. */
-export function productPublishKey(record: ProductRecord, barcodes: readonly string[]): string {
-  return `product-publish|${record.productId}|${signature({ record, barcodes: [...barcodes].sort() })}`;
+/** The dedupe identity of a publish command — the product AND its exact published content + barcodes. Sorted
+ *  by code so the same set in any order hashes the same; `signature`'s canonical form key-sorts each object. */
+export function productPublishKey(record: ProductRecord, barcodes: readonly ProductPublishBarcode[]): string {
+  const sorted = [...barcodes].sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
+  return `product-publish|${record.productId}|${signature({ record, barcodes: sorted })}`;
 }
 
 /** Build the (deterministic) outbox command for a publish. `at` is the caller's clock. */
 export function buildProductPublishCommand(input: {
   readonly record: ProductRecord;
   readonly categories: readonly Category[];
-  readonly barcodes: readonly string[];
+  readonly barcodes: readonly ProductPublishBarcode[];
   readonly requestedBy: string;
   readonly at: string;
 }): ProductPublishCommand {
@@ -102,7 +115,7 @@ export function queueProductPublish(
   input: {
     readonly product: ProductRecord;
     readonly categories: readonly Category[];
-    readonly barcodes?: readonly string[];
+    readonly barcodes?: readonly ProductPublishBarcode[];
     readonly requestedBy: string;
     readonly at: string;
   },
