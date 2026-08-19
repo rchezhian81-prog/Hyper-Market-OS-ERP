@@ -5,6 +5,40 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ PHASE 3 — STORE-CORE: ADR-0013 PRODUCT-PUBLISH DELIVERY CHAIN **COMPLETE** (19 August 2026)
+
+**Latest merged commit on `main`: `36b7f5a`** (PR #246). Working branch `claude/new-session-lw91i4`
+reset to it (no divergence).
+
+**What was built (M03-FR-01/02/03 · ADR-0013):** the full owner-decided workflow — *a product authored
+offline is delivered to the shared catalogue by the SIGNED-IN OPERATOR, as themselves, from a review
+queue; never a background service identity, never auto-published.* Seven merged slices:
+- **#240** review-queue classifier (state per item from the operator's CURRENT context) + ADR-0013 recorded.
+- **#241** operator-authenticated delivery of ready publishes (accepted→ack, retryable→hold, rejected→dead-letter).
+- **#242** the review-queue screen (tested DOM-free session model).
+- **#243** the visible shell + edge registration + concrete operator-session delivery port (`credentials:'same-origin'`, never a token).
+- **#244** central-boundary SKU-uniqueness re-check (`409 sku_already_in_use`, nothing overwritten) + confirmed kernel append-only sealed audit (control 10).
+- **#245** the barcode-assignment leg — the command carries each barcode as `{code,kind}`; delivery publishes the product then assigns each barcode, collapsing to one honest outbox status; corrected `classifyPublishResponse` so a 409 is a real conflict → dead-letter.
+- **#246** the browser E2E matrix (real headless Chromium, 3 scenarios) — the chain is now **fully E2E-verified**; this first real browser run also caught + fixed a defect the CI-skipped e2e had hidden (`product-publish-review.js` missing from the SW cache; `sw.js` SHELL + cache v13→v14).
+
+**Gate at completion:** typecheck ✓, lint ✓, guardrails 698 ✓, `vitest run` unit+integration **~4965 passed /
+256 skipped** ✓, **e2e 17 passed** (real browser) ✓, `pnpm run completion` = **40.3%** (held — reported
+honestly, never inflated).
+
+**Honest maturity note:** M03 stays **PARTIALLY_WIRED**. The authoring→review→deliver(product+barcode) chain
+is now WIRED + integration-tested + E2E-verified, but the module still has two genuine gaps, so the label was
+NOT bumped on one workflow.
+
+**Owner decision point (awaiting direction):** with the delivery chain complete, the next step is the owner's
+call —
+1. **Re-assess M03 maturity** — a deliberate re-survey of all M03 sub-requirements to propose an honest
+   re-rating now the core path is E2E-verified (not a silent bump); or
+2. **Finish M03's remaining gaps** — the §28 reversible product-merge undo, then the embedded (weight/price)
+   barcode rules not yet sourced on the cloud; or
+3. **Move to the next module** by dependency + business-risk priority.
+
+---
+
 ## ★ PHASE 0 — REPOSITORY GOVERNANCE & BASELINE RECOVERY (18 August 2026)
 
 **Last updated: 18 August 2026.** **Latest merged commit on `main`: `052c192`** (PR #225,
