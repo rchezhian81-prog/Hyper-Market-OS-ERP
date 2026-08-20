@@ -6,3 +6,4 @@
 export * from './purchasing';
 export * from './three-way-match';
 export * from './supplier-performance';
+export * from './rfq';
