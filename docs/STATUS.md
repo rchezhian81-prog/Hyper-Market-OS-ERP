@@ -5,6 +5,38 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M06 OPEN-COMMITMENT NETTING (amend/cancel/receive) WIRED — M06-FR-04 (20 August 2026)
+
+**Owner direction:** "Finish M06 to WIRED." On surveying the M06 FRs I found the honest blocker and
+flagged it: a clean WIRED needs the **requisition → RFQ → quotation-comparison** engine, which **does
+not exist** (no engine to wire — it must be built). The owner chose **"wire the two"** — do the two
+pieces the tested engines already support (FR-04 netting now, rebate accrual next), and hold M06.
+
+**What was built (M06-WIRE inc-3, M06-FR-04):** the open commitment is now a *netted* figure —
+- **Amend** `POST /v1/purchase/orders/:poId/amendments` (gated `purchase.order.approve`) re-prices an
+  issued PO's lines and **keeps the prior lines on the ledger** (hard rule #2); the open figure re-nets.
+- **Cancel** `POST …/cancellations` records an approved per-product cancellation (accumulates).
+- **Receive** `POST …/receipts` posts received quantity per product against the PO (gated the distinct
+  `purchase.order.receive`), in the PO's ordering units.
+- `computeOpenCommitment` now nets **ordered − received − cancelled**, and `GET /v1/purchase/commitments`
+  follows. amend/cancel/receive are **refused on a PO that is only proposed** (`409
+  purchase_order_not_issued`), each **idempotent on its own id** (no double-count).
+- Event-sourced `PurchaseOrderAmended` / `PurchaseOrderCancelled` / `PurchaseOrderReceiptPosted`,
+  restart-safe. 6 new cases (12 total in the PO suite).
+
+**Honest maturity — HELD at PARTIALLY_WIRED:** M06's remaining gaps are **requisition/RFQ/quotation-
+comparison** (UNBUILT — needs a new engine, not a wire) and **rebate accrual** (`accrueRebate`,
+engine-only, the next increment). **Headline stays 40.9%.**
+
+**Note on receipts:** these PO receipts are the *purchase-side* reconciliation in ordering units, kept
+distinct from the physical **GRN** (M07, minor units, quality dispositions). Tying the two with a
+unit-reconciled three-way join is a separate follow-on.
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (703), `vitest run` **5805 passed / 262
+skipped** ✓, completion **40.9%** (unchanged).
+
+---
+
 ## ★ M06 SUPPLIER SCORECARDS + CONTRACT ALERTS WIRED — M06-FR-03 (20 August 2026)
 
 **Owner direction:** after #254 merged, the owner chose "M06 supplier scorecards" as the next increment

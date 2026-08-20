@@ -75,8 +75,12 @@
   which refuse a self-approval (`409 proposer_cannot_approve`) and a **blocked supplier**
   (`409 supplier_blocked`; the hold is its own `POST /v1/purchase/suppliers/:id/block-status`,
   latest-wins). The **open commitment** (`GET /v1/purchase/commitments`) is computed from the
-  issued POs by `computeOpenCommitment` — *not known* until a PO exists, a real number after.
-  Event-sourced (`PurchaseOrderProposed`→`PurchaseOrderIssued`, `SupplierBlockStatusSet`).
+  issued POs by `computeOpenCommitment` — *not known* until a PO exists, a real number after. An issued
+  PO can be **amended** (`POST …/amendments`, keeps the prior lines on the ledger), **cancelled** in part
+  (`POST …/cancellations`), and **received against** (`POST …/receipts`) — the open commitment nets
+  ordered − received − cancelled and reconciles to receipts.
+  Event-sourced (`PurchaseOrderProposed`→`PurchaseOrderIssued`, then `PurchaseOrderAmended` /
+  `PurchaseOrderCancelled` / `PurchaseOrderReceiptPosted`, `SupplierBlockStatusSet`).
 - **Supplier scorecard (API-03, M06-FR-03):** a delivery OUTCOME is recorded per PO
   (`POST /v1/purchase/suppliers/:id/receipts/:poId`, `purchase.performance.record`) and a contract
   recorded (`POST /v1/purchase/contracts/:id`, `purchase.contract.manage`). `GET …/scorecard` runs the
@@ -91,7 +95,8 @@
 ## 4. Named domain events (§30.2, confirmed in Store-Core specs)
 `SaleCommitted` · `TenderAuthorized` / `TenderUncertain` / `TenderSettled` ·
 `InventoryMoved` · `InventoryAdjusted` · `PurchaseOrderProposed` / `PurchaseOrderIssued` ·
-`SupplierBlockStatusSet` · `SupplierReceiptRecorded` / `SupplierContractRecorded` ·
+`SupplierBlockStatusSet` · `PurchaseOrderAmended` / `PurchaseOrderCancelled` / `PurchaseOrderReceiptPosted` ·
+`SupplierReceiptRecorded` / `SupplierContractRecorded` ·
 `ReconciliationExceptionRaised` /
 `ReconciliationExceptionResolved` · `PeriodClosed` / `PeriodReopened` ·
 `MigrationTotalSigned` / `MigrationExceptionResolved`.

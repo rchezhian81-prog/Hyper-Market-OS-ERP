@@ -37,6 +37,15 @@ const listPos = (h: ApiHarness, u: string) =>
   h.request({ method: 'GET', path: '/v1/purchase/orders', userId: u, tenantId: A });
 const commitments = (h: ApiHarness, u: string) =>
   h.request({ method: 'GET', path: '/v1/purchase/commitments', userId: u, tenantId: A });
+const cancel = (h: ApiHarness, u: string, poId: string, b: unknown, key: string) =>
+  h.request({ method: 'POST', path: `/v1/purchase/orders/${poId}/cancellations`, userId: u, tenantId: A, idempotencyKey: key, body: b });
+const receive = (h: ApiHarness, u: string, poId: string, b: unknown, key: string) =>
+  h.request({ method: 'POST', path: `/v1/purchase/orders/${poId}/receipts`, userId: u, tenantId: A, idempotencyKey: key, body: b });
+const amend = (h: ApiHarness, u: string, poId: string, b: unknown, key: string) =>
+  h.request({ method: 'POST', path: `/v1/purchase/orders/${poId}/amendments`, userId: u, tenantId: A, idempotencyKey: key, body: b });
+const openMinor = (res: { body: unknown }): number | undefined => openOf(res)?.totalOpenValue?.minor;
+const fullyReceived = (res: { body: unknown }): boolean | undefined =>
+  (res.body as { openCommitment?: { fullyReceived?: boolean } | null }).openCommitment?.fullyReceived;
 
 const body = (extra: Record<string, unknown> = {}) => ({ supplierId: 'sup-1', lines: lines(), ...extra });
 
@@ -153,3 +162,72 @@ describe('purchase-order lifecycle (M06-FR-01/02/04)', () => {
 function commitmentsBody(res: { body: unknown }): { known: boolean; valueMinor?: number; count?: number } {
   return res.body as { known: boolean; valueMinor?: number; count?: number };
 }
+
+// M06-FR-04: amendments, cancellations, receipts — the open commitment nets ordered − received −
+// cancelled, and reconciles to receipts. Amendments/cancellations are approved; a partial receipt or
+// cancellation reduces the open figure correctly; an amended PO keeps its history.
+describe('open-commitment netting: amend / cancel / receive (M06-FR-04)', () => {
+  async function issued(h: ApiHarness, poId: string): Promise<void> {
+    await propose(h, 'u-mgr', poId, body(), `${poId}-p`);
+    await approve(h, 'u-owner', poId, 'budgeted', `${poId}-a`);
+  }
+
+  it('a partial cancellation reduces the open commitment correctly', async () => {
+    const h = await cast();
+    await issued(h, 'po-c');
+    // Cancel 4 of the 10 units of p1 (4 × 5000 = 20000 off the 60000).
+    const res = await cancel(h, 'u-owner', 'po-c', { cancellationId: 'x1', reason: 'supplier short', cancelledByProduct: { p1: 4 } }, 'k1');
+    expect(res.status).toBe(200);
+    expect(openMinor(res)).toBe(40000);
+    // And the aggregate commitments figure follows.
+    expect(commitmentsBody(await commitments(h, 'u-owner')).valueMinor).toBe(40000);
+  });
+
+  it('posting receipts reconciles the open commitment down to zero when fully received', async () => {
+    const h = await cast();
+    await issued(h, 'po-r');
+    expect(openMinor(await receive(h, 'u-mgr', 'po-r', { receiptId: 'r1', receivedByProduct: { p1: 6 } }, 'k1'))).toBe(30000); // 4×5000 + 4×2500
+    const full = await receive(h, 'u-mgr', 'po-r', { receiptId: 'r2', receivedByProduct: { p1: 4, p2: 4 } }, 'k2');
+    expect(openMinor(full)).toBe(0);
+    expect(fullyReceived(full)).toBe(true);
+  });
+
+  it('re-posting the same receipt id does not double-count', async () => {
+    const h = await cast();
+    await issued(h, 'po-i');
+    expect(openMinor(await receive(h, 'u-mgr', 'po-i', { receiptId: 'r1', receivedByProduct: { p1: 5 } }, 'k1'))).toBe(35000);
+    // Same receipt id again — collapses, no double-count.
+    expect(openMinor(await receive(h, 'u-mgr', 'po-i', { receiptId: 'r1', receivedByProduct: { p1: 5 } }, 'k2'))).toBe(35000);
+  });
+
+  it('an amendment re-prices the commitment and keeps a history (amendmentCount)', async () => {
+    const h = await cast();
+    await issued(h, 'po-am');
+    const res = await amend(h, 'u-owner', 'po-am', { amendmentId: 'a1', reason: 'increased order', lines: [{ productId: 'p1', orderedQty: 20, unitCost: cost(5000) }] }, 'k1');
+    expect(res.status).toBe(200);
+    expect(openMinor(res)).toBe(100000); // 20 × 5000
+    expect((res.body as { order: { amendmentCount: number; totalMinor: number } }).order.amendmentCount).toBe(1);
+    expect((res.body as { order: { totalMinor: number } }).order.totalMinor).toBe(100000);
+  });
+
+  it('refuses amend / cancel / receive on a PO that is only proposed (not an issued commitment)', async () => {
+    const h = await cast();
+    await propose(h, 'u-mgr', 'po-pp', body(), 'k1'); // proposed, never issued
+    expect(codeOf(await cancel(h, 'u-owner', 'po-pp', { cancellationId: 'x', reason: 'r', cancelledByProduct: { p1: 1 } }, 'k2'))).toBe('purchase_order_not_issued');
+    expect(codeOf(await receive(h, 'u-mgr', 'po-pp', { receiptId: 'r', receivedByProduct: { p1: 1 } }, 'k3'))).toBe('purchase_order_not_issued');
+    expect(codeOf(await amend(h, 'u-owner', 'po-pp', { amendmentId: 'a', reason: 'r', lines: lines() }, 'k4'))).toBe('purchase_order_not_issued');
+  });
+
+  it('gates the receipt on its own permission and rebuilds the netted figure after a restart', async () => {
+    const h = await cast();
+    await issued(h, 'po-g');
+    // A cashier cannot post a receipt (needs purchase.order.receive).
+    expect((await receive(h, 'u-cash', 'po-g', { receiptId: 'r1', receivedByProduct: { p1: 1 } }, 'k1')).status).toBe(403);
+    await cancel(h, 'u-owner', 'po-g', { cancellationId: 'x1', reason: 'r', cancelledByProduct: { p1: 4 } }, 'k2');
+    await receive(h, 'u-mgr', 'po-g', { receiptId: 'r1', receivedByProduct: { p2: 4 } }, 'k3');
+    // ordered 60000 − cancelled(4×5000=20000) − received(4×2500=10000) = 30000.
+    const restarted = apiHarness({ store: h.store });
+    expect(openMinor(await readPo(restarted, 'u-owner', 'po-g'))).toBe(30000);
+    expect(commitmentsBody(await commitments(restarted, 'u-owner')).valueMinor).toBe(30000);
+  });
+});
