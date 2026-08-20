@@ -5,6 +5,32 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M06 QUOTATION-COMPARISON ENGINE BUILT — M06-FR-02 (the last M06 gap) (20 August 2026)
+
+**Owner direction:** after the two wireable pieces (rebates, netting) merged, the owner chose to **build**
+the remaining M06 gap — requisition → RFQ → quotation comparison — which had no engine at all. Following
+the `services-run-on-their-tested-engine` discipline this is done in two increments: the **tested engine
+first** (this one), then the wiring.
+
+**What was built (M06-BUILD inc-5):** `packages/purchasing/src/rfq.ts` — `compareQuotes(requisition,
+quotes)`, pure and deterministic:
+- **like-for-like only** — a quote is ranked on a line only if it quotes the **same product in the same
+  currency**; a different-currency offer or one missing a line is **shown but not ranked** (P-08);
+- **cheapest and fastest per line** — frequently different suppliers, both named;
+- **overall** — only a quote covering **every** line is totalled (its lead time is the **slowest** line,
+  because the order isn't complete until the last item arrives); cheapest-overall and fastest-overall are
+  named, and any quote that couldn't be totalled is **called out by name** — the incomplete-but-cheap-
+  looking quote is exactly the trap this prevents;
+- ties break toward the other objective then quote order (stable). 6-case unit test.
+
+**No wiring yet, no re-rate:** the engine is not on the API — M06 stays **PARTIALLY_WIRED**. The next
+increment (M06-BUILD inc-6) wires requisition/RFQ/quote/comparison routes and then re-rates M06 to WIRED.
+**Headline stays 40.9%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, `vitest run` **5817 passed / 262 skipped** ✓.
+
+---
+
 ## ★ M06 SUPPLIER REBATES WIRED — M06-FR-03 (last wireable piece) (20 August 2026)
 
 **Owner direction:** the second of the "wire the two" pieces (after FR-04 netting). Wires the tested
