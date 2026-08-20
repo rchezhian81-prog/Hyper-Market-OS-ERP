@@ -88,6 +88,12 @@
   price adherence, quality, weighted overall, worst signal first; `not_rated` where there is no
   evidence. `GET /v1/purchase/contracts/alerts` runs `reviewContracts` — expiring/expired/**unapproved**
   worst-first. Event-sourced (`SupplierReceiptRecorded`, `SupplierContractRecorded`).
+- **Supplier rebate (API-03, M06-FR-03 · M23):** a rebate **scheme** is recorded
+  (`POST /v1/purchase/rebate-schemes/:id`, `purchase.contract.manage`); an **accrual** for a measured
+  period (`POST …/accruals/:accrualId`) runs the tested `accrueRebate` — nothing accrues below the
+  threshold (and it says how far short), a growth scheme measures against its baseline, and the
+  **outstanding** (accrued − received) is the money **earned and not yet claimed**
+  (`GET …/accruals` totals it). Event-sourced (`RebateSchemeRecorded`, `RebateAccrued`).
 - **Finance reconciliation (API-09):** import bank/gateway statements → match →
   `ReconciliationExceptionRaised` / `…Resolved`; **period close is blocked until control
   totals validate** (QG-07) → `PeriodClosed` / `PeriodReopened`.
@@ -96,7 +102,7 @@
 `SaleCommitted` · `TenderAuthorized` / `TenderUncertain` / `TenderSettled` ·
 `InventoryMoved` · `InventoryAdjusted` · `PurchaseOrderProposed` / `PurchaseOrderIssued` ·
 `SupplierBlockStatusSet` · `PurchaseOrderAmended` / `PurchaseOrderCancelled` / `PurchaseOrderReceiptPosted` ·
-`SupplierReceiptRecorded` / `SupplierContractRecorded` ·
+`SupplierReceiptRecorded` / `SupplierContractRecorded` · `RebateSchemeRecorded` / `RebateAccrued` ·
 `ReconciliationExceptionRaised` /
 `ReconciliationExceptionResolved` · `PeriodClosed` / `PeriodReopened` ·
 `MigrationTotalSigned` / `MigrationExceptionResolved`.

@@ -105,6 +105,7 @@ import { platformRoutes, inMemorySettings, emptyExportBundle } from '../../platf
 import { purchaseRoutes } from '../../purchase/src/index';
 import { purchaseOrderRoutes } from '../../purchase/src/purchase-orders';
 import { supplierScorecardRoutes } from '../../purchase/src/supplier-scorecard';
+import { rebateRoutes } from '../../purchase/src/rebates';
 import { financeRoutes } from '../../finance/src/index';
 import { creditNoteRoutes } from '../../finance/src/credit-notes';
 import { taxRoutes } from '../../finance/src/tax';
@@ -124,7 +125,7 @@ import { fulfilmentRoutes } from '../../fulfilment/src/index';
 import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
-  catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, packagingAdapter, wasteAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, financeAdapter, settlementAdapter,
+  catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, packagingAdapter, wasteAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, financeAdapter, settlementAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, salesHistoryAdapter,
 } from './adapters';
@@ -261,6 +262,11 @@ export function buildSurface(deps: {
       receipts: empty([]), contractsFor: empty([]), allContracts: empty([]),
       recordReceipt: () => {}, recordContract: () => {}, now,
     } : supplierScorecardAdapter({ store, now })),
+    // Supplier rebates + schemes (M06-FR-03 · M23) — the money earned and not yet claimed.
+    ...rebateRoutes(store === undefined ? {
+      scheme: empty(undefined), schemes: empty([]), accruals: empty([]),
+      recordScheme: () => {}, recordAccrual: () => {}, now,
+    } : rebatesAdapter({ store, now })),
     ...supplierPortalRoutes(store === undefined ? {
       partner: empty(undefined), submissions: empty([]), statementLines: empty([]), opening: empty(0),
       recordPartner: () => {}, recordSubmission: () => {}, recordStatementLine: () => {}, recordOpening: () => {}, now,
