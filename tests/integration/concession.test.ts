@@ -97,3 +97,97 @@ describe('concession: the tills hold the partner\'s money, and the charge is exa
     expect((await charge(h, B, 'u-owner-b', 'C1', '2026-08-01', '2026-08-31')).status).toBe(404); // A's contract did not leak
   });
 });
+
+// M27 ownership + eligibility: a lapsed agreement/insurance/licence blocks trading; a deposit is a
+// liability projected from movements (an unapproved forfeit stays a liability); a valuation excludes
+// what the store does not own and names it; somebody else's stock is not ours to write off.
+const mayTrade = (h: ApiHarness, tenantId: string, userId: string, id: string, today: string) =>
+  h.request({ method: 'GET', path: `/v1/concession/contracts/${id}/may-trade`, userId, tenantId, query: { today } });
+const depositMove = (h: ApiHarness, tenantId: string, userId: string, cid: string, mid: string, body: Record<string, unknown>) =>
+  h.request({ method: 'POST', path: `/v1/concession/concessionaires/${cid}/deposit-movements/${mid}`, userId, tenantId, idempotencyKey: `dm-${mid}`, body });
+const depositPos = (h: ApiHarness, tenantId: string, userId: string, cid: string) =>
+  h.request({ method: 'GET', path: `/v1/concession/concessionaires/${cid}/deposit`, userId, tenantId });
+const valuation = (h: ApiHarness, tenantId: string, userId: string, body: unknown, key = 'val1') =>
+  h.request({ method: 'POST', path: '/v1/concession/valuation', userId, tenantId, idempotencyKey: key, body });
+const stockAccess = (h: ApiHarness, tenantId: string, userId: string, body: unknown, key: string) =>
+  h.request({ method: 'POST', path: '/v1/concession/stock-access', userId, tenantId, idempotencyKey: key, body });
+
+const tradeable = (over: Record<string, unknown> = {}) =>
+  contract({ approvedBy: 'u-owner', insuranceUntil: '2026-12-31', licenceUntil: '2026-12-31', ...over });
+
+describe('concession ownership + eligibility (M27)', () => {
+  it('may-trade blocks a lapsed insurance / unapproved / expired counter, every reason at once', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await setContract(h, A, 'u-owner', 'OK', tradeable());
+    const ok = (await mayTrade(h, A, 'u-owner', 'OK', '2026-06-01')).body as { mayTrade: boolean; blockedBy: string[] };
+    expect(ok.mayTrade).toBe(true);
+
+    // Base contract() has no approver and no insurance → blocked on both.
+    await setContract(h, A, 'u-owner', 'BAD', contract(), 'cc-BAD');
+    const bad = (await mayTrade(h, A, 'u-owner', 'BAD', '2026-06-01')).body as { mayTrade: boolean; blockedBy: string[] };
+    expect(bad.mayTrade).toBe(false);
+    expect(bad.blockedBy).toEqual(expect.arrayContaining(['not_approved', 'insurance_lapsed']));
+
+    // Insured + approved but the day is past the agreement's end → expired.
+    const exp = (await mayTrade(h, A, 'u-owner', 'OK', '2027-01-05')).body as { blockedBy: string[] };
+    expect(exp.blockedBy).toContain('contract_expired');
+  });
+
+  it('projects the deposit as a liability; an unapproved forfeit stays a liability', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await depositMove(h, A, 'u-owner', 'JEWEL', 'd1', { kind: 'received', amountMinor: 1_000_000 });
+    await depositMove(h, A, 'u-owner', 'JEWEL', 'd2', { kind: 'refunded', amountMinor: 200_000 });
+    // A forfeit with nobody's name on it must NOT reduce the liability.
+    await depositMove(h, A, 'u-owner', 'JEWEL', 'd3', { kind: 'forfeited', amountMinor: 100_000 });
+    const p1 = (await depositPos(h, A, 'u-owner', 'JEWEL')).body as { outstandingLiabilityMinor: number; detail: string };
+    expect(p1.outstandingLiabilityMinor).toBe(800_000); // 1,000,000 − 200,000; the unapproved forfeit is ignored
+    expect(p1.detail).toContain('nobody');
+
+    // Approve a forfeit → now it reduces the liability.
+    await depositMove(h, A, 'u-owner', 'JEWEL', 'd4', { kind: 'forfeited', amountMinor: 100_000, approvedBy: 'u-owner' });
+    expect(((await depositPos(h, A, 'u-owner', 'JEWEL')).body as { outstandingLiabilityMinor: number }).outstandingLiabilityMinor).toBe(700_000);
+  });
+
+  it('values only the stock the store owns and names what it excluded', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    const lots = [
+      { lotId: 'l1', productId: 'p1', branchId: 'BR1', qty: 10, unitCostMinor: 5_000, ownership: 'own' },
+      { lotId: 'l2', productId: 'gold', branchId: 'BR1', qty: 2, unitCostMinor: 2_000_000, ownership: 'concession', ownerId: 'JEWEL' },
+    ];
+    const v = (await valuation(h, A, 'u-owner', { branchId: 'BR1', lots })).body as { ownedValueMinor: number; excludedValueMinor: number; excluded: { ownerId: string }[] };
+    expect(v.ownedValueMinor).toBe(50_000); // only the store's own lot
+    expect(v.excludedValueMinor).toBe(4_000_000); // the jeweller's gold, excluded not dropped
+    expect(v.excluded[0]?.ownerId).toBe('JEWEL');
+  });
+
+  it('refuses store staff writing off the concession\'s stock, and flags a concessionaire touching what is not theirs', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    const concessionLot = { lotId: 'l2', productId: 'gold', branchId: 'BR1', qty: 2, unitCostMinor: 2_000_000, ownership: 'concession', ownerId: 'JEWEL' };
+    // Store staff cannot write off somebody else's stock.
+    const wo = (await stockAccess(h, A, 'u-owner', { lot: concessionLot, actorId: 'u-staff', actorKind: 'store_staff', action: 'write_off' }, 'sa1')).body as { allowed: boolean; outcome: string };
+    expect(wo).toMatchObject({ allowed: false, outcome: 'not_permitted' });
+    // A concessionaire reaching for stock that is not theirs is a security event.
+    const otherLot = { ...concessionLot, ownerId: 'PHONES' };
+    const sec = (await stockAccess(h, A, 'u-owner', { lot: otherLot, actorId: 'u-jewel', actorKind: 'concessionaire', action: 'sell', concessionaireId: 'JEWEL' }, 'sa2')).body as { allowed: boolean; outcome: string; securityEvent: boolean };
+    expect(sec).toMatchObject({ allowed: false, outcome: 'not_your_stock', securityEvent: true });
+    // Store staff MAY sell the concession's stock on their behalf when the contract allows it.
+    const behalf = (await stockAccess(h, A, 'u-owner', { lot: concessionLot, actorId: 'u-staff', actorKind: 'store_staff', action: 'sell', storeSellsOnBehalf: true }, 'sa3')).body as { allowed: boolean };
+    expect(behalf.allowed).toBe(true);
+  });
+
+  it('gates the new routes and survives a restart (deposit rebuilds from the event store)', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-cash', 'cashier');
+    // A cashier cannot record a deposit movement (needs concession.contract.manage).
+    expect((await depositMove(h, A, 'u-cash', 'JEWEL', 'd1', { kind: 'received', amountMinor: 1_000_000 })).status).toBe(403);
+    await depositMove(h, A, 'u-owner', 'JEWEL', 'd1', { kind: 'received', amountMinor: 1_000_000 });
+
+    const restarted = apiHarness({ store: h.store });
+    expect(((await depositPos(restarted, A, 'u-owner', 'JEWEL')).body as { outstandingLiabilityMinor: number }).outstandingLiabilityMinor).toBe(1_000_000);
+  });
+});
