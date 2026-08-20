@@ -77,6 +77,13 @@
   latest-wins). The **open commitment** (`GET /v1/purchase/commitments`) is computed from the
   issued POs by `computeOpenCommitment` — *not known* until a PO exists, a real number after.
   Event-sourced (`PurchaseOrderProposed`→`PurchaseOrderIssued`, `SupplierBlockStatusSet`).
+- **Supplier scorecard (API-03, M06-FR-03):** a delivery OUTCOME is recorded per PO
+  (`POST /v1/purchase/suppliers/:id/receipts/:poId`, `purchase.performance.record`) and a contract
+  recorded (`POST /v1/purchase/contracts/:id`, `purchase.contract.manage`). `GET …/scorecard` runs the
+  tested `scoreSupplier` — fill rate, on-time, lead-time **reliability** (the spread, not the mean),
+  price adherence, quality, weighted overall, worst signal first; `not_rated` where there is no
+  evidence. `GET /v1/purchase/contracts/alerts` runs `reviewContracts` — expiring/expired/**unapproved**
+  worst-first. Event-sourced (`SupplierReceiptRecorded`, `SupplierContractRecorded`).
 - **Finance reconciliation (API-09):** import bank/gateway statements → match →
   `ReconciliationExceptionRaised` / `…Resolved`; **period close is blocked until control
   totals validate** (QG-07) → `PeriodClosed` / `PeriodReopened`.
@@ -84,7 +91,8 @@
 ## 4. Named domain events (§30.2, confirmed in Store-Core specs)
 `SaleCommitted` · `TenderAuthorized` / `TenderUncertain` / `TenderSettled` ·
 `InventoryMoved` · `InventoryAdjusted` · `PurchaseOrderProposed` / `PurchaseOrderIssued` ·
-`SupplierBlockStatusSet` · `ReconciliationExceptionRaised` /
+`SupplierBlockStatusSet` · `SupplierReceiptRecorded` / `SupplierContractRecorded` ·
+`ReconciliationExceptionRaised` /
 `ReconciliationExceptionResolved` · `PeriodClosed` / `PeriodReopened` ·
 `MigrationTotalSigned` / `MigrationExceptionResolved`.
 *(Additional events are defined per module as each is expanded — this list grows with the

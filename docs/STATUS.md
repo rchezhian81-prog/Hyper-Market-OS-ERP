@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M06 SUPPLIER SCORECARDS + CONTRACT ALERTS WIRED — M06-FR-03 (20 August 2026)
+
+**Owner direction:** after #254 merged, the owner chose "M06 supplier scorecards" as the next increment
+— continue M06 by wiring the tested `supplier-performance` engine. It was unit-tested (13 cases) but on
+no cloud route.
+
+**What was built (M06-WIRE inc-2):** the objective supplier scorecard on API-03 —
+- **Record a delivery outcome** `POST /v1/purchase/suppliers/:id/receipts/:poId` (gated
+  `purchase.performance.record`) — ordered/received/rejected quantity, ordered vs received date, agreed
+  vs invoiced value. Latest per PO, so a **correction supersedes** and a delivery is counted once.
+- **Record a contract** `POST /v1/purchase/contracts/:id` (gated `purchase.contract.manage`).
+- **Read the scorecard** `GET …/scorecard` runs the tested `scoreSupplier`: **fill rate**, **on-time**
+  (vs the contracted lead time), **lead-time reliability** (the *spread*, not the mean — a reliable
+  seven days beats an average four that is sometimes eleven), **price adherence**, **quality**, weighted
+  into an **overall**, worst signal named first in plain English. `not_rated` where there is no
+  evidence, never a flattering default (P-08).
+- **Contract alerts** `GET /v1/purchase/contracts/alerts` runs `reviewContracts` — expiring / expired /
+  **unapproved** worst-first (an expired contract means every order since was on no agreed terms).
+- Event-sourced `SupplierReceiptRecorded` / `SupplierContractRecorded`, restart-safe. 7-case
+  integration test incl. a correction-supersedes case and a cold restart.
+
+**Honest maturity — HELD at PARTIALLY_WIRED (no re-rate):** scorecards + contract alerts are live, but
+M06 is **not** cleanly WIRED — **requisition/RFQ**, **rebate accrual** (`accrueRebate`, engine-only),
+and **receipt/cancellation netting** of the open commitment remain. **Headline stays 40.9%.**
+
+**Gate:** typecheck ✓, lint ✓, guardrails ✓ (703), `vitest run` **5799 passed / 262 skipped** ✓,
+completion **40.9%** (unchanged).
+
+---
+
 ## ★ M06 PURCHASE-ORDER LIFECYCLE WIRED ON THE CLOUD — M06-FR-01/02/04 (19 August 2026)
 
 **Owner direction:** "wire the next module." Scanned the ledger for the tested engine closest to going

@@ -102,7 +102,8 @@ import { weightedAverageValuation, type ValuationMovement } from '../../../packa
 import { agedStockLots, type DatedMovement } from '../../../packages/stock/src/ageing-source';
 import type { MatchResult, BankChangeRequest, PurchaseDeps } from '../../purchase/src/index';
 import type { PurchaseOrderDeps, StoredPurchaseOrder } from '../../purchase/src/purchase-orders';
-import { computeOpenCommitment } from '../../../packages/purchasing/src/index';
+import type { SupplierScorecardDeps } from '../../purchase/src/supplier-scorecard';
+import { computeOpenCommitment, type ReceiptFact, type SupplierContract } from '../../../packages/purchasing/src/index';
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
 import type { CreditNoteDeps } from '../../finance/src/credit-notes';
 import type { CreditNote, ProductTaxEntry } from '../../../packages/finance/src/index';
@@ -801,6 +802,9 @@ const forPortalPartner = (partnerId: string): string => streamName(STREAM.purcha
 // (and answer the open commitment) and read a supplier's latest block state (M06-FR-01/02/04).
 const PURCHASE_ORDERS_STREAM = streamName(STREAM.purchase, 'orders');
 const SUPPLIER_BLOCK_STREAM = streamName(STREAM.purchase, 'supplier-block');
+// Supplier performance: delivery outcomes per supplier (scored), contracts on one shared stream (reviewed).
+const forSupplierPerformance = (supplierId: string): string => streamName(STREAM.purchase, 'performance', supplierId);
+const SUPPLIER_CONTRACTS_STREAM = streamName(STREAM.purchase, 'contracts');
 /** Returns hang off the sale they are against, so "what came back on this bill?" reads one stream. */
 const forSaleReturns = (saleId: string): string => streamName(STREAM.sales, 'return', saleId);
 /** Each till's cash chain folds one stream — its balance and custodian read one till, not the shop. */
@@ -3279,6 +3283,67 @@ async function latestBlock(store: EventStore, tenantId: string, supplierId: stri
     if (p.supplierId === supplierId) latest = p; // occurrence order → last wins
   }
   return latest;
+}
+
+/**
+ * The supplier-performance store (M06-FR-03). Delivery OUTCOMES are recorded per supplier — latest per
+ * PO, so a corrected outcome supersedes rather than double-counting a delivery in the score — and
+ * contracts sit on one shared stream, latest per contract id (a renegotiated term is a new version,
+ * hard rule #2). The scorecard read runs the tested `scoreSupplier` over these facts; the contract
+ * alerts read runs `reviewContracts`.
+ */
+export function supplierScorecardAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): SupplierScorecardDeps {
+  const foldContracts = async (tenantId: string): Promise<SupplierContract[]> => {
+    const events = await input.store.readStream(tenantId, SUPPLIER_CONTRACTS_STREAM, { type: 'SupplierContractRecorded' });
+    const byId = new Map<string, SupplierContract>();
+    for (const e of events) {
+      const c = payloadOf<SupplierContract>(e);
+      byId.set(c.contractId, c); // occurrence order → the last version of a contract wins
+    }
+    return [...byId.values()];
+  };
+  return {
+    now: input.now,
+
+    receipts: async (tenantId, supplierId) => {
+      const all = await allOf<ReceiptFact>(input.store, tenantId, forSupplierPerformance(supplierId), 'SupplierReceiptRecorded');
+      const byPo = new Map<string, ReceiptFact>();
+      for (const r of all) byPo.set(r.poId, r); // latest outcome per PO wins
+      return [...byPo.values()];
+    },
+
+    contractsFor: async (tenantId, supplierId) => (await foldContracts(tenantId)).filter((c) => c.supplierId === supplierId),
+    allContracts: (tenantId) => foldContracts(tenantId),
+
+    recordReceipt: async (tenantId, fact) => {
+      // A compact digest of the outcome so a re-send of the SAME delivery collapses (idempotent), but a
+      // CORRECTION (a different quantity/date/value) is a new fact the latest-per-PO fold then supersedes with.
+      const digest = `${fact.orderedOn}-${fact.receivedOn}-${fact.orderedQtyMinor}-${fact.receivedQtyMinor}-${fact.rejectedQtyMinor ?? 0}-${fact.agreedValue.minor}-${fact.invoicedValue.minor}-${fact.agreedValue.currency}`;
+      await input.store.append(tenantId, forSupplierPerformance(fact.supplierId), makeEvent({
+        id: `supplier-receipt-${fact.supplierId}-${fact.poId}-${digest}`,
+        type: 'SupplierReceiptRecorded',
+        occurredAt: input.now(),
+        idempotencyKey: `supplier-receipt-${tenantId}-${fact.supplierId}-${fact.poId}-${digest}`,
+        source: 'api/purchase',
+        payload: fact,
+      }));
+    },
+
+    recordContract: async (tenantId, contract) => {
+      await input.store.append(tenantId, SUPPLIER_CONTRACTS_STREAM, makeEvent({
+        id: `supplier-contract-${contract.contractId}-${contract.startsOn}-${contract.endsOn}`,
+        type: 'SupplierContractRecorded',
+        occurredAt: input.now(),
+        // Keyed on the id + its term + lead time: re-recording the same terms collapses, a renegotiation is new.
+        idempotencyKey: `supplier-contract-${tenantId}-${contract.contractId}-${contract.startsOn}-${contract.endsOn}-${contract.agreedLeadTimeDays}-${contract.approvedBy ?? 'unapproved'}`,
+        source: 'api/purchase',
+        payload: contract,
+      }));
+    },
+  };
 }
 
 export function purchaseAdapter(input: {
