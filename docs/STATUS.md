@@ -5,6 +5,31 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M06 SUPPLIER REBATES WIRED — M06-FR-03 (last wireable piece) (20 August 2026)
+
+**Owner direction:** the second of the "wire the two" pieces (after FR-04 netting). Wires the tested
+`accrueRebate` — the last M06 capability with a tested engine and no route.
+
+**What was built (M06-WIRE inc-4, M06-FR-03 · M23):**
+- **Record a scheme** `POST /v1/purchase/rebate-schemes/:id` (gated `purchase.contract.manage`) —
+  basis (volume / purchase-value / growth-over-baseline), rate, threshold, term, approver. Latest-per-id.
+- **Post an accrual** `POST …/accruals/:accrualId` runs the tested `accrueRebate`: **nothing accrues
+  below the threshold** (and it says how far short); a **growth scheme measures against its baseline**,
+  never the raw total; the **outstanding** (accrued − received) is the money **earned and not yet
+  claimed**. Latest-per-accrualId, so a re-measure or a later payment supersedes rather than doubling.
+- **Read** `GET …/accruals` totals accrued / received / **outstanding** (the headline nobody tracks).
+- Event-sourced `RebateSchemeRecorded` / `RebateAccrued`, restart-safe. 6-case integration test.
+
+**Honest maturity — HELD at PARTIALLY_WIRED (owner directive "wire the two, hold M06"):** with this,
+**every M06 FR (01/02/03/04) now has a live path** — but M06 is deliberately **not** re-rated to WIRED,
+because **requisition → RFQ → quotation-comparison is UNBUILT** (no engine; a build, not a wire). The
+finance-side rebate-*claim approval* (M23) is also a separate follow-on. **Headline stays 40.9%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (703), `vitest run` **5811 passed / 262
+skipped** ✓, completion **40.9%** (unchanged).
+
+---
+
 ## ★ M06 OPEN-COMMITMENT NETTING (amend/cancel/receive) WIRED — M06-FR-04 (20 August 2026)
 
 **Owner direction:** "Finish M06 to WIRED." On surveying the M06 FRs I found the honest blocker and

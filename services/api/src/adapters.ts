@@ -103,7 +103,8 @@ import { agedStockLots, type DatedMovement } from '../../../packages/stock/src/a
 import type { MatchResult, BankChangeRequest, PurchaseDeps } from '../../purchase/src/index';
 import type { PurchaseOrderDeps, StoredPurchaseOrder } from '../../purchase/src/purchase-orders';
 import type { SupplierScorecardDeps } from '../../purchase/src/supplier-scorecard';
-import { computeOpenCommitment, type ReceiptFact, type SupplierContract } from '../../../packages/purchasing/src/index';
+import type { RebateDeps } from '../../purchase/src/rebates';
+import { computeOpenCommitment, type ReceiptFact, type SupplierContract, type RebateScheme, type RebateAccrual } from '../../../packages/purchasing/src/index';
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
 import type { CreditNoteDeps } from '../../finance/src/credit-notes';
 import type { CreditNote, ProductTaxEntry } from '../../../packages/finance/src/index';
@@ -805,6 +806,9 @@ const SUPPLIER_BLOCK_STREAM = streamName(STREAM.purchase, 'supplier-block');
 // Supplier performance: delivery outcomes per supplier (scored), contracts on one shared stream (reviewed).
 const forSupplierPerformance = (supplierId: string): string => streamName(STREAM.purchase, 'performance', supplierId);
 const SUPPLIER_CONTRACTS_STREAM = streamName(STREAM.purchase, 'contracts');
+// Rebates: schemes on one shared stream (latest per id); accruals on a per-scheme stream (latest per accrual id).
+const REBATE_SCHEMES_STREAM = streamName(STREAM.purchase, 'rebate-schemes');
+const forRebateAccruals = (schemeId: string): string => streamName(STREAM.purchase, 'rebate', schemeId);
 /** Returns hang off the sale they are against, so "what came back on this bill?" reads one stream. */
 const forSaleReturns = (saleId: string): string => streamName(STREAM.sales, 'return', saleId);
 /** Each till's cash chain folds one stream — its balance and custodian read one till, not the shop. */
@@ -3404,6 +3408,67 @@ export function supplierScorecardAdapter(input: {
         idempotencyKey: `supplier-contract-${tenantId}-${contract.contractId}-${contract.startsOn}-${contract.endsOn}-${contract.agreedLeadTimeDays}-${contract.approvedBy ?? 'unapproved'}`,
         source: 'api/purchase',
         payload: contract,
+      }));
+    },
+  };
+}
+
+/**
+ * The rebate store (M06-FR-03 · M23). Schemes live on one shared stream (latest per scheme id — a
+ * renegotiation is a new version, hard rule #2); accruals live on a per-scheme stream (latest per
+ * accrual id, so a re-measure with a new received figure supersedes rather than double-counting). The
+ * accrual computation itself is the tested `accrueRebate`, run in the route.
+ */
+export function rebatesAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): RebateDeps {
+  const foldSchemes = async (tenantId: string): Promise<Map<string, RebateScheme>> => {
+    const events = await input.store.readStream(tenantId, REBATE_SCHEMES_STREAM, { type: 'RebateSchemeRecorded' });
+    const byId = new Map<string, RebateScheme>();
+    for (const e of events) {
+      const s = payloadOf<RebateScheme>(e);
+      byId.set(s.schemeId, s); // occurrence order → the last version of a scheme wins
+    }
+    return byId;
+  };
+  return {
+    now: input.now,
+    scheme: async (tenantId, schemeId) => (await foldSchemes(tenantId)).get(schemeId),
+    schemes: async (tenantId) => [...(await foldSchemes(tenantId)).values()],
+
+    accruals: async (tenantId, schemeId) => {
+      const events = await input.store.readStream(tenantId, forRebateAccruals(schemeId), { type: 'RebateAccrued' });
+      const byId = new Map<string, RebateAccrual>();
+      for (const e of events) {
+        const p = payloadOf<{ accrualId: string; accrual: RebateAccrual }>(e);
+        byId.set(p.accrualId, p.accrual); // latest measurement per accrual id wins
+      }
+      return [...byId.values()];
+    },
+
+    recordScheme: async (tenantId, scheme) => {
+      await input.store.append(tenantId, REBATE_SCHEMES_STREAM, makeEvent({
+        id: `rebate-scheme-${scheme.schemeId}-${scheme.startsOn}-${scheme.endsOn}-${scheme.rateBp}`,
+        type: 'RebateSchemeRecorded',
+        occurredAt: input.now(),
+        // Keyed on the id + its terms: re-recording the same scheme collapses, a renegotiation is new.
+        idempotencyKey: `rebate-scheme-${tenantId}-${scheme.schemeId}-${scheme.basis}-${scheme.rateBp}-${scheme.thresholdMinor ?? 0}-${scheme.startsOn}-${scheme.endsOn}-${scheme.approvedBy ?? 'unapproved'}`,
+        source: 'api/purchase',
+        payload: scheme,
+      }));
+    },
+
+    recordAccrual: async (tenantId, schemeId, accrualId, accrual) => {
+      await input.store.append(tenantId, forRebateAccruals(schemeId), makeEvent({
+        id: `rebate-accrual-${schemeId}-${accrualId}-${accrual.accrued.minor}-${accrual.received.minor}`,
+        type: 'RebateAccrued',
+        occurredAt: input.now(),
+        // Keyed on the accrual id + the computed figures: a re-post of the same measurement collapses,
+        // but a re-measure (a new basis or a payment received) is a new fact the latest-per-id fold takes.
+        idempotencyKey: `rebate-accrual-${tenantId}-${schemeId}-${accrualId}-${accrual.accrued.minor}-${accrual.received.minor}-${accrual.outstanding.minor}`,
+        source: 'api/purchase',
+        payload: { accrualId, accrual },
       }));
     },
   };
