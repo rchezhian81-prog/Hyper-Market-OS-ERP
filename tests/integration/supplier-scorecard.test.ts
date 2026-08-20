@@ -14,8 +14,19 @@ const INR = 'INR';
 const money = (minor: number) => ({ minor, currency: INR });
 
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
-const cardOf = (res: { body: unknown }): Record<string, { kind: string; bp?: number }> & { deliveries?: number; summary?: string } =>
-  (res.body as { scorecard?: Record<string, never> }).scorecard ?? ({} as never);
+type Rating = { kind: string; bp?: number };
+interface CardShape {
+  deliveries?: number;
+  summary?: string;
+  fillRate: Rating;
+  onTime: Rating;
+  leadTimeReliability: Rating;
+  priceAdherence: Rating;
+  quality: Rating;
+  overall: Rating;
+}
+const cardOf = (res: { body: unknown }): CardShape =>
+  ((res.body as { scorecard?: unknown }).scorecard ?? {}) as CardShape;
 
 const receiptBody = (over: Record<string, unknown> = {}) => ({
   orderedOn: '2026-07-01', receivedOn: '2026-07-08',
