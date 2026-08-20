@@ -5,6 +5,40 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M06 PURCHASE-ORDER LIFECYCLE WIRED ON THE CLOUD — M06-FR-01/02/04 (19 August 2026)
+
+**Owner direction:** "wire the next module." Scanned the ledger for the tested engine closest to going
+live and picked **M06 supplier/procurement** — the natural front-end of the M07 receiving path just merged
+(the PO a GRN receives against). The `packages/purchasing` engine (`issuePurchaseOrder`,
+`computeOpenCommitment`) was **unit-tested but wired to no cloud route**, and `services/purchase` already
+carried a `GET /v1/purchase/commitments` route deliberately answering *not known* with the note *"purchase
+orders are not recorded in this system."* This increment made them real.
+
+**What was built (M06-WIRE inc-1):** the purchase-order lifecycle on API-03 —
+- **Propose** `POST /v1/purchase/orders/:poId` (gated `purchase.order.propose`; the requisitioner is the
+  **authenticated buyer**, never a client field).
+- **Approve + issue** `POST …/approval` (gated the distinct `purchase.order.approve`) — the SECOND person.
+  §28 is enforced **twice**: the tested `decide` (packages/approvals) refuses a self-approval and
+  `issuePurchaseOrder` re-checks the approver ≠ requisitioner, so a proposer cannot approve their own PO
+  **even holding both codes** (`409 proposer_cannot_approve`).
+- **Blocked supplier refused** (`409 supplier_blocked`, M06-FR-01) — the hold is its own append-only,
+  latest-wins record (`POST /v1/purchase/suppliers/:id/block-status`, gated `purchase.supplier.block`).
+- **Open commitment made real** (M06-FR-04) — `GET /v1/purchase/commitments` now runs the tested
+  `computeOpenCommitment` over the issued POs, flipping from *not known* to a figure the owner can buy
+  against (still *not known*, **not zero**, until the first PO is issued).
+- Event-sourced `PurchaseOrderProposed`/`PurchaseOrderIssued`/`SupplierBlockStatusSet`, restart-safe,
+  idempotent on the PO id. 6-case integration test incl. a cold-restart rebuild.
+
+**Honest maturity — HELD at PARTIALLY_WIRED (no re-rate):** PO issue + supplier-block + open-commitment are
+now live, but M06 is **not** cleanly WIRED — **requisition/RFQ**, **supplier scorecards** (M06-FR-03,
+`supplier-performance.ts`, engine-only), and **receipt/cancellation netting** of the open figure (the engine
+takes both maps; the cloud folds neither yet) remain. So the number is unchanged. **Headline stays 40.9%.**
+
+**Gate:** typecheck ✓, lint ✓, guardrails ✓ (703 incl. api-surface-contract + ladder/ledger consistency),
+`vitest run` **5792 passed / 262 skipped** ✓, completion **40.9%** (unchanged).
+
+---
+
 ## ★ M07 GOODS-RECEIPT (GRN) CAPTURE WIRED ON THE CLOUD — D03-FR-02 (19 August 2026)
 
 **Owner direction:** last of the three shortlisted modules. Like M10, the receiving *engine* + edge surfaces
