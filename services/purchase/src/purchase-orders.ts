@@ -44,6 +44,12 @@ export interface StoredPurchaseOrder {
   /** The approver, once issued — always someone other than the requisitioner (§28). */
   readonly approvedBy: string | null;
   readonly issuedAt: string | null;
+  /** Received quantity per product against this PO — folded from posted receipts (M06-FR-04). */
+  readonly receivedByProduct: Readonly<Record<string, number>>;
+  /** Cancelled quantity per product — folded from approved cancellations (M06-FR-04). */
+  readonly cancelledByProduct: Readonly<Record<string, number>>;
+  /** How many times the PO's lines have been amended (the history is retained in the ledger). */
+  readonly amendmentCount: number;
 }
 
 export interface PurchaseOrderDeps {
@@ -59,6 +65,12 @@ export interface PurchaseOrderDeps {
   readonly issue: (tenantId: string, poId: string, approvedBy: string, issuedAt: string, reason: string, key: string) => Promise<void> | void;
   /** Set a supplier's block state. Append-only; latest wins. */
   readonly setSupplierBlocked: (tenantId: string, supplierId: string, blocked: boolean, reason: string, by: string, at: string, key: string) => Promise<void> | void;
+  /** Amend an issued PO's lines (approved). Append-only — the prior lines stay on the ledger (hard rule #2). */
+  readonly amend: (tenantId: string, poId: string, amendmentId: string, lines: readonly PurchaseOrderLineInput[], reason: string, by: string, at: string) => Promise<void> | void;
+  /** Record an approved cancellation of quantity per product against a PO. Accumulates. */
+  readonly cancel: (tenantId: string, poId: string, cancellationId: string, cancelledByProduct: Readonly<Record<string, number>>, reason: string, by: string, at: string) => Promise<void> | void;
+  /** Post received quantity per product against a PO (in the PO's ordering units). Accumulates. */
+  readonly postReceipt: (tenantId: string, poId: string, receiptId: string, receivedByProduct: Readonly<Record<string, number>>, by: string, at: string) => Promise<void> | void;
   readonly now: () => string;
 }
 
@@ -74,9 +86,26 @@ const isRawLine = (v: unknown): v is RawLine =>
   && isObj(v['unitCost']) && isMinor((v['unitCost'] as Record<string, unknown>)['minor'])
   && typeof (v['unitCost'] as Record<string, unknown>)['currency'] === 'string';
 
-/** The open-commitment view an issued PO carries (M06-FR-04) — before receipt/cancellation netting. */
+/**
+ * The open-commitment view an issued PO carries (M06-FR-04): ordered − received − cancelled, valued
+ * at the PO unit cost, netting the posted receipts and approved cancellations. A proposed PO is not a
+ * commitment yet, so it has none.
+ */
 const openOf = (po: StoredPurchaseOrder): OpenCommitment | null =>
-  po.status === 'issued' ? computeOpenCommitment(po.lines) : null;
+  po.status === 'issued' ? computeOpenCommitment(po.lines, po.receivedByProduct, po.cancelledByProduct) : null;
+
+/** A `{ productId: quantity }` map with whole, non-negative quantities and at least one entry. */
+const isQtyMap = (v: unknown): v is Record<string, number> =>
+  isObj(v) && Object.keys(v).length > 0
+  && Object.entries(v).every(([k, n]) => k.trim() !== '' && typeof n === 'number' && Number.isSafeInteger(n) && n >= 0);
+
+/** Amendments, cancellations and receipts only apply to an ISSUED commitment — a proposed PO is refused. */
+const poNotIssued = (poId: string, verb: string) => apiError(409, {
+  code: 'purchase_order_not_issued',
+  whatHappened: `Purchase order ${poId} is not issued, so it cannot be ${verb} — only an issued commitment can be.`,
+  wasItSaved: 'not_saved',
+  nextSafeAction: 'Approve and issue the PO first (a second person), then try again. Nothing was changed.',
+});
 
 export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
   return [
@@ -128,6 +157,9 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
           status: 'proposed',
           approvedBy: null,
           issuedAt: null,
+          receivedByProduct: {},
+          cancelledByProduct: {},
+          amendmentCount: 0,
         };
         await deps.propose(ctx.tenantId, po, ctx.idempotencyKey ?? poId);
         return { status: 201, body: { order: po, openCommitment: null } };
@@ -224,6 +256,97 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
         await deps.setSupplierBlocked(ctx.tenantId, supplierId, blocked, reason, ctx.userId, deps.now(),
           ctx.idempotencyKey ?? `${supplierId}-${blocked}`);
         return { status: 200, body: { supplierId, blocked } };
+      },
+    },
+    {
+      // Amend an issued PO's lines (M06-FR-04) — an approved change that keeps the prior lines on the
+      // ledger (hard rule #2). Body: { amendmentId, lines[], reason }. The open commitment re-nets against
+      // the amended quantities. Idempotent on the amendment id.
+      api: 'API-03', method: 'POST', path: '/v1/purchase/orders/:poId/amendments',
+      permission: 'purchase.order.approve', idempotent: true,
+      handler: async (ctx) => {
+        const poId = (ctx.params['poId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const amendmentId = isStr(b['amendmentId']) ? b['amendmentId'].trim() : '';
+        const reason = isStr(b['reason']) ? b['reason'].trim() : '';
+        const rawLines = b['lines'];
+        if (amendmentId === '' || reason === '' || !Array.isArray(rawLines) || rawLines.length === 0 || !rawLines.every(isRawLine)) {
+          throw apiError(400, {
+            code: 'not_readable_as_an_amendment',
+            whatHappened: 'A PO amendment needs { amendmentId, reason, lines[] (each with productId, a positive orderedQty, and unitCost { minor, currency }) }.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the full amended line set with a reason. Nothing was changed.',
+          });
+        }
+        const po = await deps.order(ctx.tenantId, poId);
+        if (po === undefined) throw notFound(`purchase order ${poId}`);
+        if (po.status !== 'issued') throw poNotIssued(poId, 'amended');
+        const currency = (rawLines[0] as RawLine).unitCost.currency;
+        if (currency !== po.currency || !(rawLines as RawLine[]).every((l) => l.unitCost.currency === po.currency)) {
+          throw apiError(422, {
+            code: 'amendment_currency_mismatch',
+            whatHappened: `An amendment must stay in the PO's currency (${po.currency}).`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Price the amended lines in the PO currency and send again.',
+          });
+        }
+        const lines: PurchaseOrderLineInput[] = (rawLines as RawLine[]).map((l) => ({
+          productId: l.productId, orderedQty: l.orderedQty, unitCost: money(l.unitCost.minor, po.currency),
+        }));
+        await deps.amend(ctx.tenantId, poId, amendmentId, lines, reason, ctx.userId, deps.now());
+        const updated = await deps.order(ctx.tenantId, poId);
+        return { status: 200, body: { order: updated, openCommitment: updated ? openOf(updated) : null } };
+      },
+    },
+    {
+      // Cancel quantity against an issued PO (M06-FR-04) — an approved, audited reduction of the open
+      // commitment. Body: { cancellationId, cancelledByProduct: { productId: qty }, reason }. Accumulates.
+      api: 'API-03', method: 'POST', path: '/v1/purchase/orders/:poId/cancellations',
+      permission: 'purchase.order.approve', idempotent: true,
+      handler: async (ctx) => {
+        const poId = (ctx.params['poId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const cancellationId = isStr(b['cancellationId']) ? b['cancellationId'].trim() : '';
+        const reason = isStr(b['reason']) ? b['reason'].trim() : '';
+        if (cancellationId === '' || reason === '' || !isQtyMap(b['cancelledByProduct'])) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_cancellation',
+            whatHappened: 'A cancellation needs { cancellationId, reason, cancelledByProduct: { "<productId>": <whole qty ≥ 0> } }.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the per-product cancelled quantities with a reason. Nothing was cancelled.',
+          });
+        }
+        const po = await deps.order(ctx.tenantId, poId);
+        if (po === undefined) throw notFound(`purchase order ${poId}`);
+        if (po.status !== 'issued') throw poNotIssued(poId, 'cancelled');
+        await deps.cancel(ctx.tenantId, poId, cancellationId, b['cancelledByProduct'], reason, ctx.userId, deps.now());
+        const updated = await deps.order(ctx.tenantId, poId);
+        return { status: 200, body: { order: updated, openCommitment: updated ? openOf(updated) : null } };
+      },
+    },
+    {
+      // Post received quantity against an issued PO (M06-FR-04) — reconciles the open commitment to what
+      // actually arrived, in the PO's ordering units. Body: { receiptId, receivedByProduct }. Accumulates.
+      api: 'API-03', method: 'POST', path: '/v1/purchase/orders/:poId/receipts',
+      permission: 'purchase.order.receive', idempotent: true,
+      handler: async (ctx) => {
+        const poId = (ctx.params['poId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const receiptId = isStr(b['receiptId']) ? b['receiptId'].trim() : '';
+        if (receiptId === '' || !isQtyMap(b['receivedByProduct'])) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_po_receipt',
+            whatHappened: 'A PO receipt needs { receiptId, receivedByProduct: { "<productId>": <whole qty ≥ 0> } }.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the per-product received quantities. Nothing was posted.',
+          });
+        }
+        const po = await deps.order(ctx.tenantId, poId);
+        if (po === undefined) throw notFound(`purchase order ${poId}`);
+        if (po.status !== 'issued') throw poNotIssued(poId, 'received against');
+        await deps.postReceipt(ctx.tenantId, poId, receiptId, b['receivedByProduct'], ctx.userId, deps.now());
+        const updated = await deps.order(ctx.tenantId, poId);
+        return { status: 200, body: { order: updated, openCommitment: updated ? openOf(updated) : null } };
       },
     },
     {

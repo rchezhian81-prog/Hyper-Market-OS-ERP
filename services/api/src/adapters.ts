@@ -3191,25 +3191,52 @@ export function inventoryAdapter(input: {
 // Every one of those is a defect that existed before persistence and would have shipped without
 // it — wiring a real store is what made an empty answer visible as an answer.
 
+/** Sum two `{ productId: qty }` maps (append-only accumulation of receipts / cancellations). */
+function mergeQty(a: Readonly<Record<string, number>>, b: Readonly<Record<string, number>>): Record<string, number> {
+  const out: Record<string, number> = { ...a };
+  for (const [k, n] of Object.entries(b)) out[k] = (out[k] ?? 0) + n;
+  return out;
+}
+
+/** Value the PO's lines (ordered qty × unit cost) — recomputed when an amendment replaces the lines. */
+function poTotalMinor(lines: StoredPurchaseOrder['lines']): number {
+  return lines.reduce((s, l) => s + l.unitCost.minor * l.orderedQty, 0);
+}
+
 /**
- * Fold the purchase-order stream to each PO's current state. A `PurchaseOrderProposed` opens it
- * (first proposal of an id wins — a re-sync is idempotent); a `PurchaseOrderIssued` moves it to
- * issued, carrying the approver and issue time. Both `purchaseOrdersAdapter` (reads) and
- * `purchaseAdapter.openCommitments` (the on-order figure) fold through here, so there is one truth.
+ * Fold the purchase-order stream to each PO's current state (M06-FR-02/04). `PurchaseOrderProposed`
+ * opens it (first proposal of an id wins — a re-sync is idempotent); `PurchaseOrderIssued` moves it to
+ * issued; `PurchaseOrderAmended` replaces the effective lines (the prior lines stay on the ledger, hard
+ * rule #2); `PurchaseOrderCancelled` / `PurchaseOrderReceiptPosted` accumulate the cancelled / received
+ * quantity per product. Both `purchaseOrdersAdapter` (reads) and `purchaseAdapter.openCommitments` fold
+ * through here, so there is one truth for the open commitment.
  */
 async function foldPurchaseOrders(store: EventStore, tenantId: string): Promise<Map<string, StoredPurchaseOrder>> {
-  const events = await store.readStream(tenantId, PURCHASE_ORDERS_STREAM); // both types, oldest first
+  const events = await store.readStream(tenantId, PURCHASE_ORDERS_STREAM); // all types, oldest first
   const byId = new Map<string, StoredPurchaseOrder>();
   for (const e of events) {
-    if (e.event.type === 'PurchaseOrderProposed') {
+    const type = e.event.type;
+    if (type === 'PurchaseOrderProposed') {
       const po = payloadOf<StoredPurchaseOrder>(e);
-      if (!byId.has(po.poId)) byId.set(po.poId, po);
-    } else if (e.event.type === 'PurchaseOrderIssued') {
+      if (!byId.has(po.poId)) byId.set(po.poId, { ...po, receivedByProduct: {}, cancelledByProduct: {}, amendmentCount: 0 });
+    } else if (type === 'PurchaseOrderIssued') {
       const iss = payloadOf<{ poId: string; approvedBy: string; issuedAt: string }>(e);
       const cur = byId.get(iss.poId);
       if (cur !== undefined && cur.status === 'proposed') {
         byId.set(iss.poId, { ...cur, status: 'issued', approvedBy: iss.approvedBy, issuedAt: iss.issuedAt });
       }
+    } else if (type === 'PurchaseOrderAmended') {
+      const am = payloadOf<{ poId: string; lines: StoredPurchaseOrder['lines'] }>(e);
+      const cur = byId.get(am.poId);
+      if (cur !== undefined) byId.set(am.poId, { ...cur, lines: am.lines, totalMinor: poTotalMinor(am.lines), amendmentCount: cur.amendmentCount + 1 });
+    } else if (type === 'PurchaseOrderCancelled') {
+      const c = payloadOf<{ poId: string; cancelledByProduct: Record<string, number> }>(e);
+      const cur = byId.get(c.poId);
+      if (cur !== undefined) byId.set(c.poId, { ...cur, cancelledByProduct: mergeQty(cur.cancelledByProduct, c.cancelledByProduct) });
+    } else if (type === 'PurchaseOrderReceiptPosted') {
+      const r = payloadOf<{ poId: string; receivedByProduct: Record<string, number> }>(e);
+      const cur = byId.get(r.poId);
+      if (cur !== undefined) byId.set(r.poId, { ...cur, receivedByProduct: mergeQty(cur.receivedByProduct, r.receivedByProduct) });
     }
   }
   return byId;
@@ -3256,6 +3283,42 @@ export function purchaseOrdersAdapter(input: {
         idempotencyKey: `po-${tenantId}-${poId}-issued`,
         source: 'api/purchase',
         payload: { poId, approvedBy, issuedAt, reason },
+      }));
+    },
+
+    amend: async (tenantId, poId, amendmentId, lines, reason, by, at) => {
+      await input.store.append(tenantId, PURCHASE_ORDERS_STREAM, makeEvent({
+        id: `po-${poId}-amended-${amendmentId}`,
+        type: 'PurchaseOrderAmended',
+        occurredAt: at,
+        // Keyed on the amendment id: a re-sent amendment collapses; each distinct amendment is retained.
+        idempotencyKey: `po-${tenantId}-${poId}-amended-${amendmentId}`,
+        source: 'api/purchase',
+        payload: { poId, amendmentId, lines, reason, by, at },
+      }));
+    },
+
+    cancel: async (tenantId, poId, cancellationId, cancelledByProduct, reason, by, at) => {
+      await input.store.append(tenantId, PURCHASE_ORDERS_STREAM, makeEvent({
+        id: `po-${poId}-cancelled-${cancellationId}`,
+        type: 'PurchaseOrderCancelled',
+        occurredAt: at,
+        // Keyed on the cancellation id so a re-send collapses; distinct cancellations accumulate.
+        idempotencyKey: `po-${tenantId}-${poId}-cancelled-${cancellationId}`,
+        source: 'api/purchase',
+        payload: { poId, cancellationId, cancelledByProduct, reason, by, at },
+      }));
+    },
+
+    postReceipt: async (tenantId, poId, receiptId, receivedByProduct, by, at) => {
+      await input.store.append(tenantId, PURCHASE_ORDERS_STREAM, makeEvent({
+        id: `po-${poId}-received-${receiptId}`,
+        type: 'PurchaseOrderReceiptPosted',
+        occurredAt: at,
+        // Keyed on the receipt id so a re-post collapses; distinct receipts accumulate.
+        idempotencyKey: `po-${tenantId}-${poId}-received-${receiptId}`,
+        source: 'api/purchase',
+        payload: { poId, receiptId, receivedByProduct, by, at },
       }));
     },
 
@@ -3420,7 +3483,11 @@ export function purchaseAdapter(input: {
     openCommitments: async (tenantId) => {
       const issued = [...(await foldPurchaseOrders(input.store, tenantId)).values()].filter((p) => p.status === 'issued');
       if (issued.length === 0) return undefined;
-      const valueMinor = issued.reduce((sum, po) => sum + computeOpenCommitment(po.lines).totalOpenValue.minor, 0);
+      // ordered − received − cancelled, netted per PO, then summed (M06-FR-04).
+      const valueMinor = issued.reduce(
+        (sum, po) => sum + computeOpenCommitment(po.lines, po.receivedByProduct, po.cancelledByProduct).totalOpenValue.minor,
+        0,
+      );
       return { count: issued.length, valueMinor };
     },
   };

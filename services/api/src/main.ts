@@ -253,7 +253,8 @@ export function buildSurface(deps: {
     // Purchase-order lifecycle (M06-FR-01/02/04) — propose, approve+issue under §28, supplier holds.
     ...purchaseOrderRoutes(store === undefined ? {
       order: empty(undefined), all: empty([]), supplierBlocked: empty(false),
-      propose: () => {}, issue: () => {}, setSupplierBlocked: () => {}, now,
+      propose: () => {}, issue: () => {}, setSupplierBlocked: () => {},
+      amend: () => {}, cancel: () => {}, postReceipt: () => {}, now,
     } : purchaseOrdersAdapter({ store, now })),
     // Supplier scorecards + contract alerts (M06-FR-03) — objective scoring from recorded delivery facts.
     ...supplierScorecardRoutes(store === undefined ? {
