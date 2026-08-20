@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M06 RE-RATED **WIRED** — RFQ/quote-comparison wired, every FR now live (20 August 2026)
+
+**Owner direction:** the wiring half of the RFQ build (after the engine, PR #258). This puts the tested
+`compareQuotes` on the API and closes the last M06 gap.
+
+**What was built (M06-BUILD inc-6, M06-FR-02):**
+- **Raise a requisition** `POST /v1/purchase/requisitions/:id` (gated `purchase.order.propose`) — what
+  the shop needs, in one comparison currency.
+- **Record a quote** `POST …/quotes/:quoteId` — a supplier's offer (per-line unit cost + lead time),
+  latest-per-id so a **re-quote supersedes** and the comparison reflects the newest price.
+- **Read the comparison** `GET …/comparison` runs `compareQuotes`: **cheapest + fastest per line and
+  overall**, an **incomplete or different-currency quote shown but never ranked**, only a quote covering
+  every line totalled (lead time = the slowest line). A chosen quote becomes a PO through the approved
+  §28 issue path.
+- **Worklist** `GET /v1/purchase/requisitions`. Event-sourced `RequisitionRaised` / `QuoteRecorded`,
+  restart-safe. 5-case integration test.
+
+**RE-RATED PARTIALLY_WIRED → WIRED (owner-directed build):** **every M06 FR is now live on the API** —
+FR-01 (onboarding/bank-change/blocked-PO), FR-02 (requisition → RFQ → quote-compare → PO issue §28),
+FR-03 (contracts/scorecards/rebates), FR-04 (amend/cancel/receive + open-commitment netting). Module
+ladder now **11 WIRED / 22 PARTIALLY_WIRED / 2 INTEGRATION_TESTED / 1 E2E_VERIFIED**. Follow-ons NOT
+blocking WIRED: finance-side rebate-claim approval (M23), a unit-reconciled PO↔GRN three-way join, and
+buyer-facing screens. **Headline 40.9% → 41.1%** (+0.2 from the M06 re-rate; wired-and-integrated
+14.4% → 15.4%).
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. ladder/ledger/evidence consistency),
+`vitest run` green, completion **41.1%**.
+
+---
+
 ## ★ M06 QUOTATION-COMPARISON ENGINE BUILT — M06-FR-02 (the last M06 gap) (20 August 2026)
 
 **Owner direction:** after the two wireable pieces (rebates, netting) merged, the owner chose to **build**

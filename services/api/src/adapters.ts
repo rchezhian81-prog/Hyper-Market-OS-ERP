@@ -104,7 +104,8 @@ import type { MatchResult, BankChangeRequest, PurchaseDeps } from '../../purchas
 import type { PurchaseOrderDeps, StoredPurchaseOrder } from '../../purchase/src/purchase-orders';
 import type { SupplierScorecardDeps } from '../../purchase/src/supplier-scorecard';
 import type { RebateDeps } from '../../purchase/src/rebates';
-import { computeOpenCommitment, type ReceiptFact, type SupplierContract, type RebateScheme, type RebateAccrual } from '../../../packages/purchasing/src/index';
+import type { RfqDeps } from '../../purchase/src/rfq';
+import { computeOpenCommitment, type ReceiptFact, type SupplierContract, type RebateScheme, type RebateAccrual, type Requisition, type Quote } from '../../../packages/purchasing/src/index';
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
 import type { CreditNoteDeps } from '../../finance/src/credit-notes';
 import type { CreditNote, ProductTaxEntry } from '../../../packages/finance/src/index';
@@ -809,6 +810,9 @@ const SUPPLIER_CONTRACTS_STREAM = streamName(STREAM.purchase, 'contracts');
 // Rebates: schemes on one shared stream (latest per id); accruals on a per-scheme stream (latest per accrual id).
 const REBATE_SCHEMES_STREAM = streamName(STREAM.purchase, 'rebate-schemes');
 const forRebateAccruals = (schemeId: string): string => streamName(STREAM.purchase, 'rebate', schemeId);
+// RFQ: requisitions on one shared stream (latest per id); quotes on a per-requisition stream (latest per quote id).
+const REQUISITIONS_STREAM = streamName(STREAM.purchase, 'requisitions');
+const forRfqQuotes = (requisitionId: string): string => streamName(STREAM.purchase, 'rfq', requisitionId);
 /** Returns hang off the sale they are against, so "what came back on this bill?" reads one stream. */
 const forSaleReturns = (saleId: string): string => streamName(STREAM.sales, 'return', saleId);
 /** Each till's cash chain folds one stream — its balance and custodian read one till, not the shop. */
@@ -3469,6 +3473,67 @@ export function rebatesAdapter(input: {
         idempotencyKey: `rebate-accrual-${tenantId}-${schemeId}-${accrualId}-${accrual.accrued.minor}-${accrual.received.minor}-${accrual.outstanding.minor}`,
         source: 'api/purchase',
         payload: { accrualId, accrual },
+      }));
+    },
+  };
+}
+
+/**
+ * The RFQ store (M06-FR-02). Requisitions live on one shared stream (latest per id); the quotes for a
+ * requisition live on its own stream (latest per quote id, so a re-quote supersedes and the comparison
+ * always reflects the newest offer). The comparison itself is the tested `compareQuotes`, run in the route.
+ */
+export function rfqAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): RfqDeps {
+  const foldRequisitions = async (tenantId: string): Promise<Map<string, Requisition>> => {
+    const events = await input.store.readStream(tenantId, REQUISITIONS_STREAM, { type: 'RequisitionRaised' });
+    const byId = new Map<string, Requisition>();
+    for (const e of events) {
+      const r = payloadOf<Requisition>(e);
+      byId.set(r.requisitionId, r); // occurrence order → the last version of a requisition wins
+    }
+    return byId;
+  };
+  return {
+    now: input.now,
+    requisition: async (tenantId, requisitionId) => (await foldRequisitions(tenantId)).get(requisitionId),
+    requisitions: async (tenantId) => [...(await foldRequisitions(tenantId)).values()],
+
+    quotes: async (tenantId, requisitionId) => {
+      const events = await input.store.readStream(tenantId, forRfqQuotes(requisitionId), { type: 'QuoteRecorded' });
+      const byId = new Map<string, Quote>();
+      for (const e of events) {
+        const q = payloadOf<Quote>(e);
+        byId.set(q.quoteId, q); // latest quote per id wins
+      }
+      return [...byId.values()];
+    },
+
+    recordRequisition: async (tenantId, requisition) => {
+      // Keyed on a digest of the lines so a re-send collapses but an edited requisition is a new version.
+      const digest = requisition.lines.map((l) => `${l.productId}:${l.quantity}`).sort().join(',');
+      await input.store.append(tenantId, REQUISITIONS_STREAM, makeEvent({
+        id: `requisition-${requisition.requisitionId}-${requisition.currency}-${digest}`,
+        type: 'RequisitionRaised',
+        occurredAt: input.now(),
+        idempotencyKey: `requisition-${tenantId}-${requisition.requisitionId}-${requisition.currency}-${digest}`,
+        source: 'api/purchase',
+        payload: requisition,
+      }));
+    },
+
+    recordQuote: async (tenantId, requisitionId, quote) => {
+      // Keyed on a digest of the quoted lines so a re-send collapses but a re-quote (new price/lead) supersedes.
+      const digest = quote.lines.map((l) => `${l.productId}:${l.unitCost.minor}:${l.unitCost.currency}:${l.leadTimeDays}`).sort().join(',');
+      await input.store.append(tenantId, forRfqQuotes(requisitionId), makeEvent({
+        id: `quote-${requisitionId}-${quote.quoteId}-${digest}`,
+        type: 'QuoteRecorded',
+        occurredAt: input.now(),
+        idempotencyKey: `quote-${tenantId}-${requisitionId}-${quote.quoteId}-${digest}`,
+        source: 'api/purchase',
+        payload: quote,
       }));
     },
   };

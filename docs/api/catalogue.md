@@ -68,6 +68,13 @@
   re-checks against the **whole** cloud history, so a cross-lane double-use is refused `409` (a visible
   conflict, hard rule #10) and a same-id re-sync is idempotent. Personalised offers (`/v1/loyalty/offers`)
   need both profiling + marketing consent (M16-FR-02); referrals pay only on a qualifying purchase.
+- **Requisition → RFQ → quote comparison (API-03, M06-FR-02):** a buyer **raises a requisition**
+  (`POST /v1/purchase/requisitions/:id`, `purchase.order.propose`) in one comparison currency, records
+  the **quotes** suppliers send (`POST …/quotes/:quoteId`, latest-per-id), and reads a **like-for-like
+  comparison** (`GET …/comparison`) from the tested `compareQuotes` — **cheapest + fastest per line and
+  overall**, an incomplete or different-currency quote shown but never ranked, only a quote covering
+  every line totalled (lead time = the slowest line). A chosen quote becomes a PO through the approved
+  issue path (§28). Event-sourced (`RequisitionRaised`, `QuoteRecorded`).
 - **Purchase order (API-03, M06-FR-01/02/04 §28):** a buyer **proposes** a PO
   (`POST /v1/purchase/orders/:id`, `purchase.order.propose` — the requisitioner is the
   authenticated user) → a **different person approves and issues** it
@@ -103,6 +110,7 @@
 `InventoryMoved` · `InventoryAdjusted` · `PurchaseOrderProposed` / `PurchaseOrderIssued` ·
 `SupplierBlockStatusSet` · `PurchaseOrderAmended` / `PurchaseOrderCancelled` / `PurchaseOrderReceiptPosted` ·
 `SupplierReceiptRecorded` / `SupplierContractRecorded` · `RebateSchemeRecorded` / `RebateAccrued` ·
+`RequisitionRaised` / `QuoteRecorded` ·
 `ReconciliationExceptionRaised` /
 `ReconciliationExceptionResolved` · `PeriodClosed` / `PeriodReopened` ·
 `MigrationTotalSigned` / `MigrationExceptionResolved`.
