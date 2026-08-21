@@ -110,7 +110,7 @@
 `InventoryMoved` · `InventoryAdjusted` · `PurchaseOrderProposed` / `PurchaseOrderIssued` ·
 `SupplierBlockStatusSet` · `PurchaseOrderAmended` / `PurchaseOrderCancelled` / `PurchaseOrderReceiptPosted` ·
 `SupplierReceiptRecorded` / `SupplierContractRecorded` · `RebateSchemeRecorded` / `RebateAccrued` ·
-`RequisitionRaised` / `QuoteRecorded` ·
+`RequisitionRaised` / `QuoteRecorded` · `ConcessionContractSet` / `ConcessionSaleRecorded` / `ConcessionDepositMoved` ·
 `ReconciliationExceptionRaised` /
 `ReconciliationExceptionResolved` · `PeriodClosed` / `PeriodReopened` ·
 `MigrationTotalSigned` / `MigrationExceptionResolved`.

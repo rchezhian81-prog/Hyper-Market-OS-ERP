@@ -400,7 +400,8 @@ export function buildSurface(deps: {
       allocateNumber: () => Promise.resolve(1), creditAllowed: empty(false), now,
     } : b2bDocumentsAdapter({ store, now, numberSeries: deps.numberSeries })),
     ...concessionRoutes(store === undefined ? {
-      contract: empty(undefined), sales: empty([]), recordContract: () => {}, recordSale: () => {}, now,
+      contract: empty(undefined), sales: empty([]), recordContract: () => {}, recordSale: () => {},
+      depositMovements: empty([]), recordDepositMovement: () => {}, now,
     } : concessionAdapter({ store, now })),
     ...scrapRoutes(store === undefined ? {
       scrapSales: empty([]), recordScrapSale: () => {}, recordPosted: () => {}, now,

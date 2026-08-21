@@ -70,7 +70,7 @@ import type { WriteOffDeps, StoredWriteOff } from '../../inventory/src/write-off
 import type { ProductionDeps, StoredRun, StoredRelease } from '../../inventory/src/production';
 import type { Recipe } from '../../../packages/production/src/recipe';
 import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord, StatementLine } from '../../purchase/src/supplier-portal';
-import type { ConcessionDeps, ConcessionContract, ConcessionSale } from '../../finance/src/concession';
+import type { ConcessionDeps, ConcessionContract, ConcessionSale, DepositMovement } from '../../finance/src/concession';
 import type { ScrapDeps, ScrapSale } from '../../finance/src/scrap';
 import type { FacilitiesDeps, MaintenanceSchedule, ScheduledTask, SafetyIncident } from '../../platform/src/facilities';
 import type { FacilitiesAssetsDeps, Asset, ServiceLog, DowntimeEvent, EnergyReading } from '../../platform/src/facilities-assets';
@@ -829,6 +829,8 @@ const forB2BDocuments = (customerId: string): string => streamName(STREAM.b2b, '
 const forPriceList = (productId: string): string => streamName(STREAM.pricing, 'list', productId);
 /** Each concession contract's terms and sales fold one stream — one counter, not the shop. */
 const forConcession = (contractId: string): string => streamName(STREAM.concession, contractId);
+// A concessionaire's deposit movements — the deposit position is projected from these (a liability).
+const forConcessionaire = (concessionaireId: string): string => streamName(STREAM.concession, 'deposit', concessionaireId);
 /** Each packaging item's registration and movements fold one stream — one item, not every crate. */
 const forPackaging = (packagingId: string): string => streamName(STREAM.packaging, packagingId);
 /** Each webhook provider's config and processed deliveries fold one stream — one provider, not all. */
@@ -1598,9 +1600,27 @@ export function concessionAdapter(input: {
         type: 'ConcessionContractSet',
         occurredAt: input.now(),
         // Keyed on the terms — re-sending the same contract collapses, a change of terms is a new fact.
-        idempotencyKey: `concession-contract-${tenantId}-${contract.contractId}-${contract.basis}-${contract.fixedRentMinor ?? 0}-${contract.revenueShareBps ?? 0}-${contract.depositMinor}-${contract.active}`,
+        // The eligibility terms (insurance/licence/approver) are in the key too, so renewing insurance or
+        // approving the contract is a new version the eligibility gate reads.
+        idempotencyKey: `concession-contract-${tenantId}-${contract.contractId}-${contract.basis}-${contract.fixedRentMinor ?? 0}-${contract.revenueShareBps ?? 0}-${contract.depositMinor}-${contract.active}-${contract.insuranceUntil ?? 'none'}-${contract.licenceUntil ?? 'none'}-${contract.approvedBy ?? 'unapproved'}`,
         source: 'api/finance',
         payload: contract,
+      }));
+    },
+
+    depositMovements: async (tenantId, concessionaireId) =>
+      allOf<DepositMovement>(input.store, tenantId, forConcessionaire(concessionaireId), 'ConcessionDepositMoved'),
+
+    recordDepositMovement: async (tenantId, movement) => {
+      await input.store.append(tenantId, forConcessionaire(movement.concessionaireId), makeEvent({
+        id: `concession-deposit-${movement.concessionaireId}-${movement.movementId}`,
+        type: 'ConcessionDepositMoved',
+        occurredAt: movement.at,
+        // The movement's own id — a re-sent deposit movement collapses rather than double-counting the
+        // concessionaire's money (a liability the shop owes back).
+        idempotencyKey: `concession-deposit-${tenantId}-${movement.concessionaireId}-${movement.movementId}`,
+        source: 'api/finance',
+        payload: movement,
       }));
     },
 

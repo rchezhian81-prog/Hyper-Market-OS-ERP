@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M27 CONCESSION OWNERSHIP + ELIGIBILITY WIRED — M27-FR-01/02/04 (20 August 2026)
+
+**Owner direction:** "wire the next module." Scanned for the cleanest tested-engine-only gap and picked
+**M27 concession**: charge/settlement were already wired, but the four ownership/eligibility functions
+in `packages/concession` were unit-tested and on no route.
+
+**What was built (M27-WIRE):** on API-09 —
+- **May-trade** `GET /v1/concession/contracts/:id/may-trade` runs `mayConcessionTrade` (FR-04): a lapsed
+  **agreement / insurance / licence** blocks new sales — every reason at once, with expiry warnings so a
+  counter can be renewed before it shuts. The contract route now **captures insurance/licence/approver**
+  (previously dropped, so the gate could never pass).
+- **Deposit position** `POST …/deposit-movements/:id` + `GET …/deposit` runs `depositPosition` (FR-01): a
+  deposit is the concessionaire's money, a **liability projected from movements**; a forfeit with nobody's
+  name on it **stays a liability** (the commonest shop-in-shop fraud is a deposit booked as rent).
+- **Own-stock valuation** `POST /v1/concession/valuation` runs `valueOwnStock` (FR-02): values **only what
+  the store owns**, and **names + values** the concession/consignment/customer stock it excluded — a quiet
+  inclusion overstates the balance sheet, insurance and tax at once.
+- **Stock access** `POST /v1/concession/stock-access` runs `checkStockAccess` (FR-02): store staff cannot
+  write off the concession's stock; a concessionaire touching what is not theirs is a **security event**.
+- Event-sourced `ConcessionDepositMoved`, restart-safe. Integration-tested (concession.test.ts, 10 cases).
+
+**Honest maturity — HELD at PARTIALLY_WIRED (no re-rate):** the ownership/eligibility engine is now live
+and tested, but **valuation + stock-access compute over SUPPLIED lots** — not yet auto-fed from the live
+**M08** ownership ledger — and **POS-side concession-sale attribution** at the till is a separate wire.
+**Headline stays 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract), `vitest run`
+**5827 passed / 262 skipped** ✓.
+
+---
+
 ## ★ M06 RE-RATED **WIRED** — RFQ/quote-comparison wired, every FR now live (20 August 2026)
 
 **Owner direction:** the wiring half of the RFQ build (after the engine, PR #258). This puts the tested
