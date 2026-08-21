@@ -59,6 +59,15 @@
   returns the latest count per facing and **how stale** each is against a freshness window; `POST
   …/shelf-counts/worklist` returns the facings that most need counting, **never-counted before long-ago,
   worst first**. This is the on-shelf figure `planogramCompliance` (M19) always needed.
+- **Planogram compliance (API-04, M04-FR-03) — the consumer:** `POST /v1/merchandising/planogram-compliance`
+  (`planogram.compliance.read`) folds the store's **recorded** shelf counts into the plan and raises the
+  right task. An **empty facing with stock in the stockroom** is an urgent refill — the most expensive
+  out-of-stock there is — told apart from an empty facing with none (a **reorder**, no task). An
+  **uncounted** facing is `never_counted`, never a breach and never compliant, and the compliance % is
+  taken over the **observed** facings only, so a figure nobody earned is never quoted (P-08). A
+  self-inconsistent plan (a facing on a shelf the store has not mapped, two primary homes) is refused
+  `422`. A **pure read/compute** — it writes nothing; the plan (planogram, shelf map, stockroom figures)
+  is caller-supplied, only the observations come from what the store recorded.
 - **Price change (API-02):** draft → **approve (separate approver)** → effective-dated
   publish into the signed edge price pack.
 - **Duplicate merge (API-02, M03-FR-04 §28):** detect suspected duplicates

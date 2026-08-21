@@ -84,6 +84,7 @@ import { complianceRoutes } from '../../compliance/src/index';
 import { inventoryRoutes } from '../../inventory/src/index';
 import { goodsReceiptRoutes } from '../../inventory/src/goods-receipt';
 import { shelfCountRoutes } from '../../inventory/src/shelf-count';
+import { planogramComplianceRoutes } from '../../inventory/src/planogram-compliance';
 import { warehouseRoutes } from '../../inventory/src/warehouse';
 import { transfersRoutes } from '../../inventory/src/warehouse-transfers';
 import { replenishmentRoutes } from '../../inventory/src/replenishment';
@@ -293,6 +294,11 @@ export function buildSurface(deps: {
     ...shelfCountRoutes(store === undefined
       ? { counts: empty([]), recordCount: () => {}, now }
       : shelfCountAdapter({ store, now })),
+    // Planogram compliance (M04-FR-03) — the CONSUMER: recorded counts drive refill-vs-reorder tasks,
+    // reading the same shelf-count stream the producer above writes.
+    ...planogramComplianceRoutes(store === undefined
+      ? { counts: empty([]), now }
+      : { counts: shelfCountAdapter({ store, now }).counts, now }),
     ...warehouseRoutes(store === undefined ? {
       bins: empty([]), contents: empty({}), appliedCommandIds: empty([]), recordBin: () => {}, recordMovement: () => {}, now,
     } : warehouseAdapter({ store, now })),
