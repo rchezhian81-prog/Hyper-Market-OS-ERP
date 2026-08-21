@@ -92,6 +92,7 @@ import type { WasteDeps, WasteRecord, WasteCoverage } from '../../inventory/src/
 import type { IntegrationDeps, CertifiedEntry, AdapterConfig, AdapterHeartbeat } from '../../platform/src/integration';
 import type { WebhookDeps, WebhookConfig } from '../../platform/src/webhooks';
 import type { ConnectorMappingDeps, Mapping } from '../../platform/src/connectors';
+import type { SecretsDeps, SecretRef } from '../../platform/src/secrets';
 import type { Hasher } from '../../../packages/audit/src/audit-trail';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
@@ -837,6 +838,8 @@ const forPackaging = (packagingId: string): string => streamName(STREAM.packagin
 const forWebhook = (provider: string): string => streamName(STREAM.integration, 'webhook', provider);
 /** Each connector mapping version folds one stream — one (connector, version), not every mapping. */
 const forConnectorMapping = (connectorId: string, version: string): string => streamName(STREAM.integration, 'mapping', connectorId, version);
+// Managed secret references (M32-FR-03) live on one shared stream — the latest state per secret id.
+const SECRETS_STREAM = streamName(STREAM.integration, 'secrets');
 /** Each pay run's lifecycle folds one stream — one run's history (drafted→…→locked), not the whole shop's. */
 const forPayRun = (payRunId: string): string => streamName(STREAM.payroll, payRunId);
 /** Each filing period's GSTR-1 submission folds one stream — one period's preview→approve→file history. */
@@ -2160,6 +2163,43 @@ export function connectorAdapter(input: {
         idempotencyKey: `conn-map-${tenantId}-${mapping.connectorId}-${mapping.version}-${mapping.rules.length}-${mapping.required.join('.')}`,
         source: 'api/platform',
         payload: mapping,
+      }));
+    },
+  };
+}
+
+/**
+ * The managed-secrets store (M32-FR-03) — references only, never a value. Registration, rotation and
+ * revocation each append the secret's new state; the latest event per secret id is its current state
+ * (a rotation supersedes with a new active version, a revocation marks it revoked — hard rule #2/#4).
+ */
+export function secretsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): SecretsDeps {
+  const foldLatest = async (tenantId: string): Promise<Map<string, SecretRef>> => {
+    const events = await input.store.readStream(tenantId, SECRETS_STREAM, { type: 'SecretStateRecorded' });
+    const byId = new Map<string, SecretRef>();
+    for (const e of events) {
+      const s = payloadOf<SecretRef>(e);
+      byId.set(s.secretId, s); // occurrence order → the latest state of a secret wins
+    }
+    return byId;
+  };
+  return {
+    now: input.now,
+    secret: async (tenantId, secretId) => (await foldLatest(tenantId)).get(secretId),
+    all: async (tenantId) => [...(await foldLatest(tenantId)).values()],
+    record: async (tenantId, secret) => {
+      await input.store.append(tenantId, SECRETS_STREAM, makeEvent({
+        id: `secret-${secret.secretId}-v${secret.version}-${secret.state}`,
+        type: 'SecretStateRecorded',
+        occurredAt: input.now(),
+        // Keyed on the id + version + state + ref: a re-sent identical state collapses, a rotation
+        // (new version) or a revocation (new state) is a new fact. Never the value — there isn't one.
+        idempotencyKey: `secret-${tenantId}-${secret.secretId}-v${secret.version}-${secret.state}-${secret.vaultRef}`,
+        source: 'api/platform',
+        payload: secret,
       }));
     },
   };

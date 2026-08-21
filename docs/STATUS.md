@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M32 MANAGED SECRETS WIRED — M32-FR-03 (21 August 2026)
+
+**Owner direction:** "wire the next module." Picked **M32 integration secrets** — a security-relevant,
+tested-engine-only gap (`packages/integration/src/secrets`, four functions on no route), matching the
+existing platform-service pattern.
+
+**What was built (M32-WIRE):** the credential lifecycle on API-11, holding **no secret material at any
+point** (a vault REFERENCE, never the key):
+- **Register** `POST /v1/integration/secrets/:id` — a raw value in `vaultRef` is **refused** (it must be
+  a scheme URI like `vault://…`, hard rule #4).
+- **Rotate** `POST …/rotation` — **with an overlap**: the previous version stays valid for a grace
+  period so an edge device that hasn't synced keeps working; a **no-grace rotation is refused** (`409
+  no_grace_on_rotation` — that is a revocation, deliberately a different action).
+- **Revoke** `POST …/revocation` — **immediate** (a compromise), and **names what will break** before
+  it does.
+- **Review** `POST …/review` — `reviewSecrets` over the inventory: overdue/never-rotated, and the
+  **blocking** findings — a revoked secret a live adapter still points at, or a **sandbox credential
+  wired into production** — phrased by what each secret protects, worst first.
+- Event-sourced `SecretStateRecorded`, restart-safe. Gated `platform.setup.write/read` (owner-scoped —
+  a secret inventory is not a general read). Integration-tested (managed-secrets.test.ts, 5 cases).
+
+**Honest maturity — HELD at PARTIALLY_WIRED (no re-rate):** the secrets lifecycle (FR-03) is now live,
+but connector **delivery / dead-letter** (FR-02) and **usage-signal monitoring** stay engine-only
+worker/transport concerns (a network path, not a cloud endpoint). **Headline stays 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract), `vitest run`
+**5832 passed / 262 skipped** ✓.
+
+---
+
 ## ★ M27 CONCESSION OWNERSHIP + ELIGIBILITY WIRED — M27-FR-01/02/04 (20 August 2026)
 
 **Owner direction:** "wire the next module." Scanned for the cleanest tested-engine-only gap and picked
