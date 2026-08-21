@@ -93,6 +93,7 @@ import type { IntegrationDeps, CertifiedEntry, AdapterConfig, AdapterHeartbeat }
 import type { WebhookDeps, WebhookConfig } from '../../platform/src/webhooks';
 import type { ConnectorMappingDeps, Mapping } from '../../platform/src/connectors';
 import type { SecretsDeps, SecretRef } from '../../platform/src/secrets';
+import type { OrgStructureDeps, OrgNode, GstRegistration } from '../../platform/src/org-structure';
 import type { Hasher } from '../../../packages/audit/src/audit-trail';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
@@ -167,6 +168,7 @@ export const STREAM = {
   delivery: 'delivery',
   identity: 'identity',
   platform: 'platform',
+  org: 'org',
   migration: 'migration',
   ai: 'ai',
   pricing: 'pricing',
@@ -840,6 +842,9 @@ const forWebhook = (provider: string): string => streamName(STREAM.integration, 
 const forConnectorMapping = (connectorId: string, version: string): string => streamName(STREAM.integration, 'mapping', connectorId, version);
 // Managed secret references (M32-FR-03) live on one shared stream — the latest state per secret id.
 const SECRETS_STREAM = streamName(STREAM.integration, 'secrets');
+// Org structure (M01-FR-01): nodes on one shared stream (latest per node id), GST registrations on another.
+const ORG_NODES_STREAM = streamName(STREAM.org, 'nodes');
+const ORG_REGISTRATIONS_STREAM = streamName(STREAM.org, 'gst-registrations');
 /** Each pay run's lifecycle folds one stream — one run's history (drafted→…→locked), not the whole shop's. */
 const forPayRun = (payRunId: string): string => streamName(STREAM.payroll, payRunId);
 /** Each filing period's GSTR-1 submission folds one stream — one period's preview→approve→file history. */
@@ -2200,6 +2205,63 @@ export function secretsAdapter(input: {
         idempotencyKey: `secret-${tenantId}-${secret.secretId}-v${secret.version}-${secret.state}-${secret.vaultRef}`,
         source: 'api/platform',
         payload: secret,
+      }));
+    },
+  };
+}
+
+/**
+ * The org-structure store (M01-FR-01) — the skeleton every transaction is scoped to. Nodes are latest
+ * per node id (a company/branch/warehouse/department can be edited and activated; append-only, hard rule
+ * #2); GST registrations are one per GSTIN. The hierarchy rules run in the route on the tested engine.
+ */
+export function orgStructureAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): OrgStructureDeps {
+  const foldNodes = async (tenantId: string): Promise<OrgNode[]> => {
+    const events = await input.store.readStream(tenantId, ORG_NODES_STREAM, { type: 'OrgNodeSet' });
+    const byId = new Map<string, OrgNode>();
+    for (const e of events) {
+      const n = payloadOf<OrgNode>(e);
+      byId.set(n.nodeId, n); // occurrence order → the latest state of a node wins
+    }
+    return [...byId.values()];
+  };
+  return {
+    now: input.now,
+    nodes: (tenantId) => foldNodes(tenantId),
+    registrations: async (tenantId) => {
+      const events = await input.store.readStream(tenantId, ORG_REGISTRATIONS_STREAM, { type: 'OrgGstRegistered' });
+      const byGstin = new Map<string, GstRegistration>();
+      for (const e of events) {
+        const r = payloadOf<GstRegistration>(e);
+        byGstin.set(r.gstin, r); // one registration per GSTIN
+      }
+      return [...byGstin.values()];
+    },
+    recordNode: async (tenantId, node) => {
+      await input.store.append(tenantId, ORG_NODES_STREAM, makeEvent({
+        id: `org-node-${node.nodeId}-${node.status}`,
+        type: 'OrgNodeSet',
+        occurredAt: input.now(),
+        // Keyed on the node + its shape + status: re-sending the same state collapses, an edit or an
+        // activation is a new fact the latest-wins fold takes.
+        idempotencyKey: `org-node-${tenantId}-${node.nodeId}-${node.kind}-${node.parentId ?? 'root'}-${node.companyId ?? 'none'}-${node.gstin ?? 'none'}-${node.status}`,
+        source: 'api/platform',
+        payload: node,
+      }));
+    },
+    recordRegistration: async (tenantId, registration) => {
+      await input.store.append(tenantId, ORG_REGISTRATIONS_STREAM, makeEvent({
+        id: `org-gst-${registration.gstin}`,
+        type: 'OrgGstRegistered',
+        occurredAt: input.now(),
+        // One GSTIN, one registration — keyed on the GSTIN so a re-send collapses (the route already
+        // refuses a duplicate against a DIFFERENT company).
+        idempotencyKey: `org-gst-${tenantId}-${registration.gstin}`,
+        source: 'api/platform',
+        payload: registration,
       }));
     },
   };

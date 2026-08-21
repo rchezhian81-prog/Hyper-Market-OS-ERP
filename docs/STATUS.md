@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M01 ORG HIERARCHY WIRED — M01-FR-01 (21 August 2026)
+
+**Owner direction:** "wire the next module." Picked **M01 org hierarchy** — the `packages/org` engine
+(GST register + validateNode/canActivate + ancestry/descendants/gstinFor) was unit-tested and on no
+route, while only the branch-lifecycle transitions were wired.
+
+**What was built (M01-WIRE):** the company → GST → branch → warehouse → department skeleton on API-01 —
+the structure every transaction, permission and report is scoped to, validated as a whole:
+- **Register GST** `POST /v1/org/gst-registrations/:gstin` — **checksum-validated** (a mistyped digit is
+  caught at entry, `422`), and a **duplicate is refused** naming the holder (`409` — a second entry is
+  usually a typo of the first).
+- **Upsert a node** `POST /v1/org/nodes/:id` — a **structural violation** (wrong parent kind,
+  cross-tenant, unknown parent/company) is refused `422`; an **incomplete node is a DRAFT**, recorded
+  with its activation blockers reported (like the product master).
+- **Activate** `POST …/activation` — only when it meets every condition; a branch cannot activate without
+  a company and a valid **own** GST registration (`409` with the reasons, never a half-activated branch).
+- **Scope reads** `GET …/:id` — a node's ancestry to its company, the descendants it covers, and **which
+  GSTIN a transaction here is filed under** (`gstinFor`); `GET /v1/org/nodes` the whole structure.
+- Event-sourced `OrgNodeSet` / `OrgGstRegistered`, restart-safe. Gated `platform.setup.write` (manage) /
+  `org.branch.read` (read). Integration-tested (org-structure.test.ts, 5 cases).
+
+**Honest maturity — HELD at PARTIALLY_WIRED (no re-rate):** the hierarchy (FR-01) and trading-day/config/
+numbering (FR-02) are now live, but **document templates** (M31) and **org-scoped report roll-ups**
+remain follow-ons. **Headline stays 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract), `vitest run`
+**5837 passed / 262 skipped** ✓.
+
+---
+
 ## ★ M32 MANAGED SECRETS WIRED — M32-FR-03 (21 August 2026)
 
 **Owner direction:** "wire the next module." Picked **M32 integration secrets** — a security-relevant,
