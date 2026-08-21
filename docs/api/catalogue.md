@@ -111,6 +111,7 @@
 `SupplierBlockStatusSet` · `PurchaseOrderAmended` / `PurchaseOrderCancelled` / `PurchaseOrderReceiptPosted` ·
 `SupplierReceiptRecorded` / `SupplierContractRecorded` · `RebateSchemeRecorded` / `RebateAccrued` ·
 `RequisitionRaised` / `QuoteRecorded` · `ConcessionContractSet` / `ConcessionSaleRecorded` / `ConcessionDepositMoved` ·
+`SecretStateRecorded` ·
 `ReconciliationExceptionRaised` /
 `ReconciliationExceptionResolved` · `PeriodClosed` / `PeriodReopened` ·
 `MigrationTotalSigned` / `MigrationExceptionResolved`.
