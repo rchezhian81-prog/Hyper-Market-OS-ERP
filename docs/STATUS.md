@@ -5,6 +5,38 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M04 PLANOGRAM-COMPLIANCE CONSUMER WIRED — M04-FR-03 (21 August 2026)
+
+**Owner direction:** "wire the next module." Picked the **consumer of the shelf counts just wired** —
+`planogramCompliance` (`packages/merchandising/src/shelf.ts`) was tested but on **no route**. It is the
+whole point of counting a shelf: compare it with the plan and raise the right task. Wiring it **closes
+the loop** the producer opened.
+
+**What was built (M04-FR-03):** the compliance run on API-04 — `POST /v1/merchandising/planogram-compliance`
+(`planogram.compliance.read`), a **pure read/compute** that writes nothing:
+- Reads the store's **recorded** shelf counts (the same append-only stream the producer writes) and folds
+  the latest per facing into the plan.
+- **Empty facing with stock in the stockroom → an urgent refill** (the most expensive out-of-stock:
+  the sale is lost and the stock is already paid for), told apart from an **empty facing with none → a
+  reorder** (no refill task).
+- An **uncounted** facing is `never_counted` — never a breach, never counted as compliant — and the
+  compliance **%** is over the **observed** facings only, so a figure nobody earned is never quoted (P-08).
+- A **self-inconsistent plan** (a facing on a shelf the store has not mapped, or two primary homes for one
+  product) is refused **422** — that is a broken plan, not a shortage.
+- The plan itself (planogram, shelf map, stockroom figures) is **caller-supplied**; only the observations
+  come from what the store recorded. Gated `planogram.compliance.read` (owner + store_manager).
+  Integration-tested (planogram-compliance.test.ts, 4 cases incl. the full producer→consumer loop and a
+  cold restart).
+
+**Honest maturity — HELD at PARTIALLY_WIRED (no re-rate):** producer **and** consumer are now live, but a
+**persisted planogram/shelf-map store** (the plan is supplied per-request today), the **assortment/space
+engines** (FR-01/04) and the **pick-route** are still unwired. **Headline stays 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract, run-on-tested-engine),
+`vitest run` **5845 passed / 262 skipped** ✓.
+
+---
+
 ## ★ M04 SHELF-COUNT PRODUCER WIRED — M04-FR-02/03 (21 August 2026)
 
 **Owner direction:** "wire the next module." Picked **M04 shelf counting** — the tested
