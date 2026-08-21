@@ -5,6 +5,39 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M04 SHELF-COUNT PRODUCER WIRED — M04-FR-02/03 (21 August 2026)
+
+**Owner direction:** "wire the next module." Picked **M04 shelf counting** — the tested
+`recordShelfCount`/`latestCounts`/`countingWorklist` engine (`packages/merchandising/src/shelf-count.ts`)
+was on **no route**, and it is the one thing `planogramCompliance` (M19) has needed since it was built:
+**how many of an item are on the shelf right now.** Nothing in the system produced that figure.
+
+**What was built (M04-WIRE):** the shelf-count producer on API-04. A shelf quantity is an *observation*,
+never a fact:
+- **Record** `POST /v1/merchandising/shelf-counts/:countId` (`shelf.count.record`) — **blind** (the figure
+  and nothing else; no expected quantity is accepted or returned, the same discipline as the till drawer),
+  **server-attributed** (the counter is whoever is logged in, never a client field), **idempotent** on the
+  count id. A negative count, a fractional count, or a shelf the shop does not have is refused `422` and
+  **nothing is saved**. → `ShelfCountRecorded`, **append-only** (a recount is a new observation; the prior
+  one stays — it is what explains a variance, hard rule #2).
+- **Latest + staleness** `GET /v1/merchandising/shelf-counts?storeId=` (`shelf.count.read`) — the latest
+  count per facing and **how stale** each is against a freshness window (a Tuesday reading shown on Friday
+  sends staff to the wrong shelf; P-08 no-silent-stale).
+- **Worklist** `POST …/shelf-counts/worklist` — the facings that most need counting, **never-counted
+  before long-ago, worst first**.
+- Gated `shelf.count.record` (record) / `shelf.count.read` (reads), granted to owner + store_manager.
+  Restart-safe (rebuilt from `ShelfCountRecorded`). Integration-tested (shelf-count.test.ts, 4 cases:
+  blind record + read-back, refusals, worklist ordering, permission-gating + cold restart).
+
+**Honest maturity — HELD at PARTIALLY_WIRED (no re-rate):** the producer (FR-02/03) is now live, but the
+**assortment/space engines** (FR-01/04) and the **picking app-shell** remain the app-shell slice; the
+count figure is not yet read *by* a wired `planogramCompliance` route. **Headline stays 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract), `vitest run`
+**5841 passed / 262 skipped** ✓.
+
+---
+
 ## ★ M01 ORG HIERARCHY WIRED — M01-FR-01 (21 August 2026)
 
 **Owner direction:** "wire the next module." Picked **M01 org hierarchy** — the `packages/org` engine

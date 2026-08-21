@@ -83,6 +83,7 @@ import { weighingVerificationRoutes } from '../../platform/src/facilities-metrol
 import { complianceRoutes } from '../../compliance/src/index';
 import { inventoryRoutes } from '../../inventory/src/index';
 import { goodsReceiptRoutes } from '../../inventory/src/goods-receipt';
+import { shelfCountRoutes } from '../../inventory/src/shelf-count';
 import { warehouseRoutes } from '../../inventory/src/warehouse';
 import { transfersRoutes } from '../../inventory/src/warehouse-transfers';
 import { replenishmentRoutes } from '../../inventory/src/replenishment';
@@ -128,7 +129,7 @@ import { fulfilmentRoutes } from '../../fulfilment/src/index';
 import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
-  catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, packagingAdapter, wasteAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, financeAdapter, settlementAdapter,
+  catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, financeAdapter, settlementAdapter,
   customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, salesHistoryAdapter,
 } from './adapters';
@@ -288,6 +289,10 @@ export function buildSurface(deps: {
     ...goodsReceiptRoutes(store === undefined
       ? { grn: empty(undefined), all: empty([]), commit: () => {}, now }
       : goodsReceiptAdapter({ store, now })),
+    // Shelf counting (M04-FR-02/03) — the blind-count producer that feeds planogram compliance.
+    ...shelfCountRoutes(store === undefined
+      ? { counts: empty([]), recordCount: () => {}, now }
+      : shelfCountAdapter({ store, now })),
     ...warehouseRoutes(store === undefined ? {
       bins: empty([]), contents: empty({}), appliedCommandIds: empty([]), recordBin: () => {}, recordMovement: () => {}, now,
     } : warehouseAdapter({ store, now })),
