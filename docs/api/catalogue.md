@@ -50,6 +50,15 @@
 - **Stock movement (API-04):** `POST /v1/inventory/movements` **appends** an event →
   `InventoryMoved`; balance is projected; replay is safe. Adjustments →
   `InventoryAdjusted` (reason-coded, approved).
+- **Shelf count (API-04, M04-FR-02/03):** a shelf quantity is an **observation**, not a fact.
+  `POST /v1/merchandising/shelf-counts/:countId` (`shelf.count.record`) records one **blind** count —
+  the figure and nothing else; the counter is the **authenticated user**, never a client field; a
+  negative or fractional count, or a shelf the shop does not have, is refused `422` and nothing is
+  saved → `ShelfCountRecorded` (**append-only**, so a recount is a new observation and the prior one
+  stays — it is what explains a variance). `GET /v1/merchandising/shelf-counts?storeId=` (`shelf.count.read`)
+  returns the latest count per facing and **how stale** each is against a freshness window; `POST
+  …/shelf-counts/worklist` returns the facings that most need counting, **never-counted before long-ago,
+  worst first**. This is the on-shelf figure `planogramCompliance` (M19) always needed.
 - **Price change (API-02):** draft → **approve (separate approver)** → effective-dated
   publish into the signed edge price pack.
 - **Duplicate merge (API-02, M03-FR-04 §28):** detect suspected duplicates

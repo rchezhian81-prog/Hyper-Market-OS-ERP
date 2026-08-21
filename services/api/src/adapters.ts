@@ -94,6 +94,7 @@ import type { WebhookDeps, WebhookConfig } from '../../platform/src/webhooks';
 import type { ConnectorMappingDeps, Mapping } from '../../platform/src/connectors';
 import type { SecretsDeps, SecretRef } from '../../platform/src/secrets';
 import type { OrgStructureDeps, OrgNode, GstRegistration } from '../../platform/src/org-structure';
+import type { ShelfCountDeps, ShelfCount } from '../../inventory/src/shelf-count';
 import type { Hasher } from '../../../packages/audit/src/audit-trail';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
@@ -845,6 +846,8 @@ const SECRETS_STREAM = streamName(STREAM.integration, 'secrets');
 // Org structure (M01-FR-01): nodes on one shared stream (latest per node id), GST registrations on another.
 const ORG_NODES_STREAM = streamName(STREAM.org, 'nodes');
 const ORG_REGISTRATIONS_STREAM = streamName(STREAM.org, 'gst-registrations');
+// Shelf counts are per store — append-only observations (a recount is a new row, M04-FR-02/03).
+const forShelfCounts = (storeId: string): string => streamName(STREAM.inventory, 'shelf-count', storeId);
 /** Each pay run's lifecycle folds one stream — one run's history (drafted→…→locked), not the whole shop's. */
 const forPayRun = (payRunId: string): string => streamName(STREAM.payroll, payRunId);
 /** Each filing period's GSTR-1 submission folds one stream — one period's preview→approve→file history. */
@@ -2262,6 +2265,33 @@ export function orgStructureAdapter(input: {
         idempotencyKey: `org-gst-${tenantId}-${registration.gstin}`,
         source: 'api/platform',
         payload: registration,
+      }));
+    },
+  };
+}
+
+/**
+ * The shelf-count store (M04-FR-02/03) — APPEND-ONLY observations. A recount is a NEW row and the
+ * previous one stays (it is the record that explains a variance); the engine folds latest-per-facing for
+ * the reads. Idempotent on the count id so a re-synced observation is one row, not two.
+ */
+export function shelfCountAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): ShelfCountDeps {
+  return {
+    now: input.now,
+    counts: (tenantId, storeId) => allOf<ShelfCount>(input.store, tenantId, forShelfCounts(storeId), 'ShelfCountRecorded'),
+    recordCount: async (tenantId, countId, count) => {
+      await input.store.append(tenantId, forShelfCounts(count.storeId), makeEvent({
+        id: `shelf-count-${count.storeId}-${countId}`,
+        type: 'ShelfCountRecorded',
+        occurredAt: count.at,
+        // Keyed on the count id: a re-sync of the same observation collapses; a genuine recount is a new
+        // countId and stays alongside the earlier one (append-only, hard rule #2).
+        idempotencyKey: `shelf-count-${tenantId}-${count.storeId}-${countId}`,
+        source: 'api/inventory',
+        payload: count,
       }));
     },
   };
