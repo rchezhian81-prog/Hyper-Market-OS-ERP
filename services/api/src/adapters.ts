@@ -116,6 +116,7 @@ import type { CreditNote, ProductTaxEntry } from '../../../packages/finance/src/
 import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
 import type { DataRightsDeps, DataSubjectRequest } from '../../customer/src/data-rights';
 import type { ServiceCaseDeps, ServiceCase, CompensationRecord, DraftDecisionRecord } from '../../customer/src/service-cases';
+import type { CampaignDeps, CampaignPlanRecord } from '../../customer/src/campaigns';
 import type { AiDraft } from '../../../packages/service-desk/src/index';
 import type { StoredPointsMovement } from '../../../packages/loyalty/src/assess-points';
 import type { StoredValueDeps, Instrument, ValueMovement } from '../../customer/src/stored-value';
@@ -839,6 +840,9 @@ const SERVICE_CASE_STREAM = streamName(STREAM.service, 'cases');
 const SERVICE_COMPENSATION_STREAM = streamName(STREAM.service, 'compensation');
 // AI drafts and the human decisions on them (P-05) — one stream, two event types.
 const SERVICE_DRAFT_STREAM = streamName(STREAM.service, 'drafts');
+// The campaign-decision log — tenant-wide, append-only (who ran which campaign, to how many, excluding
+// how many and why). Counts only; the recipient lists are not stored (PRV).
+const CAMPAIGN_PLAN_STREAM = streamName(STREAM.service, 'campaign-plans');
 /** Points hang off the customer they belong to, so one customer's balance folds one stream. */
 const forCustomerPoints = (customerId: string): string => streamName(STREAM.loyalty, customerId);
 /** Each stored-value instrument's movements fold one stream; the issued-instruments index is its own. */
@@ -4241,6 +4245,32 @@ export function serviceCaseAdapter(input: {
       await input.store.append(tenantId, SERVICE_DRAFT_STREAM, makeEvent({
         id: `service-decision-${caseId}-${d}`, type: 'DraftDecided', occurredAt: rec.at,
         idempotencyKey: `service-decision-${tenantId}-${d}`, source: 'api/customer', payload: rec,
+      }));
+    },
+  };
+}
+
+export function campaignAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): CampaignDeps {
+  return {
+    now: input.now,
+    // The SAME consent ledger the customer service reads (P-02) — folded per recipient at the send.
+    consentRecords: (tenantId, customerId) =>
+      allOf<ConsentRecord>(input.store, tenantId, forCustomer(customerId), 'ConsentRecorded'),
+    plans: (tenantId) => allOf<CampaignPlanRecord>(input.store, tenantId, CAMPAIGN_PLAN_STREAM, 'CampaignPlanned'),
+    recordPlan: async (tenantId, rec, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, CAMPAIGN_PLAN_STREAM, makeEvent({
+        id: `campaign-plan-${rec.campaignId}-${d}`,
+        type: 'CampaignPlanned',
+        occurredAt: rec.at,
+        // Each planning run is its own append-only fact — the same campaign planned twice is two
+        // decisions; a re-sent request (same idempotency key) collapses.
+        idempotencyKey: `campaign-plan-${tenantId}-${d}`,
+        source: 'api/customer',
+        payload: rec,
       }));
     },
   };

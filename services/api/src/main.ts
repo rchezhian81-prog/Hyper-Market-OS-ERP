@@ -124,6 +124,7 @@ import { customerRoutes } from '../../customer/src/index';
 import { dataRightsRoutes } from '../../customer/src/data-rights';
 import { serviceCaseRoutes } from '../../customer/src/service-cases';
 import { segmentRoutes } from '../../customer/src/segments';
+import { campaignRoutes } from '../../customer/src/campaigns';
 import { notificationGuardRoutes } from '../../customer/src/notification-guard';
 import { backupVerificationRoutes } from '../../platform/src/backup-verification';
 import { branchLifecycleRoutes } from '../../platform/src/branch-lifecycle';
@@ -136,7 +137,7 @@ import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, financeAdapter, settlementAdapter,
-  customerAdapter, dataRightsAdapter, serviceCaseAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter, riskRegisterAdapter,
+  customerAdapter, dataRightsAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter, riskRegisterAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, salesHistoryAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
@@ -388,6 +389,10 @@ export function buildSurface(deps: {
       : serviceCaseAdapter({ store, now })),
     // Consent-gated segmentation (M16-FR-02) — a pure compute over supplied facts; no store.
     ...segmentRoutes({ now }),
+    // Campaign send-gate (M21-FR-01) — consent checked per recipient against the stored ledger (P-02).
+    ...campaignRoutes(store === undefined
+      ? { consentRecords: empty([]), plans: empty([]), recordPlan: () => {}, now }
+      : campaignAdapter({ store, now })),
     ...storedValueRoutes(store === undefined ? {
       instrument: empty(undefined), movements: empty([]), recordIssue: () => {}, recordMovement: () => {},
       instrumentsForOwner: empty([]), movementsForOwner: empty([]), allMovements: empty([]), now,
