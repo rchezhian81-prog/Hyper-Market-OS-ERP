@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M35 OPERATIONAL HEALTH & ALERT-RAISING WIRED — M35-FR-03/04 (22 August 2026)
+
+**Owner direction:** "wire the next module." Picked **operational health** — the tested `checkHealth` /
+`raiseAlerts` engine (`packages/ops/src/health.ts`), on **no route**. The cloud already had a *liveness*
+probe (`/v1/platform/health`: is this service up), but nothing answered the operational question the owner
+actually asks: **is the shop healthy, and can I still trade?**
+
+**What was built (M35-FR-03/04):** `POST /v1/platform/operational-health` (`platform.health.read`), a pure
+compute over the evidence the edge reports — sync lag, outbox depth, dead letters, catalogue/backup age,
+integrations — holding two lines that matter more than any single number:
+- **`canTrade` is SEPARATE from `status`** (P-01). Every cloud-side failure degrades the status while the
+  store keeps selling; the **only** thing that stops a lane is being unable to record the sale locally. A
+  cloud outage must never read as "stop selling" — proven in the test: cloud DB down → `degraded` but
+  `canTrade: true`; local store unwritable → `canTrade: false`.
+- **A missing signal is `unknown`, never a cheerful `ok`** (P-08) — the absence of a heartbeat is not a
+  heartbeat.
+- **Alerts are owned** — `raiseAlerts` routes each finding to a **named person** with a §32 acknowledgement
+  deadline; a rule for a healthy component does not fire.
+- Gated the existing `platform.health.read` (owner + store_manager); a pure compute, no store, no new
+  permission. Integration-tested (operational-health.test.ts, 4 cases).
+
+**Honest maturity — HELD at PARTIALLY_WIRED (no re-rate):** FR-01 verifier + FR-02 drill + now FR-03 health
+and FR-04 alert-**raising** are wired, but **escalation-over-time** (`escalateUnacknowledged` — a stateful
+raise-now/escalate-later concern needing persisted alert + acknowledgement state) and the **edge actually
+collecting** these signals remain. **Headline stays 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract, run-on-tested-engine),
+`vitest run` **5857 passed / 262 skipped** ✓.
+
+---
+
 ## ★ M20 DATA-SUBJECT RIGHTS LIFECYCLE WIRED — M20-FR-04 / DPDP (22 August 2026)
 
 **Owner direction:** "wire the next module." Picked the **DPDP data-subject rights** engine

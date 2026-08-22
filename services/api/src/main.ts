@@ -106,6 +106,7 @@ import { secretsRoutes } from '../../platform/src/secrets';
 import { orgStructureRoutes } from '../../platform/src/org-structure';
 import { identityRoutes, tokenAuthenticator } from '../../identity/src/index';
 import { platformRoutes, inMemorySettings, emptyExportBundle } from '../../platform/src/index';
+import { operationalHealthRoutes } from '../../platform/src/operational-health';
 import { purchaseRoutes } from '../../purchase/src/index';
 import { purchaseOrderRoutes } from '../../purchase/src/purchase-orders';
 import { supplierScorecardRoutes } from '../../purchase/src/supplier-scorecard';
@@ -545,6 +546,8 @@ export function buildSurface(deps: {
       setBranding: () => {}, branding: empty(undefined),
       setEntitlement: () => {}, entitlements: empty([]), now,
     } : platformAdapter({ store, now, probes, settings: deps.settings ?? inMemorySettings() })),
+    // Operational health & alerting (M35-FR-03/04) — a pure compute over supplied evidence; no store.
+    ...operationalHealthRoutes({ now }),
     ...migrationRoutes(store === undefined ? {
       target: (tenantId) => ({
         targetId: `tgt-${tenantId}`, tenantId,
