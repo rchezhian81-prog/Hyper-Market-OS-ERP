@@ -21,16 +21,45 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
-  assessFirstResponse, assessSla,
+  assessFirstResponse, assessSla, grantCompensation,
   type ServiceCase, type CaseKind, type CasePriority,
+  type CompensationKind, type CompensationApproval, type CompensationOutcome,
 } from '../../../packages/service-desk/src/index';
 
 export type { ServiceCase } from '../../../packages/service-desk/src/index';
 
+/** A compensation actually granted on a case — money leaving the business, recorded append-only. */
+export interface CompensationRecord {
+  readonly caseId: string;
+  readonly kind: CompensationKind;
+  readonly amountMinor: number;
+  readonly grantedBy: string;
+  readonly approvedBy?: string;
+  readonly reason: string;
+  readonly at: string;
+}
+
 const KINDS: readonly CaseKind[] = ['complaint', 'enquiry', 'warranty', 'lost_and_found'];
 const PRIORITIES: readonly CasePriority[] = ['low', 'normal', 'high', 'urgent'];
+const COMPENSATION_KINDS: readonly CompensationKind[] = ['refund', 'goodwill_credit', 'loyalty_points', 'replacement'];
+const APPROVAL_STATUSES = ['approved', 'rejected', 'pending'] as const;
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v);
+const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+// Every non-grant outcome is a 422 — nothing was saved, and the money did not leave.
+const COMPENSATION_REFUSAL: Readonly<Record<Exclude<CompensationOutcome, 'granted'>, number>> = {
+  no_reason: 422, exceeds_policy_cap: 422, needs_approval: 422, self_approved: 422,
+};
+
+function readApproval(v: unknown): CompensationApproval | undefined | 'invalid' {
+  if (v === undefined) return undefined;
+  if (!isObj(v) || !isStr(v['subjectRef']) || !(APPROVAL_STATUSES as readonly string[]).includes(v['status'] as string)
+    || !isStr(v['decidedBy']) || typeof v['reason'] !== 'string') {
+    return 'invalid';
+  }
+  return { subjectRef: v['subjectRef'] as string, status: v['status'] as CompensationApproval['status'], decidedBy: v['decidedBy'] as string, reason: v['reason'] as string };
+}
 
 export interface ServiceCaseDeps {
   readonly serviceCase: (tenantId: string, caseId: string) => Promise<ServiceCase | undefined> | ServiceCase | undefined;
@@ -38,6 +67,9 @@ export interface ServiceCaseDeps {
   readonly serviceCases: (tenantId: string) => Promise<readonly ServiceCase[]> | readonly ServiceCase[];
   /** Append one state of a case — append-only (open → first reply → resolved is the trail). */
   readonly recordCase: (tenantId: string, caseId: string, c: ServiceCase, key: string) => Promise<void> | void;
+  /** Compensations granted on a case — append-only (money leaving the business is a ledger, hard rule #2). */
+  readonly compensations: (tenantId: string, caseId: string) => Promise<readonly CompensationRecord[]> | readonly CompensationRecord[];
+  readonly recordCompensation: (tenantId: string, caseId: string, rec: CompensationRecord, key: string) => Promise<void> | void;
   readonly now: () => string;
 }
 
@@ -140,6 +172,67 @@ export function serviceCaseRoutes(deps: ServiceCaseDeps): readonly Route[] {
           ? withSla.filter((r) => r.firstResponse.status === 'breached' || r.resolution.status === 'breached')
           : withSla;
         return { status: 200, body: { cases: rows, count: rows.length, asAt: now } };
+      },
+    },
+    {
+      // Grant compensation on a case — MONEY LEAVING THE BUSINESS, decided by the person the customer is
+      // shouting at, which is why the reason, the authority limit and the second signature are not
+      // optional (§28). Body: { kind, amountMinor, reason, agentAuthorityMinor, policyCapMinor?, approval? }.
+      // grantedBy is the authenticated caller. On grant, an append-only CompensationGranted is recorded.
+      api: 'API-06', method: 'POST', path: '/v1/service/cases/:caseId/compensation',
+      permission: 'service.case.manage', idempotent: true,
+      handler: async (ctx) => {
+        const caseId = ctx.params['caseId'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const approval = readApproval(b['approval']);
+        if (!COMPENSATION_KINDS.includes(b['kind'] as CompensationKind) || !isInt(b['amountMinor']) || (b['amountMinor'] as number) < 0
+          || typeof b['reason'] !== 'string' || !isInt(b['agentAuthorityMinor']) || (b['agentAuthorityMinor'] as number) < 0
+          || (b['policyCapMinor'] !== undefined && (!isInt(b['policyCapMinor']) || (b['policyCapMinor'] as number) < 0))
+          || approval === 'invalid') {
+          throw apiError(400, {
+            code: 'not_readable_as_compensation',
+            whatHappened: 'Compensation needs { kind (refund/goodwill_credit/loyalty_points/replacement), amountMinor, reason, agentAuthorityMinor, policyCapMinor?, approval? }.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the amount, a real reason, and the granting agent\'s authority limit. The agent is taken from your login.',
+          });
+        }
+        const existing = await deps.serviceCase(ctx.tenantId, caseId);
+        if (existing === undefined) throw notFound(`service case ${caseId}`);
+
+        const now = deps.now();
+        const result = grantCompensation({
+          serviceCase: existing, kind: b['kind'] as CompensationKind, amountMinor: b['amountMinor'] as number,
+          grantedBy: ctx.userId, reason: b['reason'] as string, agentAuthorityMinor: b['agentAuthorityMinor'] as number,
+          ...(isInt(b['policyCapMinor']) ? { policyCapMinor: b['policyCapMinor'] as number } : {}),
+          ...(approval !== undefined ? { approval } : {}),
+          at: now,
+        });
+        if (!result.granted) {
+          throw apiError(COMPENSATION_REFUSAL[result.outcome as Exclude<CompensationOutcome, 'granted'>], {
+            code: result.outcome, whatHappened: result.detail, wasItSaved: 'not_saved',
+            nextSafeAction: result.outcome === 'needs_approval' || result.outcome === 'self_approved'
+              ? 'A grant above the agent\'s authority needs a DIFFERENT person to approve it.'
+              : 'Correct the amount or the reason and grant again. Nothing was paid.',
+          });
+        }
+        const rec: CompensationRecord = {
+          caseId, kind: b['kind'] as CompensationKind, amountMinor: b['amountMinor'] as number,
+          grantedBy: ctx.userId, ...(result.approvedBy !== undefined ? { approvedBy: result.approvedBy } : {}),
+          reason: b['reason'] as string, at: now,
+        };
+        // Keyed on the case + the money + who granted it + when — a re-sync is one payment, not two.
+        await deps.recordCompensation(ctx.tenantId, caseId, rec, `${caseId}-${rec.grantedBy}-${rec.amountMinor}-${now}`);
+        return { status: 201, body: { caseId, granted: true, outcome: result.outcome, amountMinor: result.amountMinor, ...(result.approvedBy !== undefined ? { approvedBy: result.approvedBy } : {}), detail: result.detail } };
+      },
+    },
+    {
+      // Every compensation granted on a case — the record that explains, three months later, why money left.
+      api: 'API-06', method: 'GET', path: '/v1/service/cases/:caseId/compensations',
+      permission: 'service.case.read',
+      handler: async (ctx) => {
+        const caseId = ctx.params['caseId'] ?? '';
+        const rows = await deps.compensations(ctx.tenantId, caseId);
+        return { status: 200, body: { caseId, compensations: rows, count: rows.length, totalMinor: rows.reduce((s, r) => s + r.amountMinor, 0) } };
       },
     },
   ];

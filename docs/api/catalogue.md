@@ -162,8 +162,16 @@
   `GET …/sla` (`service.case.read`) returns **both clocks** — FIRST RESPONSE (the wait the customer feels;
   does not pause) and RESOLUTION (pauses while waiting on the customer, so a slow customer is not recorded
   as the shop's breach). `GET /v1/service/cases?breached=true` is the **exception queue**. Append-only
-  (`ServiceCaseRecorded`). Compensation (`grantCompensation`, §28), AI-drafts a named human sends
-  (`approveDraft`, P-05) and CSAT reporting are named follow-ons.
+  (`ServiceCaseRecorded`). AI-drafts a named human sends (`approveDraft`, P-05) and CSAT reporting are
+  named follow-ons.
+- **Service-desk compensation (API-06, M21-FR-03 · §28):** money leaving the business, decided by the
+  person the customer is shouting at — so `POST /v1/service/cases/:id/compensation` (`service.case.manage`)
+  runs `grantCompensation` with the controls not optional: a **mandatory reason** even within authority
+  ("goodwill" explains nothing three months later); above the granting agent's **authority limit** a
+  **separate** approver is required (`needs_approval`) and the agent **cannot approve their own**
+  (`self_approved`); an **absolute tenant ceiling** above which it is a management decision
+  (`exceeds_policy_cap`). A granted one is an **append-only** `CompensationGranted` (a payment is a ledger,
+  hard rule #2); `GET …/compensations` totals what left.
 - **Customer segmentation & value ranking (API-06, M16-FR-02 · PRV/DPDP):** two truths this keeps.
   `POST /v1/customer/segments/audience` (`customer.segment.read`) builds a **consent-gated** campaign
   audience — **consent is two permissions**: analysing a customer (profiling) is not messaging them
