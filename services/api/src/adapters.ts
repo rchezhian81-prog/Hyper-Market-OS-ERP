@@ -69,7 +69,7 @@ import type { CountsDeps, StoredReconciliation } from '../../inventory/src/count
 import type { WriteOffDeps, StoredWriteOff } from '../../inventory/src/write-off';
 import type { ProductionDeps, StoredRun, StoredRelease } from '../../inventory/src/production';
 import type { Recipe } from '../../../packages/production/src/recipe';
-import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord, StatementLine } from '../../purchase/src/supplier-portal';
+import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord, StatementLine, PartnerAuditEntry } from '../../purchase/src/supplier-portal';
 import type { ConcessionDeps, ConcessionContract, ConcessionSale, DepositMovement } from '../../finance/src/concession';
 import type { ScrapDeps, ScrapSale } from '../../finance/src/scrap';
 import type { FacilitiesDeps, MaintenanceSchedule, ScheduledTask, SafetyIncident } from '../../platform/src/facilities';
@@ -804,6 +804,9 @@ const forOrder = (orderId: string): string => streamName(STREAM.orders, orderId)
 const forInvoice = (invoiceId: string): string => streamName(STREAM.purchase, 'invoice', invoiceId);
 /** Each supplier partner's portal config and submissions fold one stream — one partner, not the shop. */
 const forPortalPartner = (partnerId: string): string => streamName(STREAM.purchase, 'partner', partnerId);
+// Partner-action audit is TENANT-WIDE (one stream, every partner) so `findProbing` can see a supplier
+// trying doors across the shop — the whole point is a view no single partner's stream would give (M24-FR-04).
+const PORTAL_AUDIT_STREAM = streamName(STREAM.purchase, 'portal-audit');
 // Purchase orders and supplier holds live on their own shared streams so a fold can list every PO
 // (and answer the open commitment) and read a supplier's latest block state (M06-FR-01/02/04).
 const PURCHASE_ORDERS_STREAM = streamName(STREAM.purchase, 'orders');
@@ -3852,6 +3855,23 @@ export function supplierPortalAdapter(input: {
         payload: { openingMinor },
       }));
     },
+
+    // Append-only partner-action audit (hard rule #6). Keyed on the action so a re-synced attempt is one
+    // entry; a genuine new attempt (a different submission id) is a new fact — which is what makes a
+    // pattern of refusals visible rather than collapsing into one.
+    recordAudit: async (tenantId, entry, key) => {
+      await input.store.append(tenantId, PORTAL_AUDIT_STREAM, makeEvent({
+        id: `portal-audit-${key}`,
+        type: 'PortalActionAudited',
+        occurredAt: entry.at,
+        idempotencyKey: `portal-audit-${tenantId}-${key}`,
+        source: 'api/purchase',
+        payload: entry,
+      }));
+    },
+
+    auditEntries: async (tenantId) =>
+      allOf<PartnerAuditEntry>(input.store, tenantId, PORTAL_AUDIT_STREAM, 'PortalActionAudited'),
   };
 }
 

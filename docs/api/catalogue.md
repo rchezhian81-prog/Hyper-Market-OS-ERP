@@ -119,6 +119,13 @@
   threshold (and it says how far short), a growth scheme measures against its baseline, and the
   **outstanding** (accrued − received) is the money **earned and not yet claimed**
   (`GET …/accruals` totals it). Event-sourced (`RebateSchemeRecorded`, `RebateAccrued`).
+- **Supplier-portal probe detection (API-03, M24-FR-04):** the portal is the one place a party OUTSIDE
+  the business acts on the system, so **every submission outcome is audited** — refusals as loudly as
+  successes (`PortalActionAudited`, hard rule #6). A supplier submitting against **another** supplier's
+  order (`not_your_order`) is auto-flagged a security event; `GET /v1/supplier-portal/probing?threshold=`
+  (`supplier.portal.review`) runs the tested `findProbing` over the tenant-wide audit trail — a buyer's,
+  per-tenant view of who is **trying doors** (one refusal is a mis-click; a pattern of them is not). A
+  no-grant refusal is audited but is not probing; a retried mis-click collapses to one attempt.
 - **Finance reconciliation (API-09):** import bank/gateway statements → match →
   `ReconciliationExceptionRaised` / `…Resolved`; **period close is blocked until control
   totals validate** (QG-07) → `PeriodClosed` / `PeriodReopened`.
