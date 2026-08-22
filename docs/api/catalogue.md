@@ -137,6 +137,15 @@
   (`supplier.portal.review`) runs the tested `findProbing` over the tenant-wide audit trail — a buyer's,
   per-tenant view of who is **trying doors** (one refusal is a mis-click; a pattern of them is not). A
   no-grant refusal is audited but is not probing; a retried mis-click collapses to one attempt.
+- **Operational health & alerting (API-11, M35-FR-03/04 · §32):** `POST /v1/platform/operational-health`
+  (`platform.health.read`) runs the tested `checkHealth` over the evidence the edge reports — sync lag,
+  outbox depth, dead letters, catalogue/backup age, integrations — and holds two lines that matter more
+  than any number: **`canTrade` is separate from `status`** (a cloud outage degrades the status but the
+  store keeps selling — P-01; only a lane that cannot record locally must stop), and **a missing signal
+  is `unknown`, never `ok`** (P-08 — the absence of a heartbeat is not a heartbeat). `raiseAlerts` then
+  turns findings into **owned** alerts, each routed to a named person with a §32 acknowledgement deadline.
+  A pure compute — distinct from the liveness probe at `/v1/platform/health`. Escalation-over-time (a
+  stateful raise-now-escalate-later concern) is a named follow-on.
 - **Finance reconciliation (API-09):** import bank/gateway statements → match →
   `ReconciliationExceptionRaised` / `…Resolved`; **period close is blocked until control
   totals validate** (QG-07) → `PeriodClosed` / `PeriodReopened`.
