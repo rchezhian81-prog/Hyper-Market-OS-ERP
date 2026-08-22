@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M21 SERVICE-DESK SLA CLOCKS WIRED — M21-FR-04 (22 August 2026)
+
+**Owner direction:** "wire the next module." Picked the **service-desk case + SLA engine**
+(`packages/service-desk/src/service-cases.ts` — `assessFirstResponse` / `assessSla`), tested and on **no
+route**. Control by exception (P-03): a customer complaint breaching its SLA is the one that must surface.
+
+**What was built (M21-FR-04):** the case lifecycle and the two SLA clocks on API-06 —
+- **Lifecycle** `POST /v1/service/cases/:id` opens a case; `…/first-response` stamps the human's first
+  reply; `…/resolution` resolves it (carrying the **waiting-on-customer minutes**). Append-only
+  (`ServiceCaseRecorded`), with double-open / double-reply / double-resolve all refused.
+- **Two clocks, because a single "SLA met" number hides the one customers feel.** `GET …/sla` returns
+  **first response** (the wait the customer actually feels — it does **not** pause for the customer) and
+  **resolution** (which **pauses** while the shop waits on the customer, so a customer who takes three
+  days to send a photo is not recorded as the shop's breach — else the report fills with breaches nobody
+  caused and nobody reads it).
+- **The exception queue** `GET /v1/service/cases?breached=true` surfaces the cases breaching a clock now.
+- Gated `service.case.manage` / `.read` (owner + store_manager). Integration-tested (service-cases.test.ts,
+  4 cases: lifecycle + both clocks, guards, list/breached, gating + restart). The SLA-breach *numerics*
+  need an aged case and stay covered by the engine's own unit tests.
+
+**Honest maturity — HELD at PARTIALLY_WIRED (no re-rate):** the case lifecycle and SLA clocks are live, but
+**compensation** as a §28 financial action (`grantCompensation`), **AI-drafts a named human sends**
+(`approveDraft`, P-05), **CSAT reporting** (`serviceReport`), the per-tenant SLA-policy store and the
+campaign engine (service-desk FR-01/02/03) remain. **Headline stays 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract, run-on-tested-engine),
+`vitest run` **5865 passed / 262 skipped** ✓.
+
+---
+
 ## ★ M34 RISK REGISTER & GATE-BLOCKING WIRED — M34-FR-04 (22 August 2026)
 
 **Owner direction:** "wire the next module." Picked the **risk register** (`packages/compliance/src/risk.ts`

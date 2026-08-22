@@ -155,6 +155,15 @@
   the only way past is to accept it, not to ignore it; an accepted or mitigated risk does not block.
   `GET …/gates/:gate/can-pass` runs `gateCanPass`. Append-only (`RiskRecorded`) — register-then-accept is
   two facts, nothing overwritten (hard rule #2).
+- **Service desk — cases & SLA clocks (API-06, M21-FR-04 · P-03):** control by exception — a case
+  breaching its SLA must surface, not sit amber in a queue. `POST /v1/service/cases/:id`
+  (`service.case.manage`) opens a case; `…/first-response` stamps the human reply; `…/resolution` resolves
+  it, carrying the **waiting-on-customer minutes** the resolution clock does not count against the shop.
+  `GET …/sla` (`service.case.read`) returns **both clocks** — FIRST RESPONSE (the wait the customer feels;
+  does not pause) and RESOLUTION (pauses while waiting on the customer, so a slow customer is not recorded
+  as the shop's breach). `GET /v1/service/cases?breached=true` is the **exception queue**. Append-only
+  (`ServiceCaseRecorded`). Compensation (`grantCompensation`, §28), AI-drafts a named human sends
+  (`approveDraft`, P-05) and CSAT reporting are named follow-ons.
 - **Finance reconciliation (API-09):** import bank/gateway statements → match →
   `ReconciliationExceptionRaised` / `…Resolved`; **period close is blocked until control
   totals validate** (QG-07) → `PeriodClosed` / `PeriodReopened`.

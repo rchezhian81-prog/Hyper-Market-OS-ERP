@@ -115,6 +115,7 @@ import type { CreditNoteDeps } from '../../finance/src/credit-notes';
 import type { CreditNote, ProductTaxEntry } from '../../../packages/finance/src/index';
 import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
 import type { DataRightsDeps, DataSubjectRequest } from '../../customer/src/data-rights';
+import type { ServiceCaseDeps, ServiceCase } from '../../customer/src/service-cases';
 import type { StoredPointsMovement } from '../../../packages/loyalty/src/assess-points';
 import type { StoredValueDeps, Instrument, ValueMovement } from '../../customer/src/stored-value';
 import type { CouponDeps } from '../../customer/src/coupons';
@@ -193,6 +194,7 @@ export const STREAM = {
   packaging: 'packaging',
   waste: 'waste',
   integration: 'integration',
+  service: 'service',
   lossPrevention: 'loss-prevention',
   warehouse: 'warehouse',
   orders: 'orders',
@@ -829,6 +831,9 @@ const DATA_REQUESTS_STREAM = streamName(STREAM.consent, 'data-requests');
 // Risks are TENANT-WIDE (one stream, every risk) so the gate-blocking reads fold the whole register in
 // one pass (M34-FR-04). A sub-stream of compliance, kept apart from obligations.
 const RISK_STREAM = streamName(STREAM.compliance, 'risk');
+// Service cases are TENANT-WIDE (one stream, every case) so the breached-queue read folds them in one pass
+// (M21-FR-04) — the exceptions a desk must escalate rather than let age.
+const SERVICE_CASE_STREAM = streamName(STREAM.service, 'cases');
 /** Points hang off the customer they belong to, so one customer's balance folds one stream. */
 const forCustomerPoints = (customerId: string): string => streamName(STREAM.loyalty, customerId);
 /** Each stored-value instrument's movements fold one stream; the issued-instruments index is its own. */
@@ -4158,6 +4163,36 @@ export function dataRightsAdapter(input: {
         idempotencyKey: `data-request-${tenantId}-${key}`,
         source: 'api/customer',
         payload: request,
+      }));
+    },
+  };
+}
+
+export function serviceCaseAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): ServiceCaseDeps {
+  const foldLatest = async (tenantId: string): Promise<readonly ServiceCase[]> => {
+    const all = await allOf<ServiceCase>(input.store, tenantId, SERVICE_CASE_STREAM, 'ServiceCaseRecorded');
+    const byId = new Map<string, ServiceCase>();
+    for (const c of all) byId.set(c.caseId, c); // later state wins (open → reply → resolved)
+    return [...byId.values()];
+  };
+  return {
+    now: input.now,
+    serviceCases: (tenantId) => foldLatest(tenantId),
+    serviceCase: async (tenantId, caseId) => (await foldLatest(tenantId)).find((c) => c.caseId === caseId),
+    recordCase: async (tenantId, caseId, c, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, SERVICE_CASE_STREAM, makeEvent({
+        id: `service-case-${caseId}-${d}`,
+        type: 'ServiceCaseRecorded',
+        occurredAt: input.now(),
+        // Keyed on the case and a digest of its state — a re-send collapses; each transition (open,
+        // first reply, resolved) is a new append-only fact, the fold taking the latest.
+        idempotencyKey: `service-case-${tenantId}-${caseId}-${d}`,
+        source: 'api/customer',
+        payload: c,
       }));
     },
   };
