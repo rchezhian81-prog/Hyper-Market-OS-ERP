@@ -383,7 +383,8 @@ export function buildSurface(deps: {
       : dataRightsAdapter({ store, now })),
     // Service-desk cases + SLA clocks (M21-FR-04) — open/first-response/resolve + SLA + breached queue.
     ...serviceCaseRoutes(store === undefined
-      ? { serviceCase: empty(undefined), serviceCases: empty([]), recordCase: () => {}, compensations: empty([]), recordCompensation: () => {}, now }
+      ? { serviceCase: empty(undefined), serviceCases: empty([]), recordCase: () => {}, compensations: empty([]), recordCompensation: () => {},
+          drafts: empty([]), draft: empty(undefined), recordDraft: () => {}, draftDecisions: empty([]), recordDraftDecision: () => {}, now }
       : serviceCaseAdapter({ store, now })),
     // Consent-gated segmentation (M16-FR-02) — a pure compute over supplied facts; no store.
     ...segmentRoutes({ now }),

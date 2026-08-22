@@ -162,8 +162,7 @@
   `GET …/sla` (`service.case.read`) returns **both clocks** — FIRST RESPONSE (the wait the customer feels;
   does not pause) and RESOLUTION (pauses while waiting on the customer, so a slow customer is not recorded
   as the shop's breach). `GET /v1/service/cases?breached=true` is the **exception queue**. Append-only
-  (`ServiceCaseRecorded`). AI-drafts a named human sends (`approveDraft`, P-05) and CSAT reporting are
-  named follow-ons.
+  (`ServiceCaseRecorded`). CSAT reporting (`serviceReport`) is the named follow-on.
 - **Service-desk compensation (API-06, M21-FR-03 · §28):** money leaving the business, decided by the
   person the customer is shouting at — so `POST /v1/service/cases/:id/compensation` (`service.case.manage`)
   runs `grantCompensation` with the controls not optional: a **mandatory reason** even within authority
@@ -172,6 +171,17 @@
   (`self_approved`); an **absolute tenant ceiling** above which it is a management decision
   (`exceeds_policy_cap`). A granted one is an **append-only** `CompensationGranted` (a payment is a ledger,
   hard rule #2); `GET …/compensations` totals what left.
+- **Service-desk AI drafts — a named human sends (API-06, M21-FR-03 · P-05 / hard rule #5):** an AI may
+  *draft* a reply to a customer; a **person** sends it. `POST /v1/service/cases/:id/drafts/:draftId`
+  (`service.case.manage`) records a draft **always unapproved**, and it must **cite the case evidence** it
+  is based on so the approver has something to check it against. `POST …/drafts/:draftId/decision` runs
+  `approveDraft` — **the only path by which a draft becomes sendable; there is deliberately no send route in
+  the module** — attributing the reply to the **logged-in caller, never a model**. A draft with no evidence
+  or an **empty edit** is refused `422 draft_not_approvable`; an **edit is recorded as an edit**
+  (`edited_and_approved`) so the shop can see whether the model is helping or generating work; a
+  **rejection** is a recorded human decision (`200`, not sendable), an approval/edit `201`. `GET …/drafts`
+  (`service.case.read`) lists each draft with its human decision. Append-only (`AiDraftRecorded`,
+  `DraftDecided`).
 - **Customer segmentation & value ranking (API-06, M16-FR-02 · PRV/DPDP):** two truths this keeps.
   `POST /v1/customer/segments/audience` (`customer.segment.read`) builds a **consent-gated** campaign
   audience — **consent is two permissions**: analysing a customer (profiling) is not messaging them
