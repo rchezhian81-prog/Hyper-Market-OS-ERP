@@ -5,6 +5,39 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M21 CAMPAIGN SEND-GATE WIRED — M21-FR-01 / PRV · DPDP · P-02 (22 August 2026)
+
+**Owner direction:** "wire the next module." Continued the CRM/service-desk story with the highest-value
+tested-but-unwired engine left in it: `planCampaign` (`packages/service-desk/src/campaigns.ts`) — the
+consent gate that decides who a marketing campaign may reach — was on **no route**.
+
+**What was built (M21-FR-01 · on API-06):** the gate at the SEND, per recipient, checked against the
+shop's OWN consent ledger —
+- **`POST /v1/service/campaigns/:id/plan`** runs `planCampaign`, and for each audience member folds that
+  customer's stored `ConsentRecord` ledger through the existing `mayWeSend` — **the SAME consent the rest
+  of the system holds** (P-02, one commerce truth), not a list pasted into the request. A withdrawal reads
+  as `withdrawn`, an absent record as `no_consent` (silence is never agreement), and **consent to SMS is
+  not consent to email** (channel + purpose are separate).
+- **An unapproved template, or a promotion smuggled into a transactional message** (a route around
+  marketing consent), **blocks the whole campaign** — no partial send with no explanation.
+- **The excluded count is always returned, grouped by reason**, so the check stays defensible when reach
+  shrinks instead of someone "fixing" it by loosening the gate.
+- Nothing is SENT here (the WhatsApp/SMS/email transports are deployment steps, EX-04/05). The decision is
+  recorded as an **append-only** `CampaignPlanned` log — **counts only; the recipient lists are not stored
+  (PRV)** — read at **`GET /v1/service/campaigns/plans`**. New perms `customer.campaign.send`/`.read`.
+  Integration-tested (campaign-consent.test.ts, 4 cases).
+
+**Honest maturity — HELD at PARTIALLY_WIRED (no re-rate):** the case lifecycle, SLA clocks, compensation
+ledger, AI-draft approval and now the campaign send-gate are live, but **journeys + honest attribution
+with a control group** (FR-02, `measureCampaign`/`findJourneyCandidates`), **CSAT reporting**
+(`serviceReport`), the `service` purpose, and template-approval sourced from the M31 register remain.
+**Headline stays 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract, run-on-tested-engine),
+`vitest run` **5881 passed / 262 skipped** ✓.
+
+---
+
 ## ★ M21 AI-DRAFT APPROVAL WIRED — M21-FR-03 / P-05 · hard rule #5 (22 August 2026)
 
 **Owner direction:** "wire the next module." Closed the AI-governance leg of the service desk: `approveDraft`

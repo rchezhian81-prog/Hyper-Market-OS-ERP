@@ -182,6 +182,18 @@
   **rejection** is a recorded human decision (`200`, not sendable), an approval/edit `201`. `GET …/drafts`
   (`service.case.read`) lists each draft with its human decision. Append-only (`AiDraftRecorded`,
   `DraftDecided`).
+- **Campaign send-gate (API-06, M21-FR-01 · PRV/DPDP · P-02):** a campaign is the one click that can
+  harm thousands of people at once and cannot be recalled, so the gate is at the SEND, PER RECIPIENT.
+  `POST /v1/service/campaigns/:id/plan` (`customer.campaign.send`) runs `planCampaign`, and for each
+  audience member it consults the shop's OWN consent ledger — `mayWeSend`, the SAME record the rest of the
+  system holds (P-02), not a list pasted into the request. Consent to SMS is not consent to email; a
+  marketing send needs marketing consent; a withdrawal reads as a withdrawal and an absent record as
+  no-consent (silence is never agreement). An unapproved template, or a promotion smuggled into a
+  transactional message (a route around consent), **blocks the whole campaign** — no partial send. The
+  **excluded count is always returned, grouped by reason**, so the check stays defensible when reach
+  shrinks. Nothing is SENT here (the transports are deployment steps, EX-04/05); the decision is recorded
+  as an **append-only** `CampaignPlanned` log — **counts only, the recipient lists are not stored (PRV)** —
+  read at `GET /v1/service/campaigns/plans` (`customer.campaign.read`).
 - **Customer segmentation & value ranking (API-06, M16-FR-02 · PRV/DPDP):** two truths this keeps.
   `POST /v1/customer/segments/audience` (`customer.segment.read`) builds a **consent-gated** campaign
   audience — **consent is two permissions**: analysing a customer (profiling) is not messaging them
