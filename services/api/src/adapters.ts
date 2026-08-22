@@ -77,6 +77,7 @@ import type { FacilitiesAssetsDeps, Asset, ServiceLog, DowntimeEvent, EnergyRead
 import type { FacilitiesMonitoringDeps, EquipmentRangeReg, EquipmentContents, EquipmentReading, PowerEvent } from '../../platform/src/facilities-monitoring';
 import type { PackagingDeps, PackagingItem, PackagingMovement } from '../../inventory/src/packaging';
 import type { ComplianceDeps, Obligation } from '../../compliance/src/index';
+import type { RiskRegisterDeps, Risk } from '../../compliance/src/risk';
 import type { DocumentsDeps, TemplateVersion, IssuedDocument } from '../../platform/src/documents';
 import type { SuspendedBillsDeps, SuspendedBill } from '../../pos/src/suspended-bills';
 import type { EInvoiceRegisterDeps } from '../../finance/src/e-invoice-register';
@@ -249,6 +250,36 @@ export function complianceAdapter(input: {
         idempotencyKey: `compliance-oblig-${tenantId}-${obligation.obligationId}-${digest}`,
         source: 'api/compliance',
         payload: obligation,
+      }));
+    },
+  };
+}
+
+export function riskRegisterAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): RiskRegisterDeps {
+  const foldLatest = async (tenantId: string): Promise<readonly Risk[]> => {
+    const all = await allOf<Risk>(input.store, tenantId, RISK_STREAM, 'RiskRecorded');
+    const byId = new Map<string, Risk>();
+    for (const r of all) byId.set(r.riskId, r); // later state wins (register → accept)
+    return [...byId.values()];
+  };
+  return {
+    now: input.now,
+    risks: (tenantId) => foldLatest(tenantId),
+    risk: async (tenantId, riskId) => (await foldLatest(tenantId)).find((r) => r.riskId === riskId),
+    recordRisk: async (tenantId, riskId, risk, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, RISK_STREAM, makeEvent({
+        id: `compliance-risk-${riskId}-${d}`,
+        type: 'RiskRecorded',
+        occurredAt: input.now(),
+        // Keyed on the risk and a digest of its state — a re-send collapses; register-then-accept is two
+        // append-only facts, the fold taking the latest (hard rule #2, nothing overwritten).
+        idempotencyKey: `compliance-risk-${tenantId}-${riskId}-${d}`,
+        source: 'api/compliance',
+        payload: risk,
       }));
     },
   };
@@ -795,6 +826,9 @@ const forCustomer = (customerId: string): string => streamName(STREAM.consent, c
 // Data-subject requests are TENANT-WIDE (one stream, every request) so the overdue read sees the whole
 // privacy queue in one fold — the queue a regulator asks about first (M20-FR-04 / DPDP).
 const DATA_REQUESTS_STREAM = streamName(STREAM.consent, 'data-requests');
+// Risks are TENANT-WIDE (one stream, every risk) so the gate-blocking reads fold the whole register in
+// one pass (M34-FR-04). A sub-stream of compliance, kept apart from obligations.
+const RISK_STREAM = streamName(STREAM.compliance, 'risk');
 /** Points hang off the customer they belong to, so one customer's balance folds one stream. */
 const forCustomerPoints = (customerId: string): string => streamName(STREAM.loyalty, customerId);
 /** Each stored-value instrument's movements fold one stream; the issued-instruments index is its own. */
