@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M24 SUPPLIER-PORTAL PROBE DETECTION WIRED — M24-FR-04 (21 August 2026)
+
+**Owner direction:** "wire the next module." Picked the **refusal-audit / probe-pattern** engine
+(`auditPartnerAction` + `findProbing`, `packages/supplier-portal`) — a security capability named in the
+RTM as still engine-only, and the last such gap on the portal apart from FR-01 scoping.
+
+**What was built (M24-FR-04):** the portal is the one place a party OUTSIDE the business acts on the
+system, so it now watches for someone trying doors:
+- **Every submission outcome is audited server-side** — accepted or refused, refusals as loudly as
+  successes (hard rule #6) — to a tenant-wide append-only stream (`PortalActionAudited`). A supplier
+  submitting against **another** supplier's order (`not_your_order`) is auto-flagged a security event;
+  the entry is attributed from the session, never a payload.
+- **`GET /v1/supplier-portal/probing?threshold=`** (`supplier.portal.review`) runs the tested
+  `findProbing`: a buyer's, **per-tenant** view of who is reaching for data that isn't theirs, worst
+  first. One refusal is a mis-click; a **pattern** of them (default 3) is somebody trying doors — and the
+  shop hears it from its own system rather than from the supplier whose prices leaked.
+- A no-grant refusal is audited but is **not** probing (only reaching for another partner's data is); a
+  retried mis-click **collapses to one attempt**, so a single fat-finger never looks like an attack.
+- Integration-tested (supplier-portal-probing.test.ts, 4 cases); the existing submission suite still
+  passes, so the audit hook did not disturb the submission flow.
+
+**Honest maturity — HELD at PARTIALLY_WIRED (no re-rate):** M24-FR-02/03/04 are wired and this closes the
+FR-04 probe gap, but **server-side scoping (FR-01)** — a partner reading only its own data, scoped from
+the session — is still engine-only, so M24 is not yet whole. **Headline stays 41.1%.** (When FR-01 is
+wired too, M24 becomes a re-rate candidate for the owner to ratify.)
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract, run-on-tested-engine),
+`vitest run` **5849 passed / 262 skipped** ✓.
+
+---
+
 ## ★ M04 PLANOGRAM-COMPLIANCE CONSUMER WIRED — M04-FR-03 (21 August 2026)
 
 **Owner direction:** "wire the next module." Picked the **consumer of the shelf counts just wired** —

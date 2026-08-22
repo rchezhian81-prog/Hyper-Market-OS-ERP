@@ -11,11 +11,12 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
-  acceptSubmission, checkPartnerCompliance, buildStatement,
+  acceptSubmission, checkPartnerCompliance, buildStatement, auditPartnerAction, findProbing,
   type PortalGrant, type SubmissionKind, type PartnerDocument, type PartnerDocumentKind, type StatementLine,
+  type PartnerAuditEntry,
 } from '../../../packages/supplier-portal/src/index';
 
-export type { PartnerDocument, StatementLine } from '../../../packages/supplier-portal/src/index';
+export type { PartnerDocument, StatementLine, PartnerAuditEntry } from '../../../packages/supplier-portal/src/index';
 
 const GRANTS: readonly PortalGrant[] = ['view_orders', 'acknowledge_orders', 'submit_asn', 'submit_invoice', 'submit_catalogue', 'respond_rfq', 'raise_claim', 'view_statement'];
 const KINDS: readonly SubmissionKind[] = ['rfq_response', 'catalogue', 'asn', 'invoice', 'po_acknowledgement', 'claim'];
@@ -81,6 +82,11 @@ export interface SupplierPortalDeps {
   readonly recordSubmission: (tenantId: string, partnerId: string, record: SubmissionRecord) => Promise<void> | void;
   readonly recordStatementLine: (tenantId: string, partnerId: string, line: StatementLine) => Promise<void> | void;
   readonly recordOpening: (tenantId: string, partnerId: string, openingMinor: number) => Promise<void> | void;
+  /** Append a partner-action audit entry. Refusals are recorded as loudly as successes (hard rule #6);
+   *  the caller keys it on the action so a re-sync of the same attempt is one entry, not two. */
+  readonly recordAudit: (tenantId: string, entry: PartnerAuditEntry, key: string) => Promise<void> | void;
+  /** Every partner-action audit entry for the tenant — what `findProbing` reads across partners. */
+  readonly auditEntries: (tenantId: string) => Promise<readonly PartnerAuditEntry[]> | readonly PartnerAuditEntry[];
   readonly now: () => string;
 }
 
@@ -138,15 +144,23 @@ export function supplierPortalRoutes(deps: SupplierPortalDeps): readonly Route[]
         const compliance = checkPartnerCompliance({
           partnerId, documents: config.documents, required: config.requiredDocuments, today: deps.now().slice(0, 10),
         });
+        const session = { sessionId: `portal-${partnerId}`, partnerId, tenantId: ctx.tenantId, userId: ctx.userId, grants: config.grants };
         const result = acceptSubmission({
           submissionId: b.submissionId,
-          session: { sessionId: `portal-${partnerId}`, partnerId, tenantId: ctx.tenantId, userId: ctx.userId, grants: config.grants },
+          session,
           kind: b.kind as SubmissionKind,
           compliance,
           ...(typeof b.orderPartnerId === 'string' ? { orderPartnerId: b.orderPartnerId } : {}),
           alreadySubmittedIds: prior.map((s) => s.submissionId),
           at: deps.now(),
         });
+
+        // Audit EVERY outcome, accepted or refused (hard rule #6) — a supplier repeatedly submitting
+        // against another supplier's order (`not_your_order`) is auto-flagged a security event, and that
+        // is the pattern `findProbing` exists to surface. Recorded server-side from the session, never a
+        // payload, and BEFORE the refusal throws — an unaudited refusal is the one nobody ever sees.
+        const entry = auditPartnerAction({ session, action: `submit:${b.kind}`, outcome: result.outcome, detail: result.detail, at: deps.now() });
+        await deps.recordAudit(ctx.tenantId, entry, `${partnerId}-${b.submissionId}-${result.outcome}`);
 
         if (!result.accepted) {
           throw apiError(422, {
@@ -253,6 +267,21 @@ export function supplierPortalRoutes(deps: SupplierPortalDeps): readonly Route[]
           openingMinor: await deps.opening(ctx.tenantId, partnerId),
         });
         return { status: 200, body: statement };
+      },
+    },
+    {
+      // Partners probing for other partners' data (M24-FR-04). One refusal is a mis-click; a pattern of
+      // them is somebody trying doors, and the shop should hear it from its own system rather than from
+      // the supplier whose prices leaked. Reads the tenant's audit trail (recorded on every submission
+      // above) and runs `findProbing`. `?threshold=` is how many security refusals count as a pattern
+      // (default 3). A static path — no `:partnerId` — so it is the tenant-wide security view for a buyer.
+      api: 'API-03', method: 'GET', path: '/v1/supplier-portal/probing',
+      permission: 'supplier.portal.review',
+      handler: async (ctx) => {
+        const raw = Number(ctx.query['threshold']);
+        const threshold = Number.isInteger(raw) && raw > 0 ? raw : 3;
+        const probing = findProbing(await deps.auditEntries(ctx.tenantId), threshold);
+        return { status: 200, body: { probing, threshold, count: probing.length, asAt: deps.now() } };
       },
     },
   ];

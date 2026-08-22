@@ -279,7 +279,8 @@ export function buildSurface(deps: {
     } : rfqAdapter({ store, now })),
     ...supplierPortalRoutes(store === undefined ? {
       partner: empty(undefined), submissions: empty([]), statementLines: empty([]), opening: empty(0),
-      recordPartner: () => {}, recordSubmission: () => {}, recordStatementLine: () => {}, recordOpening: () => {}, now,
+      recordPartner: () => {}, recordSubmission: () => {}, recordStatementLine: () => {}, recordOpening: () => {},
+      recordAudit: () => {}, auditEntries: empty([]), now,
     } : supplierPortalAdapter({ store, now })),
     ...inventoryRoutes(store === undefined ? {
       availability: empty([]), appendMovement: () => {}, isKnown: empty(false), valuation: empty([]),
