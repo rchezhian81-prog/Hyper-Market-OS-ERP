@@ -81,6 +81,7 @@ import { facilitiesAssetsRoutes } from '../../platform/src/facilities-assets';
 import { facilitiesMonitoringRoutes } from '../../platform/src/facilities-monitoring';
 import { weighingVerificationRoutes } from '../../platform/src/facilities-metrology';
 import { complianceRoutes } from '../../compliance/src/index';
+import { riskRegisterRoutes } from '../../compliance/src/risk';
 import { inventoryRoutes } from '../../inventory/src/index';
 import { goodsReceiptRoutes } from '../../inventory/src/goods-receipt';
 import { shelfCountRoutes } from '../../inventory/src/shelf-count';
@@ -133,7 +134,7 @@ import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, financeAdapter, settlementAdapter,
-  customerAdapter, dataRightsAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
+  customerAdapter, dataRightsAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter, riskRegisterAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, salesHistoryAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
@@ -537,6 +538,10 @@ export function buildSurface(deps: {
     ...complianceRoutes(store === undefined ? {
       obligations: empty([]), recordRegister: () => {}, now,
     } : complianceAdapter({ store, now })),
+    // Risk register & quality-gate blocking (M34-FR-04) — an open critical risk blocks its QG until accepted.
+    ...riskRegisterRoutes(store === undefined
+      ? { risk: empty(undefined), risks: empty([]), recordRisk: () => {}, now }
+      : riskRegisterAdapter({ store, now })),
     ...reportingRoutes(store === undefined
       ? { figures: empty([]), now }
       : reportingAdapter({ store, now, records: REPORTING_RECORDS, produced: REPORTING_PRODUCED })),

@@ -5,6 +5,35 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M34 RISK REGISTER & GATE-BLOCKING WIRED — M34-FR-04 (22 August 2026)
+
+**Owner direction:** "wire the next module." Picked the **risk register** (`packages/compliance/src/risk.ts`
+— `blockedGates` / `gateCanPass` / `acceptRisk`), tested and on **no route**. It is the register the whole
+governance model turns on: an open critical risk should stop the quality gates it threatens.
+
+**What was built (M34-FR-04 core):** the risk-register-and-gate slice on the compliance API —
+- **Register** `POST /v1/compliance/risks/:id` (`compliance.risk.manage`) — append-only; a `status` of
+  `accepted` is **refused here** (acceptance is not a quiet edit through the register).
+- **Accept** `POST …/acceptance` — accepting a risk is a **decision, and decisions have authors**: it is
+  recorded in the **caller's own name** (never a payload) with a **mandatory written rationale**; an
+  unjustified acceptance is refused `422` (§28).
+- **The gate** `GET /v1/compliance/gates/blocked` runs `blockedGates` — an **open, critical** risk blocks
+  the quality gates it is registered against, naming the owner; an **accepted or mitigated** one does not
+  (acceptance is a recorded decision, not silence). `GET …/gates/:gate/can-pass` runs `gateCanPass`.
+- Append-only (`RiskRecorded`), restart-safe; new permissions `compliance.risk.manage` / `.read` (owner +
+  store_manager). Integration-tested (risk-register.test.ts, 4 cases: block→accept→unblock, open-AND-critical
+  only, back-door acceptance refused, gating + restart).
+
+**Honest maturity — HELD at PARTIALLY_WIRED (no re-rate):** the risk register and gate-blocking (the part
+the gates actually read) are live, but the **incident / remediation / control-health / attestation** legs
+of FR-04 (`recordIncident` / `recordRemediation` / `controlHealth` / `overdueRemediations`) remain.
+**Headline stays 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract, run-on-tested-engine),
+`vitest run` **5861 passed / 262 skipped** ✓.
+
+---
+
 ## ★ M35 OPERATIONAL HEALTH & ALERT-RAISING WIRED — M35-FR-03/04 (22 August 2026)
 
 **Owner direction:** "wire the next module." Picked **operational health** — the tested `checkHealth` /

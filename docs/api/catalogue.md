@@ -146,6 +146,15 @@
   turns findings into **owned** alerts, each routed to a named person with a §32 acknowledgement deadline.
   A pure compute — distinct from the liveness probe at `/v1/platform/health`. Escalation-over-time (a
   stateful raise-now-escalate-later concern) is a named follow-on.
+- **Risk register & quality-gate blocking (API-11, M34-FR-04 · §28):** the register the governance model
+  turns on. `POST /v1/compliance/risks/:id` (`compliance.risk.manage`) records a risk append-only; a
+  `status` of `accepted` is **refused** on this route — acceptance is not a quiet edit. `POST …/acceptance`
+  accepts it in the **caller's own name** (never a payload) with a **mandatory written rationale** (an
+  unjustified acceptance is refused `422`). `GET /v1/compliance/gates/blocked` (`compliance.risk.read`)
+  runs `blockedGates` — an **open, critical** risk blocks the quality gates it is registered against, and
+  the only way past is to accept it, not to ignore it; an accepted or mitigated risk does not block.
+  `GET …/gates/:gate/can-pass` runs `gateCanPass`. Append-only (`RiskRecorded`) — register-then-accept is
+  two facts, nothing overwritten (hard rule #2).
 - **Finance reconciliation (API-09):** import bank/gateway statements → match →
   `ReconciliationExceptionRaised` / `…Resolved`; **period close is blocked until control
   totals validate** (QG-07) → `PeriodClosed` / `PeriodReopened`.
