@@ -123,6 +123,7 @@ import type { Producer } from '../../../packages/reporting/src/index';
 import { customerRoutes } from '../../customer/src/index';
 import { dataRightsRoutes } from '../../customer/src/data-rights';
 import { serviceCaseRoutes } from '../../customer/src/service-cases';
+import { segmentRoutes } from '../../customer/src/segments';
 import { notificationGuardRoutes } from '../../customer/src/notification-guard';
 import { backupVerificationRoutes } from '../../platform/src/backup-verification';
 import { branchLifecycleRoutes } from '../../platform/src/branch-lifecycle';
@@ -384,6 +385,8 @@ export function buildSurface(deps: {
     ...serviceCaseRoutes(store === undefined
       ? { serviceCase: empty(undefined), serviceCases: empty([]), recordCase: () => {}, now }
       : serviceCaseAdapter({ store, now })),
+    // Consent-gated segmentation (M16-FR-02) — a pure compute over supplied facts; no store.
+    ...segmentRoutes({ now }),
     ...storedValueRoutes(store === undefined ? {
       instrument: empty(undefined), movements: empty([]), recordIssue: () => {}, recordMovement: () => {},
       instrumentsForOwner: empty([]), movementsForOwner: empty([]), allMovements: empty([]), now,

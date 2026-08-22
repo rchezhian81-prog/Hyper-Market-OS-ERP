@@ -5,6 +5,35 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M16 CONSENT-GATED SEGMENTATION WIRED — M16-FR-02 (22 August 2026)
+
+**Owner direction:** "wire the next module." Picked the **customer segmentation** engine
+(`packages/customer/src/segments.ts` — `buildProfile` / `buildAudience` / `rankByValue`), tested and on
+**no route**. It holds two privacy/commercial truths worth wiring exactly.
+
+**What was built (M16-FR-02 · PRV/DPDP):** a pure compute on API-06 —
+- **Consent is TWO permissions.** `POST /v1/customer/segments/audience` builds a campaign audience where
+  agreeing to be **analysed** (profiling) is not agreeing to be **messaged** (marketing) — a marketing
+  audience needs **both**, a customer with neither is `not_profiled` (present, with the reason), and the
+  **excluded-for-consent count is always in the answer**, so a list never quietly shrinks and nobody
+  later "fixes" it by removing the consent check. A `service` purpose builds regardless — answering a
+  customer's own complaint is performance of the contract, not marketing (lawful basis).
+- **Value is MARGIN, not revenue.** `POST …/value-ranking` runs `rankByValue` — a ₹50,000 cigarette
+  customer at 4% is worth less than a ₹20,000 fresh customer at 30%, and the ranking states both so the
+  shop does not chase the wrong one; a non-profiled customer is left out.
+- Gated `customer.segment.read` (owner + store_manager); a pure compute, no store, no new event.
+  Integration-tested (customer-segments.test.ts, 4 cases). Also corrected the M16 ladder label from a
+  stale "Cash/till" to **CRM/loyalty**.
+
+**Honest maturity — HELD at PARTIALLY_WIRED (no re-rate):** the audience + ranking computes are live, but a
+**persisted per-tenant segment policy** and **stored customer profiles** (this computes over facts supplied
+per-request) remain. **Headline stays 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract, run-on-tested-engine),
+`vitest run` **5869 passed / 262 skipped** ✓.
+
+---
+
 ## ★ M21 SERVICE-DESK SLA CLOCKS WIRED — M21-FR-04 (22 August 2026)
 
 **Owner direction:** "wire the next module." Picked the **service-desk case + SLA engine**
