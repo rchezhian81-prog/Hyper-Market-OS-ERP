@@ -164,6 +164,15 @@
   as the shop's breach). `GET /v1/service/cases?breached=true` is the **exception queue**. Append-only
   (`ServiceCaseRecorded`). Compensation (`grantCompensation`, §28), AI-drafts a named human sends
   (`approveDraft`, P-05) and CSAT reporting are named follow-ons.
+- **Customer segmentation & value ranking (API-06, M16-FR-02 · PRV/DPDP):** two truths this keeps.
+  `POST /v1/customer/segments/audience` (`customer.segment.read`) builds a **consent-gated** campaign
+  audience — **consent is two permissions**: analysing a customer (profiling) is not messaging them
+  (marketing), so a marketing audience needs **both**, and the **excluded-for-consent count is always in
+  the answer** (never a silently smaller list somebody later "fixes" by dropping the check). A `service`
+  purpose builds regardless — answering a customer's own complaint is performance of the contract, not
+  marketing. `POST …/value-ranking` runs `rankByValue` — **by margin, not revenue** (both stated, because
+  a ₹50k cigarette customer at 4% is worth less than a ₹20k fresh customer at 30%); a non-profiled
+  customer is left out. A pure compute over the facts supplied — it writes nothing.
 - **Finance reconciliation (API-09):** import bank/gateway statements → match →
   `ReconciliationExceptionRaised` / `…Resolved`; **period close is blocked until control
   totals validate** (QG-07) → `PeriodClosed` / `PeriodReopened`.
