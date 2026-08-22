@@ -115,7 +115,7 @@ import type { CreditNoteDeps } from '../../finance/src/credit-notes';
 import type { CreditNote, ProductTaxEntry } from '../../../packages/finance/src/index';
 import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
 import type { DataRightsDeps, DataSubjectRequest } from '../../customer/src/data-rights';
-import type { ServiceCaseDeps, ServiceCase } from '../../customer/src/service-cases';
+import type { ServiceCaseDeps, ServiceCase, CompensationRecord } from '../../customer/src/service-cases';
 import type { StoredPointsMovement } from '../../../packages/loyalty/src/assess-points';
 import type { StoredValueDeps, Instrument, ValueMovement } from '../../customer/src/stored-value';
 import type { CouponDeps } from '../../customer/src/coupons';
@@ -834,6 +834,8 @@ const RISK_STREAM = streamName(STREAM.compliance, 'risk');
 // Service cases are TENANT-WIDE (one stream, every case) so the breached-queue read folds them in one pass
 // (M21-FR-04) — the exceptions a desk must escalate rather than let age.
 const SERVICE_CASE_STREAM = streamName(STREAM.service, 'cases');
+// Compensations are a ledger of money leaving the business (M21-FR-03) — append-only, on their own stream.
+const SERVICE_COMPENSATION_STREAM = streamName(STREAM.service, 'compensation');
 /** Points hang off the customer they belong to, so one customer's balance folds one stream. */
 const forCustomerPoints = (customerId: string): string => streamName(STREAM.loyalty, customerId);
 /** Each stored-value instrument's movements fold one stream; the issued-instruments index is its own. */
@@ -4193,6 +4195,22 @@ export function serviceCaseAdapter(input: {
         idempotencyKey: `service-case-${tenantId}-${caseId}-${d}`,
         source: 'api/customer',
         payload: c,
+      }));
+    },
+
+    // Append-only compensation ledger; the read filters the tenant's grants to one case.
+    compensations: async (tenantId, caseId) =>
+      (await allOf<CompensationRecord>(input.store, tenantId, SERVICE_COMPENSATION_STREAM, 'CompensationGranted')).filter((r) => r.caseId === caseId),
+    recordCompensation: async (tenantId, caseId, rec, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, SERVICE_COMPENSATION_STREAM, makeEvent({
+        id: `service-comp-${caseId}-${d}`,
+        type: 'CompensationGranted',
+        occurredAt: rec.at,
+        // A re-synced grant collapses on the case+amount+granter+time; never doubles the payment.
+        idempotencyKey: `service-comp-${tenantId}-${d}`,
+        source: 'api/customer',
+        payload: rec,
       }));
     },
   };

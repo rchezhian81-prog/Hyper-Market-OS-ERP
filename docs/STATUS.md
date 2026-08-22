@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M21 SERVICE-DESK COMPENSATION WIRED — M21-FR-03 / §28 (22 August 2026)
+
+**Owner direction:** "wire the next module." Continued the service-desk story just started: `grantCompensation`
+(`packages/service-desk/src/service-cases.ts`) was tested but on **no route** — the tested §28 control for
+money leaving the business to make an unhappy customer whole.
+
+**What was built (M21-FR-03):** compensation on API-06, decided by the person the customer is shouting at,
+which is why the controls are not optional —
+- **A reason is mandatory even within authority** — "goodwill" explains nothing three months later when
+  a pattern is being investigated (`422 no_reason`).
+- **Above the granting agent's authority a SEPARATE approver is required** (`422 needs_approval`), the
+  agent **cannot approve their own grant** (`422 self_approved`), and an approval for a **different** case
+  does not authorise this one — the second signature must cite this case (§28).
+- **An absolute tenant ceiling** above which it is a management decision, not a desk one
+  (`422 exceeds_policy_cap`), refused even with a valid approver.
+- A granted one is an **append-only** `CompensationGranted` — a payment is a ledger, nothing overwritten
+  (hard rule #2); `GET …/compensations` totals what left a case. grantedBy is the authenticated caller,
+  never a payload. Reuses `service.case.manage` / `.read`. Integration-tested (service-compensation.test.ts,
+  4 cases).
+
+**Honest maturity — HELD at PARTIALLY_WIRED (no re-rate):** the case lifecycle, SLA clocks and now the
+compensation ledger are live, but the **AI-draft approval** (`approveDraft`, P-05 — an AI drafts, a named
+human sends), the **campaign engine** (FR-01/02), CSAT reporting and the returns/exchanges side remain.
+**Headline stays 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract, run-on-tested-engine),
+`vitest run` **5873 passed / 262 skipped** ✓.
+
+---
+
 ## ★ M16 CONSENT-GATED SEGMENTATION WIRED — M16-FR-02 (22 August 2026)
 
 **Owner direction:** "wire the next module." Picked the **customer segmentation** engine
