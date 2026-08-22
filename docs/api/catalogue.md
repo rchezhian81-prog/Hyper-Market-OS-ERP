@@ -86,6 +86,17 @@
   re-checks against the **whole** cloud history, so a cross-lane double-use is refused `409` (a visible
   conflict, hard rule #10) and a same-id re-sync is idempotent. Personalised offers (`/v1/loyalty/offers`)
   need both profiling + marketing consent (M16-FR-02); referrals pay only on a qualifying purchase.
+- **Data-subject rights (API-06, M20-FR-04 · DPDP):** the customer app raises a request; the shop then
+  works it on the cloud, gated `privacy.request.manage`. `POST /v1/privacy/data-requests/:id` **raises**
+  (access/correction/export/erasure) → `…/verification` **verifies who asked** — the gate the module turns
+  on: fulfilling **unverified** is how one person reads or deletes another's account (`422 not_verified`).
+  `…/fulfilment` hands back the held data for access/correction/export; an **erasure** instead needs
+  `…/erasure-plan` (verified-only), which produces the honest, category-by-category answer — **erase**
+  what can go, **minimise** (strip the person from) audit evidence that can never be deleted (hard rule
+  #6), **retain** what the law requires, each named with the statute and the date it can finally go — and
+  the customer statement that says so rather than letting them believe they were fully erased (P-08).
+  `GET …/overdue` surfaces the SLA-breached queue worst-first, calling out the unverified-and-overdue.
+  Append-only (`DataSubjectRequestRecorded`) — an auditor reads exactly what was asked, verified and done.
 - **Requisition → RFQ → quote comparison (API-03, M06-FR-02):** a buyer **raises a requisition**
   (`POST /v1/purchase/requisitions/:id`, `purchase.order.propose`) in one comparison currency, records
   the **quotes** suppliers send (`POST …/quotes/:quoteId`, latest-per-id), and reads a **like-for-like

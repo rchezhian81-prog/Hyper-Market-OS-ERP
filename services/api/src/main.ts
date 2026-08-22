@@ -119,6 +119,7 @@ import { reportingRoutes } from '../../reporting/src/index';
 import { ownerAlertsRoutes } from '../../reporting/src/owner-alerts';
 import type { Producer } from '../../../packages/reporting/src/index';
 import { customerRoutes } from '../../customer/src/index';
+import { dataRightsRoutes } from '../../customer/src/data-rights';
 import { notificationGuardRoutes } from '../../customer/src/notification-guard';
 import { backupVerificationRoutes } from '../../platform/src/backup-verification';
 import { branchLifecycleRoutes } from '../../platform/src/branch-lifecycle';
@@ -131,7 +132,7 @@ import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, financeAdapter, settlementAdapter,
-  customerAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
+  customerAdapter, dataRightsAdapter, ordersAdapter, fulfilmentAdapter, identityAdapter, platformAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, salesHistoryAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
@@ -372,6 +373,10 @@ export function buildSurface(deps: {
       consentRecords: empty([]), appendConsent: () => {}, pointsBalance: empty(undefined),
       pointsMovements: empty([]), recordPointsMovement: () => {}, now,
     } : customerAdapter({ store, now })),
+    // Data-subject rights lifecycle (M20-FR-04 / DPDP) — raise/verify/fulfil/erasure-plan + overdue.
+    ...dataRightsRoutes(store === undefined
+      ? { request: empty(undefined), requests: empty([]), record: () => {}, now }
+      : dataRightsAdapter({ store, now })),
     ...storedValueRoutes(store === undefined ? {
       instrument: empty(undefined), movements: empty([]), recordIssue: () => {}, recordMovement: () => {},
       instrumentsForOwner: empty([]), movementsForOwner: empty([]), allMovements: empty([]), now,

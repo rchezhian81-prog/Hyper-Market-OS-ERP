@@ -5,6 +5,42 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M20 DATA-SUBJECT RIGHTS LIFECYCLE WIRED — M20-FR-04 / DPDP (22 August 2026)
+
+**Owner direction:** "wire the next module." Picked the **DPDP data-subject rights** engine
+(`packages/customer/src/data-rights.ts` — `planErasure` / `fulfilRequest` / `overdueRequests`), tested
+since it was written and on **no route**: the customer app's privacy centre could *raise* a request, but
+nothing on the cloud *worked* it.
+
+**What was built (M20-FR-04):** the controller-side lifecycle on API-06, where two laws point in opposite
+directions and telling the truth is the whole job:
+- **Raise → verify → fulfil.** `POST /v1/privacy/data-requests/:id` raises (access/correction/export/
+  erasure); `…/verification` verifies who asked — **the gate everything turns on**: fulfilling an
+  unverified request is how one person reads or deletes another's account, so it is refused `422`.
+- **Access/correction/export** → `…/fulfilment` hands back the held data (an honest "we hold nothing" is
+  a valid, complete answer, not a refusal).
+- **Erasure** → `…/erasure-plan` (verified-only) produces the honest, category-by-category plan: **erase**
+  what can go, **minimise** (strip the person from) audit evidence that can never be deleted (hard rule
+  #6), **retain** what the law requires — each retained category named with the statute (income-tax 8y,
+  GST 6y, Companies Act 8y…) and the date it can finally go — plus the customer statement that says so,
+  rather than letting them believe they were fully erased (P-08). A partial erasure is recorded
+  `partially_fulfilled`, never `fulfilled`.
+- **Overdue** `GET …/overdue` surfaces the SLA-breached queue worst-first — the one a regulator asks about
+  first — and calls out an **unverified-and-overdue** request separately (a queue entirely the shop's own).
+- Append-only (`DataSubjectRequestRecorded`), restart-safe; new permission `privacy.request.manage`
+  (owner + store_manager). Integration-tested (data-rights.test.ts, 4 cases incl. the verify gate, the
+  three-way erase/minimise/retain plan, the overdue ordering, and a cold restart).
+
+**Honest maturity — HELD at PARTIALLY_WIRED (no re-rate):** the lifecycle and the erasure **plan** are
+live, but the plan's **execution** against the real data stores (actually erasing/pseudonymising records
+across every stream — the engine is deliberately a *planner*) and the **customer-app→cloud** call remain.
+**Headline stays 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract, run-on-tested-engine),
+`vitest run` **5853 passed / 262 skipped** ✓.
+
+---
+
 ## ★ M24 SUPPLIER-PORTAL PROBE DETECTION WIRED — M24-FR-04 (21 August 2026)
 
 **Owner direction:** "wire the next module." Picked the **refusal-audit / probe-pattern** engine

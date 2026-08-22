@@ -113,6 +113,7 @@ import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/i
 import type { CreditNoteDeps } from '../../finance/src/credit-notes';
 import type { CreditNote, ProductTaxEntry } from '../../../packages/finance/src/index';
 import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
+import type { DataRightsDeps, DataSubjectRequest } from '../../customer/src/data-rights';
 import type { StoredPointsMovement } from '../../../packages/loyalty/src/assess-points';
 import type { StoredValueDeps, Instrument, ValueMovement } from '../../customer/src/stored-value';
 import type { CouponDeps } from '../../customer/src/coupons';
@@ -791,6 +792,9 @@ function streamName(...parts: readonly string[]): string {
 }
 
 const forCustomer = (customerId: string): string => streamName(STREAM.consent, customerId);
+// Data-subject requests are TENANT-WIDE (one stream, every request) so the overdue read sees the whole
+// privacy queue in one fold — the queue a regulator asks about first (M20-FR-04 / DPDP).
+const DATA_REQUESTS_STREAM = streamName(STREAM.consent, 'data-requests');
 /** Points hang off the customer they belong to, so one customer's balance folds one stream. */
 const forCustomerPoints = (customerId: string): string => streamName(STREAM.loyalty, customerId);
 /** Each stored-value instrument's movements fold one stream; the issued-instruments index is its own. */
@@ -4089,6 +4093,37 @@ export function customerAdapter(input: {
         idempotencyKey: `points-${tenantId}-${m.movementId}`,
         source: 'api/customer',
         payload: m,
+      }));
+    },
+  };
+}
+
+export function dataRightsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): DataRightsDeps {
+  // Every recorded state of every request, folded to the LATEST per request id by append order (not by
+  // timestamp — two transitions on the same day must still resolve to the later one deterministically).
+  const foldLatest = async (tenantId: string): Promise<readonly DataSubjectRequest[]> => {
+    const all = await allOf<DataSubjectRequest>(input.store, tenantId, DATA_REQUESTS_STREAM, 'DataSubjectRequestRecorded');
+    const byId = new Map<string, DataSubjectRequest>();
+    for (const r of all) byId.set(r.requestId, r);
+    return [...byId.values()];
+  };
+  return {
+    now: input.now,
+    requests: (tenantId) => foldLatest(tenantId),
+    request: async (tenantId, requestId) => (await foldLatest(tenantId)).find((r) => r.requestId === requestId),
+    record: async (tenantId, requestId, request, key) => {
+      await input.store.append(tenantId, DATA_REQUESTS_STREAM, makeEvent({
+        id: `data-request-${key}`,
+        type: 'DataSubjectRequestRecorded',
+        occurredAt: input.now(),
+        // Keyed on the request AND the transition (raised/verified/…): a re-sync of one transition
+        // collapses, but each new state is a new, append-only fact — the trail an auditor reads.
+        idempotencyKey: `data-request-${tenantId}-${key}`,
+        source: 'api/customer',
+        payload: request,
       }));
     },
   };
