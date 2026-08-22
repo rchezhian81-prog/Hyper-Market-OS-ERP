@@ -115,7 +115,8 @@ import type { CreditNoteDeps } from '../../finance/src/credit-notes';
 import type { CreditNote, ProductTaxEntry } from '../../../packages/finance/src/index';
 import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
 import type { DataRightsDeps, DataSubjectRequest } from '../../customer/src/data-rights';
-import type { ServiceCaseDeps, ServiceCase, CompensationRecord } from '../../customer/src/service-cases';
+import type { ServiceCaseDeps, ServiceCase, CompensationRecord, DraftDecisionRecord } from '../../customer/src/service-cases';
+import type { AiDraft } from '../../../packages/service-desk/src/index';
 import type { StoredPointsMovement } from '../../../packages/loyalty/src/assess-points';
 import type { StoredValueDeps, Instrument, ValueMovement } from '../../customer/src/stored-value';
 import type { CouponDeps } from '../../customer/src/coupons';
@@ -836,6 +837,8 @@ const RISK_STREAM = streamName(STREAM.compliance, 'risk');
 const SERVICE_CASE_STREAM = streamName(STREAM.service, 'cases');
 // Compensations are a ledger of money leaving the business (M21-FR-03) — append-only, on their own stream.
 const SERVICE_COMPENSATION_STREAM = streamName(STREAM.service, 'compensation');
+// AI drafts and the human decisions on them (P-05) — one stream, two event types.
+const SERVICE_DRAFT_STREAM = streamName(STREAM.service, 'drafts');
 /** Points hang off the customer they belong to, so one customer's balance folds one stream. */
 const forCustomerPoints = (customerId: string): string => streamName(STREAM.loyalty, customerId);
 /** Each stored-value instrument's movements fold one stream; the issued-instruments index is its own. */
@@ -4211,6 +4214,33 @@ export function serviceCaseAdapter(input: {
         idempotencyKey: `service-comp-${tenantId}-${d}`,
         source: 'api/customer',
         payload: rec,
+      }));
+    },
+
+    // AI drafts and their decisions (P-05) — both on the drafts stream, filtered by case.
+    drafts: async (tenantId, caseId) =>
+      (await allOf<AiDraft>(input.store, tenantId, SERVICE_DRAFT_STREAM, 'AiDraftRecorded')).filter((d) => d.caseId === caseId),
+    draft: async (tenantId, caseId, draftId) =>
+      (await allOf<AiDraft>(input.store, tenantId, SERVICE_DRAFT_STREAM, 'AiDraftRecorded')).find((d) => d.caseId === caseId && d.draftId === draftId),
+    recordDraft: async (tenantId, caseId, draft, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, SERVICE_DRAFT_STREAM, makeEvent({
+        id: `service-draft-${caseId}-${d}`, type: 'AiDraftRecorded', occurredAt: draft.generatedAt,
+        idempotencyKey: `service-draft-${tenantId}-${d}`, source: 'api/customer', payload: draft,
+      }));
+    },
+    // Latest decision per draft (an edit can supersede an earlier decision), folded by append order.
+    draftDecisions: async (tenantId, caseId) => {
+      const all = (await allOf<DraftDecisionRecord>(input.store, tenantId, SERVICE_DRAFT_STREAM, 'DraftDecided')).filter((r) => r.caseId === caseId);
+      const byId = new Map<string, DraftDecisionRecord>();
+      for (const r of all) byId.set(r.draftId, r);
+      return [...byId.values()];
+    },
+    recordDraftDecision: async (tenantId, caseId, rec, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, SERVICE_DRAFT_STREAM, makeEvent({
+        id: `service-decision-${caseId}-${d}`, type: 'DraftDecided', occurredAt: rec.at,
+        idempotencyKey: `service-decision-${tenantId}-${d}`, source: 'api/customer', payload: rec,
       }));
     },
   };

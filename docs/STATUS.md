@@ -5,6 +5,35 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M21 AI-DRAFT APPROVAL WIRED — M21-FR-03 / P-05 · hard rule #5 (22 August 2026)
+
+**Owner direction:** "wire the next module." Closed the AI-governance leg of the service desk: `approveDraft`
+(`packages/service-desk/src/service-cases.ts`) was tested but on **no route** — the tested P-05 control that
+lets an AI *draft* a customer reply while a **named human** is the one who sends it.
+
+**What was built (M21-FR-03 · P-05, on API-06):** an AI drafts, a person sends —
+- **`POST /v1/service/cases/:id/drafts/:draftId`** records a draft that is **always unapproved** on
+  creation (a model does not answer a customer on the shop's behalf — hard rule #5), and it must **cite the
+  case evidence** it is based on, so the approver has something to check it against.
+- **`POST …/drafts/:draftId/decision`** runs `approveDraft` — **the only path by which a draft becomes
+  sendable, and there is deliberately no send function anywhere in the module** (asserted by the engine's
+  own test). The sendable reply is attributed to the **logged-in caller, never a model**. A draft with **no
+  evidence** or an **empty edit** is refused `422 draft_not_approvable`; an **edit is recorded as an edit**
+  (`edited_and_approved`) so the shop can see whether the model is helping or generating work; a
+  **rejection** is a recorded human decision (`200`, not sendable), an approval/edit `201`.
+- **`GET …/drafts`** (`service.case.read`) lists each draft with its human decision — the record of how
+  often the model is rewritten or rejected. Append-only `AiDraftRecorded` / `DraftDecided`, restart-safe,
+  reuses `service.case.manage` / `.read`. Integration-tested (service-ai-drafts.test.ts, 4 cases).
+
+**Honest maturity — HELD at PARTIALLY_WIRED (no re-rate):** the case lifecycle, SLA clocks, compensation
+ledger and now the AI-draft approval are live, but the **campaign engine** (FR-01/02), **CSAT reporting**
+(`serviceReport`) and the returns/exchanges side remain engine-only. **Headline stays 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract, run-on-tested-engine),
+`vitest run` **5877 passed / 262 skipped** ✓.
+
+---
+
 ## ★ M21 SERVICE-DESK COMPENSATION WIRED — M21-FR-03 / §28 (22 August 2026)
 
 **Owner direction:** "wire the next module." Continued the service-desk story just started: `grantCompensation`

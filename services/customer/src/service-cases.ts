@@ -21,12 +21,26 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
-  assessFirstResponse, assessSla, grantCompensation,
+  assessFirstResponse, assessSla, grantCompensation, approveDraft,
   type ServiceCase, type CaseKind, type CasePriority,
   type CompensationKind, type CompensationApproval, type CompensationOutcome,
+  type AiDraft, type DraftDecision,
 } from '../../../packages/service-desk/src/index';
 
 export type { ServiceCase } from '../../../packages/service-desk/src/index';
+
+/** The recorded outcome of a human's decision on an AI draft — the trail that shows whether the model
+ *  is helping or generating work (how often a draft is edited or rejected). */
+export interface DraftDecisionRecord {
+  readonly draftId: string;
+  readonly caseId: string;
+  readonly decision: DraftDecision;
+  readonly approvedBy: string;
+  readonly at: string;
+  readonly sendable: boolean;
+  readonly text?: string;
+  readonly detail?: string;
+}
 
 /** A compensation actually granted on a case — money leaving the business, recorded append-only. */
 export interface CompensationRecord {
@@ -43,6 +57,9 @@ const KINDS: readonly CaseKind[] = ['complaint', 'enquiry', 'warranty', 'lost_an
 const PRIORITIES: readonly CasePriority[] = ['low', 'normal', 'high', 'urgent'];
 const COMPENSATION_KINDS: readonly CompensationKind[] = ['refund', 'goodwill_credit', 'loyalty_points', 'replacement'];
 const APPROVAL_STATUSES = ['approved', 'rejected', 'pending'] as const;
+const DRAFT_DECISIONS: readonly DraftDecision[] = ['approved', 'rejected', 'edited_and_approved'];
+const strArray = (v: unknown): readonly string[] | undefined =>
+  Array.isArray(v) && v.every((x) => typeof x === 'string') ? (v as string[]) : undefined;
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v);
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -70,6 +87,12 @@ export interface ServiceCaseDeps {
   /** Compensations granted on a case — append-only (money leaving the business is a ledger, hard rule #2). */
   readonly compensations: (tenantId: string, caseId: string) => Promise<readonly CompensationRecord[]> | readonly CompensationRecord[];
   readonly recordCompensation: (tenantId: string, caseId: string, rec: CompensationRecord, key: string) => Promise<void> | void;
+  /** AI drafts on a case, and the human decisions on them (P-05) — an AI drafts, a NAMED HUMAN approves. */
+  readonly drafts: (tenantId: string, caseId: string) => Promise<readonly AiDraft[]> | readonly AiDraft[];
+  readonly draft: (tenantId: string, caseId: string, draftId: string) => Promise<AiDraft | undefined> | AiDraft | undefined;
+  readonly recordDraft: (tenantId: string, caseId: string, draft: AiDraft, key: string) => Promise<void> | void;
+  readonly draftDecisions: (tenantId: string, caseId: string) => Promise<readonly DraftDecisionRecord[]> | readonly DraftDecisionRecord[];
+  readonly recordDraftDecision: (tenantId: string, caseId: string, rec: DraftDecisionRecord, key: string) => Promise<void> | void;
   readonly now: () => string;
 }
 
@@ -233,6 +256,80 @@ export function serviceCaseRoutes(deps: ServiceCaseDeps): readonly Route[] {
         const caseId = ctx.params['caseId'] ?? '';
         const rows = await deps.compensations(ctx.tenantId, caseId);
         return { status: 200, body: { caseId, compensations: rows, count: rows.length, totalMinor: rows.reduce((s, r) => s + r.amountMinor, 0) } };
+      },
+    },
+    {
+      // Record an AI-drafted reply. It is ALWAYS unapproved on creation — a model does not answer a
+      // customer on the shop's behalf (P-05, hard rule #5); it becomes sendable only when a named human
+      // approves it below. A draft must CITE evidence, so the approver has something to check it against.
+      // Body: { text, modelRef, evidenceRefs[] }.
+      api: 'API-06', method: 'POST', path: '/v1/service/cases/:caseId/drafts/:draftId',
+      permission: 'service.case.manage', idempotent: true,
+      handler: async (ctx) => {
+        const caseId = ctx.params['caseId'] ?? '';
+        const draftId = (ctx.params['draftId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const evidenceRefs = strArray(b['evidenceRefs']);
+        if (draftId === '' || !isStr(b['text']) || !isStr(b['modelRef']) || evidenceRefs === undefined) {
+          throw apiError(400, { code: 'not_readable_as_a_draft', whatHappened: 'An AI draft needs a draftId in the path and { text, modelRef, evidenceRefs[] } in the body.', wasItSaved: 'not_saved', nextSafeAction: 'Send the drafted text, the model reference and the case evidence it is based on.' });
+        }
+        if (await deps.serviceCase(ctx.tenantId, caseId) === undefined) throw notFound(`service case ${caseId}`);
+        if (await deps.draft(ctx.tenantId, caseId, draftId) !== undefined) throw apiError(409, { code: 'draft_already_recorded', whatHappened: `A draft "${draftId}" already exists on this case.`, wasItSaved: 'not_saved', nextSafeAction: 'Use a new draft id, or decide on the existing one.' });
+        const draft: AiDraft = { draftId, caseId, text: b['text'] as string, modelRef: b['modelRef'] as string, generatedAt: deps.now(), evidenceRefs, approved: false };
+        await deps.recordDraft(ctx.tenantId, caseId, draft, `${caseId}-${draftId}`);
+        return { status: 201, body: { draftId, caseId, approved: false, evidenceCount: evidenceRefs.length } };
+      },
+    },
+    {
+      // A NAMED HUMAN decides on an AI draft — the ONLY way it becomes sendable (there is deliberately no
+      // send route in this module). Body: { decision (approved/rejected/edited_and_approved), finalText? }.
+      // A rejection is a recorded decision (200, not sendable); a draft with no evidence or an empty edit
+      // cannot be approved (422). The decision is attributed to the caller, never a model.
+      api: 'API-06', method: 'POST', path: '/v1/service/cases/:caseId/drafts/:draftId/decision',
+      permission: 'service.case.manage', idempotent: true,
+      handler: async (ctx) => {
+        const caseId = ctx.params['caseId'] ?? '';
+        const draftId = ctx.params['draftId'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const decision = b['decision'] as DraftDecision;
+        if (!DRAFT_DECISIONS.includes(decision) || (b['finalText'] !== undefined && typeof b['finalText'] !== 'string')) {
+          throw apiError(400, { code: 'not_readable_as_a_decision', whatHappened: 'A decision needs { decision (approved/rejected/edited_and_approved), finalText? }.', wasItSaved: 'not_saved', nextSafeAction: 'Say whether the drafted reply is approved, rejected, or edited and approved.' });
+        }
+        const existing = await deps.draft(ctx.tenantId, caseId, draftId);
+        if (existing === undefined) throw notFound(`AI draft ${draftId}`);
+
+        const now = deps.now();
+        const result = approveDraft({ draft: existing, decision, ...(typeof b['finalText'] === 'string' ? { finalText: b['finalText'] } : {}), approvedBy: ctx.userId, at: now });
+        // A deficiency (no evidence to check, or an empty edit) cannot be approved — 422, nothing recorded.
+        // A rejection is a real, recorded human decision, not an error.
+        if (!result.sendable && decision !== 'rejected') {
+          throw apiError(422, { code: 'draft_not_approvable', whatHappened: result.detail, wasItSaved: 'not_saved', nextSafeAction: 'A draft needs case evidence and non-empty text before a person can approve it.' });
+        }
+        const rec: DraftDecisionRecord = {
+          draftId, caseId, decision, approvedBy: ctx.userId, at: now, sendable: result.sendable,
+          ...(result.sendable ? { text: result.text } : { detail: result.detail }),
+        };
+        await deps.recordDraftDecision(ctx.tenantId, caseId, rec, `${caseId}-${draftId}-${decision}`);
+        return { status: result.sendable ? 201 : 200, body: rec };
+      },
+    },
+    {
+      // The AI drafts on a case and how the humans decided on them — how often the model is rewritten or
+      // rejected is how a shop finds out whether it is helping or generating work.
+      api: 'API-06', method: 'GET', path: '/v1/service/cases/:caseId/drafts',
+      permission: 'service.case.read',
+      handler: async (ctx) => {
+        const caseId = ctx.params['caseId'] ?? '';
+        const [drafts, decisions] = await Promise.all([deps.drafts(ctx.tenantId, caseId), deps.draftDecisions(ctx.tenantId, caseId)]);
+        const byDraft = new Map(decisions.map((d) => [d.draftId, d]));
+        return {
+          status: 200,
+          body: {
+            caseId,
+            drafts: drafts.map((d) => ({ draftId: d.draftId, modelRef: d.modelRef, evidenceCount: d.evidenceRefs.length, generatedAt: d.generatedAt, decision: byDraft.get(d.draftId) ?? null })),
+            count: drafts.length,
+          },
+        };
       },
     },
   ];
