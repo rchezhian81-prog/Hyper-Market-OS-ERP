@@ -21,10 +21,10 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
-  assessFirstResponse, assessSla, grantCompensation, approveDraft,
+  assessFirstResponse, assessSla, grantCompensation, approveDraft, serviceReport,
   type ServiceCase, type CaseKind, type CasePriority,
   type CompensationKind, type CompensationApproval, type CompensationOutcome,
-  type AiDraft, type DraftDecision,
+  type AiDraft, type DraftDecision, type SatisfactionScore,
 } from '../../../packages/service-desk/src/index';
 
 export type { ServiceCase } from '../../../packages/service-desk/src/index';
@@ -93,6 +93,9 @@ export interface ServiceCaseDeps {
   readonly recordDraft: (tenantId: string, caseId: string, draft: AiDraft, key: string) => Promise<void> | void;
   readonly draftDecisions: (tenantId: string, caseId: string) => Promise<readonly DraftDecisionRecord[]> | readonly DraftDecisionRecord[];
   readonly recordDraftDecision: (tenantId: string, caseId: string, rec: DraftDecisionRecord, key: string) => Promise<void> | void;
+  /** CSAT scores across the tenant (M21-FR-04) — a customer rates a resolved case; the report folds them. */
+  readonly scores: (tenantId: string) => Promise<readonly SatisfactionScore[]> | readonly SatisfactionScore[];
+  readonly recordScore: (tenantId: string, caseId: string, score: SatisfactionScore, key: string) => Promise<void> | void;
   readonly now: () => string;
 }
 
@@ -330,6 +333,52 @@ export function serviceCaseRoutes(deps: ServiceCaseDeps): readonly Route[] {
             count: drafts.length,
           },
         };
+      },
+    },
+    {
+      // A customer rates a RESOLVED case (M21-FR-04 · CSAT). You rate a case that has been dealt with —
+      // a score on an open case is a complaint in another field, not satisfaction. Append-only. Body:
+      // { customerRef, score (a whole number 1–5), comment? }.
+      api: 'API-06', method: 'POST', path: '/v1/service/cases/:caseId/satisfaction',
+      permission: 'service.case.manage', idempotent: true,
+      handler: async (ctx) => {
+        const caseId = ctx.params['caseId'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const score = b['score'];
+        if (!isStr(b['customerRef']) || !isInt(score) || (score as number) < 1 || (score as number) > 5
+          || (b['comment'] !== undefined && typeof b['comment'] !== 'string')) {
+          throw apiError(400, { code: 'not_readable_as_a_score', whatHappened: 'A satisfaction score needs { customerRef, score (a whole number 1–5), comment? }.', wasItSaved: 'not_saved', nextSafeAction: 'Send who is rating it and a score from 1 to 5.' });
+        }
+        const existing = await deps.serviceCase(ctx.tenantId, caseId);
+        if (existing === undefined) throw notFound(`service case ${caseId}`);
+        if (existing.state !== 'resolved' && existing.state !== 'closed') {
+          throw apiError(409, { code: 'case_not_resolved', whatHappened: `Case ${caseId} is ${existing.state} — a satisfaction score is for a case that has been dealt with.`, wasItSaved: 'not_saved', nextSafeAction: 'Resolve the case first, then record how the customer felt about it.' });
+        }
+        const rec: SatisfactionScore = {
+          caseId, customerRef: b['customerRef'] as string, score: score as number, at: deps.now(),
+          ...(typeof b['comment'] === 'string' ? { comment: b['comment'] } : {}),
+        };
+        await deps.recordScore(ctx.tenantId, caseId, rec, `${caseId}-${rec.customerRef}-${rec.at}`);
+        return { status: 201, body: { caseId, score: rec.score, at: rec.at } };
+      },
+    },
+    {
+      // The service report a manager acts on (M21-FR-04): cases, resolved, breached on BOTH clocks, and
+      // CSAT carrying its RESPONSE RATE — because 4.8 from six replies out of four hundred cases is six
+      // people, not a satisfaction score, and the six who reply are rarely the ones who left quietly.
+      // Runs the tested `serviceReport` over the real cases + recorded scores.
+      api: 'API-06', method: 'GET', path: '/v1/service/report',
+      permission: 'service.case.read',
+      handler: async (ctx) => {
+        const now = deps.now();
+        const [cases, scores] = await Promise.all([deps.serviceCases(ctx.tenantId), deps.scores(ctx.tenantId)]);
+        const report = serviceReport({
+          cases,
+          slaViews: cases.map((c) => assessSla({ serviceCase: c, now })),
+          firstResponseViews: cases.map((c) => assessFirstResponse({ serviceCase: c, now })),
+          scores,
+        });
+        return { status: 200, body: report };
       },
     },
   ];
