@@ -5,6 +5,40 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ COMPLIANCE FOLLOW-THROUGH WIRED — M34-FR-04 follow-on · §28 · hard rule #6 (24 August 2026)
+
+**Owner direction:** "merge #281 then wire the next module." Picked the tested-but-unwired **named follow-on**
+of the risk register (`packages/compliance/src/risk.ts`) — the incident / remediation / control-health /
+attestation legs, which had unit tests but sat on no cloud route. This is the governance machinery that stops
+things falling through the cracks: when something goes wrong, you can answer, immediately, **which control
+should have stopped it, what is being done and who owns it, and whether anyone ever checked the control works.**
+
+**What was built (M34-FR-04 follow-on · on API-11):**
+- **`POST /v1/compliance/controls/:id`** (`compliance.risk.manage`) registers a control.
+- **`POST /v1/compliance/incidents/:id`** runs `recordIncident` — an incident **must name a registered
+  control** (`incident_links_to_no_control` `422`), because an incident that links to nothing teaches nothing.
+- **`POST /v1/compliance/remediations/:id`** — a fix **must name a registered incident**, and the tested
+  `recordRemediation` insists on **an owner AND a due date** (`remediation_needs_owner_and_date` `422`) — a
+  remediation with no owner is a wish.
+- **`POST /v1/compliance/attestations/:id`** — a **dated** check in the **caller's own name** against a
+  registered control (§28); a tick with no date, or nobody's name, is not evidence.
+- **`GET /v1/compliance/controls/health`** runs `controlHealth` — per control: has it failed, is the fix
+  late, and **has anyone checked it lately** (never-attested or stale → `needsAttestation`, an untested
+  control being an assumption not a control). **`GET /v1/compliance/remediations/overdue`** runs
+  `overdueRemediations`, the follow-through report.
+- All append-only + event-sourced (`ControlRegistered`/`IncidentRecorded`/`RemediationRecorded`/
+  `ControlAttested`, latest-per-id, restart-safe). Uses the existing `compliance.risk.manage`/`.read`
+  permissions — no new permission. Integration-tested (risk-followthrough.test.ts, 4 cases).
+
+**Maturity:** M34 stays **PARTIALLY_WIRED** — this fills the FR-04 follow-on remainder, but the audit-trail +
+retention primitives (FR-01/02) are still foundation-only, so no re-rate is honest. **Headline unchanged at
+41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract, run-on-tested-engine),
+`vitest run` **5909 passed / 262 skipped** ✓.
+
+---
+
 ## ★ OWNER DRILL-THROUGH WIRED — M29-FR-02 · NFR-15 · §28 · P-08 (24 August 2026)
 
 **Owner direction:** "merge #280 then wire the next module." Picked the tested-but-unwired control that most
