@@ -117,7 +117,7 @@ import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../
 import type { DataRightsDeps, DataSubjectRequest } from '../../customer/src/data-rights';
 import type { ServiceCaseDeps, ServiceCase, CompensationRecord, DraftDecisionRecord } from '../../customer/src/service-cases';
 import type { CampaignDeps, CampaignPlanRecord } from '../../customer/src/campaigns';
-import type { AiDraft } from '../../../packages/service-desk/src/index';
+import type { AiDraft, SatisfactionScore } from '../../../packages/service-desk/src/index';
 import type { StoredPointsMovement } from '../../../packages/loyalty/src/assess-points';
 import type { StoredValueDeps, Instrument, ValueMovement } from '../../customer/src/stored-value';
 import type { CouponDeps } from '../../customer/src/coupons';
@@ -840,6 +840,8 @@ const SERVICE_CASE_STREAM = streamName(STREAM.service, 'cases');
 const SERVICE_COMPENSATION_STREAM = streamName(STREAM.service, 'compensation');
 // AI drafts and the human decisions on them (P-05) — one stream, two event types.
 const SERVICE_DRAFT_STREAM = streamName(STREAM.service, 'drafts');
+// CSAT scores — tenant-wide, append-only (a customer rates a resolved case; the report folds them).
+const SERVICE_CSAT_STREAM = streamName(STREAM.service, 'csat');
 // The campaign-decision log — tenant-wide, append-only (who ran which campaign, to how many, excluding
 // how many and why). Counts only; the recipient lists are not stored (PRV).
 const CAMPAIGN_PLAN_STREAM = streamName(STREAM.service, 'campaign-plans');
@@ -4245,6 +4247,16 @@ export function serviceCaseAdapter(input: {
       await input.store.append(tenantId, SERVICE_DRAFT_STREAM, makeEvent({
         id: `service-decision-${caseId}-${d}`, type: 'DraftDecided', occurredAt: rec.at,
         idempotencyKey: `service-decision-${tenantId}-${d}`, source: 'api/customer', payload: rec,
+      }));
+    },
+
+    // CSAT scores (M21-FR-04) — tenant-wide append-only ledger; the report folds every score.
+    scores: (tenantId) => allOf<SatisfactionScore>(input.store, tenantId, SERVICE_CSAT_STREAM, 'SatisfactionRecorded'),
+    recordScore: async (tenantId, caseId, score, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, SERVICE_CSAT_STREAM, makeEvent({
+        id: `service-csat-${caseId}-${d}`, type: 'SatisfactionRecorded', occurredAt: score.at,
+        idempotencyKey: `service-csat-${tenantId}-${d}`, source: 'api/customer', payload: score,
       }));
     },
   };

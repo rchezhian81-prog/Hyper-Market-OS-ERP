@@ -162,7 +162,12 @@
   `GET …/sla` (`service.case.read`) returns **both clocks** — FIRST RESPONSE (the wait the customer feels;
   does not pause) and RESOLUTION (pauses while waiting on the customer, so a slow customer is not recorded
   as the shop's breach). `GET /v1/service/cases?breached=true` is the **exception queue**. Append-only
-  (`ServiceCaseRecorded`). CSAT reporting (`serviceReport`) is the named follow-on.
+  (`ServiceCaseRecorded`). **CSAT + the manager's report are wired too:** `POST /v1/service/cases/:id/satisfaction`
+  (`service.case.manage`) records a customer's score (1–5) on a **resolved** case — a score on an open case
+  is refused, because that is a complaint in another field, not satisfaction; append-only. `GET /v1/service/report`
+  (`service.case.read`) runs the tested `serviceReport` over the real cases + recorded scores and returns
+  CSAT **with its response rate** — a high average from six replies out of four hundred cases is six people,
+  not a satisfaction score, and the report says so.
 - **Service-desk compensation (API-06, M21-FR-03 · §28):** money leaving the business, decided by the
   person the customer is shouting at — so `POST /v1/service/cases/:id/compensation` (`service.case.manage`)
   runs `grantCompensation` with the controls not optional: a **mandatory reason** even within authority

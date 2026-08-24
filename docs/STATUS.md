@@ -5,6 +5,34 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M21 CSAT + SERVICE REPORT WIRED — M21-FR-04 (last service-desk engine) (22 August 2026)
+
+**Owner direction:** "wire the next module." Wired the last tested-but-unwired engine on the service-desk /
+CRM side of M21 — `serviceReport` (`packages/service-desk/src/service-cases.ts`), which was on **no route**.
+
+**What was built (M21-FR-04 · on API-06):**
+- **`POST /v1/service/cases/:id/satisfaction`** (`service.case.manage`) records a customer's score (1–5) on
+  a **resolved** case — a score on an open case is refused `409 case_not_resolved` (that is a complaint in
+  another field, not satisfaction), an out-of-range score `400`. Append-only `SatisfactionRecorded`.
+- **`GET /v1/service/report`** (`service.case.read`) runs the tested `serviceReport` over the tenant's real
+  cases + computed SLA / first-response views + recorded scores. **CSAT is carried with its RESPONSE RATE**
+  (`no_responses` when nobody has rated), because a high average from six replies out of four hundred cases
+  is six people, not a satisfaction score — and the six who reply are rarely the ones who left quietly.
+- Restart-safe, event-sourced (`SERVICE_CSAT_STREAM`), reuses `service.case.manage`/`.read`.
+  Integration-tested (service-csat.test.ts, 4 cases).
+
+**Honest maturity — HELD at PARTIALLY_WIRED (no re-rate):** with this, the **whole service-desk + CRM side
+of M21 is now live** — case lifecycle, both SLA clocks, compensation (§28), AI-draft approval (P-05), the
+campaign send-gate, journeys + attribution, and now CSAT. **M21 is NOT re-rated to WIRED** because the
+module also owns the returns/exchanges side, where **exchanges and no-receipt returns remain pending**
+(see the M21 ladder rung). That is the honest blocker to a re-rate, and it is a decision for the owner.
+**Headline stays 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract, run-on-tested-engine),
+`vitest run` **5889 passed / 262 skipped** ✓.
+
+---
+
 ## ★ M21 CAMPAIGN JOURNEYS + HONEST ATTRIBUTION WIRED — M21-FR-02 / PRV · P-08 (22 August 2026)
 
 **Owner direction:** "wire the next module." Continued the campaign story with the two tested-but-unwired
