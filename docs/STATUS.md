@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M02 APPROVAL DELEGATION WIRED — M02-FR-03 · §28 · P-04 · hard rule #4 (24 August 2026)
+
+**Owner direction:** "merge #279 then wire the next module." With M04/M21 closed for the release, moved to a
+fresh, high-value governance control: `packages/approvals` **delegation** (M02-FR-03) — tested since the
+module was written, and on **no cloud route**. It is the thing that stops the single most damaging control
+failure in retail: **the shared login.**
+
+**What was built (M02-FR-03 · on API-01):**
+- **`POST /v1/access/delegations/:id`** (`approvals.delegation.grant`) runs `grantDelegation` — lend an
+  approver's authority to a deputy, **authorised by the caller** (§28 — even the owner cannot self-authorise
+  a lend of their OWN authority). Refuses `self_delegation`, `exceeds_granter_authority`,
+  `widens_branch_scope`, `too_long`, and the loophole this control exists to close: `chain_forbidden` (a
+  delegate cannot re-delegate — two hops in, nobody is accountable). All `422`, nothing saved.
+- **`POST …/effective-authority`** (static, registered before `/:id`) runs `effectiveAuthority` — a person's
+  **own** authority wins; a live delegation only **adds** what they lack; an expired one grants nothing (it
+  stops on its own, which is the point of an end date). The delegate always decides **in their own name**.
+- **`GET /v1/access/delegations`** runs `reviewDelegations` — the standing-delegations audit that catches a
+  fortnight's-leave grant from March still live in August (active/expiring/expired/revoked).
+- **`POST …/:id/revoke`** ends one early. Event-sourced `DelegationRecorded` (latest-per-id — a revocation
+  supersedes), restart-safe. New perms `approvals.delegation.grant`/`.read`. Integration-tested
+  (approval-delegation.test.ts, 4 cases).
+
+**Maturity:** M02 was already **WIRED**; this fills the FR-03 delegation *remainder* on the cloud. No re-rate
+needed. **Headline unchanged at 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract, run-on-tested-engine),
+`vitest run` **5901 passed / 262 skipped** ✓.
+
+---
+
 ## ★ OWNER DECISION — M04 planogram/shelf-map store DEFERRED to R6 (CH-02) (24 August 2026)
 
 **Owner instruction:** "merge #278 then defer planogram store to a later release." Recorded — nothing is
