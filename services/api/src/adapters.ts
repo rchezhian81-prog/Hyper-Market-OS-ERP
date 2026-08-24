@@ -77,7 +77,7 @@ import type { FacilitiesAssetsDeps, Asset, ServiceLog, DowntimeEvent, EnergyRead
 import type { FacilitiesMonitoringDeps, EquipmentRangeReg, EquipmentContents, EquipmentReading, PowerEvent } from '../../platform/src/facilities-monitoring';
 import type { PackagingDeps, PackagingItem, PackagingMovement } from '../../inventory/src/packaging';
 import type { ComplianceDeps, Obligation } from '../../compliance/src/index';
-import type { RiskRegisterDeps, Risk } from '../../compliance/src/risk';
+import type { RiskRegisterDeps, Risk, Control, Incident, Remediation, Attestation } from '../../compliance/src/risk';
 import type { DocumentsDeps, TemplateVersion, IssuedDocument } from '../../platform/src/documents';
 import type { SuspendedBillsDeps, SuspendedBill } from '../../pos/src/suspended-bills';
 import type { EInvoiceRegisterDeps } from '../../finance/src/e-invoice-register';
@@ -276,6 +276,45 @@ export function riskRegisterAdapter(input: {
     for (const r of all) byId.set(r.riskId, r); // later state wins (register → accept)
     return [...byId.values()];
   };
+  // Latest-per-id fold for each follow-on register — a re-state supersedes (an incident closed, a
+  // remediation completed), append-only underneath (hard rule #2, nothing overwritten).
+  const foldControls = async (tenantId: string): Promise<readonly Control[]> => {
+    const all = await allOf<Control>(input.store, tenantId, CONTROL_STREAM, 'ControlRegistered');
+    const byId = new Map<string, Control>();
+    for (const c of all) byId.set(c.controlId, c);
+    return [...byId.values()];
+  };
+  const foldIncidents = async (tenantId: string): Promise<readonly Incident[]> => {
+    const all = await allOf<Incident>(input.store, tenantId, INCIDENT_STREAM, 'IncidentRecorded');
+    const byId = new Map<string, Incident>();
+    for (const i of all) byId.set(i.incidentId, i);
+    return [...byId.values()];
+  };
+  const foldRemediations = async (tenantId: string): Promise<readonly Remediation[]> => {
+    const all = await allOf<Remediation>(input.store, tenantId, REMEDIATION_STREAM, 'RemediationRecorded');
+    const byId = new Map<string, Remediation>();
+    for (const r of all) byId.set(r.remediationId, r);
+    return [...byId.values()];
+  };
+  const foldAttestations = async (tenantId: string): Promise<readonly Attestation[]> => {
+    const all = await allOf<Attestation>(input.store, tenantId, ATTESTATION_STREAM, 'ControlAttested');
+    const byId = new Map<string, Attestation>();
+    for (const a of all) byId.set(a.attestationId, a); // immutable — the fold just collapses exact re-sends
+    return [...byId.values()];
+  };
+  const appendKeyed = async (
+    tenantId: string, stream: string, type: string, kind: string, id: string, key: string, payload: unknown,
+  ): Promise<void> => {
+    const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+    await input.store.append(tenantId, stream, makeEvent({
+      id: `compliance-${kind}-${id}-${d}`,
+      type,
+      occurredAt: input.now(),
+      idempotencyKey: `compliance-${kind}-${tenantId}-${id}-${d}`,
+      source: 'api/compliance',
+      payload: payload as Record<string, unknown>,
+    }));
+  };
   return {
     now: input.now,
     risks: (tenantId) => foldLatest(tenantId),
@@ -293,6 +332,14 @@ export function riskRegisterAdapter(input: {
         payload: risk,
       }));
     },
+    controls: (tenantId) => foldControls(tenantId),
+    saveControl: (tenantId, controlId, control, key) => appendKeyed(tenantId, CONTROL_STREAM, 'ControlRegistered', 'control', controlId, key, control),
+    incidents: (tenantId) => foldIncidents(tenantId),
+    saveIncident: (tenantId, incidentId, incident, key) => appendKeyed(tenantId, INCIDENT_STREAM, 'IncidentRecorded', 'incident', incidentId, key, incident),
+    remediations: (tenantId) => foldRemediations(tenantId),
+    saveRemediation: (tenantId, remediationId, remediation, key) => appendKeyed(tenantId, REMEDIATION_STREAM, 'RemediationRecorded', 'remediation', remediationId, key, remediation),
+    attestations: (tenantId) => foldAttestations(tenantId),
+    saveAttestation: (tenantId, attestationId, attestation, key) => appendKeyed(tenantId, ATTESTATION_STREAM, 'ControlAttested', 'attestation', attestationId, key, attestation),
   };
 }
 
@@ -840,6 +887,10 @@ const DATA_REQUESTS_STREAM = streamName(STREAM.consent, 'data-requests');
 // Risks are TENANT-WIDE (one stream, every risk) so the gate-blocking reads fold the whole register in
 // one pass (M34-FR-04). A sub-stream of compliance, kept apart from obligations.
 const RISK_STREAM = streamName(STREAM.compliance, 'risk');
+const CONTROL_STREAM = streamName(STREAM.compliance, 'controls');
+const INCIDENT_STREAM = streamName(STREAM.compliance, 'incidents');
+const REMEDIATION_STREAM = streamName(STREAM.compliance, 'remediations');
+const ATTESTATION_STREAM = streamName(STREAM.compliance, 'attestations');
 // Service cases are TENANT-WIDE (one stream, every case) so the breached-queue read folds them in one pass
 // (M21-FR-04) — the exceptions a desk must escalate rather than let age.
 const SERVICE_CASE_STREAM = streamName(STREAM.service, 'cases');

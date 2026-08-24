@@ -190,6 +190,21 @@
   the only way past is to accept it, not to ignore it; an accepted or mitigated risk does not block.
   `GET …/gates/:gate/can-pass` runs `gateCanPass`. Append-only (`RiskRecorded`) — register-then-accept is
   two facts, nothing overwritten (hard rule #2).
+- **Incident / remediation / control-health / attestation (API-11, M34-FR-04 follow-on · §28):** the
+  registers that answer, the moment something goes wrong, WHICH control should have stopped it, WHAT is
+  being done and WHO owns it, and whether anyone ever CHECKED the control works — and **every link is
+  mandatory**, because a register whose links are optional degrades into a list nobody reads.
+  `POST /v1/compliance/controls/:id` registers a control; `POST …/incidents/:id` (`recordIncident`) records
+  an incident that **must name a registered control** (`incident_links_to_no_control` `422` otherwise);
+  `POST …/remediations/:id` records a fix that **must name a registered incident** AND — the tested
+  `recordRemediation` insists — **an owner AND a due date** (`remediation_needs_owner_and_date` `422`);
+  `POST …/attestations/:id` records a **dated** check made in the **caller's own name** against a
+  registered control (a tick with no date, or nobody's name, is not evidence). `GET …/controls/health`
+  runs `controlHealth` — per control: has it failed (incidents), is the fix late (overdue remediations),
+  and has anyone checked it lately (**never-attested or stale → `needsAttestation`**, an untested control
+  being an assumption not a control); `GET …/remediations/overdue` runs `overdueRemediations`, the
+  follow-through report. All append-only and event-sourced (`ControlRegistered` / `IncidentRecorded` /
+  `RemediationRecorded` / `ControlAttested`), gated `compliance.risk.manage` (write) / `.read` (reports).
 - **Service desk — cases & SLA clocks (API-06, M21-FR-04 · P-03):** control by exception — a case
   breaching its SLA must surface, not sit amber in a queue. `POST /v1/service/cases/:id`
   (`service.case.manage`) opens a case; `…/first-response` stamps the human reply; `…/resolution` resolves

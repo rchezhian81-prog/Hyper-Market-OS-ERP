@@ -579,7 +579,11 @@ export function buildSurface(deps: {
     } : complianceAdapter({ store, now })),
     // Risk register & quality-gate blocking (M34-FR-04) — an open critical risk blocks its QG until accepted.
     ...riskRegisterRoutes(store === undefined
-      ? { risk: empty(undefined), risks: empty([]), recordRisk: () => {}, now }
+      ? {
+          risk: empty(undefined), risks: empty([]), recordRisk: () => {},
+          controls: empty([]), saveControl: () => {}, incidents: empty([]), saveIncident: () => {},
+          remediations: empty([]), saveRemediation: () => {}, attestations: empty([]), saveAttestation: () => {}, now,
+        }
       : riskRegisterAdapter({ store, now })),
     ...reportingRoutes(store === undefined
       ? { figures: empty([]), now }
