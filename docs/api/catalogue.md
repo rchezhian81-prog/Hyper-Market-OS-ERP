@@ -79,6 +79,18 @@
   finding that costs money is an **expired contract whose display is still on the floor** (the supplier
   stopped paying and nobody took the stand away), alongside **unapproved** (no Finance sign-off, §28),
   **no-space-named** and **funding-not-received** (agreed money not in — M23), worst first.
+- **Assortment / range management (API-04, M04-FR-01):** the range answers "does **this** store carry this
+  item?", enforced both ways. `POST /v1/merchandising/assortment/:store/:product/list` (`merchandising.range.manage`)
+  lists an item; `…/drop` runs `dropFromRange` — **the dangerous operation**: a drop **with stock on hand
+  routes to CLEARANCE, never a silent delete** (deleting a stocked item makes its stock invisible — not
+  counted, not replenished, eventually written off), decided by the caller, `422` on an unnamed decider or a
+  "replaced" with no replacement. `POST /v1/merchandising/assortment/:store/integrity`
+  (`merchandising.range.read`, static route matched before `/:product`) folds the recorded range into an
+  `Assortment` and runs `checkAssortmentIntegrity` — **`sold_not_in_assortment`** (sold where it isn't
+  ranged — the next customer is disappointed), **`reordered_not_listed`** (how a dropped item keeps
+  arriving), **`clearance_with_no_stock`** (clearance finished — delist it) and **`listed_never_sold`**
+  (holding shelf space and cash). `GET /v1/merchandising/assortment/:store?onDate=` resolves the listed
+  range as-at a date. Effective-dated, event-sourced per store.
 - **Price change (API-02):** draft → **approve (separate approver)** → effective-dated
   publish into the signed edge price pack.
 - **Duplicate merge (API-02, M03-FR-04 §28):** detect suspected duplicates
