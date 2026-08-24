@@ -5,6 +5,26 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ OWNER DECISION — M21 returns/exchanges DEFERRED to R5 (CH-01) (24 August 2026)
+
+**Owner instruction:** "merge #275 then defer returns/exchanges to a later release." Recorded — nothing is
+dropped silently. The change-control ratchet (OD-02, roadmap §14/§25) requires a written, owner-approved
+deferral with a **named target release**, so this is logged as **CH-01 (Approved) in
+`docs/registers/changes.md`, target R5 (Fulfilment)** — R5 carries WF-16 (online cancellation/return), the
+natural home for the exchange and no-receipt-return flows.
+
+**What is deferred:** the **cloud wiring** of the M21/M13 returns-and-exchanges side — **exchanges** and
+**controlled no-receipt returns**. What stays: the whole service-desk + CRM side of M21 (now fully wired),
+the tested return engines (`packages/returns`, M13-FR-01/02/03 — eligibility/condition/disposition + the
+double-refund register) and the cloud refund guard.
+
+**Maturity — HONEST:** M21 stays **PARTIALLY_WIRED**. A deferred-but-unbuilt requirement is **not** counted
+as done — the deferral is not a trick to inflate the score. **Headline unchanged at 41.1%.** With the
+service-desk side complete and the returns/exchanges side formally scheduled to R5, M21 now has **no open,
+in-scope gap for the current release** — the next increment is free to move to a different module.
+
+---
+
 ## ★ M21 CSAT + SERVICE REPORT WIRED — M21-FR-04 (last service-desk engine) (22 August 2026)
 
 **Owner direction:** "wire the next module." Wired the last tested-but-unwired engine on the service-desk /
