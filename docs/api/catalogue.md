@@ -68,6 +68,17 @@
   self-inconsistent plan (a facing on a shelf the store has not mapped, two primary homes) is refused
   `422`. A **pure read/compute** — it writes nothing; the plan (planogram, shelf map, stockroom figures)
   is caller-supplied, only the observations come from what the store recorded.
+- **Space productivity & display contracts (API-04, M04-FR-04 · M23):** two questions a big shop gets
+  wrong by feel. `POST /v1/merchandising/space/performance` (`merchandising.space.read`) runs
+  `spacePerformance` — ranks areas by **margin per square foot** (not turnover), says `not_meaningful`
+  where a ratio cannot be computed rather than a fabricated zero, and flags an area whose share of
+  **margin** sits materially below its share of **space** ("this aisle is too big"). For supplier display
+  deals, `POST /v1/merchandising/display-contracts/:id` (`merchandising.display.manage`) records a contract
+  (append-only, latest-per-id) and `POST /v1/merchandising/display-contracts/review`
+  (`merchandising.space.read`, static route matched before `/:id`) runs `reviewDisplayContracts` — the
+  finding that costs money is an **expired contract whose display is still on the floor** (the supplier
+  stopped paying and nobody took the stand away), alongside **unapproved** (no Finance sign-off, §28),
+  **no-space-named** and **funding-not-received** (agreed money not in — M23), worst first.
 - **Price change (API-02):** draft → **approve (separate approver)** → effective-dated
   publish into the signed edge price pack.
 - **Duplicate merge (API-02, M03-FR-04 §28):** detect suspected duplicates
