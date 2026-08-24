@@ -96,6 +96,8 @@ import type { ConnectorMappingDeps, Mapping } from '../../platform/src/connector
 import type { SecretsDeps, SecretRef } from '../../platform/src/secrets';
 import type { OrgStructureDeps, OrgNode, GstRegistration } from '../../platform/src/org-structure';
 import type { ShelfCountDeps, ShelfCount } from '../../inventory/src/shelf-count';
+import type { SpacePerformanceDeps } from '../../inventory/src/space-performance';
+import type { DisplayContract } from '../../../packages/merchandising/src/index';
 import type { Hasher } from '../../../packages/audit/src/audit-trail';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
@@ -905,6 +907,9 @@ const ORG_NODES_STREAM = streamName(STREAM.org, 'nodes');
 const ORG_REGISTRATIONS_STREAM = streamName(STREAM.org, 'gst-registrations');
 // Shelf counts are per store — append-only observations (a recount is a new row, M04-FR-02/03).
 const forShelfCounts = (storeId: string): string => streamName(STREAM.inventory, 'shelf-count', storeId);
+// Display contracts are tenant-wide (the owner reviews them all; the review filters by store) — append-only,
+// folded latest-per-contractId so a correction supersedes.
+const DISPLAY_CONTRACT_STREAM = streamName(STREAM.inventory, 'display-contracts');
 /** Each pay run's lifecycle folds one stream — one run's history (drafted→…→locked), not the whole shop's. */
 const forPayRun = (payRunId: string): string => streamName(STREAM.payroll, payRunId);
 /** Each filing period's GSTR-1 submission folds one stream — one period's preview→approve→file history. */
@@ -2349,6 +2354,33 @@ export function shelfCountAdapter(input: {
         idempotencyKey: `shelf-count-${tenantId}-${count.storeId}-${countId}`,
         source: 'api/inventory',
         payload: count,
+      }));
+    },
+  };
+}
+
+export function spacePerformanceAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): SpacePerformanceDeps {
+  return {
+    now: input.now,
+    // Folded latest-per-contractId by append order — a re-recorded contract (a correction) supersedes.
+    contracts: async (tenantId) => {
+      const all = await allOf<DisplayContract>(input.store, tenantId, DISPLAY_CONTRACT_STREAM, 'DisplayContractRecorded');
+      const byId = new Map<string, DisplayContract>();
+      for (const c of all) byId.set(c.contractId, c);
+      return [...byId.values()];
+    },
+    recordContract: async (tenantId, contractId, contract, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, DISPLAY_CONTRACT_STREAM, makeEvent({
+        id: `display-contract-${contractId}-${d}`,
+        type: 'DisplayContractRecorded',
+        occurredAt: input.now(),
+        idempotencyKey: `display-contract-${tenantId}-${contractId}-${d}`,
+        source: 'api/inventory',
+        payload: contract,
       }));
     },
   };

@@ -5,6 +5,35 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M04 SPACE PRODUCTIVITY + DISPLAY-CONTRACT GOVERNANCE WIRED — M04-FR-04 (24 August 2026)
+
+**Owner direction:** "merge #276 then wire the next module." With M21 closed for the release, moved to a
+fresh module: the M04-FR-04 merchandising engines (`packages/merchandising/src/space.ts`) — tested, wired
+into the ERP screen, and on **no cloud route**.
+
+**What was built (M04-FR-04 · on API-04):**
+- **`POST /v1/merchandising/space/performance`** (`merchandising.space.read`) runs `spacePerformance` —
+  ranks a store's areas by **margin per square foot** (not turnover, which flatters a big-volume
+  thin-margin aisle), says **`not_meaningful`** where a ratio cannot be computed rather than a fabricated
+  zero (P-08), and flags an area whose share of **margin** sits materially below its share of **space**.
+- **`POST /v1/merchandising/display-contracts/:id`** (`merchandising.display.manage`) records a supplier
+  display contract (append-only, latest-per-id) and **`POST …/display-contracts/review`**
+  (`merchandising.space.read`, static route registered before `/:id`) runs `reviewDisplayContracts` — the
+  finding that costs real money is an **expired contract whose display is still on the floor** (the shop
+  giving away its best space), alongside **unapproved** (no Finance sign-off, §28), **no-space-named** and
+  **funding-not-received** (agreed money not in — M23), worst first.
+- Event-sourced `DisplayContractRecorded`, restart-safe. New perms `merchandising.space.read` /
+  `merchandising.display.manage`. Integration-tested (space-and-display.test.ts, 4 cases).
+
+**Honest maturity — HELD at PARTIALLY_WIRED (no re-rate):** M04's shelf-count producer (FR-02),
+planogram-compliance consumer (FR-03) and now space + display governance (FR-04) are on the cloud; the
+**FR-01 assortment engine** and a **persisted planogram/shelf-map store** remain. **Headline stays 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract, run-on-tested-engine),
+`vitest run` **5893 passed / 262 skipped** ✓.
+
+---
+
 ## ★ OWNER DECISION — M21 returns/exchanges DEFERRED to R5 (CH-01) (24 August 2026)
 
 **Owner instruction:** "merge #275 then defer returns/exchanges to a later release." Recorded — nothing is
