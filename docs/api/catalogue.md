@@ -194,6 +194,16 @@
   shrinks. Nothing is SENT here (the transports are deployment steps, EX-04/05); the decision is recorded
   as an **append-only** `CampaignPlanned` log — **counts only, the recipient lists are not stored (PRV)** —
   read at `GET /v1/service/campaigns/plans` (`customer.campaign.read`).
+- **Campaign journeys & honest attribution (API-06, M21-FR-02 · PRV · P-08):** two disciplines that
+  separate a real measurement from a flattering one. `POST /v1/service/campaigns/journeys/:kind/candidates`
+  (`customer.campaign.send`) runs `findJourneyCandidates` — a trigger inside the **quiet period** is held
+  back (a message minutes after someone put their phone down is surveillance, not a nudge), a stale one as
+  too-late, an already-completed customer skipped, and only triggers of the path kind are weighed.
+  `POST /v1/service/campaigns/:id/attribution` (`customer.campaign.read`) runs `measureCampaign` — only
+  orders placed **after** the send, **inside the window**, by people who **received** it count, and the
+  **control group's** conversion is reported beside the campaign's, because "recovered" customers who were
+  coming back anyway are a cost dressed as a win (with no control it is called activity, not uplift). Both
+  are pure computes — nothing is sent (transports are EX-04/05).
 - **Customer segmentation & value ranking (API-06, M16-FR-02 · PRV/DPDP):** two truths this keeps.
   `POST /v1/customer/segments/audience` (`customer.segment.read`) builds a **consent-gated** campaign
   audience — **consent is two permissions**: analysing a customer (profiling) is not messaging them

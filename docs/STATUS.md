@@ -5,6 +5,35 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M21 CAMPAIGN JOURNEYS + HONEST ATTRIBUTION WIRED — M21-FR-02 / PRV · P-08 (22 August 2026)
+
+**Owner direction:** "wire the next module." Continued the campaign story with the two tested-but-unwired
+computes that finish all but one FR of M21 — `findJourneyCandidates` and `measureCampaign`
+(`packages/service-desk/src/campaigns.ts`), both on **no route**.
+
+**What was built (M21-FR-02 · on API-06, both pure computes):**
+- **`POST /v1/service/campaigns/journeys/:kind/candidates`** (`customer.campaign.send`) runs
+  `findJourneyCandidates` — who an abandoned-cart / occasion / win-back journey should reach. The **quiet
+  period** is the point: a message fired minutes after someone put their phone down is **surveillance, not
+  a nudge**, so it is held back with the reason; a stale trigger is held as too-late, an already-completed
+  customer skipped, a below-value one dropped, and only triggers of the path kind are weighed.
+- **`POST /v1/service/campaigns/:id/attribution`** (`customer.campaign.read`) runs `measureCampaign` —
+  only orders placed **after** the send, **inside the window**, by people who **received** it count (an
+  order an hour before the message did not come from it), and the **control group's** conversion is
+  returned **beside** the campaign's. With no control it is called **activity, not uplift**, because a
+  win-back that "recovered" customers who were coming back anyway is a cost dressed as a success.
+- Nothing is sent here (the WhatsApp/SMS/email transports are deployment steps, EX-04/05); both reuse
+  `customer.campaign.send`/`.read`, no new store. Integration-tested (campaign-journeys.test.ts, 4 cases).
+
+**Honest maturity — HELD at PARTIALLY_WIRED (no re-rate):** case lifecycle, SLA clocks, compensation,
+AI-draft approval, the campaign send-gate and now journeys + attribution are live. **Only CSAT reporting
+(`serviceReport`) remains** before M21 could be re-rated. **Headline stays 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract, run-on-tested-engine),
+`vitest run` **5885 passed / 262 skipped** ✓.
+
+---
+
 ## ★ M21 CAMPAIGN SEND-GATE WIRED — M21-FR-01 / PRV · DPDP · P-02 (22 August 2026)
 
 **Owner direction:** "wire the next module." Continued the CRM/service-desk story with the highest-value

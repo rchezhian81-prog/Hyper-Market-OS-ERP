@@ -30,7 +30,10 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
-import { planCampaign, type Campaign, type Channel, type Purpose } from '../../../packages/service-desk/src/index';
+import {
+  planCampaign, findJourneyCandidates, measureCampaign,
+  type Campaign, type Channel, type Purpose, type JourneyKind, type JourneyTrigger,
+} from '../../../packages/service-desk/src/index';
 import { mayWeSend, type ConsentRecord, type ConsentPurpose, type Channel as ConsentChannel } from './index';
 
 /** The append-only record of a campaign-send decision — who ran which campaign, to how many, excluding
@@ -53,11 +56,30 @@ export interface CampaignPlanRecord {
 // excluded here (the ledger has no `service` consent) and named as a follow-on above.
 const PURPOSES: readonly Purpose[] = ['marketing', 'transactional'];
 const CHANNELS: readonly Channel[] = ['whatsapp', 'sms', 'email', 'push'];
+const JOURNEY_KINDS: readonly JourneyKind[] = ['abandoned_cart', 'occasion', 'win_back'];
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isBool = (v: unknown): v is boolean => typeof v === 'boolean';
+const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v);
+const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const strArray = (v: unknown): readonly string[] | undefined =>
   Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === 'string' && x.trim() !== '') ? (v as string[]) : undefined;
+const optStrArray = (v: unknown): readonly string[] | undefined =>
+  v === undefined ? [] : (Array.isArray(v) && v.every((x) => typeof x === 'string') ? (v as string[]) : undefined);
+
+// A journey trigger the caller supplies — a cart put down, an occasion, a customer gone quiet.
+function readTrigger(v: unknown): JourneyTrigger | undefined {
+  if (!isObj(v) || !isStr(v['customerRef']) || !JOURNEY_KINDS.includes(v['kind'] as JourneyKind)
+    || !isStr(v['triggeredAt']) || !isInt(v['valueMinor']) || !isStr(v['ref'])) return undefined;
+  return { customerRef: v['customerRef'] as string, kind: v['kind'] as JourneyKind, triggeredAt: v['triggeredAt'] as string, valueMinor: v['valueMinor'] as number, ref: v['ref'] as string };
+}
+
+// One order in the attribution window — a real basket by a real customer.
+interface AttrOrder { readonly customerRef: string; readonly at: string; readonly netMinor: number; readonly marginMinor: number }
+function readOrder(v: unknown): AttrOrder | undefined {
+  if (!isObj(v) || !isStr(v['customerRef']) || !isStr(v['at']) || !isInt(v['netMinor']) || !isInt(v['marginMinor'])) return undefined;
+  return { customerRef: v['customerRef'] as string, at: v['at'] as string, netMinor: v['netMinor'] as number, marginMinor: v['marginMinor'] as number };
+}
 
 export interface CampaignDeps {
   /** This customer's consent ledger — the SAME record the rest of the system reads (P-02). */
@@ -142,6 +164,74 @@ export function campaignRoutes(deps: CampaignDeps): readonly Route[] {
       handler: async (ctx) => {
         const plans = [...(await deps.plans(ctx.tenantId))].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
         return { status: 200, body: { plans, count: plans.length } };
+      },
+    },
+    {
+      // Who a journey should reach — the eligible ones, and why each other was held back (M21-FR-02).
+      // The QUIET PERIOD matters most: a message fired minutes after someone put their phone down is
+      // surveillance, not a nudge — and it is the one people screenshot. A trigger too old to be
+      // relevant, or a customer who already did the thing, is held back with the reason. Nothing is
+      // sent — this decides eligibility. Body: { triggers: [{customerRef, kind, triggeredAt, valueMinor,
+      // ref}], quietMinutes?, staleAfterMinutes?, completedRefs?, minimumValueMinor? }.
+      api: 'API-06', method: 'POST', path: '/v1/service/campaigns/journeys/:kind/candidates',
+      permission: 'customer.campaign.send', idempotent: true,
+      handler: (ctx) => {
+        const kind = ctx.params['kind'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const rawTriggers = Array.isArray(b['triggers']) ? b['triggers'] : undefined;
+        const triggers = rawTriggers?.map(readTrigger);
+        const completedRefs = optStrArray(b['completedRefs']);
+        const posIntOrUndef = (v: unknown): boolean => v === undefined || (isInt(v) && (v as number) >= 0);
+        if (!JOURNEY_KINDS.includes(kind as JourneyKind) || rawTriggers === undefined || triggers === undefined
+          || triggers.some((t) => t === undefined) || completedRefs === undefined
+          || !posIntOrUndef(b['quietMinutes']) || !posIntOrUndef(b['staleAfterMinutes']) || !posIntOrUndef(b['minimumValueMinor'])) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_journey',
+            whatHappened: 'A journey needs a kind (abandoned_cart/occasion/win_back) in the path and { triggers: [{customerRef, kind, triggeredAt, valueMinor, ref}], quietMinutes?, staleAfterMinutes?, completedRefs?, minimumValueMinor? }.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the triggers to weigh, each with when it fired and what it is worth.',
+          });
+        }
+        const candidates = findJourneyCandidates({
+          kind: kind as JourneyKind, triggers: triggers as JourneyTrigger[], now: deps.now(), completedRefs,
+          ...(isInt(b['quietMinutes']) ? { quietMinutes: b['quietMinutes'] as number } : {}),
+          ...(isInt(b['staleAfterMinutes']) ? { staleAfterMinutes: b['staleAfterMinutes'] as number } : {}),
+          ...(isInt(b['minimumValueMinor']) ? { minimumValueMinor: b['minimumValueMinor'] as number } : {}),
+        });
+        return { status: 200, body: { kind, candidates, eligibleCount: candidates.filter((c) => c.eligible).length, count: candidates.length } };
+      },
+    },
+    {
+      // Measure a campaign honestly (M21-FR-02). Only orders placed AFTER the send, inside the window, by
+      // people who received it — an order an hour before the message did not come from it. The control
+      // group's conversion is reported BESIDE it, because "recovered" customers who were coming back
+      // anyway are a cost dressed as a win; with no control it is called activity, not uplift. Body:
+      // { sentTo[], sentAt, attributionWindowHours, orders: [{customerRef, at, netMinor, marginMinor}], controlGroup? }.
+      api: 'API-06', method: 'POST', path: '/v1/service/campaigns/:campaignId/attribution',
+      permission: 'customer.campaign.read', idempotent: true,
+      handler: (ctx) => {
+        const campaignId = (ctx.params['campaignId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const sentTo = strArray(b['sentTo']);
+        const rawOrders = Array.isArray(b['orders']) ? b['orders'] : undefined;
+        const orders = rawOrders?.map(readOrder);
+        const controlGroup = optStrArray(b['controlGroup']);
+        const windowHours = b['attributionWindowHours'];
+        if (campaignId === '' || sentTo === undefined || !isStr(b['sentAt'])
+          || typeof windowHours !== 'number' || !(windowHours > 0)
+          || rawOrders === undefined || orders === undefined || orders.some((o) => o === undefined) || controlGroup === undefined) {
+          throw apiError(400, {
+            code: 'not_readable_as_an_attribution',
+            whatHappened: 'Attribution needs a campaignId in the path and { sentTo[], sentAt, attributionWindowHours (> 0), orders: [{customerRef, at, netMinor, marginMinor}], controlGroup? }.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send who was messaged, when, the window, and the orders to weigh against it.',
+          });
+        }
+        const result = measureCampaign({
+          campaignId, sentTo, sentAt: b['sentAt'] as string, attributionWindowHours: windowHours,
+          orders: orders as AttrOrder[], ...(controlGroup.length > 0 ? { controlGroup } : {}),
+        });
+        return { status: 200, body: result };
       },
     },
   ];
