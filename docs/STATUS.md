@@ -5,6 +5,24 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ OWNER DECISION — M04 planogram/shelf-map store DEFERRED to R6 (CH-02) (24 August 2026)
+
+**Owner instruction:** "merge #278 then defer planogram store to a later release." Recorded — nothing is
+dropped silently. Per the scope ratchet (OD-02, roadmap §14/§25), this is logged as **CH-02 (Approved) in
+`docs/registers/changes.md`, target R6 (Enterprise operations)** — the enterprise-merchandising / advanced-BI
+release, the natural home for a durable planogram/shelf-map store.
+
+**What is deferred:** building a **persisted cloud planogram/shelf-map store**. All four M04 FR engines are
+wired and working; the planogram-compliance route takes the plan in the request body today, which is
+sufficient for now — this defers only saving those plans on the cloud so the route reads a stored one.
+
+**Maturity — HONEST:** M04 stays **PARTIALLY_WIRED**. A deferred-but-unbuilt requirement is **not** counted
+as done — the deferral does not inflate the score. **Headline unchanged at 41.1%.** With all four M04 engines
+live and the planogram store formally scheduled to R6, M04 now has **no open, in-scope gap for the current
+release** — the next increment is free to move to a different module.
+
+---
+
 ## ★ M04 ASSORTMENT / RANGE MANAGEMENT WIRED — M04-FR-01 (all four M04 FR engines now live) (24 August 2026)
 
 **Owner direction:** "merge #277 then wire the next module." Wired the last unwired M04 engine —
