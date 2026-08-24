@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M04 ASSORTMENT / RANGE MANAGEMENT WIRED — M04-FR-01 (all four M04 FR engines now live) (24 August 2026)
+
+**Owner direction:** "merge #277 then wire the next module." Wired the last unwired M04 engine —
+`packages/merchandising/src/assortment.ts` (tested, in the ERP screen, on no cloud route).
+
+**What was built (M04-FR-01 · on API-04):**
+- **`POST /v1/merchandising/assortment/:store/:product/list`** lists an item into a store's range
+  (effective-dated, decided by the caller). **`…/drop`** runs the tested `dropFromRange` — the dangerous
+  operation: a drop **with stock on hand routes to CLEARANCE, never a silent delete** (deleting a stocked
+  item makes its stock invisible — not counted, not replenished, eventually written off). Reason and decider
+  mandatory; `422 range_decision_refused` on an unnamed decider or a "replaced" with no replacement named.
+- **`POST /v1/merchandising/assortment/:store/integrity`** (static, 5 segments — no collision with the
+  6-segment list/drop) folds the recorded range into an `Assortment` and runs `checkAssortmentIntegrity`:
+  **selling what you don't stock** (`sold_not_in_assortment`), **ordering what you dropped**
+  (`reordered_not_listed`), a finished clearance to delist, and dead listed lines holding shelf space.
+- **`GET /v1/merchandising/assortment/:store?onDate=`** resolves the listed range as-at a date. Event-sourced
+  `AssortmentEntryRecorded` per store, restart-safe. New perms `merchandising.range.manage`/`.read`.
+  Integration-tested (assortment.test.ts, 4 cases).
+
+**Honest maturity — HELD at PARTIALLY_WIRED, with an OWNER DECISION to offer:** with this, **all four M04 FR
+engines are now on the cloud** — shelf-count (FR-02), planogram-compliance (FR-03), space + display (FR-04)
+and assortment (FR-01). The one remaining piece is a **persisted planogram/shelf-map store** — the
+compliance route still takes the plan in the request body rather than reading a stored planogram. That gap is
+real, so M04 is **not** auto-re-rated. **Whether to wire that store next (to clear a WIRED re-rate) or defer
+it is an owner call.** **Headline stays 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract, run-on-tested-engine),
+`vitest run` **5897 passed / 262 skipped** ✓.
+
+---
+
 ## ★ M04 SPACE PRODUCTIVITY + DISPLAY-CONTRACT GOVERNANCE WIRED — M04-FR-04 (24 August 2026)
 
 **Owner direction:** "merge #276 then wire the next module." With M21 closed for the release, moved to a

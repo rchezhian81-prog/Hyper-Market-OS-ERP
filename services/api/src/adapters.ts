@@ -97,7 +97,8 @@ import type { SecretsDeps, SecretRef } from '../../platform/src/secrets';
 import type { OrgStructureDeps, OrgNode, GstRegistration } from '../../platform/src/org-structure';
 import type { ShelfCountDeps, ShelfCount } from '../../inventory/src/shelf-count';
 import type { SpacePerformanceDeps } from '../../inventory/src/space-performance';
-import type { DisplayContract } from '../../../packages/merchandising/src/index';
+import type { AssortmentDeps } from '../../inventory/src/assortment';
+import type { DisplayContract, AssortmentEntry } from '../../../packages/merchandising/src/index';
 import type { Hasher } from '../../../packages/audit/src/audit-trail';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
@@ -910,6 +911,8 @@ const forShelfCounts = (storeId: string): string => streamName(STREAM.inventory,
 // Display contracts are tenant-wide (the owner reviews them all; the review filters by store) — append-only,
 // folded latest-per-contractId so a correction supersedes.
 const DISPLAY_CONTRACT_STREAM = streamName(STREAM.inventory, 'display-contracts');
+// Range decisions are per store, append-only and effective-dated — the reads fold them into an Assortment.
+const forAssortment = (storeId: string): string => streamName(STREAM.inventory, 'assortment', storeId);
 /** Each pay run's lifecycle folds one stream — one run's history (drafted→…→locked), not the whole shop's. */
 const forPayRun = (payRunId: string): string => streamName(STREAM.payroll, payRunId);
 /** Each filing period's GSTR-1 submission folds one stream — one period's preview→approve→file history. */
@@ -2381,6 +2384,29 @@ export function spacePerformanceAdapter(input: {
         idempotencyKey: `display-contract-${tenantId}-${contractId}-${d}`,
         source: 'api/inventory',
         payload: contract,
+      }));
+    },
+  };
+}
+
+export function assortmentAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): AssortmentDeps {
+  return {
+    now: input.now,
+    // Every range entry for the store — append-only; the Assortment resolves the in-force status per date.
+    entries: (tenantId, storeId) => allOf<AssortmentEntry>(input.store, tenantId, forAssortment(storeId), 'AssortmentEntryRecorded'),
+    recordEntry: async (tenantId, storeId, entry, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, forAssortment(storeId), makeEvent({
+        id: `assortment-${storeId}-${entry.productId}-${d}`,
+        type: 'AssortmentEntryRecorded',
+        occurredAt: input.now(),
+        // A re-sent identical decision collapses; a genuinely new effective-dated change is a new key.
+        idempotencyKey: `assortment-${tenantId}-${storeId}-${entry.productId}-${d}`,
+        source: 'api/inventory',
+        payload: entry,
       }));
     },
   };
