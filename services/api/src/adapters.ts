@@ -99,6 +99,8 @@ import type { ShelfCountDeps, ShelfCount } from '../../inventory/src/shelf-count
 import type { SpacePerformanceDeps } from '../../inventory/src/space-performance';
 import type { AssortmentDeps } from '../../inventory/src/assortment';
 import type { DisplayContract, AssortmentEntry } from '../../../packages/merchandising/src/index';
+import type { DelegationDeps } from '../../identity/src/delegation';
+import type { Delegation } from '../../../packages/approvals/src/index';
 import type { Hasher } from '../../../packages/audit/src/audit-trail';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
@@ -913,6 +915,8 @@ const forShelfCounts = (storeId: string): string => streamName(STREAM.inventory,
 const DISPLAY_CONTRACT_STREAM = streamName(STREAM.inventory, 'display-contracts');
 // Range decisions are per store, append-only and effective-dated — the reads fold them into an Assortment.
 const forAssortment = (storeId: string): string => streamName(STREAM.inventory, 'assortment', storeId);
+// Approval delegations are tenant-wide, append-only, folded latest-per-delegationId (a revocation supersedes).
+const DELEGATION_STREAM = streamName(STREAM.identity, 'delegations');
 /** Each pay run's lifecycle folds one stream — one run's history (drafted→…→locked), not the whole shop's. */
 const forPayRun = (payRunId: string): string => streamName(STREAM.payroll, payRunId);
 /** Each filing period's GSTR-1 submission folds one stream — one period's preview→approve→file history. */
@@ -2384,6 +2388,33 @@ export function spacePerformanceAdapter(input: {
         idempotencyKey: `display-contract-${tenantId}-${contractId}-${d}`,
         source: 'api/inventory',
         payload: contract,
+      }));
+    },
+  };
+}
+
+export function delegationAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): DelegationDeps {
+  return {
+    now: input.now,
+    // Folded latest-per-delegationId by append order — a revocation (a re-record with revokedOn) supersedes.
+    delegations: async (tenantId) => {
+      const all = await allOf<Delegation>(input.store, tenantId, DELEGATION_STREAM, 'DelegationRecorded');
+      const byId = new Map<string, Delegation>();
+      for (const d of all) byId.set(d.delegationId, d);
+      return [...byId.values()];
+    },
+    recordDelegation: async (tenantId, delegation, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, DELEGATION_STREAM, makeEvent({
+        id: `delegation-${delegation.delegationId}-${d}`,
+        type: 'DelegationRecorded',
+        occurredAt: input.now(),
+        idempotencyKey: `delegation-${tenantId}-${delegation.delegationId}-${d}`,
+        source: 'api/identity',
+        payload: delegation,
       }));
     },
   };

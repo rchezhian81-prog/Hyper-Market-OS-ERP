@@ -91,6 +91,18 @@
   arriving), **`clearance_with_no_stock`** (clearance finished — delist it) and **`listed_never_sold`**
   (holding shelf space and cash). `GET /v1/merchandising/assortment/:store?onDate=` resolves the listed
   range as-at a date. Effective-dated, event-sourced per store.
+- **Approval delegation (API-01, M02-FR-03 · §28 · hard rule #4):** the honest alternative to the shared
+  login — the manager is on leave, refunds still need authorising, so a deputy is lent that authority
+  instead of the password. `POST /v1/access/delegations/:id` (`approvals.delegation.grant`) runs
+  `grantDelegation`, **authorised by the caller** (a separate person — even the owner cannot self-authorise
+  a lend of their own authority), refusing `self_delegation`, `exceeds_granter_authority`,
+  `widens_branch_scope`, `too_long` and — the loophole this exists to close — `chain_forbidden` (a delegate
+  cannot re-delegate: two hops in, nobody is accountable). `POST …/effective-authority` runs
+  `effectiveAuthority` — a person's **own** authority wins, a live delegation only **adds** what they lack,
+  an expired one grants nothing (it stops on its own). `GET /v1/access/delegations` runs `reviewDelegations`
+  — the standing-delegations audit that catches a fortnight's-leave grant from March still live in August
+  (active / expiring / expired / revoked). `POST …/:id/revoke` ends one early. The delegate always decides
+  **in their own name** — the absent manager's name is never used.
 - **Price change (API-02):** draft → **approve (separate approver)** → effective-dated
   publish into the signed edge price pack.
 - **Duplicate merge (API-02, M03-FR-04 §28):** detect suspected duplicates
