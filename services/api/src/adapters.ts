@@ -101,6 +101,8 @@ import type { AssortmentDeps } from '../../inventory/src/assortment';
 import type { DisplayContract, AssortmentEntry } from '../../../packages/merchandising/src/index';
 import type { DelegationDeps } from '../../identity/src/delegation';
 import type { Delegation } from '../../../packages/approvals/src/index';
+import type { DrillThroughDeps } from '../../reporting/src/drill-through';
+import type { DrillAudit } from '../../../packages/owner-control/src/index';
 import type { Hasher } from '../../../packages/audit/src/audit-trail';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
@@ -917,6 +919,8 @@ const DISPLAY_CONTRACT_STREAM = streamName(STREAM.inventory, 'display-contracts'
 const forAssortment = (storeId: string): string => streamName(STREAM.inventory, 'assortment', storeId);
 // Approval delegations are tenant-wide, append-only, folded latest-per-delegationId (a revocation supersedes).
 const DELEGATION_STREAM = streamName(STREAM.identity, 'delegations');
+// The owner drill audit — who reached which transactions (§28). Tenant-wide, append-only, never folded.
+const DRILL_AUDIT_STREAM = streamName(STREAM.platform, 'drill-audits');
 /** Each pay run's lifecycle folds one stream — one run's history (drafted→…→locked), not the whole shop's. */
 const forPayRun = (payRunId: string): string => streamName(STREAM.payroll, payRunId);
 /** Each filing period's GSTR-1 submission folds one stream — one period's preview→approve→file history. */
@@ -2388,6 +2392,28 @@ export function spacePerformanceAdapter(input: {
         idempotencyKey: `display-contract-${tenantId}-${contractId}-${d}`,
         source: 'api/inventory',
         payload: contract,
+      }));
+    },
+  };
+}
+
+export function drillThroughAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): DrillThroughDeps {
+  return {
+    now: input.now,
+    // Append-only — every drill is its own record; the audit is never overwritten or folded.
+    audits: (tenantId) => allOf<DrillAudit>(input.store, tenantId, DRILL_AUDIT_STREAM, 'DrillAudited'),
+    recordAudit: async (tenantId, audit, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, DRILL_AUDIT_STREAM, makeEvent({
+        id: `drill-audit-${d}`,
+        type: 'DrillAudited',
+        occurredAt: audit.at,
+        idempotencyKey: `drill-audit-${tenantId}-${d}`,
+        source: 'api/reporting',
+        payload: audit,
       }));
     },
   };

@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ OWNER DRILL-THROUGH WIRED — M29-FR-02 · NFR-15 · §28 · P-08 (24 August 2026)
+
+**Owner direction:** "merge #280 then wire the next module." Picked the tested-but-unwired control that most
+directly protects the owner's trust in his own numbers: **owner drill-through + KPI comparison**
+(`packages/owner-control`, M29-FR-02). The owner is not a programmer; he trusts a figure only as far as he
+can open it. This is the "show me the transactions behind this figure" button — and, crucially, the guard
+that the transactions **add up to the figure**.
+
+**What was built (M29-FR-02 · on API-10):**
+- **`POST /v1/reporting/drill`** (`owner.kpi.read`) runs `drillThrough` — returns the transactions behind a
+  KPI and **reconciles them to the headline**. When the rows do not add up it is said **LOUDLY**
+  (`reconciles:false`, `discrepancy` reading `DO NOT ADD UP`), never hidden — a drill that looks right and
+  is wrong is worse than none (P-08).
+- **Scope is enforced.** Rows in branches the viewer cannot see are **withheld**, the shown total is
+  recomputed from what remains, and the viewer is **told a figure exists they cannot see**
+  (`withheldCount`/`withheldTotalMinor`) — never a silently smaller list somebody later "fixes".
+- **`POST /v1/reporting/compare`** runs `compareBy` — ranks a metric across a dimension (category/branch/…)
+  with the **unattributed rows grouped, never dropped**, share in basis points; the rows must reconcile to
+  the total or they are not published.
+- **`GET /v1/reporting/drill-audits`** reads the drill log. Every drill is recorded append-only as
+  `DrillAudited` (who reached which transactions, whether it reconciled) — restart-safe (§28). New perm
+  `owner.kpi.read` (owner + store manager). Integration-tested (owner-drill-through.test.ts, 4 cases).
+
+**Maturity:** M29 was already **WIRED** (catalogue + KPI figures on the tested engine); this fills the
+FR-02 drill-through/comparison *remainder* on the cloud. No re-rate needed. **Headline unchanged at 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract, run-on-tested-engine),
+`vitest run` **5905 passed / 262 skipped** ✓.
+
+---
+
 ## ★ M02 APPROVAL DELEGATION WIRED — M02-FR-03 · §28 · P-04 · hard rule #4 (24 August 2026)
 
 **Owner direction:** "merge #279 then wire the next module." With M04/M21 closed for the release, moved to a

@@ -253,6 +253,18 @@
   marketing. `POST …/value-ranking` runs `rankByValue` — **by margin, not revenue** (both stated, because
   a ₹50k cigarette customer at 4% is worth less than a ₹20k fresh customer at 30%); a non-profiled
   customer is left out. A pure compute over the facts supplied — it writes nothing.
+- **Owner drill-through & KPI comparison (API-10, M29-FR-02 · NFR-15 · §28):** the owner sees a figure and
+  asks "show me". `POST /v1/reporting/drill` (`owner.kpi.read`) runs `drillThrough` — it returns the
+  transactions behind a KPI **and reconciles them to the headline**: when the rows do not add up it says so
+  **LOUDLY** (`reconciles:false`, a `discrepancy` that reads `DO NOT ADD UP`), because a drill that looks
+  right and is wrong is worse than none (P-08). **Scope is enforced** — rows in branches the viewer cannot
+  see are withheld, the shown total is recomputed, and the viewer is **told a figure exists they cannot
+  see** (`withheldCount`/`withheldTotalMinor`), never handed a silently smaller list. `POST
+  /v1/reporting/compare` runs `compareBy` — ranks a metric across a dimension with the **unattributed rows
+  grouped, never dropped**, and the rows must reconcile to the total or they are not published. Every drill
+  is logged (who reached which transactions) as an **append-only** `DrillAudited`, read at
+  `GET /v1/reporting/drill-audits` — restart-safe (§28). Pure reads/computes — they write nothing but the
+  audit.
 - **Finance reconciliation (API-09):** import bank/gateway statements → match →
   `ReconciliationExceptionRaised` / `…Resolved`; **period close is blocked until control
   totals validate** (QG-07) → `PeriodClosed` / `PeriodReopened`.
