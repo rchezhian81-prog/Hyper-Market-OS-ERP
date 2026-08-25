@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ IMPORT DATA-QUALITY WIRED — M30-FR-04 · P-08 · hard rule #6 (24 August 2026)
+
+**Owner direction:** "merge #282 then wire the next module." Picked the tested-but-unwired engine that most
+directly attacks the owner's stated pain — replacing a manpower-heavy ERP: `packages/import`'s **job history
++ supplier data-quality scoring** (M30-FR-04), on no cloud route. It catches the quiet, expensive failure a
+dashboard never shows: a supplier's file arriving with 12% of rows rejected every week for a year, where the
+operator fixes the dozen rows by hand so the import always "succeeds" and no alert ever fires.
+
+**What was built (M30-FR-04 · on API-03):**
+- **`POST /v1/purchase/import-jobs/:id`** (`purchase.import.record`) records an import outcome append-only —
+  **refusals kept alongside successes** (`ImportJobRecorded`, latest-per-jobId), because a history of only the
+  successes is how a file that fails half the time looks perfect (hard rule #6).
+- **`GET /v1/purchase/import-jobs`** runs `jobHistory` — newest-first, refusals included.
+- **`GET /v1/purchase/import-quality/:sourceId`** runs `scoreSource` — the score belongs to the **source, not
+  the operator**: accepted %, a band, the **ranked reasons with an action for each** (a count is a dashboard,
+  a reason is one email), the **direction** beside the level, and the quiet cost as **`annualFixHours`** ("52
+  hours a year retyping their rows"); too few rows refuses to score.
+- **`GET /v1/purchase/import-quality`** runs `compareSources` — deliberately a **list of people to talk to**,
+  worst-first, clean sources left alone.
+- New perms `purchase.import.record` (owner/store-manager) and `.read` (+ accountant). Event-sourced,
+  restart-safe. Integration-tested (import-quality.test.ts, 4 cases).
+
+**Maturity:** M30 stays **PARTIALLY_WIRED** — this fills the FR-04 remainder, but import validate/preview/
+commit (FR-01/03) + domain export (FR-02) are still foundation-only, so no re-rate is honest. **Headline
+unchanged at 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract, run-on-tested-engine),
+`vitest run` **5913 passed / 262 skipped** ✓.
+
+---
+
 ## ★ COMPLIANCE FOLLOW-THROUGH WIRED — M34-FR-04 follow-on · §28 · hard rule #6 (24 August 2026)
 
 **Owner direction:** "merge #281 then wire the next module." Picked the tested-but-unwired **named follow-on**

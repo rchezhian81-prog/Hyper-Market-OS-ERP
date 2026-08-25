@@ -165,6 +165,19 @@
   threshold (and it says how far short), a growth scheme measures against its baseline, and the
   **outstanding** (accrued − received) is the money **earned and not yet claimed**
   (`GET …/accruals` totals it). Event-sourced (`RebateSchemeRecorded`, `RebateAccrued`).
+- **Import job history & supplier data-quality (API-03, M30-FR-04 · P-08 · hard rule #6):** the control
+  that catches the quiet, expensive failure — a supplier's file arriving with 12% of rows rejected every
+  week for a year, where the operator fixes the dozen rows by hand so no alert ever fires.
+  `POST /v1/purchase/import-jobs/:id` (`purchase.import.record`) records an import outcome append-only —
+  **refusals kept alongside successes** (`ImportJobRecorded`), because a history of only the successes is
+  how a file that fails half the time looks perfect. `GET /v1/purchase/import-jobs` (`purchase.import.read`)
+  runs `jobHistory` (newest-first, refusals included). `GET /v1/purchase/import-quality/:sourceId` runs
+  `scoreSource` — the score belongs to the **source, not the operator**: accepted %, a band, the ranked
+  **reasons with the action for each** (a count is a dashboard, a reason is one email), the **direction**
+  beside the level (so a supplier improving from unusable to poor is not called a failure twice), and the
+  quiet cost as **`annualFixHours`** ("52 hours a year retyping their rows"); too few rows refuses to score
+  (`not_enough_data`). `GET /v1/purchase/import-quality` runs `compareSources` — deliberately a **list of
+  people to talk to**, worst-first, clean sources left alone. Pure reads over the recorded jobs; event-sourced, restart-safe.
 - **Supplier-portal probe detection (API-03, M24-FR-04):** the portal is the one place a party OUTSIDE
   the business acts on the system, so **every submission outcome is audited** — refusals as loudly as
   successes (`PortalActionAudited`, hard rule #6). A supplier submitting against **another** supplier's
