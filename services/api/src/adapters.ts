@@ -116,6 +116,7 @@ import type { PurchaseOrderDeps, StoredPurchaseOrder } from '../../purchase/src/
 import type { SupplierScorecardDeps } from '../../purchase/src/supplier-scorecard';
 import type { RebateDeps } from '../../purchase/src/rebates';
 import type { RfqDeps } from '../../purchase/src/rfq';
+import type { ImportQualityDeps, ImportJobRecord } from '../../purchase/src/import-quality';
 import { computeOpenCommitment, type ReceiptFact, type SupplierContract, type RebateScheme, type RebateAccrual, type Requisition, type Quote } from '../../../packages/purchasing/src/index';
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
 import type { CreditNoteDeps } from '../../finance/src/credit-notes';
@@ -931,6 +932,8 @@ const REBATE_SCHEMES_STREAM = streamName(STREAM.purchase, 'rebate-schemes');
 const forRebateAccruals = (schemeId: string): string => streamName(STREAM.purchase, 'rebate', schemeId);
 // RFQ: requisitions on one shared stream (latest per id); quotes on a per-requisition stream (latest per quote id).
 const REQUISITIONS_STREAM = streamName(STREAM.purchase, 'requisitions');
+// Import job history (M30-FR-04): every recorded job outcome on one shared stream, latest per jobId.
+const IMPORT_JOBS_STREAM = streamName(STREAM.purchase, 'import-jobs');
 const forRfqQuotes = (requisitionId: string): string => streamName(STREAM.purchase, 'rfq', requisitionId);
 /** Returns hang off the sale they are against, so "what came back on this bill?" reads one stream. */
 const forSaleReturns = (saleId: string): string => streamName(STREAM.sales, 'return', saleId);
@@ -3909,6 +3912,40 @@ export function rfqAdapter(input: {
         idempotencyKey: `quote-${tenantId}-${requisitionId}-${quote.quoteId}-${digest}`,
         source: 'api/purchase',
         payload: quote,
+      }));
+    },
+  };
+}
+
+/**
+ * Import job history & data-quality store (M30-FR-04). Every recorded job outcome is an append-only
+ * `ImportJobRecorded` fact on one shared stream — **refusals kept alongside successes** (hard rule #6),
+ * because a history of only the successes is how a file that fails half the time looks perfect. Folded
+ * latest-per-jobId so a re-send of the same outcome collapses; the score/history reads run the tested
+ * `@sre/import` engine over the fold.
+ */
+export function importQualityAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): ImportQualityDeps {
+  const foldJobs = async (tenantId: string): Promise<readonly ImportJobRecord[]> => {
+    const all = await allOf<ImportJobRecord>(input.store, tenantId, IMPORT_JOBS_STREAM, 'ImportJobRecorded');
+    const byId = new Map<string, ImportJobRecord>();
+    for (const j of all) byId.set(j.jobId, j);
+    return [...byId.values()];
+  };
+  return {
+    now: input.now,
+    jobs: (tenantId) => foldJobs(tenantId),
+    recordImportJob: async (tenantId, jobId, record, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, IMPORT_JOBS_STREAM, makeEvent({
+        id: `import-job-${jobId}-${d}`,
+        type: 'ImportJobRecorded',
+        occurredAt: input.now(),
+        idempotencyKey: `import-job-${tenantId}-${jobId}-${d}`,
+        source: 'api/purchase',
+        payload: record,
       }));
     },
   };
