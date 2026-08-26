@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ PACKING & DISPATCH WIRED — M19-FR-02 · D09 · M10-FR-02 (26 August 2026)
+
+**Owner direction:** "merge the next module." Wired the tested-but-unwired packing engine
+(`packages/fulfilment/src/packing.ts`) onto the cloud — the two moments between the shelf and the delivery
+van where the shop can catch a mistake for free or make an expensive one.
+
+**What was built (M19-FR-02 · on API-08):**
+- **`POST /v1/fulfilment/orders/:id/pack`** (`fulfilment.pack.record`) runs `packOrder` — a **weighed line's
+  final price is captured AT PACK** in exact integer minor units from the packed grams (never a guess at the
+  doorstep, where every guess is a customer overcharged or margin given away); a chilled/frozen/raw-meat line
+  with **no temperature, or one out of range, does not go on the van**; a crate mixing incompatible handling
+  (frozen with ambient, raw meat over ready-to-eat) is **refused, not warned** — one bad crate never stops
+  the rest of the order; the pack is **recorded** (`OrderPacked`) so dispatch cannot re-supply it.
+- **`POST …/:id/dispatch`** runs `dispatchOrder` over the **recorded** pack — the manifest is **derived from
+  what was packed, never from what was ordered**. Dispatch is refused `409` on an unsealed crate, a short or
+  refused line the customer has not been told about (`unresolved_lines` — the doorstep is the worst place for
+  that conversation), or an unpacked order. `dispatchedBy` = the authenticated caller, recorded
+  `OrderDispatched`.
+- **`GET …/:id/pack`** and **`GET …/:id/manifest`** read them (`fulfilment.pack.read`).
+- New perms `fulfilment.pack.record`/`.read` (owner + store manager). Event-sourced per order, restart-safe.
+  Integration-tested (fulfilment-packing.test.ts, 4 cases).
+
+**Maturity:** M19 stays **PARTIALLY_WIRED** — this fills FR-02, but the delivery state machine/proof
+(FR-01/03) and COD reconciliation (FR-04) are still foundation-only, so no re-rate is honest. **Headline
+unchanged at 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract, run-on-tested-engine),
+`vitest run` **5917 passed / 262 skipped** ✓.
+
+---
+
 ## ★ IMPORT DATA-QUALITY WIRED — M30-FR-04 · P-08 · hard rule #6 (24 August 2026)
 
 **Owner direction:** "merge #282 then wire the next module." Picked the tested-but-unwired engine that most
