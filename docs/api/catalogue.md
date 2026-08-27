@@ -293,6 +293,18 @@
   is logged (who reached which transactions) as an **append-only** `DrillAudited`, read at
   `GET /v1/reporting/drill-audits` — restart-safe (§28). Pure reads/computes — they write nothing but the
   audit.
+- **Packing & dispatch (API-08, M19-FR-02 · D09 · M10-FR-02):** the two moments between the shelf and the
+  van — one where a mistake is free to catch, one where it is expensive to make.
+  `POST /v1/fulfilment/orders/:id/pack` (`fulfilment.pack.record`) runs `packOrder` — a **weighed line's
+  final price is captured at pack** in exact integer minor units from the packed grams (never a guess at the
+  doorstep); a chilled/frozen/raw-meat line with **no temperature, or one out of range, does not go on the
+  van**; a crate that mixes incompatible handling is **refused, not warned**, while the rest of the order
+  still packs; and the pack is **recorded** (`OrderPacked`) so it cannot be re-supplied later.
+  `POST …/:id/dispatch` runs `dispatchOrder` over the **recorded** pack — the manifest is **derived from what
+  was packed, never from what was ordered** — refusing `409` an unsealed crate (`unsealed_crate`), a short or
+  refused line the customer has not been told about (`unresolved_lines`), or an unpacked order
+  (`no_pack_recorded`); `dispatchedBy` is the authenticated caller, recorded `OrderDispatched`.
+  `GET …/:id/pack` and `GET …/:id/manifest` read them (`fulfilment.pack.read`). Restart-safe.
 - **Finance reconciliation (API-09):** import bank/gateway statements → match →
   `ReconciliationExceptionRaised` / `…Resolved`; **period close is blocked until control
   totals validate** (QG-07) → `PeriodClosed` / `PeriodReopened`.

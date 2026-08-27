@@ -138,6 +138,7 @@ import type {
   Reservation, OrdersDeps, PlacedOrder, OrderTransition, OrderStateView, StoredSubstitution,
 } from '../../orders/src/index';
 import type { DeliveryAttempt, FulfilmentDeps } from '../../fulfilment/src/index';
+import type { FulfilmentPackingDeps, PackResult, Manifest } from '../../fulfilment/src/packing';
 import type { IdentityDeps } from '../../identity/src/index';
 import type { Role, RoleAssignment } from '../../../packages/rbac/src/rbac';
 import type { DependencyProbe, FeatureFlagChange, PlatformDeps, ExportedEvent } from '../../platform/src/index';
@@ -911,6 +912,9 @@ const forInstrument = (instrumentId: string): string => streamName(STREAM.loyalt
 const STORED_VALUE_INDEX = streamName(STREAM.loyalty, 'instruments');
 const forDriverRun = (driverId: string, runDate: string): string =>
   streamName(STREAM.delivery, driverId, runDate);
+// Packing & dispatch fold per order (M19-FR-02): one stream per order for its pack, one for its manifest.
+const forOrderPack = (orderId: string): string => streamName(STREAM.delivery, 'pack', orderId);
+const forOrderManifest = (orderId: string): string => streamName(STREAM.delivery, 'manifest', orderId);
 const forLocation = (locationId: string): string => streamName(STREAM.reservations, locationId);
 /** Each order's lifecycle folds one stream — one order's history end-to-end, not the whole shop's. */
 const forOrder = (orderId: string): string => streamName(STREAM.orders, orderId);
@@ -4800,6 +4804,52 @@ export function fulfilmentAdapter(input: {
      * empty run list made every run reconcile perfectly.
      */
     assigned: () => [],
+  };
+}
+
+/**
+ * Packing & dispatch store (M19-FR-02). One stream per order for its pack (latest wins — a re-pack
+ * supersedes), one for its manifest. The pack is recorded so dispatch builds the manifest from what
+ * was PACKED, never from what the caller re-supplies.
+ */
+export function fulfilmentPackingAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): FulfilmentPackingDeps {
+  const latestPack = async (tenantId: string, orderId: string): Promise<PackResult | undefined> => {
+    const all = await allOf<PackResult>(input.store, tenantId, forOrderPack(orderId), 'OrderPacked');
+    return all[all.length - 1]; // occurrence order → the last pack wins
+  };
+  const latestManifest = async (tenantId: string, orderId: string): Promise<Manifest | undefined> => {
+    const all = await allOf<Manifest>(input.store, tenantId, forOrderManifest(orderId), 'OrderDispatched');
+    return all[all.length - 1];
+  };
+  return {
+    now: input.now,
+    pack: (tenantId, orderId) => latestPack(tenantId, orderId),
+    manifest: (tenantId, orderId) => latestManifest(tenantId, orderId),
+    recordPack: async (tenantId, orderId, result, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, forOrderPack(orderId), makeEvent({
+        id: `order-pack-${orderId}-${d}`,
+        type: 'OrderPacked',
+        occurredAt: input.now(),
+        idempotencyKey: `order-pack-${tenantId}-${orderId}-${d}`,
+        source: 'api/fulfilment',
+        payload: result as unknown as Record<string, unknown>,
+      }));
+    },
+    recordDispatch: async (tenantId, orderId, manifest, key) => {
+      await input.store.append(tenantId, forOrderManifest(orderId), makeEvent({
+        id: `order-manifest-${orderId}-${key}`,
+        type: 'OrderDispatched',
+        occurredAt: input.now(),
+        // Keyed on the manifest id — a re-sent dispatch of the same manifest collapses (hard rule #2).
+        idempotencyKey: `order-manifest-${tenantId}-${orderId}-${key}`,
+        source: 'api/fulfilment',
+        payload: manifest as unknown as Record<string, unknown>,
+      }));
+    },
   };
 }
 
