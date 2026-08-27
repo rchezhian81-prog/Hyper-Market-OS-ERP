@@ -18,8 +18,12 @@ import { apiError } from '../../kernel/src/index';
 import {
   transitionDelivery,
   isTerminalDelivery,
+  reconcileCod,
+  CardDataError,
   type DeliveryState,
   type DeliveryEvent,
+  type CodExpectation,
+  type CodCollection,
 } from '../../../packages/fulfilment/src/index';
 
 export type AttemptOutcome =
@@ -158,6 +162,36 @@ function stateAfterAttempt(outcome: AttemptOutcome): DeliveryState {
   return transitionDelivery('out_for_delivery', event);
 }
 
+const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+const isNonNegInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
+
+/** Validate the caller-supplied COD expectations, or return undefined. */
+function readExpectations(v: unknown): readonly CodExpectation[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: CodExpectation[] = [];
+  for (const raw of v) {
+    if (typeof raw !== 'object' || raw === null) return undefined;
+    const e = raw as Record<string, unknown>;
+    if (!isStr(e['orderId']) || !isNonNegInt(e['expectedMinor'])) return undefined;
+    out.push({ orderId: e['orderId'], expectedMinor: e['expectedMinor'] });
+  }
+  return out;
+}
+
+/** Validate the caller-supplied COD collections. `method` is passed through — the tested engine is the
+ * authority that refuses anything but cash/UPI (hard rule #3), so a card method reaches it and is refused. */
+function readCollections(v: unknown): readonly CodCollection[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: CodCollection[] = [];
+  for (const raw of v) {
+    if (typeof raw !== 'object' || raw === null) return undefined;
+    const c = raw as Record<string, unknown>;
+    if (!isStr(c['orderId']) || !isNonNegInt(c['collectedMinor']) || typeof c['method'] !== 'string') return undefined;
+    out.push({ orderId: c['orderId'], collectedMinor: c['collectedMinor'], method: c['method'] });
+  }
+  return out;
+}
+
 export function fulfilmentRoutes(deps: FulfilmentDeps): readonly Route[] {
   return [
     {
@@ -204,6 +238,43 @@ export function fulfilmentRoutes(deps: FulfilmentDeps): readonly Route[] {
             cashHandedInMinor: Number(ctx.query['cashHandedInMinor'] ?? '0'),
           }),
         };
+      },
+    },
+    {
+      // COD reconciliation at shift end (M19-FR-04) — cash-on-delivery collected TO THE PAISA, matched per
+      // order against what was expected. Every mismatch is an OWNED, VALUED exception (short / over /
+      // uncollected / unexpected), never a silent loss (P-08); it feeds finance reconciliation (M23). COD is
+      // **cash/UPI only — a card method is REFUSED** (hard rule #3): the shop never holds card data. Body:
+      // { expectations:[{orderId, expectedMinor}], collections:[{orderId, collectedMinor, method}] }. A pure
+      // compute — the caller supplies both sides (like channel reconciliation); nothing is written.
+      api: 'API-08', method: 'POST', path: '/v1/fulfilment/cod/reconcile',
+      permission: 'delivery.run.read', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const expectations = readExpectations(b['expectations']);
+        const collections = readCollections(b['collections']);
+        if (expectations === undefined || collections === undefined) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_cod_reconciliation',
+            whatHappened: 'COD reconciliation needs { expectations: [{ orderId, expectedMinor }], collections: [{ orderId, collectedMinor, method }] }.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the COD amounts expected per order and what the drivers actually collected (cash or UPI).',
+          });
+        }
+        try {
+          // The engine is the authority on hard rule #3 — it throws on any method that is not cash/UPI.
+          return { status: 200, body: reconcileCod(expectations, collections) };
+        } catch (e) {
+          if (e instanceof CardDataError) {
+            throw apiError(422, {
+              code: 'card_data_not_allowed',
+              whatHappened: 'A COD collection used a card method. COD is cash/UPI only — the shop never holds card data (hard rule #3).',
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Record any card payment through the tokenised tender path, never as COD cash.',
+            });
+          }
+          throw e;
+        }
       },
     },
   ];
