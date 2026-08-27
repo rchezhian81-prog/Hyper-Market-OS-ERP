@@ -5,6 +5,34 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ CUSTOMER DUPLICATE DETECTION WIRED — M16-FR-01 · P-02 · P-08 · §28 (27 August 2026)
+
+**Owner direction:** "merge #287 then wire the next module." Picked the tested-but-unwired CRM data-quality
+engine (`packages/customer/src/matching.ts`) — one customer truth (P-02). A hypermarket accumulates the same
+person twice: they enrolled at the till on Tuesday and again on the app on Friday, and now their spend,
+loyalty and consent are split across two records that each look complete.
+
+**What was built (M16-FR-01 · on API-06):**
+- **`POST /v1/customer/duplicates`** (`customer.segment.read`) runs `detectDuplicateCustomers` — a shared
+  **VERIFIED** phone/email is a high-confidence **`merge_candidate`** (still governed); a shared unverified
+  contact or a matching name is low-confidence **`review`**; results ordered high-confidence first, with the
+  merge-candidate/review split reported.
+- **The rule that matters is what is NOT done: nothing is ever auto-merged** (P-08/§28). A wrong auto-merge
+  fuses two real people's records and is far harder to undo than a duplicate is to live with — so the engine
+  only proposes; the merge itself is a governed, reversible, audited act by a person.
+- A **stateless pure compute** over the caller's candidate set (the same shape as the segments routes), PII
+  compared on normalised values only. Reuses `customer.segment.read` — no new permission, no adapter/stream.
+  Integration-tested (customer-duplicates.test.ts, 4 cases).
+
+**Maturity:** M16 stays **PARTIALLY_WIRED** — this fills the FR-01 duplicate-detection remainder (alongside
+FR-02 segmentation already wired), but points/consent primitives and the per-tenant policy/profile
+persistence remain. **Headline unchanged at 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract, run-on-tested-engine),
+`vitest run` **5933 passed / 262 skipped** ✓.
+
+---
+
 ## ★ JOINER/MOVER/LEAVER WIRED — M02-FR-04 follow-on · SEC-11 · §28 · P-04 (27 August 2026)
 
 **Owner direction:** "merge #286 then wire the next module." Completed the M02-FR-04 access-lifecycle picture
