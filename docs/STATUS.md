@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ EMERGENCY ACCESS WIRED — M02-FR-04 · SEC-11 · §28 · P-04 (27 August 2026)
+
+**Owner direction:** "merge #285 then wire the next module." Picked the tested-but-unwired engine that closes
+a classic audit finding: **emergency (break-glass) access that quietly becomes permanent.** Support needs the
+owner's rights for twenty minutes to fix something; six months later they still have them and nobody remembers
+granting it. `packages/identity/src/lifecycle.ts` was tested since it was written and on no cloud route.
+
+**What was built (M02-FR-04 · on API-01):**
+- **`POST /v1/access/emergency/:id`** (`identity.role.grant`) runs `grantEmergencyAccess` — the
+  **authenticated caller is the approver** and can never be the requester (§28); the reason must be specific
+  enough to review afterwards; the **expiry is computed at grant time and stored**, so the access ends on its
+  own and does not depend on anyone remembering; and anything over the policy cap is refused
+  (`emergency_access_refused` — "there is no perpetual support access", SEC-11).
+- **`POST …/:id/revoke`** ends a grant early — recorded, never erased.
+- **`GET /v1/access/emergency`** (`identity.role.read`) runs `emergencyAccessReview` — who had elevated
+  access, when, why, for how long, and who allowed it; active and ended-early both visible, newest first.
+- **Never extended in place:** more time is a *new grant with a new approval*, which is exactly what makes it
+  appear in the review instead of accreting silently. Event-sourced (`EmergencyAccessRecorded`, latest-per-id
+  — a revocation supersedes), restart-safe. Reuses `identity.role.grant`/`.read` (owner) — no new permission.
+  Integration-tested (emergency-access.test.ts, 4 cases).
+
+**Maturity:** M02 was already **WIRED**; this fills the FR-04 emergency-access remainder. The joiner/mover/
+leaver leg (`applyLifecycle`, which rewrites the real role-grant scope) is the named follow-on. No re-rate.
+**Headline unchanged at 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract, run-on-tested-engine),
+`vitest run` **5925 passed / 262 skipped** ✓.
+
+---
+
 ## ★ COD RECONCILIATION WIRED — M19-FR-04 · hard rule #3 · P-08 (27 August 2026)
 
 **Owner direction:** "merge #284 then wire the next module." Continued the fulfilment surface with the

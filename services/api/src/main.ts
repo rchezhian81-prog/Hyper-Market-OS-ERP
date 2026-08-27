@@ -109,6 +109,7 @@ import { secretsRoutes } from '../../platform/src/secrets';
 import { orgStructureRoutes } from '../../platform/src/org-structure';
 import { identityRoutes, tokenAuthenticator } from '../../identity/src/index';
 import { delegationRoutes } from '../../identity/src/delegation';
+import { emergencyAccessRoutes } from '../../identity/src/emergency-access';
 import { platformRoutes, inMemorySettings, emptyExportBundle } from '../../platform/src/index';
 import { operationalHealthRoutes } from '../../platform/src/operational-health';
 import { purchaseRoutes } from '../../purchase/src/index';
@@ -143,7 +144,7 @@ import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, financeAdapter, settlementAdapter,
-  customerAdapter, dataRightsAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, drillThroughAdapter, platformAdapter, riskRegisterAdapter,
+  customerAdapter, dataRightsAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, riskRegisterAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, salesHistoryAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
@@ -221,6 +222,10 @@ export function buildSurface(deps: {
     ...delegationRoutes(store === undefined
       ? { delegations: empty([]), recordDelegation: () => {}, now }
       : delegationAdapter({ store, now })),
+    // Emergency access (M02-FR-04 · SEC-11) — time-bound at grant, self-expiring, never extended in place, reviewed.
+    ...emergencyAccessRoutes(store === undefined
+      ? { grant: empty(undefined), grants: empty([]), recordGrant: () => {}, now }
+      : emergencyAccessAdapter({ store, now })),
     ...catalogueRoutes(store === undefined ? {
       signer, currentPack: empty(undefined), storePack: () => {},
       buildSnapshot: (tenantId) => ({ tenantId, version: 1, builtAt: now(), products: [], barcodes: [] }),
