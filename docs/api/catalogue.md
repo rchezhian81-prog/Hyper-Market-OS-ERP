@@ -114,6 +114,16 @@
   who allowed it, active and ended-early both visible. Never extended in place: more time is a **new grant
   with a new approval**, which is exactly what makes it appear in the review. Event-sourced
   (`EmergencyAccessRecorded`), restart-safe.
+- **Joiner / mover / leaver (API-01, M02-FR-04 · SEC-11 · §28):** access has to track employment reality —
+  the gap between what someone can do and what their job is, is where fraud lives.
+  `POST /v1/access/lifecycle/:id` (`identity.role.grant`) runs `applyLifecycle` — **it decides, the caller
+  applies**. A **mover REPLACES scope**: the old roles/branches are removed in the same act (nobody ends up
+  able to raise a stock adjustment AND settle the till it hides in) and sessions close so the new scope takes
+  effect now. A **leaver is blocked until their owned open items are reassigned** (an unapproved PO owned by
+  nobody never gets approved), then fully revoked with sessions closed and a **priority sync** (§31). The
+  caller is the approver and can never be the requester (`self_service_access_refused` `422`, §28). Returns
+  what the person holds afterwards, what was removed, whether sessions close, and any blockers to clear
+  first. A pure decision — nothing is written; the role-grant change goes through the identity grant events.
 - **Price change (API-02):** draft → **approve (separate approver)** → effective-dated
   publish into the signed edge price pack.
 - **Duplicate merge (API-02, M03-FR-04 §28):** detect suspected duplicates

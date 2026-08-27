@@ -110,6 +110,7 @@ import { orgStructureRoutes } from '../../platform/src/org-structure';
 import { identityRoutes, tokenAuthenticator } from '../../identity/src/index';
 import { delegationRoutes } from '../../identity/src/delegation';
 import { emergencyAccessRoutes } from '../../identity/src/emergency-access';
+import { accessLifecycleRoutes } from '../../identity/src/access-lifecycle';
 import { platformRoutes, inMemorySettings, emptyExportBundle } from '../../platform/src/index';
 import { operationalHealthRoutes } from '../../platform/src/operational-health';
 import { purchaseRoutes } from '../../purchase/src/index';
@@ -226,6 +227,9 @@ export function buildSurface(deps: {
     ...emergencyAccessRoutes(store === undefined
       ? { grant: empty(undefined), grants: empty([]), recordGrant: () => {}, now }
       : emergencyAccessAdapter({ store, now })),
+    // Joiner/mover/leaver access-lifecycle decision (M02-FR-04) — a mover replaces scope, a leaver's owned
+    // items must be reassigned first. A pure decision (it decides, the caller applies) — no store needed.
+    ...accessLifecycleRoutes({ now }),
     ...catalogueRoutes(store === undefined ? {
       signer, currentPack: empty(undefined), storePack: () => {},
       buildSnapshot: (tenantId) => ({ tenantId, version: 1, builtAt: now(), products: [], barcodes: [] }),
