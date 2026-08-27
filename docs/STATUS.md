@@ -5,6 +5,33 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ COD RECONCILIATION WIRED — M19-FR-04 · hard rule #3 · P-08 (27 August 2026)
+
+**Owner direction:** "merge #284 then wire the next module." Continued the fulfilment surface with the
+tested-but-unwired **COD reconciliation** engine (`packages/fulfilment/src/cod.ts`) — cash-on-delivery is
+money the driver was carrying, and shift end is the only point at which the person who had it is still
+identifiable.
+
+**What was built (M19-FR-04 · on API-08):**
+- **`POST /v1/fulfilment/cod/reconcile`** (`delivery.run.read`) runs `reconcileCod` — matches COD collected
+  **to the paisa** per order against what was expected, and turns every mismatch into an **owned, valued
+  exception**: `short`/`over` (with the variance), `uncollected` (expected, nothing came) or `unexpected`
+  (collected, nobody expected it). Never a silent loss (P-08); it feeds finance reconciliation (M23).
+- **COD is cash/UPI only — a card method is refused `422`** (`card_data_not_allowed`), because the shop
+  **never holds card data** (hard rule #3). The tested engine is the authority on that refusal.
+- A pure compute — the caller supplies both sides (like channel reconciliation), nothing is written. Added
+  to the existing fulfilment routes (already runs on `@sre/fulfilment`), reusing `delivery.run.read` — no new
+  permission. Integration-tested (cod-reconciliation.test.ts, 4 cases).
+
+**Maturity:** M19 stays **PARTIALLY_WIRED** — this fills FR-04 (alongside FR-02 last increment), but the
+delivery state machine/proof (FR-01/03) are still foundation-only, so no re-rate is honest. **Headline
+unchanged at 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract, run-on-tested-engine),
+`vitest run` **5921 passed / 262 skipped** ✓.
+
+---
+
 ## ★ PACKING & DISPATCH WIRED — M19-FR-02 · D09 · M10-FR-02 (26 August 2026)
 
 **Owner direction:** "merge the next module." Wired the tested-but-unwired packing engine

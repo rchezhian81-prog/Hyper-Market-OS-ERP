@@ -305,6 +305,14 @@
   refused line the customer has not been told about (`unresolved_lines`), or an unpacked order
   (`no_pack_recorded`); `dispatchedBy` is the authenticated caller, recorded `OrderDispatched`.
   `GET …/:id/pack` and `GET …/:id/manifest` read them (`fulfilment.pack.read`). Restart-safe.
+- **COD reconciliation (API-08, M19-FR-04 · hard rule #3 · P-08):** cash-on-delivery is money the driver was
+  carrying, and shift end is the only point at which the person who had it is still identifiable.
+  `POST /v1/fulfilment/cod/reconcile` (`delivery.run.read`) runs `reconcileCod` — matches COD collected **to
+  the paisa** per order against what was expected, and every mismatch is an **owned, valued exception**:
+  `short`/`over` (with the variance), `uncollected` (expected, nothing came) or `unexpected` (collected,
+  nobody expected it) — never a silent loss, and it feeds finance reconciliation (M23). **COD is cash/UPI
+  only — a card method is refused `422`** (`card_data_not_allowed`), because the shop never holds card data
+  (hard rule #3). A pure compute — the caller supplies both sides, nothing is written.
 - **Finance reconciliation (API-09):** import bank/gateway statements → match →
   `ReconciliationExceptionRaised` / `…Resolved`; **period close is blocked until control
   totals validate** (QG-07) → `PeriodClosed` / `PeriodReopened`.
