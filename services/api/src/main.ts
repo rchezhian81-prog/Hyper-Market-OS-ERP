@@ -131,6 +131,7 @@ import { customerRoutes } from '../../customer/src/index';
 import { dataRightsRoutes } from '../../customer/src/data-rights';
 import { serviceCaseRoutes } from '../../customer/src/service-cases';
 import { segmentRoutes } from '../../customer/src/segments';
+import { customerDuplicatesRoutes } from '../../customer/src/duplicates';
 import { campaignRoutes } from '../../customer/src/campaigns';
 import { notificationGuardRoutes } from '../../customer/src/notification-guard';
 import { backupVerificationRoutes } from '../../platform/src/backup-verification';
@@ -424,6 +425,8 @@ export function buildSurface(deps: {
       : serviceCaseAdapter({ store, now })),
     // Consent-gated segmentation (M16-FR-02) — a pure compute over supplied facts; no store.
     ...segmentRoutes({ now }),
+    // Customer duplicate detection (M16-FR-01) — find the same person twice, propose a merge, never auto-merge.
+    ...customerDuplicatesRoutes({ now }),
     // Campaign send-gate (M21-FR-01) — consent checked per recipient against the stored ledger (P-02).
     ...campaignRoutes(store === undefined
       ? { consentRecords: empty([]), plans: empty([]), recordPlan: () => {}, now }

@@ -302,6 +302,14 @@
   marketing. `POST …/value-ranking` runs `rankByValue` — **by margin, not revenue** (both stated, because
   a ₹50k cigarette customer at 4% is worth less than a ₹20k fresh customer at 30%); a non-profiled
   customer is left out. A pure compute over the facts supplied — it writes nothing.
+- **Customer duplicate detection (API-06, M16-FR-01 · P-02 · P-08 · §28):** the same person enrolls twice —
+  at the till on Tuesday, on the app on Friday — and their spend, loyalty and consent split across two
+  records. `POST /v1/customer/duplicates` (`customer.segment.read`) runs `detectDuplicateCustomers` — a
+  shared **VERIFIED** phone/email is a high-confidence **`merge_candidate`** (still governed), a shared
+  unverified contact or a matching name is low-confidence **`review`**, ordered high-confidence first. **The
+  rule that matters is what is NOT done: nothing is ever auto-merged** — a merge fuses two real people's
+  records and is a governed, reversible, audited act by a person (§28); this only proposes. A stateless pure
+  compute over the caller's candidate set, PII compared on normalised values only.
 - **Owner drill-through & KPI comparison (API-10, M29-FR-02 · NFR-15 · §28):** the owner sees a figure and
   asks "show me". `POST /v1/reporting/drill` (`owner.kpi.read`) runs `drillThrough` — it returns the
   transactions behind a KPI **and reconciles them to the headline**: when the rows do not add up it says so
