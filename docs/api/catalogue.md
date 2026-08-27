@@ -103,6 +103,17 @@
   — the standing-delegations audit that catches a fortnight's-leave grant from March still live in August
   (active / expiring / expired / revoked). `POST …/:id/revoke` ends one early. The delegate always decides
   **in their own name** — the absent manager's name is never used.
+- **Emergency access (API-01, M02-FR-04 · SEC-11 · §28):** the elevated access that is real, necessary and
+  the one that quietly becomes permanent — support needs the owner's rights for twenty minutes and still has
+  them six months later. `POST /v1/access/emergency/:id` (`identity.role.grant`) runs `grantEmergencyAccess`
+  — the **authenticated caller is the approver** and can never be the requester (§28); the reason must be
+  specific enough to review; the **expiry is computed at grant and stored** so it ends on its own; and
+  anything over the policy cap is refused (`emergency_access_refused` — "no perpetual support access").
+  `POST …/:id/revoke` ends one early (recorded, never erased). `GET /v1/access/emergency`
+  (`identity.role.read`) runs `emergencyAccessReview` — who had elevated access, when, why, for how long and
+  who allowed it, active and ended-early both visible. Never extended in place: more time is a **new grant
+  with a new approval**, which is exactly what makes it appear in the review. Event-sourced
+  (`EmergencyAccessRecorded`), restart-safe.
 - **Price change (API-02):** draft → **approve (separate approver)** → effective-dated
   publish into the signed edge price pack.
 - **Duplicate merge (API-02, M03-FR-04 §28):** detect suspected duplicates

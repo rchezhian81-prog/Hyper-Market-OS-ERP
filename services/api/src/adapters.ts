@@ -100,6 +100,7 @@ import type { SpacePerformanceDeps } from '../../inventory/src/space-performance
 import type { AssortmentDeps } from '../../inventory/src/assortment';
 import type { DisplayContract, AssortmentEntry } from '../../../packages/merchandising/src/index';
 import type { DelegationDeps } from '../../identity/src/delegation';
+import type { EmergencyAccessDeps, EmergencyGrant } from '../../identity/src/emergency-access';
 import type { Delegation } from '../../../packages/approvals/src/index';
 import type { DrillThroughDeps } from '../../reporting/src/drill-through';
 import type { DrillAudit } from '../../../packages/owner-control/src/index';
@@ -977,6 +978,7 @@ const DISPLAY_CONTRACT_STREAM = streamName(STREAM.inventory, 'display-contracts'
 const forAssortment = (storeId: string): string => streamName(STREAM.inventory, 'assortment', storeId);
 // Approval delegations are tenant-wide, append-only, folded latest-per-delegationId (a revocation supersedes).
 const DELEGATION_STREAM = streamName(STREAM.identity, 'delegations');
+const EMERGENCY_ACCESS_STREAM = streamName(STREAM.identity, 'emergency-access');
 // The owner drill audit — who reached which transactions (§28). Tenant-wide, append-only, never folded.
 const DRILL_AUDIT_STREAM = streamName(STREAM.platform, 'drill-audits');
 /** Each pay run's lifecycle folds one stream — one run's history (drafted→…→locked), not the whole shop's. */
@@ -2499,6 +2501,35 @@ export function delegationAdapter(input: {
         idempotencyKey: `delegation-${tenantId}-${delegation.delegationId}-${d}`,
         source: 'api/identity',
         payload: delegation,
+      }));
+    },
+  };
+}
+
+export function emergencyAccessAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): EmergencyAccessDeps {
+  // Folded latest-per-grantId by append order — a revocation (a re-record with revokedAt) supersedes.
+  const foldGrants = async (tenantId: string): Promise<readonly EmergencyGrant[]> => {
+    const all = await allOf<EmergencyGrant>(input.store, tenantId, EMERGENCY_ACCESS_STREAM, 'EmergencyAccessRecorded');
+    const byId = new Map<string, EmergencyGrant>();
+    for (const g of all) byId.set(g.grantId, g);
+    return [...byId.values()];
+  };
+  return {
+    now: input.now,
+    grants: (tenantId) => foldGrants(tenantId),
+    grant: async (tenantId, grantId) => (await foldGrants(tenantId)).find((g) => g.grantId === grantId),
+    recordGrant: async (tenantId, grantId, grant, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, EMERGENCY_ACCESS_STREAM, makeEvent({
+        id: `emergency-access-${grantId}-${d}`,
+        type: 'EmergencyAccessRecorded',
+        occurredAt: input.now(),
+        idempotencyKey: `emergency-access-${tenantId}-${grantId}-${d}`,
+        source: 'api/identity',
+        payload: grant as unknown as Record<string, unknown>,
       }));
     },
   };
