@@ -5,6 +5,35 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ JOINER/MOVER/LEAVER WIRED — M02-FR-04 follow-on · SEC-11 · §28 · P-04 (27 August 2026)
+
+**Owner direction:** "merge #286 then wire the next module." Completed the M02-FR-04 access-lifecycle picture
+with its named follow-on: the **joiner/mover/leaver** decision (`applyLifecycle`), the second half of the
+tested engine wired last increment. Access has to track employment reality — the gap between what someone can
+do and what their job is, is where fraud lives.
+
+**What was built (M02-FR-04 follow-on · on API-01):**
+- **`POST /v1/access/lifecycle/:id`** (`identity.role.grant`) runs `applyLifecycle` — **it decides, the
+  caller applies**.
+- **A mover REPLACES scope.** Someone moves from the fresh counter to the cash office and the old role is
+  removed *in the same act* — nobody ends up able to raise a stock adjustment AND settle the till it hides
+  in. Sessions close so the new scope takes effect now.
+- **A leaver is blocked until their owned open items are reassigned** (an unapproved PO owned by nobody
+  never gets approved), then fully revoked with sessions closed and a **priority sync** (§31 — an
+  ex-employee's access must not wait behind a queue of sales).
+- The caller is the approver and can never be the requester (`self_service_access_refused` 422, §28).
+- A **pure decision** — nothing is written; the role-grant change goes through the identity grant events.
+  Reuses `identity.role.grant` (owner) — no new permission, no adapter/stream. Integration-tested
+  (access-lifecycle.test.ts, 4 cases).
+
+**Maturity:** M02 stays **WIRED**; this completes the FR-04 lifecycle remainder (emergency access last
+increment + joiner/mover/leaver now). No re-rate. **Headline unchanged at 41.1%.**
+
+**Gate:** typecheck ✓ (incl. tests), lint ✓, guardrails ✓ (incl. api-surface-contract, run-on-tested-engine),
+`vitest run` **5929 passed / 262 skipped** ✓.
+
+---
+
 ## ★ EMERGENCY ACCESS WIRED — M02-FR-04 · SEC-11 · §28 · P-04 (27 August 2026)
 
 **Owner direction:** "merge #285 then wire the next module." Picked the tested-but-unwired engine that closes
