@@ -5,6 +5,40 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ TILL PACKAGE inc 3 — the store-login-token tool: a pilot lane can now sell AND report (28 August 2026)
+
+**Owner direction:** "build the token tool" — the last piece so the pilot lane's till not only sells but
+its sales reach the owner dashboard.
+
+**The honest boundary honoured:** production issues no tokens — `services/identity` verifies and never
+mints (hard rule #4), and a guardrail enforces that nothing under services/apps/edge can mint. So this
+is an **operator script**, `scripts/issue-store-token.mjs` (`pnpm run token:store`), the pilot's
+**stand-in** for a real identity provider (ADR OA-4, still open) — an out-of-band admin action a person
+runs with the signing key they already hold, exactly what a real IdP's admin console does at go-live.
+
+**What it does (M02-FR-01, hard rule #4):** mints the store-edge token in the exact shape the API's
+`verifyToken` checks — HS256 over `{ sub, tenant_id, iss, aud, exp }` — reading the identity settings
+from `.env`, valid 30 days by default, printed **once** with a "this is a secret" warning, never written
+to a file and never printing the signing key. **Proven, not asserted:** the minted token is run through
+the **real authenticator** and **banks a real sale** through the full auth pipeline
+(`tests/integration/store-token.test.ts`, 5 cases: verifies + carries tenant/user; refused on a wrong
+key; refused when expired; a sale synced with it is banked 202; and no token is 401). The install
+runbook's Step 7 now issues it with one command.
+
+**What a full pilot lane now is.** With this, following `in-store-install.md` gives a till that **sells
+offline-first AND, once the token is set and the account provisioned, syncs its sales to the books and
+the owner dashboard** on one PC — the pilot's signal 1 is now reachable end to end. The one honest
+dependency that remains is a **person step, not a code gap**: the `store-edge` login must be provisioned
+with the sync permission (`pos.sale.sync`), a store-setup action (UAT-05). And the production credential
+source is still the open identity-provider decision (OA-4) — this tool is the pilot stand-in. Headline
+maturity unchanged (41.1%). Full gate green.
+
+**The till package is complete for the pilot:** browser till takes a sale (inc 1) → deployable one-PC
+till + install steps (inc 2) → the store token so it reports to the books (inc 3). A technician can now
+stand up a pilot lane that sells and reports.
+
+---
+
 ## ★ TILL PACKAGE inc 2 — the deployable one-PC till, proven in a browser, with install steps (28 August 2026)
 
 **Owner direction:** "build step 2." The deployable one-PC till + the click-by-click install steps, on
