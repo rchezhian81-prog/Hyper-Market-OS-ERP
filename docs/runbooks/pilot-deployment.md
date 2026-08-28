@@ -106,6 +106,23 @@ docker compose logs migrate
 You should see each migration either `apply`ed or `skip`ped, ending with *"Done — N
 migration(s) checked"*. Running it again applies nothing new — it is safe to re-run.
 
+## Step 3½ — One command that checks all of it
+
+Instead of reading `docker compose ps`, the two health addresses and the logs by hand, run the
+readiness check. It answers, in plain English, GREEN or RED for each piece — and if anything is
+RED it tells you exactly what to do:
+
+```
+pnpm run standup:check
+```
+
+You want a final **GREEN** line. It checks the settings file has no leftover placeholders, the API
+is running and can reach the database, the till screen is being served, and whether the store box
+is set to sync to the books or is (safely) selling-and-queuing only. It is read-only — it looks,
+it never changes anything. It does **not** ring a test sale to the books: that proof is day 1 of
+the pilot, with the real cashier login (the pilot plan's signal 1), because writing money into the
+books is a person's action, not a health probe's.
+
 ## Step 4 — Open the screens
 
 In a browser on that machine:
@@ -172,8 +189,14 @@ has actually been tested — not assumed).
 
 Being straight about the boundaries:
 
-- **No cloud sync yet.** The sync agent is built and tested, but the cloud endpoint it uploads
-  to needs the hosted tier — that is the vendor decision (ADR-0002).
+- **Cloud sync: built, proven, off by default in this box.** The store edge, the sync agent and
+  the cloud intake are all here in this stack, and a sale rung on the lane travelling all the way
+  to the cloud books is proven end to end (`tests/e2e/core-one-lane.test.ts`). In this single-box
+  pilot the edge starts **offline-first** — it sells and queues, and the unsent counter goes up —
+  which is the safe state to begin a pilot in. To also drain those sales to the books on the same
+  box, set `CLOUD_API_URL=http://api:8081` in `.env` and give the edge a **store token** as
+  `CLOUD_API_TOKEN` (a token is minted for a provisioned store login — part of set-up, not a value
+  in this file). Signal 1 of the pilot — sales appearing on the owner dashboard — needs sync on.
 - **No real product data.** The catalogue snapshot builder is ready; feeding it your actual
   products and prices is a data step (M30 import).
 - **No printer attached.** Receipt building and ESC/POS output are built and tested; connecting
