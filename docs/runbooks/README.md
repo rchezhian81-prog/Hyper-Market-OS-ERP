@@ -9,9 +9,11 @@ Step-by-step instructions a non-programmer can follow, especially at 9pm when so
 If you are standing the system up for the **one-lane pilot**, follow these in sequence. Each one
 hands off to the next; you do not need to know which of the other runbooks exists.
 
-1. **`pilot-deployment.md`** — bring the whole system up on one machine with one command
-   (`docker compose up`): database, schema, cloud API, the store box, and the till/owner screens.
-   Vendor-neutral — it does not commit you to a cloud provider.
+1. **`in-store-install.md`** — install a **working till** on one shop PC for the pilot lane:
+   database and cloud API in containers, and the till's edge running on the PC so the browser can
+   reach it — the arrangement that actually takes a sale, proven end to end in a real browser. Start
+   here for the pilot. (`pilot-deployment.md` is the quick all-container "kick the tyres" stand-up; it
+   does not, on its own, take a sale from a browser till — the note in its Step 5 says why.)
 2. **`pnpm run standup:check`** — the readiness gate. One command that answers GREEN / RED, in
    plain English, for each piece: settings filled in, API running and ready, till screen served,
    sync setting. Read-only — it looks, never changes. Run it until it is GREEN.

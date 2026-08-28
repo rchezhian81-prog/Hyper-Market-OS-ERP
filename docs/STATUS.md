@@ -5,6 +5,41 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ TILL PACKAGE inc 2 — the deployable one-PC till, proven in a browser, with install steps (28 August 2026)
+
+**Owner direction:** "build step 2." The deployable one-PC till + the click-by-click install steps, on
+proven ground.
+
+**Proven (the whole one-PC till, in a real browser):** `tests/e2e/the-served-till-takes-a-sale.e2e.ts`
+stands up ONE edge process exactly as a one-PC install runs it — it serves the **real POS shell** (the
+screens server, as the container entry point runs it) AND owns the write socket — then a real Chromium
+opens the served till on the box's loopback, rings a sale through the shell the cashier actually uses
+(`window.posSession`), and the sale **lands durably on the box's disk and is queued**. The commit
+crosses from the screen's port to the socket's port — the cross-origin hop increment 1 unblocked — so
+the served shell, the CORS answer and the durable commit are exercised as one thing, the way an install
+on one shop PC is. This is the first time a browser till taking a real sale on a single machine is
+proven end to end, not asserted.
+
+**Delivered (the install steps, on that proven ground):** `docs/runbooks/in-store-install.md` — a
+technician's click-by-click for the pilot lane's PC: database + cloud API in containers
+(`docker compose up -d db migrate api`), build the till and edge (`pnpm build:pos`/`build:edge`), run
+the till's edge **on the PC** (not a container — a container's loopback is private, so the browser
+could not reach it) serving the POS on `:8091` and taking sales on `:8090`, open
+`http://127.0.0.1:8091/pos/`, and prove it (a sale saves; it keeps selling with no internet;
+`pnpm run standup:check` is GREEN). The runbooks index now points here first for the pilot.
+
+**Honest scope — what a technician can now stand up, and the ONE remaining piece.** Following the
+runbook produces a **working, selling till on one PC**, offline-first: it takes sales, saves them
+durably, and queues them — proven. Turning on **sync to the books** (so sales reach the owner
+dashboard on that same PC) needs a **store token**, and the tooling to issue one is not built yet — it
+is the login-provisioning step (go-live checklist UAT-05). Until then the till runs offline-first and
+loses nothing; the sales wait in the queue. So the pilot's signal 1 (sales on the dashboard) still
+waits on that token tool, which is the next increment. Also still in-store steps, not code: loading
+your real prices, and the receipt printer. Headline maturity unchanged (41.1%). Full gate green
+(default suite + e2e).
+
+---
+
 ## ★ TILL PACKAGE inc 1 — the browser till can post its sale (cross-origin loopback) (28 August 2026)
 
 **Owner direction:** the owner asked to **"write the in-store install steps."** Investigating how a till
