@@ -21,6 +21,7 @@
     "secret-scan": "node scripts/secret-scan.mjs",
     "completion": "node scripts/completion-report.mjs",
     "standup:check": "node scripts/standup-check.mjs",
+    "token:store": "node scripts/issue-store-token.mjs",
     "db:migrate": "node scripts/migrate.mjs",
     "build:pos": "node scripts/build-app.mjs pos",
     "build:owner": "node scripts/build-app.mjs owner-app",

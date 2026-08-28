@@ -130,11 +130,26 @@ CLOUD_API_URL=http://127.0.0.1:8081 \
 CLOUD_API_TOKEN=<a store token — see below> \
 ```
 
-**The store token is the one remaining set-up piece.** It is a login token this store's edge uses to
-send its sales to the cloud API, and issuing it is part of provisioning the store's logins
-(go-live checklist UAT-05). Until a token is issued, run offline-first (Step 4) — the shop still
-trades and loses nothing; the sales wait in the queue. Tooling to issue a store token is the next
-increment of this work.
+**The store token** is a login token this store's edge uses to send its sales to the cloud API. Issue
+one with:
+
+```
+pnpm run token:store --tenant <your tenant id> --user store-edge --ttl-hours 720
+```
+
+It reads the identity settings from your `.env`, prints a token **once** (it is a secret — put it
+straight into `CLOUD_API_TOKEN`, never a file or a chat), and it is valid for 30 days. **The account
+it names (`store-edge`) must hold the sync permission** (`pos.sale.sync`) — provision that login with
+a sync-capable role as part of setting up the store's logins (go-live checklist UAT-05). A minted
+token that the real cloud API accepts and banks a sale with is proven in
+`tests/integration/store-token.test.ts`.
+
+> **Pilot stand-in.** This tool is the pilot's stand-in for a proper identity provider — the same
+> job that provider's admin console does at go-live. Choosing the production identity provider is a
+> later decision (ADR OA-4); when it lands, tokens come from it and this script is retired.
+
+Until a token is issued and the account is provisioned, run offline-first (Step 4) — the shop still
+trades and loses nothing; the sales wait in the queue.
 
 ---
 
@@ -153,8 +168,10 @@ Even in a pilot, take a backup before anything you care about — see `backup-an
 
 Being straight about the boundaries:
 
-- **A store token for live sync** (Step 7) — the tooling to issue one is the next increment; until
-  then the till runs offline-first.
+- **The production identity provider** — the store token (Step 7) is issued by a **pilot stand-in**
+  tool; the real credential source is the identity-provider decision (ADR OA-4), still open.
+- **Provisioning the `store-edge` login** with the sync permission — a store-setup step (UAT-05); the
+  token only works once that account holds it.
 - **Your real products and prices** — loading them is a data step (the catalogue), on the go-live
   checklist.
 - **A receipt printer** — receipt building is built and tested; attaching a physical printer is a
