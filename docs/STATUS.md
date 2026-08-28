@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ THE STAND-UP PACKAGE — a one-command green light for the pilot (28 August 2026)
+
+**Owner direction:** after choosing the one-lane pilot, the owner said **"prepare the stand-up package"** —
+everything a pilot lead needs to install the system in the store and *know* it is ready.
+
+**What was already there (and is good):** the containerised stack (`infra/compose/` — db, migrate, cloud API,
+the store box, the screens, one `docker compose up`), a fully-explained settings template (`.env.example`), the
+setup workbook, and the store go-live checklist (UAT-01…58). The gap was not "build it" — it was **coherence and
+a green light**.
+
+**What was prepared:**
+- **`pnpm run standup:check`** (`scripts/standup-check.mjs`) — the readiness gate. One command that answers, in
+  plain English, **GREEN / RED** for each piece: settings have no leftover placeholders, the cloud API is running
+  and can reach the database, the till screen is served, and whether the store box is set to sync to the books or
+  is (safely) selling-and-queuing only. **Read-only** — it looks, never changes; **credential-free** — only
+  unauthenticated health GETs. It deliberately does **not** ring a test sale to the books: that proof is day 1 of
+  the pilot with the real cashier login (signal 1), because writing money into the books is a person's action, not
+  a health probe's. Pure helpers unit-tested (`tests/unit/standup-check.test.ts`, 9 cases).
+- **The stand-up runbook made true.** `pilot-deployment.md` had said *"no cloud sync yet"* — stale since the
+  sale-to-books path was fixed and proven (#289). It now states the honest current state (built, proven,
+  offline-first by default; how to turn sync on for the single-box pilot) and adds the one-command readiness step.
+- **One entry point.** `docs/runbooks/README.md` now opens with **the stand-up package in order** — deploy →
+  `standup:check` → setup workbook → go-live checklist → run sheet → backup — so the pilot lead never has to guess
+  which of a dozen runbooks to open.
+
+**Honest scope:** this makes the existing package **usable and coherent** and gives the owner a green light before
+day 1. It does not itself deploy anything into a store, load real prices, or provision logins — those remain the
+in-store set-up steps on the go-live checklist. Headline maturity **unchanged (41.1%)**. Full gate green.
+
+---
+
 ## ★ PROVE THE CORE ON ONE LANE — found & fixed the sales-to-books break (28 August 2026)
 
 **Owner direction:** from the status map, the owner chose **"Prove the core on one lane"** — the honest next
