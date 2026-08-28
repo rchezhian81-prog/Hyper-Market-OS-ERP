@@ -152,6 +152,14 @@ This is the test worth doing in front of staff:
 The sale still completes and the **unsent counter** goes up. Nothing is lost. That is hard
 rule #1 working, and it is the single most important thing to demonstrate.
 
+> **Note (till packaging in progress).** For a *browser* till to commit a sale, the store box must
+> run where the browser can reach its lane socket on this machine's loopback — which the containerised
+> `edge` service in this stack does not yet do (a container's loopback is private to it). The
+> browser-side blocker (a cross-origin commit) is fixed and proven (`till-commits-cross-origin.e2e.ts`);
+> the deployable one-PC arrangement that makes this step work end to end, and the click-by-click
+> install steps for it, are the next increment. Until then, treat this step as the target, not a
+> guarantee of the current container stack.
+
 ---
 
 ## Stopping and restarting
