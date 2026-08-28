@@ -5,6 +5,47 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ PROVE THE CORE ON ONE LANE — found & fixed the sales-to-books break (28 August 2026)
+
+**Owner direction:** from the status map, the owner chose **"Prove the core on one lane"** — the honest next
+rung above "connected": drive the store's spine (scan → price → pay → commit offline → sync → books →
+owner's screen) end to end through the *real* pieces, on one lane.
+
+**What proving it found (a real break, caught by execution, not by reading):**
+The lane writes its sale to disk in the store's own shape — `{ id, number, total, tenders:[{ amount:{ minor } }] }`
+with **no `packVersion`**. The cloud `POST /v1/sales` reads `{ saleId, totalMinor, packVersion, amountMinor }`.
+The sync outbox carried the disk record **verbatim**, so every rung sale posted to the cloud was answered
+**400 — not readable as a sale**, and a 400 is permanent → **dead-lettered**. In plain terms: the money would
+be in the till and the receipt in the customer's hand, but **the sale would never reach the cloud books.** It
+stayed invisible because the one test that "proves a sale reaches the cloud" feeds the edge a **hand-built,
+already-cloud-shaped** record *and* skips unless a database is configured — so it went round the gap, twice.
+
+**What was fixed & proven (CORE-ONE-LANE · API-05 · M08·M12 · P-01/P-02/P-08 · §31.1 · #1/#6/#10):**
+- **`toCloudSale`** (`edge/store-edge/src/cloud-sale.ts`) — the one place the lane's sale and the cloud's
+  contract meet: renames `id→saleId` / `number→receiptNumber` / `total→totalMinor`, maps the tender
+  `amount.minor→amountMinor`, and **stamps `packVersion` from the pack the edge holds** (the pack the lane
+  priced from). Tolerant of a record already in the cloud shape, so it can never make a correct payload wrong.
+- Applied at **both** enqueue sites — live commit (`createEdgeNode.commit`) and boot-restore (`startEdge`,
+  now keyed on the sale's own id so a re-send collapses onto the live send).
+- A new **always-on** E2E (`tests/e2e/core-one-lane.test.ts`) rings the sale the way the lane actually does
+  (`bootPos`→`tenderCash`) and drives the **real** edge + outbox + `SyncAgent` + `httpTransport` + cloud
+  surface: **offline-first** (on the disk and queued, the cloud having seen nothing) → **banked** under its
+  own id and real total → the **owner dashboard shows the takings** → **resend banks exactly once**; plus a
+  **regression guard** that the raw till record is still refused 400 while the translated one banks. Mapper
+  unit-tested too (`tests/unit/edge-cloud-sale.test.ts`).
+
+**Maturity:** M12 stays **E2E_VERIFIED** — but that claim is now *genuinely* true for the real lane record and
+runs in the ordinary suite (it previously rested on a DB-gated test that bypassed this seam). This is a
+**correctness fix + a hardened, always-on proof**, not a new tier. **Headline unchanged at 41.1%.** Full gate
+green: typecheck, lint, 747 guardrails+contract, 5943 suite (262 DB/browser-gated skips).
+
+**Honest scope — what this does and does not prove:** it proves one lane's happy path + offline + idempotency
+through the real wire. It is **not** UAT and **not** production. The pilot (a real lane, real staff, a week)
+is still the next milestone; this makes the pilot safe to attempt, because the spine now demonstrably carries
+a sale from the counter to the books.
+
+---
+
 ## ★ CUSTOMER DUPLICATE DETECTION WIRED — M16-FR-01 · P-02 · P-08 · §28 (27 August 2026)
 
 **Owner direction:** "merge #287 then wire the next module." Picked the tested-but-unwired CRM data-quality
