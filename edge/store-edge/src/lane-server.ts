@@ -16,9 +16,26 @@
 // A shared secret would be theatre here. An attacker who can reach loopback is already running code
 // on the till, and a token sitting in the same browser buys nothing against them.
 //
-// ── Why it is deliberately tiny ─────────────────────────────────────────────
+// ── The screen and the socket are the same machine but not the same port ────
 //
-// One route, one method. Everything this server can do is commit a sale that has already been
+// The till's screen is served on one loopback port (the screens server) and this write socket is on
+// another. A browser treats two ports as two ORIGINS, so the screen's `fetch` to this socket is a
+// cross-origin request, and a cross-origin POST carrying JSON is one the browser refuses to send at
+// all unless this socket answers the preflight `OPTIONS` first and names the caller's origin back.
+// The first version answered neither — it hard-coded `access-control-allow-origin: null` and ignored
+// `OPTIONS` — so a real browser till could never post a sale, only the in-process tests could. That
+// is the same class of "every piece works apart, the join was never exercised in a browser" gap the
+// sale-to-books seam was.
+//
+// So this permits a cross-origin call **from a loopback origin only** — `127.0.0.1`, `localhost` or
+// `[::1]`, on any port. That is not a widening of the security control: the bind address already
+// means nothing off this machine can reach the socket at all, and every loopback origin is by
+// definition another page on this same till. A request from any other origin gets no allow header,
+// so the browser blocks it — belt to the bind's braces.
+//
+// ── Why it is otherwise deliberately tiny ───────────────────────────────────
+//
+// One write route, one method. Everything this server can do is commit a sale that has already been
 // priced and settled by the tested session model. It holds no pricing, no tender rules and no
 // catalogue: adding any of them would put a second, untested copy of the shop's rules on the far
 // side of a socket from the first.
@@ -29,18 +46,51 @@ import type { EdgeNode } from './index';
 /** The one address this may listen on. Named so the test can assert on it. */
 export const LANE_HOST = '127.0.0.1';
 
+/**
+ * Is this `Origin` header another page on this same machine? `127.0.0.1`, `localhost` and IPv6
+ * `[::1]` on any port; nothing else. Undefined (a same-origin or non-browser call that sends no
+ * Origin) is not cross-origin, so it needs no allowance and is not one of these.
+ *
+ * Pure and exported so the decision is unit-tested directly rather than only through a socket.
+ */
+export function isLoopbackOrigin(origin: string | undefined): boolean {
+  if (typeof origin !== 'string' || origin === '') return false;
+  let host: string;
+  try {
+    host = new URL(origin).hostname;
+  } catch {
+    return false;
+  }
+  // A URL parses `[::1]` back to `::1`; accept both the bracketed and bare forms.
+  return host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]';
+}
+
+/** The CORS headers to answer a loopback caller with — or nothing at all for any other origin. */
+function corsHeadersFor(origin: string | undefined): Record<string, string> {
+  if (!isLoopbackOrigin(origin)) return {};
+  return {
+    'access-control-allow-origin': origin!,
+    'access-control-allow-methods': 'POST, OPTIONS',
+    'access-control-allow-headers': 'content-type, idempotency-key',
+    'access-control-max-age': '600',
+    // The allowed origin depends on the request, so caches must key on it.
+    vary: 'Origin',
+  };
+}
+
 export interface LaneServer {
   readonly port: number;
   stop(): Promise<void>;
 }
 
-const send = (res: ServerResponse, status: number, body: unknown): void => {
+const send = (res: ServerResponse, status: number, body: unknown, cors: Record<string, string> = {}): void => {
   const text = JSON.stringify(body);
   res.writeHead(status, {
     'content-type': 'application/json',
     'content-length': String(Buffer.byteLength(text)),
-    // The shell is served from the same machine and origin; nothing else may call this.
-    'access-control-allow-origin': 'null',
+    // Present only for a loopback caller (another page on this same till); absent for any other
+    // origin, so the browser blocks it. See the note at the top of this file.
+    ...cors,
   });
   res.end(text);
 };
@@ -54,8 +104,18 @@ export function startLaneServer(input: {
   const maxBytes = input.maxBytes ?? 256 * 1024;
 
   const server: Server = createServer((req, res) => {
+    const cors = corsHeadersFor(req.headers.origin);
+
+    // The browser's preflight for the cross-origin POST from the till's screen. Answered only for a
+    // loopback origin; anything else gets no allow header and the browser refuses to send the POST.
+    if (req.method === 'OPTIONS' && req.url === '/lane/sales') {
+      res.writeHead(isLoopbackOrigin(req.headers.origin) ? 204 : 403, { 'content-length': '0', ...cors });
+      res.end();
+      return;
+    }
+
     if (req.method !== 'POST' || req.url !== '/lane/sales') {
-      send(res, 404, { error: 'the lane socket serves one route: POST /lane/sales' });
+      send(res, 404, { error: 'the lane socket serves one route: POST /lane/sales' }, cors);
       return;
     }
 
@@ -67,7 +127,7 @@ export function startLaneServer(input: {
       size += chunk.length;
       if (size > maxBytes && !refused) {
         refused = true;
-        send(res, 413, { error: 'sale payload too large' });
+        send(res, 413, { error: 'sale payload too large' }, cors);
         req.destroy();
         return;
       }
@@ -89,7 +149,7 @@ export function startLaneServer(input: {
             committed: false,
             refusedBecause: 'could_not_write_durably',
             laneMessage: 'This lane could not read the sale. Do not take payment — use another lane and tell the manager.',
-          });
+          }, cors);
           return;
         }
         if (typeof sale.id !== 'string' || sale.id === '') {
@@ -97,7 +157,7 @@ export function startLaneServer(input: {
             committed: false,
             refusedBecause: 'could_not_write_durably',
             laneMessage: 'This lane could not read the sale. Do not take payment — use another lane and tell the manager.',
-          });
+          }, cors);
           return;
         }
 
@@ -108,14 +168,14 @@ export function startLaneServer(input: {
           // 200 on a refusal too: the *request* was understood, and the answer is in the body. A
           // 5xx here would make a refused sale look like a broken lane, and the cashier needs to
           // know which it is — one means use another lane, the other means try again.
-          send(res, 200, outcome);
+          send(res, 200, outcome, cors);
         } catch (e) {
           send(res, 200, {
             committed: false,
             refusedBecause: 'could_not_write_durably',
             detail: e instanceof Error ? e.message : String(e),
             laneMessage: 'This lane could not save the sale. Do not take payment and do not hand over the goods — use another lane and tell the manager.',
-          });
+          }, cors);
         }
       })();
     });

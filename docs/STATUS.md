@@ -5,6 +5,41 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ TILL PACKAGE inc 1 — the browser till can post its sale (cross-origin loopback) (28 August 2026)
+
+**Owner direction:** the owner asked to **"write the in-store install steps."** Investigating how a till
+actually commits in the packaged system before writing a word — the discipline that caught the sales-to-books
+break — surfaced another real gap, so the owner chose **"build the till package first"** (layout advice: one
+PC for the pilot).
+
+**The gap (real, browser-only, never exercised by a test):** the till's screen is served on one loopback port
+and the sale-commit socket is on another. A browser sees that as **cross-origin**, and for a JSON POST it sends
+a preflight `OPTIONS` first and only sends the real POST if the socket answers and names the origin back. The
+lane socket answered **neither** — it hard-coded `access-control-allow-origin: null` and ignored `OPTIONS` — so
+a **real browser till could never take a sale**; only the in-process tests (same-origin/no-CORS) worked. Same
+class as the sales-to-books seam: every piece worked apart, the join was never exercised in a browser.
+
+**Fixed & proven (till-package increment 1 — ADR-0004, P-01, hard rule #1):**
+- The lane socket now answers a cross-origin call **from a loopback origin only** (`127.0.0.1` / `localhost` /
+  `[::1]`, any port) — the preflight and the echoed origin. Any other origin gets no allow header and the
+  browser blocks it. This is not a widening: the bind to `127.0.0.1` already means nothing off the machine can
+  reach the socket; every loopback origin is another page on this same till. `isLoopbackOrigin` is a pure,
+  unit-tested helper. (`edge/store-edge/src/lane-server.ts`)
+- **A real Chromium proof**: a page on one loopback origin posts a sale to the lane socket on another, and it
+  lands on the disk (`tests/e2e/till-commits-cross-origin.e2e.ts`) — the browser actually accepted the
+  cross-origin answer, which no in-process test could show. Plus the CORS contract unit-tested against the real
+  server (`tests/unit/lane-server-cors.test.ts`, 7 cases).
+
+**Honest scope — this is increment 1 of the till package, NOT the install steps yet.** It fixes the browser-CORS
+blocker. It does **not** yet produce a one-click working till, because two things remain: the edge must run where
+the till's browser can reach its loopback socket (a **host process**, not the current container whose loopback is
+private), and the rich POS screen served by the edge's screen-server must be driven → committed in a real
+browser end to end. That deployable one-PC arrangement + its browser proof is **increment 2**, and the
+click-by-click **install steps land at the end of it**, on proven ground — I will not write steps against an
+untested arrangement. Headline maturity unchanged (41.1%). Full gate green (5959 suite + 18 e2e).
+
+---
+
 ## ★ THE STAND-UP PACKAGE — a one-command green light for the pilot (28 August 2026)
 
 **Owner direction:** after choosing the one-lane pilot, the owner said **"prepare the stand-up package"** —
