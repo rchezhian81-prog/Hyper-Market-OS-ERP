@@ -46,7 +46,11 @@
 - **POS sale (API-05, edge-first):** commit locally → queue in the outbox → on sync
   `POST /v1/sales` with an `Idempotency-Key` → `SaleCommitted`. Tender emits
   `TenderAuthorized` / `TenderUncertain` / `TenderSettled`. **Never blocks on the network**
-  (hard rule #1); **never carries a card number** (hard rule #3).
+  (hard rule #1); **never carries a card number** (hard rule #3). The edge writes its sale
+  in the store's own shape (`id`/`total`); `toCloudSale` (`edge/store-edge/src/cloud-sale.ts`)
+  translates it into this endpoint's contract (`saleId`/`totalMinor`, stamping `packVersion`
+  from the pack the lane priced from) at the sync boundary — proven end to end through the
+  real lane in `tests/e2e/core-one-lane.test.ts` (prove the core on one lane).
 - **Stock movement (API-04):** `POST /v1/inventory/movements` **appends** an event →
   `InventoryMoved`; balance is projected; replay is safe. Adjustments →
   `InventoryAdjusted` (reason-coded, approved).

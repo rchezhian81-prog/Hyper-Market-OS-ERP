@@ -48,6 +48,7 @@ import { emptyPack, readPack, type StorePack } from './store-pack';
 import type { ScreenInput } from './screen-data';
 import { hmacSigner } from '../../../services/catalogue/src/index';
 import { makeEvent } from '../../../packages/contracts/src/event';
+import { toCloudSale } from './cloud-sale';
 import { makeTradingDayRule, tradingDate, type TradingDayRule } from '../../../packages/calendar/src/trading-day';
 import { readFile } from 'node:fs/promises';
 
@@ -151,6 +152,18 @@ export async function startEdge(
     recordsNow = { sales: recordsNow.sales, unreadable: all.filter((r) => !r.ok).length };
   };
 
+  const signer = hmacSigner(settings['PACK_SIGNING_KEY']!);
+
+  // The signed catalogue pack this box last accepted, restored from disk and re-verified the same
+  // way a lane verifies one over the wire (SYNC-01). So a reboot starts on the last pack it trusted,
+  // not a blank catalogue — and a tampered file on disk is rejected, starting from no pack instead.
+  // Read BEFORE the re-queue below, because a re-sent sale is translated to the cloud contract and
+  // stamped with the pack version this box holds (the disk record does not carry it).
+  const restoredPack = await readSignedPack(settings['EDGE_DATA_DIR']!, signer, tenantId);
+  if (restoredPack !== undefined) {
+    say(`catalogue pack v${restoredPack.snapshot.version} restored from disk — the last one this box trusted.`);
+  }
+
   /**
    * Rebuild the queue from the log.
    *
@@ -158,30 +171,28 @@ export async function startEdge(
    * view rather than trusting one that died with the process. Everything after the cursor is
    * re-queued; a sale that was mid-flight when the power went is therefore sent again, and the
    * cloud dedupes it (§31.1). Re-sending is cheap; skipping is permanent.
+   *
+   * Each record is translated to the cloud sale contract on its way into the queue (the same seam
+   * `createEdgeNode.commit` uses), so a sale re-sent after a crash is read by `/v1/sales` exactly
+   * like one sent live — not refused 400 and dead-lettered with the money already in the drawer.
+   * The idempotency key is keyed on the sale's own id, so a re-send collapses onto the live send.
    */
   let handledBefore = await readCursor(settings['EDGE_DATA_DIR']!);
   const whole = found.filter((r) => r.ok).map((r) => (r.ok ? r.record : ''));
   const toResend = whole.slice(handledBefore);
+  const restoredPackVersion = restoredPack?.snapshot.version ?? 0;
   for (const [i, record] of toResend.entries()) {
-    let payload: unknown;
-    try { payload = JSON.parse(record) as unknown; } catch { continue; }
-    const saleId = (payload as { saleId?: string }).saleId ?? `record-${handledBefore + i}`;
+    let parsed: unknown;
+    try { parsed = JSON.parse(record) as unknown; } catch { continue; }
+    const saleId = (parsed as { id?: string; saleId?: string }).id
+      ?? (parsed as { saleId?: string }).saleId ?? `record-${handledBefore + i}`;
     outbox.enqueue(makeEvent({
       id: `edge-sale-${saleId}`, type: 'SaleCommitted', occurredAt: new Date().toISOString(),
-      idempotencyKey: `edge-${tenantId}-${saleId}`, source: 'edge/lane', payload,
+      idempotencyKey: `edge-${tenantId}-${saleId}`, source: 'edge/lane',
+      payload: toCloudSale(parsed, restoredPackVersion),
     }));
   }
   if (toResend.length > 0) say(`${toResend.length} sale(s) from before are still to send.`);
-
-  const signer = hmacSigner(settings['PACK_SIGNING_KEY']!);
-
-  // The signed catalogue pack this box last accepted, restored from disk and re-verified the same
-  // way a lane verifies one over the wire (SYNC-01). So a reboot starts on the last pack it trusted,
-  // not a blank catalogue — and a tampered file on disk is rejected, starting from no pack instead.
-  const restoredPack = await readSignedPack(settings['EDGE_DATA_DIR']!, signer, tenantId);
-  if (restoredPack !== undefined) {
-    say(`catalogue pack v${restoredPack.snapshot.version} restored from disk — the last one this box trusted.`);
-  }
 
   const node = createEdgeNode({
     tenantId,

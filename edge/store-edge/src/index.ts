@@ -19,6 +19,7 @@ import { acceptPack, type SignedPack, type PackSigner } from '../../../services/
 import { commitLocally, type CommitOutcome, type DurableLog } from './durability';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
+import { toCloudSale } from './cloud-sale';
 
 /** What the lane asks the edge for, and all it may ask for. */
 export interface EdgeNode {
@@ -69,7 +70,10 @@ export function createEdgeNode(input: {
           // this same key, so a resend collapses to one sale (§31.1).
           idempotencyKey: `edge-${input.tenantId}-${saleId}`,
           source: 'edge/lane',
-          payload: JSON.parse(record) as unknown,
+          // Translated to the cloud's sale contract before it leaves — the disk record speaks
+          // `id`/`total`, `/v1/sales` speaks `saleId`/`totalMinor`/`packVersion`. The pack this edge
+          // holds is the one the lane priced this sale from, so it stamps the version (see cloud-sale.ts).
+          payload: toCloudSale(JSON.parse(record) as unknown, held?.snapshot.version ?? 0),
         }));
       }
       return outcome;
