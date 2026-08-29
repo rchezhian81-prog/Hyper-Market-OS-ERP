@@ -22,8 +22,9 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  grantDelegation, effectiveAuthority, reviewDelegations,
+  grantDelegation, effectiveAuthority, reviewDelegations, decideWithDelegation,
   type Delegation, type Approver, type DelegationRefusal,
+  type ApprovalRequest, type Decision, type DelegatedRefusal,
 } from '../../../packages/approvals/src/index';
 import type { Money, CurrencyCode } from '../../../packages/contracts/src/money';
 
@@ -53,6 +54,36 @@ const REFUSAL_STATUS: Readonly<Record<DelegationRefusal, number>> = {
   no_reason: 422, not_authorised: 422, self_delegation: 422, open_ended: 422, backwards_dates: 422,
   no_subject_types: 422, too_long: 422, exceeds_granter_authority: 422, widens_branch_scope: 422, chain_forbidden: 422,
 };
+
+// A decision refused on §28 grounds is not saved either — the maker deciding their own request (directly
+// or through a delegation aimed back at themselves), a decider with no authority, out of scope, or over
+// their cap. Every one is a 422 so the attempt is visible rather than silently blocked (P-08).
+const DECISION_REFUSAL_STATUS: Readonly<Record<DelegatedRefusal, number>> = {
+  self_approval_forbidden: 422, delegation_to_maker_forbidden: 422, no_authority: 422,
+  out_of_scope: 422, exceeds_authority: 422, reason_required: 422,
+};
+
+const isDecision = (v: unknown): v is Decision => v === 'approved' || v === 'rejected';
+
+/**
+ * Read the request being decided. `branchId` is null (or omitted) for a company-wide request; `value`
+ * is a Money or null (no monetary threshold). `status` is always 'pending' here — a decided request is
+ * what this route PRODUCES, never what it accepts.
+ */
+function readApprovalRequest(v: unknown): ApprovalRequest | undefined {
+  if (!isObj(v) || !isStr(v['id']) || !isStr(v['subjectType']) || !isStr(v['subjectRef']) || !isStr(v['requestedBy'])) return undefined;
+  const branchId = v['branchId'];
+  if (!(branchId === null || branchId === undefined || isStr(branchId))) return undefined;
+  const value = v['value'];
+  if (!(value === null || value === undefined || isMoney(value))) return undefined;
+  return {
+    id: v['id'] as string, subjectType: v['subjectType'] as string, subjectRef: v['subjectRef'] as string,
+    requestedBy: v['requestedBy'] as string,
+    branchId: isStr(branchId) ? branchId : null,
+    value: isMoney(value) ? value : null,
+    status: 'pending',
+  };
+}
 
 export interface DelegationDeps {
   /** Every delegation recorded for the tenant — folded latest-per-delegationId (a revocation supersedes). */
@@ -153,6 +184,43 @@ export function delegationRoutes(deps: DelegationDeps): readonly Route[] {
           ...(Number.isInteger(warnRaw) && warnRaw >= 0 ? { warnWithinDays: warnRaw } : {}),
         });
         return { status: 200, body: { onDate: today, rows, count: rows.length, needsAttention: rows.filter((r) => r.state === 'expiring').length } };
+      },
+    },
+    {
+      // Decide an approval under separation of duties (§28, hard rule #4). The decider is ALWAYS the
+      // authenticated caller — never a name from the body — and the two §28 refusals are enforced here:
+      // the maker cannot decide their own request, and a delegation aimed back at the maker ("I'll
+      // approve my own requests while I cover for you") is a self-approval with an extra step, refused by
+      // name so the attempt is visible. The caller's authority — their own, a live delegation, or none —
+      // is computed from the same append-only delegation store as `effective-authority`, so a decision
+      // over the delegate's cap or outside their branch is refused too. This is the SoD GATE: it returns
+      // the attributed decision to record, or the refusal; it commits nothing itself (like
+      // effective-authority). Body: { request { id, subjectType, subjectRef, requestedBy, branchId|null,
+      // value|null }, decision (approved|rejected), reason, own? (the decider's own approver record), onDate? }.
+      api: 'API-01', method: 'POST', path: '/v1/access/approvals/decide',
+      permission: 'approvals.delegation.read', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const request = readApprovalRequest(b['request']);
+        const own = b['own'] === undefined ? undefined : readApprover(b['own']);
+        if (request === undefined || !isDecision(b['decision']) || typeof b['reason'] !== 'string'
+          || (b['own'] !== undefined && own === undefined) || (b['onDate'] !== undefined && !isDate(b['onDate']))) {
+          throw apiError(400, { code: 'not_readable_as_a_decision', whatHappened: 'A delegated decision needs { request { id, subjectType, subjectRef, requestedBy, branchId|null, value {minor,currency}|null }, decision (approved|rejected), reason, own? (the decider\'s own approver record), onDate? }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the request, your decision and a reason. Who decides is taken from your login, never the body.' });
+        }
+        const authority = effectiveAuthority({
+          userId: ctx.userId, subjectType: request.subjectType,
+          delegations: await deps.delegations(ctx.tenantId),
+          today: isDate(b['onDate']) ? b['onDate'] as string : deps.now().slice(0, 10),
+          ...(own !== undefined ? { own } : {}),
+        });
+        const outcome = decideWithDelegation({
+          request, decidedBy: ctx.userId, decision: b['decision'] as Decision,
+          reason: b['reason'] as string, authority, at: deps.now(),
+        });
+        if (!outcome.ok) {
+          throw apiError(DECISION_REFUSAL_STATUS[outcome.refusal], { code: outcome.refusal, whatHappened: outcome.detail, wasItSaved: 'not_saved', nextSafeAction: 'The decision was not permitted and nothing was recorded. Escalate to someone who holds the authority, or correct the request.' });
+        }
+        return { status: 200, body: { ok: true, decision: outcome.request } };
       },
     },
   ];

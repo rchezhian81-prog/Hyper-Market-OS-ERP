@@ -5,6 +5,34 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ SEPARATION-OF-DUTIES DECISION WIRED — the maker-checker gate, and the loophole it closes (M02-FR-03 · §28 · P-04 · hard rule #4) (29 August 2026)
+
+**Owner direction:** "wire the next module." Picked the **§28 approval decision** — the last engine-only
+function in `packages/approvals` (grant, effective-authority, review and revoke were already live; only
+the decision itself, `decideWithDelegation`, had no route).
+
+**What was wired:** **`POST /v1/access/approvals/decide`** (`approvals.delegation.read`) runs the tested
+`decideWithDelegation` — the maker-checker rule, and the loophole most people actually try. A manager on
+leave delegates their approval authority to the very person whose requests need approving; that is not a
+delegation, it is **a self-approval with an extra step**, and it is refused *by name*
+(`delegation_to_maker_forbidden`) so the attempt is visible rather than merely blocked. Two properties
+make it safe: the **decider is always the authenticated caller** — never a name from the request body
+(hard rule #4) — and their authority (their own, a live delegation, or none) is computed from the **same
+append-only delegation store** as effective-authority, so a decision over the delegate's cap or outside
+their branch is refused too. It is the SoD **gate**: it returns the attributed decision to record and,
+like effective-authority, **commits nothing itself**. A stateless route on the already-registered
+`delegationRoutes` — no `main.ts` change, no persistence. Integration-tested through the real
+authenticated surface (`tests/integration/approval-decide.test.ts`, 5 cases: a clean approval recorded
+in the decider's own name; direct self-approval refused; **the delegation-to-maker loophole refused
+through a real granted delegation**; a decision over the cap refused; a 400 on an unreadable body; a 403
+without the permission).
+
+**Maturity:** M02 stays **WIRED** — this fills the FR-03 remainder and completes the whole
+`packages/approvals` decision surface (grant, effective-authority, review, revoke, decide): nothing
+engine-only left. **Headline unchanged at 41.1%.** Full gate green.
+
+---
+
 ## ★ PROMOTION ABUSE-CAP WIRED — a cap that holds at an offline till (M05-FR-04 · M20 · §31 · P-01 · P-08) (29 August 2026)
 
 **Owner direction:** "wire the next module." Picked the **offline-capable abuse cap** — the last
