@@ -94,6 +94,9 @@ import {
   createCountsReviewSession, type CountsReviewPorts, type CountsReviewSession, type CountRow,
 } from './counts-session';
 import {
+  createFleetSession, type FleetPorts, type FleetSession, type FleetDeviceRow, type FleetSummaryRollup,
+} from './fleet-session';
+import {
   createProductPublishReviewSession, type ProductPublishReviewPorts, type ProductPublishReviewSession,
 } from './product-publish-review-session';
 import { deliverOnePublish, type PublishDeliveryPort, type PublishHttp } from './product-publish-delivery';
@@ -604,6 +607,38 @@ export function bootCounts(data: CountsData | undefined): CountsReviewSession | 
   return createCountsReviewSession(
     { userId: data.userId === undefined ? null : data.userId },
     countsPortsFromData(data),
+  );
+}
+
+/** What the box tells the device fleet-manager screen — who is looking and what they may do (M33-FR-02/04).
+ *  The fleet itself is fetched from the cloud fleet-health call (wired next); the shell shows a sample
+ *  stand-in until then. `summary`/`devices` are carried when a later cloud→box sync provides them. */
+export interface FleetData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+  readonly summary?: FleetSummaryRollup;
+  readonly devices?: readonly FleetDeviceRow[];
+}
+
+const FLEET_READ_PERMISSION = 'platform.health.read';
+const FLEET_MANAGE_PERMISSION = 'platform.device.manage';
+const EMPTY_FLEET_ROLLUP: FleetSummaryRollup = { total: 0, trading: 0, blocked: 0, mustUpgrade: 0, silent: 0, byVersion: {} };
+
+export function fleetPortsFromData(data: FleetData | undefined): FleetPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    fleet: () => ({ summary: data?.summary ?? EMPTY_FLEET_ROLLUP, devices: data?.devices ?? [] }),
+    mayRead: () => held.has(FLEET_READ_PERMISSION),
+    mayManage: () => held.has(FLEET_MANAGE_PERMISSION),
+  };
+}
+
+/** Build the device fleet-manager screen, or `null` when the box carried no payload for it. */
+export function bootFleet(data: FleetData | undefined): FleetSession | null {
+  if (data === undefined) return null;
+  return createFleetSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    fleetPortsFromData(data),
   );
 }
 
@@ -1221,6 +1256,8 @@ interface ManagerWindow {
   wasteSession?: WasteReviewSession;
   countsData?: CountsData;
   countsSession?: CountsReviewSession;
+  fleetData?: FleetData;
+  fleetSession?: FleetSession;
   productPublishReviewData?: ProductPublishReviewData;
   productPublishReviewSession?: ProductPublishReviewSession;
   /** The device-backed catalogue outbox the review screen reads and, on the deliver action, drains — the SAME
@@ -1733,6 +1770,10 @@ if (browserWindow !== undefined) {
   if (waste !== null) browserWindow.wasteSession = waste;
   const counts = bootCounts(browserWindow.countsData);
   if (counts !== null) browserWindow.countsSession = counts;
+  // The device fleet manager (M33-FR-02/04): boots only when the box carried who is looking. The fleet
+  // itself is fetched from the cloud fleet-health call (wired next); until then the shell shows a sample.
+  const fleet = bootFleet(browserWindow.fleetData);
+  if (fleet !== null) browserWindow.fleetSession = fleet;
   // The products-to-publish review shares the SAME device-backed catalogue outbox the Save button commits to,
   // so exactly what was queued there is what is reviewed here. Its delivery port POSTs a ready publish under
   // the operator's own session (ADR-0013). Nothing publishes on boot — only the explicit deliver action does.

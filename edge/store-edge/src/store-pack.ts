@@ -449,6 +449,15 @@ export interface PackCountsPolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the device fleet-manager screen and what they may do (M33-FR-02/04). The fleet itself is read
+ *  from the cloud fleet-health call, not the pack; this is only who the box was told is looking. */
+export interface PackFleetPolicy {
+  readonly userId?: string;
+  /** The permission codes this user holds — `platform.health.read` to see the fleet, `platform.device.manage`
+   *  to register/block/retire a device. Never defaulted. */
+  readonly permissions: readonly string[];
+}
+
 /** Who is on the products-to-publish review screen and what they may do (ADR-0013, M03-FR-01/03). The queue
  *  itself is the device-backed catalogue outbox, not the pack; this is only who the box was told is looking. */
 export interface PackProductPublishReviewPolicy {
@@ -816,6 +825,7 @@ export interface StorePack {
   readonly countsQueue: Register<readonly unknown[]>;
   /** Who is on the stock-count review screen and what they may do there. */
   readonly countsPolicy: Register<PackCountsPolicy>;
+  readonly fleetPolicy: Register<PackFleetPolicy>;
   /** Who is on the products-to-publish review screen and what they may do there (ADR-0013). */
   readonly productPublishReviewPolicy: Register<PackProductPublishReviewPolicy>;
   /** Every account, so joiners, movers and leavers can be reviewed (M02-FR-04). */
@@ -955,6 +965,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     wastePolicy: notKnown(why),
     countsQueue: notKnown(why),
     countsPolicy: notKnown(why),
+    fleetPolicy: notKnown(why),
     productPublishReviewPolicy: notKnown(why),
     accounts: notKnown(why),
     supportSessions: notKnown(why),
@@ -1062,6 +1073,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     wastePolicy: section<PackWastePolicy>('wastePolicy'),
     countsQueue: section<readonly unknown[]>('countsQueue'),
     countsPolicy: section<PackCountsPolicy>('countsPolicy'),
+    fleetPolicy: section<PackFleetPolicy>('fleetPolicy'),
     productPublishReviewPolicy: section<PackProductPublishReviewPolicy>('productPublishReviewPolicy'),
     accounts: section<readonly unknown[]>('accounts'),
     supportSessions: section<readonly unknown[]>('supportSessions'),
