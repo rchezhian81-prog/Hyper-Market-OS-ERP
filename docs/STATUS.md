@@ -5,6 +5,40 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ SELF-CHECKOUT DECISION SURFACE WIRED — intervene rarely, watch always, never accuse at the lane (D04 · M12 · M15 · P-01) (29 August 2026)
+
+**Owner direction:** "wire the next module." Picked the **self-checkout decision surface** — three tested
+functions in `packages/self-checkout` whose price-integrity sibling was already live; a clean,
+non-delivery, non-owner-entangled module.
+
+**What was wired:** a new stateless `selfCheckoutRoutes()` (`services/pos/src/self-checkout.ts`, gated
+`selfcheckout.operate`) carrying the three lane decisions unchanged:
+- **`POST /v1/self-checkout/assess`** — the basket risk assessment. An intervention is *assistance, not
+  an accusation*: the customer sees a neutral message ("a colleague will be with you"), the attendant sees
+  the specific reason. Risk is scored **across the basket** (four loose-produce substitutions is a
+  pattern; one mis-weigh is not), and that `riskBps` is for the loss-prevention office, **never shown at
+  the lane**. An age-restricted line **always** blocks for a human — no setting changes it.
+- **`POST /v1/self-checkout/scan-and-go`** — earned trust with an honest sampling rate: released, or
+  audit_required, or trust_withdrawn on a *found* discrepancy (and the customer is told plainly), and an
+  age-restricted item ends the trip full stop.
+- **`POST /v1/self-checkout/kiosk-quote`** — a read-only price kiosk that **always says how fresh its
+  list is** and **stops quoting** past the staleness window rather than promise a price it no longer
+  trusts.
+
+All three are **stateless and offline-safe** — the lane supplies its own scanned lines, scale readings,
+clock and cached pack, so the same rule runs off the pack when the internet is not there (hard rule #1).
+No sale is committed. Registered once in `main.ts`; permission added to the owner and store-manager roles.
+Integration-tested through the real authenticated surface
+(`tests/integration/self-checkout-decisions.test.ts`, 5 cases: a clean basket completes unattended;
+age always stops for a human with a neutral customer message; scan-and-go releases a trusted trip but
+never one with an age-restricted item; the kiosk quotes fresh and refuses stale; a 400 and a 403).
+
+**Maturity:** M12 stays **E2E_VERIFIED**, M15 **WIRED**, D04 **PARTIALLY_WIRED** — this fills the
+self-checkout decision remainder (the SCO lane *screen* and sale-commit path remain). **Headline unchanged
+at 41.1%.** Full gate green.
+
+---
+
 ## ★ THREE-WAY MATCH WITH LANDED COST WIRED — do not pay for goods you never got, at a price you never agreed (M07-FR-04 · D03-FR-05 · §28) (29 August 2026)
 
 **Owner direction:** "wire the next module." Picked the **richer three-way match** — `matchInvoice`

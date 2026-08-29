@@ -48,7 +48,7 @@
     {"id": "D01", "label": "PARTIALLY_WIRED", "evidence": "recall-block wired; content/images authoring D01-FR-06 NOT STARTED"},
     {"id": "D02", "label": "PARTIALLY_WIRED", "evidence": "merchandising partial; display-funding D02-FR-06 NOT STARTED"},
     {"id": "D03", "label": "PARTIALLY_WIRED", "evidence": "supplier portal wired; landed-cost FR-05 now wired too (POST /v1/purchase/invoices/:id/reconcile apportions freight/duty across the invoice lines by value to the paisa via matchInvoice, tests/integration/purchase-invoice-reconcile.test.ts); OCR/e-invoice import D03-FR-02 NOT STARTED"},
-    {"id": "D04", "label": "PARTIALLY_WIRED", "evidence": "POS sale E2E; cash/self-checkout partial (M13/M14/M16)"},
+    {"id": "D04", "label": "PARTIALLY_WIRED", "evidence": "POS sale E2E; self-checkout/scan-and-go/price-kiosk DECISIONS now wired on the cloud (POST /v1/self-checkout/assess + /scan-and-go + /kiosk-quote run the tested packages/self-checkout engine -- basket risk scored across the basket with age always a human, scan-and-go release/audit/trust-withdrawn, read-only kiosk that stops quoting when stale; stateless + offline-safe, gated selfcheckout.operate, tests/integration/self-checkout-decisions.test.ts 5 cases); cash/M13/M14/M16 partial"},
     {"id": "D05", "label": "PARTIALLY_WIRED", "evidence": "stock/warehouse/production wired; FEFO/recall partial (M10)"},
     {"id": "D06", "label": "PARTIALLY_WIRED", "evidence": "M05 pricing wired; markdown/competitor-capture partial"},
     {"id": "D07", "label": "PARTIALLY_WIRED", "evidence": "loyalty points/gift wired; coupons/referrals engine-only (M17)"},
