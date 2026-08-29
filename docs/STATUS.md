@@ -5,6 +5,35 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ BACK-DOOR DOCK & ASN CONTROL WIRED — two lorries at one door, and the advice note that isn't a receipt (M07-FR-01/03) (29 August 2026)
+
+**Owner direction:** "wire the next module." Continued the last-stateless-engines lane with the two
+back-door receiving decisions in `packages/receiving/src/asn.ts` that had no cloud route (the handheld
+scan itself is already driven offline by the warehouse PWA).
+
+**What was wired:** a new stateless `asnRoutes()` (`services/inventory/src/asn.ts`):
+- **`POST /v1/inventory/dock-slots/book`** (`inventory.movement.append`) runs `bookDockSlot` — two lorries
+  booked on one door at one time is a queue, not a schedule, so a booking that overlaps a live slot on the
+  same dock is refused (`409 dock_conflict`); a different door, back-to-back on the same one, or a slot
+  freed by a cancellation/no-show all go through.
+- **`POST /v1/inventory/asn/compare`** (`inventory.availability.read`) runs `compareAgainstAsn` — the
+  supplier's advice note is a **promise, not a receipt**, so it compares what was advised with what
+  actually turned up and returns **only the differences** (a match is not a row) for the discrepancy path.
+  Booking stock from what the supplier *said* they sent is how a shop books goods it never got.
+
+Both are **stateless** — the caller supplies the day's existing bookings, or the ASN and the tally of
+what arrived; nothing is booked or stocked (the durable dock diary is the follow-on). Registered once in
+`main.ts`. Integration-tested through the real authenticated surface
+(`tests/integration/inventory-asn-dock.test.ts`, 5 cases: a free slot books; an overlap on the same door
+refused while a different door goes through; the ASN comparison surfaces a short line and an unadvised
+one while a matching line is not a row; a clean delivery reads matched; a 400 and a 403).
+
+**Maturity:** M07 stays **PARTIALLY_WIRED** — this fills the FR-01 dock/ASN remainder (the warehouse-PWA
+handheld surface, a durable dock diary, and OCR ingestion remain). **Headline unchanged at 41.1%.**
+Full gate green.
+
+---
+
 ## ★ DEVICE & VERSION CONTROL WIRED — keep a way back from a broken release (M33-FR-02/04 · A-10 · §35) (29 August 2026)
 
 **Owner direction:** "wire the next module." Picked the **device & application-version control** in
