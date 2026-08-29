@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ THREE-WAY MATCH WITH LANDED COST WIRED — do not pay for goods you never got, at a price you never agreed (M07-FR-04 · D03-FR-05 · §28) (29 August 2026)
+
+**Owner direction:** "wire the next module." Picked the **richer three-way match** — `matchInvoice`
+in `packages/receiving` — the last clean, unblocked engine from the scan. The store has a simpler
+match already (`/match`, lowest-of-three over captured lines); this is the fuller control it never had
+a route for.
+
+**What was wired:** **`POST /v1/purchase/invoices/:invoiceId/reconcile`** (`purchase.invoice.match`)
+runs the tested `matchInvoice` — the full reconciliation of the **purchase order, the goods receipt and
+the supplier invoice**. It does three things the simpler match does not: (1) it **values and owns every
+variance** — "₹500 over-charged on the rice line", not "the invoice doesn't tie up" — so a person can
+act on it (P-03); (2) it computes **landed cost**, apportioning freight and duty across the lines *by
+value, to the paisa with no remainder lost*, because a valuation that ignores freight overstates margin
+and the shop thinks it is making money it is not (D03-FR-05); (3) it decides **payability** — an
+out-of-tolerance variance blocks payment until someone who did **not** receive the goods approves it
+(§28 — the receiver can never clear their own receipt; an approval that names a different invoice is
+refused). It **decides only** — records nothing, pays nothing. A stateless route the AP clerk drives
+with the three documents; a mixed-currency figure is refused rather than summed (P-08). No `main.ts`
+change (route added to the already-registered `purchaseRoutes`), no persistence.
+Integration-tested through the real authenticated surface
+(`tests/integration/purchase-invoice-reconcile.test.ts`, 5 cases: a clean invoice paid with freight+duty
+apportioned exactly; a price over tolerance blocked with the variance valued; the §28 path — the receiver
+cannot clear their own receipt, a separate approver can; an approval for the wrong invoice refused; a 400
+and a 403).
+
+**Maturity:** M07 and D03 stay **PARTIALLY_WIRED** — this fills the FR-04/FR-05 remainder (OCR invoice
+ingestion D03-FR-02 and the GRN disposition-approval write path remain). **Headline unchanged at 41.1%.**
+Full gate green.
+
+---
+
 ## ★ SEPARATION-OF-DUTIES DECISION WIRED — the maker-checker gate, and the loophole it closes (M02-FR-03 · §28 · P-04 · hard rule #4) (29 August 2026)
 
 **Owner direction:** "wire the next module." Picked the **§28 approval decision** — the last engine-only
