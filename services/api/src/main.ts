@@ -113,6 +113,7 @@ import { emergencyAccessRoutes } from '../../identity/src/emergency-access';
 import { accessLifecycleRoutes } from '../../identity/src/access-lifecycle';
 import { platformRoutes, inMemorySettings, emptyExportBundle } from '../../platform/src/index';
 import { operationalHealthRoutes } from '../../platform/src/operational-health';
+import { deviceRoutes } from '../../platform/src/devices';
 import { purchaseRoutes } from '../../purchase/src/index';
 import { purchaseOrderRoutes } from '../../purchase/src/purchase-orders';
 import { supplierScorecardRoutes } from '../../purchase/src/supplier-scorecard';
@@ -624,6 +625,11 @@ export function buildSurface(deps: {
     } : platformAdapter({ store, now, probes, settings: deps.settings ?? inMemorySettings() })),
     // Operational health & alerting (M35-FR-03/04) — a pure compute over supplied evidence; no store.
     ...operationalHealthRoutes({ now }),
+    // Device & app-version control (M33-FR-02/04 / A-10) — evaluate whether a device may trade / must
+    // upgrade / was killed / is unregistered (a kill never interrupts a sale), and the fleet-at-a-glance;
+    // both refuse a policy that would brick the fleet before deciding. Stateless; the durable registry
+    // and the remote-kill write path are the follow-on.
+    ...deviceRoutes({ now }),
     ...migrationRoutes(store === undefined ? {
       target: (tenantId) => ({
         targetId: `tgt-${tenantId}`, tenantId,
