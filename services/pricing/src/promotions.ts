@@ -11,11 +11,13 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
   simulatePromotion, approveForLaunch, PromotionApprovalRequiredError,
-  measureEffectiveness, reconcileVendorFunding,
+  measureEffectiveness, reconcileVendorFunding, checkAbuseLimit,
   type SimulationInput, type SimulationResult, type SimulationVerdict,
-  type EffectivenessInput, type VendorFundingClaim,
+  type EffectivenessInput, type VendorFundingClaim, type AbuseLimit, type AbuseCheckInput,
 } from '../../../packages/promotions/src/simulation';
 import type { Money } from '../../../packages/contracts/src/money';
+
+const isNonNegInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0;
 
 /** A launch as it is persisted — the verdict it launched on and who approved a margin loss. */
 export interface LaunchRecord {
@@ -96,6 +98,39 @@ function readFundingClaim(body: unknown, promotionId: string): VendorFundingClai
     agreedPerUnit: b['agreedPerUnit'], unitsSold: b['unitsSold'] as number,
     ...(isMoney(b['receivedAmount']) ? { receivedAmount: b['receivedAmount'] } : {}),
     ...(typeof b['approvedBy'] === 'string' ? { approvedBy: b['approvedBy'] } : {}),
+  };
+}
+
+/**
+ * Read an abuse check: the offer's limits and the counts so far. The limit's promotionId comes from
+ * the path, never the body, so the two cannot disagree. Any of the three caps may be omitted (an
+ * unlimited offer is stated as unlimited, never given an invented ceiling); the three counts are
+ * required whole numbers. The rule itself — including the offline "count may be behind" — is the pure
+ * `checkAbuseLimit`.
+ */
+function readAbuseCheck(body: unknown, promotionId: string): AbuseCheckInput | undefined {
+  if (body === null || typeof body !== 'object') return undefined;
+  const b = body as Record<string, unknown>;
+  const limitRaw = b['limit'];
+  if (limitRaw === null || typeof limitRaw !== 'object') return undefined;
+  const l = limitRaw as Record<string, unknown>;
+  if (!isNonNegInt(b['usedByThisCustomer']) || !isNonNegInt(b['usedInThisBasket']) || !isNonNegInt(b['usedInTotal'])) return undefined;
+  for (const k of ['perCustomer', 'perBasket', 'totalUses'] as const) {
+    if (l[k] !== undefined && !isNonNegInt(l[k])) return undefined;
+  }
+  if (b['offline'] !== undefined && typeof b['offline'] !== 'boolean') return undefined;
+  const limit: AbuseLimit = {
+    promotionId,
+    ...(isNonNegInt(l['perCustomer']) ? { perCustomer: l['perCustomer'] } : {}),
+    ...(isNonNegInt(l['perBasket']) ? { perBasket: l['perBasket'] } : {}),
+    ...(isNonNegInt(l['totalUses']) ? { totalUses: l['totalUses'] } : {}),
+  };
+  return {
+    limit,
+    usedByThisCustomer: b['usedByThisCustomer'] as number,
+    usedInThisBasket: b['usedInThisBasket'] as number,
+    usedInTotal: b['usedInTotal'] as number,
+    ...(b['offline'] === true ? { offline: true } : {}),
   };
 }
 
@@ -208,6 +243,27 @@ export function promotionRoutes(deps: PromotionDeps): readonly Route[] {
           });
         }
         return { status: 200, body: { ...reconcileVendorFunding(claim, claim.agreedPerUnit.currency), asAt: deps.now() } };
+      },
+    },
+    {
+      // Enforce a promotion's usage caps — DELIBERATELY from counts the caller supplies, so the SAME
+      // rule runs at an offline lane off its cached pack (§31, P-01): an abuse cap that only holds
+      // online is not a cap, because the busiest hour and the worst connectivity are often the same
+      // hour. It DECIDES only — it commits nothing, appends nothing — and when the lane is offline it
+      // says the count MAY be behind rather than pretending certainty (P-08). Gated promotion.read.
+      api: 'API-02', method: 'POST', path: '/v1/promotions/:promotionId/abuse-check',
+      permission: 'promotion.read', idempotent: true,
+      handler: async (ctx) => {
+        const input = readAbuseCheck(ctx.body, ctx.params['promotionId'] ?? '');
+        if (input === undefined) {
+          throw apiError(400, {
+            code: 'not_readable_as_an_abuse_check',
+            whatHappened: 'An abuse check needs a limit (any of perCustomer, perBasket, totalUses as whole numbers) and the current whole counts usedByThisCustomer, usedInThisBasket and usedInTotal.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was changed. Send the offer’s limits and the counts so far — this only decides, it applies no discount.',
+          });
+        }
+        return { status: 200, body: { ...checkAbuseLimit(input), asAt: deps.now() } };
       },
     },
   ];
