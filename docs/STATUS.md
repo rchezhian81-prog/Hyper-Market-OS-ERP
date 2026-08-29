@@ -5,6 +5,32 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ PROMOTION ABUSE-CAP WIRED — a cap that holds at an offline till (M05-FR-04 · M20 · §31 · P-01 · P-08) (29 August 2026)
+
+**Owner direction:** "wire the next module." Picked the **offline-capable abuse cap** — the last
+engine-only function in `packages/promotions/src/simulation.ts` (simulate, launch-gate, effectiveness
+and vendor-funding were already live; only `checkAbuseLimit` had no route).
+
+**What was wired:** **`POST /v1/promotions/:id/abuse-check`** (`promotion.read`) runs the tested
+`checkAbuseLimit` — the enforcement of *"one per customer"*, *"one per basket"* and *"500 in total"*.
+The point of interest is **where it runs**: a cap is only real if it holds at the till in the busiest
+hour, and the busiest hour is often the hour the line to head office is down. So the rule works **from
+counts the caller supplies** — the same check runs at an offline lane off its cached pack (§31, P-01) —
+and when the lane is offline it returns **`countMayBeStale: true`** rather than pretending certainty
+(P-08). It **decides only** — it commits nothing, appends nothing — and an unlimited offer is stated as
+unlimited, never given an invented ceiling. A stateless what-if on the already-registered
+`promotionRoutes` — no `main.ts` change, no persistence. Integration-tested through the real
+authenticated surface (`tests/integration/promotion-abuse-check.test.ts`, 5 cases: within-cap allowed;
+each of the three caps blocking; the offline path still enforcing **and** flagging the count may be
+behind; a 400 on an unreadable check; a 403 without the permission).
+
+**Maturity:** M05 stays **WIRED** — this fills the FR-04 remainder and completes the whole
+`packages/promotions/src/simulation.ts` engine (simulate, launch-gate, effectiveness, vendor-funding,
+abuse caps): nothing engine-only left. Also corrected two now-stale traceability clauses that still
+called effectiveness/funding/abuse "engine-only". **Headline unchanged at 41.1%.** Full gate green.
+
+---
+
 ## ★ STOCKOUT-IMPACT WIRED — the last of the four stock-health numbers (M08-FR-04 · §29.1 · P-03 · P-08) (29 August 2026)
 
 **Owner direction:** "wire the next module." After a full-repo scan (confirmed by a second independent
