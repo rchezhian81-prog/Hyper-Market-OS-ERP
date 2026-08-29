@@ -5,6 +5,39 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ DEVICE & VERSION CONTROL WIRED — keep a way back from a broken release (M33-FR-02/04 · A-10 · §35) (29 August 2026)
+
+**Owner direction:** "wire the next module." Picked the **device & application-version control** in
+`packages/platform-admin` — a clean, non-entangled module built for one specific disaster (mobile-safety
+finding A-10): *a broken release ships, every till upgrades, and the shop cannot sell.*
+
+**What was wired:** a new stateless `deviceRoutes({ now })` (`services/platform/src/devices.ts`, gated
+`platform.health.read`):
+- **`POST /v1/platform/devices/evaluate`** runs the tested `evaluateDevice` — may this device trade
+  right now? The defences all keep a way back: the server supports current **and** previous (so there is
+  always a rollback target), a minimum floor forces only the genuinely-too-old to move, a **killed**
+  release moves its devices back — but **a kill never interrupts a sale**: the device keeps trading and
+  the move is deferred to the next idle moment. An unregistered, blocked, rooted, or won't-say-its-version
+  device cannot trade.
+- **`POST /v1/platform/devices/fleet-summary`** runs `fleetSummary` — the fleet at a glance: how many
+  trade, how many must upgrade, which have gone **silent** (not reported in — silence is a signal, not
+  health), and the spread by version.
+
+Both routes run **`validateVersionPolicy` first**, so a policy that would itself brick the fleet — a
+minimum newer than the current version, or a floor that cuts off the rollback target (A-10), or killing
+the version everything is meant to move to — is refused (`422 unsafe_version_policy`) **before any
+decision is handed back**. Stateless — the caller supplies the device record (or none, which reads as
+unregistered) and the policy; the durable device registry and the remote-kill **write** path are the
+follow-on. Registered once in `main.ts`. Integration-tested through the real authenticated surface
+(`tests/integration/platform-devices.test.ts`, 6 cases: a current device trades; a killed release keeps
+trading but defers the move; an absent device reads unregistered; an unsafe policy refused; the fleet
+rollup counts trading/upgrade/silent; a 400 and a 403).
+
+**Maturity:** M33 stays **INTEGRATION_TESTED** — this fills the FR-02/04 device-decision remainder (the
+durable registry + remote-kill write path remain). **Headline unchanged at 41.1%.** Full gate green.
+
+---
+
 ## ★ SELF-CHECKOUT DECISION SURFACE WIRED — intervene rarely, watch always, never accuse at the lane (D04 · M12 · M15 · P-01) (29 August 2026)
 
 **Owner direction:** "wire the next module." Picked the **self-checkout decision surface** — three tested
