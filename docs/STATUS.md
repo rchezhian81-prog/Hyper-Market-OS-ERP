@@ -5,6 +5,32 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ STOCKOUT-IMPACT WIRED — the last of the four stock-health numbers (M08-FR-04 · §29.1 · P-03 · P-08) (29 August 2026)
+
+**Owner direction:** "wire the next module." After a full-repo scan (confirmed by a second independent
+sweep), picked the **last unwired stock-health metric** — its three siblings (ageing, turns, GMROI)
+were already live on the inventory API; only *stockout impact* had no route.
+
+**What was wired:** **`POST /v1/inventory/stockout-impact`** (`inventory.availability.read`) runs the
+tested `stockoutImpact` — **what the empty shelf cost**. It is the fourth of four stock-health numbers
+and the only one that *cannot* be projected from the movement ledger: **a sale that never happened
+leaves no movement behind.** So the caller supplies the figures it can know — how many days the shelf
+was empty, the product's normal units/day, the margin per unit — and the route estimates the margin
+that never landed. Three honesty guards: it is stated as an **estimate**, in its own field, **never
+mixed into actuals** (P-08 — a might-have-been is not a receipt); a claim whose margin is in a
+different currency than the report is **refused**, never summed into a mixed-currency lie; a shelf
+that was never empty reads a clean zero. A read-only "what-if" (no ledger touched) added to the
+already-registered inventory routes — no `main.ts` change, no persistence. Integration-tested through
+the real authenticated surface (`tests/integration/inventory-stockout-impact.test.ts`, 5 cases: the
+estimate with exact figures; nothing-lost; a 400 when days-out exceeds the period; a 400 on a
+mixed-currency claim; a 403 without the permission).
+
+**Maturity:** M08 stays **INTEGRATION_TESTED** — but this completes the whole
+`packages/stock/src/metrics.ts` stock-health surface (ageing, turns, GMROI, stockouts): every metric
+now has a live route, nothing engine-only left. **Headline unchanged at 41.1%.** Full gate green.
+
+---
+
 ## ★ LABOUR-COST VIEW WIRED — the last engine-only workforce function (M25-FR-01 · §29 · P-03) (29 August 2026)
 
 **Owner direction:** "wire the next module." Picked the **last unwired engine in `packages/workforce`** —

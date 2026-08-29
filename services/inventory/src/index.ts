@@ -21,8 +21,30 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { ProductValuation } from '../../../packages/stock/src/valuation';
 import type { AgeingSource } from '../../../packages/stock/src/ageing-source';
-import { stockAgeing, inventoryTurns, gmroi, type Ratio } from '../../../packages/stock/src/metrics';
-import type { Money } from '../../../packages/contracts/src/money';
+import { stockAgeing, inventoryTurns, gmroi, stockoutImpact, type Ratio, type StockoutInput } from '../../../packages/stock/src/metrics';
+import { isCurrencyCode, type Money, type CurrencyCode } from '../../../packages/contracts/src/money';
+
+// --- small readers for the one stateless "what-if" on this surface --------------
+// Every other route here reads the append-only ledger; the stockout estimate is the
+// exception — a sale that never happened leaves no movement to fold — so its figures
+// arrive in the request body and must be validated before they reach the engine.
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+const isFiniteNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const isNonNegNum = (v: unknown): v is number => isFiniteNum(v) && v >= 0;
+const isMoney = (v: unknown): v is Money =>
+  isObj(v) && Number.isInteger(v['minor']) && isStr(v['currency']);
+const isStockoutRow = (v: unknown, currency: string): v is StockoutInput =>
+  isObj(v) &&
+  isStr(v['productId']) &&
+  isNonNegNum(v['daysOutOfStock']) &&
+  isFiniteNum(v['periodDays']) &&
+  (v['periodDays'] as number) > 0 &&
+  (v['daysOutOfStock'] as number) <= (v['periodDays'] as number) &&
+  isNonNegNum(v['averageDailyUnits']) &&
+  isMoney(v['marginPerUnit']) &&
+  // one reporting currency only — summing minor units across currencies would be a lie (P-08)
+  (v['marginPerUnit'] as Money).currency === currency;
 
 export type MovementKind =
   | 'received' | 'sold' | 'returned' | 'transferred_in' | 'transferred_out'
@@ -347,6 +369,34 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
             asAt,
           },
         };
+      },
+    },
+    {
+      // What the empty shelf cost (M08-FR-04, STOCKOUTS). The fourth stock-health number, and the
+      // only one that cannot be projected from the ledger: a sale that never happened leaves no
+      // movement behind. So the caller supplies the figures it CAN know — how many days the shelf was
+      // empty and the product's normal rate of sale — and this estimates the margin that never landed.
+      // It is stated as an ESTIMATE and never mixed into actuals (P-08): the engine returns it in its
+      // own field, labelled, so nobody mistakes a might-have-been for a receipt. A read-only "what-if"
+      // (no ledger touched), so it takes the analysis in the body rather than reading a durable store.
+      api: 'API-04', method: 'POST', path: '/v1/inventory/stockout-impact',
+      permission: 'inventory.availability.read', idempotent: true,
+      handler: async (ctx) => {
+        const b = ctx.body;
+        const rawCurrency = isObj(b) && b['currency'] !== undefined ? b['currency'] : 'INR';
+        const currency: CurrencyCode | undefined =
+          typeof rawCurrency === 'string' && isCurrencyCode(rawCurrency) ? rawCurrency : undefined;
+        const products = isObj(b) ? b['products'] : undefined;
+        if (currency === undefined || !Array.isArray(products) || products.length === 0 || !products.every((p) => isStockoutRow(p, currency))) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_stockout_analysis',
+            whatHappened:
+              'This payload could not be read as a stockout analysis. Each product needs a productId, the days it was out of stock (no more than the period), the period length, its normal units per day, and a margin per unit in the reporting currency.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was computed and nothing was stored. Correct the figures and send it again — this only estimates, it changes no stock.',
+          });
+        }
+        return { status: 200, body: { ...stockoutImpact(products, currency), asAt: deps.now() } };
       },
     },
   ];
