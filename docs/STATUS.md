@@ -5,6 +5,33 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ PROMOTION EFFECTIVENESS + VENDOR FUNDING WIRED — M05-FR-04 · D06 · D02 · P-02 (29 August 2026)
+
+**Owner direction:** "wire the next module." Picked the last engine-only tail of the promotions
+engine (`packages/promotions/src/simulation.ts`) — the two tested functions nothing on the cloud fed.
+A promotion is a decision to give away margin for volume, made on optimism and measured months later,
+if at all; simulate and launch were already governed on the cloud, these put the *measurement* there too.
+
+**What was wired (both stateless pure computes, on the existing API-02 promotions routes):**
+- **`POST /v1/promotions/:id/effectiveness`** (`promotion.read`) runs `measureEffectiveness` — the
+  verdict is **incremental MARGIN, not units**. A promotion that sold 60% more but kept ₹400 less reads
+  **"busier, and poorer" — worthDoing false**; supplier funding received can turn the same trade
+  positive. The trap this closes: judging a promotion a success because it was busy.
+- **`POST /v1/promotions/:id/vendor-funding`** (`promotion.read`) runs `reconcileVendorFunding` so
+  **"the supplier is covering it" is a number, not a memory** — claimed (agreed-per-unit × units) vs
+  what finance actually received, an outstanding balance named "the discount was given, the
+  contribution was not" (D02). Receiving MORE than agreed is flagged too.
+- Both are pure computes over the figures the caller supplies (no persistence, no new adapter), added
+  to the already-registered `promotionRoutes` — no `main.ts` change. Integration-tested through the
+  real authenticated surface (`tests/integration/promotion-effectiveness.test.ts`, 5 cases incl. the
+  400 on an unreadable body and the 403 without the permission).
+
+**Maturity:** M05 stays **WIRED** — this fills the FR-04 post-launch-measurement remainder that was
+the engine's last un-hooked tail (simulate/launch/price-list/promotion-catalogue were already live).
+**Headline unchanged at 41.1%.** Full gate green.
+
+---
+
 ## ★ TILL PACKAGE inc 3 — the store-login-token tool: a pilot lane can now sell AND report (28 August 2026)
 
 **Owner direction:** "build the token tool" — the last piece so the pilot lane's till not only sells but
