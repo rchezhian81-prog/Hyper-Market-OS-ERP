@@ -5,6 +5,39 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ SCREENS/WRITE-PATHS PHASE — inc-1: the DURABLE DEVICE REGISTRY (M33-FR-02/04 · A-10) (29 August 2026)
+
+**Owner direction:** "start on screens and write-paths"; then chose the **device / fleet manager** as the
+first surface. This is **inc-1 of that phase — the durable write-path** the fleet-manager screen (inc-2)
+will read; a shift from the last ten increments (which wired stateless what-ifs) to keeping real,
+restart-safe state.
+
+**What was built:** the shop's **real fleet**, event-sourced. A new stateless engine had decided *whether*
+a device may trade (last PR); now the store actually **holds the list of its devices**, append-only and
+folded latest-per-device so it survives a restart (`projectFleet`, unit-tested). A new
+`deviceRegistryRoutes` (`services/platform/src/device-registry.ts`) + a `deviceRegistryAdapter` over a
+`devices` sub-stream:
+- **`POST /v1/platform/devices/:id/register`** — a till nobody registered is a till nobody is accountable
+  for; re-registering updates the same record, never forks a second.
+- **`POST /v1/platform/devices/:id/status`** — block / retire / reinstate; a status change on a device
+  nobody registered is refused (`404`). Append-only: the history stays (it explains why a lane stopped).
+- **`POST /v1/platform/devices/:id/report`** — a heartbeat, so silence becomes a real signal.
+- **`GET /v1/platform/devices`** — the stored fleet.
+- **`POST /v1/platform/devices/fleet-health`** — runs the tested `fleetSummary` + `evaluateDevice` over
+  the **stored** fleet, refusing a policy that would brick the fleet before it reports (A-10). This is the
+  screen's main data feed.
+
+Writes gated the new `platform.device.manage`; reads `platform.health.read`. Registered once in `main.ts`.
+Integration-tested through the real authenticated surface incl. **durability across a restart** (a fresh
+harness over the same store still sees the fleet): `tests/integration/platform-device-registry.test.ts`
+(6) + `tests/unit/device-registry-projection.test.ts` (6).
+
+**Maturity:** M33 stays **INTEGRATION_TESTED** — inc-1 fills the durable device write-path; **inc-2 is the
+fleet-manager screen**, and the remote-kill write path remains. **Headline unchanged at 41.1%.**
+Full gate green.
+
+---
+
 ## ★ BACK-DOOR DOCK & ASN CONTROL WIRED — two lorries at one door, and the advice note that isn't a receipt (M07-FR-01/03) (29 August 2026)
 
 **Owner direction:** "wire the next module." Continued the last-stateless-engines lane with the two

@@ -96,6 +96,7 @@ import type { ConnectorMappingDeps, Mapping } from '../../platform/src/connector
 import type { SecretsDeps, SecretRef } from '../../platform/src/secrets';
 import type { OrgStructureDeps, OrgNode, GstRegistration } from '../../platform/src/org-structure';
 import type { ShelfCountDeps, ShelfCount } from '../../inventory/src/shelf-count';
+import { projectFleet, type DeviceRegistryDeps, type DeviceRegistryEvent } from '../../platform/src/device-registry';
 import type { SpacePerformanceDeps } from '../../inventory/src/space-performance';
 import type { AssortmentDeps } from '../../inventory/src/assortment';
 import type { DisplayContract, AssortmentEntry } from '../../../packages/merchandising/src/index';
@@ -5067,6 +5068,33 @@ export function promotionCatalogueAdapter(input: {
         idempotencyKey: `promo-${status}-${tenantId}-${promotionId}`,
         source: 'api/pricing',
         payload: { promotionId },
+      }));
+    },
+  };
+}
+
+/**
+ * Durable device registry (M33-FR-02/04) — the shop's real fleet, event-sourced on a devices sub-stream
+ * of the platform stream and folded latest-per-deviceId, so `fleet` survives a restart.
+ */
+export function deviceRegistryAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): DeviceRegistryDeps {
+  const stream = streamName(STREAM.platform, 'devices');
+  return {
+    now: input.now,
+    fleet: async (tenantId) => projectFleet(tenantId, await allOf<DeviceRegistryEvent>(input.store, tenantId, stream, 'DeviceRegistryEvent')),
+    recordDeviceEvent: async (tenantId, event, key) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `device-${event.deviceId}-${event.kind}-${key}`,
+        type: 'DeviceRegistryEvent',
+        occurredAt: event.at,
+        // Keyed per intent: a re-sync of the same command collapses; a genuine later change is a new key
+        // and stays alongside the earlier one (append-only, hard rule #2).
+        idempotencyKey: `device-${tenantId}-${key}`,
+        source: 'api/platform',
+        payload: event,
       }));
     },
   };
