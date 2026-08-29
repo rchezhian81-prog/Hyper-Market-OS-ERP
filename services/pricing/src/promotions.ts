@@ -11,7 +11,9 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
   simulatePromotion, approveForLaunch, PromotionApprovalRequiredError,
+  measureEffectiveness, reconcileVendorFunding,
   type SimulationInput, type SimulationResult, type SimulationVerdict,
+  type EffectivenessInput, type VendorFundingClaim,
 } from '../../../packages/promotions/src/simulation';
 import type { Money } from '../../../packages/contracts/src/money';
 
@@ -62,6 +64,40 @@ const badInput = () => apiError(400, {
   wasItSaved: 'not_saved',
   nextSafeAction: 'Nothing was changed. Send the prices, the cost and the expected volumes.',
 });
+
+/** Read a finished promotion's figures to measure. The arithmetic is `measureEffectiveness`'s. */
+function readEffectiveness(body: unknown, promotionId: string): EffectivenessInput | undefined {
+  if (body === null || typeof body !== 'object') return undefined;
+  const b = body as Record<string, unknown>;
+  if (!Number.isInteger(b['baselineUnits']) || !Number.isInteger(b['actualUnits'])
+    || !isMoney(b['baselineMargin']) || !isMoney(b['actualMargin'])
+    || (b['vendorFundingReceived'] !== undefined && !isMoney(b['vendorFundingReceived']))) {
+    return undefined;
+  }
+  return {
+    promotionId,
+    baselineUnits: b['baselineUnits'] as number, actualUnits: b['actualUnits'] as number,
+    baselineMargin: b['baselineMargin'], actualMargin: b['actualMargin'],
+    ...(isMoney(b['vendorFundingReceived']) ? { vendorFundingReceived: b['vendorFundingReceived'] } : {}),
+  };
+}
+
+/** Read a vendor's funding claim to reconcile against what finance actually received. */
+function readFundingClaim(body: unknown, promotionId: string): VendorFundingClaim | undefined {
+  if (body === null || typeof body !== 'object') return undefined;
+  const b = body as Record<string, unknown>;
+  if (typeof b['supplierId'] !== 'string' || b['supplierId'] === ''
+    || !isMoney(b['agreedPerUnit']) || !Number.isInteger(b['unitsSold'])
+    || (b['receivedAmount'] !== undefined && !isMoney(b['receivedAmount']))) {
+    return undefined;
+  }
+  return {
+    promotionId, supplierId: b['supplierId'],
+    agreedPerUnit: b['agreedPerUnit'], unitsSold: b['unitsSold'] as number,
+    ...(isMoney(b['receivedAmount']) ? { receivedAmount: b['receivedAmount'] } : {}),
+    ...(typeof b['approvedBy'] === 'string' ? { approvedBy: b['approvedBy'] } : {}),
+  };
+}
 
 export function promotionRoutes(deps: PromotionDeps): readonly Route[] {
   return [
@@ -133,6 +169,45 @@ export function promotionRoutes(deps: PromotionDeps): readonly Route[] {
             ? { promotionId, launched: false, asAt: deps.now() }
             : { promotionId, launched: true, verdict: rec.verdict, incrementalMarginMinor: rec.incrementalMarginMinor, currency: rec.currency, approvedBy: rec.approvedBy, launchedAt: rec.launchedAt },
         };
+      },
+    },
+    {
+      // The measurement the shop makes months late and on optimism — put on the cloud so the
+      // verdict is a number: **was the promotion worth doing?** Judged on incremental MARGIN, not
+      // units (M05-FR-04, D06) — a promotion can sell 40% more and leave the shop poorer. The caller
+      // supplies the finished figures; the arithmetic and the verdict are the pure engine's.
+      api: 'API-02', method: 'POST', path: '/v1/promotions/:promotionId/effectiveness',
+      permission: 'promotion.read', idempotent: true,
+      handler: async (ctx) => {
+        const input = readEffectiveness(ctx.body, ctx.params['promotionId'] ?? '');
+        if (input === undefined) {
+          throw apiError(400, {
+            code: 'not_readable_as_an_effectiveness_measure',
+            whatHappened: 'Measuring a promotion needs whole baselineUnits and actualUnits, and baselineMargin and actualMargin as { minor, currency }.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was changed. Send the baseline and actual units and margins for the finished promotion.',
+          });
+        }
+        return { status: 200, body: { ...measureEffectiveness(input), asAt: deps.now() } };
+      },
+    },
+    {
+      // "The supplier is covering it" becomes a number, not a memory (D02): claimed vs actually
+      // received on the display/funding agreement, so a discount given with the contribution never
+      // received is visible rather than lost. A pure reconciliation over the figures supplied.
+      api: 'API-02', method: 'POST', path: '/v1/promotions/:promotionId/vendor-funding',
+      permission: 'promotion.read', idempotent: true,
+      handler: async (ctx) => {
+        const claim = readFundingClaim(ctx.body, ctx.params['promotionId'] ?? '');
+        if (claim === undefined) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_funding_claim',
+            whatHappened: 'A vendor funding claim needs a supplierId, agreedPerUnit as { minor, currency } and whole unitsSold.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was changed. Send the supplier, the agreed per-unit contribution and the units sold.',
+          });
+        }
+        return { status: 200, body: { ...reconcileVendorFunding(claim, claim.agreedPerUnit.currency), asAt: deps.now() } };
       },
     },
   ];

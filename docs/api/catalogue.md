@@ -141,6 +141,12 @@
   gate — an inexact pack is refused at definition time, before it can make a stock figure wrong.
   `GET …/pack/convert?level=&quantity=&direction=to-base|from-base` converts exactly and
   reversibly (a case of 24 ↔ 24 singles). Event-sourced (`PackHierarchyDefined`, latest-per-product).
+- **Promotion, after it ends (API-02, M05-FR-04):** `POST /v1/promotions/:id/effectiveness`
+  answers *was it worth doing?* — the verdict is **incremental margin, not units**, so a
+  promotion that sold more but kept less reads "busier, and poorer"; `POST …/vendor-funding`
+  reconciles the supplier's agreed contribution against what was actually received ("the discount
+  was given, the contribution was not"). Both are pure computes over the figures supplied, gated
+  `promotion.read`.
 - **Coupon redemption (API-06, M17-FR-02, offline-first):** a lane redeems a coupon against its **cached**
   redemption set (single-use enforced offline); on sync `POST /v1/loyalty/coupons/:code/redemptions/:id`
   re-checks against the **whole** cloud history, so a cross-lane double-use is refused `409` (a visible
