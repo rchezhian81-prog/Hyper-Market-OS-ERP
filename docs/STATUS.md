@@ -5,6 +5,39 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ FLEET-MANAGER SCREEN inc-2a — the tested session model (M33-FR-02/04 · §19 · P-03 · P-08) (29 August 2026)
+
+**Owner direction:** "build the fleet-manager screen." Screens are a multi-file build, so this is the
+first slice: the **tested, DOM-free session model** — the pure view logic every ERP screen here starts
+from, before any HTML.
+
+**What was built:** `createFleetSession` (`apps/web-erp/src/fleet-session.ts`), on the shared
+`packages/ui` primitives. It folds the durable fleet-health payload (from inc-1) into the manager's view:
+- **Control by exception (P-03):** the devices that need a look come **first** — a machine that cannot
+  trade, then one that must update before it can, then one that has **gone quiet** — ahead of the healthy
+  ones. A 40-lane estate is triaged, not scrolled.
+- **Silence is a warning, not health (P-08):** a device that stopped reporting in is flagged, and a
+  never-seen one reads *"never checked in"*, not a stale recent time.
+- **Colour is never the only signal:** an icon and a word ride with every tone (via `packages/a11y`), so
+  a status is legible without colour.
+- **Least privilege:** the register / block / retire affordance is shown only to someone who holds
+  `platform.device.manage`; everyone else sees the fleet read-only.
+- **Bilingual** English + Tamil (Tamil placeholder pending a native-speaker review, OA-10; the guardrail
+  enforces presence, not translation quality).
+
+Unit-tested (`tests/unit/erp-fleet-session.test.ts`, 7 cases: not-permitted; empty; worst-first ordering
+with the right tones and words; the manage affordance gated; a never-seen device named honestly; the
+who's-looking flag; and every verdict + language having copy).
+
+**Next (inc-2b/2c):** the HTML/JS **shell** served offline by the store box (service worker, the pack-age
+badge, the offline-open + a11y guardrails and a real-browser E2E), then the **register/block/retire write
+path** from the screen to the durable registry via the device outbox.
+
+**Maturity:** M33 stays **INTEGRATION_TESTED** (a screen-surface slice, no module threshold crossed).
+**Headline unchanged at 41.1%.** Full gate green.
+
+---
+
 ## ★ SCREENS/WRITE-PATHS PHASE — inc-1: the DURABLE DEVICE REGISTRY (M33-FR-02/04 · A-10) (29 August 2026)
 
 **Owner direction:** "start on screens and write-paths"; then chose the **device / fleet manager** as the
