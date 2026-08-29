@@ -84,6 +84,7 @@ import { complianceRoutes } from '../../compliance/src/index';
 import { riskRegisterRoutes } from '../../compliance/src/risk';
 import { inventoryRoutes } from '../../inventory/src/index';
 import { goodsReceiptRoutes } from '../../inventory/src/goods-receipt';
+import { asnRoutes } from '../../inventory/src/asn';
 import { shelfCountRoutes } from '../../inventory/src/shelf-count';
 import { planogramComplianceRoutes } from '../../inventory/src/planogram-compliance';
 import { spacePerformanceRoutes } from '../../inventory/src/space-performance';
@@ -324,6 +325,9 @@ export function buildSurface(deps: {
     ...goodsReceiptRoutes(store === undefined
       ? { grn: empty(undefined), all: empty([]), commit: () => {}, now }
       : goodsReceiptAdapter({ store, now })),
+    // Back-door dock scheduling + ASN comparison (M07-FR-01) — two lorries on one door is refused, and the
+    // advice note is compared against what actually arrived (a promise, not a receipt). Stateless decisions.
+    ...asnRoutes(),
     // Shelf counting (M04-FR-02/03) — the blind-count producer that feeds planogram compliance.
     ...shelfCountRoutes(store === undefined
       ? { counts: empty([]), recordCount: () => {}, now }
