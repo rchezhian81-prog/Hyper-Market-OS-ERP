@@ -14,11 +14,95 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { threeWayMatch, type MatchLine, type MatchResult } from '../../../packages/purchasing/src/three-way-match';
+import {
+  matchInvoice, InvalidMatchApprovalError,
+  type OrderedLine, type ReceivedLine, type InvoicedLine, type LandedCharges, type MatchPolicy, type MatchApproval,
+} from '../../../packages/receiving/src/three-way-match';
+import { isCurrencyCode, type Money, type CurrencyCode } from '../../../packages/contracts/src/money';
 
 // The rule itself lives in `packages/purchasing` so the buyer's screen can use the SAME one — a
 // browser cannot import this file, which imports the HTTP kernel. Re-exported so every existing
 // caller of the service keeps working and there is still exactly one implementation.
 export * from '../../../packages/purchasing/src/three-way-match';
+
+// --- readers for the richer three-way match (invoice ↔ PO ↔ receipt + landed cost) ------------------
+// This one is stateless: the AP clerk supplies the three source documents, so the figures are validated
+// off the wire before they reach the engine. One reporting currency throughout — a Money quoted in
+// another currency is refused rather than summed into a mixed-currency total (P-08).
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+const isNonNegInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0;
+const moneyIn = (v: unknown, currency: CurrencyCode): Money | undefined =>
+  isObj(v) && Number.isInteger(v['minor']) && v['currency'] === currency ? { minor: v['minor'] as number, currency } : undefined;
+
+function readOrdered(v: unknown, currency: CurrencyCode): OrderedLine | undefined {
+  if (!isObj(v) || !isStr(v['lineId']) || !isStr(v['productId']) || !isNonNegInt(v['quantityMinor'])) return undefined;
+  const unitCost = moneyIn(v['unitCost'], currency);
+  if (unitCost === undefined) return undefined;
+  return { lineId: v['lineId'] as string, productId: v['productId'] as string, quantityMinor: v['quantityMinor'] as number, unitCost };
+}
+function readReceived(v: unknown): ReceivedLine | undefined {
+  if (!isObj(v) || !isStr(v['lineId']) || !isStr(v['productId']) || !isNonNegInt(v['quantityMinor'])) return undefined;
+  return { lineId: v['lineId'] as string, productId: v['productId'] as string, quantityMinor: v['quantityMinor'] as number };
+}
+function readInvoiced(v: unknown, currency: CurrencyCode): InvoicedLine | undefined {
+  if (!isObj(v) || !isStr(v['lineId']) || !isStr(v['productId']) || !isNonNegInt(v['quantityMinor'])) return undefined;
+  const unitCost = moneyIn(v['unitCost'], currency);
+  if (unitCost === undefined) return undefined;
+  if (v['taxMinor'] !== undefined && !isNonNegInt(v['taxMinor'])) return undefined;
+  return {
+    lineId: v['lineId'] as string, productId: v['productId'] as string, quantityMinor: v['quantityMinor'] as number, unitCost,
+    ...(isNonNegInt(v['taxMinor']) ? { taxMinor: v['taxMinor'] } : {}),
+  };
+}
+function readPolicy(v: unknown): MatchPolicy | undefined {
+  if (!isObj(v) || !isNonNegInt(v['priceToleranceBp']) || !isNonNegInt(v['quantityToleranceBp']) || !isNonNegInt(v['immaterialMinor'])) return undefined;
+  return { priceToleranceBp: v['priceToleranceBp'] as number, quantityToleranceBp: v['quantityToleranceBp'] as number, immaterialMinor: v['immaterialMinor'] as number };
+}
+function readCharges(v: unknown, currency: CurrencyCode): LandedCharges | undefined | 'invalid' {
+  if (v === undefined) return undefined;
+  if (!isObj(v)) return 'invalid';
+  const out: { freight?: Money; duty?: Money; other?: Money } = {};
+  for (const k of ['freight', 'duty', 'other'] as const) {
+    if (v[k] !== undefined) {
+      const mv = moneyIn(v[k], currency);
+      if (mv === undefined) return 'invalid';
+      out[k] = mv;
+    }
+  }
+  return out;
+}
+function readApproval(v: unknown): MatchApproval | undefined | 'invalid' {
+  if (v === undefined) return undefined;
+  if (!isObj(v) || !isStr(v['subjectRef']) || !isStr(v['decidedBy'])
+    || !(v['status'] === 'approved' || v['status'] === 'rejected' || v['status'] === 'pending')) return 'invalid';
+  return { subjectRef: v['subjectRef'] as string, status: v['status'] as MatchApproval['status'], decidedBy: v['decidedBy'] as string };
+}
+
+/** Read the whole three-way match off the wire. Returns undefined for any unreadable field. */
+function readMatchInput(body: unknown, invoiceId: string): Parameters<typeof matchInvoice>[0] | undefined {
+  if (!isObj(body)) return undefined;
+  const cur = body['currency'];
+  if (typeof cur !== 'string' || !isCurrencyCode(cur) || !isStr(body['receivedBy'])) return undefined;
+  if (!Array.isArray(body['ordered']) || !Array.isArray(body['received']) || !Array.isArray(body['invoiced']) || body['invoiced'].length === 0) return undefined;
+  const ordered = body['ordered'].map((x) => readOrdered(x, cur));
+  const received = body['received'].map(readReceived);
+  const invoiced = body['invoiced'].map((x) => readInvoiced(x, cur));
+  if (ordered.some((x) => x === undefined) || received.some((x) => x === undefined) || invoiced.some((x) => x === undefined)) return undefined;
+  const policy = readPolicy(body['policy']);
+  if (policy === undefined) return undefined;
+  const charges = readCharges(body['charges'], cur);
+  if (charges === 'invalid') return undefined;
+  const approval = readApproval(body['approval']);
+  if (approval === 'invalid') return undefined;
+  return {
+    invoiceId,
+    ordered: ordered as OrderedLine[], received: received as ReceivedLine[], invoiced: invoiced as InvoicedLine[],
+    policy, currency: cur, receivedBy: body['receivedBy'] as string,
+    ...(charges !== undefined ? { charges } : {}),
+    ...(approval !== undefined ? { approval } : {}),
+  };
+}
 
 export interface BankChangeRequest {
   readonly supplierId: string;
@@ -155,6 +239,43 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
         const result = threeWayMatch({ lines: await deps.matchLines(ctx.tenantId, invoiceId) });
         await deps.recordMatch(ctx.tenantId, invoiceId, result);
         return { status: 200, body: result };
+      },
+    },
+    {
+      // The full three-way match with LANDED COST (M07-FR-04, D03-FR-05, §28). Distinct from /match
+      // above (which reconciles pre-captured lines to the lowest of three): this is the stateless
+      // reconciliation the AP clerk drives with the three source documents — the purchase ORDER, the
+      // goods RECEIPT and the supplier INVOICE — plus freight/duty. It VALUES and OWNS every variance
+      // (₹ over-charged on which lines, not "it doesn't tie up"), apportions the charges across the
+      // lines to the paisa so the stock's TRUE landed cost is known (valuation that ignores freight
+      // overstates margin), and decides PAYABILITY: an out-of-tolerance variance blocks payment until
+      // someone who did NOT receive the goods approves it (§28 — the receiver can never clear their own
+      // receipt). It DECIDES only; it records nothing. Gated purchase.invoice.match.
+      api: 'API-03', method: 'POST', path: '/v1/purchase/invoices/:invoiceId/reconcile',
+      permission: 'purchase.invoice.match', idempotent: true,
+      handler: async (ctx) => {
+        const input = readMatchInput(ctx.body, ctx.params['invoiceId'] ?? '');
+        if (input === undefined) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_three_way_match',
+            whatHappened: 'A three-way match needs { ordered[], received[], invoiced[] } lines (each with a lineId, productId and whole quantities; ordered/invoiced also a unitCost {minor,currency}), a policy { priceToleranceBp, quantityToleranceBp, immaterialMinor }, a currency, who receivedBy, optional charges {freight,duty,other} and an optional approval — all money in the one currency.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Correct the figures and send again — this only reconciles and decides, it pays nothing and records nothing.',
+          });
+        }
+        try {
+          return { status: 200, body: matchInvoice(input) };
+        } catch (e) {
+          if (e instanceof InvalidMatchApprovalError) {
+            throw apiError(422, {
+              code: 'approval_authorises_a_different_invoice',
+              whatHappened: e.message,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Send the approval that names THIS invoice, or none. Nothing was changed.',
+            });
+          }
+          throw e;
+        }
       },
     },
     {
