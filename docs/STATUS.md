@@ -5,6 +5,30 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ LABOUR-COST VIEW WIRED — the last engine-only workforce function (M25-FR-01 · §29 · P-03) (29 August 2026)
+
+**Owner direction:** "wire the next module." Picked the **last unwired engine in `packages/workforce`** —
+its five decision siblings (roster-gaps, task-gate, checklist, incentive, SOP-ack) were already live; only
+`labourCost` had no route.
+
+**What was wired:** **`POST /v1/hr/workforce/labour-cost`** (`workforce.roster.read`) runs the tested
+`labourCost` — labour cost as a share of sales, **reported, never enforced**. A system that refuses a
+fourth cashier because the ratio looks bad makes queues at Diwali and loses more than it saved, so it
+states the number, names the guide, flags above-guide as *"worth a look — a queue costs more than a
+cashier"*, and a manager decides. A day with no sales is **`not_meaningful`**, never a divide-by-zero.
+There is deliberately **no function anywhere that could refuse a roster on cost** (asserted by test). A
+stateless what-if added to the already-registered `workforceRoutes` — no `main.ts` change, no persistence.
+Integration-tested through the real authenticated surface (`tests/integration/workforce-labour-cost.test.ts`,
+4 cases: above-guide with the exact ratio; no-sales `not_meaningful`; 400 on an unreadable body; 403 without
+the permission).
+
+**Maturity:** M25 stays **PARTIALLY_WIRED** — but this completes the whole `packages/workforce`
+read/decision surface (every engine function now has a live route; nothing engine-only left). The durable
+stores (roster/attendance/certification/SOP-ack) and the ESS screen remain the follow-on.
+**Headline unchanged at 41.1%.** Full gate green.
+
+---
+
 ## ★ PROMOTION EFFECTIVENESS + VENDOR FUNDING WIRED — M05-FR-04 · D06 · D02 · P-02 (29 August 2026)
 
 **Owner direction:** "wire the next module." Picked the last engine-only tail of the promotions

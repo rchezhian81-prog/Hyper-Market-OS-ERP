@@ -24,7 +24,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  rosterGaps, canPerformTask, assessChecklist, computeIncentive, sopStatus,
+  rosterGaps, canPerformTask, assessChecklist, computeIncentive, sopStatus, labourCost,
   type ShiftRequirement, type ShiftAssignment, type Employee, type Certification,
   type ChecklistItem, type IncentiveTarget, type SopAcknowledgement,
 } from '../../../packages/workforce/src/workforce';
@@ -80,6 +80,10 @@ const isCertification = (v: unknown): v is Certification =>
   isObj(v) && isStr(v['certificationId']) && isStr(v['employeeId']) && isStr(v['kind'])
   && isStr(v['issuedOn']) && isStr(v['validUntil'])
   && (v['verifiedBy'] === undefined || isStr(v['verifiedBy']));
+
+/** Hours a person worked: an id and a non-negative number of hours. */
+const isHoursRow = (v: unknown): v is { employeeId: string; hours: number } =>
+  isObj(v) && isStr(v['employeeId']) && typeof v['hours'] === 'number' && Number.isFinite(v['hours']) && (v['hours'] as number) >= 0;
 
 export function workforceRoutes(): readonly Route[] {
   return [
@@ -216,6 +220,38 @@ export function workforceRoutes(): readonly Route[] {
         });
         const outstanding = statuses.filter((s) => !s.upToDate).length;
         return { status: 200, body: { statuses, count: statuses.length, outstanding } };
+      },
+    },
+    {
+      // Labour cost as a share of sales — **REPORTED, never enforced** (M25-FR-01, §29). A system that
+      // refuses a fourth cashier because the ratio looks bad makes queues at Diwali and loses more than it
+      // saved, so it states the number, names the guide, flags above-guide as *worth a look* — and a
+      // manager decides. There is deliberately no route here that could refuse a roster on cost. Body:
+      // { branchId, hours: [{employeeId, hours}], employees: Employee[] (with hourlyRateMinor), salesMinor,
+      // guideBps? }. On a day with no sales the ratio is `not_meaningful`, never a divide-by-zero.
+      api: 'API-11', method: 'POST', path: '/v1/hr/workforce/labour-cost',
+      permission: 'workforce.roster.read', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (!isStr(b['branchId']) || !isArr(b['hours']) || !b['hours'].every(isHoursRow)
+          || !isArr(b['employees']) || !b['employees'].every(isEmployee)
+          || !isNonNegInt(b['salesMinor'])
+          || (b['guideBps'] !== undefined && !isPosInt(b['guideBps']))) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_labour_cost',
+            whatHappened: 'A labour-cost view needs a branchId, hours (each {employeeId, hours>=0}), employees (with their hourlyRateMinor), and a whole salesMinor.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the hours worked, the staff and the day\'s sales. Nothing is stored — this only reports the ratio and whether it is above your guide.',
+          });
+        }
+        const view = labourCost({
+          branchId: b['branchId'] as string,
+          hours: b['hours'] as { employeeId: string; hours: number }[],
+          employees: b['employees'] as Employee[],
+          salesMinor: b['salesMinor'] as number,
+          ...(isPosInt(b['guideBps']) ? { guideBps: b['guideBps'] as number } : {}),
+        });
+        return { status: 200, body: view };
       },
     },
   ];
