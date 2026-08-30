@@ -111,10 +111,28 @@ describe('the fleet view defers to the model and uses no browser dialogs', () =>
     expect(VIEW).toMatch(/session\.view\(/);
   });
 
-  it('records nothing — a read-only fleet view has no write action (no fetch/XHR/outbox)', () => {
-    expect(/\bfetch\s*\(/.test(VIEW), 'a read-only screen must not call the network').toBe(false);
+  it('a change never touches the network — it goes through the session to the offline outbox (hard rule #1)', () => {
+    expect(/\bfetch\s*\(/.test(VIEW), 'the click must not call the network').toBe(false);
     expect(/XMLHttpRequest/.test(VIEW)).toBe(false);
-    expect(/\.enqueue\s*\(/.test(VIEW), 'a read-only screen registers no device').toBe(false);
+    // the shell asks the SESSION to change a device; the session commits to the outbox — the shell never
+    // enqueues (or POSTs) itself.
+    expect(VIEW, 'the change must go through the tested session').toMatch(/session\.requestDeviceChange\(/);
+    expect(/\.enqueue\s*\(/.test(VIEW), 'the shell must not enqueue directly').toBe(false);
+  });
+
+  it('renders the register/block/retire buttons from the model and captures a reason on-screen (no prompt)', () => {
+    // The buttons come from the model's per-device actions; a change always captures a reason on a real DOM
+    // sheet, never a browser prompt (which the alert/confirm/prompt check above already forbids).
+    expect(VIEW, 'buttons are built from the model actions').toMatch(/d\.actions/);
+    expect(VIEW, 'a disabled button reflects the model').toMatch(/btn\.disabled = !a\.enabled/);
+    const HTML = readFileSync('apps/web-erp/web/fleet.html', 'utf8');
+    expect(HTML, 'an on-screen reason sheet').toMatch(/id="sheet"/);
+    expect(HTML, 'a reason input, not a prompt').toMatch(/id="reason"/);
+  });
+
+  it('shows how many changes are queued and waiting to send — never a silent backlog (P-08)', () => {
+    expect(VIEW).toMatch(/fleetOutbox\?\.unsentCount/);
+    expect(readFileSync('apps/web-erp/web/fleet.html', 'utf8')).toMatch(/id="pending"/);
   });
 
   it('the shell loads the shared bundle, carries the data marker, and offers a language toggle', () => {

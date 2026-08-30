@@ -624,23 +624,41 @@ const FLEET_READ_PERMISSION = 'platform.health.read';
 const FLEET_MANAGE_PERMISSION = 'platform.device.manage';
 const EMPTY_FLEET_ROLLUP: FleetSummaryRollup = { total: 0, trading: 0, blocked: 0, mustUpgrade: 0, silent: 0, byVersion: {} };
 
-export function fleetPortsFromData(data: FleetData | undefined): FleetPorts {
+export function fleetPortsFromData(
+  data: FleetData | undefined,
+  outbox: SyncOutbox = new SyncOutbox(),
+): FleetPorts {
   const held = new Set(data?.permissions ?? []);
   return {
     fleet: () => ({ summary: data?.summary ?? EMPTY_FLEET_ROLLUP, devices: data?.devices ?? [] }),
+    // Default-deny: an absent permission list can read/manage nothing (the server would refuse it anyway).
     mayRead: () => held.has(FLEET_READ_PERMISSION),
     mayManage: () => held.has(FLEET_MANAGE_PERMISSION),
+    outbox: () => outbox,
   };
 }
 
 /** Build the device fleet-manager screen, or `null` when the box carried no payload for it. */
-export function bootFleet(data: FleetData | undefined): FleetSession | null {
+export function bootFleet(
+  data: FleetData | undefined,
+  outbox: SyncOutbox = new SyncOutbox(),
+): FleetSession | null {
   if (data === undefined) return null;
   return createFleetSession(
     { userId: data.userId === undefined ? null : data.userId },
-    fleetPortsFromData(data),
+    fleetPortsFromData(data, outbox),
   );
 }
+
+/** The device-backed outbox the fleet manager commits register/block/retire actions to — survives a reload (§31). */
+function openFleetOutbox(): SyncOutbox {
+  const storage = (globalThis as { localStorage?: { getItem(k: string): string | null; setItem(k: string, v: string): void } }).localStorage;
+  const onProblem = (why: string): void => { fleetStorageProblem = why; };
+  return openDeviceOutbox(guardedStore('sre.fleet-outbox', storage, onProblem), onProblem);
+}
+
+/** The last storage problem the fleet outbox hit, so the shell can show it — never silent (P-08). */
+export let fleetStorageProblem: string | undefined;
 
 /** The device-backed outbox the GST-returns screen queues governance actions to — survives a reload (§31). */
 function openGstReturnsOutbox(): SyncOutbox {
@@ -1258,6 +1276,8 @@ interface ManagerWindow {
   countsSession?: CountsReviewSession;
   fleetData?: FleetData;
   fleetSession?: FleetSession;
+  /** Where a device change (register/block/retire) queues for the sync agent — device-backed, survives a reload. */
+  fleetOutbox?: SyncOutbox;
   productPublishReviewData?: ProductPublishReviewData;
   productPublishReviewSession?: ProductPublishReviewSession;
   /** The device-backed catalogue outbox the review screen reads and, on the deliver action, drains — the SAME
@@ -1772,8 +1792,14 @@ if (browserWindow !== undefined) {
   if (counts !== null) browserWindow.countsSession = counts;
   // The device fleet manager (M33-FR-02/04): boots only when the box carried who is looking. The fleet
   // itself is fetched from the cloud fleet-health call (wired next); until then the shell shows a sample.
-  const fleet = bootFleet(browserWindow.fleetData);
-  if (fleet !== null) browserWindow.fleetSession = fleet;
+  // Its register/block/retire actions commit to a device-backed outbox that survives a reload (§31); the
+  // authenticated sync-drain delivery of those commands to the registry is the follow-up increment.
+  const fleetOutbox = browserWindow.fleetOutbox ?? openFleetOutbox();
+  const fleet = bootFleet(browserWindow.fleetData, fleetOutbox);
+  if (fleet !== null) {
+    browserWindow.fleetSession = fleet;
+    browserWindow.fleetOutbox = fleetOutbox;
+  }
   // The products-to-publish review shares the SAME device-backed catalogue outbox the Save button commits to,
   // so exactly what was queued there is what is reviewed here. Its delivery port POSTs a ready publish under
   // the operator's own session (ADR-0013). Nothing publishes on boot — only the explicit deliver action does.

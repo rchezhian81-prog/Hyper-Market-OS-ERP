@@ -47,6 +47,22 @@
       .meta { color:var(--muted); font-size:14px; display:flex; gap:14px; flex-wrap:wrap; font-variant-numeric:tabular-nums; }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.state .icon { font-size:18px; } p.state.tone-error { color:#fecaca; }
+      .pending { background:#1e3a5f; color:#dbeafe; border-bottom:2px solid var(--info); }
+      .pending[hidden] { display:none; }
+      .actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:2px; }
+      .act { min-height:40px; padding:0 16px; border:0; border-radius:10px; background:var(--line); color:var(--ink); font-size:15px; font-weight:600; }
+      .act:disabled { opacity:.5; }
+      .act-block { background:#7f1d1d; color:#fee2e2; } .act-retire { background:#3f2d12; color:#fde68a; } .act-reinstate { background:#14532d; color:#dcfce7; }
+      .act-note { color:var(--muted); font-size:13px; }
+      .sheet { position:fixed; inset:0; background:rgba(2,6,23,.72); display:flex; align-items:center; justify-content:center; padding:16px; z-index:10; }
+      .sheet[hidden] { display:none; }
+      .sheet .card { background:var(--panel); border-radius:14px; padding:18px; width:100%; max-width:440px; display:grid; gap:12px; }
+      .sheet h3 { margin:0; font-size:18px; } .sheet p { margin:0; color:var(--muted); font-size:14px; }
+      .sheet input { min-height:44px; padding:0 12px; border-radius:10px; border:1px solid var(--line); background:var(--bg); color:var(--ink); font-size:16px; }
+      .sheet .msg { color:#fecaca; min-height:1.2em; }
+      .sheet .row2 { display:flex; gap:10px; justify-content:flex-end; }
+      .sheet button { min-height:44px; padding:0 18px; border:0; border-radius:10px; font-size:15px; font-weight:600; }
+      .sheet .primary { background:var(--info); color:#04283a; } .sheet .ghost { background:var(--line); color:var(--ink); }
     </style>
   </head>
   <body>
@@ -54,6 +70,7 @@
     <p class="sample" id="sample" hidden></p>
     <p class="nobody" id="nobody" hidden></p>
     <p class="manage" id="manage" hidden></p>
+    <p class="manage pending" id="pending" role="status" aria-live="polite" hidden></p>
 
     <header>
       <span class="who" id="who">Devices <small id="whoami"></small></span>
@@ -76,6 +93,19 @@
       <ul class="rows" id="rows" aria-label="Registered devices"></ul>
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
     </main>
+
+    <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>
+      <div class="card">
+        <h3 id="sheet-title"></h3>
+        <p id="sheet-prompt"></p>
+        <input id="reason" type="text" autocomplete="off" aria-label="Reason" />
+        <p class="msg" id="sheet-msg" role="alert"></p>
+        <div class="row2">
+          <button class="ghost" id="sheet-cancel" type="button"></button>
+          <button class="primary" id="sheet-confirm" type="button"></button>
+        </div>
+      </div>
+    </div>
 
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>

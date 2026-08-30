@@ -5,6 +5,38 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ FLEET-MANAGER SCREEN inc-2c-ii — the Block/Retire buttons, wired offline (M33-FR-02/04 · §31 · P-01 · P-08) (30 August 2026)
+
+**Owner direction:** "merge #306" (the offline capture), continuing the owner-approved inc-2c. inc-2c-i built
+the tested action + command; this slice puts the **buttons on the screen** and wires them to the offline outbox.
+
+**What was built:**
+- **`apps/web-erp/web/fleet.js` + `fleet.html`** — a manager who holds `platform.device.manage` now sees
+  **Block / Retire / Bring-back** on each device (built from the model's per-device actions; a button is
+  disabled exactly as the model says, and shows its queued state when a change is in flight). A change captures
+  its **reason on an on-screen sheet** (real DOM — still no `alert/confirm/prompt`), and a strip shows how many
+  changes are **waiting to send** (P-08). The click calls the tested `requestDeviceChange` — it never touches
+  the network (hard rule #1).
+- **`apps/web-erp/src/browser-entry.ts`** — a **device-backed outbox** (`sre.fleet-outbox`) threaded through
+  `fleetPortsFromData`/`bootFleet` and opened at boot, so a change made while the link is down **survives the
+  manager closing and reopening the page** (§31, P-01) until it syncs.
+
+**Tests:** `tests/unit/erp-fleet-boot.test.ts` (6 — the outbox is the same instance the sync agent will drain;
+a manager's block lands in it attributed to them; a viewer without manage cannot queue one; default-deny) and
+the usability guardrail grown 12 → 14 (the change goes through the session not the network; buttons built from
+the model; the on-screen reason sheet; the waiting-to-send strip). Full gate green (typecheck, lint,
+secret-scan, **6070 passed / 262 DB-skipped**).
+
+**Next:** inc-2c-iii — the **authenticated sync-drain delivery** of the queued commands to the registry, under
+the manager's own authority (`platform.device.manage` + `by:<manager>` enforced at the write boundary), so a
+device change made on the screen finally reaches the durable fleet.
+
+**Maturity:** M33 stays **INTEGRATION_TESTED** (the command is captured AND queued, but still not delivered to
+the cloud — the write path is not yet end-to-end, so it is honestly not counted done). **Headline unchanged at
+41.1%.**
+
+---
+
 ## ★ FLEET-MANAGER SCREEN inc-2c-i — the register/block/retire action, captured offline (M33-FR-02/04 · §31 · P-01 · P-04 · P-05) (30 August 2026)
 
 **Owner direction:** "merge #305" (the offline shell), then — via a decision prompt — **"Build inc-2c now."**
