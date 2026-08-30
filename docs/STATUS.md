@@ -5,6 +5,43 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ FLEET-MANAGER SCREEN inc-2b — the offline shell (M33-FR-02/04 · §31 · P-01 · P-08) (29 August 2026)
+
+**Owner direction:** "build the offline screen shell." With the tested session model (inc-2a) in place,
+this slice is the **HTML/JS shell** the store box serves — the page a manager actually opens, and it opens
+**with no internet**, because at the goods-in door and in the cash office that is most of the time (§31, P-01).
+
+**What was built:**
+- **`apps/web-erp/web/fleet.html` + `apps/web-erp/web/fleet.js`** — the view layer. Every rule stays in the
+  tested session model; the shell only *draws* what it hands over: the fleet-at-a-glance tiles, the device
+  rows (attention first — cannot-trade, then must-update, then **gone quiet** — each with an icon **and** a
+  word, never a bare colour), a filter to show only the ones that need a look, and a language toggle. It is
+  **read-only** this increment; it calls no network, runs no `alert/confirm/prompt`, and records nothing.
+- **Wired end-to-end through the edge** so the store box feeds it the shop's real fleet:
+  `edge/store-edge/src/store-pack.ts` (a `fleetPolicy` register), `edge/store-edge/src/screen-data.ts` (its
+  payload builder + `SCREENS`/`GLOBAL_FOR`/`BUILDERS`), `edge/store-edge/src/screen-server.ts` (serves the
+  page), and `apps/web-erp/src/browser-entry.ts` (boots `createFleetSession` from the injected data).
+- **Opens offline, and says when it is stale (P-08):** the shared `apps/web-erp/web/sw.js` now caches
+  `fleet.js` and serves the page **network-first** (a cached *payload* presented as live is the one fault
+  this codebase refuses), stamping a **stale-copy strip in English and Tamil** with the time the box last
+  fed it. When the box has *never* fed it, the screen falls back to a **clearly-labelled sample fleet**.
+
+**Tests:** a new usability guardrail `tests/guardrails/the-devices-screen-is-usable.test.ts` (12 —
+bilingual across the whole vocabulary, every verdict a real word in both languages, cannot-trade/must-update
+read as attention/error and silence reads as attention/degraded, worst-first ordering, no-permission refused,
+no browser dialogs, no write path); the **devices** row added to
+`tests/guardrails/every-screen-opens-without-a-network.test.ts` (offline-open contract) and the fleet payload
+to `tests/integration/the-screens-are-fed.test.ts`. Full gate green (typecheck, lint, secret-scan, 6040
+passed / 262 DB-skipped).
+
+**Next (inc-2c):** the **register / block / retire write path** from the screen to the durable registry via
+the device outbox — the first place this screen *changes* the fleet rather than only showing it.
+
+**Maturity:** M33 stays **INTEGRATION_TESTED** (a read-only screen-surface slice, no module threshold
+crossed). **Headline unchanged at 41.1%.**
+
+---
+
 ## ★ FLEET-MANAGER SCREEN inc-2a — the tested session model (M33-FR-02/04 · §19 · P-03 · P-08) (29 August 2026)
 
 **Owner direction:** "build the fleet-manager screen." Screens are a multi-file build, so this is the

@@ -49,13 +49,13 @@ import {
   basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
-import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackCountsPolicy, PackProductPublishReviewPolicy } from './store-pack';
+import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy } from './store-pack';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'counts', 'product-publish-review', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
+  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'counts', 'product-publish-review', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1289,6 +1289,26 @@ export function countsPayload(input: ScreenInput): Record<string, unknown> | nul
 }
 
 /**
+ * The device fleet-manager payload (M33-FR-02/04, A-10).
+ *
+ * `null` when the box has not been told who is on the screen — a screen inventing its own permissions would
+ * decide, on its own authority, who may register or block a till. **The fleet itself is NOT in this
+ * payload**: it is read from the cloud fleet-health call (this device's screen fetches it when online, and
+ * the shell shows a sample stand-in until then). This carries only the operator's CURRENT context — who is
+ * looking and what they hold now — re-read every render; the cloud routes re-check the authority on every
+ * register/block/retire, so this only shapes the UI and can never let a stale grant change the fleet.
+ */
+export function fleetPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.fleetPolicy.known) return null;
+  const policy: PackFleetPolicy = input.pack.fleetPolicy.value;
+
+  const payload: Record<string, unknown> = { permissions: policy.permissions };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+
+  return payload;
+}
+
+/**
  * The products-to-publish review payload (ADR-0013 slice 4, M03-FR-01/03).
  *
  * `null` when the box has not been told who is on the screen — a screen inventing its own permissions would
@@ -1455,6 +1475,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   'gst-returns': 'gstReturnsData',
   waste: 'wasteData',
   counts: 'countsData',
+  fleet: 'fleetData',
   'product-publish-review': 'productPublishReviewData',
   admin: 'adminData',
   ai: 'aiData',
@@ -1482,6 +1503,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   'gst-returns': gstReturnsPayload,
   waste: wastePayload,
   counts: countsPayload,
+  fleet: fleetPayload,
   'product-publish-review': productPublishReviewPayload,
   admin: adminPayload,
   ai: aiPayload,
