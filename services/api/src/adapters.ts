@@ -97,6 +97,7 @@ import type { SecretsDeps, SecretRef } from '../../platform/src/secrets';
 import type { OrgStructureDeps, OrgNode, GstRegistration } from '../../platform/src/org-structure';
 import type { ShelfCountDeps, ShelfCount } from '../../inventory/src/shelf-count';
 import { projectFleet, type DeviceRegistryDeps, type DeviceRegistryEvent } from '../../platform/src/device-registry';
+import { projectVersionPolicy, type VersionPolicyDeps, type VersionPolicyEvent } from '../../platform/src/version-policy';
 import type { SpacePerformanceDeps } from '../../inventory/src/space-performance';
 import type { AssortmentDeps } from '../../inventory/src/assortment';
 import type { DisplayContract, AssortmentEntry } from '../../../packages/merchandising/src/index';
@@ -5082,9 +5083,13 @@ export function deviceRegistryAdapter(input: {
   readonly now: () => string;
 }): DeviceRegistryDeps {
   const stream = streamName(STREAM.platform, 'devices');
+  const policyStream = streamName(STREAM.platform, 'version-policy');
   return {
     now: input.now,
     fleet: async (tenantId) => projectFleet(tenantId, await allOf<DeviceRegistryEvent>(input.store, tenantId, stream, 'DeviceRegistryEvent')),
+    // fleet-health falls back to the STORED version policy when the caller does not supply one, so a durable
+    // remote kill (set on the version-policy sub-stream) actually takes effect on the health read.
+    storedPolicy: async (tenantId) => projectVersionPolicy(await allOf<VersionPolicyEvent>(input.store, tenantId, policyStream, 'VersionPolicyEvent')),
     recordDeviceEvent: async (tenantId, event, key) => {
       await input.store.append(tenantId, stream, makeEvent({
         id: `device-${event.deviceId}-${event.kind}-${key}`,
@@ -5093,6 +5098,32 @@ export function deviceRegistryAdapter(input: {
         // Keyed per intent: a re-sync of the same command collapses; a genuine later change is a new key
         // and stays alongside the earlier one (append-only, hard rule #2).
         idempotencyKey: `device-${tenantId}-${key}`,
+        source: 'api/platform',
+        payload: event,
+      }));
+    },
+  };
+}
+
+/**
+ * The durable version-policy store (M33 remote kill). Reads/writes a `version-policy` sub-stream of the
+ * platform stream, folded latest-set-wins, so the policy an admin sets survives a restart and is what the
+ * fleet is judged against.
+ */
+export function versionPolicyAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): VersionPolicyDeps {
+  const stream = streamName(STREAM.platform, 'version-policy');
+  return {
+    now: input.now,
+    policy: async (tenantId) => projectVersionPolicy(await allOf<VersionPolicyEvent>(input.store, tenantId, stream, 'VersionPolicyEvent')),
+    recordPolicyEvent: async (tenantId, event, key) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `version-policy-${key}`,
+        type: 'VersionPolicyEvent',
+        occurredAt: event.at,
+        idempotencyKey: `version-policy-${tenantId}-${key}`,
         source: 'api/platform',
         payload: event,
       }));
