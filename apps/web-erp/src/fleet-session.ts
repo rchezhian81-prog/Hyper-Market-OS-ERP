@@ -26,6 +26,7 @@ import {
   queueDeviceChange, deviceChangeAllowed, deviceChangeKey,
   type DeviceChangeKind, type DeviceRegisterDetails, type DeviceChangeRefusal,
 } from './fleet-device-command';
+import { deliverQueuedDeviceChanges, type FleetDeliveryPort, type DeviceDeliveryReport } from './fleet-device-delivery';
 
 /** A device's live verdict, as the fleet-health call computes it (mirrors packages/platform-admin DeviceVerdict). */
 export type FleetVerdict =
@@ -76,6 +77,12 @@ export interface FleetPorts {
    * read-only mount — then no change can be requested (a request refuses `no_outbox`).
    */
   outbox?(): SyncOutbox;
+  /**
+   * Delivers a queued change to the registry **under the operator's own authority** (never a service token —
+   * P-04/P-05). Absent when the screen cannot deliver (a read-only mount, or off-browser); then `deliver()`
+   * is a no-op that reports nothing sent.
+   */
+  deliveryPort?(): FleetDeliveryPort;
 }
 
 export interface FleetConfig {
@@ -226,6 +233,13 @@ export interface FleetSession {
     /** Required for `block` / `retire` / `reinstate` — why (append-only history). */
     readonly reason?: string;
   }): FleetChangeResult;
+  /**
+   * The EXPLICIT delivery action (P-05 — a person triggers it, nothing auto-delivers): send every queued
+   * change to the registry as the signed-in operator. Delegates to the tested delivery step, which
+   * acknowledges what the cloud accepted, holds a lost-link change for retry, and dead-letters a refusal for a
+   * person (hard rule #6). A no-op reporting nothing sent when the screen has no delivery port.
+   */
+  deliver(): Promise<DeviceDeliveryReport>;
 }
 
 /** The per-device status changes (register is a fleet-level add, not a per-row action) and their button copy. */
@@ -343,6 +357,13 @@ export function createFleetSession(config: FleetConfig, ports: FleetPorts): Flee
         ...(input.reason !== undefined ? { reason: input.reason } : {}),
       });
       return result.ok ? { ok: true, key: result.key, state: result.state } : { ok: false, reason: result.refusal };
+    },
+
+    deliver: async () => {
+      const outbox = ports.outbox?.();
+      const port = ports.deliveryPort?.();
+      if (outbox === undefined || port === undefined) return { delivered: [], held: [], refused: [] };
+      return deliverQueuedDeviceChanges(outbox, port);
     },
   };
 }

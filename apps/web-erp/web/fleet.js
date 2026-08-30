@@ -7,8 +7,11 @@
 // A manager who holds the right permission can also CHANGE a device from here — block a broken one, retire an
 // old one, or bring one back. The click never calls the network (hard rule #1): the session commits a
 // deterministic command to the offline OUTBOX (window.fleetOutbox), which survives a reload and a lost
-// connection (§31); the authenticated delivery of that command to the registry is the follow-up increment. A
-// change always needs a short reason (kept with it — an append-only "why"), captured on an on-screen sheet.
+// connection (§31). A change always needs a short reason (kept with it — an append-only "why"), captured on an
+// on-screen sheet. The EXPLICIT "Send now" action then delivers the queued changes to the registry — the
+// session drains the outbox through an operator-authenticated port (the person's own session, never a service
+// token), acknowledging what the cloud accepts, holding a lost-link change for retry, and dead-lettering a
+// refusal for a person. Nothing auto-delivers (P-05), and the shell itself never opens a socket.
 // No prompt/confirm/alert — every affordance is real DOM.
 
 const el = (id) => document.getElementById(id);
@@ -82,6 +85,8 @@ const ACTION_WORDS = {
     refNoOutbox: 'This screen cannot save changes right now.',
     refDefault: 'That change cannot be made right now.',
     sampleChange: 'This is sample data — connect the store computer to change a real device.',
+    send: 'Send now', sending: 'Sending…',
+    sent: 'sent', stillWaiting: 'still waiting', couldNotSend: 'could not be sent — a person should check',
   },
   ta: {
     reasonPrompt: 'ஒரு சிறு காரணம் தரவும் — இது இந்த மாற்றத்துடன் வைக்கப்படும்.', reasonPlaceholder: 'எ.கா. திரை உடைந்தது',
@@ -92,6 +97,8 @@ const ACTION_WORDS = {
     refNoOutbox: 'இந்தத் திரை இப்போது மாற்றங்களைச் சேமிக்க முடியாது.',
     refDefault: 'அந்த மாற்றத்தை இப்போது செய்ய முடியாது.',
     sampleChange: 'இது மாதிரித் தகவல் — உண்மையான சாதனத்தை மாற்ற கடை கணினியை இணைக்கவும்.',
+    send: 'இப்போது அனுப்பு', sending: 'அனுப்புகிறது…',
+    sent: 'அனுப்பப்பட்டது', stillWaiting: 'இன்னும் காத்திருக்கிறது', couldNotSend: 'அனுப்ப முடியவில்லை — ஒருவர் சரிபார்க்க வேண்டும்',
   },
 };
 const aw = (key) => ACTION_WORDS[lang]?.[key] ?? ACTION_WORDS.en[key] ?? key;
@@ -214,10 +221,12 @@ function paint() {
   manage.textContent = view.mayManage ? t('canManage') : '';
 
   // How many changes are queued and waiting for a connection — never a silent backlog (P-08).
-  const pending = el('pending');
   const waiting = (() => { try { return window.fleetOutbox?.unsentCount?.() ?? 0; } catch { return 0; } })();
-  pending.hidden = waiting === 0;
-  pending.textContent = waiting === 0 ? '' : `${waiting} ${aw('pending')}`;
+  const canSend = waiting > 0 && typeof session.deliver === 'function';
+  el('pending-count').textContent = waiting === 0 ? '' : `${waiting} ${aw('pending')}`;
+  el('send').hidden = !canSend;
+  el('send').textContent = aw('send');
+  el('pending').hidden = waiting === 0 && el('deliver-msg').textContent === '';
 
   const nobody = el('nobody');
   nobody.hidden = !view.nobodyNamed;
@@ -241,6 +250,25 @@ el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en';
 el('filter').addEventListener('click', () => { attentionOnly = !attentionOnly; paint(); });
 el('sheet-confirm').addEventListener('click', confirmSheet);
 el('sheet-cancel').addEventListener('click', closeSheet);
+
+// The EXPLICIT delivery action (P-05 — a person sends; nothing auto-delivers). The session drains the outbox
+// through the operator-authenticated port; the shell only shows the result. It never calls the network itself.
+el('send').addEventListener('click', async () => {
+  if (typeof session.deliver !== 'function') return;
+  const btn = el('send');
+  btn.disabled = true; btn.textContent = aw('sending');
+  try {
+    const report = await session.deliver();
+    const parts = [];
+    if (report.delivered.length > 0) parts.push(`${report.delivered.length} ${aw('sent')}`);
+    if (report.held.length > 0) parts.push(`${report.held.length} ${aw('stillWaiting')}`);
+    if (report.refused.length > 0) parts.push(`${report.refused.length} ${aw('couldNotSend')}`);
+    el('deliver-msg').textContent = parts.join(' · ');
+  } finally {
+    btn.disabled = false;
+    paint(); // repaint: acknowledged/dead-lettered changes now show their new state on each device
+  }
+});
 
 el('sample').hidden = real !== undefined;
 el('sample').textContent = t('sampleData');

@@ -135,6 +135,13 @@ describe('the fleet view defers to the model and uses no browser dialogs', () =>
     expect(readFileSync('apps/web-erp/web/fleet.html', 'utf8')).toMatch(/id="pending"/);
   });
 
+  it('delivers through the session, not the network — the Send button calls session.deliver (hard rule #1)', () => {
+    // The explicit send drains the outbox through the tested session; the shell never opens a socket itself
+    // (the operator-authenticated fetch lives in browser-entry's delivery port). The no-fetch check above holds.
+    expect(VIEW, 'the Send button drains through the session').toMatch(/session\.deliver\(/);
+    expect(readFileSync('apps/web-erp/web/fleet.html', 'utf8'), 'an explicit Send affordance').toMatch(/id="send"/);
+  });
+
   it('the shell loads the shared bundle, carries the data marker, and offers a language toggle', () => {
     const HTML = readFileSync('apps/web-erp/web/fleet.html', 'utf8');
     expect(HTML).toMatch(/web-erp\.bundle\.js/);

@@ -96,6 +96,8 @@ import {
 import {
   createFleetSession, type FleetPorts, type FleetSession, type FleetDeviceRow, type FleetSummaryRollup,
 } from './fleet-session';
+import type { DeviceChangeCommand } from './fleet-device-command';
+import { deviceChangeRequest, type FleetDeliveryPort } from './fleet-device-delivery';
 import {
   createProductPublishReviewSession, type ProductPublishReviewPorts, type ProductPublishReviewSession,
 } from './product-publish-review-session';
@@ -627,6 +629,7 @@ const EMPTY_FLEET_ROLLUP: FleetSummaryRollup = { total: 0, trading: 0, blocked: 
 export function fleetPortsFromData(
   data: FleetData | undefined,
   outbox: SyncOutbox = new SyncOutbox(),
+  deliveryPort?: FleetDeliveryPort,
 ): FleetPorts {
   const held = new Set(data?.permissions ?? []);
   return {
@@ -635,6 +638,7 @@ export function fleetPortsFromData(
     mayRead: () => held.has(FLEET_READ_PERMISSION),
     mayManage: () => held.has(FLEET_MANAGE_PERMISSION),
     outbox: () => outbox,
+    ...(deliveryPort === undefined ? {} : { deliveryPort: () => deliveryPort }),
   };
 }
 
@@ -642,11 +646,12 @@ export function fleetPortsFromData(
 export function bootFleet(
   data: FleetData | undefined,
   outbox: SyncOutbox = new SyncOutbox(),
+  deliveryPort?: FleetDeliveryPort,
 ): FleetSession | null {
   if (data === undefined) return null;
   return createFleetSession(
     { userId: data.userId === undefined ? null : data.userId },
-    fleetPortsFromData(data, outbox),
+    fleetPortsFromData(data, outbox, deliveryPort),
   );
 }
 
@@ -659,6 +664,40 @@ function openFleetOutbox(): SyncOutbox {
 
 /** The last storage problem the fleet outbox hit, so the shell can show it — never silent (P-08). */
 export let fleetStorageProblem: string | undefined;
+
+/**
+ * The concrete operator-session delivery port for the fleet (M33-FR-02/04, P-04/P-05): POSTs a queued device
+ * change to its idempotent registry route **under the operator's own session** — `credentials: 'same-origin'`
+ * carries their auth cookie, NEVER a service token, because blocking or retiring a device changes central
+ * privilege state and must reach the registry as the authorised person. `register` goes to `…/register` with
+ * the device's identity; `block`/`retire`/`reinstate` go to `…/status` with the target status and the reason.
+ * The idempotency key is the command's own, so a retry cannot apply a change twice. Returns the HTTP status,
+ * or 0 for a network/timeout — which the delivery step treats as retryable, so a lost link holds the change
+ * pending and never condemns it.
+ */
+function openFleetDeliveryPort(): FleetDeliveryPort {
+  const post = async (path: string, body: unknown, idempotencyKey: string): Promise<number> => {
+    const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+    if (fetchFn === undefined) return 0; // off-browser (tests inject their own) — treat as a lost link
+    try {
+      const res = await fetchFn(path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'idempotency-key': idempotencyKey, accept: 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(body),
+      });
+      return res.status;
+    } catch {
+      return 0;
+    }
+  };
+  return {
+    post: (command: DeviceChangeCommand, idempotencyKey: string) => {
+      const { path, body } = deviceChangeRequest(command);
+      return post(path, body, idempotencyKey);
+    },
+  };
+}
 
 /** The device-backed outbox the GST-returns screen queues governance actions to — survives a reload (§31). */
 function openGstReturnsOutbox(): SyncOutbox {
@@ -1795,7 +1834,7 @@ if (browserWindow !== undefined) {
   // Its register/block/retire actions commit to a device-backed outbox that survives a reload (§31); the
   // authenticated sync-drain delivery of those commands to the registry is the follow-up increment.
   const fleetOutbox = browserWindow.fleetOutbox ?? openFleetOutbox();
-  const fleet = bootFleet(browserWindow.fleetData, fleetOutbox);
+  const fleet = bootFleet(browserWindow.fleetData, fleetOutbox, openFleetDeliveryPort());
   if (fleet !== null) {
     browserWindow.fleetSession = fleet;
     browserWindow.fleetOutbox = fleetOutbox;
