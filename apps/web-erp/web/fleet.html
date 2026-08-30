@@ -47,8 +47,11 @@
       .meta { color:var(--muted); font-size:14px; display:flex; gap:14px; flex-wrap:wrap; font-variant-numeric:tabular-nums; }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.state .icon { font-size:18px; } p.state.tone-error { color:#fecaca; }
-      .pending { background:#1e3a5f; color:#dbeafe; border-bottom:2px solid var(--info); }
+      .pending { background:#1e3a5f; color:#dbeafe; border-bottom:2px solid var(--info); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
       .pending[hidden] { display:none; }
+      .send { min-height:36px; padding:0 16px; border:0; border-radius:10px; background:var(--info); color:#04283a; font-size:14px; font-weight:700; }
+      .send:disabled { opacity:.6; } .send[hidden] { display:none; }
+      #deliver-msg { color:var(--muted); font-size:14px; }
       .actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:2px; }
       .act { min-height:40px; padding:0 16px; border:0; border-radius:10px; background:var(--line); color:var(--ink); font-size:15px; font-weight:600; }
       .act:disabled { opacity:.5; }
@@ -70,7 +73,11 @@
     <p class="sample" id="sample" hidden></p>
     <p class="nobody" id="nobody" hidden></p>
     <p class="manage" id="manage" hidden></p>
-    <p class="manage pending" id="pending" role="status" aria-live="polite" hidden></p>
+    <div class="manage pending" id="pending" role="status" aria-live="polite" hidden>
+      <span id="pending-count"></span>
+      <button class="send" id="send" type="button" hidden></button>
+      <span id="deliver-msg"></span>
+    </div>
 
     <header>
       <span class="who" id="who">Devices <small id="whoami"></small></span>

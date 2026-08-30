@@ -4,6 +4,7 @@ import {
   type FleetDeviceRow, type FleetPorts, type FleetSummaryRollup,
 } from '../../apps/web-erp/src/fleet-session';
 import { DEVICE_CHANGE_EVENT, deviceChangeKey, type DeviceChangePayload } from '../../apps/web-erp/src/fleet-device-command';
+import type { FleetDeliveryPort } from '../../apps/web-erp/src/fleet-device-delivery';
 import { SyncOutbox } from '../../packages/sync/src/outbox';
 import { isBilingualComplete } from '../../packages/ui/src/index';
 
@@ -206,5 +207,29 @@ describe('requestDeviceChange — the register/block/retire write path', () => {
     expect(block?.queued).toBe('pending');
     expect(block?.enabled).toBe(false);
     expect(block?.note).toBe('Requested — it will be sent when there is a connection.');
+  });
+});
+
+describe('deliver — the explicit send of queued changes to the registry', () => {
+  const withDelivery = (devices: readonly FleetDeviceRow[], outbox: SyncOutbox, port: FleetDeliveryPort): FleetPorts => ({
+    ...managed(devices, outbox), deliveryPort: () => port,
+  });
+
+  it('sends a queued change through the delivery port and acknowledges it on acceptance', async () => {
+    const outbox = new SyncOutbox();
+    const port: FleetDeliveryPort = { post: () => Promise.resolve(200) };
+    const s = createFleetSession({ userId: 'u-mgr' }, withDelivery([device({ deviceId: 'till-3', status: 'registered' })], outbox, port));
+    s.requestDeviceChange({ deviceId: 'till-3', change: 'block', reason: 'cracked', at: '2026-08-30T05:00:00Z' });
+    expect(outbox.unsentCount()).toBe(1);
+    const report = await s.deliver();
+    expect(report.delivered).toHaveLength(1);
+    expect(outbox.unsentCount()).toBe(0);
+  });
+
+  it('is a no-op that reports nothing sent when the screen has no delivery port', async () => {
+    const outbox = new SyncOutbox();
+    const s = createFleetSession({ userId: 'u-mgr' }, managed([device({ status: 'registered' })], outbox)); // no deliveryPort
+    const report = await s.deliver();
+    expect(report).toEqual({ delivered: [], held: [], refused: [] });
   });
 });

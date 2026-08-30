@@ -5,6 +5,42 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ FLEET-MANAGER SCREEN inc-2c-iii — the authenticated delivery; the write path is COMPLETE (M33-FR-02/04 · P-04 · P-05 · hard rule #6) (30 August 2026)
+
+**Owner direction:** "merge #307", continuing the owner-approved inc-2c. inc-2c-i/ii captured a device change
+and queued it offline; this is the **final leg — it delivers the queued change to the durable registry, as
+the person who made it.** With it, the register/block/retire write path is **whole, end to end**.
+
+**The security decision, realised:** a device change is delivered under the manager's **OWN session** (a
+same-origin POST that carries their auth cookie — never a service token), so the registry's
+`platform.device.manage` gate and `by:<manager>` stamp are enforced against the real person. A governance
+change is never applied under the store's borrowed identity.
+
+**What was built:**
+- **`apps/web-erp/src/fleet-device-delivery.ts`** — the tested delivery step: `deviceChangeRequest` (command →
+  registry route + body), `classifyDeviceResponse` (accepted / retryable / rejected), and
+  `deliverQueuedDeviceChanges` (drains the outbox, transitioning each honestly — hard rule #6: accepted →
+  acknowledged, a lost link → **held for retry** (the command's own idempotency key means a retry never
+  applies a change twice), a refusal → **dead-lettered and kept for a person**).
+- **`createFleetSession.deliver()`** + **`openFleetDeliveryPort` (browser-entry)** — the explicit "Send now"
+  action (P-05 — nothing auto-delivers) drains through the operator-authenticated port; the shell shows how
+  many were sent / still waiting / could-not-be-sent, and never opens a socket itself.
+
+**Tests:** `tests/unit/erp-fleet-device-delivery.test.ts` (11 — the classifier, the route mapping, and the
+drain transitions), `erp-fleet-session.test.ts` grown to 18 (`deliver()` via the ports), and the **end-to-end**
+`tests/integration/the-fleet-change-reaches-the-registry.test.ts` (2 — a manager's block **reaches the durable
+fleet**, and the same change delivered **without the permission is refused (403) and dead-lettered**, never
+applied). Full gate green (typecheck, lint, secret-scan, **6086 passed / 262 DB-skipped**).
+
+**Maturity — the honest call:** the **fleet-manager device register/block/retire write path is now COMPLETE
+end-to-end** — a real milestone. But M33 as a *module* still has the **version-policy remote-kill write path**
+outstanding (an admin marking a release killed so devices move back — the engine is built and wired to the
+READ routes, but not to a write route). So M33 **stays INTEGRATION_TESTED**, not WIRED — I will not inflate it
+on one write path when another remains. **Headline unchanged at 41.1%.** The remote-kill write path is the
+clear next candidate for an M33 re-rate.
+
+---
+
 ## ★ FLEET-MANAGER SCREEN inc-2c-ii — the Block/Retire buttons, wired offline (M33-FR-02/04 · §31 · P-01 · P-08) (30 August 2026)
 
 **Owner direction:** "merge #306" (the offline capture), continuing the owner-approved inc-2c. inc-2c-i built
