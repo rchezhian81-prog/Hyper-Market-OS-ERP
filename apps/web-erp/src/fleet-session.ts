@@ -21,6 +21,11 @@
 
 import { translator, presentScreenState, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
 import { presentStatus, type StatusPresentation, type Tone } from '../../../packages/a11y/src/signals';
+import type { SyncOutbox, OutboxState } from '../../../packages/sync/src/outbox';
+import {
+  queueDeviceChange, deviceChangeAllowed, deviceChangeKey,
+  type DeviceChangeKind, type DeviceRegisterDetails, type DeviceChangeRefusal,
+} from './fleet-device-command';
 
 /** A device's live verdict, as the fleet-health call computes it (mirrors packages/platform-admin DeviceVerdict). */
 export type FleetVerdict =
@@ -65,6 +70,12 @@ export interface FleetPorts {
   mayRead(): boolean;
   /** Whether this user may register / block / retire a device (`platform.device.manage`). */
   mayManage(): boolean;
+  /**
+   * The offline command queue this screen commits device changes to (P-01, §31, hard rule #1). A single
+   * injected instance, so a queued change and its displayed state are the same truth. Absent on a strictly
+   * read-only mount — then no change can be requested (a request refuses `no_outbox`).
+   */
+  outbox?(): SyncOutbox;
 }
 
 export interface FleetConfig {
@@ -81,6 +92,8 @@ export type CopyKey =
   | 'tileTotal' | 'tileTrading' | 'tileMustUpgrade' | 'tileBlocked' | 'tileSilent'
   | 'attentionLead' | 'allWell'
   | 'canManage' | 'readOnly'
+  | 'btnBlock' | 'btnRetire' | 'btnReinstate'
+  | 'queuedPending' | 'queuedSent' | 'queuedFailed'
   | 'stateReady' | 'stateEmpty' | 'stateNotPermitted'
   | 'nobodyNamed' | 'staleShell' | 'sampleData';
 
@@ -94,6 +107,10 @@ export const FLEET_COPY: BilingualCopy<CopyKey> = {
     tileTotal: 'Devices', tileTrading: 'Trading', tileMustUpgrade: 'Must update', tileBlocked: 'Blocked', tileSilent: 'Gone quiet',
     attentionLead: 'need a look', allWell: 'Every device is up to date and checking in.',
     canManage: 'You can register, block or retire a device.', readOnly: 'You can see the fleet but not change it.',
+    btnBlock: 'Block', btnRetire: 'Retire', btnReinstate: 'Bring back',
+    queuedPending: 'Requested — it will be sent when there is a connection.',
+    queuedSent: 'Sent — the fleet will refresh when it is done.',
+    queuedFailed: 'Could not be sent — a person should check.',
     stateReady: 'Showing the fleet', stateEmpty: 'No devices are registered yet.',
     stateNotPermitted: 'You do not have permission to see the device fleet.',
     nobodyNamed: 'This store computer has not been told who is using this screen.',
@@ -108,6 +125,10 @@ export const FLEET_COPY: BilingualCopy<CopyKey> = {
     tileTotal: 'சாதனங்கள்', tileTrading: 'வர்த்தகம்', tileMustUpgrade: 'புதுப்பிக்க வேண்டும்', tileBlocked: 'தடுக்கப்பட்டது', tileSilent: 'அமைதி',
     attentionLead: 'கவனம் தேவை', allWell: 'ஒவ்வொரு சாதனமும் புதுப்பித்து தகவல் அனுப்புகிறது.',
     canManage: 'நீங்கள் ஒரு சாதனத்தை பதிவு செய்யலாம், தடுக்கலாம் அல்லது நீக்கலாம்.', readOnly: 'நீங்கள் கடற்படையைப் பார்க்கலாம் ஆனால் மாற்ற முடியாது.',
+    btnBlock: 'தடு', btnRetire: 'நீக்கு', btnReinstate: 'மீண்டும் கொண்டுவா',
+    queuedPending: 'கோரப்பட்டது — இணைப்பு கிடைக்கும்போது அனுப்பப்படும்.',
+    queuedSent: 'அனுப்பப்பட்டது — முடிந்ததும் கடற்படை புதுப்பிக்கப்படும்.',
+    queuedFailed: 'அனுப்ப முடியவில்லை — ஒருவர் சரிபார்க்க வேண்டும்.',
     stateReady: 'கடற்படையைக் காட்டுகிறது', stateEmpty: 'இதுவரை எந்த சாதனமும் பதிவு செய்யப்படவில்லை.',
     stateNotPermitted: 'சாதனக் கடற்படையைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.',
     nobodyNamed: 'இந்த திரையை யார் பயன்படுத்துகிறார்கள் என்று இந்த கடை கணினிக்கு தெரிவிக்கப்படவில்லை.',
@@ -138,6 +159,22 @@ const SEVERITY: Readonly<Record<FleetVerdict, number>> = {
   blocked: 0, integrity_failed: 1, unregistered: 2, no_version_reported: 3, upgrade_required: 4, version_killed: 5, upgrade_available: 6, ok: 7,
 };
 
+/** One clickable status change on a device row, already gated and with its queued state resolved. */
+export interface PresentedDeviceAction {
+  readonly change: Exclude<DeviceChangeKind, 'register'>;
+  /** Bilingual button text ("Block" / "Retire" / "Bring back"). */
+  readonly label: string;
+  readonly deviceId: string;
+  /** The command's dedupe key — the shell passes the deviceId + change back to `requestDeviceChange`. */
+  readonly key: string;
+  /** Whether THIS user may run it now (holds `platform.device.manage` AND nothing already queued for it). */
+  readonly enabled: boolean;
+  /** The queued state of this exact request, or `null` when nothing is queued for it yet. */
+  readonly queued: OutboxState | null;
+  /** A short bilingual note when a request is in flight, so it is never invisible (P-08). */
+  readonly note?: string;
+}
+
 export interface PresentedDevice {
   readonly deviceId: string;
   readonly label: string;
@@ -149,6 +186,8 @@ export interface PresentedDevice {
   readonly needsAttention: boolean;
   readonly silent: boolean;
   readonly detail: string;
+  /** The clickable status changes offerable for this device (empty on a read-only mount). */
+  readonly actions: readonly PresentedDeviceAction[];
 }
 
 export interface FleetView {
@@ -161,13 +200,69 @@ export interface FleetView {
   readonly nobodyNamed: boolean;
 }
 
+/** Why a requested device change was refused — worded by the shell. */
+export type FleetChangeRefusal = 'not_permitted' | 'no_outbox' | DeviceChangeRefusal;
+export type FleetChangeResult =
+  | { readonly ok: true; readonly key: string; readonly state: OutboxState }
+  | { readonly ok: false; readonly reason: FleetChangeRefusal };
+
 export interface FleetSession {
   text(lang: Lang, key: CopyKey): string;
   view(lang: Lang): FleetView;
+  /**
+   * Ask to register / block / retire / bring-back a device. Re-validates the guards the view used (holds
+   * `platform.device.manage`, a named user, a legal status transition for the device's current status, and
+   * nothing already queued) so a stale button can never queue something the registry would refuse, then
+   * commits a deterministic command to the OUTBOX — never a network call (hard rule #1). The registry
+   * re-checks everything (permission, existence, transition) at the write boundary and stamps who did it
+   * (P-04/P-05). `at` is the caller's clock.
+   */
+  requestDeviceChange(input: {
+    readonly deviceId: string;
+    readonly change: DeviceChangeKind;
+    readonly at: string;
+    /** Required for a `register` — the new device's identity. */
+    readonly register?: DeviceRegisterDetails;
+    /** Required for `block` / `retire` / `reinstate` — why (append-only history). */
+    readonly reason?: string;
+  }): FleetChangeResult;
 }
+
+/** The per-device status changes (register is a fleet-level add, not a per-row action) and their button copy. */
+const CHANGE_LABEL: Readonly<Record<Exclude<DeviceChangeKind, 'register'>, CopyKey>> = {
+  block: 'btnBlock', retire: 'btnRetire', reinstate: 'btnReinstate',
+};
+const ROW_CHANGES: readonly Exclude<DeviceChangeKind, 'register'>[] = ['block', 'retire', 'reinstate'];
 
 export function createFleetSession(config: FleetConfig, ports: FleetPorts): FleetSession {
   const text = (lang: Lang, key: CopyKey): string => translator(FLEET_COPY, lang)(key);
+
+  const queuedNote = (t: (key: CopyKey) => string, state: OutboxState | null): string | undefined => {
+    if (state === 'pending') return t('queuedPending');
+    if (state === 'acknowledged') return t('queuedSent');
+    if (state === 'dead_letter') return t('queuedFailed');
+    return undefined;
+  };
+
+  /** The clickable status changes for a device — empty unless the user may manage AND an outbox is present. */
+  const presentDeviceActions = (t: (key: CopyKey) => string, row: FleetDeviceRow): PresentedDeviceAction[] => {
+    if (!ports.mayManage()) return [];
+    const outbox = ports.outbox?.();
+    return ROW_CHANGES.filter((change) => deviceChangeAllowed(change, row.status).ok).map((change) => {
+      const key = deviceChangeKey(row.deviceId, change, row.status);
+      const queued = outbox?.find(key)?.state ?? null;
+      const note = queuedNote(t, queued);
+      return {
+        change,
+        label: t(CHANGE_LABEL[change]),
+        deviceId: row.deviceId,
+        key,
+        enabled: outbox !== undefined && queued === null,
+        queued,
+        ...(note !== undefined ? { note } : {}),
+      };
+    });
+  };
 
   const present = (lang: Lang, row: FleetDeviceRow): PresentedDevice => {
     const t = translator(FLEET_COPY, lang);
@@ -189,6 +284,7 @@ export function createFleetSession(config: FleetConfig, ports: FleetPorts): Flee
       needsAttention,
       silent: row.silent,
       detail: row.detail,
+      actions: presentDeviceActions(t, row),
     };
   };
 
@@ -225,6 +321,28 @@ export function createFleetSession(config: FleetConfig, ports: FleetPorts): Flee
         mayManage: ports.mayManage(),
         nobodyNamed: config.userId === null,
       };
+    },
+
+    requestDeviceChange: (input) => {
+      // Manage permission and a named requester come first — nothing is attributed to a name that does not
+      // exist (P-05), and a read-only mount cannot change the fleet.
+      if (!ports.mayManage()) return { ok: false, reason: 'not_permitted' };
+      if (config.userId === null) return { ok: false, reason: 'not_permitted' };
+      const outbox = ports.outbox?.();
+      if (outbox === undefined) return { ok: false, reason: 'no_outbox' };
+      // Re-read the fleet so the transition is checked against the device's CURRENT status, not a stale button.
+      const rows = ports.mayRead() ? ports.fleet().devices : [];
+      const observedStatus = rows.find((d) => d.deviceId === input.deviceId)?.status ?? 'unregistered';
+      const result = queueDeviceChange(outbox, {
+        deviceId: input.deviceId,
+        change: input.change,
+        observedStatus,
+        requestedBy: config.userId,
+        at: input.at,
+        ...(input.register !== undefined ? { register: input.register } : {}),
+        ...(input.reason !== undefined ? { reason: input.reason } : {}),
+      });
+      return result.ok ? { ok: true, key: result.key, state: result.state } : { ok: false, reason: result.refusal };
     },
   };
 }

@@ -5,6 +5,46 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ FLEET-MANAGER SCREEN inc-2c-i — the register/block/retire action, captured offline (M33-FR-02/04 · §31 · P-01 · P-04 · P-05) (30 August 2026)
+
+**Owner direction:** "merge #305" (the offline shell), then — via a decision prompt — **"Build inc-2c now."**
+inc-2b gave a read-only Devices screen; this is the first slice of the WRITE path — the manager's decision
+to **register / block / retire / bring a device back** turned into a durable command, offline-first.
+
+**The design decision that shaped it (security):** blocking or retiring a device changes central privilege
+state, and the durable registry gates on `platform.device.manage` and records **who** did it. So this is a
+**governance** command, not a fact-that-happened like a sale. It is therefore captured with the requesting
+manager's identity and — exactly like the GST-returns approve/submit command — is **deliberately NOT relayed
+under the store's own token**; its cloud delivery (a later slice) must carry the manager's authority so the
+permission gate and the audit attribution are real (P-04/P-05, hard rule #5).
+
+**What was built:**
+- **`apps/web-erp/src/fleet-device-command.ts`** — the command module: a deterministic, deduplicated
+  `DeviceRegistryChangeRequested` command, a pure status-transition guard (`deviceChangeAllowed`), and a
+  `queueDeviceChange` that validates *before* it enqueues (a block on a device nobody registered, a register
+  for one already in the fleet, a status change with no stated reason — all refused, nothing queued).
+- **`createFleetSession.requestDeviceChange(...)`** — commits the command to the offline OUTBOX (never a
+  network call — hard rule #1; it survives a reload and a lost connection, §31), re-checking the transition
+  against the device's *current* status and gating on `platform.device.manage` + a named user (nobody-named
+  is refused — nothing is attributed to a name that does not exist, P-05). The view now also presents the
+  offerable changes per device with their queued state, so a request in flight is never invisible (P-08).
+
+**Tests:** `tests/unit/erp-fleet-device-command.test.ts` (13 — the guard for every transition, the dedupe
+key, the PII-shape of the command, and validate-before-enqueue) and `tests/unit/erp-fleet-session.test.ts`
+(grown 7 → 16 — the action captured with the right key/payload/manager, refused without manage / without a
+named user / without an outbox, the transition re-checked, a double-click collapsed, register with its
+identity, and the per-device offered actions with their queued state). Full gate green (typecheck, lint,
+secret-scan, **6062 passed / 262 DB-skipped**).
+
+**Next:** inc-2c-ii — the shell buttons + browser-entry outbox wiring (the manager clicks Block/Retire on the
+offline page); inc-2c-iii — the **authenticated sync-drain delivery** to the registry (the command reaches
+the cloud under the manager's authority, where `platform.device.manage` and `by:<manager>` are enforced).
+
+**Maturity:** M33 stays **INTEGRATION_TESTED** (the command is captured but not yet delivered — a partial
+write path, honestly not counted as the write path done). **Headline unchanged at 41.1%.**
+
+---
+
 ## ★ FLEET-MANAGER SCREEN inc-2b — the offline shell (M33-FR-02/04 · §31 · P-01 · P-08) (29 August 2026)
 
 **Owner direction:** "build the offline screen shell." With the tested session model (inc-2a) in place,
