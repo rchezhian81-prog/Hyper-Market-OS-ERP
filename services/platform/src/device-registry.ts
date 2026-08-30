@@ -93,6 +93,12 @@ export interface DeviceRegistryDeps {
   readonly fleet: (tenantId: string) => Promise<readonly Device[]> | readonly Device[];
   /** Append one device event. Idempotent on the key (a re-sync is one event, not two). */
   readonly recordDeviceEvent: (tenantId: string, event: DeviceRegistryEvent, key: string) => Promise<void> | void;
+  /**
+   * The STORED version policy the fleet is judged against when a fleet-health request supplies none — so a
+   * durable remote kill actually takes effect on the health read. Optional: absent on the store-less stub,
+   * where a fleet-health request must then carry a policy in its body.
+   */
+  readonly storedPolicy?: (tenantId: string) => Promise<VersionPolicy | undefined> | VersionPolicy | undefined;
   readonly now: () => string;
 }
 
@@ -132,16 +138,24 @@ export function deviceRegistryRoutes(deps: DeviceRegistryDeps): readonly Route[]
       },
     },
     {
-      // The fleet health for the status centre, over the STORED fleet (M33-FR-04). Body: { policy,
-      // silentAfterMinutes? }. Refuses a policy that would brick the fleet first, then reports the rollup
-      // and each device's live verdict. Read-only.
+      // The fleet health for the status centre, over the STORED fleet (M33-FR-04). Body: { policy?,
+      // silentAfterMinutes? }. The policy comes from the body when supplied; OTHERWISE the STORED version
+      // policy is used, so a durable remote kill takes effect here. Refuses a policy that would brick the
+      // fleet first, then reports the rollup and each device's live verdict. Read-only.
       api: 'API-10', method: 'POST', path: '/v1/platform/devices/fleet-health',
       permission: 'platform.health.read', idempotent: true,
       handler: async (ctx) => {
         const b = ctx.body;
-        const policy = isObj(b) ? readPolicy(b['policy']) : undefined;
-        if (policy === undefined || (isObj(b) && b['silentAfterMinutes'] !== undefined && !isNonNegInt(b['silentAfterMinutes']))) {
-          throw apiError(400, { code: 'not_readable_as_a_fleet_health_request', whatHappened: 'A fleet-health request needs a { policy } (currentVersion + minimumSupportedVersion, optional previousVersion/killedVersions[]) and an optional silentAfterMinutes.', wasItSaved: 'not_saved', nextSafeAction: 'Send the version policy the fleet is judged against.' });
+        // A policy in the body must be well-formed; an ABSENT policy falls back to the stored one.
+        const hasBodyPolicy = isObj(b) && b['policy'] !== undefined;
+        const bodyPolicy = hasBodyPolicy ? readPolicy(b['policy']) : undefined;
+        const silentBad = isObj(b) && b['silentAfterMinutes'] !== undefined && !isNonNegInt(b['silentAfterMinutes']);
+        if ((hasBodyPolicy && bodyPolicy === undefined) || silentBad) {
+          throw apiError(400, { code: 'not_readable_as_a_fleet_health_request', whatHappened: 'A fleet-health request takes an optional { policy } (currentVersion + minimumSupportedVersion, optional previousVersion/killedVersions[]) and an optional silentAfterMinutes.', wasItSaved: 'not_saved', nextSafeAction: 'Send a well-formed version policy, or set the durable version policy so it can be used.' });
+        }
+        const policy = bodyPolicy ?? (await deps.storedPolicy?.(ctx.tenantId));
+        if (policy === undefined) {
+          throw apiError(409, { code: 'no_version_policy', whatHappened: 'No version policy was supplied and none has been set, so the fleet cannot be judged.', wasItSaved: 'not_saved', nextSafeAction: 'Set the version policy first (POST /v1/platform/version-policy), then read fleet health.' });
         }
         guardPolicy(policy);
         const now = deps.now();

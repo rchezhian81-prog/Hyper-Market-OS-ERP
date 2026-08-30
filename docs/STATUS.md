@@ -5,6 +5,45 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M33 REMOTE-KILL write path — a durable version-policy store (M33-FR-02/04 · A-10 · §35) (30 August 2026)
+
+**Owner direction:** after inc-2c completed the fleet-manager screen, the owner chose the recommended next
+step — **wire the remote "kill a bad software version" control**, the last M33 write path I had flagged.
+
+**The problem it fixes:** the version policy the fleet is judged against (current / previous / minimum
+versions, and the *withdrawn* list) was supplied in the request body on every call and **kept nowhere** — so
+an admin could not durably say "this release is bad, pull tills off it." Now they can.
+
+**What was built (`services/platform/src/version-policy.ts` + `versionPolicyAdapter`):** a durable,
+event-sourced version-policy store on a `version-policy` sub-stream, folded latest-set-wins (survives a
+restart), mirroring the device registry exactly:
+- **`POST /v1/platform/version-policy`** — set the whole policy; **`POST …/kill`** — the remote-kill verb:
+  withdraw a broken release (add it to the killed list). Both gated `platform.device.manage`, both
+  **`validateVersionPolicy`-guarded so a policy that would brick the fleet is refused *before* anything is
+  stored** (A-10 — the current version can never be killed; a minimum above current is refused; the rollback
+  path is kept). No policy to withdraw from → refused; killing the current version → refused.
+- **`GET /v1/platform/version-policy`** — the effective policy, gated `platform.health.read`; not-set reads
+  as not-set, never an empty all-clear (P-08).
+- **The kill takes effect:** `POST …/devices/fleet-health` now **falls back to the STORED policy** when the
+  body supplies none, so a withdrawn version turns a till's verdict to `version_killed` and moves it **back to
+  the previous good build** — at the next safe moment, never mid-basket. Backward compatible: a body-supplied
+  policy still works for a what-if.
+
+**Tests:** `tests/unit/version-policy-projection.test.ts` (4 — latest-set-wins fold) and the **end-to-end**
+`tests/integration/platform-version-policy.test.ts` (7 — set / read-back / restart-survival; kill idempotent;
+killing the current version refused (422); killing with no policy set refused (409); an unsafe policy refused
+before storing (422); closed without the manage permission (403), open to a store_manager; and **fleet-health
+judging the stored fleet against the STORED policy so a kill moves a device back**). Full gate green
+(typecheck, lint, secret-scan, **6097 passed / 262 DB-skipped**).
+
+**Maturity — the honest call:** with this, **M33's device + version-control write paths are complete**. That
+makes M33 a strong re-rate candidate, but I did **not** flip it to WIRED here: a rating change is
+honesty-sensitive and deserves a deliberate **FR-by-FR re-assessment** (every M33-FR against the ladder), not
+a side-effect of one write-path PR. **M33 stays INTEGRATION_TESTED; headline unchanged at 41.1%.** The re-rate
+assessment is the warranted next step.
+
+---
+
 ## ★ FLEET-MANAGER SCREEN inc-2c-iii — the authenticated delivery; the write path is COMPLETE (M33-FR-02/04 · P-04 · P-05 · hard rule #6) (30 August 2026)
 
 **Owner direction:** "merge #307", continuing the owner-approved inc-2c. inc-2c-i/ii captured a device change
