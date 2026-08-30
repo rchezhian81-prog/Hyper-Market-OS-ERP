@@ -2,9 +2,14 @@
 // (apps/web-erp/src/fleet-session.ts), attached as window.fleetSession, built on packages/ui + packages/a11y.
 // This file only draws what the session hands it: the shop's tills, scanners, scales and kiosks with their
 // health — the ones that need a look first (cannot trade, then must-update, then gone-quiet), each with a
-// status that is never a bare colour (an icon + a word ride with it), and the fleet at a glance. Read-only in
-// this increment — nothing here registers, blocks or retires a device; that audited write path is wired next.
-// No prompt/confirm/alert.
+// status that is never a bare colour (an icon + a word ride with it), and the fleet at a glance.
+//
+// A manager who holds the right permission can also CHANGE a device from here — block a broken one, retire an
+// old one, or bring one back. The click never calls the network (hard rule #1): the session commits a
+// deterministic command to the offline OUTBOX (window.fleetOutbox), which survives a reload and a lost
+// connection (§31); the authenticated delivery of that command to the registry is the follow-up increment. A
+// change always needs a short reason (kept with it — an append-only "why"), captured on an on-screen sheet.
+// No prompt/confirm/alert — every affordance is real DOM.
 
 const el = (id) => document.getElementById(id);
 let lang = 'en';
@@ -32,7 +37,7 @@ function sampleSession() {
   const dev = (deviceId, label, kind, branchId, version, lastSeen, tone, icon, statusLabel, needsAttention, silent) => ({
     deviceId, label, kind, branchId, version, lastSeen,
     status: { tone, icon, label: statusLabel, announcement: `${label}: ${statusLabel}`, needsAttention },
-    needsAttention, silent, detail: '',
+    needsAttention, silent, detail: '', actions: [], // a sample cannot be changed — buttons appear with real data
   });
   const devices = (l) => l === 'ta'
     ? [dev('till-03', 'பில்லிங் 3', 'till', 'main', '2.0.4', '2026-08-29 09:12', 'error', '⚠', 'வர்த்தகத்திற்கு முன் புதுப்பிக்க வேண்டும்', true, false),
@@ -65,6 +70,38 @@ const VIEW_WORDS = {
   ta: { filterAll: 'அனைத்தையும் காட்டு', filterAttention: 'கவனம் தேவைப்படுபவை மட்டும்' },
 };
 const vw = (key) => VIEW_WORDS[lang]?.[key] ?? VIEW_WORDS.en[key] ?? key;
+
+// Shell chrome for the change flow (the domain button labels come from the session as a.label).
+const ACTION_WORDS = {
+  en: {
+    reasonPrompt: 'Give a short reason — it is kept with this change.', reasonPlaceholder: 'e.g. screen cracked',
+    confirm: 'Confirm', cancel: 'Cancel', pending: 'waiting to send',
+    refMissingReason: 'Please give a short reason.',
+    refAlreadyQueued: 'That change is already waiting to send.',
+    refNotPermitted: 'You do not have permission to change devices.',
+    refNoOutbox: 'This screen cannot save changes right now.',
+    refDefault: 'That change cannot be made right now.',
+    sampleChange: 'This is sample data — connect the store computer to change a real device.',
+  },
+  ta: {
+    reasonPrompt: 'ஒரு சிறு காரணம் தரவும் — இது இந்த மாற்றத்துடன் வைக்கப்படும்.', reasonPlaceholder: 'எ.கா. திரை உடைந்தது',
+    confirm: 'உறுதிசெய்', cancel: 'ரத்து', pending: 'அனுப்பக் காத்திருக்கிறது',
+    refMissingReason: 'ஒரு சிறு காரணம் தரவும்.',
+    refAlreadyQueued: 'அந்த மாற்றம் ஏற்கனவே அனுப்பக் காத்திருக்கிறது.',
+    refNotPermitted: 'சாதனங்களை மாற்ற உங்களுக்கு அனுமதி இல்லை.',
+    refNoOutbox: 'இந்தத் திரை இப்போது மாற்றங்களைச் சேமிக்க முடியாது.',
+    refDefault: 'அந்த மாற்றத்தை இப்போது செய்ய முடியாது.',
+    sampleChange: 'இது மாதிரித் தகவல் — உண்மையான சாதனத்தை மாற்ற கடை கணினியை இணைக்கவும்.',
+  },
+};
+const aw = (key) => ACTION_WORDS[lang]?.[key] ?? ACTION_WORDS.en[key] ?? key;
+const REFUSAL = {
+  missing_reason: 'refMissingReason', already_queued: 'refAlreadyQueued',
+  not_permitted: 'refNotPermitted', no_outbox: 'refNoOutbox',
+};
+
+/** The action a manager is being asked to confirm, or null when the sheet is closed. */
+let pendingAction = null;
 
 function tileNode(count, labelKey, cls) {
   const div = document.createElement('div');
@@ -101,7 +138,51 @@ function rowNode(d) {
   const br = document.createElement('span'); br.textContent = `${t('branchLabel')}: ${d.branchId}`; meta.append(br);
   li.append(meta);
 
+  const actions = d.actions ?? [];
+  if (actions.length > 0) {
+    const bar = document.createElement('div');
+    bar.className = 'actions';
+    for (const a of actions) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `act act-${a.change}`;
+      btn.textContent = a.label;
+      btn.disabled = !a.enabled;
+      btn.addEventListener('click', () => openSheet(a, d.label));
+      bar.append(btn);
+      if (a.note) { const n = document.createElement('span'); n.className = 'act-note'; n.textContent = a.note; bar.append(n); }
+    }
+    li.append(bar);
+  }
+
   return li;
+}
+
+/** Open the on-screen reason sheet for a change (never a browser prompt). */
+function openSheet(action, deviceLabel) {
+  pendingAction = action;
+  el('sheet-title').textContent = `${action.label} — ${deviceLabel}`;
+  el('reason').value = '';
+  el('reason').placeholder = aw('reasonPlaceholder');
+  el('sheet-prompt').textContent = aw('reasonPrompt');
+  el('sheet-confirm').textContent = aw('confirm');
+  el('sheet-cancel').textContent = aw('cancel');
+  el('sheet-msg').textContent = '';
+  el('sheet').hidden = false;
+  el('reason').focus();
+}
+
+function closeSheet() { pendingAction = null; el('sheet').hidden = true; }
+
+function confirmSheet() {
+  if (pendingAction === null) return;
+  if (typeof session.requestDeviceChange !== 'function') { el('sheet-msg').textContent = aw('sampleChange'); return; }
+  const result = session.requestDeviceChange({
+    deviceId: pendingAction.deviceId, change: pendingAction.change,
+    reason: el('reason').value, at: new Date().toISOString(),
+  });
+  if (result.ok) { closeSheet(); paint(); }
+  else { el('sheet-msg').textContent = aw(REFUSAL[result.reason] ?? 'refDefault'); }
 }
 
 function paint() {
@@ -132,6 +213,12 @@ function paint() {
   manage.hidden = !view.mayManage;
   manage.textContent = view.mayManage ? t('canManage') : '';
 
+  // How many changes are queued and waiting for a connection — never a silent backlog (P-08).
+  const pending = el('pending');
+  const waiting = (() => { try { return window.fleetOutbox?.unsentCount?.() ?? 0; } catch { return 0; } })();
+  pending.hidden = waiting === 0;
+  pending.textContent = waiting === 0 ? '' : `${waiting} ${aw('pending')}`;
+
   const nobody = el('nobody');
   nobody.hidden = !view.nobodyNamed;
   nobody.textContent = view.nobodyNamed ? t('nobodyNamed') : '';
@@ -150,8 +237,10 @@ function paint() {
   }
 }
 
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; if (pendingAction !== null) closeSheet(); paint(); paintStale(); });
 el('filter').addEventListener('click', () => { attentionOnly = !attentionOnly; paint(); });
+el('sheet-confirm').addEventListener('click', confirmSheet);
+el('sheet-cancel').addEventListener('click', closeSheet);
 
 el('sample').hidden = real !== undefined;
 el('sample').textContent = t('sampleData');
