@@ -5,6 +5,44 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M33 RE-RATE — corrected DOWN from INTEGRATION_TESTED to WIRED (honest deflation) (30 August 2026)
+
+**Owner direction:** "do the M33 re-rate." A full, evidence-based FR-by-FR survey of M33 against the maturity
+ladder (WIRED=60 < INTEGRATION_TESTED=75 < E2E_VERIFIED=85). The conclusion **lowers** M33's rating — the
+opposite of inflation, and the reason the assessment was worth doing.
+
+**Finding:** M33 was carried at **INTEGRATION_TESTED (75)**, but only **FR-02** genuinely earns it. The other
+three FRs fall short of their own acceptance criteria:
+- **FR-01 (settings/jobs/flags/config-history):** flags + settings are wired + durable + unit-tested, but
+  config *rollback* is engine-only (no route), **background jobs are absent** (no schedule/monitor/**retry**
+  route — "a failed job is visible & retryable" is unmet), and the **§28 "an admin cannot post a business
+  transaction" separation is unproven** (there is no distinct platform-admin role — the owner role holds both
+  every `platform.*` permission *and* every business-transaction permission — and no test asserts it).
+- **FR-02 (devices/version/remote-kill):** **wired + integration-tested** — the strong FR (registry, version
+  policy, remote kill, the fleet-manager screen + its write path end-to-end). *"Control remote sessions"*
+  (distinct from support access) is unbuilt (docs only).
+- **FR-03 (support access):** the *grant* route + a strong engine are wired, but the lifecycle is only partly
+  wired — approve is a body field (no approval-workflow route); auto-expire / read / review are engine +
+  screen only (no session read/review/server-side-expire route).
+- **FR-04 (status centre / diagnostics / licence / service management) — weakest:** diagnostics/real-health is
+  wired via M35, but the composed **status-centre is engine-only (no route)**, **licence/expiry alerting is
+  absent**, and **platform service management is absent**.
+- **No browser E2E** exists for any M33 screen (`tests/e2e/screens-open-offline.e2e.ts` excludes `fleet` and
+  `admin`), so M33 could not reach E2E_VERIFIED regardless.
+
+**Decision (owner-chosen):** record the honest rung — **M33 → WIRED (60).** The delivered surface is genuinely
+wired on the cloud and FR-02 is integration-tested, but the module is not uniformly integration-tested and
+three of four FRs miss acceptance criteria. **Headline recomputed 41.1% → 41.0%** (a −0.1 honest decrease;
+nothing was inflated to hide the correction). No requirement was dropped — the shortfalls are recorded, not
+deferred away.
+
+**Path back to INTEGRATION_TESTED (the honest to-do):** wire the **status-centre route**, the **support-access
+review/expire routes**, and a **background-job monitor/retry route**; **prove the §28 admin-separation** (a
+distinct platform-admin role + a separation test); and add a **fleet/admin browser E2E**. Each is a candidate
+increment whenever the owner wants M33 lifted.
+
+---
+
 ## ★ M33 REMOTE-KILL write path — a durable version-policy store (M33-FR-02/04 · A-10 · §35) (30 August 2026)
 
 **Owner direction:** after inc-2c completed the fleet-manager screen, the owner chose the recommended next
