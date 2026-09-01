@@ -5,6 +5,38 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M33 status centre — the admin's first screen, on the cloud (1 September 2026)
+
+**Owner direction:** after merging the support-access lifecycle (#313), the owner chose the **status-centre
+route** — the biggest remaining M33-FR-04 gap (FR-04 was the module's weakest FR).
+
+**The gap it closes:** the `statusCentre` engine existed but had **no route** — there was no single read an
+administrator could open first to see whether the shop is healthy and what needs attention.
+
+**What was built (one increment, `services/platform/src/status-centre.ts` + adapter + wiring + tests):**
+- `POST /v1/platform/status-centre` — folds three real things into one verdict: **real health** (computed
+  from the evidence the edge reports, via the same `checkHealth` the operational-health read uses — an
+  **absent signal reads as `unknown`, never a cheerful ok** (P-08), and **`canTrade` is separate from
+  `status`** so a cloud outage never reads as "stop selling", P-01); the **device fleet at a glance**
+  (trading vs blocked, from the registry judged against the stored version policy — with a registration-status
+  fallback when no policy is set yet); and the **count of support sessions open right now** (from the
+  durable support-access lifecycle). The engine returns a **plain-English headline, worst-thing-first**
+  (control by exception, P-03). A pure read — it writes nothing; gated `platform.health.read`.
+- Test: `tests/integration/status-centre.test.ts` (5 — composes real fleet+support+degraded-health into one
+  verdict; the P-08 unknown path; the no-version-policy fleet fallback; the "everything normal" path on a
+  fully-fresh signal set; and the read-gate 200/403 + malformed-evidence 400).
+
+**Honest accounting:** two FR-04 gaps remain — **licence/entitlement-expiry alerting** (no expiry/licence
+data is stored yet, so `entitlementsExpiringSoon` is always empty) and **platform service management**; and
+FR-01's **config rollback** and the missing browser E2E stand. So **M33 stays WIRED (60)**, the rung
+deliberately unchanged. **Headline holds at 41.0%.** Gate green: typecheck, lint, secret-scan, the full
+vitest suite (6134 pass), and the module-ladder / traceability-integrity / D-mirror guardrails.
+
+**Path back to INTEGRATION_TESTED:** expose **config rollback** (FR-01), wire **licence-expiry alerting** +
+**platform service management** (FR-04's last two), and add a **fleet/admin browser E2E**.
+
+---
+
 ## ★ M33 support-access lifecycle — no perpetual back door, wired end to end (1 September 2026)
 
 **Owner direction:** after merging the background-jobs route (#312), the owner chose the **support-access
