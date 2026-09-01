@@ -149,6 +149,34 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     ],
   },
   {
+    id: 'platform_admin',
+    name: 'Platform administrator',
+    // §28 / M33-FR-01 / SEC-11 — the platform-administration function, held *apart* from running
+    // the shop. This role runs the platform: settings and feature flags, devices/terminals and app
+    // versions (including the remote kill of a broken release, A-10), time-bound support access,
+    // tenant export, branding, and licence/entitlements. It **posts no business transaction**.
+    //
+    // Separation of duties here is not a policy paragraph; it is the shape of this list. Every code
+    // below is in the `platform.*` namespace (plus the universal self-read), and *not one*
+    // `pos.*`, `cash.*`, `finance.*`, `price.*`, `purchase.*`, `loyalty.value.*`, `scrap.*`,
+    // `order.*` or `inventory.*` committing code is present — nor `identity.role.grant`, which is
+    // the owner's maker-checker authority. The refusal that an administrator cannot bank a sale,
+    // post a journal, approve a purchase order or grant a role is exactly that absence, enforced by
+    // the same default-deny kernel as every other role (proved in
+    // tests/security/the-platform-admin-cannot-post-a-business-transaction.test.ts).
+    permissions: [
+      'identity.self.read',
+      'platform.health.read',
+      'platform.device.manage',
+      'platform.flag.read', 'platform.flag.write',
+      'platform.support.grant',
+      'platform.setup.read', 'platform.setup.write',
+      'platform.tenant.export',
+      'platform.branding.read', 'platform.branding.write',
+      'platform.entitlement.read', 'platform.entitlement.manage',
+    ],
+  },
+  {
     id: 'accountant',
     name: 'Accountant',
     // Posts journals; **cannot close the period they posted into** — that refusal is in the

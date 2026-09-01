@@ -5,6 +5,43 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M33 §28 admin-separation — a platform administrator who cannot post a business transaction (31 August 2026)
+
+**Owner direction:** after merging the M33 re-rate (#310), the owner chose the recommended next step —
+**prove the §28 separation of duties** that the re-rate had flagged as the strongest single way to start
+lifting M33 back toward INTEGRATION_TESTED.
+
+**The gap it closes:** M33-FR-01's acceptance says *"an admin cannot post a business transaction."* Until now
+that could not be shown, because the product had **no distinct platform-administration role** — the only holder
+of `platform.*` authority was the **owner**, who also holds every business-transaction permission there is. A
+separation you can only describe is a control an attacker reads as advice.
+
+**What was built (one increment, `services/api/src/roles.ts` + a security test):**
+- A new **`platform_admin`** role, confined **by construction** to the `platform.*` namespace (settings, feature
+  flags, devices/terminals & app versions incl. the remote kill, time-bound support access, tenant export,
+  branding, licence/entitlements) plus the universal `identity.self.read` — and holding **not one** committing
+  code (`pos.*`, `cash.*`, `finance.*`, `price.*`, `purchase.*`, `loyalty.value.*`, `scrap.*`, `order.*`,
+  `inventory.*`, nor `identity.role.grant`).
+- A **security test** (`tests/security/the-platform-admin-cannot-post-a-business-transaction.test.ts`, 7 tests)
+  proving it two independent ways over the **real** role catalogue and the **real** request pipeline: (a) a
+  catalogue-confinement invariant — the role can only ever hold `platform.*` authority, so the day someone
+  slips `finance.journal.post` in, the build goes red; (b) kernel enforcement — a person holding **only**
+  `platform_admin` is refused **403** at every business-transaction route (bank a sale, post a journal, issue a
+  credit note, close a period, approve a PO, record a scrap sale, issue stored value) while still doing the
+  platform work the role exists for; (c) a contrast — the **owner is *not* refused** on the same journal route,
+  so the refusal is the *role*, not a broken route.
+
+**Honest accounting:** this closes **one** of FR-01's three sub-gaps (the §28 separation). Config *rollback* is
+still route-less and background *jobs* are still absent, and FR-03/FR-04 gaps and the missing browser E2E stand
+— so **M33 stays WIRED (60)**; the rung is deliberately unchanged. **Headline holds at 41.0%** — no inflation,
+a genuine control added within the rung. Gate green: typecheck, lint, secret-scan, the new suite, and the
+module-ladder / traceability-integrity / D-mirror guardrails all pass.
+
+**Path back to INTEGRATION_TESTED (now one shorter):** wire the **status-centre route**, the **support-access
+review/expire routes**, and a **background-job monitor/retry route**; and add a **fleet/admin browser E2E**.
+
+---
+
 ## ★ M33 RE-RATE — corrected DOWN from INTEGRATION_TESTED to WIRED (honest deflation) (30 August 2026)
 
 **Owner direction:** "do the M33 re-rate." A full, evidence-based FR-by-FR survey of M33 against the maturity
