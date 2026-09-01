@@ -5,6 +5,46 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M33 background jobs — a failed job is visible and retryable (1 September 2026)
+
+**Owner direction:** after merging the §28 admin-separation (#311), the owner chose the **background-jobs
+monitor/retry** route — the remaining FR-01 acceptance gap the re-rate had flagged ("a failed job is visible
+and retryable").
+
+**The gap it closes:** M33-FR-01 requires managing background jobs, and its acceptance says *"a failed job is
+visible and retryable."* The product had feature flags and settings but **no jobs surface at all** — a failed
+overnight job (a settings pack that would not build, a report that never ran) was invisible and could not be
+re-tried through the platform.
+
+**What was built (one increment, `services/platform/src/background-jobs.ts` + adapter + wiring + tests):**
+- A **durable, append-only jobs registry** (a `jobs` sub-stream of the platform stream, folded latest-per-job,
+  restart-safe — hard rule #2/#6):
+  - `POST /v1/platform/jobs` — **schedule** a job (a second schedule of a known id is refused, 409 — that is
+    what *retry* is for);
+  - `POST …/jobs/:id/runs` — the runner **reports** a run's outcome (`succeeded`/`failed`, the error kept so
+    the failure is diagnosable — P-08);
+  - `GET /v1/platform/jobs` — **monitor**, failing jobs sorted first (control by exception, P-03), with a
+    count of how many need a look; and `GET …/jobs/failed` — the **exception view**, so "a failed job is
+    visible" is a read a person can actually make;
+  - `POST …/jobs/:id/retry` — **retry** a failed job (→ scheduled, retries+1); **only a failed job** can be
+    retried (409 otherwise), and an unknown job is refused (404).
+- Two new permissions `platform.job.read` / `platform.job.manage`, held by **owner** and the new
+  **platform_admin** (still within the `platform.*` namespace, so the §28 confinement test stays green).
+- Tests: `tests/unit/background-jobs-projection.test.ts` (8 — the pure fold that decides a job's status) +
+  `tests/integration/background-jobs.test.ts` (6 — schedule → fail → visible → retry → succeed through the
+  real pipeline, restart durability, the 409/404/400 guards, and that a **platform_admin may run the whole
+  loop** while a user with no role is refused).
+
+**Honest accounting:** this closes the **jobs** sub-gap of FR-01; **config rollback** is now the *last*
+route-less FR-01 gap, and FR-03/FR-04 gaps plus the missing browser E2E stand — so **M33 stays WIRED (60)**,
+the rung deliberately unchanged. **Headline holds at 41.0%.** Gate green: typecheck, lint, secret-scan, the
+full vitest suite (6118 pass), and the module-ladder / traceability-integrity / D-mirror guardrails.
+
+**Path back to INTEGRATION_TESTED (now two items shorter):** wire the **status-centre route** and the
+**support-access review/expire routes** (and expose **config rollback**); and add a **fleet/admin browser E2E**.
+
+---
+
 ## ★ M33 §28 admin-separation — a platform administrator who cannot post a business transaction (31 August 2026)
 
 **Owner direction:** after merging the M33 re-rate (#310), the owner chose the recommended next step —

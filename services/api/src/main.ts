@@ -117,6 +117,7 @@ import { operationalHealthRoutes } from '../../platform/src/operational-health';
 import { deviceRoutes } from '../../platform/src/devices';
 import { deviceRegistryRoutes } from '../../platform/src/device-registry';
 import { versionPolicyRoutes } from '../../platform/src/version-policy';
+import { backgroundJobsRoutes } from '../../platform/src/background-jobs';
 import { purchaseRoutes } from '../../purchase/src/index';
 import { purchaseOrderRoutes } from '../../purchase/src/purchase-orders';
 import { supplierScorecardRoutes } from '../../purchase/src/supplier-scorecard';
@@ -151,7 +152,7 @@ import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, financeAdapter, settlementAdapter,
-  customerAdapter, dataRightsAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, riskRegisterAdapter,
+  customerAdapter, dataRightsAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, backgroundJobsAdapter, riskRegisterAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, salesHistoryAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
@@ -648,6 +649,11 @@ export function buildSurface(deps: {
     ...versionPolicyRoutes(store === undefined
       ? { policy: () => undefined, recordPolicyEvent: () => {}, now }
       : versionPolicyAdapter({ store, now })),
+    // Durable background-job registry (M33-FR-01) — an admin schedules jobs, a runner reports each run's
+    // outcome, and a FAILED job is visible (a dedicated exception view) and retryable. Append-only, restart-safe.
+    ...backgroundJobsRoutes(store === undefined
+      ? { jobs: () => [], recordJobEvent: () => {}, now }
+      : backgroundJobsAdapter({ store, now })),
     ...migrationRoutes(store === undefined ? {
       target: (tenantId) => ({
         targetId: `tgt-${tenantId}`, tenantId,

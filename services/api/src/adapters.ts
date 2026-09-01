@@ -98,6 +98,7 @@ import type { OrgStructureDeps, OrgNode, GstRegistration } from '../../platform/
 import type { ShelfCountDeps, ShelfCount } from '../../inventory/src/shelf-count';
 import { projectFleet, type DeviceRegistryDeps, type DeviceRegistryEvent } from '../../platform/src/device-registry';
 import { projectVersionPolicy, type VersionPolicyDeps, type VersionPolicyEvent } from '../../platform/src/version-policy';
+import { projectJobs, type BackgroundJobsDeps, type BackgroundJobEvent } from '../../platform/src/background-jobs';
 import type { SpacePerformanceDeps } from '../../inventory/src/space-performance';
 import type { AssortmentDeps } from '../../inventory/src/assortment';
 import type { DisplayContract, AssortmentEntry } from '../../../packages/merchandising/src/index';
@@ -5124,6 +5125,32 @@ export function versionPolicyAdapter(input: {
         type: 'VersionPolicyEvent',
         occurredAt: event.at,
         idempotencyKey: `version-policy-${tenantId}-${key}`,
+        source: 'api/platform',
+        payload: event,
+      }));
+    },
+  };
+}
+
+/**
+ * The durable background-job registry (M33-FR-01). Reads/writes a `jobs` sub-stream of the platform stream,
+ * folded latest-per-job, so a job scheduled/reported/retried survives a restart and a failed job stays
+ * visible until a person acts on it (append-only, hard rule #2/#6).
+ */
+export function backgroundJobsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): BackgroundJobsDeps {
+  const stream = streamName(STREAM.platform, 'jobs');
+  return {
+    now: input.now,
+    jobs: async (tenantId) => projectJobs(await allOf<BackgroundJobEvent>(input.store, tenantId, stream, 'BackgroundJobEvent')),
+    recordJobEvent: async (tenantId, event, key) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `job-${event.jobId}-${event.change}-${key}`,
+        type: 'BackgroundJobEvent',
+        occurredAt: event.at,
+        idempotencyKey: `job-${tenantId}-${key}`,
         source: 'api/platform',
         payload: event,
       }));
