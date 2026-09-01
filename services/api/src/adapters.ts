@@ -100,6 +100,8 @@ import { projectFleet, type DeviceRegistryDeps, type DeviceRegistryEvent } from 
 import { projectVersionPolicy, type VersionPolicyDeps, type VersionPolicyEvent } from '../../platform/src/version-policy';
 import { projectJobs, type BackgroundJobsDeps, type BackgroundJobEvent } from '../../platform/src/background-jobs';
 import { projectSupportAccess, type SupportAccessDeps, type SupportAccessEvent } from '../../platform/src/support-access-lifecycle';
+import { type StatusCentreDeps } from '../../platform/src/status-centre';
+import { fleetSummary } from '../../../packages/platform-admin/src/devices';
 import type { SpacePerformanceDeps } from '../../inventory/src/space-performance';
 import type { AssortmentDeps } from '../../inventory/src/assortment';
 import type { DisplayContract, AssortmentEntry } from '../../../packages/merchandising/src/index';
@@ -5184,6 +5186,41 @@ export function supportAccessAdapter(input: {
         payload: event,
       }));
     },
+  };
+}
+
+/**
+ * The status centre (M33-FR-04). Composes what the platform already knows — the device fleet judged against
+ * the stored version policy, and how many support sessions are live now — for the `statusCentre` engine to
+ * fold with the caller-supplied health evidence. Reads only; entitlement-expiry data is not stored yet, so
+ * the expiring-entitlements list is empty (the remaining FR-04 gap).
+ */
+export function statusCentreAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): StatusCentreDeps {
+  const deviceStream = streamName(STREAM.platform, 'devices');
+  const policyStream = streamName(STREAM.platform, 'version-policy');
+  const supportStream = streamName(STREAM.platform, 'support-access');
+  return {
+    now: input.now,
+    fleet: async (tenantId) => {
+      const devices = projectFleet(tenantId, await allOf<DeviceRegistryEvent>(input.store, tenantId, deviceStream, 'DeviceRegistryEvent'));
+      const policy = projectVersionPolicy(await allOf<VersionPolicyEvent>(input.store, tenantId, policyStream, 'VersionPolicyEvent'));
+      if (policy === undefined) {
+        // No version policy yet: judge by registration status alone — a blocked/retired device is not trading.
+        const trading = devices.filter((d) => d.status === 'registered').length;
+        return { total: devices.length, trading, blocked: devices.length - trading };
+      }
+      const s = fleetSummary(devices, policy, input.now());
+      return { total: s.total, trading: s.trading, blocked: s.blocked };
+    },
+    supportSessions: async (tenantId) =>
+      projectSupportAccess(await allOf<SupportAccessEvent>(input.store, tenantId, supportStream, 'SupportAccessLifecycleEvent'))
+        .filter((r) => r.session !== undefined)
+        .map((r) => r.session!),
+    // Licence/entitlement expiry is not tracked yet (M33-FR-04, open) — nothing carries an expiry to warn on.
+    entitlements: () => [],
   };
 }
 
