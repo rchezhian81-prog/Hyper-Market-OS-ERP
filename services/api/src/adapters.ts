@@ -99,6 +99,7 @@ import type { ShelfCountDeps, ShelfCount } from '../../inventory/src/shelf-count
 import { projectFleet, type DeviceRegistryDeps, type DeviceRegistryEvent } from '../../platform/src/device-registry';
 import { projectVersionPolicy, type VersionPolicyDeps, type VersionPolicyEvent } from '../../platform/src/version-policy';
 import { projectJobs, type BackgroundJobsDeps, type BackgroundJobEvent } from '../../platform/src/background-jobs';
+import { projectSupportAccess, type SupportAccessDeps, type SupportAccessEvent } from '../../platform/src/support-access-lifecycle';
 import type { SpacePerformanceDeps } from '../../inventory/src/space-performance';
 import type { AssortmentDeps } from '../../inventory/src/assortment';
 import type { DisplayContract, AssortmentEntry } from '../../../packages/merchandising/src/index';
@@ -5151,6 +5152,34 @@ export function backgroundJobsAdapter(input: {
         type: 'BackgroundJobEvent',
         occurredAt: event.at,
         idempotencyKey: `job-${tenantId}-${key}`,
+        source: 'api/platform',
+        payload: event,
+      }));
+    },
+  };
+}
+
+/**
+ * The durable support-access lifecycle store (M33-FR-03 · SEC-11). Reads/writes a `support-access` sub-stream
+ * of the platform stream, folded latest-per-request, so a request → owner-decision → session → actions → end
+ * survives a restart and every support session is an entry that cannot be removed (append-only, hard rule #2/#6).
+ */
+export function supportAccessAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): SupportAccessDeps {
+  const stream = streamName(STREAM.platform, 'support-access');
+  const idOf = (e: SupportAccessEvent): string => e.kind === 'requested' ? e.request.requestId : e.kind === 'decided' ? e.requestId : e.sessionId;
+  const atOf = (e: SupportAccessEvent): string => e.kind === 'requested' ? e.request.at : e.kind === 'action' ? e.action.at : e.at;
+  return {
+    now: input.now,
+    records: async (tenantId) => projectSupportAccess(await allOf<SupportAccessEvent>(input.store, tenantId, stream, 'SupportAccessLifecycleEvent')),
+    recordEvent: async (tenantId, event, key) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `support-${idOf(event)}-${event.kind}-${key}`,
+        type: 'SupportAccessLifecycleEvent',
+        occurredAt: atOf(event),
+        idempotencyKey: `support-${tenantId}-${key}`,
         source: 'api/platform',
         payload: event,
       }));
