@@ -5,6 +5,47 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M33 support-access lifecycle — no perpetual back door, wired end to end (1 September 2026)
+
+**Owner direction:** after merging the background-jobs route (#312), the owner chose the **support-access
+lifecycle** — the M33-FR-03 (SEC-11) control the re-rate flagged as only partly wired.
+
+**The gap it closes:** support access is the back door everyone forgets is open — a vendor engineer given
+admin "to look at one thing", still there eighteen months later. The **engine** already refused everything
+that matters (owner-approval, requester≠approver §28, shorten-never-extend, forbidden money scopes, expiry
+that is a fact of the clock, actions refused after expiry). What was missing was the **lifecycle around it**:
+you could not file a request and have the owner approve it as two durable audited steps, read who has access
+now, review who had it and what they did, or end a session early.
+
+**What was built (one increment, `services/platform/src/support-access-lifecycle.ts` + adapter + wiring +
+tests):** a durable, event-sourced lifecycle on a `support-access` sub-stream (restart-safe, append-only):
+- `POST …/support-access/requests` — a support engineer **files** a request (pending); `platform.support.request`.
+- `POST …/requests/:id/decision` — the **owner** approves (→ a time-boxed session, via the engine's full
+  gate) or rejects; `platform.support.grant`. The engine refuses a self-approval (§28), an over-long grant, or
+  a money scope → **422**; an unknown request → 404; an already-decided one → 409.
+- `POST …/sessions/:id/actions` — the session **records** what it touched; refused once ended/expired
+  (the record can never show work the grant did not cover); `platform.support.request`.
+- `POST …/sessions/:id/end` — **revoke** early; `platform.support.grant`.
+- `GET …/sessions` — **read** who has access now (active computed from the clock, never a stored flag) + the
+  pending queue; `GET …/support-access/review` — **review** who had it, why, how long, what they did, with an
+  approved-but-never-used grant flagged; both `platform.support.read`.
+- Two new permissions `platform.support.request` / `platform.support.read` on **owner** and **platform_admin**
+  (within `platform.*`, so the §28 confinement test stays green). The pre-existing one-shot grant route stays.
+- Tests: `tests/unit/support-access-lifecycle-projection.test.ts` (5) + `tests/integration/support-access-lifecycle.test.ts`
+  (6 — file→approve→act→review, the §28 self-approval refusal, the shorten-never-extend and money-scope
+  refusals, end-early-then-action-refused, reject + unknown/already-decided guards, restart durability, 403).
+
+**Honest accounting:** FR-03 is now wired end to end. The module still has FR-01's **config rollback** gap,
+FR-04's **status-centre route / licence-expiry alerting / service management**, and **no browser E2E** — so
+**M33 stays WIRED (60)**, the rung deliberately unchanged. **Headline holds at 41.0%.** Gate green: typecheck,
+lint, secret-scan, the full vitest suite (6129 pass), and the module-ladder / traceability-integrity / D-mirror
+guardrails.
+
+**Path back to INTEGRATION_TESTED (now one item shorter):** wire the **status-centre route** (and expose
+**config rollback**); and add a **fleet/admin browser E2E**.
+
+---
+
 ## ★ M33 background jobs — a failed job is visible and retryable (1 September 2026)
 
 **Owner direction:** after merging the §28 admin-separation (#311), the owner chose the **background-jobs
