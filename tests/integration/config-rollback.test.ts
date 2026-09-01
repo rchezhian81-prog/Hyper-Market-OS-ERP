@@ -25,7 +25,7 @@ const rollback = (h: ReturnType<typeof apiHarness>, u: string, toVersion: unknow
   h.request({ method: 'POST', path: `/v1/platform/config/${KEY}/rollback`, userId: u, tenantId: TENANT, idempotencyKey: key, body: { toVersion, reason } });
 const setupStatus = (h: ReturnType<typeof apiHarness>, u: string) =>
   h.request({ method: 'GET', path: '/v1/platform/setup', userId: u, tenantId: TENANT });
-const taxItem = (s: SetupStatus): { value: unknown; version: number } => (s.items as { key: string; value: unknown; version: number }[]).find((i) => i.key === KEY)!;
+const taxItem = (s: SetupStatus): { value: unknown; version: number } => s.items.find((i) => i.key === KEY)!;
 
 describe('config version history + rollback (M33-FR-01)', () => {
   it('records each setting change as a version, shows the history, and rolls back to a prior version', async () => {
