@@ -5,6 +5,44 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M33 config rollback — every setting change is versioned and reversible (1 September 2026)
+
+**Owner direction:** after merging the status centre (#314), the owner chose the **config-rollback route** —
+the last route-less M33-FR-01 gap.
+
+**The gap it closes:** setup answers already write through the versioned config engine (every change is an
+append-only version with author, reason and date), and the engine could already restore a prior value — but
+there was **no route** to view a setting's history or roll it back. M33-FR-01's acceptance says "every
+setting/flag change is versioned and reversible."
+
+**What was built (one increment, `services/platform/src/config-history.ts` + a getter on
+`DurableTenantSettings` + wiring + tests):**
+- `GET /v1/platform/config/:key` — the setting's current value + version (null if never set).
+- `GET /v1/platform/config/:key/history` — the **full audited version history**, oldest first (who changed
+  it, to what, when, why).
+- `POST /v1/platform/config/:key/rollback` — restore a prior version as a **NEW append-only version**
+  (`rolledBackFrom` set; the history is never rewritten, hard rule #2/#6); a version that doesn't exist → 404.
+  Gated `platform.setup.write` (reads `platform.setup.read`).
+- The routes operate on the **same versioned store** the setup answers write to (a getter exposes it and
+  `buildSurface` hoists one shared settings instance), so a change and its rollback are **one history** and a
+  rollback **flows straight back to the live setting**.
+- Test: `tests/integration/config-rollback.test.ts` (3 — set a setting twice → history shows both versions →
+  roll back to v1 → a new v3 restoring the old value with `rolledBackFrom:1`, the live setting reads the
+  restored value, and the whole history is retained; plus the 404/400 guards and the read/write gate).
+
+**Milestone — FR-01 is now fully met.** With flags/settings (durable, versioned), the §28 admin-separation,
+background jobs, and now config rollback all wired + integration-tested, **all of M33-FR-01's acceptance is
+met**. FR-02 and FR-03 are already met. **Only FR-04's licence-expiry alerting + platform service management
+remain** as M33 WIRE gaps — once those land, M33 earns an honest re-rate to INTEGRATION_TESTED (a fleet/admin
+browser E2E is then the step to E2E_VERIFIED).
+
+**Honest accounting:** those two FR-04 gaps still stand, so **M33 stays WIRED (60)** for now — the rung is
+deliberately unchanged until FR-04 is complete. **Headline holds at 41.0%.** Gate green: typecheck, lint,
+secret-scan, the full vitest suite (6137 pass), and the module-ladder / traceability-integrity / D-mirror
+guardrails.
+
+---
+
 ## ★ M33 status centre — the admin's first screen, on the cloud (1 September 2026)
 
 **Owner direction:** after merging the support-access lifecycle (#313), the owner chose the **status-centre

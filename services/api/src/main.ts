@@ -120,6 +120,7 @@ import { versionPolicyRoutes } from '../../platform/src/version-policy';
 import { backgroundJobsRoutes } from '../../platform/src/background-jobs';
 import { supportAccessLifecycleRoutes } from '../../platform/src/support-access-lifecycle';
 import { statusCentreRoutes } from '../../platform/src/status-centre';
+import { configHistoryRoutes } from '../../platform/src/config-history';
 import { purchaseRoutes } from '../../purchase/src/index';
 import { purchaseOrderRoutes } from '../../purchase/src/purchase-orders';
 import { supplierScorecardRoutes } from '../../purchase/src/supplier-scorecard';
@@ -221,6 +222,9 @@ export function buildSurface(deps: {
   const store = deps.store;
 
   const probes = deps.probes ?? (async () => []);
+  // One durable settings instance, shared so the config-history / rollback routes operate on the SAME
+  // versioned store the setup answers write to (a setting change and its rollback share one history).
+  const settings = deps.settings ?? inMemorySettings();
 
   return [
     ...identityRoutes(store === undefined ? {
@@ -628,10 +632,14 @@ export function buildSurface(deps: {
       : reportingAdapter({ store, now, records: REPORTING_RECORDS, produced: REPORTING_PRODUCED })),
     ...platformRoutes(store === undefined ? {
       probe: probes, flags: empty({}), setFlag: () => {}, recordSupportAccess: () => {},
-      settings: inMemorySettings(), exportTenant: emptyExportBundle,
+      settings, exportTenant: emptyExportBundle,
       setBranding: () => {}, branding: empty(undefined),
       setEntitlement: () => {}, entitlements: empty([]), now,
-    } : platformAdapter({ store, now, probes, settings: deps.settings ?? inMemorySettings() })),
+    } : platformAdapter({ store, now, probes, settings })),
+    // Config version history + rollback (M33-FR-01 / M01-FR-03) — view a setting's full audited history and
+    // restore a prior version (as a new append-only version). Shares the settings store, so setup answers and
+    // their rollbacks are one history.
+    ...configHistoryRoutes({ versions: settings.configVersions, now }),
     // Operational health & alerting (M35-FR-03/04) — a pure compute over supplied evidence; no store.
     ...operationalHealthRoutes({ now }),
     // Device & app-version control (M33-FR-02/04 / A-10) — evaluate whether a device may trade / must

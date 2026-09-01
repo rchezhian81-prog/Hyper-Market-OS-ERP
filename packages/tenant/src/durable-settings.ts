@@ -19,6 +19,15 @@ export class DurableTenantSettings {
     private readonly catalogue: readonly SetupItem[] = SETUP_CATALOGUE,
   ) {}
 
+  /**
+   * The versioned config store behind these settings. Exposed read-only so the config-history / rollback
+   * routes operate on the SAME append-only store the setup answers write to — a setting change and its
+   * rollback share one history.
+   */
+  get configVersions(): ConfigVersionStore {
+    return this.store;
+  }
+
   /** The tenant's setup status, read from the durable store — defaults where a key is unset. */
   async status(tenantId: string): Promise<SetupStatus> {
     const items = await Promise.all(this.catalogue.map(async (item) => {
