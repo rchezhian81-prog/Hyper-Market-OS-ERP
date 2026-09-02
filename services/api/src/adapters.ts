@@ -103,6 +103,7 @@ import { projectSupportAccess, type SupportAccessDeps, type SupportAccessEvent }
 import { type StatusCentreDeps } from '../../platform/src/status-centre';
 import { projectLicences, type LicenceDeps, type LicenceEvent } from '../../platform/src/licences';
 import { projectServiceRequests, type ServiceRequestsDeps, type ServiceRequestEvent } from '../../platform/src/service-requests';
+import { projectRemoteSessions, type RemoteSessionsDeps, type RemoteSessionEvent } from '../../platform/src/remote-sessions';
 import { fleetSummary } from '../../../packages/platform-admin/src/devices';
 import type { SpacePerformanceDeps } from '../../inventory/src/space-performance';
 import type { AssortmentDeps } from '../../inventory/src/assortment';
@@ -5274,6 +5275,32 @@ export function serviceRequestsAdapter(input: {
         type: 'ServiceRequestEvent',
         occurredAt: event.at,
         idempotencyKey: `svc-${tenantId}-${key}`,
+        source: 'api/platform',
+        payload: event,
+      }));
+    },
+  };
+}
+
+/**
+ * The durable remote-session control store (M33-FR-02). Reads/writes a `remote-sessions` sub-stream of the
+ * platform stream, folded latest-per-session, so a live remote/terminal session is visible and an
+ * administrator's termination of it survives a restart (append-only, hard rule #2/#6).
+ */
+export function remoteSessionsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): RemoteSessionsDeps {
+  const stream = streamName(STREAM.platform, 'remote-sessions');
+  return {
+    now: input.now,
+    sessions: async (tenantId) => projectRemoteSessions(await allOf<RemoteSessionEvent>(input.store, tenantId, stream, 'RemoteSessionEvent')),
+    recordEvent: async (tenantId, event, key) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `rsession-${event.sessionId}-${event.change}-${key}`,
+        type: 'RemoteSessionEvent',
+        occurredAt: event.at,
+        idempotencyKey: `rsession-${tenantId}-${key}`,
         source: 'api/platform',
         payload: event,
       }));
