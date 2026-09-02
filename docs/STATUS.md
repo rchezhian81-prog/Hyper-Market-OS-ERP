@@ -5,6 +5,44 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M33 licence-expiry alerting — an expiring licence alerts a named owner (2 September 2026)
+
+**Owner direction:** after merging config rollback (#315), the owner chose **licence-expiry alerting** — an
+M33-FR-04 acceptance clause.
+
+**The gap it closes:** M33-FR-04 requires that "an expiring licence raises an alert to a named owner." The
+status centre had an expiring-entitlements slot, but nothing carried an expiry date or a responsible owner, so
+the slot was always empty and no alert could fire.
+
+**What was built (one increment, `services/platform/src/licences.ts` + adapter + status-centre feed + tests):**
+- A durable, event-sourced licence store (a `licences` sub-stream, latest-per-module, restart-safe):
+  - `POST /v1/platform/licences/:moduleId` — record a **time-bound licence with a NAMED owner** (module,
+    on/off, `expiresOn`, `ownerUserId`+`ownerName`); a licence with **no named owner is refused (422)** — there
+    is no renewal without a person to do it (mirrors M34's obligation rule). `platform.entitlement.manage`.
+  - `GET /v1/platform/licences` — list them. `platform.entitlement.read`.
+  - `GET /v1/platform/licences/alerts` — the **alert view**: licences expiring soon and **already expired**,
+    **worst-first**, each **naming the owner** who must renew it. An expired licence **keeps shouting** — it
+    does not drop off the day it lapses (that's when the reminder matters most). `platform.entitlement.read`.
+- The **status centre's expiring-entitlements list is now live** — fed by these real licences (previously
+  always empty).
+- Tests: `tests/unit/licences.test.ts` (3 — the fold + the severity/keeps-shouting/named-owner alert engine) +
+  `tests/integration/licence-expiry.test.ts` (4 — record → alert names owner → status centre shows it;
+  the expired-keeps-alerting path; the unnamed-owner 422 + bad-date 400; a perpetual licence never alerts +
+  the read/write gate).
+
+**M33 is now at the INTEGRATION_TESTED threshold.** FR-01/FR-02/FR-03 are met, and **FR-04's three acceptance
+clauses are now all met** (real health incl. offline/sync; an expiring licence alerts a named owner;
+diagnostics help resolve an incident). The one remaining FR-04 **SHALL** is *platform service management*
+(service-request tracking) — in the requirement's capability list but not its acceptance criteria.
+
+**Honest accounting:** I am **not** self-promoting M33. It stays **WIRED (60)** here, pending either that last
+service-management piece or an explicit owner decision to re-rate to INTEGRATION_TESTED (accepting service
+management as a SHALL-but-not-acceptance deferral). **Headline holds at 41.0%.** Gate green: typecheck (run
+again after the test files, per the #315 CI lesson), lint, secret-scan, the full vitest suite (6144 pass), and
+the module-ladder / traceability-integrity / D-mirror guardrails.
+
+---
+
 ## ★ M33 config rollback — every setting change is versioned and reversible (1 September 2026)
 
 **Owner direction:** after merging the status centre (#314), the owner chose the **config-rollback route** —

@@ -101,6 +101,7 @@ import { projectVersionPolicy, type VersionPolicyDeps, type VersionPolicyEvent }
 import { projectJobs, type BackgroundJobsDeps, type BackgroundJobEvent } from '../../platform/src/background-jobs';
 import { projectSupportAccess, type SupportAccessDeps, type SupportAccessEvent } from '../../platform/src/support-access-lifecycle';
 import { type StatusCentreDeps } from '../../platform/src/status-centre';
+import { projectLicences, type LicenceDeps, type LicenceEvent } from '../../platform/src/licences';
 import { fleetSummary } from '../../../packages/platform-admin/src/devices';
 import type { SpacePerformanceDeps } from '../../inventory/src/space-performance';
 import type { AssortmentDeps } from '../../inventory/src/assortment';
@@ -5219,8 +5220,37 @@ export function statusCentreAdapter(input: {
       projectSupportAccess(await allOf<SupportAccessEvent>(input.store, tenantId, supportStream, 'SupportAccessLifecycleEvent'))
         .filter((r) => r.session !== undefined)
         .map((r) => r.session!),
-    // Licence/entitlement expiry is not tracked yet (M33-FR-04, open) — nothing carries an expiry to warn on.
-    entitlements: () => [],
+    // The real licences (M33-FR-04) — with their expiry — so the status centre's expiring-entitlements list is
+    // live, not empty. Mapped to the engine's EntitlementState shape.
+    entitlements: async (tenantId) =>
+      projectLicences(await allOf<LicenceEvent>(input.store, tenantId, streamName(STREAM.platform, 'licences'), 'LicenceSet'))
+        .map((l) => ({ tenantId, moduleId: l.moduleId, enabled: l.enabled, ...(l.expiresOn !== undefined ? { expiresOn: l.expiresOn } : {}) })),
+  };
+}
+
+/**
+ * The durable licence store (M33-FR-04). Reads/writes a `licences` sub-stream of the platform stream, folded
+ * latest-per-module, so a licence's expiry and its named owner survive a restart and an expiring licence keeps
+ * alerting until a person renews it (append-only, hard rule #2/#6).
+ */
+export function licencesAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): LicenceDeps {
+  const stream = streamName(STREAM.platform, 'licences');
+  return {
+    now: input.now,
+    licences: async (tenantId) => projectLicences(await allOf<LicenceEvent>(input.store, tenantId, stream, 'LicenceSet')),
+    recordLicence: async (tenantId, event, key) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `licence-${event.licence.moduleId}-${key}`,
+        type: 'LicenceSet',
+        occurredAt: event.at,
+        idempotencyKey: `licence-${tenantId}-${key}`,
+        source: 'api/platform',
+        payload: event,
+      }));
+    },
   };
 }
 
