@@ -5,6 +5,45 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M33 control remote sessions + RE-RATE to E2E_VERIFIED — M33 complete (2 September 2026)
+
+**Owner direction:** "build control remote sessions next" — the last M33-FR-02 piece.
+
+**What was built (one increment, `services/platform/src/remote-sessions.ts` + adapter + wiring + tests):** a
+durable, event-sourced **remote-session control store** — the register of live remote/terminal sessions on the
+fleet, and an administrator's power to **end** one. Distinct from support access (which grants it); this is
+about the live sessions themselves not staying open, unseen, after the work is done.
+- `POST /v1/platform/remote-sessions` — **open** (a device reports a live session: who, on which device, of
+  what kind); a second open of a still-active id → **409**.
+- `POST …/:id/heartbeat` — the session **reports it is still alive** (advances last-seen; silence then reads
+  as a signal).
+- `POST …/:id/terminate` — an admin **cuts it off**, with a **named reason** (append-only); ending an
+  already-ended one → 409, an unknown one → 404, no reason → 400.
+- `GET /v1/platform/remote-sessions` — **list** who's connected now (active first + a count); `GET …/:id` reads one.
+- Gated `platform.device.manage` (control) / `platform.health.read` (read) — both already held by owner +
+  platform_admin, so **no roles change** and the §28 confinement + contract tests are untouched.
+- Tests: `tests/unit/remote-sessions.test.ts` (6) + `tests/integration/remote-sessions.test.ts` (4 —
+  open→heartbeat→terminate lifecycle, active-first listing, and the 409/409/404/400 guards + the gate).
+
+**★ RE-RATE (owner-directed): M33 INTEGRATION_TESTED (75) → E2E_VERIFIED (85). M33 is now complete to the
+top automated-verification rung.** With this, **all four FRs are wired + integration-tested**, the fleet/admin
+screen is **browser-E2E-verified** (offline-open + a11y, and the functional block-reaches-the-registry write
+path in a real headless browser — the M12/product-publish bar), and FR-02's last sub-item is built. **Nothing
+on the module is stubbed, engine-only, or unverified in a browser.** This is an honest upward re-rate the work
+earned — the same ladder that had M33 marked *down* to WIRED on 2026-08-30 when the pieces weren't there.
+**Headline 41.1% → 41.2%.** Module-ladder guardrail re-checked: label ↔ ladder rung ↔ summary counts
+(**2 E2E VERIFIED · 1 INTEGRATION TESTED · 11 WIRED · …**) all agree and sum to 36.
+
+**Gate green:** typecheck (again after the test files), lint, secret-scan, the full vitest suite (6164 pass),
+the e2e suite (`pnpm run test:e2e`), and the module-ladder / traceability-integrity / D-mirror guardrails.
+
+**M33 arc this run:** eight increments — §28 admin-separation, background jobs, support-access lifecycle,
+status centre, config rollback, licence-expiry alerting, service-request tracker, and now control-remote-sessions
++ the browser E2E — carrying M33 from a corrected-down WIRED all the way to **E2E_VERIFIED**. **Path to
+UAT_VERIFIED:** owner/operator sign-off in the store on the admin flows.
+
+---
+
 ## ★ M33 fleet/admin browser E2E — the last verification before E2E_VERIFIED (2 September 2026)
 
 **Owner direction:** "Finish M33 to E2E_VERIFIED." That means two things — a real-browser click-through of the
