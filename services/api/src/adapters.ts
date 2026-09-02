@@ -128,6 +128,8 @@ import type { RebateDeps } from '../../purchase/src/rebates';
 import type { RfqDeps } from '../../purchase/src/rfq';
 import type { ImportQualityDeps, ImportJobRecord } from '../../purchase/src/import-quality';
 import type { DataImportDeps, ImportCommitRecord } from '../../purchase/src/data-import';
+import type { DataExportAuditDeps } from '../../purchase/src/data-export';
+import type { ExportAudit } from '../../../packages/export/src/export';
 import { computeOpenCommitment, type ReceiptFact, type SupplierContract, type RebateScheme, type RebateAccrual, type Requisition, type Quote } from '../../../packages/purchasing/src/index';
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
 import type { CreditNoteDeps } from '../../finance/src/credit-notes';
@@ -3990,6 +3992,36 @@ export function importQualityAdapter(input: {
         occurredAt: input.now(),
         idempotencyKey: `import-job-${tenantId}-${jobId}-${d}`,
         source: 'api/purchase',
+        payload: record,
+      }));
+    },
+  };
+}
+
+const DATA_EXPORTS_STREAM = streamName(STREAM.platform, 'data-exports');
+
+/**
+ * Data-export audit ledger (M30-FR-02 / hard rule #6). Every domain export is an append-only
+ * `DataExported` fact — who took what domain, when, how many rows, and which columns were redacted
+ * for them — because the audit record is the only evidence afterwards of who extracted the shop's
+ * data. The export routes run the tested `@sre/export` engine; this only stores the outcome. The id
+ * is derived from the export route's idempotency key so a replay collapses to one logged export.
+ */
+export function dataExportAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): DataExportAuditDeps {
+  return {
+    now: input.now,
+    exports: async (tenantId) => allOf<ExportAudit>(input.store, tenantId, DATA_EXPORTS_STREAM, 'DataExported'),
+    recordExport: async (tenantId, record, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, DATA_EXPORTS_STREAM, makeEvent({
+        id: `data-export-${d}`,
+        type: 'DataExported',
+        occurredAt: record.at,
+        idempotencyKey: `data-export-${tenantId}-${d}`,
+        source: 'api/platform',
         payload: record,
       }));
     },

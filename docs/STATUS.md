@@ -5,6 +5,54 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M30 domain data export + RE-RATE to INTEGRATION_TESTED — M30's four FRs all wired & tested (2 September 2026)
+
+**Owner direction:** "M30-FR-02 data export" — chosen to finish M30 (the export half of the module).
+
+**The gap it closes:** the tested export engine (`packages/export`) could already turn a domain's rows into an
+**open CSV + JSON schema** under three controls — a domain permission (default-deny), branch scope (§28), and
+sensitive-column redaction (PII/payment shown only to `export.sensitive`, redacted-not-dropped so the file's
+shape never lies) — with an audit record per export. **None of it was on the API.** The promise of FR-02 is that
+*your data is yours — there is no proprietary-only route to get it out*; without a route, that promise was unkept.
+
+**What was built (one increment, `services/purchase/src/data-export.ts` + adapter + roles + wiring + tests):**
+- `GET /v1/export` (`export.read`) — the **catalogue of exportable domains** and their columns (which are
+  sensitive), so a person knows what they can take and in what shape. No data.
+- `POST /v1/export/:domain` (`export.read`) — **run the engine for one domain.** The caller's OWN per-tenant
+  authority (the same resolver the kernel uses) decides: allowed at all (the **domain's own** permission →
+  `403 export_not_permitted`), which branch's rows come back, and whether sensitive columns are shown or
+  `[redacted]` (the additional `export.sensitive`). Returns the CSV, its self-describing schema, and the audit
+  record. **Every export is logged** append-only (`DataExported`) — the audit record is the only evidence
+  afterwards of who took the shop's data (hard rule #6). A replay of an idempotency key logs once.
+- `GET /v1/exports` (`export.read`) — that **export audit trail**, newest first.
+- **Two real domains registered**, each backed by an already-folded read model and reusing existing permissions:
+  `products` (the product master → `catalogue.pack.read`) and `import-commits` (the M30 import ledger →
+  `purchase.import.read`). The registry is trivially extensible to more domains.
+- **New permissions:** `export.read` (owner + store-manager + accountant) and `export.sensitive` (owner only).
+  The api-surface contract test (every route permission granted) and the §28 platform-admin confinement test
+  both still pass — `export.*` is outside the `platform.*` namespace, so platform_admin gains nothing.
+- Tests: `tests/unit/data-export-routes.test.ts` (5 — the **redaction, branch-scope, per-domain-denial and
+  audit-logging wiring** proven with a purpose-built people domain carrying a sensitive phone + a branch column)
+  and `tests/integration/data-export.test.ts` (5 — list domains; export the product master to CSV+schema, logged
+  and restart-safe; the **same accountant allowed for import-commits but 403 for products purely by the domain's
+  own permission**; idempotent replay logging once; unknown-domain 404 and the no-`export.read` refusal).
+
+**★ RE-RATE (owner-directed): M30 WIRED (60) → INTEGRATION_TESTED (75).** With FR-02 wired, **all four M30 FRs
+are now wired AND integration-tested on the cloud** — exactly the path STATUS named last increment. This is the
+honest rung: **E2E_VERIFIED would need a real-browser import/export screen, and none exists yet.** FR-02's domain
+coverage is currently two domains (a registry addition per further domain), which the evidence states plainly
+rather than claiming "every domain". **Headline 41.4% → 41.5%.** Module-ladder guardrail re-checked: label ↔
+ladder rung ↔ summary counts (**2 E2E VERIFIED · 2 INTEGRATION TESTED · 11 WIRED · 21 PARTIALLY WIRED · …**) all
+agree and sum to 36.
+
+**Gate green:** typecheck (again after the test files), lint, secret-scan, the full vitest suite, and the
+contract / §28-confinement / module-ladder / completion-evidence guardrails.
+
+**Path to E2E_VERIFIED for M30:** a browser screen for the import preview→approve→commit flow and/or the export
+picker, proven end-to-end in a headless browser (the M12/product-publish bar).
+
+---
+
 ## M30 bulk data import — validate + approval-gated atomic commit now on the cloud (2 September 2026)
 
 **Owner direction:** "M30 — Bulk data import (rec.)" — chosen from the module survey as the next increment.
