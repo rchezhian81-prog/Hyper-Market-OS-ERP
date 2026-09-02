@@ -31,6 +31,7 @@ const EVIDENCE: Record<string, string> = {
   M17: 'tests/integration/coupons.test.ts',
   M26: 'tests/integration/facilities-incidents.test.ts',
   M29: 'tests/integration/the-screens-are-fed.test.ts',
+  M30: 'tests/integration/data-import.test.ts',
   M33: 'tests/integration/setup-surface.test.ts',
 };
 

@@ -130,6 +130,7 @@ import { supplierScorecardRoutes } from '../../purchase/src/supplier-scorecard';
 import { rebateRoutes } from '../../purchase/src/rebates';
 import { rfqRoutes } from '../../purchase/src/rfq';
 import { importQualityRoutes } from '../../purchase/src/import-quality';
+import { dataImportRoutes } from '../../purchase/src/data-import';
 import { financeRoutes } from '../../finance/src/index';
 import { creditNoteRoutes } from '../../finance/src/credit-notes';
 import { taxRoutes } from '../../finance/src/tax';
@@ -157,7 +158,7 @@ import { fulfilmentPackingRoutes } from '../../fulfilment/src/packing';
 import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
-  catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, financeAdapter, settlementAdapter,
+  catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, financeAdapter, settlementAdapter,
   customerAdapter, dataRightsAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, riskRegisterAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, salesHistoryAdapter,
 } from './adapters';
@@ -323,6 +324,12 @@ export function buildSurface(deps: {
     ...importQualityRoutes(store === undefined ? {
       jobs: empty([]), recordImportJob: () => {}, now,
     } : importQualityAdapter({ store, now })),
+    // Bulk data import (M30-FR-01/03) — validate a delimited file/rows against a template (per-row errors,
+    // reconciliation) and commit the whole job or nothing under §28 maker-checker (the uploader may not approve
+    // their own). A committed job is a durable, auditable record.
+    ...dataImportRoutes(store === undefined
+      ? { commits: () => [], recordCommit: () => {}, now }
+      : dataImportAdapter({ store, now })),
     ...supplierPortalRoutes(store === undefined ? {
       partner: empty(undefined), submissions: empty([]), statementLines: empty([]), opening: empty(0),
       recordPartner: () => {}, recordSubmission: () => {}, recordStatementLine: () => {}, recordOpening: () => {},
