@@ -5,6 +5,40 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M33 fleet/admin browser E2E — the last verification before E2E_VERIFIED (2 September 2026)
+
+**Owner direction:** "Finish M33 to E2E_VERIFIED." That means two things — a real-browser click-through of the
+fleet/admin screens, and FR-02's "control remote sessions." This increment does the **browser E2E**; the
+service-sessions piece is the follow-on.
+
+**The gap it closes:** M33 was at INTEGRATION_TESTED but had **no browser E2E** — the offline-screens E2E matrix
+excluded `fleet` and `admin`. E2E_VERIFIED (the M12 bar) needs a genuine end-to-end flow proven in a real
+browser, not just an API test.
+
+**What was built (one increment, two Playwright e2e tests — no product code changed):**
+- `tests/e2e/screens-open-offline.e2e.ts` grows a **fleet-manager case**: the devices screen opens with the
+  network cut (served from the service-worker cache) AND is accessible — every device status carries a word +
+  a screen-reader announcement + an aria-hidden icon, the chrome is labelled (same contract the other screens
+  pass).
+- `tests/e2e/fleet-change-delivery.e2e.ts` (new, 2) — the **functional write path in a real headless browser**,
+  mirroring the product-publish delivery E2E: a queued **block** is delivered by pressing **Send now**, and it
+  reaches `POST /v1/platform/devices/till-3/status` **under the operator's own session** (same-origin cookie,
+  never a service token) with `{status:'blocked', reason}` → the durable outbox item **acknowledges**; and when
+  the registry **refuses it (403)** the command **dead-letters** — kept visible for a person, never applied
+  under a borrowed identity, never silently dropped (hard rule #6, P-05).
+
+**Honest accounting — no self-promotion.** The browser-E2E prerequisite for E2E_VERIFIED is now met, but the
+owner's "finish to E2E_VERIFIED" also includes FR-02's **"control remote sessions"**, which is still docs-only.
+So **M33 stays INTEGRATION_TESTED (75)** here; the E2E_VERIFIED re-rate lands with the next increment when
+control-remote-sessions also lands. **Headline holds at 41.1%.** Gate green: typecheck, lint, secret-scan, the
+full vitest suite, the e2e suite (`pnpm run test:e2e`, 22 tests incl. the 2 new fleet ones, all passing against
+the pre-installed Chromium), and the module-ladder / traceability-integrity / D-mirror guardrails.
+
+**Path to E2E_VERIFIED:** build FR-02's "control remote sessions" (list/terminate an active remote session),
+then re-rate M33 to E2E_VERIFIED.
+
+---
+
 ## ★ M33 service-request tracker + RE-RATE to INTEGRATION_TESTED (2 September 2026)
 
 **Owner direction:** "build the service-request tracker next" — the last M33-FR-04 SHALL — "so M33 upgrades
