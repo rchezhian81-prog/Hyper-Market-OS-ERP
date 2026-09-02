@@ -127,6 +127,7 @@ import type { SupplierScorecardDeps } from '../../purchase/src/supplier-scorecar
 import type { RebateDeps } from '../../purchase/src/rebates';
 import type { RfqDeps } from '../../purchase/src/rfq';
 import type { ImportQualityDeps, ImportJobRecord } from '../../purchase/src/import-quality';
+import type { DataImportDeps, ImportCommitRecord } from '../../purchase/src/data-import';
 import { computeOpenCommitment, type ReceiptFact, type SupplierContract, type RebateScheme, type RebateAccrual, type Requisition, type Quote } from '../../../packages/purchasing/src/index';
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
 import type { CreditNoteDeps } from '../../finance/src/credit-notes';
@@ -3988,6 +3989,34 @@ export function importQualityAdapter(input: {
         type: 'ImportJobRecorded',
         occurredAt: input.now(),
         idempotencyKey: `import-job-${tenantId}-${jobId}-${d}`,
+        source: 'api/purchase',
+        payload: record,
+      }));
+    },
+  };
+}
+
+const DATA_IMPORTS_STREAM = streamName(STREAM.purchase, 'data-imports');
+
+/**
+ * Bulk data-import commit ledger (M30-FR-01/03). Each approved, reconciled load is an append-only
+ * `ImportCommitted` fact — who loaded what, who approved it, how many rows — so an import is auditable and
+ * never silently applied (hard rule #2/#6). The validate/commit routes run the tested `@sre/import` engine;
+ * this only stores the committed outcome (the commit route's 409 guard keeps one commit per job id).
+ */
+export function dataImportAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): DataImportDeps {
+  return {
+    now: input.now,
+    commits: async (tenantId) => allOf<ImportCommitRecord>(input.store, tenantId, DATA_IMPORTS_STREAM, 'ImportCommitted'),
+    recordCommit: async (tenantId, record, key) => {
+      await input.store.append(tenantId, DATA_IMPORTS_STREAM, makeEvent({
+        id: `data-import-${record.jobId}`,
+        type: 'ImportCommitted',
+        occurredAt: record.at,
+        idempotencyKey: `data-import-${tenantId}-${key}`,
         source: 'api/purchase',
         payload: record,
       }));

@@ -5,6 +5,51 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M30 bulk data import — validate + approval-gated atomic commit now on the cloud (2 September 2026)
+
+**Owner direction:** "M30 — Bulk data import (rec.)" — chosen from the module survey as the next increment.
+
+**The gap it closes:** the tested import engine (`packages/import`) could parse a delimited file, validate every
+row against a template, reconcile a financial import against a control total, and commit ATOMICALLY under §28
+maker-checker — but **none of it was reachable on the API**. A bulk load (a supplier price file, an opening-stock
+count, a batch of invoices) could only be driven from a test file, so the audit-A-03 replacement for retyping an
+eighty-line invoice had no way in. M30 was **PARTIALLY WIRED** (only FR-04, the import job-history/data-quality
+scoring, was on the cloud).
+
+**What was built (one increment, `services/purchase/src/data-import.ts` + adapter + wiring + tests):**
+- `POST /v1/import/validate` (`purchase.import.read`) — a **stateless preview** that writes nothing: what would
+  be applied, every error **by source line**, the duplicates needing review, and whether a financial file
+  **balances** against its declared control total.
+- `POST /v1/import/commit` (`purchase.import.record`) — **re-validates on the server** (never trusts a client
+  "all clear"), then commits the **whole job or nothing**. Refused by reason → **422** (`has_errors` /
+  `does_not_reconcile` / `not_approved` / `self_approved`); a re-commit of the same job id → **409**. **§28 is
+  real:** the uploader may never approve their own import, and `subjectRef` is fixed to the job id server-side so
+  an approval for one job cannot be pointed at another.
+- `GET /v1/import/commits` + `…/:jobId` (`purchase.import.read`) — the durable, **append-only `ImportCommitted`**
+  records (who loaded what, who approved it, how many rows, whether it reconciled), newest-first, restart-safe.
+- **Reuses `purchase.import.read`/`.record`** — both already held by owner/store-manager (read) and accountant
+  (read) — so **no roles change** and the §28 confinement + api-surface contract tests are untouched.
+- Tests: `tests/integration/data-import.test.ts` (7) — the clean validate→approve→commit→list→read flow surviving
+  a restart, the §28 self-approval refusal, a financial import that does/does-not reconcile, a bad-row refusal,
+  the 409 re-commit and 404 unknown-job guards, the missing job-id / missing-approval 400s, and the read/write
+  permission split.
+
+**RE-RATE (owner-directed): M30 PARTIALLY_WIRED (40) → WIRED (60).** FR-01 (validate→approve→commit) and FR-03
+(duplicates/referential integrity/reconciliation) are now wired on the cloud and integration-tested, joining the
+already-wired FR-04. **FR-02 (domain export) remains foundation-only** (`packages/export` tested, no route), so
+WIRED — not INTEGRATION_TESTED — is the honest module rung: the delivered surface is genuinely wired and
+integration-tested, but the module is not yet uniformly wired. **Headline 41.2% → 41.4%.**
+Module-ladder guardrail re-checked: label ↔ ladder rung ↔ summary counts (**2 E2E VERIFIED · 1 INTEGRATION
+TESTED · 12 WIRED · 21 PARTIALLY WIRED · …**) all agree and sum to 36.
+
+**Gate green:** typecheck (again after the test file), lint, secret-scan, the full vitest suite, and the
+module-ladder / traceability-integrity guardrails.
+
+**Path to INTEGRATION_TESTED for M30:** wire FR-02 domain export (`packages/export`) onto the API — an audited,
+permission-checked, PII-redacted CSV + schema export — so every FR is wired + integration-tested.
+
+---
+
 ## ★ M33 control remote sessions + RE-RATE to E2E_VERIFIED — M33 complete (2 September 2026)
 
 **Owner direction:** "build control remote sessions next" — the last M33-FR-02 piece.
