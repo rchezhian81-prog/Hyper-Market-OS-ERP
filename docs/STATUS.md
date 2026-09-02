@@ -5,6 +5,44 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ★ M33 service-request tracker + RE-RATE to INTEGRATION_TESTED (2 September 2026)
+
+**Owner direction:** "build the service-request tracker next" — the last M33-FR-04 SHALL — "so M33 upgrades
+cleanly."
+
+**What was built (one increment, `services/platform/src/service-requests.ts` + adapter + wiring + tests):**
+a durable, event-sourced **platform service-request tracker** — an internal ticket system for the platform
+itself, deliberately distinct from the M21 customer service desk (no SLA clocks / compensation / AI replies):
+- `POST /v1/platform/service-requests` — **raise** (title/detail/category/priority; a duplicate id → 409).
+- `POST …/:id/assign` — **assign** to a person (an open request moves to in_progress).
+- `POST …/:id/status` — **work it** through open → in_progress → resolved → closed (**resolving requires a
+  resolution note** → 400; an unknown status → 400; an unknown request → 404).
+- `GET /v1/platform/service-requests` — **list**, the ones still needing work first, with an open count.
+- `GET …/:id` — read one.
+- Two new permissions `platform.service.read` / `platform.service.manage` on **owner** and **platform_admin**
+  (within `platform.*`, so the §28 confinement test stays green).
+- Tests: `tests/unit/service-requests.test.ts` (6) + `tests/integration/service-requests.test.ts` (4 — the
+  raise→assign→resolve lifecycle, the note-required + unknown-status + duplicate + 404 guards, open-first
+  listing, and a platform_admin running the whole loop while a no-role user is refused).
+
+**★ RE-RATE (owner-directed): M33 WIRED (60) → INTEGRATION_TESTED (75).** This was the piece that completed
+**FR-04**; with it, **all four M33 FRs are now wired + integration-tested** — settings/flags/config-history +
+rollback/jobs/§28-separation (FR-01), devices/version/remote-kill (FR-02), support-access lifecycle (FR-03),
+and status-centre + licence-expiry alerting + service-request tracker (FR-04). The two remaining gaps sit
+**below the rung line** — FR-02's "control remote sessions" is docs-only, and there is no browser E2E for any
+M33 screen — and are the **path to E2E_VERIFIED (85)**, not blockers of INTEGRATION_TESTED. This is an honest
+**upward** re-rate the work earned, not inflation (the earlier 2026-08-30 correction *down* to WIRED was made
+precisely because the work wasn't there then; now it is). **Headline 41.0% → 41.1%** (+0.1). Module-ladder
+guardrail re-checked: label ↔ ladder rung ↔ summary counts (1 E2E · 2 INTEGRATION TESTED · 11 WIRED · …) all
+agree.
+
+**Gate green:** typecheck (re-run after the test files), lint, secret-scan, the full vitest suite, and the
+module-ladder / traceability-integrity / D-mirror guardrails.
+
+**Path to E2E_VERIFIED:** add a fleet/admin browser E2E (and build FR-02's "control remote sessions").
+
+---
+
 ## ★ M33 licence-expiry alerting — an expiring licence alerts a named owner (2 September 2026)
 
 **Owner direction:** after merging config rollback (#315), the owner chose **licence-expiry alerting** — an

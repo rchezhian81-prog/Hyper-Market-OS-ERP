@@ -63,6 +63,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'platform.tenant.export', 'platform.branding.read', 'platform.branding.write',
       'platform.entitlement.read', 'platform.entitlement.manage',
       'platform.job.read', 'platform.job.manage',
+      'platform.service.read', 'platform.service.manage',
       'integration.webhook.receive',
       'facilities.schedule.manage', 'facilities.task.record', 'facilities.overdue.read',
       'facilities.asset.manage', 'facilities.asset.read', 'facilities.reading.record', 'facilities.incident.record',
@@ -177,6 +178,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'platform.branding.read', 'platform.branding.write',
       'platform.entitlement.read', 'platform.entitlement.manage',
       'platform.job.read', 'platform.job.manage',
+      'platform.service.read', 'platform.service.manage',
     ],
   },
   {

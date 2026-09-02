@@ -102,6 +102,7 @@ import { projectJobs, type BackgroundJobsDeps, type BackgroundJobEvent } from '.
 import { projectSupportAccess, type SupportAccessDeps, type SupportAccessEvent } from '../../platform/src/support-access-lifecycle';
 import { type StatusCentreDeps } from '../../platform/src/status-centre';
 import { projectLicences, type LicenceDeps, type LicenceEvent } from '../../platform/src/licences';
+import { projectServiceRequests, type ServiceRequestsDeps, type ServiceRequestEvent } from '../../platform/src/service-requests';
 import { fleetSummary } from '../../../packages/platform-admin/src/devices';
 import type { SpacePerformanceDeps } from '../../inventory/src/space-performance';
 import type { AssortmentDeps } from '../../inventory/src/assortment';
@@ -5247,6 +5248,32 @@ export function licencesAdapter(input: {
         type: 'LicenceSet',
         occurredAt: event.at,
         idempotencyKey: `licence-${tenantId}-${key}`,
+        source: 'api/platform',
+        payload: event,
+      }));
+    },
+  };
+}
+
+/**
+ * The durable platform service-request tracker (M33-FR-04). Reads/writes a `service-requests` sub-stream of
+ * the platform stream, folded latest-per-request, so a request → assign → work → resolve survives a restart
+ * and an open request stays visible until a person closes it (append-only, hard rule #2/#6).
+ */
+export function serviceRequestsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): ServiceRequestsDeps {
+  const stream = streamName(STREAM.platform, 'service-requests');
+  return {
+    now: input.now,
+    requests: async (tenantId) => projectServiceRequests(await allOf<ServiceRequestEvent>(input.store, tenantId, stream, 'ServiceRequestEvent')),
+    recordEvent: async (tenantId, event, key) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `svc-${event.requestId}-${event.change}-${key}`,
+        type: 'ServiceRequestEvent',
+        occurredAt: event.at,
+        idempotencyKey: `svc-${tenantId}-${key}`,
         source: 'api/platform',
         payload: event,
       }));
