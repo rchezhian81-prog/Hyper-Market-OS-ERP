@@ -5,6 +5,60 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M35 alert lifecycle — the escalation half of FR-04 now wired (2 September 2026)
+
+**Owner direction:** "make your decision for me." I chose the next increment: the alert-lifecycle store, which
+the code itself named as the follow-on (`operational-health.ts` flags `escalateUnacknowledged` — the second
+half of M35-FR-04 — as needing a stateful store). A tested-but-unwired engine, cleanly bounded, on principle
+P-03 (control by exception) / P-08 (no silent failure).
+
+**The gap it closes:** the operational-health route computes the owned alerts a health check *should* raise, but
+it is **stateless** — every alert's acknowledgement deadline is by construction still in the future, so it could
+never answer FR-04's other half: **an alert nobody acknowledges in time escalates to a named person.** That
+needs state held over time.
+
+**What was built (one increment, `services/platform/src/alert-lifecycle.ts` + adapter + a permission + tests):**
+a durable, event-sourced (`AlertLifecycle`) alert store, folded latest-per-alert:
+- `POST /v1/platform/alerts/raise` — from the same health evidence the read takes, compute the owned alerts
+  (`raiseAlerts`) and **persist** each with its owner and §32 deadline. A re-raise of the same ongoing condition
+  **keeps the original deadline and acknowledgement** — it never resets the clock.
+- `POST /v1/platform/alerts/:alertId/acknowledge` — a **named person** takes an open alert (stopping its
+  escalation); acknowledging an alert nobody raised is refused (404).
+- `POST /v1/platform/alerts/escalate` — the **sweep**: the tested `escalateUnacknowledged` finds every alert past
+  its deadline that nobody acknowledged and routes it to the configured person; an alert with **nobody above its
+  owner** is reported as *nowhere to escalate to* (P-08), never dropped; already-escalated alerts are skipped, so
+  the sweep is **idempotent**.
+- `GET /v1/platform/alerts` — the **board**: every live alert with its state (open / acknowledged / escalated),
+  worst-first (control by exception).
+- **New permission `platform.alert.manage`** (owner + store-manager + platform_admin) gates the writes; the board
+  reads `platform.health.read`. It stays inside the `platform.*` namespace, so the §28 platform-admin
+  confinement and the api-surface contract tests both still pass.
+- Also exported the three health-evidence readers from `operational-health.ts` so the raise route validates
+  evidence with the **same parser** as the stateless read — the two surfaces can never disagree on what health
+  evidence is.
+- Tests: `tests/unit/alert-lifecycle.test.ts` (6 — the fold, and the **escalate sweep against the real route
+  handler + engine with a controllable clock**: fires for a past-due unacked alert, not before the deadline nor
+  for an acknowledged one, reports nowhere-to-go, idempotent) + `tests/integration/alert-lifecycle.test.ts` (4 —
+  raise→board→restart, a named ack + the 404, the escalate route wired and refusing a not-yet-due alert, and the
+  read/write permission gate). The harness runs on a real clock, so the time-sensitive escalation is proven in
+  the unit test against the real handler.
+
+**No re-rate — an honest hold. M35 stays PARTIALLY_WIRED (40).** This increment makes **FR-04 (alerting)
+complete** — raise + acknowledge + escalate, integration-tested — but the module still has real gaps: **edge
+signal collection** (the health/alert surface is fed by supplied evidence, not yet by real edge telemetry) and
+**backup/DR orchestration**. So the module rung does not move, and **the headline stays 41.5%.** Lifting a
+sub-feature without lifting the module is exactly the case where the % should not move. Module-ladder guardrail
+re-checked: label ↔ ladder rung ↔ summary counts unchanged and still sum to 36.
+
+**Gate green:** typecheck (again after the test files), lint, secret-scan, the full vitest suite, and the
+contract / §28-confinement / module-ladder guardrails.
+
+**Path to WIRED for M35:** wire **edge signal collection** (the store-edge reporting real health telemetry that
+feeds `raise`, instead of the caller supplying evidence) and the **backup/DR scheduling** surface, so the
+module's remaining FRs are wired on the cloud.
+
+---
+
 ## ★ M30 domain data export + RE-RATE to INTEGRATION_TESTED — M30's four FRs all wired & tested (2 September 2026)
 
 **Owner direction:** "M30-FR-02 data export" — chosen to finish M30 (the export half of the module).

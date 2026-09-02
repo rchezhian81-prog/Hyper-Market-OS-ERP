@@ -114,6 +114,7 @@ import { emergencyAccessRoutes } from '../../identity/src/emergency-access';
 import { accessLifecycleRoutes } from '../../identity/src/access-lifecycle';
 import { platformRoutes, inMemorySettings, emptyExportBundle } from '../../platform/src/index';
 import { operationalHealthRoutes } from '../../platform/src/operational-health';
+import { alertLifecycleRoutes } from '../../platform/src/alert-lifecycle';
 import { deviceRoutes } from '../../platform/src/devices';
 import { deviceRegistryRoutes } from '../../platform/src/device-registry';
 import { versionPolicyRoutes } from '../../platform/src/version-policy';
@@ -161,7 +162,7 @@ import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, dataExportAdapter, financeAdapter, settlementAdapter,
-  customerAdapter, dataRightsAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, riskRegisterAdapter,
+  customerAdapter, dataRightsAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, riskRegisterAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, salesHistoryAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
@@ -669,6 +670,12 @@ export function buildSurface(deps: {
     ...configHistoryRoutes({ versions: settings.configVersions, now }),
     // Operational health & alerting (M35-FR-03/04) — a pure compute over supplied evidence; no store.
     ...operationalHealthRoutes({ now }),
+    // Alert lifecycle (M35-FR-04) — the OTHER half of alerting: raise owned alerts durably, a named person
+    // acknowledges (stopping escalation), and the sweep escalates every unacknowledged alert past its
+    // deadline to the configured person (the tested escalateUnacknowledged); idempotent, restart-safe.
+    ...alertLifecycleRoutes(store === undefined
+      ? { alerts: () => [], recordAlertEvent: () => {}, now }
+      : alertLifecycleAdapter({ store, now })),
     // Device & app-version control (M33-FR-02/04 / A-10) — evaluate whether a device may trade / must
     // upgrade / was killed / is unregistered (a kill never interrupts a sale), and the fleet-at-a-glance;
     // both refuse a policy that would brick the fleet before deciding. Stateless; the durable registry

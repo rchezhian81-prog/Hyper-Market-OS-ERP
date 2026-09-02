@@ -130,6 +130,7 @@ import type { ImportQualityDeps, ImportJobRecord } from '../../purchase/src/impo
 import type { DataImportDeps, ImportCommitRecord } from '../../purchase/src/data-import';
 import type { DataExportAuditDeps } from '../../purchase/src/data-export';
 import type { ExportAudit } from '../../../packages/export/src/export';
+import { projectAlerts, type AlertLifecycleDeps, type AlertLifecycleEvent } from '../../platform/src/alert-lifecycle';
 import { computeOpenCommitment, type ReceiptFact, type SupplierContract, type RebateScheme, type RebateAccrual, type Requisition, type Quote } from '../../../packages/purchasing/src/index';
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
 import type { CreditNoteDeps } from '../../finance/src/credit-notes';
@@ -3993,6 +3994,36 @@ export function importQualityAdapter(input: {
         idempotencyKey: `import-job-${tenantId}-${jobId}-${d}`,
         source: 'api/purchase',
         payload: record,
+      }));
+    },
+  };
+}
+
+const ALERTS_STREAM = streamName(STREAM.platform, 'alerts');
+
+/**
+ * Alert lifecycle store (M35-FR-04). Every raise / acknowledge / escalate is an append-only `AlertLifecycle`
+ * fact on one shared stream — an alert nobody acknowledges in time escalates to a named person, and the
+ * escalation is kept as evidence (P-08, hard rule #6). The routes run the tested `@sre/ops` engines
+ * (`raiseAlerts` / `escalateUnacknowledged`) over the fold; this only stores the facts.
+ */
+export function alertLifecycleAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): AlertLifecycleDeps {
+  return {
+    now: input.now,
+    alerts: async (tenantId) =>
+      projectAlerts(await allOf<AlertLifecycleEvent>(input.store, tenantId, ALERTS_STREAM, 'AlertLifecycle')),
+    recordAlertEvent: async (tenantId, event, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, ALERTS_STREAM, makeEvent({
+        id: `alert-${event.alertId}-${event.change}-${d}`,
+        type: 'AlertLifecycle',
+        occurredAt: event.at,
+        idempotencyKey: `alert-${tenantId}-${event.alertId}-${event.change}-${d}`,
+        source: 'api/platform',
+        payload: event,
       }));
     },
   };
