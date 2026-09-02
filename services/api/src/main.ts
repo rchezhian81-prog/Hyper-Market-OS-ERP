@@ -121,6 +121,7 @@ import { backgroundJobsRoutes } from '../../platform/src/background-jobs';
 import { supportAccessLifecycleRoutes } from '../../platform/src/support-access-lifecycle';
 import { statusCentreRoutes } from '../../platform/src/status-centre';
 import { configHistoryRoutes } from '../../platform/src/config-history';
+import { licenceRoutes } from '../../platform/src/licences';
 import { purchaseRoutes } from '../../purchase/src/index';
 import { purchaseOrderRoutes } from '../../purchase/src/purchase-orders';
 import { supplierScorecardRoutes } from '../../purchase/src/supplier-scorecard';
@@ -155,7 +156,7 @@ import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, financeAdapter, settlementAdapter,
-  customerAdapter, dataRightsAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, riskRegisterAdapter,
+  customerAdapter, dataRightsAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, riskRegisterAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, salesHistoryAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
@@ -675,6 +676,11 @@ export function buildSurface(deps: {
     ...statusCentreRoutes(store === undefined
       ? { fleet: () => ({ total: 0, trading: 0, blocked: 0 }), supportSessions: () => [], entitlements: () => [], now }
       : statusCentreAdapter({ store, now })),
+    // Licence/entitlement expiry + alerting (M33-FR-04) — a time-bound licence has a named owner and, once it
+    // is close to (or past) its expiry, keeps alerting that owner until it is renewed; also feeds the status centre.
+    ...licenceRoutes(store === undefined
+      ? { licences: () => [], recordLicence: () => {}, now }
+      : licencesAdapter({ store, now })),
     ...migrationRoutes(store === undefined ? {
       target: (tenantId) => ({
         targetId: `tgt-${tenantId}`, tenantId,
