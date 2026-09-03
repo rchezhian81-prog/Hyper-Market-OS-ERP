@@ -5,6 +5,62 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M35 disaster-recovery readiness — scoring the drill, pruning backups without emptying the shelf (3 September 2026)
+
+**Owner direction:** "make your decision for me." After merging #330 I surveyed for the next tested-but-unwired
+engine and ranked this high: it's a **quality-gate** area (QG-08, disaster recovery) for an offline-first store,
+the engine is already tested, and it's clean — no duplication, no new store, no roles change.
+
+**The gap, precisely:** `packages/ops/src/backup.ts` had two tested functions with no cloud presence.
+`scoreDrill` (M35-FR-02) measures a recovery rehearsal against the §32 targets — did we lose less data than the
+RPO allows, and get back inside the RTO? — and `backupsEligibleForRemoval` reports which aged backups may be
+pruned. The verify/reconcile half of the module was wired (11 Aug); these two were not. So the shop could prove
+one backup was good, but nothing on the cloud could score a DR drill or safely reason about retention.
+
+**What was built (one increment, `services/platform/src/dr-readiness.ts`, no new permission, no store):**
+- `GET /v1/platform/recovery-targets` — the §32 targets a drill is scored against. Committed local sales carry
+  an **RPO of 0**: they must not be lost at all.
+- `POST /v1/platform/dr-drills/score` — score a rehearsal (by named service or an explicit target). A pass is a
+  pass; a **miss is NAMED** — how much data was lost against the RPO, how long recovery took against the RTO —
+  because M35-FR-02 is precisely that a drill that misses raises a remediation, it is **not** quietly re-run
+  until it passes and then reported as a pass.
+- `POST /v1/platform/backups/eligible-for-removal` — which aged backups **may** be pruned, and — the point —
+  which never may: the newest `keepAtLeast` are kept **however old**, so a retention sweep can never empty the
+  shelf (**hard rule #6**). It **reports candidates and removes nothing**; removal itself is a separate governed
+  action, not built here.
+- **Stateless**, exactly like the verify/reconcile siblings ("a ruling, not a store"). Reused the existing
+  `backup.verify.read` permission (owner + store-manager) — **no roles change**, so the api-surface and
+  §28-confinement contract tests hold untouched; the permission is outside `platform.*`.
+- Test: `tests/integration/dr-readiness.test.ts` (4 — the §32 targets with RPO 0 for local sales; a pass plus a
+  named RPO miss and a named RTO miss; retention that prunes b4/b5 but keeps the newest floor **and** keeps
+  everything when `keepAtLeast` ≥ the count; and the 400 validation set + cashier-403 gate).
+
+**No re-rate.** M35 stays **PARTIALLY_WIRED** — FR-01 (verify/reconcile) and now FR-02 (drills + retention) are
+on the cloud, but a **persisted drill register** (the evidence that recovery passed N quarters running), **edge
+signal collection** (real telemetry rather than supplied evidence) and end-to-end **backup/DR orchestration**
+remain. **Headline stays 41.5%.** Module-ladder guardrail re-checked: label ↔ rung ↔ summary counts unchanged
+and still sum to 36.
+
+**Gate green:** typecheck (again after the test file), lint, secret-scan, the full vitest suite, and the
+contract / §28-confinement / module-ladder / ladder-evidence guardrails.
+
+**Path to WIRED for M35:** persist a drill register (append-only drill results with outstanding-remediation
+flags), then wire edge signal collection so health runs on real telemetry.
+
+**For the owner — in plain words:** "disaster recovery" means: if the shop's computers are lost — fire, theft,
+a failed disk — can we get the business back, fast, without losing sales? The roadmap sets two promises: sales
+already rung up on the till must **never** be lost, and the shop must be back within set time limits. This change
+adds a way to **score a practice run** against those promises and to say plainly, in numbers, when a practice run
+fell short — so it gets fixed rather than quietly passed. It also adds a safe way to work out which **old backups
+can be cleared** to save space, with a hard rule that we always keep the most recent few no matter what, so we can
+never accidentally delete our way to having no backup. Nothing is ever deleted by this change itself — it only
+reports. The honesty figure stays at **41.5%**; this is real recovery-readiness plumbing, not a finished module.
+
+**What to check in the store:** nothing on the shop floor — this is behind-the-scenes recovery tooling. When
+you're ready, tell me to **merge #331**.
+
+---
+
 ## M31 notification delivery queue — the outbox behind the send-guard (3 September 2026)
 
 **Owner direction:** "make your decision for me." A fresh survey ranked a **governed price-production** route #2,
