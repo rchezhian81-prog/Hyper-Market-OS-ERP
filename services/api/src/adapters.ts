@@ -157,6 +157,8 @@ import type {
   Reservation, OrdersDeps, PlacedOrder, OrderTransition, OrderStateView, StoredSubstitution,
 } from '../../orders/src/index';
 import type { DeliveryAttempt, FulfilmentDeps } from '../../fulfilment/src/index';
+import type { DispatchDeps } from '../../fulfilment/src/dispatch';
+import { assignedOrderIds, type DispatchPlan } from '../../../packages/fulfilment/src/index';
 import type { FulfilmentPackingDeps, PackResult, Manifest } from '../../fulfilment/src/packing';
 import type { IdentityDeps } from '../../identity/src/index';
 import type { Role, RoleAssignment } from '../../../packages/rbac/src/rbac';
@@ -5065,12 +5067,46 @@ export function fulfilmentAdapter(input: {
       allOf<DeliveryAttempt>(input.store, tenantId, forDriverRun(driverId, runDate), 'DeliveryAttempted'),
 
     /**
-     * What dispatch gave the driver. Nothing writes it yet (M20 route planning is not on this
-     * surface), so it is empty — which is why `reconcileRun` now also reports attempts made
-     * against orders that are *not* on the run. With only the assigned-minus-attempted check, an
-     * empty run list made every run reconcile perfectly.
+     * What dispatch gave the driver — the order ids that run is answerable for. Now that the dispatch
+     * plan is persisted (`dispatchAdapter`), this reads it: `reconcileRun` can finally tell a delivery
+     * made against an order nobody dispatched from one it did. Before, an empty list made every run
+     * reconcile perfectly, hiding exactly that.
      */
-    assigned: () => [],
+    assigned: async (tenantId, driverId, runDate) => {
+      const plans = await allOf<DispatchPlan>(input.store, tenantId, streamName(STREAM.delivery, 'dispatch', runDate), 'DispatchPlanned');
+      const plan = plans[plans.length - 1]; // occurrence order → the latest plan/reassign wins
+      return plan === undefined ? [] : assignedOrderIds(plan, driverId);
+    },
+  };
+}
+
+/**
+ * Dispatch-plan store (M19-FR-03/04). One stream per run date holds the planned routes as an append-only
+ * `DispatchPlanned` fact; the latest plan/reassign wins. This is what feeds `reconcileRun` the order ids a
+ * run is answerable for (the `assigned` list it never had) — plus the read for the dispatcher's own screen.
+ */
+export function dispatchAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): DispatchDeps {
+  const streamFor = (runDate: string) => streamName(STREAM.delivery, 'dispatch', runDate);
+  return {
+    now: input.now,
+    plan: async (tenantId, runDate) => {
+      const plans = await allOf<DispatchPlan>(input.store, tenantId, streamFor(runDate), 'DispatchPlanned');
+      return plans[plans.length - 1]; // latest wins
+    },
+    recordPlan: async (tenantId, runDate, plan, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, streamFor(runDate), makeEvent({
+        id: `dispatch-${runDate}-${d}`,
+        type: 'DispatchPlanned',
+        occurredAt: input.now(),
+        idempotencyKey: `dispatch-${tenantId}-${runDate}-${d}`,
+        source: 'api/fulfilment',
+        payload: plan,
+      }));
+    },
   };
 }
 
