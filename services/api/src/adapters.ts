@@ -159,6 +159,7 @@ import type {
 import type { DeliveryAttempt, FulfilmentDeps } from '../../fulfilment/src/index';
 import type { DispatchDeps } from '../../fulfilment/src/dispatch';
 import { assignedOrderIds, type DispatchPlan } from '../../../packages/fulfilment/src/index';
+import { replayNotificationQueue, type NotificationQueueDeps, type NotificationQueueEvent } from '../../customer/src/notification-queue';
 import type { FulfilmentPackingDeps, PackResult, Manifest } from '../../fulfilment/src/packing';
 import type { IdentityDeps } from '../../identity/src/index';
 import type { Role, RoleAssignment } from '../../../packages/rbac/src/rbac';
@@ -5085,6 +5086,34 @@ export function fulfilmentAdapter(input: {
  * `DispatchPlanned` fact; the latest plan/reassign wins. This is what feeds `reconcileRun` the order ids a
  * run is answerable for (the `assigned` list it never had) — plus the read for the dispatcher's own screen.
  */
+/**
+ * Notification delivery queue store (M31-FR-04). Each enqueue / delivery / failure / dead-letter is an
+ * append-only `NotificationQueue` fact on one stream; the current queue is the tested `@sre/notifications`
+ * engine replayed over them — the retry-then-dead-letter state machine runs once, in the fold, and a
+ * dead-lettered send is kept, never dropped (hard rule #6).
+ */
+export function notificationQueueAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): NotificationQueueDeps {
+  const stream = streamName(STREAM.org, 'notifications');
+  return {
+    now: input.now,
+    queue: async (tenantId) => replayNotificationQueue(await allOf<NotificationQueueEvent>(input.store, tenantId, stream, 'NotificationQueue')),
+    record: async (tenantId, event, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `notif-${event.change}-${event.id}-${d}`,
+        type: 'NotificationQueue',
+        occurredAt: event.at,
+        idempotencyKey: `notif-${tenantId}-${event.change}-${event.id}-${d}`,
+        source: 'api/customer',
+        payload: event,
+      }));
+    },
+  };
+}
+
 export function dispatchAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;

@@ -154,6 +154,8 @@ import { segmentRoutes } from '../../customer/src/segments';
 import { customerDuplicatesRoutes } from '../../customer/src/duplicates';
 import { campaignRoutes } from '../../customer/src/campaigns';
 import { notificationGuardRoutes } from '../../customer/src/notification-guard';
+import { notificationQueueRoutes } from '../../customer/src/notification-queue';
+import { NotificationQueue } from '../../../packages/notifications/src/index';
 import { backupVerificationRoutes } from '../../platform/src/backup-verification';
 import { branchLifecycleRoutes } from '../../platform/src/branch-lifecycle';
 import { documentsRoutes } from '../../platform/src/documents';
@@ -169,7 +171,7 @@ import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, dataExportAdapter, financeAdapter, settlementAdapter,
-  customerAdapter, dataRightsAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter,
+  customerAdapter, dataRightsAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, salesHistoryAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
@@ -594,6 +596,12 @@ export function buildSurface(deps: {
     ...backupVerificationRoutes(),
     // Branch open/close lifecycle (M01-FR-04) — governed transition decision; stateless ruling.
     ...branchLifecycleRoutes(),
+    // Notification delivery queue (M31-FR-04) — the durable outbox behind the send-guard: enqueue, mark
+    // delivered, record a failure that retries then dead-letters after maxAttempts (kept, never dropped —
+    // hard rule #6), and read the pending + dead-letter lists. The channel transport is a deployment step.
+    ...notificationQueueRoutes(store === undefined
+      ? { queue: () => new NotificationQueue(), record: () => {}, now }
+      : notificationQueueAdapter({ store, now })),
     // Versioned document templates (M31-FR-01/M36-FR-02) — append-only publish; a change is a new version.
     ...documentsRoutes(store === undefined ? {
       versions: empty([]), recordPublish: () => {}, issued: empty(undefined), recordIssued: () => {}, now,
