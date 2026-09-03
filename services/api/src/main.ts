@@ -140,6 +140,7 @@ import { creditNoteRoutes } from '../../finance/src/credit-notes';
 import { taxRoutes } from '../../finance/src/tax';
 import { retentionRoutes } from '../../finance/src/retention';
 import { legalHoldsRoutes } from '../../finance/src/legal-holds';
+import { auditSearchRoutes } from '../../finance/src/audit-search';
 import { reportingRoutes } from '../../reporting/src/index';
 import { ownerAlertsRoutes } from '../../reporting/src/owner-alerts';
 import { drillThroughRoutes } from '../../reporting/src/drill-through';
@@ -518,6 +519,10 @@ export function buildSurface(deps: {
     ...legalHoldsRoutes(store === undefined
       ? { holds: () => [], recordHoldEvent: () => {}, now }
       : legalHoldsAdapter({ store, now })),
+    // Audit-trail search / reconstruct / verify (M34-FR-01) — over a supplied sealed trail: narrow it,
+    // rebuild an object's state from evidence alone, and name EVERY tamper break (never the first). Pure
+    // reads; there is no operation here to edit or drop a record (hard rule #6). Gated audit.retention.read.
+    ...auditSearchRoutes(),
     ...settlementRoutes(store === undefined ? {
       importedBatchIds: empty([]), recordBatch: () => {}, credits: empty([]),
       electronicTenders: empty([]), investigations: empty([]),
