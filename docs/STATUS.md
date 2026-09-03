@@ -5,6 +5,50 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M19 dispatch planning — and the delivery reconciliation that was blind (3 September 2026)
+
+**Owner direction:** "make your decision for me." A fresh survey (the third this session — the prior one's durable
+picks were consumed) ranked this #1, and it's the strongest kind of increment: it doesn't just wire an idle
+engine, it **fills a proven gap** in an already-wired surface.
+
+**The gap, precisely:** the delivery-run reconciliation `GET /v1/delivery/runs/:driverId` (`reconcileRun`) was
+fed `assigned: () => []` — a hard-coded empty list of "what dispatch gave the driver." So **every delivery a
+driver actually made came back flagged as one nobody had dispatched** — goods out of the building against orders
+no run could account for. The tested routing engine (`packages/fulfilment/src/routing.ts`) that produces the
+assignment existed but was only ever wired to the **edge box**, never the cloud.
+
+**What was built (one increment, `services/fulfilment/src/dispatch.ts` + adapter + one permission + tests):**
+- `POST /v1/delivery/dispatch/:runDate/plan` — `planDispatch`: draft today's routes. **Every order goes
+  somewhere** — on a route or on the unplanned list with a named reason (`no_location` / `out_of_area` /
+  `no_driver`), never silently dropped. Distances are **straight-line, declared in the result**
+  (`distancesAre:'straight_line'`) — no map, no roads, so it's a draft a dispatcher confirms, never a claimed
+  optimum. **Windows beat geography** (a booked slot is never moved for a shorter route); capacity and shift
+  hours are constraints, not suggestions.
+- `POST /v1/delivery/dispatch/:runDate/reassign` — a driver off the road is a **full re-plan** without them, not
+  a patch that appends their stops to whoever has room.
+- `GET /v1/delivery/dispatch/:runDate` — the stored plan.
+- **And the gap closed:** the plan is persisted (`DispatchPlanned`, latest wins), and the fulfilment adapter's
+  `assigned` feed now reads it (`assignedOrderIds`), so `reconcileRun` finally tells a delivery **on** the run
+  from one nobody dispatched. New permission `delivery.dispatch.manage` (owner + store-manager) for the writes;
+  the read reuses `delivery.run.read`. Both outside `platform.*`, so §28 confinement + contract tests hold.
+- Test: `tests/integration/dispatch.test.ts` (4 — plan with routed + out-of-area + no-location, accountedFor and
+  restart; **the gap closed** (plan d1→o1,o2; deliver o1 on-run + o-rogue off-run; reconcileRun flags only
+  o-rogue as unassigned and o2 as outstanding); the full re-plan on driver drop-out; and the
+  malformed-body / reassign-without-driver / 404 / permission gate).
+
+**No re-rate.** M19 stays **PARTIALLY_WIRED** — dispatch FR-03/04 is now wired on the cloud and the reconcileRun
+gap is closed, but the **delivery state machine / proof-of-delivery half (FR-01, `delivery.ts`) remains
+foundation-only**, so the module isn't uniformly wired. **Headline stays 41.5%.** Module-ladder guardrail
+re-checked: label ↔ rung ↔ summary counts unchanged and still sum to 36.
+
+**Gate green:** typecheck (again after the test file), lint, secret-scan, the full vitest suite, and the
+contract / §28-confinement / module-ladder guardrails.
+
+**Path to WIRED for M19:** wire the **delivery state machine / proof-of-delivery** (FR-01) on the cloud — the
+last foundation-only half.
+
+---
+
 ## M29 scheduled daily brief — the brief that sends itself, and works with no AI (3 September 2026)
 
 **Owner direction:** "make your decision for me." I took the standing survey's **#2** (its #1, quotations, was the
