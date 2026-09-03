@@ -35,7 +35,9 @@ const STATUSES: readonly HealthStatus[] = ['ok', 'degraded', 'down', 'unknown'];
 
 // Read the evidence, rejecting a field of the WRONG type (a string queue depth would silently misjudge
 // the outbox) but accepting any field ABSENT — the engine reports an absent signal as `unknown`.
-function readSignals(v: unknown): HealthSignals | undefined {
+// Exported so the alert-lifecycle store (which PERSISTS a raise) validates evidence the same way this
+// stateless read does — one parser, so the two surfaces can never disagree on what health evidence is.
+export function readSignals(v: unknown): HealthSignals | undefined {
   if (!isObj(v)) return undefined;
   const s = v;
   const strOrOk = (k: string) => s[k] === undefined || isStr(s[k]);
@@ -51,7 +53,7 @@ function readSignals(v: unknown): HealthSignals | undefined {
 
 // Thresholds are per-tenant (§32 gives the defaults). A partial object fills the rest from the defaults;
 // a field of the wrong type is refused rather than silently ignored.
-function readThresholds(v: unknown): HealthThresholds | undefined {
+export function readThresholds(v: unknown): HealthThresholds | undefined {
   if (v === undefined) return DEFAULT_THRESHOLDS;
   if (!isObj(v)) return undefined;
   const keys: readonly (keyof HealthThresholds)[] = ['syncLagWarnSeconds', 'syncLagCriticalSeconds', 'queueDepthWarn', 'queueDepthCritical', 'deadLetterCritical', 'catalogueStaleSeconds'];
@@ -64,7 +66,7 @@ function readThresholds(v: unknown): HealthThresholds | undefined {
   return out;
 }
 
-function readRules(v: unknown): readonly AlertRule[] | undefined {
+export function readRules(v: unknown): readonly AlertRule[] | undefined {
   if (v === undefined) return [];
   if (!Array.isArray(v)) return undefined;
   const out: AlertRule[] = [];
