@@ -5,6 +5,51 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M13 pending-tender recovery — the card machine that never answered, reconciled both ways (3 September 2026)
+
+**Owner direction:** after merging #322, a fresh survey against current `main` ranked the tested-but-unwired
+engines; the owner chose the top pick — **M13 pending-tender recovery** (`packages/tender/src/pending-recovery.ts`,
+D04-FR-02 / M12-FR-03), unit-tested but with no cloud route.
+
+**The gap it closes:** when the card/UPI machine never answers, the lane commits the tender as `uncertain` and
+the sale still completes locally (hard rule #1). Both easy answers are wrong — assume it worked and the shop
+gives goods away; assume it failed and the customer is charged twice. The engine reconciles the uncertain tender
+against the **provider's own authorisation record**, but nothing on the cloud could call it.
+
+**What was built (one increment, `services/finance/src/pending-tender.ts` + wiring + tests):**
+`POST /v1/settlement/pending-tenders/recover` — supply the uncertain tenders + the provider's authorisation
+records + whether the provider's record for the period is **complete**, and the tested engine
+(`recoverPendingTender` / `pendingExposure` / `dayCloseCheck`) returns:
+- **per-tender outcomes** — `confirmed_paid`, `confirmed_not_paid` (the shop owed — and whether the customer can
+  even be **contacted**, so an anonymous walk-in's debt isn't mistaken for a collectable one), `paid_more_than_once`
+  / over-capture (the **customer** owed, reported just as loudly), and `still_unknown`;
+- the day's **exposure split four ways** — recoverable / unrecoverable / owed-back-to-customers / still-unknown,
+  so a single "pending" total can never hide a loss;
+- the **day-close verdict** — blocked ONLY while the shop is holding a customer's money, never by an unknown.
+- **Two controls at the boundary:** an **incomplete** provider record reads as *unknown*, never a decline (chasing
+  a customer who already paid is the classic failure), and a `providerRef` that passes a Luhn/length **card-number**
+  check is refused outright (hard rule #3 — only provider tokens enter), reusing `looksLikeCardNumber`. There is
+  **no manual-resolution path** (§4.3): resolution only ever comes from the provider's record.
+
+Stateless over supplied evidence (writes nothing), gated `settlement.review.read` — **no roles change**, so the
+contract and §28-confinement tests are untouched. Tests: `tests/integration/pending-tender-recovery.test.ts`
+(4 — the four-way mix with the day-close block, the incomplete-record-is-unknown case, the card-number refusal on
+both a tender and an authorisation, and the malformed-body/permission gate). The engine keeps its 13 unit tests.
+
+**No re-rate — M13 stays PARTIALLY_WIRED (40).** This wires the recovery **reconciliation**, but tender **capture**
+and the uncertain-tender inbox/resolution **persistence** remain off-cloud at the edge (a real acquirer port is the
+follow-on), so the module is not uniformly wired. **Headline stays 41.5%.** Module-ladder guardrail re-checked:
+label ↔ ladder rung ↔ summary counts unchanged and still sum to 36.
+
+**Gate green:** typecheck (again after the test file), lint, secret-scan, the full vitest suite, and the contract /
+§28-confinement / module-ladder guardrails.
+
+**Path to WIRED for M13:** persist the uncertain-tender inbox and its resolutions (an append-only store folded for
+the day-close exposure) and connect a real acquirer/provider port, so recovery runs on the shop's own synced
+tenders rather than supplied evidence.
+
+---
+
 ## M35 alert lifecycle — the escalation half of FR-04 now wired (2 September 2026)
 
 **Owner direction:** "make your decision for me." I chose the next increment: the alert-lifecycle store, which
