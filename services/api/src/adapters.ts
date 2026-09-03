@@ -80,6 +80,8 @@ import type { ComplianceDeps, Obligation } from '../../compliance/src/index';
 import type { RiskRegisterDeps, Risk, Control, Incident, Remediation, Attestation } from '../../compliance/src/risk';
 import type { DocumentsDeps, TemplateVersion, IssuedDocument } from '../../platform/src/documents';
 import type { SuspendedBillsDeps, SuspendedBill } from '../../pos/src/suspended-bills';
+import type { QuotationsDeps } from '../../pos/src/quotations';
+import type { Quotation } from '../../../packages/suspended-sales/src/index';
 import type { EInvoiceRegisterDeps } from '../../finance/src/e-invoice-register';
 import type { PayRunStoreDeps } from '../../finance/src/pay-run-store';
 import { foldPayRun, type PayRunEvent } from '../../../packages/payroll/src/index';
@@ -440,6 +442,42 @@ export function suspendedBillsAdapter(input: {
         idempotencyKey: `susp-${tenantId}-${bill.billId}-${bill.state}-${stamp}`,
         source: 'api/pos',
         payload: bill,
+      }));
+    },
+  };
+}
+
+/**
+ * Quotation lifecycle store (M12-FR-02 / M22). Each state change (issued / converted / withdrawn) is an
+ * append-only `QuotationStateChanged` fact, folded latest-per-quotationId — a withdrawn or expired quotation
+ * is kept, never deleted (hard rule #6), because an unconverted quote is a lost sale worth seeing. The routes
+ * run the tested `@sre/suspended-sales` quotation engine over the fold; this only stores the outcome.
+ */
+export function quotationsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): QuotationsDeps {
+  // Computed here (not at module scope) because `streamName`/its separator initialise later in this file.
+  const stream = streamName(STREAM.sales, 'quotations');
+  return {
+    now: input.now,
+    quotations: async (tenantId) => {
+      const all = await allOf<Quotation>(input.store, tenantId, stream, 'QuotationStateChanged');
+      const byId = new Map<string, Quotation>();
+      for (const q of all) byId.set(q.quotationId, q); // later state wins
+      return [...byId.values()];
+    },
+    record: async (tenantId, q) => {
+      // Keyed on quotation + state + the timestamp of THIS transition, so each is its own fact while a
+      // re-send of the same one collapses.
+      const stamp = q.convertedAt ?? q.withdrawnAt ?? q.issuedAt;
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `quote-${q.quotationId}-${q.state}-${stamp}`,
+        type: 'QuotationStateChanged',
+        occurredAt: input.now(),
+        idempotencyKey: `quote-${tenantId}-${q.quotationId}-${q.state}-${stamp}`,
+        source: 'api/pos',
+        payload: q,
       }));
     },
   };
