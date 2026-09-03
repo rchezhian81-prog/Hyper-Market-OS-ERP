@@ -58,6 +58,7 @@ import { storedValueRoutes } from '../../customer/src/stored-value';
 import { couponRoutes } from '../../customer/src/coupons';
 import { promotionRoutes } from '../../pricing/src/promotions';
 import { settlementRoutes } from '../../finance/src/settlement';
+import { pendingTenderRoutes } from '../../finance/src/pending-tender';
 import { b2bCreditRoutes } from '../../finance/src/b2b-credit';
 import { b2bCollectionsRoutes } from '../../finance/src/b2b-collections';
 import { b2bCommissionRoutes } from '../../finance/src/b2b-commission';
@@ -515,6 +516,11 @@ export function buildSurface(deps: {
       electronicTenders: empty([]), investigations: empty([]),
       recordInvestigationOpened: () => {}, recordInvestigationEvidence: () => {}, recordInvestigationResolved: () => {}, now,
     } : settlementAdapter({ store, now })),
+    // Pending-tender recovery (D04-FR-02 / M12-FR-03) — reconcile an uncertain card/UPI tender against the
+    // provider's own authorisation record: money owed TO the shop and money owed BACK to the customer both
+    // surfaced, the day blocked only while the shop holds a customer's money. A pure compute over supplied
+    // evidence; no manual resolution path (§4.3), and a ref that looks like raw card data refused (hard rule #3).
+    ...pendingTenderRoutes({ now }),
     ...b2bCreditRoutes(store === undefined ? {
       account: empty(undefined), outstandingMinor: empty(0), recordAccount: () => {}, recordReceivable: () => {}, now,
     } : b2bCreditAdapter({ store, now })),
