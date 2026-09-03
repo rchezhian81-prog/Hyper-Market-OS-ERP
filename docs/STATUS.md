@@ -5,6 +5,51 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M29 scheduled daily brief — the brief that sends itself, and works with no AI (3 September 2026)
+
+**Owner direction:** "make your decision for me." I took the standing survey's **#2** (its #1, quotations, was the
+prior increment) — the **scheduled daily-brief store** (`packages/owner-control/src/scheduled-brief.ts`,
+M29-FR-04 / A01), a durable schedule-state store (the variety I wanted), low-risk and isolated.
+
+**Why it's a good pick:** the roadmap's acceptance is unusually concrete — *"the daily brief arrives on the
+phone at the set time for three days running without anyone sending it"* AND *"if AI is off, the numbers still
+arrive."* The engine is built the right way round for that: **the numbers ARE the brief; the narrative is
+decoration on top.** So it's honest and self-contained — the whole thing works with no language model, which is
+the case systems usually get wrong (a brief that depends on a model stops the morning the model is down, and in
+a Tamil Nadu hypermarket that's a Tuesday).
+
+**What was built (one increment, `services/reporting/src/scheduled-brief.ts` + adapter + one permission + tests):**
+- `POST /v1/reporting/brief-schedule` — set a **durable schedule**: the local time the brief is due, the
+  language (English/Tamil), when to warn the numbers are stale.
+- `POST /v1/reporting/brief-schedule/due` — which briefs are due now over the trading calendar, **a missed day
+  carried and labelled late** (a silent no-show is indistinguishable from a quiet day — exactly the morning you
+  needed it), idempotent (a day already sent never returns).
+- `POST /v1/reporting/brief-schedule/sent` — record a send, **append-only**; a day sent twice collapses to one.
+- `POST /v1/reporting/brief` — compose a **complete, sendable brief with no AI** (`buildScheduledBrief`): the
+  figures first, then the narrative added **only** if it's present, confident, in the reader's language and
+  evidence-backed — otherwise dropped with the omission stated (AI-NFR-04, additive not blocking); a **not-live
+  warning leads** when the data is stale (P-08).
+- Event-sourced (`BriefSchedule`, latest-config + all-sends folded), restart-safe. One new permission
+  `owner.brief.manage` (owner + store-manager) for the writes; reads reuse `owner.kpi.read` (the brief IS the
+  owner's KPI digest). Both outside `platform.*`, so §28 confinement + contract tests are untouched.
+- Test: `tests/integration/scheduled-brief.test.ts` (5 — set→due(missed+scheduled)→sent(idempotent)→restart;
+  the no-AI complete brief; a confident narrative added and a low-confidence one dropped; the stale not-live
+  warning; and the 404-without-schedule / bad-due-time / permission gate).
+
+**No re-rate.** M29 stays **WIRED** (the scheduled brief is one more FR now wired; the phone-delivery transport
+is a deployment step, so it isn't E2E) and A01 stays **PARTIALLY_WIRED** (the deterministic brief is wired, but
+the AI narrative model isn't live). **Headline stays 41.5%.** Module-ladder guardrail re-checked: label ↔ rung ↔
+summary counts unchanged and still sum to 36.
+
+**Gate green:** typecheck (again after the test file — after fixing a stale-warning assertion casing), lint,
+secret-scan, the full vitest suite, and the contract / §28-confinement / module-ladder guardrails.
+
+**Path to complete M29-FR-04 / A01:** the **delivery transport** (push/SMS/WhatsApp to the owner's phone at the
+scheduled time — an outbound channel, a deployment step) and, separately and optionally, the **AI narrative
+model** behind the model gateway (additive; the brief is already complete without it).
+
+---
+
 ## M12 retail quotations — a price promised, converted once, held only while valid (3 September 2026)
 
 **Owner direction:** "make your decision for me." I ran a fresh survey (the earlier one was stale) with a stated

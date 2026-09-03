@@ -82,6 +82,8 @@ import type { DocumentsDeps, TemplateVersion, IssuedDocument } from '../../platf
 import type { SuspendedBillsDeps, SuspendedBill } from '../../pos/src/suspended-bills';
 import type { QuotationsDeps } from '../../pos/src/quotations';
 import type { Quotation } from '../../../packages/suspended-sales/src/index';
+import type { ScheduledBriefDeps, StoredSchedule } from '../../reporting/src/scheduled-brief';
+import type { BriefLanguage } from '../../../packages/owner-control/src/index';
 import type { EInvoiceRegisterDeps } from '../../finance/src/e-invoice-register';
 import type { PayRunStoreDeps } from '../../finance/src/pay-run-store';
 import { foldPayRun, type PayRunEvent } from '../../../packages/payroll/src/index';
@@ -478,6 +480,71 @@ export function quotationsAdapter(input: {
         idempotencyKey: `quote-${tenantId}-${q.quotationId}-${q.state}-${stamp}`,
         source: 'api/pos',
         payload: q,
+      }));
+    },
+  };
+}
+
+/** One append-only fact about the daily-brief schedule: the config was `set`, or a day was `sent`. */
+interface BriefScheduleEvent {
+  readonly change: 'set' | 'sent';
+  readonly scheduleId: string;
+  readonly at: string;
+  readonly by: string;
+  readonly dueAt?: readonly [number, number];
+  readonly language?: BriefLanguage;
+  readonly staleAfterMinutes?: number;
+  readonly tradingDay?: string;
+}
+
+/**
+ * Scheduled daily-brief store (M29-FR-04). The schedule config (latest `set` wins) and the days already sent
+ * (every `sent`, deduped) are folded from one append-only stream — a send is a durable fact so a missed one is
+ * carried, not skipped, and a day sent twice collapses to one. The routes run the tested `@sre/owner-control`
+ * engine; this only stores the schedule state.
+ */
+export function scheduledBriefAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): ScheduledBriefDeps {
+  const stream = streamName(STREAM.org, 'brief-schedule');
+  const SCHEDULE_ID = 'owner-daily';
+  return {
+    now: input.now,
+    schedule: async (tenantId): Promise<StoredSchedule | undefined> => {
+      const events = await allOf<BriefScheduleEvent>(input.store, tenantId, stream, 'BriefSchedule');
+      let config: { dueAt: readonly [number, number]; language?: BriefLanguage; staleAfterMinutes?: number } | undefined;
+      const sent = new Set<string>();
+      for (const e of events) {
+        if (e.change === 'set' && e.dueAt !== undefined) {
+          config = { dueAt: e.dueAt, ...(e.language !== undefined ? { language: e.language } : {}), ...(e.staleAfterMinutes !== undefined ? { staleAfterMinutes: e.staleAfterMinutes } : {}) };
+        } else if (e.change === 'sent' && e.tradingDay !== undefined) {
+          sent.add(e.tradingDay);
+        }
+      }
+      if (config === undefined) return undefined;
+      return { scheduleId: SCHEDULE_ID, dueAt: config.dueAt, sentDays: [...sent].sort(), ...(config.language !== undefined ? { language: config.language } : {}), ...(config.staleAfterMinutes !== undefined ? { staleAfterMinutes: config.staleAfterMinutes } : {}) };
+    },
+    setSchedule: async (tenantId, cfg, by, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `brief-set-${d}`,
+        type: 'BriefSchedule',
+        occurredAt: input.now(),
+        idempotencyKey: `brief-set-${tenantId}-${d}`,
+        source: 'api/reporting',
+        payload: { change: 'set', scheduleId: SCHEDULE_ID, at: input.now(), by, dueAt: cfg.dueAt, ...(cfg.language !== undefined ? { language: cfg.language } : {}), ...(cfg.staleAfterMinutes !== undefined ? { staleAfterMinutes: cfg.staleAfterMinutes } : {}) } satisfies BriefScheduleEvent,
+      }));
+    },
+    recordSent: async (tenantId, tradingDay, by) => {
+      // Keyed on the tenant + day (no timestamp), so the same day sent twice collapses to one send.
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `brief-sent-${tenantId}-${tradingDay}`,
+        type: 'BriefSchedule',
+        occurredAt: input.now(),
+        idempotencyKey: `brief-sent-${tenantId}-${tradingDay}`,
+        source: 'api/reporting',
+        payload: { change: 'sent', scheduleId: SCHEDULE_ID, at: input.now(), by, tradingDay } satisfies BriefScheduleEvent,
       }));
     },
   };

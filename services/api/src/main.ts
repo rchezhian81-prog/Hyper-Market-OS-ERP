@@ -143,6 +143,7 @@ import { periodEvidenceRoutes } from '../../finance/src/period-evidence';
 import { legalHoldsRoutes } from '../../finance/src/legal-holds';
 import { auditSearchRoutes } from '../../finance/src/audit-search';
 import { reportingRoutes } from '../../reporting/src/index';
+import { scheduledBriefRoutes } from '../../reporting/src/scheduled-brief';
 import { ownerAlertsRoutes } from '../../reporting/src/owner-alerts';
 import { drillThroughRoutes } from '../../reporting/src/drill-through';
 import type { Producer } from '../../../packages/reporting/src/index';
@@ -168,7 +169,7 @@ import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, dataExportAdapter, financeAdapter, settlementAdapter,
   customerAdapter, dataRightsAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter,
-  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, salesHistoryAdapter,
+  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, salesHistoryAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
@@ -688,6 +689,13 @@ export function buildSurface(deps: {
     ...reportingRoutes(store === undefined
       ? { figures: empty([]), now }
       : reportingAdapter({ store, now, records: REPORTING_RECORDS, produced: REPORTING_PRODUCED })),
+    // Scheduled daily brief (M29-FR-04) — the brief that sends itself: a durable schedule (due time, language),
+    // which briefs are due now (a MISSED day carried, never skipped), an append-only send record (a day sent
+    // twice is one send), and a brief composed complete WITHOUT AI (the numbers are the brief; narrative is
+    // additive). The transport that delivers it to the phone is the deployment step.
+    ...scheduledBriefRoutes(store === undefined
+      ? { schedule: () => undefined, setSchedule: () => {}, recordSent: () => {}, now }
+      : scheduledBriefAdapter({ store, now })),
     ...platformRoutes(store === undefined ? {
       probe: probes, flags: empty({}), setFlag: () => {}, recordSupportAccess: () => {},
       settings, exportTenant: emptyExportBundle,
