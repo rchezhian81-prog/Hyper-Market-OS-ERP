@@ -5,6 +5,52 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M23 period-close evidence pack + control-total validation — what the CA actually signs (3 September 2026)
+
+**Owner direction:** "make your decision for me." I chose the survey's remaining strong candidate — M23-FR-04
+period close — but scoped it deliberately: the **safe, isolated slice** (evidence pack + control-total
+validation), not the higher-value but invasive **period reopen**.
+
+**Why the scope call:** the §28-approved *reopen* of a signed period is the higher-value gap (finance can close
+a period but has no route to reopen one). But doing it properly means reworking the finance **close
+idempotency** — today a period has exactly one `PeriodClosed` event keyed without time, so a reopened period
+could never be re-closed — and that is a change to a **QG-07-gated store with existing integration tests**
+(books-reconcile, day-close-honestly). That is more risk than a delegated pick should carry silently, so I did
+the clean slice and flagged the reopen as a follow-on that needs care.
+
+**What was built (one increment, `services/finance/src/period-evidence.ts` + wiring + test):**
+A period is signed on **two figures agreeing that were reached two different ways** — the book of record vs an
+independent second source (the bank statement, the filed return, the counted shelf), which by design comes from
+OUTSIDE this system, so the caller supplies it:
+- `POST /v1/finance/periods/:period/control-totals` — run `validateControlTotals`: compare both sides of every
+  total **exactly in integer minor units** (§29.1), reporting per line whether it reconciles and by how much a
+  difference is, in words a CA can re-derive.
+- `POST /v1/finance/periods/:period/evidence-pack` — run `buildEvidencePack`: the pack the CA **signs**, stating
+  both sides of every figure and the derivation method so the signature is on something re-derivable. A pack
+  that does **not** reconcile is **still produced** — hiding it just moves the conversation later — but marked
+  **not signable**, with the reason on the page (P-08). A dead-lettered posting also blocks signing, named and
+  never dropped (hard rule #6).
+- Stateless reads (write nothing, change no period's state), gated `finance.period.read` (the accountant and
+  owner) — **no roles change**, so the contract and §28-confinement tests are untouched.
+- Test: `tests/integration/period-evidence.test.ts` (4 — the two-sided reconciliation with one total short; a
+  signable pack; a not-signable pack (both a difference and a dead-lettered posting); the malformed-body /
+  missing-cutoff refusals and the permission gate).
+
+**No re-rate — M23 stays PARTIALLY_WIRED (40).** This wires FR-04's evidence-pack + control-totals, but the
+period **reopen**, the **Tally drain** (a deployment adapter) and **forward correction-routing** remain, and the
+module's live-GST external blocker is unchanged. **Headline stays 41.5%.** Module-ladder guardrail re-checked:
+label ↔ ladder rung ↔ summary counts unchanged and still sum to 36.
+
+**Gate green:** typecheck (again after the test file), lint, secret-scan, the full vitest suite, and the
+contract / §28-confinement / module-ladder guardrails.
+
+**The flagged follow-on:** the §28-approved period **reopen** — a signed set of accounts reopened only with a
+separate approver and a written reason (`reopenPeriod` is tested and ready) — which requires the finance
+close-idempotency reworked so a reopened period can be re-closed. That's a QG-07-gated change I'd want to make
+carefully, with a heads-up, rather than fold into a routine increment.
+
+---
+
 ## M34 audit-trail search / reconstruct / verify — tamper detection on the cloud (3 September 2026)
 
 **Owner direction:** "build the audit-trail search surface next" — M34-FR-01, the `@sre/audit` AuditTrail
