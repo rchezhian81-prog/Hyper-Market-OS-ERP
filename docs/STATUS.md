@@ -5,6 +5,55 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M34 legal holds — a hold that freezes evidence past its retention date, never erased (3 September 2026)
+
+**Owner direction:** "make your decision for me." I chose the survey's clean greenfield pick over the
+finance-heavy alternative: **M34-FR-02 legal-hold retention** (`packages/audit/src/retention.ts`) — a
+durable event-sourced store matching the pattern I've built reliably, advancing an FR that was
+**foundation-only**, and squarely on hard rule #6 (never destroy evidence).
+
+**The gap it closes:** two duties pull opposite ways — privacy says don't keep personal data for ever
+(PRV-08), evidence says never destroy what a court may need (hard rule #6). The tested `@sre/audit` engine
+resolves it by **deleting nothing**: a legal **hold** freezes records regardless of age, and a retention
+**plan** says what's deletable vs frozen. The statutory-period question was already wired
+(`GET /v1/finance/retention`); the **hold lifecycle** — the half that makes "a record under hold survives
+its retention date" real — had no cloud route.
+
+**What was built (one increment, `services/finance/src/legal-holds.ts` + adapter + two permissions + tests):**
+- `POST /v1/audit/legal-holds` — **place** a hold over a class or a single object; a **reason is required**
+  (a hold nobody can explain isn't defensible); a duplicate id → 409.
+- `POST /v1/audit/legal-holds/:holdId/lift` — **release** a hold, recorded as a NEW state (`liftHold`); the
+  hold itself is **never erased** (hard rule #6), so it's provable a year later what was frozen, by whom, and
+  when it was released. 404 unknown, 409 already-lifted.
+- `GET /v1/audit/legal-holds` — **list**, active first, the lifted kept beside them.
+- `POST /v1/audit/retention/plan` — run `planRetention` over the supplied audit records + policies **and the
+  tenant's stored holds**: a record past its retention date that a hold covers comes back **`legal_hold`, not
+  eligible** — the FR-02 acceptance. Deletes nothing; the eligible set is a proposal for an authorised human
+  decision.
+- `POST /v1/audit/evidence-pack` — assemble the period's records for an auditor / inspector / court, **named
+  to the exporter** (nothing leaves anonymously) and carrying the trail's seal.
+- **Two new permissions:** `audit.hold.manage` (owner) gates place/lift; `audit.retention.read`
+  (owner + accountant) gates the plan/list/pack. Both outside the `platform.*` namespace, so the §28
+  platform-admin confinement and api-surface contract tests still pass.
+- Tests: `tests/unit/legal-holds.test.ts` (3 — the fold: place/lift, no-phantom, a hold lifted once) +
+  `tests/integration/legal-holds.test.ts` (4 — the held-record-survives-retention flow through place → plan →
+  lift → plan with a restart, the reason/duplicate/404/409 refusals, the evidence pack, and the manage-vs-read
+  gate).
+
+**No re-rate — M34 stays PARTIALLY_WIRED (40).** This wires FR-02's legal-hold lifecycle + plan + evidence
+pack (moving it off foundation-only), but the **audit-trail read surface (FR-01 reconstruct/search/verify)
+remains unwired**, so the module isn't uniformly wired. **Headline stays 41.5%.** Module-ladder guardrail
+re-checked: label ↔ ladder rung ↔ summary counts unchanged and still sum to 36.
+
+**Gate green:** typecheck (again after the test files), lint, secret-scan, the full vitest suite, and the
+contract / §28-confinement / module-ladder guardrails.
+
+**Path to WIRED for M34:** wire the **audit-trail read surface** (FR-01) — `AuditTrail.reconstruct` /
+`.search` / `.verify` over the kernel's sealed `audit_log`, so an auditor can reconstruct an entity's state,
+search the trail, and be shown the exact tamper break; that is the last foundation-only FR in M34.
+
+---
+
 ## M13 pending-tender recovery — the card machine that never answered, reconciled both ways (3 September 2026)
 
 **Owner direction:** after merging #322, a fresh survey against current `main` ranked the tested-but-unwired
