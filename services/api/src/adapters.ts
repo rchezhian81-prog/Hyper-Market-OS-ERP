@@ -131,6 +131,7 @@ import type { DataImportDeps, ImportCommitRecord } from '../../purchase/src/data
 import type { DataExportAuditDeps } from '../../purchase/src/data-export';
 import type { ExportAudit } from '../../../packages/export/src/export';
 import { projectAlerts, type AlertLifecycleDeps, type AlertLifecycleEvent } from '../../platform/src/alert-lifecycle';
+import { projectHolds, type LegalHoldsDeps, type LegalHoldEvent } from '../../finance/src/legal-holds';
 import { computeOpenCommitment, type ReceiptFact, type SupplierContract, type RebateScheme, type RebateAccrual, type Requisition, type Quote } from '../../../packages/purchasing/src/index';
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
 import type { CreditNoteDeps } from '../../finance/src/credit-notes';
@@ -3994,6 +3995,35 @@ export function importQualityAdapter(input: {
         idempotencyKey: `import-job-${tenantId}-${jobId}-${d}`,
         source: 'api/purchase',
         payload: record,
+      }));
+    },
+  };
+}
+
+const LEGAL_HOLDS_STREAM = streamName(STREAM.platform, 'legal-holds');
+
+/**
+ * Legal-hold store (M34-FR-02 / hard rule #6). Every place / lift is an append-only `LegalHold` fact —
+ * a hold that freezes evidence past its retention date, and its release recorded as a NEW state so the
+ * hold itself is never erased (it must be provable a year later what was frozen, by whom, and when it was
+ * released). The routes run the tested `@sre/audit` engine over the fold; this only stores the facts.
+ */
+export function legalHoldsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): LegalHoldsDeps {
+  return {
+    now: input.now,
+    holds: async (tenantId) => projectHolds(await allOf<LegalHoldEvent>(input.store, tenantId, LEGAL_HOLDS_STREAM, 'LegalHold')),
+    recordHoldEvent: async (tenantId, event, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, LEGAL_HOLDS_STREAM, makeEvent({
+        id: `legal-hold-${event.holdId}-${event.change}-${d}`,
+        type: 'LegalHold',
+        occurredAt: event.at,
+        idempotencyKey: `legal-hold-${tenantId}-${event.holdId}-${event.change}-${d}`,
+        source: 'api/finance',
+        payload: event,
       }));
     },
   };
