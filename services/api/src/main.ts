@@ -139,6 +139,7 @@ import { financeRoutes } from '../../finance/src/index';
 import { creditNoteRoutes } from '../../finance/src/credit-notes';
 import { taxRoutes } from '../../finance/src/tax';
 import { retentionRoutes } from '../../finance/src/retention';
+import { periodEvidenceRoutes } from '../../finance/src/period-evidence';
 import { legalHoldsRoutes } from '../../finance/src/legal-holds';
 import { auditSearchRoutes } from '../../finance/src/audit-search';
 import { reportingRoutes } from '../../reporting/src/index';
@@ -506,6 +507,10 @@ export function buildSurface(deps: {
       appendJournal: () => {}, controlTotals: empty([]), postersIn: empty([]),
       markClosed: () => {}, now,
     } : financeAdapter({ store, now })),
+    // Period-close evidence pack + control-total validation (M23-FR-04 / QG-07) — reconcile both sides of
+    // every total (the ledger vs an independent second source the caller supplies) and produce the CA's
+    // signable pack; a non-reconciling pack is still produced but marked not signable. Stateless reads.
+    ...periodEvidenceRoutes({ now }),
     ...creditNoteRoutes(store === undefined ? {
       alreadyCredited: empty(0), appendCreditNote: () => {}, notes: empty([]), now,
     } : financeNotesAdapter({ store, now, ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }) })),
