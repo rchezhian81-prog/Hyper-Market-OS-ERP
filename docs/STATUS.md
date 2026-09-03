@@ -5,6 +5,53 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M12 retail quotations — a price promised, converted once, held only while valid (3 September 2026)
+
+**Owner direction:** "make your decision for me." I ran a fresh survey (the earlier one was stale) with a stated
+preference for a **durable event-sourced store** over another stateless compute — for variety and lasting value
+— and for low-risk isolated work. The survey's clear top pick, matching that exactly, was the **retail
+counter-quotation lifecycle** (`packages/suspended-sales/src/quotation.ts`), unit-tested but with no cloud route.
+
+**What made it the right pick:** it's a genuine place/act/read store (not another "supplied evidence" compute),
+low-risk and isolated, and — crucially — its **sibling in the same package (suspended-bill) is already wired
+with the exact adapter+route scaffold**, so it was a copy-adapt, not a green field. A confirmed distinction: the
+B2B tax-document-chain quotation (M22-FR-02, `packages/b2b`) is already wired; this is the separate **retail
+counter-quote** (M12-FR-02), which was engine-only.
+
+**What a quotation is, and why it needs its own controls:** it's the one document that looks like a sale and
+must not behave like one. Every control here stops it becoming the route around another control:
+- **Moves no stock** — quoting 200 kg reserves nothing; the shop keeps selling the goods.
+- **The price is held, only in its validity window** — a converted quote rings up at the quoted prices *while
+  valid*; an **expired** quote is refused, never silently re-priced (that's a person's decision either way).
+- **Cannot quote past the margin floor** — a below-floor price needs a separate approver, and the person quoting
+  cannot approve their own (§28).
+- **Converting is idempotent** — one quote becomes exactly one sale; a second convert returns the first.
+- **Withdrawn / expired is kept** (hard rule #6) — an unconverted quote is a lost sale, and the follow-up list
+  surfaces expiring ones soonest-first so a done-but-lost sale is chased before it goes cold.
+
+**What was built (one increment, `services/pos/src/quotations.ts` + adapter + two permissions + tests):**
+`POST /v1/pos/quotations/:id` (issue), `…/convert`, `…/withdraw`, `GET /v1/pos/quotations` (list, `?state=`),
+`GET /v1/pos/quotations/follow-up`. Event-sourced (`QuotationStateChanged`, folded latest-per-id), restart-safe.
+New perms `pos.quotation.write` / `pos.quotation.read` (owner + store-manager), both outside the `platform.*`
+namespace so the §28 confinement and contract tests are untouched.
+- **A bug caught locally before CI:** I first placed the stream-name `const` at module scope, but the
+  `streamName` helper initialises later in `adapters.ts` — a temporal-dead-zone `ReferenceError` that broke the
+  whole surface build. Moved it inside the adapter function (deferred to call time); CI would have caught it, I
+  caught it first.
+- Test: `tests/integration/quotations.test.ts` (6 — issue→convert-at-quoted-price→idempotent-second-convert with
+  a restart; the below-floor + §28 self-approval refusals and a valid approval; the expired-refused case; the
+  withdraw-kept + convert-withdrawn refusals; the follow-up list; and the re-issue-409 / unknown-404 / gate).
+
+**No re-rate.** M12 stays **E2E_VERIFIED** (already the top; the quotation is a supporting FR-02 sub-feature now
+wired) and M22 stays **PARTIALLY_WIRED** (its gap is the customer-facing collections portal, untouched here).
+**Headline stays 41.5%.** Module-ladder guardrail re-checked: label ↔ ladder rung ↔ summary counts unchanged and
+still sum to 36.
+
+**Gate green:** typecheck (again after the test file), lint, secret-scan, the full vitest suite, and the
+contract / §28-confinement / module-ladder guardrails.
+
+---
+
 ## M23 period-close evidence pack + control-total validation — what the CA actually signs (3 September 2026)
 
 **Owner direction:** "make your decision for me." I chose the survey's remaining strong candidate — M23-FR-04
