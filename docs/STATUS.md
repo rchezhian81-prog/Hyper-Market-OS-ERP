@@ -5,6 +5,50 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M34 audit-trail search / reconstruct / verify — tamper detection on the cloud (3 September 2026)
+
+**Owner direction:** "build the audit-trail search surface next" — M34-FR-01, the `@sre/audit` AuditTrail
+read capabilities (`search` / `reconstruct` / `verify`), unit-tested but with no cloud route.
+
+**What I found first (and why the scope is what it is):** the `@sre/audit` domain trail (who did what to which
+object, before/after, sealed with its own chain) has **no live producer** anywhere in the running system — a
+repo-wide grep found `AuditTrail`/`InMemoryAuditStore` used only in tests. The trail the system actually keeps
+is the **kernel's request-level `audit_log`** (method/path/status, a separate SHA-256 chain) — a different
+shape, and one the in-memory test harness doesn't populate. So the honest, testable cut — and the one
+consistent with the retention/evidence-pack surface merged in #324 — is to wire the three read capabilities
+**over a supplied sealed trail** (an export), which is exactly what an auditor holding a trail dump needs.
+
+**What was built (one increment, `services/finance/src/audit-search.ts` + wiring + test):**
+- `POST /v1/audit/trail/search` — narrow a supplied sealed trail by actor / object / action / scope / period.
+- `POST /v1/audit/trail/reconstruct` — rebuild an object's state **from the evidence alone**, with the chain of
+  changes that produced it (NFR-15) — "how did this price get here?" answered without trusting any screen.
+- `POST /v1/audit/trail/verify` — check the whole chain and name **every** place it doesn't hold up
+  (`hash_mismatch` / `broken_link` / `sequence_gap`), not just the first, so an auditor sees the full extent of
+  a problem (P-08 — tamper detected, never silently absorbed).
+- Pure reads; there is deliberately **no operation to edit or drop a record** (the FR-01 acceptance — impossible
+  for anyone, the owner included, to edit the audit log). Gated `audit.retention.read` — **no roles change**, so
+  the contract and §28-confinement tests are untouched.
+- Test: `tests/integration/audit-search.test.ts` (3) — builds a **real sealed trail with the same engine the
+  route uses**, verifies it intact, then **tampers one record's after-state and confirms verify names that exact
+  record**; searches by actor; reconstructs a product's state (`{price: '120'}`) from its two recorded changes;
+  and the malformed-body / permission gate.
+
+**No re-rate — M34 stays PARTIALLY_WIRED (40).** With this, all four M34 FRs have cloud routes — but the
+audit read surfaces (FR-01 search/verify, FR-02 retention/evidence) work **only on supplied trails**, because
+nothing in the running system yet keeps the domain audit trail. Lifting the module to WIRED would imply the
+trail is kept and queryable end-to-end, which it isn't — so the rung holds. **Headline stays 41.5%.**
+Module-ladder guardrail re-checked: label ↔ ladder rung ↔ summary counts unchanged and still sum to 36.
+
+**Gate green:** typecheck (again after the test file), lint, secret-scan, the full vitest suite, and the
+contract / §28-confinement / module-ladder guardrails.
+
+**Path to WIRED for M34 (the real follow-on):** a durable domain-audit store that **every module records
+sensitive actions into** (price/refund/role/bank changes with before/after) — then search / reconstruct /
+verify / retention / evidence-pack read the system's OWN trail directly, instead of a supplied export. That's
+the piece that makes the whole M34 surface real, and it's a cross-cutting build, not a single route.
+
+---
+
 ## M34 legal holds — a hold that freezes evidence past its retention date, never erased (3 September 2026)
 
 **Owner direction:** "make your decision for me." I chose the survey's clean greenfield pick over the
