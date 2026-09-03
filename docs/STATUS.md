@@ -5,6 +5,64 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M31 notification delivery queue — the outbox behind the send-guard (3 September 2026)
+
+**Owner direction:** "make your decision for me." A fresh survey ranked a **governed price-production** route #2,
+but building it would have opened a **second door** to setting a price alongside the existing price-entry route —
+a duplicated control that drifts apart is exactly the smell this codebase keeps finding — so I passed on it and
+took the survey's **#3**: wire the tested **notification delivery queue** (`packages/notifications/src/queue.ts`,
+M31-FR-04) onto the cloud. It's a durable-outbox engine of the kind I wanted, unwired, low-risk, isolated.
+
+**Why it's a good pick:** the send-guard (`POST /v1/notifications/can-send`, M31-FR-03) already decides _whether_
+a message may go — consent, suppression. But there was **nowhere to put the ones that may.** The queue that
+carries them, retries a failing send and — crucially — moves a poison send to a **visible dead-letter list** for
+a person rather than dropping it (hard rule #6) was built and unit-tested, and **never wired.** A notification
+that quietly vanishes is one a customer was promised and never got, and nobody knows — the same failure the sync
+outbox and the Tally connector are built to make impossible.
+
+**What was built (one increment, `services/customer/src/notification-queue.ts` + adapter, no new permission):**
+- `POST /v1/notifications/queue/:id` — **enqueue** a send. Idempotent on its id: a re-enqueue returns the
+  existing item (`alreadyQueued`), never a second copy of the same message.
+- `POST /v1/notifications/queue/:id/delivered` — the transport got it through.
+- `POST /v1/notifications/queue/:id/failed` — record a failed attempt with a **reason** (a poison send with no
+  reason cannot be fixed, so a missing reason is refused). The **tested engine** decides the resulting state:
+  it retries, and after `maxAttempts` it **dead-letters** — the route records the fact, the fold decides the
+  outcome, so the retry-then-dead-letter state machine is the engine's, run once, not a second copy on the API.
+- `GET /v1/notifications/queue/pending` — what still has to go out, in order.
+- `GET /v1/notifications/queue/dead-letters` — poison sends **kept** for a person, never dropped.
+- Event-sourced (`NotificationQueue` events over the append-only log; the queue is the `@sre/notifications`
+  engine replayed), **restart-safe**. Reused the existing `notification.send.check` permission (the
+  notification-pipeline scope owner + store-manager already hold) — **no roles change**, so the api-surface and
+  §28-confinement contract tests hold untouched.
+- Test: `tests/integration/notification-queue.test.ts` (3 — enqueue-idempotent + delivered + restart; the
+  retry→dead-letter walk at `maxAttempts:3` with the dead-letter kept across a restart and an
+  already-dead-lettered fail a no-op; and the 400 no-channel/no-reason + 404 unknown-id + cashier-403 gate).
+
+**No re-rate.** M31 stays **PARTIALLY_WIRED** — the queue and the send-guard (FR-03/FR-04) are now on the cloud
+alongside the numbering/template/issue surfaces, but the **channel transport** that actually drains the queue
+down SMS/WhatsApp/email/push is an outbound network path — a deployment step, honestly deferred — and batch
+re-issue + archival remain. **Headline stays 41.5%.** Module-ladder guardrail re-checked: label ↔ rung ↔ summary
+counts unchanged and still sum to 36.
+
+**Gate green:** typecheck (again after the test file), lint, secret-scan, the full vitest suite, and the
+contract / §28-confinement / module-ladder / ladder-evidence guardrails.
+
+**Path to WIRED for M31:** wire the outbound **channel transport** that drains the pending queue (a real
+send path with provider adapters), then batch re-issue + document archival.
+
+**For the owner — in plain words:** when the shop sends a customer a message (an order-ready SMS, a WhatsApp bill),
+that message now sits in a proper **outbox** in the cloud until it's confirmed sent. If a send keeps failing —
+a wrong number, a dead line — it's tried a few times and then set aside in a **"couldn't send" list** that a
+person can look at, instead of just disappearing as if it had gone. Nothing is thrown away silently. The part
+that still has to be switched on is the actual sending machinery down each channel — that's a wiring-up job for
+when we go live, not something to build now. Nothing else in the shop changes, and the completion figure stays
+honest at **41.5%.**
+
+**What to check in the store:** nothing to check on the shop floor yet — this is plumbing behind the messaging,
+and the message-sending itself isn't switched on until deployment. When you're ready, tell me to **merge #330**.
+
+---
+
 ## M19 dispatch planning — and the delivery reconciliation that was blind (3 September 2026)
 
 **Owner direction:** "make your decision for me." A fresh survey (the third this session — the prior one's durable
