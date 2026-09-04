@@ -5382,6 +5382,14 @@ export function promotionAdapter(input: {
   return {
     now: input.now,
 
+    // A margin-losing promotion is a below-cost pricing decision, so its §28 approver must genuinely hold
+    // `price.change.approve` — the same authoritative grant source the price change and price list check.
+    canApprove: async (tenantId, userId) => {
+      const grants = await allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+      const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
+      return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('price.change.approve'));
+    },
+
     launchedPromotion: async (tenantId, promotionId) => {
       const launched = await allOf<LaunchRecord>(input.store, tenantId, STREAM.promotions, 'PromotionLaunched');
       return launched.find((r) => r.promotionId === promotionId);

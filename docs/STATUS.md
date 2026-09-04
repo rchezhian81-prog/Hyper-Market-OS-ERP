@@ -5,6 +5,55 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M05-FR-04 promotion launch — closing the twin below-cost bypass on the promotion side (4 September 2026)
+
+**Owner direction:** after the pricing side-door fix (below), the owner said **"Hunt for more bypasses like it."**
+I ran a rigorous control-bypass audit across the mutating routes and found five §28 "approver-not-verified" gaps.
+I'm closing them **one per PR, highest-confidence first**. This is the first, and the cleanest — it's the exact
+twin of the pricing fix, so it reuses the same approval authority with **no new permission and no roles change**.
+
+**The gap, precisely:** a below-cost *promotion* is a decision to give the store's own margin away, and the
+launch route (`POST /v1/promotions/:id/launch`, permission `promotion.launch`, held by owner and store manager)
+gated it on a "second person" approval — but it took `approvedBy` as a **raw body string** and the engine checked
+only that the approver was **not the proposer**. Nothing verified the named approver actually held any pricing
+authority. Net: **a margin-losing promotion could be "approved" by any name typed into the box** — a colleague, a
+made-up name — and go live, exactly the same class of hole as the price-list one.
+
+**What was built (one increment, `services/pricing/src/promotions.ts` + the promotion adapter, no new permission):**
+- The launch handler now, **only for a margin-losing offer** (`simulation.blocksApproval`), verifies the named
+  approver genuinely holds **`price.change.approve`** via `canApprove` — the **same authority** the governed price
+  change and the price-list write boundary already require (a below-cost promotion *is* a pricing decision). An
+  approver who lacks it is refused with `approver_may_not_approve`; proposer ≠ approver and the written-reason
+  rule are unchanged. A margin-*positive* promotion still launches freely — this adds no friction to normal offers.
+- Added `canApprove` to `PromotionDeps` and to the promotion adapter (mirroring the pricing/price-list adapters);
+  the no-store stub denies by default. **No roles change** — reused `price.change.approve`.
+- Test: `tests/integration/promotion-governance.test.ts` extended — a **cashier**-named approver on a below-cost
+  offer is now refused (`approver_may_not_approve`), and a genuinely-authorised second person still lets a real
+  loss-leader through. The prior tests silently relied on an unprovisioned name counting as approval (the bug);
+  they now provision a real approver, so the suite proves the closed door instead of the open one.
+
+**No re-rate.** M05 was already **WIRED** with all four FRs integration-tested; this hardens an existing control,
+it does not add maturity. **Headline stays 41.5%.** Module-ladder guardrail re-checked: label ↔ rung ↔ summary
+counts unchanged and sum to 36.
+
+**Gate green:** typecheck, completion (41.5%), lint, secret-scan, the full vitest suite (6245 passed), and the
+traceability-integrity / completion-model / module-ladder / ladder-evidence guardrails.
+
+**For the owner — in plain words:** a "buy it below what it cost us" promotion is meant to need a second, senior
+person's sign-off. It turned out the system only checked that the approver's name was *different* from the person
+proposing it — it never checked that the approver was actually **allowed** to approve pricing. So in theory a
+below-cost offer could be waved through by typing any name in the approval box. I've now made the system check the
+approver really holds pricing-approval authority (the same rule your shelf-price changes already use), and I added
+a test that proves a cashier's name no longer counts while a real approver's does. Nothing changed for normal
+promotions — only the ones that sell below cost need the proper sign-off. **What to check in the store:** try to
+launch a below-cost promotion and put a cashier's name (not a manager/owner) as the approver — it should refuse
+and say the approver may not approve; put a manager/owner with a reason and it should go through. **Next:** the
+remaining four audit gaps, one PR at a time — customer compensation, stock write-off via generic movements,
+finance period reopen/close signer, and refunds (that last one needs a design check first, because a refund
+approver may legitimately be captured at the lane offline).
+
+---
+
 ## M05 pricing governance — closing the side door a below-cost price could slip through (4 September 2026)
 
 **Owner direction:** the owner picked "Pricing governance" from a menu. Reading the code closely, I found the

@@ -34,6 +34,9 @@ export interface LaunchRecord {
 export interface PromotionDeps {
   readonly launchedPromotion: (tenantId: string, promotionId: string) => Promise<LaunchRecord | undefined> | LaunchRecord | undefined;
   readonly recordLaunch: (tenantId: string, record: LaunchRecord) => Promise<void> | void;
+  /** Whether a user holds `price.change.approve` — a margin-losing (below-cost) promotion is a pricing
+   *  decision, so its §28 approver must genuinely hold the pricing-approval authority, not just be named. */
+  readonly canApprove: (tenantId: string, userId: string) => Promise<boolean>;
   readonly now: () => string;
 }
 
@@ -164,6 +167,22 @@ export function promotionRoutes(deps: PromotionDeps): readonly Route[] {
         if (input === undefined) throw badInput();
 
         const simulation: SimulationResult = simulatePromotion(input);
+
+        // A margin-losing offer needs a §28 approver — and a name typed in a box is not one. When the
+        // simulation blocks approval, verify the named approver genuinely holds the pricing-approval
+        // authority (the same `price.change.approve` that governs a below-cost price); the pure engine
+        // cannot see the grants, so this closes the "invent a co-signer" bypass. A self-approval falls
+        // through to `approveForLaunch`, which refuses it (§28).
+        if (simulation.blocksApproval && typeof b.approvedBy === 'string' && b.approvedBy.trim() !== '' && b.approvedBy !== ctx.userId
+          && !(await deps.canApprove(ctx.tenantId, b.approvedBy))) {
+          throw apiError(422, {
+            code: 'approver_may_not_approve',
+            whatHappened: `${b.approvedBy} does not hold price.change.approve, so their approval of a margin-losing promotion does not count.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Have someone who may approve below-cost pricing approve it with a reason. Nothing was launched.',
+          });
+        }
+
         const approval = typeof b.approvedBy === 'string'
           ? { subjectRef: promotionId, status: 'approved' as const, decidedBy: b.approvedBy, ...(typeof b.rationale === 'string' ? { rationale: b.rationale } : {}) }
           : undefined;
