@@ -304,7 +304,7 @@ export function buildSurface(deps: {
       ? { entries: empty([]), recordEntry: () => {}, canApprove: () => Promise.resolve(false), now }
       : priceListAdapter({ store, now })),
     ...promotionRoutes(store === undefined
-      ? { launchedPromotion: empty(undefined), recordLaunch: () => {}, now }
+      ? { launchedPromotion: empty(undefined), recordLaunch: () => {}, canApprove: () => Promise.resolve(false), now }
       : promotionAdapter({ store, now })),
     ...promotionCatalogueRoutes(store === undefined
       ? { promotion: empty(undefined), promotions: empty([]), recordDefined: () => {}, recordStatus: () => {}, now }

@@ -51,20 +51,26 @@ describe('a promotion is simulated, then gated on its margin (M20 / M05-FR-04, �
     expect((await getPromo(h, A, 'u-owner', 'P1')).body as Launched).toMatchObject({ launched: true, verdict: 'margin_reduced_but_positive' });
   });
 
-  it('refuses to launch a margin-losing offer without a second person and a reason (§28)', async () => {
+  it('refuses a margin-losing offer without a second person, a reason, or a genuinely-authorised approver (§28)', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-mgr', 'owner');    // holds price.change.approve — a genuine approver
+    await h.provisionRole(A, 'u-cash', 'cashier'); // holds NO pricing-approval authority
 
     expect(codeOf(await launch(h, A, 'u-owner', 'PL', lossPromo()))).toBe('launch_needs_approval'); // no approval
     // Self-approval is refused — the proposer cannot approve their own margin loss.
     expect(codeOf(await launch(h, A, 'u-owner', 'PL', lossPromo({ approvedBy: 'u-owner', rationale: 'clearance of short-dated stock' }), 'k-self'))).toBe('launch_needs_approval');
-    // A different approver but no real reason is refused.
+    // An approver who does NOT hold the pricing-approval authority does not count — a name typed in a box
+    // is not an approval. This is the bypass being closed (a below-cost promotion is a pricing decision).
+    expect(codeOf(await launch(h, A, 'u-owner', 'PL', lossPromo({ approvedBy: 'u-cash', rationale: 'festival loss leader for footfall' }), 'k-noauth'))).toBe('approver_may_not_approve');
+    // A genuinely-authorised approver but no real reason is still refused.
     expect(codeOf(await launch(h, A, 'u-owner', 'PL', lossPromo({ approvedBy: 'u-mgr', rationale: 'ok' }), 'k-noreason'))).toBe('launch_needs_approval');
   });
 
-  it('launches a margin-losing offer when a second person approves with a written reason', async () => {
+  it('launches a margin-losing offer when a genuinely-authorised second person approves with a reason', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-mgr', 'owner'); // genuinely holds price.change.approve
     const res = await launch(h, A, 'u-owner', 'PL', lossPromo({ approvedBy: 'u-mgr', rationale: 'loss-leader to drive festival footfall' }));
     expect(res.status).toBe(201);
     expect((res.body as Launched).approvedBy).toBe('u-mgr');
