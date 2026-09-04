@@ -5,6 +5,63 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M34 compliance obligation lifecycle — closing a licence off the list, and the evidence gap (4 September 2026)
+
+**Owner direction:** "make your decision for me." After merging #331 I took the next clean pick from the standing
+survey: complete the **M34-FR-03 obligation lifecycle**. The licence/certificate register was wired (register +
+expiry alerts + status), but three tested engine functions had no cloud route — and their absence left real holes.
+
+**The gaps, precisely:** the register could take a licence on and shout as it neared expiry, but there was no way
+to **close** an obligation that no longer applied (a scale scrapped, a licence surrendered) — so it would shout on
+the alert list for ever. There was no way to **file evidence after registration** (the renewed certificate, the
+inspection report). And there was no **evidence-gap** view — an obligation in date but with nothing on file to
+show an inspector is a finding in itself, and nothing surfaced it. `closeObligation`, `attachEvidence` and
+`missingEvidence` were built and tested in `packages/compliance`; none was reachable.
+
+**What was built (one increment, additive to `services/compliance/src/obligations.ts`, no adapter/roles change):**
+- `POST /v1/compliance/obligations/:id/close` — close with a **required reason**. It leaves the alert list but is
+  **never deleted**: the record stays for ever with its reason, because an inspector's question is usually about a
+  period you no longer operate in (**hard rule #6**). Already-closed is a no-op, so a retried close never churns
+  the original reason.
+- `POST /v1/compliance/obligations/:id/evidence` — file evidence **after** registration. Evidence is **only ever
+  added**, never replaced or removed; the same `evidenceId` twice is a no-op.
+- `GET /v1/compliance/evidence-gaps` — active obligations with **nothing on file** — a finding in itself, separate
+  from any expiry date.
+- **The mechanism is the codebase's own:** the adapter already folds the register "latest registration wins — a
+  change is a new append-only fact, never an overwrite," so close and attach-evidence are just that: read the
+  current obligation, apply the tested engine function, re-record. **No new event type, no adapter change, no
+  deps change, no roles change** — reused `compliance.obligation.manage` (writes) / `.read` (the gap report),
+  both already held by owner + store-manager, so the api-surface and §28-confinement contract tests hold.
+- Test: `tests/integration/compliance-obligation-lifecycle.test.ts` (3 — close drops a licence off alerts and
+  flips the shop back to compliant, kept across a restart, re-close a no-op; an evidence gap that clears when a
+  document is filed and re-adds nothing on a duplicate; and the 400 no-reason / 404 unknown / bad-evidence / and
+  cashier-403 gate).
+
+**No re-rate.** M34 stays **PARTIALLY_WIRED** — the FR-03 obligation surface is now complete on the cloud, but the
+honest FR-01/FR-02 scope note still stands: the audit-trail read surfaces operate on **supplied** trails, and
+nothing in the running system yet **produces** the domain-level audit trail, so the module is not uniformly wired.
+**Headline stays 41.5%.** Module-ladder guardrail re-checked: label ↔ rung ↔ summary counts unchanged and sum to 36.
+
+**Gate green:** typecheck (again after the test file), lint, secret-scan, the full vitest suite, and the
+contract / §28-confinement / module-ladder / ladder-evidence guardrails.
+
+**Path to WIRED for M34:** produce a real domain audit trail every module records into (the FR-01/02 follow-on),
+then the retention/legal-hold reads run on live evidence rather than supplied trails.
+
+**For the owner — in plain words:** the shop runs on licences and certificates — the food licence, the fire NOC,
+the stamping certificate on every weighing scale. The system already keeps a list of them and warns before they
+run out. This change adds three missing pieces: a way to **take one off the list when it genuinely no longer
+applies** (a scale you scrapped) — but it's kept on record for ever with the reason, never truly deleted, because
+an inspector may ask about it years later; a way to **attach the actual document** (the renewed certificate) after
+you've added the licence; and a **"what's got no paperwork on file" list**, so a licence that's still valid but
+whose certificate we can't produce shows up before an inspector finds it first. Nothing on the shop floor changes,
+and the honesty figure stays at **41.5%**.
+
+**What to check in the store:** nothing on the shop floor — this is behind the compliance register. When you're
+ready, tell me to **merge #332**.
+
+---
+
 ## M35 disaster-recovery readiness — scoring the drill, pruning backups without emptying the shelf (3 September 2026)
 
 **Owner direction:** "make your decision for me." After merging #330 I surveyed for the next tested-but-unwired
