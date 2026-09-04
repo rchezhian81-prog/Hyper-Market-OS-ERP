@@ -14,7 +14,8 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  registerObligation, expiryAlerts, isCompliant, MissingResponsiblePersonError,
+  registerObligation, expiryAlerts, isCompliant, closeObligation, missingEvidence, attachEvidence,
+  MissingResponsiblePersonError,
   type Obligation, type ObligationKind, type EvidenceRef,
 } from '../../../packages/compliance/src/index';
 
@@ -109,5 +110,87 @@ export function complianceRoutes(deps: ComplianceDeps): readonly Route[] {
         return { status: 200, body: { asOf: on, ...(branchId === undefined ? {} : { branchId }), compliant } };
       },
     },
+    {
+      // Close an obligation that no longer applies — a scale scrapped, a licence surrendered. It leaves the
+      // alert list but is NEVER deleted: the record stays for ever with its reason, because an inspector's
+      // question is usually about a period you no longer operate in (hard rule #6). Closing is a new
+      // append-only fact the register folds, exactly like a change to an expiry.
+      api: 'API-11', method: 'POST', path: '/v1/compliance/obligations/:obligationId/close',
+      permission: 'compliance.obligation.manage', idempotent: true,
+      handler: async (ctx) => {
+        const obligationId = ctx.params['obligationId'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (typeof b['reason'] !== 'string' || b['reason'].trim() === '') {
+          throw apiError(400, {
+            code: 'close_needs_a_reason',
+            whatHappened: 'Closing an obligation needs a { reason } — the record is kept for ever with it (hard rule #6), never deleted.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send why the obligation no longer applies.',
+          });
+        }
+        const current = (await deps.obligations(ctx.tenantId)).find((o) => o.obligationId === obligationId);
+        if (current === undefined) throw notFound(obligationId);
+        if (current.status === 'closed') {
+          // Already closed — a no-op, so a retried close does not churn the reason.
+          return { status: 200, body: { obligationId, status: 'closed', closedReason: current.closedReason ?? null, closedAt: current.closedAt ?? null, alreadyClosed: true } };
+        }
+        const closed = closeObligation(current, b['reason'].trim(), deps.now());
+        await deps.recordRegister(ctx.tenantId, closed);
+        return { status: 200, body: { obligationId, status: 'closed', closedReason: closed.closedReason, closedAt: closed.closedAt } };
+      },
+    },
+    {
+      // File evidence AFTER registration — the renewed certificate, the inspection report. Evidence is only
+      // ever ADDED, never replaced or removed (hard rule #6); a re-send of the same evidenceId collapses.
+      api: 'API-11', method: 'POST', path: '/v1/compliance/obligations/:obligationId/evidence',
+      permission: 'compliance.obligation.manage', idempotent: true,
+      handler: async (ctx) => {
+        const obligationId = ctx.params['obligationId'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (typeof b['evidenceId'] !== 'string' || b['evidenceId'].trim() === '' || typeof b['description'] !== 'string' || b['description'].trim() === '') {
+          throw apiError(400, {
+            code: 'evidence_needs_id_and_description',
+            whatHappened: 'Attaching evidence needs { evidenceId } and { description } — the document that proves the obligation is met.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the evidence id and a description.',
+          });
+        }
+        if (b['recordedAt'] !== undefined && (typeof b['recordedAt'] !== 'string' || Number.isNaN(Date.parse(b['recordedAt'] as string)))) {
+          throw apiError(400, { code: 'evidence_recorded_at_invalid', whatHappened: 'recordedAt, if given, must be an ISO-8601 timestamp.', wasItSaved: 'not_saved', nextSafeAction: 'Send a valid timestamp or omit it for now.' });
+        }
+        const current = (await deps.obligations(ctx.tenantId)).find((o) => o.obligationId === obligationId);
+        if (current === undefined) throw notFound(obligationId);
+        if ((current.evidence ?? []).some((e) => e.evidenceId === (b['evidenceId'] as string).trim())) {
+          return { status: 200, body: { obligationId, evidenceCount: (current.evidence ?? []).length, alreadyOnFile: true } };
+        }
+        const evidence: EvidenceRef = {
+          evidenceId: (b['evidenceId'] as string).trim(),
+          description: (b['description'] as string).trim(),
+          recordedAt: typeof b['recordedAt'] === 'string' ? b['recordedAt'] : deps.now(),
+        };
+        const updated = attachEvidence(current, evidence);
+        await deps.recordRegister(ctx.tenantId, updated);
+        return { status: 201, body: { obligationId, evidenceCount: (updated.evidence ?? []).length } };
+      },
+    },
+    {
+      // Active obligations with NOTHING on file to show an inspector — a finding in itself, separate from
+      // any expiry date. A licence that is in date but unproven is still a gap.
+      api: 'API-11', method: 'GET', path: '/v1/compliance/evidence-gaps',
+      permission: 'compliance.obligation.read',
+      handler: async (ctx) => {
+        const gaps = missingEvidence(await deps.obligations(ctx.tenantId));
+        return { status: 200, body: { count: gaps.length, obligations: gaps } };
+      },
+    },
   ];
+}
+
+function notFound(obligationId: string): ReturnType<typeof apiError> {
+  return apiError(404, {
+    code: 'unknown_obligation',
+    whatHappened: `There is no obligation '${obligationId}' on the register.`,
+    wasItSaved: 'not_saved',
+    nextSafeAction: `Register it first with POST /v1/compliance/obligations/${obligationId}.`,
+  });
 }
