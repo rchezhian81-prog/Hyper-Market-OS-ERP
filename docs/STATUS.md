@@ -5,6 +5,66 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M23 period reopen — changing a signed month, with a name on the decision (4 September 2026)
+
+**Owner direction:** the owner chose **"Finance month-close & reopen"** from a menu I put up after finding the
+easy "wire a ready-made engine" seam had thinned. I scoped it to the clean, decision-free, high-value half the
+codebase itself nominated: the **§28-approved period reopen** (M23-FR-04). (The other half — computing control
+totals from a genuine independent second source — is deliberately deferred: the close *still* refuses until a real
+second source, e.g. a bank statement, is fed in; the system has no producer for one yet, and inventing a
+same-source total would make the check theatre. That's an honest gap, not this increment.)
+
+**The gap, precisely:** `closePeriod` was wired, but a closed month could never be reopened, and the reason was
+structural — period state was stored as "does a `PeriodClosed` event exist?", which is closed **forever**. The
+codebase flagged this exactly: reopen "needs the finance close-idempotency reworked so a reopened period can be
+re-closed." The tested `reopenPeriod` engine (§28) had no route.
+
+**What was built (one increment, `services/finance/src/index.ts` + the finance adapter, no new permission):**
+- `POST /v1/finance/periods/:period/reopen` — runs the tested `reopenPeriod`. A signed month does **not** change
+  on one person's say-so: reopening needs an approval by **someone other than the requester** (§28) and a
+  **written reason**. It is recorded as a **new append-only fact**, never an edit to the closed period (hard rule
+  #2). Self-approval, a missing approver/reason, and an already-open period are all refused.
+- **The close-idempotency rework:** period state is now the **latest** close/reopen fact per period (each carries
+  a transition sequence number, so latest-wins is order-independent), instead of "any close ⇒ closed forever." So
+  a reopened period is **open again and re-closable**, and the close route now **refuses an already-closed
+  period** (409) — a month is reopened, never silently re-closed over a signed set. Legacy closes (no sequence)
+  read as sequence 0, so nothing already closed is disturbed.
+- **Correction routing was already there:** `postJournal` already directs a post aimed at a closed period to the
+  next open period as a compensating entry — so I did **not** add a second surface for it (no duplication).
+- Reused the existing `finance.period.close` permission for reopen — **no roles change**.
+- Test: `tests/integration/period-reopen.test.ts` (3 — a closed period reopened by a different approver, left
+  open and then **re-closed** and durable across a restart; the §28 self-approval / missing-approver /
+  missing-reason / already-open refusals; and the already-closed close-guard 409 + cashier-403 gate). The closed
+  precondition is seeded via the adapter's real `markClosed` (the close route can't reach a closed state through
+  the real adapter, by design — there's no second source yet).
+
+**No re-rate.** M23 stays **PARTIALLY_WIRED** — reopen is now on the cloud, but the close still cannot *complete*
+end-to-end until a genuine independent second control-total source exists, and the Tally drain remains. **Headline
+stays 41.5%.** Module-ladder guardrail re-checked: label ↔ rung ↔ summary counts unchanged and sum to 36.
+
+**Gate green:** typecheck (again after the test file, which caught two `FinanceDeps` test stubs needing the new
+`markReopened`), lint, secret-scan, the full vitest suite, and the contract / §28-confinement / module-ladder /
+ladder-evidence guardrails.
+
+**Path to WIRED for M23:** feed a genuine independent second source (a bank statement / filed return) so the
+close can complete, then the Tally HTTP/XML drain.
+
+**For the owner — in plain words:** once your accountant signs off a month, it's locked — nobody can quietly change
+the figures afterwards, which is exactly what an auditor needs. But sometimes a month legitimately has to be
+**re-opened** (a supplier credit note arrives late, a figure was wrong). This adds a safe way to do that: it needs
+**a second person to approve it and a written reason**, and the whole thing is kept on record — who asked, who
+approved, why — so the change has a name on it. Crucially, the original signed month is never edited; reopening is
+logged as its own event, and once reopened the month can be properly closed and signed again. Nothing at the till
+changes. And to be straight with you: I did **not** switch on the actual month-*closing* yet, because that
+honestly needs an outside figure to check against (like your bank statement) that the system doesn't have yet —
+closing a month by only checking it against itself would be a rubber stamp, and I won't build that. The honesty
+figure stays at **41.5%**.
+
+**What to check in the store:** nothing on the shop floor — this is back-office accounting control. When you're
+ready, tell me to **merge #335**.
+
+---
+
 ## M11 weighed-department costing — the fresh counter that quietly loses money (4 September 2026)
 
 **Owner direction:** "make your decision for me." The easy "wire a ready-made engine" seam had thinned, so I ran

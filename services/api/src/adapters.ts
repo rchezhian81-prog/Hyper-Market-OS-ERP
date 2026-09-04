@@ -4477,19 +4477,41 @@ export function financeAdapter(input: {
 }): FinanceDeps {
   const journals = (tenantId: string) =>
     allOf<JournalEntry>(input.store, tenantId, STREAM.finance, 'JournalPosted');
-  const closed = async (tenantId: string): Promise<ReadonlySet<string>> => new Set(
-    (await allOf<{ readonly period: string }>(input.store, tenantId, STREAM.periods, 'PeriodClosed'))
-      .map((c) => c.period),
-  );
+  // Period lifecycle: close and reopen are both append-only facts. Each carries a transition `seq` so the
+  // LATEST per period wins regardless of fetch order — a reopened period is open again and re-closable
+  // (M23-FR-04). Legacy `PeriodClosed` events carry no seq and read as seq 0, so a period closed before
+  // reopen existed still folds to closed.
+  const lifecycle = async (tenantId: string) => {
+    const closes = (await allOf<{ readonly period: string; readonly seq?: number }>(input.store, tenantId, STREAM.periods, 'PeriodClosed'))
+      .map((e) => ({ period: e.period, seq: e.seq ?? 0, state: 'closed' as PeriodState }));
+    const reopens = (await allOf<{ readonly period: string; readonly seq?: number }>(input.store, tenantId, STREAM.periods, 'PeriodReopened'))
+      .map((e) => ({ period: e.period, seq: e.seq ?? 0, state: 'open' as PeriodState }));
+    return [...closes, ...reopens];
+  };
+  const latestByPeriod = async (tenantId: string): Promise<ReadonlyMap<string, PeriodState>> => {
+    const seqByPeriod = new Map<string, number>();
+    const stateByPeriod = new Map<string, PeriodState>();
+    for (const e of await lifecycle(tenantId)) {
+      const seen = seqByPeriod.get(e.period);
+      if (seen === undefined || e.seq > seen) { seqByPeriod.set(e.period, e.seq); stateByPeriod.set(e.period, e.state); }
+    }
+    return stateByPeriod;
+  };
+  const closed = async (tenantId: string): Promise<ReadonlySet<string>> =>
+    new Set([...(await latestByPeriod(tenantId))].filter(([, s]) => s === 'closed').map(([p]) => p));
+  const transitionsFor = async (tenantId: string, period: string): Promise<number> =>
+    (await lifecycle(tenantId)).filter((e) => e.period === period).length;
 
   return {
     now: input.now,
 
-    /** Open is the absence of a close, not a stored flag — so no period can be open and closed at once. */
+    /** State is the LATEST lifecycle fact per period (close/reopen), not a stored flag — so a period is
+     *  never open and closed at once, and a reopened one is open again. A period seen only in journals
+     *  (never closed) is open. */
     periodStates: async (tenantId) => {
-      const shut = await closed(tenantId);
-      const seen = new Set<string>([...shut, ...(await journals(tenantId)).map((j) => j.period)]);
-      return new Map([...seen].sort().map((p) => [p, shut.has(p) ? 'closed' : 'open'] as const)) as ReadonlyMap<string, PeriodState>;
+      const latest = await latestByPeriod(tenantId);
+      const seen = new Set<string>([...latest.keys(), ...(await journals(tenantId)).map((j) => j.period)]);
+      return new Map([...seen].sort().map((p) => [p, latest.get(p) ?? 'open'] as const)) as ReadonlyMap<string, PeriodState>;
     },
 
     /**
@@ -4542,13 +4564,27 @@ export function financeAdapter(input: {
     )].sort(),
 
     markClosed: async (tenantId, period, signedBy) => {
+      const seq = await transitionsFor(tenantId, period);
       await input.store.append(tenantId, STREAM.periods, makeEvent({
-        id: `close-${period}`,
+        id: `close-${period}-${seq}`,
         type: 'PeriodClosed',
         occurredAt: input.now(),
-        idempotencyKey: `close-${tenantId}-${period}`,
+        // Keyed by the transition number so a re-close AFTER a reopen is a new fact, not a collapsed one.
+        idempotencyKey: `close-${tenantId}-${period}-${seq}`,
         source: 'api/finance',
-        payload: { period, signedBy, closedAt: input.now() },
+        payload: { period, signedBy, closedAt: input.now(), seq },
+      }));
+    },
+
+    markReopened: async (tenantId, period, reopen) => {
+      const seq = await transitionsFor(tenantId, period);
+      await input.store.append(tenantId, STREAM.periods, makeEvent({
+        id: `reopen-${period}-${seq}`,
+        type: 'PeriodReopened',
+        occurredAt: input.now(),
+        idempotencyKey: `reopen-${tenantId}-${period}-${seq}`,
+        source: 'api/finance',
+        payload: { period, ...reopen, reopenedAt: input.now(), seq },
       }));
     },
   };

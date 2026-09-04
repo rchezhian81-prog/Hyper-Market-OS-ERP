@@ -13,10 +13,10 @@
 //     moves the conversation later — but marked **not signable**, with the reason on the page (P-08).
 //
 // Both are pure reads over supplied figures — they write nothing and change no period's state. Gated
-// `finance.period.read` (the accountant and owner, who answer for the books). Closing a period is the
-// existing `POST /v1/finance/periods/:period/close`; the §28-approved REOPEN of a signed period is the
-// higher-value follow-on (it needs the finance close-idempotency reworked so a reopened period can be
-// re-closed) and is deliberately not in this increment.
+// `finance.period.read` (the accountant and owner, who answer for the books). Closing a period is
+// `POST /v1/finance/periods/:period/close` and the §28-approved REOPEN of a signed period is
+// `POST /v1/finance/periods/:period/reopen` — both in `services/finance/src/index.ts`, where the
+// close-idempotency was reworked so a reopened period is re-closable.
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
