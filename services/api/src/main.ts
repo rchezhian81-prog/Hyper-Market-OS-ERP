@@ -157,6 +157,7 @@ import { notificationGuardRoutes } from '../../customer/src/notification-guard';
 import { notificationQueueRoutes } from '../../customer/src/notification-queue';
 import { NotificationQueue } from '../../../packages/notifications/src/index';
 import { backupVerificationRoutes } from '../../platform/src/backup-verification';
+import { drReadinessRoutes } from '../../platform/src/dr-readiness';
 import { branchLifecycleRoutes } from '../../platform/src/branch-lifecycle';
 import { documentsRoutes } from '../../platform/src/documents';
 import { suspendedBillsRoutes } from '../../pos/src/suspended-bills';
@@ -594,6 +595,8 @@ export function buildSurface(deps: {
     ...notificationGuardRoutes(),
     // Backup verification & restore reconciliation (M35-FR-01/02, P-04) — stateless recovery rulings.
     ...backupVerificationRoutes(),
+    // DR-drill scoring & backup-retention eligibility (M35-FR-02, QG-08, §32, hard rule #6) — stateless.
+    ...drReadinessRoutes(),
     // Branch open/close lifecycle (M01-FR-04) — governed transition decision; stateless ruling.
     ...branchLifecycleRoutes(),
     // Notification delivery queue (M31-FR-04) — the durable outbox behind the send-guard: enqueue, mark
