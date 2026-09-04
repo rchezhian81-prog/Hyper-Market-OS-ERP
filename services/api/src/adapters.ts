@@ -414,6 +414,12 @@ export function documentsAdapter(input: {
         payload: doc,
       }));
     },
+
+    /** EVERY published version for the tenant — the whole `TemplateVersionPublished` fold, for retention. */
+    allVersions: async (tenantId) => allOf<TemplateVersion>(input.store, tenantId, STREAM.documents, 'TemplateVersionPublished'),
+
+    /** EVERY issued document for the tenant — the whole `DocumentIssued` fold, for retention. */
+    allIssued: async (tenantId) => allOf<IssuedDocument>(input.store, tenantId, STREAM.documents, 'DocumentIssued'),
   };
 }
 

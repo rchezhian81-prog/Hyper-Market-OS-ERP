@@ -22,6 +22,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
   publishTemplateVersion, currentVersion, issueDocument, reproduceDocument,
+  assessTemplateRetention, planDocumentRetention,
   type TemplateVersion, type DocumentKind, type IssuedDocument,
 } from '../../../packages/documents/src/index';
 
@@ -53,6 +54,10 @@ export interface DocumentsDeps {
   readonly issued: (tenantId: string, documentId: string) => Promise<IssuedDocument | undefined> | IssuedDocument | undefined;
   /** Store an issued document with its FROZEN content, append-only. Idempotent on the document id. */
   readonly recordIssued: (tenantId: string, doc: IssuedDocument) => Promise<void> | void;
+  /** EVERY published version across all of a tenant's templates — for the retention assessment. */
+  readonly allVersions: (tenantId: string) => Promise<readonly TemplateVersion[]> | readonly TemplateVersion[];
+  /** EVERY issued document for a tenant — for the retention plan. */
+  readonly allIssued: (tenantId: string) => Promise<readonly IssuedDocument[]> | readonly IssuedDocument[];
   readonly now: () => string;
 }
 
@@ -176,6 +181,38 @@ export function documentsRoutes(deps: DocumentsDeps): readonly Route[] {
             issuedAt: doc.issuedAt, issuedBy: doc.issuedBy, detail: reproduced.detail,
           },
         };
+      },
+    },
+    {
+      // TEMPLATE-VERSION retention: which versions may EVER be disposed of. A version any issued document
+      // depends on can never go — it is the record of what that layout meant, the branding in force and who
+      // approved it, and an auditor asking "why does this invoice look like this?" is asking about the
+      // version, not the render (hard rule #6). A read; it disposes of nothing.
+      api: 'API-11', method: 'GET', path: '/v1/documents/retention/templates',
+      permission: 'document.template.read',
+      handler: async (ctx) => {
+        const decisions = assessTemplateRetention({
+          versions: await deps.allVersions(ctx.tenantId),
+          documents: await deps.allIssued(ctx.tenantId),
+        });
+        return { status: 200, body: { count: decisions.length, disposableCount: decisions.filter((d) => d.disposable).length, decisions } };
+      },
+    },
+    {
+      // ISSUED-DOCUMENT retention: which documents a person may be ASKED about disposing of. It PROPOSES,
+      // never deletes — a legal hold beats any retention date, a statutory record (tax invoice, credit note,
+      // goods receipt, statement) is never proposed at all, and a document with no retention date is kept
+      // because silence never means discard. The statutory set is the engine's policy, not a query override.
+      api: 'API-11', method: 'GET', path: '/v1/documents/retention/documents',
+      permission: 'document.template.read',
+      handler: async (ctx) => {
+        const today = ctx.query['today'];
+        if (today !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(today)) {
+          throw apiError(400, { code: 'retention_date_invalid', whatHappened: '?today=, if given, must be a YYYY-MM-DD date.', wasItSaved: 'not_saved', nextSafeAction: 'Send a valid date or omit it for today.' });
+        }
+        const on = today ?? deps.now().slice(0, 10);
+        const plan = planDocumentRetention({ documents: await deps.allIssued(ctx.tenantId), today: on });
+        return { status: 200, body: { today: on, count: plan.length, proposedForDisposalCount: plan.filter((p) => p.action === 'propose_disposal').length, plan } };
       },
     },
   ];

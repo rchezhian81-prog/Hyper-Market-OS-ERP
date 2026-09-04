@@ -607,7 +607,8 @@ export function buildSurface(deps: {
       : notificationQueueAdapter({ store, now })),
     // Versioned document templates (M31-FR-01/M36-FR-02) — append-only publish; a change is a new version.
     ...documentsRoutes(store === undefined ? {
-      versions: empty([]), recordPublish: () => {}, issued: empty(undefined), recordIssued: () => {}, now,
+      versions: empty([]), recordPublish: () => {}, issued: empty(undefined), recordIssued: () => {},
+      allVersions: empty([]), allIssued: empty([]), now,
     } : documentsAdapter({ store, now })),
     // Suspended (parked) bills (M15-FR-01/M12-FR-02) — park/resume/abandon; a recall is a claim, once.
     ...suspendedBillsRoutes(store === undefined ? {

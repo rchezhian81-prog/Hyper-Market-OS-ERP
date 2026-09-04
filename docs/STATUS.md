@@ -5,6 +5,60 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M31 document retention & archival — what may be disposed of, and what never may (4 September 2026)
+
+**Owner direction:** "make your decision for me." After merging #332 I took the survey's cleanest remaining pick —
+the **M31 document retention/archival** read surface, the "archival remains" follow-on named on the M31 ladder.
+Two tested functions in `packages/documents/src/templates.ts` had no cloud route.
+
+**The gap, precisely:** the documents module could publish versioned templates, issue frozen documents and
+reproduce them, but nothing could answer the two questions retention actually poses — **which template versions
+may ever be disposed of** (`assessTemplateRetention`) and **which issued documents a person may be asked about
+disposing of** (`planDocumentRetention`). Both were built and tested, and unreachable.
+
+**What was built (one increment, `services/platform/src/documents.ts` + two adapter read-folds):**
+- `GET /v1/documents/retention/templates` — `assessTemplateRetention` over the whole corpus. A version **any
+  issued document depends on can never go** — it is the record of what that layout meant, the branding in force
+  and who approved it; an auditor asking "why does this invoice look like this?" is asking about the version, not
+  the render (**hard rule #6**). Only a version nothing was ever issued under is disposable.
+- `GET /v1/documents/retention/documents?today=` — `planDocumentRetention` over the issued corpus. It **proposes,
+  never deletes**: a **legal hold beats any retention date**, a **statutory record** (tax invoice, credit note,
+  goods receipt, statement) is **never proposed** whatever the date says, a document with **no retention date is
+  kept** because silence never means discard, and only a document genuinely past its retention date is proposed —
+  for a person to decide. The statutory set is the engine's policy, not a query override, so a caller can't make a
+  tax invoice disposable by accident.
+- **Reads over the stored corpus, not supplied facts:** the adapter already loaded the tenant-wide
+  `TemplateVersionPublished` / `DocumentIssued` folds internally, so this added two thin `allVersions` / `allIssued`
+  reads — no new event type, no roles change; reused `document.template.read` (owner + store-manager).
+- Test: `tests/integration/documents-retention.test.ts` (3 — an unused version disposable while the one a
+  document depends on is kept; a retention plan where a legal hold, a statutory tax invoice, a no-date document and
+  a still-in-window document are all **kept** and only the genuinely-expired one is **proposed**; and the bad-date
+  400 + cashier-403 gate).
+
+**No re-rate.** M31 stays **PARTIALLY_WIRED** — the retention/archival **assessment** is now on the cloud, but the
+actual **disposal/archival EXECUTION workflow** (a person acting on a proposal, append-only) and **batch document
+re-issue** remain, and the notification channel transport is still a deployment step. **Headline stays 41.5%.**
+Module-ladder guardrail re-checked: label ↔ rung ↔ summary counts unchanged and sum to 36.
+
+**Gate green:** typecheck (again after the test file), lint, secret-scan, the full vitest suite, and the
+contract / §28-confinement / module-ladder / ladder-evidence guardrails.
+
+**Path to WIRED for M31:** the disposal/archival execution workflow (act on a proposal, append-only, §28), then
+batch re-issue, then the notification channel transport.
+
+**For the owner — in plain words:** the shop generates documents that must be kept for years — tax invoices, credit
+notes, receipts. This change adds two safe read-only reports. The first says **which old invoice layouts can be
+tidied away** — and it will *never* let you remove a layout that a real invoice was printed from, because years
+later an inspector may ask why that invoice looked the way it did. The second says **which documents are old
+enough that someone could consider clearing them** — but it only ever *suggests*; it deletes nothing, it always
+protects tax records and anything under a legal hold, and if a document has no "keep until" date it's kept to be
+safe. Nothing on the shop floor changes, and the honesty figure stays at **41.5%**.
+
+**What to check in the store:** nothing on the shop floor — this is behind the document system. When you're ready,
+tell me to **merge #333**.
+
+---
+
 ## M34 compliance obligation lifecycle — closing a licence off the list, and the evidence gap (4 September 2026)
 
 **Owner direction:** "make your decision for me." After merging #331 I took the next clean pick from the standing
