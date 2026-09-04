@@ -68,6 +68,7 @@ import type { Transfer } from '../../../packages/warehouse/src/transfers';
 import type { CountsDeps, StoredReconciliation } from '../../inventory/src/counts';
 import type { WriteOffDeps, StoredWriteOff } from '../../inventory/src/write-off';
 import type { ProductionDeps, StoredRun, StoredRelease } from '../../inventory/src/production';
+import type { WeighedCostingDeps, StoredWeighedRun } from '../../inventory/src/weighed-costing';
 import type { Recipe } from '../../../packages/production/src/recipe';
 import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord, StatementLine, PartnerAuditEntry } from '../../purchase/src/supplier-portal';
 import type { ConcessionDeps, ConcessionContract, ConcessionSale, DepositMovement } from '../../finance/src/concession';
@@ -3287,6 +3288,40 @@ export function productionAdapter(input: {
         idempotencyKey: `prod-dept-${tenantId}-${departmentId}`,
         source: 'api/inventory',
         payload: { departmentId },
+      }));
+    },
+  };
+}
+
+/**
+ * Weighed-department costing (M11-FR-02). Costed weighed runs live on the SAME append-only production
+ * stream as recipe runs, under their own `WeighedRunCosted` type; the board and the idempotency check
+ * fold them by id (latest wins, though a run is only costed once). Nothing here moves stock.
+ */
+export function weighedCostingAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): WeighedCostingDeps {
+  const productionStream = streamName(STREAM.inventory, 'production');
+  const fold = async (tenantId: string): Promise<readonly StoredWeighedRun[]> => {
+    const all = await allOf<StoredWeighedRun>(input.store, tenantId, productionStream, 'WeighedRunCosted');
+    const byId = new Map<string, StoredWeighedRun>();
+    for (const r of all) byId.set(r.runId, r); // last write wins (a run is costed once)
+    return [...byId.values()];
+  };
+  return {
+    now: input.now,
+    weighedRuns: (tenantId) => fold(tenantId),
+    weighedRun: async (tenantId, runId) => (await fold(tenantId)).find((r) => r.runId === runId),
+    recordWeighedRun: async (tenantId, run) => {
+      await input.store.append(tenantId, productionStream, makeEvent({
+        id: `weighed-run-${run.runId}`,
+        type: 'WeighedRunCosted',
+        occurredAt: run.at,
+        // A weighed run is costed once — the same run id collapses rather than doubling.
+        idempotencyKey: `weighed-run-${tenantId}-${run.runId}`,
+        source: 'api/inventory',
+        payload: run,
       }));
     },
   };

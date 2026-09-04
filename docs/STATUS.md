@@ -5,6 +5,57 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M11 weighed-department costing — the fresh counter that quietly loses money (4 September 2026)
+
+**Owner direction:** "make your decision for me." The easy "wire a ready-made engine" seam had thinned, so I ran
+a **fresh, thorough survey** (favouring store-operations over back-office plumbing, flagging anything premature
+or owner-decision-gated). It confirmed the previously-obvious next pick, **M36 plan metering**, is gated on a
+pending owner decision (paid plans, OA-12 — nothing defines plans or produces usage), and named this as the
+cleanest, highest store-value pick instead.
+
+**The gap, precisely:** M11 was already WIRED, but its costing covered **recipe/BOM production** only. A butcher,
+fish counter or deli doesn't work from a recipe — it takes in 12 kg of whole fish, bins the bone and trim, and
+puts out 8 kg of fillet. The tested `costCatchWeight` engine (`packages/production/src/catch-weight.ts`) costs
+exactly that shape and measures yield against the department's standard — and it had **no cloud route**. The
+recipe route can't express it (it needs a defined BOM and puts output into quarantine). Confirmed it's a distinct
+surface, not a duplicate.
+
+**What was built (one increment, `services/inventory/src/weighed-costing.ts` + adapter, no new permission):**
+- `POST /v1/production/weighed-runs/:id` — cost a weigh-in→weigh-out run. The **whole input cost is carried onto
+  the sellable survivors**, so cost-per-kg-of-output rises with trim loss (a 30% loss turns ₹300/kg fish into
+  ₹428/kg fillet — the real cost the shelf price must cover). A yield below the department's standard is a
+  **valued exception** with the money attached, and more weight out than in is flagged as a mis-weigh (P-03
+  control by exception). Persisted append-only; idempotent on the run id.
+- `GET /v1/production/weighed-runs` — the board, **worst-first**: a counter quietly running at a loss sits at the
+  top, not buried. Filters by department; `?onlyExceptions=true` shows just the flagged.
+- `POST /v1/production/price-by-weight` — price a weighed pack exactly to the paisa (a scale/POS helper).
+- Reused the existing `production.plan.commit` (costing) / `production.read` (board + pricing) permissions — **no
+  roles change**; costed runs live on the same production event stream under their own `WeighedRunCosted` type.
+  Nothing here moves stock or sets a price.
+- Test: `tests/integration/weighed-costing.test.ts` (4 — the fish-counter low-yield cut with cost-per-kg-of-output
+  and the valued exception, kept across a restart and idempotent; a gained-weight mis-weigh; the worst-first board
+  with department filter and only-exceptions; and price-by-weight + validation 400s + cashier-403 gate).
+
+**No re-rate.** M11 was already **WIRED**; this **deepens FR-02** (adds the weighed-department shape its costing
+was missing) without crossing a threshold, so M11 stays WIRED and the **headline holds at 41.5%.** Module-ladder
+guardrail re-checked: label ↔ rung ↔ summary counts unchanged and sum to 36.
+
+**Gate green:** typecheck (again after the test file), lint, secret-scan, the full vitest suite, and the
+contract / §28-confinement / module-ladder / ladder-evidence guardrails.
+
+**For the owner — in plain words:** the counters where staff cut and weigh — fish, meat, deli — are where money
+leaks invisibly. If you buy a whole fish and only 70% of it becomes sellable fillet, that fillet has to cover the
+cost of the 30% you threw away, or you're selling it too cheap without knowing. This change lets the shop record
+"this much went in, this much came out" and it works out **what the cut actually cost per kilo** and **whether the
+yield was below what that counter should give** — putting the worst offenders at the top of a list so they get
+noticed in a week, not a year. It changes nothing at the till and touches no prices by itself. The honesty figure
+stays at **41.5%.**
+
+**What to check in the store:** nothing on the shop floor yet — this is the calculation behind the counter, not a
+new screen for staff. When you're ready, tell me to **merge #334**.
+
+---
+
 ## M31 document retention & archival — what may be disposed of, and what never may (4 September 2026)
 
 **Owner direction:** "make your decision for me." After merging #332 I took the survey's cleanest remaining pick —
