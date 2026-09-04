@@ -5,6 +5,64 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M05 pricing governance — closing the side door a below-cost price could slip through (4 September 2026)
+
+**Owner direction:** the owner picked "Pricing governance" from a menu. Reading the code closely, I found the
+governance they wanted was **already built and live** on the main price-change path (`POST /v1/prices/changes`):
+above-MRP refused, below-cost/below-floor blocked unless a separate approver who genuinely holds
+`price.change.approve` signs off (§28). I told the owner this rather than rebuild it. But I flagged a possible
+**bypass** and ran a rigorous end-to-end trace — which confirmed a **real gap**.
+
+**The gap, precisely (trace verdict, with file:line evidence):** there are two price-setting doors. The main one
+is fully governed. The *other* — the scoped, effective-dated price list (`POST /v1/prices/list/:id/entries/:id`,
+used for per-customer/channel/zone prices) — checked **only MRP + back-dating**, never cost or the margin floor.
+A `PriceEntry` it writes is exactly what `resolvePrice` reads to price a real sale, and **nothing downstream
+re-applies the below-cost/floor/§28 check** — in fact cost isn't even carried into the catalogue pack, so it's
+*uncheckable* later. Net: **a staff member with price-entry permission could push a below-cost price through that
+path and it would price live till sales with no second-person approval** — failing the M05-FR-02 acceptance
+("a below-margin-floor price is blocked pending approval"). The correct governed engine existed but was wired
+only into the desktop ERP screen, which a direct API call bypasses. I put the finding + the fix to the owner and
+they approved closing it.
+
+**What was built (one increment, `services/pricing/src/price-list.ts` + the price-list adapter, no new permission):**
+- The price-list write boundary now runs the **same tested `checkPrice` gate** the governed change uses — pure
+  and deterministic, so the identical check also holds on the offline edge (M05-FR-02's offline rule). Above MRP
+  is refused outright; **below cost / below the margin floor is refused unless a separate approver who genuinely
+  holds `price.change.approve` (verified against the tenant's grants, not just named) signs it off with a reason,
+  and the setter can never self-approve** (§28). Back-dating stays refused. The route now requires the item's
+  cost and the margin floor (they're the only place cost and price coexist server-side).
+- Reused the existing permissions — `price.change.propose` to set, `price.change.approve` to approve — **no roles
+  change**; added `canApprove` to the price-list adapter, mirroring the governed change's own check.
+- Test: added a §28 case to `tests/integration/price-list-effective-dating.test.ts` (below-cost refused and
+  **recorded nothing**; below-floor refused; self-approval refused; a named approver who lacks approval authority
+  refused; a valid separate approver lets a genuine loss leader through, recorded with their name; a
+  healthy-margin price needs no approval). Updated the two catalogue-pack tests that publish prices to supply
+  cost/floor (they exercise pack building, not the gate).
+
+**No re-rate.** M05 was already **WIRED**; this **closes a real bypass** so the WIRED claim now holds end-to-end
+(its own ladder row had honestly recorded the split — the list did MRP+back-dating, the margin/§28 lived only with
+the governed change). No maturity threshold moves. **Headline stays 41.5%.** Module-ladder guardrail re-checked:
+label ↔ rung ↔ summary counts unchanged and sum to 36.
+
+**Gate green:** typecheck (twice), lint, secret-scan, the full vitest suite, and the contract / §28-confinement /
+module-ladder / ladder-evidence / pricing-screen-cannot-break-the-law guardrails.
+
+**For the owner — in plain words:** you asked for the below-cost/margin protection, and the good news was it was
+already built on the main price path — so I didn't rebuild it. But I found a **side door**: the "scoped price
+list" (used to give different prices to different customers or channels) only checked the legal MRP ceiling, not
+whether the price was below cost. So someone with permission to enter prices could, in theory, put in a
+loss-making price there and it would reach the till **without a second person's sign-off** — the exact protection
+you wanted, quietly skipped. I've now put the **same lock on that side door**: a below-cost or thin-margin price
+entered any way now needs a second, authorised person to approve it with a reason, and the person entering it can
+never approve their own. Normal, healthy prices are completely unaffected, and nothing changes at the till except
+that a below-cost price can no longer slip through unapproved. The honesty figure stays at **41.5%.**
+
+**What to check in the store:** nothing on the shop floor — this is a control behind price entry. If your staff use
+the scoped/customer-specific price list, note that entering a below-cost price there will now (correctly) ask for a
+second person's approval. When you're ready, tell me to **merge #336**.
+
+---
+
 ## M23 period reopen — changing a signed month, with a name on the decision (4 September 2026)
 
 **Owner direction:** the owner chose **"Finance month-close & reopen"** from a menu I put up after finding the

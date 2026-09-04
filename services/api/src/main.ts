@@ -301,7 +301,7 @@ export function buildSurface(deps: {
       ? { recordPriceChange: () => {}, canApprove: () => Promise.resolve(false), now }
       : pricingAdapter({ store, now })),
     ...priceListRoutes(store === undefined
-      ? { entries: empty([]), recordEntry: () => {}, now }
+      ? { entries: empty([]), recordEntry: () => {}, canApprove: () => Promise.resolve(false), now }
       : priceListAdapter({ store, now })),
     ...promotionRoutes(store === undefined
       ? { launchedPromotion: empty(undefined), recordLaunch: () => {}, now }
