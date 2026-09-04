@@ -19,7 +19,8 @@ const publishProduct = (h: ApiHarness, productId: string, product: unknown) =>
 const setTaxRate = (h: ApiHarness, hsn: string, rateBps: number) =>
   h.request({ method: 'POST', path: `/v1/catalogue/tax-classes/${hsn}/rates/2017-07-01`, userId: 'u-owner', tenantId: A, idempotencyKey: `k-tax-${hsn}`, body: { rateBps } });
 const setPrice = (h: ApiHarness, productId: string, priceMinor: number, mrpMinor: number) =>
-  h.request({ method: 'POST', path: `/v1/prices/list/${productId}/entries/e1`, userId: 'u-owner', tenantId: A, idempotencyKey: `k-price-${productId}`, body: { scope: 'store', scopeRef: STORE, priceMinor, mrpMinor, currency: 'INR', effectiveFrom: FUTURE_FROM } });
+  // costMinor/marginFloorBps satisfy the price gate trivially — these tests exercise pack building, not the gate.
+  h.request({ method: 'POST', path: `/v1/prices/list/${productId}/entries/e1`, userId: 'u-owner', tenantId: A, idempotencyKey: `k-price-${productId}`, body: { scope: 'store', scopeRef: STORE, priceMinor, mrpMinor, costMinor: 1, marginFloorBps: 0, currency: 'INR', effectiveFrom: FUTURE_FROM } });
 const assignBarcode = (h: ApiHarness, productId: string, code: string) =>
   h.request({ method: 'POST', path: `/v1/catalogue/products/${productId}/barcodes/${code}`, userId: 'u-owner', tenantId: A, idempotencyKey: `k-bc-${productId}`, body: { kind: 'ean' } });
 const publishPack = (h: ApiHarness, u: string, body: unknown, key: string) =>

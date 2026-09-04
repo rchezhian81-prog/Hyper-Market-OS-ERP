@@ -34,8 +34,8 @@ describe('price list: effective-dated, scoped, one price truth by precedence (M0
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
 
-    expect((await publish(h, A, 'u-owner', 'P1', 'e-store', { scope: 'store', scopeRef: 'store-1', priceMinor: 10_000, mrpMinor: 20_000, currency: 'INR', effectiveFrom: iso(0) })).status).toBe(201);
-    expect((await publish(h, A, 'u-owner', 'P1', 'e-cust', { scope: 'customer', scopeRef: 'CUST1', priceMinor: 9_000, mrpMinor: 20_000, currency: 'INR', effectiveFrom: iso(0) })).status).toBe(201);
+    expect((await publish(h, A, 'u-owner', 'P1', 'e-store', { scope: 'store', scopeRef: 'store-1', priceMinor: 10_000, costMinor: 5_000, marginFloorBps: 2_000, mrpMinor: 20_000, currency: 'INR', effectiveFrom: iso(0) })).status).toBe(201);
+    expect((await publish(h, A, 'u-owner', 'P1', 'e-cust', { scope: 'customer', scopeRef: 'CUST1', priceMinor: 9_000, costMinor: 5_000, marginFloorBps: 2_000, mrpMinor: 20_000, currency: 'INR', effectiveFrom: iso(0) })).status).toBe(201);
 
     // No customer in context → the store base applies.
     const base = (await resolve(h, A, 'u-owner', 'P1', { at: iso(1), storeId: 'store-1' })).body as Resolved;
@@ -54,8 +54,8 @@ describe('price list: effective-dated, scoped, one price truth by precedence (M0
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
 
-    await publish(h, A, 'u-owner', 'P1', 'e-now', { scope: 'store', scopeRef: 'store-1', priceMinor: 10_000, mrpMinor: 20_000, currency: 'INR', effectiveFrom: iso(0) });
-    await publish(h, A, 'u-owner', 'P1', 'e-future', { scope: 'store', scopeRef: 'store-1', priceMinor: 8_000, mrpMinor: 20_000, currency: 'INR', effectiveFrom: iso(30) });
+    await publish(h, A, 'u-owner', 'P1', 'e-now', { scope: 'store', scopeRef: 'store-1', priceMinor: 10_000, costMinor: 5_000, marginFloorBps: 2_000, mrpMinor: 20_000, currency: 'INR', effectiveFrom: iso(0) });
+    await publish(h, A, 'u-owner', 'P1', 'e-future', { scope: 'store', scopeRef: 'store-1', priceMinor: 8_000, costMinor: 5_000, marginFloorBps: 2_000, mrpMinor: 20_000, currency: 'INR', effectiveFrom: iso(30) });
 
     // Before the future date, today's price still applies.
     expect(((await resolve(h, A, 'u-owner', 'P1', { at: iso(1), storeId: 'store-1' })).body as Resolved).priceMinor).toBe(10_000);
@@ -67,8 +67,8 @@ describe('price list: effective-dated, scoped, one price truth by precedence (M0
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
 
-    expect(codeOf(await publish(h, A, 'u-owner', 'P1', 'e-mrp', { scope: 'store', scopeRef: 'store-1', priceMinor: 25_000, mrpMinor: 20_000, currency: 'INR', effectiveFrom: iso(0) }))).toBe('price_above_mrp');
-    expect(codeOf(await publish(h, A, 'u-owner', 'P1', 'e-back', { scope: 'store', scopeRef: 'store-1', priceMinor: 10_000, mrpMinor: 20_000, currency: 'INR', effectiveFrom: iso(-5) }))).toBe('price_back_dated');
+    expect(codeOf(await publish(h, A, 'u-owner', 'P1', 'e-mrp', { scope: 'store', scopeRef: 'store-1', priceMinor: 25_000, costMinor: 5_000, marginFloorBps: 2_000, mrpMinor: 20_000, currency: 'INR', effectiveFrom: iso(0) }))).toBe('price_above_mrp');
+    expect(codeOf(await publish(h, A, 'u-owner', 'P1', 'e-back', { scope: 'store', scopeRef: 'store-1', priceMinor: 10_000, costMinor: 5_000, marginFloorBps: 2_000, mrpMinor: 20_000, currency: 'INR', effectiveFrom: iso(-5) }))).toBe('price_back_dated');
 
     // Neither refusal recorded anything — there is no price list for the product.
     expect((await history(h, A, 'u-owner', 'P1')).status).toBe(404);
@@ -78,8 +78,8 @@ describe('price list: effective-dated, scoped, one price truth by precedence (M0
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
 
-    await publish(h, A, 'u-owner', 'P1', 'e1', { scope: 'store', scopeRef: 'store-1', priceMinor: 10_000, mrpMinor: 20_000, currency: 'INR', effectiveFrom: iso(0) });
-    const second = await publish(h, A, 'u-owner', 'P1', 'e2', { scope: 'store', scopeRef: 'store-1', priceMinor: 9_500, mrpMinor: 20_000, currency: 'INR', effectiveFrom: iso(10) });
+    await publish(h, A, 'u-owner', 'P1', 'e1', { scope: 'store', scopeRef: 'store-1', priceMinor: 10_000, costMinor: 5_000, marginFloorBps: 2_000, mrpMinor: 20_000, currency: 'INR', effectiveFrom: iso(0) });
+    const second = await publish(h, A, 'u-owner', 'P1', 'e2', { scope: 'store', scopeRef: 'store-1', priceMinor: 9_500, costMinor: 5_000, marginFloorBps: 2_000, mrpMinor: 20_000, currency: 'INR', effectiveFrom: iso(10) });
     expect((second.body as { version: number }).version).toBe(2);   // monotonic per (scope, ref)
 
     const h1 = await history(h, A, 'u-owner', 'P1');
@@ -95,8 +95,8 @@ describe('price list: effective-dated, scoped, one price truth by precedence (M0
     await h.provisionRole(A, 'u-acct', 'accountant');     // neither (no catalogue.pack.read, no price.change.propose)
 
     // A manager may publish; a cashier and an accountant may not.
-    expect((await publish(h, A, 'u-mgr', 'P1', 'e1', { scope: 'store', scopeRef: 'store-1', priceMinor: 10_000, mrpMinor: 20_000, currency: 'INR', effectiveFrom: iso(0) })).status).toBe(201);
-    expect((await publish(h, A, 'u-cash', 'P1', 'e2', { scope: 'store', scopeRef: 'store-1', priceMinor: 10_000, mrpMinor: 20_000, currency: 'INR', effectiveFrom: iso(0) })).status).toBe(403);
+    expect((await publish(h, A, 'u-mgr', 'P1', 'e1', { scope: 'store', scopeRef: 'store-1', priceMinor: 10_000, costMinor: 5_000, marginFloorBps: 2_000, mrpMinor: 20_000, currency: 'INR', effectiveFrom: iso(0) })).status).toBe(201);
+    expect((await publish(h, A, 'u-cash', 'P1', 'e2', { scope: 'store', scopeRef: 'store-1', priceMinor: 10_000, costMinor: 5_000, marginFloorBps: 2_000, mrpMinor: 20_000, currency: 'INR', effectiveFrom: iso(0) })).status).toBe(403);
 
     // A cashier may resolve a price (the till reads prices); an accountant may not.
     expect((await resolve(h, A, 'u-cash', 'P1', { at: iso(1), storeId: 'store-1' })).status).toBe(200);
@@ -109,5 +109,38 @@ describe('price list: effective-dated, scoped, one price truth by precedence (M0
     // Another tenant sees nothing of A's price list.
     await h.seedOwner(B, 'u-owner-b');
     expect((await resolve(h, B, 'u-owner-b', 'P1', { at: iso(1), storeId: 'store-1' })).status).toBe(404);
+  });
+
+  it('refuses a below-cost or below-margin price on the scoped list unless a separate approver signs it off (§28, M05-FR-02)', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');                     // owner: holds price.change.approve
+    await h.provisionRole(A, 'u-mgr', 'store_manager');  // sets prices (propose), does NOT hold approve
+    await h.provisionRole(A, 'u-cash', 'cashier');       // neither
+
+    const setBy = (entryId: string, body: Record<string, unknown>) =>
+      h.request({ method: 'POST', path: `/v1/prices/list/PX/entries/${entryId}`, userId: 'u-mgr', tenantId: A, idempotencyKey: `pe-${entryId}`, body });
+    const base = { scope: 'store', scopeRef: 'store-1', mrpMinor: 20_000, costMinor: 5_000, marginFloorBps: 2_000, currency: 'INR', effectiveFrom: iso(0) };
+
+    // Below cost, no approval → refused, and nothing is recorded (the gap this closes).
+    expect(codeOf(await setBy('e-loss', { ...base, priceMinor: 4_000 }))).toBe('price_below_cost');
+    expect((await history(h, A, 'u-owner', 'PX')).status).toBe(404); // the refused price reached no list, no till
+
+    // Above cost but below the 20% margin floor, no approval → refused.
+    expect(codeOf(await setBy('e-thin', { ...base, priceMinor: 5_100 }))).toBe('price_below_floor');
+
+    // §28: a self-approval does not count, and an approver who cannot approve prices does not count.
+    expect(codeOf(await setBy('e-self', { ...base, priceMinor: 4_000, approval: { decidedBy: 'u-mgr', reason: 'x' } }))).toBe('approved_by_the_setter');
+    expect(codeOf(await setBy('e-nope', { ...base, priceMinor: 4_000, approval: { decidedBy: 'u-cash', reason: 'x' } }))).toBe('approver_may_not_approve_prices');
+
+    // A valid separate approver (the owner holds price.change.approve and is not the setter) lets a genuine
+    // loss leader through — recorded WITH the approver's name.
+    const ok = await setBy('e-ok', { ...base, priceMinor: 4_000, approval: { decidedBy: 'u-owner', reason: 'Diwali loss leader' } });
+    expect(ok.status).toBe(201);
+    expect(ok.body).toMatchObject({ approvedBy: 'u-owner' });
+
+    // A healthy-margin price needs no approval at all.
+    const healthy = await setBy('e-fine', { ...base, priceMinor: 8_000 });
+    expect(healthy.status).toBe(201);
+    expect(healthy.body).toMatchObject({ approvedBy: null });
   });
 });

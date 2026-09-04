@@ -5350,6 +5350,14 @@ export function priceListAdapter(input: {
   return {
     now: input.now,
 
+    // The §28 approver of a below-cost/floor price-list entry must genuinely hold price.change.approve —
+    // the same authoritative grant source the kernel authorizes against, identical to the governed change.
+    canApprove: async (tenantId, userId) => {
+      const grants = await allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+      const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
+      return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('price.change.approve'));
+    },
+
     entries: (tenantId, productId) =>
       allOf<PriceEntry>(input.store, tenantId, forPriceList(productId), 'PriceListEntryPublished'),
 
