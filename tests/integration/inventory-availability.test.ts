@@ -4,8 +4,9 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 // Inventory availability, end to end through the real API (M08, API-04). Movements are appended and
 // on-hand is PROJECTED from them (hard rule #2): the same movements in any order give the same
 // figure; a state that has gone negative is REPORTED as an exception, never blocked (P-08 / hard
-// rule #10); a write-off (`wasted`/`adjusted`) needs a reason and a SECOND person (§28). This proves
-// the wired `services/inventory` implementation against the real pipeline and real per-tenant RBAC.
+// rule #10); a stock LOSS (`wasted`) is refused on this route and directed to the governed write-off
+// route (where value, evidence and a verified §28 approver are enforced). This proves the wired
+// `services/inventory` implementation against the real pipeline and real per-tenant RBAC.
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -47,16 +48,16 @@ describe('inventory availability is projected from appended movements (M08, API-
     expect(neg.find((n) => n.productId === 'P2')).toMatchObject({ onHandMinor: -20 });
   });
 
-  it('needs a reason and a SECOND person for a write-off (§28)', async () => {
+  it('refuses a stock write-off on the movements route — losses go through the governed write-off route', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
 
-    // No reason → refused.
-    expect((await move(h, A, 'u-owner', { movementId: 'w1', productId: 'P3', kind: 'wasted', quantityMinor: 5, ...base })).status).toBe(422);
-    // Self-approved → refused.
-    expect((await move(h, A, 'u-owner', { movementId: 'w2', productId: 'P3', kind: 'wasted', quantityMinor: 5, reason: 'damaged in transit', approvedBy: 'u-owner', ...base })).status).toBe(422);
-    // Reason + a different approver → recorded.
-    expect((await move(h, A, 'u-owner', { movementId: 'w3', productId: 'P3', kind: 'wasted', quantityMinor: 5, reason: 'damaged in transit', approvedBy: 'u-manager', ...base })).status).toBe(202);
+    // A loss makes stock disappear: it is not a plain movement, and the ungoverned door is closed. Even a
+    // well-formed 'wasted' movement (a reason + a different approver) is refused and directed to the write-off
+    // route, which captures the value, evidence for a material loss, and a §28 approver who holds the authority.
+    const res = await move(h, A, 'u-owner', { movementId: 'w3', productId: 'P3', kind: 'wasted', quantityMinor: 5, reason: 'damaged in transit', approvedBy: 'u-manager', ...base });
+    expect(res.status).toBe(422);
+    expect((res.body as { error?: { code?: string } }).error?.code).toBe('write_off_uses_the_write_off_route');
   });
 
   it('is per-tenant and authorized: another tenant is unaffected, and a cashier cannot append (403)', async () => {

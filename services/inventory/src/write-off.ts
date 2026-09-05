@@ -11,6 +11,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
   commitWriteOff, MissingReasonError, InvalidWriteOffError, MissingEvidenceError,
+  DEFAULT_WRITE_OFF_THRESHOLD_MINOR, readWriteOffThreshold,
   type LossType, type WrittenOff,
 } from '../../../packages/waste/src/waste';
 import { ApprovalRequiredError } from '../../../packages/adjustment/src/adjustment';
@@ -48,7 +49,17 @@ export interface WriteOffDeps {
   readonly writeOffExists: (tenantId: string, id: string) => Promise<boolean> | boolean;
   /** The committed write-offs (for the review surface / a location query). */
   readonly writeOffs: (tenantId: string) => Promise<readonly StoredWriteOff[]> | readonly StoredWriteOff[];
+  /** Record the committed write-off AND its compensating stock movement (one truth — a loss reduces
+   *  on-hand, not just the finance record). Append-only, idempotent on the write-off id. */
   readonly recordWriteOff: (tenantId: string, rec: StoredWriteOff) => Promise<void> | void;
+  /** The tenant's material-loss threshold (M28-FR-01) — `undefined` means none set, so the default
+   *  applies. Sourced SERVER-SIDE: the caller can no longer declare their own threshold in the body. */
+  readonly writeOffThreshold: (tenantId: string) => Promise<number | undefined> | number | undefined;
+  /** Set the tenant's material-loss threshold — append-only config (latest wins), owner-only. */
+  readonly recordWriteOffThreshold: (tenantId: string, thresholdMinor: number, key: string) => Promise<void> | void;
+  /** Whether a user holds Manager/Owner authority to approve a material write-off (§28). A named
+   *  approver who does not hold it does not count — the same check as the other §28 approvals. */
+  readonly canApproveWriteOff: (tenantId: string, userId: string) => Promise<boolean> | boolean;
   readonly now: () => string;
 }
 
@@ -64,13 +75,13 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         if (!isStr(b['productId']) || !isStr(b['locationId']) || !isPosInt(b['qty']) || !isStr(b['uom'])
           || !LOSS_TYPES.includes(b['lossType'] as LossType) || !isStr(b['reasonCode'])
-          || !isNonNegInt(b['valueMinor']) || !isNonNegInt(b['thresholdMinor'])
+          || !isNonNegInt(b['valueMinor'])
           || (b['currency'] !== undefined && !isCurrencyCode(b['currency'] as string))
           || (b['evidenceRef'] !== undefined && !isStr(b['evidenceRef']))
           || (b['approvedBy'] !== undefined && !isStr(b['approvedBy']))) {
           throw apiError(400, {
             code: 'not_readable_as_a_write_off',
-            whatHappened: 'A write-off needs a productId, locationId, whole qty > 0, uom, a lossType (wastage/damage/expiry/donation/destruction), a reasonCode, a whole valueMinor and thresholdMinor.',
+            whatHappened: 'A write-off needs a productId, locationId, whole qty > 0, uom, a lossType (wastage/damage/expiry/donation/destruction), a reasonCode and a whole valueMinor. The material-loss threshold is the tenant\'s policy, not sent by the caller.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send the write-off fields. Nothing was recorded.',
           });
@@ -86,13 +97,17 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
 
         const currency = (b['currency'] as CurrencyCode) ?? 'INR';
         const at = deps.now();
+        // The material-loss threshold is the tenant's policy (or the default), NEVER the body — otherwise a
+        // caller could claim any loss "immaterial" and skip the evidence and the second signature.
+        const thresholdMinor = (await deps.writeOffThreshold(ctx.tenantId)) ?? DEFAULT_WRITE_OFF_THRESHOLD_MINOR;
         const approval: DecidedRequest | undefined = isStr(b['approvedBy'])
           ? { id: writeOffId, subjectType: 'stock_adjustment', subjectRef: writeOffId, requestedBy: ctx.userId, branchId: ctx.branchId, value: null, status: 'approved', decidedBy: b['approvedBy'] as string, reason: b['reasonCode'] as string, decidedAt: at }
           : undefined;
 
         // The engine runs over an ephemeral ledger + outbox: it validates the reason, the positive quantity,
         // the evidence for a material loss and the separate approver (§28), and produces the compensating
-        // movement. We persist the committed write-off on its own append-only stream.
+        // movement. We persist the committed write-off on its own append-only stream AND the compensating
+        // stock movement (via recordWriteOff), so the loss reduces on-hand — one truth (P-02).
         const ledger = new Ledger(new InMemoryLedgerStore());
         const outbox = new SyncOutbox();
         let result: WrittenOff;
@@ -101,7 +116,7 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
             id: writeOffId, productId: b['productId'] as string, locationId: b['locationId'] as string,
             qty: b['qty'] as number, uom: b['uom'] as string, lossType: b['lossType'] as LossType,
             reasonCode: b['reasonCode'] as string, value: { minor: b['valueMinor'] as number, currency },
-            raisedBy: ctx.userId, at, thresholdMinor: b['thresholdMinor'] as number,
+            raisedBy: ctx.userId, at, thresholdMinor,
             ...(isStr(b['evidenceRef']) ? { evidenceRef: b['evidenceRef'] as string } : {}),
             ...(approval === undefined ? {} : { approval }),
           }, ledger, outbox);
@@ -118,6 +133,19 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
           throw e;
         }
 
+        // §28 authority gate: commitWriteOff enforces a SEPARATE approver for a material loss, but the pure
+        // engine cannot see roles — a name typed in the box is not an approval. When approval was required
+        // and an approver was named, that approver must GENUINELY hold Manager/Owner authority, else it does
+        // not count (the same shape as the price-change / promotion / compensation approvals). Nothing recorded.
+        if (result.requiredApproval && isStr(b['approvedBy']) && !(await deps.canApproveWriteOff(ctx.tenantId, b['approvedBy'] as string))) {
+          throw apiError(422, {
+            code: 'approver_may_not_approve',
+            whatHappened: `${b['approvedBy']} does not hold the authority to approve a stock write-off, so their approval of this material loss does not count.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Have a Manager or Owner (a different person than the one raising it) approve the loss with a reason. Nothing was recorded.',
+          });
+        }
+
         const rec: StoredWriteOff = {
           id: writeOffId, productId: b['productId'] as string, locationId: b['locationId'] as string,
           lossType: result.lossType, qtyRemoved: result.qtyRemoved, uom: b['uom'] as string,
@@ -127,6 +155,36 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
         };
         await deps.recordWriteOff(ctx.tenantId, rec);
         return { status: 201, body: { id: writeOffId, lossType: rec.lossType, qtyRemoved: rec.qtyRemoved, valueMinor: rec.valueMinor, requiredApproval: rec.requiredApproval, evidenceRef: rec.evidenceRef } };
+      },
+    },
+    {
+      // The material-loss threshold (M28-FR-01) — the value at/above which evidence + a §28 approver are
+      // required. READ so the warehouse/desk can see the line it is working to (a manager reads it).
+      api: 'API-04', method: 'GET', path: '/v1/inventory/write-off-threshold',
+      permission: 'waste.view',
+      handler: async (ctx) => {
+        const stored = await deps.writeOffThreshold(ctx.tenantId);
+        return { status: 200, body: { thresholdMinor: stored ?? DEFAULT_WRITE_OFF_THRESHOLD_MINOR, isDefault: stored === undefined } };
+      },
+    },
+    {
+      // Set the material-loss threshold (M28-FR-01) — an owner decision (roadmap §16). Recorded append-only
+      // (latest wins). Body: { thresholdMinor }. The threshold is configuration, so no caller sets it per-request.
+      api: 'API-04', method: 'POST', path: '/v1/inventory/write-off-threshold',
+      permission: 'inventory.writeoff.threshold.set', idempotent: true,
+      handler: async (ctx) => {
+        const thresholdMinor = readWriteOffThreshold(ctx.body);
+        if (thresholdMinor === 'invalid') {
+          throw apiError(400, {
+            code: 'not_readable_as_a_threshold',
+            whatHappened: 'A write-off threshold needs { thresholdMinor } — a whole amount in paise, ≥ 0.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the value at or above which a loss needs evidence and a manager/owner sign-off.',
+          });
+        }
+        const now = deps.now();
+        await deps.recordWriteOffThreshold(ctx.tenantId, thresholdMinor, `${thresholdMinor}-${now}`);
+        return { status: 200, body: { thresholdMinor, setAt: now } };
       },
     },
     {

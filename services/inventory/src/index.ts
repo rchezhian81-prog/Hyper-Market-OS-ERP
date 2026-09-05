@@ -258,6 +258,19 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
             nextSafeAction: 'Keep it queued on the device and raise it. A movement that cannot be sent still happened on the floor.',
           });
         }
+        // A stock LOSS is not a plain movement — a write-off makes stock disappear, so it goes through the
+        // governed write-off route, which carries a value, evidence for a material loss, and a §28 approver
+        // who genuinely holds the authority (none of which this sync route can enforce, and where `enteredBy`
+        // and `approvedBy` are unverified body strings). Refuse it here rather than let a loss through the
+        // ungoverned door. Upward corrections (`adjusted`) still flow here — they add stock, they do not remove it.
+        if (m.kind === 'wasted') {
+          throw apiError(422, {
+            code: 'write_off_uses_the_write_off_route',
+            whatHappened: 'A stock write-off (a loss) is recorded through the governed write-off route, not the movements route.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Record the loss at POST /v1/inventory/write-off/:writeOffId — it reduces the stock and captures the value, evidence and approver. Nothing was appended here.',
+          });
+        }
         const check = checkMovement(m);
         if (!check.ok) {
           throw apiError(422, {

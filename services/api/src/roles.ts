@@ -37,7 +37,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'purchase.import.record', 'purchase.import.read',
       'export.read', 'export.sensitive',
       'supplier.portal.manage', 'supplier.portal.submit', 'supplier.portal.review',
-      'inventory.movement.append', 'inventory.availability.read',
+      'inventory.movement.append', 'inventory.availability.read', 'inventory.writeoff.threshold.set',
       'production.recipe.manage', 'production.plan.commit', 'production.release', 'production.read',
       'pos.sale.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.restricted.check',
       'cash.movement.record', 'cash.till.read', 'till.shift.close', 'till.shift.read',

@@ -5,6 +5,61 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M28-FR-01 stock write-off — one governed door, and it actually moves the stock (5 September 2026)
+
+**Owner direction:** continuing the bypass hunt. The owner chose to **make the strict write-off door the only
+one** and set the material-loss threshold at **₹500** (at/above it: a photo/witness AND a manager/owner sign-off;
+below it: a reason alone).
+
+**The finding, precisely:** writing off stock (damage/expiry/shrinkage) — the one action that makes stock
+disappear — had **two doors**, and the wrong one was load-bearing:
+- The **governed write-off route** (`POST /v1/inventory/write-off/:id`) demanded evidence + a §28 approver +
+  a value for a material loss, tied the raiser to the authenticated caller — but (because availability folds
+  only the movements stream) it **never reduced on-hand**. A latent bug: a governed write-off didn't move the stock.
+- The **generic movements route** (`POST /v1/inventory/movements`, `kind:'wasted'`) **did** reduce on-hand, but
+  asked only for a reason and a second *name* — and both the raiser (`enteredBy`) and the approver (`approvedBy`)
+  were **unverified body strings**, with no evidence and no value. So a loss could be recorded in someone else's
+  name, "approved" by anyone. Plus the write-off route's own `thresholdMinor` came from the **body**, so a caller
+  could claim any loss "immaterial" and skip evidence+approval entirely.
+
+**What was built (one increment — the strict door made whole and strict):**
+- The write-off route now **emits the compensating `wasted` stock movement** (via the adapter's `recordWriteOff`),
+  so a committed loss **reduces on-hand** — one truth (P-02, hard rule #2 compensating movement).
+- The generic movements route **refuses `kind:'wasted'`** (`write_off_uses_the_write_off_route`), directing losses
+  to the governed door. (Upward `adjusted` corrections still flow through movements — they add stock, not remove it;
+  noted as a follow-on.)
+- The **material-loss threshold is sourced server-side** from per-tenant config (default the owner's **₹500**),
+  never the body — closing the self-declared-threshold bypass. Owner-settable via `GET`/`POST
+  /v1/inventory/write-off-threshold` (POST gated the new **owner-only** permission `inventory.writeoff.threshold.set`).
+- A material loss now needs an approver who **genuinely holds Manager/Owner authority** (`canApproveWriteOff` —
+  reusing `inventory.movement.append`, which only owner + store_manager hold), not merely a name ≠ raiser
+  (`approver_may_not_approve`). Per M28 the approver is a Manager/Owner, so no owner decision was needed on "who".
+- Tests: `waste-write-off.test.ts` rewritten (immaterial vs material at ₹500; a cashier/unprovisioned approver
+  refused; a genuine Manager approver lets it through; **on-hand reduced** after a write-off; threshold
+  owner-settable and manager/cashier refused); `inventory-availability.test.ts` asserts the movements route
+  refuses a write-off; the pure `checkMovement` unit tests stay green (the refusal is in the route, not the engine).
+
+**No re-rate.** M28 was `PARTIALLY_WIRED`; this delivers the named "approval-threshold controls" follow-on and
+wires the on-hand reduction, but does not cross a module maturity threshold. **Headline stays 41.5%.**
+Module-ladder guardrail re-checked: label ↔ rung ↔ summary counts unchanged, sum to 36.
+
+**Gate green:** typecheck, completion (41.5%), lint, secret-scan, the full vitest suite (**6250 passed**), and the
+api-surface-contract (new permission granted) / §28-confinement / module-ladder guardrails.
+
+**For the owner — in plain words:** writing off stock is the one action that quietly makes stock disappear, so it
+should always carry a reason, a value, a photo for anything sizeable, and a manager/owner's sign-off. There were
+two ways to do it: the proper one asked for all that but — oddly — didn't actually reduce the shelf count; and a
+back way *did* reduce the count but accepted a made-up name for who did it and who approved it, with no photo. I've
+made the proper way the **only** way, and made it reduce the shelf count as it should. A loss under **₹500** needs
+just a reason; **₹500 or more** needs a photo and a genuine manager/owner sign-off (a cashier's or a typed-in name
+no longer counts). You can change that ₹500 line any time. **What to check in the store:** try to record a ₹6,000
+loss with a photo but a *cashier* as approver → it should refuse; with a *manager/owner* → it should go through and
+the item's stock count should drop; a small ₹200 loss should record with just a reason. **Next:** the last audit
+gap — the finance period reopen/close signer — then the refund one (which needs a quick design check for the offline
+till first).
+
+---
+
 ## M21-FR-03 customer compensation — the desk can no longer set its own spending limit (4 September 2026)
 
 **Owner direction:** continuing the bypass hunt. The owner chose to fix the customer-compensation gap **in one
