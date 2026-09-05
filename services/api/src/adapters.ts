@@ -4626,6 +4626,15 @@ export function financeAdapter(input: {
         payload: { period, ...reopen, reopenedAt: input.now(), seq },
       }));
     },
+
+    // The §28 authority to SIGN a month-close or APPROVE a re-open (M23-FR-04) — finance.period.sign, held by
+    // the owner and the accountant (the CA/books person the roadmap has sign the control totals). A named
+    // signer/approver who does not hold it does not count (the same check as the other §28 approvals).
+    canSignPeriod: async (tenantId, userId) => {
+      const grants = await allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+      const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
+      return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('finance.period.sign'));
+    },
   };
 }
 
