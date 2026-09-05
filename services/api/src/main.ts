@@ -478,6 +478,7 @@ export function buildSurface(deps: {
     // Service-desk cases + SLA clocks (M21-FR-04) — open/first-response/resolve + SLA + breached queue.
     ...serviceCaseRoutes(store === undefined
       ? { serviceCase: empty(undefined), serviceCases: empty([]), recordCase: () => {}, compensations: empty([]), recordCompensation: () => {},
+          compensationPolicy: () => undefined, recordCompensationPolicy: () => {}, canApproveCompensation: () => Promise.resolve(false),
           drafts: empty([]), draft: empty(undefined), recordDraft: () => {}, draftDecisions: empty([]), recordDraftDecision: () => {},
           scores: empty([]), recordScore: () => {}, now }
       : serviceCaseAdapter({ store, now })),
