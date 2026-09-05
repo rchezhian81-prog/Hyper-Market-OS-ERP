@@ -22,8 +22,9 @@ import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
   assessFirstResponse, assessSla, grantCompensation, approveDraft, serviceReport,
+  DEFAULT_COMPENSATION_POLICY, readCompensationPolicy,
   type ServiceCase, type CaseKind, type CasePriority,
-  type CompensationKind, type CompensationApproval, type CompensationOutcome,
+  type CompensationKind, type CompensationApproval, type CompensationOutcome, type CompensationPolicy,
   type AiDraft, type DraftDecision, type SatisfactionScore,
 } from '../../../packages/service-desk/src/index';
 
@@ -87,6 +88,14 @@ export interface ServiceCaseDeps {
   /** Compensations granted on a case — append-only (money leaving the business is a ledger, hard rule #2). */
   readonly compensations: (tenantId: string, caseId: string) => Promise<readonly CompensationRecord[]> | readonly CompensationRecord[];
   readonly recordCompensation: (tenantId: string, caseId: string, rec: CompensationRecord, key: string) => Promise<void> | void;
+  /** The tenant's compensation authority limits (M21-FR-03) — `undefined` means none set, so the default
+   *  applies. Sourced SERVER-SIDE: the caller never declares their own authority in the request body. */
+  readonly compensationPolicy: (tenantId: string) => Promise<CompensationPolicy | undefined> | CompensationPolicy | undefined;
+  /** Set the tenant's compensation limits — append-only config (latest wins), owner-only. */
+  readonly recordCompensationPolicy: (tenantId: string, policy: CompensationPolicy, key: string) => Promise<void> | void;
+  /** Whether a user holds `service.compensation.approve` — the §28 authority to approve an over-limit
+   *  grant (owner-only by default). A named approver who does not hold it does not count. */
+  readonly canApproveCompensation: (tenantId: string, userId: string) => Promise<boolean> | boolean;
   /** AI drafts on a case, and the human decisions on them (P-05) — an AI drafts, a NAMED HUMAN approves. */
   readonly drafts: (tenantId: string, caseId: string) => Promise<readonly AiDraft[]> | readonly AiDraft[];
   readonly draft: (tenantId: string, caseId: string, draftId: string) => Promise<AiDraft | undefined> | AiDraft | undefined;
@@ -202,9 +211,12 @@ export function serviceCaseRoutes(deps: ServiceCaseDeps): readonly Route[] {
     },
     {
       // Grant compensation on a case — MONEY LEAVING THE BUSINESS, decided by the person the customer is
-      // shouting at, which is why the reason, the authority limit and the second signature are not
-      // optional (§28). Body: { kind, amountMinor, reason, agentAuthorityMinor, policyCapMinor?, approval? }.
-      // grantedBy is the authenticated caller. On grant, an append-only CompensationGranted is recorded.
+      // shouting at, which is why the reason and the second signature are not optional (§28). Body:
+      // { kind, amountMinor, reason, approval? }. The AUTHORITY LIMITS are the tenant's policy, sourced
+      // server-side — the caller can no longer declare their own limit — and the caller's own authority is
+      // set by their role: someone holding service.compensation.approve (the owner) may grant up to the
+      // desk ceiling alone, everyone else up to the agent authority. grantedBy is the authenticated caller.
+      // On grant, an append-only CompensationGranted is recorded.
       api: 'API-06', method: 'POST', path: '/v1/service/cases/:caseId/compensation',
       permission: 'service.case.manage', idempotent: true,
       handler: async (ctx) => {
@@ -212,24 +224,28 @@ export function serviceCaseRoutes(deps: ServiceCaseDeps): readonly Route[] {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         const approval = readApproval(b['approval']);
         if (!COMPENSATION_KINDS.includes(b['kind'] as CompensationKind) || !isInt(b['amountMinor']) || (b['amountMinor'] as number) < 0
-          || typeof b['reason'] !== 'string' || !isInt(b['agentAuthorityMinor']) || (b['agentAuthorityMinor'] as number) < 0
-          || (b['policyCapMinor'] !== undefined && (!isInt(b['policyCapMinor']) || (b['policyCapMinor'] as number) < 0))
-          || approval === 'invalid') {
+          || typeof b['reason'] !== 'string' || approval === 'invalid') {
           throw apiError(400, {
             code: 'not_readable_as_compensation',
-            whatHappened: 'Compensation needs { kind (refund/goodwill_credit/loyalty_points/replacement), amountMinor, reason, agentAuthorityMinor, policyCapMinor?, approval? }.',
+            whatHappened: 'Compensation needs { kind (refund/goodwill_credit/loyalty_points/replacement), amountMinor, reason, approval? }. The authority limits are the tenant\'s policy, not sent by the caller.',
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Send the amount, a real reason, and the granting agent\'s authority limit. The agent is taken from your login.',
+            nextSafeAction: 'Send the amount, a real reason, and (for an over-limit grant) an approval by someone who may approve it. The agent is taken from your login.',
           });
         }
         const existing = await deps.serviceCase(ctx.tenantId, caseId);
         if (existing === undefined) throw notFound(`service case ${caseId}`);
 
+        // The limits come from the tenant's policy (or the default), NEVER the body. The caller's own
+        // authority is their role's: an owner-authority holder may grant up to the desk ceiling alone.
+        const policy = (await deps.compensationPolicy(ctx.tenantId)) ?? DEFAULT_COMPENSATION_POLICY;
+        const callerMayApprove = await deps.canApproveCompensation(ctx.tenantId, ctx.userId);
+        const ownAuthorityMinor = callerMayApprove ? policy.deskCeilingMinor : policy.agentAuthorityMinor;
+
         const now = deps.now();
         const result = grantCompensation({
           serviceCase: existing, kind: b['kind'] as CompensationKind, amountMinor: b['amountMinor'] as number,
-          grantedBy: ctx.userId, reason: b['reason'] as string, agentAuthorityMinor: b['agentAuthorityMinor'] as number,
-          ...(isInt(b['policyCapMinor']) ? { policyCapMinor: b['policyCapMinor'] as number } : {}),
+          grantedBy: ctx.userId, reason: b['reason'] as string, agentAuthorityMinor: ownAuthorityMinor,
+          policyCapMinor: policy.deskCeilingMinor,
           ...(approval !== undefined ? { approval } : {}),
           at: now,
         });
@@ -237,8 +253,20 @@ export function serviceCaseRoutes(deps: ServiceCaseDeps): readonly Route[] {
           throw apiError(COMPENSATION_REFUSAL[result.outcome as Exclude<CompensationOutcome, 'granted'>], {
             code: result.outcome, whatHappened: result.detail, wasItSaved: 'not_saved',
             nextSafeAction: result.outcome === 'needs_approval' || result.outcome === 'self_approved'
-              ? 'A grant above the agent\'s authority needs a DIFFERENT person to approve it.'
+              ? 'A grant above the agent\'s authority needs a DIFFERENT person who may approve compensation to approve it.'
               : 'Correct the amount or the reason and grant again. Nothing was paid.',
+          });
+        }
+        // §28 authority gate: the engine grants an over-limit amount on a self-checked approval (decidedBy
+        // ≠ grantedBy), but a name in a box is not an approval. When the grant was carried by an approval
+        // (result.approvedBy set), the approver must GENUINELY hold service.compensation.approve, else it
+        // does not count — the same shape as the price-change and promotion approvals. Nothing is recorded.
+        if (result.approvedBy !== undefined && !(await deps.canApproveCompensation(ctx.tenantId, result.approvedBy))) {
+          throw apiError(422, {
+            code: 'approver_may_not_approve',
+            whatHappened: `${result.approvedBy} does not hold the authority to approve compensation, so their approval of this over-limit grant does not count.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Have someone who may approve compensation (the owner) approve it with a reason. Nothing was paid.',
           });
         }
         const rec: CompensationRecord = {
@@ -249,6 +277,38 @@ export function serviceCaseRoutes(deps: ServiceCaseDeps): readonly Route[] {
         // Keyed on the case + the money + who granted it + when — a re-sync is one payment, not two.
         await deps.recordCompensation(ctx.tenantId, caseId, rec, `${caseId}-${rec.grantedBy}-${rec.amountMinor}-${now}`);
         return { status: 201, body: { caseId, granted: true, outcome: result.outcome, amountMinor: result.amountMinor, ...(result.approvedBy !== undefined ? { approvedBy: result.approvedBy } : {}), detail: result.detail } };
+      },
+    },
+    {
+      // The tenant's compensation authority limits (M21-FR-03) — what a desk agent may grant alone, and the
+      // absolute desk ceiling. READ, so the desk can see the limits it is working to (a manager reads it).
+      api: 'API-06', method: 'GET', path: '/v1/service/compensation-policy',
+      permission: 'service.case.read',
+      handler: async (ctx) => {
+        const stored = await deps.compensationPolicy(ctx.tenantId);
+        const policy = stored ?? DEFAULT_COMPENSATION_POLICY;
+        return { status: 200, body: { ...policy, isDefault: stored === undefined } };
+      },
+    },
+    {
+      // Set the tenant's compensation authority limits (M21-FR-03) — a §28 decision, owner-only. Recorded
+      // append-only (latest wins). Body: { agentAuthorityMinor, deskCeilingMinor }. An agent's own authority
+      // can never exceed the desk ceiling. The limits are configuration, so no user can set their own here.
+      api: 'API-06', method: 'POST', path: '/v1/service/compensation-policy',
+      permission: 'service.compensation.approve', idempotent: true,
+      handler: async (ctx) => {
+        const policy = readCompensationPolicy(ctx.body);
+        if (policy === 'invalid') {
+          throw apiError(400, {
+            code: 'not_readable_as_a_policy',
+            whatHappened: 'A compensation policy needs { agentAuthorityMinor, deskCeilingMinor } — whole amounts in paise, ≥ 0, and the agent authority no higher than the desk ceiling.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the desk agent\'s own limit and the absolute desk ceiling.',
+          });
+        }
+        const now = deps.now();
+        await deps.recordCompensationPolicy(ctx.tenantId, policy, `${policy.agentAuthorityMinor}-${policy.deskCeilingMinor}-${now}`);
+        return { status: 200, body: { ...policy, setAt: now } };
       },
     },
     {

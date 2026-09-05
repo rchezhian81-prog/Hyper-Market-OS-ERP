@@ -145,7 +145,7 @@ import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../
 import type { DataRightsDeps, DataSubjectRequest } from '../../customer/src/data-rights';
 import type { ServiceCaseDeps, ServiceCase, CompensationRecord, DraftDecisionRecord } from '../../customer/src/service-cases';
 import type { CampaignDeps, CampaignPlanRecord } from '../../customer/src/campaigns';
-import type { AiDraft, SatisfactionScore } from '../../../packages/service-desk/src/index';
+import type { AiDraft, SatisfactionScore, CompensationPolicy } from '../../../packages/service-desk/src/index';
 import type { StoredPointsMovement } from '../../../packages/loyalty/src/assess-points';
 import type { StoredValueDeps, Instrument, ValueMovement } from '../../customer/src/stored-value';
 import type { CouponDeps } from '../../customer/src/coupons';
@@ -1032,6 +1032,8 @@ const SERVICE_COMPENSATION_STREAM = streamName(STREAM.service, 'compensation');
 const SERVICE_DRAFT_STREAM = streamName(STREAM.service, 'drafts');
 // CSAT scores — tenant-wide, append-only (a customer rates a resolved case; the report folds them).
 const SERVICE_CSAT_STREAM = streamName(STREAM.service, 'csat');
+// The tenant's compensation authority limits (M21-FR-03) — tenant-wide config, append-only (latest wins).
+const SERVICE_POLICY_STREAM = streamName(STREAM.service, 'compensation-policy');
 // The campaign-decision log — tenant-wide, append-only (who ran which campaign, to how many, excluding
 // how many and why). Counts only; the recipient lists are not stored (PRV).
 const CAMPAIGN_PLAN_STREAM = streamName(STREAM.service, 'campaign-plans');
@@ -4775,6 +4777,30 @@ export function serviceCaseAdapter(input: {
         source: 'api/customer',
         payload: rec,
       }));
+    },
+
+    // The tenant's compensation authority limits (M21-FR-03) — append-only config, the latest set wins.
+    compensationPolicy: async (tenantId) => {
+      const all = await allOf<CompensationPolicy>(input.store, tenantId, SERVICE_POLICY_STREAM, 'CompensationPolicySet');
+      return all.length === 0 ? undefined : all[all.length - 1];
+    },
+    recordCompensationPolicy: async (tenantId, policy, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, SERVICE_POLICY_STREAM, makeEvent({
+        id: `service-comp-policy-${d}`,
+        type: 'CompensationPolicySet',
+        occurredAt: input.now(),
+        idempotencyKey: `service-comp-policy-${tenantId}-${d}`,
+        source: 'api/customer',
+        payload: policy,
+      }));
+    },
+    // The §28 authority to approve an over-limit compensation — service.compensation.approve, owner-only by
+    // default. A named approver who does not hold it does not count (the same check as price-change approval).
+    canApproveCompensation: async (tenantId, userId) => {
+      const grants = await allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+      const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
+      return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('service.compensation.approve'));
     },
 
     // AI drafts and their decisions (P-05) — both on the drafts stream, filtered by case.

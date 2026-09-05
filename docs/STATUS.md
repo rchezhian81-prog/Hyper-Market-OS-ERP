@@ -5,6 +5,62 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M21-FR-03 customer compensation — the desk can no longer set its own spending limit (4 September 2026)
+
+**Owner direction:** continuing the bypass hunt. The owner chose to fix the customer-compensation gap **in one
+step** and set the money limits themselves: a desk manager may grant up to **₹500** alone; **₹500–₹5,000**
+needs the **owner** to approve; **above ₹5,000** the desk request is refused entirely. Approver = **the owner
+only**.
+
+**The gap, precisely (two holes on the CLOUD route `POST /v1/service/cases/:id/compensation`):**
+1. **The desk set its own limit.** The route took `agentAuthorityMinor` (and the desk ceiling) from the
+   *request body*. A direct API call could claim a huge limit and grant any amount "within its own authority",
+   skipping the second-signature entirely. This was the load-bearing hole.
+2. **Any name counted as an approver.** Even when an approval was attached, the engine only checked the
+   approver's name was *different* from the granter — not that they held any authority (the twin of the
+   pricing/promotion holes). The old test literally relied on this: an unprovisioned `u-boss` "approved" a refund.
+
+The offline desk was **never** the hole — it receives its limits as trusted config pushed to the box, not as
+user input — so the pure engine and the offline path are untouched. The fix is confined to the cloud.
+
+**What was built (one increment):**
+- **Server-side per-tenant policy** (`packages/service-desk`: `CompensationPolicy`, `DEFAULT_COMPENSATION_POLICY`
+  = ₹500/₹5,000, `readCompensationPolicy`). The cloud route now sources both limits from the tenant's stored
+  policy (or the default), **never the body**. The caller's *own* authority is set by their role: an
+  owner-authority holder may grant up to the desk ceiling alone; everyone else up to the agent authority.
+- **Owner-only approval authority.** New permission `service.compensation.approve`, granted to the **owner
+  only** (roadmap M21-FR-03 names this §28 permission). An over-limit grant carried by an approver who does not
+  genuinely hold it is refused `approver_may_not_approve` (checked with `canApproveCompensation`, the same shape
+  as price-change/promotion approvals). Proposer ≠ approver and the absolute ceiling are unchanged.
+- **The limits are configurable** — `GET /v1/service/compensation-policy` (a manager can see the limits it
+  works to) and `POST /v1/service/compensation-policy` (owner-only) — so the owner can change ₹500/₹5,000 later
+  without code.
+- Adapter (`serviceCaseAdapter`: `compensationPolicy` fold, `recordCompensationPolicy`, `canApproveCompensation`)
+  and the no-store stub updated.
+- Test `tests/integration/service-compensation.test.ts` rewritten around the real limits: a cashier's or an
+  unprovisioned name as approver is refused; a genuine owner approver lets a loss through; the owner grants up
+  to the ceiling alone; the server-side limits are enforced and owner-settable; the caller can no longer declare
+  their own authority.
+
+**No re-rate.** M21 was already **PARTIALLY_WIRED**; this hardens an existing control, it does not add maturity.
+**Headline stays 41.5%.** Module-ladder guardrail re-checked: label ↔ rung ↔ summary counts unchanged, sum to 36.
+
+**Gate green:** typecheck, completion (41.5%), lint, secret-scan, the full vitest suite (**6247 passed**), and the
+api-surface-contract / §28-confinement / traceability-integrity / completion-model / module-ladder guardrails.
+
+**For the owner — in plain words:** giving a customer their money back is meant to have a limit — small amounts
+by a desk manager, bigger ones only with your sign-off, and nothing above ₹5,000 at the desk at all. The system
+was letting the till *tell it* what the manager's limit was, so a clever request could set the limit sky-high
+and skip your approval; and when an approval was given, it never checked the approver was actually you. Now the
+limits live in the system (set to your figures: ₹500 alone, up to ₹5,000 with your approval, nothing above), the
+till can't change them, and only you can approve the bigger ones. You can change those figures any time.
+**What to check in the store:** have a manager try to refund ₹2,000 and put their *own* name (or a cashier's) as
+approver — it should refuse; put *your* name with a reason — it should go through; a refund over ₹5,000 should
+refuse for everyone. **Next:** the remaining audit gaps — stock write-off via the generic movements route, and
+finance period reopen/close signer — one PR at a time (refunds still need a design check first for the offline lane).
+
+---
+
 ## M05-FR-04 promotion launch — closing the twin below-cost bypass on the promotion side (4 September 2026)
 
 **Owner direction:** after the pricing side-door fix (below), the owner said **"Hunt for more bypasses like it."**

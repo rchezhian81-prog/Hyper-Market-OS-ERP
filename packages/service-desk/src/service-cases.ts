@@ -285,6 +285,36 @@ export function grantCompensation(input: {
   };
 }
 
+/**
+ * The per-tenant compensation authority limits (M21-FR-03). These are **configuration, not a per-request
+ * input**: the desk agent's own ceiling and the absolute desk ceiling both come from the tenant, never from
+ * the caller — otherwise the person granting the money declares their own authority, and the second-signature
+ * rule can be dodged simply by claiming a high limit. The offline desk receives these as trusted config
+ * pushed to the box; the cloud route reads them from the tenant's stored policy (or the default below).
+ */
+export interface CompensationPolicy {
+  /** A desk agent may grant up to this on their own; above it a separate §28 approver is required. */
+  readonly agentAuthorityMinor: number;
+  /** The absolute desk ceiling — above this nobody at the desk may go, even with an approver. */
+  readonly deskCeilingMinor: number;
+}
+
+/** The system default when a tenant has set no policy: ₹500 agent authority, ₹5,000 desk ceiling (paise). */
+export const DEFAULT_COMPENSATION_POLICY: CompensationPolicy = { agentAuthorityMinor: 50_000, deskCeilingMinor: 500_000 };
+
+/** Validate a proposed policy from an untrusted body — both limits whole and ≥ 0, and an agent's own
+ *  authority can never exceed the desk's absolute ceiling. */
+export function readCompensationPolicy(v: unknown): CompensationPolicy | 'invalid' {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return 'invalid';
+  const o = v as Record<string, unknown>;
+  const a = o['agentAuthorityMinor'];
+  const c = o['deskCeilingMinor'];
+  if (typeof a !== 'number' || !Number.isInteger(a) || a < 0) return 'invalid';
+  if (typeof c !== 'number' || !Number.isInteger(c) || c < 0) return 'invalid';
+  if (a > c) return 'invalid';
+  return { agentAuthorityMinor: a, deskCeilingMinor: c };
+}
+
 export interface AiDraft {
   readonly draftId: string;
   readonly caseId: string;

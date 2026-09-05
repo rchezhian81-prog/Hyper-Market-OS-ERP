@@ -45,7 +45,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'customer.consent.read', 'customer.consent.write', 'privacy.request.manage', 'loyalty.points.read', 'loyalty.points.write',
       'loyalty.value.issue', 'loyalty.value.redeem', 'loyalty.value.read',
       'loyalty.coupon.issue', 'loyalty.coupon.redeem', 'loyalty.coupon.read',
-      'service.case.manage', 'service.case.read', 'customer.segment.read',
+      'service.case.manage', 'service.case.read', 'service.compensation.approve', 'customer.segment.read',
       'customer.campaign.send', 'customer.campaign.read',
       'order.promise', 'order.reservation.read', 'order.read', 'order.lifecycle.manage',
       'delivery.attempt.record', 'delivery.run.read', 'delivery.dispatch.manage',
