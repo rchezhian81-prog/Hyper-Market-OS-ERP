@@ -5,6 +5,53 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M23-FR-04 month-end — a made-up name can no longer sign a close or reopen a locked month (5 September 2026)
+
+**Owner direction:** the last of the bypass hunt (before refunds). The owner chose that **the owner or the
+accountant** may sign a month-close and approve a re-open — matching the roadmap's "a CA can sign the control
+totals."
+
+**The finding, precisely:** locking a month (and re-opening a locked one) is a §28 control — signed off by a
+separate person who didn't do the bookkeeping. The routes enforced "the signer/approver **did not post** into
+the month" and "the reopen approver **≠ the requester**" — real segregation. But both `signedBy` (close) and
+`approvedBy` (reopen) were **raw body strings whose authority was never checked**: a made-up name that never
+posted could certify a month-close, and any name ≠ the requester could approve re-opening a signed month. The
+same unverified-approver shape as the other four gaps.
+
+**What was built (one increment):**
+- New authority **`finance.period.sign`**, granted to the **owner and the accountant** (the CA/books person),
+  verified via `canSignPeriod`. The close route now refuses a signer who lacks it (`signer_may_not_certify`);
+  the reopen route refuses an approver who lacks it (`approver_may_not_approve`). The existing segregation
+  (signer ≠ poster, approver ≠ requester) is unchanged and still checked first.
+- Adapter (`financeAdapter.canSignPeriod`) + `main.ts` no-store stub + two `FinanceDeps` test stubs the
+  typecheck caught (the same lesson as the earlier `markReopened` addition).
+- Tests: `tests/integration/period-reopen.test.ts` extended — a cashier/unprovisioned approver is refused on a
+  closed period; the reopen still works with the accountant as approver; self-approval / missing-approver /
+  already-open unchanged. The **close-signer gate** is driven over a stub with reconciling control totals (a
+  signer with the authority closes; one without is refused; a signer who posted is refused first) — the only
+  way to reach the close success path, since the real close is still blocked by the deliberately-absent second
+  control-total source (OA-12).
+
+**No re-rate.** M23 was `PARTIALLY_WIRED` (the close still can't complete end-to-end until a genuine second
+control-total source exists, and the Tally drain remains). This hardens the §28 signer/approver; it does not
+cross a maturity threshold. **Headline stays 41.5%.** Module-ladder guardrail re-checked: label ↔ rung ↔
+summary counts unchanged, sum to 36.
+
+**Gate green:** typecheck, completion (41.5%), lint, secret-scan, the full vitest suite (**6254 passed**), and
+the api-surface-contract / §28-confinement / module-ladder guardrails.
+
+**For the owner — in plain words:** locking a month, and re-opening a locked one, is meant to be signed off by a
+proper separate person — not the one who did the entries. The system checked the signer didn't do the entries,
+but never checked they were actually **you or your accountant** — so in theory a made-up name could sign the
+month off, or approve re-opening it. Now the system checks the signer/approver is genuinely you or your
+accountant, and still not the person who did the bookkeeping. **What to check in the store:** (this mostly
+matters at month-end with your accountant) re-opening a locked month with a *cashier's* or a made-up name as
+approver should refuse; with *your* or the *accountant's* name it should go through. **Next:** the fifth and
+last gap — refunds — which I'll bring to you with a design question first, because at an offline till the
+approver may legitimately be captured at the lane.
+
+---
+
 ## M28-FR-01 stock write-off — one governed door, and it actually moves the stock (5 September 2026)
 
 **Owner direction:** continuing the bypass hunt. The owner chose to **make the strict write-off door the only
