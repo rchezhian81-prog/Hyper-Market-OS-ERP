@@ -407,7 +407,8 @@ export function buildSurface(deps: {
       onHand: empty(0), reconciliations: empty([]), countExists: empty(false), recordReconciliation: () => {}, now,
     } : countsAdapter({ store, now })),
     ...writeOffRoutes(store === undefined ? {
-      writeOffExists: empty(false), writeOffs: empty([]), recordWriteOff: () => {}, now,
+      writeOffExists: empty(false), writeOffs: empty([]), recordWriteOff: () => {},
+      writeOffThreshold: () => undefined, recordWriteOffThreshold: () => {}, canApproveWriteOff: () => Promise.resolve(false), now,
     } : writeOffAdapter({ store, now })),
     ...productionRoutes(store === undefined ? {
       recipe: empty(undefined), recordRecipe: () => {}, ingredientCost: empty(undefined), recordCost: () => {},

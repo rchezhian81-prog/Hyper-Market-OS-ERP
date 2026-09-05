@@ -3143,6 +3143,10 @@ export function writeOffAdapter(input: {
   // write-off id — a re-sent write-off of the same id collapses rather than recording the loss twice
   // (append-only, hard rule #2). A correction is a NEW, compensating write-off with its own id.
   const writeOffStream = streamName(STREAM.inventory, 'write-offs');
+  // The tenant's material-loss threshold (M28-FR-01) — tenant-wide config, append-only (latest wins).
+  const thresholdStream = streamName(STREAM.inventory, 'write-off-threshold');
+  // Reused to emit the compensating stock movement (same append + snapshot path as any movement).
+  const inv = inventoryAdapter({ store: input.store, now: input.now });
   const fold = async (tenantId: string): Promise<readonly StoredWriteOff[]> =>
     allOf<StoredWriteOff>(input.store, tenantId, writeOffStream, 'WriteOffCommitted');
 
@@ -3151,6 +3155,15 @@ export function writeOffAdapter(input: {
     writeOffs: (tenantId) => fold(tenantId),
     writeOffExists: async (tenantId, id) => (await fold(tenantId)).some((r) => r.id === id),
     recordWriteOff: async (tenantId, rec) => {
+      // One truth (P-02): a committed loss REDUCES on-hand, not merely records it for finance. Emit the
+      // compensating `wasted` movement, keyed on the write-off id so a re-sync is one reduction not two.
+      await inv.appendMovement(tenantId, {
+        movementId: `writeoff-${rec.id}`,
+        productId: rec.productId, locationId: rec.locationId, kind: 'wasted',
+        quantityMinor: rec.qtyRemoved, uom: rec.uom, occurredAt: rec.at,
+        reason: rec.reasonCode, enteredBy: rec.raisedBy,
+        ...(rec.approvedBy !== null ? { approvedBy: rec.approvedBy } : {}),
+      });
       await input.store.append(tenantId, writeOffStream, makeEvent({
         id: `write-off-${rec.id}`,
         type: 'WriteOffCommitted',
@@ -3159,6 +3172,30 @@ export function writeOffAdapter(input: {
         source: 'api/inventory',
         payload: rec,
       }));
+    },
+    writeOffThreshold: async (tenantId) => {
+      const all = await allOf<{ thresholdMinor: number }>(input.store, tenantId, thresholdStream, 'WriteOffThresholdSet');
+      const last = all[all.length - 1];
+      return last === undefined ? undefined : last.thresholdMinor;
+    },
+    recordWriteOffThreshold: async (tenantId, thresholdMinor, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, thresholdStream, makeEvent({
+        id: `write-off-threshold-${d}`,
+        type: 'WriteOffThresholdSet',
+        occurredAt: input.now(),
+        idempotencyKey: `write-off-threshold-${tenantId}-${d}`,
+        source: 'api/inventory',
+        payload: { thresholdMinor },
+      }));
+    },
+    // Manager/Owner authority to approve a material write-off (M28-FR-01, §28). Today only owner and
+    // store_manager hold inventory.movement.append, so this identifies a Manager/Owner; a named approver
+    // who does not hold it does not count (the same check as the other §28 approvals).
+    canApproveWriteOff: async (tenantId, userId) => {
+      const grants = await allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+      const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
+      return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('inventory.movement.append'));
     },
   };
 }

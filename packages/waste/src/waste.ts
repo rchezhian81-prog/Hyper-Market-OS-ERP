@@ -68,6 +68,23 @@ export class MissingEvidenceError extends Error {
 }
 
 /**
+ * The per-tenant material-loss threshold (M28-FR-01) — the write-off value at/above which captured
+ * evidence AND a separate Manager/Owner approver are required. This is **configuration, not a per-request
+ * input**: were the caller to send their own threshold, they could claim any loss "immaterial" and skip
+ * the evidence and the second signature. The cloud route reads it from the tenant's stored policy (or the
+ * default below); the owner may raise or lower it.
+ */
+export const DEFAULT_WRITE_OFF_THRESHOLD_MINOR = 50_000; // ₹500 in paise
+
+/** Validate a proposed threshold from an untrusted body — a whole number of paise ≥ 0. */
+export function readWriteOffThreshold(v: unknown): number | 'invalid' {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return 'invalid';
+  const t = (v as Record<string, unknown>)['thresholdMinor'];
+  if (typeof t !== 'number' || !Number.isInteger(t) || t < 0) return 'invalid';
+  return t;
+}
+
+/**
  * Commit a write-off: validate a reason and (for a material value) evidence, then
  * append a reason-coded compensating stock movement via the adjustment engine —
  * which enforces the separate-approver rule for material losses (§28). The loss is
