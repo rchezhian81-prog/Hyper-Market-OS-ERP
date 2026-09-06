@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { startEdge } from '../../edge/store-edge/src/main';
 import { LANE_HOST } from '../../edge/store-edge/src/lane-server';
 import { readLog } from '../../edge/store-edge/src/file-log';
-import { bootPos, laneDurable } from '../../apps/pos/src/browser-entry';
+import { bootPos, laneDurable, laneDurableReturn } from '../../apps/pos/src/browser-entry';
+import { money } from '../../packages/contracts/src/money';
 
 /**
  * **The till's screen reaches the till's disk.**
@@ -90,6 +91,38 @@ describe('a sale rung on the screen reaches this till\'s disk', () => {
   });
 });
 
+describe('a refund taken on the screen reaches this till\'s disk (M13-FR-01)', () => {
+  const AT = '2026-08-05T19:00:00Z';
+  const refundInput = () => ({
+    id: 'RT-1', number: 'RT-1', originalSaleId: 'S-1', processedAt: AT, reasonCode: 'damaged',
+    lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, originalQtyMinor: 1, disposition: 'resell' as const }],
+    refund: money(50_00, 'INR'), refundTender: 'cash' as const,
+    maxRefund: money(64_000, 'INR'), approvalThresholdMinor: 100_000,
+  });
+
+  it('commits through the loopback socket to the RETURNS log, and queues it for the cloud', async () => {
+    const edge = await startLane();
+    const view = bootPos({ laneId: 'lane-1', durableReturn: laneDurableReturn(edge.lane!.port) });
+
+    const committed = await view.till.refund(refundInput());
+    expect(committed.refundStatus).toBe('settled');
+
+    // On the edge's OWN returns disk, whole — never the sale log.
+    const returns = await readLog(edge.returnsLog.path);
+    expect(returns).toHaveLength(1);
+    expect(returns[0]?.ok === true && JSON.parse(returns[0].record).returnId).toBe('RT-1');
+    expect(await readLog(edge.log.path)).toHaveLength(0); // the sale log is untouched
+    // Durable AND queued on the edge's returns pipeline.
+    expect(edge.returnsOutbox.unsentCount()).toBe(1);
+    expect(edge.outbox.unsentCount()).toBe(0); // the sale queue is untouched
+  });
+
+  it('REFUSES the refund when this till\'s store is not running — no cash leaves the drawer', async () => {
+    const view = bootPos({ laneId: 'lane-1', durableReturn: laneDurableReturn(1) }); // nothing listens on port 1
+    await expect(view.till.refund(refundInput())).rejects.toThrow(/could not be recorded durably|not ready to take a refund/i);
+  });
+});
+
 describe('nothing off this till can reach the socket', () => {
   it('binds to loopback and nowhere else — the bind address IS the control', async () => {
     // Bound to the network instead, any device on the shop wifi — including a customer's phone —
@@ -105,10 +138,12 @@ describe('nothing off this till can reach the socket', () => {
     expect(reachable.status).toBe(200);
   });
 
-  it('serves exactly one route, and answers anything else with 404', async () => {
+  it('serves only its two write routes, and answers anything else with 404', async () => {
     // The smaller this surface is, the less there is to get wrong on a machine sitting in a shop.
+    // Two POST routes — a sale and a refund (M13-FR-01) — and nothing else: a GET, the wrong path,
+    // and the root all get 404.
     const edge = await startLane();
-    for (const [method, path] of [['GET', '/lane/sales'], ['POST', '/'], ['POST', '/admin'], ['GET', '/']] as const) {
+    for (const [method, path] of [['GET', '/lane/sales'], ['GET', '/lane/returns'], ['POST', '/'], ['POST', '/admin'], ['GET', '/']] as const) {
       const res = await fetch(`http://127.0.0.1:${edge.lane!.port}${path}`, { method });
       expect(res.status, `${method} ${path}`).toBe(404);
     }

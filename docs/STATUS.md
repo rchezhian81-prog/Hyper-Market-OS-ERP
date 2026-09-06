@@ -5,6 +5,62 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M13-FR-01 offline returns reconcile on sync — Slice 2c: the till's durable-first refund (6 September 2026)
+
+**Owner direction:** the owner asked me to wire offline returns to the cloud, one PR at a time. Slice 1
+built the cloud doorway (#342), Slice 2a the transport road (#343), Slice 2b the edge's durable
+store-and-drain (#344). This is **Slice 2c** — the last piece: the till hands its refund to the edge, so
+an offline refund travels **end-to-end**.
+
+**The gap:** `apps/pos/src/till-session.ts` `refund()` committed the package `commitReturn` **in memory**
+— no durable disk write, an undrained browser outbox — unlike a *sale*, which posts to the edge over
+loopback and waits. So a refund taken at the lane was neither durable on the box nor able to reach the
+cloud, even though every downstream piece (Slices 1/2a/2b) was now built and waiting.
+
+**What was built (Slice 2c — the till's refund is durable-first):**
+- **`refund()` is now async and follows the sale's order — decide, then record durably, then account
+  for it locally.** `assertReturnValid` (extracted as a pure function from `packages/returns/src/returns.ts`,
+  which `commitReturn` now calls too — behaviour-preserving) refuses an invalid refund **before anything
+  is written anywhere**. Then the refund is posted to this till's edge via **`laneDurableReturn`**
+  (`apps/pos/src/browser-entry.ts`, the exact mirror of the sale's `laneDurable` — a loopback POST to
+  `/lane/returns`) and **awaited**: only a durable confirmation lets the cashier hand back cash. A refused
+  write throws `LocalRefundRefusedError` — no cash for a refund the box did not record. Only then does
+  `commitReturn` record it locally.
+- **The chain is now complete:** till → edge (durable, its own returns log, Slice 2b) → cloud
+  (reconciles into the register, the §28 approver re-verified, Slice 1) — carried by the transport wire
+  (Slice 2a).
+- Tests: durable-first refund cases in `tests/unit/pos-till-session.test.ts` (posts to the edge with the
+  right record; **refuses to give a refund the edge could not record**; refuses an invalid refund before
+  the edge is ever asked), and the full loopback seam in `tests/integration/the-lane-reaches-its-disk.test.ts`
+  (`till.refund` → real lane socket → the edge's returns log + queue, with the **sale log untouched**).
+
+**Honest scope — what this does NOT do.** The POS refund **screen** is a pre-existing stub:
+`apps/pos/web/app.js` still tells the cashier *"refunds against a receipt need the original sale, and this
+lane cannot look one up yet — send the customer to the service desk."* So a cashier cannot yet *initiate*
+a refund from the POS screen; the durable-first path is exercised by the till-session composition and the
+tests, exactly as the sale durable seam was built and tested before its screen used it. Wiring the refund
+UI (receipt lookup + line selection) is a **separate M13 feature**, not part of this offline-sync work.
+
+**No re-rate.** M13 stays `PARTIALLY_WIRED` — the whole offline-returns-to-cloud **sync path** is now
+complete (cloud route + transport wire + edge drain + till durable-first), but the POS refund UI, exchanges
+(FR-02) and the acquirer port remain. **Headline stays 41.5%** — this was the last of the wiring, not a
+new rung. Module-ladder guardrail re-checked: unchanged, sum to 36.
+
+**Gate green:** typecheck, completion (41.5%), lint, secret-scan, and the full vitest suite.
+
+**For the owner — in plain words:** the four pieces are now joined. When the till gives an offline refund,
+it is written to the shop box's disk **before** the cashier is told to hand over cash (if the box can't
+record it, the refund is refused — no cash goes out), and it travels to the central system on its own,
+landing on your **review list** if a manager didn't approve it. **One honest caveat:** the refund *button*
+on the till screen still says "send the customer to the service desk" — building that screen (looking up
+the original bill, picking the lines) is a separate job I have **not** done here. So the plumbing is
+finished and proven by tests, but a cashier can't press a button and drive it yet. **What to check:** for
+now, nothing on the shop floor changes; when the refund screen is later built on top of this, the test will
+be: refund on a till with the network off, bring the network back, and confirm it appears centrally and on
+the review list. **Next:** your call — the refund UI, or move to another gap.
+
+---
+
 ## M13-FR-01 offline returns reconcile on sync — Slice 2b: the edge drain wire (6 September 2026)
 
 **Owner direction:** the owner asked me to wire offline returns to the cloud, one PR at a time. Slice 1
