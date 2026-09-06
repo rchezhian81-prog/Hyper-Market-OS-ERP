@@ -5,6 +5,60 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M13-FR-01 offline returns reconcile on sync — Slice 1: the cloud record-and-flag route (6 September 2026)
+
+**Owner direction:** after the refund guard (#341) I flagged that offline returns aren't actually wired to
+reconcile on the cloud — the roadmap's "a receipted return reconciles on sync" was unbuilt. The owner asked me
+to wire it, and chose to **build it in two PRs, one at a time**. This is **Slice 1** (the cloud half).
+
+**The gap (from the earlier trace):** the offline lane commits a refund (`commitReturn`) with no network and
+queues a `ReturnAccepted` event — but that event has **no cloud route** (dead-lettered by name), and the POS
+shell wires no sync agent for it. So an offline refund never reaches the cloud, the register never sees it, and
+the roadmap's reconcile-on-sync is unbuilt. The codebase itself flagged the shape needed: *"a dedicated 'apply a
+synced governance command' route that trusts the relayed operator identity … a separate, security-reviewed
+increment"* (`edge/sync-agent/src/http-transport.ts`).
+
+**What was built (Slice 1 — the cloud reconcile-on-sync route):**
+- **`POST /v1/sales/:saleId/returns/synced`** (permission `pos.return.sync`, new) accepts a refund that ALREADY
+  HAPPENED at the lane. It **trusts the operator identity captured at the lane** (`processedBy`/`approvedBy` in
+  the body) — the sync agent relays under the store's token, exactly as the synced-**sale** route already trusts
+  the lane's cashier — and it **never rejects** (202 always; a 4xx would tell the till a refund that happened
+  did not).
+- It **records the return into the register** (feeding the at-most-once guard and the money cap — the whole
+  point of "reconciles on sync"), and for a **§28 breach** — a material refund with no approver, a self-approval,
+  or an approver who does not genuinely hold `pos.return.approve` — records a **visible governance exception**
+  (record-and-flag, hard rule #10) instead of a refusal. The threshold is the tenant policy and the approver's
+  authority is re-checked on the cloud.
+- **`GET /v1/pos/return-governance-exceptions`** (`lp.case.read`, a loss surface one rung above the desk, like
+  over-returns) surfaces the flagged refunds for a person to work.
+- Pure `refundGovernanceFindings` engine (unit-tested); `returnsAdapter.flaggedReturns`; `ReturnRecord` gains
+  optional `governanceFlags`/`approvedBy`; `main.ts` stub. New permission `pos.return.sync` (owner + store_manager
+  + cashier, mirroring `pos.sale.sync`).
+- Tests: `tests/integration/returns-reconcile-on-sync.test.ts` (6) — a clean synced refund reconciles into the
+  register with no flags; an unauthorised/absent/self approver reconciles **but is flagged** (202, never
+  rejected) and surfaced on the exceptions read; an immaterial refund isn't flagged; idempotent on the return
+  id; gated (`pos.return.sync` to relay, `lp.case.read` to read the exceptions). Plus `refundGovernanceFindings`
+  unit cases.
+
+**No re-rate.** M13 stays `PARTIALLY_WIRED` — the cloud half of reconcile-on-sync is in, but an offline refund
+still can't travel end-to-end until **Slice 2** (the sync-agent route mapping + the POS outbox drain). **Headline
+stays 41.5%.** Module-ladder guardrail re-checked: unchanged, sum to 36.
+
+**Gate green:** typecheck, completion (41.5%), lint, secret-scan, the full vitest suite (**6264 passed**), and the
+api-surface-contract (both route permissions granted) / §28-confinement / module-ladder guardrails.
+
+**For the owner — in plain words:** when the till is offline and gives a refund, that refund needs to reach the
+central system later so the books and the "how much is left to refund" figure stay right — and if the refund
+skipped a manager's sign-off at the lane, that needs to be *seen*, not silently accepted (the money's already
+gone). This first half builds the **cloud side**: a doorway that accepts a refund the till reports after the
+fact, records it properly, and — if it wasn't approved by a real manager — puts it on a **review list** for you,
+rather than turning it away. The **second half** (next PR) connects the till's outbox to that doorway so refunds
+actually travel there on their own. **What to check** once both halves are in: take a refund on a till with the
+network off, bring the network back, and it should appear centrally — and if it lacked a manager's approval, show
+up on the review list. **Next:** Slice 2 — the till-to-cloud wiring.
+
+---
+
 ## M13-FR-01/03 refunds — the till can no longer set its own approval rule (6 September 2026)
 
 **Owner direction:** the fifth and final bypass. I brought the owner a design question first (refunds are meant to

@@ -1776,6 +1776,16 @@ export function returnsAdapter(input: {
       const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
       return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('pos.return.approve'));
     },
+
+    // Synced refunds that reconciled with a §28 breach (M13-FR-01), folded from the tenant-wide returns
+    // projection — flagged records only, one per return id (latest wins on a re-sync). The visible loss
+    // surface a person works (hard rule #10).
+    flaggedReturns: async (tenantId) => {
+      const all = await allOf<ReturnRecord>(input.store, tenantId, STREAM.returns, 'ReturnRecorded');
+      const byId = new Map<string, ReturnRecord>();
+      for (const r of all) if (r.governanceFlags !== undefined && r.governanceFlags.length > 0) byId.set(r.returnId, r);
+      return [...byId.values()];
+    },
   };
 }
 

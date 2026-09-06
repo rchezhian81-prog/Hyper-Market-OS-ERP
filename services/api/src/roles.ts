@@ -39,7 +39,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'supplier.portal.manage', 'supplier.portal.submit', 'supplier.portal.review',
       'inventory.movement.append', 'inventory.availability.read', 'inventory.writeoff.threshold.set',
       'production.recipe.manage', 'production.plan.commit', 'production.release', 'production.read',
-      'pos.sale.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.return.threshold.set', 'pos.restricted.check',
+      'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.return.threshold.set', 'pos.restricted.check',
       'cash.movement.record', 'cash.till.read', 'till.shift.close', 'till.shift.read',
       'lp.case.manage', 'lp.case.read', 'lp.rule.manage',
       'customer.consent.read', 'customer.consent.write', 'privacy.request.manage', 'loyalty.points.read', 'loyalty.points.write',
@@ -110,7 +110,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'supplier.portal.manage', 'supplier.portal.submit', 'supplier.portal.review',
       'inventory.movement.append', 'inventory.availability.read',
       'production.recipe.manage', 'production.plan.commit', 'production.release', 'production.read',
-      'pos.sale.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.restricted.check',
+      'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.restricted.check',
       'cash.movement.record', 'cash.till.read', 'till.shift.close', 'till.shift.read',
       'lp.case.manage', 'lp.case.read', 'lp.rule.manage',
       'customer.consent.read', 'customer.consent.write', 'privacy.request.manage', 'loyalty.points.read', 'loyalty.points.write',
@@ -149,7 +149,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     // The narrowest role in the product, and the one most people hold (P-07).
     permissions: [
       'identity.self.read', 'payroll.ess.self', 'catalogue.pack.read',
-      'pos.sale.sync', 'pos.sale.read', 'pos.return.record', 'pos.restricted.check',
+      'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.return.record', 'pos.restricted.check',
       'cash.movement.record', 'cash.till.read', 'till.shift.close', 'till.shift.read',
       'customer.consent.read', 'loyalty.points.read', 'loyalty.points.write',
       'loyalty.value.issue', 'loyalty.value.redeem', 'loyalty.value.read',

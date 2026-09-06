@@ -11,7 +11,10 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
-import { assessReturn, DEFAULT_REFUND_THRESHOLD_MINOR, readRefundThreshold, type ReturnRequest, type ReturnRequestLine } from '../../../packages/returns/src/assess-return';
+import {
+  assessReturn, DEFAULT_REFUND_THRESHOLD_MINOR, readRefundThreshold, refundGovernanceFindings,
+  type ReturnRequest, type ReturnRequestLine, type RefundGovernanceFinding,
+} from '../../../packages/returns/src/assess-return';
 import {
   returnRegister, returnableLines, overReturned, alreadyRefundedMinor,
   type OriginalSale, type RecordedReturn,
@@ -39,6 +42,12 @@ export interface ReturnRecord {
   readonly refundTender: string;
   readonly refundStatus: RefundStatus;
   readonly lines: readonly ReturnRequestLine[];
+  /** Set only on a SYNCED refund that reconciled with a §28 breach — the money already left the lane, so
+   *  the breach is recorded as a visible exception (hard rule #10), never a rejection. Absent on a clean
+   *  refund and on every desk-guarded (front-door) refund. */
+  readonly governanceFlags?: readonly RefundGovernanceFinding[];
+  /** Who approved it at the lane, carried on a synced refund so the exception names the claimed approver. */
+  readonly approvedBy?: string;
 }
 
 export interface ReturnsDeps {
@@ -59,6 +68,9 @@ export interface ReturnsDeps {
   /** Whether a user holds `pos.return.approve` — the §28 authority to approve a refund (a supervisor/
    *  manager above the cashier). A named approver who does not hold it does not count. */
   readonly canApproveRefund: (tenantId: string, userId: string) => Promise<boolean> | boolean;
+  /** Every synced refund that reconciled with a §28 breach, tenant-wide — the loss surface for a person
+   *  to work (hard rule #10). Folded from the returns projection, flagged records only. */
+  readonly flaggedReturns: (tenantId: string) => Promise<readonly ReturnRecord[]> | readonly ReturnRecord[];
   readonly now: () => string;
 }
 
@@ -82,6 +94,47 @@ function readReturn(body: unknown, saleId: string): ReturnRequest | undefined {
     processedAt: typeof b.processedAt === 'string' && b.processedAt.trim() !== '' ? b.processedAt : '',
     processedBy: '',          // set to ctx.userId in the handler
     approvalThresholdMinor: 0, // set from the tenant policy in the handler
+  };
+}
+
+/** A refund that ALREADY HAPPENED at the lane, relayed by the sync agent. Unlike the desk return, the
+ *  OPERATOR identity (`processedBy`/`approvedBy`) is captured at the lane and trusted here (the sync agent
+ *  is not the operator) — exactly as the synced-sale route trusts the lane's cashier. */
+interface SyncedReturn {
+  readonly returnId: string;
+  readonly number: string;
+  readonly processedBy: string;
+  readonly approvedBy?: string;
+  readonly reasonCode: string;
+  readonly refundMinor: number;
+  readonly refundTender: string;
+  readonly refundStatus: RefundStatus;
+  readonly processedAt: string;
+  readonly lines: readonly ReturnRequestLine[];
+}
+
+function readSyncedReturn(body: unknown): SyncedReturn | undefined {
+  if (body === null || typeof body !== 'object') return undefined;
+  const b = body as Record<string, unknown>;
+  const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+  if (!isStr(b['returnId']) || !isStr(b['processedBy']) || typeof b['reasonCode'] !== 'string'
+    || typeof b['refundMinor'] !== 'number' || !Number.isInteger(b['refundMinor']) || (b['refundMinor'] as number) < 0
+    || !isStr(b['refundTender']) || !Array.isArray(b['lines'])) {
+    return undefined;
+  }
+  return {
+    returnId: b['returnId'] as string,
+    number: isStr(b['number']) ? (b['number'] as string) : (b['returnId'] as string),
+    processedBy: b['processedBy'] as string,
+    ...(isStr(b['approvedBy']) ? { approvedBy: b['approvedBy'] as string } : {}),
+    reasonCode: b['reasonCode'] as string,
+    refundMinor: b['refundMinor'] as number,
+    refundTender: b['refundTender'] as string,
+    // Never assume a card/UPI refund settled (M13-FR-04): only an explicit 'settled' (cash/store-credit at
+    // the lane) is trusted as settled; anything else is pending until reconciled.
+    refundStatus: b['refundStatus'] === 'settled' ? 'settled' : 'pending',
+    processedAt: isStr(b['processedAt']) ? (b['processedAt'] as string) : '',
+    lines: b['lines'] as ReturnRequestLine[],
   };
 }
 
@@ -255,6 +308,62 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
         const now = deps.now();
         await deps.recordRefundThreshold(ctx.tenantId, thresholdMinor, `${thresholdMinor}-${now}`);
         return { status: 200, body: { thresholdMinor, setAt: now } };
+      },
+    },
+    {
+      // Reconcile a return that ALREADY HAPPENED at the lane (M13-FR-01, offline-first · §31). The sync agent
+      // relays it under the store's sync token; the OPERATOR identity (processedBy/approvedBy) is the one
+      // captured at the lane, TRUSTED here as the synced-sale route trusts the lane's cashier — the sync
+      // agent is not the operator. The money already left the drawer, so this NEVER rejects (a 4xx would
+      // tell the till a refund that happened did not): it RECORDS the return into the register (feeding the
+      // at-most-once guard and the money cap), and for a §28 breach records a VISIBLE governance exception
+      // (record-and-flag, hard rule #10) instead of the desk guard's refusal. The threshold is the tenant's
+      // policy and the approver's authority is re-checked on the cloud — a bad approver becomes an exception.
+      api: 'API-05', method: 'POST', path: '/v1/sales/:saleId/returns/synced',
+      permission: 'pos.return.sync', idempotent: true,
+      handler: async (ctx) => {
+        const saleId = ctx.params['saleId'] ?? '';
+        const s = readSyncedReturn(ctx.body);
+        if (s === undefined) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_synced_return',
+            whatHappened: 'This payload could not be read as a synced return — it needs a return id, who processed it, a reason code, a whole refund amount, a tender and lines.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Keep it in the outbox and raise it — a refund that happened at the lane must not be dropped.',
+          });
+        }
+
+        const thresholdMinor = (await deps.refundThreshold(ctx.tenantId)) ?? DEFAULT_REFUND_THRESHOLD_MINOR;
+        const approverHoldsAuthority = s.approvedBy !== undefined && s.approvedBy.trim() !== ''
+          ? await deps.canApproveRefund(ctx.tenantId, s.approvedBy)
+          : false;
+        const flags = refundGovernanceFindings({
+          refundMinor: s.refundMinor, approvalThresholdMinor: thresholdMinor, processedBy: s.processedBy,
+          ...(s.approvedBy === undefined ? {} : { approvedBy: s.approvedBy }), approverHoldsAuthority,
+        });
+
+        const record: ReturnRecord = {
+          returnId: s.returnId, number: s.number, originalSaleId: saleId,
+          processedBy: s.processedBy, processedAt: s.processedAt === '' ? deps.now() : s.processedAt,
+          reasonCode: s.reasonCode, refundMinor: s.refundMinor, refundTender: s.refundTender,
+          refundStatus: s.refundStatus, lines: s.lines,
+          ...(flags.length > 0 ? { governanceFlags: flags } : {}),
+          ...(s.approvedBy === undefined ? {} : { approvedBy: s.approvedBy }),
+        };
+        await deps.recordReturn(ctx.tenantId, saleId, record);
+        // 202: the refund happened and is now reconciled; a §28 breach is surfaced as an exception, not a refusal.
+        return { status: 202, body: { returnId: s.returnId, reconciled: true, flags } };
+      },
+    },
+    {
+      // Synced refunds that reconciled with a §28 breach — a governance/LOSS surface for a person to work
+      // (hard rule #10). Gated one rung above the desk on lp.case.read (owner/manager/accountant), like the
+      // over-returns surface: a cashier taking refunds has no business reading the shop's governance exceptions.
+      api: 'API-05', method: 'GET', path: '/v1/pos/return-governance-exceptions',
+      permission: 'lp.case.read',
+      handler: async (ctx) => {
+        const flagged = await deps.flaggedReturns(ctx.tenantId);
+        return { status: 200, body: { count: flagged.length, exceptions: flagged, asAt: deps.now() } };
       },
     },
   ];
