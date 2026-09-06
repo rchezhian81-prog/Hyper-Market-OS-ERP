@@ -81,6 +81,22 @@ export interface ReturnAssessment {
 }
 
 /**
+ * The per-tenant refund approval threshold (M13-FR-03) — the refund value at/above which a separate
+ * §28 approver is required. This is **configuration, not a per-request input**: were the caller to send
+ * their own threshold, they could claim any refund "immaterial" and skip the second signature. The
+ * default is 0 — every refund of any amount needs a separate approver — and the owner may raise it.
+ */
+export const DEFAULT_REFUND_THRESHOLD_MINOR = 0;
+
+/** Validate a proposed refund threshold from an untrusted body — a whole number of paise ≥ 0. */
+export function readRefundThreshold(v: unknown): number | 'invalid' {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return 'invalid';
+  const t = (v as Record<string, unknown>)['thresholdMinor'];
+  if (typeof t !== 'number' || !Number.isInteger(t) || t < 0) return 'invalid';
+  return t;
+}
+
+/**
  * Assess one return against a bill and everything already returned/refunded against it.
  *
  * The one subtlety worth stating: a return does **not** count against itself. The prior history is

@@ -11,7 +11,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
-import { assessReturn, type ReturnRequest, type ReturnRequestLine } from '../../../packages/returns/src/assess-return';
+import { assessReturn, DEFAULT_REFUND_THRESHOLD_MINOR, readRefundThreshold, type ReturnRequest, type ReturnRequestLine } from '../../../packages/returns/src/assess-return';
 import {
   returnRegister, returnableLines, overReturned, alreadyRefundedMinor,
   type OriginalSale, type RecordedReturn,
@@ -50,6 +50,15 @@ export interface ReturnsDeps {
   readonly priorRefunds: (tenantId: string, saleId: string) => Promise<readonly RecordedRefund[]> | readonly RecordedRefund[];
   /** Append the accepted return. Idempotent on the return id. */
   readonly recordReturn: (tenantId: string, saleId: string, record: ReturnRecord) => Promise<void> | void;
+  /** The tenant's refund approval threshold (M13-FR-03) — `undefined` means none set, so the default
+   *  (0 — every refund needs a §28 approver) applies. Sourced SERVER-SIDE: the caller cannot declare
+   *  their own threshold in the body and call a refund "immaterial". */
+  readonly refundThreshold: (tenantId: string) => Promise<number | undefined> | number | undefined;
+  /** Set the tenant's refund approval threshold — append-only config (latest wins), owner-only. */
+  readonly recordRefundThreshold: (tenantId: string, thresholdMinor: number, key: string) => Promise<void> | void;
+  /** Whether a user holds `pos.return.approve` — the §28 authority to approve a refund (a supervisor/
+   *  manager above the cashier). A named approver who does not hold it does not count. */
+  readonly canApproveRefund: (tenantId: string, userId: string) => Promise<boolean> | boolean;
   readonly now: () => string;
 }
 
@@ -57,19 +66,22 @@ export interface ReturnsDeps {
 function readReturn(body: unknown, saleId: string): ReturnRequest | undefined {
   if (body === null || typeof body !== 'object') return undefined;
   const b = body as Partial<ReturnRequest>;
+  // `processedBy` and `approvalThresholdMinor` are NOT read from the body — the route sets `processedBy`
+  // to the authenticated caller and the threshold from the tenant's policy. A caller cannot record a
+  // refund under someone else's name, nor declare their own approval threshold.
   const structural = typeof b.returnId === 'string' && b.returnId.trim() !== ''
-    && typeof b.processedBy === 'string' && b.processedBy.trim() !== ''
     && typeof b.reasonCode === 'string'
     && Array.isArray(b.lines)
     && typeof b.refundMinor === 'number' && Number.isInteger(b.refundMinor)
-    && typeof b.refundTender === 'string'
-    && typeof b.approvalThresholdMinor === 'number' && Number.isInteger(b.approvalThresholdMinor);
+    && typeof b.refundTender === 'string';
   if (!structural) return undefined;
   return {
     ...(b as ReturnRequest),
     originalSaleId: saleId,
     number: typeof b.number === 'string' && b.number.trim() !== '' ? b.number : saleId,
     processedAt: typeof b.processedAt === 'string' && b.processedAt.trim() !== '' ? b.processedAt : '',
+    processedBy: '',          // set to ctx.userId in the handler
+    approvalThresholdMinor: 0, // set from the tenant policy in the handler
   };
 }
 
@@ -82,11 +94,11 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
       permission: 'pos.return.record', idempotent: true,
       handler: async (ctx) => {
         const saleId = ctx.params['saleId'] ?? '';
-        const request = readReturn(ctx.body, saleId);
-        if (request === undefined) {
+        const parsed = readReturn(ctx.body, saleId);
+        if (parsed === undefined) {
           throw apiError(400, {
             code: 'not_readable_as_a_return',
-            whatHappened: 'This payload could not be read as a return — it needs a return id, who processed it, a reason code, lines, a whole refund amount, a tender and an approval threshold.',
+            whatHappened: 'This payload could not be read as a return — it needs a return id, a reason code, lines, a whole refund amount and a tender. Who processed it is your login, and the approval threshold is the tenant\'s policy — not sent by the caller.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'No money has moved. Fix the return and send it again.',
           });
@@ -102,14 +114,37 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
           Promise.resolve(deps.priorRefunds(ctx.tenantId, saleId)),
         ]);
 
-        const processedAt = request.processedAt === '' ? deps.now() : request.processedAt;
-        const assessment = assessReturn({ sale, priorReturns, priorRefunds, request: { ...request, processedAt } });
+        // The processor is the AUTHENTICATED caller (never a body value — a refund carries the name of
+        // whoever gave it), and the approval threshold is the tenant's policy (default 0 — every refund
+        // needs a §28 approver), NOT the body. This is a direct desk/online guard: no money has moved yet,
+        // so a governance failure is refused here rather than recorded.
+        const thresholdMinor = (await deps.refundThreshold(ctx.tenantId)) ?? DEFAULT_REFUND_THRESHOLD_MINOR;
+        const processedAt = parsed.processedAt === '' ? deps.now() : parsed.processedAt;
+        const request: ReturnRequest = { ...parsed, processedBy: ctx.userId, approvalThresholdMinor: thresholdMinor, processedAt };
+
+        const assessment = assessReturn({ sale, priorReturns, priorRefunds, request });
         if (!assessment.ok) {
           throw apiError(422, {
             code: assessment.refusedBecause!,
             whatHappened: assessment.detail,
             wasItSaved: 'not_saved',
             nextSafeAction: 'No money has moved and no stock has changed. Fix the return and send it again.',
+          });
+        }
+
+        // §28 authority gate: assessReturn confirms a material refund carries a named approver who is not
+        // the processor, but the pure engine cannot see roles — a name in the box is not an approval. When
+        // a refund is material and an approver was named, that approver must GENUINELY hold pos.return.approve
+        // (a supervisor/manager above the cashier), else it does not count (the same shape as the price-change/
+        // promotion/compensation approvals). No money has moved, so this is refused.
+        const material = request.refundMinor > 0 && request.refundMinor >= thresholdMinor;
+        if (material && typeof request.approvedBy === 'string' && request.approvedBy.trim() !== ''
+          && !(await deps.canApproveRefund(ctx.tenantId, request.approvedBy))) {
+          throw apiError(422, {
+            code: 'approver_may_not_approve',
+            whatHappened: `${request.approvedBy} does not hold the authority to approve a refund, so their approval of this one does not count.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Have a supervisor/manager (a different person than the one processing it) approve the refund. No money has moved.',
           });
         }
 
@@ -190,6 +225,36 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
           status: 200,
           body: { saleId, overReturned: over, anyFound: over.length > 0, asAt: deps.now() },
         };
+      },
+    },
+    {
+      // The refund approval threshold (M13-FR-03) — the value at/above which a refund needs a supervisor's
+      // sign-off. READ so the desk can see the line it is working to (a cashier reads it).
+      api: 'API-05', method: 'GET', path: '/v1/pos/refund-threshold',
+      permission: 'pos.return.record',
+      handler: async (ctx) => {
+        const stored = await deps.refundThreshold(ctx.tenantId);
+        return { status: 200, body: { thresholdMinor: stored ?? DEFAULT_REFUND_THRESHOLD_MINOR, isDefault: stored === undefined } };
+      },
+    },
+    {
+      // Set the refund approval threshold (M13-FR-03) — an owner decision. Recorded append-only (latest
+      // wins). Body: { thresholdMinor }. 0 means every refund needs a §28 approver. Not a per-refund input.
+      api: 'API-05', method: 'POST', path: '/v1/pos/refund-threshold',
+      permission: 'pos.return.threshold.set', idempotent: true,
+      handler: async (ctx) => {
+        const thresholdMinor = readRefundThreshold(ctx.body);
+        if (thresholdMinor === 'invalid') {
+          throw apiError(400, {
+            code: 'not_readable_as_a_threshold',
+            whatHappened: 'A refund threshold needs { thresholdMinor } — a whole amount in paise, ≥ 0 (0 means every refund needs an approver).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the value at or above which a refund needs a supervisor sign-off.',
+          });
+        }
+        const now = deps.now();
+        await deps.recordRefundThreshold(ctx.tenantId, thresholdMinor, `${thresholdMinor}-${now}`);
+        return { status: 200, body: { thresholdMinor, setAt: now } };
       },
     },
   ];

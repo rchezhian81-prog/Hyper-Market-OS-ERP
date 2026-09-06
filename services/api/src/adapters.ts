@@ -1751,6 +1751,31 @@ export function returnsAdapter(input: {
         },
       ]);
     },
+
+    // The tenant's refund approval threshold (M13-FR-03) — tenant-wide config, append-only (latest wins).
+    refundThreshold: async (tenantId) => {
+      const all = await allOf<{ thresholdMinor: number }>(input.store, tenantId, streamName(STREAM.returns, 'refund-threshold'), 'RefundThresholdSet');
+      const last = all[all.length - 1];
+      return last === undefined ? undefined : last.thresholdMinor;
+    },
+    recordRefundThreshold: async (tenantId, thresholdMinor, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, streamName(STREAM.returns, 'refund-threshold'), makeEvent({
+        id: `refund-threshold-${d}`,
+        type: 'RefundThresholdSet',
+        occurredAt: input.now(),
+        idempotencyKey: `refund-threshold-${tenantId}-${d}`,
+        source: 'api/pos',
+        payload: { thresholdMinor },
+      }));
+    },
+    // The §28 authority to approve a refund (M13-FR-03) — pos.return.approve, held by a supervisor/manager
+    // (owner + store_manager), above the cashier. A named approver who does not hold it does not count.
+    canApproveRefund: async (tenantId, userId) => {
+      const grants = await allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+      const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
+      return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('pos.return.approve'));
+    },
   };
 }
 

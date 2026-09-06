@@ -451,7 +451,7 @@ export function buildSurface(deps: {
     } : posAdapter({ store, now })),
     ...returnsRoutes(store === undefined ? {
       originalSale: empty(undefined), priorReturns: empty([]), priorRefunds: empty([]),
-      recordReturn: () => {}, now,
+      recordReturn: () => {}, refundThreshold: () => undefined, recordRefundThreshold: () => {}, canApproveRefund: () => Promise.resolve(false), now,
     } : returnsAdapter({ store, now })),
     ...cashRoutes(store === undefined
       ? { tillMovements: empty([]), recordCashMovement: () => {}, now }

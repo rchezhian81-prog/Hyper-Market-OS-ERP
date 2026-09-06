@@ -5,6 +5,63 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M13-FR-01/03 refunds — the till can no longer set its own approval rule (6 September 2026)
+
+**Owner direction:** the fifth and final bypass. I brought the owner a design question first (refunds are meant to
+be offline-first, so I traced how an offline refund reaches the cloud before touching it). The trace found the
+cloud route `POST /v1/sales/:saleId/returns` is a **direct desk/online guard, not the offline sync endpoint** —
+the offline refund path (`ReturnAccepted` → outbox) has **no cloud route today** (it's dead-lettered by name; the
+POS shell wires no sync agent for it). So refusing a bad approver here is safe (no money has moved) and does not
+touch offline-first. The owner then chose that **every refund requires a manager/owner approval — no amount a
+cashier can refund alone** (threshold ₹0).
+
+**The finding, precisely:** a refund is where money leaves the till, so an over-threshold refund needs a separate
+supervisor to approve it (§28, cashier can't self-approve). The cloud guard had **three unverified inputs**:
+`processedBy` and `approvalThresholdMinor` came from the **request body**, and the approver (`approvedBy`) was only
+checked ≠ the processor, never for authority. So a caller could record a refund under someone else's name, claim a
+huge threshold to make any refund "immaterial", and name anyone as approver.
+
+**What was built (one increment):**
+- **`processedBy` is now the authenticated caller** (`ctx.userId`), never a body value — a refund carries the name
+  of whoever gave it, and the self-approval check can't be dodged by forging the processor.
+- **The threshold is sourced server-side** from per-tenant config (default **0** — every refund needs an approver),
+  never the body — closing the self-declared-threshold bypass. Owner-settable via `GET`/`POST /v1/pos/refund-threshold`
+  (POST gated the new **owner-only** `pos.return.threshold.set`).
+- **A material refund's approver must genuinely hold `pos.return.approve`** (a new permission on **owner +
+  store_manager**, above the cashier), via `canApproveRefund` — not merely a name ≠ processor
+  (`approver_may_not_approve`). The engine `assessReturn` is unchanged (it runs offline too); only the cloud route
+  sources the inputs and adds the authority gate.
+- Adapter (`returnsAdapter`: `refundThreshold`, `recordRefundThreshold`, `canApproveRefund`) + `main.ts` no-store
+  stub + tests. `returns-guard-the-refund.test.ts` rewritten (every refund needs a verified approver at the 0
+  default; a cashier/unprovisioned approver refused; the threshold owner-settable); two GST/inventory tests that
+  do refunds as a means to an end now provision a genuine approver.
+
+**No re-rate.** M13 was `PARTIALLY_WIRED`; this hardens the live desk guard. **Headline stays 41.5%.** Module-ladder
+guardrail re-checked: label ↔ rung ↔ summary counts unchanged, sum to 36.
+
+**Gate green:** typecheck, completion (41.5%), lint, secret-scan, the full vitest suite (**6255 passed**), and the
+api-surface-contract (both new permissions granted) / §28-confinement / module-ladder guardrails.
+
+**A larger gap this trace surfaced (flagged, not built):** offline returns are **not wired to reconcile on sync** —
+`ReturnAccepted` has no cloud route and the POS shell drains no return outbox, so "a receipted return reconciles on
+sync" (roadmap M13-FR-01) is genuinely unbuilt end-to-end. When that is wired, the record-and-flag design (record
+the synced refund, flag a governance breach as a visible exception) is the right shape for it. I recorded this as a
+named follow-on rather than folding it in here.
+
+**For the owner — in plain words:** giving a customer money back is where cash leaves the till, so it should need a
+manager's sign-off. The system was letting the till *tell it* who processed the refund, how big a refund counts as
+"needs approval", and who approved it — none of it checked. So in theory a refund could be logged under a made-up
+name, with the approval rule switched off, approved by anyone. Now: the refund is always recorded under the actual
+person logged in; the approval rule lives in the system (set to **every refund needs a manager**, your choice); and
+the approver must genuinely be a manager or you. You can change "every refund" to a rupee amount any time.
+**What to check in the store:** a cashier tries to refund → it should refuse until a manager approves; a cashier's
+own name (or a made-up name) as the approver → refused; a manager's name → it goes through. **The bypass hunt is
+now complete** — all five closed (below-cost promotions, customer compensation, stock write-off, month-end signer,
+refunds). The one remaining piece is *wiring offline returns to sync to the cloud*, which turned out to be unbuilt
+— I'll bring that to you as its own decision when you're ready.
+
+---
+
 ## M23-FR-04 month-end — a made-up name can no longer sign a close or reopen a locked month (5 September 2026)
 
 **Owner direction:** the last of the bypass hunt (before refunds). The owner chose that **the owner or the
