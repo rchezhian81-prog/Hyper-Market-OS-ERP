@@ -5,6 +5,62 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M13-FR-01 offline returns reconcile on sync — Slice 2b: the edge drain wire (6 September 2026)
+
+**Owner direction:** the owner asked me to wire offline returns to the cloud, one PR at a time. Slice 1
+built the cloud doorway (#342); Slice 2a built the transport road to it (#343, merged). This is
+**Slice 2b** — the edge-bootstrap wire that *feeds* that road. Because this is P-01-critical (it touches
+the store-edge box's durable disk and restart, the thing that keeps the shop trading offline), I built
+it to leave the sale path **byte-for-byte untouched**, and scoped it to the **edge half only** so the
+one remaining browser money-out change lands in its own reviewable PR (Slice 2c).
+
+**The gap:** a refund taken at the till (`apps/pos` `createTillSession.refund`) commits the package
+`commitReturn` **in memory** — no durable disk write and no drained agent — unlike a *sale*, which posts
+to the edge over loopback (`/lane/sales` → the edge fsyncs it → the edge's agent syncs it). So an offline
+refund was neither durable on the box nor able to reach the cloud.
+
+**What was built (Slice 2b — the edge can now durably store + sync a refund):**
+- **A separate returns pipeline on the edge.** `createEdgeNode` gains **`commitReturn(returnId, record)`**
+  — the exact mirror of `commit`: it durably writes the refund to the edge's **own `returns.log`** (never
+  the sale log) and enqueues `ReturnAccepted` into a **separate returns outbox**, translated by the new
+  **`toCloudReturn`** (`edge/store-edge/src/cloud-return.ts`, the mirror of `toCloudSale`; it *preserves* a
+  no-receipt return's `originalSaleId: null` so the transport dead-letters it for a person rather than
+  misrouting it).
+- **`main.ts`** opens the second log, re-queues it on restart from its **own `sync-cursor-returns`**
+  cursor, and drains it with a **second `SyncAgent`** (same transport). This is why the sale path is
+  untouched: separate log, separate cursor, separate outbox, separate agent — the sale's re-queue and
+  cursor arithmetic are byte-for-byte as they were, a refund can never be re-queued as a sale, and a
+  refund that cannot get through never holds a sale.
+- **`lane-server.ts`** serves **`POST /lane/returns`** beside `/lane/sales` (loopback-only, same CORS,
+  refuses a refund with no id *before* any durable write — a bad minute, not a lost refund).
+- Tests: **`tests/integration/offline-returns-reach-the-cloud-through-the-edge.test.ts`** (6) drives the
+  **real** `startEdge` → `node.commitReturn` → returns `SyncAgent` → the real cloud surface — a refund
+  reconciles into the register; **re-sends after a crash** from the returns log; a §28-breach approver
+  reconciles **and** is flagged (never rejected); and **the sale and refund logs stay separate — neither
+  is ever re-queued as the other**. Plus `tests/unit/edge-cloud-return.test.ts` (5) and `/lane/returns`
+  cases in `tests/unit/lane-server-cors.test.ts` (4).
+
+**No re-rate.** M13 stays `PARTIALLY_WIRED`. All three earlier halves and now the edge drain are in, but
+the till still doesn't *post* its refund to the edge — that's **Slice 2c** (a browser money-out change:
+make `refund()` durable-first via a `laneDurableReturn` loopback POST, mirroring the sale's `laneDurable`).
+Until then nothing in production feeds `commitReturn`, so the screen's unsent-count (still sales-only) is
+not lying about anything that exists yet. **Headline stays 41.5%** — the wire, not a rung. Module-ladder
+guardrail re-checked: unchanged, sum to 36.
+
+**Gate green:** typecheck, completion (41.5%), lint, secret-scan, and the full vitest suite (**6287 passed**).
+
+**For the owner — in plain words:** think of the store's back-office box as the shop's safe. A *sale* is
+already written into the safe the instant it's rung up, even with the internet down, and sent onward when
+the line's back. A *refund* wasn't — it only lived in the till screen's memory, so a browser refresh or a
+power blip could lose it, and it never reached the central system. This slice gives refunds the **same
+safe**: a refund is written to the box's disk before it's called done, kept in its **own drawer** so it can
+never get muddled with sales, and sent to the central system on its own — re-trying safely if the line was
+down when it happened. **What to check** once the final piece is in: take a refund on a till with the
+network off, bring the network back, and it should appear centrally (and on your review list if a manager
+didn't approve it). **Next:** Slice 2c — the till handing its refund to the box (the last piece).
+
+---
+
 ## M13-FR-01 offline returns reconcile on sync — Slice 2a: the transport wire (6 September 2026)
 
 **Owner direction:** the owner asked me to wire offline returns to the cloud and chose to **build it in slices,

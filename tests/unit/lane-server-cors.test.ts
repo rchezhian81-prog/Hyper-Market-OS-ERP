@@ -16,10 +16,12 @@ import type { EdgeNode } from '../../edge/store-edge/src/index';
 const stubNode = (committed = true): EdgeNode => ({
   pack: () => undefined,
   commit: async (id) => ({ committed, saleId: id, laneMessage: committed ? 'saved' : 'refused' } as never),
+  commitReturn: async (id) => ({ committed, returnId: id, laneMessage: committed ? 'saved' : 'refused' } as never),
   takePack: () => ({ accepted: true, staffMessage: '' }),
 });
 
 const SALE = JSON.stringify({ id: 'S-1', number: 'R-1', total: 100, lines: [], tenders: [] });
+const RETURN = JSON.stringify({ returnId: 'RT-1', originalSaleId: 'S-1', number: 'RT-1', processedBy: 'u-cash', reasonCode: 'x', refundMinor: 100, refundTender: 'cash', lines: [] });
 
 describe('isLoopbackOrigin', () => {
   it('accepts 127.0.0.1, localhost and [::1] on any port', () => {
@@ -97,5 +99,56 @@ describe('the lane socket answers a browser on this machine', () => {
     });
     expect(res.status).toBe(200);
     expect(res.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
+  // ── /lane/returns is the exact mirror of /lane/sales (M13-FR-01) ────────────
+
+  it('commits a refund posted to /lane/returns, calling commitReturn (not commit)', async () => {
+    const calls: { kind: 'sale' | 'return'; id: string }[] = [];
+    const node: EdgeNode = {
+      pack: () => undefined,
+      commit: async (id) => { calls.push({ kind: 'sale', id }); return { committed: true, laneMessage: 'saved' } as never; },
+      commitReturn: async (id) => { calls.push({ kind: 'return', id }); return { committed: true, laneMessage: 'saved' } as never; },
+      takePack: () => ({ accepted: true, staffMessage: '' }),
+    };
+    const base = await start(node);
+    const res = await fetch(`${base}/lane/returns`, {
+      method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost:8080' }, body: RETURN,
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('access-control-allow-origin')).toBe('http://localhost:8080');
+    expect((await res.json() as { committed: boolean }).committed).toBe(true);
+    // The refund went through the RETURN seam, and nothing touched the sale seam.
+    expect(calls).toEqual([{ kind: 'return', id: 'RT-1' }]);
+  });
+
+  it('answers the /lane/returns preflight for a loopback origin', async () => {
+    const base = await start();
+    const res = await fetch(`${base}/lane/returns`, {
+      method: 'OPTIONS', headers: { origin: 'http://127.0.0.1:8080', 'access-control-request-method': 'POST' },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-origin')).toBe('http://127.0.0.1:8080');
+  });
+
+  it('refuses a refund with no return id, before any durable write — a bad minute, not a lost refund', async () => {
+    const base = await start();
+    const res = await fetch(`${base}/lane/returns`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ originalSaleId: 'S-1', refundMinor: 100 }), // no returnId
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json() as { committed: boolean }).committed).toBe(false);
+  });
+
+  it('serves only the two write routes; anything else is 404 naming both', async () => {
+    const base = await start();
+    const res = await fetch(`${base}/lane/whatever`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    });
+    expect(res.status).toBe(404);
+    const body = await res.json() as { error: string };
+    expect(body.error).toContain('/lane/sales');
+    expect(body.error).toContain('/lane/returns');
   });
 });

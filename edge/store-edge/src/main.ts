@@ -49,8 +49,12 @@ import type { ScreenInput } from './screen-data';
 import { hmacSigner } from '../../../services/catalogue/src/index';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import { toCloudSale } from './cloud-sale';
+import { toCloudReturn } from './cloud-return';
 import { makeTradingDayRule, tradingDate, type TradingDayRule } from '../../../packages/calendar/src/trading-day';
 import { readFile } from 'node:fs/promises';
+
+/** The returns pipeline's own cursor file, so the sale and refund logs advance independently. */
+const RETURNS_CURSOR = 'sync-cursor-returns';
 
 /** Gap between drains when the last one delivered something. */
 const BASE_INTERVAL_MS = 15_000;
@@ -76,15 +80,25 @@ export function nextInterval(consecutiveQuietPasses: number): number {
 export interface EdgeProcess {
   readonly log: OpenFileLog;
   /**
+   * The RETURN's own durable log — a separate file from the sale log (M13-FR-01). A refund is money
+   * leaving the drawer, so it is durable before it is called done; keeping it out of the sale log is
+   * what lets the sale path's restart re-queue stay exactly as it was.
+   */
+  readonly returnsLog: OpenFileLog;
+  /**
    * The loopback socket the lane's screen posts a sale to, or null when this edge has no lane —
    * the back-office box runs the same process and does the shop-wide work (ADR-0004).
    */
   readonly lane: LaneServer | null;
   readonly outbox: SyncOutbox;
-  /** What a lane talks to: price a scan, commit a sale, take a new pack. */
+  /** The return pipeline's own outbox — drained by `returnsAgent`, cursored separately from sales. */
+  readonly returnsOutbox: SyncOutbox;
+  /** What a lane talks to: price a scan, commit a sale, commit a refund, take a new pack. */
   readonly node: EdgeNode;
   /** Null when no cloud is configured — which is a supported way to run, not a fault. */
   readonly agent: SyncAgent | null;
+  /** The return pipeline's own sync agent (same transport, own outbox). Null when no cloud. */
+  readonly returnsAgent: SyncAgent | null;
   /**
    * Pull the latest signed catalogue pack from the cloud now, adopt it if it is newer and verifies,
    * and persist it to disk — the inbound refresh (SYNC-01). Null when no cloud is configured. The
@@ -125,6 +139,16 @@ export async function startEdge(
     capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
   });
 
+  // The RETURN's own durable log, in the same data dir but a separate file (M13-FR-01). A refund is
+  // money out of the drawer, so it is durable before it is called done — but it must never share the
+  // sale log: the sale re-queue below reads every sale-log record as a `SaleCommitted`, and a return
+  // among them would be re-sent to `/v1/sales` as a broken sale. Its own file keeps the two apart.
+  const returnsLog = await openFileLog({
+    dataDir: settings['EDGE_DATA_DIR']!,
+    capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
+    fileName: 'returns.log',
+  });
+
   // Report what was found on the disk, including anything a power cut left half-written. It is
   // quarantined rather than repaired, and it is said out loud rather than counted silently (#6).
   const found = await readLog(log.path);
@@ -136,6 +160,7 @@ export async function startEdge(
   }
 
   const outbox = new SyncOutbox();
+  const returnsOutbox = new SyncOutbox();
   const tenantId = settings['EDGE_TENANT_ID']!;
 
   /**
@@ -194,6 +219,32 @@ export async function startEdge(
   }
   if (toResend.length > 0) say(`${toResend.length} sale(s) from before are still to send.`);
 
+  // The SAME rebuild-from-the-log, for returns, over the returns log and the returns cursor. A refund
+  // committed with the line down is re-queued after a restart and the cloud dedupes it (§31.1). It is
+  // translated to the synced-return contract on its way in, so a re-sent refund is read by the cloud
+  // exactly like one sent live. Entirely separate arithmetic from the sales cursor above — one number
+  // cannot mark two logs — which is why the sale re-queue is untouched by any of this.
+  const returnsFound = await readLog(returnsLog.path);
+  const returnsBroken = returnsFound.filter((r) => !r.ok);
+  if (returnsBroken.length > 0) {
+    say(`  ${returnsBroken.length} refund record(s) could not be read whole — kept, not repaired. Raise this.`);
+  }
+  let returnsHandledBefore = await readCursor(settings['EDGE_DATA_DIR']!, RETURNS_CURSOR);
+  const wholeReturns = returnsFound.filter((r) => r.ok).map((r) => (r.ok ? r.record : ''));
+  const returnsToResend = wholeReturns.slice(returnsHandledBefore);
+  for (const [i, record] of returnsToResend.entries()) {
+    let parsed: unknown;
+    try { parsed = JSON.parse(record) as unknown; } catch { continue; }
+    const cloud = toCloudReturn(parsed);
+    const returnId = cloud.returnId !== '' ? cloud.returnId : `record-${returnsHandledBefore + i}`;
+    returnsOutbox.enqueue(makeEvent({
+      id: `edge-return-${returnId}`, type: 'ReturnAccepted', occurredAt: new Date().toISOString(),
+      idempotencyKey: `edge-return-${tenantId}-${returnId}`, source: 'edge/lane',
+      payload: cloud,
+    }));
+  }
+  if (returnsToResend.length > 0) say(`${returnsToResend.length} refund(s) from before are still to send.`);
+
   const node = createEdgeNode({
     tenantId,
     log,
@@ -201,6 +252,9 @@ export async function startEdge(
     // The seam. Without it a sale is durable on the disk and never queued, which is exactly how
     // it was: every piece on either side built and tested, nothing joining them, nothing failing.
     outbox,
+    // The refund's mirror of that seam, on its own log and its own outbox (M13-FR-01).
+    returnsLog,
+    returnsOutbox,
     ...(restoredPack === undefined ? {} : { initialPack: restoredPack }),
   });
 
@@ -275,16 +329,23 @@ export async function startEdge(
     // Supported, and said plainly. The lanes sell; the queue grows; nobody is told a lie about it.
     say('no cloud is configured, so nothing will be synced. The shop can still trade — that is the point.');
     return {
-      log, outbox, node, lane, screens, agent: null, refreshPack: null,
+      log, returnsLog, outbox, returnsOutbox, node, lane, screens, agent: null, returnsAgent: null, refreshPack: null,
       stop: async () => {
         if (lane !== null) await lane.stop();
         if (screens !== null) await screens.stop();
         await log.close();
+        await returnsLog.close();
       },
     };
   }
 
   const agent = new SyncAgent(outbox, httpTransport({
+    baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch,
+  }));
+  // The return pipeline's own agent — same transport, its own outbox. A second agent is simpler and
+  // safer than teaching one agent about two queues: the sale drain and its cursor stay exactly as they
+  // were, and the refund drain sits beside them without ever crossing into the sale path.
+  const returnsAgent = new SyncAgent(returnsOutbox, httpTransport({
     baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch,
   }));
 
@@ -339,15 +400,34 @@ export async function startEdge(
     }
   };
 
+  /**
+   * The SAME contiguous-prefix advance, for the returns log and its own cursor. Reads the returns
+   * OUTBOX, which — being a separate queue — holds only refunds, in refund order, so there is nothing
+   * to filter and nothing of the sale path to disturb.
+   */
+  const advanceReturnsCursor = async (): Promise<void> => {
+    const handledNow = returnsHandledBefore + advanceTo(returnsOutbox.all().map((i) => i.state !== 'pending'));
+    if (handledNow > returnsHandledBefore) {
+      returnsHandledBefore = handledNow;
+      await writeCursor(settings['EDGE_DATA_DIR']!, handledNow, RETURNS_CURSOR);
+    }
+  };
+
   const pass = async (): Promise<void> => {
     // Sequential by construction: the next pass is scheduled only after this one returns, so two
     // drains can never run at once.
     try {
       const result = await agent.drain({ at: new Date().toISOString() });
       await advanceCursor();
-      quietPasses = result.acknowledged > 0 ? 0 : quietPasses + 1;
-      if (result.acknowledged > 0 || result.deadLettered > 0) {
-        say(`sync: ${result.acknowledged} sent, ${result.deadLettered} needing a person, ${result.remaining} waiting`);
+      // The refund queue drains right after the sale queue, on the same loop and just as far from the
+      // sale path. Its own drain, its own cursor — a refund that cannot get through never holds a sale.
+      const returnsResult = await returnsAgent.drain({ at: new Date().toISOString() });
+      await advanceReturnsCursor();
+      const sent = result.acknowledged + returnsResult.acknowledged;
+      const dead = result.deadLettered + returnsResult.deadLettered;
+      quietPasses = sent > 0 ? 0 : quietPasses + 1;
+      if (sent > 0 || dead > 0) {
+        say(`sync: ${sent} sent, ${dead} needing a person, ${result.remaining + returnsResult.remaining} waiting`);
       }
     } catch (e) {
       // A drain that throws is a bug, not a lost sale — the outbox still holds everything. Say so
@@ -371,28 +451,41 @@ export async function startEdge(
 
   return {
     log,
+    returnsLog,
     outbox,
+    returnsOutbox,
     node,
     lane,
     screens,
     agent,
+    returnsAgent,
     refreshPack,
     stop: async () => {
       stopping = true;
       if (timer !== undefined) clearTimeout(timer);
       // One last try, then go. Nothing is lost by stopping mid-drain: an unacknowledged item stays
-      // pending, which is the whole reason there is an outbox.
+      // pending, which is the whole reason there is an outbox. Sales first, then refunds — both queues
+      // get a final drain, both cursors advance over what got through.
       try {
         await agent.drain({ at: new Date().toISOString(), limit: 20 });
         await advanceCursor();
       } catch { /* still queued, and the cursor stays where it is */ }
+      try {
+        await returnsAgent.drain({ at: new Date().toISOString(), limit: 20 });
+        await advanceReturnsCursor();
+      } catch { /* still queued, and the returns cursor stays where it is */ }
       const badge = agent.health();
+      const returnsBadge = returnsAgent.health();
       if (badge.unsentCount > 0) {
         say(`stopping with ${badge.unsentCount} sale(s) still to send. They are on the disk and will go when this starts again.`);
+      }
+      if (returnsBadge.unsentCount > 0) {
+        say(`stopping with ${returnsBadge.unsentCount} refund(s) still to send. They are on the disk and will go when this starts again.`);
       }
       if (lane !== null) await lane.stop();
       if (screens !== null) await screens.stop();
       await log.close();
+      await returnsLog.close();
     },
   };
 }

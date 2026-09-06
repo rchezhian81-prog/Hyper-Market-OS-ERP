@@ -20,10 +20,22 @@ import { join } from 'node:path';
 
 const FILE = 'sync-cursor';
 
+/**
+ * The cursor file name. Defaults to the sales cursor, which every existing caller uses unchanged.
+ *
+ * A second durable log (offline RETURNS reconcile on sync, M13-FR-01) needs its OWN cursor: its log
+ * and the sales log advance independently, and one number cannot mark two logs. So the returns
+ * pipeline passes its own name, and the two files never touch. Naming it here rather than at the
+ * call sites keeps the "where does the restart begin" answer in one place for both.
+ */
+export function cursorFileFor(name?: string): string {
+  return name ?? FILE;
+}
+
 /** Records at the front of the log that are finished. Zero if nothing has been sent, or unreadable. */
-export async function readCursor(dataDir: string): Promise<number> {
+export async function readCursor(dataDir: string, fileName?: string): Promise<number> {
   try {
-    const text = await readFile(join(dataDir, FILE), 'utf8');
+    const text = await readFile(join(dataDir, cursorFileFor(fileName)), 'utf8');
     const n = Number(text.trim());
     // An unreadable cursor means starting from the beginning, which re-sends and dedupes. The
     // other reading — "assume everything is done" — would skip sales, permanently and silently.
@@ -43,8 +55,8 @@ export async function readCursor(dataDir: string): Promise<number> {
  * Written whole and short. A partial write of a number is a different number, so this is one of
  * the few places where writing a fixed, tiny payload is itself the safety property.
  */
-export async function writeCursor(dataDir: string, handled: number): Promise<void> {
-  const handle = await open(join(dataDir, FILE), 'w');
+export async function writeCursor(dataDir: string, handled: number, fileName?: string): Promise<void> {
+  const handle = await open(join(dataDir, cursorFileFor(fileName)), 'w');
   try {
     await handle.write(`${handled}\n`);
     await handle.sync();
