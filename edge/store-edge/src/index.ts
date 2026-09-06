@@ -20,6 +20,7 @@ import { commitLocally, type CommitOutcome, type DurableLog } from './durability
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { toCloudSale } from './cloud-sale';
+import { toCloudReturn } from './cloud-return';
 
 /** What the lane asks the edge for, and all it may ask for. */
 export interface EdgeNode {
@@ -27,6 +28,15 @@ export interface EdgeNode {
   readonly pack: () => SignedPack | undefined;
   /** Commit a sale to the local disk before the receipt prints. */
   readonly commit: (saleId: string, record: string) => Promise<CommitOutcome>;
+  /**
+   * Commit an offline RETURN to the local disk, then queue it for the cloud (M13-FR-01, §31).
+   *
+   * The mirror of `commit`, and deliberately a SEPARATE seam: a refund is money leaving the drawer,
+   * so it is durable before it is called done, exactly as a sale is durable before the receipt
+   * prints. It writes to its OWN durable log and its OWN outbox — never the sale log — so a return
+   * can never be re-queued as a sale on restart, and the sale path is untouched by its existence.
+   */
+  readonly commitReturn: (returnId: string, record: string) => Promise<CommitOutcome>;
   /** Take a new catalogue pack, or keep the one we trust. */
   readonly takePack: (incoming: SignedPack) => { readonly accepted: boolean; readonly staffMessage: string };
 }
@@ -46,6 +56,17 @@ export function createEdgeNode(input: {
    * joined them, and nothing failed, which is what made it invisible.
    */
   readonly outbox?: SyncOutbox;
+  /**
+   * The RETURN's own durable log — separate from the sale log on purpose (M13-FR-01).
+   *
+   * A return record must never land in the sale log: the restart re-queue reads every sale-log
+   * record as a `SaleCommitted`, so a return there would be re-sent to `/v1/sales` as a broken sale.
+   * Its own log keeps the two pipelines independent, so nothing here can disturb the sale path.
+   * `commitReturn` refuses (durably, before the refund is called done) when it is not configured.
+   */
+  readonly returnsLog?: DurableLog;
+  /** Where a committed RETURN is queued for the cloud — the return pipeline's own outbox. */
+  readonly returnsOutbox?: SyncOutbox;
 }): EdgeNode {
   let held = input.initialPack;
 
@@ -74,6 +95,42 @@ export function createEdgeNode(input: {
           // `id`/`total`, `/v1/sales` speaks `saleId`/`totalMinor`/`packVersion`. The pack this edge
           // holds is the one the lane priced this sale from, so it stamps the version (see cloud-sale.ts).
           payload: toCloudSale(JSON.parse(record) as unknown, held?.snapshot.version ?? 0),
+        }));
+      }
+      return outcome;
+    },
+
+    commitReturn: async (returnId, record) => {
+      // Configured on every real edge; guarded so a mis-wired deployment refuses the refund BEFORE
+      // it is called done (a bad minute) rather than losing it silently after (money already gone).
+      if (input.returnsLog === undefined) {
+        return {
+          committed: false,
+          refusedBecause: 'could_not_write_durably',
+          detail: 'this edge has no returns log configured, so a refund cannot be saved durably',
+          laneMessage: 'This lane cannot record a refund right now. Do not hand over cash — use another lane and tell the manager.',
+        };
+      }
+
+      const outcome = await commitLocally({
+        saleId: returnId, record, log: input.returnsLog,
+        ...(input.reserveBytes === undefined ? {} : { reserveBytes: input.reserveBytes }),
+      });
+
+      // After the durable write, never before — the same ordering as the sale, and for the same
+      // reason: queueing first would send a refund the lane went on to refuse.
+      if (outcome.committed && input.returnsOutbox !== undefined) {
+        input.returnsOutbox.enqueue(makeEvent({
+          id: `edge-return-${returnId}`,
+          type: 'ReturnAccepted',
+          occurredAt: new Date().toISOString(),
+          // The return's own id, minted at the lane. Every retry carries this same key, so a resend
+          // collapses to one refund at the cloud (§31.1).
+          idempotencyKey: `edge-return-${input.tenantId}-${returnId}`,
+          source: 'edge/lane',
+          // Translated to the cloud's synced-return contract before it leaves. `returnAcceptedRoute`
+          // reads `originalSaleId` to address the bill; the cloud re-verifies the §28 approver.
+          payload: toCloudReturn(JSON.parse(record) as unknown),
         }));
       }
       return outcome;

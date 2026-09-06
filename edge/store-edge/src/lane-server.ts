@@ -35,16 +35,21 @@
 //
 // ── Why it is otherwise deliberately tiny ───────────────────────────────────
 //
-// One write route, one method. Everything this server can do is commit a sale that has already been
-// priced and settled by the tested session model. It holds no pricing, no tender rules and no
-// catalogue: adding any of them would put a second, untested copy of the shop's rules on the far
-// side of a socket from the first.
+// Two write routes, one method. Everything this server can do is commit a sale — or a refund — that
+// has already been priced and settled by the tested session model. It holds no pricing, no tender
+// rules and no catalogue: adding any of them would put a second, untested copy of the shop's rules on
+// the far side of a socket from the first. `/lane/returns` is the exact mirror of `/lane/sales`: the
+// refund is durable on the disk before the lane calls it done, then queued for the cloud (M13-FR-01).
 
 import { createServer, type Server, type ServerResponse } from 'node:http';
+import { returnIdOf } from './cloud-return';
 import type { EdgeNode } from './index';
 
 /** The one address this may listen on. Named so the test can assert on it. */
 export const LANE_HOST = '127.0.0.1';
+
+/** The write routes this socket serves — a sale, and a refund. Both loopback-only, both POST. */
+const LANE_ROUTES = ['/lane/sales', '/lane/returns'] as const;
 
 /**
  * Is this `Origin` header another page on this same machine? `127.0.0.1`, `localhost` and IPv6
@@ -103,21 +108,33 @@ export function startLaneServer(input: {
 }): Promise<LaneServer> {
   const maxBytes = input.maxBytes ?? 256 * 1024;
 
+  // A refused-durable-write answer, in the words the cashier needs with a customer watching. `noun`
+  // is 'sale' or 'refund' so the same shape serves both routes without either lying about the other.
+  const refusal = (noun: string, detail?: string): Record<string, unknown> => ({
+    committed: false,
+    refusedBecause: 'could_not_write_durably',
+    ...(detail === undefined ? {} : { detail }),
+    laneMessage: `This lane could not save the ${noun}. Do not take payment or hand over ${noun === 'sale' ? 'the goods' : 'cash'} — use another lane and tell the manager.`,
+  });
+
   const server: Server = createServer((req, res) => {
     const cors = corsHeadersFor(req.headers.origin);
+    const route = LANE_ROUTES.find((r) => r === req.url);
 
     // The browser's preflight for the cross-origin POST from the till's screen. Answered only for a
     // loopback origin; anything else gets no allow header and the browser refuses to send the POST.
-    if (req.method === 'OPTIONS' && req.url === '/lane/sales') {
+    if (req.method === 'OPTIONS' && route !== undefined) {
       res.writeHead(isLoopbackOrigin(req.headers.origin) ? 204 : 403, { 'content-length': '0', ...cors });
       res.end();
       return;
     }
 
-    if (req.method !== 'POST' || req.url !== '/lane/sales') {
-      send(res, 404, { error: 'the lane socket serves one route: POST /lane/sales' }, cors);
+    if (req.method !== 'POST' || route === undefined) {
+      send(res, 404, { error: `the lane socket serves: ${LANE_ROUTES.map((r) => `POST ${r}`).join(', ')}` }, cors);
       return;
     }
+    const isReturn = route === '/lane/returns';
+    const noun = isReturn ? 'refund' : 'sale';
 
     const chunks: Buffer[] = [];
     let size = 0;
@@ -127,7 +144,7 @@ export function startLaneServer(input: {
       size += chunk.length;
       if (size > maxBytes && !refused) {
         refused = true;
-        send(res, 413, { error: 'sale payload too large' }, cors);
+        send(res, 413, { error: `${noun} payload too large` }, cors);
         req.destroy();
         return;
       }
@@ -137,45 +154,37 @@ export function startLaneServer(input: {
     req.on('end', () => {
       if (refused) return;
       void (async () => {
-        // `id`, not `saleId`. The record is the sale exactly as `commitSale` shapes it, and its
-        // identity field is `id` — the first version of this guessed `saleId` and refused every
-        // real sale with "could not read the sale", which is a lane that cannot take money because
-        // two files disagreed about a field name. Read the shape that exists, not the hoped-for one.
-        let sale: { id?: string };
+        // Read the record's OWN identity field: a sale's is `id` (as `commitSale` shapes it); a
+        // refund's is `returnId` (the shape `packages/returns` mints), tolerating a bare `id`. Read
+        // the shape that exists, not a hoped-for one — that mismatch is a lane that cannot take money.
+        let parsed: unknown;
         try {
-          sale = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { id?: string };
+          parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
         } catch {
-          send(res, 400, {
-            committed: false,
-            refusedBecause: 'could_not_write_durably',
-            laneMessage: 'This lane could not read the sale. Do not take payment — use another lane and tell the manager.',
-          }, cors);
+          send(res, 400, refusal(noun), cors);
           return;
         }
-        if (typeof sale.id !== 'string' || sale.id === '') {
-          send(res, 400, {
-            committed: false,
-            refusedBecause: 'could_not_write_durably',
-            laneMessage: 'This lane could not read the sale. Do not take payment — use another lane and tell the manager.',
-          }, cors);
+        const id = isReturn
+          ? returnIdOf(parsed)
+          : ((parsed as { id?: string } | null)?.id);
+        if (typeof id !== 'string' || id === '') {
+          send(res, 400, refusal(noun), cors);
           return;
         }
 
         try {
-          // The whole of this server. `commit` writes to the disk, waits for the fsync, and only
-          // then queues for the cloud — the order is the rule and it lives in the edge, not here.
-          const outcome = await input.node.commit(sale.id, JSON.stringify(sale));
+          // The whole of this server. `commit`/`commitReturn` writes to the disk, waits for the
+          // fsync, and only then queues for the cloud — the order is the rule and it lives in the
+          // edge, not here.
+          const outcome = isReturn
+            ? await input.node.commitReturn(id, JSON.stringify(parsed))
+            : await input.node.commit(id, JSON.stringify(parsed));
           // 200 on a refusal too: the *request* was understood, and the answer is in the body. A
           // 5xx here would make a refused sale look like a broken lane, and the cashier needs to
           // know which it is — one means use another lane, the other means try again.
           send(res, 200, outcome, cors);
         } catch (e) {
-          send(res, 200, {
-            committed: false,
-            refusedBecause: 'could_not_write_durably',
-            detail: e instanceof Error ? e.message : String(e),
-            laneMessage: 'This lane could not save the sale. Do not take payment and do not hand over the goods — use another lane and tell the manager.',
-          }, cors);
+          send(res, 200, refusal(noun, e instanceof Error ? e.message : String(e)), cors);
         }
       })();
     });
