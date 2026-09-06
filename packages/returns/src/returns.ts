@@ -259,6 +259,10 @@ export function commitReturn(
         noReceipt,
         laneId: input.laneId,
         processedBy: input.processedBy,
+        // The second person who approved a material refund at the lane (§28). Carried on the event so the
+        // cloud can RE-VERIFY the approver's authority when it reconciles the refund on sync — the offline
+        // engine only checked decidedBy ≠ processedBy; the cloud checks they genuinely hold the authority.
+        ...(input.approval?.decidedBy === undefined ? {} : { approvedBy: input.approval.decidedBy }),
         reasonCode: input.reasonCode,
         refundMinor: input.refund.minor,
         currency: input.refund.currency,

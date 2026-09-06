@@ -5,6 +5,54 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M13-FR-01 offline returns reconcile on sync — Slice 2a: the transport wire (6 September 2026)
+
+**Owner direction:** the owner asked me to wire offline returns to the cloud and chose to **build it in slices,
+one PR at a time**. Slice 1 (merged, #342) built the cloud doorway. This is **Slice 2a** — the wire that carries
+an offline refund *to* that doorway through the real sync agent. I split the original "Slice 2" into 2a (this
+low-risk transport wire) and 2b (the P-01-critical edge-bootstrap wiring), so the durable-log/restart surgery
+lands in its own reviewable PR rather than riding alongside the transport change.
+
+**What was built (Slice 2a — the transport wire):**
+- **`ReturnAccepted` now carries its lane approver.** `commitReturn` (`packages/returns/src/returns.ts`) adds
+  `approvedBy` (the second person who approved the material refund) to the queued event — the field the cloud
+  **re-verifies on sync**. Offline the engine can only check `decidedBy ≠ processedBy` (§28 separation); it
+  cannot check whether that person genuinely holds the authority. The cloud can, and does — so the event has to
+  carry the name.
+- **`ReturnAccepted` now has a route.** `returnAcceptedRoute` (`edge/sync-agent/src/http-transport.ts`) maps it
+  to **`POST /v1/sales/:saleId/returns/synced`** (Slice 1's doorway). It is a resolver, not a `:saleId` template,
+  because the bill key on the payload is `originalSaleId`; a **no-receipt** return has `originalSaleId: null`,
+  which has **no synced endpoint yet**, so it is **dead-lettered by name for a person** (hard rule #6) — never
+  posted to a generic or wrong URL. This is the **first synced-governance route**, safe to relay under the store
+  token precisely because the cloud route re-verifies the approver.
+- Tests: **`tests/integration/offline-returns-reach-the-cloud.test.ts`** (4) drives the **real** parts end-to-end
+  — the real `commitReturn` mints the event, the real `SyncOutbox` queues it, the real `SyncAgent` + `httpTransport`
+  drain it, and `fetch` drives the **real cloud API surface** (router, token auth, permission check, POS rules,
+  append-only register). A clean refund reconciles into the register; a lane approver **lacking authority
+  reconciles AND becomes a visible §28 exception** (the offline engine couldn't check authority, the cloud did);
+  a no-receipt return is **kept for a person**; a refund **waits out an outage** then reconciles when the line
+  returns. Plus 4 `returnAcceptedRoute` unit cases in `tests/unit/sync-http-transport.test.ts` (routes the bill,
+  URL-encodes the sale id, carries the return's own idempotency key, rejects a null/missing/empty `originalSaleId`).
+
+**No re-rate.** M13 stays `PARTIALLY_WIRED`. Both cloud-side slices and now the transport wire are in, but an
+offline refund still can't travel end-to-end until **Slice 2b** connects the POS till's outbox to this transport
+(today the till's `SyncOutbox` is never drained). **Headline stays 41.5%** — this is the wire being built, not a
+rung moving. Module-ladder guardrail re-checked: unchanged, sum to 36.
+
+**Gate green:** typecheck, completion (41.5%), lint, secret-scan, and the full vitest suite (**6272 passed**).
+
+**For the owner — in plain words:** Slice 1 built the *doorway* in the central system that accepts a refund the
+till reports after the fact. This slice builds the *road* to that doorway: when the till gives an offline refund,
+the record it saves now (1) remembers **who approved it** and (2) knows **where to send it** — and the central
+system double-checks that the approver was really a manager who's allowed to approve refunds. If they weren't, the
+refund is still accepted (the money already left the drawer) but it lands on your **review list**, never silently.
+A refund on a bill the shop can't find (a no-receipt return) has no doorway yet, so it's **held for a person to
+handle** rather than sent to the wrong place. **What to check** once the last slice is in: take a refund on a till
+with the network off, bring the network back, and it should appear centrally — and show up on the review list if
+it lacked a manager's approval. **Next:** Slice 2b — connecting the till's outbox to this road (the last piece).
+
+---
+
 ## M13-FR-01 offline returns reconcile on sync — Slice 1: the cloud record-and-flag route (6 September 2026)
 
 **Owner direction:** after the refund guard (#341) I flagged that offline returns aren't actually wired to

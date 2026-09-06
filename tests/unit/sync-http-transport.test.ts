@@ -134,6 +134,46 @@ describe('a drained portal-action command reaches the poll/verify route it would
   });
 });
 
+// An offline RETURN reconciles on sync (M13-FR-01). The path carries the bill it is against, and the
+// payload key is `originalSaleId` (not `saleId`), so it needs a resolver, not a `:saleId` template. This is
+// the first SYNCED-GOVERNANCE route: the cloud record-and-flag endpoint re-verifies the §28 approver, so the
+// operator identity captured at the lane may safely be relayed under the store token.
+describe('a drained offline return reaches the cloud record-and-flag route', () => {
+  const ret = (payload: Record<string, unknown>): DomainEvent => makeEvent({
+    id: 'ret-1', type: 'ReturnAccepted', occurredAt: '2026-08-07T10:00:00.000Z',
+    idempotencyKey: 'return:RT1', source: 'edge/lane-1', payload,
+  });
+
+  it('routes a receipted return to the synced endpoint for the bill it is against', async () => {
+    const { fn, calls } = fakeFetch(202);
+    await transportOn(fn).send(ret({ returnId: 'RT1', originalSaleId: 'S1', processedBy: 'u-lanecash', approvedBy: 'u-mgr' }));
+    expect(calls[0]?.url).toBe('https://api.example.test/v1/sales/S1/returns/synced');
+  });
+
+  it('url-encodes the sale id, so a hostile id cannot break out of the path', async () => {
+    const { fn, calls } = fakeFetch(202);
+    await transportOn(fn).send(ret({ returnId: 'RT2', originalSaleId: 'S/../admin', processedBy: 'u-lanecash' }));
+    expect(calls[0]?.url).toBe('https://api.example.test/v1/sales/S%2F..%2Fadmin/returns/synced');
+  });
+
+  it('carries the return\'s own idempotency key, so a re-synced refund reconciles once', async () => {
+    const { fn, calls } = fakeFetch(202);
+    await transportOn(fn).send(ret({ returnId: 'RT1', originalSaleId: 'S1', processedBy: 'u-lanecash' }));
+    expect((calls[0]?.init.headers as Record<string, string>)['idempotency-key']).toBe('return:RT1');
+  });
+
+  it('REJECTS a no-receipt return (originalSaleId null) — there is no synced endpoint, so it is kept for a person', async () => {
+    // A no-receipt return has no bill to reconcile against. It must dead-letter by name (hard rule #6),
+    // never post to a wrong or generic URL.
+    const nullSale = await transportOn(fakeFetch(202).fn).send(ret({ returnId: 'RN', originalSaleId: null, noReceipt: true, processedBy: 'u-lanecash' }));
+    expect(nullSale.status).toBe('rejected');
+    const missing = await transportOn(fakeFetch(202).fn).send(ret({ returnId: 'RN2', processedBy: 'u-lanecash' }));
+    expect(missing.status).toBe('rejected');
+    const empty = await transportOn(fakeFetch(202).fn).send(ret({ returnId: 'RN3', originalSaleId: '', processedBy: 'u-lanecash' }));
+    expect(empty.status).toBe('rejected');
+  });
+});
+
 describe('retryable versus rejected — the distinction that decides whether a sale survives', () => {
   it('treats a TIMEOUT as retryable, because a slow line says nothing about the sale', async () => {
     // A shop on a rural line times out several times a day. This is the branch that decides
