@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  assessReturn, type ReturnRequest,
+  assessReturn, refundGovernanceFindings, type ReturnRequest,
   type OriginalSale, type RecordedReturn,
 } from '../../packages/returns/src/index';
 
@@ -77,5 +77,25 @@ describe('assessReturn guards the refund against the whole history', () => {
     expect(assess(material({})).refusedBecause).toBe('needs_a_second_person');
     expect(assess(material({ approvedBy: 'u1' })).refusedBecause).toBe('approved_by_the_person_processing_it');
     expect(assess(material({ approvedBy: 'u2' })).ok).toBe(true);
+  });
+});
+
+// The findings on an ALREADY-GIVEN (synced) refund — the record-and-flag counterpart to the desk guard.
+describe('refundGovernanceFindings (M13-FR-01, §28 on sync)', () => {
+  const f = (over: Partial<Parameters<typeof refundGovernanceFindings>[0]> = {}) => refundGovernanceFindings({
+    refundMinor: 5000, approvalThresholdMinor: 0, processedBy: 'u-lane', approverHoldsAuthority: true, ...over,
+  });
+
+  it('an immaterial refund (below threshold) has no findings', () => {
+    expect(f({ refundMinor: 5000, approvalThresholdMinor: 10000, approvedBy: undefined })).toEqual([]);
+    expect(f({ refundMinor: 0, approvalThresholdMinor: 0 })).toEqual([]);
+  });
+  it('a material refund with no approver, a self-approval, or an unauthorised approver is flagged, in precedence', () => {
+    expect(f({ approvedBy: undefined })).toEqual(['given_without_approval']);
+    expect(f({ approvedBy: 'u-lane' })).toEqual(['approved_by_the_processor']);
+    expect(f({ approvedBy: 'u-other', approverHoldsAuthority: false })).toEqual(['approver_lacks_authority']);
+  });
+  it('a material refund approved by a genuinely-authorised, different person has no findings', () => {
+    expect(f({ approvedBy: 'u-mgr', approverHoldsAuthority: true })).toEqual([]);
   });
 });

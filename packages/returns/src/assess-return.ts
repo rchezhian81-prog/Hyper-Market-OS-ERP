@@ -96,6 +96,35 @@ export function readRefundThreshold(v: unknown): number | 'invalid' {
   return t;
 }
 
+/** A §28 breach found on a refund that ALREADY HAPPENED at the lane (M13-FR-01/03). Unlike `assessReturn`
+ *  (the desk guard, which refuses before money moves), these are surfaced on a SYNCED refund — the money is
+ *  gone, so a breach becomes a visible exception (hard rule #10), never a rejection. */
+export type RefundGovernanceFinding =
+  | 'given_without_approval'      // material, but no approver was named at the lane
+  | 'approved_by_the_processor'   // the person who gave the refund also "approved" it (§28)
+  | 'approver_lacks_authority';   // the named approver does not hold refund-approval authority
+
+/**
+ * The §28 findings on an already-given (synced) refund, in order of precedence. Pure: the caller supplies
+ * whether the named approver genuinely holds the authority (a role read the cloud does, not this engine).
+ * An immaterial refund (below the tenant threshold) needs no approver, so it has no findings.
+ */
+export function refundGovernanceFindings(input: {
+  readonly refundMinor: number;
+  readonly approvalThresholdMinor: number;
+  readonly processedBy: string;
+  readonly approvedBy?: string;
+  readonly approverHoldsAuthority: boolean;
+}): readonly RefundGovernanceFinding[] {
+  const material = input.refundMinor > 0 && input.refundMinor >= input.approvalThresholdMinor;
+  if (!material) return [];
+  const approvedBy = input.approvedBy?.trim() ?? '';
+  if (approvedBy === '') return ['given_without_approval'];
+  if (approvedBy === input.processedBy) return ['approved_by_the_processor'];
+  if (!input.approverHoldsAuthority) return ['approver_lacks_authority'];
+  return [];
+}
+
 /**
  * Assess one return against a bill and everything already returned/refunded against it.
  *
