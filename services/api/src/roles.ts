@@ -50,7 +50,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'order.promise', 'order.reservation.read', 'order.read', 'order.lifecycle.manage',
       'delivery.attempt.record', 'delivery.run.read', 'delivery.dispatch.manage',
       'fulfilment.pack.record', 'fulfilment.pack.read',
-      'finance.journal.post', 'finance.period.close', 'finance.period.read', 'finance.creditnote.issue',
+      'finance.journal.post', 'finance.period.close', 'finance.period.read', 'finance.period.sign', 'finance.creditnote.issue',
       'settlement.batch.import', 'settlement.review.read', 'settlement.investigation.manage',
       'b2b.account.manage', 'b2b.account.read', 'b2b.receivable.record', 'b2b.credit.check',
       'b2b.commission.record', 'b2b.commission.read', 'b2b.document.issue', 'b2b.document.read',
@@ -194,7 +194,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     // finance service and this list is what makes it reachable rather than theoretical.
     permissions: [
       'identity.self.read', 'payroll.ess.self',
-      'finance.journal.post', 'finance.period.read', 'finance.creditnote.issue',
+      'finance.journal.post', 'finance.period.read', 'finance.period.sign', 'finance.creditnote.issue',
       'settlement.batch.import', 'settlement.review.read', 'settlement.investigation.manage',
       'lp.case.read',
       'b2b.account.manage', 'b2b.account.read', 'b2b.receivable.record', 'b2b.credit.check',

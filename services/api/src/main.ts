@@ -524,7 +524,7 @@ export function buildSurface(deps: {
     ...financeRoutes(store === undefined ? {
       periodStates: empty(new Map()), nextOpenPeriod: empty(now().slice(0, 7)),
       appendJournal: () => {}, controlTotals: empty([]), postersIn: empty([]),
-      markClosed: () => {}, markReopened: () => {}, now,
+      markClosed: () => {}, markReopened: () => {}, canSignPeriod: () => Promise.resolve(false), now,
     } : financeAdapter({ store, now })),
     // Period-close evidence pack + control-total validation (M23-FR-04 / QG-07) — reconcile both sides of
     // every total (the ledger vs an independent second source the caller supplies) and produce the CA's

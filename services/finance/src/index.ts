@@ -165,6 +165,9 @@ export interface FinanceDeps {
   readonly markClosed: (tenantId: string, period: string, signedBy: string) => Promise<void> | void;
   /** Reopen a closed period as a NEW append-only fact (never an edit) — the period becomes re-closable. */
   readonly markReopened: (tenantId: string, period: string, reopen: { readonly requestedBy: string; readonly approvedBy: string; readonly reason: string }) => Promise<void> | void;
+  /** Whether a user holds `finance.period.sign` — the §28 authority to SIGN a month-close or APPROVE a
+   *  re-open (the owner or the accountant/CA). A named signer/approver who does not hold it does not count. */
+  readonly canSignPeriod: (tenantId: string, userId: string) => Promise<boolean> | boolean;
   readonly now: () => string;
 }
 
@@ -223,6 +226,18 @@ export function financeRoutes(deps: FinanceDeps): readonly Route[] {
             nextSafeAction: 'The period is still open and everything in it is unchanged. Settle what is named above, then close it.',
           });
         }
+        // §28 authority gate: the engine has confirmed the signer did not post into the month, but a pure
+        // engine cannot see roles — a name typed in the box is not a signature. The named signer must
+        // GENUINELY hold finance.period.sign (the owner or the accountant/CA), else the certification does
+        // not count (the same shape as the other §28 approvals). Nothing is closed.
+        if (!(await deps.canSignPeriod(ctx.tenantId, body.signedBy!))) {
+          throw apiError(422, {
+            code: 'signer_may_not_certify',
+            whatHappened: `${body.signedBy} does not hold the authority to sign a period close, so their signature on ${period} does not count.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Have someone who may sign a period (the owner or the accountant) certify the control totals. Nothing was closed.',
+          });
+        }
         await deps.markClosed(ctx.tenantId, period, body.signedBy!);
         return { status: 200, body: { closed: result.detail } };
       },
@@ -255,6 +270,17 @@ export function financeRoutes(deps: FinanceDeps): readonly Route[] {
             whatHappened: result.detail,
             wasItSaved: 'not_saved',
             nextSafeAction: 'A signed period reopens only with a DIFFERENT person’s approval and a reason; an already-open period has nothing to reopen. Nothing was changed.',
+          });
+        }
+        // §28 authority gate: the engine confirmed the approver is not the requester, but a name in the box
+        // is not an approval. The named approver must GENUINELY hold finance.period.sign (the owner or the
+        // accountant/CA), else their approval of the re-open does not count. Nothing is reopened.
+        if (!(await deps.canSignPeriod(ctx.tenantId, approval.decidedBy))) {
+          throw apiError(422, {
+            code: 'approver_may_not_approve',
+            whatHappened: `${approval.decidedBy} does not hold the authority to approve a period re-open, so their approval does not count.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Have someone who may sign a period (the owner or the accountant), and who is not the one re-opening it, approve it with a reason. Nothing was changed.',
           });
         }
         await deps.markReopened(ctx.tenantId, period, { requestedBy: ctx.userId, approvedBy: approval.decidedBy, reason: approval.reason });

@@ -366,7 +366,7 @@ describe('all three register cleanly on the kernel', () => {
     };
     const finance: FinanceDeps = {
       periodStates: () => new Map(), nextOpenPeriod: () => '2026-08', appendJournal: () => {},
-      controlTotals: () => [], postersIn: () => [], markClosed: () => {}, markReopened: () => {}, now: () => NOW,
+      controlTotals: () => [], postersIn: () => [], markClosed: () => {}, markReopened: () => {}, canSignPeriod: () => false, now: () => NOW,
     };
     const reporting: ReportingDeps = { figures: () => [], now: () => NOW };
 
