@@ -74,6 +74,23 @@ export function gstPortalActionRoute(payload: Record<string, unknown>): string |
 }
 
 /**
+ * Where an offline RETURN goes when it reconciles on sync (M13-FR-01). The path carries the bill it is
+ * against, and the payload key is `originalSaleId` (not `saleId`), so a `:saleId` template cannot express
+ * it — hence a resolver. A **no-receipt** return has `originalSaleId: null` and there is no synced endpoint
+ * for it, so it has NO route and is dead-lettered by name (hard rule #6), never posted in hope.
+ *
+ * Unlike the governance commands below, this IS routed: its target is the dedicated record-and-flag route
+ * `POST /v1/sales/:saleId/returns/synced`, which trusts the lane-relayed operator identity (as the synced
+ * SALE route trusts the lane's cashier) and RE-VERIFIES the §28 approver on the cloud — a breach becomes a
+ * visible exception, never a silent apply-as-the-wrong-actor. So relaying it under the store token is safe.
+ */
+export function returnAcceptedRoute(payload: Record<string, unknown>): string | undefined {
+  const originalSaleId = payload['originalSaleId'];
+  if (typeof originalSaleId !== 'string' || originalSaleId === '') return undefined;
+  return `/v1/sales/${encodeURIComponent(originalSaleId)}/returns/synced`;
+}
+
+/**
  * Where each event type goes. Explicit, and small on purpose.
  *
  * The alternative — deriving a path from the type name — is a rule nobody can read and a silent
@@ -85,6 +102,9 @@ export function gstPortalActionRoute(payload: Record<string, unknown>): string |
  * clicked — breaking §28. They need a dedicated "apply a synced governance command" route that trusts the
  * relayed operator identity, which is a separate, security-reviewed increment. Until then they dead-letter
  * (visible, hard rule #6), which is the honest state — never silently applied as the wrong actor.
+ *
+ * `ReturnAccepted` is the FIRST such synced-governance route to land (M13-FR-01): its record-and-flag cloud
+ * route re-verifies the approver, so it is safe to relay. `commitReturn` at the edge enqueues it (Slice 2b).
  */
 export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   SaleCommitted: '/v1/sales',
@@ -92,6 +112,7 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   DeliveryAttempted: '/v1/delivery/attempts',
   ConsentRecorded: '/v1/customers/:customerId/consent',
   GstPortalActionRequested: gstPortalActionRoute,
+  ReturnAccepted: returnAcceptedRoute,
 };
 
 /** Fill `:name` segments from the payload, or run a resolver, so a route can address a thing. */
