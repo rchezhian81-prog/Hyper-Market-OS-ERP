@@ -67,8 +67,10 @@ const recordReturn = (h: ApiHarness, tenantId: string, saleId: string, ret: Reco
   h.request({ method: 'POST', path: `/v1/sales/${saleId}/returns`, userId: 'u-owner', tenantId, idempotencyKey: `ret-${ret['returnId']}`, body: ret });
 
 const returnOf = (returnId: string, refundMinor: number, lines: { productId: string; quantityMinor: number; disposition: string }[]) => ({
-  returnId, number: returnId, processedBy: 'u-owner', reasonCode: 'changed_mind',
-  refundMinor, refundTender: 'cash', approvalThresholdMinor: 1_000_000, processedAt: '2026-06-15T10:00:00.000Z',
+  // The processor is the caller (server-side); the threshold is the tenant policy (default 0, so every
+  // refund needs a §28 approver). u-mgr (store_manager) holds pos.return.approve and differs from u-owner.
+  returnId, number: returnId, reasonCode: 'changed_mind',
+  refundMinor, refundTender: 'cash', approvedBy: 'u-mgr', processedAt: '2026-06-15T10:00:00.000Z',
   lines: lines.map((l) => ({ ...l, uom: 'each' })),
 });
 
@@ -150,6 +152,7 @@ describe('stock productivity — turns and GMROI over a period (M08-FR-04, API-0
   it('nets a RESELL return out of sales AND cost — the goods come back sellable', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-mgr', 'store_manager'); // the refund approver (pos.return.approve)
     await move(h, A, { movementId: 'r1', productId: 'P1', kind: 'received', quantityMinor: 100, unitCostMinor: 1000, occurredAt: '2026-03-01T10:00:00.000Z', ...base });
     await move(h, A, { movementId: 's1', productId: 'P1', kind: 'sold', quantityMinor: 40, occurredAt: '2026-06-01T10:00:00.000Z', ...base });
     await seedSale(h, A, 'SALE-1', '2026-06-01T10:00:00.000Z', [{ productId: 'P1', quantityMinor: 40, lineTotalMinor: 59000 }]);
@@ -171,6 +174,7 @@ describe('stock productivity — turns and GMROI over a period (M08-FR-04, API-0
   it('nets a DAMAGED return out of sales but NOT cost — the goods are a loss, not stock', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-mgr', 'store_manager'); // the refund approver (pos.return.approve)
     await move(h, A, { movementId: 'r1', productId: 'P1', kind: 'received', quantityMinor: 100, unitCostMinor: 1000, occurredAt: '2026-03-01T10:00:00.000Z', ...base });
     await move(h, A, { movementId: 's1', productId: 'P1', kind: 'sold', quantityMinor: 40, occurredAt: '2026-06-01T10:00:00.000Z', ...base });
     await seedSale(h, A, 'SALE-1', '2026-06-01T10:00:00.000Z', [{ productId: 'P1', quantityMinor: 40, lineTotalMinor: 59000 }]);

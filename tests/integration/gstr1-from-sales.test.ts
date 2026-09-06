@@ -41,8 +41,10 @@ const recordReturn = (h: ApiHarness, u: string, saleId: string, returnId: string
   h.request({
     method: 'POST', path: `/v1/sales/${saleId}/returns`, userId: u, tenantId: A, idempotencyKey: `ret-${returnId}`,
     body: {
-      returnId, number: returnId, processedBy: u, reasonCode: 'changed_mind', refundMinor, refundTender: 'cash',
-      approvalThresholdMinor: 10_000_000, processedAt,
+      // The processor is the caller (server-side); the threshold is the tenant policy (default 0, so every
+      // refund needs a §28 approver). u-mgr (store_manager) holds pos.return.approve and differs from u-owner.
+      returnId, number: returnId, reasonCode: 'changed_mind', refundMinor, refundTender: 'cash',
+      approvedBy: 'u-mgr', processedAt,
       lines: [{ productId, quantityMinor, uom: 'each', disposition: 'resell' }],
     },
   });
@@ -194,6 +196,7 @@ describe('GSTR-1 Table 12 folded from banked till sales (A5)', () => {
   it('nets a return against the outward supplies, reversing the tax at the rate it was sold', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-mgr', 'store_manager'); // the refund approver (pos.return.approve)
     // Sold 3 × ₹118 (MILK 0401 @18%); one is returned this period. The return reverses ₹10000 taxable / ₹1800 tax.
     await bankSale(h, 'u-owner', 'ns1', 'MILK', 11_800, '2026-08-05', { hsnCode: '0401', taxRateBps: 1800 });
     await bankSale(h, 'u-owner', 'ns2', 'MILK', 11_800, '2026-08-06', { hsnCode: '0401', taxRateBps: 1800 });
@@ -216,6 +219,7 @@ describe('GSTR-1 Table 12 folded from banked till sales (A5)', () => {
   it('excludes a return processed outside the period', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-mgr', 'store_manager'); // the refund approver (pos.return.approve)
     await bankSale(h, 'u-owner', 'nx1', 'MILK', 11_800, '2026-08-05', { hsnCode: '0401', taxRateBps: 1800 });
     // Return processed in September — must not appear in the August return.
     await recordReturn(h, 'u-owner', 'nx1', 'RET-SEP', 'MILK', 1, 11_800, '2026-09-02T10:00:00Z');
@@ -231,6 +235,7 @@ describe('GSTR-1 Table 12 folded from banked till sales (A5)', () => {
   it('emits the GSTN portal JSON (net of returns) when a gstin + filing period are supplied', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-mgr', 'store_manager'); // the refund approver (pos.return.approve)
     await bankSale(h, 'u-owner', 'gx1', 'MILK', 11_800, '2026-08-05', { hsnCode: '0401', taxRateBps: 1800 });
     await bankSale(h, 'u-owner', 'gx2', 'MILK', 11_800, '2026-08-06', { hsnCode: '0401', taxRateBps: 1800 });
     await bankSale(h, 'u-owner', 'gx3', 'MILK', 11_800, '2026-08-07', { hsnCode: '0401', taxRateBps: 1800 });

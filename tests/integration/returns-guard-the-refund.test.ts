@@ -36,14 +36,25 @@ const bank = (h: ApiHarness, tenantId: string, userId: string, body = sale()) =>
 const ret = (h: ApiHarness, tenantId: string, userId: string, saleId: string, body: Record<string, unknown>) =>
   h.request({ method: 'POST', path: `/v1/sales/${saleId}/returns`, userId, tenantId, idempotencyKey: `ret-${body['returnId']}`, body });
 
-// A return of `qty` units of P1, refunding `refundMinor`, resold. The approval threshold defaults
-// high so a refund is not "material" unless a test lowers it — that keeps the §28 rule to the one
-// test about it, rather than leaking into every other one.
+// A return of `qty` units of P1, refunding `refundMinor`, resold. The refund threshold defaults to 0
+// (every refund is material and needs a §28 approver), so `req` carries a genuine approver — `u-mgr`, a
+// store_manager who holds `pos.return.approve` and differs from the caller (`u-owner`). `processedBy` and
+// the threshold are NOT body fields any more: the processor is the authenticated caller and the threshold
+// is the tenant's policy. Tests that assert a non-approval refusal override `approvedBy`.
 const line = (qty = 1) => ({ productId: 'P1', uom: 'each', quantityMinor: qty, disposition: 'resell' as const });
 const req = (over: Record<string, unknown>) => ({
-  returnId: 'RT1', processedBy: 'u-owner', reasonCode: 'customer_changed_mind',
-  lines: [line(1)], refundMinor: 5000, refundTender: 'cash', approvalThresholdMinor: 9_999_999, ...over,
+  returnId: 'RT1', reasonCode: 'customer_changed_mind',
+  lines: [line(1)], refundMinor: 5000, refundTender: 'cash', approvedBy: 'u-mgr', ...over,
 });
+
+// Seed the tenant with an owner (the refund processor) and a store_manager `u-mgr` who holds
+// `pos.return.approve` — a genuine, different second person for every material refund.
+async function cast(): Promise<ApiHarness> {
+  const h = apiHarness();
+  await h.seedOwner(A, 'u-owner');
+  await h.provisionRole(A, 'u-mgr', 'store_manager');
+  return h;
+}
 
 interface Body { returnId?: string; refundStatus?: string; restockedLines?: number; remaining?: { productId: string; returnableMinor: number }[] }
 /** The error code lives at `body.error.code` — the kernel wraps every refusal in an `error` envelope. */
@@ -51,8 +62,7 @@ const codeOf = (res: { body: unknown }): string | undefined => (res.body as { er
 
 describe('a refund is guarded where the whole history lives (M13/M21, API-05)', () => {
   it('refunds a receipted return and shows what is left on the bill', async () => {
-    const h = apiHarness();
-    await h.seedOwner(A, 'u-owner');
+    const h = await cast();
     expect((await bank(h, A, 'u-owner')).status).toBe(202);
 
     const res = await ret(h, A, 'u-owner', 'S1', req({ returnId: 'RT1', lines: [line(1)], refundMinor: 5000 }));
@@ -64,8 +74,7 @@ describe('a refund is guarded where the whole history lives (M13/M21, API-05)', 
   });
 
   it('enforces at-most-once against the whole history — the guard the cloud was not feeding', async () => {
-    const h = apiHarness();
-    await h.seedOwner(A, 'u-owner');
+    const h = await cast();
     await bank(h, A, 'u-owner');
 
     expect((await ret(h, A, 'u-owner', 'S1', req({ returnId: 'RT1', lines: [line(2)], refundMinor: 10000 }))).status).toBe(201);
@@ -78,8 +87,7 @@ describe('a refund is guarded where the whole history lives (M13/M21, API-05)', 
   });
 
   it('never refunds more money than the bill was paid (M13-FR-03)', async () => {
-    const h = apiHarness();
-    await h.seedOwner(A, 'u-owner');
+    const h = await cast();
     await bank(h, A, 'u-owner');
 
     // One unit back, but a refund of ₹200 against a ₹150 bill — refused before any approval question.
@@ -88,22 +96,44 @@ describe('a refund is guarded where the whole history lives (M13/M21, API-05)', 
     expect(codeOf(res)).toBe('refund_exceeds_what_is_left');
   });
 
-  it('needs a second, different person for a material refund (§28)', async () => {
-    const h = apiHarness();
-    await h.seedOwner(A, 'u-owner');
+  it('every refund needs a genuinely-authorised second person (§28, default threshold 0)', async () => {
+    const h = await cast();
+    await h.provisionRole(A, 'u-cash', 'cashier'); // holds pos.return.record but NOT pos.return.approve
     await bank(h, A, 'u-owner');
 
-    // ₹120 refund is at/above the ₹100 threshold → material.
-    const material = (over: Record<string, unknown>) => req({ lines: [line(1)], refundMinor: 12000, approvalThresholdMinor: 10000, ...over });
-    expect((await ret(h, A, 'u-owner', 'S1', material({ returnId: 'RM1' }))).status).toBe(422); // no approver
-    expect(codeOf(await ret(h, A, 'u-owner', 'S1', material({ returnId: 'RM2', approvedBy: 'u-owner' }))))
-      .toBe('approved_by_the_person_processing_it');
-    expect((await ret(h, A, 'u-owner', 'S1', material({ returnId: 'RM3', approvedBy: 'u-manager' }))).status).toBe(201); // a different person
+    // At the default 0 threshold every refund is material. No approver → refused.
+    expect(codeOf(await ret(h, A, 'u-owner', 'S1', req({ returnId: 'RM1', approvedBy: undefined })))).toBe('needs_a_second_person');
+    // The processor cannot approve their own refund (the caller u-owner IS processedBy).
+    expect(codeOf(await ret(h, A, 'u-owner', 'S1', req({ returnId: 'RM2', approvedBy: 'u-owner' })))).toBe('approved_by_the_person_processing_it');
+    // A named approver who does NOT hold pos.return.approve does not count — a cashier, or a made-up name.
+    expect(codeOf(await ret(h, A, 'u-owner', 'S1', req({ returnId: 'RM3', approvedBy: 'u-cash' })))).toBe('approver_may_not_approve');
+    expect(codeOf(await ret(h, A, 'u-owner', 'S1', req({ returnId: 'RM4', approvedBy: 'u-nobody' })))).toBe('approver_may_not_approve');
+    // A genuine supervisor (store_manager), different from the processor → allowed.
+    expect((await ret(h, A, 'u-owner', 'S1', req({ returnId: 'RM5', approvedBy: 'u-mgr' }))).status).toBe(201);
+  });
+
+  it('the refund threshold is the tenant policy — default 0, owner-settable, not the caller\'s to declare', async () => {
+    const h = await cast();
+    await h.provisionRole(A, 'u-cash', 'cashier');
+    await bank(h, A, 'u-owner');
+
+    const getT = (u: string) => h.request({ method: 'GET', path: '/v1/pos/refund-threshold', userId: u, tenantId: A });
+    const setT = (u: string, body: unknown, key: string) => h.request({ method: 'POST', path: '/v1/pos/refund-threshold', userId: u, tenantId: A, idempotencyKey: key, body });
+
+    // The default is readable and 0 — every refund needs an approver.
+    expect((await getT('u-owner')).body).toMatchObject({ thresholdMinor: 0, isDefault: true });
+    // Only the owner may set it — a cashier and even a store_manager cannot.
+    expect((await setT('u-cash', { thresholdMinor: 10000 }, 't-cash')).status).toBe(403);
+    expect((await setT('u-mgr', { thresholdMinor: 10000 }, 't-mgr')).status).toBe(403);
+    // The owner raises it to ₹100.
+    expect((await setT('u-owner', { thresholdMinor: 10000 }, 't-ok')).status).toBe(200);
+    expect((await getT('u-owner')).body).toMatchObject({ thresholdMinor: 10000, isDefault: false });
+    // A ₹50 refund is now BELOW the ₹100 threshold → immaterial, no approver needed (was material at 0).
+    expect((await ret(h, A, 'u-owner', 'S1', req({ returnId: 'RTB', refundMinor: 5000, approvedBy: undefined }))).status).toBe(201);
   });
 
   it('reports a card refund as pending, never assumed settled (M13-FR-04)', async () => {
-    const h = apiHarness();
-    await h.seedOwner(A, 'u-owner');
+    const h = await cast();
     await bank(h, A, 'u-owner');
 
     const res = await ret(h, A, 'u-owner', 'S1', req({ returnId: 'RT1', lines: [line(1)], refundMinor: 5000, refundTender: 'card' }));
@@ -112,8 +142,7 @@ describe('a refund is guarded where the whole history lives (M13/M21, API-05)', 
   });
 
   it('refuses a product that was not on the bill, and a bill it never banked', async () => {
-    const h = apiHarness();
-    await h.seedOwner(A, 'u-owner');
+    const h = await cast();
     await bank(h, A, 'u-owner');
 
     const ghost = await ret(h, A, 'u-owner', 'S1', req({ returnId: 'RG1', lines: [{ productId: 'P-GHOST', uom: 'each', quantityMinor: 1, disposition: 'resell' }] }));
@@ -125,8 +154,7 @@ describe('a refund is guarded where the whole history lives (M13/M21, API-05)', 
   });
 
   it('is idempotent on the return id — a retry does not double-count the goods', async () => {
-    const h = apiHarness();
-    await h.seedOwner(A, 'u-owner');
+    const h = await cast();
     await bank(h, A, 'u-owner');
 
     // The till resends what it could not confirm: same return id, twice. Both succeed, one refund.
@@ -141,8 +169,7 @@ describe('a refund is guarded where the whole history lives (M13/M21, API-05)', 
   });
 
   it('is authorized and per-tenant: a role without the permission is refused, and one tenant\'s sale is invisible to another', async () => {
-    const h = apiHarness();
-    await h.seedOwner(A, 'u-owner');
+    const h = await cast();
     await h.provisionRole(A, 'u-acct', 'accountant'); // an accountant holds no POS return permission
     await bank(h, A, 'u-owner');
 
@@ -150,18 +177,17 @@ describe('a refund is guarded where the whole history lives (M13/M21, API-05)', 
 
     // Tenant B never banked S1, so B returning against it finds nothing — A's sale did not leak.
     await h.seedOwner(B, 'u-owner-b');
-    expect((await ret(h, B, 'u-owner-b', 'S1', req({ returnId: 'RB1', processedBy: 'u-owner-b' }))).status).toBe(404);
+    expect((await ret(h, B, 'u-owner-b', 'S1', req({ returnId: 'RB1' }))).status).toBe(404);
   });
 
   it('refuses an empty or unreadable return without moving money', async () => {
-    const h = apiHarness();
-    await h.seedOwner(A, 'u-owner');
+    const h = await cast();
     await bank(h, A, 'u-owner');
 
     expect((await ret(h, A, 'u-owner', 'S1', req({ returnId: 'RE1', lines: [] }))).status).toBe(422); // no lines
     expect((await ret(h, A, 'u-owner', 'S1', req({ returnId: 'RE2', reasonCode: '' }))).status).toBe(422); // no reason
     // A structurally-broken payload (no refund amount) is a 400 before any assessment.
-    expect((await h.request({ method: 'POST', path: '/v1/sales/S1/returns', userId: 'u-owner', tenantId: A, idempotencyKey: 'ret-RE3', body: { returnId: 'RE3', processedBy: 'u-owner', reasonCode: 'x', lines: [line(1)], refundTender: 'cash', approvalThresholdMinor: 10000 } })).status).toBe(400);
+    expect((await h.request({ method: 'POST', path: '/v1/sales/S1/returns', userId: 'u-owner', tenantId: A, idempotencyKey: 'ret-RE3', body: { returnId: 'RE3', reasonCode: 'x', lines: [line(1)], refundTender: 'cash' } })).status).toBe(400);
   });
 });
 
@@ -199,8 +225,7 @@ const syncForeignReturn = (h: ApiHarness, tenant: string, saleId: string, over: 
 
 describe('the return register is legible, not only enforced (M21, API-05)', () => {
   it('reads what may still come back on a bill and how much money is left to refund', async () => {
-    const h = apiHarness();
-    await h.seedOwner(A, 'u-owner');
+    const h = await cast();
     await bank(h, A, 'u-owner'); // 3 units of P1, paid ₹150
     // One unit back, ₹50 refunded — a partial return, so the bill is not exhausted.
     expect((await ret(h, A, 'u-owner', 'S1', req({ returnId: 'RT1', lines: [line(1)], refundMinor: 5000 }))).status).toBe(201);
@@ -217,8 +242,7 @@ describe('the return register is legible, not only enforced (M21, API-05)', () =
   });
 
   it('surfaces a bill over-returned by history the front door forbids — a loss surface gated above the desk (P-04)', async () => {
-    const h = apiHarness();
-    await h.seedOwner(A, 'u-owner');
+    const h = await cast();
     await h.provisionRole(A, 'u-cash', 'cashier');
     await bank(h, A, 'u-owner'); // 3 units sold
 
@@ -240,8 +264,7 @@ describe('the return register is legible, not only enforced (M21, API-05)', () =
   });
 
   it('answers a bill it never banked with a 404, and never crosses tenants (§35)', async () => {
-    const h = apiHarness();
-    await h.seedOwner(A, 'u-owner');
+    const h = await cast();
     await h.seedOwner(B, 'u-owner-b');
     await bank(h, A, 'u-owner');
 
@@ -279,6 +302,7 @@ describe.skipIf(!DATABASE_URL)('the return register is legible end to end on rea
     const sql = pgClient(client);
     const h = apiHarness({ store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql) });
     await h.seedOwner(E2E_TENANT, 'u-owner');
+    await h.provisionRole(E2E_TENANT, 'u-mgr', 'store_manager'); // holds pos.return.approve (the refund approver)
     await h.provisionRole(E2E_TENANT, 'u-cash', 'cashier');
 
     const S = `${RUN}-S1`;
