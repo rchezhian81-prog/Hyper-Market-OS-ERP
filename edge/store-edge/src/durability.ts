@@ -26,7 +26,7 @@ export interface DurableLog {
   readonly capacityBytes: number;
 }
 
-export type CommitRefusal = 'could_not_write_durably' | 'no_room_left' | 'idempotency_conflict';
+export type CommitRefusal = 'could_not_write_durably' | 'no_room_left' | 'idempotency_conflict' | 'over_return';
 
 export interface CommitOutcome {
   readonly committed: boolean;

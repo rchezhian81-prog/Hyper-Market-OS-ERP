@@ -75,4 +75,19 @@ coordination or allocation.
 
 _Recorded here so they are not lost, and explicitly NOT a renumbering of RR-F01–RR-F06._
 
-- (none yet — added as discovered during the repairs)
+- **GAP-REFUND-XLANE-01 — cross-lane / disconnected refund at-most-once needs cloud reconciliation.**
+  RR-F04 is fixed *locally*: an edge enforces entitlement for a sale it rang, from its own trusted
+  sold + returned totals. But an edge only knows its own sales and returns. A refund against a sale
+  rung on another lane (or with no receipt) cannot be entitlement-checked at that edge, so the edge
+  applies the safe policy — allow it under the existing §28 approval/cap controls and mark it locally
+  unverified — and does **not** claim global at-most-once. Enforcing at-most-once ACROSS lanes needs
+  the cloud (which sees every lane's sales and returns) to reconcile refunds on sync — e.g. a
+  cumulative-returned check on the `POST /v1/sales/:saleId/returns/synced` route, or a returned-units
+  allocation handed to lanes. This is a cloud increment, separate from these findings and not a
+  renumbering of them.
+- **GAP-SALE-IDEMPOTENCY-01 — the sale path has the same reused-id exposure RR-F03 fixed for refunds.**
+  `createEdgeNode.commit` appends a sale on every call with no operation-identity guard, so the same
+  sale id committed twice with a different payload would double-append locally (the cloud dedups the
+  send on the key, as with refunds pre-RR-F03). Not in the Codex findings (which are refund-focused)
+  and the sale path is deliberately left untouched here; recorded for a future, separately-reviewed
+  increment that applies the same durable idempotency guard to sales.

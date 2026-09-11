@@ -22,6 +22,7 @@ import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { toCloudSale } from './cloud-sale';
 import { toCloudReturn } from './cloud-return';
 import { canonicalHash, type IdempotencyGuard } from './idempotency';
+import type { ReturnEntitlement, EntitlementLine } from './entitlement';
 
 /** What the lane asks the edge for, and all it may ask for. */
 export interface EdgeNode {
@@ -75,6 +76,16 @@ export function createEdgeNode(input: {
    * standalone/demo edge (and the direct-construction unit tests) still run; a real edge supplies it.
    */
   readonly returnsIdempotency?: IdempotencyGuard;
+  /**
+   * Refund entitlement from trusted local data (RR-F04). Rebuilt at boot from this edge's sale log
+   * (how much each sale sold) and returns log (how much has come back), it refuses a refund that
+   * would take back more of a line than was sold — using what the box knows, never the numbers the
+   * request supplies. A sale this edge did not ring is `saleKnown === false`; such a refund cannot be
+   * entitlement-checked here and is allowed under the existing approval/cap controls, its global
+   * at-most-once left to cloud reconciliation (it is never claimed locally). Optional so a
+   * standalone/demo edge and the direct-construction unit tests still run.
+   */
+  readonly returnsEntitlement?: ReturnEntitlement;
 }): EdgeNode {
   let held = input.initialPack;
   // A refund committed right now, keyed by its id, so a concurrent second call with the same id
@@ -107,6 +118,21 @@ export function createEdgeNode(input: {
           // holds is the one the lane priced this sale from, so it stamps the version (see cloud-sale.ts).
           payload: toCloudSale(JSON.parse(record) as unknown, held?.snapshot.version ?? 0),
         }));
+      }
+
+      // Teach the refund-entitlement guard what this sale sold, so a refund taken later in the SAME
+      // session is checked against it and not only against sales already on disk at boot (RR-F04).
+      // After the durable write, off the money-critical path, and wrapped so it can never affect the
+      // sale: a bad record here only means a refund against it falls back to the safe policy.
+      if (outcome.committed && input.returnsEntitlement !== undefined) {
+        try {
+          const parsed = JSON.parse(record) as { lines?: { productId?: unknown; quantityMinor?: unknown }[] };
+          const lines: EntitlementLine[] = Array.isArray(parsed.lines)
+            ? parsed.lines.flatMap((l) => (typeof l.productId === 'string' && typeof l.quantityMinor === 'number'
+              ? [{ productId: l.productId, quantityMinor: l.quantityMinor }] : []))
+            : [];
+          input.returnsEntitlement.recordSale(saleId, lines);
+        } catch { /* the sale is committed regardless; entitlement just won't know this line */ }
       }
       return outcome;
     },
@@ -149,10 +175,47 @@ export function createEdgeNode(input: {
         return outcome;
       };
 
+      // Refund entitlement from trusted local data (RR-F04). Wraps the durable write: for a refund
+      // against a sale THIS edge rang, it refuses one that would take back more of a line than was
+      // sold, using the box's own sold + already-returned totals, and reserves the returned quantity
+      // synchronously BEFORE the write so two refunds of the last unit cannot both pass. A sale this
+      // edge did not ring (cross-lane, no receipt) has no trusted local record: it is allowed under
+      // the existing approval/cap controls and its global at-most-once is left to cloud reconciliation
+      // — deliberately not claimed here (see the note on `returnsEntitlement`).
+      const entitlement = input.returnsEntitlement;
+      let cloud: ReturnType<typeof toCloudReturn> | undefined;
+      try { cloud = toCloudReturn(JSON.parse(record) as unknown); } catch { cloud = undefined; }
+      const entSaleId = cloud !== undefined && typeof cloud.originalSaleId === 'string' && cloud.originalSaleId !== ''
+        ? cloud.originalSaleId : undefined;
+      const entLines: EntitlementLine[] = (cloud?.lines ?? []).map((l) => ({ productId: l.productId, quantityMinor: l.quantityMinor }));
+
+      const withEntitlement = async (commit: () => Promise<CommitOutcome>): Promise<CommitOutcome> => {
+        if (entitlement === undefined || entSaleId === undefined || !entitlement.saleKnown(entSaleId)) {
+          return commit(); // nothing trusted to check against — safe policy handled by the caller/cloud
+        }
+        const verdict = entitlement.check(entSaleId, entLines);
+        if (!verdict.ok) {
+          return {
+            committed: false, refusedBecause: 'over_return',
+            detail: `refund would return ${verdict.requestedMinor} of ${verdict.productId} against sale ${entSaleId}, but only ${Math.max(0, verdict.soldMinor - verdict.returnedMinor)} of ${verdict.soldMinor} sold remain unreturned`,
+            laneMessage: 'This item has already been refunded against that receipt. Do not hand back cash — tell the manager.',
+          };
+        }
+        entitlement.reserve(entSaleId, entLines); // synchronous, before the durable write (atomic)
+        try {
+          const outcome = await commit();
+          if (!outcome.committed) entitlement.release(entSaleId, entLines);
+          return outcome;
+        } catch (e) {
+          entitlement.release(entSaleId, entLines);
+          throw e;
+        }
+      };
+
       const guard = input.returnsIdempotency;
       if (guard === undefined) {
-        // Standalone/demo edge with no durable identity guard — original behaviour.
-        return commitAndQueue();
+        // Standalone/demo edge with no durable identity guard — original behaviour, still entitled.
+        return withEntitlement(commitAndQueue);
       }
 
       // Operation identity + canonical payload identity (RR-F03). A reused id decides the outcome
@@ -192,7 +255,7 @@ export function createEdgeNode(input: {
       }
 
       const work = (async (): Promise<CommitOutcome> => {
-        const outcome = await commitAndQueue();
+        const outcome = await withEntitlement(commitAndQueue);
         if (outcome.committed) guard.remember(returnId, hash);
         return outcome;
       })();

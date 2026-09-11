@@ -58,6 +58,19 @@ export class RefundConflictError extends Error {
   }
 }
 
+/**
+ * Thrown when a refund would take back more of a line than the original sale sold, judged against
+ * the edge's own trusted sale + return history rather than numbers the request supplied (RR-F04).
+ * Explicit, so the screen can say "already refunded" rather than a generic failure — and so a caller
+ * cannot mistake it for something to retry.
+ */
+export class RefundNotEntitledError extends Error {
+  constructor(returnId: string, readonly laneMessage: string) {
+    super(`Return "${returnId}" exceeds what the original sale entitles (M13-FR-01, RR-F04).`);
+    this.name = 'RefundNotEntitledError';
+  }
+}
+
 export interface TillConfig {
   readonly tillId: string;
   readonly laneId: string;
@@ -195,10 +208,14 @@ export function createTillSession(
       if (durableReturn !== undefined) {
         const outcome = await durableReturn(full.id, toReturnRecord(full));
         if (!outcome.committed) {
-          // An explicit conflict (id reused for different money — RR-F03) is not a "try again"; it
-          // is wrong and needs a person. Anything else is a durable-write refusal.
+          // Explicit, distinct failures the cashier and caller must tell apart. A conflict (id reused
+          // for different money — RR-F03) and an over-return (more than the receipt entitles — RR-F04)
+          // are both "this is wrong", not "try again"; anything else is a durable-write refusal.
           if (outcome.refusedBecause === 'idempotency_conflict') {
             throw new RefundConflictError(full.id, outcome.laneMessage);
+          }
+          if (outcome.refusedBecause === 'over_return') {
+            throw new RefundNotEntitledError(full.id, outcome.laneMessage);
           }
           throw new LocalRefundRefusedError(full.id, outcome.laneMessage);
         }
