@@ -15,8 +15,8 @@
 // behind it are re-sent on the next start and collapse to nothing at the cloud, and the unfinished
 // one is never stepped over. Cheap redundancy against permanent loss is the right way round.
 
-import { open, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { open, readFile, rename } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 
 const FILE = 'sync-cursor';
 
@@ -46,23 +46,35 @@ export async function readCursor(dataDir: string, fileName?: string): Promise<nu
 }
 
 /**
- * Write the cursor, durably.
+ * Write the cursor, durably and atomically.
  *
  * Synced for the same reason the sales log is: a cursor that reached the operating system's cache
  * and not the disk survives a clean shutdown and not a power cut, and the one time it matters is
  * the power cut.
  *
- * Written whole and short. A partial write of a number is a different number, so this is one of
- * the few places where writing a fixed, tiny payload is itself the safety property.
+ * **Write a temp file, fsync it, then rename it over the real one.** A rename within a directory is
+ * atomic, so a reader — including this box after a power cut mid-write — sees either the whole old
+ * number or the whole new one, never a torn half. The earlier version truncated the real file and
+ * wrote into it, which leaves a window where the file is empty or half a number on the disk; that
+ * happened to read *safely* (an unreadable cursor means start from the beginning, which re-sends and
+ * dedupes), but "happens to fail safe" is a weaker thing to rest a ledger on than "cannot tear".
  */
 export async function writeCursor(dataDir: string, handled: number, fileName?: string): Promise<void> {
-  const handle = await open(join(dataDir, cursorFileFor(fileName)), 'w');
+  const target = join(dataDir, cursorFileFor(fileName));
+  const temp = `${target}.tmp`;
+  const handle = await open(temp, 'w');
   try {
     await handle.write(`${handled}\n`);
-    await handle.sync();
+    await handle.sync(); // the bytes of the temp file are on the disk before it becomes the cursor
   } finally {
     await handle.close();
   }
+  await rename(temp, target); // atomic swap — no reader ever sees a partial number
+  // Sync the directory so the rename itself survives a power cut, not just the temp file's bytes.
+  try {
+    const dir = await open(dirname(target), 'r');
+    try { await dir.sync(); } finally { await dir.close(); }
+  } catch { /* some filesystems refuse to sync a directory; the rename is still atomic */ }
 }
 
 /**
