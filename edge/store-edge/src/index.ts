@@ -21,6 +21,7 @@ import { makeEvent } from '../../../packages/contracts/src/event';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { toCloudSale } from './cloud-sale';
 import { toCloudReturn } from './cloud-return';
+import { canonicalHash, type IdempotencyGuard } from './idempotency';
 
 /** What the lane asks the edge for, and all it may ask for. */
 export interface EdgeNode {
@@ -67,8 +68,18 @@ export function createEdgeNode(input: {
   readonly returnsLog?: DurableLog;
   /** Where a committed RETURN is queued for the cloud — the return pipeline's own outbox. */
   readonly returnsOutbox?: SyncOutbox;
+  /**
+   * Operation-identity guard for refunds (RR-F03). Rebuilt from the durable returns log at boot and
+   * consulted before every refund write: an identical retry returns the original outcome with no new
+   * effect, and a reused id with different money is refused as an explicit conflict. Optional so a
+   * standalone/demo edge (and the direct-construction unit tests) still run; a real edge supplies it.
+   */
+  readonly returnsIdempotency?: IdempotencyGuard;
 }): EdgeNode {
   let held = input.initialPack;
+  // A refund committed right now, keyed by its id, so a concurrent second call with the same id
+  // awaits the first rather than racing it to a double write (RR-F03 "prove across concurrency").
+  const returnsInFlight = new Map<string, Promise<CommitOutcome>>();
 
   return {
     pack: () => held,
@@ -112,28 +123,85 @@ export function createEdgeNode(input: {
         };
       }
 
-      const outcome = await commitLocally({
-        saleId: returnId, record, log: input.returnsLog,
-        ...(input.reserveBytes === undefined ? {} : { reserveBytes: input.reserveBytes }),
-      });
+      const returnsLog = input.returnsLog;
 
-      // After the durable write, never before — the same ordering as the sale, and for the same
-      // reason: queueing first would send a refund the lane went on to refuse.
-      if (outcome.committed && input.returnsOutbox !== undefined) {
-        input.returnsOutbox.enqueue(makeEvent({
-          id: `edge-return-${returnId}`,
-          type: 'ReturnAccepted',
-          occurredAt: new Date().toISOString(),
-          // The return's own id, minted at the lane. Every retry carries this same key, so a resend
-          // collapses to one refund at the cloud (§31.1).
-          idempotencyKey: `edge-return-${input.tenantId}-${returnId}`,
-          source: 'edge/lane',
-          // Translated to the cloud's synced-return contract before it leaves. `returnAcceptedRoute`
-          // reads `originalSaleId` to address the bill; the cloud re-verifies the §28 approver.
-          payload: toCloudReturn(JSON.parse(record) as unknown),
-        }));
+      // The durable write, then the queue — after the write, never before, the same ordering as the
+      // sale and for the same reason: queueing first would send a refund the lane went on to refuse.
+      const commitAndQueue = async (): Promise<CommitOutcome> => {
+        const outcome = await commitLocally({
+          saleId: returnId, record, log: returnsLog,
+          ...(input.reserveBytes === undefined ? {} : { reserveBytes: input.reserveBytes }),
+        });
+        if (outcome.committed && input.returnsOutbox !== undefined) {
+          input.returnsOutbox.enqueue(makeEvent({
+            id: `edge-return-${returnId}`,
+            type: 'ReturnAccepted',
+            occurredAt: new Date().toISOString(),
+            // The return's own id, minted at the lane. Every retry carries this same key, so a resend
+            // collapses to one refund at the cloud (§31.1).
+            idempotencyKey: `edge-return-${input.tenantId}-${returnId}`,
+            source: 'edge/lane',
+            // Translated to the cloud's synced-return contract before it leaves. `returnAcceptedRoute`
+            // reads `originalSaleId` to address the bill; the cloud re-verifies the §28 approver.
+            payload: toCloudReturn(JSON.parse(record) as unknown),
+          }));
+        }
+        return outcome;
+      };
+
+      const guard = input.returnsIdempotency;
+      if (guard === undefined) {
+        // Standalone/demo edge with no durable identity guard — original behaviour.
+        return commitAndQueue();
       }
-      return outcome;
+
+      // Operation identity + canonical payload identity (RR-F03). A reused id decides the outcome
+      // before anything is written: an identical payload returns the original outcome and writes
+      // nothing again; a different payload under the same id is an explicit conflict.
+      const hash = canonicalHash(record);
+      const decideReused = (): CommitOutcome | undefined => {
+        const verdict = guard.verdict(returnId, hash);
+        if (verdict.kind === 'duplicate') {
+          return {
+            committed: true, durable: true,
+            detail: `refund ${returnId} was already recorded with these details — returning the original outcome; nothing was written again`,
+            laneMessage: 'This refund was already recorded. Do not hand back cash a second time.',
+          };
+        }
+        if (verdict.kind === 'conflict') {
+          return {
+            committed: false, refusedBecause: 'idempotency_conflict',
+            detail: `refund id ${returnId} was already used for a different refund; this request was refused and nothing was written`,
+            laneMessage: 'This refund ID was already used for a different amount. Do not hand back cash — tell the manager.',
+          };
+        }
+        return undefined; // fresh
+      };
+
+      const reused = decideReused();
+      if (reused !== undefined) return reused;
+
+      // Fresh — but a concurrent call with the same id may be committing right now. Await it, then
+      // re-decide against what it actually committed, so two racing calls cannot both write.
+      const pending = returnsInFlight.get(returnId);
+      if (pending !== undefined) {
+        await pending;
+        const afterRace = decideReused();
+        if (afterRace !== undefined) return afterRace;
+        // else the concurrent one failed and remembered nothing — fall through and commit ours.
+      }
+
+      const work = (async (): Promise<CommitOutcome> => {
+        const outcome = await commitAndQueue();
+        if (outcome.committed) guard.remember(returnId, hash);
+        return outcome;
+      })();
+      returnsInFlight.set(returnId, work);
+      try {
+        return await work;
+      } finally {
+        returnsInFlight.delete(returnId);
+      }
     },
 
     takePack: (incoming) => {

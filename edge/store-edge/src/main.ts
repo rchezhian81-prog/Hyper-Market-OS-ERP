@@ -40,6 +40,8 @@ import { pullPack, type PackPullOutcome, type PackPullStatus } from '../../../ed
 import { openFileLog, readLog, type OpenFileLog } from './file-log';
 import { readSignedPack, writeSignedPack } from './signed-pack-file';
 import { SyncPipeline } from './sync-pipeline';
+import { canonicalHash, IdempotencyGuard } from './idempotency';
+import { returnIdOf } from './cloud-return';
 import { createEdgeNode, type EdgeNode } from './index';
 import { startLaneServer, LANE_HOST, type LaneServer } from './lane-server';
 import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-server';
@@ -273,6 +275,21 @@ export async function startEdge(
     say(`  ${returnsRestore.restoredDeadLetters} refund(s) the cloud refused earlier are still waiting for a person — kept, with their history.`);
   }
 
+  // The refund operation-identity guard (RR-F03), rebuilt from the durable returns log so the rule
+  // holds across a restart: every refund already on the disk is remembered by its id and the
+  // canonical hash of the record it committed with. A reused id then returns the original outcome
+  // (identical payload) or is refused as a conflict (different money) — before anything is written.
+  const returnsIdempotency = new IdempotencyGuard(
+    (await readLog(returnsLog.path))
+      .flatMap((r) => (r.ok ? [r.record] : []))
+      .flatMap((rec) => {
+        let parsed: unknown;
+        try { parsed = JSON.parse(rec); } catch { return []; }
+        const id = returnIdOf(parsed);
+        return id === undefined ? [] : [[id, canonicalHash(rec)] as const];
+      }),
+  );
+
   const node = createEdgeNode({
     tenantId,
     log,
@@ -283,6 +300,8 @@ export async function startEdge(
     // The refund's mirror of that seam, on its own log and its own outbox (M13-FR-01).
     returnsLog,
     returnsOutbox,
+    // The refund's operation-identity guard, rebuilt from the durable log above (RR-F03).
+    returnsIdempotency,
     ...(restoredPack === undefined ? {} : { initialPack: restoredPack }),
   });
 

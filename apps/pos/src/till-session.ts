@@ -45,6 +45,19 @@ export class LocalRefundRefusedError extends Error {
   }
 }
 
+/**
+ * Thrown when a refund id was already used for a DIFFERENT refund (RR-F03). This is not a lane
+ * failure to retry — it is an explicit conflict: the same id cannot mean two different refunds, so
+ * the cashier must not hand back cash and the id must be looked at. Distinct from
+ * `LocalRefundRefusedError` so the screen and the caller can tell "try again" from "this is wrong".
+ */
+export class RefundConflictError extends Error {
+  constructor(returnId: string, readonly laneMessage: string) {
+    super(`Return "${returnId}" reuses an id that was already used for a different refund (M13, RR-F03).`);
+    this.name = 'RefundConflictError';
+  }
+}
+
 export interface TillConfig {
   readonly tillId: string;
   readonly laneId: string;
@@ -181,7 +194,14 @@ export function createTillSession(
       // only; a real lane always supplies one.
       if (durableReturn !== undefined) {
         const outcome = await durableReturn(full.id, toReturnRecord(full));
-        if (!outcome.committed) throw new LocalRefundRefusedError(full.id, outcome.laneMessage);
+        if (!outcome.committed) {
+          // An explicit conflict (id reused for different money — RR-F03) is not a "try again"; it
+          // is wrong and needs a person. Anything else is a durable-write refusal.
+          if (outcome.refusedBecause === 'idempotency_conflict') {
+            throw new RefundConflictError(full.id, outcome.laneMessage);
+          }
+          throw new LocalRefundRefusedError(full.id, outcome.laneMessage);
+        }
       }
 
       // Then account for it locally: stock back in the right state, the refund result for the screen.
