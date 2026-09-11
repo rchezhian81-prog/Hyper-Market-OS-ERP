@@ -5,16 +5,27 @@
 // nothing on the other side of it. The shell's default was a refusal, which was honest and meant a
 // lane could not take money.
 //
-// ── Loopback, and only loopback ─────────────────────────────────────────────
+// ── Loopback first, then server-side authorization ──────────────────────────
 //
-// This binds to `127.0.0.1`. Not `0.0.0.0`, not the machine's LAN address. **The bind address is
-// the entire security control**, and it is sufficient: the lane's browser and the lane's edge are
-// the same machine (ADR-0004), so nothing outside that machine has any business writing a sale.
-// Bound to the network instead, any device on the shop wifi — including a customer's phone — could
-// post sales into the till's log.
+// This binds to `127.0.0.1`. Not `0.0.0.0`, not the machine's LAN address: the lane's browser and
+// the lane's edge are the same machine (ADR-0004), so nothing off that machine can reach the socket,
+// and no device on the shop wifi — a customer's phone included — can post into the till's log.
 //
-// A shared secret would be theatre here. An attacker who can reach loopback is already running code
-// on the till, and a token sitting in the same browser buys nothing against them.
+// The bind is necessary but **not sufficient**, and an earlier version of this file wrongly treated
+// it (with CORS response headers) as the whole control. A page open in the till's own browser is ON
+// this machine: it can issue a cross-origin request to loopback, and a CORS *simple* request — one
+// carrying `text/plain` — is delivered with no preflight. The server then wrote the record and only
+// the missing CORS header stopped the attacker reading the reply, which is too late: the durable
+// mutation already happened (review finding RR-F01). CORS is a control on reading a reply in a
+// browser; it is not authorization to mutate.
+//
+// So authorization is now decided **server-side, before the body is read or anything is written**
+// (`laneCallRefusal`): a foreign `Origin` is refused (403), and the content type must be
+// `application/json` (415 otherwise) — the one type a cross-origin caller cannot send without a
+// preflight this socket refuses for non-loopback origins. A request with no `Origin` (a same-origin
+// call, or a non-browser client already on this machine) is allowed with the right content type: an
+// attacker who can forge headers from a shell on the till is already inside the trust boundary the
+// loopback bind draws, and a shared secret in the same browser would buy nothing against them.
 //
 // ── The screen and the socket are the same machine but not the same port ────
 //
@@ -68,6 +79,45 @@ export function isLoopbackOrigin(origin: string | undefined): boolean {
   }
   // A URL parses `[::1]` back to `::1`; accept both the bracketed and bare forms.
   return host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]';
+}
+
+/**
+ * Is this the lane protocol's content type? `application/json` only (a charset parameter is fine).
+ *
+ * This is a **server-side authorization control, not tidiness** (RR-F01). A cross-origin `fetch`
+ * carrying `application/json` is never a CORS "simple request", so the browser must ask this socket's
+ * permission with a preflight `OPTIONS` first — which is refused for any non-loopback origin. The
+ * bypass the review found used `text/plain`, which *is* a simple request and is sent with no
+ * preflight at all: the browser delivers it, the server writes the record, and only then does the
+ * missing CORS header stop the attacker reading the reply — too late, the durable mutation happened.
+ * Requiring `application/json` closes that door: the only content type the real till ever sends, and
+ * the one that cannot cross an origin without this socket's say-so.
+ */
+export function isJsonContentType(contentType: string | undefined): boolean {
+  if (typeof contentType !== 'string') return false;
+  const base = contentType.split(';', 1)[0]!.trim().toLowerCase();
+  return base === 'application/json';
+}
+
+/**
+ * May this request mutate the lane's log at all? Decided BEFORE the body is read or anything is
+ * written (RR-F01). Loopback binding and CORS response headers do not establish caller
+ * authorization — a request that carries a foreign `Origin`, or a content type the lane protocol
+ * does not speak, is refused here rather than parsed and committed. A request with no `Origin` (a
+ * same-origin call, or a non-browser client already on this machine, which the loopback bind treats
+ * as in the trust boundary — see the note at the top) is allowed if its content type is right.
+ */
+export function laneCallRefusal(
+  origin: string | undefined,
+  contentType: string | undefined,
+): { readonly status: number; readonly reason: string } | undefined {
+  if (typeof origin === 'string' && origin !== '' && !isLoopbackOrigin(origin)) {
+    return { status: 403, reason: 'this request did not come from this till and was refused before anything was written' };
+  }
+  if (!isJsonContentType(contentType)) {
+    return { status: 415, reason: 'the lane accepts application/json only; this request was refused before anything was written' };
+  }
+  return undefined;
 }
 
 /** The CORS headers to answer a loopback caller with — or nothing at all for any other origin. */
@@ -135,6 +185,17 @@ export function startLaneServer(input: {
     }
     const isReturn = route === '/lane/returns';
     const noun = isReturn ? 'refund' : 'sale';
+
+    // Server-side authorization, BEFORE the body is read or anything is written (RR-F01). A foreign
+    // Origin or a non-JSON content type is refused here — CORS headers and the loopback bind are not
+    // caller authorization. This is what stops a `text/plain` cross-origin write from mutating the
+    // log and only being "blocked" after the durable record already exists.
+    const authRefusal = laneCallRefusal(req.headers.origin, req.headers['content-type']);
+    if (authRefusal !== undefined) {
+      send(res, authRefusal.status, { committed: false, refusedBecause: 'unauthorized_request', detail: authRefusal.reason }, cors);
+      req.resume(); // drain and discard the body; nothing here reads or persists it
+      return;
+    }
 
     const chunks: Buffer[] = [];
     let size = 0;
