@@ -39,6 +39,13 @@ export interface CommitOutcome {
   readonly detail: string;
   /** What the cashier is told, in words that work with a customer watching. */
   readonly laneMessage: string;
+  /**
+   * The lane could not CONFIRM whether the write happened — a reply was lost, not a refusal (RR-F02).
+   * `committed` is false because it is not confirmed committed, but this is explicitly NOT a definite
+   * failure: it must never invite running the operation again as if nothing happened. Set only after a
+   * safe, same-identity retry could not reach the store; resolved when a retry or status inquiry does.
+   */
+  readonly unconfirmed?: true;
 }
 
 /**

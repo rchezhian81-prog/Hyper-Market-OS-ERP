@@ -71,6 +71,20 @@ export class RefundNotEntitledError extends Error {
   }
 }
 
+/**
+ * Thrown when the lane could not CONFIRM whether a refund was recorded — a reply was lost, not a
+ * refusal (RR-F02). It is deliberately distinct from `LocalRefundRefusedError`: a refusal means "it
+ * did not happen, try elsewhere"; this means "it may or may not have happened — do not hand back cash
+ * and do not run it again, resolve it first". Treating uncertainty as failure is what causes a second
+ * refund for money that already went back.
+ */
+export class RefundUncertainError extends Error {
+  constructor(returnId: string, readonly laneMessage: string) {
+    super(`Return "${returnId}" could not be confirmed as recorded at the lane (RR-F02).`);
+    this.name = 'RefundUncertainError';
+  }
+}
+
 export interface TillConfig {
   readonly tillId: string;
   readonly laneId: string;
@@ -208,9 +222,13 @@ export function createTillSession(
       if (durableReturn !== undefined) {
         const outcome = await durableReturn(full.id, toReturnRecord(full));
         if (!outcome.committed) {
-          // Explicit, distinct failures the cashier and caller must tell apart. A conflict (id reused
-          // for different money — RR-F03) and an over-return (more than the receipt entitles — RR-F04)
-          // are both "this is wrong", not "try again"; anything else is a durable-write refusal.
+          // Explicit, distinct outcomes the cashier and caller must tell apart. Unconfirmed (a lost
+          // reply — RR-F02) is "may have recorded, do not re-run"; a conflict (id reused for different
+          // money — RR-F03) and an over-return (more than the receipt entitles — RR-F04) are "this is
+          // wrong"; anything else is a plain durable-write refusal ("try elsewhere").
+          if (outcome.unconfirmed === true) {
+            throw new RefundUncertainError(full.id, outcome.laneMessage);
+          }
           if (outcome.refusedBecause === 'idempotency_conflict') {
             throw new RefundConflictError(full.id, outcome.laneMessage);
           }

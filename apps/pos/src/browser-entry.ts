@@ -53,41 +53,81 @@ export type DurableWrite = (saleId: string, record: string) => Promise<CommitOut
  * screen cannot say "Sale complete" until the disk has confirmed.
  */
 export function laneDurable(port: number = DEFAULT_LANE_PORT): DurableWrite {
+  // A sale is NOT safe to re-post on a lost reply: the edge is not yet idempotent on the sale id
+  // (GAP-SALE-IDEMPOTENCY-01), so a blind retry could double-record. A lost reply is therefore a
+  // refusal, as before — the sale has no receipt yet and the customer is still there.
   return laneDurableTo('/lane/sales', port,
-    'This lane is not ready to take payment. Do not take money — tell the manager and use another lane.');
+    'This lane is not ready to take payment. Do not take money — tell the manager and use another lane.',
+    { safeRetry: false });
 }
 
 /**
  * The lane's durable write for a REFUND: post it to this till's own edge on `/lane/returns` and wait
- * (M13-FR-01). The exact mirror of `laneDurable` — money leaves the drawer, so the disk confirms
- * before the cashier hands back cash, and the edge queues it for the cloud afterwards.
+ * (M13-FR-01). The mirror of `laneDurable`, with one difference that RR-F02 turns on: a lost reply is
+ * resolved by re-posting under the SAME id, which the edge treats idempotently (RR-F03), so a retry
+ * can never cause a second refund — it only learns whether the first attempt recorded.
  */
 export function laneDurableReturn(port: number = DEFAULT_LANE_PORT): DurableWrite {
   return laneDurableTo('/lane/returns', port,
-    'This lane is not ready to record a refund. Do not hand back cash — tell the manager and use another lane.');
+    'This lane is not ready to record a refund. Do not hand back cash — tell the manager and use another lane.',
+    { safeRetry: true });
 }
 
-/** Post a record to one of the till's edge write routes and wait for its durable answer. */
-function laneDurableTo(path: '/lane/sales' | '/lane/returns', port: number, refusedLaneMessage: string): DurableWrite {
+/**
+ * Post a record to one of the till's edge write routes and wait for its durable answer.
+ *
+ * A lost reply is not the same as a refusal (RR-F02). When the route is idempotent (`safeRetry`), a
+ * dropped response is retried by re-posting the SAME record: the edge returns the original outcome for
+ * a repeat, so the retry resolves whether the first attempt landed without any risk of a double
+ * effect. Only when the store cannot be reached at all — after those retries — is the outcome
+ * reported as **unconfirmed**: `committed` is false, but it must never be read as a definite failure
+ * that invites running the refund again. For a non-idempotent route a lost reply stays a refusal.
+ */
+function laneDurableTo(
+  path: '/lane/sales' | '/lane/returns',
+  port: number,
+  refusedLaneMessage: string,
+  opts: { readonly safeRetry: boolean; readonly attempts?: number; readonly retryDelayMs?: number },
+): DurableWrite {
+  const attempts = opts.safeRetry ? (opts.attempts ?? 4) : 1;
+  const retryDelayMs = opts.retryDelayMs ?? 100;
   return async (_id, record) => {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}${path}`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: record,
-      });
-      return await response.json() as CommitOutcome;
-    } catch {
-      // The edge is not running, or was stopped, or the port is wrong. **Refused**, and refused is
-      // right: it happens before the receipt exists and the customer is still standing there.
-      // Accepting into memory instead would be a sale the cashier saw succeed that exists nowhere.
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: record,
+        });
+        return await response.json() as CommitOutcome;
+      } catch (e) {
+        lastError = e;
+        // The reply was lost, or the store did not answer. On an idempotent route the same record is
+        // re-posted (same identity), so the edge dedupes it — a retry cannot double-record.
+        if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, retryDelayMs * attempt));
+      }
+    }
+    if (opts.safeRetry) {
+      // Could not reach the store after safe retries. The refund MIGHT be recorded — we do not know,
+      // and saying "definitely failed" here is what leads to a second refund (RR-F02). Report it as
+      // unconfirmed instead: hold, do not hand back cash, do not re-run it.
       return {
         committed: false,
+        unconfirmed: true,
         refusedBecause: 'could_not_write_durably',
-        detail: `the lane's local store did not answer on port ${port}`,
-        laneMessage: refusedLaneMessage,
+        detail: `the lane's local store did not answer on port ${port} after ${attempts} attempts: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+        laneMessage: 'This lane could not confirm the refund was saved. Do NOT hand back cash and do NOT run it again — get the manager to check whether it recorded first.',
       };
     }
+    // A non-idempotent route (a sale): a lost reply is refused, and refused is right — it happens
+    // before the receipt exists and accepting into memory would be a sale that exists nowhere.
+    return {
+      committed: false,
+      refusedBecause: 'could_not_write_durably',
+      detail: `the lane's local store did not answer on port ${port}`,
+      laneMessage: refusedLaneMessage,
+    };
   };
 }
 

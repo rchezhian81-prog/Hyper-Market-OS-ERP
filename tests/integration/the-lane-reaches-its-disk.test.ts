@@ -117,9 +117,14 @@ describe('a refund taken on the screen reaches this till\'s disk (M13-FR-01)', (
     expect(edge.outbox.unsentCount()).toBe(0); // the sale queue is untouched
   });
 
-  it('REFUSES the refund when this till\'s store is not running — no cash leaves the drawer', async () => {
+  it('does not COMPLETE the refund when this till\'s store is not running — no cash leaves the drawer', async () => {
+    // RR-F02: an unreachable store is reported as UNCERTAIN, not a definite failure. The refund route
+    // retries under the same id (idempotent at the edge — RR-F03); when nothing answers even after
+    // that, the reply might have been lost AFTER a durable write (a power cut between fsync and the
+    // HTTP reply), so "definitely failed, use another lane" is exactly what could cause a second
+    // refund. The cashier is told to hold and not re-run it — and crucially NO cash leaves the drawer.
     const view = bootPos({ laneId: 'lane-1', durableReturn: laneDurableReturn(1) }); // nothing listens on port 1
-    await expect(view.till.refund(refundInput())).rejects.toThrow(/could not be recorded durably|not ready to take a refund/i);
+    await expect(view.till.refund(refundInput())).rejects.toThrow(/could not be confirmed|do not run it again/i);
   });
 });
 
