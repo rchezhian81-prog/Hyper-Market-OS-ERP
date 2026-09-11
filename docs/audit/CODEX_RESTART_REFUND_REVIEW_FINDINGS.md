@@ -21,12 +21,14 @@ found while repairing are recorded separately (see the bottom of this file), nev
 
 | ID | Title | Status |
 |----|-------|--------|
-| RR-F01 | Untrusted requests can mutate the lane's durable log | **open** — repair in progress |
-| RR-F02 | A lost reply is incorrectly reported as definite failure | **open** — repair in progress |
-| RR-F03 | Reusing a refund ID with different money succeeds | **open** — repair in progress |
-| RR-F04 | A second full refund succeeds using stale caller history | **open** — repair in progress |
+| RR-F01 | Untrusted requests can mutate the lane's durable log | **RESOLVED** — commit `0adc015`; reproduced then fixed against current `main` |
+| RR-F02 | A lost reply is incorrectly reported as definite failure | **RESOLVED** — commit `41cad65` |
+| RR-F03 | Reusing a refund ID with different money succeeds | **RESOLVED** — commit `ededd39` |
+| RR-F04 | A second full refund succeeds using stale caller history | **RESOLVED** — commit `26506ba` (local; cross-lane safe policy + GAP-REFUND-XLANE-01) |
 | RR-F05 | Failed-sync record lost on restart (cursor stepped over in-memory dead-letter) | **RESOLVED** — PR #345, commit `98ea05b`; evidence `docs/evidence/rr-f05-f06-restart-recovery.md` |
 | RR-F06 | Failed-sync records must survive restart with history | **RESOLVED** — PR #345, commit `98ea05b`; evidence `docs/evidence/rr-f05-f06-restart-recovery.md` |
+
+Evidence for RR-F01–RR-F04: `docs/evidence/rr-f01-f04-refund-review.md`.
 
 Repair order for the four open findings (owner-directed): **RR-F01 → RR-F03 → RR-F04 → RR-F02.**
 RR-F02 last because its safe fix (status inquiry / idempotent retry under the same operation
