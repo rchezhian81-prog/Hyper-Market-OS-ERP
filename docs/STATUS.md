@@ -5,6 +5,51 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## RR-F05 / RR-F06 — failed-sync records survive a restart; the sync checkpoint is correct (11 September 2026)
+
+**Owner direction:** resume PR #345 (the hold is on merging/deploying, not on repairing the branch);
+bring the merged js-yaml security fix into it; then fix two restart-recovery findings from the #345
+review, as separate documented commits, and prove them with regression tests. Do not merge or deploy;
+keep the other four review findings open.
+
+**What was wrong (confirmed against the real `startEdge`, not from docs):** a sale or refund the cloud
+refuses is dead-lettered, and the durable cursor was advanced **over** it — while the dead-letter
+lived only in the in-memory outbox. On the next restart the record was below the cursor (never
+re-queued) and the in-memory dead-letter was gone with the process, so a failed refund vanished with
+nothing saying so — the exact silent discard hard rule #6 forbids (RR-F06). The same advance added the
+finished prefix of the **deduped** outbox to the cursor, so a duplicate record in the log stranded the
+cursor one short and re-sent the tail on every restart (RR-F05). Reproduced before the fix: dead-letters
+`1` before restart, `0` after. After the fix: `1` before, `1` after (recovered, visible, not re-sent).
+
+**The fix (one coherent rule):** a log position is *done* when it was acknowledged by the cloud **or**
+it is recorded in the **durable** dead-letter store; a dead-letter is written to that store, fsync'd,
+**before** the cursor moves past it, so advancing can no longer lose it; the cursor is derived per
+keyed log position from a fixed base (duplicates collapse correctly), never by outbox length.
+
+**What changed:**
+- `edge/store-edge/src/dead-letter-log.ts` (new) — durable, append-only failed-sync store: payload,
+  reason, attempts, timestamps and resolution history.
+- `edge/store-edge/src/sync-pipeline.ts` (new) — one pipeline's restore + advance + dead-letter
+  durability, shared by the sale and refund pipelines. Handles duplicate, malformed, incorrect-checkpoint
+  and interrupted-write cases explicitly.
+- `edge/store-edge/src/sync-cursor.ts` — `writeCursor` is now atomic (temp → fsync → rename), so an
+  interrupted checkpoint write cannot tear.
+- `edge/store-edge/src/main.ts` — wires two pipelines, persists new dead-letters before advancing each
+  cursor, exposes `syncOnce()`. **The sale path is untouched** (hard rule #1).
+- `tests/unit/edge-dead-letter-log.test.ts`, `tests/integration/failed-sync-survives-restart.test.ts`
+  (new) — the counterexample plus restart, outage, old incorrect checkpoints, duplicate replay,
+  interrupted writes and malformed records; synthetic data only.
+
+**Evidence:** `docs/evidence/rr-f05-f06-restart-recovery.md` — fix commit `98ea05b`, exact commands and
+counts. Headlines: full non-DB suite **6,309 passed / 0 failed** (+16 new); real disposable
+**PostgreSQL 16.13** `DB_TESTS_REQUIRED=1 pnpm run test:db` **1,476 passed / 0 failed**; migrations
+idempotent and backup/restore reconciled; typecheck/lint/secret-scan clean.
+
+**No re-rate. Headline stays 41.5%** — hardening of the existing §31 durable-outbox/recovery capability,
+not new maturity. The other four PR #345 review findings remain **open**. Not merged, not deployed.
+
+---
+
 ## Database-test verification — the six migration tests now actually run in CI (11 September 2026)
 
 **Owner direction:** close the database-test verification gap. Audit at commit `12d8493`: locally
