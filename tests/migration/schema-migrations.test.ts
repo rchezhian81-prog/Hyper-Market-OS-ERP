@@ -257,9 +257,30 @@ describe.skipIf(!DATABASE_URL)('the migration set applies, re-applies and holds 
   });
 
   it('refuses an UPDATE and a DELETE on the ledger, by name (hard rule #2)', async () => {
-    await expect(client.query("UPDATE event_ledger SET source = 'tampered'"))
+    // The guard is a FOR EACH ROW trigger, so it fires only when a row is actually matched. On an
+    // EMPTY table an UPDATE/DELETE matches nothing, the trigger never fires, and the statement
+    // "succeeds" affecting zero rows — which is not proof of anything. The first version of this
+    // test relied on other suites having left rows in the shared CI database; run in isolation
+    // (as a required DB test now must be) it passed vacuously against an empty ledger.
+    //
+    // So seed one synthetic row first (INSERT/append is permitted — only UPDATE/DELETE are guarded)
+    // and prove the append landed, then show the guard refuses editing and deleting that REAL row.
+    const TENANT = '00000000-0000-4000-8000-000000000001';
+    const ID = 'migration-guard-probe';
+    await client.query(
+      `INSERT INTO event_ledger (id, tenant_id, stream, type, occurred_at, idempotency_key, source, payload)
+       VALUES ($1, $2, 'migration-guard', 'ProbeAppended', now(), $3, 'tests/migration', '{}'::jsonb)
+       ON CONFLICT DO NOTHING`,
+      [ID, TENANT, `idem-${ID}`],
+    );
+    // The append itself must be allowed, and the row must be there — otherwise the refusals below
+    // would once again pass against nothing.
+    const seeded = await client.query('SELECT 1 FROM event_ledger WHERE tenant_id = $1 AND id = $2', [TENANT, ID]);
+    expect(seeded.rowCount, 'the synthetic ledger row was not appended').toBe(1);
+
+    await expect(client.query('UPDATE event_ledger SET source = $1 WHERE tenant_id = $2 AND id = $3', ['tampered', TENANT, ID]))
       .rejects.toThrow(/append-only/i);
-    await expect(client.query('DELETE FROM event_ledger'))
+    await expect(client.query('DELETE FROM event_ledger WHERE tenant_id = $1 AND id = $2', [TENANT, ID]))
       .rejects.toThrow(/append-only/i);
   });
 

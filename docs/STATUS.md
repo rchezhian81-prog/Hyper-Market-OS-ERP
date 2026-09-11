@@ -5,6 +5,60 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Database-test verification — the six migration tests now actually run in CI (11 September 2026)
+
+**Owner direction:** close the database-test verification gap. Audit at commit `12d8493`: locally
+6,292 passed / 262 skipped (no `DATABASE_URL`); in CI's PostgreSQL job 256 integration DB tests ran,
+but the **six real-database migration tests** in `tests/migration/schema-migrations.test.ts` had
+**never run against a database in CI** — the job's step ran only `tests/integration`.
+
+**What was wrong, and the real defect it hid:** the CI PostgreSQL job targeted `tests/integration`
+only, so `tests/migration` never touched a database there; and `pnpm test` (the other job) has no
+`DATABASE_URL`, so the migration DB block skipped. Running the six in **isolation against a pristine
+database** surfaced a genuine defect: the *"refuses UPDATE/DELETE on the ledger"* test ran its
+`UPDATE` against an **empty** table, where the `FOR EACH ROW` append-only trigger never fires, so it
+"passed" affecting zero rows — proving nothing. It had only ever passed by relying on rows other
+suites left in the shared CI database, and it never ran in CI at all. **Fixed by strengthening:** the
+test now appends a synthetic ledger row (INSERT is allowed), confirms it, then proves the guard
+refuses editing and deleting that real row. No assertion weakened; the guard itself was always correct.
+
+**What changed:**
+- `tests/migration/schema-migrations.test.ts` — the append-only test now seeds a real row.
+- `tests/migration/db-required-in-ci.test.ts` (new) — a fail-loud guard: when `DB_TESTS_REQUIRED=1`
+  (set in the CI DB job) the database must be set **and reachable**, so a required run can never pass
+  green having silently skipped the DB suites (P-08).
+- `.github/workflows/ci.yml` — the real-PostgreSQL job now runs **`pnpm run test:db`**
+  (`tests/integration` **+** `tests/migration`) with `DB_TESTS_REQUIRED=1` and a shell check.
+- `package.json` — new `test:migration` and `test:db` scripts.
+
+**Evidence:** `docs/evidence/db-test-verification.md` — disposable **PostgreSQL 16.13** (isolated,
+synthetic, never production), exact commands and counts. Headlines: migrations 11 applied then 0
+(idempotent); migration suite **16/16** on a pristine DB; `DB_TESTS_REQUIRED=1 pnpm run test:db`
+**1,465 passed / 0 failed / 0 skipped**; full suite **with** a database **6,554 passed / 0 skipped**
+(the 262 formerly-skipped now execute); fail-loud guard proven (required + missing DB → job fails).
+
+**No re-rate. Headline stays 41.5%** — this is verification and CI hardening that makes an existing
+guarantee actually checked; it moves no maturity rung. Module-ladder guardrail unchanged.
+
+**Gate green:** typecheck, lint, secret-scan; full suite off-database 6,293 passed / 262 skipped (the
+DB-gated tests skip without a database, by design — they are run and pass in the DB job).
+
+**For the owner — in plain words:** the safety checks that prove the database cannot be quietly
+rewritten (and that a database upgrade won't lose old records) were written months ago, but the
+robot that runs the checks on every change had been running only *some* of them — six of the most
+important ones about the database's own structure were being skipped without anyone noticing. This
+change makes the robot run all of them, on a real throwaway database, and — importantly — makes it
+**stop with a clear error** if the database is ever missing, instead of quietly passing. Running the
+six for the first time even caught one check that was only pretending to work (it was testing an empty
+table); that's now fixed to test a real record. Nothing about the shop's day changes; this is about
+the checks behind the scenes being honest.
+
+**PR:** folded into the active PR **#345** to keep to one active PR (the change is self-contained and
+does not touch #345's feature code); #345 now also closes this verification gap, and its own CI run
+validates the fix. It can be split into its own PR on request. **Not merged** — owner ratifies.
+
+---
+
 ## M13-FR-01 offline returns reconcile on sync — Slice 2c: the till's durable-first refund (6 September 2026)
 
 **Owner direction:** the owner asked me to wire offline returns to the cloud, one PR at a time. Slice 1
