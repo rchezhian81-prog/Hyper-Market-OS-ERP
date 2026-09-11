@@ -5,6 +5,161 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## RR-F05 / RR-F06 — failed-sync records survive a restart; the sync checkpoint is correct (11 September 2026)
+
+**Owner direction:** resume PR #345 (the hold is on merging/deploying, not on repairing the branch);
+bring the merged js-yaml security fix into it; then fix two restart-recovery findings from the #345
+review, as separate documented commits, and prove them with regression tests. Do not merge or deploy;
+keep the other four review findings open.
+
+**What was wrong (confirmed against the real `startEdge`, not from docs):** a sale or refund the cloud
+refuses is dead-lettered, and the durable cursor was advanced **over** it — while the dead-letter
+lived only in the in-memory outbox. On the next restart the record was below the cursor (never
+re-queued) and the in-memory dead-letter was gone with the process, so a failed refund vanished with
+nothing saying so — the exact silent discard hard rule #6 forbids (RR-F06). The same advance added the
+finished prefix of the **deduped** outbox to the cursor, so a duplicate record in the log stranded the
+cursor one short and re-sent the tail on every restart (RR-F05). Reproduced before the fix: dead-letters
+`1` before restart, `0` after. After the fix: `1` before, `1` after (recovered, visible, not re-sent).
+
+**The fix (one coherent rule):** a log position is *done* when it was acknowledged by the cloud **or**
+it is recorded in the **durable** dead-letter store; a dead-letter is written to that store, fsync'd,
+**before** the cursor moves past it, so advancing can no longer lose it; the cursor is derived per
+keyed log position from a fixed base (duplicates collapse correctly), never by outbox length.
+
+**What changed:**
+- `edge/store-edge/src/dead-letter-log.ts` (new) — durable, append-only failed-sync store: payload,
+  reason, attempts, timestamps and resolution history.
+- `edge/store-edge/src/sync-pipeline.ts` (new) — one pipeline's restore + advance + dead-letter
+  durability, shared by the sale and refund pipelines. Handles duplicate, malformed, incorrect-checkpoint
+  and interrupted-write cases explicitly.
+- `edge/store-edge/src/sync-cursor.ts` — `writeCursor` is now atomic (temp → fsync → rename), so an
+  interrupted checkpoint write cannot tear.
+- `edge/store-edge/src/main.ts` — wires two pipelines, persists new dead-letters before advancing each
+  cursor, exposes `syncOnce()`. **The sale path is untouched** (hard rule #1).
+- `tests/unit/edge-dead-letter-log.test.ts`, `tests/integration/failed-sync-survives-restart.test.ts`
+  (new) — the counterexample plus restart, outage, old incorrect checkpoints, duplicate replay,
+  interrupted writes and malformed records; synthetic data only.
+
+**Evidence:** `docs/evidence/rr-f05-f06-restart-recovery.md` — fix commit `98ea05b`, exact commands and
+counts. Headlines: full non-DB suite **6,309 passed / 0 failed** (+16 new); real disposable
+**PostgreSQL 16.13** `DB_TESTS_REQUIRED=1 pnpm run test:db` **1,476 passed / 0 failed**; migrations
+idempotent and backup/restore reconciled; typecheck/lint/secret-scan clean.
+
+**No re-rate. Headline stays 41.5%** — hardening of the existing §31 durable-outbox/recovery capability,
+not new maturity. The other four PR #345 review findings remain **open**. Not merged, not deployed.
+
+---
+
+## Database-test verification — the six migration tests now actually run in CI (11 September 2026)
+
+**Owner direction:** close the database-test verification gap. Audit at commit `12d8493`: locally
+6,292 passed / 262 skipped (no `DATABASE_URL`); in CI's PostgreSQL job 256 integration DB tests ran,
+but the **six real-database migration tests** in `tests/migration/schema-migrations.test.ts` had
+**never run against a database in CI** — the job's step ran only `tests/integration`.
+
+**What was wrong, and the real defect it hid:** the CI PostgreSQL job targeted `tests/integration`
+only, so `tests/migration` never touched a database there; and `pnpm test` (the other job) has no
+`DATABASE_URL`, so the migration DB block skipped. Running the six in **isolation against a pristine
+database** surfaced a genuine defect: the *"refuses UPDATE/DELETE on the ledger"* test ran its
+`UPDATE` against an **empty** table, where the `FOR EACH ROW` append-only trigger never fires, so it
+"passed" affecting zero rows — proving nothing. It had only ever passed by relying on rows other
+suites left in the shared CI database, and it never ran in CI at all. **Fixed by strengthening:** the
+test now appends a synthetic ledger row (INSERT is allowed), confirms it, then proves the guard
+refuses editing and deleting that real row. No assertion weakened; the guard itself was always correct.
+
+**What changed:**
+- `tests/migration/schema-migrations.test.ts` — the append-only test now seeds a real row.
+- `tests/migration/db-required-in-ci.test.ts` (new) — a fail-loud guard: when `DB_TESTS_REQUIRED=1`
+  (set in the CI DB job) the database must be set **and reachable**, so a required run can never pass
+  green having silently skipped the DB suites (P-08).
+- `.github/workflows/ci.yml` — the real-PostgreSQL job now runs **`pnpm run test:db`**
+  (`tests/integration` **+** `tests/migration`) with `DB_TESTS_REQUIRED=1` and a shell check.
+- `package.json` — new `test:migration` and `test:db` scripts.
+
+**Evidence:** `docs/evidence/db-test-verification.md` — disposable **PostgreSQL 16.13** (isolated,
+synthetic, never production), exact commands and counts. Headlines: migrations 11 applied then 0
+(idempotent); migration suite **16/16** on a pristine DB; `DB_TESTS_REQUIRED=1 pnpm run test:db`
+**1,465 passed / 0 failed / 0 skipped**; full suite **with** a database **6,554 passed / 0 skipped**
+(the 262 formerly-skipped now execute); fail-loud guard proven (required + missing DB → job fails).
+
+**No re-rate. Headline stays 41.5%** — this is verification and CI hardening that makes an existing
+guarantee actually checked; it moves no maturity rung. Module-ladder guardrail unchanged.
+
+**Gate green:** typecheck, lint, secret-scan; full suite off-database 6,293 passed / 262 skipped (the
+DB-gated tests skip without a database, by design — they are run and pass in the DB job).
+
+**For the owner — in plain words:** the safety checks that prove the database cannot be quietly
+rewritten (and that a database upgrade won't lose old records) were written months ago, but the
+robot that runs the checks on every change had been running only *some* of them — six of the most
+important ones about the database's own structure were being skipped without anyone noticing. This
+change makes the robot run all of them, on a real throwaway database, and — importantly — makes it
+**stop with a clear error** if the database is ever missing, instead of quietly passing. Running the
+six for the first time even caught one check that was only pretending to work (it was testing an empty
+table); that's now fixed to test a real record. Nothing about the shop's day changes; this is about
+the checks behind the scenes being honest.
+
+**PR:** folded into the active PR **#345** to keep to one active PR (the change is self-contained and
+does not touch #345's feature code); #345 now also closes this verification gap, and its own CI run
+validates the fix. It can be split into its own PR on request. **Not merged** — owner ratifies.
+
+---
+
+## M13-FR-01 offline returns reconcile on sync — Slice 2c: the till's durable-first refund (6 September 2026)
+
+**Owner direction:** the owner asked me to wire offline returns to the cloud, one PR at a time. Slice 1
+built the cloud doorway (#342), Slice 2a the transport road (#343), Slice 2b the edge's durable
+store-and-drain (#344). This is **Slice 2c** — the last piece: the till hands its refund to the edge, so
+an offline refund travels **end-to-end**.
+
+**The gap:** `apps/pos/src/till-session.ts` `refund()` committed the package `commitReturn` **in memory**
+— no durable disk write, an undrained browser outbox — unlike a *sale*, which posts to the edge over
+loopback and waits. So a refund taken at the lane was neither durable on the box nor able to reach the
+cloud, even though every downstream piece (Slices 1/2a/2b) was now built and waiting.
+
+**What was built (Slice 2c — the till's refund is durable-first):**
+- **`refund()` is now async and follows the sale's order — decide, then record durably, then account
+  for it locally.** `assertReturnValid` (extracted as a pure function from `packages/returns/src/returns.ts`,
+  which `commitReturn` now calls too — behaviour-preserving) refuses an invalid refund **before anything
+  is written anywhere**. Then the refund is posted to this till's edge via **`laneDurableReturn`**
+  (`apps/pos/src/browser-entry.ts`, the exact mirror of the sale's `laneDurable` — a loopback POST to
+  `/lane/returns`) and **awaited**: only a durable confirmation lets the cashier hand back cash. A refused
+  write throws `LocalRefundRefusedError` — no cash for a refund the box did not record. Only then does
+  `commitReturn` record it locally.
+- **The chain is now complete:** till → edge (durable, its own returns log, Slice 2b) → cloud
+  (reconciles into the register, the §28 approver re-verified, Slice 1) — carried by the transport wire
+  (Slice 2a).
+- Tests: durable-first refund cases in `tests/unit/pos-till-session.test.ts` (posts to the edge with the
+  right record; **refuses to give a refund the edge could not record**; refuses an invalid refund before
+  the edge is ever asked), and the full loopback seam in `tests/integration/the-lane-reaches-its-disk.test.ts`
+  (`till.refund` → real lane socket → the edge's returns log + queue, with the **sale log untouched**).
+
+**Honest scope — what this does NOT do.** The POS refund **screen** is a pre-existing stub:
+`apps/pos/web/app.js` still tells the cashier *"refunds against a receipt need the original sale, and this
+lane cannot look one up yet — send the customer to the service desk."* So a cashier cannot yet *initiate*
+a refund from the POS screen; the durable-first path is exercised by the till-session composition and the
+tests, exactly as the sale durable seam was built and tested before its screen used it. Wiring the refund
+UI (receipt lookup + line selection) is a **separate M13 feature**, not part of this offline-sync work.
+
+**No re-rate.** M13 stays `PARTIALLY_WIRED` — the whole offline-returns-to-cloud **sync path** is now
+complete (cloud route + transport wire + edge drain + till durable-first), but the POS refund UI, exchanges
+(FR-02) and the acquirer port remain. **Headline stays 41.5%** — this was the last of the wiring, not a
+new rung. Module-ladder guardrail re-checked: unchanged, sum to 36.
+
+**Gate green:** typecheck, completion (41.5%), lint, secret-scan, and the full vitest suite.
+
+**For the owner — in plain words:** the four pieces are now joined. When the till gives an offline refund,
+it is written to the shop box's disk **before** the cashier is told to hand over cash (if the box can't
+record it, the refund is refused — no cash goes out), and it travels to the central system on its own,
+landing on your **review list** if a manager didn't approve it. **One honest caveat:** the refund *button*
+on the till screen still says "send the customer to the service desk" — building that screen (looking up
+the original bill, picking the lines) is a separate job I have **not** done here. So the plumbing is
+finished and proven by tests, but a cashier can't press a button and drive it yet. **What to check:** for
+now, nothing on the shop floor changes; when the refund screen is later built on top of this, the test will
+be: refund on a till with the network off, bring the network back, and confirm it appears centrally and on
+the review list. **Next:** your call — the refund UI, or move to another gap.
+
+---
+
 ## M13-FR-01 offline returns reconcile on sync — Slice 2b: the edge drain wire (6 September 2026)
 
 **Owner direction:** the owner asked me to wire offline returns to the cloud, one PR at a time. Slice 1

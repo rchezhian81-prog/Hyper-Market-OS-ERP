@@ -41,6 +41,8 @@
     "extract:check": "node --experimental-strip-types scripts/extract-check.mts",
     "verify:audit": "node --experimental-strip-types scripts/verify-audit-chain.mts",
     "test:integration": "vitest run tests/integration",
+    "test:migration": "vitest run tests/migration",
+    "test:db": "vitest run tests/integration tests/migration",
     "test:perf": "vitest run --config vitest.perf.config.ts",
     "test:e2e": "vitest run --config vitest.e2e.config.ts"
   },

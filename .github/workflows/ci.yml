@@ -107,10 +107,25 @@ jobs:
       #   Stage 10 — the books reconcile and the owner can see why
       #   Stage 14 — one customer, end to end
       #   Stage 15 — pick to doorstep
-      - name: Stage 6 to 10, 14 and 15 gate suites
+      #
+      # tests/migration is included here (not only tests/integration). Its six database-backed tests
+      # — additive-only migrations, idempotent re-apply, the append-only triggers actually installed,
+      # UPDATE/DELETE on the ledger refused, tenant-scoped uniqueness, a new migration applied without
+      # disturbing existing rows — had never once run against a database in CI, because this step ran
+      # only tests/integration. A schema guarantee that is asserted by the SQL that installs it and
+      # never checked in the database is a claim, not a control (the same lesson as db/migrations/0004).
+      #
+      # DB_TESTS_REQUIRED makes the required job FAIL rather than silently skip if the database is
+      # missing (P-08, hard rule #9): tests/migration/db-required-in-ci.test.ts refuses to let the
+      # skipIf(!DATABASE_URL) blocks pass as a quiet green. The shell check is the belt to that brace.
+      - name: Stage gate + migration suites (real PostgreSQL) — required, never skip
         env:
           DATABASE_URL: postgres://sre@localhost:5432/sre_core
-        run: pnpm run test:integration
+          DB_TESTS_REQUIRED: '1'
+        run: |
+          test -n "$DATABASE_URL" \
+            || (echo "::error::DATABASE_URL is not set — the required database tests would silently skip" && exit 1)
+          pnpm run test:db
 
       - name: Backup, destroy and restore, reconciled (QG-08)
         env:

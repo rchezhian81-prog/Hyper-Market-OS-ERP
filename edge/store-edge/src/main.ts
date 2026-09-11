@@ -38,8 +38,8 @@ import { httpTransport } from '../../../edge/sync-agent/src/http-transport';
 import { httpPackSource } from '../../../edge/sync-agent/src/pack-source';
 import { pullPack, type PackPullOutcome, type PackPullStatus } from '../../../edge/sync-agent/src/pack-puller';
 import { openFileLog, readLog, type OpenFileLog } from './file-log';
-import { readCursor, writeCursor, advanceTo } from './sync-cursor';
 import { readSignedPack, writeSignedPack } from './signed-pack-file';
+import { SyncPipeline } from './sync-pipeline';
 import { createEdgeNode, type EdgeNode } from './index';
 import { startLaneServer, LANE_HOST, type LaneServer } from './lane-server';
 import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-server';
@@ -107,6 +107,13 @@ export interface EdgeProcess {
    */
   readonly refreshPack: (() => Promise<PackPullOutcome>) | null;
   /**
+   * Run exactly one drain-and-settle of both queues (sales then refunds), returning what moved.
+   * Null when no cloud is configured — there is nothing to drain to. The poll loop calls the same
+   * core on its timer; this is exposed so a test can drive one pass deterministically, and so an
+   * operator tool can force a sync now rather than waiting for the next interval.
+   */
+  readonly syncOnce: (() => Promise<{ sent: number; dead: number; remaining: number }>) | null;
+  /**
    * Where the six screens are served from, or null when `EDGE_SCREEN_PORT` is unset.
    *
    * Optional because a lane box and the back-office box run the same process: a till does not need
@@ -149,6 +156,21 @@ export async function startEdge(
     fileName: 'returns.log',
   });
 
+  // The durable failed-sync stores — one per pipeline (RR-F06). A dead-lettered sale or refund is
+  // appended here BEFORE the cursor moves past it, so a restart recovers it with its reason, attempts
+  // and history intact instead of losing it with the process. Append-only, like every ledger the edge
+  // keeps (hard rule #6): a resolution is a new entry, never an edit.
+  const deadLetterLog = await openFileLog({
+    dataDir: settings['EDGE_DATA_DIR']!,
+    capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
+    fileName: 'dead-letters',
+  });
+  const returnsDeadLetterLog = await openFileLog({
+    dataDir: settings['EDGE_DATA_DIR']!,
+    capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
+    fileName: 'dead-letters-returns',
+  });
+
   // Report what was found on the disk, including anything a power cut left half-written. It is
   // quarantined rather than repaired, and it is said out loud rather than counted silently (#6).
   const found = await readLog(log.path);
@@ -159,8 +181,6 @@ export async function startEdge(
     say('  They are kept, not repaired: a repaired half-sale is a made-up sale. Raise this.');
   }
 
-  const outbox = new SyncOutbox();
-  const returnsOutbox = new SyncOutbox();
   const tenantId = settings['EDGE_TENANT_ID']!;
 
   /**
@@ -190,60 +210,68 @@ export async function startEdge(
   }
 
   /**
-   * Rebuild the queue from the log.
+   * Rebuild each queue from its durable log and its durable dead-letter store.
    *
    * The log is the system of record and the queue is a view of it, so a restart reconstructs the
-   * view rather than trusting one that died with the process. Everything after the cursor is
-   * re-queued; a sale that was mid-flight when the power went is therefore sent again, and the
-   * cloud dedupes it (§31.1). Re-sending is cheap; skipping is permanent.
+   * view rather than trusting one that died with the process. `SyncPipeline` owns the rule that used
+   * to live inline here and got two things subtly wrong (RR-F05/RR-F06): it re-queues what is
+   * unfinished, restores every known failure so it stays visible with its history, and derives the
+   * checkpoint per *log position* so a duplicate record cannot strand the cursor and a dead-letter is
+   * never stepped over into oblivion. Each record is translated to the cloud contract on its way in
+   * (the same seam `createEdgeNode.commit` uses), so a record re-sent after a crash is read by the
+   * cloud exactly like one sent live and dedupes there (§31.1) — re-sending is cheap, skipping is
+   * permanent.
    *
-   * Each record is translated to the cloud sale contract on its way into the queue (the same seam
-   * `createEdgeNode.commit` uses), so a sale re-sent after a crash is read by `/v1/sales` exactly
-   * like one sent live — not refused 400 and dead-lettered with the money already in the drawer.
-   * The idempotency key is keyed on the sale's own id, so a re-send collapses onto the live send.
+   * The two pipelines never share a file — one number cannot mark two logs — so the sale path is
+   * untouched by anything the refund pipeline does, and the reverse.
    */
-  let handledBefore = await readCursor(settings['EDGE_DATA_DIR']!);
-  const whole = found.filter((r) => r.ok).map((r) => (r.ok ? r.record : ''));
-  const toResend = whole.slice(handledBefore);
   const restoredPackVersion = restoredPack?.snapshot.version ?? 0;
-  for (const [i, record] of toResend.entries()) {
-    let parsed: unknown;
-    try { parsed = JSON.parse(record) as unknown; } catch { continue; }
-    const saleId = (parsed as { id?: string; saleId?: string }).id
-      ?? (parsed as { saleId?: string }).saleId ?? `record-${handledBefore + i}`;
-    outbox.enqueue(makeEvent({
-      id: `edge-sale-${saleId}`, type: 'SaleCommitted', occurredAt: new Date().toISOString(),
-      idempotencyKey: `edge-${tenantId}-${saleId}`, source: 'edge/lane',
-      payload: toCloudSale(parsed, restoredPackVersion),
-    }));
-  }
-  if (toResend.length > 0) say(`${toResend.length} sale(s) from before are still to send.`);
+  const salesPipeline = new SyncPipeline({
+    dataDir: settings['EDGE_DATA_DIR']!, log, deadLetterLog, cursorFile: undefined, noun: 'sale', say,
+    eventFor: (record, index) => {
+      let parsed: unknown;
+      try { parsed = JSON.parse(record) as unknown; } catch { return undefined; }
+      const saleId = (parsed as { id?: string; saleId?: string }).id
+        ?? (parsed as { saleId?: string }).saleId ?? `record-${index}`;
+      return makeEvent({
+        id: `edge-sale-${saleId}`, type: 'SaleCommitted', occurredAt: new Date().toISOString(),
+        idempotencyKey: `edge-${tenantId}-${saleId}`, source: 'edge/lane',
+        payload: toCloudSale(parsed, restoredPackVersion),
+      });
+    },
+  });
+  const returnsPipeline = new SyncPipeline({
+    dataDir: settings['EDGE_DATA_DIR']!, log: returnsLog, deadLetterLog: returnsDeadLetterLog,
+    cursorFile: RETURNS_CURSOR, noun: 'refund', say,
+    eventFor: (record, index) => {
+      let parsed: unknown;
+      try { parsed = JSON.parse(record) as unknown; } catch { return undefined; }
+      const cloud = toCloudReturn(parsed);
+      const returnId = cloud.returnId !== '' ? cloud.returnId : `record-${index}`;
+      return makeEvent({
+        id: `edge-return-${returnId}`, type: 'ReturnAccepted', occurredAt: new Date().toISOString(),
+        idempotencyKey: `edge-return-${tenantId}-${returnId}`, source: 'edge/lane',
+        payload: cloud,
+      });
+    },
+  });
 
-  // The SAME rebuild-from-the-log, for returns, over the returns log and the returns cursor. A refund
-  // committed with the line down is re-queued after a restart and the cloud dedupes it (§31.1). It is
-  // translated to the synced-return contract on its way in, so a re-sent refund is read by the cloud
-  // exactly like one sent live. Entirely separate arithmetic from the sales cursor above — one number
-  // cannot mark two logs — which is why the sale re-queue is untouched by any of this.
-  const returnsFound = await readLog(returnsLog.path);
-  const returnsBroken = returnsFound.filter((r) => !r.ok);
-  if (returnsBroken.length > 0) {
-    say(`  ${returnsBroken.length} refund record(s) could not be read whole — kept, not repaired. Raise this.`);
+  const salesRestore = await salesPipeline.restore();
+  const returnsRestore = await returnsPipeline.restore();
+  const outbox = salesPipeline.outbox;
+  const returnsOutbox = returnsPipeline.outbox;
+
+  if (salesRestore.resendCount > 0) say(`${salesRestore.resendCount} sale(s) from before are still to send.`);
+  if (salesRestore.restoredDeadLetters > 0) {
+    say(`  ${salesRestore.restoredDeadLetters} sale(s) the cloud refused earlier are still waiting for a person — kept, with their history.`);
   }
-  let returnsHandledBefore = await readCursor(settings['EDGE_DATA_DIR']!, RETURNS_CURSOR);
-  const wholeReturns = returnsFound.filter((r) => r.ok).map((r) => (r.ok ? r.record : ''));
-  const returnsToResend = wholeReturns.slice(returnsHandledBefore);
-  for (const [i, record] of returnsToResend.entries()) {
-    let parsed: unknown;
-    try { parsed = JSON.parse(record) as unknown; } catch { continue; }
-    const cloud = toCloudReturn(parsed);
-    const returnId = cloud.returnId !== '' ? cloud.returnId : `record-${returnsHandledBefore + i}`;
-    returnsOutbox.enqueue(makeEvent({
-      id: `edge-return-${returnId}`, type: 'ReturnAccepted', occurredAt: new Date().toISOString(),
-      idempotencyKey: `edge-return-${tenantId}-${returnId}`, source: 'edge/lane',
-      payload: cloud,
-    }));
+  if (returnsRestore.brokenCount > 0) {
+    say(`  ${returnsRestore.brokenCount} refund record(s) could not be read whole — kept, not repaired. Raise this.`);
   }
-  if (returnsToResend.length > 0) say(`${returnsToResend.length} refund(s) from before are still to send.`);
+  if (returnsRestore.resendCount > 0) say(`${returnsRestore.resendCount} refund(s) from before are still to send.`);
+  if (returnsRestore.restoredDeadLetters > 0) {
+    say(`  ${returnsRestore.restoredDeadLetters} refund(s) the cloud refused earlier are still waiting for a person — kept, with their history.`);
+  }
 
   const node = createEdgeNode({
     tenantId,
@@ -329,12 +357,14 @@ export async function startEdge(
     // Supported, and said plainly. The lanes sell; the queue grows; nobody is told a lie about it.
     say('no cloud is configured, so nothing will be synced. The shop can still trade — that is the point.');
     return {
-      log, returnsLog, outbox, returnsOutbox, node, lane, screens, agent: null, returnsAgent: null, refreshPack: null,
+      log, returnsLog, outbox, returnsOutbox, node, lane, screens, agent: null, returnsAgent: null, refreshPack: null, syncOnce: null,
       stop: async () => {
         if (lane !== null) await lane.stop();
         if (screens !== null) await screens.stop();
         await log.close();
         await returnsLog.close();
+        await deadLetterLog.close();
+        await returnsDeadLetterLog.close();
       },
     };
   }
@@ -380,54 +410,54 @@ export async function startEdge(
   let timer: NodeJS.Timeout | undefined;
 
   /**
-   * Move the cursor over the finished prefix, and persist it.
+   * Settle a pipeline after a drain: persist anything newly dead-lettered to the durable store, THEN
+   * advance the cursor over the finished leading run.
    *
-   * Only a contiguous run counts: a sale still queued, or one that dead-lettered and is now a
-   * person's problem, holds the cursor where it is. Stepping over it would mean the next restart
-   * never re-queued it, and that sale would be gone with nothing saying so.
+   * The order is the safety property (RR-F06). A dead-letter is on the disk before the cursor is
+   * allowed past it, so a crash between the two only means the record is re-queued and re-recorded
+   * next start — never lost. Advancing itself is now safe over a durable dead-letter, because the
+   * failure is preserved in its own store and restored, visible, on the next boot. A record still
+   * pending in the middle holds the cursor exactly as before, so nothing unfinished is stepped over.
    */
-  const advanceCursor = async (): Promise<void> => {
-    // Read from the OUTBOX, not from the start-up snapshot of the log.
-    //
-    // The first version folded over the records found on disk at start-up, which meant a sale rung
-    // up during this run was not in the list at all — so the cursor never moved and every restart
-    // re-sent everything. The outbox holds exactly the right set in exactly the right order: the
-    // records re-queued from the log at start, then everything committed since.
-    const handledNow = handledBefore + advanceTo(outbox.all().map((i) => i.state !== 'pending'));
-    if (handledNow > handledBefore) {
-      handledBefore = handledNow;
-      await writeCursor(settings['EDGE_DATA_DIR']!, handledNow);
-    }
+  const settleSales = async (at: string): Promise<void> => {
+    await salesPipeline.persistNewDeadLetters(at);
+    await salesPipeline.advanceCursor();
+  };
+  const settleReturns = async (at: string): Promise<void> => {
+    await returnsPipeline.persistNewDeadLetters(at);
+    await returnsPipeline.advanceCursor();
   };
 
   /**
-   * The SAME contiguous-prefix advance, for the returns log and its own cursor. Reads the returns
-   * OUTBOX, which — being a separate queue — holds only refunds, in refund order, so there is nothing
-   * to filter and nothing of the sale path to disturb.
+   * One drain of both queues, each settled straight after: sales drain, sales settle (persist any
+   * new dead-letter, then advance the sales cursor), then the same for refunds. The refund queue
+   * drains right after the sale queue, on the same loop and just as far from the sale path — its own
+   * drain, its own cursor, so a refund that cannot get through never holds a sale.
+   *
+   * Exposed as `syncOnce` so a test can drive exactly one pass deterministically, the same way
+   * `refreshPack` drives one inbound pull — the timer-based `pass` below is the only other caller.
    */
-  const advanceReturnsCursor = async (): Promise<void> => {
-    const handledNow = returnsHandledBefore + advanceTo(returnsOutbox.all().map((i) => i.state !== 'pending'));
-    if (handledNow > returnsHandledBefore) {
-      returnsHandledBefore = handledNow;
-      await writeCursor(settings['EDGE_DATA_DIR']!, handledNow, RETURNS_CURSOR);
-    }
+  const drainAndSettle = async (opts?: { readonly limit?: number }): Promise<{ sent: number; dead: number; remaining: number }> => {
+    const at = new Date().toISOString();
+    const result = await agent.drain({ at, ...(opts?.limit === undefined ? {} : { limit: opts.limit }) });
+    await settleSales(at);
+    const returnsResult = await returnsAgent.drain({ at, ...(opts?.limit === undefined ? {} : { limit: opts.limit }) });
+    await settleReturns(at);
+    return {
+      sent: result.acknowledged + returnsResult.acknowledged,
+      dead: result.deadLettered + returnsResult.deadLettered,
+      remaining: result.remaining + returnsResult.remaining,
+    };
   };
 
   const pass = async (): Promise<void> => {
     // Sequential by construction: the next pass is scheduled only after this one returns, so two
     // drains can never run at once.
     try {
-      const result = await agent.drain({ at: new Date().toISOString() });
-      await advanceCursor();
-      // The refund queue drains right after the sale queue, on the same loop and just as far from the
-      // sale path. Its own drain, its own cursor — a refund that cannot get through never holds a sale.
-      const returnsResult = await returnsAgent.drain({ at: new Date().toISOString() });
-      await advanceReturnsCursor();
-      const sent = result.acknowledged + returnsResult.acknowledged;
-      const dead = result.deadLettered + returnsResult.deadLettered;
+      const { sent, dead, remaining } = await drainAndSettle();
       quietPasses = sent > 0 ? 0 : quietPasses + 1;
       if (sent > 0 || dead > 0) {
-        say(`sync: ${sent} sent, ${dead} needing a person, ${result.remaining + returnsResult.remaining} waiting`);
+        say(`sync: ${sent} sent, ${dead} needing a person, ${remaining} waiting`);
       }
     } catch (e) {
       // A drain that throws is a bug, not a lost sale — the outbox still holds everything. Say so
@@ -460,19 +490,21 @@ export async function startEdge(
     agent,
     returnsAgent,
     refreshPack,
+    syncOnce: () => drainAndSettle(),
     stop: async () => {
       stopping = true;
       if (timer !== undefined) clearTimeout(timer);
       // One last try, then go. Nothing is lost by stopping mid-drain: an unacknowledged item stays
       // pending, which is the whole reason there is an outbox. Sales first, then refunds — both queues
       // get a final drain, both cursors advance over what got through.
+      const at = new Date().toISOString();
       try {
-        await agent.drain({ at: new Date().toISOString(), limit: 20 });
-        await advanceCursor();
+        await agent.drain({ at, limit: 20 });
+        await settleSales(at);
       } catch { /* still queued, and the cursor stays where it is */ }
       try {
-        await returnsAgent.drain({ at: new Date().toISOString(), limit: 20 });
-        await advanceReturnsCursor();
+        await returnsAgent.drain({ at, limit: 20 });
+        await settleReturns(at);
       } catch { /* still queued, and the returns cursor stays where it is */ }
       const badge = agent.health();
       const returnsBadge = returnsAgent.health();
@@ -486,6 +518,8 @@ export async function startEdge(
       if (screens !== null) await screens.stop();
       await log.close();
       await returnsLog.close();
+      await deadLetterLog.close();
+      await returnsDeadLetterLog.close();
     },
   };
 }

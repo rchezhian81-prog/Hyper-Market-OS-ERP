@@ -141,20 +141,23 @@ export class ApprovalRequiredError extends Error {
   }
 }
 
+/** What the validation decided, so the caller does not recompute it. */
+export interface ReturnValidity {
+  readonly noReceipt: boolean;
+  /** True when a material or no-receipt refund required (and passed) a §28 approver check. */
+  readonly requiredApproval: boolean;
+}
+
 /**
- * Commit a return locally and durably, then queue it for sync. Validates the M13
- * rules (at-most-once per line, refund never exceeds the allowed amount, approval
- * for material/no-receipt refunds by a separate person), appends one stock
- * movement per kept line to the append-only ledger in the disposition's state,
- * and enqueues a ReturnAccepted event — all with no network call. A card/UPI
- * refund is recorded as a PENDING reversal (never assumed successful). Idempotent
- * on the return id.
+ * Validate a return against the M13 rules, throwing the specific error on the first breach —
+ * and touching NOTHING (no ledger, no outbox). Pure and exported so a caller can decide BEFORE it
+ * records: the offline till writes a refund to its edge's durable disk, and a refund must be judged
+ * *before* it reaches that disk, not after — the same "decide, then record" order the sale path
+ * learned (a refund written and then rejected is a phantom refund the cloud reconciles as a §28
+ * breach that never actually happened). `commitReturn` calls this first, so the rules are enforced
+ * in exactly one place whether a caller pre-checks or not.
  */
-export function commitReturn(
-  input: CommitReturnInput,
-  stockLedger: Ledger,
-  outbox: SyncOutbox,
-): CommittedReturn {
+export function assertReturnValid(input: CommitReturnInput): ReturnValidity {
   const noReceipt = input.noReceipt ?? false;
 
   if (input.lines.length === 0) {
@@ -211,6 +214,25 @@ export function commitReturn(
       throw new ApprovalRequiredError(input.id);
     }
   }
+
+  return { noReceipt, requiredApproval };
+}
+
+/**
+ * Commit a return locally and durably, then queue it for sync. Validates the M13
+ * rules (at-most-once per line, refund never exceeds the allowed amount, approval
+ * for material/no-receipt refunds by a separate person), appends one stock
+ * movement per kept line to the append-only ledger in the disposition's state,
+ * and enqueues a ReturnAccepted event — all with no network call. A card/UPI
+ * refund is recorded as a PENDING reversal (never assumed successful). Idempotent
+ * on the return id.
+ */
+export function commitReturn(
+  input: CommitReturnInput,
+  stockLedger: Ledger,
+  outbox: SyncOutbox,
+): CommittedReturn {
+  const { noReceipt, requiredApproval } = assertReturnValid(input);
 
   // Append one stock movement per kept line (resell/quarantine/damaged); a scrapped
   // unit is destroyed and keeps no stock. Only resell re-enters sellable stock.

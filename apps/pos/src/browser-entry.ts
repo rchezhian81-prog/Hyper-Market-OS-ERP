@@ -53,9 +53,25 @@ export type DurableWrite = (saleId: string, record: string) => Promise<CommitOut
  * screen cannot say "Sale complete" until the disk has confirmed.
  */
 export function laneDurable(port: number = DEFAULT_LANE_PORT): DurableWrite {
-  return async (_saleId, record) => {
+  return laneDurableTo('/lane/sales', port,
+    'This lane is not ready to take payment. Do not take money — tell the manager and use another lane.');
+}
+
+/**
+ * The lane's durable write for a REFUND: post it to this till's own edge on `/lane/returns` and wait
+ * (M13-FR-01). The exact mirror of `laneDurable` — money leaves the drawer, so the disk confirms
+ * before the cashier hands back cash, and the edge queues it for the cloud afterwards.
+ */
+export function laneDurableReturn(port: number = DEFAULT_LANE_PORT): DurableWrite {
+  return laneDurableTo('/lane/returns', port,
+    'This lane is not ready to record a refund. Do not hand back cash — tell the manager and use another lane.');
+}
+
+/** Post a record to one of the till's edge write routes and wait for its durable answer. */
+function laneDurableTo(path: '/lane/sales' | '/lane/returns', port: number, refusedLaneMessage: string): DurableWrite {
+  return async (_id, record) => {
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/lane/sales`, {
+      const response = await fetch(`http://127.0.0.1:${port}${path}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: record,
@@ -69,7 +85,7 @@ export function laneDurable(port: number = DEFAULT_LANE_PORT): DurableWrite {
         committed: false,
         refusedBecause: 'could_not_write_durably',
         detail: `the lane's local store did not answer on port ${port}`,
-        laneMessage: 'This lane is not ready to take payment. Do not take money — tell the manager and use another lane.',
+        laneMessage: refusedLaneMessage,
       };
     }
   };
@@ -95,6 +111,8 @@ export function bootPos(config?: {
   varianceToleranceMinor?: number;
   /** Overridable for tests. Production always goes to this till's own edge. */
   durable?: DurableWrite;
+  /** The refund's durable write. Overridable for tests; production goes to this till's own edge. */
+  durableReturn?: DurableWrite;
   /** This lane's reserved receipt-number range (M01-FR-02), provisioned per lane. */
   receipt?: PosReceiptSeries;
 }): PosView & {
@@ -139,6 +157,8 @@ export function bootPos(config?: {
     new Ledger(new InMemoryLedgerStore()),
     new Ledger(new InMemoryLedgerStore()),
     outbox,
+    // The refund's durable write goes to this till's own edge, exactly as the sale's does.
+    config?.durableReturn ?? laneDurableReturn(config?.lanePort ?? DEFAULT_LANE_PORT),
   );
 
   // Receipt numbering (M01-FR-02). A provisioned reserved range gives gap-free, collision-free

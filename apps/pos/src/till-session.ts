@@ -26,9 +26,24 @@
 import { money, type Money } from '../../../packages/contracts/src/money';
 import { Ledger } from '../../../packages/ledger/src/ledger';
 import { recordCashMovement, tillBalanceMinor, type CashMovementKind, type CommittedCashMovement } from '../../../packages/cash/src/cash';
-import { commitReturn, type CommitReturnInput, type CommittedReturn } from '../../../packages/returns/src/returns';
+import { assertReturnValid, commitReturn, type CommitReturnInput, type CommittedReturn } from '../../../packages/returns/src/returns';
 import { closeShift, type CloseShiftInput, type ShiftCloseResult } from '../../../packages/till/src/till';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
+import type { CommitOutcome } from '../../../edge/store-edge/src/durability';
+
+/**
+ * The lane's durable write for a refund — post it to this till's own edge and wait for the answer,
+ * exactly as a sale's `DurableWrite` does. Same-machine loopback, never a call off the till (ADR-0004).
+ */
+export type DurableReturnWrite = (returnId: string, record: string) => Promise<CommitOutcome>;
+
+/** Thrown when the edge would not durably record a refund — so the cashier hands back no cash. */
+export class LocalRefundRefusedError extends Error {
+  constructor(returnId: string, readonly laneMessage: string) {
+    super(`Return "${returnId}" could not be recorded durably at the lane: ${laneMessage}`);
+    this.name = 'LocalRefundRefusedError';
+  }
+}
 
 export interface TillConfig {
   readonly tillId: string;
@@ -71,8 +86,17 @@ export interface TillSession {
   /** What is in the drawer according to the movements recorded — never shown before a count. */
   drawerBalanceMinor(): number;
 
-  /** Refund a customer. `pending` for card and UPI, because a reversal has not happened yet. */
-  refund(input: Omit<CommitReturnInput, 'laneId' | 'processedBy'>): CommittedReturn;
+  /**
+   * Refund a customer, durably. `pending` for card and UPI, because a reversal has not happened yet.
+   *
+   * Money leaves the drawer, so the order is the sale's order (§P-01, hard rule #1): **decide, then
+   * record durably, then account for it locally.** The refund is validated first (an invalid one is
+   * refused before anything is written), then written to this till's edge and awaited — and only if
+   * the disk confirms is it committed to the local ledger and the cashier told to hand over cash. A
+   * refused durable write throws `LocalRefundRefusedError`, so no cash is given for a refund the box
+   * did not record. The edge queues it for the cloud; the cloud re-verifies the §28 approver on sync.
+   */
+  refund(input: Omit<CommitReturnInput, 'laneId' | 'processedBy'>): Promise<CommittedReturn>;
 
   /**
    * Close the shift against a **counted** figure.
@@ -98,8 +122,36 @@ export function createTillSession(
   /** Returned goods go back onto the shelf, or do not — so a refund touches stock (M13). */
   stockLedger: Ledger,
   outbox: SyncOutbox,
+  /**
+   * The refund's durable write to this till's edge (M13-FR-01). Its own port, the mirror of the
+   * sale's `DurableWrite`: a refund is durable on the box's disk before it is called done, then the
+   * edge syncs it to the cloud. Optional so a standalone/demo shell can run; when it is absent the
+   * refund is recorded locally only (not durable, not synced), which the shell must not do in a real
+   * lane — production always supplies it (see `apps/pos/src/browser-entry.ts`).
+   */
+  durableReturn?: DurableReturnWrite,
 ): TillSession {
   const inr = (minor: number): Money => money(minor, 'INR');
+
+  /** The refund record posted to the edge — exactly the fields the synced-return route + `toCloudReturn`
+   * read (the bill it is against, who processed it, the §28 approver, and the lines). */
+  const toReturnRecord = (full: CommitReturnInput): string => JSON.stringify({
+    returnId: full.id,
+    number: full.number,
+    originalSaleId: full.originalSaleId,
+    noReceipt: full.noReceipt ?? false,
+    laneId: full.laneId,
+    processedBy: full.processedBy,
+    ...(full.approval?.decidedBy === undefined ? {} : { approvedBy: full.approval.decidedBy }),
+    reasonCode: full.reasonCode,
+    refundMinor: full.refund.minor,
+    currency: full.refund.currency,
+    refundTender: full.refundTender,
+    processedAt: full.processedAt,
+    lines: full.lines.map((l) => ({
+      productId: l.productId, uom: l.uom, quantityMinor: Math.abs(l.quantityMinor), disposition: l.disposition,
+    })),
+  });
 
   return {
     moveCash: (input) => recordCashMovement({
@@ -116,11 +168,27 @@ export function createTillSession(
 
     drawerBalanceMinor: () => tillBalanceMinor(cashLedger, config.tillId),
 
-    refund: (input) => commitReturn({
-      ...input,
-      laneId: config.laneId,
-      processedBy: config.cashierId,
-    }, stockLedger, outbox),
+    refund: async (input) => {
+      const full: CommitReturnInput = { ...input, laneId: config.laneId, processedBy: config.cashierId };
+
+      // Decide first — an invalid refund is refused before anything is written anywhere (the sale
+      // path's "decide, then record" order). `assertReturnValid` throws the specific M13 error and
+      // touches nothing, so a rejected refund never reaches the edge disk.
+      assertReturnValid(full);
+
+      // Then record durably, and wait — the receipt of confirmation is what lets the cashier hand
+      // back cash. Absent a durable port (a standalone/demo shell) the refund is recorded locally
+      // only; a real lane always supplies one.
+      if (durableReturn !== undefined) {
+        const outcome = await durableReturn(full.id, toReturnRecord(full));
+        if (!outcome.committed) throw new LocalRefundRefusedError(full.id, outcome.laneMessage);
+      }
+
+      // Then account for it locally: stock back in the right state, the refund result for the screen.
+      // `commitReturn` re-runs the same validation (it passes) and enqueues to the local outbox for
+      // the sync badge; the edge's own outbox is what actually carries the refund to the cloud.
+      return commitReturn(full, stockLedger, outbox);
+    },
 
     close: (input) => closeShift({
       id: input.shiftId,
