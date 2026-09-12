@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Migration MG-05 + MG-06 — trial-load and reconciliation reach the cloud (12 September 2026)
+
+**Owner direction:** "merge #358 / continue." The next steps of the pipeline after mapping (MG-03) and
+cleaning (MG-04) — the ones that actually load the data and prove it reconciles.
+
+**Built (API-12, `services/migration/src/index.ts`, running the tested engines):**
+- **MG-05 trial-load** — `POST /v1/migration/trial-loads` (`migration.trial.run`) runs `runTrialLoad`
+  into a **non-production rehearsal** at full volume and projects the full-volume time (the cutover
+  window is a real evening, so timing is an output). Refuses, by name, a rehearsal that rehearses
+  nothing: no operator, an extract not verified against its seal (MG-02), open blocking exceptions
+  (MG-04), or a target not prepared empty (a load that works once is the cutover, not a rehearsal).
+- **MG-06 reconciliation** — `POST /v1/migration/reconciliation` (`migration.reconciliation.read`)
+  runs `recordControlTotal` + `assessReconciliation` and decides **QG-07** (the cutover gate). The
+  check that makes it worth running: a total whose two sides were **derived the same way** reconciles
+  nothing and is refused (422) — the one migration mistake nobody notices because the report is green.
+  A difference is reconciled, explained to the rupee by approved exclusions, or **open**; QG-07 passes
+  only when every total is reconciled/explained AND signed.
+
+Both refuse a production target first (hard rule #7) and stamp the tenant from the authenticated
+caller. New permissions `migration.trial.run` / `migration.reconciliation.read` (Owner role).
+
+**Evidence:** `tests/unit/migration-trial-reconcile-route.test.ts` (7). API-surface contract +
+thirteen-APIs consistency pass. typecheck/lint clean.
+
+**Honesty:** **No re-rate — headline stays 41.5%.** MG-05/MG-06's rungs are unchanged (progress in
+prose, as with MG-01…04). The migration pipeline now covers discovery → preservation → mapping →
+cleaning → trial-load → reconciliation; next is opening balances (MG-08) and cutover (MG-10/11).
+
+---
+
 ## Migration MG-03 + MG-04 — mapping and cleaning reach the cloud (12 September 2026)
 
 **Owner direction:** "Continue migration." The next steps of the pipeline after discovery (MG-01) and

@@ -12,7 +12,11 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
-import { assertNonProduction, type LoadTarget } from '../../../packages/migration/src/trial';
+import { assertNonProduction, runTrialLoad, type LoadTarget } from '../../../packages/migration/src/trial';
+import {
+  recordControlTotal, assessReconciliation,
+  type ControlTotal,
+} from '../../../packages/migration/src/reconcile';
 import {
   inventorySources, sealExtract, verifyExtract, simpleHasher,
   type LegacySource, type SealedExtract,
@@ -61,6 +65,26 @@ function isObservedValue(v: unknown): v is ObservedValue {
   return typeof v['domain'] === 'string' && MAPPING_DOMAINS.includes(v['domain'])
     && typeof v['value'] === 'string'
     && typeof v['rows'] === 'number';
+}
+
+const TOTAL_KINDS: readonly string[] = ['migration', 'stock', 'financial', 'tax', 'loyalty'];
+const TOTAL_UNITS: readonly string[] = ['rows', 'quantity', 'minor_currency', 'points'];
+
+/**
+ * Is this a control total the reconciliation can assess — two independently-derived figures with a
+ * note on where each side came from? The derivations are required because the whole point of MG-06 is
+ * catching a total that reconciles because both sides were computed the same way.
+ */
+function isControlTotal(v: unknown): v is ControlTotal {
+  if (!isObj(v)) return false;
+  return typeof v['totalId'] === 'string' && v['totalId'] !== ''
+    && typeof v['kind'] === 'string' && TOTAL_KINDS.includes(v['kind'])
+    && typeof v['name'] === 'string'
+    && typeof v['unit'] === 'string' && TOTAL_UNITS.includes(v['unit'])
+    && typeof v['legacyValue'] === 'number'
+    && typeof v['loadedValue'] === 'number'
+    && typeof v['legacyDerivation'] === 'string'
+    && typeof v['loadedDerivation'] === 'string';
 }
 
 /**
@@ -412,6 +436,98 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
             nextSafeAction: 'Nothing was changed — cleaning only reads. Check the records against the legacy field shapes and send again.',
           });
         }
+      },
+    },
+    {
+      // MG-05 — trial load. Run the mapped and cleaned data into a NON-production rehearsal at full
+      // volume and report how long it took: the cutover window is a real evening, so timing is an
+      // output, not a footnote. Refuses, by name, a load that rehearses nothing — no operator, an
+      // extract not verified against its seal (MG-02), open blocking exceptions (MG-04), or a target
+      // not prepared empty (a load that only works once is the cutover, not a rehearsal). The
+      // production check runs first and is absolute (hard rule #7).
+      api: 'API-12', method: 'POST', path: '/v1/migration/trial-loads',
+      permission: 'migration.trial.run', idempotent: true,
+      handler: async (ctx) => {
+        await assertSafeTarget(deps, ctx.tenantId);
+        const b = ctx.body;
+        const rowsToLoad = isObj(b) ? b['rowsToLoad'] : undefined;
+        const elapsedMs = isObj(b) ? b['elapsedMs'] : undefined;
+        const extractVerified = isObj(b) ? b['extractVerified'] : undefined;
+        const blockingExceptionsOpen = isObj(b) ? b['blockingExceptionsOpen'] : undefined;
+        const targetPreparedEmpty = isObj(b) ? b['targetPreparedEmpty'] : undefined;
+        const fullVolumeRows = isObj(b) ? b['fullVolumeRows'] : undefined;
+        const trialId = isObj(b) && typeof b['trialId'] === 'string' && b['trialId'] !== ''
+          ? b['trialId'] : `trial-${ctx.tenantId}-${deps.now()}`;
+        if (typeof rowsToLoad !== 'number' || typeof elapsedMs !== 'number'
+          || typeof extractVerified !== 'boolean' || typeof blockingExceptionsOpen !== 'number'
+          || typeof targetPreparedEmpty !== 'boolean'
+          || (fullVolumeRows !== undefined && typeof fullVolumeRows !== 'number')) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_trial_load',
+            whatHappened: 'This payload could not be read as a trial load. It needs rowsToLoad, elapsedMs, extractVerified (was the extract verified against its seal, MG-02), blockingExceptionsOpen (MG-04), and targetPreparedEmpty.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was loaded. Correct the fields and run the trial again.',
+          });
+        }
+        const target = await deps.target(ctx.tenantId);
+        const result = runTrialLoad({
+          plan: {
+            trialId, tenantId: ctx.tenantId, target, rowsToLoad,
+            operator: ctx.userId, extractVerified, blockingExceptionsOpen, targetPreparedEmpty,
+          },
+          elapsedMs,
+          ...(fullVolumeRows === undefined ? {} : { fullVolumeRows }),
+        });
+        if (!result.ok) {
+          // A precondition stopped the rehearsal. Understood but cannot proceed → 422. (production_target
+          // cannot occur here — assertSafeTarget already refused a production target with 403.)
+          throw apiError(422, {
+            code: result.refusedBecause!,
+            whatHappened: result.detail,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was loaded into the rehearsal. Resolve what is named above and run the trial again.',
+          });
+        }
+        return { status: 200, body: result };
+      },
+    },
+    {
+      // MG-06 — reconciliation. Compare the loaded totals against the legacy control totals and decide
+      // QG-07 (the cutover gate). The check that makes this worth running: a total whose two sides were
+      // derived the SAME WAY reconciles nothing, and it is refused here (422) — it is the one migration
+      // mistake nobody notices, because the report is green. A difference is reconciled, explained to
+      // the rupee by approved exclusions, or OPEN; QG-07 passes only when every total is
+      // reconciled/explained AND signed. Read-only assessment; the tenant is stamped from the caller.
+      api: 'API-12', method: 'POST', path: '/v1/migration/reconciliation',
+      permission: 'migration.reconciliation.read', idempotent: true,
+      handler: async (ctx) => {
+        await assertSafeTarget(deps, ctx.tenantId);
+        const b = ctx.body;
+        const rawTotals = isObj(b) ? b['totals'] : undefined;
+        if (!Array.isArray(rawTotals) || !rawTotals.every(isControlTotal)) {
+          throw apiError(400, {
+            code: 'not_readable_as_control_totals',
+            whatHappened: 'This payload could not be read as control totals. Each needs a totalId, a kind (migration/stock/financial/tax/loyalty), a name, a unit (rows/quantity/minor_currency/points), a legacyValue and loadedValue, and — crucially — a legacyDerivation and loadedDerivation saying where each side came from.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was assessed. Correct the totals and send them again.',
+          });
+        }
+        let acc: readonly ControlTotal[] = [];
+        for (const t of rawTotals) {
+          const stamped: ControlTotal = { ...t, tenantId: ctx.tenantId };
+          const r = recordControlTotal({ totals: acc, total: stamped });
+          if (!r.ok) {
+            // Most importantly same_derivation_both_sides — a self-comparison wearing the costume of a check.
+            throw apiError(422, {
+              code: r.refusedBecause!,
+              whatHappened: r.detail,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Nothing was assessed. Give the two sides different, independent derivations (or a unique id), then send again.',
+            });
+          }
+          acc = r.totals;
+        }
+        return { status: 200, body: assessReconciliation({ tenantId: ctx.tenantId, totals: acc }) };
       },
     },
     {
