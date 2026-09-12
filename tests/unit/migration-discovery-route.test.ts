@@ -37,7 +37,9 @@ const source = (over: Partial<LegacySource> = {}): LegacySource => ({
 });
 
 interface Thrown { readonly status: number; readonly body: { readonly code: string } }
-async function thrown(fn: () => Promise<unknown>): Promise<Thrown> {
+// `fn` returns whatever the route handler returns — the kernel types that as a sync-or-async union,
+// so accept `unknown` and `await` it (await handles both a value and a promise).
+async function thrown(fn: () => unknown): Promise<Thrown> {
   try { await fn(); } catch (e) { return e as Thrown; }
   throw new Error('expected the handler to throw');
 }
