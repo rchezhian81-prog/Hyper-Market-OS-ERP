@@ -5,6 +5,34 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Migration MG-08 + MG-09 — opening balances and delta reach the cloud (12 September 2026)
+
+**Owner direction:** "merge #359 … complete all." Continuing to the steps that commit the migration.
+
+**Built (API-12, `services/migration/src/index.ts`, running the tested engines):**
+- **MG-08 opening balances** — `POST /v1/migration/opening-events` (`migration.opening.build`) turns
+  **signed** control totals into append-only opening **events**, never a written balance (hard rule
+  #2). Refuses unless **QG-07 has passed** and every position traces to a signed total — an opening
+  event cannot be withdrawn once banked, and a compensating event on day one is a permanent scar.
+- **MG-09 delta** — `POST /v1/migration/deltas` (`migration.delta.apply`) applies the changes made
+  between the final extract and cutover **exactly once** (§31.1): a re-sent change is `already_applied`
+  (a success, so an interrupted run resumes), and a change dated before the extract cutoff is refused
+  as already loaded (the double-count MG-09 exists to prevent). Every outcome is a visible line (P-08).
+
+Both refuse a production target first (hard rule #7). New permissions `migration.opening.build` /
+`migration.delta.apply` (Owner role).
+
+**Evidence:** `tests/unit/migration-opening-delta-route.test.ts` (8). API-surface contract +
+thirteen-APIs pass. typecheck/lint clean.
+
+**Honesty:** **No re-rate — headline stays 41.5%.** The migration pipeline is now wired end to end at
+the API — discovery → preservation → mapping → cleaning → trial-load → reconciliation → opening
+balances → delta. The remaining migration piece is **cutover (MG-10/11)**; and **signing** finance/tax
+control totals needs a `chartered_accountant` role added to the catalogue (a governance decision for
+the owner — the engine expects it, the role catalogue does not yet define it).
+
+---
+
 ## Migration MG-05 + MG-06 — trial-load and reconciliation reach the cloud (12 September 2026)
 
 **Owner direction:** "merge #358 / continue." The next steps of the pipeline after mapping (MG-03) and
