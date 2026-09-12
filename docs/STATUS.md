@@ -5,6 +5,32 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## WP5-D + WP5-E — the public storefront: marketing landing page + sign-in (12 September 2026)
+
+**Built (net-new `apps/site`, a public static site — not an offline operational screen, so deliberately
+outside the offline-shell machinery):**
+- `apps/site/web/index.html` — the marketing landing page. Explains the product (offline-first,
+  one-truth, GST-ready, control-by-exception), shows the three plans at the prices actually billed
+  (₹2,000 / ₹5,000 / ₹12,000, labelled indicative launch pricing), a plain-English "how billing works"
+  strip (UPI Autopay, RBI e-mandate, pre-debit notice, no OTP under ₹15,000, cancel anytime), and the
+  reassurance that no card details are stored. Its own design system (pine + marigold), self-contained.
+- `apps/site/web/login.html` — sign-in. **Credential-free** (hard rule #4): it asks only for a work
+  email and delegates to the organisation's identity provider; it never collects or stores a password
+  and does not fake a session. Honest about the IdP being an owner setup step (external blocker).
+
+**Evidence:** `tests/guardrails/the-commercial-site-is-honest.test.ts` (9: real plans + launch-pricing
+caveat; offline/UPI/GST/no-card-storage claims match reality; sign-in has no password field, stores
+nothing, fakes no session). Full non-DB suite green (6,466); lint clean.
+
+**Honesty:** **No re-rate — headline stays 41.5%.** WP5 is a non-denominator work package. The pages
+are the storefront; real sign-in needs a production identity provider and real billing needs a
+Razorpay merchant account — both owner external blockers.
+
+**Next:** WP5-F subscribe/mandate flow on the site (wired to the API-11 billing routes); migration
+MG-03 (mapping) / MG-04 (cleaning).
+
+---
+
 ## WP5-A + WP5-C — the billing engine and the subscription API go live on API-11 (12 September 2026)
 
 **Built (advances M36; the paid money path for selling the product):**
