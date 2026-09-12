@@ -5,6 +5,33 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Migration MG-10/11 — the cutover gate reaches the cloud; pipeline complete at the API (12 September 2026)
+
+**Owner direction:** "complete all." The final step of the migration pipeline.
+
+**Built (API-12, `services/migration/src/index.ts`, running the tested engines):**
+- **MG-10/11 cutover** — `POST /v1/migration/cutover/decision` (`migration.cutover.decide`) **derives**
+  the eight-check gate from the evidence the earlier steps produced (`buildCutoverChecklist`) and
+  decides GO / NO GO (`decideCutover`), naming every failed check at once. The rule that makes it worth
+  having: **"not known" fails** — an absent producer (no reconciliation, no edge sync count) is never a
+  comfortable default pass. Whichever way it goes, the shop keeps trading (the decision's
+  `shopKeepsTrading` is typed `true`, P-01). Refuses a production target first (hard rule #7).
+
+New permission `migration.cutover.decide` (Owner role).
+
+**Evidence:** `tests/unit/migration-cutover-route.test.ts` (4: GO on full evidence; NO GO names the
+missing owner GO; an absent producer is not-known and fails; production/missing/malformed refused).
+API-surface contract + thirteen-APIs pass. typecheck/lint clean.
+
+**Honesty:** **No re-rate — headline stays 41.5%.** With this, the migration pipeline is **wired end
+to end on API-12**: discovery → preservation → mapping → cleaning → trial-load → reconciliation →
+opening balances → delta → **cutover**. Two owner decisions remain before a real go-live: adding a
+**`chartered_accountant` role** so finance/tax control totals can be signed (the engine expects it),
+and the real **cutover run** itself (a person's night, not a route). The commercial side still needs a
+Razorpay merchant account + a production identity provider (external blockers).
+
+---
+
 ## Migration MG-08 + MG-09 — opening balances and delta reach the cloud (12 September 2026)
 
 **Owner direction:** "merge #359 … complete all." Continuing to the steps that commit the migration.

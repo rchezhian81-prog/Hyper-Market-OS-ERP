@@ -18,7 +18,7 @@ import {
 } from '../../../packages/migration/src/trial';
 import {
   recordControlTotal, assessReconciliation, buildOpeningEvents,
-  type ControlTotal, type OpeningKind,
+  type ControlTotal, type OpeningKind, type ReconciliationReport,
 } from '../../../packages/migration/src/reconcile';
 import {
   inventorySources, sealExtract, verifyExtract, simpleHasher,
@@ -28,8 +28,10 @@ import {
   approveMapping, assessCoverage,
   type MappingTable, type MappingEntry, type MappingDomain,
 } from '../../../packages/migration/src/mapping';
-import { detectExceptions } from '../../../packages/migration/src/cleaning';
+import { detectExceptions, type OutstandingExceptions } from '../../../packages/migration/src/cleaning';
 import type { LegacyDataset } from '../../../packages/migration/src/synthetic';
+import { decideCutover, type ParallelRunPosition } from '../../../packages/migration/src/cutover';
+import { buildCutoverChecklist, type CutoverEvidence, type TeamMember } from '../../../packages/migration/src/cutover-checklist';
 import {
   buildVerificationReport, renderVerificationReport,
   type DomainFinding, type Acceptance, type Signature,
@@ -120,6 +122,13 @@ function isOpeningPosition(v: unknown): v is OpeningPosition {
     && (v['quantity'] === undefined || typeof v['quantity'] === 'number')
     && (v['valueMinor'] === undefined || typeof v['valueMinor'] === 'number')
     && (v['points'] === undefined || typeof v['points'] === 'number');
+}
+
+/** A named person on the night, with a role each — "the team" is not a team at 2am (MG-11). */
+function isTeamMember(v: unknown): v is TeamMember {
+  if (!isObj(v)) return false;
+  return typeof v['userId'] === 'string' && v['userId'] !== ''
+    && typeof v['role'] === 'string' && v['role'] !== '';
 }
 
 /**
@@ -630,6 +639,71 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
           ...(alreadyApplied === undefined ? {} : { alreadyApplied: alreadyApplied as readonly string[] }),
         });
         return { status: 200, body: result };
+      },
+    },
+    {
+      // MG-10/11 — the cutover gate. DERIVES the eight checks from the evidence the earlier steps
+      // produced ("not known" fails, never a comfortable default), then decides GO / NO GO with every
+      // failed check named at once. This is the gate on the single most irreversible action in the
+      // project — the night the shop stops running on the old system. Whichever way it goes, the shop
+      // opens the next morning (the decision's shopKeepsTrading is typed `true`, P-01).
+      api: 'API-12', method: 'POST', path: '/v1/migration/cutover/decision',
+      permission: 'migration.cutover.decide', idempotent: true,
+      handler: async (ctx) => {
+        await assertSafeTarget(deps, ctx.tenantId);
+        const b = ctx.body;
+        const cutoverId = isObj(b) && typeof b['cutoverId'] === 'string' && b['cutoverId'] !== ''
+          ? b['cutoverId'] : `cutover-${ctx.tenantId}-${deps.now()}`;
+        const ev = isObj(b) ? b['evidence'] : undefined;
+        if (!isObj(ev)) {
+          throw apiError(400, {
+            code: 'not_readable_as_cutover_evidence',
+            whatHappened: 'This payload could not be read as cutover evidence. It needs an evidence object; any of its parts may be absent, and an absent one FAILS its check rather than passing it.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was decided. Send { evidence: { … } } assembled from the earlier steps.',
+          });
+        }
+        // Each PRESENT part is checked on the field the gate actually reads; an absent part is left
+        // undefined so the derived checklist fails or marks it not-known. A malformed present part is
+        // refused rather than silently treated as a pass.
+        const malformed = (): never => {
+          throw apiError(400, {
+            code: 'malformed_cutover_evidence',
+            whatHappened: 'A part of the cutover evidence was the wrong shape.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was decided. Each present part must match what its producing step returns.',
+          });
+        };
+        const recon = ev['reconciliation'];
+        if (recon !== undefined && (!isObj(recon) || typeof recon['qg07Passed'] !== 'boolean')) malformed();
+        const parallel = ev['parallel'];
+        if (parallel !== undefined && (!isObj(parallel) || typeof parallel['sufficient'] !== 'boolean')) malformed();
+        const exceptions = ev['exceptions'];
+        if (exceptions !== undefined && (!isObj(exceptions) || typeof exceptions['clearForCutover'] !== 'boolean' || !Array.isArray(exceptions['blockingUnresolved']))) malformed();
+        const edge = ev['edgeUnsyncedItems'];
+        if (edge !== undefined && typeof edge !== 'number') malformed();
+        const deltaAppliedAt = ev['deltaAppliedAt'];
+        if (deltaAppliedAt !== undefined && typeof deltaAppliedAt !== 'string') malformed();
+        const rollbackDemonstratedAt = ev['rollbackDemonstratedAt'];
+        if (rollbackDemonstratedAt !== undefined && typeof rollbackDemonstratedAt !== 'string') malformed();
+        const ownerGoBy = ev['ownerGoBy'];
+        if (ownerGoBy !== undefined && typeof ownerGoBy !== 'string') malformed();
+        const team = ev['namedTeam'];
+        if (team !== undefined && (!Array.isArray(team) || !team.every(isTeamMember))) malformed();
+
+        const evidence: CutoverEvidence = {
+          ...(recon === undefined ? {} : { reconciliation: recon as unknown as ReconciliationReport }),
+          ...(parallel === undefined ? {} : { parallel: parallel as unknown as ParallelRunPosition }),
+          ...(exceptions === undefined ? {} : { exceptions: exceptions as unknown as OutstandingExceptions }),
+          ...(edge === undefined ? {} : { edgeUnsyncedItems: edge as number }),
+          ...(deltaAppliedAt === undefined ? {} : { deltaAppliedAt: deltaAppliedAt as string }),
+          ...(rollbackDemonstratedAt === undefined ? {} : { rollbackDemonstratedAt: rollbackDemonstratedAt as string }),
+          ...(ownerGoBy === undefined ? {} : { ownerGoBy: ownerGoBy as string }),
+          ...(team === undefined ? {} : { namedTeam: team as readonly TeamMember[] }),
+        };
+        const derived = buildCutoverChecklist({ cutoverId, tenantId: ctx.tenantId, evidence });
+        const decision = decideCutover(derived.checklist);
+        return { status: 200, body: { decision, checks: derived.checks, notKnown: derived.notKnown, detail: derived.detail } };
       },
     },
     {
