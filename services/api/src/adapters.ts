@@ -55,7 +55,7 @@ import { attributeSalesFifo, type BatchReceipt, type HistoricalSaleLine } from '
 import type { ReturnsDeps, ReturnRecord, RecordedRefund, OriginalSale, RecordedReturn } from '../../pos/src/returns';
 import type { CashDeps, RecordedCashMovement } from '../../pos/src/cash';
 import type { StoredCashMovement } from '../../../packages/cash/src/index';
-import type { ShiftDeps, ClosedShiftRecord } from '../../pos/src/shift';
+import type { ShiftDeps, ClosedShiftRecord, OverShortReview } from '../../pos/src/shift';
 import type { B2BCreditDeps, B2BAccount, RecordedReceivable } from '../../finance/src/b2b-credit';
 import type { B2BCollectionsDeps, Receivable as CollectionsReceivable, RecordedPayment } from '../../finance/src/b2b-collections';
 import type { B2BCommissionDeps, CommissionAccrual } from '../../finance/src/b2b-commission';
@@ -1828,6 +1828,8 @@ export function shiftAdapter(input: {
 }): ShiftDeps {
   const closes = (tenantId: string) =>
     allOf<ClosedShiftRecord>(input.store, tenantId, SHIFTS_STREAM, 'TillClosed');
+  const reviews = (tenantId: string) =>
+    allOf<OverShortReview>(input.store, tenantId, SHIFTS_STREAM, 'ShiftOverShortReviewed');
 
   return {
     now: input.now,
@@ -1835,6 +1837,8 @@ export function shiftAdapter(input: {
     closedShift: async (tenantId, shiftId) => (await closes(tenantId)).find((r) => r.shiftId === shiftId),
 
     overShortShifts: async (tenantId) => (await closes(tenantId)).filter((r) => r.exceptionRaised),
+
+    overShortReviews: async (tenantId) => reviews(tenantId),
 
     recordShiftClose: async (tenantId, record) => {
       await input.store.append(tenantId, SHIFTS_STREAM, makeEvent({
@@ -1846,6 +1850,18 @@ export function shiftAdapter(input: {
         idempotencyKey: `shift-close-${tenantId}-${record.shiftId}`,
         source: 'api/pos',
         payload: record,
+      }));
+    },
+
+    recordOverShortReview: async (tenantId, review) => {
+      await input.store.append(tenantId, SHIFTS_STREAM, makeEvent({
+        id: `shift-overshort-review-${review.shiftId}`,
+        type: 'ShiftOverShortReviewed',
+        occurredAt: review.reviewedAt,
+        // One sign-off per shift — a re-sent review collapses rather than recording two findings.
+        idempotencyKey: `shift-overshort-review-${tenantId}-${review.shiftId}`,
+        source: 'api/pos',
+        payload: review,
       }));
     },
   };

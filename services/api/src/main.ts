@@ -471,7 +471,7 @@ export function buildSurface(deps: {
       ? { tillMovements: empty([]), recordCashMovement: () => {}, now }
       : cashAdapter({ store, now })),
     ...shiftRoutes(store === undefined
-      ? { closedShift: empty(undefined), recordShiftClose: () => {}, overShortShifts: empty([]), now }
+      ? { closedShift: empty(undefined), recordShiftClose: () => {}, overShortShifts: empty([]), overShortReviews: empty([]), recordOverShortReview: () => {}, now }
       : shiftAdapter({ store, now })),
     ...lpCasesRoutes(store === undefined
       ? { cases: empty([]), case: empty(undefined), recordOpened: () => {}, recordEvidence: () => {}, recordClosed: () => {}, now }

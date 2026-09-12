@@ -5,6 +5,38 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M14: a material over/short must now be signed off by the cash office (12 September 2026)
+
+**Autonomous increment** (owner standing direction: "don't wait… complete everything without any
+gaps"; chosen because it needs no owner decision and directly continues the cash-office work above).
+
+**The gap:** a material over/short was recorded and listed, but nothing made anyone *work* it. A
+shortage that is only ever listed is a shortage nobody owned (P-03 control by exception).
+
+**What changed (behaviour):**
+- New pure rule `packages/till/src/over-short-review.ts` — `assessOverShortReview`: only a material
+  over/short can be reviewed, the reviewer must **not** be the cashier who counted the drawer
+  (separation of duties), and a sign-off must state a finding.
+- New route `POST /v1/shifts/:shiftId/over-short/review` (API-05), permission `till.overshort.review`,
+  held by **owner + store manager, deliberately not the cashier**. The reviewer is the authenticated
+  caller (never the body); it refuses a self-review (`422 cannot_review_your_own_drawer`), a clean
+  drawer (`422 nothing_to_review`), and an unknown shift (`404`). Recorded append-only as a
+  `ShiftOverShortReviewed` event; idempotent per shift (the first sign-off stands).
+- The over/short list now carries `reviewed` / `reviewedBy` / `disposition` per row and an `openCount`,
+  so the cash office can see and work the ones still open.
+
+**Separation of duties proven:** a cashier can't reach the route at all (403, least privilege), and a
+store manager who also ran a till can't sign off their own drawer (422) — a different accountable
+person must.
+
+**Evidence:** `tests/unit/over-short-review.test.ts` (4); `tests/integration/shift-close.test.ts`
+grew to 13 (sign-off + list state; SoD refusal; clean-drawer + 404 refusals; least-privilege 403 +
+idempotency). Full suite green (6,529 passed / 262 DB-skipped); typecheck + lint + secret-scan clean.
+The api-surface contract (every route's permission is grantable by a role) still passes with the new
+permission. **Not re-rated** — the ledger and headline % are unchanged.
+
+---
+
 ## M14-FR-02: the blind cash count is now captured BY DENOMINATION (12 September 2026)
 
 **Owner direction:** "You choose the next module." I chose M14 (Till, Cash Office & Day-Close) and,
