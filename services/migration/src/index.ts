@@ -18,13 +18,50 @@ import {
   type LegacySource, type SealedExtract,
 } from '../../../packages/migration/src/discovery';
 import {
+  approveMapping, assessCoverage,
+  type MappingTable, type MappingEntry, type MappingDomain,
+} from '../../../packages/migration/src/mapping';
+import { detectExceptions } from '../../../packages/migration/src/cleaning';
+import type { LegacyDataset } from '../../../packages/migration/src/synthetic';
+import {
   buildVerificationReport, renderVerificationReport,
   type DomainFinding, type Acceptance, type Signature,
 } from '../../../packages/migration/src/verification-report';
 
 const SOURCE_KINDS: readonly string[] = ['erp_database', 'pos_database', 'spreadsheet', 'paper', 'third_party_system', 'report_only'];
 const VOLUME_BASES: readonly string[] = ['counted', 'estimated', 'unknown'];
+const MAPPING_DOMAINS: readonly string[] = ['tax_code', 'uom', 'department', 'account', 'branch', 'identity', 'document_kind'];
+const MAPPING_STATUSES: readonly string[] = ['draft', 'approved', 'superseded'];
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object';
+
+/** Is this one entry of a mapping table — a legacy value, its target, and WHY (read at an assessment)? */
+function isMappingEntry(v: unknown): v is MappingEntry {
+  if (!isObj(v)) return false;
+  return typeof v['domain'] === 'string' && MAPPING_DOMAINS.includes(v['domain'])
+    && typeof v['legacyValue'] === 'string'
+    && typeof v['targetValue'] === 'string'
+    && typeof v['rationale'] === 'string';
+}
+
+/** Is this a mapping table the MG-03 engine can approve / measure coverage against? */
+function isMappingTable(v: unknown): v is MappingTable {
+  if (!isObj(v)) return false;
+  return typeof v['mappingId'] === 'string' && v['mappingId'] !== ''
+    && typeof v['tenantId'] === 'string'
+    && typeof v['version'] === 'number'
+    && typeof v['status'] === 'string' && MAPPING_STATUSES.includes(v['status'])
+    && Array.isArray(v['entries']) && v['entries'].every(isMappingEntry);
+}
+
+interface ObservedValue { readonly domain: MappingDomain; readonly value: string; readonly rows: number }
+
+/** One value seen in the extract, and how many rows carry it — coverage is measured against these. */
+function isObservedValue(v: unknown): v is ObservedValue {
+  if (!isObj(v)) return false;
+  return typeof v['domain'] === 'string' && MAPPING_DOMAINS.includes(v['domain'])
+    && typeof v['value'] === 'string'
+    && typeof v['rows'] === 'number';
+}
 
 /**
  * Is this a legacy source the discovery step can assess? The fields discovery reasons about — a name,
@@ -235,6 +272,146 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
           });
         }
         return { status: 200, body: verifyExtract({ extract, material, rowCount, hasher: simpleHasher }) };
+      },
+    },
+    {
+      // MG-03 — mapping, the approval half. A mapping table is a set of accounting decisions wearing
+      // the costume of a config file, so it is APPROVED by a named person (from the token) with a date,
+      // and the one contradiction that cannot be resolved at load — a single legacy value meaning two
+      // different targets — is refused HERE, by name, rather than picked arbitrarily during the load
+      // (where nine products quietly become zero-rated). Stateless: the approved table is returned for
+      // the operator to keep and use at load, the same chain-of-custody contract as the seal.
+      api: 'API-12', method: 'POST', path: '/v1/migration/mapping/approve',
+      permission: 'migration.mapping.approve', idempotent: true,
+      handler: async (ctx) => {
+        await assertSafeTarget(deps, ctx.tenantId);
+        const b = ctx.body;
+        const table = isObj(b) ? b['table'] : undefined;
+        if (!isMappingTable(table)) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_mapping_table',
+            whatHappened: 'This payload could not be read as a mapping table. It needs a mappingId, a version, a status, and entries — each with a domain (tax_code/uom/department/account/branch/identity/document_kind), a legacyValue, a targetValue and a rationale.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was approved. Correct the table and send it again.',
+          });
+        }
+        if (table.tenantId !== ctx.tenantId) {
+          throw apiError(403, {
+            code: 'mapping_belongs_to_another_tenant',
+            whatHappened: 'This mapping table was built for a different tenant.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was approved. Approve a mapping under the tenant it was built for.',
+          });
+        }
+        const result = approveMapping({ table, approvedBy: ctx.userId, now: deps.now() });
+        if (!result.ok) {
+          throw apiError(422, {
+            code: result.refusedBecause!,
+            whatHappened: result.conflicts.length > 0 ? `${result.detail} — ${result.conflicts.join('; ')}` : result.detail,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'No mapping was approved. Resolve what is named above — a one-legacy-value-to-two-targets conflict, a missing rationale, or an empty table — and approve again. A change to an already-approved table is a new version.',
+          });
+        }
+        return { status: 200, body: result.table };
+      },
+    },
+    {
+      // MG-03 — mapping, the coverage half. Coverage is measured against the values ACTUALLY present in
+      // the extract, never against the table's own size: "142 mappings approved" says nothing, while
+      // "9 products carry a code no approved mapping covers" is the fact that decides whether the load
+      // is safe. Read-only; every uncovered value is an exception to resolve, never a default to apply.
+      api: 'API-12', method: 'POST', path: '/v1/migration/mapping/coverage',
+      permission: 'migration.mapping.read', idempotent: true,
+      handler: async (ctx) => {
+        await assertSafeTarget(deps, ctx.tenantId);
+        const b = ctx.body;
+        const table = isObj(b) ? b['table'] : undefined;
+        const observed = isObj(b) ? b['observed'] : undefined;
+        if (!isMappingTable(table) || !Array.isArray(observed) || !observed.every(isObservedValue)) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_coverage_check',
+            whatHappened: 'This payload could not be read as a coverage check. It needs the mapping table and the values observed in the extract — each an entry of { domain, value, rows }.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was assessed. Send the table alongside the values actually present in the source.',
+          });
+        }
+        if (table.tenantId !== ctx.tenantId) {
+          throw apiError(403, {
+            code: 'mapping_belongs_to_another_tenant',
+            whatHappened: 'This mapping table was built for a different tenant.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was assessed. Measure coverage under the tenant the mapping was built for.',
+          });
+        }
+        return { status: 200, body: assessCoverage({ tenantId: ctx.tenantId, table, observed }) };
+      },
+    },
+    {
+      // MG-04 — cleaning. Find everything wrong with the legacy data and CHANGE NONE OF IT: duplicate
+      // products, a barcode on two products, negative stock, a batch with no expiry, a document whose
+      // total disagrees with its lines, an unmapped tax code (blocking — defaulting it is a zero
+      // rating). Cleaning proposes; it never decides, never merges, never drops (hard rules #2/#6). The
+      // report is severity-ordered by money and law, so the working queue is right. Read-only: the
+      // response even carries `nothingWasModified: true` so a caller cannot assume otherwise.
+      api: 'API-12', method: 'POST', path: '/v1/migration/cleaning/exceptions',
+      permission: 'migration.cleaning.read', idempotent: true,
+      handler: async (ctx) => {
+        await assertSafeTarget(deps, ctx.tenantId);
+        const b = ctx.body;
+        const ds = isObj(b) ? b['dataset'] : undefined;
+        const ARRAYS = ['products', 'stock', 'customers', 'suppliers', 'documents', 'lines'] as const;
+        if (!isObj(ds) || ARRAYS.some((f) => ds[f] !== undefined && !Array.isArray(ds[f]))) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_dataset',
+            whatHappened: 'This payload could not be read as a legacy dataset. It needs a dataset object whose products, stock, customers, suppliers, documents and lines are each a list (any may be omitted, but present ones must be lists).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was assessed and nothing was changed — cleaning only ever reads. Correct the dataset and send it again.',
+          });
+        }
+        const mappingTable = isObj(b) ? b['mappingTable'] : undefined;
+        const rateRevisionDate = isObj(b) ? b['rateRevisionDate'] : undefined;
+        if (mappingTable !== undefined && !isMappingTable(mappingTable)) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_mapping_table',
+            whatHappened: 'The mappingTable supplied for tax judgement could not be read as a mapping table.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was assessed. Send a valid mapping table, or omit it (tax codes are then not judged, never guessed).',
+          });
+        }
+        if (rateRevisionDate !== undefined && typeof rateRevisionDate !== 'string') {
+          throw apiError(400, {
+            code: 'not_readable_as_a_date',
+            whatHappened: 'rateRevisionDate must be a date string when supplied.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was assessed. Send an ISO date, or omit it.',
+          });
+        }
+        const dataset: LegacyDataset = {
+          seed: 0,
+          products: (ds['products'] ?? []) as LegacyDataset['products'],
+          stock: (ds['stock'] ?? []) as LegacyDataset['stock'],
+          customers: (ds['customers'] ?? []) as LegacyDataset['customers'],
+          suppliers: (ds['suppliers'] ?? []) as LegacyDataset['suppliers'],
+          documents: (ds['documents'] ?? []) as LegacyDataset['documents'],
+          lines: (ds['lines'] ?? []) as LegacyDataset['lines'],
+          plantedFaults: {} as LegacyDataset['plantedFaults'],
+          plantedIds: {} as LegacyDataset['plantedIds'],
+        };
+        try {
+          const report = detectExceptions({
+            tenantId: ctx.tenantId, dataset,
+            ...(mappingTable === undefined ? {} : { mappingTable }),
+            ...(rateRevisionDate === undefined ? {} : { rateRevisionDate }),
+          });
+          return { status: 200, body: report };
+        } catch {
+          throw apiError(400, {
+            code: 'not_readable_as_a_dataset',
+            whatHappened: 'The legacy dataset could not be assessed — a record was shaped in a way the detectors could not read.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was changed — cleaning only reads. Check the records against the legacy field shapes and send again.',
+          });
+        }
       },
     },
     {

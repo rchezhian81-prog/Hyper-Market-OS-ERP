@@ -5,6 +5,39 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Migration MG-03 + MG-04 — mapping and cleaning reach the cloud (12 September 2026)
+
+**Owner direction:** "Continue migration." The next steps of the pipeline after discovery (MG-01) and
+preservation (MG-02).
+
+**Built (API-12, `services/migration/src/index.ts`, running the tested engines):**
+- **MG-03 mapping** — `POST /v1/migration/mapping/approve` (`migration.mapping.approve`) approves a
+  mapping table, stamping the approver from the token and **refusing the one contradiction that cannot
+  be resolved at load** — a single legacy value mapping to two targets (422, conflicts named) — plus a
+  missing rationale, an empty table, or an already-approved one. `POST /v1/migration/mapping/coverage`
+  (`migration.mapping.read`) measures the approved table against the values **actually present in the
+  extract**, so the answer is "9 rows carry a code no mapping covers," not "142 mappings approved." An
+  uncovered value is an exception, never a default.
+- **MG-04 cleaning** — `POST /v1/migration/cleaning/exceptions` (`migration.cleaning.read`) runs the
+  detectors over the legacy dataset and returns a severity-ordered report (money and law first:
+  unmapped tax code and negative stock are blocking). **Cleaning proposes and changes nothing** — the
+  response carries `nothingWasModified: true`; there is no merge, correct or drop here (hard rules
+  #2/#6). Optional mapping table judges tax codes; without it they are not guessed.
+
+Both refuse a production target first (hard rule #7) and stamp the tenant from the authenticated
+caller, never the body. New permissions `migration.mapping.read` / `migration.mapping.approve` /
+`migration.cleaning.read` (Owner role).
+
+**Evidence:** `tests/unit/migration-mapping-route.test.ts` (7), `tests/unit/migration-cleaning-route.test.ts`
+(3). API-surface contract + thirteen-APIs consistency pass. typecheck/lint clean.
+
+**Honesty:** **No re-rate — headline stays 41.5%.** MG-03/MG-04's rungs are unchanged; wiring these
+routes deepens the engines' maturity without moving the ladder (progress recorded in prose, as with
+MG-01/MG-02). The migration pipeline now covers discovery → preservation → mapping → cleaning; next is
+trial-load + reconciliation (MG-05/06).
+
+---
+
 ## WP5-D + WP5-E — the public storefront: marketing landing page + sign-in (12 September 2026)
 
 **Built (net-new `apps/site`, a public static site — not an offline operational screen, so deliberately
