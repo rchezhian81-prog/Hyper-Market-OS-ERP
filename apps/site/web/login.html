@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sign in · SRE Retail OS</title>
+<meta name="description" content="Sign in to SRE Retail OS through your organisation's identity provider." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Public+Sans:wght@0,400;0,500;0,600&display=swap" />
+<style>
+  :root{
+    --ground:#f6f4ee; --card:#fffdf9; --ink:#17211c; --muted:#586b60;
+    --pine:#124734; --pine-deep:#0d3527; --pine-soft:#e7efe8;
+    --marigold:#e8963a; --marigold-deep:#c9781f; --line:#d8d2c2;
+    --display:"Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+    --body:"Public Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; background:var(--pine-soft); color:var(--ink);
+    font-family:var(--body); font-size:17px; line-height:1.6;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:24px; -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--pine); font-weight:600}
+  .brand{display:flex; align-items:center; gap:10px; font-family:var(--display); font-weight:800; font-size:1.2rem; text-decoration:none; color:var(--ink); margin-bottom:26px}
+  .brand .mark{width:32px;height:32px;border-radius:9px;background:var(--pine);display:grid;place-items:center;color:#fff;font-size:.9rem;font-weight:800}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:34px 30px; width:100%; max-width:420px; box-shadow:0 20px 50px -30px rgba(18,71,52,.5)}
+  h1{font-family:var(--display); font-weight:800; font-size:1.55rem; letter-spacing:-.01em; margin:0 0 6px}
+  .sub{color:var(--muted); margin:0 0 24px; font-size:.98rem}
+  label{display:block; font-weight:600; font-size:.9rem; margin-bottom:7px}
+  input[type=email]{width:100%; font:inherit; padding:.75em .9em; border:1px solid var(--line); border-radius:10px; background:#fff; color:var(--ink)}
+  input:focus-visible{outline:3px solid var(--marigold); outline-offset:1px; border-color:var(--marigold)}
+  button{width:100%; margin-top:18px; font:inherit; font-weight:700; cursor:pointer; border:none; border-radius:999px; padding:.8em 1em; background:var(--marigold); color:#241403; transition:background .15s ease, transform .15s ease}
+  button:hover{background:var(--marigold-deep); color:#fff; transform:translateY(-1px)}
+  .note{margin-top:18px; font-size:.86rem; color:var(--muted); background:var(--pine-soft); border-radius:10px; padding:13px 15px}
+  .msg{margin-top:16px; font-size:.92rem; border-radius:10px; padding:13px 15px; background:#fdf3e3; border:1px solid #f0d3a3; color:#7a4a12; display:none}
+  .msg.show{display:block}
+  .back{margin-top:22px; text-align:center; font-size:.92rem}
+  footer{margin-top:26px; color:var(--muted); font-size:.82rem; text-align:center; max-width:420px}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+  <a class="brand" href="./index.html"><span class="mark">SRE</span> Retail&nbsp;OS</a>
+  <main class="card">
+    <h1>Sign in</h1>
+    <p class="sub">Enter your work email. We'll take you to your organisation's secure sign-in.</p>
+    <form id="signin" novalidate>
+      <label for="email">Work email</label>
+      <input id="email" name="email" type="email" autocomplete="username" inputmode="email" placeholder="you@yourshop.in" required />
+      <button type="submit">Continue</button>
+    </form>
+    <div id="msg" class="msg" role="status" aria-live="polite"></div>
+    <p class="note">Sign-in is handled by your organisation's identity provider — SRE Retail OS never asks for or stores your password. Your account and its permissions are set up by your owner or administrator.</p>
+    <p class="back"><a href="./index.html">← Back to SRE Retail OS</a> · <a href="./index.html#plans">See plans</a></p>
+  </main>
+  <footer>© <span id="year">2026</span> SRE Hyper Market · Secure sign-in under your organisation's identity provider.</footer>
+  <script>
+    document.getElementById('year').textContent = String(new Date().getFullYear());
+    var form = document.getElementById('signin');
+    var msg = document.getElementById('msg');
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var email = document.getElementById('email');
+      if (!email.value || email.validity.typeMismatch || email.value.indexOf('@') === -1) {
+        email.focus();
+        msg.textContent = 'Please enter a valid work email address.';
+        msg.classList.add('show');
+        return;
+      }
+      // The identity provider is connected as part of go-live setup (an owner action). Until then,
+      // this page authenticates no one and stores nothing — it does not fake a session.
+      msg.textContent = 'Secure sign-in for ' + email.value + ' will be available once your identity provider is connected. This is a one-time setup step for the owner — no password is collected or stored here.';
+      msg.classList.add('show');
+    });
+  </script>
+</body>
+</html>

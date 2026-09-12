@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Set up your plan · SRE Retail OS</title>
+<meta name="description" content="Choose your SRE Retail OS plan and set up automatic monthly billing by UPI Autopay — RBI-compliant, no card details stored." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Public+Sans:wght@0,400;0,500;0,600&display=swap" />
+<style>
+  :root{
+    --ground:#f6f4ee; --card:#fffdf9; --ink:#17211c; --muted:#586b60;
+    --pine:#124734; --pine-deep:#0d3527; --pine-soft:#e7efe8;
+    --marigold:#e8963a; --marigold-deep:#c9781f; --line:#d8d2c2; --ok:#2f8f5b;
+    --display:"Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+    --body:"Public Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--ground); color:var(--ink); font-family:var(--body); font-size:17px; line-height:1.6; -webkit-font-smoothing:antialiased}
+  a{color:var(--pine); font-weight:600}
+  h1,h2,h3{font-family:var(--display); font-weight:800; line-height:1.1; margin:0; text-wrap:balance}
+  .wrap{max-width:960px; margin-inline:auto; padding-inline:24px}
+  header{border-bottom:1px solid var(--line); background:var(--card)}
+  .nav{display:flex; align-items:center; justify-content:space-between; padding-block:14px}
+  .brand{display:flex; align-items:center; gap:10px; font-family:var(--display); font-weight:800; text-decoration:none; color:var(--ink)}
+  .brand .mark{width:30px;height:30px;border-radius:8px;background:var(--pine);display:grid;place-items:center;color:#fff;font-size:.9rem;font-weight:800}
+  main{padding-block:44px 60px}
+  .eyebrow{font-size:.8rem; letter-spacing:.14em; text-transform:uppercase; font-weight:600; color:var(--marigold-deep)}
+  h1{font-size:clamp(1.9rem,4vw,2.6rem); letter-spacing:-.02em; margin-top:10px}
+  .grid{display:grid; grid-template-columns:1fr 1.1fr; gap:24px; margin-top:34px; align-items:start}
+  .panel{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:26px 24px}
+  .panel h2{font-size:1.2rem}
+  .plan-price{font-family:var(--display); font-weight:800; font-size:2.4rem; letter-spacing:-.02em; margin-top:12px; font-variant-numeric:tabular-nums}
+  .plan-price span{font-family:var(--body); font-weight:500; font-size:1rem; color:var(--muted)}
+  .plan-who{color:var(--muted); margin-top:6px}
+  ul.feat{list-style:none; margin:18px 0 0; padding:0; display:flex; flex-direction:column; gap:10px}
+  ul.feat li{display:flex; gap:10px; align-items:flex-start; font-size:.97rem}
+  ul.feat svg{flex:0 0 auto; margin-top:3px; color:var(--ok)}
+  .switcher{margin-top:22px; display:flex; gap:8px; flex-wrap:wrap}
+  .switcher a{font-size:.86rem; text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:.35em .8em; color:var(--muted); font-weight:600}
+  .switcher a.on{background:var(--pine); color:#fff; border-color:var(--pine)}
+  fieldset{border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin:0 0 18px}
+  legend{font-weight:600; font-size:.9rem; padding-inline:6px}
+  .rail{display:flex; gap:10px; align-items:center; padding:8px 4px}
+  .rail input{width:18px; height:18px; accent-color:var(--pine)}
+  .rail .sub{color:var(--muted); font-size:.85rem}
+  .terms{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:12px}
+  .terms li{display:flex; gap:11px; align-items:flex-start; font-size:.95rem}
+  .terms svg{flex:0 0 auto; margin-top:2px; color:var(--pine)}
+  .debit{background:var(--pine-soft); border-radius:12px; padding:16px 18px; margin-bottom:18px}
+  .debit .amt{font-family:var(--display); font-weight:800; font-size:1.5rem; font-variant-numeric:tabular-nums}
+  .debit .when{color:var(--muted); font-size:.9rem}
+  button{width:100%; margin-top:6px; font:inherit; font-weight:700; cursor:pointer; border:none; border-radius:999px; padding:.85em 1em; background:var(--marigold); color:#241403; transition:background .15s ease, transform .15s ease}
+  button:hover{background:var(--marigold-deep); color:#fff; transform:translateY(-1px)}
+  .safe{margin-top:16px; font-size:.85rem; color:var(--muted)}
+  .back{margin-top:26px}
+  :focus-visible{outline:3px solid var(--marigold); outline-offset:2px; border-radius:6px}
+  @media (max-width:760px){.grid{grid-template-columns:1fr}}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="./index.html"><span class="mark">SRE</span> Retail&nbsp;OS</a>
+    <a href="./index.html#plans">All plans</a>
+  </div>
+</header>
+<main class="wrap">
+  <p class="eyebrow">Set up your plan</p>
+  <h1 id="title">Start on Standard</h1>
+  <div class="switcher" id="switcher" aria-label="Choose a plan">
+    <a href="./subscribe.html?plan=starter" data-plan="starter">Starter</a>
+    <a href="./subscribe.html?plan=standard" data-plan="standard">Standard</a>
+    <a href="./subscribe.html?plan=growth" data-plan="growth">Growth</a>
+  </div>
+
+  <div class="grid">
+    <section class="panel" aria-labelledby="plan-h">
+      <h2 id="plan-h">Your plan</h2>
+      <div class="plan-price"><span id="price">₹5,000</span><span>/month</span></div>
+      <p class="plan-who" id="who">A busy hypermarket running several lanes with loyalty and home delivery.</p>
+      <ul class="feat" id="feat"></ul>
+    </section>
+
+    <section class="panel" aria-labelledby="debit-h">
+      <h2 id="debit-h">Your monthly auto-debit</h2>
+      <div class="debit">
+        <div class="amt" id="debit-amt">₹5,000 / month</div>
+        <div class="when">First debit when you go live, then on the same date each month — with a reminder before every debit.</div>
+      </div>
+      <fieldset>
+        <legend>How it's collected</legend>
+        <label class="rail"><input type="radio" name="rail" value="upi_autopay" checked /> <span>UPI Autopay <span class="sub">— recommended, lowest cost</span></span></label>
+        <label class="rail"><input type="radio" name="rail" value="card_emandate" /> <span>Card e-mandate</span></label>
+        <label class="rail"><input type="radio" name="rail" value="enach" /> <span>Bank e-NACH</span></label>
+      </fieldset>
+      <ul class="terms">
+        <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> One-time approval on your phone sets up the mandate (RBI e-mandate).</li>
+        <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> A pre-debit notification before every month's collection.</li>
+        <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> No OTP each month while the fee stays under ₹15,000.</li>
+        <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Cancel anytime — service runs to the end of the paid month, and your data is never deleted.</li>
+      </ul>
+      <div style="margin-top:20px">
+        <button id="continue" type="button">Continue to secure sign-in</button>
+        <p class="safe">Your card details are never stored — only a secure mandate reference from your bank or UPI app. GST is added at checkout. Prices are indicative launch pricing set by SRE.</p>
+      </div>
+    </section>
+  </div>
+  <p class="back"><a href="./index.html">← Back to SRE Retail OS</a></p>
+</main>
+<script>
+  var PLANS = {
+    starter:  { name:'Starter',  price:'₹2,000',  who:'A single-branch shop getting its counters and stock onto one system.', feat:['Up to 2 tills, 1 branch','Up to 10 named users','Offline billing, stock & GST','Loyalty points'] },
+    standard: { name:'Standard', price:'₹5,000',  who:'A busy hypermarket running several lanes with loyalty and home delivery.', feat:['Up to 6 tills, 1 branch','Up to 40 named users','Everything in Starter, plus','Loyalty & home delivery'] },
+    growth:   { name:'Growth',   price:'₹12,000', who:'A multi-branch group that also sells to businesses and online.', feat:['Up to 15 tills, 3 branches','Up to 120 named users','Everything in Standard, plus','Customer app & B2B accounts'] }
+  };
+  function param(){ try { return new URLSearchParams(location.search).get('plan') || ''; } catch (e) { return ''; } }
+  var id = param(); if (!PLANS[id]) id = 'standard';
+  var p = PLANS[id];
+  document.getElementById('title').textContent = 'Start on ' + p.name;
+  document.getElementById('price').textContent = p.price;
+  document.getElementById('who').textContent = p.who;
+  document.getElementById('debit-amt').textContent = p.price + ' / month';
+  var ul = document.getElementById('feat');
+  p.feat.forEach(function (f) {
+    var li = document.createElement('li');
+    li.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+    li.appendChild(document.createTextNode(' ' + f));
+    ul.appendChild(li);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('#switcher a'), function (a) {
+    if (a.getAttribute('data-plan') === id) a.classList.add('on');
+  });
+  document.getElementById('continue').addEventListener('click', function () {
+    // Setting up billing requires being signed in — the mandate is created against the tenant's own
+    // account. Sign-in and live collection are connected as go-live setup steps (owner actions).
+    location.href = './login.html';
+  });
+</script>
+</body>
+</html>

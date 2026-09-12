@@ -25,6 +25,7 @@ CLAUDE.md (Technology baseline, roadmap §19) requires: **"Any substitution requ
 | [0011](./0011-edge-durability-file-log.md) | Edge durability via an append-only file-log, not a local relational DB (§19 substitution) | Accepted |
 | [0012](./0012-modular-monolith-cloud-topology.md) | Modular-monolith cloud topology | Accepted |
 | [0013](./0013-product-publish-delivered-by-the-signed-in-operator.md) | Product publish delivered by the signed-in operator, not a background service identity (owner decision, 18 Aug 2026) | Accepted |
+| [0014](./0014-recurring-billing-provider-and-mandates.md) | Recurring subscription billing: Razorpay via the connector SDK, mandates not card data (WP5, §19 substitution) | Accepted (owner-directed; provider substitutable) |
 
 Further de-facto and proposed decisions (transaction boundaries, Postgres RLS, SHA-256 audit chain,
 observability exporters, OpenAPI, DSR API, hosting/IaC/CD) are catalogued as recommendations in

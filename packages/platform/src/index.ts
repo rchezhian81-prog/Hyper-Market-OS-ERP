@@ -12,6 +12,8 @@
 // per-tenant configuration), both live since Stage 5.
 
 export * from './plans';
+export * from './billing';
+export * from './billing-provider';
 export * from './branding';
 export * from './lifecycle';
 export * from './partner';

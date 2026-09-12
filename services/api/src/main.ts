@@ -115,6 +115,7 @@ import { delegationRoutes } from '../../identity/src/delegation';
 import { emergencyAccessRoutes } from '../../identity/src/emergency-access';
 import { accessLifecycleRoutes } from '../../identity/src/access-lifecycle';
 import { platformRoutes, inMemorySettings, emptyExportBundle } from '../../platform/src/index';
+import { billingRoutes } from '../../platform/src/billing-routes';
 import { operationalHealthRoutes } from '../../platform/src/operational-health';
 import { alertLifecycleRoutes } from '../../platform/src/alert-lifecycle';
 import { deviceRoutes } from '../../platform/src/devices';
@@ -174,13 +175,25 @@ import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, dataExportAdapter, financeAdapter, settlementAdapter,
   customerAdapter, dataRightsAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter,
-  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, salesHistoryAdapter,
+  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, salesHistoryAdapter, billingAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
+import { SandboxRecurringBillingProvider, type Plan as BillingPlan } from '../../../packages/platform/src/index';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 
 const now = (): string => new Date().toISOString();
+
+/**
+ * Proposed subscription plans (WP5 / ADR-0014). These prices are DEFAULTS pending the owner's final
+ * pricing (an owner action, `docs/OWNER-ACTION-REGISTER.md`) — configuration, not invented facts. All
+ * sit under the ₹15,000 no-OTP ceiling so the monthly debit runs automatically. Amounts are in paise.
+ */
+const PROPOSED_PLANS: readonly BillingPlan[] = [
+  { planId: 'starter', name: 'Starter', grants: ['loyalty'], limits: { lanes: 2, branches: 1, named_users: 10 }, monthlyPriceMinor: 200_000 },
+  { planId: 'standard', name: 'Standard', grants: ['loyalty', 'delivery'], limits: { lanes: 6, branches: 1, named_users: 40 }, monthlyPriceMinor: 500_000, overageMinor: { lanes: 100_000 } },
+  { planId: 'growth', name: 'Growth', grants: ['loyalty', 'delivery', 'customer_app', 'b2b'], limits: { lanes: 15, branches: 3, named_users: 120 }, monthlyPriceMinor: 1_200_000, overageMinor: { lanes: 90_000 } },
+];
 
 /**
  * The two facts the report catalogue (M29/M30) needs, declared in the composition root because
@@ -729,6 +742,18 @@ export function buildSurface(deps: {
       setBranding: () => {}, branding: empty(undefined),
       setEntitlement: () => {}, entitlements: empty([]), now,
     } : platformAdapter({ store, now, probes, settings })),
+    // Subscription & recurring billing (WP5 / ADR-0014) — plans, a tenant's subscription + dunning,
+    // subscribe (which sets up the auto-debit mandate through the provider), give notice, and the
+    // provider webhook. The provider is the SANDBOX until a live merchant account exists, so no real
+    // money can move; and dunning never stops the shop trading (P-01). Needs the durable store.
+    ...billingRoutes(store === undefined ? {
+      plans: () => PROPOSED_PLANS,
+      subscription: () => undefined,
+      subscribe: async () => { throw new Error('subscription billing requires the cloud store'); },
+      cancel: async () => { throw new Error('subscription billing requires the cloud store'); },
+      handleWebhook: async () => { throw new Error('subscription billing requires the cloud store'); },
+      now,
+    } : billingAdapter({ store, now, provider: new SandboxRecurringBillingProvider(), plans: PROPOSED_PLANS })),
     // Config version history + rollback (M33-FR-01 / M01-FR-03) — view a setting's full audited history and
     // restore a prior version (as a new append-only version). Shares the settings store, so setup answers and
     // their rollbacks are one history.

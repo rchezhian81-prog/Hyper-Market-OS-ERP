@@ -5,6 +5,143 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Migration MG-03 + MG-04 — mapping and cleaning reach the cloud (12 September 2026)
+
+**Owner direction:** "Continue migration." The next steps of the pipeline after discovery (MG-01) and
+preservation (MG-02).
+
+**Built (API-12, `services/migration/src/index.ts`, running the tested engines):**
+- **MG-03 mapping** — `POST /v1/migration/mapping/approve` (`migration.mapping.approve`) approves a
+  mapping table, stamping the approver from the token and **refusing the one contradiction that cannot
+  be resolved at load** — a single legacy value mapping to two targets (422, conflicts named) — plus a
+  missing rationale, an empty table, or an already-approved one. `POST /v1/migration/mapping/coverage`
+  (`migration.mapping.read`) measures the approved table against the values **actually present in the
+  extract**, so the answer is "9 rows carry a code no mapping covers," not "142 mappings approved." An
+  uncovered value is an exception, never a default.
+- **MG-04 cleaning** — `POST /v1/migration/cleaning/exceptions` (`migration.cleaning.read`) runs the
+  detectors over the legacy dataset and returns a severity-ordered report (money and law first:
+  unmapped tax code and negative stock are blocking). **Cleaning proposes and changes nothing** — the
+  response carries `nothingWasModified: true`; there is no merge, correct or drop here (hard rules
+  #2/#6). Optional mapping table judges tax codes; without it they are not guessed.
+
+Both refuse a production target first (hard rule #7) and stamp the tenant from the authenticated
+caller, never the body. New permissions `migration.mapping.read` / `migration.mapping.approve` /
+`migration.cleaning.read` (Owner role).
+
+**Evidence:** `tests/unit/migration-mapping-route.test.ts` (7), `tests/unit/migration-cleaning-route.test.ts`
+(3). API-surface contract + thirteen-APIs consistency pass. typecheck/lint clean.
+
+**Honesty:** **No re-rate — headline stays 41.5%.** MG-03/MG-04's rungs are unchanged; wiring these
+routes deepens the engines' maturity without moving the ladder (progress recorded in prose, as with
+MG-01/MG-02). The migration pipeline now covers discovery → preservation → mapping → cleaning; next is
+trial-load + reconciliation (MG-05/06).
+
+---
+
+## WP5-D + WP5-E + WP5-F — the public storefront: landing, sign-in, subscribe (12 September 2026)
+
+**Built (net-new `apps/site`, a public static site — not an offline operational screen, so deliberately
+outside the offline-shell machinery):**
+- `apps/site/web/index.html` — the marketing landing page. Explains the product (offline-first,
+  one-truth, GST-ready, control-by-exception), shows the three plans at the prices actually billed
+  (₹2,000 / ₹5,000 / ₹12,000, labelled indicative launch pricing), a plain-English "how billing works"
+  strip (UPI Autopay, RBI e-mandate, pre-debit notice, no OTP under ₹15,000, cancel anytime), and the
+  reassurance that no card details are stored. Its own design system (pine + marigold), self-contained.
+- `apps/site/web/login.html` — sign-in. **Credential-free** (hard rule #4): it asks only for a work
+  email and delegates to the organisation's identity provider; it never collects or stores a password
+  and does not fake a session. Honest about the IdP being an owner setup step (external blocker).
+- `apps/site/web/subscribe.html` — the subscribe / auto-debit page (WP5-F). Reads `?plan=`, shows the
+  plan and the exact monthly debit, lets the payer pick a rail (UPI Autopay / card e-mandate / e-NACH),
+  and states the RBI mandate terms plainly (one-time approval, pre-debit notice, no OTP under ₹15,000,
+  cancel anytime, no card stored, data never deleted). "Continue" goes to secure sign-in — it never
+  fakes a mandate; live collection needs sign-in + a merchant account (owner setup). The landing
+  plan buttons now lead here (`subscribe.html?plan=…`).
+
+**Evidence:** `tests/guardrails/the-commercial-site-is-honest.test.ts` (13: real plans + launch-pricing
+caveat; offline/UPI/GST/no-card-storage claims match reality; sign-in has no password field, stores
+nothing, fakes no session; subscribe shows the rails + RBI terms and requires sign-in). Full non-DB
+suite green; lint clean.
+
+**Honesty:** **No re-rate — headline stays 41.5%.** WP5 is a non-denominator work package. The pages
+are the storefront; real sign-in needs a production identity provider and real billing needs a
+Razorpay merchant account — both owner external blockers.
+
+**Next:** WP5-F subscribe/mandate flow on the site (wired to the API-11 billing routes); migration
+MG-03 (mapping) / MG-04 (cleaning).
+
+---
+
+## WP5-A + WP5-C — the billing engine and the subscription API go live on API-11 (12 September 2026)
+
+**Built (advances M36; the paid money path for selling the product):**
+- **Engine** (`packages/platform/src/billing.ts`, extends M36 `plans.ts`): `Mandate` +
+  `assertMandateChargeable` (provider refs only — no card data, hard rule #3; refuses an inactive
+  mandate, a debit above the authorised cap, and an auto-debit above the RBI ₹15,000 no-OTP ceiling);
+  `BillingSchedule` + `nextCharge` (monthly anchor day, next debit + pre-debit notice deadline);
+  `computeTaxInvoice` (GST: CGST/SGST intra-state, IGST inter-state, halves sum exactly, GSTIN
+  validated); dunning (`startDunning`/`onChargeResult`) that suspends optional grants but is typed so
+  it can **never stop the shop trading** (P-01); and `foldBilling`, the append-only history read.
+- **Provider port** (`packages/platform/src/billing-provider.ts`): a provider-agnostic
+  `RecurringBillingProvider` interface + `SandboxRecurringBillingProvider` — a real runtime mode (no
+  network, no money) used until a live merchant account exists.
+- **API-11 routes** (`services/platform/src/billing-routes.ts`, wired in `services/api/src/main.ts`
+  via `billingAdapter` in `services/api/src/adapters.ts`): `GET /v1/platform/plans`,
+  `GET/POST /v1/platform/subscription`, `POST /v1/platform/subscription/cancellation`,
+  `POST /v1/platform/billing/webhook`. Event-sourced on a billing sub-stream (append-only, hard rule
+  #2). New permissions `platform.plan.read`, `platform.subscription.read`,
+  `platform.subscription.manage` (owner only — the payer decides), `platform.billing.webhook`
+  (owner + platform_admin) — all `platform.*`, so the platform-admin-posts-no-business-transaction
+  separation still holds.
+
+**Evidence:** `tests/unit/platform-billing.test.ts` (20), `tests/unit/platform-billing-provider.test.ts`
+(8), `tests/integration/subscription-billing.test.ts` (8, over the REAL surface: plans → subscribe →
+sandbox mandate → webhook → dunning → cancel; forged webhook refused; failed run suspends optional
+features but keeps trading; only the owner can subscribe). Surface-contract + thirteen-APIs +
+platform-admin-separation guardrails pass. Full non-DB suite green (6,457); typecheck/lint clean.
+
+**Honesty:** **No re-rate — headline stays 41.5%.** WP5 is a non-denominator work package advancing
+M36. **No real money can move** (sandbox provider) until the owner supplies a Razorpay merchant
+account + KYC. Prices are proposed defaults the owner sets.
+
+**Next:** the Razorpay sandbox adapter behind the provider interface; the marketing landing page,
+login and subscribe/mandate pages; migration MG-03/MG-04.
+
+---
+
+## WP5 — Commercialization kickoff: sell the product as a subscription (12 September 2026)
+
+**Owner direction:** "I want to live commercially from the beginning. Plan and design a landing page, a login
+page, a subscription plan, and an auto-debit payment method every month … complete everything without any
+gaps." Given as an autonomous stretch ("don't wait for me … if you need anything, get it from a web source").
+
+**Interpretation (stated for correction):** sell SRE Retail OS to *other retailers* as a subscription SaaS —
+a marketing funnel (landing → signup → login → plan → monthly auto-debit), **not** a shopper-membership scheme
+for SRE's own customers. If that reading is wrong, the design pivots.
+
+**Planned & designed (this increment — docs only):**
+- `docs/adr/0014-recurring-billing-provider-and-mandates.md` — recurring billing = **Razorpay** (UPI Autopay
+  primary; card e-mandate / e-NACH alternates) behind a provider-agnostic `RecurringBillingProvider` interface
+  via the connector SDK; **no card data** (hard rule #3, provider refs only); **sandbox until the owner is a
+  live merchant** (external blocker); dunning suspends optional feature grants and **never stops trading**
+  (P-01); AI never moves money (hard rule #5); RBI e-Mandate Framework 2026 honoured (₹15k no-AFA ceiling,
+  pre-debit notice). Six-axis §19-substitution analysis included.
+- `docs/design/commercialization/wp5-commercial-surface.md` — the funnel, the reuse-first architecture
+  (extend M36 `packages/platform/src/plans.ts`; routes under **API-11**; static-HTML apps), the data-model
+  additions (`Mandate`, `BillingSchedule`, GST `Invoice`, dunning), the credential-free login design (auth
+  broker + external IdP, per ADR-0013), the slice plan, and the owner external blockers.
+- `docs/COMPLETION-MODEL.md` — **WP5 registered** as a net-new owner work package mapping onto M36 / M01–M02 /
+  API-11. It is **not** a new denominator item and does **not** move the headline on its own.
+
+**Honesty:** **No re-rate — headline stays 41.5%.** This increment is planning/design; maturity moves only as
+the coded slices (WP5-A engine → API-11 routes → adapter → pages) land, each advancing the controlling item it
+touches. Real money cannot move and no real tenant can log in until the owner supplies a Razorpay merchant
+account (KYC), a production identity provider, and final prices.
+
+**Next:** WP5-A — the billing domain engine (`Mandate` / `BillingSchedule` / GST `Invoice` / dunning) in
+`packages/platform`, pure and tested. Migration MG-03 (mapping) / MG-04 (cleaning) woven in.
+
+---
+
 ## Migration MG-02 — preservation (seal / verify) reaches the cloud (12 September 2026)
 
 **Owner direction:** "Continue the migration pipeline." The next step after discovery.
