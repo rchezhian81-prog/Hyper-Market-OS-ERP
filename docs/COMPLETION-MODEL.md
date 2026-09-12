@@ -60,10 +60,14 @@ v2.1, per `CLAUDE.md`):
 finest grain, but their statuses are tracked in prose in `docs/traceability.md`, not as a per-FR ledger.
 The top-level controlling items above are a fixed, enumerable, non-overlapping set that the RTM assigns
 statuses to directly. The R2 compliance annexes (`A1`–`A29`) and the net-new owner-directive work packages
-(WP1 category policy, WP2 e-invoice/e-way-bill, WP3 payroll, WP4 GST-return submission) are **refinements
-that map onto these controlling items** (e.g. WP4 → `M23` finance / GST) and are tracked in the RTM — they
-are deliberately **not** separate denominator entries, to prevent double-counting and denominator drift.
-This is baseline **v1**; a finer per-FR denominator is a future baseline revision (see governance below).
+(WP1 category policy, WP2 e-invoice/e-way-bill, WP3 payroll, WP4 GST-return submission,
+**WP5 commercialization** — marketing landing page + self-service signup + online recurring auto-debit
+billing, mapping onto `M36` (commercial layer / billing), `M01`–`M02` (signup / login / identity) and
+API-11 (Platform); see `docs/design/commercialization/wp5-commercial-surface.md` and `docs/adr/0014-recurring-billing-provider-and-mandates.md`)
+are **refinements that map onto these controlling items** (e.g. WP4 → `M23` finance / GST) and are tracked in
+the RTM — they are deliberately **not** separate denominator entries, to prevent double-counting and
+denominator drift. This is baseline **v1**; a finer per-FR denominator is a future baseline revision (see
+governance below).
 
 ## The six separate scores
 

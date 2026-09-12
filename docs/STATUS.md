@@ -5,6 +5,40 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## WP5 — Commercialization kickoff: sell the product as a subscription (12 September 2026)
+
+**Owner direction:** "I want to live commercially from the beginning. Plan and design a landing page, a login
+page, a subscription plan, and an auto-debit payment method every month … complete everything without any
+gaps." Given as an autonomous stretch ("don't wait for me … if you need anything, get it from a web source").
+
+**Interpretation (stated for correction):** sell SRE Retail OS to *other retailers* as a subscription SaaS —
+a marketing funnel (landing → signup → login → plan → monthly auto-debit), **not** a shopper-membership scheme
+for SRE's own customers. If that reading is wrong, the design pivots.
+
+**Planned & designed (this increment — docs only):**
+- `docs/adr/0014-recurring-billing-provider-and-mandates.md` — recurring billing = **Razorpay** (UPI Autopay
+  primary; card e-mandate / e-NACH alternates) behind a provider-agnostic `RecurringBillingProvider` interface
+  via the connector SDK; **no card data** (hard rule #3, provider refs only); **sandbox until the owner is a
+  live merchant** (external blocker); dunning suspends optional feature grants and **never stops trading**
+  (P-01); AI never moves money (hard rule #5); RBI e-Mandate Framework 2026 honoured (₹15k no-AFA ceiling,
+  pre-debit notice). Six-axis §19-substitution analysis included.
+- `docs/design/commercialization/wp5-commercial-surface.md` — the funnel, the reuse-first architecture
+  (extend M36 `packages/platform/src/plans.ts`; routes under **API-11**; static-HTML apps), the data-model
+  additions (`Mandate`, `BillingSchedule`, GST `Invoice`, dunning), the credential-free login design (auth
+  broker + external IdP, per ADR-0013), the slice plan, and the owner external blockers.
+- `docs/COMPLETION-MODEL.md` — **WP5 registered** as a net-new owner work package mapping onto M36 / M01–M02 /
+  API-11. It is **not** a new denominator item and does **not** move the headline on its own.
+
+**Honesty:** **No re-rate — headline stays 41.5%.** This increment is planning/design; maturity moves only as
+the coded slices (WP5-A engine → API-11 routes → adapter → pages) land, each advancing the controlling item it
+touches. Real money cannot move and no real tenant can log in until the owner supplies a Razorpay merchant
+account (KYC), a production identity provider, and final prices.
+
+**Next:** WP5-A — the billing domain engine (`Mandate` / `BillingSchedule` / GST `Invoice` / dunning) in
+`packages/platform`, pure and tested. Migration MG-03 (mapping) / MG-04 (cleaning) woven in.
+
+---
+
 ## Migration MG-02 — preservation (seal / verify) reaches the cloud (12 September 2026)
 
 **Owner direction:** "Continue the migration pipeline." The next step after discovery.
