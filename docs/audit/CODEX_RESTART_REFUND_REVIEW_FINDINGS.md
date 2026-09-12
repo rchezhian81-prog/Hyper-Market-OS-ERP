@@ -88,9 +88,16 @@ _Recorded here so they are not lost, and explicitly NOT a renumbering of RR-F01�
   (hard rule #10) — the same record-and-flag pattern as the §28 findings. Idempotent on re-sync. A
   refund against a sale the cloud has not banked yet raises no such finding (the over-returns report
   catches it once the sale is present).
-- **GAP-SALE-IDEMPOTENCY-01 — the sale path has the same reused-id exposure RR-F03 fixed for refunds.**
-  `createEdgeNode.commit` appends a sale on every call with no operation-identity guard, so the same
-  sale id committed twice with a different payload would double-append locally (the cloud dedups the
-  send on the key, as with refunds pre-RR-F03). Not in the Codex findings (which are refund-focused)
-  and the sale path is deliberately left untouched here; recorded for a future, separately-reviewed
-  increment that applies the same durable idempotency guard to sales.
+- **GAP-SALE-IDEMPOTENCY-01 — the sale path had the same reused-id exposure RR-F03 fixed for refunds.
+  RESOLVED** (commits `cc1fb17`, `e813760`; evidence `docs/evidence/gap-sale-idempotency-01.md`).
+  `createEdgeNode.commit` appended a sale on every call with no operation-identity guard, so the same
+  sale id committed twice with a different payload double-appended locally (two durable records, only
+  one queued — the cloud deduped the send on the key, hiding the split, as with refunds pre-RR-F03).
+  Reproduced on current `main`, then fixed with the sale-path mirror of the returns guard:
+  `createEdgeNode` now takes an optional `salesIdempotency`, and before any write decides operation +
+  canonical payload identity — an identical retry returns the original outcome with no second append,
+  a reused id with a different payload is refused as an explicit `idempotency_conflict`, and per-id
+  in-flight coalescing serialises concurrent calls. `main.ts` rebuilds the guard from the durable
+  sale log at boot, so the rule holds across a restart. Proven across retries, concurrency and
+  restart. Not in the Codex findings (which are refund-focused) and does not replace or renumber
+  RR-F01–RR-F06.

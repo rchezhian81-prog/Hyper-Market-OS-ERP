@@ -5,6 +5,42 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## GAP-SALE-IDEMPOTENCY-01 — sale operation identity at the edge (12 September 2026)
+
+**Owner direction:** fix GAP-SALE-IDEMPOTENCY-01 (the sale-path analogue of RR-F03, recorded during
+the RR-F01–RR-F04 repair). Same discipline: reproduce, fix, test, evidence, one PR, do not merge/deploy.
+
+**What was wrong (reproduced on current `main`):** RR-F03 gave the refund pipeline operation identity
++ canonical payload identity; the sale pipeline had neither. `createEdgeNode.commit` appended a sale on
+**every** call, so the same sale id committed twice with a different payload wrote **two** conflicting
+durable records and both "succeeded". The split was hidden: the sync outbox mints one idempotency key
+per sale id, so the cloud deduped the send and only one sale was transmitted — the disk and the cloud
+silently disagreed, with no exception (against P-08). Reproduced (guardless `createEdgeNode`, exactly
+how `main.ts` wired the sale path): `S-dup` at ₹50 then `S-dup` at ₹60 → both committed, `durable_sales=2`,
+`queued=1`.
+
+**The fix (the sale-path mirror of the RR-F03 returns guard):**
+- `edge/store-edge/src/index.ts` — `createEdgeNode` gains an optional `salesIdempotency` guard; before
+  any write it decides operation + canonical payload identity: identical retry → original outcome, no
+  second append; reused id + different payload → explicit `idempotency_conflict` ("Do not take payment —
+  tell the manager"), nothing written; per-id `salesInFlight` coalescing serialises concurrent calls.
+  A guardless standalone/demo edge keeps the original behaviour.
+- `edge/store-edge/src/main.ts` — builds `salesIdempotency` from the durable sale log at boot, so the
+  rule holds across a restart (the mirror of how `returnsIdempotency` is built).
+
+After the fix: `S-dup` at ₹60 → `committed=false`, `idempotency_conflict`, `durable_sales=1`.
+
+**Evidence:** `docs/evidence/gap-sale-idempotency-01.md`; register updated in
+`docs/audit/CODEX_RESTART_REFUND_REVIEW_FINDINGS.md` (GAP-SALE-IDEMPOTENCY-01 → RESOLVED). Fix commits
+`cc1fb17` (guard + wiring), `e813760` (tests). Full non-DB suite **6,354 passed / 0 failed** (+7 new);
+real disposable **PostgreSQL 16.13** `DB_TESTS_REQUIRED=1 pnpm run test:db` **1,517 passed / 0 failed**;
+typecheck/lint/secret-scan/audit clean. Ledgers stay append-only (hard rule #2) — a conflict is refused,
+never overwritten. This is the last recorded open operational gap.
+
+**No re-rate. Headline stays 41.5%** — hardening of the M07/§31 offline sale path. Not merged, not deployed.
+
+---
+
 ## GAP-REFUND-XLANE-01 — cross-lane refund at-most-once, closed at the cloud (12 September 2026)
 
 **Owner direction:** fix GAP-REFUND-XLANE-01 (the cloud half of double-refund protection recorded

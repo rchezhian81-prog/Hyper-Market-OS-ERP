@@ -324,6 +324,18 @@ export async function startEdge(
     }),
   );
 
+  // The SALE operation-identity guard (GAP-SALE-IDEMPOTENCY-01) — the mirror of the returns guard,
+  // rebuilt from the durable sale log so the rule holds across a restart: a reused sale id then
+  // returns the original outcome (identical payload) or is refused as a conflict (different payload),
+  // before anything is written.
+  const salesIdempotency = new IdempotencyGuard(
+    salesRecords.flatMap((rec) => {
+      let id: unknown;
+      try { id = (JSON.parse(rec) as { id?: unknown }).id; } catch { return []; }
+      return typeof id === 'string' && id !== '' ? [[id, canonicalHash(rec)] as const] : [];
+    }),
+  );
+
   const node = createEdgeNode({
     tenantId,
     log,
@@ -338,6 +350,8 @@ export async function startEdge(
     returnsIdempotency,
     // The refund's entitlement from trusted local sale + return history (RR-F04).
     returnsEntitlement,
+    // The sale's operation-identity guard, rebuilt from the durable log above (GAP-SALE-IDEMPOTENCY-01).
+    salesIdempotency,
     ...(restoredPack === undefined ? {} : { initialPack: restoredPack }),
   });
 
