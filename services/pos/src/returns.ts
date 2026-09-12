@@ -12,7 +12,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
-  assessReturn, DEFAULT_REFUND_THRESHOLD_MINOR, readRefundThreshold, refundGovernanceFindings,
+  assessReturn, crossLaneRefundFindings, DEFAULT_REFUND_THRESHOLD_MINOR, readRefundThreshold, refundGovernanceFindings,
   type ReturnRequest, type ReturnRequestLine, type RefundGovernanceFinding,
 } from '../../../packages/returns/src/assess-return';
 import {
@@ -337,10 +337,27 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
         const approverHoldsAuthority = s.approvedBy !== undefined && s.approvedBy.trim() !== ''
           ? await deps.canApproveRefund(ctx.tenantId, s.approvedBy)
           : false;
-        const flags = refundGovernanceFindings({
+        const governanceFlags = refundGovernanceFindings({
           refundMinor: s.refundMinor, approvalThresholdMinor: thresholdMinor, processedBy: s.processedBy,
           ...(s.approvedBy === undefined ? {} : { approvedBy: s.approvedBy }), approverHoldsAuthority,
         });
+
+        // Global at-most-once against the WHOLE cloud history (GAP-REFUND-XLANE-01). A lane enforces
+        // this for its own sales; a refund against a bill rung on another lane is invisible to it, and
+        // only the cloud sees every lane at once. With this return folded in, flag it if it now
+        // over-returns goods or over-refunds money. The money already left the lane, so — like the §28
+        // findings — it is recorded and surfaced as a visible exception, never rejected (hard rule #10).
+        // When the cloud has not banked the sale (e.g. it has not synced yet) there is nothing trusted
+        // to check against, so no such finding is raised here; the over-returns report catches it once
+        // the sale is present.
+        const sale = await deps.originalSale(ctx.tenantId, saleId);
+        const crossLaneFlags = sale === undefined ? [] : crossLaneRefundFindings({
+          sale,
+          priorReturns: await Promise.resolve(deps.priorReturns(ctx.tenantId, saleId)),
+          priorRefunds: await Promise.resolve(deps.priorRefunds(ctx.tenantId, saleId)),
+          thisReturn: { returnId: s.returnId, lines: s.lines, refundMinor: s.refundMinor },
+        });
+        const flags = [...governanceFlags, ...crossLaneFlags];
 
         const record: ReturnRecord = {
           returnId: s.returnId, number: s.number, originalSaleId: saleId,

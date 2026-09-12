@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  assessReturn, refundGovernanceFindings, type ReturnRequest,
+  assessReturn, refundGovernanceFindings, crossLaneRefundFindings, type ReturnRequest,
   type OriginalSale, type RecordedReturn,
 } from '../../packages/returns/src/index';
 
@@ -97,5 +97,46 @@ describe('refundGovernanceFindings (M13-FR-01, §28 on sync)', () => {
   });
   it('a material refund approved by a genuinely-authorised, different person has no findings', () => {
     expect(f({ approvedBy: 'u-mgr', approverHoldsAuthority: true })).toEqual([]);
+  });
+});
+
+describe('crossLaneRefundFindings — global at-most-once from the whole cloud history (GAP-REFUND-XLANE-01)', () => {
+  // SALE sold 3 units of p1 for ₹150.
+  const priorReturn = (returnId: string, qty: number): RecordedReturn => ({
+    returnId, originalSaleId: 'S-1', processedAt: '2026-08-01T11:00:00.000Z',
+    lines: [{ productId: 'p1', uom: 'ea', quantityMinor: qty }],
+  });
+
+  it('no findings when this return stays within what the bill sold and was paid', () => {
+    const findings = crossLaneRefundFindings({
+      sale: SALE, priorReturns: [priorReturn('RT-A', 1)], priorRefunds: [{ returnId: 'RT-A', originalSaleId: 'S-1', refundMinor: 5_000 }],
+      thisReturn: { returnId: 'RT-B', lines: [{ productId: 'p1', uom: 'ea', quantityMinor: 1 }], refundMinor: 5_000 },
+    });
+    expect(findings).toEqual([]); // 2 of 3 units, ₹100 of ₹150 — within entitlement
+  });
+
+  it('flags an over-return of goods once cumulative exceeds what was sold', () => {
+    const findings = crossLaneRefundFindings({
+      sale: SALE, priorReturns: [priorReturn('RT-A', 3)], priorRefunds: [{ returnId: 'RT-A', originalSaleId: 'S-1', refundMinor: 15_000 }],
+      thisReturn: { returnId: 'RT-B', lines: [{ productId: 'p1', uom: 'ea', quantityMinor: 1 }], refundMinor: 0 },
+    });
+    expect(findings).toContain('over_returned_goods'); // 4 of 3 units
+  });
+
+  it('flags an over-refund of money independently of the goods count', () => {
+    const findings = crossLaneRefundFindings({
+      sale: SALE, priorReturns: [priorReturn('RT-A', 1)], priorRefunds: [{ returnId: 'RT-A', originalSaleId: 'S-1', refundMinor: 15_000 }],
+      thisReturn: { returnId: 'RT-B', lines: [{ productId: 'p1', uom: 'ea', quantityMinor: 1 }], refundMinor: 5_000 },
+    });
+    expect(findings).toContain('refund_exceeds_paid');   // ₹200 of ₹150 paid
+    expect(findings).not.toContain('over_returned_goods'); // 2 of 3 units — goods fine
+  });
+
+  it('is idempotent: folding a return already in the history changes nothing', () => {
+    const findings = crossLaneRefundFindings({
+      sale: SALE, priorReturns: [priorReturn('RT-A', 3)], priorRefunds: [{ returnId: 'RT-A', originalSaleId: 'S-1', refundMinor: 15_000 }],
+      thisReturn: { returnId: 'RT-A', lines: [{ productId: 'p1', uom: 'ea', quantityMinor: 3 }], refundMinor: 15_000 },
+    });
+    expect(findings).toEqual([]); // RT-A counted once — exactly 3 of 3, ₹150 of ₹150
   });
 });

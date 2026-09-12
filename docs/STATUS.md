@@ -5,6 +5,41 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## GAP-REFUND-XLANE-01 — cross-lane refund at-most-once, closed at the cloud (12 September 2026)
+
+**Owner direction:** fix GAP-REFUND-XLANE-01 (the cloud half of double-refund protection recorded
+during the RR-F04 repair). Same discipline: reproduce, fix, test, evidence, one PR, do not merge/deploy.
+
+**What was wrong (reproduced on current `main`):** RR-F04 enforces refund at-most-once *locally* per
+edge, but an edge only sees its own lane. The cloud synced-return route
+(`POST /v1/sales/:saleId/returns/synced`) enforced the §28 governance findings yet never checked
+global at-most-once, so a refund against a bill rung on another lane could over-return goods (or
+over-refund money) and be recorded with **no exception**. Reproduced: bank 1 unit, two synced refunds
+under different ids → both 202, flags `[]`, governance-exceptions count 0 (while the over-returns
+report showed returned 2 of 1 sold).
+
+**The fix (record-and-flag, never reject — the money already left the lane, hard rule #10):**
+- `packages/returns/src/assess-return.ts` — new pure `crossLaneRefundFindings`: with this return
+  folded into the cloud's full history, returns `over_returned_goods` / `refund_exceeds_paid`
+  (added to `RefundGovernanceFinding`). Idempotent on re-sync.
+- `services/pos/src/returns.ts` — the synced route computes these against the authoritative sale +
+  prior returns/refunds and records them as `governanceFlags`, surfaced on the existing
+  `/v1/pos/return-governance-exceptions` loss report. A not-yet-banked sale raises no finding.
+
+After the fix: the second cross-lane refund is 202 with
+`['over_returned_goods','refund_exceeds_paid']`, one governance exception, idempotent on re-sync.
+
+**Evidence:** `docs/evidence/gap-refund-xlane-01.md`; register updated in
+`docs/audit/CODEX_RESTART_REFUND_REVIEW_FINDINGS.md` (GAP-REFUND-XLANE-01 → RESOLVED). Full non-DB
+suite **6,347 passed / 0 failed** (+10 new); real disposable **PostgreSQL 16.13**
+`DB_TESTS_REQUIRED=1 pnpm run test:db` **1,510 passed / 0 failed**; typecheck/lint/secret-scan/audit
+clean. Honest note: the rare *concurrent* race for the last unit is caught by the over-returns report
+rather than flagged at sync time (stated in the evidence). `GAP-SALE-IDEMPOTENCY-01` remains open.
+
+**No re-rate. Headline stays 41.5%** — hardening of the M13 refund controls. Not merged, not deployed.
+
+---
+
 ## RR-F01…RR-F04 — the Codex refund-review findings, reproduced and repaired (11 September 2026)
 
 **Owner direction:** the four original Codex findings (RR-F01–RR-F04), recorded verbatim; reproduce

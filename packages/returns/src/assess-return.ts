@@ -24,8 +24,8 @@
 
 import type { Disposition, RefundStatus } from './returns';
 import {
-  returnRegister, returnableLines, alreadyRefundedMinor,
-  type OriginalSale, type RecordedReturn, type ReturnableLine,
+  returnRegister, returnableLines, overReturned, alreadyRefundedMinor,
+  type OriginalSale, type RecordedReturn, type ReturnableLine, type ReturnedLine,
 } from './return-register';
 
 /** Cash and store credit settle at the desk; a card/UPI reversal is a provider round-trip. */
@@ -102,7 +102,12 @@ export function readRefundThreshold(v: unknown): number | 'invalid' {
 export type RefundGovernanceFinding =
   | 'given_without_approval'      // material, but no approver was named at the lane
   | 'approved_by_the_processor'   // the person who gave the refund also "approved" it (§28)
-  | 'approver_lacks_authority';   // the named approver does not hold refund-approval authority
+  | 'approver_lacks_authority'    // the named approver does not hold refund-approval authority
+  // Cross-lane / global at-most-once breaches, visible only where the whole history is (the cloud).
+  // A synced refund never rejects (the money already left the lane), so these are surfaced as visible
+  // exceptions the same way the §28 findings are (record-and-flag, hard rule #10). GAP-REFUND-XLANE-01.
+  | 'over_returned_goods'         // cumulative returned of a product now exceeds what the bill sold
+  | 'refund_exceeds_paid';        // cumulative refunded on the bill now exceeds what it was paid
 
 /**
  * The §28 findings on an already-given (synced) refund, in order of precedence. Pure: the caller supplies
@@ -123,6 +128,40 @@ export function refundGovernanceFindings(input: {
   if (approvedBy === input.processedBy) return ['approved_by_the_processor'];
   if (!input.approverHoldsAuthority) return ['approver_lacks_authority'];
   return [];
+}
+
+/**
+ * The GLOBAL at-most-once findings on a refund that ALREADY HAPPENED at the lane and is now
+ * reconciling on sync (GAP-REFUND-XLANE-01). A lane enforces at-most-once for its own sales, but a
+ * refund against a bill rung on another lane is invisible to it — only the cloud sees the whole
+ * history. Here, WITH this return folded into that history, we ask two questions the lane could not:
+ * has more of a product now come back than the bill sold, and has more money now been refunded than
+ * the bill was paid? Either is a loss a person must work, but the money already left the lane, so it
+ * is surfaced as a visible exception (hard rule #10), never a rejection — exactly as the §28 findings
+ * are.
+ *
+ * Idempotent on a re-sync: the register and the refund total both dedupe by return id, so folding
+ * this return in when it is already present changes nothing.
+ */
+export function crossLaneRefundFindings(input: {
+  readonly sale: OriginalSale;
+  readonly priorReturns: readonly RecordedReturn[];
+  readonly priorRefunds: readonly { readonly returnId: string; readonly originalSaleId: string | null; readonly refundMinor: number }[];
+  readonly thisReturn: { readonly returnId: string; readonly lines: readonly ReturnedLine[]; readonly refundMinor: number };
+}): readonly RefundGovernanceFinding[] {
+  const findings: RefundGovernanceFinding[] = [];
+  const recorded: RecordedReturn = {
+    returnId: input.thisReturn.returnId, originalSaleId: input.sale.saleId, processedAt: '', lines: input.thisReturn.lines,
+  };
+  const register = returnRegister([...input.priorReturns, recorded]);
+  if (overReturned(input.sale, register).length > 0) findings.push('over_returned_goods');
+
+  const refundedWithThis = alreadyRefundedMinor(input.sale.saleId, [
+    ...input.priorRefunds,
+    { returnId: input.thisReturn.returnId, originalSaleId: input.sale.saleId, refundMinor: input.thisReturn.refundMinor },
+  ]);
+  if (refundedWithThis > input.sale.totalMinor) findings.push('refund_exceeds_paid');
+  return findings;
 }
 
 /**

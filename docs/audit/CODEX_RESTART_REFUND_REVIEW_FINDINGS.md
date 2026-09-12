@@ -77,16 +77,17 @@ coordination or allocation.
 
 _Recorded here so they are not lost, and explicitly NOT a renumbering of RR-F01–RR-F06._
 
-- **GAP-REFUND-XLANE-01 — cross-lane / disconnected refund at-most-once needs cloud reconciliation.**
-  RR-F04 is fixed *locally*: an edge enforces entitlement for a sale it rang, from its own trusted
-  sold + returned totals. But an edge only knows its own sales and returns. A refund against a sale
-  rung on another lane (or with no receipt) cannot be entitlement-checked at that edge, so the edge
-  applies the safe policy — allow it under the existing §28 approval/cap controls and mark it locally
-  unverified — and does **not** claim global at-most-once. Enforcing at-most-once ACROSS lanes needs
-  the cloud (which sees every lane's sales and returns) to reconcile refunds on sync — e.g. a
-  cumulative-returned check on the `POST /v1/sales/:saleId/returns/synced` route, or a returned-units
-  allocation handed to lanes. This is a cloud increment, separate from these findings and not a
-  renumbering of them.
+- **GAP-REFUND-XLANE-01 — cross-lane / disconnected refund at-most-once needs cloud reconciliation.
+  RESOLVED** (commits `a75bffc`, `b3c8880`; evidence `docs/evidence/gap-refund-xlane-01.md`).
+  RR-F04 fixed at-most-once *locally* per edge; this closes the cloud half. The synced-return route
+  (`POST /v1/sales/:saleId/returns/synced`) now checks the reconciling refund against the cloud's
+  authoritative sale and full return/refund history (`crossLaneRefundFindings`): a cumulative
+  over-return of goods, or an over-refund of money, is **recorded and flagged as a visible governance
+  exception** (`over_returned_goods` / `refund_exceeds_paid`) on
+  `/v1/pos/return-governance-exceptions`. The money already left the lane, so it is never rejected
+  (hard rule #10) — the same record-and-flag pattern as the §28 findings. Idempotent on re-sync. A
+  refund against a sale the cloud has not banked yet raises no such finding (the over-returns report
+  catches it once the sale is present).
 - **GAP-SALE-IDEMPOTENCY-01 — the sale path has the same reused-id exposure RR-F03 fixed for refunds.**
   `createEdgeNode.commit` appends a sale on every call with no operation-identity guard, so the same
   sale id committed twice with a different payload would double-append locally (the cloud dedups the
