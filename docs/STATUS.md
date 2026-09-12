@@ -5,6 +5,39 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M13 refund screen — Slice 3: the offline end-to-end proof (12 September 2026)
+
+**Owner direction:** "Offline end-to-end proof" — prove a cashier can complete a real refund on the
+device with no connection, rather than assert it.
+
+**Built in this slice:** `tests/e2e/the-served-till-takes-a-refund.e2e.ts` — the refund's mirror of the
+sale's served-till e2e. A real Chromium opens the box's OWN served POS screen (the screens server the
+container entry point runs), with **no cloud configured** — the offline case the refund screen exists
+for. It rings a sale, then refunds it through the shell's own surface, driving in one real browser:
+- the **cross-origin `GET /lane/lookup`** (screen port → socket port) that finds the bill from the
+  box's own durable log — no network;
+- the **§28 manager approval** (a different person from the cashier);
+- the **durable-first `POST /lane/returns`** write, landing the refund on the box's returns log and
+  queueing it for the cloud to reconcile later — exactly once.
+
+Two cases proven end-to-end: (1) a manager-approved cash refund settles, is durable + queued once, the
+sale log untouched, and a **reused refund id is refused as a conflict — no double payout**; (2) a
+refund with **no manager is refused** (`approval_required`), nothing written or queued. Self-skips
+where no browser binary is present (a local/deploy proof, not a CI gate) — the same as the sale e2e.
+
+**Evidence:** `pnpm run test:e2e` → **6 files, 24 tests passed** (the 2 new refund cases + all
+existing) on the pre-installed Chromium; typecheck/lint/secret-scan clean; the POS bundle rebuilds
+cleanly; full non-DB and real-PostgreSQL suites unchanged (no source touched — only a new e2e test).
+
+**Refund screen status:** functionally **proven end-to-end, offline**. Still open before it is
+"done": product names on screen (shown by code today), no-receipt refunds (await a cap), and the
+**usability acceptance** — a person timing a new cashier against the ≤3-interaction bar
+(`docs/design/usability-test-script.md`). The e2e proves it *works*, not yet that it meets the *speed*
+bar. **No re-rate — headline stays 41.5%** until the owner is satisfied it meets the acceptance bar.
+Not merged, not deployed.
+
+---
+
 ## M13 refund screen — Slice 2c: the on-screen panels (12 September 2026)
 
 **Owner direction:** continuing "Start Slice 2." The owner made the three screen decisions:
