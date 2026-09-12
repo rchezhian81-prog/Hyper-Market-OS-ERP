@@ -63,6 +63,15 @@ export const LANE_HOST = '127.0.0.1';
 const LANE_ROUTES = ['/lane/sales', '/lane/returns'] as const;
 
 /**
+ * The one READ route: look up a bill this lane rang, for the refund screen (M13-FR-01). A GET, so it
+ * mutates nothing — the RR-F01 "a text/plain write slipped through" problem cannot arise, because
+ * there is no write. It returns a customer's bill, so it is still restricted to a loopback origin
+ * (another page on this same till): a foreign origin is refused outright rather than relying on the
+ * browser to withhold the reply. Read-only and loopback-only.
+ */
+const LANE_LOOKUP_ROUTE = '/lane/lookup';
+
+/**
  * Is this `Origin` header another page on this same machine? `127.0.0.1`, `localhost` and IPv6
  * `[::1]` on any port; nothing else. Undefined (a same-origin or non-browser call that sends no
  * Origin) is not cross-origin, so it needs no allowance and is not one of these.
@@ -125,7 +134,7 @@ function corsHeadersFor(origin: string | undefined): Record<string, string> {
   if (!isLoopbackOrigin(origin)) return {};
   return {
     'access-control-allow-origin': origin!,
-    'access-control-allow-methods': 'POST, OPTIONS',
+    'access-control-allow-methods': 'GET, POST, OPTIONS',
     'access-control-allow-headers': 'content-type, idempotency-key',
     'access-control-max-age': '600',
     // The allowed origin depends on the request, so caches must key on it.
@@ -169,7 +178,40 @@ export function startLaneServer(input: {
 
   const server: Server = createServer((req, res) => {
     const cors = corsHeadersFor(req.headers.origin);
+    // The path only — the lookup route carries a `?receipt=` query the write routes never do.
+    const pathname = ((): string => {
+      try { return new URL(req.url ?? '', 'http://lane').pathname; } catch { return req.url ?? ''; }
+    })();
     const route = LANE_ROUTES.find((r) => r === req.url);
+
+    // The READ route: GET /lane/lookup?receipt=… — resolve a bill this lane rang for the refund
+    // screen (M13-FR-01). No write happens here, so a foreign-origin call cannot mutate anything; but
+    // it returns a customer's bill, so a foreign origin is refused outright (403, no data) rather than
+    // computed-and-withheld. A loopback origin (another page on this same till) is served.
+    if (req.method === 'GET' && pathname === LANE_LOOKUP_ROUTE) {
+      if (typeof req.headers.origin === 'string' && req.headers.origin !== '' && !isLoopbackOrigin(req.headers.origin)) {
+        send(res, 403, { error: 'this request did not come from this till' }, cors);
+        return;
+      }
+      const receipt = ((): string => {
+        try { return new URL(req.url ?? '', 'http://lane').searchParams.get('receipt') ?? ''; } catch { return ''; }
+      })();
+      if (receipt === '') {
+        send(res, 400, { error: 'a receipt number or sale id is required' }, cors);
+        return;
+      }
+      void (async () => {
+        try {
+          const result = await input.node.lookupSale(receipt);
+          // 200 either way: the request was understood. `found` lets the screen tell "no such bill on
+          // this lane" (send them to look it up online / at the desk) from a lane that is broken.
+          send(res, 200, result === undefined ? { found: false } : { found: true, ...result }, cors);
+        } catch (e) {
+          send(res, 200, { found: false, detail: e instanceof Error ? e.message : String(e) }, cors);
+        }
+      })();
+      return;
+    }
 
     // The browser's preflight for the cross-origin POST from the till's screen. Answered only for a
     // loopback origin; anything else gets no allow header and the browser refuses to send the POST.
@@ -180,7 +222,8 @@ export function startLaneServer(input: {
     }
 
     if (req.method !== 'POST' || route === undefined) {
-      send(res, 404, { error: `the lane socket serves: ${LANE_ROUTES.map((r) => `POST ${r}`).join(', ')}` }, cors);
+      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `GET ${LANE_LOOKUP_ROUTE}?receipt=…`].join(', ');
+      send(res, 404, { error: `the lane socket serves: ${serves}` }, cors);
       return;
     }
     const isReturn = route === '/lane/returns';
