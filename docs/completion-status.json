@@ -5,7 +5,7 @@
     "denominator": 104,
     "denominatorSource": "roadmap v2.0/v2.1 controlling structure: M01-M36 (36) + D01-D14 (14) + A01-A10 (10) + WF-01..20 (20) + QG-01..12 (12) + MG-01..12 (12). See docs/COMPLETION-MODEL.md.",
     "statusSource": "docs/traceability.md (RTM) + docs/STATUS.md, read conservatively (lower status when ambiguous) on 13 Aug 2026",
-    "previousProductCompletionPct": 40.3,
+    "previousProductCompletionPct": 41.5,
     "note": "First computation — this is the baseline, so previous == current and change == 0. Established alongside the reporting model; carries no new product maturity itself."
   },
   "items": [
@@ -101,17 +101,17 @@
     {"id": "QG-10", "label": "PARTIALLY_WIRED", "evidence": "CI smoke/health/rollback; production verification pending"},
     {"id": "QG-11", "label": "PARTIALLY_WIRED", "evidence": "kill-switch/authority/budget integration-tested; model accuracy evals pending"},
     {"id": "QG-12", "label": "PARTIALLY_WIRED", "evidence": "owner decision register/process exists; per-gate evidence ongoing"},
-    {"id": "MG-01", "label": "ENGINE_ONLY", "evidence": "discovery framework only; legacy inventory not performed"},
-    {"id": "MG-02", "label": "PARTIALLY_WIRED", "evidence": "backup-verification integration-tested (verify/reconcile)"},
-    {"id": "MG-03", "label": "PARTIALLY_WIRED", "evidence": "connector-mapping validation integration-tested"},
-    {"id": "MG-04", "label": "ENGINE_ONLY", "evidence": "cleaning engine only; no live data run"},
-    {"id": "MG-05", "label": "ENGINE_ONLY", "evidence": "trial-load engine only; migration refuses production"},
-    {"id": "MG-06", "label": "PARTIALLY_WIRED", "evidence": "reconcile-restore integration-tested; verification report served"},
+    {"id": "MG-01", "label": "WIRED", "evidence": "WIRED: POST /v1/migration/discovery on API-12; tested in tests/unit/migration-discovery-route.test.ts"},
+    {"id": "MG-02", "label": "WIRED", "evidence": "WIRED: seal + verify on API-12; tested in tests/unit/migration-preservation-route.test.ts"},
+    {"id": "MG-03", "label": "WIRED", "evidence": "WIRED: mapping approve + coverage on API-12; tested in tests/unit/migration-mapping-route.test.ts"},
+    {"id": "MG-04", "label": "WIRED", "evidence": "WIRED: cleaning exceptions on API-12; tested in tests/unit/migration-cleaning-route.test.ts"},
+    {"id": "MG-05", "label": "WIRED", "evidence": "WIRED: trial-load on API-12 (refuses production); tested in tests/unit/migration-trial-reconcile-route.test.ts"},
+    {"id": "MG-06", "label": "WIRED", "evidence": "WIRED: reconciliation + control-total sign-off (CA signs finance/tax) on API-12; tested in migration-trial-reconcile-route + migration-sign-route"},
     {"id": "MG-07", "label": "ENGINE_ONLY", "evidence": "history migration engine only; no legacy data"},
-    {"id": "MG-08", "label": "ENGINE_ONLY", "evidence": "opening-state sign-off logic only; not loaded"},
-    {"id": "MG-09", "label": "ENGINE_ONLY", "evidence": "delta capture engine only; not run"},
+    {"id": "MG-08", "label": "WIRED", "evidence": "WIRED: opening-events on API-12 (append-only, needs signed totals); tested in tests/unit/migration-opening-delta-route.test.ts"},
+    {"id": "MG-09", "label": "WIRED", "evidence": "WIRED: delta apply on API-12 (exactly-once); tested in tests/unit/migration-opening-delta-route.test.ts"},
     {"id": "MG-10", "label": "NOT_STARTED", "evidence": "parallel run is a pilot activity; not built"},
-    {"id": "MG-11", "label": "PARTIALLY_WIRED", "evidence": "cutover gate guardrail-tested; cutover-weekend runbook complete"},
+    {"id": "MG-11", "label": "WIRED", "evidence": "WIRED: cutover decision gate on API-12 (derived 8-check, not-known-fails); tested in tests/unit/migration-cutover-route.test.ts"},
     {"id": "MG-12", "label": "ENGINE_ONLY", "evidence": "retention/archive engine only; retire post-cutover"}
   ]
 }
