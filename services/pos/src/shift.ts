@@ -5,7 +5,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
-import { assessShiftClose, checkDenominationCount, type ShiftCloseInput, type DenominationCount } from '../../../packages/till/src/index';
+import { assessShiftClose, checkDenominationCount, assessOverShortReview, type ShiftCloseInput, type DenominationCount } from '../../../packages/till/src/index';
 
 /** A shift close as it is persisted — enough to list over/short and to answer idempotently. */
 export interface ClosedShiftRecord {
@@ -28,11 +28,32 @@ export interface ClosedShiftRecord {
   readonly closedAt: string;
 }
 
+/**
+ * A cash-office sign-off on a material over/short (M14 / P-03). Append-only, one accountable reviewer
+ * who is NOT the cashier who counted the drawer. It closes the exception; it never edits the close.
+ */
+export interface OverShortReview {
+  readonly shiftId: string;
+  /** The reviewer — the authenticated caller, never the cashier who closed the shift. */
+  readonly reviewedBy: string;
+  /** The cashier whose drawer this was, copied from the close for the audit trail. */
+  readonly cashierId: string;
+  readonly varianceMinor: number;
+  /** The reviewer's coded finding for why the drawer was over/short. */
+  readonly disposition: string;
+  /** Optional free-text detail alongside the coded disposition. */
+  readonly note: string | null;
+  readonly reviewedAt: string;
+}
+
 export interface ShiftDeps {
   readonly closedShift: (tenantId: string, shiftId: string) => Promise<ClosedShiftRecord | undefined> | ClosedShiftRecord | undefined;
   readonly recordShiftClose: (tenantId: string, record: ClosedShiftRecord) => Promise<void> | void;
   /** Shifts closed with a material over/short — the cash office's reconciliation list. */
   readonly overShortShifts: (tenantId: string) => Promise<readonly ClosedShiftRecord[]> | readonly ClosedShiftRecord[];
+  /** Cash-office sign-offs recorded against material over/shorts, so the list shows what is still open. */
+  readonly overShortReviews: (tenantId: string) => Promise<readonly OverShortReview[]> | readonly OverShortReview[];
+  readonly recordOverShortReview: (tenantId: string, review: OverShortReview) => Promise<void> | void;
   readonly now: () => string;
 }
 
@@ -133,14 +154,86 @@ export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
       permission: 'till.shift.read',
       handler: async (ctx) => {
         const rows = await deps.overShortShifts(ctx.tenantId);
+        const reviews = await deps.overShortReviews(ctx.tenantId);
+        const reviewByShift = new Map(reviews.map((r) => [r.shiftId, r] as const));
+        const mapped = rows.map((r) => {
+          const review = reviewByShift.get(r.shiftId);
+          return {
+            shiftId: r.shiftId, tillId: r.tillId, cashierId: r.cashierId, tradingDay: r.tradingDay,
+            varianceMinor: r.varianceMinor, reasonCode: r.reasonCode, denominations: r.denominations ?? null,
+            reviewed: review !== undefined,
+            reviewedBy: review?.reviewedBy ?? null,
+            disposition: review?.disposition ?? null,
+            reviewedAt: review?.reviewedAt ?? null,
+          };
+        });
         return {
           status: 200,
           body: {
-            overShort: rows.map((r) => ({ shiftId: r.shiftId, tillId: r.tillId, cashierId: r.cashierId, tradingDay: r.tradingDay, varianceMinor: r.varianceMinor, reasonCode: r.reasonCode, denominations: r.denominations ?? null })),
+            overShort: mapped,
             totalVarianceMinor: rows.reduce((s, r) => s + r.varianceMinor, 0),
+            // The cash office works the OPEN ones — a shortage nobody signed off is the one that matters.
+            openCount: mapped.filter((r) => !r.reviewed).length,
             asAt: deps.now(),
           },
         };
+      },
+    },
+    {
+      // Sign off a material over/short (P-03 control by exception). The reviewer is the authenticated
+      // caller — never the cashier who counted the drawer (separation of duties) — and must state a
+      // finding. Append-only: it closes the exception, it never edits the close. Idempotent per shift.
+      api: 'API-05', method: 'POST', path: '/v1/shifts/:shiftId/over-short/review',
+      permission: 'till.overshort.review', idempotent: true,
+      handler: async (ctx) => {
+        const shiftId = ctx.params['shiftId'] ?? '';
+        const record = await deps.closedShift(ctx.tenantId, shiftId);
+        if (record === undefined) {
+          throw apiError(404, {
+            code: 'no_such_closed_shift',
+            whatHappened: `There is no closed shift "${shiftId}" to review.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Check the shift id on the over/short list and try again.',
+          });
+        }
+
+        const existing = (await deps.overShortReviews(ctx.tenantId)).find((r) => r.shiftId === shiftId);
+        if (existing !== undefined) {
+          return { status: 200, body: { shiftId, reviewed: true, reviewedBy: existing.reviewedBy, disposition: existing.disposition, alreadyReviewed: true } };
+        }
+
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (typeof b['disposition'] !== 'string' || (b['note'] !== undefined && typeof b['note'] !== 'string')) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_review',
+            whatHappened: 'Signing off an over/short needs a disposition (a coded finding); a note is optional text.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was signed off. Send a disposition, and optionally a note.',
+          });
+        }
+
+        const disposition = b['disposition'] as string;
+        const assessment = assessOverShortReview({
+          reviewerId: ctx.userId, cashierId: record.cashierId,
+          exceptionRaised: record.exceptionRaised, disposition,
+        });
+        if (!assessment.ok) {
+          throw apiError(422, {
+            code: assessment.refusedBecause!,
+            whatHappened: assessment.detail,
+            wasItSaved: 'not_saved',
+            nextSafeAction: assessment.refusedBecause === 'cannot_review_your_own_drawer'
+              ? 'A different person — the cash office or the store manager — must sign this off.'
+              : 'Send a stated finding for the over/short, or pick a shift that actually has one.',
+          });
+        }
+
+        const review: OverShortReview = {
+          shiftId, reviewedBy: ctx.userId, cashierId: record.cashierId, varianceMinor: record.varianceMinor,
+          disposition, note: typeof b['note'] === 'string' ? b['note'] : null, reviewedAt: deps.now(),
+        };
+        await deps.recordOverShortReview(ctx.tenantId, review);
+        return { status: 201, body: { shiftId, reviewed: true, reviewedBy: review.reviewedBy, disposition: review.disposition, varianceMinor: review.varianceMinor } };
       },
     },
   ];

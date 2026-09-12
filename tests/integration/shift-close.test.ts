@@ -23,6 +23,9 @@ const close = (h: ApiHarness, tenantId: string, userId: string, shiftId: string,
 const overShort = (h: ApiHarness, tenantId: string, userId: string) =>
   h.request({ method: 'GET', path: '/v1/shifts/over-short', userId, tenantId });
 
+const review = (h: ApiHarness, tenantId: string, userId: string, shiftId: string, body: Record<string, unknown>, key?: string) =>
+  h.request({ method: 'POST', path: `/v1/shifts/${shiftId}/over-short/review`, userId, tenantId, idempotencyKey: key ?? `rv-${shiftId}`, body });
+
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
 interface Closed { varianceMinor: number; exceptionRaised: boolean; expectedMinor: number }
 interface OverShort { overShort: { shiftId: string; varianceMinor: number }[]; totalVarianceMinor: number }
@@ -141,5 +144,76 @@ describe('a shift closes on a blind count, over/short valued and explained (M14-
     // Tenant B has no over/short of its own.
     await h.seedOwner(B, 'u-owner-b');
     expect(((await overShort(h, B, 'u-owner-b')).body as OverShort).overShort).toEqual([]);
+  });
+});
+
+// The cash-office sign-off on a material over/short (M14 / P-03 control by exception). A shortage that
+// is only listed is a shortage nobody worked; this closes it — by a second, accountable person who is
+// NOT the cashier who counted the drawer, with a stated finding, recorded append-only.
+interface ReviewRow { shiftId: string; reviewed: boolean; reviewedBy: string | null; disposition: string | null }
+interface OverShortList { overShort: ReviewRow[]; openCount: number }
+const codeOfReview = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
+
+describe('a material over/short is signed off by the cash office (M14 / P-03, API-05)', () => {
+  it('lets a second person sign off a cashier’s short, and the list then shows it reviewed with none open', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    // cashier-1 counted the drawer; it came up ₹1,000 short (material).
+    await close(h, A, 'u-owner', 'S1', base({ countedCashMinor: 114_000, reasonCode: 'short_at_count' }));
+    let list = (await overShort(h, A, 'u-owner')).body as OverShortList;
+    expect(list.openCount).toBe(1);
+    expect(list.overShort[0]!.reviewed).toBe(false);
+
+    const signed = await review(h, A, 'u-owner', 'S1', { disposition: 'gave_wrong_change_on_a_note', note: 'CCTV confirms overpayment' });
+    expect(signed.status).toBe(201);
+
+    list = (await overShort(h, A, 'u-owner')).body as OverShortList;
+    expect(list.openCount).toBe(0);
+    const row = list.overShort.find((r) => r.shiftId === 'S1')!;
+    expect(row.reviewed).toBe(true);
+    expect(row.reviewedBy).toBe('u-owner');
+    expect(row.disposition).toBe('gave_wrong_change_on_a_note');
+  });
+
+  it('refuses the cashier signing off their OWN drawer (separation of duties)', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-sm', 'store_manager'); // a store manager who also ran a till
+    // u-sm is the cashier on this shift.
+    await close(h, A, 'u-owner', 'S1', base({ cashierId: 'u-sm', countedCashMinor: 114_000, reasonCode: 'short' }));
+
+    const ownReview = await review(h, A, 'u-sm', 'S1', { disposition: 'i_recount_it' });
+    expect(ownReview.status).toBe(422);
+    expect(codeOfReview(ownReview)).toBe('cannot_review_your_own_drawer');
+
+    // A different accountable person (the owner) may sign it off.
+    expect((await review(h, A, 'u-owner', 'S1', { disposition: 'reviewed_ok' })).status).toBe(201);
+  });
+
+  it('refuses a sign-off on a drawer that balanced within tolerance, and 404s an unknown shift', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await close(h, A, 'u-owner', 'S1', base()); // variance 0, no exception
+    const clean = await review(h, A, 'u-owner', 'S1', { disposition: 'nothing_wrong' });
+    expect(clean.status).toBe(422);
+    expect(codeOfReview(clean)).toBe('nothing_to_review');
+
+    const missing = await review(h, A, 'u-owner', 'S-none', { disposition: 'x' });
+    expect(missing.status).toBe(404);
+  });
+
+  it('a cashier cannot reach the sign-off at all (least privilege), and it is idempotent once signed', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-cash', 'cashier');
+    await close(h, A, 'u-owner', 'S1', base({ countedCashMinor: 114_000, reasonCode: 'short' }));
+
+    expect((await review(h, A, 'u-cash', 'S1', { disposition: 'let_me_clear_it' })).status).toBe(403);
+
+    expect((await review(h, A, 'u-owner', 'S1', { disposition: 'signed' }, 'rv-1')).status).toBe(201);
+    const again = await review(h, A, 'u-owner', 'S1', { disposition: 'signed_again' }, 'rv-2');
+    expect(again.status).toBe(200);
+    expect((again.body as { alreadyReviewed?: boolean }).alreadyReviewed).toBe(true);
+    expect((again.body as { disposition: string }).disposition).toBe('signed'); // the first sign-off stands
   });
 });
