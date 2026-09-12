@@ -14,6 +14,7 @@ import { readFileSync, existsSync } from 'node:fs';
 
 const landing = readFileSync('apps/site/web/index.html', 'utf8');
 const login = readFileSync('apps/site/web/login.html', 'utf8');
+const subscribe = readFileSync('apps/site/web/subscribe.html', 'utf8');
 
 describe('the landing page exists and describes the real product', () => {
   it('is a titled, standalone page', () => {
@@ -42,8 +43,37 @@ describe('the landing page exists and describes the real product', () => {
     expect(landing).toMatch(/never stored|never hold a card|only ever hold a reference/i);
   });
 
-  it('sends visitors to sign in', () => {
+  it('sends visitors to sign in, and each plan into the subscribe flow', () => {
     expect(landing).toContain('./login.html');
+    for (const id of ['starter', 'standard', 'growth']) {
+      expect(landing, `the ${id} plan should lead into subscribe`).toContain(`./subscribe.html?plan=${id}`);
+    }
+  });
+});
+
+describe('the subscribe page makes the auto-debit honest and RBI-shaped', () => {
+  it('exists, is titled, and offers the three RBI-covered rails', () => {
+    expect(subscribe).toMatch(/<title>Set up your plan · SRE Retail OS<\/title>/);
+    expect(subscribe).toMatch(/UPI Autopay/);
+    expect(subscribe).toMatch(/e-mandate/i);
+    expect(subscribe).toMatch(/e-NACH/i);
+  });
+
+  it('shows the same plan prices as are billed', () => {
+    for (const price of ['₹2,000', '₹5,000', '₹12,000']) expect(subscribe).toContain(price);
+  });
+
+  it('states the RBI mandate terms and that no card is stored', () => {
+    expect(subscribe).toMatch(/pre-debit notification/i);
+    expect(subscribe).toMatch(/₹15,000/);
+    expect(subscribe).toMatch(/[Cc]ancel anytime/);
+    expect(subscribe).toMatch(/card details are never stored/i);
+    expect(subscribe).toMatch(/data is never deleted/i);
+  });
+
+  it('requires signing in before billing is set up — it never fakes a mandate', () => {
+    expect(subscribe).toContain('./login.html');
+    expect(subscribe).not.toMatch(/localStorage|sessionStorage|document\.cookie/);
   });
 });
 

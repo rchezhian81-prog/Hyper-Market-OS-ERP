@@ -38,7 +38,7 @@ trial-load + reconciliation (MG-05/06).
 
 ---
 
-## WP5-D + WP5-E — the public storefront: marketing landing page + sign-in (12 September 2026)
+## WP5-D + WP5-E + WP5-F — the public storefront: landing, sign-in, subscribe (12 September 2026)
 
 **Built (net-new `apps/site`, a public static site — not an offline operational screen, so deliberately
 outside the offline-shell machinery):**
@@ -50,10 +50,17 @@ outside the offline-shell machinery):**
 - `apps/site/web/login.html` — sign-in. **Credential-free** (hard rule #4): it asks only for a work
   email and delegates to the organisation's identity provider; it never collects or stores a password
   and does not fake a session. Honest about the IdP being an owner setup step (external blocker).
+- `apps/site/web/subscribe.html` — the subscribe / auto-debit page (WP5-F). Reads `?plan=`, shows the
+  plan and the exact monthly debit, lets the payer pick a rail (UPI Autopay / card e-mandate / e-NACH),
+  and states the RBI mandate terms plainly (one-time approval, pre-debit notice, no OTP under ₹15,000,
+  cancel anytime, no card stored, data never deleted). "Continue" goes to secure sign-in — it never
+  fakes a mandate; live collection needs sign-in + a merchant account (owner setup). The landing
+  plan buttons now lead here (`subscribe.html?plan=…`).
 
-**Evidence:** `tests/guardrails/the-commercial-site-is-honest.test.ts` (9: real plans + launch-pricing
+**Evidence:** `tests/guardrails/the-commercial-site-is-honest.test.ts` (13: real plans + launch-pricing
 caveat; offline/UPI/GST/no-card-storage claims match reality; sign-in has no password field, stores
-nothing, fakes no session). Full non-DB suite green (6,466); lint clean.
+nothing, fakes no session; subscribe shows the rails + RBI terms and requires sign-in). Full non-DB
+suite green; lint clean.
 
 **Honesty:** **No re-rate — headline stays 41.5%.** WP5 is a non-denominator work package. The pages
 are the storefront; real sign-in needs a production identity provider and real billing needs a
