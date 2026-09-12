@@ -5,6 +5,46 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M13 refund screen — Slice 1: the tested view surface (12 September 2026)
+
+**Owner direction:** "start the cashier refund screen." With the refund/restart security work all merged
+and no open gaps, this begins the last paused feature — the §27 "Return/exchange" POS screen (M13).
+
+**Grounding (never invent a requirement):** the refund *engine and offline-sync path* are done and
+hardened (M13-FR-01…FR-04, in `packages/returns` + `till.refund`); what is missing is the cashier
+SCREEN, which `docs/design/screens/pos-cashier.md` lists as a required state and `apps/pos/web/app.js`
+currently serves as an honest "not built — go to the service desk" stub. The concrete numbers (return
+window, no-receipt cap, approval threshold) are **owner-input-pending** (`docs/requirements/M13.md:46`),
+so they are consumed as INJECTED policy, never hardcoded; the only authoritative governance default is
+**threshold 0 → every refund needs a §28 approver** holding `pos.return.approve`.
+
+**Built in this slice (the screen's tested "brain", no DOM yet):**
+- `apps/pos/src/refund-view.ts` (`createRefundView`) — the display-primitive bridge the web UI will
+  bind to. It turns the cashier's line/reason/tender/approval choices into a `till.refund()` call and
+  maps every outcome — the card/UPI `pending` distinction (M13-FR-04) and the four money-critical error
+  types `refused`/`uncertain`/`conflict`/`not_entitled` (RR-F02/03/04) — into ONE plain-English screen
+  state. Returnable-per-line and the max-refund ceiling come from the tested register
+  (`returnableLines`/`alreadyRefundedMinor`); it holds **no money rule of its own**.
+- `packages/returns/src/returns.ts` — extracted the §28 threshold rule into one pure predicate
+  `refundRequiresApproval`, now used by both `assertReturnValid` (the enforcer) and the screen (to ask
+  for a manager up front). One source of the rule, not two.
+- `docs/design/screens/pos-refund.md` — the Return/Refund screen spec (states, ≤3 interaction budget,
+  offline/pending behaviour, the outcome table, accessibility + Tamil). Exchanges and return-window
+  enforcement explicitly **deferred** (not in the engine; numbers owner-pending).
+
+**Deliberately fail-safe:** a no-receipt refund with no configured cap is refused up front and never
+reaches the money path; an unrecognised error is read as a refusal (do not pay out).
+
+**Evidence:** tests `tests/unit/pos-refund-view.test.ts` (19). Full non-DB suite **6,373 passed / 0
+failed** (+19); real disposable **PostgreSQL 16.13** `DB_TESTS_REQUIRED=1 pnpm run test:db` **1,517
+passed / 0 failed** (engine refactor caused no regression); typecheck/lint/secret-scan/audit clean.
+
+**Next slices:** (2) the on-screen panels replacing the `app.js` stub, bound to this surface; (3) the
+offline end-to-end check. **No re-rate — headline stays 41.5%** (M13 remains `PARTIALLY_WIRED`; the
+screen is not fully shipped until the web UI lands). Not merged, not deployed.
+
+---
+
 ## GAP-SALE-IDEMPOTENCY-01 — sale operation identity at the edge (12 September 2026)
 
 **Owner direction:** fix GAP-SALE-IDEMPOTENCY-01 (the sale-path analogue of RR-F03, recorded during

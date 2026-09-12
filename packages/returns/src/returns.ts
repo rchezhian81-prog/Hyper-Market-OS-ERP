@@ -16,7 +16,7 @@
 // and outbox are injected. Idempotent on the return id (§31.1).
 
 import { makeEvent } from '../../contracts/src/event';
-import { isNegative, isPositive, compare, type Money } from '../../contracts/src/money';
+import { isNegative, compare, type Money } from '../../contracts/src/money';
 import type { TenderKind } from '../../contracts/src/enums';
 import type { DecidedRequest } from '../../approvals/src/approvals';
 import type { Ledger } from '../../ledger/src/ledger';
@@ -149,6 +149,24 @@ export interface ReturnValidity {
 }
 
 /**
+ * Does this refund need a separate §28 approver — a material refund, or any no-receipt return
+ * (M13-FR-03 / §28)? Pure and exported so the **one** copy of the rule is here: `assertReturnValid`
+ * enforces it at commit, and the refund SCREEN calls the same function to know whether to ask for a
+ * manager *before* the cashier submits, rather than a second, untested copy on the view side.
+ *
+ * `approvalThresholdMinor` is the per-tenant threshold (server config, default 0 → every positive
+ * refund needs an approver). A zero-value refund (an even exchange) is not material.
+ */
+export function refundRequiresApproval(
+  refundMinor: number,
+  noReceipt: boolean,
+  approvalThresholdMinor: number,
+): boolean {
+  const materialRefund = refundMinor > 0 && refundMinor >= approvalThresholdMinor;
+  return noReceipt || materialRefund;
+}
+
+/**
  * Validate a return against the M13 rules, throwing the specific error on the first breach —
  * and touching NOTHING (no ledger, no outbox). Pure and exported so a caller can decide BEFORE it
  * records: the offline till writes a refund to its edge's durable disk, and a refund must be judged
@@ -200,9 +218,7 @@ export function assertReturnValid(input: CommitReturnInput): ReturnValidity {
   // Approval: a material refund or any no-receipt return needs a valid approval by
   // a DIFFERENT person (M13-FR-03 / §28). An AI agent can never authorise a refund
   // (AI-NFR-12) — the approval is a human DecidedRequest produced upstream.
-  const materialRefund =
-    isPositive(input.refund) && input.refund.minor >= input.approvalThresholdMinor;
-  const requiredApproval = noReceipt || materialRefund;
+  const requiredApproval = refundRequiresApproval(input.refund.minor, noReceipt, input.approvalThresholdMinor);
   if (requiredApproval) {
     const a = input.approval;
     const valid =
