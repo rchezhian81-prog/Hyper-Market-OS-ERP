@@ -54,7 +54,32 @@ const WORDS = {
     over: 'Over by', short: 'Short by', balanced: 'The drawer balances exactly.',
     needsReason: 'This difference is large enough that a manager must be told. Do not put the money away — call the manager now.',
     countHint: 'Count what is actually in the drawer. Nothing on this screen tells you what it should be — that is on purpose.',
-    refundNotBuilt: 'Refunds against a receipt need the original sale, and this lane cannot look one up yet. Send the customer to the service desk.',
+    refundFind: 'Scan the receipt, or key the bill number',
+    refundFindHint: 'Scan the barcode on the customer receipt, or type the bill number and press OK',
+    refundLookupFailed: 'Could not reach the store to look up that bill. Try again, or use another lane.',
+    refundNotFound: 'No bill with that number was rung on this lane. Check the number, or look it up at the service desk.',
+    refundNothingLeft: 'Everything on this bill has already been returned. Nothing more can come back.',
+    refundWhichItem: 'Which item is coming back?',
+    refundCanReturn: 'can return',
+    refundHowMany: 'How many are coming back?',
+    refundBadQty: 'That is more than can come back on this bill. Check the number.',
+    refundReason: 'Why is it coming back?',
+    refundAmount: 'How much to refund?',
+    refundMax: 'Most you can refund',
+    refundTooMuch: 'That is more than this bill allows —',
+    refundGiving: 'Refunding',
+    refundHow: 'How is the refund given?',
+    storeCredit: 'Store credit',
+    refundCondition: 'What condition is the item in?',
+    dispResell: 'Good — back on the shelf',
+    dispDamaged: 'Damaged — not for sale',
+    refundManagerId: 'Manager: scan your badge or key your staff code',
+    refundManagerHint: 'A different person from the cashier must approve a refund',
+    refundNeedManager: 'A manager must approve this refund. Ask a manager — not yourself.',
+    refundApproveReason: 'Manager: why is this refund approved?',
+    refundDone: 'Refund recorded',
+    refundPending: 'Refund pending',
+    refundStop: 'Do not hand over cash',
     declinedMsg: 'The payment was declined. The sale is NOT complete — do not hand over the goods. Ask for another payment method.',
     noAnswerMsg: 'The card machine has not answered, so we do not know whether the customer has paid. The sale is NOT complete — do not hand over the goods. Check the machine, and if it is unclear, ask the manager before trying again.',
   },
@@ -80,7 +105,32 @@ const WORDS = {
     over: 'அதிகம்', short: 'குறைவு', balanced: 'டிராயர் சரியாக உள்ளது.',
     needsReason: 'இந்த வித்தியாசம் பெரியது. மேலாளரிடம் சொல்ல வேண்டும். பணத்தை வைக்க வேண்டாம் — உடனே மேலாளரை அழைக்கவும்.',
     countHint: 'டிராயரில் உள்ளதை எண்ணவும். எவ்வளவு இருக்க வேண்டும் என்பதை இந்தத் திரை சொல்லாது — அது வேண்டுமென்றே.',
-    refundNotBuilt: 'ரசீதுக்கு எதிரான திரும்பப் பணத்திற்கு அசல் விற்பனை தேவை. இந்த லேனில் அது இன்னும் இல்லை. வாடிக்கையாளரை சேவை மையத்திற்கு அனுப்பவும்.',
+    refundFind: 'ரசீதை ஸ்கேன் செய்யவும், அல்லது பில் எண்ணை உள்ளிடவும்',
+    refundFindHint: 'வாடிக்கையாளர் ரசீதில் உள்ள பார்கோடை ஸ்கேன் செய்யவும், அல்லது பில் எண்ணை உள்ளிட்டு சரி அழுத்தவும்',
+    refundLookupFailed: 'அந்த பில்லைப் பார்க்க கடை கணினியை அணுக முடியவில்லை. மீண்டும் முயற்சிக்கவும், அல்லது வேறு லேனைப் பயன்படுத்தவும்.',
+    refundNotFound: 'அந்த எண்ணில் இந்த லேனில் எந்த பில்லும் இல்லை. எண்ணைச் சரிபார்க்கவும், அல்லது சேவை மையத்தில் பார்க்கவும்.',
+    refundNothingLeft: 'இந்த பில்லில் உள்ள அனைத்தும் ஏற்கனவே திரும்பப் பெறப்பட்டன. மேலும் எதுவும் திரும்ப முடியாது.',
+    refundWhichItem: 'எந்தப் பொருள் திரும்புகிறது?',
+    refundCanReturn: 'திரும்ப முடியும்',
+    refundHowMany: 'எத்தனை திரும்புகின்றன?',
+    refundBadQty: 'இந்த பில்லில் திரும்ப முடிந்ததை விட அதிகம். எண்ணைச் சரிபார்க்கவும்.',
+    refundReason: 'ஏன் திரும்புகிறது?',
+    refundAmount: 'எவ்வளவு திரும்பத் தர வேண்டும்?',
+    refundMax: 'திரும்பத் தரக்கூடிய அதிகபட்சம்',
+    refundTooMuch: 'இந்த பில் அனுமதிப்பதை விட அதிகம் —',
+    refundGiving: 'திரும்பத் தருவது',
+    refundHow: 'திரும்பப் பணம் எப்படித் தரப்படுகிறது?',
+    storeCredit: 'கடை வரவு',
+    refundCondition: 'பொருளின் நிலை என்ன?',
+    dispResell: 'நல்லது — அலமாரிக்குத் திரும்ப',
+    dispDamaged: 'சேதம் — விற்பனைக்கு அல்ல',
+    refundManagerId: 'மேலாளர்: உங்கள் அடையாள அட்டையை ஸ்கேன் செய்யவும் அல்லது ஊழியர் குறியீட்டை உள்ளிடவும்',
+    refundManagerHint: 'திரும்பப் பணத்தை காசாளர் அல்லாத வேறு ஒருவர் அனுமதிக்க வேண்டும்',
+    refundNeedManager: 'இந்த திரும்பப் பணத்தை ஒரு மேலாளர் அனுமதிக்க வேண்டும். உங்களை அல்ல — ஒரு மேலாளரிடம் கேளுங்கள்.',
+    refundApproveReason: 'மேலாளர்: இந்த திரும்பப் பணம் ஏன் அனுமதிக்கப்படுகிறது?',
+    refundDone: 'திரும்பப் பணம் பதிவு செய்யப்பட்டது',
+    refundPending: 'திரும்பப் பணம் நிலுவையில்',
+    refundStop: 'பணத்தைக் கொடுக்க வேண்டாம்',
     declinedMsg: 'பணம் மறுக்கப்பட்டது. விற்பனை முடியவில்லை — பொருட்களைக் கொடுக்க வேண்டாம். வேறு முறையில் பணம் கேட்கவும்.',
     noAnswerMsg: 'கார்டு இயந்திரம் பதில் சொல்லவில்லை. வாடிக்கையாளர் பணம் செலுத்தினாரா என்று தெரியவில்லை. விற்பனை முடியவில்லை — பொருட்களைக் கொடுக்க வேண்டாம். இயந்திரத்தைச் சரிபார்க்கவும்; தெளிவில்லை என்றால் மேலாளரிடம் கேட்கவும்.',
   },
@@ -95,6 +145,15 @@ const VOID_REASONS = [
   { code: 'wrong_item', en: 'Wrong item', ta: 'தவறான பொருள்' },
   { code: 'price_query', en: 'Price query', ta: 'விலை சந்தேகம்' },
   { code: 'damaged', en: 'Damaged', ta: 'சேதமடைந்தது' },
+];
+
+/** Refund reasons, preset — free text at a till is a reason nobody can report on afterwards (M15). */
+const REFUND_REASONS = [
+  { code: 'damaged', en: 'Damaged / faulty', ta: 'சேதம் / குறை' },
+  { code: 'wrong_item', en: 'Wrong item', ta: 'தவறான பொருள்' },
+  { code: 'not_needed', en: 'No longer needed', ta: 'இனி தேவையில்லை' },
+  { code: 'expired', en: 'Expired / out of date', ta: 'காலாவதி ஆனது' },
+  { code: 'other', en: 'Other', ta: 'மற்றவை' },
 ];
 
 /**
@@ -129,6 +188,9 @@ function demoSession() {
       : Promise.reject(Object.assign(new Error('not paid'), { notPaid: outcome }))),
     suspend() { held = true; }, recall() { held = false; }, state: () => (held ? 'suspended' : 'selling'),
     newSale() { lines.length = 0; seq = 0; },
+    // No real bills without the bundle, so a refund lookup finds nothing — the screen says so
+    // honestly rather than pretending. The real, tested surface replaces this at build time.
+    lookupRefund: () => Promise.resolve(null),
     till: {
       moveCash: ({ amountMinor }) => ({ tillBalance: { minor: -amountMinor } }),
       close: ({ countedMinor }) => ({
@@ -172,7 +234,7 @@ let chosen = null;
  * Resolves with the answer, or `null` if cancelled. `mode` is `'number'` (keypad) or `'choice'`
  * (preset buttons) — the two shapes every question at a till actually takes.
  */
-function ask({ title, mode, hint = '', initial = '0', onChange = null }) {
+function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS }) {
   el('sheet-title').textContent = title;
   el('entry-hint').textContent = hint;
   el('entry').textContent = initial;
@@ -185,7 +247,7 @@ function ask({ title, mode, hint = '', initial = '0', onChange = null }) {
   chosen = null;
 
   if (mode === 'choice') {
-    el('reasons').replaceChildren(...VOID_REASONS.map((reason) => {
+    el('reasons').replaceChildren(...choices.map((reason) => {
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = reason[lang] ?? reason.en;
@@ -483,12 +545,7 @@ el('more').addEventListener('click', async () => {
     { value: 'close', label: t('closeTill') },
   ]);
   if (what === 'pickup') return takeCashToSafe();
-  if (what === 'refund') {
-    // Said plainly rather than shown a screen that cannot work. A refund against a receipt needs
-    // the original sale, and this lane has no way to look one up yet.
-    tell(t('read'), t('refundNotBuilt'));
-    return;
-  }
+  if (what === 'refund') return startRefund();
   if (what === 'close') return closeTheTill();
 });
 
@@ -503,6 +560,163 @@ async function takeCashToSafe() {
   } catch (e) {
     tell(t('read'), String(e && e.message ? e.message : e));
   }
+}
+
+/**
+ * Ask for a receipt number or a staff code — SCANNED or keyed (the owner chose both). The receipt
+ * carries a barcode and a staff badge carries a barcode, so a scan (fast keystrokes ending in Enter)
+ * resolves at once; the on-screen number pad is the fallback for keying it by hand. The scan capture
+ * is SCOPED to this panel and removed when it closes, so it never leaks into the sale screen's global
+ * scanner (which stays off while a panel is open).
+ */
+function askScanOrKey({ title, hint = '' }) {
+  return new Promise((resolve) => {
+    let done = false;
+    let buffer = '';
+    const finish = (value) => {
+      if (done) return;
+      done = true;
+      window.removeEventListener('keydown', onKey, true);
+      resolve(value);
+    };
+    const onKey = (event) => {
+      if (event.key === 'Enter') {
+        const code = buffer;
+        buffer = '';
+        if (code.length >= 4) { closeSheet(null); finish(code); } // a scanner, not a person
+        return;
+      }
+      if (/^[A-Za-z0-9._-]$/.test(event.key)) buffer += event.key;
+    };
+    window.addEventListener('keydown', onKey, true);
+    // The keypad sheet is the manual fallback; whichever answers first wins.
+    ask({ title, mode: 'number', hint }).then((typed) => finish(typed));
+  });
+}
+
+/**
+ * The refund. Money leaves the drawer, so honesty beats speed at every step and every rule is
+ * enforced behind this view (M13). This file assembles the cashier's answers and shows the outcome —
+ * it decides nothing: `lookupRefund` reads the bill from this lane's own disk, and `submit` runs the
+ * tested refund engine + the till's durable-first write. Every outcome is the model's own words.
+ */
+async function startRefund() {
+  // 1. Find the bill — scan the receipt, or key the bill number.
+  const receipt = await askScanOrKey({ title: t('refundFind'), hint: t('refundFindHint') });
+  if (receipt === null || receipt === '' || receipt === '0') return;
+
+  let bill;
+  try {
+    bill = await session.lookupRefund(String(receipt));
+  } catch {
+    tell(t('refundStop'), t('refundLookupFailed'));
+    return;
+  }
+  if (!bill) { tell(t('read'), t('refundNotFound')); return; }
+
+  const returnable = bill.returnable.filter((l) => l.returnableMinor > 0);
+  if (returnable.length === 0) { tell(t('read'), t('refundNothingLeft')); return; }
+
+  // 2. Which item, and how many — capped at what is still returnable on the bill.
+  const productId = await choose(t('refundWhichItem'), returnable.map((l) => ({
+    value: l.productId, label: `${l.productId} — ${t('refundCanReturn')} ${l.returnableMinor}`,
+  })));
+  if (productId === null) return;
+  const line = returnable.find((l) => l.productId === productId);
+
+  const qtyAns = await ask({
+    title: t('refundHowMany'), mode: 'number', initial: '1',
+    hint: `${t('refundCanReturn')}: ${line.returnableMinor}`,
+  });
+  if (qtyAns === null) return;
+  const qty = Number(qtyAns);
+  if (!Number.isInteger(qty) || qty <= 0 || qty > line.returnableMinor) { tell(t('read'), t('refundBadQty')); return; }
+
+  // 3. Reason (chosen, never typed — M15), and the condition the goods come back in (M13-FR-02).
+  const reason = await ask({ title: t('refundReason'), mode: 'choice', choices: REFUND_REASONS });
+  if (!reason) return;
+
+  const disposition = await choose(t('refundCondition'), [
+    { value: 'resell', label: t('dispResell') },
+    { value: 'damaged', label: t('dispDamaged') },
+  ]);
+  if (disposition === null) return;
+
+  // 4. The amount — shown against the ceiling as they type; the engine caps it too (M13-FR-03).
+  const amount = await ask({
+    title: t('refundAmount'), mode: 'number',
+    hint: `${t('refundMax')}: ${inr(bill.maxRefundMinor)}`,
+    onChange: (rupees) => (Math.round(rupees * 100) > bill.maxRefundMinor
+      ? `${t('refundTooMuch')} ${inr(bill.maxRefundMinor)}`
+      : `${t('refundGiving')}: ${inr(Math.round(rupees * 100))}`),
+  });
+  if (amount === null) return;
+  const refundMinor = Math.round(Number(amount) * 100);
+  if (refundMinor <= 0) return;
+
+  const refundTender = await choose(t('refundHow'), [
+    { value: 'cash', label: t('cash') },
+    { value: 'card', label: t('card') },
+    { value: 'upi', label: t('upi') },
+    { value: 'store_credit', label: t('storeCredit') },
+  ]);
+  if (refundTender === null) return;
+
+  // 5. A manager approves where the policy requires it (§28). The default is every refund; a manager
+  // scans their badge or keys their staff code — a DIFFERENT person from the cashier, which the engine
+  // enforces and the cloud re-verifies on sync.
+  let approval;
+  if (bill.needsApproval(refundMinor)) {
+    const by = await askScanOrKey({ title: t('refundManagerId'), hint: t('refundManagerHint') });
+    if (by === null || by === '' || by === '0') { tell(t('read'), t('refundNeedManager')); return; }
+    const approveReason = await ask({ title: t('refundApproveReason'), mode: 'choice', choices: REFUND_REASONS });
+    if (!approveReason) return;
+    approval = { by: String(by), reason: approveReason };
+  }
+
+  // 6. The refund's own document number, from this lane's gap-free range, and its operation identity
+  // (the idempotency key — a retry under the same id can never refund twice, RR-F03).
+  let number;
+  try {
+    number = session.nextReceipt ? session.nextReceipt() : `R-${Date.now().toString(36).toUpperCase()}`;
+  } catch {
+    tell(t('read'), t('receiptsUsedUp'));
+    return;
+  }
+  const returnId = `RT-${number}`;
+
+  let outcome;
+  try {
+    outcome = await bill.submit({
+      returnId, number, reasonCode: reason,
+      lines: [{ productId, uom: line.uom, quantityMinor: qty, disposition }],
+      refundMinor, refundTender,
+      ...(approval ? { approval } : {}),
+    });
+  } catch (e) {
+    // submit is written not to throw, but a lost connection to the store can still reject here — treat
+    // it as a stop, never as a silent success.
+    tell(t('refundStop'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e));
+    return;
+  }
+  showRefundOutcome(outcome);
+  render();
+}
+
+/**
+ * One screen state per refund outcome, in the model's OWN words (`laneMessage`). The money-critical
+ * four — refused, uncertain, conflict, not entitled — head with "Do not hand over cash", the one
+ * instruction that must not be missed; settled and pending get their own headings; anything else is
+ * the plain "please read this".
+ */
+function showRefundOutcome(outcome) {
+  const stop = outcome.kind === 'refused' || outcome.kind === 'uncertain'
+    || outcome.kind === 'conflict' || outcome.kind === 'not_entitled';
+  const title = outcome.kind === 'settled' ? t('refundDone')
+    : outcome.kind === 'pending' ? t('refundPending')
+      : stop ? t('refundStop')
+        : t('read');
+  tell(title, outcome.laneMessage);
 }
 
 /**
