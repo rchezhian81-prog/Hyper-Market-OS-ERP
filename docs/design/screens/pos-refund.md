@@ -105,4 +105,15 @@ never free text.
    shown as they type); refund method (cash/card/UPI/store credit); manager approval scanned or
    keyed (a different person, §28); the outcome in the model's own words, the money-critical four
    headed "Do not hand over cash". The `the-till-screen-is-usable` guardrail asserts these.
-3. **The end-to-end check** — a cashier completes a refund on the served shell, offline. Next slice.
+3. **The end-to-end check** — a cashier completes a refund on the served shell, offline. **DONE**
+   (`tests/e2e/the-served-till-takes-a-refund.e2e.ts`): a real Chromium opens the box's own served
+   screen, rings a sale, then refunds it through the shell's surface with **no cloud configured** —
+   exercising the cross-origin `/lane/lookup`, the §28 manager approval, and the durable-first
+   `/lane/returns` write, landing the refund on the box's returns log and queue exactly once; a
+   reused refund id is refused (no double payout), and a refund with no manager is refused. Self-skips
+   where no browser binary is present, like the sale e2e.
+
+Still open on the screen itself (tracked, not silently dropped): product names (shown by code today),
+no-receipt refunds (await a cap), and the **usability acceptance** (a person with a stopwatch against
+the ≤3-interaction bar, `../usability-test-script.md`) — the e2e proves it *works*, not yet that it
+meets the speed bar.
