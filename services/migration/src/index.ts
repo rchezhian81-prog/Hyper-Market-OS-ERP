@@ -13,10 +13,30 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { assertNonProduction, type LoadTarget } from '../../../packages/migration/src/trial';
+import { inventorySources, type LegacySource } from '../../../packages/migration/src/discovery';
 import {
   buildVerificationReport, renderVerificationReport,
   type DomainFinding, type Acceptance, type Signature,
 } from '../../../packages/migration/src/verification-report';
+
+const SOURCE_KINDS: readonly string[] = ['erp_database', 'pos_database', 'spreadsheet', 'paper', 'third_party_system', 'report_only'];
+const VOLUME_BASES: readonly string[] = ['counted', 'estimated', 'unknown'];
+const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object';
+
+/**
+ * Is this a legacy source the discovery step can assess? The fields discovery reasons about — a name,
+ * a kind, whether the volume is counted/estimated/unknown, and whether it can be extracted. Optional
+ * fields (owner, row count, retention) are what discovery reports as GAPS when absent, so they are
+ * not required here; a missing one is a finding, not a malformed request.
+ */
+function isLegacySource(v: unknown): v is LegacySource {
+  if (!isObj(v)) return false;
+  return typeof v['sourceId'] === 'string' && v['sourceId'] !== ''
+    && typeof v['name'] === 'string' && v['name'] !== ''
+    && typeof v['kind'] === 'string' && SOURCE_KINDS.includes(v['kind'])
+    && typeof v['volumeBasis'] === 'string' && VOLUME_BASES.includes(v['volumeBasis'])
+    && typeof v['extractable'] === 'boolean';
+}
 
 export interface MigrationDeps {
   readonly target: (tenantId: string) => Promise<LoadTarget> | LoadTarget;
@@ -91,6 +111,34 @@ async function namedPeople(
 
 export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
   return [
+    {
+      // MG-01 — the first step of the pipeline: inventory the legacy sources and NAME what is
+      // missing from the inventory (an unowned source, an estimated volume, no retention period, a
+      // source that cannot be extracted). Read-only assessment — it computes from the sources the
+      // operator declares in the body and stores nothing, so it takes them in the body like the other
+      // what-if surfaces. The completeness verdict is the output: a migration that starts before
+      // discovery is complete migrates what somebody happened to remember (MG-01).
+      api: 'API-12', method: 'POST', path: '/v1/migration/discovery',
+      permission: 'migration.discovery.read', idempotent: true,
+      handler: async (ctx) => {
+        await assertSafeTarget(deps, ctx.tenantId);
+        const b = ctx.body;
+        const rawSources = isObj(b) ? b['sources'] : undefined;
+        if (!Array.isArray(rawSources) || rawSources.length === 0 || !rawSources.every(isLegacySource)) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_source_inventory',
+            whatHappened: 'This payload could not be read as a list of legacy sources. Each source needs a sourceId, a name, a kind (erp_database/pos_database/spreadsheet/paper/third_party_system/report_only), whether its volume is counted/estimated/unknown, and whether it can be extracted.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was assessed and nothing was stored. Correct the sources and send them again — discovery reads and reports, it changes no data.',
+          });
+        }
+        // The tenant is stamped from the authenticated context, never the body: a source is
+        // discovered FOR this tenant, and trusting a body-supplied tenantId would let one tenant's
+        // discovery name another's source.
+        const sources = rawSources.map((s) => ({ ...s, tenantId: ctx.tenantId }));
+        return { status: 200, body: inventorySources({ tenantId: ctx.tenantId, sources }) };
+      },
+    },
     {
       api: 'API-12', method: 'GET', path: '/v1/migration/verification',
       permission: 'migration.verification.read',

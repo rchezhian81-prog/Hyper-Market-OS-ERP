@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Migration MG-01 — the discovery step reaches the cloud (12 September 2026)
+
+**Owner direction:** "You pick the next most valuable module." Grounded the pick in the completion
+state: everything is partially built, the daily-operations modules are wired, and the least-mature,
+highest-leverage area is **migration** (MG-01…12 + WF-19) — the gate between a fully-built system and
+one SRE Hyper Market can actually run on its **real** legacy data. Its verification/sign-off end was
+wired; the front of the pipeline (discovery → trial-load) was engine-only. First increment: wire the
+pipeline's first, safest step.
+
+**Built:** `POST /v1/migration/discovery` (API-12, `services/migration/src/index.ts`) runs the tested
+`inventorySources` (MG-01). The operator declares the legacy sources; it names what is missing — an
+**unowned source**, an **estimated or unknown volume**, **no retention period**, a source that
+**cannot be extracted** — and returns the completeness verdict (there is no partial discovery). It is
+read-only (assesses and reports, stores nothing), **refuses a production target** before it looks at
+anything (hard rule #7), and stamps the tenant from the authenticated caller, never the body. New
+permission `migration.discovery.read` (Owner role).
+
+**Evidence:** `tests/unit/migration-discovery-route.test.ts` (5: clean inventory complete; gaps named;
+tenant isolation; production refused; malformed payload refused). The API-surface contract + the
+thirteen-APIs consistency tests pass (the permission is valid, grantable, and consistently spelled).
+Full non-DB and real-PostgreSQL suites green; typecheck/lint/secret-scan/audit clean.
+
+**Scope & honesty:** this is the discovery **assessment** only; persisting the source inventory, and
+wiring the later stages (preservation MG-02 sealing, cleaning MG-04, trial-load MG-05, reconciliation)
+are following increments. **No re-rate — headline stays 41.5%, and MG-01's rung stays ENGINE_ONLY on
+purpose:** one stateless assessment route is a real step but not go-live readiness, so the conservative
+completion rung is unchanged and the progress is recorded in prose (this section + the assembly row)
+rather than by inflating the ladder. Not merged, not deployed.
+
+---
+
 ## M13 refund screen — product names on the screen (12 September 2026)
 
 **Owner direction:** "Wire product names onto the screen" — the refund screen showed product codes
