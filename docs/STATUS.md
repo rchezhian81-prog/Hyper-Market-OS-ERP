@@ -5,6 +5,30 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Migration driven to "proven": INTEGRATION_TESTED (44.2% → 45.5%) (12 September 2026)
+
+**Owner direction:** "Drive migration to proven."
+
+**Evidence built:** `tests/integration/migration-pipeline.test.ts` (5) drives every wired migration
+route through the **real request pipeline** the way production composes it — `buildSurface` with the
+real token authenticator, the real per-tenant RBAC resolver, the real idempotency store, and the real
+`migrationAdapter` (so `rolesOf` folds `RoleGranted` events — a chartered accountant is one because the
+ledger says so). It walks discovery → preserve → map → clean → trial-load → reconcile → **sign (owner
+signs stock; owner refused on finance; CA signs finance)** → opening balances → delta → cutover (GO),
+and proves the authority model at the door (a `store_manager` is 403 at a migration route).
+
+**Re-rate (evidence-first, `docs/completion-status.json` + `docs/traceability.md`):** the nine wired
+migration controls promoted **WIRED → INTEGRATION_TESTED** (MG-01/02/03/04/05/06/08/09/11). MG-07,
+MG-10, MG-12 unchanged (still not wired). INTEGRATION_TESTED is the honest ceiling — proven through the
+integrated API pipeline, not yet a browser/full-system E2E.
+
+**The number (`pnpm run completion`):** product completion **44.2% → 45.5%** (+1.3 pts; numerator 4,600
+→ 4,735 / 10,400); `baseline.previousProductCompletionPct` set to 44.2. completion-model-integrity,
+the non-module mirror, and traceability-integrity all pass. No code behaviour changed — one new
+integration test plus the label promotion it earns.
+
+---
+
 ## Deliberate re-rate: the migration module (12 September 2026)
 
 **Owner direction:** "Re-rate the migration." An explicit, owner-authorised re-rate — the one kind of
