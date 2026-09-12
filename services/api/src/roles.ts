@@ -90,6 +90,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'migration.discovery.read', 'migration.preservation.seal', 'migration.preservation.verify',
       'migration.mapping.read', 'migration.mapping.approve', 'migration.cleaning.read',
       'migration.trial.run', 'migration.reconciliation.read',
+      'migration.opening.build', 'migration.delta.apply',
       'migration.verification.read', 'migration.exception.accept',
       'ai.agent.run', 'ai.proposal.read', 'ai.budget.read', 'ai.killswitch.set',
     ],

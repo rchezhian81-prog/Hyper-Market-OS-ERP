@@ -12,10 +12,13 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
-import { assertNonProduction, runTrialLoad, type LoadTarget } from '../../../packages/migration/src/trial';
 import {
-  recordControlTotal, assessReconciliation,
-  type ControlTotal,
+  assertNonProduction, runTrialLoad, applyDelta,
+  type LoadTarget, type DeltaChange,
+} from '../../../packages/migration/src/trial';
+import {
+  recordControlTotal, assessReconciliation, buildOpeningEvents,
+  type ControlTotal, type OpeningKind,
 } from '../../../packages/migration/src/reconcile';
 import {
   inventorySources, sealExtract, verifyExtract, simpleHasher,
@@ -85,6 +88,38 @@ function isControlTotal(v: unknown): v is ControlTotal {
     && typeof v['loadedValue'] === 'number'
     && typeof v['legacyDerivation'] === 'string'
     && typeof v['loadedDerivation'] === 'string';
+}
+
+const DELTA_OPS: readonly string[] = ['insert', 'update', 'delete'];
+
+/** Is this a post-extract change to apply exactly once — a stable key, an entity, and when it happened? */
+function isDeltaChange(v: unknown): v is DeltaChange {
+  if (!isObj(v)) return false;
+  return typeof v['changeKey'] === 'string' && v['changeKey'] !== ''
+    && typeof v['entity'] === 'string'
+    && typeof v['legacyId'] === 'string'
+    && typeof v['operation'] === 'string' && DELTA_OPS.includes(v['operation'])
+    && typeof v['changedAt'] === 'string'
+    && (v['deltaMinor'] === undefined || typeof v['deltaMinor'] === 'number')
+    && (v['deltaQty'] === undefined || typeof v['deltaQty'] === 'number');
+}
+
+const OPENING_KINDS: readonly string[] = ['stock', 'customer_outstanding', 'supplier_outstanding', 'loyalty_points', 'open_order'];
+
+interface OpeningPosition {
+  readonly kind: OpeningKind; readonly subjectId: string; readonly fromTotalId: string;
+  readonly quantity?: number; readonly valueMinor?: number; readonly points?: number;
+}
+
+/** Is this an opening position — a figure that must trace back to a signed control total (MG-08)? */
+function isOpeningPosition(v: unknown): v is OpeningPosition {
+  if (!isObj(v)) return false;
+  return typeof v['kind'] === 'string' && OPENING_KINDS.includes(v['kind'])
+    && typeof v['subjectId'] === 'string' && v['subjectId'] !== ''
+    && typeof v['fromTotalId'] === 'string' && v['fromTotalId'] !== ''
+    && (v['quantity'] === undefined || typeof v['quantity'] === 'number')
+    && (v['valueMinor'] === undefined || typeof v['valueMinor'] === 'number')
+    && (v['points'] === undefined || typeof v['points'] === 'number');
 }
 
 /**
@@ -528,6 +563,73 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
           acc = r.totals;
         }
         return { status: 200, body: assessReconciliation({ tenantId: ctx.tenantId, totals: acc }) };
+      },
+    },
+    {
+      // MG-08 — opening balances as EVENTS, never a written balance (hard rule #2). Turn signed control
+      // totals into append-only opening events. Refuses unless QG-07 has passed and every position
+      // traces to a SIGNED total — because an opening event cannot be withdrawn once banked, and a
+      // compensating event on day one is a permanent scar on the ledger. An opening quantity with no
+      // event behind it is the one number in the shop that can never be explained.
+      api: 'API-12', method: 'POST', path: '/v1/migration/opening-events',
+      permission: 'migration.opening.build', idempotent: true,
+      handler: async (ctx) => {
+        await assertSafeTarget(deps, ctx.tenantId);
+        const b = ctx.body;
+        const rawTotals = isObj(b) ? b['totals'] : undefined;
+        const rawPositions = isObj(b) ? b['positions'] : undefined;
+        if (!Array.isArray(rawTotals) || !rawTotals.every(isControlTotal)
+          || !Array.isArray(rawPositions) || !rawPositions.every(isOpeningPosition)) {
+          throw apiError(400, {
+            code: 'not_readable_as_opening_state',
+            whatHappened: 'This payload could not be read as an opening state. It needs the signed control totals and the opening positions — each { kind, subjectId, fromTotalId, and a quantity / valueMinor / points }.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was built. Correct the totals and positions and send again.',
+          });
+        }
+        const totals = rawTotals.map((t) => ({ ...t, tenantId: ctx.tenantId }));
+        const result = buildOpeningEvents({ tenantId: ctx.tenantId, totals, positions: rawPositions, now: deps.now() });
+        if (!result.ok) {
+          throw apiError(422, {
+            code: result.refusedBecause!,
+            whatHappened: result.detail,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'No opening events were built. QG-07 must have passed and every opening figure must trace to a SIGNED total — a balance with no signature behind it can never be explained.',
+          });
+        }
+        return { status: 200, body: { events: result.events, detail: result.detail } };
+      },
+    },
+    {
+      // MG-09 — delta. Between the final extract and cutover the shop keeps trading (P-01), so a delta
+      // always exists. Apply it EXACTLY ONCE (§31.1): a re-sent change is already_applied (a success, so
+      // an interrupted run resumes at midnight instead of being decided by hand), and a change dated
+      // before the extract cutoff is refused as already loaded — the double-count MG-09 exists to
+      // prevent. Every outcome is a visible line in the body (P-08). Refuses production first (#7).
+      api: 'API-12', method: 'POST', path: '/v1/migration/deltas',
+      permission: 'migration.delta.apply', idempotent: true,
+      handler: async (ctx) => {
+        await assertSafeTarget(deps, ctx.tenantId);
+        const b = ctx.body;
+        const rawChanges = isObj(b) ? b['changes'] : undefined;
+        const extractCutoff = isObj(b) ? b['extractCutoff'] : undefined;
+        const alreadyApplied = isObj(b) ? b['alreadyApplied'] : undefined;
+        if (!Array.isArray(rawChanges) || !rawChanges.every(isDeltaChange)
+          || typeof extractCutoff !== 'string' || extractCutoff === ''
+          || (alreadyApplied !== undefined && (!Array.isArray(alreadyApplied) || !alreadyApplied.every((k) => typeof k === 'string')))) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_delta',
+            whatHappened: 'This payload could not be read as a delta. It needs the changes (each { changeKey, entity, legacyId, operation, changedAt }), the extractCutoff, and optionally the keys already applied by an earlier run.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was applied. Correct the delta and send it again.',
+          });
+        }
+        const target = await deps.target(ctx.tenantId);
+        const result = applyDelta({
+          target, changes: rawChanges, extractCutoff,
+          ...(alreadyApplied === undefined ? {} : { alreadyApplied: alreadyApplied as readonly string[] }),
+        });
+        return { status: 200, body: result };
       },
     },
     {
