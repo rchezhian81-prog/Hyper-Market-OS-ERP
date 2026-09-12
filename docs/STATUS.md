@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M13 refund screen — Slice 2b: shell refund plumbing (12 September 2026)
+
+**Owner direction:** continuing "Start Slice 2." Slice 2a made receipt lookup exist at the edge; this
+makes it reachable from the till's screen and binds the refund path end-to-end — still no visible
+panels (those are Slice 2c), kept a separate PR so the money-out UI is reviewed on its own.
+
+**Built in this slice:**
+- `edge/store-edge/src/lane-server.ts` — the lane socket now serves a READ route
+  `GET /lane/lookup?receipt=…`. Read-only (it mutates nothing, so the RR-F01 write-bypass class can't
+  arise) and loopback-only: a foreign origin is refused **403** outright, because it returns a
+  customer's bill. Answers `{ found: false }` for a bill this lane did not ring.
+- `apps/pos/src/browser-entry.ts` — `window.posSession.lookupRefund(receipt)` fetches that route and
+  hands the screen a small object — `{ sale, returnable, maxRefundMinor, needsApproval, submit }` —
+  bound to the Slice-1 `createRefundView` + `till.refund`. A manager's approval captured at the lane
+  (their staff id + a reason) is mapped into the §28 `DecidedRequest` the engine checks (decidedBy ≠
+  the cashier); the cloud re-verifies the approver truly holds `pos.return.approve` on sync.
+- Refund policy is **injected** (`refundPolicy`), default **threshold 0** (every refund needs a §28
+  approver) and **no no-receipt cap** (that path stays unavailable until one is configured) — the
+  owner-pending numbers are never invented here.
+
+**Evidence:** `tests/unit/lane-lookup-route.test.ts` (6) + `tests/unit/pos-refund-wiring.test.ts` (8,
+driving the real till through the shell surface with fake lane lookup/durable-write). Full non-DB
+suite green; real-PostgreSQL suite green; typecheck/lint/secret-scan/audit clean.
+
+**Next slice (2c):** the on-screen panels — receipt entry, line selection, reason, refund method,
+manager approval, outcome — binding to `lookupRefund` and replacing the `app.js` "go to the service
+desk" stub (this is where the buttons appear). **No re-rate — headline stays 41.5%** (M13 still
+`PARTIALLY_WIRED`). Not merged, not deployed.
+
+---
+
 ## M13 refund screen — Slice 2a: lane-local receipt lookup (12 September 2026)
 
 **Owner direction:** "Start Slice 2" (the on-screen refund flow). Investigating it surfaced a true
