@@ -5,6 +5,43 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## WP5-A + WP5-C — the billing engine and the subscription API go live on API-11 (12 September 2026)
+
+**Built (advances M36; the paid money path for selling the product):**
+- **Engine** (`packages/platform/src/billing.ts`, extends M36 `plans.ts`): `Mandate` +
+  `assertMandateChargeable` (provider refs only — no card data, hard rule #3; refuses an inactive
+  mandate, a debit above the authorised cap, and an auto-debit above the RBI ₹15,000 no-OTP ceiling);
+  `BillingSchedule` + `nextCharge` (monthly anchor day, next debit + pre-debit notice deadline);
+  `computeTaxInvoice` (GST: CGST/SGST intra-state, IGST inter-state, halves sum exactly, GSTIN
+  validated); dunning (`startDunning`/`onChargeResult`) that suspends optional grants but is typed so
+  it can **never stop the shop trading** (P-01); and `foldBilling`, the append-only history read.
+- **Provider port** (`packages/platform/src/billing-provider.ts`): a provider-agnostic
+  `RecurringBillingProvider` interface + `SandboxRecurringBillingProvider` — a real runtime mode (no
+  network, no money) used until a live merchant account exists.
+- **API-11 routes** (`services/platform/src/billing-routes.ts`, wired in `services/api/src/main.ts`
+  via `billingAdapter` in `services/api/src/adapters.ts`): `GET /v1/platform/plans`,
+  `GET/POST /v1/platform/subscription`, `POST /v1/platform/subscription/cancellation`,
+  `POST /v1/platform/billing/webhook`. Event-sourced on a billing sub-stream (append-only, hard rule
+  #2). New permissions `platform.plan.read`, `platform.subscription.read`,
+  `platform.subscription.manage` (owner only — the payer decides), `platform.billing.webhook`
+  (owner + platform_admin) — all `platform.*`, so the platform-admin-posts-no-business-transaction
+  separation still holds.
+
+**Evidence:** `tests/unit/platform-billing.test.ts` (20), `tests/unit/platform-billing-provider.test.ts`
+(8), `tests/integration/subscription-billing.test.ts` (8, over the REAL surface: plans → subscribe →
+sandbox mandate → webhook → dunning → cancel; forged webhook refused; failed run suspends optional
+features but keeps trading; only the owner can subscribe). Surface-contract + thirteen-APIs +
+platform-admin-separation guardrails pass. Full non-DB suite green (6,457); typecheck/lint clean.
+
+**Honesty:** **No re-rate — headline stays 41.5%.** WP5 is a non-denominator work package advancing
+M36. **No real money can move** (sandbox provider) until the owner supplies a Razorpay merchant
+account + KYC. Prices are proposed defaults the owner sets.
+
+**Next:** the Razorpay sandbox adapter behind the provider interface; the marketing landing page,
+login and subscribe/mandate pages; migration MG-03/MG-04.
+
+---
+
 ## WP5 — Commercialization kickoff: sell the product as a subscription (12 September 2026)
 
 **Owner direction:** "I want to live commercially from the beginning. Plan and design a landing page, a login

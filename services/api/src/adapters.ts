@@ -23,6 +23,13 @@ import { createHash } from 'node:crypto';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { Money, CurrencyCode } from '../../../packages/contracts/src/money';
 import type { EventStore, PersistedEvent } from '../../../packages/persistence/src/event-store';
+import {
+  foldBilling,
+  type BillingEvent, type BillingSnapshot, type BillingRail, type DunningPolicy, type Mandate,
+  type BillingSchedule, type Plan as BillingPlan, type RecurringBillingProvider,
+} from '../../../packages/platform/src/index';
+import type { BillingDeps, SubscribeOutcome, WebhookOutcome } from '../../platform/src/billing-routes';
+import { OPTIONAL_FEATURES } from '../../../packages/tenant/src/index';
 import { InMemorySnapshotStore, projectFromSnapshot, type Projection, type SnapshotStore } from '../../../packages/persistence/src/index';
 import type { CatalogueProduct } from '../../../packages/catalogue/src/catalogue';
 import type { SignedPack } from '../../catalogue/src/index';
@@ -5942,6 +5949,131 @@ export function platformAdapter(input: {
       const state = new Map<string, boolean>();
       for (const c of changes) state.set(c.feature, c.enabled);
       return [...state.entries()].filter(([, on]) => on).map(([f]) => f);
+    },
+  };
+}
+
+/**
+ * Subscription & recurring billing (WP5 / ADR-0014).
+ *
+ * Append-only on a dedicated billing sub-stream: subscribing, giving notice, and each charge are
+ * immutable facts, and the current state is a fold (`foldBilling`), never an overwritten status
+ * column (hard rule #2). The provider only sets up the mandate and reports charge outcomes; every
+ * regulated rule — the schedule, the RBI ceilings, the GST invoice, the dunning ladder that suspends
+ * optional features but never stops trading — is in the tested `packages/platform` engine. The
+ * provider defaults to the sandbox: no real money can move until a live merchant account exists.
+ */
+export function billingAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly provider: RecurringBillingProvider;
+  readonly plans: readonly BillingPlan[];
+  readonly policy?: DunningPolicy;
+  readonly preDebitNoticeHours?: number;
+}): BillingDeps {
+  const policy: DunningPolicy = input.policy ?? { maxRetries: 3, suspendableGrants: [...OPTIONAL_FEATURES] };
+  const noticeHours = input.preDebitNoticeHours ?? 24;
+  const BILLING = streamName(STREAM.platform, 'billing');
+
+  interface StartedPayload {
+    readonly planId: string; readonly rail: BillingRail; readonly mandate: Mandate;
+    readonly schedule: BillingSchedule; readonly startedOn: string; readonly by: string;
+  }
+  interface CancelledPayload { readonly endsOn: string; readonly by: string; readonly at: string }
+  interface ChargePayload {
+    readonly outcome: 'succeeded' | 'failed'; readonly chargeRef: string;
+    readonly amountMinor: number; readonly at: string;
+  }
+
+  const readEvents = async (tenantId: string): Promise<readonly BillingEvent[]> => {
+    const events = await input.store.readStream(tenantId, BILLING, {});
+    const out: BillingEvent[] = [];
+    for (const e of events) {
+      if (e.event.type === 'BillingSubscriptionStarted') {
+        const p = e.event.payload as StartedPayload;
+        out.push({ kind: 'subscription_started', planId: p.planId, rail: p.rail, mandate: p.mandate, schedule: p.schedule, startedOn: p.startedOn, by: p.by });
+      } else if (e.event.type === 'BillingSubscriptionCancelled') {
+        const p = e.event.payload as CancelledPayload;
+        out.push({ kind: 'subscription_cancelled', endsOn: p.endsOn, by: p.by, at: p.at });
+      } else if (e.event.type === 'BillingChargeRecorded') {
+        const p = e.event.payload as ChargePayload;
+        out.push({ kind: 'charge_recorded', outcome: p.outcome, chargeRef: p.chargeRef, amountMinor: p.amountMinor, at: p.at });
+      }
+    }
+    return out;
+  };
+
+  const snapshotOf = async (tenantId: string): Promise<BillingSnapshot | undefined> =>
+    foldBilling({ tenantId, events: await readEvents(tenantId), policy, asAt: input.now() });
+
+  return {
+    now: input.now,
+    plans: () => input.plans,
+    subscription: (tenantId) => snapshotOf(tenantId),
+
+    subscribe: async (tenantId, sub): Promise<SubscribeOutcome> => {
+      const plan = input.plans.find((p) => p.planId === sub.planId);
+      if (plan === undefined) throw new Error(`unknown plan ${sub.planId}`); // the route validated this first
+      const at = input.now();
+      const startsOn = at.slice(0, 10);
+      const anchorDay = Math.min(28, Math.max(1, Number(startsOn.slice(8, 10)) || 1));
+      const created = await input.provider.createSubscription({
+        tenantId, plan, rail: sub.rail, anchorDay, startsOn, preDebitNoticeHours: noticeHours,
+      });
+      const version = (await allOf<StartedPayload>(input.store, tenantId, BILLING, 'BillingSubscriptionStarted')).length + 1;
+      const payload: StartedPayload = {
+        planId: sub.planId, rail: sub.rail, mandate: created.mandate, schedule: created.schedule, startedOn: startsOn, by: sub.by,
+      };
+      await input.store.append(tenantId, BILLING, makeEvent({
+        id: `sub-start-${tenantId}-v${version}`,
+        type: 'BillingSubscriptionStarted',
+        occurredAt: at,
+        idempotencyKey: `sub-start-${tenantId}-v${version}`,
+        source: 'api/platform',
+        payload,
+      }));
+      const snapshot = await snapshotOf(tenantId);
+      if (snapshot === undefined) throw new Error('subscription did not persist'); // unreachable — just started
+      return { snapshot, authorisationUrl: created.authorisationUrl, providerMode: input.provider.mode };
+    },
+
+    cancel: async (tenantId, by): Promise<BillingSnapshot | undefined> => {
+      const events = await readEvents(tenantId);
+      const current = foldBilling({ tenantId, events, policy, asAt: input.now() });
+      if (current === undefined) return undefined;
+      const at = input.now();
+      const endsOn = current.nextCharge?.chargeOn ?? at.slice(0, 10);
+      const version = events.filter((e) => e.kind === 'subscription_cancelled').length + 1;
+      const payload: CancelledPayload = { endsOn, by, at };
+      await input.store.append(tenantId, BILLING, makeEvent({
+        id: `sub-cancel-${tenantId}-v${version}`,
+        type: 'BillingSubscriptionCancelled',
+        occurredAt: at,
+        idempotencyKey: `sub-cancel-${tenantId}-v${version}`,
+        source: 'api/platform',
+        payload,
+      }));
+      return snapshotOf(tenantId);
+    },
+
+    handleWebhook: async ({ rawBody, signature }): Promise<WebhookOutcome> => {
+      if (!input.provider.verifyWebhook({ rawBody, signature })) {
+        return { verified: false, applied: false, detail: 'signature did not verify' };
+      }
+      const event = input.provider.parseChargeEvent(rawBody);
+      if (event === undefined) return { verified: true, applied: false, detail: 'not a charge event this endpoint records' };
+      const payload: ChargePayload = { outcome: event.outcome, chargeRef: event.chargeRef, amountMinor: event.amountMinor, at: event.at };
+      await input.store.append(event.tenantId, BILLING, makeEvent({
+        id: `charge-${event.tenantId}-${event.chargeRef}`,
+        type: 'BillingChargeRecorded',
+        occurredAt: event.at,
+        // The charge reference is the key: a re-delivered webhook for the same charge collapses.
+        idempotencyKey: `charge-${event.tenantId}-${event.chargeRef}`,
+        source: 'api/platform',
+        payload,
+      }));
+      const snapshot = await snapshotOf(event.tenantId);
+      return { verified: true, applied: true, detail: `charge ${event.outcome} recorded`, dunning: snapshot?.dunning };
     },
   };
 }

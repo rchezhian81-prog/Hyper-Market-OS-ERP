@@ -376,3 +376,100 @@ export function onChargeResult(input: {
         : `delinquent — optional features suspended (${policy.suspendableGrants.join(', ')}); the shop keeps trading`,
   };
 }
+
+// ---------------------------------------------------------------------------------------------------
+// The subscription as a fold — the append-only history of one tenant's billing, read forward.
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * A billing fact. Subscriptions are append-only (hard rule #2): starting a subscription, giving
+ * notice, and each charge attempt are separate immutable facts, and the current state is read by
+ * folding them — never by overwriting a status column.
+ */
+export type BillingEvent =
+  | {
+      readonly kind: 'subscription_started';
+      readonly planId: string;
+      readonly rail: BillingRail;
+      readonly mandate: Mandate;
+      readonly schedule: BillingSchedule;
+      readonly startedOn: string;
+      readonly by: string;
+    }
+  | { readonly kind: 'subscription_cancelled'; readonly endsOn: string; readonly by: string; readonly at: string }
+  | {
+      readonly kind: 'charge_recorded';
+      readonly outcome: 'succeeded' | 'failed';
+      readonly chargeRef: string;
+      readonly amountMinor: number;
+      readonly at: string;
+    };
+
+export interface BillingSnapshot {
+  readonly tenantId: string;
+  readonly planId: string;
+  readonly rail: BillingRail;
+  readonly mandate: Mandate;
+  readonly schedule: BillingSchedule;
+  readonly startedOn: string;
+  /** Set once notice is given. Service continues until this date. */
+  readonly endsOn?: string;
+  readonly dunning: DunningStatus;
+  /** The next debit and its pre-debit notice — absent once the subscription has ended. */
+  readonly nextCharge?: ScheduledCharge;
+  readonly detail: string;
+}
+
+/**
+ * Read a tenant's current billing state by folding its history.
+ *
+ * The subscription is the LATEST `subscription_started` (a re-subscribe after a lapse is a new
+ * fact, not an edit); a cancellation on or before it is ignored, one after it sets `endsOn`. Dunning
+ * is folded from `startDunning` through every charge in order, so the delinquency state is derived,
+ * never stored and never guessed. A subscription that has already ended has no next charge.
+ *
+ * Returns `undefined` when the tenant has never subscribed — a real answer ("not a customer yet"),
+ * distinct from any particular state of one who has.
+ */
+export function foldBilling(input: {
+  readonly tenantId: string;
+  readonly events: readonly BillingEvent[];
+  readonly policy: DunningPolicy;
+  readonly asAt: string;
+}): BillingSnapshot | undefined {
+  let started: Extract<BillingEvent, { kind: 'subscription_started' }> | undefined;
+  for (const e of input.events) if (e.kind === 'subscription_started') started = e;
+  if (started === undefined) return undefined;
+
+  // Only facts at or after the current subscription start count toward its state.
+  const since = input.events.slice(input.events.lastIndexOf(started));
+
+  let endsOn: string | undefined;
+  let dunning = startDunning(input.tenantId);
+  for (const e of since) {
+    if (e.kind === 'subscription_cancelled') endsOn = e.endsOn;
+    else if (e.kind === 'charge_recorded') {
+      dunning = onChargeResult({ previous: dunning, outcome: e.outcome, policy: input.policy });
+    }
+  }
+
+  const ended = endsOn !== undefined && input.asAt > endsOn;
+  const upcoming = ended ? undefined : nextCharge({ schedule: started.schedule, asAt: input.asAt });
+
+  return {
+    tenantId: input.tenantId,
+    planId: started.planId,
+    rail: started.rail,
+    mandate: started.mandate,
+    schedule: started.schedule,
+    startedOn: started.startedOn,
+    endsOn,
+    dunning,
+    nextCharge: upcoming,
+    detail: ended
+      ? `subscription ended ${endsOn}`
+      : endsOn !== undefined
+        ? `on ${started.planId}, ending ${endsOn}; ${dunning.detail}`
+        : `on ${started.planId}; ${dunning.detail}`,
+  };
+}
