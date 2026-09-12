@@ -91,6 +91,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'migration.mapping.read', 'migration.mapping.approve', 'migration.cleaning.read',
       'migration.trial.run', 'migration.reconciliation.read',
       'migration.opening.build', 'migration.delta.apply', 'migration.cutover.decide',
+      'migration.controltotal.sign',
       'migration.verification.read', 'migration.exception.accept',
       'ai.agent.run', 'ai.proposal.read', 'ai.budget.read', 'ai.killswitch.set',
     ],
@@ -210,6 +211,22 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'purchase.invoice.match', 'purchase.commitment.read', 'purchase.import.read',
       'export.read', 'audit.retention.read',
       'reporting.dashboard.read', 'reporting.report.read',
+    ],
+  },
+  {
+    id: 'chartered_accountant',
+    name: 'Chartered accountant',
+    // M23 / C-01 / MG-06 — the external professional who signs the FINANCE and TAX control totals at
+    // migration. Deliberately the narrowest of the sign-off roles: it may read the reconciliation and
+    // the verification report, and it may sign — and **nothing else**. The rule that a store manager,
+    // however senior, cannot sign a tax total is enforced in the reconciliation engine
+    // (`packages/migration/src/reconcile.ts` `signControlTotal`, CA_ONLY), and this role is what makes
+    // that refusal reachable rather than theoretical: the CA is the one holder for whom it passes.
+    permissions: [
+      'identity.self.read',
+      'migration.reconciliation.read',
+      'migration.verification.read',
+      'migration.controltotal.sign',
     ],
   },
 ];

@@ -823,7 +823,7 @@ export function buildSurface(deps: {
       // placeholder is satisfied by anybody who types the placeholder.
       findings: empty([]), acceptances: empty([]), signatures: empty([]),
       recordAcceptance: () => {}, ownerId: empty(undefined),
-      extractionOperator: empty(undefined), now,
+      extractionOperator: empty(undefined), rolesOf: empty([]), now,
     } : migrationAdapter({
       store, now, targetKind: deps.migrationTargetKind, ownerRoleId: OWNER_ROLE_ID,
     })),
