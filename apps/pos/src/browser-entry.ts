@@ -12,12 +12,20 @@
 
 import { InMemoryLedgerStore, Ledger } from '../../../packages/ledger/src/ledger';
 import type { CommitOutcome } from '../../../edge/store-edge/src/durability';
+import type { SaleLookupResult } from '../../../edge/store-edge/src/receipt-lookup';
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { CatalogueCache, type CatalogueSnapshot } from '../../../packages/catalogue/src/catalogue';
 import { ReservedRangeAllocator } from '../../../packages/numbering/src/numbering';
+import { money } from '../../../packages/contracts/src/money';
+import type { TenderKind } from '../../../packages/contracts/src/enums';
+import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
 import { PosSession, taxRateFromPercent } from './session';
 import { createTillSession } from './till-session';
 import { createPosView, type PosView } from './view-adapter';
+import {
+  createRefundView, type RefundPolicy, type RefundLineChoice, type RefundScreenOutcome,
+} from './refund-view';
+import type { ReturnableLine } from '../../../packages/returns/src/return-register';
 
 /**
  * This lane's reserved receipt-number range (M01-FR-02), provisioned per lane in the signed local
@@ -132,6 +140,48 @@ function laneDurableTo(
 }
 
 /**
+ * Look up a bill this lane rang, over the loopback READ route (M13-FR-01) — read-only, never a
+ * write. The mirror of the durable-write helpers, for the refund screen: the edge answers from its
+ * own logs, so it works offline for a bill this lane knows. A bill it did not ring resolves `null`.
+ */
+export type LaneLookup = (receipt: string) => Promise<SaleLookupResult | null>;
+
+export function laneLookup(port: number = DEFAULT_LANE_PORT): LaneLookup {
+  return async (receipt) => {
+    const response = await fetch(`http://127.0.0.1:${port}/lane/lookup?receipt=${encodeURIComponent(receipt)}`);
+    const body = await response.json() as { found?: boolean } & Partial<SaleLookupResult>;
+    return body.found === true && body.sale !== undefined
+      ? { sale: body.sale, returns: body.returns ?? [], refunds: body.refunds ?? [] }
+      : null;
+  };
+}
+
+/** What the refund screen passes back to complete a refund — display primitives + an optional
+ * manager approval captured at the lane (§28: the manager's staff id, which must differ from the
+ * cashier, and a reason). The edge/cloud re-verify that the approver truly holds the authority. */
+export interface RefundDraftInput {
+  readonly returnId: string;
+  readonly number: string;
+  readonly reasonCode: string;
+  readonly lines: readonly RefundLineChoice[];
+  readonly refundMinor: number;
+  readonly refundTender: TenderKind;
+  readonly noReceipt?: boolean;
+  readonly approval?: { readonly by: string; readonly reason: string };
+}
+
+/** A looked-up bill, ready for the refund screen to show and act on. */
+export interface RefundLookup {
+  readonly sale: { readonly saleId: string; readonly number: string; readonly totalMinor: number };
+  readonly returnable: readonly ReturnableLine[];
+  readonly maxRefundMinor: number;
+  /** Whether a refund of this amount needs a §28 approver, so the screen asks for a manager first. */
+  readonly needsApproval: (refundMinor: number, noReceipt?: boolean) => boolean;
+  /** Complete the refund, resolving to exactly one plain-English screen state. Never throws. */
+  readonly submit: (draft: RefundDraftInput) => Promise<RefundScreenOutcome>;
+}
+
+/**
  * Build the lane's session from its configuration.
  *
  * In deployment the lane config (lane id, cashier, trading day, currency, tax rate) comes from the
@@ -155,6 +205,15 @@ export function bootPos(config?: {
   durableReturn?: DurableWrite;
   /** This lane's reserved receipt-number range (M01-FR-02), provisioned per lane. */
   receipt?: PosReceiptSeries;
+  /**
+   * The refund policy for this tenant (M13, §28) — the approval threshold and no-receipt cap. These
+   * are owner-input-pending numbers, so they are GIVEN here (from the signed local config pack in
+   * deployment), never invented. Default: threshold 0 — every refund needs a §28 approver — and no
+   * no-receipt cap, so the no-receipt path is unavailable until one is configured (fail safe).
+   */
+  refundPolicy?: RefundPolicy;
+  /** Look up a bill for a refund. Overridable for tests; production reads this till's own edge. */
+  laneLookup?: LaneLookup;
 }): PosView & {
   readonly till: ReturnType<typeof createTillSession>;
   /** The next receipt number for this lane — gap-free within its reserved range. Throws when the
@@ -164,6 +223,8 @@ export function bootPos(config?: {
   readonly nextReceipt: () => string;
   /** How many receipt numbers remain in this lane's range, or Infinity when unprovisioned. */
   readonly receiptsRemaining: () => number;
+  /** Look up a bill this lane rang, for the refund screen — or `null` if it did not ring it. */
+  readonly lookupRefund: (receipt: string) => Promise<RefundLookup | null>;
 } {
   const outbox = new SyncOutbox();
   const session = new PosSession(
@@ -214,7 +275,52 @@ export function bootPos(config?: {
     : receiptAllocator.allocate().formatted);
   const receiptsRemaining = (): number => receiptAllocator?.remaining() ?? Number.POSITIVE_INFINITY;
 
-  return Object.assign(view, { till, nextReceipt, receiptsRemaining });
+  // The refund screen's surface. Look up a bill this lane rang, then hand the screen a small object
+  // that can show what is returnable and complete the refund — the money rules stay in the tested
+  // refund view + the till behind it; this only converts the shape and maps a manager's lane approval
+  // into the §28 `DecidedRequest` the engine checks (decidedBy ≠ processedBy; the cloud re-verifies
+  // the approver truly holds the authority on sync).
+  const refundPolicy: RefundPolicy = config?.refundPolicy ?? { approvalThresholdMinor: 0 };
+  const lookup = config?.laneLookup ?? laneLookup(config?.lanePort ?? DEFAULT_LANE_PORT);
+  const cashierId = config?.cashierId ?? 'cashier';
+
+  const lookupRefund = async (receipt: string): Promise<RefundLookup | null> => {
+    const found = await lookup(receipt);
+    if (found === null) return null;
+    const originalSale = found.sale;
+    const refundView = createRefundView({
+      refund: till.refund,
+      now: () => new Date().toISOString(),
+      policy: refundPolicy,
+      priorReturns: found.returns,
+      priorRefunds: found.refunds,
+    });
+    return {
+      sale: { saleId: originalSale.saleId, number: originalSale.number, totalMinor: originalSale.totalMinor },
+      returnable: refundView.returnable(originalSale),
+      maxRefundMinor: refundView.maxRefundMinor(originalSale),
+      needsApproval: (refundMinor, noReceipt = false) => refundView.needsApproval({
+        returnId: '', number: '', originalSale, reasonCode: '', lines: [], refundMinor, refundTender: 'cash', noReceipt,
+      }),
+      submit: (draft) => {
+        const approval: DecidedRequest | undefined = draft.approval === undefined ? undefined : {
+          id: `ovr-${draft.returnId}`, subjectType: 'pos.return', subjectRef: draft.returnId,
+          requestedBy: cashierId, branchId: null, value: money(draft.refundMinor, 'INR'),
+          status: 'approved', decidedBy: draft.approval.by, reason: draft.approval.reason,
+          decidedAt: new Date().toISOString(),
+        };
+        return refundView.submit({
+          returnId: draft.returnId, number: draft.number, originalSale,
+          reasonCode: draft.reasonCode, lines: draft.lines,
+          refundMinor: draft.refundMinor, refundTender: draft.refundTender,
+          noReceipt: draft.noReceipt ?? false,
+          ...(approval === undefined ? {} : { approval }),
+        });
+      },
+    };
+  };
+
+  return Object.assign(view, { till, nextReceipt, receiptsRemaining, lookupRefund });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its
