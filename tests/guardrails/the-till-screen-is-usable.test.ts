@@ -145,10 +145,37 @@ describe('the drawer is counted blind', () => {
   });
 });
 
-describe('what is not built is SAID, not hidden behind a dead button', () => {
-  it('tells the cashier where to send a receipt refund instead of failing silently', () => {
-    // A button that opens a screen which cannot work is worse than one that explains itself.
-    expect(code(APP)).toContain("t('refundNotBuilt')");
+describe('the refund screen gives money back, safely', () => {
+  it('reads the bill and completes the refund through the tested surface, not a browser prompt', () => {
+    // The view decides nothing: it reads the bill from this lane's own disk and submits through the
+    // bundled refund engine + till. No prompt/confirm/alert (checked above); no money rule here.
+    expect(code(APP)).toMatch(/session\.lookupRefund\(/);
+    expect(code(APP)).toMatch(/\.submit\(/);
+  });
+
+  it('offers refund reasons as choices, never free text (M15)', () => {
+    expect(code(APP)).toContain('REFUND_REASONS');
+    expect(HTML).not.toMatch(/<input[^>]*reason/i);
+  });
+
+  it("shows the MODEL's own words for a refund outcome, not its own", () => {
+    // laneMessage is written for a cashier with a customer watching — the same rule as a sale refusal.
+    expect(code(APP)).toContain('outcome.laneMessage');
+  });
+
+  it('handles every money-critical outcome distinctly — the "do not pay out" states', () => {
+    // Confusing "a reply was lost" with "it failed" is what causes a second refund (RR-F02); each
+    // outcome is a distinct screen state, and the dangerous four head with "do not hand over cash".
+    for (const kind of ['settled', 'pending', 'refused', 'uncertain', 'conflict', 'not_entitled']) {
+      expect(code(APP), kind).toContain(kind);
+    }
+    expect(code(APP)).toContain("t('refundStop')");
+  });
+
+  it('asks a manager to approve when the policy requires it (§28)', () => {
+    // A refund the cashier can give themselves is not a control. The screen asks for a manager when
+    // the policy says so (the default is every refund), captured scanned or keyed.
+    expect(code(APP)).toMatch(/needsApproval\(/);
   });
 });
 
