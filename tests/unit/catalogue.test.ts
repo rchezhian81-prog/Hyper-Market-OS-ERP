@@ -82,6 +82,12 @@ describe('CatalogueCache', () => {
     expect(cache.scan('  8901234567890 \n').product.sku).toBe('RICE1');
   });
 
+  it('finds a product by its id (for the refund screen), undefined when unknown', () => {
+    const cache = new CatalogueCache(snapshot());
+    expect(cache.findByProductId('p1')?.name).toBe('Rice 1kg');
+    expect(cache.findByProductId('p-nope')).toBeUndefined();
+  });
+
   it('refuses an unknown barcode', () => {
     const cache = new CatalogueCache(snapshot());
     expect(() => cache.scan('0000000000000')).toThrow(UnknownBarcodeError);
