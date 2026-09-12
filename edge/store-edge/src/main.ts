@@ -42,6 +42,7 @@ import { readSignedPack, writeSignedPack } from './signed-pack-file';
 import { SyncPipeline } from './sync-pipeline';
 import { canonicalHash, IdempotencyGuard } from './idempotency';
 import { ReturnEntitlement, type EntitlementLine } from './entitlement';
+import { buildReceiptLookup } from './receipt-lookup';
 import { returnIdOf } from './cloud-return';
 import { createEdgeNode, type EdgeNode } from './index';
 import { startLaneServer, LANE_HOST, type LaneServer } from './lane-server';
@@ -352,6 +353,14 @@ export async function startEdge(
     returnsEntitlement,
     // The sale's operation-identity guard, rebuilt from the durable log above (GAP-SALE-IDEMPOTENCY-01).
     salesIdempotency,
+    // Receipt lookup for the refund screen (M13-FR-01). Reads BOTH durable logs live on each call —
+    // rare (only when a refund is being taken) and always fresh, so a bill rung earlier in this same
+    // session is found, not just those on disk at boot. Read-only; never a network call.
+    lookupSale: async (receiptOrId: string) => {
+      const sales = (await readLog(log.path)).flatMap((r) => (r.ok ? [r.record] : []));
+      const returns = (await readLog(returnsLog.path)).flatMap((r) => (r.ok ? [r.record] : []));
+      return buildReceiptLookup(sales, returns)(receiptOrId);
+    },
     ...(restoredPack === undefined ? {} : { initialPack: restoredPack }),
   });
 

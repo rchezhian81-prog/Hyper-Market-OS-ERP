@@ -23,6 +23,7 @@ import { toCloudSale } from './cloud-sale';
 import { toCloudReturn } from './cloud-return';
 import { canonicalHash, type IdempotencyGuard } from './idempotency';
 import type { ReturnEntitlement, EntitlementLine } from './entitlement';
+import type { SaleLookupResult } from './receipt-lookup';
 
 /** What the lane asks the edge for, and all it may ask for. */
 export interface EdgeNode {
@@ -39,6 +40,14 @@ export interface EdgeNode {
    * can never be re-queued as a sale on restart, and the sale path is untouched by its existence.
    */
   readonly commitReturn: (returnId: string, record: string) => Promise<CommitOutcome>;
+  /**
+   * Look up a bill THIS lane rang, by its receipt number or sale id, for the refund screen
+   * (M13-FR-01, §31). Returns the original sale plus the return/refund history against it — read
+   * from this lane's own durable logs, so it works offline for a locally-known bill. Resolves
+   * `undefined` for a bill this lane did not ring (or when no lookup is configured — a standalone
+   * shell). Never a network call, and read-only: it can commit nothing.
+   */
+  readonly lookupSale: (receiptOrId: string) => Promise<SaleLookupResult | undefined>;
   /** Take a new catalogue pack, or keep the one we trust. */
   readonly takePack: (incoming: SignedPack) => { readonly accepted: boolean; readonly staffMessage: string };
 }
@@ -94,6 +103,14 @@ export function createEdgeNode(input: {
    * Optional so a standalone/demo edge (and the direct-construction unit tests) still run.
    */
   readonly salesIdempotency?: IdempotencyGuard;
+  /**
+   * Receipt lookup for the refund screen (M13-FR-01) — resolves a bill this lane rang from its own
+   * durable logs. Injected (not built here) because it reads the log files live, which is I/O the
+   * node itself stays free of; `main.ts` wires it to `buildReceiptLookup` over the real logs so it
+   * always reflects everything committed, including sales rung earlier in this same session. Absent
+   * on a standalone/demo edge, where `lookupSale` then resolves `undefined`.
+   */
+  readonly lookupSale?: (receiptOrId: string) => Promise<SaleLookupResult | undefined>;
 }): EdgeNode {
   let held = input.initialPack;
   // Work committing right now, keyed by its id, so a concurrent second call with the same id awaits
@@ -325,6 +342,11 @@ export function createEdgeNode(input: {
         returnsInFlight.delete(returnId);
       }
     },
+
+    // Read-only, off the money path: resolve a bill this lane rang for the refund screen. Delegates
+    // to the injected lookup (which reads the durable logs live); a standalone edge without one
+    // resolves `undefined`, which the screen shows as "receipt not found on this lane".
+    lookupSale: async (receiptOrId) => input.lookupSale?.(receiptOrId),
 
     takePack: (incoming) => {
       // The same function the service and the tests use, so a lane cannot end up applying a

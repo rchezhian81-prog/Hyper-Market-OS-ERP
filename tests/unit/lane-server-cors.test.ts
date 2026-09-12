@@ -17,6 +17,7 @@ const stubNode = (committed = true): EdgeNode => ({
   pack: () => undefined,
   commit: async (id) => ({ committed, saleId: id, laneMessage: committed ? 'saved' : 'refused' } as never),
   commitReturn: async (id) => ({ committed, returnId: id, laneMessage: committed ? 'saved' : 'refused' } as never),
+  lookupSale: async () => undefined,
   takePack: () => ({ accepted: true, staffMessage: '' }),
 });
 
@@ -109,6 +110,7 @@ describe('the lane socket answers a browser on this machine', () => {
       pack: () => undefined,
       commit: async (id) => { calls.push({ kind: 'sale', id }); return { committed: true, laneMessage: 'saved' } as never; },
       commitReturn: async (id) => { calls.push({ kind: 'return', id }); return { committed: true, laneMessage: 'saved' } as never; },
+      lookupSale: async () => undefined,
       takePack: () => ({ accepted: true, staffMessage: '' }),
     };
     const base = await start(node);
