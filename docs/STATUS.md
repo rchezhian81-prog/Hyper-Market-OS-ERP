@@ -5,6 +5,29 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M13 refund screen — product names on the screen (12 September 2026)
+
+**Owner direction:** "Wire product names onto the screen" — the refund screen showed product codes
+("P1") instead of names ("Rice 1kg").
+
+**Built:** the lane already holds the catalogue it prices from; the refund screen now reads names from
+it. `CatalogueCache.findByProductId(productId)` (a public accessor over the existing by-id index) →
+`PosView.productName(productId)` on the tested view adapter → `apps/pos/web/app.js` `descOf(productId)`
+used in the item-selection list and the quantity prompt. **Code fallback** when the catalogue does not
+know the id (a delisted item, or a lane with no pack) — so the screen shows *something* rather than
+blank, and never invents a name. No money rule touched; the name is display only.
+
+**Evidence:** `tests/unit/catalogue.test.ts` (+1: findByProductId) and `tests/unit/pos-view-adapter.test.ts`
+(+2: productName resolves a name / undefined for unknown / undefined with no catalogue). The
+`the-till-screen-is-usable` guardrail and the served-till refund e2e still pass; the POS bundle
+rebuilds cleanly; full non-DB and real-PostgreSQL suites green; typecheck/lint/secret-scan clean.
+
+**Refund screen status:** still open — no-receipt refunds (await a cap) and the ≤3-interaction
+usability acceptance (a person with a stopwatch). **No re-rate — headline stays 41.5%.** Not merged,
+not deployed.
+
+---
+
 ## M13 refund screen — Slice 3: the offline end-to-end proof (12 September 2026)
 
 **Owner direction:** "Offline end-to-end proof" — prove a cashier can complete a real refund on the

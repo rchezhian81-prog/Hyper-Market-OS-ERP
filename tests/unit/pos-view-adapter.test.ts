@@ -105,4 +105,25 @@ describe('createPosView', () => {
     expect(session.basket()[0]!.hsnCode).toBe('1006');
     expect(session.basket()[0]!.taxRate.bps).toBe(1800);
   });
+
+  it('resolves a product name by id for the refund screen, undefined for an unknown id', () => {
+    const session = new PosSession(
+      { laneId: 'lane-1', cashierId: 'clerk-1', tradingDay: '2026-08-02', currency: 'INR', defaultTaxRate: taxRateFromPercent(18) },
+      new Ledger(new InMemoryLedgerStore()), new SyncOutbox(),
+      () => Promise.resolve({ committed: true as const, durable: true as const, detail: 'ok', laneMessage: 'ok' }),
+    );
+    const snapshot: CatalogueSnapshot = {
+      tenantId: 't1', version: 1, builtAt: AT,
+      products: [{ productId: 'p1', sku: 'RICE1', name: 'Rice 1kg', baseUom: 'ea', unitPriceMinor: 100_00, taxBps: 1800, status: 'active' }],
+      barcodes: [],
+    };
+    const view = createPosView(session, 'INR', new CatalogueCache(snapshot));
+    expect(view.productName('p1')).toBe('Rice 1kg');
+    expect(view.productName('p-unknown')).toBeUndefined();
+  });
+
+  it('has no product name without a catalogue — the refund screen then falls back to the code', () => {
+    const { view } = newView(); // no catalogue loaded on this lane
+    expect(view.productName('p1')).toBeUndefined();
+  });
 });

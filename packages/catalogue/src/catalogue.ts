@@ -205,6 +205,16 @@ export class CatalogueCache {
     return this.bySku.get(sku);
   }
 
+  /**
+   * The product a lane rang under this id, for a screen that has only the id — the refund screen
+   * shows the item the customer is returning, and the sale record it reads carries the productId, not
+   * the name. Undefined when this lane's catalogue does not know the id (a product delisted since the
+   * sale, or a lane with no pack), so the caller can fall back to the code rather than invent a name.
+   */
+  findByProductId(productId: string): CatalogueProduct | undefined {
+    return this.byProductId.get(productId);
+  }
+
   /** Decode an embedded barcode against the tenant's rules, if one matches. */
   private decodeEmbedded(
     code: string,

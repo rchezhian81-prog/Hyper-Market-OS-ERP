@@ -27,6 +27,10 @@ const el = (id) => document.getElementById(id);
 const inr = (minor) =>
   '₹' + (minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+/** A product's name from the lane's catalogue, or its code when the catalogue does not know it — a
+ *  cashier reads "Amul Ghee 1L", not "P1", but a delisted item still shows something rather than blank. */
+const descOf = (productId) => (session.productName && session.productName(productId)) || productId;
+
 // ── Words ───────────────────────────────────────────────────────────────────
 //
 // Tamil is a first language for much of the floor staff, not a translation afterthought. Numbers
@@ -619,13 +623,13 @@ async function startRefund() {
 
   // 2. Which item, and how many — capped at what is still returnable on the bill.
   const productId = await choose(t('refundWhichItem'), returnable.map((l) => ({
-    value: l.productId, label: `${l.productId} — ${t('refundCanReturn')} ${l.returnableMinor}`,
+    value: l.productId, label: `${descOf(l.productId)} — ${t('refundCanReturn')} ${l.returnableMinor}`,
   })));
   if (productId === null) return;
   const line = returnable.find((l) => l.productId === productId);
 
   const qtyAns = await ask({
-    title: t('refundHowMany'), mode: 'number', initial: '1',
+    title: `${t('refundHowMany')} — ${descOf(productId)}`, mode: 'number', initial: '1',
     hint: `${t('refundCanReturn')}: ${line.returnableMinor}`,
   });
   if (qtyAns === null) return;

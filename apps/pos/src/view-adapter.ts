@@ -60,6 +60,12 @@ export interface PosView {
   scanBarcode(code: string, batch?: ScanBatchContext): ScanOutcome;
   /** True when no catalogue is loaded on this lane (the view hides scanning). */
   hasCatalogue(): boolean;
+  /**
+   * The name of a product this lane can price, by its id — for a screen that has only the id (the
+   * refund screen reads the sale record, which carries productIds). `undefined` when this lane's
+   * catalogue does not know the id, so the screen falls back to the code rather than invent a name.
+   */
+  productName(productId: string): string | undefined;
   setQuantity(lineId: string, qty: number): void;
   voidLine(lineId: string, reason: string): void;
   basket(): ViewLine[];
@@ -141,6 +147,10 @@ export function createPosView(
 
     hasCatalogue(): boolean {
       return catalogue !== undefined;
+    },
+
+    productName(productId: string): string | undefined {
+      return catalogue?.findByProductId(productId)?.name;
     },
 
     scanBarcode(code: string, batch?: ScanBatchContext): ScanOutcome {

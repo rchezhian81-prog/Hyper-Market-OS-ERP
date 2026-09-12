@@ -113,7 +113,8 @@ never free text.
    reused refund id is refused (no double payout), and a refund with no manager is refused. Self-skips
    where no browser binary is present, like the sale e2e.
 
-Still open on the screen itself (tracked, not silently dropped): product names (shown by code today),
-no-receipt refunds (await a cap), and the **usability acceptance** (a person with a stopwatch against
-the ≤3-interaction bar, `../usability-test-script.md`) — the e2e proves it *works*, not yet that it
-meets the speed bar.
+Still open on the screen itself (tracked, not silently dropped): no-receipt refunds (await a cap), and
+the **usability acceptance** (a person with a stopwatch against the ≤3-interaction bar,
+`../usability-test-script.md`) — the e2e proves it *works*, not yet that it meets the speed bar.
+Product names are now shown from the lane's catalogue (a code fallback when the catalogue does not
+know the id).
