@@ -93,7 +93,16 @@ never free text.
 ## Build order (slices, one reviewed PR each)
 
 1. **The tested view surface** (`apps/pos/src/refund-view.ts`) — display-primitive bridge over the
-   tested engine + `till.refund()`, mapping every outcome above to a plain-English screen state. No DOM.
-2. **The on-screen panels** — replace the honest "not built yet" stub in `apps/pos/web/app.js` with
-   the real flow bound to the view surface.
-3. **The end-to-end check** — a cashier completes a refund on the served shell, offline.
+   tested engine + `till.refund()`, mapping every outcome above to a plain-English screen state. No DOM. **DONE** (#350).
+2a. **Lane-local receipt lookup** (`edge/store-edge/src/receipt-lookup.ts`, `EdgeNode.lookupSale`) —
+   the offline read that finds a bill this lane rang. **DONE** (#351).
+2b. **Shell refund plumbing** — the lane read route `GET /lane/lookup` + `posSession.lookupRefund`
+   binding lookup + the view surface + `till.refund`. **DONE** (#352).
+2c. **The on-screen panels** — the real flow in `apps/pos/web/app.js`, replacing the "not built"
+   stub. **DONE** (this slice): the owner chose scan-or-key for the receipt AND the manager code,
+   every refund needing a manager (threshold 0). Receipt entry via a scan-or-keypad panel; item +
+   quantity (capped at returnable); reason (chips); condition (resell/damaged); amount (capped,
+   shown as they type); refund method (cash/card/UPI/store credit); manager approval scanned or
+   keyed (a different person, §28); the outcome in the model's own words, the money-critical four
+   headed "Do not hand over cash". The `the-till-screen-is-usable` guardrail asserts these.
+3. **The end-to-end check** — a cashier completes a refund on the served shell, offline. Next slice.
