@@ -86,7 +86,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'finance.gstr.generate', 'finance.gstr.read', 'finance.gstr.approve', 'finance.gstr.submit',
       'payroll.statutory.read', 'payroll.ess.self',
       'workforce.roster.read', 'workforce.task.read', 'workforce.checklist.read', 'workforce.incentive.read', 'workforce.sop.read',
-      'migration.verification.read', 'migration.exception.accept',
+      'migration.discovery.read', 'migration.verification.read', 'migration.exception.accept',
       'ai.agent.run', 'ai.proposal.read', 'ai.budget.read', 'ai.killswitch.set',
     ],
   },
