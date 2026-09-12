@@ -6226,6 +6226,14 @@ export function migrationAdapter(input: {
         input.store, tenantId, STREAM.migration, 'ExtractionRun',
       ))?.operatorId;
     },
+
+    /**
+     * The roles a user actually holds in this tenant, read from the append-only grant history — so a
+     * control-total signature's authority (is the signer a chartered accountant?) is decided from the
+     * ledger, never from what the request claims about itself.
+     */
+    rolesOf: async (tenantId, userId) =>
+      (await grants(tenantId)).filter((g) => g.userId === userId).map((g) => g.roleId),
   };
 }
 

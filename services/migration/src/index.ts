@@ -17,7 +17,7 @@ import {
   type LoadTarget, type DeltaChange,
 } from '../../../packages/migration/src/trial';
 import {
-  recordControlTotal, assessReconciliation, buildOpeningEvents,
+  recordControlTotal, assessReconciliation, buildOpeningEvents, signControlTotal,
   type ControlTotal, type OpeningKind, type ReconciliationReport,
 } from '../../../packages/migration/src/reconcile';
 import {
@@ -184,6 +184,12 @@ export interface MigrationDeps {
    * signed document.
    */
   readonly extractionOperator: (tenantId: string) => Promise<string | undefined> | string | undefined;
+  /**
+   * The roles a user holds in a tenant, read from their own grants — used to decide whether a signer
+   * is a chartered accountant (MG-06). Optional so existing callers/stubs need not supply it; when it
+   * is absent the caller is treated as holding no roles, so a finance/tax total cannot be signed.
+   */
+  readonly rolesOf?: (tenantId: string, userId: string) => Promise<readonly string[]> | readonly string[];
   readonly now: () => string;
 }
 
@@ -572,6 +578,53 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
           acc = r.totals;
         }
         return { status: 200, body: assessReconciliation({ tenantId: ctx.tenantId, totals: acc }) };
+      },
+    },
+    {
+      // MG-06 sign-off — put a NAME to a control total (QG-07). Two refusals matter: the person who ran
+      // the load cannot sign its totals (§28 — they already believe it worked, which is the whole
+      // reason a second pair of eyes exists), and a FINANCE or TAX total is the chartered accountant's
+      // to sign and nobody else's (M23 / C-01). The signer is the authenticated caller and their role
+      // is read from their OWN grants, never the body. There is no provisional signature — an open
+      // total is refused, because this is the last place a wrong opening balance can be stopped.
+      api: 'API-12', method: 'POST', path: '/v1/migration/control-totals/sign',
+      permission: 'migration.controltotal.sign', idempotent: true,
+      handler: async (ctx) => {
+        await assertSafeTarget(deps, ctx.tenantId);
+        const b = ctx.body;
+        const rawTotals = isObj(b) ? b['totals'] : undefined;
+        const totalId = isObj(b) ? b['totalId'] : undefined;
+        const loadOperator = isObj(b) ? b['loadOperator'] : undefined;
+        const statement = isObj(b) ? b['statement'] : undefined;
+        if (!Array.isArray(rawTotals) || !rawTotals.every(isControlTotal)
+          || typeof totalId !== 'string' || totalId === ''
+          || typeof loadOperator !== 'string' || loadOperator === ''
+          || typeof statement !== 'string' || statement === '') {
+          throw apiError(400, {
+            code: 'not_readable_as_a_signature',
+            whatHappened: 'This payload could not be read as a control-total signature. It needs the control totals, the totalId to sign, who ran the load (loadOperator), and the signer\'s statement.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was signed. Correct the fields and send them again.',
+          });
+        }
+        const totals = rawTotals.map((t) => ({ ...t, tenantId: ctx.tenantId }));
+        const roles = deps.rolesOf ? await deps.rolesOf(ctx.tenantId, ctx.userId) : [];
+        // The role that carries authority for THIS signature: a chartered accountant if the signer
+        // actually holds that role (only they may sign finance/tax), otherwise the caller's own role,
+        // recorded for the audit. Read from grants, never taken from the request body.
+        const signerRole = roles.includes('chartered_accountant') ? 'chartered_accountant' : (roles[0] ?? 'unknown');
+        const result = signControlTotal({
+          totals, totalId, signedBy: ctx.userId, signerRole, loadOperator, statement, now: deps.now(),
+        });
+        if (!result.ok) {
+          throw apiError(422, {
+            code: result.refusedBecause!,
+            whatHappened: result.detail,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was signed. The person who ran the load cannot sign its totals; a finance or tax total is the chartered accountant\'s to sign; and an open total cannot be signed at all.',
+          });
+        }
+        return { status: 200, body: { totals: result.totals } };
       },
     },
     {

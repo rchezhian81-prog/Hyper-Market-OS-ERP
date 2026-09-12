@@ -5,6 +5,34 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## MG-06 sign-off + the Chartered Accountant role (12 September 2026)
+
+**Owner direction:** "Add the CA role." Closes the last gap in the migration sign-off chain.
+
+**Built:**
+- **Chartered Accountant role** (`services/api/src/roles.ts`, `chartered_accountant`) — the external
+  professional who signs finance/tax control totals at migration (M23 / C-01). Deliberately the
+  narrowest sign-off role: read the reconciliation and the verification report, and sign — nothing
+  else. It is the one holder for whom the engine's finance/tax-needs-a-CA refusal passes.
+- **MG-06 sign-off route** — `POST /v1/migration/control-totals/sign` (`migration.controltotal.sign`,
+  held by owner + chartered_accountant) runs `signControlTotal`. The signer is the authenticated
+  caller and **their role is read from their own grants, never the body** (new optional
+  `rolesOf` dep, wired in `services/api/src/adapters.ts`). Refuses: the person who ran the load signing
+  its own totals (§28), a finance/tax total signed by a non-CA (M23 / C-01), and an **open** total
+  (no provisional signature — the last place a wrong opening balance can be stopped).
+
+**Evidence:** `tests/unit/migration-sign-route.test.ts` (6: CA signs a finance total; non-CA refused on
+finance; a non-CA signs a stock total; loader-signs-own refused; open total refused; production +
+malformed refused). The platform-admin-separation, api-surface-contract and thirteen-APIs guardrails
+still pass with the new role and permission. Full non-DB suite green; typecheck/lint clean.
+
+**Honesty:** **No re-rate — headline stays 41.5%.** The migration sign-off chain is now complete:
+reconcile → **sign (CA for finance/tax)** → opening balances → cutover. What remains before a real
+go-live is operational, not code: the owner grants the CA role to a real person, and the cutover night
+itself. The commercial side still needs a Razorpay merchant account + a production identity provider.
+
+---
+
 ## Migration MG-10/11 — the cutover gate reaches the cloud; pipeline complete at the API (12 September 2026)
 
 **Owner direction:** "complete all." The final step of the migration pipeline.
