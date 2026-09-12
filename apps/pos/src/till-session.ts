@@ -45,6 +45,46 @@ export class LocalRefundRefusedError extends Error {
   }
 }
 
+/**
+ * Thrown when a refund id was already used for a DIFFERENT refund (RR-F03). This is not a lane
+ * failure to retry — it is an explicit conflict: the same id cannot mean two different refunds, so
+ * the cashier must not hand back cash and the id must be looked at. Distinct from
+ * `LocalRefundRefusedError` so the screen and the caller can tell "try again" from "this is wrong".
+ */
+export class RefundConflictError extends Error {
+  constructor(returnId: string, readonly laneMessage: string) {
+    super(`Return "${returnId}" reuses an id that was already used for a different refund (M13, RR-F03).`);
+    this.name = 'RefundConflictError';
+  }
+}
+
+/**
+ * Thrown when a refund would take back more of a line than the original sale sold, judged against
+ * the edge's own trusted sale + return history rather than numbers the request supplied (RR-F04).
+ * Explicit, so the screen can say "already refunded" rather than a generic failure — and so a caller
+ * cannot mistake it for something to retry.
+ */
+export class RefundNotEntitledError extends Error {
+  constructor(returnId: string, readonly laneMessage: string) {
+    super(`Return "${returnId}" exceeds what the original sale entitles (M13-FR-01, RR-F04).`);
+    this.name = 'RefundNotEntitledError';
+  }
+}
+
+/**
+ * Thrown when the lane could not CONFIRM whether a refund was recorded — a reply was lost, not a
+ * refusal (RR-F02). It is deliberately distinct from `LocalRefundRefusedError`: a refusal means "it
+ * did not happen, try elsewhere"; this means "it may or may not have happened — do not hand back cash
+ * and do not run it again, resolve it first". Treating uncertainty as failure is what causes a second
+ * refund for money that already went back.
+ */
+export class RefundUncertainError extends Error {
+  constructor(returnId: string, readonly laneMessage: string) {
+    super(`Return "${returnId}" could not be confirmed as recorded at the lane (RR-F02).`);
+    this.name = 'RefundUncertainError';
+  }
+}
+
 export interface TillConfig {
   readonly tillId: string;
   readonly laneId: string;
@@ -181,7 +221,22 @@ export function createTillSession(
       // only; a real lane always supplies one.
       if (durableReturn !== undefined) {
         const outcome = await durableReturn(full.id, toReturnRecord(full));
-        if (!outcome.committed) throw new LocalRefundRefusedError(full.id, outcome.laneMessage);
+        if (!outcome.committed) {
+          // Explicit, distinct outcomes the cashier and caller must tell apart. Unconfirmed (a lost
+          // reply — RR-F02) is "may have recorded, do not re-run"; a conflict (id reused for different
+          // money — RR-F03) and an over-return (more than the receipt entitles — RR-F04) are "this is
+          // wrong"; anything else is a plain durable-write refusal ("try elsewhere").
+          if (outcome.unconfirmed === true) {
+            throw new RefundUncertainError(full.id, outcome.laneMessage);
+          }
+          if (outcome.refusedBecause === 'idempotency_conflict') {
+            throw new RefundConflictError(full.id, outcome.laneMessage);
+          }
+          if (outcome.refusedBecause === 'over_return') {
+            throw new RefundNotEntitledError(full.id, outcome.laneMessage);
+          }
+          throw new LocalRefundRefusedError(full.id, outcome.laneMessage);
+        }
       }
 
       // Then account for it locally: stock back in the right state, the refund result for the screen.

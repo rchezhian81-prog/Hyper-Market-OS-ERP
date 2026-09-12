@@ -5,6 +5,47 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## RR-F01…RR-F04 — the Codex refund-review findings, reproduced and repaired (11 September 2026)
+
+**Owner direction:** the four original Codex findings (RR-F01–RR-F04), recorded verbatim; reproduce
+against current `main` before claiming anything; repair in order **RR-F01 → RR-F03 → RR-F04 → RR-F02**,
+one active PR, separate reviewable commits; keep the RR-F05/RR-F06 tests; run the real-database job;
+record new gaps separately without renumbering; do not merge or deploy.
+
+**What each was, and the fix (each reproduced on current `main` first):**
+- **RR-F01** — a `text/plain`, foreign-`Origin` POST to `/lane/returns` returned 200 and wrote a
+  record. CORS + loopback are not authorization. Fix (`edge/store-edge/src/lane-server.ts`, commit
+  `0adc015`): authorize **before** any write — foreign origin → 403, non-JSON → 415; authorized
+  offline operation preserved.
+- **RR-F03** — the same refund id with different money committed twice. Fix (new
+  `edge/store-edge/src/idempotency.ts` + `index.ts`, commit `ededd39`): operation identity + canonical
+  payload identity, rebuilt from the durable log; identical retry → original outcome, different money →
+  explicit conflict; concurrency- and restart-safe. Till surfaces `RefundConflictError`.
+- **RR-F04** — a second full refund of the same unit succeeded via a new id + omitted history. Fix
+  (new `edge/store-edge/src/entitlement.ts` + `index.ts`, commit `26506ba`): entitlement from trusted
+  sold (sale log) + returned (returns log), atomic reservation; legitimate partials still pass. Till
+  surfaces `RefundNotEntitledError`.
+- **RR-F02** — a lost reply was reported as definite failure. Fix (`apps/pos/src/browser-entry.ts` +
+  `till-session.ts`, commit `cd574c0`): retry the refund under the same id (idempotent now, RR-F03) to
+  resolve a dropped reply without a double refund; an unreachable store → **unconfirmed** (hold, do not
+  re-run), never a false failure. Till surfaces `RefundUncertainError`.
+
+**Safe policy for what offline cannot solve:** a refund whose original sale is not on this edge
+(cross-lane / no receipt) cannot be entitlement-checked locally — allowed under existing approval/cap
+controls, global at-most-once deferred to cloud reconciliation and **never claimed locally**. Recorded
+as `GAP-REFUND-XLANE-01` (with a sale-path idempotency analogue `GAP-SALE-IDEMPOTENCY-01`) — separate
+from, and not renumbering, the findings.
+
+**Evidence:** `docs/evidence/rr-f01-f04-refund-review.md`; findings register
+`docs/audit/CODEX_RESTART_REFUND_REVIEW_FINDINGS.md`. Full non-DB suite **6,337 passed / 0 failed**
+(+44 new); real disposable **PostgreSQL 16.13** `DB_TESTS_REQUIRED=1 pnpm run test:db` **1,504 passed
+/ 0 failed**; typecheck/lint/secret-scan/audit clean; RR-F05/RR-F06 tests retained and green.
+
+**No re-rate. Headline stays 41.5%** — hardening of the M13 refund and offline-lane controls. Not
+merged, not deployed. This is the one active repair PR.
+
+---
+
 ## RR-F05 / RR-F06 — failed-sync records survive a restart; the sync checkpoint is correct (11 September 2026)
 
 **Owner direction:** resume PR #345 (the hold is on merging/deploying, not on repairing the branch);
