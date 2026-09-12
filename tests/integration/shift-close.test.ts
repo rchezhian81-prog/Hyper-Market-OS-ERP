@@ -63,6 +63,61 @@ describe('a shift closes on a blind count, over/short valued and explained (M14-
     expect(list.totalVarianceMinor).toBe(-1_000);
   });
 
+  it('captures the blind count BY DENOMINATION when the breakdown sums to the count, and surfaces it to the cash office', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    // A material −1000 short (expected 115000, counted 114000), broken down note-by-note: the drawer
+    // is missing exactly two ₹500 notes. 2×500 + 1×100 + 4×10 = 100000 + 10000 + 4000 = 114000.
+    const denominations = [
+      { denominationMinor: 50_000, count: 2 },
+      { denominationMinor: 10_000, count: 1 },
+      { denominationMinor: 1_000, count: 4 },
+    ];
+    const res = await close(h, A, 'u-owner', 'S1', base({ countedCashMinor: 114_000, reasonCode: 'two_500_notes_missing', denominations }));
+    expect(res.status).toBe(201);
+    expect((res.body as { denominationsRecorded?: boolean }).denominationsRecorded).toBe(true);
+
+    // The cash office's reconciliation list carries the breakdown, so it sees WHAT was short.
+    const list = (await overShort(h, A, 'u-owner')).body as { overShort: { shiftId: string; denominations: unknown }[] };
+    const row = list.overShort.find((r) => r.shiftId === 'S1');
+    expect(row?.denominations).toEqual(denominations);
+  });
+
+  it('refuses a breakdown that does not sum to the counted total (entry error caught at the drawer)', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    // Notes add to 110000 but the cashier declared 115000 counted.
+    const res = await close(h, A, 'u-owner', 'S1', base({
+      denominations: [{ denominationMinor: 50_000, count: 2 }, { denominationMinor: 10_000, count: 1 }],
+    }));
+    expect(res.status).toBe(422);
+    expect(codeOf(res)).toBe('does_not_sum_to_the_count');
+    // Nothing was recorded — the drawer is not on the over/short list.
+    expect(((await overShort(h, A, 'u-owner')).body as OverShort).overShort).toEqual([]);
+  });
+
+  it('refuses an unknown denomination and a malformed breakdown', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    // ₹300 note does not exist.
+    const unknown = await close(h, A, 'u-owner', 'S1', base({ countedCashMinor: 30_000, denominations: [{ denominationMinor: 30_000, count: 1 }] }));
+    expect(unknown.status).toBe(422);
+    expect(codeOf(unknown)).toBe('unknown_denomination');
+
+    // Not a list of {denominationMinor, count} pairs.
+    const malformed = await close(h, A, 'u-owner', 'S2', base({ denominations: [{ denominationMinor: 50_000 }] }));
+    expect(malformed.status).toBe(400);
+    expect(codeOf(malformed)).toBe('denominations_not_readable');
+  });
+
+  it('still closes on the total alone when no breakdown is sent (offline lane compatibility)', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    const res = await close(h, A, 'u-owner', 'S1', base());
+    expect(res.status).toBe(201);
+    expect((res.body as { denominationsRecorded?: boolean }).denominationsRecorded).toBe(false);
+  });
+
   it('is idempotent per shift — a re-sent close does not record it twice on a different figure', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');

@@ -4,3 +4,4 @@
 
 export * from './till';
 export * from './assess-shift';
+export * from './denominations';
