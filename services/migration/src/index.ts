@@ -13,7 +13,10 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { assertNonProduction, type LoadTarget } from '../../../packages/migration/src/trial';
-import { inventorySources, type LegacySource } from '../../../packages/migration/src/discovery';
+import {
+  inventorySources, sealExtract, verifyExtract, simpleHasher,
+  type LegacySource, type SealedExtract,
+} from '../../../packages/migration/src/discovery';
 import {
   buildVerificationReport, renderVerificationReport,
   type DomainFinding, type Acceptance, type Signature,
@@ -36,6 +39,21 @@ function isLegacySource(v: unknown): v is LegacySource {
     && typeof v['kind'] === 'string' && SOURCE_KINDS.includes(v['kind'])
     && typeof v['volumeBasis'] === 'string' && VOLUME_BASES.includes(v['volumeBasis'])
     && typeof v['extractable'] === 'boolean';
+}
+
+/** Is this a sealed extract the load-time check can verify against — the seal `sealExtract` produced?
+ * The digest and row count taken at extraction (MG-02) are what a load verifies against, so both
+ * must be present and the record must actually claim to be sealed. */
+function isSealedExtract(v: unknown): v is SealedExtract {
+  if (!isObj(v)) return false;
+  return typeof v['extractId'] === 'string' && v['extractId'] !== ''
+    && typeof v['tenantId'] === 'string'
+    && typeof v['sourceId'] === 'string'
+    && typeof v['digest'] === 'string' && v['digest'] !== ''
+    && typeof v['rowCount'] === 'number'
+    && typeof v['extractedAt'] === 'string'
+    && typeof v['extractedBy'] === 'string'
+    && v['sealed'] === true;
 }
 
 export interface MigrationDeps {
@@ -137,6 +155,86 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
         // discovery name another's source.
         const sources = rawSources.map((s) => ({ ...s, tenantId: ctx.tenantId }));
         return { status: 200, body: inventorySources({ tenantId: ctx.tenantId, sources }) };
+      },
+    },
+    {
+      // MG-02 — preservation, step one: SEAL the raw extract at extraction. Hash it, stamp who took
+      // it and when, and REFUSE it without a verified backup restore (a backup job that reported
+      // success is not a backup that restores, and the difference is only discovered when it matters).
+      // The digest is taken here, at extraction — a hash taken later, at load, proves nothing. The
+      // seal is returned to the operator to keep; verifying it at load is the next route.
+      api: 'API-12', method: 'POST', path: '/v1/migration/extracts/:extractId/seal',
+      permission: 'migration.preservation.seal', idempotent: true,
+      handler: async (ctx) => {
+        await assertSafeTarget(deps, ctx.tenantId);
+        const b = ctx.body;
+        const extractId = ctx.params['extractId'] ?? '';
+        const sourceId = isObj(b) ? b['sourceId'] : undefined;
+        const material = isObj(b) ? b['material'] : undefined;
+        const rowCount = isObj(b) ? b['rowCount'] : undefined;
+        const extractedBy = isObj(b) ? b['extractedBy'] : undefined;
+        const backupVerifiedAt = isObj(b) ? b['backupVerifiedAt'] : undefined;
+        if (extractId === '' || typeof sourceId !== 'string' || sourceId === ''
+          || typeof material !== 'string' || typeof rowCount !== 'number' || typeof extractedBy !== 'string'
+          || (backupVerifiedAt !== undefined && typeof backupVerifiedAt !== 'string')) {
+          throw apiError(400, {
+            code: 'not_readable_as_an_extract_to_seal',
+            whatHappened: 'This payload could not be read as a raw extract. Sealing needs the extract id (in the path), the sourceId it came from, the material to hash, the row count, and who extracted it.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was sealed. Correct the fields and send them again.',
+          });
+        }
+        const sealed = sealExtract({
+          extractId, tenantId: ctx.tenantId, sourceId, material, rowCount, extractedBy,
+          ...(backupVerifiedAt === undefined ? {} : { backupVerifiedAt }),
+          hasher: simpleHasher, now: deps.now(),
+        });
+        if (!sealed.ok) {
+          // Refused, by name — most importantly a backup that was never verified (MG-02). Understood
+          // but cannot be produced, so 422, and nothing is sealed.
+          throw apiError(422, {
+            code: sealed.refusedBecause!, whatHappened: sealed.detail,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'No seal was produced. A raw extract without a VERIFIED backup restore, an empty extract, or one with nobody\'s name on it cannot be sealed — resolve that first.',
+          });
+        }
+        return { status: 200, body: sealed.extract };
+      },
+    },
+    {
+      // MG-02 — preservation, step two: VERIFY at load time that the bytes about to be loaded are the
+      // bytes that were sealed. Both the digest AND the row count, because they fail differently: a
+      // changed digest means the content moved; a smaller row count means part of it did not arrive,
+      // and a truncated extract loads perfectly and reconciles to a smaller, self-consistent shop. A
+      // mismatch is not an HTTP error — the answer (matches / rowCountMatches) is in the body for the
+      // operator to act on, the same way discovery's gaps are.
+      api: 'API-12', method: 'POST', path: '/v1/migration/extracts/verify',
+      permission: 'migration.preservation.verify', idempotent: true,
+      handler: async (ctx) => {
+        await assertSafeTarget(deps, ctx.tenantId);
+        const b = ctx.body;
+        const extract = isObj(b) ? b['extract'] : undefined;
+        const material = isObj(b) ? b['material'] : undefined;
+        const rowCount = isObj(b) ? b['rowCount'] : undefined;
+        if (!isSealedExtract(extract) || typeof material !== 'string' || typeof rowCount !== 'number') {
+          throw apiError(400, {
+            code: 'not_readable_as_a_load_to_verify',
+            whatHappened: 'This payload could not be read as a load to verify. It needs the sealed extract taken at extraction, the material about to be loaded, and its row count.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was verified. Send the seal from extraction alongside the bytes about to be loaded.',
+          });
+        }
+        // A seal belongs to the tenant it was taken for; verifying it under another is refused rather
+        // than quietly recomputing against the wrong shop's seal.
+        if (extract.tenantId !== ctx.tenantId) {
+          throw apiError(403, {
+            code: 'seal_belongs_to_another_tenant',
+            whatHappened: 'This sealed extract was taken for a different tenant.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was verified. Verify a seal against the tenant it was taken for.',
+          });
+        }
+        return { status: 200, body: verifyExtract({ extract, material, rowCount, hasher: simpleHasher }) };
       },
     },
     {
