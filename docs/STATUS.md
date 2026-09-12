@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Migration MG-02 — preservation (seal / verify) reaches the cloud (12 September 2026)
+
+**Owner direction:** "Continue the migration pipeline." The next step after discovery.
+
+**Built:** the MG-02 preservation pair on API-12 (`services/migration/src/index.ts`), running the tested
+`sealExtract` / `verifyExtract`:
+- `POST /v1/migration/extracts/:extractId/seal` — seal a raw extract when it is taken: hash it, stamp
+  who took it and when, and **refuse it without a VERIFIED backup restore** (a backup job that
+  reported success is not a backup that restores — the difference is only discovered when it matters).
+  The digest is taken at extraction; a hash taken later, at load, proves nothing. Also refuses an
+  empty extract and one with nobody's name on it.
+- `POST /v1/migration/extracts/verify` — at load time, check the bytes about to be loaded are the
+  bytes that were sealed: **both the digest AND the row count**, because a truncated extract loads
+  perfectly and reconciles to a smaller, self-consistent shop. A mismatch is a result in the body
+  (matches / rowCountMatches), not an HTTP error; a seal for another tenant is refused (403).
+
+Both refuse a production target first (hard rule #7). Stateless (the operator keeps the seal between
+extraction and load — the engine's chain-of-custody contract). New permissions
+`migration.preservation.seal` / `migration.preservation.verify` (Owner role).
+
+**Evidence:** `tests/unit/migration-preservation-route.test.ts` (8: seal with verified backup; refused
+without a backup / empty / no extractor named; production + malformed refused; verify matches; catches
+a changed digest and a truncated load; tenant isolation). API-surface contract + thirteen-APIs
+consistency pass. Full non-DB and real-PostgreSQL suites green; typecheck/lint/secret-scan clean.
+
+**Scope & honesty:** stateless preservation (server-side seal storage is a follow-on). **No re-rate —
+headline stays 41.5%;** MG-02's rung was already PARTIALLY_WIRED, so wiring these routes deepens it
+without moving the ladder. Not merged, not deployed.
+
+---
+
 ## Migration MG-01 — the discovery step reaches the cloud (12 September 2026)
 
 **Owner direction:** "You pick the next most valuable module." Grounded the pick in the completion
