@@ -5,7 +5,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
-import { assessShiftClose, type ShiftCloseInput } from '../../../packages/till/src/index';
+import { assessShiftClose, checkDenominationCount, type ShiftCloseInput, type DenominationCount } from '../../../packages/till/src/index';
 
 /** A shift close as it is persisted — enough to list over/short and to answer idempotently. */
 export interface ClosedShiftRecord {
@@ -19,6 +19,12 @@ export interface ClosedShiftRecord {
   readonly currency: string;
   readonly exceptionRaised: boolean;
   readonly reasonCode: string | null;
+  /**
+   * The blind count's denomination breakdown (M14-FR-02), when the cashier entered it note-by-note.
+   * Optional so an offline lane that only synced a total still closes; when present it is verified to
+   * sum to `countedMinor`, so the cash office and the CA see WHAT was short, not just how much.
+   */
+  readonly denominations?: readonly DenominationCount[];
   readonly closedAt: string;
 }
 
@@ -59,6 +65,38 @@ export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
           });
         }
 
+        // Optional denomination breakdown of the blind count. When present, every entry must read as a
+        // {denominationMinor, count} pair and the whole breakdown must SUM to the counted total — a
+        // breakdown that does not sum is an entry error caught here at the drawer, never a variance the
+        // cash office chases at audit.
+        let denominations: readonly DenominationCount[] | undefined;
+        if (b['denominations'] !== undefined) {
+          if (!Array.isArray(b['denominations'])
+            || !b['denominations'].every((d) => d !== null && typeof d === 'object'
+              && Number.isInteger((d as Record<string, unknown>)['denominationMinor'])
+              && Number.isInteger((d as Record<string, unknown>)['count']))) {
+            throw apiError(400, {
+              code: 'denominations_not_readable',
+              whatHappened: 'The denomination breakdown must be a list of notes/coins, each with a whole face value in paise and a whole count.',
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Nothing was closed. Send the breakdown as a list of {denominationMinor, count}, or leave it out to close on the total alone.',
+            });
+          }
+          const parsed = (b['denominations'] as readonly Record<string, unknown>[]).map((d) => ({
+            denominationMinor: d['denominationMinor'] as number, count: d['count'] as number,
+          }));
+          const check = checkDenominationCount({ denominations: parsed, countedCashMinor: b['countedCashMinor'] as number });
+          if (!check.ok) {
+            throw apiError(422, {
+              code: check.refusedBecause!,
+              whatHappened: check.detail,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'The drawer was NOT closed. Recount the notes and coins so the breakdown matches the counted total, then close again.',
+            });
+          }
+          denominations = parsed;
+        }
+
         const input: ShiftCloseInput = {
           openingFloatMinor: b['openingFloatMinor'] as number, cashSalesMinor: b['cashSalesMinor'] as number,
           pickupsMinor: b['pickupsMinor'] as number, cashRefundsMinor: b['cashRefundsMinor'] as number,
@@ -79,12 +117,14 @@ export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
           shiftId, tillId: b['tillId'] as string, cashierId: b['cashierId'] as string, tradingDay: b['tradingDay'] as string,
           expectedMinor: result.expectedMinor, countedMinor: result.countedMinor, varianceMinor: result.varianceMinor,
           currency: typeof b['currency'] === 'string' ? b['currency'] as string : 'INR',
-          exceptionRaised: result.exceptionRaised, reasonCode: result.reasonCode, closedAt: deps.now(),
+          exceptionRaised: result.exceptionRaised, reasonCode: result.reasonCode,
+          ...(denominations !== undefined ? { denominations } : {}),
+          closedAt: deps.now(),
         };
         await deps.recordShiftClose(ctx.tenantId, record);
         return {
           status: 201,
-          body: { shiftId, closed: true, expectedMinor: result.expectedMinor, countedMinor: result.countedMinor, varianceMinor: result.varianceMinor, isOver: result.isOver, isShort: result.isShort, exceptionRaised: result.exceptionRaised },
+          body: { shiftId, closed: true, expectedMinor: result.expectedMinor, countedMinor: result.countedMinor, varianceMinor: result.varianceMinor, isOver: result.isOver, isShort: result.isShort, exceptionRaised: result.exceptionRaised, denominationsRecorded: denominations !== undefined },
         };
       },
     },
@@ -96,7 +136,7 @@ export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
         return {
           status: 200,
           body: {
-            overShort: rows.map((r) => ({ shiftId: r.shiftId, tillId: r.tillId, cashierId: r.cashierId, tradingDay: r.tradingDay, varianceMinor: r.varianceMinor, reasonCode: r.reasonCode })),
+            overShort: rows.map((r) => ({ shiftId: r.shiftId, tillId: r.tillId, cashierId: r.cashierId, tradingDay: r.tradingDay, varianceMinor: r.varianceMinor, reasonCode: r.reasonCode, denominations: r.denominations ?? null })),
             totalVarianceMinor: rows.reduce((s, r) => s + r.varianceMinor, 0),
             asAt: deps.now(),
           },

@@ -5,6 +5,41 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M14-FR-02: the blind cash count is now captured BY DENOMINATION (12 September 2026)
+
+**Owner direction:** "You choose the next module." I chose M14 (Till, Cash Office & Day-Close) and,
+after grounding, the one clean single-domain gap: the cloud shift-close (`POST /v1/shifts/:shiftId/close`)
+persisted only a cash **total**, so the FR-02 "blind cash counts by denomination" breakdown was lost —
+and nothing checked the breakdown added up.
+
+**What changed (behaviour):**
+- New pure, offline helper `packages/till/src/denominations.ts` — the Indian note/coin set in paise,
+  `sumDenominations`, and `checkDenominationCount` (every entry a real denomination with a whole,
+  non-negative count, and the breakdown must **sum** to the counted total).
+- The cloud close route now accepts an optional `denominations` list. When present it is verified to
+  sum to the counted total — a breakdown that does not sum is refused **at the drawer**
+  (`422 does_not_sum_to_the_count`), never left as a variance to chase at audit — then persisted
+  append-only on the close event (via the existing `shiftAdapter`, which stores the whole record).
+- The cash-office over/short list now carries the breakdown, so a material short shows **what** was
+  short (e.g. "missing two ₹500 notes"), not only how much.
+- Backward-compatible: a close sent with only a total (an offline lane that never captured the
+  breakdown) still closes clean.
+
+**Blind property preserved:** the expected figure is still never shown at count time; the cashier
+enters what they physically see, denomination by denomination.
+
+**Evidence:** `tests/unit/denominations.test.ts` (7) proves the helper; `tests/integration/shift-close.test.ts`
+grew to 9 (capture + surface to cash office; refuse a breakdown that does not sum; refuse an unknown
+denomination and a malformed list; total-only close still works). Full suite green
+(6,521 passed / 262 DB-skipped), typecheck + lint + secret-scan clean.
+
+**Not re-rated.** This strengthens M14-FR-02 but M14 as a module has other FRs; changing M14's ledger
+label would move the headline, which I do not do without an explicit owner instruction. The ledger
+(`docs/completion-status.json`) is untouched; the completion % is unchanged. A re-rate is offered as an
+option below.
+
+---
+
 ## Migration driven to "proven": INTEGRATION_TESTED (44.2% → 45.5%) (12 September 2026)
 
 **Owner direction:** "Drive migration to proven."
