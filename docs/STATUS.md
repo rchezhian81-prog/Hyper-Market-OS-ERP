@@ -5,6 +5,40 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M13 refund screen — Slice 2c: the on-screen panels (12 September 2026)
+
+**Owner direction:** continuing "Start Slice 2." The owner made the three screen decisions:
+find the bill by **scan or keyed number**; **every refund needs a manager** (approval threshold 0);
+the manager identifies by **staff code or scanned badge**. Built to those.
+
+**Built in this slice (the visible screen — `apps/pos/web/app.js`):** the "Refund" menu item now
+opens the real flow instead of the "go to the service desk" stub:
+1. Find the bill — a scan-or-keypad panel (`askScanOrKey`): scan the receipt barcode, or key the bill
+   number. Scoped scan capture, removed on close, so it never leaks into the sale screen's scanner.
+2. Which item + how many — capped at what is still returnable on the bill.
+3. Why (reason chips — never free text, M15) and the condition (resell / damaged, M13-FR-02).
+4. How much — shown against the remaining-refundable ceiling as they type; the engine caps it too.
+5. How the refund is given — cash / card / UPI / store credit.
+6. Manager approval — scanned badge or keyed staff code, a **different** person from the cashier
+   (§28, enforced by the engine; the cloud re-verifies the approver's authority on sync).
+7. The outcome in the model's OWN words — `settled` / `pending` and the four money-critical
+   refusals (`refused` / `uncertain` / `conflict` / `not_entitled`) headed **"Do not hand over cash"**.
+
+Every rule stays behind the tested surface (Slices 1/2a/2b); this file assembles answers and shows the
+result — it decides nothing. English + Tamil for every new word.
+
+**Evidence:** `tests/guardrails/the-till-screen-is-usable.test.ts` rewritten from the old "refund not
+built" assertion to assert the real screen (reads via `lookupRefund`, submits, reasons are chips,
+model's words, the money-critical outcomes, manager gating) — 21 tests pass. The POS bundle rebuilds
+cleanly. Full non-DB suite green; real-PostgreSQL suite green; typecheck/lint/secret-scan/audit clean.
+
+**Honest scope:** items are shown by product code (not yet the catalogue name); no-receipt refunds
+stay unavailable until a cap is set; the offline end-to-end (Playwright) proof on the served shell is
+the next slice. **No re-rate — headline stays 41.5%** until the whole screen is proven end-to-end and
+the owner is satisfied it meets the acceptance bar. Not merged, not deployed.
+
+---
+
 ## M13 refund screen — Slice 2b: shell refund plumbing (12 September 2026)
 
 **Owner direction:** continuing "Start Slice 2." Slice 2a made receipt lookup exist at the edge; this
