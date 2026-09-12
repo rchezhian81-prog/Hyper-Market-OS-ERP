@@ -5,6 +5,38 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M13 refund screen — Slice 2a: lane-local receipt lookup (12 September 2026)
+
+**Owner direction:** "Start Slice 2" (the on-screen refund flow). Investigating it surfaced a true
+prerequisite: the refund screen must look up the original bill, and **nothing at the lane could do
+that** — the lane socket served only the two write routes (sale, refund), no read. Offline-first
+(M13-FR-01: "receipted return works offline where the original is locally known") means that lookup
+must come from the lane's OWN records, not the network. So Slice 2 splits: **2a — receipt lookup
+(this increment); 2b — the on-screen panels that use it.**
+
+**Built in this slice (read-only, offline, no UI yet):**
+- `edge/store-edge/src/receipt-lookup.ts` (`buildReceiptLookup`) — a pure assembler that turns this
+  lane's durable sale + returns logs into exactly the read model the refund screen needs: the
+  `OriginalSale`, plus the return/refund history the register folds into "what is still returnable"
+  and "how much money is left". Keyed by receipt number AND sale id (whichever the customer's slip
+  shows); dedupes a return id; skips malformed and no-receipt records. No I/O — tested without a disk.
+- `edge/store-edge/src/index.ts` — `EdgeNode` gains `lookupSale(receiptOrId)`, read-only and off the
+  money path; `edge/store-edge/src/main.ts` wires it to read both durable logs LIVE on each call, so a bill rung earlier
+  in the same session is found, not just those on disk at boot. Never a network call.
+
+**Honest scope:** a bill rung on another lane, or before this box was installed, is not in these logs
+and is not found here — that is a cloud-backed online lookup, a later step. This is the offline half.
+
+**Evidence:** `tests/unit/edge-receipt-lookup.test.ts` (10) + `tests/integration/lane-receipt-lookup.test.ts`
+(4, through the real `startEdge`, incl. a restart). Full non-DB suite green; real-PostgreSQL suite
+green; typecheck/lint/secret-scan/audit clean.
+
+**Next slice (2b):** the on-screen panels — receipt entry, line selection, reason/tender/approval —
+binding `lookupSale` to the Slice-1 view surface and replacing the `app.js` "go to the service desk"
+stub. **No re-rate — headline stays 41.5%** (M13 still `PARTIALLY_WIRED`). Not merged, not deployed.
+
+---
+
 ## M13 refund screen — Slice 1: the tested view surface (12 September 2026)
 
 **Owner direction:** "start the cashier refund screen." With the refund/restart security work all merged
