@@ -86,55 +86,114 @@ export function createEdgeNode(input: {
    * standalone/demo edge and the direct-construction unit tests still run.
    */
   readonly returnsEntitlement?: ReturnEntitlement;
+  /**
+   * Operation-identity guard for SALES (GAP-SALE-IDEMPOTENCY-01) — the sale-path mirror of
+   * `returnsIdempotency`. Rebuilt from the durable sale log at boot and consulted before every sale
+   * write: an identical retry returns the original outcome with no second append, and a reused sale
+   * id with a different payload is refused as an explicit conflict rather than double-recorded.
+   * Optional so a standalone/demo edge (and the direct-construction unit tests) still run.
+   */
+  readonly salesIdempotency?: IdempotencyGuard;
 }): EdgeNode {
   let held = input.initialPack;
-  // A refund committed right now, keyed by its id, so a concurrent second call with the same id
-  // awaits the first rather than racing it to a double write (RR-F03 "prove across concurrency").
+  // Work committing right now, keyed by its id, so a concurrent second call with the same id awaits
+  // the first rather than racing it to a double write (RR-F03 "prove across concurrency"). One map
+  // per pipeline — a sale and a refund never share an id space.
   const returnsInFlight = new Map<string, Promise<CommitOutcome>>();
+  const salesInFlight = new Map<string, Promise<CommitOutcome>>();
 
   return {
     pack: () => held,
 
     commit: async (saleId, record) => {
-      const outcome = await commitLocally({
-        saleId, record, log: input.log,
-        ...(input.reserveBytes === undefined ? {} : { reserveBytes: input.reserveBytes }),
-      });
+      // The durable write, then the queue — after the write, never before. Queueing first would send
+      // a sale the lane went on to refuse; the customer would have walked away without paying for it.
+      const commitAndQueue = async (): Promise<CommitOutcome> => {
+        const outcome = await commitLocally({
+          saleId, record, log: input.log,
+          ...(input.reserveBytes === undefined ? {} : { reserveBytes: input.reserveBytes }),
+        });
+        if (outcome.committed && input.outbox !== undefined) {
+          input.outbox.enqueue(makeEvent({
+            id: `edge-sale-${saleId}`,
+            type: 'SaleCommitted',
+            occurredAt: new Date().toISOString(),
+            // The sale's own id, minted here at the lane. Every retry from here to the cloud carries
+            // this same key, so a resend collapses to one sale (§31.1).
+            idempotencyKey: `edge-${input.tenantId}-${saleId}`,
+            source: 'edge/lane',
+            // Translated to the cloud's sale contract before it leaves — the disk record speaks
+            // `id`/`total`, `/v1/sales` speaks `saleId`/`totalMinor`/`packVersion`. The pack this edge
+            // holds is the one the lane priced this sale from, so it stamps the version (see cloud-sale.ts).
+            payload: toCloudSale(JSON.parse(record) as unknown, held?.snapshot.version ?? 0),
+          }));
+        }
+        // Teach the refund-entitlement guard what this sale sold, so a refund taken later in the SAME
+        // session is checked against it and not only against sales already on disk at boot (RR-F04).
+        // Off the money-critical path, and wrapped so it can never affect the sale.
+        if (outcome.committed && input.returnsEntitlement !== undefined) {
+          try {
+            const parsed = JSON.parse(record) as { lines?: { productId?: unknown; quantityMinor?: unknown }[] };
+            const lines: EntitlementLine[] = Array.isArray(parsed.lines)
+              ? parsed.lines.flatMap((l) => (typeof l.productId === 'string' && typeof l.quantityMinor === 'number'
+                ? [{ productId: l.productId, quantityMinor: l.quantityMinor }] : []))
+              : [];
+            input.returnsEntitlement.recordSale(saleId, lines);
+          } catch { /* the sale is committed regardless; entitlement just won't know this line */ }
+        }
+        return outcome;
+      };
 
-      // **After the durable write, never before.** Queueing first would send a sale the lane went
-      // on to refuse — the cloud would hold a sale that never happened, and the customer would
-      // have walked away without paying for it. Same reasoning as printing the receipt second.
-      if (outcome.committed && input.outbox !== undefined) {
-        input.outbox.enqueue(makeEvent({
-          id: `edge-sale-${saleId}`,
-          type: 'SaleCommitted',
-          occurredAt: new Date().toISOString(),
-          // The sale's own id, minted here at the lane. Every retry from here to the cloud carries
-          // this same key, so a resend collapses to one sale (§31.1).
-          idempotencyKey: `edge-${input.tenantId}-${saleId}`,
-          source: 'edge/lane',
-          // Translated to the cloud's sale contract before it leaves — the disk record speaks
-          // `id`/`total`, `/v1/sales` speaks `saleId`/`totalMinor`/`packVersion`. The pack this edge
-          // holds is the one the lane priced this sale from, so it stamps the version (see cloud-sale.ts).
-          payload: toCloudSale(JSON.parse(record) as unknown, held?.snapshot.version ?? 0),
-        }));
+      const guard = input.salesIdempotency;
+      if (guard === undefined) {
+        // Standalone/demo edge (and the direct-construction unit tests) — original behaviour.
+        return commitAndQueue();
       }
 
-      // Teach the refund-entitlement guard what this sale sold, so a refund taken later in the SAME
-      // session is checked against it and not only against sales already on disk at boot (RR-F04).
-      // After the durable write, off the money-critical path, and wrapped so it can never affect the
-      // sale: a bad record here only means a refund against it falls back to the safe policy.
-      if (outcome.committed && input.returnsEntitlement !== undefined) {
-        try {
-          const parsed = JSON.parse(record) as { lines?: { productId?: unknown; quantityMinor?: unknown }[] };
-          const lines: EntitlementLine[] = Array.isArray(parsed.lines)
-            ? parsed.lines.flatMap((l) => (typeof l.productId === 'string' && typeof l.quantityMinor === 'number'
-              ? [{ productId: l.productId, quantityMinor: l.quantityMinor }] : []))
-            : [];
-          input.returnsEntitlement.recordSale(saleId, lines);
-        } catch { /* the sale is committed regardless; entitlement just won't know this line */ }
+      // Operation identity + canonical payload identity for the sale (GAP-SALE-IDEMPOTENCY-01),
+      // decided before anything is written: an identical retry returns the original outcome and
+      // writes nothing again; a reused sale id with a different payload is an explicit conflict.
+      const hash = canonicalHash(record);
+      const decideReused = (): CommitOutcome | undefined => {
+        const verdict = guard.verdict(saleId, hash);
+        if (verdict.kind === 'duplicate') {
+          return {
+            committed: true, durable: true,
+            detail: `sale ${saleId} was already recorded with these details — returning the original outcome; nothing was written again`,
+            laneMessage: 'This sale was already recorded.',
+          };
+        }
+        if (verdict.kind === 'conflict') {
+          return {
+            committed: false, refusedBecause: 'idempotency_conflict',
+            detail: `sale id ${saleId} was already used for a different sale; this request was refused and nothing was written`,
+            laneMessage: 'This sale ID was already used for a different sale. Do not take payment — tell the manager.',
+          };
+        }
+        return undefined; // fresh
+      };
+
+      const reused = decideReused();
+      if (reused !== undefined) return reused;
+
+      const pending = salesInFlight.get(saleId);
+      if (pending !== undefined) {
+        await pending;
+        const afterRace = decideReused();
+        if (afterRace !== undefined) return afterRace;
       }
-      return outcome;
+
+      const work = (async (): Promise<CommitOutcome> => {
+        const outcome = await commitAndQueue();
+        if (outcome.committed) guard.remember(saleId, hash);
+        return outcome;
+      })();
+      salesInFlight.set(saleId, work);
+      try {
+        return await work;
+      } finally {
+        salesInFlight.delete(saleId);
+      }
     },
 
     commitReturn: async (returnId, record) => {
