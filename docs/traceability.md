@@ -304,17 +304,17 @@ per-item evidence and any external blocker live in the ledger. Names are from `d
 | QG-10 | Production gate | PARTIALLY WIRED |
 | QG-11 | AI gate | PARTIALLY WIRED |
 | QG-12 | Owner gate | PARTIALLY WIRED |
-| MG-01 | Discovery | ENGINE ONLY |
-| MG-02 | Preservation | PARTIALLY WIRED |
-| MG-03 | Mapping | PARTIALLY WIRED |
-| MG-04 | Cleaning | ENGINE ONLY |
-| MG-05 | Trial loads | ENGINE ONLY |
-| MG-06 | Reconciliation | PARTIALLY WIRED |
+| MG-01 | Discovery | WIRED |
+| MG-02 | Preservation | WIRED |
+| MG-03 | Mapping | WIRED |
+| MG-04 | Cleaning | WIRED |
+| MG-05 | Trial loads | WIRED |
+| MG-06 | Reconciliation | WIRED |
 | MG-07 | History | ENGINE ONLY |
-| MG-08 | Opening state | ENGINE ONLY |
-| MG-09 | Delta | ENGINE ONLY |
+| MG-08 | Opening state | WIRED |
+| MG-09 | Delta | WIRED |
 | MG-10 | Parallel run | NOT STARTED |
-| MG-11 | Cutover | PARTIALLY WIRED |
+| MG-11 | Cutover | WIRED |
 | MG-12 | Archive/retire | ENGINE ONLY |
 
 ## Design artifacts (Stage 3–4)

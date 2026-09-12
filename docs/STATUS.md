@@ -5,6 +5,34 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Deliberate re-rate: the migration module (12 September 2026)
+
+**Owner direction:** "Re-rate the migration." An explicit, owner-authorised re-rate — the one kind of
+headline move the discipline allows, because it is decided, not drifted into.
+
+**What changed in the ledger (`docs/completion-status.json`), mirrored in `docs/traceability.md`:**
+Nine migration controls that were wired to the API and tested this session were promoted to **WIRED**:
+- MG-01 discovery, MG-04 cleaning, MG-05 trial-load, MG-08 opening balances, MG-09 delta:
+  `ENGINE_ONLY` → **WIRED** (+40 each).
+- MG-02 preservation, MG-03 mapping, MG-06 reconciliation + sign-off, MG-11 cutover gate:
+  `PARTIALLY_WIRED` → **WIRED** (+20 each).
+
+**Left unchanged, honestly** — their engines exist but are **not** wired to a route yet:
+MG-07 history/exclusions (`ENGINE_ONLY`), MG-10 parallel run (`NOT_STARTED`), MG-12 archive/retire
+(`ENGINE_ONLY`). WIRED is the ceiling used — the routes are live on the API and unit/contract-tested,
+but not yet exercised end-to-end through the full pipeline with a database, so none was rated above WIRED.
+
+**The number (reproducible via `pnpm run completion`):**
+- Product completion (weighted headline): **41.5% → 44.2%** (+2.7 pts; numerator 4,320 → 4,600 / 10,400).
+- Wired-and-integrated (≥ WIRED): **16.3% → 25.0%** — the score that matters for go-live.
+- `baseline.previousProductCompletionPct` set to 41.5 so the report shows the change honestly.
+
+completion-model-integrity, the non-module-ledger mirror, and traceability-integrity all pass. This is
+a label/accounting change only — no code changed, and the denominator (104) and weights are untouched
+(still baseline v1).
+
+---
+
 ## MG-06 sign-off + the Chartered Accountant role (12 September 2026)
 
 **Owner direction:** "Add the CA role." Closes the last gap in the migration sign-off chain.
