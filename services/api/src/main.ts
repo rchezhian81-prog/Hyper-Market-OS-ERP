@@ -832,8 +832,8 @@ export function buildSurface(deps: {
       // Stopped by default, matching the adapter. A kill switch that defaults off is an agent
       // running because nobody has told it not to.
       killSwitchOn: empty(true), setKillSwitch: () => {},
-      budget: empty({ capMinor: 0, spentMinor: 0, periodEnds: now() }),
-      enabledAgents: empty([]), run: empty([]), openProposals: empty([]), now,
+      budget: empty({ capMinor: 0, spentMinor: 0, periodEnds: now() }), setBudget: () => {},
+      enabledAgents: empty([]), setEnabledAgents: () => {}, run: empty([]), openProposals: empty([]), now,
     } : aiAdapter({ store, now })),
   ];
 }

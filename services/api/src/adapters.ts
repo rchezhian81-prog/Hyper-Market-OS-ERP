@@ -6353,11 +6353,37 @@ export function aiAdapter(input: {
       };
     },
 
+    setBudget: async (tenantId, budget, by, at) => {
+      await input.store.append(tenantId, STREAM.ai, makeEvent({
+        id: `ai-budget-${at}`,
+        type: 'AiBudgetSet',
+        occurredAt: at,
+        // Keyed on the moment it was set — a later cap is the owner changing the limit, latest wins;
+        // the same set re-sent (a retry) collapses.
+        idempotencyKey: `ai-budget-${tenantId}-${at}`,
+        source: 'api/ai',
+        payload: { capMinor: budget.capMinor, periodEnds: budget.periodEnds, by, at },
+      }));
+    },
+
     /** Nothing is enabled until somebody enables it, by name (AID-01…10). */
     enabledAgents: async (tenantId) =>
       (await latest<{ readonly agents: readonly AgentId[] }>(
         input.store, tenantId, STREAM.ai, 'AiAgentsEnabled',
       ))?.agents ?? [],
+
+    setEnabledAgents: async (tenantId, agents, by, at) => {
+      await input.store.append(tenantId, STREAM.ai, makeEvent({
+        id: `ai-enabled-${at}`,
+        type: 'AiAgentsEnabled',
+        occurredAt: at,
+        // The enabled SET as of this moment — latest wins, so enabling is declarative (the new list is
+        // the whole truth), not additive; a re-sent identical change collapses.
+        idempotencyKey: `ai-enabled-${tenantId}-${at}`,
+        source: 'api/ai',
+        payload: { agents, by, at },
+      }));
+    },
 
     /**
      * No model is called from here.

@@ -13,8 +13,8 @@ const ctx = (): RequestContext => ({
 });
 
 const deps: AiDeps = {
-  killSwitchOn: () => false, setKillSwitch: () => {}, budget: () => ({ capMinor: 0, spentMinor: 0, periodEnds: NOW }),
-  enabledAgents: () => [], run: () => [], openProposals: () => [], now: () => NOW,
+  killSwitchOn: () => false, setKillSwitch: () => {}, budget: () => ({ capMinor: 0, spentMinor: 0, periodEnds: NOW }), setBudget: () => {},
+  enabledAgents: () => [], setEnabledAgents: () => {}, run: () => [], openProposals: () => [], now: () => NOW,
 };
 
 const agentsRoute = (): Route => {

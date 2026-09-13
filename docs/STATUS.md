@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## AI assistant, step 1: the control surface — enable agents + set a budget (13 September 2026)
+
+**Owner direction:** "You choose the next module" → (after grounding showed the easy wire-ups exhausted)
+"Start the AI assistant." Chosen because the human-governed AI pipeline is a core principle (P-05) and its
+control surface had a real gap: the kill switch could be set, but **enabled-agents and budget were
+read-only with no writer** — so no agent could ever be turned on or funded, and every run was refused.
+
+**What changed (behaviour):** two governance writes on API-13 (owner only):
+- `PUT /v1/ai/agents/enabled` (`ai.agent.enable`) — switch agents ON **by name** (A01…A10); the enabled
+  set is declarative (latest wins); a name outside the authority catalogue is refused (a typo enables
+  nothing). Default remains OFF — nothing runs until enabled, the opposite of the kill switch.
+- `PUT /v1/ai/budget` (`ai.budget.set`) — set the spend cap + period; enforced BEFORE each run (a limit
+  checked afterwards is a record of the overspend). Spend itself is summed from runs, never set here.
+- Event-sourced (`AiAgentsEnabled` / `AiBudgetSet`) via `aiAdapter`; new permissions granted to owner.
+
+Now the three gates the run route already checked (kill switch off → enabled by name → within budget)
+can all actually be set, so an enabled, funded agent passes the gate. **The run still produces no
+proposals yet** — that is the next slice (wiring agent A08 Data Quality to draft evidence-backed
+suggestions a data steward acts on; AI never commits, hard rule #5). No external model is involved.
+
+**Evidence:** `tests/integration/ai-governance.test.ts` (3) — fund + enable → an enabled agent's run
+passes the gate while an un-enabled one is refused; malformed list/budget refused; owner-only (a cashier
+is 403). Full suite green (6,559 passed / 262 DB-skipped); typecheck + lint + secret-scan clean; the
+api-surface contract and 13-API guardrail pass with the two new permissions.
+
+**Not re-rated** — this is control-surface infrastructure across the AI agents, not a single A-item; the
+ledger and headline % are unchanged.
+
+---
+
 ## Deliberate re-rate: MG-07 + MG-12 (45.9% → 46.9%) (13 September 2026)
 
 **Owner direction:** "Re-rate the migration items and show the new number." Owner-authorised,
