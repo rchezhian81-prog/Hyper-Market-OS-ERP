@@ -132,7 +132,11 @@ export interface AiDeps {
   readonly killSwitchOn: (tenantId: string) => Promise<boolean> | boolean;
   readonly setKillSwitch: (tenantId: string, on: boolean, by: string, at: string) => Promise<void> | void;
   readonly budget: (tenantId: string) => Promise<Budget> | Budget;
+  /** Set the spend cap and period for the tenant. Enforced BEFORE each run, never after. */
+  readonly setBudget: (tenantId: string, budget: { readonly capMinor: number; readonly periodEnds: string }, by: string, at: string) => Promise<void> | void;
   readonly enabledAgents: (tenantId: string) => Promise<readonly AgentId[]> | readonly AgentId[];
+  /** Switch agents ON by name — nothing runs until it is, the opposite default to the kill switch. */
+  readonly setEnabledAgents: (tenantId: string, agents: readonly AgentId[], by: string, at: string) => Promise<void> | void;
   readonly run: (tenantId: string, agent: AgentId) => Promise<Omit<Proposal, 'committed'>[]> | Omit<Proposal, 'committed'>[];
   readonly openProposals: (tenantId: string) => Promise<readonly Proposal[]> | readonly Proposal[];
   readonly now: () => string;
@@ -211,6 +215,49 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
       api: 'API-13', method: 'GET', path: '/v1/ai/budget',
       permission: 'ai.budget.read',
       handler: async (ctx) => ({ status: 200, body: { ...(await deps.budget(ctx.tenantId)), asAt: deps.now() } }),
+    },
+    {
+      // Switch agents ON by name (AID-01…10). **Nothing runs until it is enabled here** — the opposite
+      // default to the kill switch, because an agent running because nobody switched it off is exactly
+      // the failure this avoids. Enabling is a governance act; only names in the authority catalogue are
+      // accepted, so a typo enables nothing rather than a mystery agent.
+      api: 'API-13', method: 'PUT', path: '/v1/ai/agents/enabled',
+      permission: 'ai.agent.enable', idempotent: true,
+      handler: async (ctx) => {
+        const agents = (ctx.body as { agents?: unknown } | null)?.agents;
+        if (!Array.isArray(agents) || !agents.every((a) => typeof a === 'string' && a in AGENTS)) {
+          throw apiError(400, {
+            code: 'not_readable_as_an_agent_list',
+            whatHappened: 'Enabling agents needs a list of agent ids from the authority catalogue (A01…A10).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { "agents": ["A08", …] }. Nothing was changed — read GET /v1/ai/agents for the catalogue.',
+          });
+        }
+        const unique = [...new Set(agents as AgentId[])];
+        await deps.setEnabledAgents(ctx.tenantId, unique, ctx.userId, deps.now());
+        return { status: 200, body: { enabled: unique, by: ctx.userId, at: deps.now() } };
+      },
+    },
+    {
+      // Set the AI spend budget for the period. The cap is enforced BEFORE each run (a limit checked
+      // afterwards is a record of the overspend, not a limit). A governance act; the spend itself is
+      // summed from what has run, never set here.
+      api: 'API-13', method: 'PUT', path: '/v1/ai/budget',
+      permission: 'ai.budget.set', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (!Number.isInteger(b['capMinor']) || (b['capMinor'] as number) < 0
+          || typeof b['periodEnds'] !== 'string' || (b['periodEnds'] as string).trim() === '') {
+          throw apiError(400, {
+            code: 'not_readable_as_a_budget',
+            whatHappened: 'A budget needs a whole, non-negative capMinor (the spend cap in paise) and a periodEnds timestamp.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { "capMinor": <integer>, "periodEnds": "<iso timestamp>" }. Nothing was changed.',
+          });
+        }
+        await deps.setBudget(ctx.tenantId, { capMinor: b['capMinor'] as number, periodEnds: b['periodEnds'] as string }, ctx.userId, deps.now());
+        return { status: 200, body: { capMinor: b['capMinor'], periodEnds: b['periodEnds'], by: ctx.userId, at: deps.now() } };
+      },
     },
     {
       api: 'API-13', method: 'PUT', path: '/v1/ai/kill-switch',

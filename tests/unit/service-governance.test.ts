@@ -220,7 +220,7 @@ describe('API-13 — nothing an agent produces can commit anything', () => {
     };
     const deps = (over: Partial<AiDeps> = {}): AiDeps => ({
       killSwitchOn: () => false, setKillSwitch: () => {}, budget: () => budget(),
-      enabledAgents: () => ['A02'] as readonly AgentId[], run: () => [proposal],
+      setBudget: () => {}, enabledAgents: () => ['A02'] as readonly AgentId[], setEnabledAgents: () => {}, run: () => [proposal],
       openProposals: () => [], now: () => NOW, ...over,
     });
 
@@ -242,7 +242,7 @@ describe('API-13 — nothing an agent produces can commit anything', () => {
   it('says on every reply that nothing was committed', async () => {
     const deps: AiDeps = {
       killSwitchOn: () => false, setKillSwitch: () => {}, budget: () => budget(),
-      enabledAgents: () => ['A02'], openProposals: () => [], now: () => NOW,
+      setBudget: () => {}, enabledAgents: () => ['A02'], setEnabledAgents: () => {}, openProposals: () => [], now: () => NOW,
       run: () => [{
         proposalId: 'P-1', agent: 'A02', summary: 'a suggestion',
         wouldRequire: 'POST /v1/purchase/orders', createdAt: NOW,
@@ -260,8 +260,8 @@ describe('API-13 — nothing an agent produces can commit anything', () => {
   it('turns the kill switch on and says what it did to the shop', async () => {
     let on = false;
     const deps: AiDeps = {
-      killSwitchOn: () => on, setKillSwitch: (_t, v) => { on = v; }, budget: () => budget(),
-      enabledAgents: () => ['A02'], run: () => [], openProposals: () => [], now: () => NOW,
+      killSwitchOn: () => on, setKillSwitch: (_t, v) => { on = v; }, budget: () => budget(), setBudget: () => {},
+      enabledAgents: () => ['A02'], setEnabledAgents: () => {}, run: () => [], openProposals: () => [], now: () => NOW,
     };
     const k = kernelFor(aiRoutes(deps));
     const res = await handle(k, {
