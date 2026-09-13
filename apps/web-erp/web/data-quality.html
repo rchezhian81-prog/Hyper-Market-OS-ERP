@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Data quality</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      Data quality suggestions inbox — the steward's screen (A08, API-13, §7.1, P-05). Every rule lives in the
+      tested session model (apps/web-erp/src/data-quality-inbox-session.ts), attached as
+      window.dataQualityInboxSession and built on the shared packages/ui primitives over the tested
+      buildDataQualityWorklist engine. It shows the OPEN suggestions to look at (each with the real product and
+      what to check) and the DISMISSED ones a steward set aside (with who and why). Read-only — nothing here
+      changes a product; fixing a gap the ordinary way removes its suggestion on its own. The worklist is read
+      live (GET /v1/ai/data-quality/worklist); offline the screen shows its clearly-marked sample stand-in.
+    -->
+    <style>
+      :root { --bg:#0f172a; --panel:#1e293b; --ink:#f8fafc; --muted:#94a3b8; --ok:#22c55e; --degraded:#f59e0b; --error:#ef4444; --idle:#64748b; --info:#38bdf8; --line:#334155; --tap:48px; }
+      * { box-sizing: border-box; }
+      body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; min-height:100dvh; display:flex; flex-direction:column; }
+      header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; background:var(--panel); flex-wrap:wrap; }
+      .who { font-weight:600; } .who small { display:block; color:var(--muted); font-weight:400; font-size:14px; }
+      .lang { background:var(--line); color:var(--ink); min-height:40px; padding:0 14px; font-size:15px; border:0; border-radius:10px; }
+      .sample,.stale,.nobody { margin:0; padding:10px 16px; font-size:15px; font-weight:600; }
+      .sample { background:var(--degraded); color:#451a03; } .stale { background:#1e3a5f; color:#dbeafe; border-bottom:2px solid var(--info); font-weight:400; }
+      .nobody { background:#3f2d12; color:#fde68a; border-bottom:2px solid var(--degraded); }
+      .sample[hidden],.stale[hidden],.nobody[hidden] { display:none; }
+      main { flex:1; padding:16px; display:grid; gap:16px; align-content:start; max-width:900px; width:100%; }
+      h2 { margin:0 0 4px; font-size:20px; } p.lead { margin:0 0 4px; color:var(--muted); font-size:15px; }
+      h3 { margin:8px 0 0; font-size:16px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+      .summary { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+      .summary .count { font-size:18px; font-weight:700; } .summary .count.attention { color:var(--degraded); }
+      ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
+      li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); }
+      li.row.tone-ok { border-left-color:var(--ok); } li.row.tone-degraded { border-left-color:var(--degraded); }
+      li.row.tone-error { border-left-color:var(--error); } li.row.tone-idle { border-left-color:var(--idle); }
+      .row .head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+      .row .headline { font-weight:600; }
+      .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
+      .status .icon { font-size:18px; width:1.4em; text-align:center; }
+      .row .detail { font-size:14px; color:var(--muted); }
+      .row .affects { font-size:13px; color:var(--info); font-weight:600; }
+      .row .why { font-size:13px; color:#fde68a; }
+      p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
+      p.state .icon { font-size:18px; } p.state.tone-error { color:#fecaca; }
+      .lang:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+    </style>
+  </head>
+  <body>
+    <p class="stale" id="stale" hidden></p>
+    <p class="sample" id="sample" hidden></p>
+    <p class="nobody" id="nobody" hidden></p>
+
+    <header>
+      <span class="who" id="who">Data quality <small id="whoami"></small></span>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+
+    <main>
+      <div>
+        <h2 id="title">Data quality</h2>
+        <p class="lead" id="lead"></p>
+      </div>
+
+      <div class="summary" role="status" aria-live="polite">
+        <span class="count attention" id="open-count"></span>
+        <span class="count" id="dismissed-count"></span>
+      </div>
+
+      <h3 id="open-heading" hidden></h3>
+      <ul class="rows" id="rows" aria-label="Data quality suggestions to look at"></ul>
+
+      <h3 id="dismissed-heading" hidden></h3>
+      <ul class="rows" id="dismissed-rows" aria-label="Suggestions set aside"></ul>
+
+      <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+    </main>
+
+    <!--SCREEN-DATA-->
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./data-quality.js" type="module"></script>
+  </body>
+</html>

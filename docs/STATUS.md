@@ -5,6 +5,49 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## AI assistant, step 4: the Data Quality inbox on screen (web admin) (13 September 2026)
+
+**Owner direction:** "put the inbox on screen in the web admin." Steps 1–3 built the governance, the A08
+detector, and the worklist API; this puts a real screen in front of the steward.
+
+**What changed (behaviour):** a new web-erp screen at **`/data-quality`** ("Data quality", in the Catalogue
+menu), gated on the SAME permission the worklist route checks (`ai.proposal.read`), so the menu never offers
+a screen the server would refuse. It shows:
+- **To look at** — the open suggestions, each as a plain-English headline + what to check + the real
+  product(s) it affects ("Name (SKU)"), attention-first (P-03). Colour is never the only signal — every row
+  carries an icon and a word (the shared `packages/a11y` primitive refuses a blank).
+- **Set aside** — the dismissed suggestions, each showing who set it aside and why.
+
+It **self-heals**: the worklist is read live (`GET /v1/ai/data-quality/worklist`) and re-derived server-side,
+so fixing a gap the ordinary way (assign the barcode, merge the pair, add the MRP) removes its suggestion on
+its own — no "done" flag to go stale. It honours governance: when A08 is off or the kill switch is on, the
+API returns `agentActive:false` and the screen shows a plain-English note (a deliberate, non-fault `locked`
+state), never a bare "all clear". Offline it opens into a clearly-marked **sample** stand-in and says so
+(service-worker cached, network-first, the stale strip stamped with when the page was last served) — bilingual
+**EN/TA** throughout. **Read-only — nothing here changes a product** (hard rule #5).
+
+**Where it lives:** tested DOM-free session model `apps/web-erp/src/data-quality-inbox-session.ts` on the
+shared `packages/ui`/`packages/a11y` primitives; shell `apps/web-erp/web/data-quality.{html,js}`;
+`browser-entry.ts` boots it from the box's policy (who + what they hold) and refreshes the worklist with a
+live GET; registered as a served screen in `edge/store-edge` (`screen-data.ts`, `store-pack.ts`
+`PackDataQualityPolicy`, `screen-server.ts`); menu item in `navigation.ts`; cached in `sw.js` (v15→v16).
+
+**Evidence:** `tests/unit/erp-data-quality-inbox-session.test.ts` (8) — open reads as attention / dismissed
+idle, cites the real product, agent-off shows a note not an error, not-permitted refused, nobody-named
+flagged, bilingual complete + tripwire; `tests/guardrails/the-data-quality-inbox-screen-is-usable.test.ts`
+(9) — bilingual, colour-never-alone, no browser dialogs, defers to the session, **read-only (no POST/PUT)**,
+aria attributes, shell markers; the offline-shell guardrail extended (the screen registers the SW, is
+network-first, shows the bilingual stale strip); `tests/e2e/screens-open-offline.e2e.ts` extended (opens
+offline, accessible). Full suite green; typecheck + lint + secret-scan + all guardrails clean; the ERP bundle
+builds.
+
+**Not re-rated.** This is the UI over the already-WIRED A08 engine; A08 stays **WIRED** (headline 47.3%).
+**Next A08 steps (not built):** the in-screen "not a problem" dismiss button (the API route already exists —
+this screen shows the dismissed list read-only for now); and A08's last remit leg (`suggest_mapping` over
+import history), which would be the case for INTEGRATION_TESTED.
+
+---
+
 ## AI assistant, step 3: the Data Quality suggestions inbox (13 September 2026)
 
 **Owner direction:** "build the suggestions inbox." The A08 run produced suggestions but they lived

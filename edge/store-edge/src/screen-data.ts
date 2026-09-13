@@ -49,13 +49,13 @@ import {
   basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
-import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy } from './store-pack';
+import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy } from './store-pack';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'counts', 'product-publish-review', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
+  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'counts', 'product-publish-review', 'data-quality', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1330,6 +1330,26 @@ export function productPublishReviewPayload(input: ScreenInput): Record<string, 
 }
 
 /**
+ * The Data Quality inbox payload (A08 · API-13 · §7.1 · P-05).
+ *
+ * `null` when the box has not been told who is on the screen — a screen inventing its own permissions would
+ * decide, on its own authority, who may see the shop's data-quality suggestions. **The worklist itself is NOT
+ * in this payload**: it is read live from the cloud (`GET /v1/ai/data-quality/worklist`, which re-derives the
+ * findings and honours the kill switch server-side); the shell fetches it when online and shows a sample
+ * stand-in until then. This carries only the operator's CURRENT context — who is looking and what they hold
+ * now — re-read every render; the cloud route re-checks the authority, so this only shapes the UI.
+ */
+export function dataQualityPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.dataQualityPolicy.known) return null;
+  const policy: PackDataQualityPolicy = input.pack.dataQualityPolicy.value;
+
+  const payload: Record<string, unknown> = { permissions: policy.permissions };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+
+  return payload;
+}
+
+/**
  * The admin and security payload (M01 · M02 · M33 · M34 · D12).
  *
  * `null` when the box has not been told who administers this shop and by what windows — a screen
@@ -1477,6 +1497,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   counts: 'countsData',
   fleet: 'fleetData',
   'product-publish-review': 'productPublishReviewData',
+  'data-quality': 'dataQualityInboxData',
   admin: 'adminData',
   ai: 'aiData',
   migration: 'migrationData',
@@ -1505,6 +1526,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   counts: countsPayload,
   fleet: fleetPayload,
   'product-publish-review': productPublishReviewPayload,
+  'data-quality': dataQualityPayload,
   admin: adminPayload,
   ai: aiPayload,
   migration: migrationPayload,
