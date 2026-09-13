@@ -40,11 +40,24 @@ export interface DataQualityWorklistData {
   readonly note?: string;
 }
 
+/** The outcome of a dismiss/reopen — recorded, refused by the server, or a lost link (retryable). */
+export type DismissOutcome = 'recorded' | 'refused' | 'lost_link';
+
+/** The authenticated POST of a steward's decision. Injected, so the model never opens a socket itself.
+ *  `dismissed:false` reopens. The AI never writes this — it is a HUMAN decision in the human's name. */
+export interface DataQualityDismissPort {
+  post(input: { readonly findingId: string; readonly dismissed: boolean; readonly reason: string }): Promise<DismissOutcome>;
+}
+
 export interface DataQualityInboxPorts {
   /** The worklist the shell last read (live from the cloud, or the injected stand-in). */
   worklist(): DataQualityWorklistData;
   /** Whether this user may read the inbox (`ai.proposal.read`). */
   mayRead(): boolean;
+  /** Whether this user may set a suggestion aside / bring it back (`ai.suggestion.dismiss`). */
+  mayDismiss(): boolean;
+  /** Records a steward's decision. Only reached from the explicit dismiss/reopen action, never on render. */
+  dismissPort(): DataQualityDismissPort;
 }
 
 export interface DataQualityInboxConfig {
@@ -60,6 +73,8 @@ export type CopyKey =
   | 'openHeading' | 'dismissedHeading'
   | 'openCount' | 'dismissedCount' | 'allClear'
   | 'affectsLabel' | 'dismissedByLabel' | 'reasonLabel'
+  | 'dismissBtn' | 'reopenBtn' | 'reasonPlaceholder'
+  | 'dismissRecorded' | 'dismissRefused' | 'dismissLostLink'
   | 'scrReady' | 'scrEmpty' | 'scrOff' | 'stateNotPermitted'
   | 'nobodyNamed' | 'staleShell' | 'sampleData';
 
@@ -72,6 +87,8 @@ export const DATA_QUALITY_INBOX_COPY: BilingualCopy<CopyKey> = {
     openHeading: 'To look at', dismissedHeading: 'Set aside',
     openCount: 'to look at', dismissedCount: 'set aside', allClear: 'Nothing to look at — your product list is clean.',
     affectsLabel: 'Affects', dismissedByLabel: 'Set aside by', reasonLabel: 'Reason',
+    dismissBtn: 'Not a problem', reopenBtn: 'Bring back', reasonPlaceholder: 'Why is this not a problem?',
+    dismissRecorded: 'Set aside.', dismissRefused: 'Could not save — a short reason is needed, or you do not have permission.', dismissLostLink: 'No connection — not saved. Try again.',
     scrReady: 'Showing the suggestions', scrEmpty: 'Nothing to look at — your product list is clean.',
     scrOff: 'The Data Quality helper is switched off, so there are no suggestions to show.',
     stateNotPermitted: 'You do not have permission to see the data quality suggestions.',
@@ -86,6 +103,8 @@ export const DATA_QUALITY_INBOX_COPY: BilingualCopy<CopyKey> = {
     openHeading: 'பார்க்க வேண்டியவை', dismissedHeading: 'ஒதுக்கப்பட்டவை',
     openCount: 'பார்க்க வேண்டியவை', dismissedCount: 'ஒதுக்கப்பட்டவை', allClear: 'பார்க்க எதுவும் இல்லை — உங்கள் பொருள் பட்டியல் சுத்தமாக உள்ளது.',
     affectsLabel: 'பாதிக்கிறது', dismissedByLabel: 'ஒதுக்கியவர்', reasonLabel: 'காரணம்',
+    dismissBtn: 'சிக்கல் இல்லை', reopenBtn: 'மீண்டும் கொண்டுவா', reasonPlaceholder: 'இது ஏன் சிக்கல் இல்லை?',
+    dismissRecorded: 'ஒதுக்கப்பட்டது.', dismissRefused: 'சேமிக்க முடியவில்லை — ஒரு சிறு காரணம் தேவை, அல்லது உங்களுக்கு அனுமதி இல்லை.', dismissLostLink: 'இணைப்பு இல்லை — சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
     scrReady: 'பரிந்துரைகளைக் காட்டுகிறது', scrEmpty: 'பார்க்க எதுவும் இல்லை — உங்கள் பொருள் பட்டியல் சுத்தமாக உள்ளது.',
     scrOff: 'தரக் கட்டுப்பாட்டு உதவியாளர் அணைக்கப்பட்டுள்ளது, எனவே காட்ட பரிந்துரைகள் இல்லை.',
     stateNotPermitted: 'தரக் கட்டுப்பாட்டு பரிந்துரைகளைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.',
@@ -134,15 +153,24 @@ export interface DataQualityInboxView {
   readonly openCount: number;
   readonly dismissedCount: number;
   readonly nobodyNamed: boolean;
+  /** Whether to offer the "not a problem" / "bring back" actions — this user holds `ai.suggestion.dismiss`. */
+  readonly mayDismiss: boolean;
 }
 
 export interface DataQualityInboxSession {
   text(lang: Lang, key: CopyKey): string;
   view(lang: Lang): DataQualityInboxView;
+  /** Set a suggestion aside as not-a-problem, in the steward's name — a HUMAN write (hard rule #5). Runs only
+   *  from an explicit action, never on render; refuses without permission or a reason before it ever POSTs. */
+  dismiss(findingId: string, reason: string): Promise<DismissOutcome>;
+  /** Bring a set-aside suggestion back onto the open list. */
+  reopen(findingId: string): Promise<DismissOutcome>;
+  /** Present a dismiss/reopen outcome as one glanceable status the shell shows after the action. */
+  presentDismissResult(lang: Lang, outcome: DismissOutcome): StatusPresentation;
 }
 
-const EMPTY_VIEW = (screenState: StatusPresentation, nobodyNamed: boolean): DataQualityInboxView => ({
-  screenState, agentActive: false, open: [], dismissed: [], openCount: 0, dismissedCount: 0, nobodyNamed,
+const EMPTY_VIEW = (screenState: StatusPresentation, nobodyNamed: boolean, mayDismiss: boolean): DataQualityInboxView => ({
+  screenState, agentActive: false, open: [], dismissed: [], openCount: 0, dismissedCount: 0, nobodyNamed, mayDismiss,
 });
 
 export function createDataQualityInboxSession(
@@ -176,9 +204,10 @@ export function createDataQualityInboxSession(
     view: (lang) => {
       const t = translator(DATA_QUALITY_INBOX_COPY, lang);
       const nobodyNamed = config.userId === null;
+      const mayDismiss = ports.mayDismiss();
 
       if (!ports.mayRead()) {
-        return EMPTY_VIEW(presentScreenState({ state: 'error', label: t('stateNotPermitted') }), nobodyNamed);
+        return EMPTY_VIEW(presentScreenState({ state: 'error', label: t('stateNotPermitted') }), nobodyNamed, mayDismiss);
       }
 
       const worklist = ports.worklist();
@@ -186,7 +215,7 @@ export function createDataQualityInboxSession(
         // Governance honoured: the agent is off or killed, so there is nothing to show — say so plainly,
         // not an empty screen a person reads as "all clear". `locked` is the deliberate, non-fault state (its
         // tone is idle, never the red of an error — the helper being off is a choice, not a breakage).
-        return EMPTY_VIEW(presentScreenState({ state: 'locked', label: worklist.note ?? t('scrOff') }), nobodyNamed);
+        return EMPTY_VIEW(presentScreenState({ state: 'locked', label: worklist.note ?? t('scrOff') }), nobodyNamed, mayDismiss);
       }
 
       const open = worklist.open.map((e) => present(lang, e));
@@ -200,7 +229,27 @@ export function createDataQualityInboxSession(
         openCount: open.length,
         dismissedCount: dismissed.length,
         nobodyNamed,
+        mayDismiss,
       };
+    },
+
+    // Set a suggestion aside / bring it back. Refuse BEFORE any POST — no permission, or an empty reason on a
+    // dismiss, is a local refusal, not a round trip (the server also refuses, but the screen should not send a
+    // request it knows will fail). The AI never writes this; the caller is the authenticated steward, and the
+    // server records the decision in their name.
+    dismiss: async (findingId, reason) => {
+      if (!ports.mayDismiss() || reason.trim() === '') return 'refused';
+      return ports.dismissPort().post({ findingId, dismissed: true, reason: reason.trim() });
+    },
+    reopen: async (findingId) => {
+      if (!ports.mayDismiss()) return 'refused';
+      return ports.dismissPort().post({ findingId, dismissed: false, reason: '' });
+    },
+    presentDismissResult: (lang, outcome) => {
+      const t = translator(DATA_QUALITY_INBOX_COPY, lang);
+      if (outcome === 'recorded') return presentStatus({ tone: 'ok', icon: '✓', label: t('dismissRecorded'), needsAttention: false });
+      if (outcome === 'lost_link') return presentStatus({ tone: 'degraded', icon: '⚠', label: t('dismissLostLink'), needsAttention: true });
+      return presentStatus({ tone: 'error', icon: '✕', label: t('dismissRefused'), needsAttention: true });
     },
   };
 }

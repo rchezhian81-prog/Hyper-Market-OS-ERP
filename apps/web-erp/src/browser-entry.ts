@@ -96,6 +96,7 @@ import {
 import {
   createDataQualityInboxSession,
   type DataQualityInboxPorts, type DataQualityInboxSession, type DataQualityWorklistData,
+  type DataQualityDismissPort, type DismissOutcome,
 } from './data-quality-inbox-session';
 import {
   createFleetSession, type FleetPorts, type FleetSession, type FleetDeviceRow, type FleetSummaryRollup,
@@ -626,18 +627,24 @@ export interface DataQualityInboxData {
 }
 
 const DATA_QUALITY_READ_PERMISSION = 'ai.proposal.read';
+const DATA_QUALITY_DISMISS_PERMISSION = 'ai.suggestion.dismiss';
 /** Nothing to show until the live read succeeds — and the agent-off note carries the reason. */
 const INACTIVE_WORKLIST: DataQualityWorklistData = Object.freeze({ agentActive: false, open: [], dismissed: [] });
+/** Off-browser / tests inject their own http; a real port is wired in the boot body. */
+const NOOP_DISMISS_PORT: DataQualityDismissPort = { post: async () => 'lost_link' };
 
 export function dataQualityInboxPortsFromData(
   data: DataQualityInboxData | undefined,
   worklist?: DataQualityWorklistData,
+  dismissPort: DataQualityDismissPort = NOOP_DISMISS_PORT,
 ): DataQualityInboxPorts {
   const held = new Set(data?.permissions ?? []);
   return {
     worklist: () => worklist ?? data?.worklist ?? INACTIVE_WORKLIST,
-    // Default-deny: an absent permission list can read nothing (the server would refuse it anyway).
+    // Default-deny: an absent permission list can read/dismiss nothing (the server would refuse it anyway).
     mayRead: () => held.has(DATA_QUALITY_READ_PERMISSION),
+    mayDismiss: () => held.has(DATA_QUALITY_DISMISS_PERMISSION),
+    dismissPort: () => dismissPort,
   };
 }
 
@@ -645,12 +652,38 @@ export function dataQualityInboxPortsFromData(
 export function bootDataQualityInbox(
   data: DataQualityInboxData | undefined,
   worklist?: DataQualityWorklistData,
+  dismissPort?: DataQualityDismissPort,
 ): DataQualityInboxSession | null {
   if (data === undefined) return null;
   return createDataQualityInboxSession(
     { userId: data.userId === undefined ? null : data.userId },
-    dataQualityInboxPortsFromData(data, worklist),
+    dataQualityInboxPortsFromData(data, worklist, dismissPort),
   );
+}
+
+/** The authenticated POST of a steward's dismiss/reopen decision — the operator's OWN session cookie
+ *  (`credentials: 'same-origin'`), never a service token. A network/timeout is a retryable lost link, not a
+ *  refusal, so a dropped connection never reads as "the server said no". The AI never calls this — a person does. */
+function openDataQualityDismissPort(): DataQualityDismissPort {
+  return {
+    post: async ({ findingId, dismissed, reason }): Promise<DismissOutcome> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return 'lost_link';
+      const key = globalThis.crypto?.randomUUID?.() ?? `dq-dismiss-${findingId}-${String(dismissed)}`;
+      const body = dismissed ? { findingId, reason } : { findingId, reopen: true };
+      try {
+        const res = await fetchFn('/v1/ai/data-quality/dismissals', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify(body),
+        });
+        return res.status >= 200 && res.status < 300 ? 'recorded' : 'refused';
+      } catch {
+        return 'lost_link';
+      }
+    },
+  };
 }
 
 /** Read the live worklist (a GET — read-only, commits nothing). Returns null offline/refused so the shell
@@ -1897,14 +1930,15 @@ if (browserWindow !== undefined) {
   // the worklist with a live GET (read-only). Offline it shows its sample stand-in and says so. Read-only —
   // nothing here changes a product; the dismiss action is the follow-up increment.
   const dataQualityData = browserWindow.dataQualityInboxData;
-  const dataQualityInbox = bootDataQualityInbox(dataQualityData);
+  const dataQualityDismissPort = openDataQualityDismissPort();
+  const dataQualityInbox = bootDataQualityInbox(dataQualityData, undefined, dataQualityDismissPort);
   if (dataQualityInbox !== null) {
     browserWindow.dataQualityInboxSession = dataQualityInbox;
     browserWindow.dataQualityInbox = {
       refresh: fetchDataQualityWorklist,
       present: (worklist) => createDataQualityInboxSession(
         { userId: dataQualityData?.userId === undefined ? null : dataQualityData.userId },
-        dataQualityInboxPortsFromData(dataQualityData, worklist),
+        dataQualityInboxPortsFromData(dataQualityData, worklist, dataQualityDismissPort),
       ),
     };
   }
