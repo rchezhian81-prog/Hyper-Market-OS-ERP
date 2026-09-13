@@ -5,6 +5,34 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Deliberate re-rate: MG-07 + MG-12 (45.9% → 46.9%) (13 September 2026)
+
+**Owner direction:** "Re-rate the migration items and show the new number." Owner-authorised,
+evidence-first — the one kind of headline move the discipline allows.
+
+**What changed in the ledger (`docs/completion-status.json`), mirrored in `docs/traceability.md`:**
+- **MG-07 history exclusions: ENGINE_ONLY → INTEGRATION_TESTED (+55).** Wired on API-12 (propose /
+  owner-decision / list+position) and proven through the **real** request pipeline
+  (`tests/integration/migration-history-exclusions.test.ts`, 5) — proposer ≠ owner-approver SoD,
+  age-alone refused, only-owner-approves.
+- **MG-12 legacy-system retirement: ENGINE_ONLY → INTEGRATION_TESTED (+55).** Wired on API-12
+  (`assessRetirement`) and proven through the real pipeline (`tests/integration/migration-retirement.test.ts`,
+  4) — names every blocker at once, server-clock `today`, data never deleted, refuses production.
+- Both held at **INTEGRATION_TESTED, not E2E_VERIFIED** — proven through the integrated API pipeline,
+  not a browser/full-system run — the same bar as the other MG controls.
+
+**The number (`pnpm run completion`):** product completion **45.9% → 46.9%** (+1.0 pts; numerator
+4,770 → 4,880 / 10,400); wired-and-integrated (≥ WIRED) **26.0% → 27.9%**; `previousProductCompletionPct`
+set to 45.9. Denominator (104) and the fixed weight scale are untouched (baseline v1). No code changed —
+a label/accounting change only; completion-model-integrity, the non-module mirror, the module ladder and
+traceability integrity all pass.
+
+**The migration control family is now proven end-to-end** at INTEGRATION_TESTED across every coded
+control (MG-01…09, MG-11, MG-07, MG-12 + the MG-06 sign-off); only MG-10 (parallel run, a pilot activity)
+is not code.
+
+---
+
 ## MG-12 legacy-system retirement wired on API-12 — migration control family complete (13 September 2026)
 
 **Owner direction:** "keep building modules… strong and clear without rework." The last wireable
