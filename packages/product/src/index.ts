@@ -7,6 +7,7 @@ export * from './product';
 export * from './pack';
 export * from './duplicates';
 export * from './completeness';
+export * from './data-quality';
 export * from './unit-price';
 export * from './label-height';
 export * from './loose-food-label';

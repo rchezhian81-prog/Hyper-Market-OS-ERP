@@ -5,6 +5,68 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Deliberate re-rate: A08 Data Quality (46.9% → 47.3%) (13 September 2026)
+
+**Owner direction:** "re-rate A08 and show the new number." Owner-authorised, evidence-first.
+
+**What changed in the ledger (`docs/completion-status.json`), mirrored in `docs/traceability.md`:**
+- **A08 Data Quality: ENGINE_ONLY → WIRED (+40).** `POST /v1/ai/agents/A08/runs` now returns
+  evidence-backed DRAFT proposals from the tested detection engine, proven through the **real** API
+  pipeline (`tests/integration/ai-data-quality.test.ts`, 3; `tests/unit/product-data-quality.test.ts`, 7).
+- **Held at WIRED, not INTEGRATION_TESTED** — deliberately conservative. The run is live and
+  integration-tested for what it delivers, but the agent's remit still has a named unbuilt leg
+  (`suggest_mapping` over `read_import_history`) and proposals are not yet persisted into a steward
+  review worklist. "Connected and working on the surface" is the honest ceiling — the same bar M03/M06
+  held with follow-ons.
+
+**The number (`node scripts/completion-report.mjs`):** product completion **46.9% → 47.3%** (+0.4 pts;
+numerator 4,880 → 4,920 / 10,400); wired-and-integrated (≥ WIRED) **27.9% → 28.8%** (A08 crossed into
+≥ WIRED; WIRED count 11 → 12); `previousProductCompletionPct` set to 46.9. Denominator (104) and the
+fixed weight scale are untouched (baseline v1). No code changed — a label/accounting change only;
+completion-model-integrity, the non-module mirror, the module ladder and all 730 guardrails pass.
+
+---
+
+## AI assistant, step 2: the Data Quality agent (A08) drafts real suggestions (13 September 2026)
+
+**Owner direction:** "Start the AI assistant" — step 1 (the control surface) merged as #373; this is the
+promised next slice, making the first agent actually PRODUCE something a person can act on.
+
+**What changed (behaviour):** agent **A08 (Data Quality)** now returns evidence-backed DRAFT proposals
+from a run (`POST /v1/ai/agents/A08/runs`). It is deterministic — **no external model** — and scans the
+tenant's live published product master for the data-quality gaps that can genuinely occur:
+- **a sellable item with no barcode** — it cannot be scanned, so every sale is a manual search;
+- **two records that look like the same item** — split stock and double replenishment (the tested
+  `detectDuplicateProducts`, never auto-merged);
+- **a sellable item with no printed MRP** — a Legal Metrology display gap.
+
+Each finding names the **real product(s)** as its evidence and names the ordinary catalogue endpoint a
+person would call (assign a barcode / propose a merge / re-publish with an MRP). **The run commits
+nothing and writes nothing to any store** — `committedAnything: false`, and a data steward acts through
+the normal route with its own permissions, approvals and audit (hard rule #5, P-05).
+
+**Deliberately NOT scanned:** a missing HSN/tax class (the publish gate refuses a publish without one)
+and a barcode shared across two products (the register enforces one-code-one-item). Both are impossible
+in a live master, so a scan for either would always read "all clear" when it was never possible — worse
+than no scan. The system already prevents them at the door.
+
+**Where it lives:** the detection is pure product-domain logic (`packages/product/src/data-quality.ts`,
+`assessProductDataQuality`) built on the tested `duplicates`/`pack` engines; `aiAdapter.run` folds the
+product master + barcode register (the tested folds, reused) and maps findings → draft proposals;
+`packages/ai` stays pure governance (authority/budget/safety/evaluation).
+
+**Evidence:** `tests/unit/product-data-quality.test.ts` (7) — each gap detected, evidence cites the real
+product, drafts/discontinued ignored, clean catalogue silent, deterministic ids;
+`tests/integration/ai-data-quality.test.ts` (3) — through the real surface: enable+fund→A08 drafts a
+proposal per real gap citing the product and naming the endpoint, commits nothing; a clean catalogue and
+an empty master both yield nothing. Typecheck + lint + secret-scan clean.
+
+**Re-rated (owner-authorised, see the section above):** A08 ENGINE_ONLY → **WIRED**, headline
+46.9% → **47.3%**. **Next A08 step (not built):** persist proposals so a data steward sees an
+open-suggestions worklist and can mark each done — the run is write-free today by design.
+
+---
+
 ## AI assistant, step 1: the control surface — enable agents + set a budget (13 September 2026)
 
 **Owner direction:** "You choose the next module" → (after grounding showed the easy wire-ups exhausted)

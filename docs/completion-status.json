@@ -5,7 +5,7 @@
     "denominator": 104,
     "denominatorSource": "roadmap v2.0/v2.1 controlling structure: M01-M36 (36) + D01-D14 (14) + A01-A10 (10) + WF-01..20 (20) + QG-01..12 (12) + MG-01..12 (12). See docs/COMPLETION-MODEL.md.",
     "statusSource": "docs/traceability.md (RTM) + docs/STATUS.md, read conservatively (lower status when ambiguous) on 13 Aug 2026",
-    "previousProductCompletionPct": 45.9,
+    "previousProductCompletionPct": 46.9,
     "note": "First computation — this is the baseline, so previous == current and change == 0. Established alongside the reporting model; carries no new product maturity itself."
   },
   "items": [
@@ -66,7 +66,7 @@
     {"id": "A05", "label": "ENGINE_ONLY", "evidence": "service-desk drafting engine-only; no wired AI pipeline"},
     {"id": "A06", "label": "ENGINE_ONLY", "evidence": "ops runbook-recommend engine-only"},
     {"id": "A07", "label": "PARTIALLY_WIRED", "evidence": "fraud-signals integration-tested; detect-only, no autonomous sanctions"},
-    {"id": "A08", "label": "ENGINE_ONLY", "evidence": "data-quality detection engine-only"},
+    {"id": "A08", "label": "WIRED", "evidence": "Data Quality agent WIRED on API-13 (owner-authorised re-rate 13 Sep): POST /v1/ai/agents/A08/runs now returns evidence-backed DRAFT proposals from the tested detection engine — aiAdapter.run('A08') folds the live product master + barcode register and runs assessProductDataQuality (packages/product/src/data-quality.ts) over the tested detectDuplicateProducts + barcodeCoverageGaps: a sellable item with no barcode, two records that look like the same item, a sellable item with no printed MRP; each finding names the real product(s) as evidence and names the ordinary catalogue endpoint a human calls (assign barcode / propose merge / re-publish). Deliberately does NOT scan for a missing tax class (publish gate blocks it) or a shared barcode (register enforces one-code-one-item) — both impossible in a live master. AI commits nothing and writes nothing (committedAnything:false, hard rule #5). Proven through the REAL API pipeline: tests/integration/ai-data-quality.test.ts (3) + tests/unit/product-data-quality.test.ts (7). HELD at WIRED, not INTEGRATION_TESTED: the agent's remit still has an unbuilt leg (suggest_mapping over read_import_history) and proposals are not yet persisted into a steward review worklist — both named follow-ons."},
     {"id": "A09", "label": "ENGINE_ONLY", "evidence": "marketing draft engine-only"},
     {"id": "A10", "label": "ENGINE_ONLY", "evidence": "workforce/SOP guidance engine-only"},
     {"id": "WF-01", "label": "PARTIALLY_WIRED", "evidence": "spans M03/M04/M05/M30; weakest partially wired"},

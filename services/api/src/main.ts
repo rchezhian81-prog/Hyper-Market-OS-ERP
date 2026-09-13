@@ -834,7 +834,13 @@ export function buildSurface(deps: {
       killSwitchOn: empty(true), setKillSwitch: () => {},
       budget: empty({ capMinor: 0, spentMinor: 0, periodEnds: now() }), setBudget: () => {},
       enabledAgents: empty([]), setEnabledAgents: () => {}, run: empty([]), openProposals: empty([]), now,
-    } : aiAdapter({ store, now })),
+    } : aiAdapter({
+      store, now,
+      // The Data Quality agent (A08) reads the live product master + barcode register — the tested
+      // folds reused verbatim (same pattern as the export domains above), never a second copy.
+      products: (t) => productMasterAdapter({ store, now }).products(t),
+      barcodes: (t) => barcodeAdapter({ store, now }).all(t),
+    })),
   ];
 }
 
