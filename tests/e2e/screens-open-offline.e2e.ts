@@ -350,6 +350,46 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
     }
   });
 
+  it('the data quality inbox screen opens offline AND is accessible (A08, API-13)', async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.goto(`${base}/data-quality`, { waitUntil: 'load' });
+      await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.serviceWorker.ready.then(() => true));
+      await page.waitForFunction(() => (globalThis as unknown as BrowserWindow).navigator.serviceWorker.controller !== null, { timeout: 15_000 });
+
+      await context.setOffline(true);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+
+      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine)).toBe(false);
+      expect(await page.title()).toContain('Data quality');
+      expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
+      expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
+
+      const a11y = await page.evaluate(() => {
+        const doc = (globalThis as unknown as { document: A11yDoc }).document;
+        const nonEmpty = (v: string | null) => typeof v === 'string' && v.trim().length > 0;
+        const statuses = Array.from(doc.querySelectorAll('.status'));
+        return {
+          langLabelled: nonEmpty(doc.getElementById('lang')?.getAttribute('aria-label') ?? null),
+          listLabelled: nonEmpty(doc.getElementById('rows')?.getAttribute('aria-label') ?? null),
+          statusCount: statuses.length,
+          everyStatusAnnounced: statuses.every((s) => nonEmpty(s.getAttribute('aria-label'))),
+          everyStatusHasWord: statuses.every((s) => nonEmpty(s.textContent)),
+          everyIconHidden: statuses.every((s) => s.querySelector('.icon')?.getAttribute('aria-hidden') === 'true'),
+        };
+      });
+      expect(a11y.langLabelled).toBe(true);
+      expect(a11y.listLabelled).toBe(true);
+      expect(a11y.statusCount).toBeGreaterThan(0);
+      expect(a11y.everyStatusAnnounced).toBe(true);
+      expect(a11y.everyStatusHasWord).toBe(true);
+      expect(a11y.everyIconHidden).toBe(true);
+    } finally {
+      await context.close();
+    }
+  });
+
   it('the fleet-manager (devices) screen opens offline AND is accessible (M33-FR-02/04)', async () => {
     // The admin/fleet screen — the one the E2E matrix had excluded, and the last thing between M33 and
     // E2E_VERIFIED. It opens the same way every other screen does (SW-cached, offline), and what it renders

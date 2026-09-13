@@ -94,6 +94,10 @@ import {
   createCountsReviewSession, type CountsReviewPorts, type CountsReviewSession, type CountRow,
 } from './counts-session';
 import {
+  createDataQualityInboxSession,
+  type DataQualityInboxPorts, type DataQualityInboxSession, type DataQualityWorklistData,
+} from './data-quality-inbox-session';
+import {
   createFleetSession, type FleetPorts, type FleetSession, type FleetDeviceRow, type FleetSummaryRollup,
 } from './fleet-session';
 import type { DeviceChangeCommand } from './fleet-device-command';
@@ -610,6 +614,59 @@ export function bootCounts(data: CountsData | undefined): CountsReviewSession | 
     { userId: data.userId === undefined ? null : data.userId },
     countsPortsFromData(data),
   );
+}
+
+/** What the box tells the Data Quality inbox screen: who is looking, what they may do, and (optionally) the
+ *  worklist it last carried. The worklist is a LIVE cloud read (`GET /v1/ai/data-quality/worklist`) refreshed
+ *  by the shell when online; offline the screen shows its clearly-marked sample stand-in. */
+export interface DataQualityInboxData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+  readonly worklist?: DataQualityWorklistData;
+}
+
+const DATA_QUALITY_READ_PERMISSION = 'ai.proposal.read';
+/** Nothing to show until the live read succeeds — and the agent-off note carries the reason. */
+const INACTIVE_WORKLIST: DataQualityWorklistData = Object.freeze({ agentActive: false, open: [], dismissed: [] });
+
+export function dataQualityInboxPortsFromData(
+  data: DataQualityInboxData | undefined,
+  worklist?: DataQualityWorklistData,
+): DataQualityInboxPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    worklist: () => worklist ?? data?.worklist ?? INACTIVE_WORKLIST,
+    // Default-deny: an absent permission list can read nothing (the server would refuse it anyway).
+    mayRead: () => held.has(DATA_QUALITY_READ_PERMISSION),
+  };
+}
+
+/** Build the Data Quality inbox, or `null` when the box carried no payload for it (shell shows the sample). */
+export function bootDataQualityInbox(
+  data: DataQualityInboxData | undefined,
+  worklist?: DataQualityWorklistData,
+): DataQualityInboxSession | null {
+  if (data === undefined) return null;
+  return createDataQualityInboxSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    dataQualityInboxPortsFromData(data, worklist),
+  );
+}
+
+/** Read the live worklist (a GET — read-only, commits nothing). Returns null offline/refused so the shell
+ *  keeps whatever it was showing and its stale strip says the page is what the box last told it. */
+export async function fetchDataQualityWorklist(): Promise<DataQualityWorklistData | null> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return null; // off-browser (tests inject their own http)
+  try {
+    const res = await fetchFn('/v1/ai/data-quality/worklist', {
+      method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin',
+    });
+    if (res.status >= 400) return null;
+    return (await res.json()) as DataQualityWorklistData;
+  } catch {
+    return null;
+  }
 }
 
 /** What the box tells the device fleet-manager screen — who is looking and what they may do (M33-FR-02/04).
@@ -1313,6 +1370,13 @@ interface ManagerWindow {
   wasteSession?: WasteReviewSession;
   countsData?: CountsData;
   countsSession?: CountsReviewSession;
+  dataQualityInboxData?: DataQualityInboxData;
+  dataQualityInboxSession?: DataQualityInboxSession;
+  /** The shell reads the live worklist through this and re-presents it — a GET read, never a write. */
+  dataQualityInbox?: {
+    refresh(): Promise<DataQualityWorklistData | null>;
+    present(worklist: DataQualityWorklistData): DataQualityInboxSession;
+  };
   fleetData?: FleetData;
   fleetSession?: FleetSession;
   /** Where a device change (register/block/retire) queues for the sync agent — device-backed, survives a reload. */
@@ -1829,6 +1893,21 @@ if (browserWindow !== undefined) {
   if (waste !== null) browserWindow.wasteSession = waste;
   const counts = bootCounts(browserWindow.countsData);
   if (counts !== null) browserWindow.countsSession = counts;
+  // The Data Quality inbox (A08): boots from the box's policy (who + what they hold), then the shell refreshes
+  // the worklist with a live GET (read-only). Offline it shows its sample stand-in and says so. Read-only —
+  // nothing here changes a product; the dismiss action is the follow-up increment.
+  const dataQualityData = browserWindow.dataQualityInboxData;
+  const dataQualityInbox = bootDataQualityInbox(dataQualityData);
+  if (dataQualityInbox !== null) {
+    browserWindow.dataQualityInboxSession = dataQualityInbox;
+    browserWindow.dataQualityInbox = {
+      refresh: fetchDataQualityWorklist,
+      present: (worklist) => createDataQualityInboxSession(
+        { userId: dataQualityData?.userId === undefined ? null : dataQualityData.userId },
+        dataQualityInboxPortsFromData(dataQualityData, worklist),
+      ),
+    };
+  }
   // The device fleet manager (M33-FR-02/04): boots only when the box carried who is looking. The fleet
   // itself is fetched from the cloud fleet-health call (wired next); until then the shell shows a sample.
   // Its register/block/retire actions commit to a device-backed outbox that survives a reload (§31); the

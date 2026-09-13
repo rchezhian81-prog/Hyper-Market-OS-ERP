@@ -45,6 +45,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Gated on the SAME authority the publish route checks (`catalogue.pack.publish`), so the menu never offers
   // it to someone the server would refuse — it is the publisher's action screen (M03-FR-01/03).
   { id: 'product-publish-review', label: 'Products to publish', path: '/product-publish-review', requires: 'catalogue.pack.publish', group: 'Catalogue' },
+  // Data quality — the A08 steward inbox (missing barcodes, duplicate records, missing prices). Gated on the
+  // SAME permission the worklist route checks (`ai.proposal.read`), so the menu never offers a screen the
+  // server would refuse (A08 · API-13).
+  { id: 'data-quality', label: 'Data quality', path: '/data-quality', requires: 'ai.proposal.read', group: 'Catalogue' },
 
   { id: 'suppliers', label: 'Suppliers', path: '/suppliers', requires: 'supplier.view', group: 'Purchasing' },
   { id: 'purchase-orders', label: 'Purchase orders', path: '/purchase-orders', requires: 'po.view', group: 'Purchasing' },

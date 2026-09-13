@@ -467,6 +467,15 @@ export interface PackProductPublishReviewPolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the Data Quality inbox screen and what they may do (A08 · API-13). The worklist itself is read
+ *  live from the cloud, not the pack; this is only who the box was told is looking. */
+export interface PackDataQualityPolicy {
+  readonly userId?: string;
+  /** The permission codes this user holds — `ai.proposal.read` to see the suggestions. Never defaulted. The
+   *  cloud worklist route re-checks it, so this only shapes the UI. */
+  readonly permissions: readonly string[];
+}
+
 /** Who administers this shop, and the windows it judges accounts and devices by. */
 export interface PackAdminPolicy {
   /** Days without a login after which an account is stale enough to review. Per-tenant. */
@@ -828,6 +837,8 @@ export interface StorePack {
   readonly fleetPolicy: Register<PackFleetPolicy>;
   /** Who is on the products-to-publish review screen and what they may do there (ADR-0013). */
   readonly productPublishReviewPolicy: Register<PackProductPublishReviewPolicy>;
+  /** Who is on the Data Quality inbox screen and what they may do there (A08). */
+  readonly dataQualityPolicy: Register<PackDataQualityPolicy>;
   /** Every account, so joiners, movers and leavers can be reviewed (M02-FR-04). */
   readonly accounts: Register<readonly unknown[]>;
   /**
@@ -967,6 +978,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     countsPolicy: notKnown(why),
     fleetPolicy: notKnown(why),
     productPublishReviewPolicy: notKnown(why),
+    dataQualityPolicy: notKnown(why),
     accounts: notKnown(why),
     supportSessions: notKnown(why),
     devices: notKnown(why),
@@ -1075,6 +1087,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     countsPolicy: section<PackCountsPolicy>('countsPolicy'),
     fleetPolicy: section<PackFleetPolicy>('fleetPolicy'),
     productPublishReviewPolicy: section<PackProductPublishReviewPolicy>('productPublishReviewPolicy'),
+    dataQualityPolicy: section<PackDataQualityPolicy>('dataQualityPolicy'),
     accounts: section<readonly unknown[]>('accounts'),
     supportSessions: section<readonly unknown[]>('supportSessions'),
     devices: section<readonly unknown[]>('devices'),
