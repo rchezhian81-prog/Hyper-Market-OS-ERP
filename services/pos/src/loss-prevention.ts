@@ -20,6 +20,7 @@ import {
   openCase, addEvidence, verifyEvidence, closeCase, ruleFeedback,
   type InvestigationCase, type EvidenceItem, type EvidenceKind, type CaseOutcome,
 } from '../../../packages/loss-prevention/src/cases';
+import { buildOpenCaseWorklist } from '../../../packages/loss-prevention/src/worklist';
 import {
   evaluateLossPrevention, type LpRule, type ActivityEvent, type SignalKind,
 } from '../../../packages/loss-prevention/src/loss-prevention';
@@ -110,6 +111,19 @@ export function lpCasesRoutes(deps: LpCasesDeps): readonly Route[] {
         if (!result.closed) refuse('close_refused', result.detail);
         await deps.recordClosed(ctx.tenantId, result.case);
         return { status: 200, body: { caseId, state: 'closed', outcome: result.case.outcome, closedBy: result.case.closedBy } };
+      },
+    },
+    {
+      // The manager's open-investigations worklist (M15-FR-04 / P-03). Every OPEN case, highest value
+      // first, so an auto-opened shortage investigation cannot be opened and forgotten; `?mine=true`
+      // narrows it to the caller's own assignments. Read-only, a summary per case (not the sealed
+      // evidence). Registered before the `:caseId` read — both paths are anchored and mutually exclusive.
+      api: 'API-05', method: 'GET', path: '/v1/loss-prevention/cases',
+      permission: 'lp.case.read',
+      handler: async (ctx) => {
+        const mine = ctx.query['mine'] === 'true' || ctx.query['assignedToMe'] === 'true';
+        const worklist = buildOpenCaseWorklist(await deps.cases(ctx.tenantId), mine ? { assignedTo: ctx.userId } : {});
+        return { status: 200, body: { ...worklist, scope: mine ? 'assigned_to_me' : 'all_open', asAt: deps.now() } };
       },
     },
     {
