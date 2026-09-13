@@ -217,3 +217,70 @@ describe('a material over/short is signed off by the cash office (M14 / P-03, AP
     expect((again.body as { disposition: string }).disposition).toBe('signed'); // the first sign-off stands
   });
 });
+
+// A material SHORT auto-opens a loss-prevention investigation assigned to the store manager (M15-FR-04,
+// P-03). The close never fails — the shop keeps trading — and the outcome is reported alongside; the
+// case is an ordinary LP case, readable through the existing loss-prevention surface.
+interface CloseWithInvestigation {
+  investigation?: { opened: boolean; caseId?: string; assignedTo?: string; blockedReason?: string };
+}
+const readCase = (h: ApiHarness, tenantId: string, userId: string, caseId: string) =>
+  h.request({ method: 'GET', path: `/v1/loss-prevention/cases/${caseId}`, userId, tenantId });
+
+describe('a material short auto-opens an investigation, assigned to the store manager (M15-FR-04)', () => {
+  it('opens a case on the cashier, assigned to the store manager, and it is a real readable LP case', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-sm', 'store_manager');
+    // cashier-1 counted the drawer; ₹1,000 short (material).
+    const res = await close(h, A, 'u-owner', 'S1', base({ countedCashMinor: 114_000, reasonCode: 'short' }));
+    expect(res.status).toBe(201);
+    const inv = (res.body as CloseWithInvestigation).investigation!;
+    expect(inv.opened).toBe(true);
+    expect(inv.assignedTo).toBe('u-sm');
+    expect(inv.caseId).toBe('shortage-S1');
+
+    // The case exists in the ordinary loss-prevention surface, on the cashier, assigned to the manager.
+    const c = await readCase(h, A, 'u-owner', 'shortage-S1');
+    expect(c.status).toBe(200);
+    expect((c.body as { subjectRef: string; assignedTo: string; state: string }).subjectRef).toBe('cashier-1');
+    expect((c.body as { assignedTo: string }).assignedTo).toBe('u-sm');
+    expect((c.body as { state: string }).state).toBe('open');
+  });
+
+  it('opens no investigation for an over, or for a within-tolerance close', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-sm', 'store_manager');
+    // +1000 over, material → exception raised, but an over is not a loss.
+    const over = await close(h, A, 'u-owner', 'S-over', base({ countedCashMinor: 116_000, reasonCode: 'over' }));
+    expect((over.body as CloseWithInvestigation).investigation).toBeUndefined();
+    // within tolerance → no exception, no investigation.
+    const clean = await close(h, A, 'u-owner', 'S-clean', base());
+    expect((clean.body as CloseWithInvestigation).investigation).toBeUndefined();
+  });
+
+  it('still closes the drawer when there is no store manager, and reports the gap (P-01 keeps trading, P-08 no silent gap)', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner'); // no store manager granted
+    const res = await close(h, A, 'u-owner', 'S1', base({ countedCashMinor: 114_000, reasonCode: 'short' }));
+    expect(res.status).toBe(201); // the close succeeds regardless
+    const inv = (res.body as CloseWithInvestigation).investigation!;
+    expect(inv.opened).toBe(false);
+    expect(inv.blockedReason).toBe('no_eligible_investigator');
+    // No case was opened.
+    expect((await readCase(h, A, 'u-owner', 'shortage-S1')).status).toBe(404);
+  });
+
+  it('is idempotent — re-closing the same shift does not open a second investigation', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-sm', 'store_manager');
+    expect((await close(h, A, 'u-owner', 'S1', base({ countedCashMinor: 114_000, reasonCode: 'short' }), 'k1')).status).toBe(201);
+    // Re-sent close is a no-op (alreadyClosed) and does not re-run the auto-open.
+    const again = await close(h, A, 'u-owner', 'S1', base({ countedCashMinor: 114_000, reasonCode: 'short' }), 'k2');
+    expect((again.body as { alreadyClosed?: boolean }).alreadyClosed).toBe(true);
+    // Exactly one case exists.
+    expect((await readCase(h, A, 'u-owner', 'shortage-S1')).status).toBe(200);
+  });
+});

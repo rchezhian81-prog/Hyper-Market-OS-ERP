@@ -63,6 +63,8 @@ import type { B2BDocumentsDeps, StoredB2BDocument } from '../../finance/src/b2b-
 import { checkCredit } from '../../../packages/b2b/src/credit';
 import type { LpCasesDeps, LpRulesDeps } from '../../pos/src/loss-prevention';
 import type { InvestigationCase, EvidenceItem } from '../../../packages/loss-prevention/src/cases';
+import { openCase } from '../../../packages/loss-prevention/src/cases';
+import { planInvestigationFromShortage } from '../../../packages/loss-prevention/src/auto-open-from-shortage';
 import type { LpRule } from '../../../packages/loss-prevention/src/loss-prevention';
 import type { FraudSignalsDeps } from '../../pos/src/fraud-signals';
 import type { FraudThresholds } from '../../../packages/loss-prevention/src/fraud-signals';
@@ -189,7 +191,7 @@ import type { AgentId, Budget, Proposal, AiDeps } from '../../ai/src/index';
 import type { PricingDeps, PriceChangeRecord } from '../../pricing/src/index';
 import type { PriceListDeps } from '../../pricing/src/price-list';
 import type { PriceEntry } from '../../../packages/price-list/src/price-list';
-import { ROLE_CATALOGUE } from './roles';
+import { ROLE_CATALOGUE, STORE_MANAGER_ROLE_ID } from './roles';
 
 /** Streams, named once. A typo here is a domain that silently reads an empty history. */
 export const STREAM = {
@@ -1830,6 +1832,9 @@ export function shiftAdapter(input: {
     allOf<ClosedShiftRecord>(input.store, tenantId, SHIFTS_STREAM, 'TillClosed');
   const reviews = (tenantId: string) =>
     allOf<OverShortReview>(input.store, tenantId, SHIFTS_STREAM, 'ShiftOverShortReviewed');
+  // The auto-open reuses the SAME loss-prevention case store the manual /cases route writes to, so an
+  // auto-opened case is an ordinary case — read, evidenced and closed through the existing surface.
+  const lp = lpCasesAdapter({ store: input.store, now: input.now });
 
   return {
     now: input.now,
@@ -1839,6 +1844,34 @@ export function shiftAdapter(input: {
     overShortShifts: async (tenantId) => (await closes(tenantId)).filter((r) => r.exceptionRaised),
 
     overShortReviews: async (tenantId) => reviews(tenantId),
+
+    openInvestigationOnShortage: async (tenantId, record) => {
+      // "The store manager" is a role, not a person — resolve who holds it from the tenant's own grants
+      // (the authoritative source, the same one the kernel authorizes against), never from the request.
+      const grants = await allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+      const storeManagers = [...new Set(grants.filter((g) => g.roleId === STORE_MANAGER_ROLE_ID).map((g) => g.userId))];
+
+      const plan = planInvestigationFromShortage({ shift: record, storeManagers });
+      if (!plan.open) return { opened: false, blockedReason: plan.refusedBecause, detail: plan.detail };
+
+      // Idempotent: one case per shift shortage. A re-run finds the case already open and does nothing.
+      const existing = await lp.case(tenantId, plan.caseId!);
+      if (existing !== undefined) {
+        return { opened: true, caseId: existing.caseId, assignedTo: existing.assignedTo, alreadyOpen: true, detail: 'investigation already open for this shift' };
+      }
+
+      const result = openCase({
+        caseId: plan.caseId!, tenantId, raisedFromRef: plan.raisedFromRef!, subjectRef: plan.subjectRef!,
+        summary: plan.summary!, valueMinor: plan.valueMinor!,
+        // A deterministic rule opened this, not a person — recorded honestly as the system actor (P-05).
+        openedBy: 'system:till-shortage-rule', assignedTo: plan.assignedTo!, at: input.now(),
+      });
+      if (!result.opened || result.case === undefined) {
+        return { opened: false, blockedReason: 'refused', detail: result.detail };
+      }
+      await lp.recordOpened(tenantId, result.case);
+      return { opened: true, caseId: result.case.caseId, assignedTo: result.case.assignedTo, detail: result.detail };
+    },
 
     recordShiftClose: async (tenantId, record) => {
       await input.store.append(tenantId, SHIFTS_STREAM, makeEvent({

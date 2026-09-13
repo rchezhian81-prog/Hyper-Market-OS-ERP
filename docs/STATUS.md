@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M15: a material cash short now auto-opens an investigation, assigned to the store manager (13 September 2026)
+
+**Owner direction:** "Auto-open an investigation on a material short; investigator is the store manager."
+
+**What changed (behaviour):**
+- New pure rule `packages/loss-prevention/src/auto-open-from-shortage.ts` — `planInvestigationFromShortage`:
+  only a material **short** opens a case (an over is the cash-office sign-off's job, not a loss; a
+  within-tolerance close is not an exception); the subject is the cashier who counted the drawer; the
+  investigator is a store manager who is **not** that cashier.
+- `services/pos/src/shift.ts`: when a drawer closes materially short, the close now also opens a
+  loss-prevention investigation (via the store-backed adapter). It **never blocks the close** — the shop
+  keeps trading (P-01) — and reports the outcome (`investigation: { opened, caseId, assignedTo }`, or
+  `blockedReason`) alongside, so a gap is visible not silent (P-08). Idempotent: one case per shift.
+- `services/api/src/adapters.ts`: the shift adapter resolves "the store manager" from the tenant's own
+  `RoleGranted` grants (`STORE_MANAGER_ROLE_ID`, added to `roles.ts`), and opens the case through the
+  **same** loss-prevention case store the manual `/cases` route uses — so an auto-opened case is an
+  ordinary case, read/evidenced/closed through the existing surface. `openedBy` is recorded honestly as
+  the system rule (`system:till-shortage-rule`), a deterministic rule that may commit (P-05).
+
+**Separation of duties preserved:** a subject cannot investigate their own case (the engine's rule), and
+if the only store manager IS the cashier — or there is no store manager — the case is not force-assigned;
+the shortage is reported as an open gap for the owner to fix (grant the role), never silently dropped.
+
+**Evidence:** `tests/unit/auto-open-from-shortage.test.ts` (6); `tests/integration/shift-close.test.ts`
+grew to 17 (auto-open + the case readable on the real LP surface; no case for an over or a clean close;
+close still succeeds with no store manager and reports the gap; idempotent — no second case on re-close).
+Full suite green (6,539 passed / 262 DB-skipped); typecheck + lint + secret-scan clean; the api-surface
+contract still passes. **Not re-rated** — the ledger and headline % are unchanged.
+
+---
+
 ## M14: a material over/short must now be signed off by the cash office (12 September 2026)
 
 **Autonomous increment** (owner standing direction: "don't wait… complete everything without any
