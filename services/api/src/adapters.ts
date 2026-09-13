@@ -43,7 +43,8 @@ import type { CataloguePreviewDeps } from '../../catalogue/src/catalogue-preview
 import { assembleCatalogueSnapshot } from '../../catalogue/src/catalogue-preview';
 import { apiError } from '../../kernel/src/index';
 import type { GstRatePeriod } from '../../../packages/finance/src/rate';
-import type { ProductRecord, BarcodeAssignment, MergeRequest, MergeLink, PackHierarchy } from '../../../packages/product/src/index';
+import type { ProductRecord, BarcodeAssignment, MergeRequest, MergeLink, PackHierarchy, DataQualityFinding } from '../../../packages/product/src/index';
+import { BarcodeRegistry, assessProductDataQuality } from '../../../packages/product/src/index';
 import type { IncomingSale, IncomingTender, SaleException, PosDeps } from '../../pos/src/index';
 import type { LotTraceDeps } from '../../inventory/src/lot-trace';
 import type { RecallDeps } from '../../inventory/src/recall';
@@ -188,7 +189,7 @@ import type { TargetKind } from '../../../packages/migration/src/trial';
 import type { DomainFinding, Acceptance } from '../../../packages/migration/src/verification-report';
 import type { Signature } from '../../../packages/migration/src/verification-report';
 import type { HistoryExclusion } from '../../../packages/migration/src/history';
-import type { AgentId, Budget, Proposal, AiDeps } from '../../ai/src/index';
+import type { AgentId, Budget, Proposal, EvidenceItem as AiEvidenceItem, AiDeps } from '../../ai/src/index';
 import type { PricingDeps, PriceChangeRecord } from '../../pricing/src/index';
 import type { PriceListDeps } from '../../pricing/src/price-list';
 import type { PriceEntry } from '../../../packages/price-list/src/price-list';
@@ -6309,9 +6310,48 @@ export function migrationAdapter(input: {
   };
 }
 
+/**
+ * The domain endpoint a person calls to ACT on a data-quality finding — named, never invoked from
+ * here. The AI drafts; a data steward acts through the ordinary catalogue route, which applies its
+ * own permissions, approvals and audit (hard rule #5, P-05).
+ */
+const DATA_QUALITY_ROUTE: Readonly<Record<DataQualityFinding['kind'], string>> = {
+  missing_barcode: 'POST /v1/catalogue/products/:productId/barcodes/:code',
+  suspected_duplicate: 'POST /v1/catalogue/merges/:mergeId',
+  missing_mrp: 'POST /v1/catalogue/products/:productId/publish',
+};
+
+/**
+ * Turn A08's product data-quality findings into DRAFT proposals — each carrying the real product(s)
+ * as evidence and naming the endpoint a human would call. No proposal here commits anything; the
+ * run route stamps `committed: false` and the reply says `committedAnything: false`.
+ */
+function dataQualityProposals(findings: readonly DataQualityFinding[], now: string): Omit<Proposal, 'committed'>[] {
+  return findings.map((f): Omit<Proposal, 'committed'> => ({
+    // Deterministic from the finding — the same master yields the same proposal id.
+    proposalId: f.findingId,
+    agent: 'A08',
+    summary: f.headline,
+    wouldRequire: DATA_QUALITY_ROUTE[f.kind],
+    evidence: f.evidence.map((e): AiEvidenceItem => ({
+      source: 'product master',
+      reference: e.sku.trim() === '' ? e.productId : e.sku,
+      summary: `${e.name} — ${e.note}`,
+    })),
+    createdAt: now,
+  }));
+}
+
 export function aiAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
+  /**
+   * The live product master and its barcode register, for the Data Quality agent (A08). Optional:
+   * without them A08 finds nothing rather than throwing — the same shape as every other agent whose
+   * data source is not yet wired. The readers are the tested product/barcode folds, reused verbatim.
+   */
+  readonly products?: (tenantId: string) => Promise<readonly ProductRecord[]> | readonly ProductRecord[];
+  readonly barcodes?: (tenantId: string) => Promise<readonly BarcodeAssignment[]> | readonly BarcodeAssignment[];
 }): AiDeps {
   return {
     now: input.now,
@@ -6386,14 +6426,25 @@ export function aiAdapter(input: {
     },
 
     /**
-     * No model is called from here.
+     * A run READS and DRAFTS — it commits nothing and, for A08, writes nothing to any store.
      *
-     * The gate above this refuses first — nothing is enabled and no budget is granted — so this is
-     * unreachable until a provider is chosen (OB-02) and an agent is turned on by name. It returns
-     * nothing rather than pretending to have run, and the reply says `committedAnything: false`
-     * whatever happens, because a proposal is never an action (hard rule #5).
+     * The Data Quality agent (A08) is deterministic and needs no model: it scans the tenant's live
+     * product master for the gaps that can actually occur — a sellable item with no barcode, two
+     * records that look like the same thing, an item with no printed MRP — and returns each as a
+     * DRAFT proposal citing the real product(s). A person acts through the ordinary catalogue
+     * endpoint the proposal names; nothing here changes any product (hard rule #5, P-05).
+     *
+     * Every other agent still returns nothing — it becomes reachable when its own data source is
+     * wired (and, for a model-backed agent, a provider is chosen, OB-02).
      */
-    run: () => [],
+    run: async (tenantId, agent) => {
+      if (agent !== 'A08' || input.products === undefined || input.barcodes === undefined) return [];
+      const findings = assessProductDataQuality({
+        products: await input.products(tenantId),
+        barcodes: new BarcodeRegistry(await input.barcodes(tenantId)),
+      });
+      return dataQualityProposals(findings, input.now());
+    },
 
     openProposals: (tenantId) => allOf<Proposal>(input.store, tenantId, STREAM.ai, 'AiProposalRaised'),
   };

@@ -5,6 +5,48 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## AI assistant, step 2: the Data Quality agent (A08) drafts real suggestions (13 September 2026)
+
+**Owner direction:** "Start the AI assistant" — step 1 (the control surface) merged as #373; this is the
+promised next slice, making the first agent actually PRODUCE something a person can act on.
+
+**What changed (behaviour):** agent **A08 (Data Quality)** now returns evidence-backed DRAFT proposals
+from a run (`POST /v1/ai/agents/A08/runs`). It is deterministic — **no external model** — and scans the
+tenant's live published product master for the data-quality gaps that can genuinely occur:
+- **a sellable item with no barcode** — it cannot be scanned, so every sale is a manual search;
+- **two records that look like the same item** — split stock and double replenishment (the tested
+  `detectDuplicateProducts`, never auto-merged);
+- **a sellable item with no printed MRP** — a Legal Metrology display gap.
+
+Each finding names the **real product(s)** as its evidence and names the ordinary catalogue endpoint a
+person would call (assign a barcode / propose a merge / re-publish with an MRP). **The run commits
+nothing and writes nothing to any store** — `committedAnything: false`, and a data steward acts through
+the normal route with its own permissions, approvals and audit (hard rule #5, P-05).
+
+**Deliberately NOT scanned:** a missing HSN/tax class (the publish gate refuses a publish without one)
+and a barcode shared across two products (the register enforces one-code-one-item). Both are impossible
+in a live master, so a scan for either would always read "all clear" when it was never possible — worse
+than no scan. The system already prevents them at the door.
+
+**Where it lives:** the detection is pure product-domain logic (`packages/product/src/data-quality.ts`,
+`assessProductDataQuality`) built on the tested `duplicates`/`pack` engines; `aiAdapter.run` folds the
+product master + barcode register (the tested folds, reused) and maps findings → draft proposals;
+`packages/ai` stays pure governance (authority/budget/safety/evaluation).
+
+**Evidence:** `tests/unit/product-data-quality.test.ts` (7) — each gap detected, evidence cites the real
+product, drafts/discontinued ignored, clean catalogue silent, deterministic ids;
+`tests/integration/ai-data-quality.test.ts` (3) — through the real surface: enable+fund→A08 drafts a
+proposal per real gap citing the product and naming the endpoint, commits nothing; a clean catalogue and
+an empty master both yield nothing. Typecheck + lint + secret-scan clean.
+
+**Not re-rated.** A08 is genuinely WIRED now (run → tested engine → evidence-backed proposals,
+integration-tested), an advance on its ledger ENGINE_ONLY, but re-rating the headline is owner-gated. Say
+the word and I will re-rate A08 (ENGINE_ONLY → WIRED, or INTEGRATION_TESTED given the real-pipeline test)
+and show the new number. **Next A08 step (not built):** persist proposals so a data steward sees an
+open-suggestions worklist and can mark each done — the run is write-free today by design.
+
+---
+
 ## AI assistant, step 1: the control surface — enable agents + set a budget (13 September 2026)
 
 **Owner direction:** "You choose the next module" → (after grounding showed the easy wire-ups exhausted)
