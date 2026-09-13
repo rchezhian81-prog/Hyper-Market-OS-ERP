@@ -5,6 +5,49 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## AI assistant, step 3: the Data Quality suggestions inbox (13 September 2026)
+
+**Owner direction:** "build the suggestions inbox." The A08 run produced suggestions but they lived
+only in the run's response — there was no worklist a steward could return to and work through. This
+adds the inbox.
+
+**What changed (behaviour):** two routes on API-13.
+- **`GET /v1/ai/data-quality/worklist`** (`ai.proposal.read`) — the steward's inbox: the live A08
+  findings folded with the stewards' dismissals, split into `open` (act on these) and `dismissed`
+  (judged not-a-problem, with who/when/why), each with counts. It **re-derives every time**, so the
+  moment a steward FIXES a gap through the ordinary catalogue route (assign the barcode, merge the
+  pair, add the MRP) the suggestion leaves the list on its own — the inbox self-heals and no "done"
+  flag can go stale against reality. It honours the same governance as a run (hidden when the kill
+  switch is on or A08 is not enabled by name) but calls no model and **spends nothing, so it is NOT
+  behind the budget gate** — a steward's worklist must not vanish because a budget is exhausted.
+- **`POST /v1/ai/data-quality/dismissals`** (`ai.suggestion.dismiss`) — a steward records that a
+  suggestion is not a problem (two genuinely-different products, an item that legitimately has no
+  barcode), with a reason; `reopen: true` puts it back. A **HUMAN write**, recorded in the human's
+  name (`by` = the authenticated caller, never a body field), append-only + latest-wins
+  (`AiDataQualityDismissed`), reversible — never an erasure (hard rules #2/#6). **The AI still writes
+  nothing**: fixing is implicit (the finding vanishes), dismissing is an explicit human judgement.
+
+**Where it lives:** the fold is a pure function (`buildDataQualityWorklist` in
+`packages/product/src/data-quality.ts`); `aiAdapter` gains `dataQualityWorklist` (re-derive findings +
+fold dispositions) and `recordDataQualityDisposition` (append the human decision); the two routes +
+their validation + governance live in `services/ai`. New permission `ai.suggestion.dismiss` granted to
+owner + store_manager; store_manager also gains `ai.proposal.read` (the data steward for the catalogue,
+who can already propose merges).
+
+**Evidence:** `tests/unit/data-quality-worklist.test.ts` (6) — open/dismiss/reopen/self-heal/latest-wins/stable-order;
+`tests/integration/ai-data-quality-worklist.test.ts` (6) — through the real surface: the inbox lists
+the open suggestions with no budget set; a steward dismisses a false positive (recorded in their name)
+and it moves to `dismissed`; reopen returns it; **fixing a gap removes it with no tick-off**; governance
+hides it when not-enabled or killed; a cashier is 403 on both routes and a reasonless dismissal is 400.
+Full suite green; typecheck + lint + secret-scan + 730 guardrails clean.
+
+**Not re-rated.** A08 stays **WIRED** — the inbox strengthens the wired state (a durable, governed
+steward workflow) but the agent's remit still has the same unbuilt leg (`suggest_mapping` over
+`read_import_history`), so the honest ceiling is unchanged. Say the word to re-rate, or to build that
+last leg (which would be the case for INTEGRATION_TESTED).
+
+---
+
 ## Deliberate re-rate: A08 Data Quality (46.9% → 47.3%) (13 September 2026)
 
 **Owner direction:** "re-rate A08 and show the new number." Owner-authorised, evidence-first.

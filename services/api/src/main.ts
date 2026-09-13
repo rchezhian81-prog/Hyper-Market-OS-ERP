@@ -833,7 +833,8 @@ export function buildSurface(deps: {
       // running because nobody has told it not to.
       killSwitchOn: empty(true), setKillSwitch: () => {},
       budget: empty({ capMinor: 0, spentMinor: 0, periodEnds: now() }), setBudget: () => {},
-      enabledAgents: empty([]), setEnabledAgents: () => {}, run: empty([]), openProposals: empty([]), now,
+      enabledAgents: empty([]), setEnabledAgents: () => {}, run: empty([]), openProposals: empty([]),
+      dataQualityWorklist: empty({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordDataQualityDisposition: () => {}, now,
     } : aiAdapter({
       store, now,
       // The Data Quality agent (A08) reads the live product master + barcode register — the tested
