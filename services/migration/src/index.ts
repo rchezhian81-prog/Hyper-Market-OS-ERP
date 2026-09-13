@@ -37,11 +37,30 @@ import {
   type DomainFinding, type Acceptance, type Signature,
 } from '../../../packages/migration/src/verification-report';
 import {
-  proposeExclusion, approveExclusion, exclusionPosition,
-  type HistoryExclusion, type ExclusionScope,
+  proposeExclusion, approveExclusion, exclusionPosition, assessRetirement,
+  type HistoryExclusion, type ExclusionScope, type LegacyArchive,
 } from '../../../packages/migration/src/history';
 
 const EXCLUSION_SCOPES: readonly string[] = ['documents_before', 'entity_kind', 'named_records', 'inactive_records'];
+
+/**
+ * Is this a legacy archive the retirement assessment can read — a sealed, read-only capture with the
+ * dates retention runs from? `readOnly` must be the literal true: an archive that is not read-only is
+ * not an archive, it is still a live system.
+ */
+function isLegacyArchive(v: unknown): v is LegacyArchive {
+  if (!isObj(v)) return false;
+  return typeof v['archiveId'] === 'string' && v['archiveId'] !== ''
+    && typeof v['sourceId'] === 'string'
+    && typeof v['digest'] === 'string' && v['digest'] !== ''
+    && Number.isInteger(v['rowCount'])
+    && typeof v['archivedAt'] === 'string'
+    && Number.isInteger(v['retentionYears']) && (v['retentionYears'] as number) >= 0
+    && typeof v['earliestRecordDate'] === 'string' && v['earliestRecordDate'] !== ''
+    && typeof v['latestRecordDate'] === 'string' && v['latestRecordDate'] !== ''
+    && v['readOnly'] === true
+    && (v['restoreVerifiedAt'] === undefined || typeof v['restoreVerifiedAt'] === 'string');
+}
 
 const SOURCE_KINDS: readonly string[] = ['erp_database', 'pos_database', 'spreadsheet', 'paper', 'third_party_system', 'report_only'];
 const VOLUME_BASES: readonly string[] = ['counted', 'estimated', 'unknown'];
@@ -958,6 +977,38 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
         await assertSafeTarget(deps, ctx.tenantId);
         const all = await deps.exclusions(ctx.tenantId);
         return { status: 200, body: { exclusions: all, position: exclusionPosition(all), asAt: deps.now() } };
+      },
+    },
+    {
+      // MG-12 — may the legacy SYSTEM be switched off? A what-if over the supplied archive: retention is
+      // a DATE in the future (run from the data, not from confidence), the restore must have been
+      // demonstrated, the cutover must be accepted, and no assessment may still need the records. Every
+      // blocker is named at once. Retiring the system NEVER deletes the data (hard rule #6) — the archive
+      // stays read-only. "today" is the server clock, never the body, so nobody fakes elapsed retention.
+      // Computes and stores nothing. Refuses a production target first (#7).
+      api: 'API-12', method: 'POST', path: '/v1/migration/retirement/assessment',
+      permission: 'migration.retirement.assess', idempotent: true,
+      handler: async (ctx) => {
+        await assertSafeTarget(deps, ctx.tenantId);
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (!isLegacyArchive(b['archive']) || typeof b['cutoverAccepted'] !== 'boolean'
+          || !Number.isInteger(b['openAssessments']) || (b['openAssessments'] as number) < 0) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_retirement_check',
+            whatHappened: 'A retirement check needs a read-only archive (with its retention years and earliest/latest record dates), whether the cutover is accepted, and a whole non-negative count of open assessments.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was assessed and nothing was changed — this check reads and reports, it never deletes data or switches anything off.',
+          });
+        }
+        // The archive is FOR this tenant — stamped from the authenticated context, never the body.
+        const archive: LegacyArchive = { ...(b['archive'] as LegacyArchive), tenantId: ctx.tenantId };
+        const assessment = assessRetirement({
+          archive,
+          cutoverAccepted: b['cutoverAccepted'] as boolean,
+          openAssessments: b['openAssessments'] as number,
+          today: deps.now(),
+        });
+        return { status: 200, body: assessment };
       },
     },
   ];
