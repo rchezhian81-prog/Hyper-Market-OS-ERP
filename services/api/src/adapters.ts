@@ -187,6 +187,7 @@ import type { MigrationDeps } from '../../migration/src/index';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import type { DomainFinding, Acceptance } from '../../../packages/migration/src/verification-report';
 import type { Signature } from '../../../packages/migration/src/verification-report';
+import type { HistoryExclusion } from '../../../packages/migration/src/history';
 import type { AgentId, Budget, Proposal, AiDeps } from '../../ai/src/index';
 import type { PricingDeps, PriceChangeRecord } from '../../pricing/src/index';
 import type { PriceListDeps } from '../../pricing/src/price-list';
@@ -6236,6 +6237,28 @@ export function migrationAdapter(input: {
     findings: (tenantId) => allOf<DomainFinding>(input.store, tenantId, STREAM.migration, 'MigrationFindingRaised'),
     acceptances: (tenantId) => allOf<Acceptance>(input.store, tenantId, STREAM.migration, 'MigrationExceptionAccepted'),
     signatures: (tenantId) => allOf<Signature>(input.store, tenantId, STREAM.migration, 'MigrationReportSigned'),
+
+    // Every exclusion, latest state per id — the proposal, then the owner's written decision. A
+    // history exclusion goes proposed → approved/rejected; the fold keeps the newest per id (MG-07).
+    exclusions: async (tenantId) => {
+      const all = await allOf<HistoryExclusion>(input.store, tenantId, STREAM.migration, 'MigrationHistoryExclusion');
+      const byId = new Map<string, HistoryExclusion>();
+      for (const e of all) byId.set(e.exclusionId, e);
+      return [...byId.values()];
+    },
+
+    recordExclusion: async (tenantId, exclusion) => {
+      await input.store.append(tenantId, STREAM.migration, makeEvent({
+        // The exclusion id AND its status — proposing then deciding are two append-only facts on one
+        // exclusion; re-sending the same transition collapses, a decision after a proposal does not.
+        id: `mg-exclusion-${exclusion.exclusionId}-${exclusion.status}`,
+        type: 'MigrationHistoryExclusion',
+        occurredAt: exclusion.status === 'proposed' ? exclusion.proposedAt : (exclusion.approvedAt ?? input.now()),
+        idempotencyKey: `mg-exclusion-${tenantId}-${exclusion.exclusionId}-${exclusion.status}`,
+        source: 'api/migration',
+        payload: exclusion,
+      }));
+    },
 
     recordAcceptance: async (tenantId, a) => {
       await input.store.append(tenantId, STREAM.migration, makeEvent({
