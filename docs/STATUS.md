@@ -5,6 +5,51 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## AI assistant, step 6: A08's last leg — suspicious mappings from import history (13 September 2026)
+
+**Owner direction:** "finish A08's last piece." A08's remit (§7.1) is three things — duplicates, missing
+attributes, and **suspicious mappings**. Steps 1–5 built and wired the first two (they read the product
+master) and put them on screen. This adds the third, so A08 now does everything the roadmap asks of it.
+
+**What a "suspicious mapping" is, honestly:** the raw source headers of an import are **not** kept — only the
+post-mapping rows and their rejections are — so A08 cannot *propose a mapping* for a fresh file without
+guessing, and guessing is not allowed (never invent). What import history **does** keep is the per-column
+**rejection fingerprint**: every job (committed, refused or abandoned) keeps `errors[]`, each tagged with the
+target column it failed on and why. A source whose "hsn" column is rejected week after week is a mapping that
+is wrong at the source's end. So A08's third leg is a **detector** over that real, persisted data — it flags a
+`(source, column, reason)` that **recurs** (≥3 rejected rows AND ≥20% of that source's failures) on a
+mapping-related reason, and draws the ranking + the plain-English corrective action from the **same tested
+`scoreSource` engine** the import-quality reports already use. In-file duplicates are excluded on purpose (a
+steward cannot fix a supplier exporting the same key twice by re-mapping a column).
+
+**What changed (behaviour):** running A08 (`POST /v1/ai/agents/A08/runs`) now returns, alongside the product
+findings, one DRAFT proposal per suspicious mapping — e.g. _"Imports from 'acme-foods' keep failing on the
+'hsn' column"_ — each citing **import history** as its evidence (the source, the rejected-row count, the share,
+and what to do), and pointing at the source's import-quality review (`GET /v1/purchase/import-quality/:sourceId`)
+as where a steward looks. **Commits nothing** (hard rule #5 / P-05): the reply still says
+`committedAnything: false` and every proposal `committed: false`. The two legs are independent data sources, so
+either can be absent without silencing the other.
+
+**Where it lives:** new pure detector `packages/import/src/mapping-quality.ts` (`assessMappingQuality`,
+reusing `scoreSource`); exported from the import package. Wired into `services/api/src/adapters.ts` `aiAdapter`
+— a new optional `importHistory` reader + a `mappingQualityProposals` mapper, folded into the A08 `run`;
+`services/api/src/main.ts` supplies it via the SAME tested `importQualityAdapter(...).jobs` fold the
+import-quality routes read (one truth, no second copy).
+
+**Evidence:** `tests/unit/import-mapping-quality.test.ts` (6) — flags a recurring column with its action;
+ignores in-file duplicates; ignores a one-off (count<3); ignores a low-share column; worst-first deterministic
+order; clean/empty → nothing. `tests/integration/ai-mapping-quality.test.ts` (3) — on the live surface a
+recurring failure becomes a mapping proposal citing import history and committing nothing; both legs run in one
+pass (a product-master gap and a mapping gap together); a clean history and in-file duplicates say nothing.
+Existing A08 + AI-governance suites still green; typecheck + lint clean.
+
+**Not re-rated (owner-gated).** A08 has been **WIRED** (headline **47.3%**) since step 1. This finishes its
+third and last remit leg end to end and adds integration coverage — which is the case for lifting A08 to
+**INTEGRATION_TESTED**, but the headline number is **not** re-rated without the owner's explicit say-so. That
+decision is offered in the summary below.
+
+---
+
 ## AI assistant, step 5: the "not a problem" dismiss button on the inbox screen (13 September 2026)
 
 **Owner direction:** "add the dismiss button." Step 4 put the read-only inbox on screen (#376); this makes
