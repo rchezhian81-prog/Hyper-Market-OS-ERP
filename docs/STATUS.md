@@ -5,6 +5,32 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M15: the store manager's open-investigations worklist (13 September 2026)
+
+**Owner direction:** "After #367 merges, build the manager's open-investigations worklist."
+
+**The gap it closes:** a material short now auto-opens a case (previous entry), but a case that is
+opened and then unseen is one nobody worked — the exact failure control-by-exception (P-03) exists to
+prevent. There was no route that *listed* cases; only a single-case read and rule-feedback existed.
+
+**What changed (behaviour):**
+- New pure selector `packages/loss-prevention/src/worklist.ts` — `buildOpenCaseWorklist`: OPEN cases
+  only (a closed case has an outcome and drops off), highest value first (then oldest, then id), with
+  `openCount` and `totalValueMinor`; an optional `assignedTo` gives the "my investigations" view. Returns
+  a **summary** per case, never the sealed evidence chain (a worklist is scanned; the full case with its
+  chain-of-custody verification is a separate read).
+- New route `GET /v1/loss-prevention/cases` (`lp.case.read`) in `services/pos/src/loss-prevention.ts`:
+  the worklist; `?mine=true` narrows to the caller's own assignments. Registered alongside the existing
+  `GET …/cases/:caseId` — both paths are anchored and mutually exclusive, so no collision.
+
+**Evidence:** `tests/unit/lp-worklist.test.ts` (5); `tests/integration/loss-prevention-cases.test.ts`
+grew to 8 (open-only + value ordering + exposure total; `?mine=true` narrowing; `lp.case.read`
+authorization — accountant reads, cashier 403 — and per-tenant isolation). Full suite green
+(6,547 passed / 262 DB-skipped); typecheck + lint + secret-scan clean; the api-surface contract passes
+with the new route. **Not re-rated** — the ledger and headline % are unchanged.
+
+---
+
 ## M15: a material cash short now auto-opens an investigation, assigned to the store manager (13 September 2026)
 
 **Owner direction:** "Auto-open an investigation on a material short; investigator is the store manager."

@@ -22,6 +22,8 @@ const getCase = (h: ApiHarness, t: string, u: string, id: string) =>
   h.request({ method: 'GET', path: `/v1/loss-prevention/cases/${id}`, userId: u, tenantId: t });
 const feedback = (h: ApiHarness, t: string, u: string) =>
   h.request({ method: 'GET', path: `/v1/loss-prevention/rule-feedback`, userId: u, tenantId: t });
+const worklist = (h: ApiHarness, t: string, u: string, query?: Record<string, string>) =>
+  h.request({ method: 'GET', path: `/v1/loss-prevention/cases`, userId: u, tenantId: t, ...(query ? { query } : {}) });
 
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
 const CASE = { raisedFromRef: 'voidabuse:till-1', subjectRef: 'staff-9', summary: 'repeated post-void refunds', valueMinor: 50_000, assignedTo: 'u-mgr' };
@@ -115,5 +117,55 @@ describe('loss-prevention cases: raised-from-a-signal, sealed evidence, second-s
 
     await h.seedOwner(B, 'u-owner-b');
     expect((await getCase(h, B, 'u-owner-b', 'c1')).status).toBe(404);
+  });
+});
+
+// The manager's open-investigations worklist (M15-FR-04 / P-03): GET /v1/loss-prevention/cases lists
+// every OPEN case (highest value first), narrowable to the caller's own with ?mine=true, so an
+// auto-opened shortage investigation cannot be opened and forgotten.
+interface WorklistBody { openCount: number; totalValueMinor: number; scope: string; cases: { caseId: string; assignedTo: string; valueMinor: number }[] }
+
+describe('the open-investigations worklist (M15-FR-04, API-05)', () => {
+  it('lists open cases highest-value first, totals the exposure, and drops a closed case', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await open(h, A, 'u-owner', 'c-small', { ...CASE, valueMinor: 5_000 });
+    await open(h, A, 'u-owner', 'c-big', { ...CASE, valueMinor: 90_000 });
+    await open(h, A, 'u-owner', 'c-done', { ...CASE, valueMinor: 40_000 });
+    await close(h, A, 'u-owner', 'c-done', { outcome: 'unfounded', note: 'explained' });
+
+    const wl = (await worklist(h, A, 'u-owner')).body as WorklistBody;
+    expect(wl.scope).toBe('all_open');
+    expect(wl.openCount).toBe(2); // the closed one is gone
+    expect(wl.cases.map((c) => c.caseId)).toEqual(['c-big', 'c-small']); // highest value first
+    expect(wl.totalValueMinor).toBe(95_000);
+  });
+
+  it('narrows to the caller’s own assignments with ?mine=true', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-mgr', 'store_manager');
+    await open(h, A, 'u-owner', 'c-mine', { ...CASE, assignedTo: 'u-mgr', valueMinor: 10_000 });
+    await open(h, A, 'u-owner', 'c-theirs', { ...CASE, assignedTo: 'u-other', valueMinor: 20_000 });
+
+    const mine = (await worklist(h, A, 'u-mgr', { mine: 'true' })).body as WorklistBody;
+    expect(mine.scope).toBe('assigned_to_me');
+    expect(mine.cases.map((c) => c.caseId)).toEqual(['c-mine']);
+    // Unfiltered, the same manager sees both open cases.
+    expect(((await worklist(h, A, 'u-mgr')).body as WorklistBody).openCount).toBe(2);
+  });
+
+  it('is read-authorized (lp.case.read) and per-tenant', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-acct', 'accountant'); // reads
+    await h.provisionRole(A, 'u-cash', 'cashier');    // neither
+    await open(h, A, 'u-owner', 'c1', CASE);
+
+    expect((await worklist(h, A, 'u-acct')).status).toBe(200); // accountant may read the worklist
+    expect((await worklist(h, A, 'u-cash')).status).toBe(403); // cashier may not
+    // Tenant B sees none of A's cases.
+    await h.seedOwner(B, 'u-owner-b');
+    expect(((await worklist(h, B, 'u-owner-b')).body as WorklistBody).openCount).toBe(0);
   });
 });
