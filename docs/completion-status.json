@@ -5,7 +5,7 @@
     "denominator": 104,
     "denominatorSource": "roadmap v2.0/v2.1 controlling structure: M01-M36 (36) + D01-D14 (14) + A01-A10 (10) + WF-01..20 (20) + QG-01..12 (12) + MG-01..12 (12). See docs/COMPLETION-MODEL.md.",
     "statusSource": "docs/traceability.md (RTM) + docs/STATUS.md, read conservatively (lower status when ambiguous) on 13 Aug 2026",
-    "previousProductCompletionPct": 45.5,
+    "previousProductCompletionPct": 45.9,
     "note": "First computation — this is the baseline, so previous == current and change == 0. Established alongside the reporting model; carries no new product maturity itself."
   },
   "items": [
@@ -107,11 +107,11 @@
     {"id": "MG-04", "label": "INTEGRATION_TESTED", "evidence": "INTEGRATION_TESTED: cleaning exceptions on API-12, proven through the real pipeline in tests/integration/migration-pipeline.test.ts"},
     {"id": "MG-05", "label": "INTEGRATION_TESTED", "evidence": "INTEGRATION_TESTED: trial-load on API-12, proven through the real pipeline in tests/integration/migration-pipeline.test.ts"},
     {"id": "MG-06", "label": "INTEGRATION_TESTED", "evidence": "INTEGRATION_TESTED: reconciliation + control-total sign-off (CA role resolved from the ledger) on API-12, proven through the real pipeline in tests/integration/migration-pipeline.test.ts"},
-    {"id": "MG-07", "label": "ENGINE_ONLY", "evidence": "history migration engine only; no legacy data"},
+    {"id": "MG-07", "label": "INTEGRATION_TESTED", "evidence": "history exclusions wired on API-12 (propose / owner-decision / list+position) and integration-tested through the real pipeline — proposer != owner-approver SoD, age-alone refused, only-owner-approves; tests/integration/migration-history-exclusions.test.ts (5). Ceiling INTEGRATION_TESTED — proven through the integrated API pipeline, not a browser/full-system E2E"},
     {"id": "MG-08", "label": "INTEGRATION_TESTED", "evidence": "INTEGRATION_TESTED: opening-events on API-12 (signed totals -> append-only events), proven through the real pipeline in tests/integration/migration-pipeline.test.ts"},
     {"id": "MG-09", "label": "INTEGRATION_TESTED", "evidence": "INTEGRATION_TESTED: delta apply on API-12, proven through the real pipeline in tests/integration/migration-pipeline.test.ts"},
     {"id": "MG-10", "label": "NOT_STARTED", "evidence": "parallel run is a pilot activity; not built"},
     {"id": "MG-11", "label": "INTEGRATION_TESTED", "evidence": "INTEGRATION_TESTED: cutover decision gate on API-12, proven through the real pipeline in tests/integration/migration-pipeline.test.ts"},
-    {"id": "MG-12", "label": "ENGINE_ONLY", "evidence": "retention/archive engine only; retire post-cutover"}
+    {"id": "MG-12", "label": "INTEGRATION_TESTED", "evidence": "legacy-system retirement wired on API-12 (assessRetirement) and integration-tested through the real pipeline — names every blocker at once, today is the server clock, data is never deleted (read-only archive), refuses production; tests/integration/migration-retirement.test.ts (4). Ceiling INTEGRATION_TESTED — proven through the integrated API pipeline, not a browser/full-system E2E"}
   ]
 }

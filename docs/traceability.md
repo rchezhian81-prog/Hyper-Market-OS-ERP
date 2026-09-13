@@ -310,12 +310,12 @@ per-item evidence and any external blocker live in the ledger. Names are from `d
 | MG-04 | Cleaning | INTEGRATION TESTED |
 | MG-05 | Trial loads | INTEGRATION TESTED |
 | MG-06 | Reconciliation | INTEGRATION TESTED |
-| MG-07 | History | ENGINE ONLY |
+| MG-07 | History | INTEGRATION TESTED |
 | MG-08 | Opening state | INTEGRATION TESTED |
 | MG-09 | Delta | INTEGRATION TESTED |
 | MG-10 | Parallel run | NOT STARTED |
 | MG-11 | Cutover | INTEGRATION TESTED |
-| MG-12 | Archive/retire | ENGINE ONLY |
+| MG-12 | Archive/retire | INTEGRATION TESTED |
 
 ## Design artifacts (Stage 3–4)
 
