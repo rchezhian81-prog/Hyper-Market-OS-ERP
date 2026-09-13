@@ -75,7 +75,8 @@ const ALL: readonly Route[] = [
   ...aiRoutes({
     killSwitchOn: () => false, setKillSwitch: () => {},
     budget: () => ({ capMinor: 1, spentMinor: 0, periodEnds: NOW }), setBudget: () => {},
-    enabledAgents: () => [], setEnabledAgents: () => {}, run: () => [], openProposals: () => [], now: () => NOW,
+    enabledAgents: () => [], setEnabledAgents: () => {}, run: () => [], openProposals: () => [],
+    dataQualityWorklist: () => ({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordDataQualityDisposition: () => {}, now: () => NOW,
   }),
 ];
 

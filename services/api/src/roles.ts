@@ -103,7 +103,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'migration.exclusion.propose', 'migration.exclusion.approve',
       'migration.retirement.assess',
       'migration.verification.read', 'migration.exception.accept',
-      'ai.agent.run', 'ai.proposal.read', 'ai.budget.read', 'ai.budget.set', 'ai.agent.enable', 'ai.killswitch.set',
+      'ai.agent.run', 'ai.proposal.read', 'ai.suggestion.dismiss', 'ai.budget.read', 'ai.budget.set', 'ai.agent.enable', 'ai.killswitch.set',
     ],
   },
   {
@@ -115,6 +115,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'identity.self.read', 'org.branch.read', 'payroll.ess.self',
       'catalogue.pack.read',
       'catalogue.merge.propose',
+      'ai.proposal.read', 'ai.suggestion.dismiss',
       'price.change.propose',
       'promotion.simulate', 'promotion.launch', 'promotion.read',
       'b2b.credit.check', 'b2b.account.read', 'b2b.commission.read', 'b2b.document.issue', 'b2b.document.read',

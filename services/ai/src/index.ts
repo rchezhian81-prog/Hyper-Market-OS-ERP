@@ -28,6 +28,7 @@ import {
   type AgentDefinition,
   type AgentId as EngineAgentId,
 } from '../../../packages/ai/src/index';
+import type { DataQualityWorklist } from '../../../packages/product/src/index';
 
 /**
  * Who the ten agents are — sourced from the tested authority engine (`packages/ai`), not a second
@@ -139,6 +140,20 @@ export interface AiDeps {
   readonly setEnabledAgents: (tenantId: string, agents: readonly AgentId[], by: string, at: string) => Promise<void> | void;
   readonly run: (tenantId: string, agent: AgentId) => Promise<Omit<Proposal, 'committed'>[]> | Omit<Proposal, 'committed'>[];
   readonly openProposals: (tenantId: string) => Promise<readonly Proposal[]> | readonly Proposal[];
+  /**
+   * The Data Quality steward's inbox: the live A08 findings folded with the stewards' dismissals.
+   * A read — deterministic, no model, no spend — so it is not behind the budget gate.
+   */
+  readonly dataQualityWorklist: (tenantId: string) => Promise<DataQualityWorklist> | DataQualityWorklist;
+  /**
+   * A steward's judgement that a finding is (not) a problem. A HUMAN write, recorded in the human's
+   * name — the AI never writes it. `dismissed:false` reopens a previously-dismissed finding.
+   */
+  readonly recordDataQualityDisposition: (
+    tenantId: string,
+    disposition: { readonly findingId: string; readonly dismissed: boolean; readonly reason: string; readonly by: string; readonly at: string },
+    key: string,
+  ) => Promise<void> | void;
   readonly now: () => string;
 }
 
@@ -210,6 +225,68 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
         status: 200,
         body: { proposals: await deps.openProposals(ctx.tenantId), committedAnything: false },
       }),
+    },
+    {
+      // The Data Quality steward's INBOX (A08). The live A08 findings folded with the stewards'
+      // dismissals — a person's worklist, not an action. It re-derives every time, so fixing a gap
+      // through the ordinary catalogue route removes its suggestion on its own; the inbox never drifts
+      // from the live master. It is the AGENT's output, so it honours the same governance as a run —
+      // hidden when the kill switch is on or A08 is not enabled by name — but it calls no model and
+      // spends nothing, so it is NOT behind the budget gate: a steward's worklist must not vanish
+      // because a budget is exhausted. It commits nothing.
+      api: 'API-13', method: 'GET', path: '/v1/ai/data-quality/worklist',
+      permission: 'ai.proposal.read',
+      handler: async (ctx) => {
+        const killed = await deps.killSwitchOn(ctx.tenantId);
+        const enabled = (await deps.enabledAgents(ctx.tenantId)).includes('A08');
+        if (killed || !enabled) {
+          return {
+            status: 200,
+            body: {
+              agentActive: false,
+              open: [], dismissed: [], openCount: 0, dismissedCount: 0,
+              note: killed
+                ? 'The AI kill switch is on, so the Data Quality agent is stopped and shows no suggestions. Turn it off to see them again — nothing else in the shop is affected.'
+                : 'The Data Quality agent (A08) is not switched on for this tenant, so it shows no suggestions. Enable it by name to see them.',
+              committedAnything: false,
+            },
+          };
+        }
+        const worklist = await deps.dataQualityWorklist(ctx.tenantId);
+        return { status: 200, body: { agentActive: true, ...worklist, committedAnything: false } };
+      },
+    },
+    {
+      // A steward sets a suggestion aside as NOT a problem (two genuinely-different products, an item
+      // that legitimately has no barcode), with a reason — a HUMAN decision recorded in the human's
+      // name (the AI never writes it). `reopen: true` puts it back on the list. Fixing a gap needs no
+      // call here — the finding vanishes on its own once the master is corrected. Latest decision per
+      // finding wins.
+      api: 'API-13', method: 'POST', path: '/v1/ai/data-quality/dismissals',
+      permission: 'ai.suggestion.dismiss', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const findingId = typeof b['findingId'] === 'string' ? b['findingId'].trim() : '';
+        const reopen = b['reopen'] === true;
+        const reason = typeof b['reason'] === 'string' ? b['reason'].trim() : '';
+        if (findingId === '' || (!reopen && reason === '')) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_dismissal',
+            whatHappened: reopen
+              ? 'Reopening a suggestion needs the findingId to reopen.'
+              : 'Setting a suggestion aside needs the findingId and a short reason it is not a problem.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { "findingId": "…", "reason": "…" } to dismiss, or { "findingId": "…", "reopen": true } to reopen. Nothing was changed.',
+          });
+        }
+        const at = deps.now();
+        await deps.recordDataQualityDisposition(
+          ctx.tenantId,
+          { findingId, dismissed: !reopen, reason, by: ctx.userId, at },
+          ctx.idempotencyKey ?? `${findingId}-${at}`,
+        );
+        return { status: 200, body: { findingId, dismissed: !reopen, by: ctx.userId, at, committedAnything: false } };
+      },
     },
     {
       api: 'API-13', method: 'GET', path: '/v1/ai/budget',

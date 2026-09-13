@@ -43,8 +43,8 @@ import type { CataloguePreviewDeps } from '../../catalogue/src/catalogue-preview
 import { assembleCatalogueSnapshot } from '../../catalogue/src/catalogue-preview';
 import { apiError } from '../../kernel/src/index';
 import type { GstRatePeriod } from '../../../packages/finance/src/rate';
-import type { ProductRecord, BarcodeAssignment, MergeRequest, MergeLink, PackHierarchy, DataQualityFinding } from '../../../packages/product/src/index';
-import { BarcodeRegistry, assessProductDataQuality } from '../../../packages/product/src/index';
+import type { ProductRecord, BarcodeAssignment, MergeRequest, MergeLink, PackHierarchy, DataQualityFinding, SuggestionDisposition } from '../../../packages/product/src/index';
+import { BarcodeRegistry, assessProductDataQuality, buildDataQualityWorklist } from '../../../packages/product/src/index';
 import type { IncomingSale, IncomingTender, SaleException, PosDeps } from '../../pos/src/index';
 import type { LotTraceDeps } from '../../inventory/src/lot-trace';
 import type { RecallDeps } from '../../inventory/src/recall';
@@ -6447,5 +6447,40 @@ export function aiAdapter(input: {
     },
 
     openProposals: (tenantId) => allOf<Proposal>(input.store, tenantId, STREAM.ai, 'AiProposalRaised'),
+
+    /**
+     * The Data Quality steward's inbox — the live A08 findings folded with the stewards' dismissals.
+     * A pure READ: it re-derives the findings from the current master (so a fixed gap leaves the list
+     * on its own) and folds the dismissals latest-per-finding. Nothing is written here.
+     */
+    dataQualityWorklist: async (tenantId) => {
+      const findings = (input.products === undefined || input.barcodes === undefined)
+        ? []
+        : assessProductDataQuality({
+            products: await input.products(tenantId),
+            barcodes: new BarcodeRegistry([...(await input.barcodes(tenantId))]),
+          });
+      const latest = new Map<string, SuggestionDisposition>();
+      for (const d of await allOf<SuggestionDisposition>(input.store, tenantId, STREAM.ai, 'AiDataQualityDismissed')) {
+        latest.set(d.findingId, d); // occurrence order → the last decision on a finding wins
+      }
+      return buildDataQualityWorklist({ findings, dispositions: [...latest.values()] });
+    },
+
+    /**
+     * A steward's judgement that a suggestion is (not) a problem — a HUMAN write, recorded in the
+     * human's name (`by` is the authenticated caller, stamped by the route). Append-only, latest-wins;
+     * a reopen (`dismissed:false`) is another event, never an erasure (hard rule #2/#6).
+     */
+    recordDataQualityDisposition: async (tenantId, disposition, key) => {
+      await input.store.append(tenantId, STREAM.ai, makeEvent({
+        id: `dq-disposition-${disposition.findingId}-${disposition.at}`,
+        type: 'AiDataQualityDismissed',
+        occurredAt: disposition.at,
+        idempotencyKey: `dq-disposition-${tenantId}-${key}`,
+        source: 'api/ai',
+        payload: disposition,
+      }));
+    },
   };
 }

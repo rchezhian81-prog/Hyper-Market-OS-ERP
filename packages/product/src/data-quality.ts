@@ -154,3 +154,70 @@ export function assessProductDataQuality(input: {
 
   return findings;
 }
+
+// --- the steward's suggestions inbox ---------------------------------------------------------------
+//
+// A08's findings are re-derived deterministically every time (above), so the inbox never drifts from
+// the live master: the moment a steward FIXES a gap through the ordinary catalogue route, its finding
+// stops being produced and leaves the list on its own — the inbox self-heals, and no "done" flag can
+// go stale against reality.
+//
+// The one thing that must persist is a steward's judgement that a finding is NOT a problem — two
+// genuinely-different products the name-match flagged, or an item that legitimately has no barcode.
+// That is a DISMISSAL: a human decision, recorded in the human's name with a reason, and it keeps a
+// re-derived finding out of the open list until a steward reopens it. Fixing is implicit (the finding
+// vanishes); dismissing is explicit (a recorded human judgement). Nothing here is an AI write.
+
+/** A steward's latest judgement on one finding. `dismissed` false is an explicit reopen. */
+export interface SuggestionDisposition {
+  readonly findingId: string;
+  readonly dismissed: boolean;
+  /** Who decided — the authenticated steward, never a name from a request body. */
+  readonly by: string;
+  readonly at: string;
+  /** Why it is not a problem. Required to dismiss; carried for the audit trail. */
+  readonly reason: string;
+}
+
+export interface DataQualityWorklistItem {
+  readonly finding: DataQualityFinding;
+  readonly status: 'open' | 'dismissed';
+  /** Present only when dismissed — who set it aside, when, and why. */
+  readonly dismissal?: { readonly by: string; readonly at: string; readonly reason: string };
+}
+
+export interface DataQualityWorklist {
+  /** Findings a steward should act on — not dismissed. In the detector's stable order. */
+  readonly open: readonly DataQualityWorklistItem[];
+  /** Findings still present but a steward has judged not-a-problem (with the reason). */
+  readonly dismissed: readonly DataQualityWorklistItem[];
+  readonly openCount: number;
+  readonly dismissedCount: number;
+}
+
+/**
+ * Fold the live findings together with the stewards' dispositions into the inbox.
+ *
+ * Pure and deterministic. A dismissal only ever applies to a finding that is STILL present — a
+ * dismissal of a gap that has since been fixed is moot and simply does not appear (the finding is
+ * gone). `dispositions` is the latest judgement per finding id.
+ */
+export function buildDataQualityWorklist(input: {
+  readonly findings: readonly DataQualityFinding[];
+  readonly dispositions: readonly SuggestionDisposition[];
+}): DataQualityWorklist {
+  const latest = new Map<string, SuggestionDisposition>();
+  for (const d of input.dispositions) latest.set(d.findingId, d); // caller passes latest-per-id; last wins defensively
+
+  const open: DataQualityWorklistItem[] = [];
+  const dismissed: DataQualityWorklistItem[] = [];
+  for (const finding of input.findings) {
+    const d = latest.get(finding.findingId);
+    if (d?.dismissed === true) {
+      dismissed.push({ finding, status: 'dismissed', dismissal: { by: d.by, at: d.at, reason: d.reason } });
+    } else {
+      open.push({ finding, status: 'open' });
+    }
+  }
+  return { open, dismissed, openCount: open.length, dismissedCount: dismissed.length };
+}
