@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## MG-12 legacy-system retirement wired on API-12 — migration control family complete (13 September 2026)
+
+**Owner direction:** "keep building modules… strong and clear without rework." The last wireable
+migration control (MG-10 is a genuine pilot activity, not code), so wiring it completes the family.
+
+**What changed (behaviour):** the tested `assessRetirement` engine (MG-12, `packages/migration/src/history.ts`)
+is now reachable:
+- `POST /v1/migration/retirement/assessment` (`migration.retirement.assess`, owner) — a what-if that
+  answers "may the legacy SYSTEM be switched off?" and **names every blocker at once**: retention not
+  elapsed (a DATE run from the data, not confidence), restore never demonstrated, cutover not accepted,
+  or an open assessment that could still need the records. `today` is the **server clock, never the
+  body**, so nobody fakes elapsed retention. Retiring the system **never deletes the data** — the
+  archive stays read-only (`dataIsNeverDeleted` typed true, hard rule #6). Stateless: computes and
+  stores nothing; refuses a production target first (#7). New permission `migration.retirement.assess`
+  (owner). The archive's tenant is stamped from the authenticated context, never the body.
+
+**Migration control family status:** MG-01…09, MG-11 (proven, INTEGRATION_TESTED) + MG-06 sign-off; now
+MG-07 (exclusions, previous entry) and MG-12 (retirement) are both wired and integration-tested. **Only
+MG-10 (parallel run) remains** — and it is a pilot/operational activity, not something to code.
+
+**Evidence:** `tests/integration/migration-retirement.test.ts` (4) through the real pipeline (retirable
+when all four conditions hold; every blocker named at once; malformed/not-read-only refused; RBAC — a
+store manager cannot run it). Full suite green (6,556 passed / 262 DB-skipped); typecheck + lint +
+secret-scan clean; api-surface contract passes with the new permission.
+
+**Not re-rated.** MG-12 stays `ENGINE_ONLY` in the ledger and the headline is unchanged. MG-07 and MG-12
+are both now wired + tested; a re-rate of the migration `MG-*` items (to WIRED/INTEGRATION_TESTED) is
+available on your word — the same evidence-first move as before.
+
+---
+
 ## MG-07 history exclusions wired on API-12 (13 September 2026)
 
 **Owner direction:** "keep building modules… strong and clear without rework" (after choosing to hold
