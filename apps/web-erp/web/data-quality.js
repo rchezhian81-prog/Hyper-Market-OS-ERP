@@ -1,9 +1,10 @@
 // Data quality suggestions inbox — the view layer (A08, API-13). Every rule lives in the TESTED session model
 // (apps/web-erp/src/data-quality-inbox-session.ts), attached as window.dataQualityInboxSession, built on
 // packages/ui over the tested buildDataQualityWorklist engine. This file only draws what the session hands it:
-// the OPEN suggestions to look at (each with the real product and what to check), then the DISMISSED ones a
-// steward set aside (with who and why). Read-only — nothing here changes a product; the worklist is read live
-// with a GET, and fixing a gap the ordinary way removes its suggestion on its own. No prompt/confirm/alert.
+// the OPEN suggestions to look at (each with the real product, what to check, and — for a steward — a "not a
+// problem" button with a reason box), then the DISMISSED ones set aside (each with who/why and a "bring back"
+// button). Setting aside is a HUMAN decision that runs ONLY on an explicit click, never on load; on success
+// the worklist is re-read (a GET) so the server-re-derived list moves the row. No prompt/confirm/alert.
 
 const el = (id) => document.getElementById(id);
 let lang = 'en';
@@ -14,10 +15,14 @@ function sampleSession() {
     en: { title: 'Data quality', lead: 'Sample suggestions. Connect the store computer to see the helper’s findings for your own products.', langName: 'தமிழ்',
       openHeading: 'To look at', dismissedHeading: 'Set aside', openCount: 'to look at', dismissedCount: 'set aside',
       affectsLabel: 'Affects', dismissedByLabel: 'Set aside by', reasonLabel: 'Reason', allClear: 'Nothing to look at — your product list is clean.',
+      dismissBtn: 'Not a problem', reopenBtn: 'Bring back', reasonPlaceholder: 'Why is this not a problem?',
+      dismissRecorded: 'Set aside.', dismissRefused: 'Could not save — a short reason is needed.', dismissLostLink: 'No connection — not saved. Try again.',
       sampleData: 'Sample data — this is not your shop.', staleShell: 'No connection to the store computer. This page is what it was last told, at', nobodyNamed: '' },
     ta: { title: 'தரக் கட்டுப்பாடு', lead: 'மாதிரிப் பரிந்துரைகள். உங்கள் சொந்தப் பொருட்களுக்கான கண்டுபிடிப்புகளைப் பார்க்க கடை கணினியை இணைக்கவும்.', langName: 'English',
       openHeading: 'பார்க்க வேண்டியவை', dismissedHeading: 'ஒதுக்கப்பட்டவை', openCount: 'பார்க்க வேண்டியவை', dismissedCount: 'ஒதுக்கப்பட்டவை',
       affectsLabel: 'பாதிக்கிறது', dismissedByLabel: 'ஒதுக்கியவர்', reasonLabel: 'காரணம்', allClear: 'பார்க்க எதுவும் இல்லை — உங்கள் பொருள் பட்டியல் சுத்தமாக உள்ளது.',
+      dismissBtn: 'சிக்கல் இல்லை', reopenBtn: 'மீண்டும் கொண்டுவா', reasonPlaceholder: 'இது ஏன் சிக்கல் இல்லை?',
+      dismissRecorded: 'ஒதுக்கப்பட்டது.', dismissRefused: 'சேமிக்க முடியவில்லை — ஒரு சிறு காரணம் தேவை.', dismissLostLink: 'இணைப்பு இல்லை — சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
       sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', nobodyNamed: '' },
   };
   const openRow = (l) => ({
@@ -37,15 +42,25 @@ function sampleSession() {
     text: (l, key) => CHROME[l]?.[key] ?? CHROME.en[key] ?? key,
     view: (l) => ({
       screenState: { tone: 'ok', icon: '✓', label: '', announcement: '', needsAttention: false },
-      agentActive: true, open: [openRow(l)], dismissed: [dismissedRow(l)], openCount: 1, dismissedCount: 1, nobodyNamed: false,
+      agentActive: true, open: [openRow(l)], dismissed: [dismissedRow(l)], openCount: 1, dismissedCount: 1, nobodyNamed: false, mayDismiss: true,
     }),
+    dismiss: async () => 'lost_link',
+    reopen: async () => 'lost_link',
+    presentDismissResult: (l, outcome) => ({ tone: outcome === 'recorded' ? 'ok' : 'degraded', icon: outcome === 'recorded' ? '✓' : '⚠', label: '', announcement: '', needsAttention: outcome !== 'recorded' }),
   };
 }
 
 let session = window.dataQualityInboxSession ?? sampleSession();
 const t = (key) => session.text(lang, key);
 
-function rowNode(r) {
+/** Run a steward action, show its result, and — on success — re-read the worklist so the row moves. */
+async function act(run) {
+  const outcome = await run();
+  paintResult(session.presentDismissResult(lang, outcome));
+  if (outcome === 'recorded') await refresh();
+}
+
+function rowNode(r, mayDismiss, isOpen) {
   const li = document.createElement('li');
   li.className = `row tone-${r.status.tone}`;
 
@@ -70,6 +85,23 @@ function rowNode(r) {
     w.textContent = `${t('dismissedByLabel')} ${r.dismissedBy ?? ''} — ${t('reasonLabel')}: ${r.dismissedReason}`;
     li.append(w);
   }
+
+  // The steward's action. Only rendered for someone who holds the permission, and it runs ONLY on a click.
+  if (mayDismiss && isOpen) {
+    const actions = document.createElement('div'); actions.className = 'actions';
+    const reason = document.createElement('input'); reason.type = 'text'; reason.className = 'reason';
+    reason.setAttribute('aria-label', t('reasonPlaceholder')); reason.placeholder = t('reasonPlaceholder');
+    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'act dismiss'; btn.textContent = t('dismissBtn');
+    btn.addEventListener('click', () => act(() => session.dismiss(r.findingId, reason.value)));
+    actions.append(reason, btn);
+    li.append(actions);
+  } else if (mayDismiss && !isOpen) {
+    const actions = document.createElement('div'); actions.className = 'actions';
+    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'act reopen'; btn.textContent = t('reopenBtn');
+    btn.addEventListener('click', () => act(() => session.reopen(r.findingId)));
+    actions.append(btn);
+    li.append(actions);
+  }
   return li;
 }
 
@@ -92,11 +124,11 @@ function paint() {
 
   el('open-heading').hidden = view.open.length === 0;
   el('open-heading').textContent = t('openHeading');
-  el('rows').replaceChildren(...view.open.map(rowNode));
+  el('rows').replaceChildren(...view.open.map((r) => rowNode(r, view.mayDismiss, true)));
 
   el('dismissed-heading').hidden = view.dismissed.length === 0;
   el('dismissed-heading').textContent = t('dismissedHeading');
-  el('dismissed-rows').replaceChildren(...view.dismissed.map(rowNode));
+  el('dismissed-rows').replaceChildren(...view.dismissed.map((r) => rowNode(r, view.mayDismiss, false)));
 
   const state = el('state');
   if (view.open.length === 0 && view.dismissed.length === 0) {
@@ -107,6 +139,16 @@ function paint() {
   } else {
     state.hidden = true;
   }
+}
+
+function paintResult(presentation) {
+  const result = el('result');
+  if (!result) return;
+  result.hidden = false;
+  result.className = `result tone-${presentation.tone}`;
+  el('result-icon').textContent = presentation.icon;
+  el('result-text').textContent = presentation.label;
+  result.setAttribute('aria-label', presentation.announcement || presentation.label);
 }
 
 el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });

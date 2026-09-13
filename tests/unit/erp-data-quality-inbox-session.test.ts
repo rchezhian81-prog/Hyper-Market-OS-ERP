@@ -29,7 +29,9 @@ const dismissedEntry = (id: string): DataQualityWorklistEntry => ({
 const worklist = (over: Partial<DataQualityWorklistData> = {}): DataQualityWorklistData =>
   ({ agentActive: true, open: [], dismissed: [], ...over });
 const session = (w: DataQualityWorklistData, ports: Partial<DataQualityInboxPorts> = {}, userId: string | null = 'u-owner') =>
-  createDataQualityInboxSession({ userId }, { worklist: () => w, mayRead: () => true, ...ports });
+  createDataQualityInboxSession({ userId }, {
+    worklist: () => w, mayRead: () => true, mayDismiss: () => true, dismissPort: () => ({ post: async () => 'recorded' }), ...ports,
+  });
 
 describe('the data quality inbox copy is complete in both languages', () => {
   it('has no gap in either language across the whole vocabulary', () => {
@@ -96,5 +98,39 @@ describe('governance and permission', () => {
   it('flags nobody-named when the box was not told who is looking', () => {
     const view = session(worklist(), {}, null).view('en');
     expect(view.nobodyNamed).toBe(true);
+  });
+});
+
+describe('the dismiss / reopen action — a human write, refused before it ever POSTs when it should be', () => {
+  it('offers the action only to a steward who holds the permission (mayDismiss)', () => {
+    expect(session(worklist(), { mayDismiss: () => true }).view('en').mayDismiss).toBe(true);
+    expect(session(worklist(), { mayDismiss: () => false }).view('en').mayDismiss).toBe(false);
+  });
+
+  it('records a dismiss with a reason through the port, and reopens through it', async () => {
+    const posted: unknown[] = [];
+    const s = session(worklist(), { dismissPort: () => ({ post: async (i) => { posted.push(i); return 'recorded'; } }) });
+    expect(await s.dismiss('dq-missing-barcode:p1', '  genuinely different  ')).toBe('recorded');
+    expect(await s.reopen('dq-missing-mrp:p2')).toBe('recorded');
+    // The reason is trimmed; a reopen carries dismissed:false and no reason.
+    expect(posted).toEqual([
+      { findingId: 'dq-missing-barcode:p1', dismissed: true, reason: 'genuinely different' },
+      { findingId: 'dq-missing-mrp:p2', dismissed: false, reason: '' },
+    ]);
+  });
+
+  it('refuses locally — no permission, or an empty reason — WITHOUT calling the port (the AI/UI never sends a doomed write)', async () => {
+    let called = false;
+    const port = () => ({ post: async () => { called = true; return 'recorded' as const; } });
+    expect(await session(worklist(), { mayDismiss: () => false, dismissPort: port }).dismiss('f', 'r')).toBe('refused');
+    expect(await session(worklist(), { dismissPort: port }).dismiss('f', '   ')).toBe('refused');
+    expect(called).toBe(false);
+  });
+
+  it('presents each outcome distinctly — recorded is calm, refused/lost-link ask for attention', () => {
+    const s = session(worklist());
+    expect(s.presentDismissResult('en', 'recorded').tone).toBe('ok');
+    expect(s.presentDismissResult('en', 'lost_link').needsAttention).toBe(true);
+    expect(s.presentDismissResult('en', 'refused').tone).toBe('error');
   });
 });

@@ -5,6 +5,44 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## AI assistant, step 5: the "not a problem" dismiss button on the inbox screen (13 September 2026)
+
+**Owner direction:** "add the dismiss button." Step 4 put the read-only inbox on screen (#376); this makes
+it actionable from the screen.
+
+**What changed (behaviour):** on the `/data-quality` screen, a steward who holds `ai.suggestion.dismiss`
+now sees, on each **open** suggestion, a short **reason box + a "Not a problem" button**; and on each
+**set-aside** one, a **"Bring back"** button. Both POST to the existing `/v1/ai/data-quality/dismissals`
+route under the operator's own session cookie (never a service token). On a successful save the screen
+**re-reads the worklist** so the server-re-derived list moves the row (open ↔ set-aside) — no local guessing.
+
+Held to the same rules as the publish screen:
+- **Human decision, on an explicit click only** — the write never runs on load; recorded in the steward's
+  name (the AI writes nothing, hard rule #5).
+- **No browser dialogs** — the reason is a labelled text input, not a `prompt()`.
+- **Refused before it ever sends** when it should be — no permission, or an empty reason, is a local refusal,
+  not a doomed round trip (the server also refuses 403 / 400). The buttons are hidden entirely without
+  `ai.suggestion.dismiss` (`mayDismiss`, default-deny).
+- A lost connection reads as **"not saved, try again"** (retryable), never as a refusal.
+
+**Where it lives:** `data-quality-inbox-session.ts` gains `dismiss`/`reopen`/`presentDismissResult` + the
+`mayDismiss`/`dismissPort` ports; `browser-entry.ts` gains `openDataQualityDismissPort` (the authenticated
+POST) wired into boot + the live-refresh `present`; the shell js/html gain the reason input + buttons + a
+result strip. Bilingual EN/TA throughout.
+
+**Evidence:** `tests/unit/erp-data-quality-inbox-session.test.ts` extended (12) — records a dismiss with a
+trimmed reason / reopens through the port; refuses locally (no permission, empty reason) WITHOUT calling the
+port; presents each outcome distinctly; `mayDismiss` gates the view. The usability guardrail's read-only
+assertion is **replaced** by a click-gated-write assertion (the dismiss/reopen POST runs only from a click,
+the only write verb is POST, the worklist read stays a GET) plus an unpermitted-steward test. Full suite
+green; typecheck + lint + secret-scan + all guardrails clean; ERP bundle builds.
+
+**Not re-rated.** UI over the already-WIRED A08 engine + its existing dismissals route; A08 stays **WIRED**
+(headline 47.3%). The Data Quality helper is now end-to-end usable from the screen. **Remaining A08 leg (not
+built):** `suggest_mapping` over import history — the case for INTEGRATION_TESTED.
+
+---
+
 ## AI assistant, step 4: the Data Quality inbox on screen (web admin) (13 September 2026)
 
 **Owner direction:** "put the inbox on screen in the web admin." Steps 1–3 built the governance, the A08

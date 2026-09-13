@@ -27,7 +27,9 @@ const worklist: DataQualityWorklistData = {
   dismissed: [{ finding: finding({ findingId: 'dq-duplicate:p1:p2', kind: 'suspected_duplicate' }), status: 'dismissed', dismissal: { by: 'u-mgr', at: '2026-09-13T00:00:00Z', reason: 'different sizes' } }],
 };
 const session = (ports: Partial<DataQualityInboxPorts> = {}) =>
-  createDataQualityInboxSession({ userId: 'u-owner' }, { worklist: () => worklist, mayRead: () => true, ...ports });
+  createDataQualityInboxSession({ userId: 'u-owner' }, {
+    worklist: () => worklist, mayRead: () => true, mayDismiss: () => true, dismissPort: () => ({ post: async () => 'recorded' }), ...ports,
+  });
 
 describe('the data quality inbox copy is complete in both languages', () => {
   it('has no gap in either language across the whole vocabulary', () => {
@@ -65,12 +67,25 @@ describe('an open suggestion reads as attention; a dismissed one does not', () =
   });
 });
 
-describe('the view defers to the model, uses no browser dialogs, and only reads', () => {
+describe('an unpermitted steward is offered no action', () => {
+  it('the view withholds mayDismiss when the user lacks ai.suggestion.dismiss, and the model refuses even if called', async () => {
+    const noPerm = session({ mayDismiss: () => false });
+    expect(noPerm.view('en').mayDismiss).toBe(false);
+    // Defence in depth: even a direct call refuses before any POST (the server also refuses 403).
+    expect(await noPerm.dismiss('dq-missing-barcode:p1', 'a reason')).toBe('refused');
+    // A dismiss with no reason is refused locally too (the server returns 400).
+    expect(await session().dismiss('dq-missing-barcode:p1', '   ')).toBe('refused');
+    // A permitted steward with a reason reaches the port (which records it).
+    expect(await session().dismiss('dq-missing-barcode:p1', 'genuinely different')).toBe('recorded');
+  });
+});
+
+describe('the view defers to the model, uses no browser dialogs, and only writes on an explicit click', () => {
   const RAW = readFileSync('apps/web-erp/web/data-quality.js', 'utf8');
   // Strip line comments so a comment that names an API is not counted as a call (the codebase's own idiom).
   const VIEW = RAW.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
 
-  it('never calls alert / confirm / prompt', () => {
+  it('never calls alert / confirm / prompt (the reason is a text input, not a browser dialog)', () => {
     expect(/\b(alert|confirm|prompt)\s*\(/.test(VIEW)).toBe(false);
   });
 
@@ -79,8 +94,18 @@ describe('the view defers to the model, uses no browser dialogs, and only reads'
     expect(VIEW).toMatch(/session\.view\(/);
   });
 
-  it('is READ-ONLY — it commits nothing (no POST/PUT/PATCH/DELETE); the worklist is a GET (hard rule #5)', () => {
-    expect(/method:\s*'(POST|PUT|PATCH|DELETE)'/.test(VIEW), 'the inbox screen writes — it must only read').toBe(false);
+  it('dismisses ONLY from an explicit click — session.dismiss/reopen never run at load (hard rule #5)', () => {
+    // The write action must sit inside a click handler, never at the top level (which runs on boot).
+    for (const call of ['session.dismiss(', 'session.reopen(']) {
+      const callIdx = VIEW.indexOf(call);
+      expect(callIdx, `${call} is not present`).toBeGreaterThan(-1);
+      const clickIdx = VIEW.indexOf("addEventListener('click'");
+      expect(clickIdx, 'no click handler is registered').toBeGreaterThan(-1);
+      expect(callIdx, `${call} runs before/outside a click handler (would write on load)`).toBeGreaterThan(clickIdx);
+    }
+    // The only write is the dismissals POST — no other verb, and the worklist read stays a GET.
+    const writes = VIEW.match(/method:\s*'(POST|PUT|PATCH|DELETE)'/g) ?? [];
+    expect(writes.every((m) => m.includes('POST')), 'the screen uses a write verb other than POST').toBe(true);
   });
 
   it('every rendered status carries a screen-reader announcement and an aria-hidden icon', () => {
