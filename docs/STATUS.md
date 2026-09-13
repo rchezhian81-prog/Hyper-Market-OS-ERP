@@ -5,6 +5,34 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Deliberate re-rate: M14 + M15 (45.5% → 45.9%) (13 September 2026)
+
+**Owner direction:** "Re-rate M14/M15 and show the new number." An explicit, owner-authorised re-rate —
+the one kind of headline move the discipline allows, decided rather than drifted into. Evidence-first,
+read conservatively (lower rung when ambiguous).
+
+**What changed in the ledger (`docs/completion-status.json`):**
+- **M14 (Till, Cash Office & Day-Close): PARTIALLY_WIRED → WIRED (+20).** The cloud cash-office/shift
+  surface — cash movements, blind count by denomination (sums to the counted total), over/short
+  valuation, cash-office sign-off (separation of duties), and auto-open of an M15 case on a material
+  short — is wired AND integration-tested through the **real** API pipeline
+  (`tests/integration/shift-close.test.ts`, 17). Held at **WIRED, not INTEGRATION_TESTED**, because
+  M14-FR-04 day-close (the trading-day lock) is still engine-only and edge-destined — not wired to a
+  route — so the module as a whole is not yet integration-tested end to end.
+- **M15 (Loss Prevention): WIRED → INTEGRATION_TESTED (+15).** All four FRs are now wired **and**
+  integration-tested through the real pipeline: anomaly rules (`loss-prevention-rules.test.ts`), fraud
+  signals (`fraud-signals.test.ts`), duplicate-bank block (`duplicate-bank.test.ts`), and investigation
+  cases + auto-open-on-shortage + the open-investigations worklist (`loss-prevention-cases.test.ts`,
+  `shift-close.test.ts`). Held at **INTEGRATION_TESTED, not E2E_VERIFIED** — no browser/full-system run yet.
+
+**The number (`pnpm run completion`):** product completion **45.5% → 45.9%** (+0.4 pts; numerator
+4,735 → 4,770 / 10,400); wired-and-integrated (≥ WIRED) **25.0% → 26.0%**; `previousProductCompletionPct`
+set to 45.5. Denominator (104) and the fixed weight scale are untouched (baseline v1). No code changed —
+a label/accounting change only; completion-model-integrity, the non-module mirror and traceability
+integrity all pass.
+
+---
+
 ## M15: the store manager's open-investigations worklist (13 September 2026)
 
 **Owner direction:** "After #367 merges, build the manager's open-investigations worklist."
