@@ -5,6 +5,32 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## AI assistant, step 7: A08 re-rated WIRED → INTEGRATION_TESTED (owner-authorised, 13 September 2026)
+
+**Owner direction:** "Then re-rate A08 to INTEGRATION_TESTED" — an explicit authorisation to move the headline,
+given after step 6 (PR #378) merged. This is a **docs-only** change; no product code moved.
+
+**Why the rating holds now.** A08's WIRED entry had two named hold reasons: an unbuilt `suggest_mapping` leg,
+and proposals not yet persisted into a steward review worklist. **Both are now closed** — the mapping leg
+landed in #378 (integration-tested), and the worklist + on-screen inbox with a dismiss/reopen action shipped in
+#375/#376/#377. All three remit legs (§7.1) are built and integration-tested end to end through the real API
+pipeline, and A08 still commits nothing (hard rule #5). It is **held below E2E_VERIFIED**: there is no
+browser/UAT end-to-end test driving the inbox screen yet (a named follow-on).
+
+**Headline effect (honest accounting).** One controlling item (A08) moves up one maturity band, 60 → 75 of a
+possible 100, so the weighted numerator rises **4,920 → 4,935 of 10,400**:
+
+- **Product completion (technical): 47.3% → 47.5%** (+0.2 pts). `baseline.previousProductCompletionPct` set to
+  47.3 so the report shows the delta.
+- **Wired-and-integrated (≥ WIRED): 28.8%** — unchanged (A08 was already counted; INTEGRATION_TESTED is still
+  ≥ WIRED).
+- **E2E verification: 2.9%** — unchanged (INTEGRATION_TESTED is below E2E).
+
+**Where it lives:** `docs/completion-status.json` (A08 label + evidence, baseline), `docs/traceability.md` (A08
+summary row + detailed evidence row). Nothing else changed.
+
+---
+
 ## AI assistant, step 6: A08's last leg — suspicious mappings from import history (13 September 2026)
 
 **Owner direction:** "finish A08's last piece." A08's remit (§7.1) is three things — duplicates, missing
@@ -43,10 +69,9 @@ recurring failure becomes a mapping proposal citing import history and committin
 pass (a product-master gap and a mapping gap together); a clean history and in-file duplicates say nothing.
 Existing A08 + AI-governance suites still green; typecheck + lint clean.
 
-**Not re-rated (owner-gated).** A08 has been **WIRED** (headline **47.3%**) since step 1. This finishes its
-third and last remit leg end to end and adds integration coverage — which is the case for lifting A08 to
-**INTEGRATION_TESTED**, but the headline number is **not** re-rated without the owner's explicit say-so. That
-decision is offered in the summary below.
+**Landed as PR #378** (squash-merged on green CI: container build + typecheck/lint/tests/scans + real-PostgreSQL
+stage-gate all success). At merge time the headline was **not** re-rated — A08 stayed **WIRED (47.3%)** pending
+the owner's explicit say-so. The owner then authorised the re-rate; see **step 7** above.
 
 ---
 
