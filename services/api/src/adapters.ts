@@ -142,6 +142,7 @@ import type { SupplierScorecardDeps } from '../../purchase/src/supplier-scorecar
 import type { RebateDeps } from '../../purchase/src/rebates';
 import type { RfqDeps } from '../../purchase/src/rfq';
 import type { ImportQualityDeps, ImportJobRecord } from '../../purchase/src/import-quality';
+import { assessMappingQuality, type MappingQualityFinding } from '../../../packages/import/src/index';
 import type { DataImportDeps, ImportCommitRecord } from '../../purchase/src/data-import';
 import type { DataExportAuditDeps } from '../../purchase/src/data-export';
 import type { ExportAudit } from '../../../packages/export/src/export';
@@ -6342,6 +6343,28 @@ function dataQualityProposals(findings: readonly DataQualityFinding[], now: stri
   }));
 }
 
+/**
+ * Turn A08's suspicious-mapping findings into DRAFT proposals — each citing the SOURCE + column its rejection
+ * history fingerprints, and naming where a steward reviews it. The action itself (re-map, agree a code list
+ * with the supplier, fix the template) is off-system; the proposal points at the source's import-quality
+ * review, and its evidence carries the count, the share and the corrective action. Commits nothing.
+ */
+function mappingQualityProposals(findings: readonly MappingQualityFinding[], now: string): Omit<Proposal, 'committed'>[] {
+  return findings.map((f): Omit<Proposal, 'committed'> => ({
+    proposalId: f.findingId,
+    agent: 'A08',
+    summary: f.headline,
+    // Where a steward looks to act — the source's import-quality review (the fix is with the source, off-system).
+    wouldRequire: 'GET /v1/purchase/import-quality/:sourceId',
+    evidence: [{
+      source: 'import history',
+      reference: f.sourceId,
+      summary: `"${f.column}": ${f.count} row(s) rejected (${Math.round(f.shareBps / 100)}% of this source's failures) — ${f.action}`,
+    }],
+    createdAt: now,
+  }));
+}
+
 export function aiAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -6352,6 +6375,11 @@ export function aiAdapter(input: {
    */
   readonly products?: (tenantId: string) => Promise<readonly ProductRecord[]> | readonly ProductRecord[];
   readonly barcodes?: (tenantId: string) => Promise<readonly BarcodeAssignment[]> | readonly BarcodeAssignment[];
+  /**
+   * The tenant's import history (M30-FR-04), for A08's suspicious-mapping leg. Optional, same shape as the
+   * others: without it A08 simply raises no mapping findings. The tested import-quality fold, reused verbatim.
+   */
+  readonly importHistory?: (tenantId: string) => Promise<readonly ImportJobRecord[]> | readonly ImportJobRecord[];
 }): AiDeps {
   return {
     now: input.now,
@@ -6438,12 +6466,24 @@ export function aiAdapter(input: {
      * wired (and, for a model-backed agent, a provider is chosen, OB-02).
      */
     run: async (tenantId, agent) => {
-      if (agent !== 'A08' || input.products === undefined || input.barcodes === undefined) return [];
-      const findings = assessProductDataQuality({
-        products: await input.products(tenantId),
-        barcodes: new BarcodeRegistry(await input.barcodes(tenantId)),
-      });
-      return dataQualityProposals(findings, input.now());
+      if (agent !== 'A08') return [];
+      const now = input.now();
+      const proposals: Omit<Proposal, 'committed'>[] = [];
+      // Leg 1+2 — the product master: missing barcode / suspected duplicate / missing MRP.
+      if (input.products !== undefined && input.barcodes !== undefined) {
+        const findings = assessProductDataQuality({
+          products: await input.products(tenantId),
+          barcodes: new BarcodeRegistry(await input.barcodes(tenantId)),
+        });
+        proposals.push(...dataQualityProposals(findings, now));
+      }
+      // Leg 3 — suspicious mappings from import history: a source that keeps failing on one column.
+      // An independent data source, so it runs whether or not the product master is wired.
+      if (input.importHistory !== undefined) {
+        const findings = assessMappingQuality({ jobs: await input.importHistory(tenantId) });
+        proposals.push(...mappingQualityProposals(findings, now));
+      }
+      return proposals;
     },
 
     openProposals: (tenantId) => allOf<Proposal>(input.store, tenantId, STREAM.ai, 'AiProposalRaised'),

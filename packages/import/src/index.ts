@@ -15,3 +15,4 @@
 export * from './delimited';
 export * from './import-job';
 export * from './job-history';
+export * from './mapping-quality';

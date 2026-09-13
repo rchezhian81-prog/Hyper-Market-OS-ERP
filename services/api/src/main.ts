@@ -841,6 +841,9 @@ export function buildSurface(deps: {
       // folds reused verbatim (same pattern as the export domains above), never a second copy.
       products: (t) => productMasterAdapter({ store, now }).products(t),
       barcodes: (t) => barcodeAdapter({ store, now }).all(t),
+      // ...and import history, for A08's suspicious-mapping leg — the same tested fold the
+      // import-quality routes read, so there is one truth about which source keeps failing.
+      importHistory: (t) => importQualityAdapter({ store, now }).jobs(t),
     })),
   ];
 }
