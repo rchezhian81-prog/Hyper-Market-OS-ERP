@@ -15,3 +15,4 @@
 export * from './loss-prevention';
 export * from './fraud-signals';
 export * from './cases';
+export * from './auto-open-from-shortage';

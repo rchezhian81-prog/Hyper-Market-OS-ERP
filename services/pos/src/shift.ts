@@ -46,9 +46,30 @@ export interface OverShortReview {
   readonly reviewedAt: string;
 }
 
+/**
+ * What the automatic shortage rule did when a drawer closed materially short (M15-FR-04). The close
+ * always succeeds — the shop keeps trading (P-01) — so this reports, separately, whether the
+ * investigation was opened, or why it could not be (a visible gap, never a silent one — P-08).
+ */
+export interface ShortageInvestigationOutcome {
+  readonly opened: boolean;
+  readonly caseId?: string;
+  readonly assignedTo?: string;
+  readonly alreadyOpen?: boolean;
+  /** Set when no case was opened — e.g. no store manager to assign it to. */
+  readonly blockedReason?: string;
+  readonly detail?: string;
+}
+
 export interface ShiftDeps {
   readonly closedShift: (tenantId: string, shiftId: string) => Promise<ClosedShiftRecord | undefined> | ClosedShiftRecord | undefined;
   readonly recordShiftClose: (tenantId: string, record: ClosedShiftRecord) => Promise<void> | void;
+  /**
+   * Open a loss-prevention investigation for a drawer that closed materially SHORT, assigned to the
+   * store manager (never the cashier). Optional: an offline/store-less lane closes without it, and the
+   * close never fails when it is absent or refuses.
+   */
+  readonly openInvestigationOnShortage?: (tenantId: string, record: ClosedShiftRecord) => Promise<ShortageInvestigationOutcome> | ShortageInvestigationOutcome;
   /** Shifts closed with a material over/short — the cash office's reconciliation list. */
   readonly overShortShifts: (tenantId: string) => Promise<readonly ClosedShiftRecord[]> | readonly ClosedShiftRecord[];
   /** Cash-office sign-offs recorded against material over/shorts, so the list shows what is still open. */
@@ -143,9 +164,23 @@ export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
           closedAt: deps.now(),
         };
         await deps.recordShiftClose(ctx.tenantId, record);
+
+        // A material SHORT auto-opens a loss-prevention investigation, assigned to the store manager
+        // (M15-FR-04). It never blocks the close — the shop keeps trading (P-01) — and its outcome
+        // (opened, or why not) is reported alongside so a gap is visible, not silent (P-08).
+        let investigation: ShortageInvestigationOutcome | undefined;
+        if (result.exceptionRaised && result.isShort && deps.openInvestigationOnShortage !== undefined) {
+          investigation = await deps.openInvestigationOnShortage(ctx.tenantId, record);
+        }
+
         return {
           status: 201,
-          body: { shiftId, closed: true, expectedMinor: result.expectedMinor, countedMinor: result.countedMinor, varianceMinor: result.varianceMinor, isOver: result.isOver, isShort: result.isShort, exceptionRaised: result.exceptionRaised, denominationsRecorded: denominations !== undefined },
+          body: {
+            shiftId, closed: true, expectedMinor: result.expectedMinor, countedMinor: result.countedMinor,
+            varianceMinor: result.varianceMinor, isOver: result.isOver, isShort: result.isShort,
+            exceptionRaised: result.exceptionRaised, denominationsRecorded: denominations !== undefined,
+            ...(investigation !== undefined ? { investigation } : {}),
+          },
         };
       },
     },

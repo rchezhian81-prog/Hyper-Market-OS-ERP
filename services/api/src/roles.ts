@@ -20,6 +20,14 @@ import type { Role } from '../../../packages/rbac/src/rbac';
  */
 export const OWNER_ROLE_ID = 'owner';
 
+/**
+ * Which role runs the shop day to day — named as a constant for the same reason as the owner's: the
+ * shortage rule (a material till short opens an investigation assigned to the store manager) resolves
+ * this role from the tenant's grants, and a role id typed twice in two files is a control that silently
+ * stops applying.
+ */
+export const STORE_MANAGER_ROLE_ID = 'store_manager';
+
 export const ROLE_CATALOGUE: readonly Role[] = [
   {
     id: OWNER_ROLE_ID,
@@ -97,7 +105,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     ],
   },
   {
-    id: 'store_manager',
+    id: STORE_MANAGER_ROLE_ID,
     name: 'Store manager',
     // Everything needed to run the shop, and **nothing that closes a month or grants a role**.
     // Separation of duties is not a policy document; it is which codes are absent from this list.
