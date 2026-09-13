@@ -19,7 +19,8 @@ const NOW = '2026-09-12T10:00:00Z';
 const deps = (targetKind: TargetKind = 'rehearsal'): MigrationDeps => ({
   target: (tenantId): LoadTarget => ({ targetId: `tgt-${tenantId}`, tenantId, kind: targetKind, label: targetKind }),
   findings: () => [], acceptances: () => [], signatures: () => [],
-  recordAcceptance: () => {}, ownerId: () => 'u-owner', extractionOperator: () => 'u-op', now: () => NOW,
+  recordAcceptance: () => {}, ownerId: () => 'u-owner', extractionOperator: () => 'u-op',
+  exclusions: () => [], recordExclusion: () => {}, now: () => NOW,
 });
 
 const ctx = (over: Partial<RequestContext>): RequestContext =>

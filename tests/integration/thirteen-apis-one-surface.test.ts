@@ -69,7 +69,8 @@ const ALL: readonly Route[] = [
   ...migrationRoutes({
     target: () => ({ targetId: 'tgt-1', tenantId: 't', kind: 'rehearsal', label: 'rehearsal' }), findings: () => [],
     acceptances: () => [], signatures: () => [], recordAcceptance: () => {},
-    ownerId: () => 'u-owner', extractionOperator: () => 'u-op', now: () => NOW,
+    ownerId: () => 'u-owner', extractionOperator: () => 'u-op',
+    exclusions: () => [], recordExclusion: () => {}, now: () => NOW,
   }),
   ...aiRoutes({
     killSwitchOn: () => false, setKillSwitch: () => {},

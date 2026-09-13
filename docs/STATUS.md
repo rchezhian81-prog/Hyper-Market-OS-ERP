@@ -5,6 +5,41 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## MG-07 history exclusions wired on API-12 (13 September 2026)
+
+**Owner direction:** "keep building modules… strong and clear without rework" (after choosing to hold
+go-live). Chosen because it completes the migration control family with a proven route pattern (I wired
+MG-01…11 earlier this session), the engine already exists and is tested, and it carries near-zero rework
+risk — MG-10 is a genuine pilot activity (not code), leaving MG-07 and MG-12 as the wireable remainder.
+
+**What changed (behaviour):** the tested `packages/migration/src/history.ts` engine (MG-07) is now
+reachable on API-12:
+- `POST /v1/migration/history/exclusions` (`migration.exclusion.propose`, owner + store manager) —
+  propose leaving legacy data behind: a written, VALUED proposal; **age alone is refused** as a reason;
+  open-once per id.
+- `POST /v1/migration/history/exclusions/:id/decision` (`migration.exclusion.approve`, owner only) —
+  the OWNER approves or rejects in writing; the engine refuses a proposer approving their own even if
+  they are the owner (separation of duties, OD-05), and a decided exclusion cannot be re-decided.
+- `GET /v1/migration/history/exclusions` (`migration.reconciliation.read`) — every exclusion and the
+  position: only the APPROVED figure may explain a reconciliation difference (MG-06); undecided ones
+  leave it open, forcing the decision before cutover.
+- Persisted append-only as `MigrationHistoryExclusion` events (latest-state-per-id fold) via
+  `migrationAdapter`; all routes refuse a production target first (hard rule #7).
+- New permissions `migration.exclusion.propose` / `.approve`; propose granted to the store manager so a
+  proposer who is not the owner exists (the SoD needs two people).
+
+**Evidence:** `tests/integration/migration-history-exclusions.test.ts` (5) drives propose → owner-approve
+→ position through the real authenticated pipeline (operator proposes, owner approves; owner cannot
+self-approve; age-alone refused; RBAC; open-once + no re-decide). Full suite green (6,552 passed / 262
+DB-skipped); typecheck + lint + secret-scan clean; the api-surface contract passes with the new permissions.
+
+**Not re-rated.** MG-07 stays `ENGINE_ONLY` in the ledger and the headline % is unchanged — it is now
+wired and integration-tested, and a re-rate to WIRED/INTEGRATION_TESTED is available on your word (the
+same evidence-first move as the M14/M15 re-rate). MG-12 (retirement/archive) is the remaining wireable
+migration control; I'll offer it next.
+
+---
+
 ## Deliberate re-rate: M14 + M15 (45.5% → 45.9%) (13 September 2026)
 
 **Owner direction:** "Re-rate M14/M15 and show the new number." An explicit, owner-authorised re-rate —

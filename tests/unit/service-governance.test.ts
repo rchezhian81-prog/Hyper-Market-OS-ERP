@@ -41,7 +41,7 @@ describe('API-12 — the migration service cannot point at production', () => {
     target: () => ({ targetId: 'tgt-1', tenantId: 't-sre', kind: 'rehearsal', label: 'migration rehearsal' }),
     findings: () => findings, acceptances: () => [], signatures: () => [],
     recordAcceptance: () => {}, ownerId: () => 'u-owner',
-    extractionOperator: () => 'u-operator', now: () => NOW, ...over,
+    extractionOperator: () => 'u-operator', exclusions: () => [], recordExclusion: () => {}, now: () => NOW, ...over,
   });
 
   it('REFUSES every route when the target is production (hard rule #7)', async () => {

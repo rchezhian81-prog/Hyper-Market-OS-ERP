@@ -36,6 +36,12 @@ import {
   buildVerificationReport, renderVerificationReport,
   type DomainFinding, type Acceptance, type Signature,
 } from '../../../packages/migration/src/verification-report';
+import {
+  proposeExclusion, approveExclusion, exclusionPosition,
+  type HistoryExclusion, type ExclusionScope,
+} from '../../../packages/migration/src/history';
+
+const EXCLUSION_SCOPES: readonly string[] = ['documents_before', 'entity_kind', 'named_records', 'inactive_records'];
 
 const SOURCE_KINDS: readonly string[] = ['erp_database', 'pos_database', 'spreadsheet', 'paper', 'third_party_system', 'report_only'];
 const VOLUME_BASES: readonly string[] = ['counted', 'estimated', 'unknown'];
@@ -190,6 +196,10 @@ export interface MigrationDeps {
    * is absent the caller is treated as holding no roles, so a finance/tax total cannot be signed.
    */
   readonly rolesOf?: (tenantId: string, userId: string) => Promise<readonly string[]> | readonly string[];
+  /** Every history exclusion (MG-07), latest state per id — proposed, then owner-decided. */
+  readonly exclusions: (tenantId: string) => Promise<readonly HistoryExclusion[]> | readonly HistoryExclusion[];
+  /** Persist an exclusion — the proposal, then the owner's written decision. Append-only. */
+  readonly recordExclusion: (tenantId: string, exclusion: HistoryExclusion) => Promise<void> | void;
   readonly now: () => string;
 }
 
@@ -835,6 +845,119 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
         }
         await deps.recordAcceptance(ctx.tenantId, a);
         return { status: 201, body: a };
+      },
+    },
+    {
+      // MG-07 — propose leaving legacy data behind. An exclusion is a WRITTEN, VALUED proposal; it is
+      // not a smaller migration until the owner approves it, and until then it explains nothing in the
+      // reconciliation (it sits as an undecided difference). Age alone is refused as a reason (the
+      // engine's rule — a warranty claim in year four is exactly the record somebody needs). Open-once
+      // per id. Refuses production (#7).
+      api: 'API-12', method: 'POST', path: '/v1/migration/history/exclusions',
+      permission: 'migration.exclusion.propose', idempotent: true,
+      handler: async (ctx) => {
+        await assertSafeTarget(deps, ctx.tenantId);
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const exclusionId = typeof b['exclusionId'] === 'string' ? b['exclusionId'] : '';
+        if (exclusionId === '' || typeof b['scope'] !== 'string' || !EXCLUSION_SCOPES.includes(b['scope'] as string)
+          || typeof b['description'] !== 'string' || !Number.isInteger(b['recordCount']) || !Number.isInteger(b['valueMinor'])
+          || typeof b['reason'] !== 'string') {
+          throw apiError(400, {
+            code: 'not_readable_as_an_exclusion',
+            whatHappened: 'An exclusion needs an id, a scope (documents_before/entity_kind/named_records/inactive_records), a description, a whole record count and value in paise, and a reason.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was proposed. Send the exclusion with a reason that is unusability, not age.',
+          });
+        }
+        if ((await deps.exclusions(ctx.tenantId)).some((e) => e.exclusionId === exclusionId)) {
+          throw apiError(409, {
+            code: 'exclusion_already_exists',
+            whatHappened: `Exclusion ${exclusionId} already exists — a decided exclusion stays decided, and its record is the evidence.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Use a new id, or read the existing exclusion.',
+          });
+        }
+        const result = proposeExclusion({
+          exclusionId, tenantId: ctx.tenantId, scope: b['scope'] as ExclusionScope,
+          description: b['description'] as string, recordCount: b['recordCount'] as number,
+          valueMinor: b['valueMinor'] as number, reason: b['reason'] as string,
+          proposedBy: ctx.userId, now: deps.now(),
+        });
+        if (!result.ok || result.exclusion === undefined) {
+          throw apiError(422, {
+            code: result.refusedBecause!,
+            whatHappened: result.detail,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was proposed. State why the data is not usable — age alone is never a reason, and the money it covers must be stated so it can be reconciled against.',
+          });
+        }
+        await deps.recordExclusion(ctx.tenantId, result.exclusion);
+        return { status: 201, body: result.exclusion };
+      },
+    },
+    {
+      // MG-07 — the OWNER approves or rejects an exclusion, in writing (OD-05). The proposer cannot
+      // approve their own even if they are the owner (the person who decided the data is not worth
+      // migrating is not the person to confirm it), and only the owner may decide. Refuses production (#7).
+      api: 'API-12', method: 'POST', path: '/v1/migration/history/exclusions/:exclusionId/decision',
+      permission: 'migration.exclusion.approve', idempotent: true,
+      handler: async (ctx) => {
+        await assertSafeTarget(deps, ctx.tenantId);
+        const exclusionId = ctx.params['exclusionId'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (typeof b['approve'] !== 'boolean' || typeof b['ownerStatement'] !== 'string') {
+          throw apiError(400, {
+            code: 'not_readable_as_a_decision',
+            whatHappened: 'A decision needs approve (true/false) and a written ownerStatement.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was decided. Send the decision in writing — a year later the record is all there is.',
+          });
+        }
+        const existing = (await deps.exclusions(ctx.tenantId)).find((e) => e.exclusionId === exclusionId);
+        if (existing === undefined) {
+          throw apiError(404, {
+            code: 'no_such_exclusion',
+            whatHappened: `There is no proposed exclusion "${exclusionId}" to decide.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Check the exclusion id on the history list and try again.',
+          });
+        }
+        const owner = await deps.ownerId(ctx.tenantId);
+        if (owner === undefined) {
+          throw apiError(409, {
+            code: 'nobody_is_recorded_as_the_owner',
+            whatHappened: 'No user holds the owner role for this tenant, so there is nobody this decision could be checked against.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was decided. Record who the owner is first — OD-05 requires the owner to approve an exclusion.',
+          });
+        }
+        const result = approveExclusion({
+          exclusion: existing, decidedBy: ctx.userId, decidedByIsOwner: ctx.userId === owner,
+          approve: b['approve'] as boolean, ownerStatement: b['ownerStatement'] as string, now: deps.now(),
+        });
+        if (!result.ok || result.exclusion === undefined) {
+          const status = result.refusedBecause === 'not_the_owner' || result.refusedBecause === 'proposer_cannot_approve' ? 403 : 422;
+          throw apiError(status, {
+            code: result.refusedBecause!,
+            whatHappened: result.detail,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was decided. Only the owner may approve an exclusion, and not one they proposed themselves.',
+          });
+        }
+        await deps.recordExclusion(ctx.tenantId, result.exclusion);
+        return { status: 200, body: result.exclusion };
+      },
+    },
+    {
+      // MG-07 read — every exclusion and what they add up to, split by whether the owner has decided.
+      // Only the APPROVED figure may explain a reconciliation difference (MG-06); undecided exclusions
+      // leave the difference open, which forces the decision before cutover rather than after.
+      api: 'API-12', method: 'GET', path: '/v1/migration/history/exclusions',
+      permission: 'migration.reconciliation.read',
+      handler: async (ctx) => {
+        await assertSafeTarget(deps, ctx.tenantId);
+        const all = await deps.exclusions(ctx.tenantId);
+        return { status: 200, body: { exclusions: all, position: exclusionPosition(all), asAt: deps.now() } };
       },
     },
   ];

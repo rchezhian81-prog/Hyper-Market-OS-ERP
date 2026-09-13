@@ -19,7 +19,7 @@ const deps = (roles: readonly string[], targetKind: TargetKind = 'rehearsal'): M
   target: (tenantId): LoadTarget => ({ targetId: `tgt-${tenantId}`, tenantId, kind: targetKind, label: targetKind }),
   findings: () => [], acceptances: () => [], signatures: () => [],
   recordAcceptance: () => {}, ownerId: () => 'u-owner', extractionOperator: () => 'u-op',
-  rolesOf: () => roles, now: () => NOW,
+  rolesOf: () => roles, exclusions: () => [], recordExclusion: () => {}, now: () => NOW,
 });
 
 const ctx = (over: Partial<RequestContext>): RequestContext =>
