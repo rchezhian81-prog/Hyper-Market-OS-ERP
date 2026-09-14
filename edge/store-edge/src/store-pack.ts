@@ -476,6 +476,16 @@ export interface PackDataQualityPolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the employee self-service (ESS) screen and what they may do (M25 · §7). The rota and payslip
+ *  themselves are read live from the cloud (self-scoped), not the pack; this is only who the box was told is
+ *  looking, so the shell can gate on `payroll.ess.self` before the live reads. */
+export interface PackEssPolicy {
+  readonly userId?: string;
+  /** The permission codes this user holds — `payroll.ess.self` to use self-service. Never defaulted; the cloud
+   *  reads re-check it, so this only shapes the UI. */
+  readonly permissions: readonly string[];
+}
+
 /** Who administers this shop, and the windows it judges accounts and devices by. */
 export interface PackAdminPolicy {
   /** Days without a login after which an account is stale enough to review. Per-tenant. */
@@ -839,6 +849,7 @@ export interface StorePack {
   readonly productPublishReviewPolicy: Register<PackProductPublishReviewPolicy>;
   /** Who is on the Data Quality inbox screen and what they may do there (A08). */
   readonly dataQualityPolicy: Register<PackDataQualityPolicy>;
+  readonly essPolicy: Register<PackEssPolicy>;
   /** Every account, so joiners, movers and leavers can be reviewed (M02-FR-04). */
   readonly accounts: Register<readonly unknown[]>;
   /**
@@ -979,6 +990,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     fleetPolicy: notKnown(why),
     productPublishReviewPolicy: notKnown(why),
     dataQualityPolicy: notKnown(why),
+    essPolicy: notKnown(why),
     accounts: notKnown(why),
     supportSessions: notKnown(why),
     devices: notKnown(why),
@@ -1088,6 +1100,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     fleetPolicy: section<PackFleetPolicy>('fleetPolicy'),
     productPublishReviewPolicy: section<PackProductPublishReviewPolicy>('productPublishReviewPolicy'),
     dataQualityPolicy: section<PackDataQualityPolicy>('dataQualityPolicy'),
+    essPolicy: section<PackEssPolicy>('essPolicy'),
     accounts: section<readonly unknown[]>('accounts'),
     supportSessions: section<readonly unknown[]>('supportSessions'),
     devices: section<readonly unknown[]>('devices'),

@@ -197,6 +197,8 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   // Products to publish (ADR-0013). Who may deliver a queued product publish; the queue is the device outbox.
   productPublishReviewPolicy: known({ userId: 'u-owner', permissions: ['catalogue.pack.publish'] }),
   dataQualityPolicy: known({ userId: 'u-owner', permissions: ['ai.proposal.read'] }),
+  // Employee self-service (M25). Who is looking + whether they hold `payroll.ess.self`; rota + payslip come live.
+  essPolicy: known({ userId: 'u-cash', permissions: ['payroll.ess.self'] }),
   // Admin and security (M01/M02/M33/M34). Support access is never pruned (hard rule #6).
   accounts: known([{
     userId: 'u-meena', tenantId: 't1', username: 'meena',

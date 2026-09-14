@@ -5,22 +5,29 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## ESS screen build (owner-directed: rota + payslip) — data sources landing (14 September 2026)
+## ESS screen build (owner-directed: rota + payslip) — the screen lands (14 September 2026)
 
 Owner asked to build the ESS (employee self-service) screen showing staff their **rota** and **payslip**.
-Building it in disciplined slices, each its own PR:
+Built in disciplined slices, each its own PR:
 - **PR-H1 (#392, merged)** — `GET /v1/hr/workforce/my-roster`: an employee's own shifts from the durable roster
   store, self-scoped, gated `payroll.ess.self`.
-- **PR-H2 (this)** — the **durable issued-payslip store**: `POST /v1/hr/payroll/payslips/:employeeId/:period`
+- **PR-H2 (#393, merged)** — the **durable issued-payslip store**: `POST /v1/hr/payroll/payslips/:employeeId/:period`
   (HR issues, confidential) + `GET /v1/hr/payroll/my-payslip` (the employee's own latest, self-redacted by the
   tested `employeeSelfView`, gated `payroll.ess.self`) + `GET …/payslips/:employeeId` (HR review). Event-sourced
   latest-per-(employeeId,period) on `STREAM.payroll`; survives a restart. `services/finance/src/payslip-store.ts`
   + `payslipStoreAdapter`. `tests/integration/payslip-store.test.ts` (3). No completion-% change.
-- **PR-H3 (next)** — the offline `/ess` web-erp screen reading both my-roster + my-payslip, bilingual EN/TA,
-  a11y, following the category-policy screen pattern (session model + shell + edge screen-data + SW + nav +
-  browser-entry live-fetch-with-sample-fallback + usable-screen guardrail + offline/a11y e2e).
+- **PR-H3 (this)** — the offline **`/ess`** web-erp screen: a member of staff opens it and sees their OWN rota
+  (the shifts they are rostered for) and their OWN latest payslip (take-home pay, their deductions, and — shown
+  separately so nothing looks taken from them — the employer's contribution). Bilingual EN/TA, colour never the
+  only signal (every row carries an icon + a word + a screen-reader announcement), offline-first (SW-cached,
+  says when it is showing a cached page). Reads both self-scoped GETs live with a clearly-labelled sample
+  fallback. Own-record only — the engine refuses any employee id but the caller's own, so no one else's rota or
+  pay can be reached here (P-04 least privilege, P-05, P-07). Follows the category-policy screen pattern:
+  tested DOM-free session model (`apps/web-erp/src/ess-session.ts`, unit-tested) + shell (`ess.html`/`ess.js`)
+  + edge screen-data (`essPayload`, `PackEssPolicy`) + SW (`sre-erp-shell-v17`, `./ess.js`) + nav item +
+  `browser-entry` live-fetch-with-sample-fallback + a usable-screen guardrail + an offline/a11y e2e.
 
-Note: a demo-only `/my-payslip` screen already exists; the new `/ess` screen is the single self-service surface
+Note: a demo-only `/my-payslip` screen already existed; the new `/ess` screen is the single self-service surface
 showing rota + payslip and reads the real (now durable) data.
 
 ---

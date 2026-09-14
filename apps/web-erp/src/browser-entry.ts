@@ -85,6 +85,9 @@ import {
   createCategoryPolicySession, type CategoryPolicyPorts, type CategoryPolicySession,
 } from './category-policy-session';
 import {
+  createEssSession, type EssPorts, type EssSession, type EssRoster, type EssPayslip,
+} from './ess-session';
+import {
   createGstReturnsSession, type GstReturnsPorts, type GstReturnsSession, type ReturnRow as GstReturnRow,
 } from './gst-returns-session';
 import {
@@ -518,6 +521,71 @@ export function bootCategoryPolicy(data: CategoryPolicyData | undefined): Catego
     { userId: data.userId === undefined ? null : data.userId },
     categoryPolicyPortsFromData(data),
   );
+}
+
+/** What the box tells the employee self-service (ESS) screen — who is looking and what they hold. The rota and
+ *  payslip themselves come LIVE from the two self-scoped reads, not the pack. */
+export interface EssData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+}
+
+const ESS_PERMISSION = 'payroll.ess.self';
+
+export function essPortsFromData(data: EssData | undefined, roster: EssRoster | null, payslip: EssPayslip | null): EssPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    mayRead: () => held.has(ESS_PERMISSION),
+    roster: () => roster,
+    payslip: () => payslip,
+  };
+}
+
+/** Build the ESS screen, or `null` when the box carried no payload for it. First paint has no live data yet. */
+export function bootEss(data: EssData | undefined): EssSession | null {
+  if (data === undefined) return null;
+  return createEssSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    essPortsFromData(data, null, null),
+  );
+}
+
+/** Read my own rota (a self-scoped GET). Null offline/refused so the shell keeps what it was showing. */
+export async function fetchMyRoster(): Promise<EssRoster | null> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return null; // off-browser (tests inject their own http)
+  try {
+    const res = await fetchFn('/v1/hr/workforce/my-roster', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    if (res.status >= 400) return null;
+    const b = (await res.json()) as { known?: boolean; active?: boolean; shifts?: EssRoster['shifts'] };
+    return { known: b.known ?? false, active: b.active ?? false, shifts: b.shifts ?? [] };
+  } catch {
+    return null;
+  }
+}
+
+/** Read my own latest payslip (a self-scoped GET, already redacted server-side). Null offline/refused. */
+export async function fetchMyPayslip(): Promise<EssPayslip | null> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return null;
+  try {
+    const res = await fetchFn('/v1/hr/payroll/my-payslip', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    if (res.status >= 400) return null;
+    const b = (await res.json()) as {
+      issued?: boolean; period?: string;
+      view?: { netPayMinor?: number; deductions?: readonly { label: string; amountMinor: number }[]; employerContributions?: { totalMinor?: number } };
+    };
+    if (b.issued !== true || b.view === undefined) return { issued: false };
+    return {
+      issued: true,
+      ...(b.period !== undefined ? { period: b.period } : {}),
+      ...(b.view.netPayMinor !== undefined ? { netPayMinor: b.view.netPayMinor } : {}),
+      ...(b.view.deductions !== undefined ? { deductions: b.view.deductions } : {}),
+      ...(b.view.employerContributions?.totalMinor !== undefined ? { employerTotalMinor: b.view.employerContributions.totalMinor } : {}),
+    };
+  } catch {
+    return null;
+  }
 }
 
 /** What the box tells the GST-returns screen — the last-synced filing queue plus who is looking. */
@@ -1395,6 +1463,13 @@ interface ManagerWindow {
   gstReconciliationOutbox?: SyncOutbox;
   categoryPolicyData?: CategoryPolicyData;
   categoryPolicySession?: CategoryPolicySession;
+  essData?: EssData;
+  essSession?: EssSession;
+  /** The shell reads my rota + payslip live through this and re-presents them — self-scoped GETs, never writes. */
+  essLive?: {
+    refresh(): Promise<{ roster: EssRoster | null; payslip: EssPayslip | null } | null>;
+    present(data: { roster: EssRoster | null; payslip: EssPayslip | null }): EssSession;
+  };
   gstReturnsData?: GstReturnsData;
   gstReturnsSession?: GstReturnsSession;
   /** Where a governance action (approve/submit) queues for the sync agent — device-backed, survives a reload. */
@@ -1939,6 +2014,23 @@ if (browserWindow !== undefined) {
       present: (worklist) => createDataQualityInboxSession(
         { userId: dataQualityData?.userId === undefined ? null : dataQualityData.userId },
         dataQualityInboxPortsFromData(dataQualityData, worklist, dataQualityDismissPort),
+      ),
+    };
+  }
+  // Employee self-service (M25): the member of staff's OWN rota + OWN payslip, one screen. Boots from the box's
+  // policy (who is looking + whether they hold `payroll.ess.self`), then the shell refreshes both from live,
+  // self-scoped GETs (/v1/hr/workforce/my-roster, /v1/hr/payroll/my-payslip). Offline it shows its sample and
+  // says so. Read-only — the engine refuses any employee id but the caller's own, so nobody else's rota or pay
+  // can ever be reached from here (P-04 least privilege, P-05 own-record only).
+  const essData = browserWindow.essData;
+  const ess = bootEss(essData);
+  if (ess !== null) {
+    browserWindow.essSession = ess;
+    browserWindow.essLive = {
+      refresh: async () => ({ roster: await fetchMyRoster(), payslip: await fetchMyPayslip() }),
+      present: (live) => createEssSession(
+        { userId: essData?.userId === undefined ? null : essData.userId },
+        essPortsFromData(essData, live.roster, live.payslip),
       ),
     };
   }
