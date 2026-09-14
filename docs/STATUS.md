@@ -5,6 +5,20 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## MG-06 migration/reconciliation → E2E_VERIFIED (headline moved) (14 September 2026)
+
+Continued the E2E track (owner "keep going"). Extended the migration-screen browser harness with the
+**control-total SIGN** write-path (MG-06): a named signer who is **not** the person who ran the load opens "the
+figures" tab, picks a reconciled control total, signs with a statement, and the signature is **committed to the
+device outbox and shown queued** (hard rule #1); the **person who ran the load is refused** signing its own
+totals (§28 separation of duties). Added to `tests/e2e/migration-decision-delivery.e2e.ts` (now 5 tests: MG-04
+resolve + MG-06 sign ×2 + nobody-named + offline-open).
+
+**MG-06 re-rated INTEGRATION_TESTED → E2E_VERIFIED — honest, earned.** Headline **48.4% → 48.5%**; E2E-verification
+metric **4.8% → 5.8%**. Conservative: only the sign write-path was re-rated.
+
+---
+
 ## MG-04 migration/cleaning → E2E_VERIFIED (headline moved) (14 September 2026)
 
 Owner said "keep going" on the E2E-verification track. Next target: the **migration ("Moving from the old

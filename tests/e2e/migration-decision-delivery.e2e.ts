@@ -48,11 +48,22 @@ const EXCEPTION = {
   confidence: 'certain', legacyIds: ['p1'], evidence: 'stock on hand is -4 for Toor dal 1kg in the old system',
 };
 
-/** What the box injects about who is at the desk and what the cleaning pass found. `userId` absent → nobody
- *  named, and nothing may be signed, decided or rolled back (§28). */
-const migrationData = (over: { userId?: string } = {}): Record<string, unknown> => ({
+/** One reconciled control total (MG-06): the old and new figures MATCH, so it is signable — a stock (not a
+ *  finance/tax) figure, so an ordinary role may sign it, not only the chartered accountant. */
+const TOTAL = {
+  totalId: 'CT-1', tenantId: 'store-1', kind: 'stock', name: 'Stock rows migrated', unit: 'rows',
+  legacyValue: 12000, loadedValue: 12000,
+  legacyDerivation: 'count of the old system’s stock rows', loadedDerivation: 'count of the new system’s stock rows',
+};
+
+/** What the box injects about who is at the desk, what the cleaning pass found, and (when `withTotals`) the
+ *  reconciliation figures. `userId` absent → nobody named, and nothing may be signed, decided or rolled back
+ *  (§28); `loadOperator` is who ran the load, which the signer must NOT be (§28 separation of duties). */
+const migrationData = (over: { userId?: string; loadOperator?: string; withTotals?: boolean } = {}): Record<string, unknown> => ({
   storeId: 'store-1', now: '2026-09-14T21:00:00.000Z', cutoverId: 'CUT-1', exceptions: [EXCEPTION],
+  ...(over.withTotals === true ? { totals: [TOTAL] } : {}),
   ...(over.userId === undefined ? {} : { userId: over.userId }),
+  ...(over.loadOperator === undefined ? {} : { loadOperator: over.loadOperator }),
 });
 
 /** A server that serves the migration shell (GET, the operator context injected) and the static files the shell
@@ -135,6 +146,46 @@ describe.skipIf(!HAVE_BROWSER)('the operator settles an exception, end to end in
       await page.waitForSelector('#unsent:not([hidden])', { timeout: 10_000 });
       expect(await unsentHidden(page)).toBe(false);
       expect(((await page.textContent('#unsent')) ?? '')).toMatch(/1\b/);
+    } finally {
+      await teardown();
+    }
+  });
+
+  it('a named signer who is not the loader signs a reconciled figure: it is committed and shown queued (MG-06)', async () => {
+    const { page, teardown } = await openScreen(migrationData({ userId: 'u-owner', loadOperator: 'u-loader', withTotals: true }));
+    try {
+      expect(await unsentHidden(page)).toBe(true);
+
+      // Open "the figures" tab, pick the reconciled figure, sign as somebody who did NOT run the load, and say
+      // what was checked.
+      await page.click('#tab-figures');
+      await page.selectOption('#sign-total', 'CT-1');
+      await page.fill('#sign-role', 'store_manager');
+      await page.fill('#sign-statement', 'old and new stock-row counts both read 12,000 — checked against the extract log');
+      await page.click('#sign');
+
+      // The signature is committed to the device outbox and the page says so — a control total carries a
+      // signature or it does not count.
+      await page.waitForSelector('#unsent:not([hidden])', { timeout: 10_000 });
+      expect(await unsentHidden(page)).toBe(false);
+    } finally {
+      await teardown();
+    }
+  });
+
+  it('the person who ran the load cannot sign its own totals: refused, nothing queued (§28 separation of duties)', async () => {
+    // Signer === loader — the one person the second pair of eyes exists to be different from.
+    const { page, teardown } = await openScreen(migrationData({ userId: 'u-owner', loadOperator: 'u-owner', withTotals: true }));
+    try {
+      await page.click('#tab-figures');
+      await page.selectOption('#sign-total', 'CT-1');
+      await page.fill('#sign-role', 'store_manager');
+      await page.fill('#sign-statement', 'this should not be recorded — I ran the load myself');
+      await page.click('#sign');
+
+      // The refusal banner shows and nothing was queued.
+      await page.waitForSelector('#banner:not([hidden])', { timeout: 10_000 });
+      expect(await unsentHidden(page)).toBe(true);
     } finally {
       await teardown();
     }
