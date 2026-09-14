@@ -5,6 +5,25 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M25-FR-02 daily-task routing + escalation (14 September 2026)
+
+Continued driving M25 up (owner said "keep going"): wired the **daily-task routing + escalation**, the M25-FR-02
+acceptance *"an overdue critical task escalates."* New tested pure engine `assessDailyTasks`
+(`packages/workforce`) routes the day's tasks to the right role and decides pending / overdue / **escalated** — a
+critical task past its due time escalates to the manager on duty (P-03); a non-critical one is merely overdue, so
+the one that matters isn't lost in the noise. Durable store `services/finance/src/task-store.ts`:
+`POST /v1/hr/workforce/tasks/:id` (define, routed to a role), `…/complete` (record who did it),
+`GET /v1/hr/workforce/tasks?role=&branchId=&asOf=` (the routed list with live escalation status). Event-sourced,
+manage-gated writes, restart-safe. `tests/unit/workforce.test.ts` (+4) + `tests/integration/task-store.test.ts` (4).
+
+**M25 stays PARTIALLY_WIRED — assessed, not forced.** FR-02's cloud read/decision surface (checklist assessment +
+durable completion store + task routing/escalation) is now fully wired, but FR-02's acceptance has a *second*
+clause — *"checklists route and complete **offline**"* (§31/P-01) — and the offline task-completion queue at the
+edge is not yet built. That's a genuine offline-first requirement, not a below-the-line deployment step, so I did
+**not** force the rung up. No completion-% change.
+
+---
+
 ## M25-FR-02 durable checklist-completion store (14 September 2026)
 
 After the ESS screen landed (below), continued driving M25 up: built the **durable completion store** for the
