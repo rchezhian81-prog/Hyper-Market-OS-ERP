@@ -5,6 +5,22 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M25-FR-02 durable checklist-completion store (14 September 2026)
+
+After the ESS screen landed (below), continued driving M25 up: built the **durable completion store** for the
+opening/closing/handover checklist (M25-FR-02) — the piece I'd flagged as keeping M25 below WIRED.
+`services/finance/src/checklist-store.ts`: `POST /v1/hr/workforce/checklists/:id` records a submitted checklist
+(event-sourced latest-per-id on `STREAM.workforce`, writes gated `workforce.roster.manage`), and
+`GET /v1/hr/workforce/checklists[/:id/status]` runs the SAME tested `assessChecklist` over the STORED checklist —
+so a closing checklist can be produced and re-assessed weeks later, not only in the moment it was ticked. A
+blocking item outstanding stops the shop; an unsigned complete list is "a list, not a record"; a signed one with
+only non-blocking items left is complete and carries them into the next handover. Survives a restart.
+`tests/integration/checklist-store.test.ts` (4). **M25 stays PARTIALLY_WIRED** — of FR-02's two named gaps, the
+durable completion store is now closed; only daily-task routing/escalation to the right role remains. No
+completion-% change.
+
+---
+
 ## ESS screen build (owner-directed: rota + payslip) — the screen lands (14 September 2026)
 
 Owner asked to build the ESS (employee self-service) screen showing staff their **rota** and **payslip**.

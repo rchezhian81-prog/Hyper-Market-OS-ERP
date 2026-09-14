@@ -103,6 +103,7 @@ import type { RosterStoreDeps } from '../../finance/src/roster-store';
 import type { CertStoreDeps } from '../../finance/src/cert-store';
 import type { SopStoreDeps, Sop as WfSop } from '../../finance/src/sop-store';
 import type { AttendanceStoreDeps, AttendanceRecord as WfAttendance } from '../../finance/src/attendance-store';
+import type { ChecklistStoreDeps, StoredChecklist as WfChecklist } from '../../finance/src/checklist-store';
 import type { PayslipStoreDeps, IssuedPayslip } from '../../finance/src/payslip-store';
 import type { Employee as WfEmployee, ShiftRequirement as WfShift, ShiftAssignment as WfAssignment, Certification as WfCertification, SopAcknowledgement as WfSopAck } from '../../../packages/workforce/src/workforce';
 import { foldPayRun, type PayRunEvent } from '../../../packages/payroll/src/index';
@@ -1293,6 +1294,38 @@ export function attendanceStoreAdapter(input: { readonly store: EventStore; read
       for (const e of await allOf<WfEmployee>(input.store, tenantId, ROSTER_STREAM, 'RosterEmployeeSet')) byId.set(e.employeeId, e);
       const all = [...byId.values()];
       return branchId === undefined ? all : all.filter((e) => e.branchId === branchId);
+    },
+  };
+}
+
+/**
+ * The durable checklist-completion store (M25-FR-02 follow-on). A submitted opening/closing/handover checklist
+ * appends to the SAME tenant `workforce` stream, latest-per-checklistId (a re-submission supersedes; the prior
+ * events are kept, hard rule #6); the stateful assessment reads the stored checklist and runs the tested
+ * `assessChecklist`, so a checklist can be produced and re-assessed weeks later, not only in the moment it was
+ * ticked.
+ */
+export function checklistStoreAdapter(input: { readonly store: EventStore; readonly now: () => string }): ChecklistStoreDeps {
+  return {
+    now: input.now,
+    putChecklist: async (tenantId, checklist, key) => {
+      await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
+        id: `ChecklistSubmittedSet-${checklist.checklistId}-${input.now()}`,
+        type: 'ChecklistSubmittedSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: checklist,
+      }));
+    },
+    checklists: async (tenantId) => {
+      // Latest submission per checklistId — a re-submission of the same checklist replaces the prior one.
+      const byId = new Map<string, WfChecklist>();
+      for (const c of await allOf<WfChecklist>(input.store, tenantId, ROSTER_STREAM, 'ChecklistSubmittedSet')) byId.set(c.checklistId, c);
+      return [...byId.values()];
+    },
+    checklist: async (tenantId, checklistId) => {
+      let found: WfChecklist | undefined;
+      for (const c of await allOf<WfChecklist>(input.store, tenantId, ROSTER_STREAM, 'ChecklistSubmittedSet')) {
+        if (c.checklistId === checklistId) found = c; // occurrence order → last wins
+      }
+      return found;
     },
   };
 }
