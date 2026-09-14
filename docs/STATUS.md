@@ -5,6 +5,38 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Session close — 14 September 2026 (autonomous completion run)
+
+**Delivered this session (six increments, all merged green through full CI, one increment per PR):**
+1. **#385** Near-expiry stock reader over the cloud ledger (M10-FR-01, ADR-0015) — GRN batch expiry persisted
+   cloud-side; `GET /v1/inventory/near-expiry` nets sales+wastage worst-first. Plus a real fix: `attributeSalesFifo`
+   gained `remainingByBatch` (captured-batch consumption was omitted from on-hand).
+2. **#386** A03 Inventory agent markdown/disposal leg over that reader — **A03 re-rated PARTIALLY_WIRED → WIRED**.
+3. **#387–#390** The owner-authorised **workforce (HR) durable stores**, complete: **roster** (M25-FR-01),
+   **certification** (M25-FR-03), **SOP-acknowledgement** (M25-FR-04), **attendance** (M25). Every stateless
+   workforce decision (roster-gaps, task-gate, sop-status, labour-cost) now has a durable, stateful counterpart
+   reading persisted facts (new `STREAM.workforce` + `workforce.roster.manage` permission).
+
+**Honest completion: 48.2%** (47.8 → 48.0 on A07 earlier, → 48.2 on A03). The four HR stores deepen M25
+substantially but stay **within its rung** (module crosses to WIRED only when the ESS surface lands) — the
+number was kept honest, not inflated by volume.
+
+**What is next / blocked / needs an owner decision:**
+- **Owner decision — OB-02 (model provider).** The three AI agents A05 (Service), A09 (Marketing drafting),
+  A10 (Workforce drafting) are ENGINE_ONLY, blocked on choosing a model provider (cost + data-residency). This
+  is the single biggest completion jump available and only the owner can unblock it.
+- **M25 ESS (employee self-service) screen** — the last M25 piece: a larger offline UI slice (payslip/roster/
+  SOP/certificate self-view over the now-durable stores + the existing `payroll.ess.self` route). Buildable
+  autonomously; benefits from a quick owner steer on exactly what an employee should see.
+- **Real-world rungs (cannot be reached by code):** UAT_VERIFIED and PRODUCTION_VERIFIED need the shop, real
+  staff and a pilot — see `docs/readiness-to-go-live.md`.
+- **Other autonomous options:** drive a PARTIALLY_WIRED module edge up a rung (e.g. M16/M20 customer, M04
+  planogram store — several are follow-on-gated, verify per item; the ledger evidence prose can lag the code).
+
+Branch `claude/new-session-lw91i4` is clean at `main`; no open PRs, watches, or triggers.
+
+---
+
 ## Durable attendance store (M25 follow-on · PR-G) — the HR store's durable stores COMPLETE (14 September 2026)
 
 **Direction:** owner authorised continuous autonomous completion; the workforce (HR) store front. This is the
