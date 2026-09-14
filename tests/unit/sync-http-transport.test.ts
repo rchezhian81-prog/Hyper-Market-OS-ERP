@@ -174,6 +174,51 @@ describe('a drained offline return reaches the cloud record-and-flag route', () 
   });
 });
 
+// An offline opening/closing checklist or daily-task completion reconciles on sync (M25-FR-02, §31). The id is a
+// plain payload field matching the path param, so a template fills it — the same door the online write goes
+// through, recording the box-relayed signer under the store token.
+describe('a drained offline checklist/task completion reaches its synced route', () => {
+  const checklist = (payload: Record<string, unknown>): DomainEvent => makeEvent({
+    id: 'cl-1', type: 'ChecklistCompleted', occurredAt: '2026-09-14T21:00:00.000Z',
+    idempotencyKey: 'edge-completion-t1-CL1', source: 'edge', payload,
+  });
+  const taskDone = (payload: Record<string, unknown>): DomainEvent => makeEvent({
+    id: 'td-1', type: 'TaskCompleted', occurredAt: '2026-09-14T21:00:00.000Z',
+    idempotencyKey: 'edge-completion-t1-T1', source: 'edge', payload,
+  });
+
+  it('routes a checklist completion to its synced endpoint, filling the id from the payload', async () => {
+    const { fn, calls } = fakeFetch(200);
+    await transportOn(fn).send(checklist({ checklistId: 'CL1', kind: 'closing', items: [], signedBy: 'Meena' }));
+    expect(calls[0]?.url).toBe('https://api.example.test/v1/hr/workforce/checklists/CL1/synced');
+  });
+
+  it('routes a task completion to its synced complete endpoint', async () => {
+    const { fn, calls } = fakeFetch(200);
+    await transportOn(fn).send(taskDone({ taskId: 'T1', doneBy: 'Meena' }));
+    expect(calls[0]?.url).toBe('https://api.example.test/v1/hr/workforce/tasks/T1/complete/synced');
+  });
+
+  it('url-encodes the id, so a hostile id cannot break out of the path', async () => {
+    const { fn, calls } = fakeFetch(200);
+    await transportOn(fn).send(checklist({ checklistId: 'CL/../admin', kind: 'closing', items: [] }));
+    expect(calls[0]?.url).toBe('https://api.example.test/v1/hr/workforce/checklists/CL%2F..%2Fadmin/synced');
+  });
+
+  it('carries the completion\'s own idempotency key, so a re-synced completion reconciles once', async () => {
+    const { fn, calls } = fakeFetch(200);
+    await transportOn(fn).send(checklist({ checklistId: 'CL1', kind: 'closing', items: [] }));
+    expect((calls[0]?.init.headers as Record<string, string>)['idempotency-key']).toBe('edge-completion-t1-CL1');
+  });
+
+  it('REJECTS a completion with no id — there is no path to address, so it is kept for a person', async () => {
+    const noChecklist = await transportOn(fakeFetch(200).fn).send(checklist({ kind: 'closing', items: [] }));
+    expect(noChecklist.status).toBe('rejected');
+    const noTask = await transportOn(fakeFetch(200).fn).send(taskDone({ doneBy: 'Meena' }));
+    expect(noTask.status).toBe('rejected');
+  });
+});
+
 describe('retryable versus rejected — the distinction that decides whether a sale survives', () => {
   it('treats a TIMEOUT as retryable, because a slow line says nothing about the sale', async () => {
     // A shop on a rural line times out several times a day. This is the branch that decides
