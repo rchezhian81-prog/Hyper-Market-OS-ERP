@@ -44,6 +44,13 @@ export interface AttributionResult {
   readonly estimates: readonly SaleBatchEstimate[];
   /** Whole units across all un-captured batch-tracked sales that no recorded batch could cover. */
   readonly unattributedQty: number;
+  /**
+   * Net units still on hand per batch AFTER every sale is applied — captured-batch lines (which consume
+   * their named batch) AND FIFO-estimated lines alike. This is the single source of net-on-hand: `estimates`
+   * alone omits captured-batch consumption, so a reader that must know what remains reads this, not `estimates`.
+   * Keyed by batchId; a batch fully drawn reads 0. Floored at 0 (a sale never drives a batch negative).
+   */
+  readonly remainingByBatch: ReadonlyMap<string, number>;
 }
 
 export class InvalidAttribution extends Error {
@@ -133,5 +140,5 @@ export function attributeSalesFifo(input: {
     if (need > 0) unattributedQty += need; // no recorded batch could cover it — said, not invented
   }
 
-  return { estimates, unattributedQty };
+  return { estimates, unattributedQty, remainingByBatch: new Map(remaining) };
 }

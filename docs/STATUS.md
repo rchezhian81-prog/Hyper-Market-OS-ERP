@@ -5,6 +5,49 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Near-expiry stock reader over the cloud ledger (M10-FR-01 · ADR-0015 · PR-B) — the A03 foundation (14 September 2026)
+
+**Direction:** owner authorised continuous autonomous completion; this is the foundation piece for wiring the
+A03 Inventory agent (PR-C), built on the owner-ratified **ADR-0015** (persist GRN-captured batch expiry on the
+cloud stock ledger, cloud-side only — the offline signed-pack path is deliberately untouched).
+
+**Why this was blocked and now is not.** ADR-0006 kept batch **expiry** off the cloud ledger on purpose (it
+protects the offline till pack; FIFO-by-receipt is the FEFO proxy). That left the cloud with no way to answer
+"what is near expiry on the shelves NOW" — only the STATELESS `POST /v1/inventory/expiry-actions`, which needs
+the caller to supply the batches. ADR-0015 narrowly persists the expiry a GRN already captures, cloud-side, so
+the ledger can now answer it itself.
+
+**What changed (behaviour):**
+- **The ledger now carries expiry.** `services/inventory/src/index.ts` adds an optional `Movement.expiry?`
+  (cloud-only, documented per ADR-0015; valuation/recall/FEFO reads are unaffected). The GRN route
+  (`services/inventory/src/goods-receipt.ts`) threads the captured `l.expiry` onto the received inbound
+  movement. The offline path writes nothing new.
+- **A new stateful read:** `GET /v1/inventory/near-expiry?withinDays=&asOf=` (default window 7, asOf today).
+  It folds the tenant's own ledger — received batches (with their expiry), sales, wastage — and returns the
+  batches STILL on hand that are expired (→ dispose) or near expiry (→ markdown), earliest-expiry first, with
+  markdown/dispose counts. Read-only (**commits nothing**, P-05); gated `inventory.availability.read` (a
+  cashier is refused); `400 not_a_valid_window` on a bad window.
+- **The netting engine:** `packages/fefo/src/near-expiry.ts` `nearExpiryStock` composes the tested
+  `attributeSalesFifo` (net-on-hand per batch, ADR-0006 FIFO-by-receipt proxy) with the tested `expiryActions`
+  — so it acts on what is still on hand, not on what was ever received. A batch with no recorded expiry is
+  skipped (never guessed); a sold-through or wasted batch drops out.
+- **A real fix found while wiring:** `attributeSalesFifo` exposed sold quantities only via `estimates`, which
+  by design **omit captured-batch consumption** (a sale that named its own batch). Reading `estimates` alone
+  therefore over-stated on-hand for any till-captured batch. Added `remainingByBatch` (net-on-hand per batch,
+  reflecting BOTH captured-batch and FIFO-estimated draws, floored at zero); `nearExpiryStock` reads that.
+  Locked with a unit regression at the engine and a captured-batch case in the near-expiry engine test.
+
+**Where it lives:** `packages/fefo/src/{attribute-sales,near-expiry}.ts`, `services/inventory/src/near-expiry.ts`,
+`services/inventory/src/goods-receipt.ts`, `services/inventory/src/index.ts`; adapter + route in
+`services/api/src/{adapters,main}.ts` (`nearExpiryAdapter` folds `InventoryMoved`/`SaleCommitted`).
+
+**Evidence:** `tests/integration/inventory-near-expiry.test.ts` (4 — markdown net-of-sales, dispose expired,
+far-off + sold-through excluded, window/RBAC), `tests/unit/fefo-near-expiry.test.ts` (9),
+`tests/unit/fefo-attribute-sales.test.ts` (8, incl. the `remainingByBatch` regression). **No completion-% change
+— this is the reader/foundation; the A03 agent wiring (PR-C) is the rung it enables.**
+
+---
+
 ## Security/Fraud agent (A07) — prioritise-investigations leg wired, PARTIALLY_WIRED → WIRED (14 September 2026)
 
 **Direction:** owner authorised continuous autonomous completion. Next deterministic agent after A06.

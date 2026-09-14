@@ -52,7 +52,8 @@ import { RecallRegistry, type RecallRecord } from '../../../packages/traceabilit
 import type { SalesHistoryDeps } from '../../inventory/src/sales-history';
 import type { SoldLine } from '../../../packages/demand/src/sales-history';
 import type { OutboundLotRecord } from '../../../packages/quality/src/index';
-import { attributeSalesFifo, type BatchReceipt, type HistoricalSaleLine } from '../../../packages/fefo/src/index';
+import { attributeSalesFifo, nearExpiryStock, type BatchReceipt, type HistoricalSaleLine, type ReceiptWithExpiry, type SaleForNetOnHand } from '../../../packages/fefo/src/index';
+import type { NearExpiryDeps } from '../../inventory/src/near-expiry';
 import type { ReturnsDeps, ReturnRecord, RecordedRefund, OriginalSale, RecordedReturn } from '../../pos/src/returns';
 import type { CashDeps, RecordedCashMovement } from '../../pos/src/cash';
 import type { StoredCashMovement } from '../../../packages/cash/src/index';
@@ -1662,6 +1663,54 @@ export function lotTraceAdapter(input: { readonly store: EventStore }): LotTrace
       }
 
       return [...captured, ...estimated];
+    },
+  };
+}
+
+/**
+ * Near-expiry stock (M10-FR-01 · A03 · ADR-0015). Folds the store's own ledger into the batches on hand now
+ * that are expired (dispose) or near expiry (markdown): received batches carry their expiry (ADR-0015), what
+ * has sold is estimated FIFO-by-receipt (ADR-0006) and netted off, and wastage is subtracted. A pure READ,
+ * reusing the same tested `nearExpiryStock`/`attributeSalesFifo`/`expiryActions` engines — no second copy of
+ * the rules. The universe of batch-tracked products is exactly those with a received batch, so no catalogue
+ * lookup is needed and a sale of a non-batch product is ignored.
+ */
+export function nearExpiryAdapter(input: { readonly store: EventStore; readonly now: () => string }): NearExpiryDeps {
+  return {
+    now: input.now,
+    nearExpiry: async (tenantId, opts) => {
+      const moves = (await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' })).map((e) => payloadOf<Movement>(e));
+      const receipts: ReceiptWithExpiry[] = moves
+        .filter((m) => m.kind === 'received' && typeof m.batchId === 'string' && m.batchId !== '')
+        .map((m) => ({
+          batchId: m.batchId as string,
+          productId: m.productId,
+          receivedDate: m.occurredAt.slice(0, 10),
+          qty: m.quantityMinor,
+          ...(typeof m.expiry === 'string' && m.expiry !== '' ? { expiry: m.expiry } : {}),
+        }));
+      if (receipts.length === 0) return [];
+      const wastage = moves
+        .filter((m) => m.kind === 'wasted' && typeof m.batchId === 'string' && m.batchId !== '')
+        .map((m) => ({ batchId: m.batchId as string, qty: m.quantityMinor }));
+      // Sales only matter for products we actually received a batch of (those are the batch-tracked ones).
+      const receivedProducts = new Set(receipts.map((r) => r.productId));
+      const sales = await allOf<IncomingSale>(input.store, tenantId, STREAM.sales, 'SaleCommitted');
+      const saleLines: SaleForNetOnHand[] = [];
+      for (const sale of sales) {
+        for (const line of sale.lines ?? []) {
+          if (!receivedProducts.has(line.productId)) continue;
+          saleLines.push({
+            saleId: sale.saleId,
+            soldDate: sale.tradingDay,
+            qty: line.quantityMinor,
+            batchTracked: true,
+            productId: line.productId,
+            ...(typeof line.batchId === 'string' && line.batchId !== '' ? { capturedBatchId: line.batchId } : {}),
+          });
+        }
+      }
+      return nearExpiryStock({ receipts, sales: saleLines, wastage, asOf: opts.asOf, nearExpiryDays: opts.nearExpiryDays });
     },
   };
 }
