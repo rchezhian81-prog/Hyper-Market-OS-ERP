@@ -5,6 +5,26 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## ESS screen build (owner-directed: rota + payslip) — data sources landing (14 September 2026)
+
+Owner asked to build the ESS (employee self-service) screen showing staff their **rota** and **payslip**.
+Building it in disciplined slices, each its own PR:
+- **PR-H1 (#392, merged)** — `GET /v1/hr/workforce/my-roster`: an employee's own shifts from the durable roster
+  store, self-scoped, gated `payroll.ess.self`.
+- **PR-H2 (this)** — the **durable issued-payslip store**: `POST /v1/hr/payroll/payslips/:employeeId/:period`
+  (HR issues, confidential) + `GET /v1/hr/payroll/my-payslip` (the employee's own latest, self-redacted by the
+  tested `employeeSelfView`, gated `payroll.ess.self`) + `GET …/payslips/:employeeId` (HR review). Event-sourced
+  latest-per-(employeeId,period) on `STREAM.payroll`; survives a restart. `services/finance/src/payslip-store.ts`
+  + `payslipStoreAdapter`. `tests/integration/payslip-store.test.ts` (3). No completion-% change.
+- **PR-H3 (next)** — the offline `/ess` web-erp screen reading both my-roster + my-payslip, bilingual EN/TA,
+  a11y, following the category-policy screen pattern (session model + shell + edge screen-data + SW + nav +
+  browser-entry live-fetch-with-sample-fallback + usable-screen guardrail + offline/a11y e2e).
+
+Note: a demo-only `/my-payslip` screen already exists; the new `/ess` screen is the single self-service surface
+showing rota + payslip and reads the real (now durable) data.
+
+---
+
 ## Session close — 14 September 2026 (autonomous completion run)
 
 **Delivered this session (six increments, all merged green through full CI, one increment per PR):**
