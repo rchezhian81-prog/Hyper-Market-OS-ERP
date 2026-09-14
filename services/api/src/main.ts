@@ -381,7 +381,7 @@ export function buildSurface(deps: {
           ...dataExportAdapter({ store, now }),
         }),
     ...supplierPortalRoutes(store === undefined ? {
-      partner: empty(undefined), submissions: empty([]), statementLines: empty([]), opening: empty(0),
+      partner: empty(undefined), partnerForUser: empty(undefined), submissions: empty([]), statementLines: empty([]), opening: empty(0),
       recordPartner: () => {}, recordSubmission: () => {}, recordStatementLine: () => {}, recordOpening: () => {},
       recordAudit: () => {}, auditEntries: empty([]), now,
     } : supplierPortalAdapter({ store, now })),

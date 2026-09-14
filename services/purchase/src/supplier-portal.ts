@@ -11,9 +11,9 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
-  acceptSubmission, checkPartnerCompliance, buildStatement, auditPartnerAction, findProbing,
+  acceptSubmission, checkPartnerCompliance, buildStatement, auditPartnerAction, findProbing, scopeToPartner,
   type PortalGrant, type SubmissionKind, type PartnerDocument, type PartnerDocumentKind, type StatementLine,
-  type PartnerAuditEntry,
+  type PartnerAuditEntry, type PartnerSession,
 } from '../../../packages/supplier-portal/src/index';
 
 export type { PartnerDocument, StatementLine, PartnerAuditEntry } from '../../../packages/supplier-portal/src/index';
@@ -38,6 +38,16 @@ export interface PartnerConfig {
   readonly grants: readonly PortalGrant[];
   readonly documents: readonly PartnerDocument[];
   readonly requiredDocuments: readonly PartnerDocumentKind[];
+  /**
+   * The user id(s) that ARE this supplier's portal login(s) — the buyer binds them here (M24-FR-01, §35).
+   *
+   * This is the ONLY place a user is bound to a partner, and it is set by the BUYER configuring the
+   * partner, never by the supplier. A supplier-facing read then derives its partner id from this binding
+   * (the adapter folds it into a login index), so the partner id it is scoped to comes from the
+   * authenticated session, not from anything the supplier's request carries. Optional (default none) so a
+   * partner with no portal login yet is still configurable.
+   */
+  readonly logins: readonly string[];
 }
 
 /** Read a partner's documents from a payload, stamping the partner id from the PATH — never the body,
@@ -75,6 +85,12 @@ export interface SubmissionRecord {
 
 export interface SupplierPortalDeps {
   readonly partner: (tenantId: string, partnerId: string) => Promise<PartnerConfig | undefined> | PartnerConfig | undefined;
+  /**
+   * Which partner (if any) this authenticated user is a portal login for (M24-FR-01, §35). Resolved from
+   * the stored `logins` binding, NEVER from the request — this is what makes "a supplier sees only its own
+   * data" a server-side fact. `undefined` when the login is bound to no partner (not a supplier login).
+   */
+  readonly partnerForUser: (tenantId: string, userId: string) => Promise<string | undefined> | string | undefined;
   readonly submissions: (tenantId: string, partnerId: string) => Promise<readonly SubmissionRecord[]> | readonly SubmissionRecord[];
   readonly statementLines: (tenantId: string, partnerId: string) => Promise<readonly StatementLine[]> | readonly StatementLine[];
   readonly opening: (tenantId: string, partnerId: string) => Promise<number> | number;
@@ -91,6 +107,52 @@ export interface SupplierPortalDeps {
 }
 
 export function supplierPortalRoutes(deps: SupplierPortalDeps): readonly Route[] {
+  // Resolve the authenticated caller's OWN supplier session for a /me read (M24-FR-01, §35). The partner
+  // id comes from the stored login binding, never the request; a login bound to no partner is refused as
+  // "not a supplier login". Returns the session the scoped read runs against.
+  const meSession = async (tenantId: string, userId: string): Promise<PartnerSession> => {
+    const partnerId = await deps.partnerForUser(tenantId, userId);
+    if (partnerId === undefined) {
+      throw apiError(403, {
+        code: 'not_a_supplier_login',
+        whatHappened: 'This login is not bound to any supplier, so it has no supplier portal data of its own.',
+        wasItSaved: 'not_saved',
+        nextSafeAction: 'A buyer binds a login to a supplier when they configure the partner (the partner\'s "logins").',
+      });
+    }
+    const config = await deps.partner(tenantId, partnerId);
+    if (config === undefined) throw notFound(`supplier-portal partner ${partnerId}`);
+    return { sessionId: `portal-${partnerId}`, partnerId, tenantId, userId, grants: config.grants };
+  };
+
+  // Turn a scope decision into either the caller's own rows or a recorded refusal (M24-FR-01/04). A
+  // request naming another partner is a security event: recorded on the tenant's audit trail (so
+  // `findProbing` surfaces a pattern of it — hard rule #6) and refused 403 — NOT silently emptied. A
+  // login without the read grant is a permission answer, also 403, never an empty list read as "nothing".
+  const scopedOrRefused = async <T extends { readonly partnerId: string; readonly tenantId?: string }>(
+    tenantId: string, session: PartnerSession, rows: readonly T[], grant: PortalGrant,
+    requestedPartnerId: string | undefined, action: string,
+  ): Promise<readonly T[]> => {
+    const decision = scopeToPartner({ session, rows, grant, ...(requestedPartnerId === undefined ? {} : { requestedPartnerId }) });
+    if (decision.securityEvent) {
+      const entry = auditPartnerAction({ session, action, outcome: decision.outcome, detail: decision.detail, at: deps.now() });
+      // Keyed on the FOREIGN partner asked for, so repeated distinct probes each count (a pattern) while
+      // an identical retry collapses to one entry.
+      await deps.recordAudit(tenantId, entry, `${session.partnerId}-${session.userId}-${action}-${requestedPartnerId ?? ''}`);
+    }
+    if (!decision.allowed) {
+      throw apiError(403, {
+        code: decision.outcome,
+        whatHappened: decision.detail,
+        wasItSaved: 'not_saved',
+        nextSafeAction: decision.outcome === 'not_your_data'
+          ? 'You can only see your own data. This attempt was recorded.'
+          : 'Ask the buyer to grant this on your portal login.',
+      });
+    }
+    return decision.rows;
+  };
+
   return [
     {
       // Configure a partner's grants, compliance documents and the document kinds this tenant requires.
@@ -99,21 +161,23 @@ export function supplierPortalRoutes(deps: SupplierPortalDeps): readonly Route[]
       permission: 'supplier.portal.manage', idempotent: true,
       handler: async (ctx) => {
         const partnerId = ctx.params['partnerId'] ?? '';
-        const b = (ctx.body ?? {}) as { grants?: unknown; documents?: unknown; requiredDocuments?: unknown };
+        const b = (ctx.body ?? {}) as { grants?: unknown; documents?: unknown; requiredDocuments?: unknown; logins?: unknown };
         const documents = readDocuments(b.documents, partnerId);
         if (!Array.isArray(b.grants) || !b.grants.every((g) => (GRANTS as readonly string[]).includes(g as string))
           || documents === undefined
-          || (b.requiredDocuments !== undefined && (!Array.isArray(b.requiredDocuments) || !b.requiredDocuments.every((k) => DOCUMENT_KINDS.includes(k as PartnerDocumentKind))))) {
+          || (b.requiredDocuments !== undefined && (!Array.isArray(b.requiredDocuments) || !b.requiredDocuments.every((k) => DOCUMENT_KINDS.includes(k as PartnerDocumentKind))))
+          || (b.logins !== undefined && (!Array.isArray(b.logins) || !b.logins.every((u) => isStr(u))))) {
           throw apiError(400, {
             code: 'not_readable_as_a_partner',
-            whatHappened: 'A partner needs a list of valid portal grants, optional compliance documents ({ documentId, kind, reference, validFrom, validUntil, verifiedBy? }) and the document kinds it requires.',
+            whatHappened: 'A partner needs a list of valid portal grants, optional compliance documents ({ documentId, kind, reference, validFrom, validUntil, verifiedBy? }), the document kinds it requires, and the user id(s) that are its portal logins.',
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Send { "grants": [...], "documents": [...], "requiredDocuments": [...] }. Nothing was configured.',
+            nextSafeAction: 'Send { "grants": [...], "documents": [...], "requiredDocuments": [...], "logins": [...] }. Nothing was configured.',
           });
         }
         const requiredDocuments = (b.requiredDocuments as PartnerDocumentKind[] | undefined) ?? [];
-        await deps.recordPartner(ctx.tenantId, partnerId, { grants: b.grants as PortalGrant[], documents, requiredDocuments }, deps.now());
-        return { status: 201, body: { partnerId, grants: b.grants, documents: documents.length, requiredDocuments } };
+        const logins = (b.logins as string[] | undefined) ?? [];
+        await deps.recordPartner(ctx.tenantId, partnerId, { grants: b.grants as PortalGrant[], documents, requiredDocuments, logins }, deps.now());
+        return { status: 201, body: { partnerId, grants: b.grants, documents: documents.length, requiredDocuments, logins: logins.length } };
       },
     },
     {
@@ -282,6 +346,44 @@ export function supplierPortalRoutes(deps: SupplierPortalDeps): readonly Route[]
         const threshold = Number.isInteger(raw) && raw > 0 ? raw : 3;
         const probing = findProbing(await deps.auditEntries(ctx.tenantId), threshold);
         return { status: 200, body: { probing, threshold, count: probing.length, asAt: deps.now() } };
+      },
+    },
+    {
+      // A supplier reads its OWN submissions (M24-FR-01, §35). The partner id is the caller's bound
+      // partner from the SESSION, never a path or body — there is no `:partnerId` here to change. A
+      // request that names another partner via `?partnerId=` is refused AND recorded (a competitor probe
+      // is not a UI mistake — it feeds `findProbing`). Gated `supplier.portal.self`: a supplier login sees
+      // its own, and a buyer (who does not hold it) uses the partner-scoped review routes above instead.
+      api: 'API-03', method: 'GET', path: '/v1/supplier-portal/me/submissions',
+      permission: 'supplier.portal.self',
+      handler: async (ctx) => {
+        const session = await meSession(ctx.tenantId, ctx.userId);
+        const requested = isStr(ctx.query['partnerId']) ? ctx.query['partnerId'] : undefined;
+        const rows = await scopedOrRefused(ctx.tenantId, session, await deps.submissions(ctx.tenantId, session.partnerId), 'view_orders', requested, 'read:submissions');
+        return {
+          status: 200,
+          body: { partnerId: session.partnerId, submissions: rows.map((s) => ({ submissionId: s.submissionId, kind: s.kind, requiresReview: s.requiresReview, receivedAt: s.receivedAt })), asAt: deps.now() },
+        };
+      },
+    },
+    {
+      // A supplier reads its OWN statement (M24-FR-01, §35) — the closing balance built from its own lines
+      // only, disputed shown separately, `accessible:false` (not a zero) when the login lacks the grant.
+      // Same session-scoping as above; a `?partnerId=` naming another partner is refused and recorded.
+      api: 'API-03', method: 'GET', path: '/v1/supplier-portal/me/statement',
+      permission: 'supplier.portal.self',
+      handler: async (ctx) => {
+        const session = await meSession(ctx.tenantId, ctx.userId);
+        const requested = isStr(ctx.query['partnerId']) ? ctx.query['partnerId'] : undefined;
+        // Probe check first (records + refuses a cross-partner ask) — buildStatement scopes internally too,
+        // but only the explicit requested-partner comparison turns a probe into the recorded security event.
+        await scopedOrRefused(ctx.tenantId, session, await deps.statementLines(ctx.tenantId, session.partnerId), 'view_statement', requested, 'read:statement');
+        const statement = buildStatement({
+          session,
+          lines: await deps.statementLines(ctx.tenantId, session.partnerId),
+          openingMinor: await deps.opening(ctx.tenantId, session.partnerId),
+        });
+        return { status: 200, body: statement };
       },
     },
   ];
