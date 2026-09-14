@@ -5,6 +5,41 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M25-FR-02 offline completion queue CLOSED — edge half (slice 2b) → M25 re-rated WIRED (14 September 2026)
+
+The edge half landed, closing the offline-first gap the owner directed (option B) and completing the whole
+M25-FR-02 offline task/checklist completion queue.
+
+**What slice 2b built (composition root, no new domain surface):**
+- A **`commitCompletion` seam on `EdgeNode`** (`edge/store-edge/src/index.ts`) — the third seam beside `commit`
+  (sale) and `commitReturn` (refund). A manager's offline checklist or task tick-off commits to the box's OWN
+  durable log then queues on its OWN outbox. The on-disk record is an explicit `{completionKind, body}` envelope,
+  so the restart re-queue routes a checklist vs a task deterministically without sniffing its shape (P-08). Not
+  money, so no operation-identity guard — the cloud `/synced` routes are idempotent by the event's own key and
+  fold latest-per-id, and the ledger is append-only regardless (hard rule #6).
+- A **third `SyncPipeline` + `SyncAgent`** in `edge/store-edge/src/main.ts` beside sales and returns, with its own
+  `completions.log` / `sync-cursor-completions` / `dead-letters-completions` — **never shared** with sales or
+  returns (hard rule #1). `drainAndSettle` and `stop` extended to the completions leg; the no-cloud branch too.
+- `tests/integration/offline-completions-reach-the-cloud-through-the-edge.test.ts` (5) drives the real `startEdge`
+  → real `SyncAgent` + `httpTransport` → real cloud API: a completion committed with the cable OUT is durable,
+  survives a box restart (re-queued from the log), reaches the cloud when the link returns, and the sale / refund /
+  completion logs stay SEPARATE (none re-queued as another). Two inline `EdgeNode` test stubs updated for the new seam.
+
+**Honest re-rate — M25 PARTIALLY_WIRED (40) → WIRED (60).** This is the one clause the prior accounting explicitly
+held M25 at PARTIALLY_WIRED for ("no completion-% change until the edge half lands and the offline acceptance is
+genuinely met"). Every M25 FR now has a live surface backed by a durable store and integration tests (FR-01
+roster/labour-cost, FR-02 checklist + task-routing + **offline queue**, FR-03 task-gate/incentive/certification,
+FR-04 SOP-ack; ESS screen E2E). Deliberately held to **WIRED, not INTEGRATION_TESTED (75)**, at the module level
+without a per-FR integration-coverage audit + workforce-screen write-path e2e — the never-inflate posture. Headline
+**48.5% → 48.7%** (numerator +20 for M25, 5045 → 5065 of 10400). Module ladder + summary updated to match (the
+`the-module-ladder-matches-the-ledger` guardrail is what would catch any drift).
+
+The store's completion-sync token is a **completion.sync holder** (a manager-authority identity, not the cashier
+the sale/refund pipelines can relay under), because slice 1 deliberately withholds `workforce.completion.sync` from
+the cashier — a cashier must not sign off a manager's closing checklist (P-04).
+
+---
+
 ## M25-FR-02 offline completion sync — cloud half (slice 1) (14 September 2026)
 
 Owner directed closing the real offline-first gap (option B): checklists/tasks must **complete offline and sync**

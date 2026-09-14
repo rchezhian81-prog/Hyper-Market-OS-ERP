@@ -21,6 +21,7 @@ import { makeEvent } from '../../../packages/contracts/src/event';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { toCloudSale } from './cloud-sale';
 import { toCloudReturn } from './cloud-return';
+import { toCloudChecklist, toCloudTaskCompletion } from './cloud-completion';
 import { canonicalHash, type IdempotencyGuard } from './idempotency';
 import type { ReturnEntitlement, EntitlementLine } from './entitlement';
 import type { SaleLookupResult } from './receipt-lookup';
@@ -40,6 +41,23 @@ export interface EdgeNode {
    * can never be re-queued as a sale on restart, and the sale path is untouched by its existence.
    */
   readonly commitReturn: (returnId: string, record: string) => Promise<CommitOutcome>;
+  /**
+   * Commit an offline CHECKLIST or TASK completion to the local disk, then queue it for the cloud
+   * (M25-FR-02, §31). The third seam, beside `commit` and `commitReturn` and deliberately separate
+   * from both: a manager opens or closes the shop with the cable out, and that governance evidence is
+   * durable before it is called done, then carried up on its own when the line returns — never lost,
+   * and never re-queued as a sale or a refund. It writes to its OWN durable log and its OWN outbox
+   * (hard rule #1). `completionKind` names which cloud contract the record speaks — a checklist or a
+   * task — so the restart re-queue routes it without having to guess from its shape (P-08). Not money,
+   * so no operation-identity guard: the cloud's synced routes are idempotent by the event's own key and
+   * fold latest-per-id, and the ledger is append-only regardless (hard rule #6), so a re-delivery
+   * settles to one record on its own.
+   */
+  readonly commitCompletion: (
+    completionKind: 'checklist' | 'task',
+    completionId: string,
+    record: string,
+  ) => Promise<CommitOutcome>;
   /**
    * Look up a bill THIS lane rang, by its receipt number or sale id, for the refund screen
    * (M13-FR-01, §31). Returns the original sale plus the return/refund history against it — read
@@ -78,6 +96,17 @@ export function createEdgeNode(input: {
   readonly returnsLog?: DurableLog;
   /** Where a committed RETURN is queued for the cloud — the return pipeline's own outbox. */
   readonly returnsOutbox?: SyncOutbox;
+  /**
+   * The COMPLETION's own durable log — separate from the sale and return logs on purpose (M25-FR-02).
+   *
+   * A checklist/task completion must never land in the sale or return log: each log's restart re-queue
+   * reads every record as its own kind, so a completion among sales would be re-sent to `/v1/sales` as
+   * a broken sale. Its own log keeps the three pipelines independent (hard rule #1). `commitCompletion`
+   * refuses (durably, before the completion is called done) when it is not configured.
+   */
+  readonly completionsLog?: DurableLog;
+  /** Where a committed COMPLETION is queued for the cloud — the completion pipeline's own outbox. */
+  readonly completionsOutbox?: SyncOutbox;
   /**
    * Operation-identity guard for refunds (RR-F03). Rebuilt from the durable returns log at boot and
    * consulted before every refund write: an identical retry returns the original outcome with no new
@@ -341,6 +370,52 @@ export function createEdgeNode(input: {
       } finally {
         returnsInFlight.delete(returnId);
       }
+    },
+
+    commitCompletion: async (completionKind, completionId, record) => {
+      // Configured on every real edge; guarded so a mis-wired deployment refuses the completion BEFORE
+      // it is called done (a report a person can act on) rather than losing it silently after.
+      if (input.completionsLog === undefined) {
+        return {
+          committed: false,
+          refusedBecause: 'could_not_write_durably',
+          detail: 'this edge has no completions log configured, so a checklist/task completion cannot be saved durably',
+          laneMessage: 'This lane cannot record a checklist or task completion right now. Tell the manager.',
+        };
+      }
+
+      // Store an explicit envelope — the kind, then the record — so the restart re-queue routes a
+      // checklist as a checklist and a task as a task without sniffing the record's shape (P-08). The
+      // envelope IS the box's own evidence of what it committed; it invents no domain fact. A record
+      // that will not parse is kept verbatim so nothing is dropped; the transport dead-letters it by
+      // name when it has no id to address (hard rule #6).
+      let body: unknown;
+      try { body = JSON.parse(record) as unknown; } catch { body = record; }
+      const envelope = JSON.stringify({ completionKind, body });
+
+      // The durable write, then the queue — after the write, never before, the same ordering as the
+      // sale and refund seams: a completion is durable before anything is told it happened.
+      const outcome = await commitLocally({
+        saleId: completionId, record: envelope, log: input.completionsLog,
+        ...(input.reserveBytes === undefined ? {} : { reserveBytes: input.reserveBytes }),
+      });
+      if (outcome.committed && input.completionsOutbox !== undefined) {
+        input.completionsOutbox.enqueue(makeEvent({
+          id: `edge-completion-${completionKind}-${completionId}`,
+          type: completionKind === 'checklist' ? 'ChecklistCompleted' : 'TaskCompleted',
+          occurredAt: new Date().toISOString(),
+          // The completion's own id, minted at the lane. Every retry carries this same key, so a resend
+          // collapses to one record at the cloud (§31.1). The kind is in the key so a checklist and a
+          // task that happen to share an id string never collide.
+          idempotencyKey: `edge-completion-${input.tenantId}-${completionKind}-${completionId}`,
+          source: 'edge/lane',
+          // Translated to the cloud's synced-completion contract before it leaves. The route template
+          // reads `checklistId`/`taskId` from the payload to address the record; the cloud re-verifies
+          // the relayed signer and records into the SAME durable store the online routes use.
+          payload: completionKind === 'checklist' ? toCloudChecklist(body) : toCloudTaskCompletion(body),
+        }));
+      }
+      return outcome;
     },
 
     // Read-only, off the money path: resolve a bill this lane rang for the refund screen. Delegates

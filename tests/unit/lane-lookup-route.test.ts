@@ -25,6 +25,7 @@ const stubNode = (result: SaleLookupResult | undefined): EdgeNode => ({
   pack: () => undefined,
   commit: async (id) => ({ committed: true, saleId: id, laneMessage: 'saved' } as never),
   commitReturn: async (id) => ({ committed: true, returnId: id, laneMessage: 'saved' } as never),
+  commitCompletion: async (_kind, id) => ({ committed: true, completionId: id, laneMessage: 'saved' } as never),
   lookupSale: async (receipt) => { lookedUpWith = receipt; return result; },
   takePack: () => ({ accepted: true, staffMessage: '' }),
 });
