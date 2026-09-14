@@ -852,6 +852,9 @@ export function buildSurface(deps: {
       // ...and the loss-prevention investigation cases, for the Security/Fraud agent (A07) — the same
       // tested LP case fold the manager's worklist reads, so A07 prioritises the same open cases.
       investigations: (t) => lpCasesAdapter({ store, now }).cases(t),
+      // ...and the near-expiry stock, for the Inventory agent (A03) — the SAME tested reader the
+      // /v1/inventory/near-expiry route uses, so A03 suggests markdowns/disposals over the same batches.
+      nearExpiry: (t, opts) => nearExpiryAdapter({ store, now }).nearExpiry(t, opts),
     })),
   ];
 }

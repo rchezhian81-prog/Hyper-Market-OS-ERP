@@ -265,7 +265,7 @@ per-item evidence and any external blocker live in the ledger. Names are from `d
 | D14 | Hardware/integration | PARTIALLY WIRED |
 | A01 | Owner Intelligence | PARTIALLY WIRED |
 | A02 | Purchase | PARTIALLY WIRED |
-| A03 | Inventory | PARTIALLY WIRED |
+| A03 | Inventory | WIRED |
 | A04 | Customer Shopping | PARTIALLY WIRED |
 | A05 | Service | ENGINE ONLY |
 | A06 | Operations | WIRED |

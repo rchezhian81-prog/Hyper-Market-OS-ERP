@@ -52,7 +52,7 @@ import { RecallRegistry, type RecallRecord } from '../../../packages/traceabilit
 import type { SalesHistoryDeps } from '../../inventory/src/sales-history';
 import type { SoldLine } from '../../../packages/demand/src/sales-history';
 import type { OutboundLotRecord } from '../../../packages/quality/src/index';
-import { attributeSalesFifo, nearExpiryStock, type BatchReceipt, type HistoricalSaleLine, type ReceiptWithExpiry, type SaleForNetOnHand } from '../../../packages/fefo/src/index';
+import { attributeSalesFifo, nearExpiryStock, type BatchReceipt, type HistoricalSaleLine, type ReceiptWithExpiry, type SaleForNetOnHand, type ExpiryActionItem } from '../../../packages/fefo/src/index';
 import type { NearExpiryDeps } from '../../inventory/src/near-expiry';
 import type { ReturnsDeps, ReturnRecord, RecordedRefund, OriginalSale, RecordedReturn } from '../../pos/src/returns';
 import type { CashDeps, RecordedCashMovement } from '../../pos/src/cash';
@@ -6459,6 +6459,35 @@ function investigationProposals(worklist: OpenCaseWorklist, now: string): Omit<P
   }));
 }
 
+/**
+ * Turn A03's near-expiry stock into DRAFT proposals — a markdown for a batch close to its use-by, a disposal
+ * for one already expired, worst-first (the order the tested `nearExpiryStock` already returns). Each cites the
+ * real batch on the cloud ledger (id, product, net-of-sales quantity on hand, expiry, days left) as evidence.
+ * A03 SUGGESTS; a **manager** commits the money action the proposal names — a markdown through the price-change
+ * approval path (`POST /v1/prices/changes`), a disposal through the write-off path — never the agent (hard rule
+ * #5 / P-05). A markdown is a price change and a disposal removes stock, so neither is ever committed here.
+ */
+function inventoryProposals(items: readonly ExpiryActionItem[], now: string): Omit<Proposal, 'committed'>[] {
+  return items.map((i): Omit<Proposal, 'committed'> => {
+    const dispose = i.action === 'dispose';
+    return {
+      proposalId: `inv-${i.action}:${i.batchId}`,
+      agent: 'A03',
+      summary: dispose
+        ? `Dispose batch ${i.batchId} of ${i.productId} — expired ${i.expiry}, ${i.qty} still on hand`
+        : `Mark down batch ${i.batchId} of ${i.productId} — expires ${i.expiry} in ${i.daysToExpiry} day(s), ${i.qty} on hand`,
+      // The governance action a manager commits — the AI only recommends it (hard rule #5).
+      wouldRequire: dispose ? 'POST /v1/inventory/write-off/:writeOffId' : 'POST /v1/prices/changes',
+      evidence: [{
+        source: 'near-expiry stock (cloud ledger)',
+        reference: i.batchId,
+        summary: `${i.productId} batch ${i.batchId}: ${i.qty} on hand, expiry ${i.expiry} (${i.status}, ${i.daysToExpiry} day(s) to expiry) → ${i.action}`,
+      }],
+      createdAt: now,
+    };
+  });
+}
+
 export function aiAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -6485,6 +6514,12 @@ export function aiAdapter(input: {
    * verbatim; the worklist ordering is the tested `buildOpenCaseWorklist`.
    */
   readonly investigations?: (tenantId: string) => Promise<readonly InvestigationCase[]> | readonly InvestigationCase[];
+  /**
+   * The tenant's near-expiry stock (M10-FR-01 · ADR-0015), for the Inventory agent (A03). Optional, same shape
+   * as the others: without it A03 suggests nothing. The tested `nearExpiryStock` fold over the cloud ledger —
+   * the SAME reader the `/v1/inventory/near-expiry` route uses (`nearExpiryAdapter(...).nearExpiry`).
+   */
+  readonly nearExpiry?: NearExpiryDeps['nearExpiry'];
 }): AiDeps {
   return {
     now: input.now,
@@ -6602,6 +6637,12 @@ export function aiAdapter(input: {
         if (input.investigations === undefined) return [];
         const worklist = buildOpenCaseWorklist(await input.investigations(tenantId));
         return investigationProposals(worklist, now);
+      }
+      // A03 Inventory — the near-expiry stock now on hand: mark down before it expires, dispose what already has.
+      if (agent === 'A03') {
+        if (input.nearExpiry === undefined) return [];
+        const items = await input.nearExpiry(tenantId, { asOf: now.slice(0, 10), nearExpiryDays: 7 });
+        return inventoryProposals(items, now);
       }
       return [];
     },
