@@ -78,6 +78,8 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Employee self-service — own payslip only. Gated on `payroll.ess.self`, which ordinary staff MAY hold for
   // themselves (it is own-record only; the engine refuses any other employee), so it is a separate item.
   { id: 'my-payslip', label: 'My payslip', path: '/my-payslip', requires: 'payroll.ess.self', group: 'Payroll' },
+  // Employee self-service — my rota + my payslip on one screen. Same own-record grant `payroll.ess.self`.
+  { id: 'ess', label: 'My self-service', path: '/ess', requires: 'payroll.ess.self', group: 'Payroll' },
 
   { id: 'users', label: 'Users & roles', path: '/admin/users', requires: 'admin.users.manage', group: 'Administration' },
   { id: 'store-setup', label: 'Store setup', path: '/admin/setup', requires: 'platform.setup.read', group: 'Administration' },

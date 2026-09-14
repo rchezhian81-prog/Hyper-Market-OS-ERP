@@ -40,6 +40,7 @@ const SCREENS = [
   { name: 'the waste review', dir: 'web-erp', view: 'waste.js', page: 'waste.html', bundle: 'web-erp.bundle.js' },
   { name: 'the products to publish', dir: 'web-erp', view: 'product-publish-review.js', page: 'product-publish-review.html', bundle: 'web-erp.bundle.js' },
   { name: 'the data quality inbox', dir: 'web-erp', view: 'data-quality.js', page: 'data-quality.html', bundle: 'web-erp.bundle.js' },
+  { name: 'the self-service', dir: 'web-erp', view: 'ess.js', page: 'ess.html', bundle: 'web-erp.bundle.js' },
   { name: 'the devices', dir: 'web-erp', view: 'fleet.js', page: 'fleet.html', bundle: 'web-erp.bundle.js' },
   { name: 'the store setup', dir: 'web-erp', view: 'setup.js', page: 'setup.html', bundle: 'web-erp.bundle.js' },
   { name: 'the owner', dir: 'owner-app', view: 'app.js', page: 'index.html', bundle: 'owner-app.bundle.js' },

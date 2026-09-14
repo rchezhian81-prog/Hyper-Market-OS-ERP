@@ -49,13 +49,13 @@ import {
   basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
-import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy } from './store-pack';
+import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackEssPolicy } from './store-pack';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'counts', 'product-publish-review', 'data-quality', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
+  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'counts', 'product-publish-review', 'data-quality', 'ess', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1349,6 +1349,18 @@ export function dataQualityPayload(input: ScreenInput): Record<string, unknown> 
   return payload;
 }
 
+/** Employee self-service (ESS) — only who is looking and what they hold; the rota and payslip come live from
+ *  the cloud (self-scoped), not the pack. Null when the box was not told who is on the screen. */
+export function essPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.essPolicy.known) return null;
+  const policy: PackEssPolicy = input.pack.essPolicy.value;
+
+  const payload: Record<string, unknown> = { permissions: policy.permissions };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+
+  return payload;
+}
+
 /**
  * The admin and security payload (M01 · M02 · M33 · M34 · D12).
  *
@@ -1498,6 +1510,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   fleet: 'fleetData',
   'product-publish-review': 'productPublishReviewData',
   'data-quality': 'dataQualityInboxData',
+  ess: 'essData',
   admin: 'adminData',
   ai: 'aiData',
   migration: 'migrationData',
@@ -1527,6 +1540,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   fleet: fleetPayload,
   'product-publish-review': productPublishReviewPayload,
   'data-quality': dataQualityPayload,
+  ess: essPayload,
   admin: adminPayload,
   ai: aiPayload,
   migration: migrationPayload,
