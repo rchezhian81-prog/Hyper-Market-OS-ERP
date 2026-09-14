@@ -44,6 +44,19 @@ describe('attributeSalesFifo — cloud best-estimate batch attribution (inc3b / 
     expect(estimates[0]!.batchId).toBe('B2');                        // B1 was consumed by the captured sale
   });
 
+  it('reports net remaining per batch — captured AND FIFO-estimated draws alike — floored at zero', () => {
+    // s-cap names B1 (takes all 3); s-est estimates B2 (takes 2 of 5). Remaining: B1 → 0, B2 → 3.
+    const { remainingByBatch } = attributeSalesFifo({
+      receipts,
+      sales: [
+        { saleId: 's-cap', soldDate: '2026-08-06', qty: 3, batchTracked: true, capturedBatchId: 'B1' },
+        { saleId: 's-est', soldDate: '2026-08-07', qty: 2, batchTracked: true },
+      ],
+    });
+    expect(remainingByBatch.get('B1')).toBe(0); // captured consumption IS reflected (unlike `estimates`)
+    expect(remainingByBatch.get('B2')).toBe(3);
+  });
+
   it('ignores a non-batch-tracked line entirely', () => {
     const { estimates } = attributeSalesFifo({ receipts, sales: [sale({ batchTracked: false })] });
     expect(estimates).toEqual([]);

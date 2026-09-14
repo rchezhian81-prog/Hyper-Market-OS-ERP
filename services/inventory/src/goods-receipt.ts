@@ -142,6 +142,8 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
             occurredAt: receivedAt,
             enteredBy: ctx.userId,
             ...(l.batchId !== null ? { batchId: l.batchId } : {}),
+            // Carry the captured batch expiry onto the ledger (ADR-0015) — cloud-only, feeds near-expiry reads.
+            ...(l.expiry !== null && l.expiry !== undefined ? { expiry: l.expiry } : {}),
             ...(costByLine.get(l.lineId) !== undefined ? { unitCostMinor: costByLine.get(l.lineId) } : {}),
           }));
         await deps.commit(ctx.tenantId, record, movements, ctx.idempotencyKey ?? grnId);

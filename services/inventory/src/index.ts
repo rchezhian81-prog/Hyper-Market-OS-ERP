@@ -66,6 +66,13 @@ export interface Movement {
   readonly uom: string;
   readonly occurredAt: string;
   readonly batchId?: string;
+  /**
+   * The batch's expiry date (YYYY-MM-DD), carried on a `received` movement from the goods receipt that
+   * captured it (ADR-0015). Cloud/back-office only — it does not touch the offline till path or the sale.
+   * Optional and absent by default; expiry-driven reads (near-expiry stock, A03 markdown) use it, and
+   * nothing else reads it, so valuation/recall are unaffected.
+   */
+  readonly expiry?: string;
   /** Required for `adjusted` and `wasted` — a quantity change with no reason is untraceable. */
   readonly reason?: string;
   readonly approvedBy?: string;
