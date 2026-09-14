@@ -104,8 +104,9 @@ import type { CertStoreDeps } from '../../finance/src/cert-store';
 import type { SopStoreDeps, Sop as WfSop } from '../../finance/src/sop-store';
 import type { AttendanceStoreDeps, AttendanceRecord as WfAttendance } from '../../finance/src/attendance-store';
 import type { ChecklistStoreDeps, StoredChecklist as WfChecklist } from '../../finance/src/checklist-store';
+import type { TaskStoreDeps, TaskDefinition as WfTaskDef, TaskCompletion as WfTaskDone } from '../../finance/src/task-store';
 import type { PayslipStoreDeps, IssuedPayslip } from '../../finance/src/payslip-store';
-import type { Employee as WfEmployee, ShiftRequirement as WfShift, ShiftAssignment as WfAssignment, Certification as WfCertification, SopAcknowledgement as WfSopAck } from '../../../packages/workforce/src/workforce';
+import type { Employee as WfEmployee, ShiftRequirement as WfShift, ShiftAssignment as WfAssignment, Certification as WfCertification, SopAcknowledgement as WfSopAck, DailyTask as WfDailyTask } from '../../../packages/workforce/src/workforce';
 import { foldPayRun, type PayRunEvent } from '../../../packages/payroll/src/index';
 import type { Gstr1SubmissionStoreDeps } from '../../finance/src/gstr1-submission-store';
 import { foldGstr1Submission, type Gstr1SubmissionEvent } from '../../../packages/finance/src/index';
@@ -1326,6 +1327,46 @@ export function checklistStoreAdapter(input: { readonly store: EventStore; reado
         if (c.checklistId === checklistId) found = c; // occurrence order → last wins
       }
       return found;
+    },
+  };
+}
+
+/**
+ * The durable daily-task routing + escalation store (M25-FR-02). A task DEFINITION and its COMPLETION append to
+ * the SAME tenant `workforce` stream, latest-per-taskId; the routed task list folds a task's definition with
+ * whether a completion exists (done/doneBy/doneAt merged in) and the tested `assessDailyTasks` decides pending /
+ * overdue / escalated — an overdue CRITICAL task escalates to the manager on duty (P-03).
+ */
+export function taskStoreAdapter(input: { readonly store: EventStore; readonly now: () => string }): TaskStoreDeps {
+  return {
+    now: input.now,
+    putTask: async (tenantId, def, key) => {
+      await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
+        id: `DailyTaskSet-${def.taskId}-${input.now()}`,
+        type: 'DailyTaskSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: def,
+      }));
+    },
+    completeTask: async (tenantId, completion, key) => {
+      await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
+        id: `DailyTaskCompletedSet-${completion.taskId}-${input.now()}`,
+        type: 'DailyTaskCompletedSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: completion,
+      }));
+    },
+    tasks: async (tenantId) => {
+      // Latest definition per taskId, latest completion per taskId; a task is done when a completion exists.
+      const defs = new Map<string, WfTaskDef>();
+      for (const d of await allOf<WfTaskDef>(input.store, tenantId, ROSTER_STREAM, 'DailyTaskSet')) defs.set(d.taskId, d);
+      const done = new Map<string, WfTaskDone>();
+      for (const c of await allOf<WfTaskDone>(input.store, tenantId, ROSTER_STREAM, 'DailyTaskCompletedSet')) done.set(c.taskId, c);
+      return [...defs.values()].map((d): WfDailyTask => {
+        const c = done.get(d.taskId);
+        return {
+          taskId: d.taskId, description: d.description, forRole: d.forRole, dueAt: d.dueAt, critical: d.critical,
+          ...(d.branchId === undefined ? {} : { branchId: d.branchId }),
+          done: c !== undefined,
+          ...(c === undefined ? {} : { doneBy: c.doneBy, doneAt: c.doneAt }),
+        };
+      });
     },
   };
 }

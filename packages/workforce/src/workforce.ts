@@ -442,3 +442,92 @@ export function sopStatus(input: {
     })
     .sort((a, b) => Number(a.upToDate) - Number(b.upToDate) || a.sopId.localeCompare(b.sopId));
 }
+
+export type TaskStatus = 'done' | 'pending' | 'overdue' | 'escalated';
+
+/** A daily task: what it is, the role it is ROUTED to, when it is due, whether it is critical, and its state. */
+export interface DailyTask {
+  readonly taskId: string;
+  readonly description: string;
+  /** The role this task is routed to — an opening task belongs to whoever opens, not everyone. */
+  readonly forRole: string;
+  readonly branchId?: string;
+  /** When it is due (ISO). */
+  readonly dueAt: string;
+  /** A critical task the shop cannot run without — when it goes overdue it ESCALATES, not merely nags. */
+  readonly critical: boolean;
+  readonly done: boolean;
+  readonly doneBy?: string;
+  readonly doneAt?: string;
+}
+
+export interface TaskAssessment {
+  readonly taskId: string;
+  readonly description: string;
+  readonly forRole: string;
+  readonly branchId?: string;
+  readonly critical: boolean;
+  readonly status: TaskStatus;
+  /** How many whole minutes past due, for an overdue/escalated task (absent otherwise). */
+  readonly overdueByMinutes?: number;
+  readonly detail: string;
+}
+
+export interface DailyTaskReport {
+  readonly assessments: readonly TaskAssessment[];
+  /** The subset that ESCALATED — a critical task past its due time, needing a manager now (P-03). */
+  readonly escalated: readonly TaskAssessment[];
+  /** Overdue non-critical tasks: worth attention, but not an escalation. */
+  readonly overdue: number;
+}
+
+/**
+ * Route the day's tasks to the right role and surface what has gone wrong (M25-FR-02).
+ *
+ * **A critical task past its due time ESCALATES; a non-critical one is merely overdue.** The
+ * distinction is the whole point of an escalation: if every late task shouted for a manager,
+ * the one that mattered — the chiller check, the float count — would be lost in the noise. A
+ * done task is done whenever it was done; the clock only bites the ones still open.
+ *
+ * Pure and deterministic: the caller supplies `now`, so the same tasks assessed at the same
+ * instant always read the same, and a test does not depend on the wall clock.
+ */
+export function assessDailyTasks(input: {
+  readonly tasks: readonly DailyTask[];
+  readonly now: string;
+}): DailyTaskReport {
+  const nowMs = new Date(input.now).getTime();
+
+  const assessments = input.tasks
+    .map((t): TaskAssessment => {
+      const base = {
+        taskId: t.taskId, description: t.description, forRole: t.forRole, critical: t.critical,
+        ...(t.branchId === undefined ? {} : { branchId: t.branchId }),
+      };
+      if (t.done) {
+        return { ...base, status: 'done', detail: `done${t.doneBy === undefined ? '' : ` by ${t.doneBy}`}` };
+      }
+      const dueMs = new Date(t.dueAt).getTime();
+      if (Number.isNaN(dueMs) || nowMs < dueMs) {
+        return { ...base, status: 'pending', detail: `due ${t.dueAt}` };
+      }
+      const overdueByMinutes = Math.floor((nowMs - dueMs) / 60_000);
+      if (t.critical) {
+        return {
+          ...base, status: 'escalated', overdueByMinutes,
+          detail: `CRITICAL and ${overdueByMinutes} minute(s) overdue — escalate to the manager on duty`,
+        };
+      }
+      return { ...base, status: 'overdue', overdueByMinutes, detail: `${overdueByMinutes} minute(s) overdue` };
+    })
+    // Worst first: escalated, then overdue, then pending, then done; ties by how late.
+    .sort((a, b) => rank(b.status) - rank(a.status) || (b.overdueByMinutes ?? 0) - (a.overdueByMinutes ?? 0) || a.taskId.localeCompare(b.taskId));
+
+  return {
+    assessments,
+    escalated: assessments.filter((a) => a.status === 'escalated'),
+    overdue: assessments.filter((a) => a.status === 'overdue').length,
+  };
+}
+
+const rank = (s: TaskStatus): number => (s === 'escalated' ? 3 : s === 'overdue' ? 2 : s === 'pending' ? 1 : 0);

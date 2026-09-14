@@ -7,10 +7,12 @@ import {
   computeIncentive,
   labourCost,
   sopStatus,
+  assessDailyTasks,
   type Employee,
   type Certification,
   type ShiftRequirement,
   type ChecklistItem,
+  type DailyTask,
 } from '../../packages/workforce/src/workforce';
 
 // M25-FR-01..04 acceptance: "ROSTER GAPS ARE VISIBLE by shift and role; a lapsed
@@ -360,5 +362,45 @@ describe('acknowledging v3 is NOT acknowledging v5 (M25-FR-04)', () => {
       acknowledgements: [{ sopId: 'sop-deli', version: 2, employeeId: 'e-1', acknowledgedAt: '2026-07-01T00:00:00Z' }],
     });
     expect(status.map((s) => s.sopId)).toEqual(['sop-cash', 'sop-deli']);
+  });
+});
+
+describe('an overdue CRITICAL task escalates; a non-critical one is merely overdue (M25-FR-02)', () => {
+  const task = (over: Partial<DailyTask>): DailyTask => ({
+    taskId: 't', description: 'a task', forRole: 'cashier', dueAt: '2026-09-14T06:00:00Z', critical: false, done: false, ...over,
+  });
+  const NOW = '2026-09-14T09:00:00Z'; // three hours after 06:00
+
+  it('a done task is done whatever the clock says', () => {
+    const r = assessDailyTasks({ tasks: [task({ taskId: 't1', done: true, doneBy: 'Meena', dueAt: '2026-09-14T06:00:00Z' })], now: NOW });
+    expect(r.assessments[0]).toMatchObject({ status: 'done' });
+    expect(r.escalated).toEqual([]);
+    expect(r.overdue).toBe(0);
+  });
+
+  it('not yet due is pending, not overdue', () => {
+    const r = assessDailyTasks({ tasks: [task({ taskId: 't1', dueAt: '2026-09-14T18:00:00Z' })], now: NOW });
+    expect(r.assessments[0]).toMatchObject({ status: 'pending' });
+  });
+
+  it('past due and CRITICAL escalates (with the minutes late); past due and non-critical is only overdue', () => {
+    const r = assessDailyTasks({
+      tasks: [
+        task({ taskId: 't-crit', description: 'Chiller temperature check', critical: true }),
+        task({ taskId: 't-mop', description: 'Mop the entrance', critical: false }),
+      ],
+      now: NOW,
+    });
+    // Worst first: the escalated one leads.
+    expect(r.assessments[0]).toMatchObject({ taskId: 't-crit', status: 'escalated', critical: true, overdueByMinutes: 180 });
+    expect(r.assessments[1]).toMatchObject({ taskId: 't-mop', status: 'overdue', overdueByMinutes: 180 });
+    expect(r.escalated.map((t) => t.taskId)).toEqual(['t-crit']); // only the critical one needs a manager now
+    expect(r.overdue).toBe(1); // the mop is overdue but does not escalate
+  });
+
+  it('a critical task completed before it went late does NOT escalate', () => {
+    const r = assessDailyTasks({ tasks: [task({ taskId: 't-crit', critical: true, done: true, doneBy: 'Ravi' })], now: NOW });
+    expect(r.assessments[0]).toMatchObject({ status: 'done' });
+    expect(r.escalated).toEqual([]);
   });
 });
