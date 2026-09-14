@@ -5,6 +5,23 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## A08 Data Quality inbox → E2E_VERIFIED (headline moved) (14 September 2026)
+
+Owner directed an E2E-verification increment ("go with B"). Chose A08, whose completion evidence named the
+exact gap: *"no browser/UAT e2e driving the inbox screen yet."* Built `tests/e2e/data-quality-dismiss-delivery.e2e.ts`
+— a real headless-browser test driving the `/data-quality` steward inbox's **dismiss** write-path against a stub
+cloud: an authorised steward types a reason and clicks "Not a problem" → the decision **POSTs `{findingId, reason}`
+to `/v1/ai/data-quality/dismissals`** under their own same-origin session, and the row moves from "to look at" to
+"set aside" because the worklist is **re-read server-side** (a GET, never a client-side shuffle); a read-only
+steward sees the finding but **no dismiss control** and sends nothing; an empty reason is **refused client-side**.
+This is alongside the existing offline-open+a11y coverage of the same screen, so the inbox is now verified in a
+real browser both ways — the E2E_VERIFIED bar (the M33 fleet precedent: offline-open + a functional write path).
+
+**A08 re-rated INTEGRATION_TESTED → E2E_VERIFIED — an honest, earned move (it crossed the rung threshold).**
+Headline **48.2% → 48.3%**; E2E-verification metric **2.9% → 3.8%**. This is what an E2E increment is meant to do.
+
+---
+
 ## M25-FR-02 daily-task routing + escalation (14 September 2026)
 
 Continued driving M25 up (owner said "keep going"): wired the **daily-task routing + escalation**, the M25-FR-02
