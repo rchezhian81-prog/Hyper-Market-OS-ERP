@@ -5,6 +5,43 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Operations agent (A06) wired — ENGINE_ONLY → WIRED (14 September 2026)
+
+**Direction:** owner authorised continuous autonomous completion to readiness. First increment of that program:
+wire the next deterministic AI agent, following the A08 precedent (governed, evidence-backed, commits nothing).
+
+**Why A06 is a clean, honest win.** A06's remit (§7.1) is "explain sync and integration incidents and
+recommend a runbook — an OPERATOR executes it." That is **not** model-drafting: the incidents are the REAL,
+persisted operational alerts the alert-lifecycle store already folds (sync lag, a queue not draining, dead
+letters, a stale catalogue, an unreachable database, a missing backup, a silent integration), and the runbook
+for each is a fixed, reviewed mapping from the component to the steps a person takes. So no model provider is
+needed — the output is grounded and deterministic.
+
+**What changed (behaviour):** running A06 (`POST /v1/ai/agents/A06/runs`) now returns one DRAFT proposal per
+operational incident that still needs attention — e.g. _"dead_letter is down: 3 items could not be sent…"_ with
+the reviewed runbook (open the dead-letter queue, fix or re-submit each, never delete one) — citing the real
+alert (component, status, owner, deadline) as evidence. An **acknowledged** alert is left out (a named person
+is already on it, P-03). **Commits nothing** (hard rule #5): the reply says `committedAnything:false`; a person
+acknowledges the alert (`POST /v1/platform/alerts/:alertId/acknowledge`, taking ownership) and runs the runbook.
+
+**Where it lives:** new pure engine `packages/ops/src/operations-advisor.ts` (`recommendOperationsRunbooks`),
+exported from `@sre/ops`. Wired into `services/api/src/adapters.ts` `aiAdapter` — a new optional
+`operationsAlerts` reader (the SAME tested `alertLifecycleAdapter(...).alerts` fold the alerts board reads) + an
+`operationsProposals` mapper + the A06 branch in `run`; `services/api/src/main.ts` supplies the reader.
+
+**Evidence:** `tests/unit/ops-operations-advisor.test.ts` (6) — a runbook per unhealthy component, one shared
+integration runbook, acknowledged alerts left out, escalated still recommended, worst-first order, nothing
+fabricated. `tests/integration/ai-operations-agent.test.ts` (3) — the live run recommends a runbook citing a
+real raised alert and commits nothing; stops once the alert is acknowledged; recommends nothing with no
+incidents. Full suite green; typecheck + lint + secret-scan clean.
+
+**Re-rated ENGINE_ONLY → WIRED (owner-authorised continuous completion).** A06 is live on the API with real,
+deterministic output and integration coverage. Headline **47.5% → 47.8%** (+0.3; numerator 4,935 → 4,975 /
+10,400; ENGINE_ONLY 5→4; wired-and-integrated 28.8% → 29.8%). Held at WIRED, not INTEGRATION_TESTED: no
+operator-facing recommendation **screen** yet (the analog of A08's inbox) — that is A06's path to the next rung.
+
+---
+
 ## AI assistant, step 8: the suspicious-mapping suggestions on the inbox screen (14 September 2026)
 
 **Owner direction:** "surface the mapping suggestions on the inbox screen" — the named follow-on from step 6.
