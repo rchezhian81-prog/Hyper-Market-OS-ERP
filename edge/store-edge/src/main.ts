@@ -54,11 +54,15 @@ import { hmacSigner } from '../../../services/catalogue/src/index';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import { toCloudSale } from './cloud-sale';
 import { toCloudReturn } from './cloud-return';
+import { toCloudChecklist, toCloudTaskCompletion, checklistIdOf, taskIdOf } from './cloud-completion';
 import { makeTradingDayRule, tradingDate, type TradingDayRule } from '../../../packages/calendar/src/trading-day';
 import { readFile } from 'node:fs/promises';
 
 /** The returns pipeline's own cursor file, so the sale and refund logs advance independently. */
 const RETURNS_CURSOR = 'sync-cursor-returns';
+
+/** The completions pipeline's own cursor file (M25-FR-02), so the third log advances independently too. */
+const COMPLETIONS_CURSOR = 'sync-cursor-completions';
 
 /** Gap between drains when the last one delivered something. */
 const BASE_INTERVAL_MS = 15_000;
@@ -90,6 +94,12 @@ export interface EdgeProcess {
    */
   readonly returnsLog: OpenFileLog;
   /**
+   * The COMPLETION's own durable log — a separate file from the sale and return logs (M25-FR-02). A
+   * checklist/task completed offline is durable before it is called done, and kept out of the other
+   * two logs so each pipeline's restart re-queue only ever reads its own kind of record.
+   */
+  readonly completionsLog: OpenFileLog;
+  /**
    * The loopback socket the lane's screen posts a sale to, or null when this edge has no lane —
    * the back-office box runs the same process and does the shop-wide work (ADR-0004).
    */
@@ -97,12 +107,16 @@ export interface EdgeProcess {
   readonly outbox: SyncOutbox;
   /** The return pipeline's own outbox — drained by `returnsAgent`, cursored separately from sales. */
   readonly returnsOutbox: SyncOutbox;
+  /** The completion pipeline's own outbox — drained by `completionsAgent`, cursored separately again. */
+  readonly completionsOutbox: SyncOutbox;
   /** What a lane talks to: price a scan, commit a sale, commit a refund, take a new pack. */
   readonly node: EdgeNode;
   /** Null when no cloud is configured — which is a supported way to run, not a fault. */
   readonly agent: SyncAgent | null;
   /** The return pipeline's own sync agent (same transport, own outbox). Null when no cloud. */
   readonly returnsAgent: SyncAgent | null;
+  /** The completion pipeline's own sync agent (same transport, own outbox). Null when no cloud. */
+  readonly completionsAgent: SyncAgent | null;
   /**
    * Pull the latest signed catalogue pack from the cloud now, adopt it if it is newer and verifies,
    * and persist it to disk — the inbound refresh (SYNC-01). Null when no cloud is configured. The
@@ -173,6 +187,21 @@ export async function startEdge(
     dataDir: settings['EDGE_DATA_DIR']!,
     capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
     fileName: 'dead-letters-returns',
+  });
+
+  // The COMPLETION's own durable log and its own failed-sync store (M25-FR-02) — a checklist or task
+  // completed with the cable out is durable before it is called done, exactly as a sale and a refund
+  // are, and kept out of both their logs so no restart re-queue ever reads one kind as another (hard
+  // rule #1). Its file is separate for the same reason the returns file is.
+  const completionsLog = await openFileLog({
+    dataDir: settings['EDGE_DATA_DIR']!,
+    capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
+    fileName: 'completions.log',
+  });
+  const completionsDeadLetterLog = await openFileLog({
+    dataDir: settings['EDGE_DATA_DIR']!,
+    capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
+    fileName: 'dead-letters-completions',
   });
 
   // Report what was found on the disk, including anything a power cut left half-written. It is
@@ -260,10 +289,41 @@ export async function startEdge(
     },
   });
 
+  // The COMPLETION pipeline (M25-FR-02) — the same machine as the sale and refund pipelines over a
+  // third file, so the offline completion queue reuses the tested restart-recovery rule rather than
+  // re-implementing it. Each on-disk record is an envelope the lane wrote (`{ completionKind, body }`),
+  // so `eventFor` routes a checklist to `ChecklistCompleted` and a task to `TaskCompleted` without
+  // guessing from the record's shape (P-08). The event it mints matches `commitCompletion`'s exactly
+  // — same id, type, key and payload — so a record re-sent after a crash dedupes at the cloud against
+  // the one that may already have gone live (§31.1). Never shares a file with sales or refunds.
+  const completionsPipeline = new SyncPipeline({
+    dataDir: settings['EDGE_DATA_DIR']!, log: completionsLog, deadLetterLog: completionsDeadLetterLog,
+    cursorFile: COMPLETIONS_CURSOR, noun: 'completion', say,
+    eventFor: (record, index) => {
+      let envelope: unknown;
+      try { envelope = JSON.parse(record) as unknown; } catch { return undefined; }
+      const env = (envelope !== null && typeof envelope === 'object' ? envelope : {}) as { completionKind?: unknown; body?: unknown };
+      const completionKind = env.completionKind === 'task' ? 'task' : env.completionKind === 'checklist' ? 'checklist' : undefined;
+      if (completionKind === undefined) return undefined;
+      const body = env.body;
+      const id = (completionKind === 'checklist' ? checklistIdOf(body) : taskIdOf(body)) ?? `record-${index}`;
+      return makeEvent({
+        id: `edge-completion-${completionKind}-${id}`,
+        type: completionKind === 'checklist' ? 'ChecklistCompleted' : 'TaskCompleted',
+        occurredAt: new Date().toISOString(),
+        idempotencyKey: `edge-completion-${tenantId}-${completionKind}-${id}`,
+        source: 'edge/lane',
+        payload: completionKind === 'checklist' ? toCloudChecklist(body) : toCloudTaskCompletion(body),
+      });
+    },
+  });
+
   const salesRestore = await salesPipeline.restore();
   const returnsRestore = await returnsPipeline.restore();
+  const completionsRestore = await completionsPipeline.restore();
   const outbox = salesPipeline.outbox;
   const returnsOutbox = returnsPipeline.outbox;
+  const completionsOutbox = completionsPipeline.outbox;
 
   if (salesRestore.resendCount > 0) say(`${salesRestore.resendCount} sale(s) from before are still to send.`);
   if (salesRestore.restoredDeadLetters > 0) {
@@ -275,6 +335,13 @@ export async function startEdge(
   if (returnsRestore.resendCount > 0) say(`${returnsRestore.resendCount} refund(s) from before are still to send.`);
   if (returnsRestore.restoredDeadLetters > 0) {
     say(`  ${returnsRestore.restoredDeadLetters} refund(s) the cloud refused earlier are still waiting for a person — kept, with their history.`);
+  }
+  if (completionsRestore.brokenCount > 0) {
+    say(`  ${completionsRestore.brokenCount} completion record(s) could not be read whole — kept, not repaired. Raise this.`);
+  }
+  if (completionsRestore.resendCount > 0) say(`${completionsRestore.resendCount} completion(s) from before are still to send.`);
+  if (completionsRestore.restoredDeadLetters > 0) {
+    say(`  ${completionsRestore.restoredDeadLetters} completion(s) the cloud refused earlier are still waiting for a person — kept, with their history.`);
   }
 
   // The refund operation-identity guard (RR-F03), rebuilt from the durable returns log so the rule
@@ -347,6 +414,9 @@ export async function startEdge(
     // The refund's mirror of that seam, on its own log and its own outbox (M13-FR-01).
     returnsLog,
     returnsOutbox,
+    // The completion's mirror of that seam, on its own log and its own outbox (M25-FR-02).
+    completionsLog,
+    completionsOutbox,
     // The refund's operation-identity guard, rebuilt from the durable log above (RR-F03).
     returnsIdempotency,
     // The refund's entitlement from trusted local sale + return history (RR-F04).
@@ -435,14 +505,17 @@ export async function startEdge(
     // Supported, and said plainly. The lanes sell; the queue grows; nobody is told a lie about it.
     say('no cloud is configured, so nothing will be synced. The shop can still trade — that is the point.');
     return {
-      log, returnsLog, outbox, returnsOutbox, node, lane, screens, agent: null, returnsAgent: null, refreshPack: null, syncOnce: null,
+      log, returnsLog, completionsLog, outbox, returnsOutbox, completionsOutbox, node, lane, screens,
+      agent: null, returnsAgent: null, completionsAgent: null, refreshPack: null, syncOnce: null,
       stop: async () => {
         if (lane !== null) await lane.stop();
         if (screens !== null) await screens.stop();
         await log.close();
         await returnsLog.close();
+        await completionsLog.close();
         await deadLetterLog.close();
         await returnsDeadLetterLog.close();
+        await completionsDeadLetterLog.close();
       },
     };
   }
@@ -454,6 +527,13 @@ export async function startEdge(
   // safer than teaching one agent about two queues: the sale drain and its cursor stay exactly as they
   // were, and the refund drain sits beside them without ever crossing into the sale path.
   const returnsAgent = new SyncAgent(returnsOutbox, httpTransport({
+    baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch,
+  }));
+  // The completion pipeline's own agent (M25-FR-02) — same transport, its own outbox, for the same
+  // reason a refund has its own: three small agents beside one another keep each drain and each cursor
+  // exactly its own, so a completion that cannot get through never holds a sale or a refund, and none
+  // of the three can ever be re-queued as another.
+  const completionsAgent = new SyncAgent(completionsOutbox, httpTransport({
     baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch,
   }));
 
@@ -505,6 +585,10 @@ export async function startEdge(
     await returnsPipeline.persistNewDeadLetters(at);
     await returnsPipeline.advanceCursor();
   };
+  const settleCompletions = async (at: string): Promise<void> => {
+    await completionsPipeline.persistNewDeadLetters(at);
+    await completionsPipeline.advanceCursor();
+  };
 
   /**
    * One drain of both queues, each settled straight after: sales drain, sales settle (persist any
@@ -521,10 +605,15 @@ export async function startEdge(
     await settleSales(at);
     const returnsResult = await returnsAgent.drain({ at, ...(opts?.limit === undefined ? {} : { limit: opts.limit }) });
     await settleReturns(at);
+    // The completion queue drains right after the refund queue, on the same loop and just as far from
+    // the sale path — its own drain, its own cursor, so a completion that cannot get through never holds
+    // a sale or a refund.
+    const completionsResult = await completionsAgent.drain({ at, ...(opts?.limit === undefined ? {} : { limit: opts.limit }) });
+    await settleCompletions(at);
     return {
-      sent: result.acknowledged + returnsResult.acknowledged,
-      dead: result.deadLettered + returnsResult.deadLettered,
-      remaining: result.remaining + returnsResult.remaining,
+      sent: result.acknowledged + returnsResult.acknowledged + completionsResult.acknowledged,
+      dead: result.deadLettered + returnsResult.deadLettered + completionsResult.deadLettered,
+      remaining: result.remaining + returnsResult.remaining + completionsResult.remaining,
     };
   };
 
@@ -560,13 +649,16 @@ export async function startEdge(
   return {
     log,
     returnsLog,
+    completionsLog,
     outbox,
     returnsOutbox,
+    completionsOutbox,
     node,
     lane,
     screens,
     agent,
     returnsAgent,
+    completionsAgent,
     refreshPack,
     syncOnce: () => drainAndSettle(),
     stop: async () => {
@@ -584,20 +676,30 @@ export async function startEdge(
         await returnsAgent.drain({ at, limit: 20 });
         await settleReturns(at);
       } catch { /* still queued, and the returns cursor stays where it is */ }
+      try {
+        await completionsAgent.drain({ at, limit: 20 });
+        await settleCompletions(at);
+      } catch { /* still queued, and the completions cursor stays where it is */ }
       const badge = agent.health();
       const returnsBadge = returnsAgent.health();
+      const completionsBadge = completionsAgent.health();
       if (badge.unsentCount > 0) {
         say(`stopping with ${badge.unsentCount} sale(s) still to send. They are on the disk and will go when this starts again.`);
       }
       if (returnsBadge.unsentCount > 0) {
         say(`stopping with ${returnsBadge.unsentCount} refund(s) still to send. They are on the disk and will go when this starts again.`);
       }
+      if (completionsBadge.unsentCount > 0) {
+        say(`stopping with ${completionsBadge.unsentCount} completion(s) still to send. They are on the disk and will go when this starts again.`);
+      }
       if (lane !== null) await lane.stop();
       if (screens !== null) await screens.stop();
       await log.close();
       await returnsLog.close();
+      await completionsLog.close();
       await deadLetterLog.close();
       await returnsDeadLetterLog.close();
+      await completionsDeadLetterLog.close();
     },
   };
 }
