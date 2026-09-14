@@ -5,6 +5,46 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## AI assistant, step 8: the suspicious-mapping suggestions on the inbox screen (14 September 2026)
+
+**Owner direction:** "surface the mapping suggestions on the inbox screen" — the named follow-on from step 6.
+A08's third leg (suspicious mappings from import history) produced DRAFT proposals from a run, but the
+steward's `/data-quality` inbox showed only the product-master suggestions. This puts the mapping ones on the
+same screen.
+
+**What changed (behaviour):** the Data Quality inbox worklist (`GET /v1/ai/data-quality/worklist`) now folds
+BOTH sources — the product master (missing barcode / duplicate / missing MRP) AND import history (a supplier
+that keeps failing on one column) — into one list. A mapping suggestion appears with its own category badge
+("Supplier file keeps failing on a column", icon ⇄), its plain-English headline and what-to-do detail, and an
+**Affects** line naming the source + column (e.g. _acme-foods — "hsn" column_) rather than a product. A steward
+sets one aside / brings it back with the **same** "Not a problem" / "Bring back" buttons, through the **same**
+dismissals route — the two families of finding id never collide (`dq-*` for products, `dq-mapping:*` for
+mappings), so one dismissal ledger serves both. Self-heals the same way: fix the supplier column and the
+suggestion drops off on its own. Still **read-only** — nothing here changes anything (hard rule #5). Bilingual
+EN/TA, and the offline sample now shows a mapping suggestion too.
+
+**Where it lives:** the worklist fold `buildDataQualityWorklist` (packages/product) is now **generic** over the
+finding shape, so the tested open/dismissed split serves both legs with one definition. `services/api`'s
+`dataQualityWorklist` folds product + mapping findings against one dismissal ledger and tags each entry by
+`source`; `services/ai` types the worklist as a `source`-tagged union (`StewardWorklist`). The web-erp session
+model (`data-quality-inbox-session.ts`) presents a mapping entry (new category label + icon + source/column
+"affects"); the shell js and browser-entry were already generic over presented rows, so they render it
+unchanged. The dismiss/reopen path is untouched.
+
+**Evidence:** `tests/unit/erp-data-quality-inbox-session.test.ts` extended (15) — a mapping suggestion presents
+with its own category/icon and a source-column "affects" (never a fake product); product + mapping coexist in
+one view; a dismissed mapping suggestion is idle with its reason and dismisses through the same port.
+`tests/integration/ai-data-quality-worklist.test.ts` extended (8) — the live worklist surfaces a
+`dq-mapping:*` entry tagged `source:'mapping'` alongside the three product gaps; a steward sets a mapping
+suggestion aside through the same route and it moves to dismissed. The generic `buildDataQualityWorklist`
+keeps its 6 unit tests green. Full suite green; typecheck + lint + secret-scan clean.
+
+**Not re-rated.** UI over the already-INTEGRATION_TESTED A08 engine; A08 stays **INTEGRATION_TESTED** (headline
+**47.5%**). This closes the "surface mapping findings in the inbox" follow-on. The remaining A08 follow-on — a
+browser/UAT e2e over the inbox screen — is the path to E2E_VERIFIED.
+
+---
+
 ## AI assistant, step 7: A08 re-rated WIRED → INTEGRATION_TESTED (owner-authorised, 13 September 2026)
 
 **Owner direction:** "Then re-rate A08 to INTEGRATION_TESTED" — an explicit authorisation to move the headline,

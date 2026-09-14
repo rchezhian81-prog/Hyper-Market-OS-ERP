@@ -17,7 +17,8 @@ const MRP = [{ value: { minor: 5000, currency: 'INR' }, effectiveFrom: '2026-01-
 const base = { baseUom: 'each', primaryCategoryId: 'grocery', taxClass: '25010020', lifecycle: 'draft' };
 
 interface WorklistItem {
-  readonly finding: { readonly findingId: string; readonly kind: string; readonly headline: string };
+  readonly source?: 'product' | 'mapping';
+  readonly finding: { readonly findingId: string; readonly kind: string; readonly headline: string; readonly sourceId?: string; readonly column?: string };
   readonly status: 'open' | 'dismissed';
   readonly dismissal?: { readonly by: string; readonly at: string; readonly reason: string };
 }
@@ -42,6 +43,21 @@ const worklist = (h: ApiHarness, u: string) =>
   h.request({ method: 'GET', path: '/v1/ai/data-quality/worklist', userId: u, tenantId: A });
 const dismiss = (h: ApiHarness, u: string, body: unknown, key: string) =>
   h.request({ method: 'POST', path: '/v1/ai/data-quality/dismissals', userId: u, tenantId: A, idempotencyKey: key, body });
+
+const err = (line: number, column: string, kind: string) => ({ line, column, kind, message: `${column} ${kind}` });
+const importJob = (h: ApiHarness, id: string, over: Record<string, unknown>) =>
+  h.request({
+    method: 'POST', path: `/v1/purchase/import-jobs/${id}`, userId: 'u-owner', tenantId: A, idempotencyKey: `job-${id}`,
+    body: {
+      sourceId: 'acme-foods', templateId: 'supplier-price-v1', fileName: `${id}.csv`, outcome: 'committed',
+      totalRows: 1000, validRows: 1000, errorRows: 0, duplicatesForReview: 0, errors: [], uploadedAt: '2026-08-20T10:00:00Z', ...over,
+    },
+  });
+/** Seed one supplier that keeps failing on its "hsn" column — a suspicious mapping A08 should flag. */
+async function seedRecurringMappingFailure(h: ApiHarness): Promise<void> {
+  await importJob(h, 'j1', { uploadedAt: '2026-08-18T09:00:00Z', validRows: 998, errorRows: 2, errors: [err(2, 'hsn', 'not_allowed_value'), err(5, 'hsn', 'not_allowed_value')] });
+  await importJob(h, 'j2', { uploadedAt: '2026-08-25T09:00:00Z', validRows: 999, errorRows: 1, errors: [err(3, 'hsn', 'not_allowed_value')] });
+}
 
 /** Seed a master with exactly three gaps: a no-barcode item, a duplicate pair, and a no-MRP item. */
 async function seedGaps(h: ApiHarness): Promise<void> {
@@ -167,5 +183,46 @@ describe('the Data Quality steward inbox (A08) on the live surface', () => {
     expect(bad.status).toBe(400);
     expect(codeOf(bad)).toBe('not_readable_as_a_dismissal');
     expect(((await worklist(h, 'u-owner')).body as WorklistBody).dismissedCount).toBe(0);
+  });
+
+  it('surfaces suspicious-mapping suggestions from import history alongside the product gaps', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await seedGaps(h);                    // the three product-master gaps
+    await seedRecurringMappingFailure(h); // a supplier that keeps failing on "hsn"
+    await armA08(h);
+
+    const body = (await worklist(h, 'u-owner')).body as WorklistBody;
+    expect(body.agentActive).toBe(true);
+    expect(body.committedAnything).toBe(false);
+
+    // The mapping suggestion appears, tagged `source: 'mapping'`, citing the source + column (not a product).
+    const mapping = body.open.find((i) => i.finding.findingId === 'dq-mapping:acme-foods:hsn:not_allowed_value');
+    expect(mapping).toBeDefined();
+    expect(mapping!.source).toBe('mapping');
+    expect(mapping!.finding.sourceId).toBe('acme-foods');
+    expect(mapping!.finding.column).toBe('hsn');
+
+    // The three product gaps are still there, tagged `source: 'product'` — both legs share the inbox.
+    expect(body.open.filter((i) => i.source === 'product').length).toBe(3);
+    expect(body.openCount).toBe(4);
+  });
+
+  it('a steward sets a mapping suggestion aside through the SAME dismissals route; it moves to dismissed', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await seedRecurringMappingFailure(h);
+    await armA08(h);
+    expect(((await worklist(h, 'u-owner')).body as WorklistBody).openCount).toBe(1);
+
+    const done = await dismiss(h, 'u-owner', { findingId: 'dq-mapping:acme-foods:hsn:not_allowed_value', reason: 'legacy HSN codes — supplier is migrating them next quarter' }, 'dm1');
+    expect(done.status).toBe(200);
+
+    const after = (await worklist(h, 'u-owner')).body as WorklistBody;
+    expect(after.openCount).toBe(0);
+    const item = after.dismissed.find((i) => i.finding.findingId === 'dq-mapping:acme-foods:hsn:not_allowed_value');
+    expect(item).toBeDefined();
+    expect(item!.source).toBe('mapping');
+    expect(item!.dismissal).toMatchObject({ by: 'u-owner', reason: 'legacy HSN codes — supplier is migrating them next quarter' });
   });
 });
