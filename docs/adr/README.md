@@ -26,6 +26,7 @@ CLAUDE.md (Technology baseline, roadmap §19) requires: **"Any substitution requ
 | [0012](./0012-modular-monolith-cloud-topology.md) | Modular-monolith cloud topology | Accepted |
 | [0013](./0013-product-publish-delivered-by-the-signed-in-operator.md) | Product publish delivered by the signed-in operator, not a background service identity (owner decision, 18 Aug 2026) | Accepted |
 | [0014](./0014-recurring-billing-provider-and-mandates.md) | Recurring subscription billing: Razorpay via the connector SDK, mandates not card data (WP5, §19 substitution) | Accepted (owner-directed; provider substitutable) |
+| [0015](./0015-persist-batch-expiry-on-the-cloud-ledger.md) | Persist batch expiry on the cloud stock ledger, cloud-only (unblocks A03 near-expiry markdown; ADR-0006 offline path unchanged) | Accepted (owner-directed, 14 Sep 2026) |
 
 Further de-facto and proposed decisions (transaction boundaries, Postgres RLS, SHA-256 audit chain,
 observability exporters, OpenAPI, DSR API, hosting/IaC/CD) are catalogued as recommendations in
