@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Inventory agent (A03) — markdown/disposal leg wired, PARTIALLY_WIRED → WIRED (14 September 2026)
+
+**Direction:** owner authorised continuous autonomous completion. This is PR-C, built directly on PR-B's
+near-expiry cloud-ledger reader (below) — the reason PR-B was worth doing.
+
+**Why A03 is now a clean win.** A03's remit (§7) is "stockout, overstock and expiry prediction; transfer and
+markdown SUGGESTIONS — a manager commits." Its forecast/markdown/replenishment engines were already
+integration-tested (hence PARTIALLY_WIRED), but the agent surface produced nothing for the **expiry** half.
+PR-B gave the cloud a real, persisted, tested near-expiry reader; A03's `suggest_markdown` leg now reads it.
+
+**What changed (behaviour):** running A03 (`POST /v1/ai/agents/A03/runs`) now returns DRAFT proposals over
+the tenant's **real near-expiry stock on the cloud ledger** — the SAME tested `nearExpiryStock` fold the
+`/v1/inventory/near-expiry` route uses (net-of-sales on hand per batch, worst-first). A batch close to its
+use-by draws a **markdown** proposal (`wouldRequire: POST /v1/prices/changes`); one already expired draws a
+**disposal** (`wouldRequire: POST /v1/inventory/write-off/:writeOffId`). Gated by the three AI gates
+(kill-switch off / enabled by name / within budget). **Commits nothing** (`committedAnything:false`, hard rule
+#5 / P-05): a **manager** commits the price change or the write-off — the AI only recommends it.
+
+**Where it lives:** `services/api/src/adapters.ts` `aiAdapter` gains an optional `nearExpiry` reader (reusing
+`nearExpiryAdapter(...).nearExpiry`) + an `inventoryProposals` mapper; the A03 branch sits beside A06/A07/A08
+in `run`. `main.ts` supplies the reader.
+
+**Evidence:** `tests/integration/ai-inventory-agent.test.ts` (3) — a disposal + a markdown worst-first citing
+the batch and committing nothing; a sold-through batch drops off (nets real banked sales); an enabled A03 with
+no near-expiry stock suggests nothing. **Completion 48.0 → 48.2 (+0.2 pts)**, wired-and-integrated 30.8 →
+31.7%. **Held below INTEGRATION_TESTED for the agent as a whole:** its `suggest_transfer` leg needs a
+multi-location stock-position reader (a separate increment).
+
+---
+
 ## Near-expiry stock reader over the cloud ledger (M10-FR-01 · ADR-0015 · PR-B) — the A03 foundation (14 September 2026)
 
 **Direction:** owner authorised continuous autonomous completion; this is the foundation piece for wiring the
