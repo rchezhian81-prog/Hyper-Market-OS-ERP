@@ -179,18 +179,23 @@ export interface SuggestionDisposition {
   readonly reason: string;
 }
 
-export interface DataQualityWorklistItem {
-  readonly finding: DataQualityFinding;
+// The worklist fold is generic over the finding shape — it uses only `findingId` to match a
+// disposition, so it folds the product findings (default) AND the import-history "suspicious
+// mapping" findings (`packages/import`) with the SAME tested logic and one definition of the
+// open/dismissed split. `F` defaults to `DataQualityFinding` so existing product callers are
+// unchanged.
+export interface DataQualityWorklistItem<F extends { readonly findingId: string } = DataQualityFinding> {
+  readonly finding: F;
   readonly status: 'open' | 'dismissed';
   /** Present only when dismissed — who set it aside, when, and why. */
   readonly dismissal?: { readonly by: string; readonly at: string; readonly reason: string };
 }
 
-export interface DataQualityWorklist {
+export interface DataQualityWorklist<F extends { readonly findingId: string } = DataQualityFinding> {
   /** Findings a steward should act on — not dismissed. In the detector's stable order. */
-  readonly open: readonly DataQualityWorklistItem[];
+  readonly open: readonly DataQualityWorklistItem<F>[];
   /** Findings still present but a steward has judged not-a-problem (with the reason). */
-  readonly dismissed: readonly DataQualityWorklistItem[];
+  readonly dismissed: readonly DataQualityWorklistItem<F>[];
   readonly openCount: number;
   readonly dismissedCount: number;
 }
@@ -200,17 +205,18 @@ export interface DataQualityWorklist {
  *
  * Pure and deterministic. A dismissal only ever applies to a finding that is STILL present — a
  * dismissal of a gap that has since been fixed is moot and simply does not appear (the finding is
- * gone). `dispositions` is the latest judgement per finding id.
+ * gone). `dispositions` is the latest judgement per finding id. Generic over the finding shape: any
+ * finding with a stable `findingId` folds the same way (product gaps, or suspicious mappings).
  */
-export function buildDataQualityWorklist(input: {
-  readonly findings: readonly DataQualityFinding[];
+export function buildDataQualityWorklist<F extends { readonly findingId: string }>(input: {
+  readonly findings: readonly F[];
   readonly dispositions: readonly SuggestionDisposition[];
-}): DataQualityWorklist {
+}): DataQualityWorklist<F> {
   const latest = new Map<string, SuggestionDisposition>();
   for (const d of input.dispositions) latest.set(d.findingId, d); // caller passes latest-per-id; last wins defensively
 
-  const open: DataQualityWorklistItem[] = [];
-  const dismissed: DataQualityWorklistItem[] = [];
+  const open: DataQualityWorklistItem<F>[] = [];
+  const dismissed: DataQualityWorklistItem<F>[] = [];
   for (const finding of input.findings) {
     const d = latest.get(finding.findingId);
     if (d?.dismissed === true) {

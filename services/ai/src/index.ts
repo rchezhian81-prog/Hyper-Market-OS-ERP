@@ -28,7 +28,27 @@ import {
   type AgentDefinition,
   type AgentId as EngineAgentId,
 } from '../../../packages/ai/src/index';
-import type { DataQualityWorklist } from '../../../packages/product/src/index';
+import type { DataQualityWorklistItem, DataQualityFinding } from '../../../packages/product/src/index';
+import type { MappingQualityFinding } from '../../../packages/import/src/index';
+
+/**
+ * One entry in the Data Quality steward's worklist, tagged by where the suggestion comes from: the
+ * PRODUCT master (missing barcode / duplicate / missing MRP) or IMPORT HISTORY (a suspicious mapping —
+ * a source that keeps failing on one column). Both are A08's remit (§7.1); both are read-only DRAFTS
+ * a steward acts on through the ordinary route, and both are dismissed through the SAME route (their
+ * finding ids never collide — `dq-*` for products, `dq-mapping:*` for mappings).
+ */
+export type StewardWorklistEntry =
+  | ({ readonly source: 'product' } & DataQualityWorklistItem<DataQualityFinding>)
+  | ({ readonly source: 'mapping' } & DataQualityWorklistItem<MappingQualityFinding>);
+
+/** The steward's inbox: product and mapping suggestions folded with the stewards' dismissals. */
+export interface StewardWorklist {
+  readonly open: readonly StewardWorklistEntry[];
+  readonly dismissed: readonly StewardWorklistEntry[];
+  readonly openCount: number;
+  readonly dismissedCount: number;
+}
 
 /**
  * Who the ten agents are — sourced from the tested authority engine (`packages/ai`), not a second
@@ -144,7 +164,7 @@ export interface AiDeps {
    * The Data Quality steward's inbox: the live A08 findings folded with the stewards' dismissals.
    * A read — deterministic, no model, no spend — so it is not behind the budget gate.
    */
-  readonly dataQualityWorklist: (tenantId: string) => Promise<DataQualityWorklist> | DataQualityWorklist;
+  readonly dataQualityWorklist: (tenantId: string) => Promise<StewardWorklist> | StewardWorklist;
   /**
    * A steward's judgement that a finding is (not) a problem. A HUMAN write, recorded in the human's
    * name — the AI never writes it. `dismissed:false` reopens a previously-dismissed finding.

@@ -25,6 +25,19 @@ const dismissedEntry = (id: string): DataQualityWorklistEntry => ({
   status: 'dismissed',
   dismissal: { by: 'u-steward', at: '2026-09-13T00:00:00Z', reason: 'genuinely different pack sizes' },
 });
+/** A suspicious-mapping suggestion from import history — no product; source + column instead. */
+const mappingEntry = (id: string, status: 'open' | 'dismissed' = 'open'): DataQualityWorklistEntry => ({
+  source: 'mapping',
+  finding: {
+    findingId: id,
+    headline: 'Imports from "acme-foods" keep failing on the "hsn" column',
+    detail: '3 rows rejected — agree a code list with the supplier.',
+    sourceId: 'acme-foods',
+    column: 'hsn',
+  },
+  status,
+  ...(status === 'dismissed' ? { dismissal: { by: 'u-steward', at: '2026-09-13T00:00:00Z', reason: 'legacy codes, being migrated' } } : {}),
+});
 
 const worklist = (over: Partial<DataQualityWorklistData> = {}): DataQualityWorklistData =>
   ({ agentActive: true, open: [], dismissed: [], ...over });
@@ -77,6 +90,41 @@ describe('open suggestions read as attention; dismissed ones do not', () => {
     expect(view.openCount).toBe(0);
     expect(view.dismissed).toEqual([]);
     expect(view.screenState.tone).not.toBe('error');
+  });
+});
+
+describe('suspicious-mapping suggestions (import history) share the same inbox', () => {
+  it('presents a mapping suggestion with its own category + icon, and "affects" the source column — never a fake product', () => {
+    const view = session(worklist({ open: [mappingEntry('dq-mapping:acme-foods:hsn:not_allowed_value')] })).view('en');
+    const row = view.open[0]!;
+    expect(row.kind).toBe('suspicious_mapping');
+    expect(row.needsAttention).toBe(true);
+    expect(row.status.tone).toBe('degraded');
+    expect(row.status.icon.trim().length).toBeGreaterThan(0);
+    expect(row.status.label).toBe(DATA_QUALITY_INBOX_COPY.en.kindMapping);
+    // The evidence is the source + column, not a product "Name (SKU)".
+    expect(row.affects).toEqual(['acme-foods — "hsn" column']);
+    expect(row.headline).toContain('acme-foods');
+  });
+
+  it('product and mapping suggestions coexist in one worklist', () => {
+    const view = session(worklist({ open: [openEntry('dq-missing-barcode:p1'), mappingEntry('dq-mapping:s:c:k')] })).view('en');
+    expect(view.openCount).toBe(2);
+    expect(view.open.map((r) => r.kind).sort()).toEqual(['missing_barcode', 'suspicious_mapping']);
+  });
+
+  it('a dismissed mapping suggestion is idle with its reason, and is dismissed/reopened through the SAME port', async () => {
+    const view = session(worklist({ dismissed: [mappingEntry('dq-mapping:s:c:k', 'dismissed')] })).view('en');
+    const row = view.dismissed[0]!;
+    expect(row.kind).toBe('suspicious_mapping');
+    expect(row.needsAttention).toBe(false);
+    expect(row.status.tone).toBe('idle');
+    expect(row.dismissedReason).toBe('legacy codes, being migrated');
+
+    const posted: unknown[] = [];
+    const s = session(worklist(), { dismissPort: () => ({ post: async (i) => { posted.push(i); return 'recorded'; } }) });
+    expect(await s.dismiss('dq-mapping:s:c:k', 'legacy codes')).toBe('recorded');
+    expect(posted).toEqual([{ findingId: 'dq-mapping:s:c:k', dismissed: true, reason: 'legacy codes' }]);
   });
 });
 

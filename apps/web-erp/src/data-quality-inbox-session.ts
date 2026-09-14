@@ -24,12 +24,37 @@ import { translator, presentScreenState, type BilingualCopy, type Lang } from '.
 import { presentStatus, type StatusPresentation, type Tone } from '../../../packages/a11y/src/signals';
 import type { DataQualityFinding, DataQualityIssueKind } from '../../../packages/product/src/index';
 
-/** One suggestion as the worklist route hands it over — the finding plus, when set aside, who/why. */
-export interface DataQualityWorklistEntry {
-  readonly finding: DataQualityFinding;
-  readonly status: 'open' | 'dismissed';
-  readonly dismissal?: { readonly by: string; readonly at: string; readonly reason: string };
+/** The category a suggestion belongs to — the three product-master gaps, plus the import-history one. */
+export type SuggestionCategory = DataQualityIssueKind | 'suspicious_mapping';
+
+/** A suspicious-mapping finding as the worklist hands it over (import history — no product). The session
+ *  reads only these fields; the source's own detail already carries the count and the corrective action. */
+export interface MappingFindingView {
+  readonly findingId: string;
+  readonly headline: string;
+  readonly detail: string;
+  /** The source (supplier/system/file) whose imports keep failing. */
+  readonly sourceId: string;
+  /** The target column that keeps rejecting — the one whose mapping is suspect. */
+  readonly column: string;
 }
+
+/** One suggestion as the worklist route hands it over, tagged by where it comes from: the PRODUCT master
+ *  (a `DataQualityFinding`) or IMPORT HISTORY (a `MappingFindingView`). `source` absent means product, so
+ *  the existing product body stays valid. Both carry, when set aside, who/why. */
+export type DataQualityWorklistEntry =
+  | {
+      readonly source?: 'product';
+      readonly finding: DataQualityFinding;
+      readonly status: 'open' | 'dismissed';
+      readonly dismissal?: { readonly by: string; readonly at: string; readonly reason: string };
+    }
+  | {
+      readonly source: 'mapping';
+      readonly finding: MappingFindingView;
+      readonly status: 'open' | 'dismissed';
+      readonly dismissal?: { readonly by: string; readonly at: string; readonly reason: string };
+    };
 
 /** The worklist body (`GET /v1/ai/data-quality/worklist`). `agentActive` false → A08 is off or killed. */
 export interface DataQualityWorklistData {
@@ -69,7 +94,7 @@ export interface DataQualityInboxConfig {
 
 export type CopyKey =
   | 'title' | 'lead' | 'langName'
-  | 'kindMissingBarcode' | 'kindDuplicate' | 'kindMissingMrp' | 'kindDismissed'
+  | 'kindMissingBarcode' | 'kindDuplicate' | 'kindMissingMrp' | 'kindMapping' | 'kindDismissed'
   | 'openHeading' | 'dismissedHeading'
   | 'openCount' | 'dismissedCount' | 'allClear'
   | 'affectsLabel' | 'dismissedByLabel' | 'reasonLabel'
@@ -81,9 +106,9 @@ export type CopyKey =
 export const DATA_QUALITY_INBOX_COPY: BilingualCopy<CopyKey> = {
   en: {
     title: 'Data quality', langName: 'தமிழ்',
-    lead: 'Problems the Data Quality helper found in your product list. Fix one the normal way — add the barcode, merge the duplicate, set the price — and it drops off this list on its own. Nothing here changes a product; it points you at what to check.',
+    lead: 'Problems the Data Quality helper found in your product list and your supplier import files. Fix one the normal way — add the barcode, merge the duplicate, set the price, or sort out a supplier column — and it drops off this list on its own. Nothing here changes anything; it points you at what to check.',
     kindMissingBarcode: 'No barcode — cannot be scanned', kindDuplicate: 'Looks like a duplicate', kindMissingMrp: 'No printed price (MRP)',
-    kindDismissed: 'Set aside — not a problem',
+    kindMapping: 'Supplier file keeps failing on a column', kindDismissed: 'Set aside — not a problem',
     openHeading: 'To look at', dismissedHeading: 'Set aside',
     openCount: 'to look at', dismissedCount: 'set aside', allClear: 'Nothing to look at — your product list is clean.',
     affectsLabel: 'Affects', dismissedByLabel: 'Set aside by', reasonLabel: 'Reason',
@@ -97,9 +122,9 @@ export const DATA_QUALITY_INBOX_COPY: BilingualCopy<CopyKey> = {
   },
   ta: {
     title: 'தரக் கட்டுப்பாடு', langName: 'English',
-    lead: 'தரக் கட்டுப்பாட்டு உதவியாளர் உங்கள் பொருள் பட்டியலில் கண்டறிந்த சிக்கல்கள். ஒன்றை வழக்கம் போல் சரிசெய்யுங்கள் — பார்கோடு சேர்க்க, நகலை இணைக்க, விலை அமைக்க — அது தானாகவே இந்தப் பட்டியலில் இருந்து நீங்கும். இங்கு எதுவும் பொருளை மாற்றாது; என்ன சரிபார்க்க வேண்டும் என்பதைக் காட்டுகிறது.',
+    lead: 'தரக் கட்டுப்பாட்டு உதவியாளர் உங்கள் பொருள் பட்டியலிலும் சப்ளையர் இறக்குமதிக் கோப்புகளிலும் கண்டறிந்த சிக்கல்கள். ஒன்றை வழக்கம் போல் சரிசெய்யுங்கள் — பார்கோடு சேர்க்க, நகலை இணைக்க, விலை அமைக்க, அல்லது சப்ளையர் நெடுவரிசையைச் சரிசெய்ய — அது தானாகவே இந்தப் பட்டியலில் இருந்து நீங்கும். இங்கு எதுவும் மாற்றப்படாது; என்ன சரிபார்க்க வேண்டும் என்பதைக் காட்டுகிறது.',
     kindMissingBarcode: 'பார்கோடு இல்லை — ஸ்கேன் செய்ய முடியாது', kindDuplicate: 'நகல் போல் தெரிகிறது', kindMissingMrp: 'அச்சிட்ட விலை (MRP) இல்லை',
-    kindDismissed: 'ஒதுக்கப்பட்டது — சிக்கல் இல்லை',
+    kindMapping: 'சப்ளையர் கோப்பு ஒரு நெடுவரிசையில் தொடர்ந்து தோல்வி', kindDismissed: 'ஒதுக்கப்பட்டது — சிக்கல் இல்லை',
     openHeading: 'பார்க்க வேண்டியவை', dismissedHeading: 'ஒதுக்கப்பட்டவை',
     openCount: 'பார்க்க வேண்டியவை', dismissedCount: 'ஒதுக்கப்பட்டவை', allClear: 'பார்க்க எதுவும் இல்லை — உங்கள் பொருள் பட்டியல் சுத்தமாக உள்ளது.',
     affectsLabel: 'பாதிக்கிறது', dismissedByLabel: 'ஒதுக்கியவர்', reasonLabel: 'காரணம்',
@@ -129,11 +154,14 @@ const KIND_ICON: Readonly<Record<DataQualityIssueKind, string>> = {
   missing_mrp: '₹',
 };
 
+/** The suspicious-mapping suggestion's own badge — a distinct shape/word from the product ones. */
+const MAPPING_ICON = '⇄';
+
 // ── the presented shapes the view renders ────────────────────────────────────────────────────────────
 
 export interface PresentedSuggestion {
   readonly findingId: string;
-  readonly kind: DataQualityIssueKind;
+  readonly kind: SuggestionCategory;
   readonly status: StatusPresentation;   // kind as tone + word + icon + announcement
   readonly needsAttention: boolean;       // open suggestions need a look; dismissed ones do not
   readonly headline: string;              // the finding's plain-English one-liner
@@ -181,11 +209,32 @@ export function createDataQualityInboxSession(
 
   const present = (lang: Lang, entry: DataQualityWorklistEntry): PresentedSuggestion => {
     const t = translator(DATA_QUALITY_INBOX_COPY, lang);
-    const f = entry.finding;
     const open = entry.status === 'open';
-    const label = open ? t(KIND_LABEL[f.kind]) : t('kindDismissed');
     // Open suggestions are the work — a degraded tone that asks for a glance (P-03). A dismissed one is idle.
     const tone: Tone = open ? 'degraded' : 'idle';
+    const dismissedFields = entry.dismissal !== undefined
+      ? { dismissedBy: entry.dismissal.by, dismissedReason: entry.dismissal.reason }
+      : {};
+
+    // A suspicious-mapping suggestion (import history) — no product; its "affects" is the source + column.
+    if (entry.source === 'mapping') {
+      const f = entry.finding;
+      const label = open ? t('kindMapping') : t('kindDismissed');
+      return {
+        findingId: f.findingId,
+        kind: 'suspicious_mapping',
+        status: presentStatus({ tone, icon: open ? MAPPING_ICON : '✓', label, announcement: `${f.headline}`, needsAttention: open }),
+        needsAttention: open,
+        headline: f.headline,
+        detail: f.detail,
+        affects: [`${f.sourceId} — "${f.column}" column`],
+        ...dismissedFields,
+      };
+    }
+
+    // A product-master suggestion — the finding names the real product(s).
+    const f = entry.finding;
+    const label = open ? t(KIND_LABEL[f.kind]) : t('kindDismissed');
     const affects = f.evidence.map((e) => (e.sku.trim() === '' ? e.name : `${e.name} (${e.sku})`));
     return {
       findingId: f.findingId,
@@ -195,7 +244,7 @@ export function createDataQualityInboxSession(
       headline: f.headline,
       detail: f.detail,
       affects,
-      ...(entry.dismissal !== undefined ? { dismissedBy: entry.dismissal.by, dismissedReason: entry.dismissal.reason } : {}),
+      ...dismissedFields,
     };
   };
 

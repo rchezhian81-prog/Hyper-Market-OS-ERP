@@ -32,6 +32,13 @@ function sampleSession() {
     affects: ['Loose Poha (SKU-NOSCAN)'],
     status: { tone: 'degraded', icon: '▦', label: l === 'ta' ? 'பார்கோடு இல்லை' : 'No barcode — cannot be scanned', announcement: 'Loose Poha', needsAttention: true },
   });
+  const mappingRow = (l) => ({
+    findingId: 'sample-mapping', kind: 'suspicious_mapping', needsAttention: true,
+    headline: l === 'ta' ? '"acme-foods" இறக்குமதிகள் "hsn" நெடுவரிசையில் தொடர்ந்து தோல்வி' : 'Imports from "acme-foods" keep failing on the "hsn" column',
+    detail: l === 'ta' ? 'இந்தச் சப்ளையரின் "hsn" குறியீடுகளை நாம் அடையாளம் காணவில்லை — அவர்களுடன் ஒரு குறியீட்டுப் பட்டியலை ஒப்புக்கொள்ளுங்கள்.' : 'We do not recognise this supplier’s "hsn" codes — agree a code list with them.',
+    affects: ['acme-foods — "hsn" column'],
+    status: { tone: 'degraded', icon: '⇄', label: l === 'ta' ? 'சப்ளையர் கோப்பு ஒரு நெடுவரிசையில் தொடர்ந்து தோல்வி' : 'Supplier file keeps failing on a column', announcement: 'acme-foods', needsAttention: true },
+  });
   const dismissedRow = (l) => ({
     findingId: 'sample-dup', kind: 'suspected_duplicate', needsAttention: false,
     headline: l === 'ta' ? 'நகல் போல் தெரிந்தது' : 'Looked like a duplicate', detail: '', affects: ['Aashirvaad Atta 5kg (SKU-ATTA-1)'],
@@ -42,7 +49,7 @@ function sampleSession() {
     text: (l, key) => CHROME[l]?.[key] ?? CHROME.en[key] ?? key,
     view: (l) => ({
       screenState: { tone: 'ok', icon: '✓', label: '', announcement: '', needsAttention: false },
-      agentActive: true, open: [openRow(l)], dismissed: [dismissedRow(l)], openCount: 1, dismissedCount: 1, nobodyNamed: false, mayDismiss: true,
+      agentActive: true, open: [openRow(l), mappingRow(l)], dismissed: [dismissedRow(l)], openCount: 2, dismissedCount: 1, nobodyNamed: false, mayDismiss: true,
     }),
     dismiss: async () => 'lost_link',
     reopen: async () => 'lost_link',

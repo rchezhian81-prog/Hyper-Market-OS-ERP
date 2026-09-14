@@ -6494,17 +6494,41 @@ export function aiAdapter(input: {
      * on its own) and folds the dismissals latest-per-finding. Nothing is written here.
      */
     dataQualityWorklist: async (tenantId) => {
-      const findings = (input.products === undefined || input.barcodes === undefined)
+      // One dismissal ledger serves BOTH legs — a steward's judgement is keyed by findingId, and the
+      // two families of id never collide (`dq-*` for product gaps, `dq-mapping:*` for suspicious
+      // mappings), so a single latest-per-id fold applies each decision to whichever finding it names.
+      const latest = new Map<string, SuggestionDisposition>();
+      for (const d of await allOf<SuggestionDisposition>(input.store, tenantId, STREAM.ai, 'AiDataQualityDismissed')) {
+        latest.set(d.findingId, d); // occurrence order → the last decision on a finding wins
+      }
+      const dispositions = [...latest.values()];
+
+      // Leg 1+2 — the product master.
+      const productFindings = (input.products === undefined || input.barcodes === undefined)
         ? []
         : assessProductDataQuality({
             products: await input.products(tenantId),
             barcodes: new BarcodeRegistry([...(await input.barcodes(tenantId))]),
           });
-      const latest = new Map<string, SuggestionDisposition>();
-      for (const d of await allOf<SuggestionDisposition>(input.store, tenantId, STREAM.ai, 'AiDataQualityDismissed')) {
-        latest.set(d.findingId, d); // occurrence order → the last decision on a finding wins
-      }
-      return buildDataQualityWorklist({ findings, dispositions: [...latest.values()] });
+      const productWL = buildDataQualityWorklist({ findings: productFindings, dispositions });
+
+      // Leg 3 — suspicious mappings from import history (an independent source; absent → nothing here).
+      const mappingFindings = input.importHistory === undefined
+        ? []
+        : assessMappingQuality({ jobs: await input.importHistory(tenantId) });
+      const mappingWL = buildDataQualityWorklist({ findings: mappingFindings, dispositions });
+
+      // Merge the two folds into one worklist, each entry tagged by its source so the screen can label
+      // it. Product suggestions lead (the everyday catalogue gaps), then the mapping suggestions.
+      const open = [
+        ...productWL.open.map((i) => ({ source: 'product' as const, ...i })),
+        ...mappingWL.open.map((i) => ({ source: 'mapping' as const, ...i })),
+      ];
+      const dismissed = [
+        ...productWL.dismissed.map((i) => ({ source: 'product' as const, ...i })),
+        ...mappingWL.dismissed.map((i) => ({ source: 'mapping' as const, ...i })),
+      ];
+      return { open, dismissed, openCount: open.length, dismissedCount: dismissed.length };
     },
 
     /**
