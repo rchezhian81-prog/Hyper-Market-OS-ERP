@@ -64,6 +64,7 @@ import type { B2BDocumentsDeps, StoredB2BDocument } from '../../finance/src/b2b-
 import { checkCredit } from '../../../packages/b2b/src/credit';
 import type { LpCasesDeps, LpRulesDeps } from '../../pos/src/loss-prevention';
 import type { InvestigationCase, EvidenceItem } from '../../../packages/loss-prevention/src/cases';
+import { buildOpenCaseWorklist, type OpenCaseWorklist } from '../../../packages/loss-prevention/src/worklist';
 import { openCase } from '../../../packages/loss-prevention/src/cases';
 import { planInvestigationFromShortage } from '../../../packages/loss-prevention/src/auto-open-from-shortage';
 import type { LpRule } from '../../../packages/loss-prevention/src/loss-prevention';
@@ -6387,6 +6388,28 @@ function operationsProposals(findings: readonly OperationsFinding[], now: string
   }));
 }
 
+/**
+ * Turn A07's open investigations into prioritised DRAFT proposals — highest exposure first — each citing the
+ * real case (its opaque SUBJECT REFERENCE, never a name — P-04) as evidence. A07 SUMMARISES and PRIORITISES;
+ * it takes NO autonomous sanction (its whole authority forbids it). A security officer works the case through
+ * the ordinary loss-prevention surface. Commits nothing (hard rule #5 / P-05).
+ */
+function investigationProposals(worklist: OpenCaseWorklist, now: string): Omit<Proposal, 'committed'>[] {
+  return worklist.cases.map((c): Omit<Proposal, 'committed'> => ({
+    proposalId: `sec-investigation:${c.caseId}`,
+    agent: 'A07',
+    summary: `Prioritise open investigation on ${c.subjectRef}: ${c.summary}`,
+    // Where a security officer works it — the open-investigations worklist (the fix is casework, not an AI act).
+    wouldRequire: 'GET /v1/loss-prevention/cases',
+    evidence: [{
+      source: 'loss-prevention cases',
+      reference: c.caseId,
+      summary: `subject ${c.subjectRef}: ${c.summary} — ${Math.round(c.valueMinor / 100)} at stake, ${c.evidenceCount} evidence item(s), open since ${c.openedAt.slice(0, 10)}, assigned to ${c.assignedTo}`,
+    }],
+    createdAt: now,
+  }));
+}
+
 export function aiAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -6407,6 +6430,12 @@ export function aiAdapter(input: {
    * the others: without it A06 recommends nothing. The tested alert-lifecycle fold, reused verbatim.
    */
   readonly operationsAlerts?: (tenantId: string) => Promise<readonly LiveAlert[]> | readonly LiveAlert[];
+  /**
+   * The tenant's loss-prevention investigation cases (M15-FR-04), for the Security/Fraud agent (A07).
+   * Optional, same shape as the others: without it A07 prioritises nothing. The tested LP case fold, reused
+   * verbatim; the worklist ordering is the tested `buildOpenCaseWorklist`.
+   */
+  readonly investigations?: (tenantId: string) => Promise<readonly InvestigationCase[]> | readonly InvestigationCase[];
 }): AiDeps {
   return {
     now: input.now,
@@ -6518,6 +6547,12 @@ export function aiAdapter(input: {
         if (input.operationsAlerts === undefined) return [];
         const findings = recommendOperationsRunbooks(await input.operationsAlerts(tenantId));
         return operationsProposals(findings, now);
+      }
+      // A07 Security/Fraud — prioritise the open investigations by exposure. NO autonomous sanctions.
+      if (agent === 'A07') {
+        if (input.investigations === undefined) return [];
+        const worklist = buildOpenCaseWorklist(await input.investigations(tenantId));
+        return investigationProposals(worklist, now);
       }
       return [];
     },
