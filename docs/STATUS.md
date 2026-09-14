@@ -5,6 +5,33 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Durable certification store (M25-FR-03 follow-on · PR-E) — the HR store, second piece (14 September 2026)
+
+**Direction:** owner authorised continuous autonomous completion; the workforce (HR) store is the active
+front. After the roster store (PR-D), this makes **certificates** durable — same pattern, same tenant stream,
+no model-provider decision needed.
+
+**What changed (behaviour):** the certificate on file is now durable, so "may this person work the deli
+counter TODAY?" reads stored facts.
+- `POST /v1/hr/workforce/certifications/:id` — record/replace a certificate (kind, issued/valid dates, and WHO
+  verified it — an **unverified** certificate is not cover). `workforce.roster.manage`.
+- `GET /v1/hr/workforce/certifications?employeeId=` — the stored certificates. `workforce.roster.read`.
+- `GET /v1/hr/workforce/employees/:id/task-gate?task=&requiresCertification=&requiresRole=&today=` — the
+  STATEFUL gate: folds the stored employee (from the roster store) + their stored certificates and runs the
+  tested `canPerformTask`. `workforce.task.read`. **The gate is on the TASK, never the person** — a lapsed
+  food-handling certificate blocks the deli counter but not shelf-stacking (`stillAllowed`); a leaver is
+  blocked outright; an unverified certificate is `certification_missing`; a `404` when the employee is unknown.
+- Event-sourced latest-per-id on the same `STREAM.workforce`; reuses the PR-D permission (no new one).
+
+**Where it lives:** `services/finance/src/cert-store.ts` (routes), `services/api/src/adapters.ts`
+(`certStoreAdapter`), `services/api/src/main.ts` (wiring).
+
+**Evidence:** `tests/integration/cert-store.test.ts` (4) — valid→allowed / expired→blocked (+ reads back),
+unverified-not-cover + role-not-held, leaver blocked outright, 404 + manage/task RBAC + malformed 400. **M25
+stays PARTIALLY_WIRED** (attendance/SOP durable stores + the ESS screen remain) — **no completion-% change**.
+
+---
+
 ## Durable roster store (M25-FR-01 follow-on · PR-D) — the owner-authorized HR store (14 September 2026)
 
 **Direction:** owner authorised continuous autonomous completion, and explicitly named "build the workforce

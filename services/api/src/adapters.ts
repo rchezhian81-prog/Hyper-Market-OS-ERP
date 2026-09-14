@@ -100,7 +100,8 @@ import type { BriefLanguage } from '../../../packages/owner-control/src/index';
 import type { EInvoiceRegisterDeps } from '../../finance/src/e-invoice-register';
 import type { PayRunStoreDeps } from '../../finance/src/pay-run-store';
 import type { RosterStoreDeps } from '../../finance/src/roster-store';
-import type { Employee as WfEmployee, ShiftRequirement as WfShift, ShiftAssignment as WfAssignment } from '../../../packages/workforce/src/workforce';
+import type { CertStoreDeps } from '../../finance/src/cert-store';
+import type { Employee as WfEmployee, ShiftRequirement as WfShift, ShiftAssignment as WfAssignment, Certification as WfCertification } from '../../../packages/workforce/src/workforce';
 import { foldPayRun, type PayRunEvent } from '../../../packages/payroll/src/index';
 import type { Gstr1SubmissionStoreDeps } from '../../finance/src/gstr1-submission-store';
 import { foldGstr1Submission, type Gstr1SubmissionEvent } from '../../../packages/finance/src/index';
@@ -1180,6 +1181,44 @@ export function rosterStoreAdapter(input: { readonly store: EventStore; readonly
         assignments = assignments.filter((a) => shiftIds.has(a.shiftId));
       }
       return { employees, shifts, assignments };
+    },
+  };
+}
+
+/**
+ * The durable certification store (M25-FR-03 follow-on). Certificates append to the SAME tenant `workforce`
+ * stream as the roster (event type distinguishes them), latest-per-certificationId; the stateful task-gate
+ * reads a stored employee (the roster fold) + their certificates and runs the tested `canPerformTask`.
+ */
+export function certStoreAdapter(input: { readonly store: EventStore; readonly now: () => string }): CertStoreDeps {
+  const latestCerts = async (tenantId: string): Promise<WfCertification[]> => {
+    const byId = new Map<string, WfCertification>();
+    for (const c of await allOf<WfCertification>(input.store, tenantId, ROSTER_STREAM, 'RosterCertificationSet')) byId.set(c.certificationId, c);
+    return [...byId.values()];
+  };
+  return {
+    now: input.now,
+    putCertification: async (tenantId, cert, key) => {
+      await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
+        id: `RosterCertificationSet-${cert.certificationId}-${input.now()}`,
+        type: 'RosterCertificationSet',
+        occurredAt: input.now(),
+        idempotencyKey: key,
+        source: 'api/hr',
+        payload: cert,
+      }));
+    },
+    certifications: async (tenantId, employeeId) => {
+      const all = await latestCerts(tenantId);
+      return employeeId === undefined ? all : all.filter((c) => c.employeeId === employeeId);
+    },
+    employee: async (tenantId, employeeId) => {
+      // Latest-per-id over the roster's employee events (the same fold the roster store uses).
+      let found: WfEmployee | undefined;
+      for (const e of await allOf<WfEmployee>(input.store, tenantId, ROSTER_STREAM, 'RosterEmployeeSet')) {
+        if (e.employeeId === employeeId) found = e; // occurrence order → last wins
+      }
+      return found;
     },
   };
 }
