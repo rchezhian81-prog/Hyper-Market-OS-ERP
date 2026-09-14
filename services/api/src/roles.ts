@@ -243,4 +243,21 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'migration.controltotal.sign',
     ],
   },
+  {
+    id: 'supplier',
+    name: 'Supplier (portal login)',
+    // M24-FR-01 / §35 — the ONE role held by a party OUTSIDE the business: a supplier logging into the
+    // portal to see its own orders and statement. Deliberately the narrowest external role in the product,
+    // narrower even than the chartered accountant: it may read ITS OWN portal data and nothing else.
+    //
+    // Separation is the shape of this list. `supplier.portal.self` is a READ of the caller's own rows,
+    // scoped server-side from the session's partner binding (the routes never trust a partner id in the
+    // request); it is NOT `supplier.portal.manage`/`.review` (those are the BUYER's configure/review
+    // authority) nor `.submit` (buyer-operated today). No `pos.*`, `cash.*`, `finance.*`, `purchase.*`
+    // committing code is present — a supplier cannot post a business transaction, only see its own.
+    permissions: [
+      'identity.self.read',
+      'supplier.portal.self',
+    ],
+  },
 ];

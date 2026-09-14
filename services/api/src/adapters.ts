@@ -1080,6 +1080,10 @@ const forPortalPartner = (partnerId: string): string => streamName(STREAM.purcha
 // Partner-action audit is TENANT-WIDE (one stream, every partner) so `findProbing` can see a supplier
 // trying doors across the shop — the whole point is a view no single partner's stream would give (M24-FR-04).
 const PORTAL_AUDIT_STREAM = streamName(STREAM.purchase, 'portal-audit');
+// A supplier login's binding to its partner (M24-FR-01, §35) — keyed by the USER, so a supplier-facing
+// read resolves its partner id from the session, never the request. Latest binding wins (a login moved to
+// a different partner re-points); the stream folds one user, not the shop.
+const forPortalLogin = (userId: string): string => streamName(STREAM.purchase, 'portal-login', userId);
 // Purchase orders and supplier holds live on their own shared streams so a fold can list every PO
 // (and answer the open commitment) and read a supplier's latest block state (M06-FR-01/02/04).
 const PURCHASE_ORDERS_STREAM = streamName(STREAM.purchase, 'orders');
@@ -4815,6 +4819,11 @@ export function supplierPortalAdapter(input: {
     partner: async (tenantId, partnerId) =>
       latest<PartnerConfig>(input.store, tenantId, forPortalPartner(partnerId), 'SupplierPartnerConfigured'),
 
+    // Which partner this login is bound to (M24-FR-01) — read from the per-user login index the config
+    // write maintains below. Latest binding wins, so a login reassigned to another partner re-points.
+    partnerForUser: async (tenantId, userId) =>
+      (await latest<{ partnerId: string }>(input.store, tenantId, forPortalLogin(userId), 'SupplierLoginBound'))?.partnerId,
+
     submissions: async (tenantId, partnerId) =>
       allOf<SubmissionRecord>(input.store, tenantId, forPortalPartner(partnerId), 'SupplierSubmissionReceived'),
 
@@ -4841,10 +4850,23 @@ export function supplierPortalAdapter(input: {
         id: `portal-partner-${partnerId}-${config.grants.join('.')}`,
         type: 'SupplierPartnerConfigured',
         occurredAt: input.now(),
-        idempotencyKey: `portal-partner-${tenantId}-${partnerId}-${config.grants.join('.')}-${config.requiredDocuments.join('.')}-${docsDigest}`,
+        idempotencyKey: `portal-partner-${tenantId}-${partnerId}-${config.grants.join('.')}-${config.requiredDocuments.join('.')}-${docsDigest}-${[...config.logins].sort().join('.')}`,
         source: 'api/purchase',
         payload: config,
       }));
+      // Maintain the per-user login index (M24-FR-01) so a supplier-facing read resolves its partner id
+      // from the session. One binding event per login, keyed by (user, partner) so a re-config with the
+      // same login collapses but a reassignment to another partner is a new, latest-wins fact.
+      for (const userId of config.logins) {
+        await input.store.append(tenantId, forPortalLogin(userId), makeEvent({
+          id: `portal-login-${userId}-${partnerId}`,
+          type: 'SupplierLoginBound',
+          occurredAt: input.now(),
+          idempotencyKey: `portal-login-${tenantId}-${userId}-${partnerId}`,
+          source: 'api/purchase',
+          payload: { userId, partnerId },
+        }));
+      }
     },
 
     recordSubmission: async (tenantId, partnerId, record) => {

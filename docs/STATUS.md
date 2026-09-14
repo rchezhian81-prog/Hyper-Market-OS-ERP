@@ -5,6 +5,40 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M24-FR-01 supplier server-side scoping → M24 re-rated WIRED (14 September 2026)
+
+Continued (owner "keep going"). Closed the last M24 gap the ledger named — "server-side scoping (FR-01)
+still engine-only" — the **read-isolation** half of the M24-FR-01 acceptance: *a supplier cannot see
+another supplier's data* (§35). The supplier portal is the ONE place a party outside the business logs in,
+so this is the commonest multi-tenant breach there is (one supplier seeing a competitor's prices).
+
+**What landed (the `scopeToPartner` engine already existed and was battle-tested; this wires it to a
+supplier-facing surface):**
+- `services/purchase/src/supplier-portal.ts`: `GET /v1/supplier-portal/me/submissions` + `/me/statement`.
+  The partner id comes from the authenticated session's **stored login binding**, NEVER the request —
+  there is no `:partnerId` in these paths to change. A request that names another partner (`?partnerId=`)
+  is refused `not_your_data` **and recorded** as a security event (so `findProbing` surfaces a pattern —
+  hard rule #6, tying read-probing to the FR-04 view), never silently emptied. A login bound to no partner
+  is `not_a_supplier_login`; a login without the read grant gets a permission answer, not an empty list (P-08).
+- `services/api/src/adapters.ts`: `PartnerConfig.logins` (the buyer binds a supplier's login when
+  configuring the partner) is folded into a per-user `SupplierLoginBound` index; `partnerForUser` resolves
+  it latest-wins (a login reassigned to another partner re-points).
+- `services/api/src/roles.ts`: a **new narrow `supplier` role** holding only `identity.self.read` +
+  `supplier.portal.self` — the narrowest external role in the product (the roadmap's "Supplier
+  (self-service)" actor), with no `pos.*`/`cash.*`/`finance.*`/`purchase.*` committing code, so a supplier
+  cannot post a business transaction, only see its own data.
+- `tests/integration/supplier-portal-scoping.test.ts` (4): own submissions+statement scoped; a cross-partner
+  probe refused+recorded ×3 → `findProbing` fires; an unbound login refused; a buyer (lacking `.self`) refused.
+
+**Honest re-rate — M24 PARTIALLY_WIRED (40) → WIRED (60).** FR-02 submissions, FR-03 compliance-at-action,
+and FR-04 statement/refusal-audit/probe-detection were already WIRED+integration-tested; FR-01 scoping was
+the only engine-only FR and is now the live supplier-facing surface. The supplier login **credential**
+issuance (external IdP) is deployment, exactly as with other wired-but-not-deployed surfaces (the GST
+browser-auth foundation, etc.); the isolation **behaviour** is proven. Headline **48.7% → 48.9%** (M24 +20).
+Module ladder + summary + evidence registry updated to match.
+
+---
+
 ## M25-FR-02 offline completion queue CLOSED — edge half (slice 2b) → M25 re-rated WIRED (14 September 2026)
 
 The edge half landed, closing the offline-first gap the owner directed (option B) and completing the whole
