@@ -113,6 +113,13 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   ConsentRecorded: '/v1/customers/:customerId/consent',
   GstPortalActionRequested: gstPortalActionRoute,
   ReturnAccepted: returnAcceptedRoute,
+  // Offline opening/closing checklist + daily-task completions (M25-FR-02, §31/P-01). The store box holds a
+  // completion made with the cable out and the sync agent relays it to the dedicated SYNCED route under the
+  // store token — the SAME door the online write goes through, which records the box-relayed signer and re-checks
+  // it (as the synced-return route does). The id is a plain payload field matching the path param, so a template
+  // fills it (and an empty/absent id yields no path → dead-lettered by name, hard rule #6), no resolver needed.
+  ChecklistCompleted: '/v1/hr/workforce/checklists/:checklistId/synced',
+  TaskCompleted: '/v1/hr/workforce/tasks/:taskId/complete/synced',
 };
 
 /** Fill `:name` segments from the payload, or run a resolver, so a route can address a thing. */

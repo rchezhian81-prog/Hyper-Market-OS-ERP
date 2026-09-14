@@ -21,11 +21,19 @@ record), and never drop a completion that genuinely happened (only a 400 for an 
 `tests/integration/offline-completion-sync-routes.test.ts` (4). No completion-% change (the acceptance isn't met
 until slice 2).
 
-**Slice 2 (next) — the edge half:** a third `SyncPipeline` + `SyncAgent` beside sales and returns (its own
-`completions.log`/cursor/outbox), a `commitCompletion` seam on `EdgeNode`, a `cloud-completion.ts` translator, and
-`ChecklistCompleted`/`TaskCompleted` event types + route resolvers in the sync-agent transport — with an
-`offline-completions-reach-the-cloud-through-the-edge` integration test (completion made offline, box restarted,
-reaches the cloud when the link returns). That closes the FR-02 offline acceptance.
+**Slice 2a (this) — the transport + translator (pure, no composition-root risk):** `ChecklistCompleted` /
+`TaskCompleted` event types (`packages/contracts`), their route templates in the sync-agent transport
+(`edge/sync-agent/src/http-transport.ts` → the `/synced` routes, id filled from the payload, an absent id
+dead-lettered by name), and a defensive `edge/store-edge/src/cloud-completion.ts` translator (mirror of
+`cloud-return.ts`) that maps the box's on-disk completion record onto exactly what the synced routes read.
+`tests/unit/cloud-completion.test.ts` (7) + `tests/unit/sync-http-transport.test.ts` (+5). No completion-% change.
+
+**Slice 2b (next) — the edge composition root:** a third `SyncPipeline` + `SyncAgent` beside sales and returns
+(its own `completions.log`/cursor/outbox — never shared, hard rule #1), a `commitCompletion` seam on `EdgeNode`
+(`edge/store-edge/src/index.ts`) that durably commits then enqueues via the translator, wired in
+`edge/store-edge/src/main.ts` — with an `offline-completions-reach-the-cloud-through-the-edge` integration test
+(completion made offline, box restarted, reaches the cloud when the link returns). That closes the FR-02 offline
+acceptance and is where M25 is re-assessed.
 
 ---
 

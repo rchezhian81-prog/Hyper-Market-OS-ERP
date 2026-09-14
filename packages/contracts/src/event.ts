@@ -47,6 +47,8 @@ export const KNOWN_EVENT_TYPES = [
   'PeriodReopened',
   'MigrationTotalSigned',
   'MigrationExceptionResolved',
+  'ChecklistCompleted',
+  'TaskCompleted',
 ] as const;
 export type KnownEventType = (typeof KNOWN_EVENT_TYPES)[number];
 export const isKnownEventType = (v: string): v is KnownEventType =>
