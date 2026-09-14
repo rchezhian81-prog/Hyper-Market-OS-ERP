@@ -4,5 +4,6 @@
 // secrets, card data and personal data by construction (hard rules #3 and #4).
 
 export * from './health';
+export * from './operations-advisor';
 export * from './logging';
 export * from './backup';

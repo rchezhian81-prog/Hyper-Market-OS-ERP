@@ -146,7 +146,8 @@ import { assessMappingQuality, type MappingQualityFinding } from '../../../packa
 import type { DataImportDeps, ImportCommitRecord } from '../../purchase/src/data-import';
 import type { DataExportAuditDeps } from '../../purchase/src/data-export';
 import type { ExportAudit } from '../../../packages/export/src/export';
-import { projectAlerts, type AlertLifecycleDeps, type AlertLifecycleEvent } from '../../platform/src/alert-lifecycle';
+import { projectAlerts, type AlertLifecycleDeps, type AlertLifecycleEvent, type LiveAlert } from '../../platform/src/alert-lifecycle';
+import { recommendOperationsRunbooks, type OperationsFinding } from '../../../packages/ops/src/index';
 import { projectHolds, type LegalHoldsDeps, type LegalHoldEvent } from '../../finance/src/legal-holds';
 import { computeOpenCommitment, type ReceiptFact, type SupplierContract, type RebateScheme, type RebateAccrual, type Requisition, type Quote } from '../../../packages/purchasing/src/index';
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
@@ -6365,6 +6366,27 @@ function mappingQualityProposals(findings: readonly MappingQualityFinding[], now
   }));
 }
 
+/**
+ * Turn A06's operational-incident findings into DRAFT proposals — each explaining a live incident and naming
+ * its runbook, citing the real persisted alert as evidence. A06 recommends; an OPERATOR acknowledges the alert
+ * (taking ownership) and runs the runbook. Commits nothing (hard rule #5 / P-05).
+ */
+function operationsProposals(findings: readonly OperationsFinding[], now: string): Omit<Proposal, 'committed'>[] {
+  return findings.map((f): Omit<Proposal, 'committed'> => ({
+    proposalId: f.findingId,
+    agent: 'A06',
+    summary: f.headline,
+    // The governance action a person takes: acknowledge the alert (take ownership), then run the runbook.
+    wouldRequire: 'POST /v1/platform/alerts/:alertId/acknowledge',
+    evidence: [{
+      source: 'operational alerts',
+      reference: f.alertId,
+      summary: `${f.component} ${f.status} (owner ${String(f.evidence['owner'] ?? 'unassigned')}) — Runbook: ${f.runbook}`,
+    }],
+    createdAt: now,
+  }));
+}
+
 export function aiAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -6380,6 +6402,11 @@ export function aiAdapter(input: {
    * others: without it A08 simply raises no mapping findings. The tested import-quality fold, reused verbatim.
    */
   readonly importHistory?: (tenantId: string) => Promise<readonly ImportJobRecord[]> | readonly ImportJobRecord[];
+  /**
+   * The tenant's live operational alerts (M35-FR-04), for the Operations agent (A06). Optional, same shape as
+   * the others: without it A06 recommends nothing. The tested alert-lifecycle fold, reused verbatim.
+   */
+  readonly operationsAlerts?: (tenantId: string) => Promise<readonly LiveAlert[]> | readonly LiveAlert[];
 }): AiDeps {
   return {
     now: input.now,
@@ -6466,24 +6493,33 @@ export function aiAdapter(input: {
      * wired (and, for a model-backed agent, a provider is chosen, OB-02).
      */
     run: async (tenantId, agent) => {
-      if (agent !== 'A08') return [];
       const now = input.now();
-      const proposals: Omit<Proposal, 'committed'>[] = [];
-      // Leg 1+2 — the product master: missing barcode / suspected duplicate / missing MRP.
-      if (input.products !== undefined && input.barcodes !== undefined) {
-        const findings = assessProductDataQuality({
-          products: await input.products(tenantId),
-          barcodes: new BarcodeRegistry(await input.barcodes(tenantId)),
-        });
-        proposals.push(...dataQualityProposals(findings, now));
+      // A08 Data Quality — the product master + import history.
+      if (agent === 'A08') {
+        const proposals: Omit<Proposal, 'committed'>[] = [];
+        // Leg 1+2 — the product master: missing barcode / suspected duplicate / missing MRP.
+        if (input.products !== undefined && input.barcodes !== undefined) {
+          const findings = assessProductDataQuality({
+            products: await input.products(tenantId),
+            barcodes: new BarcodeRegistry(await input.barcodes(tenantId)),
+          });
+          proposals.push(...dataQualityProposals(findings, now));
+        }
+        // Leg 3 — suspicious mappings from import history: a source that keeps failing on one column.
+        // An independent data source, so it runs whether or not the product master is wired.
+        if (input.importHistory !== undefined) {
+          const findings = assessMappingQuality({ jobs: await input.importHistory(tenantId) });
+          proposals.push(...mappingQualityProposals(findings, now));
+        }
+        return proposals;
       }
-      // Leg 3 — suspicious mappings from import history: a source that keeps failing on one column.
-      // An independent data source, so it runs whether or not the product master is wired.
-      if (input.importHistory !== undefined) {
-        const findings = assessMappingQuality({ jobs: await input.importHistory(tenantId) });
-        proposals.push(...mappingQualityProposals(findings, now));
+      // A06 Operations — explain the live operational incidents and recommend a runbook for each.
+      if (agent === 'A06') {
+        if (input.operationsAlerts === undefined) return [];
+        const findings = recommendOperationsRunbooks(await input.operationsAlerts(tenantId));
+        return operationsProposals(findings, now);
       }
-      return proposals;
+      return [];
     },
 
     openProposals: (tenantId) => allOf<Proposal>(input.store, tenantId, STREAM.ai, 'AiProposalRaised'),

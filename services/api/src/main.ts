@@ -844,6 +844,9 @@ export function buildSurface(deps: {
       // ...and import history, for A08's suspicious-mapping leg — the same tested fold the
       // import-quality routes read, so there is one truth about which source keeps failing.
       importHistory: (t) => importQualityAdapter({ store, now }).jobs(t),
+      // ...and the live operational alerts, for the Operations agent (A06) — the same tested
+      // alert-lifecycle fold the alerts board reads, so A06 explains the same incidents a human sees.
+      operationsAlerts: (t) => alertLifecycleAdapter({ store, now }).alerts(t),
     })),
   ];
 }
