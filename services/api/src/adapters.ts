@@ -103,6 +103,7 @@ import type { RosterStoreDeps } from '../../finance/src/roster-store';
 import type { CertStoreDeps } from '../../finance/src/cert-store';
 import type { SopStoreDeps, Sop as WfSop } from '../../finance/src/sop-store';
 import type { AttendanceStoreDeps, AttendanceRecord as WfAttendance } from '../../finance/src/attendance-store';
+import type { PayslipStoreDeps, IssuedPayslip } from '../../finance/src/payslip-store';
 import type { Employee as WfEmployee, ShiftRequirement as WfShift, ShiftAssignment as WfAssignment, Certification as WfCertification, SopAcknowledgement as WfSopAck } from '../../../packages/workforce/src/workforce';
 import { foldPayRun, type PayRunEvent } from '../../../packages/payroll/src/index';
 import type { Gstr1SubmissionStoreDeps } from '../../finance/src/gstr1-submission-store';
@@ -1292,6 +1293,39 @@ export function attendanceStoreAdapter(input: { readonly store: EventStore; read
       for (const e of await allOf<WfEmployee>(input.store, tenantId, ROSTER_STREAM, 'RosterEmployeeSet')) byId.set(e.employeeId, e);
       const all = [...byId.values()];
       return branchId === undefined ? all : all.filter((e) => e.branchId === branchId);
+    },
+  };
+}
+
+/** Issued payslips fold one tenant stream, latest-per-(employeeId,period) — the durable ESS payslip record. */
+const PAYSLIPS_STREAM = streamName(STREAM.payroll, 'payslips');
+
+/**
+ * The durable issued-payslip store (M25 · ESS). Each issued payslip appends to one tenant stream,
+ * latest-per-(employeeId,period); `my-payslip` reads the caller's most-recent-period payslip and the tested
+ * `employeeSelfView` redacts it. A retained record (hard rule #6) — a re-issue supersedes but never erases.
+ */
+export function payslipStoreAdapter(input: { readonly store: EventStore; readonly now: () => string }): PayslipStoreDeps {
+  const foldFor = async (tenantId: string, employeeId: string): Promise<IssuedPayslip[]> => {
+    const byPeriod = new Map<string, IssuedPayslip>();
+    for (const p of await allOf<IssuedPayslip>(input.store, tenantId, PAYSLIPS_STREAM, 'PayslipIssued')) {
+      if (p.employeeId === employeeId) byPeriod.set(p.period, p); // occurrence order → last issue of a period wins
+    }
+    return [...byPeriod.values()];
+  };
+  return {
+    now: input.now,
+    putPayslip: async (tenantId, issued, key) => {
+      await input.store.append(tenantId, PAYSLIPS_STREAM, makeEvent({
+        id: `PayslipIssued-${issued.employeeId}-${issued.period}-${input.now()}`,
+        type: 'PayslipIssued', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: issued,
+      }));
+    },
+    payslipsFor: foldFor,
+    latestPayslip: async (tenantId, employeeId) => {
+      const all = await foldFor(tenantId, employeeId);
+      if (all.length === 0) return undefined;
+      return all.sort((a, b) => b.period.localeCompare(a.period))[0]; // most recent pay period
     },
   };
 }
