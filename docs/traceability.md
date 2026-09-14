@@ -308,7 +308,7 @@ per-item evidence and any external blocker live in the ledger. Names are from `d
 | MG-01 | Discovery | INTEGRATION TESTED |
 | MG-02 | Preservation | INTEGRATION TESTED |
 | MG-03 | Mapping | INTEGRATION TESTED |
-| MG-04 | Cleaning | INTEGRATION TESTED |
+| MG-04 | Cleaning | E2E VERIFIED |
 | MG-05 | Trial loads | INTEGRATION TESTED |
 | MG-06 | Reconciliation | INTEGRATION TESTED |
 | MG-07 | History | INTEGRATION TESTED |
