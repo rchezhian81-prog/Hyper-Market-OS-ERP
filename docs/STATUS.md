@@ -5,6 +5,24 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## MG-04 migration/cleaning → E2E_VERIFIED (headline moved) (14 September 2026)
+
+Owner said "keep going" on the E2E-verification track. Next target: the **migration ("Moving from the old
+system") screen** — a full offline screen that existed with **zero e2e coverage**, over migration controls that
+are all integration-tested. Built `tests/e2e/migration-decision-delivery.e2e.ts` — a real headless-browser test
+driving the screen's **exception-resolution** write-path (MG-04 cleaning/dedupe): an authorised operator opens
+the "problems in the old data" tab, picks a blocking cleaning exception, chooses to correct it, gives the reason,
+and the decision is **committed to the device outbox with the page showing it queued** (hard rule #1 — not a
+signature that lives only in a tab); with **nobody named** the same decision is **refused and nothing queued**
+(§28); and the screen **opens with the network cut**, from the SW cache, saying it is a cached page (§31). That's
+the E2E_VERIFIED bar (offline-open + a functional write-path, the M33 precedent).
+
+**MG-04 re-rated INTEGRATION_TESTED → E2E_VERIFIED — honest, earned (crossed the rung threshold).**
+Headline **48.3% → 48.4%**; E2E-verification metric **3.8% → 4.8%**. Conservative: only MG-04 (the write-path the
+e2e actually drives) was re-rated, not the other MG stages the screen also surfaces.
+
+---
+
 ## A08 Data Quality inbox → E2E_VERIFIED (headline moved) (14 September 2026)
 
 Owner directed an E2E-verification increment ("go with B"). Chose A08, whose completion evidence named the
