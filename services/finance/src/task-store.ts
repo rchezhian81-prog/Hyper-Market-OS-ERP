@@ -102,6 +102,34 @@ export function taskStoreRoutes(deps: TaskStoreDeps): readonly Route[] {
       },
     },
     {
+      // Reconcile a task completed OFFLINE at the store (M25-FR-02, §31/P-01, offline-first). When the box has no
+      // internet the task is still done; the completion is committed to the store's own outbox (hard rule #1) and
+      // the sync agent relays it HERE under the store's sync token. `doneBy` is who was captured at the box —
+      // TRUSTED as the synced-return route trusts the lane's operator. Records exactly as the /complete route
+      // does (same durable store), gated on the narrow store-sync permission `workforce.completion.sync` — not
+      // `roster.manage`, which the box's service identity must not hold (P-04). Idempotent: a re-delivery is one
+      // record. Never rejects a task that genuinely happened — only a 400 for a payload it cannot read.
+      api: 'API-11', method: 'POST', path: '/v1/hr/workforce/tasks/:taskId/complete/synced',
+      permission: 'workforce.completion.sync', idempotent: true,
+      handler: async (ctx) => {
+        const taskId = (ctx.params['taskId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (taskId === '' || !isStr(b['doneBy']) || (b['doneAt'] !== undefined && !isStr(b['doneAt']))) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_completion',
+            whatHappened: 'A task completion needs a taskId in the path and { doneBy } in the body (doneAt optional, defaults to now).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Keep it in the outbox and raise it — a task completed at the store must not be dropped.',
+          });
+        }
+        const completion: TaskCompletion = {
+          taskId, doneBy: b['doneBy'], doneAt: isStr(b['doneAt']) ? b['doneAt'] : deps.now(),
+        };
+        await deps.completeTask(ctx.tenantId, completion, ctx.idempotencyKey ?? `taskdone-synced-${taskId}-${deps.now()}`);
+        return { status: 200, body: { completion, synced: true } };
+      },
+    },
+    {
       // The routed tasks with their live status. Optionally narrowed ?role= / ?branchId=; ?asOf= sets the instant
       // the clock is read at (defaults to now), so an overdue/escalated task can be assessed deterministically.
       api: 'API-11', method: 'GET', path: '/v1/hr/workforce/tasks',

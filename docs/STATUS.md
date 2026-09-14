@@ -5,6 +5,30 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M25-FR-02 offline completion sync — cloud half (slice 1) (14 September 2026)
+
+Owner directed closing the real offline-first gap (option B): checklists/tasks must **complete offline and sync**
+(§31/P-01), which the cloud durable stores alone don't satisfy. Studied the proven "offline returns reach the
+cloud through the edge" pipeline (returns is a full clone of the sale pipeline on its own log/cursor/outbox/agent)
+and am replicating it for completions in two slices.
+
+**Slice 1 (this) — the cloud half:** dedicated SYNCED routes `POST /v1/hr/workforce/checklists/:id/synced` and
+`POST /v1/hr/workforce/tasks/:id/complete/synced` record a completion made offline into the SAME durable stores,
+gated on a NEW narrow store-sync permission `workforce.completion.sync` (owner + store_manager; **not** the full
+`workforce.roster.manage`, which the box's service identity must not hold — P-04). They trust the box-relayed
+signer (as the synced-return route trusts the lane operator), are idempotent (a re-delivered completion is one
+record), and never drop a completion that genuinely happened (only a 400 for an unreadable payload).
+`tests/integration/offline-completion-sync-routes.test.ts` (4). No completion-% change (the acceptance isn't met
+until slice 2).
+
+**Slice 2 (next) — the edge half:** a third `SyncPipeline` + `SyncAgent` beside sales and returns (its own
+`completions.log`/cursor/outbox), a `commitCompletion` seam on `EdgeNode`, a `cloud-completion.ts` translator, and
+`ChecklistCompleted`/`TaskCompleted` event types + route resolvers in the sync-agent transport — with an
+`offline-completions-reach-the-cloud-through-the-edge` integration test (completion made offline, box restarted,
+reaches the cloud when the link returns). That closes the FR-02 offline acceptance.
+
+---
+
 ## MG-06 migration/reconciliation → E2E_VERIFIED (headline moved) (14 September 2026)
 
 Continued the E2E track (owner "keep going"). Extended the migration-screen browser harness with the
