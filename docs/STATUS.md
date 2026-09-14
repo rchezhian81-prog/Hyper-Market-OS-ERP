@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Durable attendance store (M25 follow-on · PR-G) — the HR store's durable stores COMPLETE (14 September 2026)
+
+**Direction:** owner authorised continuous autonomous completion; the workforce (HR) store front. This is the
+**last durable-store piece** — after it, all four M25 stateless decision surfaces have a durable counterpart.
+
+**What changed (behaviour):**
+- `POST /v1/hr/workforce/attendance/:employeeId/:date` — record hours worked on a day. `workforce.roster.manage`.
+- `GET /v1/hr/workforce/attendance?date=` — the stored hours for a day. `workforce.roster.read`.
+- `GET /v1/hr/workforce/labour-cost?branchId=&date=&salesMinor=&guideBps=` — the STATEFUL view: folds the
+  stored hours for the day + the stored staff for the branch (with their hourly rate) and runs the tested
+  `labourCost`. `workforce.roster.read`. **REPORTED, never enforced (§29):** above-guide is "worth a look", a
+  no-sales day is `not_meaningful` (never a divide-by-zero), no route can refuse a roster on cost. The day's
+  sales figure is supplied (finance's number, not re-derived here).
+- Event-sourced latest-per-(employee,date) on the same `STREAM.workforce`; reuses the PR-D permission.
+
+**Where it lives:** `services/finance/src/attendance-store.ts`, `services/api/src/adapters.ts`
+(`attendanceStoreAdapter`), `services/api/src/main.ts`.
+
+**Evidence:** `tests/integration/attendance-store.test.ts` (4) — ratio + above-guide + restart rebuild;
+no-sales `not_meaningful`; branch scoping + read-back; RBAC + malformed 400.
+
+**HR store milestone:** the M25 durable stores are now **complete** — **roster** (PR-D), **certification**
+(PR-E), **SOP-acknowledgement** (PR-F) and **attendance** (PR-G). Every stateless workforce decision
+(roster-gaps, task-gate, sop-status, labour-cost) now has a durable, stateful counterpart reading persisted
+facts. The only remaining M25 piece is the **employee self-service (ESS) screen** — a larger UI slice. **M25
+stays PARTIALLY_WIRED; no completion-% change** (the durable stores deepen M25 within its rung; the module
+crosses to WIRED/INTEGRATION_TESTED when the ESS surface lands).
+
+---
+
 ## Durable SOP-acknowledgement store (M25-FR-04 follow-on · PR-F) — the HR store, third piece (14 September 2026)
 
 **Direction:** owner authorised continuous autonomous completion; the workforce (HR) store front continues.

@@ -102,6 +102,7 @@ import type { PayRunStoreDeps } from '../../finance/src/pay-run-store';
 import type { RosterStoreDeps } from '../../finance/src/roster-store';
 import type { CertStoreDeps } from '../../finance/src/cert-store';
 import type { SopStoreDeps, Sop as WfSop } from '../../finance/src/sop-store';
+import type { AttendanceStoreDeps, AttendanceRecord as WfAttendance } from '../../finance/src/attendance-store';
 import type { Employee as WfEmployee, ShiftRequirement as WfShift, ShiftAssignment as WfAssignment, Certification as WfCertification, SopAcknowledgement as WfSopAck } from '../../../packages/workforce/src/workforce';
 import { foldPayRun, type PayRunEvent } from '../../../packages/payroll/src/index';
 import type { Gstr1SubmissionStoreDeps } from '../../finance/src/gstr1-submission-store';
@@ -1262,6 +1263,35 @@ export function sopStoreAdapter(input: { readonly store: EventStore; readonly no
         if (e.employeeId === employeeId) found = e; // occurrence order → last wins
       }
       return found;
+    },
+  };
+}
+
+/**
+ * The durable attendance store (M25 follow-on). Hours-worked records append to the SAME tenant `workforce`
+ * stream, latest-per-(employee,date); the stateful labour-cost view reads the stored hours for a day + the
+ * stored staff for a branch and runs the tested `labourCost` (reported, never enforced).
+ */
+export function attendanceStoreAdapter(input: { readonly store: EventStore; readonly now: () => string }): AttendanceStoreDeps {
+  return {
+    now: input.now,
+    putAttendance: async (tenantId, record, key) => {
+      await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
+        id: `AttendanceSet-${record.employeeId}-${record.date}-${input.now()}`,
+        type: 'AttendanceSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: record,
+      }));
+    },
+    attendance: async (tenantId, date) => {
+      // Latest hours per (employee, date); return the rows for the requested day.
+      const byKey = new Map<string, WfAttendance>();
+      for (const r of await allOf<WfAttendance>(input.store, tenantId, ROSTER_STREAM, 'AttendanceSet')) byKey.set(`${r.employeeId}:${r.date}`, r);
+      return [...byKey.values()].filter((r) => r.date === date);
+    },
+    employees: async (tenantId, branchId) => {
+      const byId = new Map<string, WfEmployee>();
+      for (const e of await allOf<WfEmployee>(input.store, tenantId, ROSTER_STREAM, 'RosterEmployeeSet')) byId.set(e.employeeId, e);
+      const all = [...byId.values()];
+      return branchId === undefined ? all : all.filter((e) => e.branchId === branchId);
     },
   };
 }
