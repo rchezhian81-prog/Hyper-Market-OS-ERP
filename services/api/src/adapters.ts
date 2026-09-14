@@ -99,6 +99,8 @@ import type { ScheduledBriefDeps, StoredSchedule } from '../../reporting/src/sch
 import type { BriefLanguage } from '../../../packages/owner-control/src/index';
 import type { EInvoiceRegisterDeps } from '../../finance/src/e-invoice-register';
 import type { PayRunStoreDeps } from '../../finance/src/pay-run-store';
+import type { RosterStoreDeps } from '../../finance/src/roster-store';
+import type { Employee as WfEmployee, ShiftRequirement as WfShift, ShiftAssignment as WfAssignment } from '../../../packages/workforce/src/workforce';
 import { foldPayRun, type PayRunEvent } from '../../../packages/payroll/src/index';
 import type { Gstr1SubmissionStoreDeps } from '../../finance/src/gstr1-submission-store';
 import { foldGstr1Submission, type Gstr1SubmissionEvent } from '../../../packages/finance/src/index';
@@ -240,6 +242,7 @@ export const STREAM = {
   ewaybill: 'ewaybill',
   gstreturns: 'gstreturns',
   payroll: 'payroll',
+  workforce: 'workforce',
   packaging: 'packaging',
   waste: 'waste',
   integration: 'integration',
@@ -1133,6 +1136,53 @@ const forPayRun = (payRunId: string): string => streamName(STREAM.payroll, payRu
 const forGstr1Submission = (period: string): string => streamName(STREAM.gstreturns, 'submission', period);
 /** A tenant-wide index of the periods that have a submission — the exception queue folds each one. */
 const GSTR1_SUBMISSION_INDEX = streamName(STREAM.gstreturns, 'submission-index');
+
+/** The tenant's durable roster — one stream for the staff directory, shifts and assignments (latest-per-id). */
+const ROSTER_STREAM = streamName(STREAM.workforce, 'roster');
+
+/**
+ * The durable roster store (M25-FR-01 follow-on). The workforce DECISION routes are stateless what-ifs; this
+ * makes the roster durable — the staff directory, shifts and assignments each append to one tenant stream and
+ * "current" is a latest-per-id fold of the stored facts (hard rule #2), so a restart never loses who is on.
+ */
+export function rosterStoreAdapter(input: { readonly store: EventStore; readonly now: () => string }): RosterStoreDeps {
+  const append = async (tenantId: string, type: string, id: string, key: string, payload: object): Promise<void> => {
+    await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
+      id: `${type}-${id}-${input.now()}`,
+      type,
+      occurredAt: input.now(),
+      idempotencyKey: key,
+      source: 'api/hr',
+      payload,
+    }));
+  };
+  return {
+    now: input.now,
+    putEmployee: (tenantId, employee, key) => append(tenantId, 'RosterEmployeeSet', employee.employeeId, key, employee),
+    putShift: (tenantId, shift, key) => append(tenantId, 'RosterShiftSet', shift.shiftId, key, shift),
+    putAssignment: (tenantId, assignment, key) => append(tenantId, 'RosterAssignmentSet', `${assignment.shiftId}:${assignment.employeeId}`, key, assignment),
+    roster: async (tenantId, branchId) => {
+      // Latest-per-id: allOf returns occurrence order, so the last set of each id wins.
+      const emp = new Map<string, WfEmployee>();
+      for (const e of await allOf<WfEmployee>(input.store, tenantId, ROSTER_STREAM, 'RosterEmployeeSet')) emp.set(e.employeeId, e);
+      const shf = new Map<string, WfShift>();
+      for (const s of await allOf<WfShift>(input.store, tenantId, ROSTER_STREAM, 'RosterShiftSet')) shf.set(s.shiftId, s);
+      const asg = new Map<string, WfAssignment>();
+      for (const a of await allOf<WfAssignment>(input.store, tenantId, ROSTER_STREAM, 'RosterAssignmentSet')) asg.set(`${a.shiftId}:${a.employeeId}`, a);
+
+      let employees = [...emp.values()];
+      let shifts = [...shf.values()];
+      let assignments = [...asg.values()];
+      if (branchId !== undefined) {
+        employees = employees.filter((x) => x.branchId === branchId);
+        shifts = shifts.filter((x) => x.branchId === branchId);
+        const shiftIds = new Set(shifts.map((s) => s.shiftId));
+        assignments = assignments.filter((a) => shiftIds.has(a.shiftId));
+      }
+      return { employees, shifts, assignments };
+    },
+  };
+}
 
 export const STREAM_FOR = { forCustomer, forDriverRun, forLocation, forInvoice, forSaleReturns } as const;
 

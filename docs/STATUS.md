@@ -5,6 +5,39 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Durable roster store (M25-FR-01 follow-on · PR-D) — the owner-authorized HR store (14 September 2026)
+
+**Direction:** owner authorised continuous autonomous completion, and explicitly named "build the workforce
+(HR) store" as a front. This is that store's first piece — **not** blocked on the model-provider decision
+(OB-02), because it is a data store, not an AI drafting leg.
+
+**Why now.** The workforce DECISION routes (roster-gaps, task-gate, checklist, incentive, SOP, labour-cost)
+are all wired but **stateless** — each takes the whole roster in the request body. The named follow-on was
+"Rostering/attendance/certification/SOP durable stores." This delivers the **rostering** one.
+
+**What changed (behaviour):** the roster is now durable.
+- `POST /v1/hr/workforce/employees/:id` — upsert a staff record; a leaver is recorded `active:false` (kept,
+  never deleted — hard rule #2/#6) and stops being cover.
+- `POST /v1/hr/workforce/shifts/:id` — a shift and the roles it cannot run without.
+- `POST /v1/hr/workforce/shifts/:id/assignments/:employeeId` — who is on, as which role.
+- `GET /v1/hr/workforce/roster` / `GET /v1/hr/workforce/roster-gaps` — the stored roster and, running the SAME
+  tested `rosterGaps`, what it is missing (per role per shift with the hour; the unstaffed-critical count
+  surfaced separately, P-03; a leaver not counted; optionally `?branchId=`). Survives a restart.
+- All event-sourced latest-per-id on a new `STREAM.workforce`; **writes gated on a new
+  `workforce.roster.manage`** (owner + store_manager; default-deny — a cashier is refused); reads on
+  `workforce.roster.read`. Records only what a manager decided — no automatic rostering (P-05).
+
+**Where it lives:** `services/finance/src/roster-store.ts` (routes), `services/api/src/adapters.ts`
+(`rosterStoreAdapter` + `STREAM.workforce`), `services/api/src/main.ts` (wiring), `services/api/src/roles.ts`
+(the new permission).
+
+**Evidence:** `tests/integration/roster-store.test.ts` (4) — records + gaps + restart rebuild; a leaver
+re-opens the gap; branch filter; manage/read RBAC + malformed 400. Contract/security/role suites
+(api-surface-contract, access-control-sweep, service-catalogue) all still green. **M25 stays PARTIALLY_WIRED**
+(attendance/certification/SOP durable stores + the ESS screen remain) — **no completion-% change**.
+
+---
+
 ## Inventory agent (A03) — markdown/disposal leg wired, PARTIALLY_WIRED → WIRED (14 September 2026)
 
 **Direction:** owner authorised continuous autonomous completion. This is PR-C, built directly on PR-B's
