@@ -66,6 +66,32 @@ const assessStored = (c: StoredChecklist): ChecklistResult =>
     ...(isStr(c.signedBy) ? { signedBy: c.signedBy } : {}),
   });
 
+/** Read a submitted checklist off a request body, or `undefined` when it is not a readable checklist. Shared by
+ *  the manage route and the offline-sync route, so both accept EXACTLY the same shape. */
+const readChecklist = (checklistId: string, b: Record<string, unknown>, submittedAt: string): StoredChecklist | undefined => {
+  if (checklistId === '' || !CHECKLIST_KINDS.includes(b['kind'] as ChecklistKind)
+    || !isArr(b['items']) || !b['items'].every(isChecklistItem)
+    || (b['signedBy'] !== undefined && !isStr(b['signedBy']))
+    || (b['branchId'] !== undefined && !isStr(b['branchId']))
+    || (b['forDate'] !== undefined && !isStr(b['forDate']))) return undefined;
+  return {
+    checklistId,
+    kind: b['kind'] as ChecklistKind,
+    items: b['items'] as ChecklistItem[],
+    ...(isStr(b['signedBy']) ? { signedBy: b['signedBy'] } : {}),
+    ...(isStr(b['branchId']) ? { branchId: b['branchId'] } : {}),
+    ...(isStr(b['forDate']) ? { forDate: b['forDate'] } : {}),
+    submittedAt,
+  };
+};
+
+const NOT_READABLE_CHECKLIST = {
+  code: 'not_readable_as_a_checklist',
+  whatHappened: 'A stored checklist needs a checklistId in the path and { kind (opening/closing/handover), items (each with itemId, description, done, blocking) } in the body (signedBy, branchId, forDate optional).',
+  wasItSaved: 'not_saved' as const,
+  nextSafeAction: 'Send the checklist as it was ticked, and who signed it.',
+};
+
 export function checklistStoreRoutes(deps: ChecklistStoreDeps): readonly Route[] {
   return [
     {
@@ -75,30 +101,32 @@ export function checklistStoreRoutes(deps: ChecklistStoreDeps): readonly Route[]
       permission: 'workforce.roster.manage', idempotent: true,
       handler: async (ctx) => {
         const checklistId = (ctx.params['checklistId'] ?? '').trim();
-        const b = (ctx.body ?? {}) as Record<string, unknown>;
-        if (checklistId === '' || !CHECKLIST_KINDS.includes(b['kind'] as ChecklistKind)
-          || !isArr(b['items']) || !b['items'].every(isChecklistItem)
-          || (b['signedBy'] !== undefined && !isStr(b['signedBy']))
-          || (b['branchId'] !== undefined && !isStr(b['branchId']))
-          || (b['forDate'] !== undefined && !isStr(b['forDate']))) {
-          throw apiError(400, {
-            code: 'not_readable_as_a_checklist',
-            whatHappened: 'A stored checklist needs a checklistId in the path and { kind (opening/closing/handover), items (each with itemId, description, done, blocking) } in the body (signedBy, branchId, forDate optional).',
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Send the checklist as it was ticked, and who signed it.',
-          });
-        }
-        const checklist: StoredChecklist = {
-          checklistId,
-          kind: b['kind'] as ChecklistKind,
-          items: b['items'] as ChecklistItem[],
-          ...(isStr(b['signedBy']) ? { signedBy: b['signedBy'] } : {}),
-          ...(isStr(b['branchId']) ? { branchId: b['branchId'] } : {}),
-          ...(isStr(b['forDate']) ? { forDate: b['forDate'] } : {}),
-          submittedAt: deps.now(),
-        };
+        const checklist = readChecklist(checklistId, (ctx.body ?? {}) as Record<string, unknown>, deps.now());
+        if (checklist === undefined) throw apiError(400, NOT_READABLE_CHECKLIST);
         await deps.putChecklist(ctx.tenantId, checklist, ctx.idempotencyKey ?? `checklist-${checklistId}-${deps.now()}`);
         return { status: 200, body: { checklist, assessment: assessStored(checklist) } };
+      },
+    },
+    {
+      // Reconcile a checklist that was completed OFFLINE at the store (M25-FR-02, §31/P-01, offline-first). When
+      // the box has no internet, a manager still opens and closes the shop; the completion is committed to the
+      // store's own outbox (hard rule #1) and the sync agent later relays it HERE under the store's sync token.
+      // The person who signed it (`signedBy`) is the one captured at the box — TRUSTED here as the synced-return
+      // route trusts the lane's operator (the sync agent is not the manager). The shift already happened, so this
+      // records the checklist exactly as the manage route does (same durable store, latest-wins, hard rule #6),
+      // gated on the narrow store-sync permission `workforce.completion.sync` — not the full `roster.manage`,
+      // which the box's service identity must not hold (P-04). Idempotent: a re-delivered completion is one record.
+      api: 'API-11', method: 'POST', path: '/v1/hr/workforce/checklists/:checklistId/synced',
+      permission: 'workforce.completion.sync', idempotent: true,
+      handler: async (ctx) => {
+        const checklistId = (ctx.params['checklistId'] ?? '').trim();
+        const checklist = readChecklist(checklistId, (ctx.body ?? {}) as Record<string, unknown>, deps.now());
+        if (checklist === undefined) {
+          // A completion that happened offline must not be dropped — keep it in the box's outbox and raise it.
+          throw apiError(400, { ...NOT_READABLE_CHECKLIST, nextSafeAction: 'Keep it in the outbox and raise it — a checklist completed at the store must not be dropped.' });
+        }
+        await deps.putChecklist(ctx.tenantId, checklist, ctx.idempotencyKey ?? `checklist-synced-${checklistId}-${deps.now()}`);
+        return { status: 200, body: { checklist, assessment: assessStored(checklist), synced: true } };
       },
     },
     {
