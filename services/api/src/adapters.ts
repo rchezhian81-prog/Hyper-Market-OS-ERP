@@ -164,6 +164,8 @@ import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/i
 import type { CreditNoteDeps } from '../../finance/src/credit-notes';
 import type { CreditNote, ProductTaxEntry } from '../../../packages/finance/src/index';
 import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
+import type { SegmentDeps } from '../../customer/src/segments';
+import type { SegmentPolicy } from '../../../packages/customer/src/index';
 import type { DataRightsDeps, DataSubjectRequest } from '../../customer/src/data-rights';
 import type { ServiceCaseDeps, ServiceCase, CompensationRecord, DraftDecisionRecord } from '../../customer/src/service-cases';
 import type { CampaignDeps, CampaignPlanRecord } from '../../customer/src/campaigns';
@@ -225,6 +227,9 @@ export const STREAM = {
    * shape the store's `(tenant_id, stream, seq)` index was built for.
    */
   consent: 'consent',
+  /** Customer/CRM tenant-wide facts that are NOT per-customer consent — e.g. the segmentation policy
+   *  (M16-FR-02): the tenant's boundaries for what counts as new/loyal/lapsing, one per tenant. */
+  customer: 'customer',
   reservations: 'reservations',
   delivery: 'delivery',
   identity: 'identity',
@@ -5131,6 +5136,36 @@ export function financeNotesAdapter(input: {
         idempotencyKey: `creditnote-${tenantId}-${note.noteId}`,
         source: 'api/finance',
         payload: note,
+      }));
+    },
+  };
+}
+
+/** The tenant's segmentation policy is ONE fact per tenant (its boundaries), latest applies (M16-FR-02). */
+const SEGMENT_POLICY_STREAM = streamName(STREAM.customer, 'segment-policy');
+
+/**
+ * The per-tenant segmentation-policy store (M16-FR-02) — the boundaries for what counts as new/loyal/
+ * lapsing. A tenant sets them ONCE and every audience/value-ranking query reads them, so the segments a
+ * shop acts on are its own definition, not whatever a caller happened to put in the request body. Latest
+ * applies; an empty policy is the engine's documented defaults (never a silent zero).
+ */
+export function segmentPolicyAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): Pick<SegmentDeps, 'policy' | 'recordPolicy'> {
+  return {
+    policy: async (tenantId) =>
+      latest<SegmentPolicy>(input.store, tenantId, SEGMENT_POLICY_STREAM, 'SegmentPolicySet'),
+    recordPolicy: async (tenantId, policy) => {
+      await input.store.append(tenantId, SEGMENT_POLICY_STREAM, makeEvent({
+        id: 'segment-policy',
+        type: 'SegmentPolicySet',
+        occurredAt: input.now(),
+        // Keyed on the values, so re-sending the same policy collapses but any change is a new, latest fact.
+        idempotencyKey: `segment-policy-${tenantId}-${[policy.newBelowOrders, policy.loyalAtOrders, policy.lapsingAfterDays, policy.lapsedAfterDays, policy.minimumHistory].join('.')}`,
+        source: 'api/customer',
+        payload: policy,
       }));
     },
   };

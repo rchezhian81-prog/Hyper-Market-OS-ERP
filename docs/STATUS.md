@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M16-FR-02 per-tenant segmentation-policy store (14 September 2026)
+
+Continued (owner "keep going", chose the customer/marketing-data direction). The customer segmentation
+engines (`buildAudience`/`rankByValue`) were stateless what-ifs: every call had to carry the boundaries for
+what counts as new/loyal/lapsing. Persisted the tenant's **policy** so a shop segments to its OWN
+definition without re-supplying it each call.
+
+- `services/api/src/adapters.ts`: `segmentPolicyAdapter` — the policy is one fact per tenant, event-sourced
+  latest-wins on a new `STREAM.customer` stream. `services/customer/src/segments.ts`:
+  `POST /v1/customer/segments/policy` sets it (gated a **new `customer.segment.manage`** on owner +
+  store_manager), `GET` reads it, and `/segments/audience` + `/value-ranking` fall back to the STORED policy
+  when the body omits one — an explicit body policy still overrides, so a one-off "what if loyal meant 10
+  orders?" is still possible.
+- `tests/integration/customer-segment-policy.test.ts` (4): set+read (unset reads as `{}` defaults, not a
+  silent zero); an audience with no body policy uses the stored one (a 3-order customer is "loyal" under a
+  stored `loyalAtOrders:3`); an explicit body policy overrides; manager-gated + a bad boundary refused.
+
+**M16 stays PARTIALLY_WIRED (deepened, no completion-% change).** The remaining M16-FR-02 gap is the
+customer-**profile**/behavioural-fact persistence, and it carries a genuine **design question I will not
+guess at**: the stored consent ledger is channel-specific (`purpose+channel`), but segmentation consent
+(`CustomerConsent`) is purpose-only — how a customer's channel-specific consents collapse to a single
+purpose-level "granted" for segmentation is a modelling decision to settle (likely with the owner) before
+wiring the stateful reads. This policy store is the unambiguous half; that is the next step.
+
+**Note on trajectory:** the quick, self-contained headline-movers are now exhausted (survey done this
+session). I offered the owner a 2–3 option steer (customer data / AI features / rollout-readiness); they
+declined it and said "keep going", so I took the recommended customer-data direction. Remaining work is
+multi-step or needs a design/owner decision — I'll keep surfacing those honestly rather than guessing.
+
+---
+
 ## M24-FR-01 supplier server-side scoping → M24 re-rated WIRED (14 September 2026)
 
 Continued (owner "keep going"). Closed the last M24 gap the ledger named — "server-side scoping (FR-01)

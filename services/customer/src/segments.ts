@@ -66,6 +66,27 @@ function profilesFrom(orders: readonly OrderFact[], consents: readonly CustomerC
 
 export interface SegmentDeps {
   readonly now: () => string;
+  /**
+   * The tenant's stored segmentation policy (M16-FR-02), or `undefined` when none is set (the engine
+   * defaults then apply). An audience/ranking query with no `policy` in its body reads THIS, so a shop
+   * segments to its own definition of new/loyal/lapsing rather than re-supplying it on every call.
+   */
+  readonly policy: (tenantId: string) => Promise<SegmentPolicy | undefined> | SegmentPolicy | undefined;
+  /** Record the tenant's segmentation policy — latest applies. */
+  readonly recordPolicy: (tenantId: string, policy: SegmentPolicy) => Promise<void> | void;
+}
+
+/**
+ * The effective policy for a request: the body's own policy when it supplied one, otherwise the tenant's
+ * STORED policy, otherwise the engine defaults ({}). Returns `undefined` only when the body carried a
+ * policy that could not be read — the one case the route must refuse.
+ */
+async function effectivePolicy(deps: SegmentDeps, tenantId: string, body: Record<string, unknown>): Promise<SegmentPolicy | 'invalid'> {
+  if (body['policy'] !== undefined) {
+    const p = readPolicy(body['policy']);
+    return p === undefined ? 'invalid' : p;
+  }
+  return (await deps.policy(tenantId)) ?? {};
 }
 
 export function segmentRoutes(deps: SegmentDeps): readonly Route[] {
@@ -80,13 +101,13 @@ export function segmentRoutes(deps: SegmentDeps): readonly Route[] {
         const orders = arrayOf(b['orders'], isOrder);
         const consents = arrayOf(b['consents'], isConsent);
         const complaints = arrayOf(b['complaints'], isComplaint);
-        const policy = readPolicy(b['policy']);
+        const policy = await effectivePolicy(deps, ctx.tenantId, b);
         if (!SEGMENTS.includes(b['segment'] as SegmentName) || !PURPOSES.includes(b['purpose'] as ConsentPurpose)
-          || orders === undefined || consents === undefined || complaints === undefined || policy === undefined
+          || orders === undefined || consents === undefined || complaints === undefined || policy === 'invalid'
           || (b['asOf'] !== undefined && !isDate(b['asOf']))) {
           throw apiError(400, {
             code: 'not_readable_as_an_audience_request',
-            whatHappened: 'An audience needs { segment, purpose (marketing/profiling/service), orders[], consents[], complaints?, policy?, asOf? }.',
+            whatHappened: 'An audience needs { segment, purpose (marketing/profiling/service), orders[], consents[], complaints?, policy?, asOf? }. Omit policy to use the tenant\'s stored one.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send the facts to segment over. A read never writes.',
           });
@@ -108,15 +129,15 @@ export function segmentRoutes(deps: SegmentDeps): readonly Route[] {
         const orders = arrayOf(b['orders'], isOrder);
         const consents = arrayOf(b['consents'], isConsent);
         const complaints = arrayOf(b['complaints'], isComplaint);
-        const policy = readPolicy(b['policy']);
+        const policy = await effectivePolicy(deps, ctx.tenantId, b);
         const top = b['top'];
-        if (orders === undefined || consents === undefined || complaints === undefined || policy === undefined
+        if (orders === undefined || consents === undefined || complaints === undefined || policy === 'invalid'
           || (top !== undefined && (!isInt(top) || (top as number) <= 0))
           || (b['purpose'] !== undefined && !PURPOSES.includes(b['purpose'] as ConsentPurpose))
           || (b['asOf'] !== undefined && !isDate(b['asOf']))) {
           throw apiError(400, {
             code: 'not_readable_as_a_ranking_request',
-            whatHappened: 'A value ranking needs { orders[], consents?, complaints?, top? (>0), purpose?, policy?, asOf? }.',
+            whatHappened: 'A value ranking needs { orders[], consents?, complaints?, top? (>0), purpose?, policy?, asOf? }. Omit policy to use the tenant\'s stored one.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send the order facts to rank over.',
           });
@@ -126,6 +147,36 @@ export function segmentRoutes(deps: SegmentDeps): readonly Route[] {
         const profiles = profilesFrom(orders, consents, complaints, purpose, asOf, policy);
         const ranking = rankByValue(profiles, isInt(top) ? top : 10);
         return { status: 200, body: { ranking, count: ranking.length } };
+      },
+    },
+    {
+      // Set the tenant's segmentation policy (M16-FR-02) — the boundaries every audience/ranking reads
+      // when a request omits its own. A management decision (what counts as loyal for THIS shop), so it is
+      // gated one rung above the read: `customer.segment.manage`. Latest applies; an omitted field is the
+      // engine default, not zero. Idempotent.
+      api: 'API-06', method: 'POST', path: '/v1/customer/segments/policy',
+      permission: 'customer.segment.manage', idempotent: true,
+      handler: async (ctx) => {
+        const policy = readPolicy(ctx.body);
+        if (policy === undefined) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_segment_policy',
+            whatHappened: 'A segmentation policy is { newBelowOrders?, loyalAtOrders?, lapsingAfterDays?, lapsedAfterDays?, minimumHistory? } — each a non-negative whole number. Omit a field to keep the engine default.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the boundaries you want to change. Nothing was set.',
+          });
+        }
+        await deps.recordPolicy(ctx.tenantId, policy);
+        return { status: 201, body: { policy, note: 'This applies to every audience and value ranking that does not carry its own policy.' } };
+      },
+    },
+    {
+      // Read the tenant's stored segmentation policy — {} (all engine defaults) when none is set. A read.
+      api: 'API-06', method: 'GET', path: '/v1/customer/segments/policy',
+      permission: 'customer.segment.read',
+      handler: async (ctx) => {
+        const policy = (await deps.policy(ctx.tenantId)) ?? {};
+        return { status: 200, body: { policy, set: (await deps.policy(ctx.tenantId)) !== undefined } };
       },
     },
   ];
