@@ -847,6 +847,9 @@ export function buildSurface(deps: {
       // ...and the live operational alerts, for the Operations agent (A06) — the same tested
       // alert-lifecycle fold the alerts board reads, so A06 explains the same incidents a human sees.
       operationsAlerts: (t) => alertLifecycleAdapter({ store, now }).alerts(t),
+      // ...and the loss-prevention investigation cases, for the Security/Fraud agent (A07) — the same
+      // tested LP case fold the manager's worklist reads, so A07 prioritises the same open cases.
+      investigations: (t) => lpCasesAdapter({ store, now }).cases(t),
     })),
   ];
 }

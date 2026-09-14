@@ -5,6 +5,40 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Security/Fraud agent (A07) — prioritise-investigations leg wired, PARTIALLY_WIRED → WIRED (14 September 2026)
+
+**Direction:** owner authorised continuous autonomous completion. Next deterministic agent after A06.
+
+**Why A07 is a clean win.** A07's remit (§7.1) is "summarise anomalies and prioritise investigation — NO
+autonomous sanctions." Its fraud-signal detection was already integration-tested (hence PARTIALLY_WIRED), but
+the agent surface produced nothing. The **prioritise_investigation** leg has a real, persisted data source —
+the loss-prevention investigation cases — and a tested ordering engine (`buildOpenCaseWorklist`), so it wires
+cleanly and money-safely (it recommends who to look at first; it sanctions nobody).
+
+**What changed (behaviour):** running A07 (`POST /v1/ai/agents/A07/runs`) now returns a **prioritised** DRAFT
+review list of the OPEN investigations — biggest exposure first, then oldest — so the largest potential loss is
+worked first (P-03). Each proposal cites the case's **opaque subject reference, never a name** (P-04), with the
+value at stake, how long it has been open, and the evidence count. **No sanction, commits nothing** (hard rule
+#5): a security officer works the case through the ordinary loss-prevention surface
+(`GET /v1/loss-prevention/cases`).
+
+**Where it lives:** `services/api/src/adapters.ts` `aiAdapter` gains an optional `investigations` reader (the
+SAME tested `lpCasesAdapter(...).cases` fold the manager's worklist reads) + an `investigationProposals` mapper
+over the tested `buildOpenCaseWorklist`; the A06/A07 branches sit beside A08 in `run`. `main.ts` supplies the
+reader.
+
+**Evidence:** `tests/integration/ai-security-agent.test.ts` (3) — prioritised biggest-first, cites the subject
+ref (not a name), commits nothing; a closed case drops off; nothing with no open cases. The prioritisation
+engine keeps its `tests/unit/lp-worklist.test.ts` (5). Full suite green; typecheck + lint + secret-scan clean.
+
+**Re-rated PARTIALLY_WIRED → WIRED** (owner-authorised continuous completion): the prioritise_investigation leg
+is now live on the agent surface with integration coverage. Headline **47.8% → 48.0%** (numerator 4,975 →
+4,995 / 10,400; PARTIALLY_WIRED 68→67; wired-and-integrated 29.8% → 30.8%). Held at WIRED, not
+INTEGRATION_TESTED: the summarise_anomalies (fraud signals on the agent run) leg and a security-officer screen
+are the remaining pieces.
+
+---
+
 ## Operations agent (A06) wired — ENGINE_ONLY → WIRED (14 September 2026)
 
 **Direction:** owner authorised continuous autonomous completion to readiness. First increment of that program:
