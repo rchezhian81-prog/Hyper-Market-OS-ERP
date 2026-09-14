@@ -101,7 +101,8 @@ import type { EInvoiceRegisterDeps } from '../../finance/src/e-invoice-register'
 import type { PayRunStoreDeps } from '../../finance/src/pay-run-store';
 import type { RosterStoreDeps } from '../../finance/src/roster-store';
 import type { CertStoreDeps } from '../../finance/src/cert-store';
-import type { Employee as WfEmployee, ShiftRequirement as WfShift, ShiftAssignment as WfAssignment, Certification as WfCertification } from '../../../packages/workforce/src/workforce';
+import type { SopStoreDeps, Sop as WfSop } from '../../finance/src/sop-store';
+import type { Employee as WfEmployee, ShiftRequirement as WfShift, ShiftAssignment as WfAssignment, Certification as WfCertification, SopAcknowledgement as WfSopAck } from '../../../packages/workforce/src/workforce';
 import { foldPayRun, type PayRunEvent } from '../../../packages/payroll/src/index';
 import type { Gstr1SubmissionStoreDeps } from '../../finance/src/gstr1-submission-store';
 import { foldGstr1Submission, type Gstr1SubmissionEvent } from '../../../packages/finance/src/index';
@@ -1214,6 +1215,48 @@ export function certStoreAdapter(input: { readonly store: EventStore; readonly n
     },
     employee: async (tenantId, employeeId) => {
       // Latest-per-id over the roster's employee events (the same fold the roster store uses).
+      let found: WfEmployee | undefined;
+      for (const e of await allOf<WfEmployee>(input.store, tenantId, ROSTER_STREAM, 'RosterEmployeeSet')) {
+        if (e.employeeId === employeeId) found = e; // occurrence order → last wins
+      }
+      return found;
+    },
+  };
+}
+
+/**
+ * The durable SOP-acknowledgement store (M25-FR-04 follow-on). SOPs and acknowledgements append to the SAME
+ * tenant `workforce` stream, latest-per-id; the stateful sop-status reads a stored employee (the roster fold) +
+ * the SOPs for their role + their acknowledgements and runs the tested `sopStatus`.
+ */
+export function sopStoreAdapter(input: { readonly store: EventStore; readonly now: () => string }): SopStoreDeps {
+  return {
+    now: input.now,
+    putSop: async (tenantId, sop, key) => {
+      await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
+        id: `SopDefinitionSet-${sop.sopId}-${input.now()}`,
+        type: 'SopDefinitionSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: sop,
+      }));
+    },
+    putAcknowledgement: async (tenantId, ack, key) => {
+      await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
+        id: `SopAcknowledgedSet-${ack.sopId}-${ack.employeeId}-${input.now()}`,
+        type: 'SopAcknowledgedSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: ack,
+      }));
+    },
+    sops: async (tenantId) => {
+      const byId = new Map<string, WfSop>();
+      for (const s of await allOf<WfSop>(input.store, tenantId, ROSTER_STREAM, 'SopDefinitionSet')) byId.set(s.sopId, s);
+      return [...byId.values()];
+    },
+    acknowledgements: async (tenantId, employeeId) => {
+      // Latest acknowledgement per (sopId, employeeId) — a re-ack when a version bumps replaces the prior one.
+      const byKey = new Map<string, WfSopAck>();
+      for (const a of await allOf<WfSopAck>(input.store, tenantId, ROSTER_STREAM, 'SopAcknowledgedSet')) byKey.set(`${a.sopId}:${a.employeeId}`, a);
+      const all = [...byKey.values()];
+      return employeeId === undefined ? all : all.filter((a) => a.employeeId === employeeId);
+    },
+    employee: async (tenantId, employeeId) => {
       let found: WfEmployee | undefined;
       for (const e of await allOf<WfEmployee>(input.store, tenantId, ROSTER_STREAM, 'RosterEmployeeSet')) {
         if (e.employeeId === employeeId) found = e; // occurrence order → last wins

@@ -5,6 +5,35 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Durable SOP-acknowledgement store (M25-FR-04 follow-on · PR-F) — the HR store, third piece (14 September 2026)
+
+**Direction:** owner authorised continuous autonomous completion; the workforce (HR) store front continues.
+After the roster (PR-D) and certification (PR-E) stores, this makes **SOP acknowledgements** durable — same
+pattern, same tenant stream, no model-provider decision needed.
+
+**What changed (behaviour):**
+- `POST /v1/hr/workforce/sops/:id` — publish/replace an SOP at a version, for some roles. `workforce.roster.manage`.
+- `POST /v1/hr/workforce/sops/:id/acknowledgements/:employeeId` — record that a person acknowledged a version.
+  `workforce.roster.manage`.
+- `GET /v1/hr/workforce/sops` — the published SOPs. `workforce.sop.read`.
+- `GET /v1/hr/workforce/employees/:id/sop-status` — the STATEFUL status: folds the stored employee + the SOPs
+  for their role + their acknowledgements and runs the tested `sopStatus`. `workforce.sop.read`.
+  **Acknowledging v3 is not acknowledging v5** — an old signature that looks like compliance is worse than
+  none; an SOP for a different role does not apply; a `404` when the employee is unknown.
+- Event-sourced latest-per-id on the same `STREAM.workforce`; reuses the PR-D permission (no new one).
+
+**Where it lives:** `services/finance/src/sop-store.ts`, `services/api/src/adapters.ts` (`sopStoreAdapter`),
+`services/api/src/main.ts`.
+
+**Evidence:** `tests/integration/sop-store.test.ts` (3) — outstanding → acked-old-still-outstanding →
+acked-current-up-to-date; role-scoping + restart rebuild; 404 + manage/sop RBAC + malformed 400. **M25 stays
+PARTIALLY_WIRED** (the attendance durable store + the ESS screen remain) — **no completion-% change**.
+
+_HR store progress: roster (PR-D), certification (PR-E) and SOP-acknowledgement (PR-F) durable stores are now
+live; the **attendance** durable store + the **ESS screen** are the last M25 durable-store pieces._
+
+---
+
 ## Durable certification store (M25-FR-03 follow-on · PR-E) — the HR store, second piece (14 September 2026)
 
 **Direction:** owner authorised continuous autonomous completion; the workforce (HR) store is the active
