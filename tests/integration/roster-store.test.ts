@@ -18,6 +18,8 @@ const assign = (h: ApiHarness, u: string, shiftId: string, employeeId: string, r
   h.request({ method: 'POST', path: `/v1/hr/workforce/shifts/${shiftId}/assignments/${employeeId}`, userId: u, tenantId: A, idempotencyKey: key, body: { role } });
 const rosterGaps = (h: ApiHarness, u: string, query: Record<string, string> = {}) =>
   h.request({ method: 'GET', path: '/v1/hr/workforce/roster-gaps', userId: u, tenantId: A, query });
+const myRoster = (h: ApiHarness, u: string) =>
+  h.request({ method: 'GET', path: '/v1/hr/workforce/my-roster', userId: u, tenantId: A });
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
 
 interface Gap { readonly shiftId: string; readonly role: string; readonly needed: number; readonly assigned: number; readonly short: number }
@@ -82,6 +84,27 @@ describe('durable roster store (M25-FR-01 follow-on)', () => {
     await putShift(h, 'u-mgr', 'S2', shift({ branchId: 'b2' }), 'k3');                // branch b2
     expect(((await rosterGaps(h, 'u-mgr', { branchId: 'b1' })).body as GapsBody).shiftsChecked).toBe(1);
     expect(((await rosterGaps(h, 'u-mgr')).body as GapsBody).shiftsChecked).toBe(2); // both branches
+  });
+
+  it('an employee sees their OWN rota (self-service on payroll.ess.self), and nobody else\'s', async () => {
+    const h = await cast();
+    // The manager sets up the roster; an employee's id is their own login id (ESS self-scope).
+    await putEmployee(h, 'u-mgr', 'u-cash', emp({ roles: ['cashier'] }), 'k1');
+    await putEmployee(h, 'u-mgr', 'other', emp({ roles: ['cashier'] }), 'k2');
+    await putShift(h, 'u-mgr', 'S1', shift(), 'k3');
+    await assign(h, 'u-mgr', 'S1', 'u-cash', 'cashier', 'k4');
+    await assign(h, 'u-mgr', 'S1', 'other', 'cashier', 'k5');
+
+    // The cashier (holds payroll.ess.self, NOT workforce.roster.read) sees only their own shift.
+    interface Mine { readonly known: boolean; readonly active: boolean; readonly count: number; readonly shifts: readonly { shiftId: string; role: string }[] }
+    const mine = (await myRoster(h, 'u-cash')).body as Mine;
+    expect(mine).toMatchObject({ known: true, active: true, count: 1 });
+    expect(mine.shifts[0]).toMatchObject({ shiftId: 'S1', role: 'cashier' });
+
+    // Someone the roster does not know reads as known:false with an empty rota — a new hire, not a 404.
+    const unknown = (await myRoster(h, 'u-owner')).body as Mine;
+    expect(unknown.known).toBe(false);
+    expect(unknown.count).toBe(0);
   });
 
   it('gates writes on workforce.roster.manage and reads on workforce.roster.read; refuses a malformed body', async () => {

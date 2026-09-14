@@ -169,5 +169,31 @@ export function rosterStoreRoutes(deps: RosterStoreDeps): readonly Route[] {
         };
       },
     },
+    {
+      // My own rota (employee self-service, M25 · §7) — the shifts THIS person is rostered for, earliest first,
+      // each with the role and the hour. Self-scoped: it reads the roster for the AUTHENTICATED caller
+      // (`ctx.userId`) and nobody else, so a member of staff sees their own week and not the whole grid. Gated on
+      // the narrow, widely-held `payroll.ess.self` (the same self-service permission the payslip ESS view uses),
+      // NOT the manager `workforce.roster.read`. Read-only; a person the roster does not know reads as `known:false`.
+      api: 'API-11', method: 'GET', path: '/v1/hr/workforce/my-roster',
+      permission: 'payroll.ess.self',
+      handler: async (ctx) => {
+        const r = await deps.roster(ctx.tenantId);
+        const me = r.employees.find((e) => e.employeeId === ctx.userId);
+        const byShift = new Map(r.shifts.map((s) => [s.shiftId, s]));
+        const shifts = r.assignments
+          .filter((a) => a.employeeId === ctx.userId)
+          .map((a) => {
+            const shift = byShift.get(a.shiftId);
+            return shift === undefined ? undefined : { shiftId: shift.shiftId, role: a.role, branchId: shift.branchId, startsAt: shift.startsAt, endsAt: shift.endsAt };
+          })
+          .filter((s): s is { shiftId: string; role: string; branchId: string; startsAt: string; endsAt: string } => s !== undefined)
+          .sort((a, b) => a.startsAt.localeCompare(b.startsAt) || a.shiftId.localeCompare(b.shiftId));
+        return {
+          status: 200,
+          body: { employeeId: ctx.userId, known: me !== undefined, active: me?.active ?? false, shifts, count: shifts.length },
+        };
+      },
+    },
   ];
 }
