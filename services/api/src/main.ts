@@ -152,6 +152,7 @@ import { retentionRoutes } from '../../finance/src/retention';
 import { periodEvidenceRoutes } from '../../finance/src/period-evidence';
 import { legalHoldsRoutes } from '../../finance/src/legal-holds';
 import { auditSearchRoutes } from '../../finance/src/audit-search';
+import { storedAuditTrailRoutes } from '../../finance/src/audit-trail-store';
 import { reportingRoutes } from '../../reporting/src/index';
 import { scheduledBriefRoutes } from '../../reporting/src/scheduled-brief';
 import { ownerAlertsRoutes } from '../../reporting/src/owner-alerts';
@@ -182,7 +183,7 @@ import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, dataExportAdapter, financeAdapter, settlementAdapter,
-  customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter,
+  customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
@@ -264,6 +265,10 @@ export function buildSurface(deps: {
   // One durable settings instance, shared so the config-history / rollback routes operate on the SAME
   // versioned store the setup answers write to (a setting change and its rollback share one history).
   const settings = deps.settings ?? inMemorySettings();
+  // The durable domain audit trail (M34-FR-01): one sealed chain per tenant. Producers (slice 1: the
+  // credential lifecycle) seal into it; the stored read routes search / reconstruct / verify it. No
+  // store → no durable trail, so a producer simply records nothing (its recordAudit is left unset).
+  const auditTrail = store === undefined ? undefined : auditTrailAdapter({ store });
 
   return [
     ...identityRoutes(store === undefined ? {
@@ -460,7 +465,7 @@ export function buildSurface(deps: {
     // Managed secrets — register/rotate/revoke/review (M32-FR-03). References only, never a value.
     ...secretsRoutes(store === undefined ? {
       secret: empty(undefined), all: empty([]), record: () => {}, now,
-    } : secretsAdapter({ store, now })),
+    } : { ...secretsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     // Org hierarchy — nodes + GST register, validate/activate/scope (M01-FR-01).
     ...orgStructureRoutes(store === undefined ? {
       nodes: empty([]), registrations: empty([]), recordNode: () => {}, recordRegistration: () => {}, now,
@@ -571,6 +576,9 @@ export function buildSurface(deps: {
     // rebuild an object's state from evidence alone, and name EVERY tamper break (never the first). Pure
     // reads; there is no operation here to edit or drop a record (hard rule #6). Gated audit.retention.read.
     ...auditSearchRoutes(),
+    // The PRODUCED domain audit trail — search / reconstruct / verify over the STORED sealed chain that
+    // the running system now keeps (M34-FR-01). Reads only; gated audit.retention.read.
+    ...storedAuditTrailRoutes({ records: auditTrail?.records ?? empty([]) }),
     ...settlementRoutes(store === undefined ? {
       importedBatchIds: empty([]), recordBatch: () => {}, credits: empty([]),
       electronicTenders: empty([]), investigations: empty([]),

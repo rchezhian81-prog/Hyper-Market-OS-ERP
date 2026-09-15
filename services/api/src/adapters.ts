@@ -141,6 +141,7 @@ import type { Delegation } from '../../../packages/approvals/src/index';
 import type { DrillThroughDeps } from '../../reporting/src/drill-through';
 import type { DrillAudit } from '../../../packages/owner-control/src/index';
 import type { Hasher } from '../../../packages/audit/src/audit-trail';
+import { AuditTrail, InMemoryAuditStore, type AuditEntry, type AuditRecord } from '../../../packages/audit/src/index';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project, EFFECT_ON_HAND } from '../../inventory/src/index';
@@ -266,6 +267,9 @@ export const STREAM = {
   lossPrevention: 'loss-prevention',
   warehouse: 'warehouse',
   orders: 'orders',
+  /** The domain-level, tamper-evident audit trail (M34-FR-01) — tenant-wide, append-only, one sealed
+   *  record per sensitive action, NEVER folded (every record is its own fact; the chain is the evidence). */
+  audit: 'audit',
   /**
    * A tenant-wide, time-windowed PROJECTION of returns, appended beside the per-sale return stream so
    * "which returns happened in this period" can be answered without walking every bill (M08-FR-04,
@@ -1135,6 +1139,8 @@ const forWebhook = (provider: string): string => streamName(STREAM.integration, 
 const forConnectorMapping = (connectorId: string, version: string): string => streamName(STREAM.integration, 'mapping', connectorId, version);
 // Managed secret references (M32-FR-03) live on one shared stream — the latest state per secret id.
 const SECRETS_STREAM = streamName(STREAM.integration, 'secrets');
+// The domain-level audit trail (M34-FR-01) — one tenant-wide append-only chain of sealed records.
+const AUDIT_TRAIL_STREAM = streamName(STREAM.audit, 'domain-trail');
 // Org structure (M01-FR-01): nodes on one shared stream (latest per node id), GST registrations on another.
 const ORG_NODES_STREAM = streamName(STREAM.org, 'nodes');
 const ORG_REGISTRATIONS_STREAM = streamName(STREAM.org, 'gst-registrations');
@@ -2927,6 +2933,50 @@ export function secretsAdapter(input: {
         source: 'api/platform',
         payload: secret,
       }));
+    },
+  };
+}
+
+/**
+ * The durable domain audit trail (M34-FR-01) — where a sensitive action is SEALED into a tamper-evident
+ * chain and read back as evidence. `recordAudit` seals on the tested `@sre/audit` engine SERVER-SIDE:
+ * it folds the current chain, lets `AuditTrail.record` compute this record's sequence + previous-hash
+ * from the real tail (the caller NEVER supplies a seal, so a record cannot be forged into the chain),
+ * and appends it append-only (`AuditRecordSealed`, never folded — every record is its own fact, hard
+ * rule #6). `records` returns the whole chain in order for search / reconstruct / verify. The seal uses
+ * the engine's default hasher — the SAME one the read routes verify with — so a stored chain checks out.
+ *
+ * Honest caveat: sealing folds the tail then appends, so two SIMULTANEOUS records for one tenant could
+ * both seal the same sequence; that is rare for sensitive actions and, crucially, DETECTED by `verify`
+ * (a sequence gap / broken link) rather than silently wrong (P-08). Per-stream serialisation is a
+ * follow-on. The route producers here are idempotent, so a retry never double-records.
+ */
+export interface AuditTrailDeps {
+  readonly records: (tenantId: string) => Promise<readonly AuditRecord[]>;
+  readonly recordAudit: (tenantId: string, entry: AuditEntry) => Promise<AuditRecord>;
+}
+
+export function auditTrailAdapter(input: { readonly store: EventStore }): AuditTrailDeps {
+  const records = (tenantId: string) =>
+    allOf<AuditRecord>(input.store, tenantId, AUDIT_TRAIL_STREAM, 'AuditRecordSealed');
+  return {
+    records,
+    recordAudit: async (tenantId, entry) => {
+      const seed = new InMemoryAuditStore();
+      for (const r of await records(tenantId)) seed.append(r);
+      // The engine validates the entry (an unattributable record is refused) and seals it over the tail.
+      const sealed = new AuditTrail(seed).record(entry);
+      await input.store.append(tenantId, AUDIT_TRAIL_STREAM, makeEvent({
+        id: `audit-${sealed.sequence}-${sealed.hash}`,
+        type: 'AuditRecordSealed',
+        occurredAt: sealed.at,
+        // One record per (sequence, hash): the seal is unique, so an identical re-send collapses and a
+        // genuinely new action is a new fact. Never overwritten, never folded away (hard rule #6).
+        idempotencyKey: `audit-${tenantId}-${sealed.sequence}-${sealed.hash}`,
+        source: 'api/audit',
+        payload: sealed,
+      }));
+      return sealed;
     },
   };
 }
