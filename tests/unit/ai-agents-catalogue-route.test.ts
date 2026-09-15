@@ -15,7 +15,8 @@ const ctx = (): RequestContext => ({
 const deps: AiDeps = {
   killSwitchOn: () => false, setKillSwitch: () => {}, budget: () => ({ capMinor: 0, spentMinor: 0, periodEnds: NOW }), setBudget: () => {},
   enabledAgents: () => [], setEnabledAgents: () => {}, run: () => [], openProposals: () => [],
-  dataQualityWorklist: () => ({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordDataQualityDisposition: () => {}, now: () => NOW,
+  dataQualityWorklist: () => ({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordDataQualityDisposition: () => {},
+  operationsWorklist: () => ({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordOperationsDisposition: () => {}, now: () => NOW,
 };
 
 const agentsRoute = (): Route => {

@@ -5,6 +5,34 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## A06 Operations operator inbox — slice 1, the worklist backend (15 September 2026)
+
+Owner directive: "keep going until 100%" → chose the **screens** track (lift the now-wired AI helpers toward
+screen-tested/verified). A06's ledger says its only remaining gap for the next rung is "no operator-facing
+recommendation SCREEN yet." Building that screen the way A08's data-quality inbox was built — in slices. This
+is **slice 1: the backend worklist**, the same shape as A08's `/v1/ai/data-quality/worklist`.
+
+- `services/ai/src/index.ts`: **GET `/v1/ai/operations/worklist`** (gated `ai.proposal.read`) returns the live
+  A06 recommendations folded with the operators' dismissals — `agentActive:false` + empty + a plain-English
+  note when the kill switch is on or A06 is not enabled by name (the same governance a run honours), but no
+  model call and no spend, so it is **not** behind the budget gate (an operator's worklist must not vanish
+  because a budget ran out). **POST `/v1/ai/operations/dismissals`** (gated `ai.suggestion.dismiss`) records an
+  operator's set-aside (with a reason) or reopen, **in the operator's own name** — the AI never writes it;
+  append-only, latest-decision-per-finding wins (hard rule #2/#6).
+- `services/api/src/adapters.ts`: `operationsWorklist` **re-derives** the recommendations every read from the
+  live alerts (the SAME tested `recommendOperationsRunbooks`), so an incident that has been acknowledged or
+  cleared drops off on its own — the inbox never drifts from the live alert board. Reuses the generic
+  `buildDataQualityWorklist` fold (A06 findings already carry a stable `findingId`). Nothing is written on read.
+- `tests/integration/ai-operations-worklist.test.ts` (4): lists a live incident + drops it once acknowledged;
+  set-aside-with-reason (in the operator's name) + reopen; hidden when killed / not-enabled; gated read + write
+  + malformed dismissal refused.
+
+**No rung change — A06 stays WIRED, headline unmoved (honest).** The screen itself (the tested session model,
+the web-erp shell, and the browser e2e) is slices 2–3 — that is what lifts A06 to INTEGRATION_TESTED then
+E2E_VERIFIED. This slice is the backend those screens read.
+
+---
+
 ## A05 Service agent → WIRED — all ten AI agents now at least WIRED; headline crosses 50% (15 September 2026)
 
 Continued autonomously ("keep going until 100%"). A05 was the last ENGINE_ONLY AI agent. Like A09 it had
