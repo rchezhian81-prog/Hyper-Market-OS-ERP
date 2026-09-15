@@ -5,6 +5,30 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## A10 Workforce guidance manager inbox — slice 2, the session model (15 September 2026)
+
+The on-screen logic, DOM-free and tested, mirroring A06/A08 slice 2. Slice 1 gave the backend worklist; this
+is the tested rulebook the served page (slice 3) will render.
+
+- **The session model:** `apps/web-erp/src/workforce-inbox-session.ts` — `createWorkforceInboxSession` over
+  the shared `packages/ui` + `packages/a11y` primitives. It presents the worklist as attention-first rows: an
+  **escalated** task (critical + overdue → the manager on duty) reads graver (error tone) than a plain
+  **overdue** one (degraded); a set-aside item is idle. Colour is never the only signal — an icon and a word
+  ride with every tone. It offers the manager's set-aside / bring-back actions, **refused locally before any
+  POST** without permission or a reason, and honours governance — a plain-English note, never a bare "all on
+  track", when the agent is off. Bilingual EN/TA with a complete vocabulary (no gaps).
+- **Tests:** `tests/unit/erp-workforce-inbox-session.test.ts` (12) — copy complete in both languages (+
+  tripwire); escalated/overdue/set-aside tones; every status carries a word + icon; clean reads as empty not
+  error; governance note + read-permission gate + nobody-named; the set-aside/reopen posts a trimmed reason
+  through the port and refuses locally without permission/reason (never calling the port); each outcome
+  presented distinctly.
+
+**No rung change — A10 stays WIRED, headline unmoved (honest).** Slice 3 — the served web-erp page
+(`workforce.html` + `.js`), fed from the edge, offline-capable, reachable from the nav, plus a browser e2e —
+is what lifts A10 to INTEGRATION_TESTED then E2E_VERIFIED. This slice is the tested logic that page renders.
+
+---
+
 ## A10 Workforce guidance manager inbox — slice 1, the worklist backend (15 September 2026)
 
 Starting the A10 manager-facing screen the same disciplined way as A06/A08: the backend worklist first, the
