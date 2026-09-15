@@ -8,6 +8,7 @@ import {
   labourCost,
   sopStatus,
   assessDailyTasks,
+  taskGuidanceFindings,
   type Employee,
   type Certification,
   type ShiftRequirement,
@@ -402,5 +403,45 @@ describe('an overdue CRITICAL task escalates; a non-critical one is merely overd
     const r = assessDailyTasks({ tasks: [task({ taskId: 't-crit', critical: true, done: true, doneBy: 'Ravi' })], now: NOW });
     expect(r.assessments[0]).toMatchObject({ status: 'done' });
     expect(r.escalated).toEqual([]);
+  });
+});
+
+describe('the A10 guidance worklist names only what needs a person now (taskGuidanceFindings)', () => {
+  const task = (over: Partial<DailyTask>): DailyTask => ({
+    taskId: 't', description: 'a task', forRole: 'cashier', dueAt: '2026-09-14T06:00:00Z', critical: false, done: false, ...over,
+  });
+  const NOW = '2026-09-14T09:00:00Z'; // three hours after 06:00
+
+  it('surfaces the escalated and overdue tasks, worst-first, and NOTHING that is done or pending', () => {
+    const findings = taskGuidanceFindings(assessDailyTasks({
+      tasks: [
+        task({ taskId: 't-crit', description: 'Chiller temperature check', forRole: 'duty-manager', branchId: 'b1', critical: true }),
+        task({ taskId: 't-mop', description: 'Mop the entrance', critical: false }),
+        task({ taskId: 't-done', description: 'Float count', critical: true, done: true, doneBy: 'Meena' }),
+        task({ taskId: 't-later', description: 'Evening restock', dueAt: '2026-09-14T18:00:00Z' }),
+      ],
+      now: NOW,
+    }));
+    // Only the escalated + overdue tasks, escalation first.
+    expect(findings.map((f) => f.findingId)).toEqual(['wf-guidance:escalated:t-crit', 'wf-guidance:overdue:t-mop']);
+    const crit = findings[0]!;
+    expect(crit).toMatchObject({ taskId: 't-crit', kind: 'escalated', forRole: 'duty-manager', branchId: 'b1', overdueByMinutes: 180 });
+    expect(crit.headline).toContain('critical');
+    expect(crit.guidance).toContain('manager on duty');
+    expect(findings[1]).toMatchObject({ taskId: 't-mop', kind: 'overdue' });
+    expect(findings[1]!.guidance).toContain('Assign');
+  });
+
+  it('the finding id matches the A10 run proposal id exactly, so the inbox and a run name the same task', () => {
+    const [f] = taskGuidanceFindings(assessDailyTasks({ tasks: [task({ taskId: 't-x', critical: true })], now: NOW }));
+    expect(f!.findingId).toBe('wf-guidance:escalated:t-x'); // === workforceGuidanceProposals' proposalId
+  });
+
+  it('yields nothing when the day is clean — no fabricated guidance', () => {
+    const findings = taskGuidanceFindings(assessDailyTasks({
+      tasks: [task({ taskId: 't-ok', done: true, doneBy: 'Ravi' }), task({ taskId: 't-later', dueAt: '2026-09-14T18:00:00Z' })],
+      now: NOW,
+    }));
+    expect(findings).toEqual([]);
   });
 });

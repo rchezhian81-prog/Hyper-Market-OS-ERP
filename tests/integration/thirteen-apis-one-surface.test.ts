@@ -77,7 +77,8 @@ const ALL: readonly Route[] = [
     budget: () => ({ capMinor: 1, spentMinor: 0, periodEnds: NOW }), setBudget: () => {},
     enabledAgents: () => [], setEnabledAgents: () => {}, run: () => [], openProposals: () => [],
     dataQualityWorklist: () => ({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordDataQualityDisposition: () => {},
-    operationsWorklist: () => ({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordOperationsDisposition: () => {}, now: () => NOW,
+    operationsWorklist: () => ({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordOperationsDisposition: () => {},
+    workforceWorklist: () => ({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordWorkforceDisposition: () => {}, now: () => NOW,
   }),
 ];
 
