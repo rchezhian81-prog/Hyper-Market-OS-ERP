@@ -476,6 +476,16 @@ export interface PackDataQualityPolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the Operations inbox screen and what they may do (A06 · API-13). The recommendations are read
+ *  live from the cloud (`GET /v1/ai/operations/worklist`), not the pack; this is only who the box was told is
+ *  looking, so the shell can gate on `ai.proposal.read` before the live read. */
+export interface PackOperationsInboxPolicy {
+  readonly userId?: string;
+  /** The permission codes this user holds — `ai.proposal.read` to see the recommendations. Never defaulted.
+   *  The cloud worklist route re-checks it, so this only shapes the UI. */
+  readonly permissions: readonly string[];
+}
+
 /** Who is on the employee self-service (ESS) screen and what they may do (M25 · §7). The rota and payslip
  *  themselves are read live from the cloud (self-scoped), not the pack; this is only who the box was told is
  *  looking, so the shell can gate on `payroll.ess.self` before the live reads. */
@@ -849,6 +859,8 @@ export interface StorePack {
   readonly productPublishReviewPolicy: Register<PackProductPublishReviewPolicy>;
   /** Who is on the Data Quality inbox screen and what they may do there (A08). */
   readonly dataQualityPolicy: Register<PackDataQualityPolicy>;
+  /** Who is on the Operations inbox screen and what they may do there (A06). */
+  readonly operationsInboxPolicy: Register<PackOperationsInboxPolicy>;
   readonly essPolicy: Register<PackEssPolicy>;
   /** Every account, so joiners, movers and leavers can be reviewed (M02-FR-04). */
   readonly accounts: Register<readonly unknown[]>;
@@ -990,6 +1002,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     fleetPolicy: notKnown(why),
     productPublishReviewPolicy: notKnown(why),
     dataQualityPolicy: notKnown(why),
+    operationsInboxPolicy: notKnown(why),
     essPolicy: notKnown(why),
     accounts: notKnown(why),
     supportSessions: notKnown(why),
@@ -1100,6 +1113,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     fleetPolicy: section<PackFleetPolicy>('fleetPolicy'),
     productPublishReviewPolicy: section<PackProductPublishReviewPolicy>('productPublishReviewPolicy'),
     dataQualityPolicy: section<PackDataQualityPolicy>('dataQualityPolicy'),
+    operationsInboxPolicy: section<PackOperationsInboxPolicy>('operationsInboxPolicy'),
     essPolicy: section<PackEssPolicy>('essPolicy'),
     accounts: section<readonly unknown[]>('accounts'),
     supportSessions: section<readonly unknown[]>('supportSessions'),
