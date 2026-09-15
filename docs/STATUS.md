@@ -5,6 +5,34 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M16-FR-02 stateful segmentation → M16 re-rated WIRED (15 September 2026)
+
+Owner picked Track A (customer/marketing data) and approved the recommended consent rule. Closed the
+remaining M16-FR-02 gap — customer-**profile** persistence + the **stateful** segmentation reads — which
+takes M16 to WIRED.
+
+- `services/api/src/adapters.ts` (`segmentDataAdapter`): persists customer order/complaint **facts**
+  (event-sourced latest-per-id on `STREAM.customer`) alongside the policy, and reads the existing consent
+  ledger. `services/customer/src/segments.ts`: `POST /v1/customer/facts/orders/:orderId` +
+  `/complaints/:caseId` record facts (gated `customer.segment.manage`); **`GET /v1/customer/segments/audience`
+  + `/value-ranking`** run `buildAudience`/`rankByValue` over the STORED facts + STORED policy + STORED
+  consent — the shop asks "who's my loyal audience?" of its own data, not facts re-fed each call.
+- **Consent collapse (`collapseConsent`), the owner-approved rule:** the ledger is per-`(purpose,channel)`;
+  segmentation is purpose-level. `?channel=` → granted only if the latest record for that contact channel
+  is `given` (audience count = sendable count); channel omitted → granted if any channel's latest is `given`
+  (a general targeting view). The binding per-channel check still runs at send (`mayWeSend`), so this is a
+  pre-filter, never the final permission. A single-purpose withdrawal is simply absent from `granted`, never
+  a global `withdrawnAt`.
+- `tests/integration/customer-segments-stateful.test.ts` (4): any-channel audience (both consented
+  customers), channel-narrowed audience (only the SMS-consented one, the other surfaced as excluded-for-
+  consent — never silently dropped), value ranking over stored facts, manager-gated + malformed refused.
+
+**Honest re-rate — M16 PARTIALLY_WIRED (40) → WIRED (60).** Both named FR-02 gaps (segment-policy + profile
+persistence) are closed; every M16 FR now has a live surface. Headline **48.9% → 49.1%**. Follow-ons (not
+blocking WIRED): auto-populating order facts from the sale ledger, and lifting to INTEGRATION_TESTED/E2E.
+
+---
+
 ## M16-FR-02 per-tenant segmentation-policy store (14 September 2026)
 
 Continued (owner "keep going", chose the customer/marketing-data direction). The customer segmentation

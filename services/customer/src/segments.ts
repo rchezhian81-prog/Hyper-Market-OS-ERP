@@ -18,6 +18,39 @@ import {
   type OrderFact, type ComplaintFact, type CustomerConsent, type CustomerProfile,
   type ConsentPurpose, type SegmentName, type SegmentPolicy,
 } from '../../../packages/customer/src/index';
+import type { ConsentRecord, Channel } from './index';
+
+const CONTACT_CHANNELS = ['whatsapp', 'sms', 'email', 'push', 'post'] as const;
+
+/**
+ * Collapse a customer's per-(purpose,channel) consent ledger into the purpose-level shape segmentation
+ * reads (M16-FR-02). The ledger is channel-specific (a customer may agree to marketing by SMS but not
+ * email); segmentation asks a purpose-level "may we analyse / may we contact for this purpose".
+ *
+ * The owner-chosen rule: when a `channel` is named, a purpose counts as granted only if the customer's
+ * LATEST record for that (purpose, channel) is `given` — so the audience is exactly who is reachable on
+ * THAT channel; when no channel is named, it counts as granted if ANY channel's latest record for the
+ * purpose is `given` — a general "reachable somehow" targeting view. The binding per-channel check still
+ * runs at send time (`mayWeSend`), so this is a pre-filter, never the final permission. Only the two
+ * purposes segmentation uses (marketing, profiling) are collapsed; a purpose withdrawn on its own does
+ * NOT set `withdrawnAt` (which segmentation treats as a GLOBAL block) — it is simply absent from `granted`.
+ */
+export function collapseConsent(customerRef: string, records: readonly ConsentRecord[], channel?: Channel): CustomerConsent {
+  const purposes: readonly ConsentPurpose[] = ['marketing', 'profiling'];
+  const grantedFor = (purpose: ConsentPurpose): boolean => {
+    const forPurpose = records.filter((r) => r.purpose === purpose && (channel === undefined || r.channel === channel));
+    if (forPurpose.length === 0) return false;
+    // Latest-wins per channel, then: this channel is granted iff its latest record is `given`.
+    const byChannel = new Map<string, ConsentRecord>();
+    for (const r of forPurpose) {
+      const seen = byChannel.get(r.channel);
+      if (seen === undefined || r.recordedAt >= seen.recordedAt) byChannel.set(r.channel, r);
+    }
+    // A named channel has at most one entry; without one, ANY channel currently `given` grants it.
+    return [...byChannel.values()].some((r) => r.given);
+  };
+  return { customerRef, granted: purposes.filter(grantedFor) };
+}
 
 const PURPOSES: readonly ConsentPurpose[] = ['marketing', 'profiling', 'service'];
 const SEGMENTS: readonly SegmentName[] = ['new', 'regular', 'loyal', 'lapsing', 'lapsed', 'not_profiled', 'insufficient_history'];
@@ -74,6 +107,21 @@ export interface SegmentDeps {
   readonly policy: (tenantId: string) => Promise<SegmentPolicy | undefined> | SegmentPolicy | undefined;
   /** Record the tenant's segmentation policy — latest applies. */
   readonly recordPolicy: (tenantId: string, policy: SegmentPolicy) => Promise<void> | void;
+  /** Every stored order fact for the tenant — the customer BEHAVIOUR the stateful segmentation reads (M16-FR-02). */
+  readonly orderFacts: (tenantId: string) => Promise<readonly OrderFact[]> | readonly OrderFact[];
+  /** Every stored complaint fact for the tenant. */
+  readonly complaintFacts: (tenantId: string) => Promise<readonly ComplaintFact[]> | readonly ComplaintFact[];
+  /** Persist an order fact (latest-per-orderId). */
+  readonly recordOrderFact: (tenantId: string, fact: OrderFact) => Promise<void> | void;
+  /** Persist a complaint fact (latest-per-caseId). */
+  readonly recordComplaintFact: (tenantId: string, fact: ComplaintFact) => Promise<void> | void;
+  /** A customer's consent ledger (per purpose+channel) — the SAME record the send-gate reads (P-02). */
+  readonly consentFor: (tenantId: string, customerRef: string) => Promise<readonly ConsentRecord[]> | readonly ConsentRecord[];
+}
+
+/** Gather the CustomerConsent for every customer named in the facts, folded from the stored ledger. */
+async function consentsFor(deps: SegmentDeps, tenantId: string, refs: readonly string[], channel?: Channel): Promise<readonly CustomerConsent[]> {
+  return Promise.all(refs.map(async (ref) => collapseConsent(ref, await deps.consentFor(tenantId, ref), channel)));
 }
 
 /**
@@ -177,6 +225,82 @@ export function segmentRoutes(deps: SegmentDeps): readonly Route[] {
       handler: async (ctx) => {
         const policy = (await deps.policy(ctx.tenantId)) ?? {};
         return { status: 200, body: { policy, set: (await deps.policy(ctx.tenantId)) !== undefined } };
+      },
+    },
+    {
+      // Record a customer's order as a segmentation FACT (M16-FR-02) — the behaviour the stateful buckets
+      // read. `orderId` from the path (a re-send supersedes on it); the customer, value, MARGIN, channel
+      // and time from the body. Manager-gated (customer.segment.manage). Idempotent.
+      api: 'API-06', method: 'POST', path: '/v1/customer/facts/orders/:orderId',
+      permission: 'customer.segment.manage', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const fact = { orderId: ctx.params['orderId'] ?? '', customerRef: b['customerRef'], at: b['at'], netMinor: b['netMinor'], marginMinor: b['marginMinor'], channel: b['channel'] };
+        if (!isOrder(fact)) {
+          throw apiError(400, { code: 'not_readable_as_an_order_fact', whatHappened: 'An order fact needs { customerRef, at (date), netMinor (whole), marginMinor (whole), channel (store/app/web/phone) }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the order fields. Nothing was recorded.' });
+        }
+        await deps.recordOrderFact(ctx.tenantId, fact);
+        return { status: 201, body: { orderId: fact.orderId, customerRef: fact.customerRef } };
+      },
+    },
+    {
+      // Record a customer complaint as a segmentation fact — an unresolved complaint tempers a value ranking.
+      api: 'API-06', method: 'POST', path: '/v1/customer/facts/complaints/:caseId',
+      permission: 'customer.segment.manage', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const fact = { caseId: ctx.params['caseId'] ?? '', customerRef: b['customerRef'], at: b['at'], resolved: b['resolved'] };
+        if (!isComplaint(fact)) {
+          throw apiError(400, { code: 'not_readable_as_a_complaint_fact', whatHappened: 'A complaint fact needs { customerRef, at (date), resolved (boolean) }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the complaint fields. Nothing was recorded.' });
+        }
+        await deps.recordComplaintFact(ctx.tenantId, fact);
+        return { status: 201, body: { caseId: fact.caseId, customerRef: fact.customerRef } };
+      },
+    },
+    {
+      // The STATEFUL audience (M16-FR-02) — the counterpart to the POST what-if. Runs over the tenant's
+      // STORED order/complaint facts + STORED policy + the STORED consent ledger, so a shop asks "who is
+      // my loyal-customer audience?" of its own data. Consent is collapsed per the owner-chosen rule
+      // (`?channel=` → that contact channel exactly; omit → reachable on any channel). Gated segment.read.
+      api: 'API-06', method: 'GET', path: '/v1/customer/segments/audience',
+      permission: 'customer.segment.read',
+      handler: async (ctx) => {
+        const rawChannel = ctx.query['channel'];
+        if (!SEGMENTS.includes(ctx.query['segment'] as SegmentName) || !PURPOSES.includes(ctx.query['purpose'] as ConsentPurpose)
+          || (ctx.query['asOf'] !== undefined && !isDate(ctx.query['asOf']))
+          || (rawChannel !== undefined && !(CONTACT_CHANNELS as readonly string[]).includes(rawChannel))) {
+          throw apiError(400, { code: 'not_readable_as_an_audience_query', whatHappened: 'Query: ?segment=&purpose=(marketing/profiling/service)&channel=(whatsapp/sms/email/push/post, optional)&asOf=(optional).', wasItSaved: 'not_saved', nextSafeAction: 'A read never writes; correct the query.' });
+        }
+        const channel = rawChannel as Channel | undefined;
+        const purpose = ctx.query['purpose'] as ConsentPurpose;
+        const asOf = isDate(ctx.query['asOf']) ? ctx.query['asOf'] : deps.now();
+        const orders = await deps.orderFacts(ctx.tenantId);
+        const complaints = await deps.complaintFacts(ctx.tenantId);
+        const refs = [...new Set(orders.map((o) => o.customerRef))];
+        const consents = await consentsFor(deps, ctx.tenantId, refs, channel);
+        const profiles = profilesFrom(orders, consents, complaints, purpose, asOf, (await deps.policy(ctx.tenantId)) ?? {});
+        return { status: 200, body: buildAudience({ segment: ctx.query['segment'] as SegmentName, purpose, profiles, consents }) };
+      },
+    },
+    {
+      // The STATEFUL value ranking — most valuable customers by MARGIN (not revenue), over the STORED
+      // facts + consent (profiling) + policy. Non-profiled customers are excluded. Gated segment.read.
+      api: 'API-06', method: 'GET', path: '/v1/customer/segments/value-ranking',
+      permission: 'customer.segment.read',
+      handler: async (ctx) => {
+        const top = ctx.query['top'];
+        if ((top !== undefined && !(Number.isInteger(Number(top)) && Number(top) > 0))
+          || (ctx.query['asOf'] !== undefined && !isDate(ctx.query['asOf']))) {
+          throw apiError(400, { code: 'not_readable_as_a_ranking_query', whatHappened: 'Query: ?top=(>0, optional)&asOf=(optional).', wasItSaved: 'not_saved', nextSafeAction: 'A read never writes; correct the query.' });
+        }
+        const asOf = isDate(ctx.query['asOf']) ? ctx.query['asOf'] : deps.now();
+        const orders = await deps.orderFacts(ctx.tenantId);
+        const complaints = await deps.complaintFacts(ctx.tenantId);
+        const refs = [...new Set(orders.map((o) => o.customerRef))];
+        const consents = await consentsFor(deps, ctx.tenantId, refs);
+        const profiles = profilesFrom(orders, consents, complaints, 'profiling', asOf, (await deps.policy(ctx.tenantId)) ?? {});
+        const ranking = rankByValue(profiles, top !== undefined ? Number(top) : 10);
+        return { status: 200, body: { ranking, count: ranking.length } };
       },
     },
   ];
