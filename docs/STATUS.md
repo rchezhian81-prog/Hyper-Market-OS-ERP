@@ -5,6 +5,33 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M35-FR-02 — the DR-drill register, durable §32 evidence over N quarters (15 September 2026)
+
+Another honest hardening increment (a deepening, not a rung change). The DR-drill *scorer* was wired but
+**stateless** — `POST /v1/platform/dr-drills/score` returns a ruling and keeps nothing — and the module's own
+evidence flagged "a persisted drill register (evidence over N quarters)" as remaining. This builds it.
+
+- **Record:** `POST /v1/platform/dr-drills` scores a rehearsal on the **same** tested `scoreDrill` engine and
+  **records it append-only** in the runner's own name. A **miss is kept as a miss** — never re-run until it
+  passes and only the pass kept, which is the exact self-deception M35-FR-02 forbids (hard rule #6). Gated a
+  **new narrow write scope `backup.drill.record`** (owner + store manager), distinct from the read scope the
+  scorer/targets use (P-04 least privilege).
+- **Read:** `GET /v1/platform/dr-drills` — the whole register (most recent first) with a per-service
+  **posture** (the latest drill per service = current recovery readiness) and a passed/missed summary. A miss
+  is never hidden; the point of the register is that it shows.
+- **Durable:** event-sourced `DrDrillRecorded` on a `platform/dr-drills` stream, restart-safe. A shared
+  `resolveTarget` helper means the scorer and the register refuse a bad target identically.
+- **Where:** `services/platform/src/dr-readiness.ts` + `services/api/src/adapters.ts` (`drReadinessAdapter`) +
+  `main.ts` no-store fallback + `roles.ts` (the new scope). `tests/integration/dr-readiness.test.ts` extended
+  (6 — records a pass + a miss, register keeps both with the per-service posture, gated read + write + no-id
+  refused).
+
+**M35 stays PARTIALLY_WIRED — honest, no headline change (50.7%).** This closes only the persisted-drill-register
+gap; the module rung is still governed by its remaining pieces — edge signal collection (real telemetry rather
+than supplied evidence) and end-to-end backup/DR orchestration. A real deepening banked toward M35.
+
+---
+
 ## M19-FR-03 — the delivery state machine, now a durable governed surface (15 September 2026)
 
 An honest hardening increment, not a rung change. The tested delivery state machine

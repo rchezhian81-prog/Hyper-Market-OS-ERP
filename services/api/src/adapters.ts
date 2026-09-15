@@ -121,6 +121,7 @@ import type { WebhookDeps, WebhookConfig } from '../../platform/src/webhooks';
 import type { ConnectorMappingDeps, Mapping } from '../../platform/src/connectors';
 import type { SecretsDeps, SecretRef } from '../../platform/src/secrets';
 import type { OrgStructureDeps, OrgNode, GstRegistration } from '../../platform/src/org-structure';
+import type { DrReadinessDeps, DrDrillRecord } from '../../platform/src/dr-readiness';
 import type { ShelfCountDeps, ShelfCount } from '../../inventory/src/shelf-count';
 import { projectFleet, type DeviceRegistryDeps, type DeviceRegistryEvent } from '../../platform/src/device-registry';
 import { projectVersionPolicy, type VersionPolicyDeps, type VersionPolicyEvent } from '../../platform/src/version-policy';
@@ -1149,6 +1150,31 @@ const DELEGATION_STREAM = streamName(STREAM.identity, 'delegations');
 const EMERGENCY_ACCESS_STREAM = streamName(STREAM.identity, 'emergency-access');
 // The owner drill audit — who reached which transactions (§28). Tenant-wide, append-only, never folded.
 const DRILL_AUDIT_STREAM = streamName(STREAM.platform, 'drill-audits');
+// The DR-drill register — every recovery rehearsal scored + kept as §32 evidence (M35-FR-02). Distinct from
+// the owner drill audit above; append-only, a missed drill kept (hard rule #6).
+const DR_DRILLS_STREAM = streamName(STREAM.platform, 'dr-drills');
+
+/**
+ * The durable DR-drill register (M35-FR-02) — the stateful counterpart to the stateless dr-drills/score ruling.
+ * A recorded drill is scored on the SAME tested engine at the route, then kept here append-only; the register
+ * read folds every drill, a miss included, so the §32 "evidence over N quarters" can finally be shown.
+ */
+export function drReadinessAdapter(input: { readonly store: EventStore; readonly now: () => string }): DrReadinessDeps {
+  return {
+    now: input.now,
+    drills: (tenantId) => allOf<DrDrillRecord>(input.store, tenantId, DR_DRILLS_STREAM, 'DrDrillRecorded'),
+    recordDrill: async (tenantId, record) => {
+      await input.store.append(tenantId, DR_DRILLS_STREAM, makeEvent({
+        id: `dr-drill-${record.drillId}-${record.drilledAt}`,
+        type: 'DrDrillRecorded',
+        occurredAt: record.drilledAt,
+        idempotencyKey: `dr-drill-${tenantId}-${record.drillId}-${record.drilledAt}`,
+        source: 'api/platform',
+        payload: record,
+      }));
+    },
+  };
+}
 /** Each pay run's lifecycle folds one stream — one run's history (drafted→…→locked), not the whole shop's. */
 const forPayRun = (payRunId: string): string => streamName(STREAM.payroll, payRunId);
 /** Each filing period's GSTR-1 submission folds one stream — one period's preview→approve→file history. */

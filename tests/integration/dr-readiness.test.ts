@@ -15,6 +15,10 @@ const score = (h: ApiHarness, u: string, body: Record<string, unknown>, key = `s
   h.request({ method: 'POST', path: '/v1/platform/dr-drills/score', userId: u, tenantId: A, idempotencyKey: key, body });
 const eligible = (h: ApiHarness, u: string, body: Record<string, unknown>, key = `e-${Math.random()}`) =>
   h.request({ method: 'POST', path: '/v1/platform/backups/eligible-for-removal', userId: u, tenantId: A, idempotencyKey: key, body });
+const record = (h: ApiHarness, u: string, body: Record<string, unknown>, key = `r-${Math.random()}`) =>
+  h.request({ method: 'POST', path: '/v1/platform/dr-drills', userId: u, tenantId: A, idempotencyKey: key, body });
+const register = (h: ApiHarness, u: string) =>
+  h.request({ method: 'GET', path: '/v1/platform/dr-drills', userId: u, tenantId: A });
 
 async function cast(): Promise<ApiHarness> {
   const h = apiHarness();
@@ -92,5 +96,42 @@ describe('DR readiness: recovery targets, drill scoring, retention eligibility (
     expect((await targets(h, 'u-cash')).status).toBe(403);
     expect((await score(h, 'u-cash', { service: 'cloud', dataLossSeconds: 1, recoverySeconds: 1 })).status).toBe(403);
     expect((await eligible(h, 'u-cash', { manifests: MANIFESTS, asOf: '2026-09-03T00:00:00Z', retentionDays: 30 })).status).toBe(403);
+  });
+});
+
+describe('DR-drill register: the durable §32 evidence over N quarters (M35-FR-02, hard rule #6)', () => {
+  it('records drills — a pass AND a miss — and the register keeps both, with a per-service posture', async () => {
+    const h = await cast();
+
+    // An empty register before anything is recorded — not an error.
+    const empty = (await register(h, 'u-owner')).body as { drills: unknown[]; summary: { recorded: number } };
+    expect(empty.drills).toEqual([]);
+    expect(empty.summary.recorded).toBe(0);
+
+    // Q3 cloud drill passes; a later Q3 cloud drill MISSES (took too long). The miss is kept, not re-run away.
+    expect((await record(h, 'u-owner', { drillId: 'q3-cloud-a', service: 'cloud', dataLossSeconds: 100, recoverySeconds: 3600 })).status).toBe(201);
+    expect((await record(h, 'u-owner', { drillId: 'q3-cloud-b', service: 'cloud', dataLossSeconds: 100, recoverySeconds: 20000 })).status).toBe(201);
+    expect((await record(h, 'u-owner', { drillId: 'q3-edge', service: 'store-edge (committed sales)', dataLossSeconds: 0, recoverySeconds: 60 })).status).toBe(201);
+
+    const reg = (await register(h, 'u-owner')).body as {
+      drills: { drillId: string; result: { passed: boolean; service: string } }[];
+      posture: { service: string; passed: boolean }[];
+      summary: { recorded: number; passed: number; missed: number; servicesCovered: number };
+    };
+    // Every drill kept — the miss included (hard rule #6).
+    expect(reg.summary).toMatchObject({ recorded: 3, passed: 2, missed: 1, servicesCovered: 2 });
+    expect(reg.drills.map((d) => d.drillId).sort()).toEqual(['q3-cloud-a', 'q3-cloud-b', 'q3-edge']);
+    // Posture is the LATEST drill per service — cloud's latest MISSED, so the current cloud posture is a fail.
+    expect(reg.posture.find((p) => p.service === 'cloud')?.passed).toBe(false);
+    expect(reg.posture.find((p) => p.service === 'store-edge (committed sales)')?.passed).toBe(true);
+  });
+
+  it('gates the register read (backup.verify.read) and the record write (backup.drill.record), and refuses a drill with no id', async () => {
+    const h = await cast();
+    // Malformed: recording needs a drillId.
+    expect(codeOf(await record(h, 'u-owner', { service: 'cloud', dataLossSeconds: 1, recoverySeconds: 1 }))).toBe('drill_needs_an_id');
+    // A cashier holds neither scope → refused on both the write and the read.
+    expect((await record(h, 'u-cash', { drillId: 'x', service: 'cloud', dataLossSeconds: 1, recoverySeconds: 1 })).status).toBe(403);
+    expect((await register(h, 'u-cash')).status).toBe(403);
   });
 });

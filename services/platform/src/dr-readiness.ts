@@ -25,7 +25,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
   scoreDrill, backupsEligibleForRemoval, DEFAULT_RECOVERY_TARGETS,
-  type RecoveryTarget, type BackupManifest,
+  type RecoveryTarget, type BackupManifest, type DrillResult,
 } from '../../../packages/ops/src/index';
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -40,7 +40,66 @@ function asRecoveryTarget(v: unknown): RecoveryTarget | undefined {
   return { service: v['service'].trim(), rpoSeconds: v['rpoSeconds'], rtoSeconds: v['rtoSeconds'] };
 }
 
-export function drReadinessRoutes(): readonly Route[] {
+/**
+ * Resolve the §32 target a drill is scored against — an explicit `{ target }` wins, else a named `{ service }`
+ * is looked up in the fixed §32 set. Throws a 400 with a specific reason on any bad shape, so both the
+ * stateless scorer and the durable register refuse the same way. Shared so the two cannot drift.
+ */
+function resolveTarget(b: Record<string, unknown>): RecoveryTarget {
+  if (b['target'] !== undefined) {
+    const target = asRecoveryTarget(b['target']);
+    if (target === undefined) {
+      throw apiError(400, {
+        code: 'target_not_a_recovery_target',
+        whatHappened: 'A { target } must be { service, rpoSeconds, rtoSeconds } with non-negative second counts.',
+        wasItSaved: 'not_saved',
+        nextSafeAction: 'Send a valid target, or send a { service } named in GET /v1/platform/recovery-targets.',
+      });
+    }
+    return target;
+  }
+  if (isStr(b['service'])) {
+    const wanted = b['service'].trim();
+    const target = DEFAULT_RECOVERY_TARGETS.find((t) => t.service === wanted);
+    if (target === undefined) {
+      throw apiError(400, {
+        code: 'unknown_recovery_target',
+        whatHappened: `There is no §32 recovery target for service '${wanted}'.`,
+        wasItSaved: 'not_saved',
+        nextSafeAction: `Use one of: ${DEFAULT_RECOVERY_TARGETS.map((t) => t.service).join(', ')} — or pass a full { target }.`,
+      });
+    }
+    return target;
+  }
+  throw apiError(400, {
+    code: 'drill_needs_a_target',
+    whatHappened: 'Scoring a drill needs either a { service } named in the §32 targets or a full { target }.',
+    wasItSaved: 'not_saved',
+    nextSafeAction: 'Send a service name or a target.',
+  });
+}
+
+/**
+ * One recorded DR drill in the durable register — the scored result, plus who ran it and when. Append-only
+ * (hard rule #6): a missed drill stays on the record; it is never re-run until it passes and only the pass
+ * kept. This is the §32 "evidence that recovery passed N quarters running" the stateless scorer could not hold.
+ */
+export interface DrDrillRecord {
+  readonly drillId: string;
+  readonly result: DrillResult;
+  readonly drilledBy: string;
+  readonly drilledAt: string;
+}
+
+export interface DrReadinessDeps {
+  /** Record a scored drill into the durable register — append-only, in the runner's own name. */
+  readonly recordDrill: (tenantId: string, record: DrDrillRecord) => Promise<void> | void;
+  /** The register — every drill ever recorded, in occurrence order. */
+  readonly drills: (tenantId: string) => Promise<readonly DrDrillRecord[]> | readonly DrDrillRecord[];
+  readonly now: () => string;
+}
+
+export function drReadinessRoutes(deps: DrReadinessDeps): readonly Route[] {
   return [
     {
       // The §32 targets a drill is measured against — RPO (max data loss) and RTO (max time to be back),
@@ -62,39 +121,7 @@ export function drReadinessRoutes(): readonly Route[] {
       permission: 'backup.verify.read', idempotent: true,
       handler: async (ctx) => {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-
-        // Resolve the target: an explicit target wins; otherwise look a named service up in the §32 set.
-        let target: RecoveryTarget | undefined;
-        if (b['target'] !== undefined) {
-          target = asRecoveryTarget(b['target']);
-          if (target === undefined) {
-            throw apiError(400, {
-              code: 'target_not_a_recovery_target',
-              whatHappened: 'A { target } must be { service, rpoSeconds, rtoSeconds } with non-negative second counts.',
-              wasItSaved: 'not_saved',
-              nextSafeAction: 'Send a valid target, or send a { service } named in GET /v1/platform/recovery-targets.',
-            });
-          }
-        } else if (isStr(b['service'])) {
-          const wanted = b['service'].trim();
-          target = DEFAULT_RECOVERY_TARGETS.find((t) => t.service === wanted);
-          if (target === undefined) {
-            throw apiError(400, {
-              code: 'unknown_recovery_target',
-              whatHappened: `There is no §32 recovery target for service '${wanted}'.`,
-              wasItSaved: 'not_saved',
-              nextSafeAction: `Use one of: ${DEFAULT_RECOVERY_TARGETS.map((t) => t.service).join(', ')} — or pass a full { target }.`,
-            });
-          }
-        } else {
-          throw apiError(400, {
-            code: 'drill_needs_a_target',
-            whatHappened: 'Scoring a drill needs either a { service } named in the §32 targets or a full { target }.',
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Send a service name or a target.',
-          });
-        }
-
+        const target = resolveTarget(b);
         if (!isNonNegNum(b['dataLossSeconds']) || !isNonNegNum(b['recoverySeconds'])) {
           throw apiError(400, {
             code: 'drill_needs_measured_seconds',
@@ -103,13 +130,70 @@ export function drReadinessRoutes(): readonly Route[] {
             nextSafeAction: 'Send how much data the rehearsal lost and how long recovery took.',
           });
         }
-
-        const result = scoreDrill({
-          target,
-          dataLossSeconds: b['dataLossSeconds'],
-          recoverySeconds: b['recoverySeconds'],
-        });
+        const result = scoreDrill({ target, dataLossSeconds: b['dataLossSeconds'], recoverySeconds: b['recoverySeconds'] });
         return { status: 200, body: result };
+      },
+    },
+    {
+      // RECORD a scored drill into the durable register (M35-FR-02 · §32 · hard rule #6) — the evidence that
+      // recovery has been rehearsed and passed N quarters running, which the stateless scorer above could not
+      // hold. It scores on the SAME engine (so the recorded result is never a second opinion), then appends the
+      // drill append-only in the runner's OWN name. A missed drill is recorded as a MISS (it is not re-run until
+      // it passes and only the pass kept — that would be the exact self-deception M35-FR-02 forbids). Gated on a
+      // narrow write scope `backup.drill.record`, distinct from the read scope the scorer/targets use (P-04).
+      api: 'API-11', method: 'POST', path: '/v1/platform/dr-drills',
+      permission: 'backup.drill.record', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (!isStr(b['drillId'])) {
+          throw apiError(400, {
+            code: 'drill_needs_an_id',
+            whatHappened: 'Recording a drill needs a { drillId } naming this rehearsal.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send a drillId (e.g. the quarter and service being rehearsed).',
+          });
+        }
+        const target = resolveTarget(b);
+        if (!isNonNegNum(b['dataLossSeconds']) || !isNonNegNum(b['recoverySeconds'])) {
+          throw apiError(400, {
+            code: 'drill_needs_measured_seconds',
+            whatHappened: 'A drill needs the measured { dataLossSeconds } and { recoverySeconds } — both non-negative numbers.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send how much data the rehearsal lost and how long recovery took.',
+          });
+        }
+        const result = scoreDrill({ target, dataLossSeconds: b['dataLossSeconds'], recoverySeconds: b['recoverySeconds'] });
+        const record: DrDrillRecord = { drillId: b['drillId'].trim(), result, drilledBy: ctx.userId, drilledAt: deps.now() };
+        await deps.recordDrill(ctx.tenantId, record);
+        return { status: 201, body: { recorded: record, committedAnything: true } };
+      },
+    },
+    {
+      // The DR-drill REGISTER (M35-FR-02 · §32) — every drill ever recorded, most recent first, with a readiness
+      // summary: the latest drill per service (is our current posture a pass?) and how many of the recorded
+      // drills passed vs missed. A miss is never hidden; the point of the register is that it shows.
+      api: 'API-11', method: 'GET', path: '/v1/platform/dr-drills',
+      permission: 'backup.verify.read',
+      handler: async (ctx) => {
+        const all = [...await deps.drills(ctx.tenantId)];
+        // Most recent first for the register view.
+        const drills = all.slice().sort((a, z) => (a.drilledAt < z.drilledAt ? 1 : a.drilledAt > z.drilledAt ? -1 : 0));
+        // The latest drill per service is the current posture for that service (occurrence order = time order).
+        const latestByService = new Map<string, DrDrillRecord>();
+        for (const d of all) latestByService.set(d.result.service, d);
+        const posture = [...latestByService.values()]
+          .map((d) => ({ service: d.result.service, passed: d.result.passed, drillId: d.drillId, drilledAt: d.drilledAt, detail: d.result.detail }))
+          .sort((a, z) => (a.service < z.service ? -1 : a.service > z.service ? 1 : 0));
+        const passed = all.filter((d) => d.result.passed).length;
+        return {
+          status: 200,
+          body: {
+            drills,
+            posture,
+            summary: { recorded: all.length, passed, missed: all.length - passed, servicesCovered: latestByService.size },
+            note: 'the register keeps every drill, a miss included (hard rule #6); `posture` is the latest drill per service — its current recovery readiness',
+          },
+        };
       },
     },
     {
