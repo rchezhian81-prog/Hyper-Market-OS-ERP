@@ -107,7 +107,7 @@ import type { ChecklistStoreDeps, StoredChecklist as WfChecklist } from '../../f
 import type { TaskStoreDeps, TaskDefinition as WfTaskDef, TaskCompletion as WfTaskDone } from '../../finance/src/task-store';
 import type { PayslipStoreDeps, IssuedPayslip } from '../../finance/src/payslip-store';
 import type { Employee as WfEmployee, ShiftRequirement as WfShift, ShiftAssignment as WfAssignment, Certification as WfCertification, SopAcknowledgement as WfSopAck, DailyTask as WfDailyTask, TaskAssessment as WfTaskAssessment } from '../../../packages/workforce/src/workforce';
-import { assessDailyTasks } from '../../../packages/workforce/src/workforce';
+import { assessDailyTasks, taskGuidanceFindings } from '../../../packages/workforce/src/workforce';
 import { foldPayRun, type PayRunEvent } from '../../../packages/payroll/src/index';
 import type { Gstr1SubmissionStoreDeps } from '../../finance/src/gstr1-submission-store';
 import { foldGstr1Submission, type Gstr1SubmissionEvent } from '../../../packages/finance/src/index';
@@ -7249,6 +7249,42 @@ export function aiAdapter(input: {
         type: 'AiOperationsDismissed',
         occurredAt: disposition.at,
         idempotencyKey: `ops-disposition-${tenantId}-${key}`,
+        source: 'api/ai',
+        payload: disposition,
+      }));
+    },
+
+    /**
+     * The Workforce/SOP manager's inbox (A10) — the day's escalated/overdue task guidance folded with the
+     * managers' dismissals. A pure READ: it RE-DERIVES the guidance from the live daily tasks (the SAME tested
+     * assessDailyTasks the run uses, at the current clock so "overdue" is measured now), so a task that has
+     * been completed/assigned leaves the list on its own; the inbox never drifts from the task board.
+     * Dismissals fold latest-per-finding. Nothing is written here. Without a tasks reader wired, the list is
+     * simply empty.
+     */
+    workforceWorklist: async (tenantId) => {
+      const latest = new Map<string, SuggestionDisposition>();
+      for (const d of await allOf<SuggestionDisposition>(input.store, tenantId, STREAM.ai, 'AiWorkforceDismissed')) {
+        latest.set(d.findingId, d); // occurrence order → the last decision on a finding wins
+      }
+      const findings = input.dailyTasks === undefined
+        ? []
+        : taskGuidanceFindings(assessDailyTasks({ tasks: await input.dailyTasks(tenantId), now: input.now() }));
+      return buildDataQualityWorklist({ findings, dispositions: [...latest.values()] });
+    },
+
+    /**
+     * A manager's judgement that a piece of guidance is (not) worth acting on now — a HUMAN write, recorded in
+     * the human's name (`by` is the authenticated caller, stamped by the route). Append-only, latest-wins; a
+     * reopen (`dismissed:false`) is another event, never an erasure (hard rule #2/#6). It records only the
+     * manager's set-aside note — it commits no HR action (the task is completed/assigned the ordinary way).
+     */
+    recordWorkforceDisposition: async (tenantId, disposition, key) => {
+      await input.store.append(tenantId, STREAM.ai, makeEvent({
+        id: `wf-disposition-${disposition.findingId}-${disposition.at}`,
+        type: 'AiWorkforceDismissed',
+        occurredAt: disposition.at,
+        idempotencyKey: `wf-disposition-${tenantId}-${key}`,
         source: 'api/ai',
         payload: disposition,
       }));

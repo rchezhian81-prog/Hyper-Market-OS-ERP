@@ -890,7 +890,8 @@ export function buildSurface(deps: {
       budget: empty({ capMinor: 0, spentMinor: 0, periodEnds: now() }), setBudget: () => {},
       enabledAgents: empty([]), setEnabledAgents: () => {}, run: empty([]), openProposals: empty([]),
       dataQualityWorklist: empty({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordDataQualityDisposition: () => {},
-      operationsWorklist: empty({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordOperationsDisposition: () => {}, now,
+      operationsWorklist: empty({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordOperationsDisposition: () => {},
+      workforceWorklist: empty({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordWorkforceDisposition: () => {}, now,
     } : aiAdapter({
       store, now,
       // The Data Quality agent (A08) reads the live product master + barcode register — the tested

@@ -5,6 +5,39 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## A10 Workforce guidance manager inbox — slice 1, the worklist backend (15 September 2026)
+
+Starting the A10 manager-facing screen the same disciplined way as A06/A08: the backend worklist first, the
+tested session model and served shell to follow. A10's own ledger named its next rung as "no operator-facing
+guidance SCREEN yet (the analog of A08's inbox)"; this is the backend those screens read.
+
+- **The worklist read:** `GET /v1/ai/workforce/worklist` re-derives the day's guidance from the live daily
+  tasks — the escalated (critical + overdue) and overdue tasks that need a person now — via the SAME tested
+  `assessDailyTasks` fold the run uses, measured at the current clock, and folds the managers' set-aside
+  decisions (latest-per-task) through the reused generic `buildDataQualityWorklist`. Hidden with a
+  plain-English note when the kill switch is on or A10 is not enabled by name (the same governance a run
+  honours), but it calls no model and spends nothing, so it is not behind the budget gate — a manager's
+  worklist must not vanish because a budget is exhausted.
+- **The set-aside write:** `POST /v1/ai/workforce/dismissals` records a manager's set-aside/reopen in the
+  manager's OWN name (append-only `AiWorkforceDismissed`, gated `ai.suggestion.dismiss`). It commits **no HR
+  action** — the task is still completed/assigned the ordinary way; a completed task drops off the list on its
+  own because the worklist re-derives from live tasks.
+- **One source of truth for the id:** the worklist finding id (`wf-guidance:<status>:<taskId>`) is exactly the
+  id the A10 *run* proposal already carries, so the inbox and a run name the same task by construction.
+- **Where:** `packages/workforce` (new `WorkforceFinding` + pure `taskGuidanceFindings`, unit-tested);
+  `services/ai/src/index.ts` (the `WorkforceWorklist` type + the two routes); `services/api/src/adapters.ts`
+  (`workforceWorklist`/`recordWorkforceDisposition` over the reused generic fold); `main.ts` no-store fallback.
+- **Tests:** `tests/integration/ai-workforce-worklist.test.ts` (4 — lists an escalated task + re-derives so a
+  completed one drops off; a manager sets it aside in their own name and reopens; hidden when killed / not
+  enabled; gates read + write + refuses a malformed dismissal) + `tests/unit/workforce.test.ts` (the new
+  `taskGuidanceFindings` cases).
+
+**No rung change — A10 stays WIRED, headline unmoved (honest).** The manager SCREEN itself (the tested session
+model, the web-erp shell, and the browser e2e) is slices 2–3 — that is what lifts A10 to INTEGRATION_TESTED
+then E2E_VERIFIED. This slice is the backend those screens read. Full gate green.
+
+---
+
 ## A06 Operations operator inbox — the browser e2e → A06 E2E_VERIFIED (15 September 2026)
 
 The last A06 slice: a **headless-browser end-to-end test** that drives the *real* served screen and proves

@@ -31,6 +31,7 @@ import {
 import type { DataQualityWorklistItem, DataQualityFinding, DataQualityWorklist } from '../../../packages/product/src/index';
 import type { MappingQualityFinding } from '../../../packages/import/src/index';
 import type { OperationsFinding } from '../../../packages/ops/src/index';
+import type { WorkforceFinding } from '../../../packages/workforce/src/index';
 
 /**
  * One entry in the Data Quality steward's worklist, tagged by where the suggestion comes from: the
@@ -58,6 +59,15 @@ export interface StewardWorklist {
  * leaves the list on its own — the inbox never drifts from the live alert board. It commits nothing.
  */
 export type OperationsWorklist = DataQualityWorklist<OperationsFinding>;
+
+/**
+ * The Workforce/SOP manager's inbox (A10): the day's guidance — the ESCALATED (critical + overdue) and OVERDUE
+ * tasks that need a person now — folded with the managers' dismissals. Each entry carries the full
+ * `WorkforceFinding` (the task, why it needs attention and the recommended action). Re-derived every read from
+ * the live daily tasks, so a task that is completed/assigned the ordinary way leaves the list on its own — the
+ * inbox never drifts from the task board. It commits nothing.
+ */
+export type WorkforceWorklist = DataQualityWorklist<WorkforceFinding>;
 
 /**
  * Who the ten agents are — sourced from the tested authority engine (`packages/ai`), not a second
@@ -193,6 +203,20 @@ export interface AiDeps {
    * the AI never writes it. `dismissed:false` reopens a previously-dismissed recommendation.
    */
   readonly recordOperationsDisposition: (
+    tenantId: string,
+    disposition: { readonly findingId: string; readonly dismissed: boolean; readonly reason: string; readonly by: string; readonly at: string },
+    key: string,
+  ) => Promise<void> | void;
+  /**
+   * The Workforce/SOP manager's inbox (A10): the day's escalated/overdue task guidance folded with the
+   * managers' dismissals. A read — deterministic, no model, no spend — so it is not behind the budget gate.
+   */
+  readonly workforceWorklist: (tenantId: string) => Promise<WorkforceWorklist> | WorkforceWorklist;
+  /**
+   * A manager's judgement that a piece of guidance is (not) worth acting on now (already assigned, handled
+   * off-system), recorded in the human's name — the AI never writes it. `dismissed:false` reopens it.
+   */
+  readonly recordWorkforceDisposition: (
     tenantId: string,
     disposition: { readonly findingId: string; readonly dismissed: boolean; readonly reason: string; readonly by: string; readonly at: string },
     key: string,
@@ -384,6 +408,68 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
         }
         const at = deps.now();
         await deps.recordOperationsDisposition(
+          ctx.tenantId,
+          { findingId, dismissed: !reopen, reason, by: ctx.userId, at },
+          ctx.idempotencyKey ?? `${findingId}-${at}`,
+        );
+        return { status: 200, body: { findingId, dismissed: !reopen, by: ctx.userId, at, committedAnything: false } };
+      },
+    },
+    {
+      // The Workforce/SOP manager's INBOX (A10). The day's escalated/overdue task guidance folded with the
+      // managers' dismissals — a person's worklist, not an action. Re-derived every read from the live daily
+      // tasks, so a task that has been completed/assigned leaves the list on its own; the inbox never drifts
+      // from the task board. It is the AGENT's output, so it honours the same governance as a run — hidden
+      // when the kill switch is on or A10 is not enabled by name — but it calls no model and spends nothing, so
+      // it is NOT behind the budget gate: a manager's worklist must not vanish because a budget is exhausted.
+      // Commits nothing.
+      api: 'API-13', method: 'GET', path: '/v1/ai/workforce/worklist',
+      permission: 'ai.proposal.read',
+      handler: async (ctx) => {
+        const killed = await deps.killSwitchOn(ctx.tenantId);
+        const enabled = (await deps.enabledAgents(ctx.tenantId)).includes('A10');
+        if (killed || !enabled) {
+          return {
+            status: 200,
+            body: {
+              agentActive: false,
+              open: [], dismissed: [], openCount: 0, dismissedCount: 0,
+              note: killed
+                ? 'The AI kill switch is on, so the Workforce guidance agent is stopped and shows no tasks. Turn it off to see them again — nothing else in the shop is affected.'
+                : 'The Workforce guidance agent (A10) is not switched on for this tenant, so it shows no tasks. Enable it by name to see them.',
+              committedAnything: false,
+            },
+          };
+        }
+        const worklist = await deps.workforceWorklist(ctx.tenantId);
+        return { status: 200, body: { agentActive: true, ...worklist, committedAnything: false } };
+      },
+    },
+    {
+      // A manager sets a piece of guidance aside (already assigned, being handled off-system, judged not worth
+      // acting on now), with a reason — a HUMAN decision recorded in the human's name (the AI never writes it).
+      // `reopen: true` puts it back on the list. Completing/assigning the task needs no call here — the guidance
+      // vanishes on its own once the task is done. Latest decision per finding wins (append-only, hard rule
+      // #2/#6). It commits no HR action — a manager still completes/assigns the task the ordinary way.
+      api: 'API-13', method: 'POST', path: '/v1/ai/workforce/dismissals',
+      permission: 'ai.suggestion.dismiss', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const findingId = typeof b['findingId'] === 'string' ? b['findingId'].trim() : '';
+        const reopen = b['reopen'] === true;
+        const reason = typeof b['reason'] === 'string' ? b['reason'].trim() : '';
+        if (findingId === '' || (!reopen && reason === '')) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_dismissal',
+            whatHappened: reopen
+              ? 'Reopening a piece of guidance needs the findingId to reopen.'
+              : 'Setting guidance aside needs the findingId and a short reason it is not being acted on now.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { "findingId": "…", "reason": "…" } to dismiss, or { "findingId": "…", "reopen": true } to reopen. Nothing was changed.',
+          });
+        }
+        const at = deps.now();
+        await deps.recordWorkforceDisposition(
           ctx.tenantId,
           { findingId, dismissed: !reopen, reason, by: ctx.userId, at },
           ctx.idempotencyKey ?? `${findingId}-${at}`,

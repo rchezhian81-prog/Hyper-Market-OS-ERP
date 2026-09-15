@@ -531,3 +531,61 @@ export function assessDailyTasks(input: {
 }
 
 const rank = (s: TaskStatus): number => (s === 'escalated' ? 3 : s === 'overdue' ? 2 : s === 'pending' ? 1 : 0);
+
+/**
+ * One A10 guidance item as the workforce inbox reads it — a single task that needs a person NOW, either
+ * ESCALATED (critical + overdue) or merely OVERDUE, with the recommended action. Read-only: A10 flags what
+ * needs attention; a MANAGER completes or assigns the task through the ordinary workforce route (hard rule
+ * #5 / P-05). The finding self-heals — once the task is done or brought back in time it stops being escalated
+ * / overdue and yields no finding, so it leaves the inbox on its own.
+ */
+export interface WorkforceFinding {
+  /** Stable, deterministic id — the SAME id the A10 run proposal carries. Keyed by (status, task) so an
+   *  escalation always surfaces as its own finding even if the task's earlier overdue guidance was set aside. */
+  readonly findingId: string;
+  readonly taskId: string;
+  /** Which kind of attention it needs: an escalation (graver) or an overdue nudge. */
+  readonly kind: 'escalated' | 'overdue';
+  /** The role the task is routed to (so a manager knows who should be on it). */
+  readonly forRole: string;
+  readonly branchId?: string;
+  /** One line a manager reads first. */
+  readonly headline: string;
+  /** The assessment's own plain-English detail (why it needs attention). */
+  readonly detail: string;
+  /** The recommended action a person takes — never an autonomous act. */
+  readonly guidance: string;
+  /** How many whole minutes past due. */
+  readonly overdueByMinutes: number;
+}
+
+/**
+ * Turn a day's task assessment into the A10 guidance worklist — the ESCALATED and OVERDUE tasks that need a
+ * person now, worst-first (the order `assessDailyTasks` already returns). Pure and deterministic. A task that
+ * is done or not yet due yields no finding, so completing/assigning it drops it off on its own — the inbox
+ * never drifts from the live task board. The finding id matches the A10 run proposal's id exactly, so the
+ * inbox and a run agree on which task each decision names.
+ */
+export function taskGuidanceFindings(report: DailyTaskReport): readonly WorkforceFinding[] {
+  return report.assessments
+    .filter((a) => a.status === 'escalated' || a.status === 'overdue')
+    .map((a): WorkforceFinding => {
+      const escalated = a.status === 'escalated';
+      const overdueByMinutes = a.overdueByMinutes ?? 0;
+      return {
+        findingId: `wf-guidance:${a.status}:${a.taskId}`,
+        taskId: a.taskId,
+        kind: escalated ? 'escalated' : 'overdue',
+        forRole: a.forRole,
+        ...(a.branchId === undefined ? {} : { branchId: a.branchId }),
+        headline: escalated
+          ? `"${a.description}" is critical and ${overdueByMinutes} minute(s) overdue`
+          : `"${a.description}" is ${overdueByMinutes} minute(s) overdue`,
+        detail: a.detail,
+        guidance: escalated
+          ? 'Escalate to the manager on duty and get it done now.'
+          : 'Assign someone to complete this task.',
+        overdueByMinutes,
+      };
+    });
+}
