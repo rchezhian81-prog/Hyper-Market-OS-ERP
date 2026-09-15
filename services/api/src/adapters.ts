@@ -172,7 +172,8 @@ import type { SegmentPolicy, OrderFact, ComplaintFact, CustomerProfile as SegCus
 import type { DataRightsDeps, DataSubjectRequest } from '../../customer/src/data-rights';
 import type { ServiceCaseDeps, ServiceCase, CompensationRecord, DraftDecisionRecord } from '../../customer/src/service-cases';
 import type { CampaignDeps, CampaignPlanRecord } from '../../customer/src/campaigns';
-import type { AiDraft, SatisfactionScore, CompensationPolicy } from '../../../packages/service-desk/src/index';
+import type { AiDraft, SatisfactionScore, CompensationPolicy, SlaView } from '../../../packages/service-desk/src/index';
+import { assessFirstResponse } from '../../../packages/service-desk/src/index';
 import type { StoredPointsMovement } from '../../../packages/loyalty/src/assess-points';
 import type { StoredValueDeps, Instrument, ValueMovement } from '../../customer/src/stored-value';
 import type { CouponDeps } from '../../customer/src/coupons';
@@ -6927,6 +6928,28 @@ function marketingGuidanceProposals(audiences: readonly MarketingAudienceDraft[]
   }));
 }
 
+/**
+ * Turn A05's first-response SLA assessment into DRAFT service proposals — the OPEN cases nobody has replied
+ * to yet that are past (breached) or near (at-risk) their first-response promise, worst-first. A05 answers
+ * policy/order questions and DRAFTS case responses, and EXCEPTIONS ESCALATE to a person (its purpose): it
+ * flags which customer is waiting and by how long, and a SERVICE AGENT replies (a supervisor approves any
+ * AI-drafted reply). Commits nothing (hard rule #5 / P-05) — the first-response clock is the wait a customer
+ * actually feels, so surfacing it is exactly the help without ever answering on the shop's behalf.
+ */
+function serviceGuidanceProposals(views: readonly { readonly serviceCase: ServiceCase; readonly sla: SlaView }[], now: string): Omit<Proposal, 'committed'>[] {
+  return views.map(({ serviceCase: c, sla }): Omit<Proposal, 'committed'> => ({
+    proposalId: `svc-case:${sla.status}:${c.caseId}`,
+    agent: 'A05',
+    summary: sla.shouldEscalate
+      ? `Escalate: case ${c.caseId} ("${c.summary}", ${c.priority} ${c.kind}) has BREACHED its first-response SLA — ${sla.detail}`
+      : `Reply soon: case ${c.caseId} ("${c.summary}", ${c.priority} ${c.kind}) is at risk of breaching — ${sla.detail}`,
+    // The governance action a SERVICE AGENT takes — reply to the customer; the AI only flags it (hard rule #5).
+    wouldRequire: 'POST /v1/service/cases/:caseId/first-response',
+    evidence: [{ source: 'service desk cases', reference: c.caseId, summary: `${c.kind} from ${c.customerRef}: ${sla.detail}` }],
+    createdAt: now,
+  }));
+}
+
 export function aiAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -6966,6 +6989,12 @@ export function aiAdapter(input: {
    * without it A09 drafts nothing. `draftMarketingAudiences` runs here over what it returns.
    */
   readonly marketingDraft?: (tenantId: string) => Promise<{ readonly profiles: readonly SegCustomerProfile[]; readonly consents: readonly SegCustomerConsent[] }>;
+  /**
+   * The tenant's service-desk cases (M21), for the Service agent (A05). Optional, same shape as the others:
+   * without it A05 surfaces nothing. The tested serviceCases fold the desk board reads; A05 runs the tested
+   * assessFirstResponse over the OPEN, unanswered ones, so it flags the same waiting customers a human sees.
+   */
+  readonly serviceCases?: (tenantId: string) => Promise<readonly ServiceCase[]> | readonly ServiceCase[];
   /**
    * The tenant's near-expiry stock (M10-FR-01 · ADR-0015), for the Inventory agent (A03). Optional, same shape
    * as the others: without it A03 suggests nothing. The tested `nearExpiryStock` fold over the cloud ledger —
@@ -7111,6 +7140,21 @@ export function aiAdapter(input: {
         if (input.marketingDraft === undefined) return [];
         const { profiles, consents } = await input.marketingDraft(tenantId);
         return marketingGuidanceProposals(draftMarketingAudiences({ profiles, consents }), now);
+      }
+      // A05 Service — the open cases nobody has answered yet that are breaching/at-risk on first response,
+      // worst-first. Exceptions escalate; a service agent replies (hard rule #5). The SAME tested
+      // assessFirstResponse over the SAME stored cases the service-desk board reads.
+      if (agent === 'A05') {
+        if (input.serviceCases === undefined) return [];
+        const views = (await input.serviceCases(tenantId))
+          .filter((c) => c.state === 'open' && c.firstRespondedAt === undefined)
+          .map((c) => ({ serviceCase: c, sla: assessFirstResponse({ serviceCase: c, now }) }))
+          .filter((v) => v.sla.status === 'breached' || v.sla.status === 'at_risk')
+          .sort((a, b) =>
+            Number(b.sla.shouldEscalate) - Number(a.sla.shouldEscalate) // breached (escalate) before at-risk
+            || a.sla.remainingMinutes - b.sla.remainingMinutes          // most overdue / least time left first
+            || a.serviceCase.caseId.localeCompare(b.serviceCase.caseId));
+        return serviceGuidanceProposals(views, now);
       }
       return [];
     },
