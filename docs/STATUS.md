@@ -5,6 +5,35 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## A10 Workforce guidance manager inbox — the browser e2e → A10 E2E_VERIFIED (15 September 2026)
+
+The last A10 slice: a **headless-browser end-to-end test** that drives the *real* served screen and proves the
+manager's set-aside decision actually reaches the cloud — the analog of the A06 operations e2e.
+
+- **The test:** `tests/e2e/workforce-dismiss-delivery.e2e.ts`. It serves the built `workforce.html` + bundle
+  from a stub server that *also* answers `POST /v1/ai/workforce/dismissals` and `GET /v1/ai/workforce/worklist`
+  on the **same origin**, then drives headless Chromium through three scenarios:
+  - **an authorised manager** types a reason, clicks *Set aside* → the decision is POSTed
+    (`{findingId, reason}`) under the manager's **own same-origin session**, the result strip shows, and the row
+    moves from *needs attention* to *set aside* **because the worklist is re-read** (a server re-derive, never a
+    client-side shuffle);
+  - **a read-only manager** (`ai.proposal.read` only) → **no** set-aside control is rendered and **nothing** is
+    sent;
+  - **an empty reason** → refused client-side, **nothing** sent (hard rule #5 — a set-aside with no reason is
+    not a record).
+- **How it runs:** `pnpm run test:e2e` (separate `vitest.e2e.config.ts`, not the standard gate). Chromium is
+  the pre-installed `/opt/pw-browsers/chromium`; the suite self-skips where no browser is present. Green:
+  **10 e2e files / 40 tests pass**, the 3 new workforce scenarios among them.
+
+**Honest re-rate — A10 INTEGRATION_TESTED (75) → E2E_VERIFIED (85), +10 weighted points.** Headline **50.6%
+→ 50.7%** (5275/10400); E2E-verified count **7 → 8**. Every A10 leg is now proven end to end: the guidance
+run, the worklist backend, the session model, the served+offline screen, and now the real browser write-path.
+**Held at E2E_VERIFIED, not UAT_VERIFIED:** real-store UAT — a manager working the day's late tasks on the shop
+floor and confirming the escalations are right — needs the owner and is externally blocked on store rollout.
+Ledger + A10 mirror row updated to match.
+
+---
+
 ## A10 Workforce guidance manager inbox — slice 3, the served screen → A10 INTEGRATION_TESTED (15 September 2026)
 
 The visible screen. Slices 1–2 gave the backend worklist and the tested on-screen logic; this adds the
