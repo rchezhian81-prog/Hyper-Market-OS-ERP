@@ -908,6 +908,10 @@ export function buildSurface(deps: {
       // ...and the near-expiry stock, for the Inventory agent (A03) — the SAME tested reader the
       // /v1/inventory/near-expiry route uses, so A03 suggests markdowns/disposals over the same batches.
       nearExpiry: (t, opts) => nearExpiryAdapter({ store, now }).nearExpiry(t, opts),
+      // ...and the stored daily tasks, for the Workforce/SOP guidance agent (A10) — the SAME tested
+      // task-store fold the /v1/hr/workforce/tasks board reads, so A10 flags the same escalated/overdue
+      // tasks a manager sees. A10 recommends only; a manager assigns/completes (hard rule #5).
+      dailyTasks: (t) => taskStoreAdapter({ store, now }).tasks(t),
     })),
   ];
 }

@@ -106,7 +106,8 @@ import type { AttendanceStoreDeps, AttendanceRecord as WfAttendance } from '../.
 import type { ChecklistStoreDeps, StoredChecklist as WfChecklist } from '../../finance/src/checklist-store';
 import type { TaskStoreDeps, TaskDefinition as WfTaskDef, TaskCompletion as WfTaskDone } from '../../finance/src/task-store';
 import type { PayslipStoreDeps, IssuedPayslip } from '../../finance/src/payslip-store';
-import type { Employee as WfEmployee, ShiftRequirement as WfShift, ShiftAssignment as WfAssignment, Certification as WfCertification, SopAcknowledgement as WfSopAck, DailyTask as WfDailyTask } from '../../../packages/workforce/src/workforce';
+import type { Employee as WfEmployee, ShiftRequirement as WfShift, ShiftAssignment as WfAssignment, Certification as WfCertification, SopAcknowledgement as WfSopAck, DailyTask as WfDailyTask, TaskAssessment as WfTaskAssessment } from '../../../packages/workforce/src/workforce';
+import { assessDailyTasks } from '../../../packages/workforce/src/workforce';
 import { foldPayRun, type PayRunEvent } from '../../../packages/payroll/src/index';
 import type { Gstr1SubmissionStoreDeps } from '../../finance/src/gstr1-submission-store';
 import { foldGstr1Submission, type Gstr1SubmissionEvent } from '../../../packages/finance/src/index';
@@ -6853,6 +6854,33 @@ function inventoryProposals(items: readonly ExpiryActionItem[], now: string): Om
   });
 }
 
+/**
+ * Turn A10's daily-task assessment into DRAFT guidance proposals — the ESCALATED (critical + overdue) and
+ * OVERDUE tasks that need a person's attention, worst-first (the order `assessDailyTasks` already returns).
+ * A10 gives role-aware guidance and takes NO HR decision (its whole authority forbids it): it flags what
+ * needs attention; a MANAGER assigns or completes the task through the ordinary workforce route. Commits
+ * nothing (hard rule #5 / P-05).
+ */
+function workforceGuidanceProposals(assessments: readonly WfTaskAssessment[], now: string): Omit<Proposal, 'committed'>[] {
+  return assessments
+    .filter((a) => a.status === 'escalated' || a.status === 'overdue')
+    .map((a): Omit<Proposal, 'committed'> => ({
+      proposalId: `wf-guidance:${a.status}:${a.taskId}`,
+      agent: 'A10',
+      summary: a.status === 'escalated'
+        ? `Escalate: "${a.description}" (${a.forRole}) is CRITICAL and ${a.overdueByMinutes ?? 0} min overdue — needs the manager on duty`
+        : `Overdue: "${a.description}" (${a.forRole}) is ${a.overdueByMinutes ?? 0} min overdue — assign someone`,
+      // The governance action a MANAGER takes — complete/assign the task; the AI only flags it (hard rule #5).
+      wouldRequire: 'POST /v1/hr/workforce/tasks/:taskId/complete',
+      evidence: [{
+        source: 'workforce daily tasks',
+        reference: a.taskId,
+        summary: `${a.description} — role ${a.forRole}${a.branchId === undefined ? '' : `, branch ${a.branchId}`}: ${a.detail}`,
+      }],
+      createdAt: now,
+    }));
+}
+
 export function aiAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -6879,6 +6907,12 @@ export function aiAdapter(input: {
    * verbatim; the worklist ordering is the tested `buildOpenCaseWorklist`.
    */
   readonly investigations?: (tenantId: string) => Promise<readonly InvestigationCase[]> | readonly InvestigationCase[];
+  /**
+   * The tenant's stored daily tasks (M25-FR-02), for the Workforce/SOP guidance agent (A10). Optional, same
+   * shape as the others: without it A10 recommends nothing. The tested task-store fold, reused verbatim — the
+   * same DailyTask list the tasks board runs `assessDailyTasks` over, so A10 flags the same tasks a human sees.
+   */
+  readonly dailyTasks?: (tenantId: string) => Promise<readonly WfDailyTask[]> | readonly WfDailyTask[];
   /**
    * The tenant's near-expiry stock (M10-FR-01 · ADR-0015), for the Inventory agent (A03). Optional, same shape
    * as the others: without it A03 suggests nothing. The tested `nearExpiryStock` fold over the cloud ledger —
@@ -7008,6 +7042,14 @@ export function aiAdapter(input: {
         if (input.nearExpiry === undefined) return [];
         const items = await input.nearExpiry(tenantId, { asOf: now.slice(0, 10), nearExpiryDays: 7 });
         return inventoryProposals(items, now);
+      }
+      // A10 Workforce/SOP guidance — the day's tasks that need attention (escalated + overdue), role-aware.
+      // NO HR decision (its authority forbids it): it flags, a manager assigns/completes. The SAME tested
+      // `assessDailyTasks` over the SAME stored tasks the workforce board reads.
+      if (agent === 'A10') {
+        if (input.dailyTasks === undefined) return [];
+        const report = assessDailyTasks({ tasks: await input.dailyTasks(tenantId), now });
+        return workforceGuidanceProposals(report.assessments, now);
       }
       return [];
     },

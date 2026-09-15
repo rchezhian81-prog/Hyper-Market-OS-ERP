@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## A10 Workforce/SOP guidance agent → WIRED (15 September 2026)
+
+Continued autonomously (owner: "go with your recommendation… i asked you to complete autonomously").
+A10 was the last of three ENGINE_ONLY AI agents whose engine was already built and tested but not on the
+live run surface. Wired it exactly as A03/A06/A07 were: the agent reads the tenant's OWN stored data,
+runs a tested deterministic engine, and drafts DRAFT proposals that **commit nothing** (hard rule #5 / P-05).
+
+- `services/api/src/adapters.ts` (`aiAdapter`): a new optional `dailyTasks` reader + a
+  `workforceGuidanceProposals` mapper, and an `A10` dispatch case. On a run it folds the tenant's real
+  stored daily tasks (the **same** `taskStoreAdapter` fold the workforce board reads, from the append-only
+  roster stream — M25-FR-02) and runs the tested `assessDailyTasks`; for each task that needs a person NOW
+  it drafts guidance worst-first — a **CRITICAL overdue** task **escalates** ("needs the manager on duty"),
+  a non-critical overdue one is flagged to assign — each citing the real task (id, role, branch, detail,
+  minutes overdue) as evidence. `services/api/src/main.ts` supplies the reader.
+- Takes **no HR decision** (its authority forbids it): the reply is `committedAnything:false`, every
+  proposal `committed:false`, and `wouldRequire` names the human action —
+  `POST /v1/hr/workforce/tasks/:taskId/complete`. A **manager** completes/assigns through the ordinary
+  workforce route. Gated by the three AI gates (kill-switch off / enabled by name / within budget).
+- `tests/integration/ai-workforce-guidance.test.ts` (3): escalates a critical overdue task + flags a
+  non-critical one + ignores a not-yet-due one + commits nothing; stops flagging once the task is completed;
+  drafts nothing when nothing is overdue (no fabricated urgency). Due times are anchored to the wall clock
+  (the run route reads the real clock, no `?asOf=`) so the test stays true whenever it runs.
+
+**Honest re-rate — A10 ENGINE_ONLY (20) → WIRED (60), +40 weighted points.** Headline **49.1% → 49.5%**.
+Held at WIRED, not INTEGRATION_TESTED: no operator-facing guidance SCREEN yet (the analog of A08's inbox) —
+that is the path to the next rung. Remaining ENGINE_ONLY AI agents: A05 (service-desk drafting), A09
+(marketing draft). Ledger + traceability mirror updated to match.
+
+---
+
 ## M16-FR-02 stateful segmentation → M16 re-rated WIRED (15 September 2026)
 
 Owner picked Track A (customer/marketing data) and approved the recommended consent rule. Closed the
