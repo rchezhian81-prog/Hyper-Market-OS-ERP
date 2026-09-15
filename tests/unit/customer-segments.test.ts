@@ -3,6 +3,9 @@ import {
   buildProfile,
   buildAudience,
   rankByValue,
+  assembleProfiles,
+  draftMarketingAudiences,
+  CAMPAIGN_SEGMENTS,
   type OrderFact,
   type CustomerConsent,
 } from '../../packages/customer/src/segments';
@@ -186,5 +189,79 @@ describe('an audience always reports who it could not reach', () => {
     const audience = buildAudience({ segment: 'regular', purpose: 'service', profiles, consents: [] });
     expect(audience.customerRefs).toHaveLength(3);
     expect(audience.excludedForConsent).toBe(0);
+  });
+});
+
+// The A09 Marketing agent's engine (M16-FR-02 / A09): assemble the tenant's profiles from stored facts,
+// then draft the audiences worth a campaign — within consent, by margin, reach stated honestly.
+describe('assembleProfiles builds one profile per known customer', () => {
+  const ASOF2 = '2026-08-04T00:00:00Z';
+  const ordersOf = (ref: string, n: number, from = '2026-07-20T10:00:00Z'): OrderFact[] =>
+    Array.from({ length: n }, (_, i) => order({
+      orderId: `${ref}-O-${i}`, customerRef: ref,
+      at: new Date(Date.parse(from) + i * 86_400_000).toISOString(),
+    }));
+
+  it('collects the distinct refs from orders AND consents, and honours the consent gate', () => {
+    const orders = [...ordersOf('c-1', 3), ...ordersOf('c-2', 3)];
+    const consents: CustomerConsent[] = [{ customerRef: 'c-1', granted: ['profiling', 'marketing'] }];
+    const profiles = assembleProfiles({ orders, complaints: [], consents, purpose: 'marketing', asOf: ASOF2 });
+    expect(profiles.map((p) => p.customerRef).sort()).toEqual(['c-1', 'c-2']);
+    // c-1 consented → segmented; c-2 has no profiling consent → not_profiled (not dropped).
+    expect(profiles.find((p) => p.customerRef === 'c-1')!.segment).toBe('regular');
+    expect(profiles.find((p) => p.customerRef === 'c-2')!.segment).toBe('not_profiled');
+  });
+});
+
+describe('draftMarketingAudiences drafts the campaign-worthy segments, best-margin-first', () => {
+  const ASOF2 = '2026-08-04T00:00:00Z';
+  const both = (ref: string): CustomerConsent => ({ customerRef: ref, granted: ['profiling', 'marketing'] });
+  const profilingOnly = (ref: string): CustomerConsent => ({ customerRef: ref, granted: ['profiling'] });
+  const ordersOf = (ref: string, n: number, from: string): OrderFact[] =>
+    Array.from({ length: n }, (_, i) => order({
+      orderId: `${ref}-O-${i}`, customerRef: ref,
+      at: new Date(Date.parse(from) + i * 86_400_000).toISOString(),
+    }));
+
+  // c-loyal-A: 10 recent orders, fully consented → loyal, contactable (200_000 margin).
+  // c-loyal-B: 10 recent orders, profiling consent only → loyal, NOT contactable (excluded, counted).
+  // c-regular: 3 recent orders, fully consented → regular, contactable (60_000).
+  // c-lapsing: 2 orders 95 days ago, fully consented → lapsing, contactable (40_000).
+  // c-new: 1 recent order, fully consented → 'new' (NOT a campaign segment; never drafted).
+  const orders = [
+    ...ordersOf('c-loyal-A', 10, '2026-07-24T10:00:00Z'),
+    ...ordersOf('c-loyal-B', 10, '2026-07-24T10:00:00Z'),
+    ...ordersOf('c-regular', 3, '2026-07-28T10:00:00Z'),
+    ...ordersOf('c-lapsing', 2, '2026-05-01T10:00:00Z'),
+    ...ordersOf('c-new', 1, '2026-08-01T10:00:00Z'),
+  ];
+  const consents = [both('c-loyal-A'), profilingOnly('c-loyal-B'), both('c-regular'), both('c-lapsing'), both('c-new')];
+  const profiles = assembleProfiles({ orders, complaints: [], consents, purpose: 'marketing', asOf: ASOF2 });
+
+  it('ranks loyal → regular → lapsing by margin, and never drafts an empty or non-campaign segment', () => {
+    const drafts = draftMarketingAudiences({ profiles, consents });
+    expect(drafts.map((d) => d.segment)).toEqual(['loyal', 'regular', 'lapsing']);
+    // 'new' is not a campaign segment; nothing empty is drafted either.
+    expect(drafts.some((d) => d.segment === 'new')).toBe(false);
+    expect(drafts.every((d) => d.contactable > 0)).toBe(true);
+  });
+
+  it('states reach honestly — the loyal audience is one contactable customer with one excluded for consent', () => {
+    const [loyal] = draftMarketingAudiences({ profiles, consents });
+    expect(loyal!.segment).toBe('loyal');
+    expect(loyal!.contactable).toBe(1);
+    expect(loyal!.marginMinor).toBe(200_000);
+    expect(loyal!.excludedForConsent).toBe(1); // c-loyal-B matches but withheld marketing consent
+  });
+
+  it('drafts NOTHING when no one in a campaign segment can be contacted', () => {
+    // Same behaviour customers, but none consented to marketing → nothing to draft.
+    const noMarketing = consents.map((c) => profilingOnly(c.customerRef));
+    const p2 = assembleProfiles({ orders, complaints: [], consents: noMarketing, purpose: 'marketing', asOf: ASOF2 });
+    expect(draftMarketingAudiences({ profiles: p2, consents: noMarketing })).toEqual([]);
+  });
+
+  it('targets only the loyalty/win-back segments', () => {
+    expect([...CAMPAIGN_SEGMENTS].sort()).toEqual(['lapsed', 'lapsing', 'loyal', 'regular']);
   });
 });

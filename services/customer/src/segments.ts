@@ -14,7 +14,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  buildProfile, buildAudience, rankByValue,
+  buildAudience, rankByValue, assembleProfiles,
   type OrderFact, type ComplaintFact, type CustomerConsent, type CustomerProfile,
   type ConsentPurpose, type SegmentName, type SegmentPolicy,
 } from '../../../packages/customer/src/index';
@@ -89,12 +89,7 @@ const arrayOf = <T,>(v: unknown, guard: (x: unknown) => x is T): readonly T[] | 
 // Build one profile per distinct customer named in the facts. `purpose` decides what may be computed —
 // the engine returns a non-consenting customer as `not_profiled` for any non-service purpose.
 function profilesFrom(orders: readonly OrderFact[], consents: readonly CustomerConsent[], complaints: readonly ComplaintFact[], purpose: ConsentPurpose, asOf: string, policy: SegmentPolicy): readonly CustomerProfile[] {
-  const consentByRef = new Map(consents.map((c) => [c.customerRef, c]));
-  const refs = [...new Set([...orders.map((o) => o.customerRef), ...consents.map((c) => c.customerRef)])];
-  return refs.map((customerRef) => buildProfile({
-    customerRef, orders, complaints, ...(consentByRef.get(customerRef) !== undefined ? { consent: consentByRef.get(customerRef) } : {}),
-    purpose, asOf, policy,
-  }));
+  return assembleProfiles({ orders, complaints, consents, purpose, asOf, policy });
 }
 
 export interface SegmentDeps {
