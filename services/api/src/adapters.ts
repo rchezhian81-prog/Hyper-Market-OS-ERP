@@ -166,7 +166,9 @@ import type { CreditNoteDeps } from '../../finance/src/credit-notes';
 import type { CreditNote, ProductTaxEntry } from '../../../packages/finance/src/index';
 import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
 import type { SegmentDeps } from '../../customer/src/segments';
-import type { SegmentPolicy, OrderFact, ComplaintFact } from '../../../packages/customer/src/index';
+import { collapseConsent } from '../../customer/src/segments';
+import { assembleProfiles, draftMarketingAudiences } from '../../../packages/customer/src/index';
+import type { SegmentPolicy, OrderFact, ComplaintFact, CustomerProfile as SegCustomerProfile, CustomerConsent as SegCustomerConsent, MarketingAudienceDraft } from '../../../packages/customer/src/index';
 import type { DataRightsDeps, DataSubjectRequest } from '../../customer/src/data-rights';
 import type { ServiceCaseDeps, ServiceCase, CompensationRecord, DraftDecisionRecord } from '../../customer/src/service-cases';
 import type { CampaignDeps, CampaignPlanRecord } from '../../customer/src/campaigns';
@@ -5210,6 +5212,28 @@ export function segmentDataAdapter(input: {
   };
 }
 
+/**
+ * The marketing-draft inputs for the A09 Marketing agent (M16-FR-02 / A09): one profile per known customer
+ * built for the `marketing` purpose, plus each customer's folded consent — assembled from the SAME stored
+ * order facts + consent ledger the stateful segmentation reads (P-02, never a second copy), exactly as the
+ * `GET /v1/customer/segments/audience` route assembles them (refs from the orders; consent folded per ref,
+ * any-channel — the binding per-channel check still runs at send time). Returns nothing to commit: A09 only
+ * DRAFTS which audiences are worth a campaign (`draftMarketingAudiences` runs in the AI adapter).
+ */
+export async function marketingDraftInputs(
+  input: { readonly store: EventStore; readonly now: () => string },
+  tenantId: string,
+): Promise<{ readonly profiles: readonly SegCustomerProfile[]; readonly consents: readonly SegCustomerConsent[] }> {
+  const deps = segmentDataAdapter(input);
+  const [orders, complaints, policy] = await Promise.all([
+    deps.orderFacts(tenantId), deps.complaintFacts(tenantId), deps.policy(tenantId),
+  ]);
+  const refs = [...new Set(orders.map((o) => o.customerRef))];
+  const consents = await Promise.all(refs.map(async (ref) => collapseConsent(ref, await deps.consentFor(tenantId, ref))));
+  const profiles = assembleProfiles({ orders, complaints, consents, purpose: 'marketing', asOf: input.now(), policy: policy ?? {} });
+  return { profiles, consents };
+}
+
 export function customerAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -6881,6 +6905,28 @@ function workforceGuidanceProposals(assessments: readonly WfTaskAssessment[], no
     }));
 }
 
+/**
+ * Turn A09's drafted marketing audiences into DRAFT campaign-idea proposals — the segments worth a campaign,
+ * best-margin-first (the order `draftMarketingAudiences` already returns). A09 DRAFTS segments within consent
+ * and margin and takes NO commercial action (its authority forbids it): it names an audience worth targeting
+ * and STATES the reach honestly — the contactable count and the number excluded for want of consent (P-08) —
+ * and a MARKETING APPROVER builds and sends any campaign. Commits nothing (hard rule #5 / P-05); there is no
+ * auto-send, and the per-channel consent check still binds at send time.
+ */
+function marketingGuidanceProposals(audiences: readonly MarketingAudienceDraft[], now: string): Omit<Proposal, 'committed'>[] {
+  return audiences.map((a): Omit<Proposal, 'committed'> => ({
+    proposalId: `mkt-audience:${a.segment}`,
+    agent: 'A09',
+    summary: `Campaign idea: the "${a.segment}" audience — ${a.contactable} contactable customer(s), ~${a.marginMinor} in lifetime margin`
+      + (a.excludedForConsent > 0 ? ` (${a.excludedForConsent} more match but have not consented and are not contactable)` : ''),
+    // The governance action a MARKETING APPROVER takes — build and send the campaign; the AI only drafts the
+    // audience (hard rule #5). No campaign route is auto-called: a person reviews consent, offer and margin.
+    wouldRequire: 'a marketing approver reviews and launches a campaign to this audience (no auto-send)',
+    evidence: [{ source: 'customer segments', reference: a.segment, summary: a.detail }],
+    createdAt: now,
+  }));
+}
+
 export function aiAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -6913,6 +6959,13 @@ export function aiAdapter(input: {
    * same DailyTask list the tasks board runs `assessDailyTasks` over, so A10 flags the same tasks a human sees.
    */
   readonly dailyTasks?: (tenantId: string) => Promise<readonly WfDailyTask[]> | readonly WfDailyTask[];
+  /**
+   * The tenant's marketing-draft inputs (M16-FR-02), for the Marketing agent (A09): a profile per known
+   * customer (marketing purpose) + each customer's folded consent, from the SAME stored facts + consent
+   * ledger the stateful segmentation reads (`marketingDraftInputs`). Optional, same shape as the others:
+   * without it A09 drafts nothing. `draftMarketingAudiences` runs here over what it returns.
+   */
+  readonly marketingDraft?: (tenantId: string) => Promise<{ readonly profiles: readonly SegCustomerProfile[]; readonly consents: readonly SegCustomerConsent[] }>;
   /**
    * The tenant's near-expiry stock (M10-FR-01 · ADR-0015), for the Inventory agent (A03). Optional, same shape
    * as the others: without it A03 suggests nothing. The tested `nearExpiryStock` fold over the cloud ledger —
@@ -7050,6 +7103,14 @@ export function aiAdapter(input: {
         if (input.dailyTasks === undefined) return [];
         const report = assessDailyTasks({ tasks: await input.dailyTasks(tenantId), now });
         return workforceGuidanceProposals(report.assessments, now);
+      }
+      // A09 Marketing — the segments worth a campaign, within consent and by margin, best-margin-first. NO
+      // commercial action (its authority forbids it): it drafts the audience, a marketing approver launches.
+      // The SAME tested segmentation over the SAME stored facts + consent the audience board reads (M16-FR-02).
+      if (agent === 'A09') {
+        if (input.marketingDraft === undefined) return [];
+        const { profiles, consents } = await input.marketingDraft(tenantId);
+        return marketingGuidanceProposals(draftMarketingAudiences({ profiles, consents }), now);
       }
       return [];
     },

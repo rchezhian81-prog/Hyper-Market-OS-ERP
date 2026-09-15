@@ -5,6 +5,38 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## A09 Marketing agent → WIRED (15 September 2026)
+
+Continued autonomously. A09's engine (marketing drafting) didn't exist yet, so unlike A10 this wasn't a
+pure "switch it on" — it's the **"draft segments"** leg of A09's remit, built on the M16 stateful
+segmentation merged earlier today. A09 now proactively surfaces **which audiences are worth a campaign**,
+the same way A07 surfaces which investigations to work first.
+
+- **New tested pure engine** in `packages/customer/src/segments.ts`: `assembleProfiles` (build one profile
+  per known customer from stored facts — the pure core of the segmentation reads) and
+  `draftMarketingAudiences` (run the tested `buildAudience` across the campaign-worthy segments —
+  `loyal`/`regular`/`lapsing`/`lapsed` — keep only those with a contactable customer, **best-margin-first**,
+  each carrying its `excludedForConsent` count so reach is honest). The M16 service's `profilesFrom` now
+  delegates to `assembleProfiles` (one tested source, no duplication).
+- **Wiring:** `services/api/src/adapters.ts` — `marketingDraftInputs` assembles `{profiles, consents}` from
+  the SAME stored order facts + consent ledger the `GET /v1/customer/segments/audience` board reads (P-02,
+  never a second copy) + an A09 dispatch case + a `marketingGuidanceProposals` mapper; `main.ts` supplies it.
+- **No commercial action** (its authority forbids it): `committedAnything:false`, every proposal
+  `committed:false`, `wouldRequire` names the human action (a marketing approver reviews and launches — **no
+  auto-send**, and the per-channel consent check still binds at send time). Gated by the three AI gates.
+- **Tests:** `tests/unit/customer-segments.test.ts` extended (assembleProfiles + draftMarketingAudiences —
+  ranks loyal→regular→lapsing by margin, never drafts an empty/non-campaign segment, states excluded-for-
+  consent, drafts nothing when no one is contactable); `tests/integration/ai-marketing-agent.test.ts` (2,
+  real API pipeline). Order dates anchored to the wall clock so the tests stay true whenever they run.
+
+**Honest re-rate — A09 ENGINE_ONLY (20) → WIRED (60), +40 weighted points.** Headline **49.5% → 49.9%**.
+Held at WIRED, not INTEGRATION_TESTED: the `draft_campaign`/`draft_offer` CONTENT legs (actual offer
+construction + `read_margin_summary` for offer margin math) and a marketing-approver SCREEN are the
+remaining pieces. Only ENGINE_ONLY AI agent left: **A05** (service-desk drafting). Ledger + traceability
+mirror updated to match.
+
+---
+
 ## A10 Workforce/SOP guidance agent → WIRED (15 September 2026)
 
 Continued autonomously (owner: "go with your recommendation… i asked you to complete autonomously").

@@ -274,3 +274,62 @@ export function rankByValue(profiles: readonly CustomerProfile[], top = 10): rea
           : `${p.lifetimeMarginMinor} of margin on ${p.lifetimeRevenueMinor} of spend (${(p.marginBps / 100).toFixed(2)}%)`,
     }));
 }
+
+/**
+ * Build one profile per distinct customer named in the facts (an order, or a consent record on file),
+ * for the given purpose. This is the pure core of the stateful segmentation reads — collect the distinct
+ * customer refs, then run the tested `buildProfile` for each. A non-consenting customer is returned as
+ * `not_profiled` for any non-service purpose (see `buildProfile`), so a campaign's reach stays honest.
+ */
+export function assembleProfiles(input: {
+  readonly orders: readonly OrderFact[];
+  readonly complaints: readonly ComplaintFact[];
+  readonly consents: readonly CustomerConsent[];
+  readonly purpose: ConsentPurpose;
+  readonly asOf: string;
+  readonly policy?: SegmentPolicy;
+}): readonly CustomerProfile[] {
+  const consentByRef = new Map(input.consents.map((c) => [c.customerRef, c]));
+  const refs = [...new Set([...input.orders.map((o) => o.customerRef), ...input.consents.map((c) => c.customerRef)])];
+  return refs.map((customerRef) => buildProfile({
+    customerRef, orders: input.orders, complaints: input.complaints,
+    ...(consentByRef.get(customerRef) !== undefined ? { consent: consentByRef.get(customerRef) } : {}),
+    purpose: input.purpose, asOf: input.asOf, policy: input.policy ?? {},
+  }));
+}
+
+/**
+ * The segments a marketing campaign is worth drafting for — a loyalty or win-back play. Deliberately NOT
+ * `new` (too little history to target on), `not_profiled` (no lawful basis), or `insufficient_history`.
+ */
+export const CAMPAIGN_SEGMENTS: readonly SegmentName[] = ['loyal', 'regular', 'lapsing', 'lapsed'];
+
+export interface MarketingAudienceDraft extends SegmentAudience {
+  /** How many customers in this audience can actually be contacted for the purpose (= customerRefs.length). */
+  readonly contactable: number;
+}
+
+/**
+ * Draft the marketing audiences worth a campaign, **best-margin-first**. Runs the tested `buildAudience`
+ * for each campaign-worthy segment and keeps only those with at least one contactable customer, so the
+ * draft names something a person can act on rather than every empty segment. Each audience carries its
+ * `excludedForConsent` count, so a campaign's reach is stated honestly (P-08) and nobody "fixes" a
+ * smaller-than-expected list by removing the consent check.
+ *
+ * Pure: profiles + consent in, ranked drafts out. It DRAFTS ONLY — it neither builds nor sends a campaign,
+ * and it commits nothing (A09 authority / hard rule #5); a marketing approver decides.
+ */
+export function draftMarketingAudiences(input: {
+  readonly profiles: readonly CustomerProfile[];
+  readonly consents: readonly CustomerConsent[];
+  readonly purpose?: ConsentPurpose;
+  readonly segments?: readonly SegmentName[];
+}): readonly MarketingAudienceDraft[] {
+  const purpose = input.purpose ?? 'marketing';
+  const segments = input.segments ?? CAMPAIGN_SEGMENTS;
+  return segments
+    .map((segment) => buildAudience({ segment, purpose, profiles: input.profiles, consents: input.consents }))
+    .map((a): MarketingAudienceDraft => ({ ...a, contactable: a.customerRefs.length }))
+    .filter((a) => a.contactable > 0)
+    .sort((a, b) => b.marginMinor - a.marginMinor || a.segment.localeCompare(b.segment));
+}
