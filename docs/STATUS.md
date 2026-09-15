@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## A06 Operations operator inbox — the browser e2e → A06 E2E_VERIFIED (15 September 2026)
+
+The last A06 slice: a **headless-browser end-to-end test** that drives the *real* served screen and proves
+the operator's set-aside decision actually reaches the cloud. Everything below the glass was already tested;
+this is the one thing a unit test can't show — a person clicking a button in a real browser.
+
+- **The test:** `tests/e2e/operations-dismiss-delivery.e2e.ts` (the exact analog of the A08
+  `data-quality-dismiss-delivery.e2e.ts`). It serves the built `operations.html` + bundle from a stub server
+  that *also* answers `POST /v1/ai/operations/dismissals` and `GET /v1/ai/operations/worklist` on the **same
+  origin**, then drives headless Chromium through three scenarios:
+  - **an authorised operator** types a reason, clicks *Set aside* → the decision is POSTed
+    (`{findingId, reason}`) under the operator's **own same-origin session**, the result strip shows, and the
+    row moves from *to act on* to *set aside* **because the worklist is re-read** (a server re-derive, never a
+    client-side shuffle);
+  - **a read-only operator** (`ai.proposal.read` only) → **no** set-aside control is rendered and **nothing**
+    is sent;
+  - **an empty reason** → refused client-side, **nothing** sent (a set-aside with no reason is not a record —
+    hard rule #5).
+- **How it runs:** `pnpm run test:e2e` (separate `vitest.e2e.config.ts`, not the standard gate). Chromium is
+  the pre-installed `/opt/pw-browsers/chromium`; the suite self-skips where no browser is present. Green:
+  **37 e2e tests pass**, the 3 new operations scenarios among them.
+
+**Honest re-rate — A06 INTEGRATION_TESTED (75) → E2E_VERIFIED (85), +10 weighted points.** Headline **50.4%
+→ 50.5%** (5250/10400); E2E-verified count **6 → 7**. Every A06 leg is now proven end to end: the
+recommend-runbook run, the worklist backend, the session model, the served+offline screen, and now the real
+browser write-path. **Held at E2E_VERIFIED, not UAT_VERIFIED:** real-store UAT — an operator working the
+recommendations on the shop floor and confirming the runbooks are the right steps — needs the owner and is
+externally blocked on store rollout. Ledger + A06 mirror row updated to match.
+
+---
+
 ## A06 Operations operator inbox — slice 3, the screen → A06 INTEGRATION_TESTED (15 September 2026)
 
 The visible screen. Slice 1 gave the backend worklist, slice 2 the on-screen logic; this adds the **served
