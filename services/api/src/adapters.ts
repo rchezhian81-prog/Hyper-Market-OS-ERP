@@ -165,7 +165,7 @@ import type { CreditNoteDeps } from '../../finance/src/credit-notes';
 import type { CreditNote, ProductTaxEntry } from '../../../packages/finance/src/index';
 import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
 import type { SegmentDeps } from '../../customer/src/segments';
-import type { SegmentPolicy } from '../../../packages/customer/src/index';
+import type { SegmentPolicy, OrderFact, ComplaintFact } from '../../../packages/customer/src/index';
 import type { DataRightsDeps, DataSubjectRequest } from '../../customer/src/data-rights';
 import type { ServiceCaseDeps, ServiceCase, CompensationRecord, DraftDecisionRecord } from '../../customer/src/service-cases';
 import type { CampaignDeps, CampaignPlanRecord } from '../../customer/src/campaigns';
@@ -5143,17 +5143,27 @@ export function financeNotesAdapter(input: {
 
 /** The tenant's segmentation policy is ONE fact per tenant (its boundaries), latest applies (M16-FR-02). */
 const SEGMENT_POLICY_STREAM = streamName(STREAM.customer, 'segment-policy');
+/** Customer behavioural facts are TENANT-WIDE (one stream each) so the stateful segmentation folds the
+ *  whole base in one pass — the customer's orders + complaints the buckets read (M16-FR-02). */
+const ORDER_FACTS_STREAM = streamName(STREAM.customer, 'order-facts');
+const COMPLAINT_FACTS_STREAM = streamName(STREAM.customer, 'complaint-facts');
 
 /**
- * The per-tenant segmentation-policy store (M16-FR-02) — the boundaries for what counts as new/loyal/
- * lapsing. A tenant sets them ONCE and every audience/value-ranking query reads them, so the segments a
- * shop acts on are its own definition, not whatever a caller happened to put in the request body. Latest
- * applies; an empty policy is the engine's documented defaults (never a silent zero).
+ * The customer segmentation data store (M16-FR-02): the per-tenant POLICY (boundaries for what counts as
+ * new/loyal/lapsing), the customer behavioural FACTS (orders + complaints) the stateful buckets read, and
+ * the per-customer CONSENT ledger (the SAME record the send-gate reads — P-02). All event-sourced; facts
+ * fold latest-per-id so a correction supersedes. A shop sets its policy once and the audience/ranking
+ * reads run over its own stored data, rather than facts re-supplied on every call.
  */
-export function segmentPolicyAdapter(input: {
+export function segmentDataAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
-}): Pick<SegmentDeps, 'policy' | 'recordPolicy'> {
+}): Omit<SegmentDeps, 'now'> {
+  const latestPerId = <T>(rows: readonly T[], id: (t: T) => string): readonly T[] => {
+    const by = new Map<string, T>();
+    for (const r of rows) by.set(id(r), r); // allOf is oldest-first, so the last write wins
+    return [...by.values()];
+  };
   return {
     policy: async (tenantId) =>
       latest<SegmentPolicy>(input.store, tenantId, SEGMENT_POLICY_STREAM, 'SegmentPolicySet'),
@@ -5168,6 +5178,34 @@ export function segmentPolicyAdapter(input: {
         payload: policy,
       }));
     },
+    orderFacts: async (tenantId) =>
+      latestPerId(await allOf<OrderFact>(input.store, tenantId, ORDER_FACTS_STREAM, 'CustomerOrderFactRecorded'), (o) => o.orderId),
+    complaintFacts: async (tenantId) =>
+      latestPerId(await allOf<ComplaintFact>(input.store, tenantId, COMPLAINT_FACTS_STREAM, 'CustomerComplaintFactRecorded'), (c) => c.caseId),
+    recordOrderFact: async (tenantId, fact) => {
+      await input.store.append(tenantId, ORDER_FACTS_STREAM, makeEvent({
+        id: `order-fact-${fact.orderId}`,
+        type: 'CustomerOrderFactRecorded',
+        occurredAt: input.now(),
+        idempotencyKey: `order-fact-${tenantId}-${fact.orderId}-${fact.customerRef}-${fact.netMinor}-${fact.marginMinor}-${fact.at}-${fact.channel}`,
+        source: 'api/customer',
+        payload: fact,
+      }));
+    },
+    recordComplaintFact: async (tenantId, fact) => {
+      await input.store.append(tenantId, COMPLAINT_FACTS_STREAM, makeEvent({
+        id: `complaint-fact-${fact.caseId}`,
+        type: 'CustomerComplaintFactRecorded',
+        occurredAt: input.now(),
+        idempotencyKey: `complaint-fact-${tenantId}-${fact.caseId}-${fact.customerRef}-${fact.resolved}-${fact.at}`,
+        source: 'api/customer',
+        payload: fact,
+      }));
+    },
+    // The SAME per-customer consent stream the campaign send-gate reads (P-02) — segmentation folds it
+    // to a purpose-level view (services/customer/src/segments.ts collapseConsent), never a second copy.
+    consentFor: async (tenantId, customerRef) =>
+      allOf<ConsentRecord>(input.store, tenantId, forCustomer(customerRef), 'ConsentRecorded'),
   };
 }
 
