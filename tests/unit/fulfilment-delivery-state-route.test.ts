@@ -18,7 +18,7 @@ const post = (): Route => {
   const captured: DeliveryAttempt[] = [];
   const deps: FulfilmentDeps = {
     appendAttempt: (_t, a) => { captured.push(a); },
-    attempts: () => [], assigned: () => [], now: () => NOW,
+    attempts: () => [], assigned: () => [], deliveryState: () => [], recordDeliveryTransition: () => {}, now: () => NOW,
   };
   const r = fulfilmentRoutes(deps).find((x) => x.method === 'POST' && x.path === '/v1/delivery/attempts');
   if (r === undefined) throw new Error('no POST /v1/delivery/attempts');

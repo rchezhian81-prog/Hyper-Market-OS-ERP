@@ -233,7 +233,7 @@ describe('all three register cleanly on the kernel', () => {
       recordSubstitution: () => {}, orderSubstitutions: () => [],
     };
     const fulfilment: FulfilmentDeps = {
-      appendAttempt: () => {}, attempts: () => [], assigned: () => [], now: () => NOW,
+      appendAttempt: () => {}, attempts: () => [], assigned: () => [], deliveryState: () => [], recordDeliveryTransition: () => {}, now: () => NOW,
     };
     const built = buildRouter([
       ...customerRoutes(customer), ...ordersRoutes(orders), ...fulfilmentRoutes(fulfilment),

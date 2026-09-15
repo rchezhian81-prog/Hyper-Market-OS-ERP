@@ -17,11 +17,15 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
   transitionDelivery,
+  canTransitionDelivery,
   isTerminalDelivery,
+  assertProofOfDelivery,
   reconcileCod,
   CardDataError,
   type DeliveryState,
   type DeliveryEvent,
+  type ProofOfDelivery,
+  type ProofKind,
   type CodExpectation,
   type CodCollection,
 } from '../../../packages/fulfilment/src/index';
@@ -143,11 +147,51 @@ export function reconcileRun(input: {
   };
 }
 
+/**
+ * One recorded step of an order's delivery lifecycle — the tested state machine's transition, made durable and
+ * append-only (hard rule #6). The order's CURRENT state is the `to` of its latest record; an order with no
+ * record yet is `assigned` (the machine's start). A `deliver` step always carries the proof reference it was
+ * required to have, so the evidence and the state can never drift apart.
+ */
+export interface DeliveryStateRecord {
+  readonly orderId: string;
+  readonly from: DeliveryState;
+  readonly to: DeliveryState;
+  readonly event: DeliveryEvent;
+  /** The authenticated person who recorded the step (driver/dispatcher) — never a service identity. */
+  readonly by: string;
+  readonly at: string;
+  /** Present only on a `deliver` step — the proof (photo/OTP/signature) reference, never deleted (#6). */
+  readonly proofRef?: string;
+}
+
 export interface FulfilmentDeps {
   readonly appendAttempt: (tenantId: string, a: DeliveryAttempt) => Promise<void> | void;
   readonly attempts: (tenantId: string, driverId: string, runDate: string) => Promise<readonly DeliveryAttempt[]> | readonly DeliveryAttempt[];
   readonly assigned: (tenantId: string, driverId: string, runDate: string) => Promise<readonly string[]> | readonly string[];
+  /** The append-only delivery-state history of one order, oldest first. Empty means it has not left `assigned`. */
+  readonly deliveryState: (tenantId: string, orderId: string) => Promise<readonly DeliveryStateRecord[]> | readonly DeliveryStateRecord[];
+  /** Record a delivery-state transition — append-only, in the human's name (the state machine already refused
+   *  an out-of-order step and a proofless delivery before this is reached). */
+  readonly recordDeliveryTransition: (tenantId: string, record: DeliveryStateRecord) => Promise<void> | void;
   readonly now: () => string;
+}
+
+/** The five lifecycle events the tested state machine accepts, for validating the caller's input. */
+const DELIVERY_EVENTS: readonly DeliveryEvent[] = ['depart', 'deliver', 'fail', 'reattempt', 'rto'];
+
+/** The current state of an order from its append-only history — the machine's start (`assigned`) until it moves. */
+function currentDeliveryState(history: readonly DeliveryStateRecord[]): DeliveryState {
+  return history.length === 0 ? 'assigned' : history[history.length - 1]!.to;
+}
+
+/** Read a caller-supplied proof, or `undefined` — the tested `assertProofOfDelivery` is the authority that
+ *  refuses a missing/blank one, so a malformed proof simply reaches it as absent. */
+function readProof(v: unknown): ProofOfDelivery | undefined {
+  if (typeof v !== 'object' || v === null) return undefined;
+  const p = v as Record<string, unknown>;
+  if (typeof p['kind'] !== 'string' || typeof p['ref'] !== 'string') return undefined;
+  return { kind: p['kind'] as ProofKind, ref: p['ref'] };
 }
 
 /**
@@ -221,6 +265,74 @@ export function fulfilmentRoutes(deps: FulfilmentDeps): readonly Route[] {
             final: isTerminalDelivery(deliveryState),
           },
         };
+      },
+    },
+    {
+      // Move ONE order through its delivery lifecycle (M19-FR-03) — the full tested state machine made durable.
+      // A stop leaves `assigned` only by `depart`, is `deliver`ed (with PROOF — a delivery marked delivered with
+      // no photo/OTP/signature cannot be defended when the customer says it never arrived, hard rule #6) or
+      // `fail`ed, and a failed stop is `reattempt`ed or returned to origin (`rto`) — never a silence. The machine
+      // refuses an out-of-order step (409) and a proofless delivery (422) BEFORE anything is written, and the
+      // step is recorded append-only in the driver's own name. The single-attempt route above stays for the
+      // driver's per-run log; this is the order's own lifecycle, which a dispatcher reads to answer "where is it".
+      api: 'API-08', method: 'POST', path: '/v1/delivery/orders/:orderId/transition',
+      permission: 'delivery.attempt.record', idempotent: true,
+      handler: async (ctx) => {
+        const orderId = ctx.params['orderId'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const event = b['event'];
+        if (typeof event !== 'string' || !DELIVERY_EVENTS.includes(event as DeliveryEvent)) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_delivery_transition',
+            whatHappened: 'A delivery transition needs { "event": "depart" | "deliver" | "fail" | "reattempt" | "rto" } (and a proof on deliver).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the lifecycle event to record. Nothing was changed.',
+          });
+        }
+        const ev = event as DeliveryEvent;
+        const from = currentDeliveryState(await deps.deliveryState(ctx.tenantId, orderId));
+        const proof = readProof(b['proof']);
+        // Proof is required to mark an order delivered — checked before the transition, so a proofless
+        // "delivered" never even reaches the state machine (hard rule #6).
+        if (ev === 'deliver') {
+          try {
+            assertProofOfDelivery(proof);
+          } catch {
+            throw apiError(422, {
+              code: 'delivered_without_proof',
+              whatHappened: 'a delivery marked delivered with no proof (photo, OTP or signature) cannot be defended when the customer says it never arrived',
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Capture a photo/OTP/signature reference and send { "event": "deliver", "proof": { "kind": "otp", "ref": "…" } } again. The order still shows as out for delivery.',
+            });
+          }
+        }
+        if (!canTransitionDelivery(from, ev)) {
+          throw apiError(409, {
+            code: 'invalid_delivery_transition',
+            whatHappened: `a delivery cannot "${ev}" from "${from}" — the lifecycle is assigned → out_for_delivery → delivered/failed, and a failed stop is reattempted or returned to origin`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Read the order\'s current state (GET /v1/delivery/orders/:orderId) and send a step it allows. Nothing was changed.',
+          });
+        }
+        const to = transitionDelivery(from, ev);
+        const record: DeliveryStateRecord = {
+          orderId, from, to, event: ev, by: ctx.userId, at: deps.now(),
+          ...(ev === 'deliver' && proof !== undefined ? { proofRef: proof.ref } : {}),
+        };
+        await deps.recordDeliveryTransition(ctx.tenantId, record);
+        return { status: 200, body: { orderId, state: to, final: isTerminalDelivery(to) } };
+      },
+    },
+    {
+      // Where is this order? Its current delivery state and the full append-only step history — what a
+      // dispatcher reads when a customer rings, and the record that settles a "it never arrived" dispute.
+      api: 'API-08', method: 'GET', path: '/v1/delivery/orders/:orderId',
+      permission: 'delivery.run.read',
+      handler: async (ctx) => {
+        const orderId = ctx.params['orderId'] ?? '';
+        const history = await deps.deliveryState(ctx.tenantId, orderId);
+        const state = currentDeliveryState(history);
+        return { status: 200, body: { orderId, state, final: isTerminalDelivery(state), history } };
       },
     },
     {

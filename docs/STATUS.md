@@ -5,6 +5,38 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M19-FR-03 — the delivery state machine, now a durable governed surface (15 September 2026)
+
+An honest hardening increment, not a rung change. The tested delivery state machine
+(`packages/fulfilment/src/delivery.ts`) had been half-wired — `POST /v1/delivery/attempts` records a single
+proof-gated deliver/fail attempt — but the docs themselves flagged that the full lifecycle "remains
+foundation-only". This closes that: the order's whole delivery lifecycle is now a durable, restart-safe,
+governed surface.
+
+- **The route:** `POST /v1/delivery/orders/:orderId/transition` runs the full tested `transitionDelivery`
+  machine — `assigned → depart → out_for_delivery → deliver/fail`, and a failed stop is `reattempt`ed or
+  returned to origin (`rto`). It refuses an **out-of-order step** (409) and a **proofless delivery** (422 —
+  `assertProofOfDelivery`; a delivery marked delivered with no photo/OTP/signature cannot be defended when the
+  customer says it never arrived, hard rule #6) **before anything is written**. The proof reference rides with
+  the delivered step so evidence and state can never drift; every step is append-only in the driver's own name,
+  gated `delivery.attempt.record`.
+- **The read:** `GET /v1/delivery/orders/:orderId` — current state + full history, gated `delivery.run.read`.
+  What a dispatcher reads to answer "where is this order" and the record that settles an "it never arrived"
+  dispute.
+- **Durable:** event-sourced `DeliveryStateChanged` (latest-per-order) on a per-order stream, restart-safe.
+  `services/fulfilment/src/index.ts` + `services/api/src/adapters.ts` + `main.ts` no-store fallback.
+- **Tests:** `tests/integration/delivery-state.test.ts` (5 — full walk with proof, proofless refused,
+  out-of-order refused, fail→reattempt→deliver + fail→rto terminal, gated read+write + malformed).
+
+**M19 stays PARTIALLY_WIRED — honest, no headline change.** The module rung is governed by its weakest FR, and
+**M19-FR-01 (customer-confirmed substitution) is foundation-only as an M19 concern** — the substitution
+write-path exists on the API but under **M18-FR-04** (`POST /v1/orders/:id/substitute`). Whether that satisfies
+M19-FR-01 is a cross-module FR-attribution judgment that belongs to the owner/roadmap, not an autonomous
+re-rate (I will not inflate the headline on a doc-attribution call). This increment is a real deepening — the
+full delivery lifecycle is now governed, durable and restart-safe — banked toward M19 without moving the %.
+
+---
+
 ## A10 Workforce guidance manager inbox — the browser e2e → A10 E2E_VERIFIED (15 September 2026)
 
 The last A10 slice: a **headless-browser end-to-end test** that drives the *real* served screen and proves the

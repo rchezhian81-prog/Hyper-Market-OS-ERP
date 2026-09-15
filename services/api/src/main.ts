@@ -532,7 +532,7 @@ export function buildSurface(deps: {
       recordSubstitution: () => {}, orderSubstitutions: empty([]),
     } : ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES })),
     ...fulfilmentRoutes(store === undefined
-      ? { appendAttempt: () => {}, attempts: empty([]), assigned: empty([]), now }
+      ? { appendAttempt: () => {}, attempts: empty([]), assigned: empty([]), deliveryState: empty([]), recordDeliveryTransition: () => {}, now }
       : fulfilmentAdapter({ store, now })),
     // Dispatch planning & run assignment (M19-FR-03/04) — draft today's routes (every order routed or
     // unplanned-with-a-reason, straight-line distances labelled as such), full re-plan when a driver drops
