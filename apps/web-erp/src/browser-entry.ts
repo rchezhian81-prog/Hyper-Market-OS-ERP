@@ -107,6 +107,11 @@ import {
   type OperationsDismissPort,
 } from './operations-inbox-session';
 import {
+  createWorkforceInboxSession,
+  type WorkforceInboxPorts, type WorkforceInboxSession, type WorkforceWorklistData,
+  type WorkforceDismissPort,
+} from './workforce-inbox-session';
+import {
   createFleetSession, type FleetPorts, type FleetSession, type FleetDeviceRow, type FleetSummaryRollup,
 } from './fleet-session';
 import type { DeviceChangeCommand } from './fleet-device-command';
@@ -860,6 +865,91 @@ export async function fetchOperationsWorklist(): Promise<OperationsWorklistData 
   }
 }
 
+// ── Workforce guidance inbox (A10) — the exact mirror of the Operations inbox above ────────────────────────
+
+/** What the box tells the Workforce guidance inbox screen: who is looking, what they may do, and (optionally)
+ *  the worklist it last carried. The worklist is a LIVE cloud read (`GET /v1/ai/workforce/worklist`) refreshed
+ *  by the shell when online; offline the screen shows its clearly-marked sample stand-in. */
+export interface WorkforceInboxData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+  readonly worklist?: WorkforceWorklistData;
+}
+
+const WORKFORCE_READ_PERMISSION = 'ai.proposal.read';
+const WORKFORCE_DISMISS_PERMISSION = 'ai.suggestion.dismiss';
+const INACTIVE_WORKFORCE_WORKLIST: WorkforceWorklistData = Object.freeze({ agentActive: false, open: [], dismissed: [] });
+const NOOP_WORKFORCE_DISMISS_PORT: WorkforceDismissPort = { post: async () => 'lost_link' };
+
+export function workforceInboxPortsFromData(
+  data: WorkforceInboxData | undefined,
+  worklist?: WorkforceWorklistData,
+  dismissPort: WorkforceDismissPort = NOOP_WORKFORCE_DISMISS_PORT,
+): WorkforceInboxPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    worklist: () => worklist ?? data?.worklist ?? INACTIVE_WORKFORCE_WORKLIST,
+    // Default-deny: an absent permission list can read/dismiss nothing (the server would refuse it anyway).
+    mayRead: () => held.has(WORKFORCE_READ_PERMISSION),
+    mayDismiss: () => held.has(WORKFORCE_DISMISS_PERMISSION),
+    dismissPort: () => dismissPort,
+  };
+}
+
+/** Build the Workforce inbox, or `null` when the box carried no payload for it (shell shows the sample). */
+export function bootWorkforceInbox(
+  data: WorkforceInboxData | undefined,
+  worklist?: WorkforceWorklistData,
+  dismissPort?: WorkforceDismissPort,
+): WorkforceInboxSession | null {
+  if (data === undefined) return null;
+  return createWorkforceInboxSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    workforceInboxPortsFromData(data, worklist, dismissPort),
+  );
+}
+
+/** The authenticated POST of a manager's set-aside/reopen decision — the manager's OWN session cookie
+ *  (`credentials: 'same-origin'`), never a service token. A network/timeout is a retryable lost link, not a
+ *  refusal, so a dropped connection never reads as "the server said no". The AI never calls this — a person does. */
+function openWorkforceDismissPort(): WorkforceDismissPort {
+  return {
+    post: async ({ findingId, dismissed, reason }): Promise<DismissOutcome> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return 'lost_link';
+      const key = globalThis.crypto?.randomUUID?.() ?? `wf-dismiss-${findingId}-${String(dismissed)}`;
+      const body = dismissed ? { findingId, reason } : { findingId, reopen: true };
+      try {
+        const res = await fetchFn('/v1/ai/workforce/dismissals', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify(body),
+        });
+        return res.status >= 200 && res.status < 300 ? 'recorded' : 'refused';
+      } catch {
+        return 'lost_link';
+      }
+    },
+  };
+}
+
+/** Read the live worklist (a GET — read-only, commits nothing). Returns null offline/refused so the shell
+ *  keeps whatever it was showing and its stale strip says the page is what the box last told it. */
+export async function fetchWorkforceWorklist(): Promise<WorkforceWorklistData | null> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return null; // off-browser (tests inject their own http)
+  try {
+    const res = await fetchFn('/v1/ai/workforce/worklist', {
+      method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin',
+    });
+    if (res.status >= 400) return null;
+    return (await res.json()) as WorkforceWorklistData;
+  } catch {
+    return null;
+  }
+}
+
 /** What the box tells the device fleet-manager screen — who is looking and what they may do (M33-FR-02/04).
  *  The fleet itself is fetched from the cloud fleet-health call (wired next); the shell shows a sample
  *  stand-in until then. `summary`/`devices` are carried when a later cloud→box sync provides them. */
@@ -1582,6 +1672,13 @@ interface ManagerWindow {
     refresh(): Promise<OperationsWorklistData | null>;
     present(worklist: OperationsWorklistData): OperationsInboxSession;
   };
+  workforceInboxData?: WorkforceInboxData;
+  workforceInboxSession?: WorkforceInboxSession;
+  /** The shell reads the live worklist through this and re-presents it — a GET read, never a write. */
+  workforceInbox?: {
+    refresh(): Promise<WorkforceWorklistData | null>;
+    present(worklist: WorkforceWorklistData): WorkforceInboxSession;
+  };
   fleetData?: FleetData;
   fleetSession?: FleetSession;
   /** Where a device change (register/block/retire) queues for the sync agent — device-backed, survives a reload. */
@@ -2128,6 +2225,23 @@ if (browserWindow !== undefined) {
       present: (worklist) => createOperationsInboxSession(
         { userId: operationsData?.userId === undefined ? null : operationsData.userId },
         operationsInboxPortsFromData(operationsData, worklist, operationsDismissPort),
+      ),
+    };
+  }
+  // The Workforce guidance inbox (A10): boots from the box's policy (who + what they hold), then the shell
+  // refreshes the worklist with a live GET (read-only). Offline it shows its sample stand-in and says so. A10
+  // flags; a manager acts (assign or complete the task the ordinary way), and setting guidance aside is a HUMAN
+  // write in the manager's own name — the AI never writes it.
+  const workforceData = browserWindow.workforceInboxData;
+  const workforceDismissPort = openWorkforceDismissPort();
+  const workforceInbox = bootWorkforceInbox(workforceData, undefined, workforceDismissPort);
+  if (workforceInbox !== null) {
+    browserWindow.workforceInboxSession = workforceInbox;
+    browserWindow.workforceInbox = {
+      refresh: fetchWorkforceWorklist,
+      present: (worklist) => createWorkforceInboxSession(
+        { userId: workforceData?.userId === undefined ? null : workforceData.userId },
+        workforceInboxPortsFromData(workforceData, worklist, workforceDismissPort),
       ),
     };
   }

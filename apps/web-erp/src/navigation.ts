@@ -89,6 +89,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // connection, each with its runbook). Gated on the SAME permission the worklist route checks
   // (`ai.proposal.read`), so the menu never offers a screen the server would refuse (A06 · API-13).
   { id: 'operations', label: 'Operations', path: '/operations', requires: 'ai.proposal.read', group: 'Administration' },
+  // Workforce — the A10 guidance inbox (the day's late staff tasks, a critical overdue one escalated to the
+  // manager on duty, each with the recommended action). Gated on the SAME permission the worklist route checks
+  // (`ai.proposal.read`), so the menu never offers a screen the server would refuse (A10 · API-13).
+  { id: 'workforce', label: 'Workforce', path: '/workforce', requires: 'ai.proposal.read', group: 'Administration' },
 ]);
 
 export interface NavGroup {

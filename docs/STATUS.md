@@ -5,6 +5,34 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## A10 Workforce guidance manager inbox — slice 3, the served screen → A10 INTEGRATION_TESTED (15 September 2026)
+
+The visible screen. Slices 1–2 gave the backend worklist and the tested on-screen logic; this adds the
+**served web-erp page** a manager actually opens — and lifts A10 from WIRED to INTEGRATION_TESTED.
+
+- **The screen:** `apps/web-erp/web/workforce.html` + `workforce.js` — the bilingual (EN/TA) view over the
+  tested session model, drawing the open guidance (each late task, why it needs attention, the recommended
+  action and, for a manager, a set-aside-with-reason button) and the set-aside ones (who/why + bring-back).
+  Read-only; the set-aside write runs only on an explicit click. Offline it opens into a clearly-marked sample
+  and says the page is stale.
+- **Served + fed from the edge:** registered as the `workforce` screen (`screen-server.ts`), fed
+  `workforceInboxData` from the box's policy (`screen-data.ts workforcePayload` + `store-pack.ts
+  PackWorkforceInboxPolicy`) — who is looking + what they hold, re-read every render; the worklist itself is
+  the live cloud GET. `browser-entry.ts` boots it over a same-origin dismiss port (`POST
+  /v1/ai/workforce/dismissals`) + live worklist GET. Cached in the web-erp **service worker (v19)** so it opens
+  on a dead router. Reachable from the ERP **navigation** (gated `ai.proposal.read`).
+- **Tests:** `the-screens-are-fed.test.ts` now feeds the workforce screen (+ refuses it on an empty pack);
+  `every-screen-opens-without-a-network.test.ts` holds it to the offline bar (SW registered, network-first
+  page, stamped stale strip in EN+TA, bundle cached); `edge-feeds-the-screens.test.ts` covers its payload.
+
+**Honest re-rate — A10 WIRED (60) → INTEGRATION_TESTED (75), +15 weighted points.** Headline **50.5% →
+50.6%.** Every A10 leg is now live and integration-tested (run, worklist, session, served+offline screen).
+Held at INTEGRATION_TESTED, not E2E_VERIFIED: a headless-browser e2e driving the real screen's set-aside
+write-path (the analog of `operations-dismiss-delivery.e2e.ts`) is the remaining piece — a follow-on slice.
+Ledger + A10 mirror row updated to match.
+
+---
+
 ## A10 Workforce guidance manager inbox — slice 2, the session model (15 September 2026)
 
 The on-screen logic, DOM-free and tested, mirroring A06/A08 slice 2. Slice 1 gave the backend worklist; this
