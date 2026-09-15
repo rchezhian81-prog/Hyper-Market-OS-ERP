@@ -59,7 +59,7 @@ const ALL: readonly Route[] = [
   }),
   ...customerRoutes({ consentRecords: () => [], appendConsent: () => {}, pointsBalance: () => undefined, pointsMovements: () => [], recordPointsMovement: () => {}, now: () => NOW }),
   ...ordersRoutes({ onHand: () => new Map(), outstanding: () => [], holdReservations: () => {}, holdMinutes: 60, now: () => NOW, recordPlaced: () => {}, orderState: () => undefined, orderReservations: () => [], recordTransition: () => {}, releaseReservations: () => {}, recordSubstitution: () => {}, orderSubstitutions: () => [] }),
-  ...fulfilmentRoutes({ appendAttempt: () => {}, attempts: () => [], assigned: () => [], now: () => NOW }),
+  ...fulfilmentRoutes({ appendAttempt: () => {}, attempts: () => [], assigned: () => [], deliveryState: () => [], recordDeliveryTransition: () => {}, now: () => NOW }),
   ...financeRoutes({
     periodStates: () => new Map(), nextOpenPeriod: () => '2026-08', appendJournal: () => {},
     controlTotals: () => [], postersIn: () => [], markClosed: () => {}, markReopened: () => {}, canSignPeriod: () => false, now: () => NOW,

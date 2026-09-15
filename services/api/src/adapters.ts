@@ -185,7 +185,7 @@ import { expired } from '../../orders/src/index';
 import type {
   Reservation, OrdersDeps, PlacedOrder, OrderTransition, OrderStateView, StoredSubstitution,
 } from '../../orders/src/index';
-import type { DeliveryAttempt, FulfilmentDeps } from '../../fulfilment/src/index';
+import type { DeliveryAttempt, DeliveryStateRecord, FulfilmentDeps } from '../../fulfilment/src/index';
 import type { DispatchDeps } from '../../fulfilment/src/dispatch';
 import { assignedOrderIds, type DispatchPlan } from '../../../packages/fulfilment/src/index';
 import { replayNotificationQueue, type NotificationQueueDeps, type NotificationQueueEvent } from '../../customer/src/notification-queue';
@@ -5762,6 +5762,22 @@ export function fulfilmentAdapter(input: {
       const plans = await allOf<DispatchPlan>(input.store, tenantId, streamName(STREAM.delivery, 'dispatch', runDate), 'DispatchPlanned');
       const plan = plans[plans.length - 1]; // occurrence order → the latest plan/reassign wins
       return plan === undefined ? [] : assignedOrderIds(plan, driverId);
+    },
+
+    // One order IS a stream: reading where a single order has got to no longer scans every delivery the shop
+    // has ever made. The append-only history folds to the current state by occurrence order (latest `to` wins).
+    deliveryState: (tenantId, orderId) =>
+      allOf<DeliveryStateRecord>(input.store, tenantId, streamName(STREAM.delivery, 'order', orderId), 'DeliveryStateChanged'),
+
+    recordDeliveryTransition: async (tenantId, record) => {
+      await input.store.append(tenantId, streamName(STREAM.delivery, 'order', record.orderId), makeEvent({
+        id: `dstate-${record.orderId}-${record.event}-${record.at}`,
+        type: 'DeliveryStateChanged',
+        occurredAt: record.at,
+        idempotencyKey: `dstate-${tenantId}-${record.orderId}-${record.event}-${record.at}`,
+        source: 'api/fulfilment',
+        payload: record,
+      }));
     },
   };
 }
