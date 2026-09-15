@@ -21,6 +21,11 @@ const inventory = (h: ApiHarness, u: string) =>
   h.request({ method: 'GET', path: '/v1/integration/secrets', userId: u, tenantId: A });
 const review = (h: ApiHarness, u: string, body: Record<string, unknown>, key: string) =>
   h.request({ method: 'POST', path: '/v1/integration/secrets/review', userId: u, tenantId: A, idempotencyKey: key, body });
+const signals = (h: ApiHarness, u: string, body: Record<string, unknown>, key = `sig-${Math.random()}`) =>
+  h.request({ method: 'POST', path: '/v1/integration/secrets/usage-signals', userId: u, tenantId: A, idempotencyKey: key, body });
+
+const usage = (over: Record<string, unknown> = {}) =>
+  ({ identityId: 'svc-partner-a', api: 'API-06 customer', calls: 100, errors: 0, onDate: '2026-09-14', ...over });
 
 const secret = (over: Record<string, unknown> = {}) =>
   ({ kind: 'payment_provider', vaultRef: 'vault://payments/live#v1', owner: 'u-owner', protects: 'the live payment key', rotateEveryDays: 90, environment: 'production', ...over });
@@ -91,6 +96,46 @@ describe('managed secrets: references only, rotate with overlap, revoke names br
     // The blocking ones sort first.
     expect(rev.issues[0]?.blocking).toBe(true);
     expect(rev.detail).toContain('WILL fail');
+  });
+
+  it('surfaces unusual API-caller traffic — and NEVER blocks a caller (P-05, hard rule #5)', async () => {
+    const h = await cast();
+    const res = await signals(h, 'u-owner', {
+      current: [
+        usage({ identityId: 'svc-spike', calls: 5_000 }),            // 50× a 100 baseline → spike
+        usage({ identityId: 'svc-errs', calls: 100, errors: 40 }),   // 40% failing → error_surge
+        usage({ identityId: 'svc-new', calls: 12 }),                 // no history → new_caller
+      ],
+      baseline: [
+        usage({ identityId: 'svc-spike', calls: 100, onDate: '2026-09-07' }),
+        usage({ identityId: 'svc-errs', calls: 100, onDate: '2026-09-07' }),
+        usage({ identityId: 'svc-quiet', calls: 500, onDate: '2026-09-07' }), // now absent → silent
+      ],
+    });
+    expect(res.status).toBe(200);
+    const body = res.body as { findings: { identityId: string; signal: string; actionTaken: boolean }[]; count: number; watched: number };
+    const byId = (id: string) => body.findings.filter((f) => f.identityId === id).map((f) => f.signal);
+    expect(byId('svc-spike')).toContain('spike');
+    expect(byId('svc-errs')).toContain('error_surge');
+    expect(byId('svc-new')).toContain('new_caller');
+    expect(byId('svc-quiet')).toContain('silent'); // the alert that never fires
+    expect(body.watched).toBe(3);
+    // The whole point: it reports, it never acts. Not one finding may claim an action was taken.
+    expect(body.findings.every((f) => f.actionTaken === false)).toBe(true);
+  });
+
+  it('says nothing about ordinary variation, and refuses malformed windows / a caller without the read scope', async () => {
+    const h = await cast();
+    // Within 3× and no error surge → quiet.
+    const ok = await signals(h, 'u-owner', {
+      current: [usage({ calls: 140 })],
+      baseline: [usage({ calls: 100, onDate: '2026-09-07' })],
+    });
+    expect((ok.body as { findings: unknown[]; count: number }).count).toBe(0);
+    // A window missing its counts is refused — nothing is computed on a malformed shape.
+    expect(codeOf(await signals(h, 'u-owner', { current: [{ identityId: 'x', api: 'y', onDate: '2026-09-14' }], baseline: [] }))).toBe('not_readable_as_usage_windows');
+    // A store manager holds no platform.setup.read → refused.
+    expect((await signals(h, 'u-mgr', { current: [], baseline: [] })).status).toBe(403);
   });
 
   it('gates management on platform.setup, and survives a restart', async () => {

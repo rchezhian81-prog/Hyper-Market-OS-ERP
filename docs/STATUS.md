@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M32-FR-03 — usage signals, now a governed cloud read (15 September 2026)
+
+An honest hardening increment, not a rung change. The credential-usage anomaly detector (`findUsageSignals`
+in `packages/integration/src/secrets.ts`) was tested but reachable from **no running path** — the M32
+evidence itself named "usage-signal monitoring (findUsageSignals)" as one of two engine-only legs. This
+wires it as a gated cloud read.
+
+- **The route:** `POST /v1/integration/secrets/usage-signals` runs the same tested `findUsageSignals` over a
+  supplied `current` and `baseline` window and reports four signals — a **spike** (a credential hammered far
+  above baseline), a **silent** feed (one that stopped — the alert that never fires, i.e. an integration that
+  broke), an **error surge**, and a **new caller** with no history. Gated the existing `platform.setup.read`
+  (owner-scoped — no new scope, so no new privilege surface).
+- **It never blocks.** Every finding carries `actionTaken: false` (the engine types it as the literal
+  `false`), asserted by the test: revoking a credential on a traffic spike kills a payment integration
+  mid-sale and the spike is usually a promotion (P-05, hard rule #5 — an agent recommends, a human commits).
+  The route reports; a human decides.
+- **Stateless** — the caller (the telemetry roll-up worker) supplies the windows; nothing is stored, so no
+  new event type, store, or `SecretsDeps` change. The counts-only window (`identityId, api, calls, errors,
+  onDate`) carries no payloads.
+- **Where:** `services/platform/src/secrets.ts` (route + window validators, registered before `/:secretId`).
+  `tests/integration/managed-secrets.test.ts` extended (+2 — surfaces spike/silent/error_surge/new_caller and
+  never acts; ordinary variation is quiet, malformed windows refused, gated read).
+
+**M32 stays PARTIALLY_WIRED — honest, no headline change (50.7%).** This closes the usage-signal engine-only
+leg; the module rung is still governed by its **remaining** engine-only piece — the connector DELIVERY /
+dead-letter path (M32-FR-02 transport), a durable-broker/worker concern rather than a cloud endpoint by
+design. A real deepening banked toward M32.
+
+---
+
 ## M35-FR-02 — the DR-drill register, durable §32 evidence over N quarters (15 September 2026)
 
 Another honest hardening increment (a deepening, not a rung change). The DR-drill *scorer* was wired but

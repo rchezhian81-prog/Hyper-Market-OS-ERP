@@ -20,8 +20,8 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
-  reviewSecrets, rotateSecret, revokeSecret,
-  type SecretRef, type SecretKind,
+  reviewSecrets, rotateSecret, revokeSecret, findUsageSignals,
+  type SecretRef, type SecretKind, type UsageWindow,
 } from '../../../packages/integration/src/index';
 
 export type { SecretRef } from '../../../packages/integration/src/index';
@@ -31,6 +31,12 @@ const KINDS: readonly SecretKind[] = ['payment_provider', 'gst_portal', 'messagi
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isPosInt = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v > 0;
+const isNonNegInt = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+// A rolled-up usage window for ONE identity against ONE api on ONE date — counts only, no payloads.
+const isUsageWindow = (v: unknown): v is UsageWindow =>
+  isObj(v) && isStr(v['identityId']) && isStr(v['api']) && isNonNegInt(v['calls']) && isNonNegInt(v['errors']) && isStr(v['onDate']);
+const usageWindows = (v: unknown): readonly UsageWindow[] | undefined =>
+  Array.isArray(v) && v.every(isUsageWindow) ? (v as UsageWindow[]) : undefined;
 // A vault REFERENCE, never a raw value — must be a scheme URI (e.g. vault://...), so a plaintext key
 // pasted into this field is refused rather than stored (hard rule #4).
 const isVaultRef = (v: unknown): v is string => typeof v === 'string' && /^[a-z][a-z0-9+.-]*:\/\/.+/.test(v);
@@ -75,6 +81,39 @@ export function secretsRoutes(deps: SecretsDeps): readonly Route[] {
           asAt: isStr(b['asAt']) ? (b['asAt'] as string).slice(0, 10) : deps.now().slice(0, 10),
         });
         return { status: 200, body: review };
+      },
+    },
+    {
+      // Surface UNUSUAL API-caller traffic against a baseline — a credential used far more than usual
+      // (spike), one that went quiet (silent — the alert that never fires, an integration that broke),
+      // an error surge, or a brand-new caller. Nothing here EVER blocks: `findUsageSignals` types
+      // `actionTaken` as the literal `false`, because revoking on a spike kills a payment integration
+      // mid-sale and a spike is usually a promotion (P-05, hard rule #5 — an agent never commits). The
+      // caller (the telemetry roll-up worker) supplies the windows; this route applies the tested
+      // `@sre/integration` rules and REPORTS. Registered before `/:secretId` so this static path is not
+      // read as a secretId. Body: { current: UsageWindow[], baseline: UsageWindow[], spikeBps?, errorBps? }.
+      api: 'API-11', method: 'POST', path: '/v1/integration/secrets/usage-signals',
+      permission: 'platform.setup.read', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const current = usageWindows(b['current']);
+        const baseline = usageWindows(b['baseline']);
+        if (current === undefined || baseline === undefined
+          || (b['spikeBps'] !== undefined && !isPosInt(b['spikeBps']))
+          || (b['errorBps'] !== undefined && !isPosInt(b['errorBps']))) {
+          throw apiError(400, {
+            code: 'not_readable_as_usage_windows',
+            whatHappened: 'Usage signals need { current: [], baseline: [] } of { identityId, api, calls (>=0), errors (>=0), onDate } windows; spikeBps and errorBps are optional positive basis points.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the rolled-up current and baseline windows. This route reads and reports — it never blocks a caller.',
+          });
+        }
+        const findings = findUsageSignals({
+          current, baseline,
+          ...(isPosInt(b['spikeBps']) ? { spikeBps: b['spikeBps'] } : {}),
+          ...(isPosInt(b['errorBps']) ? { errorBps: b['errorBps'] } : {}),
+        });
+        return { status: 200, body: { findings, count: findings.length, watched: current.length } };
       },
     },
     {
