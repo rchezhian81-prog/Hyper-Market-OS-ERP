@@ -917,6 +917,10 @@ export function buildSurface(deps: {
       // so A09 drafts the same audiences within the same consent. A09 drafts only; a marketing approver
       // launches any campaign (hard rule #5), and the per-channel consent check still binds at send time.
       marketingDraft: (t) => marketingDraftInputs({ store, now }, t),
+      // ...and the service-desk cases, for the Service agent (A05) — the SAME tested serviceCases fold the
+      // desk board reads, so A05 flags the same open, unanswered cases breaching their first-response SLA
+      // that a human sees. A05 flags only; a service agent replies (hard rule #5).
+      serviceCases: (t) => serviceCaseAdapter({ store, now }).serviceCases(t),
     })),
   ];
 }

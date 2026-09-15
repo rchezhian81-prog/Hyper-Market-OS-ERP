@@ -267,7 +267,7 @@ per-item evidence and any external blocker live in the ledger. Names are from `d
 | A02 | Purchase | PARTIALLY WIRED |
 | A03 | Inventory | WIRED |
 | A04 | Customer Shopping | PARTIALLY WIRED |
-| A05 | Service | ENGINE ONLY |
+| A05 | Service | WIRED |
 | A06 | Operations | WIRED |
 | A07 | Security/Fraud | WIRED |
 | A08 | Data Quality | E2E VERIFIED |

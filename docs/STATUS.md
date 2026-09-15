@@ -5,6 +5,35 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## A05 Service agent → WIRED — all ten AI agents now at least WIRED; headline crosses 50% (15 September 2026)
+
+Continued autonomously ("keep going until 100%"). A05 was the last ENGINE_ONLY AI agent. Like A09 it had
+no drafting engine, but it had a tested SLA engine — so this wires A05's **SLA-prioritisation + escalation**
+leg (its stated "exceptions escalate to a person"), the same shape as A07.
+
+- **`services/api/src/adapters.ts`** (`aiAdapter`): a new optional `serviceCases` reader + a
+  `serviceGuidanceProposals` mapper + an `A05` dispatch case. On a run it folds the tenant's real stored
+  service-desk cases (the **same** `serviceCases` fold the desk board reads, M21) and runs the tested
+  `assessFirstResponse` over the **open, not-yet-answered** ones: it surfaces those **breaching or at risk**
+  of their first-response SLA — the wait a customer actually feels — worst-first (breached/escalate before
+  at-risk, then most-overdue first), citing the real case as evidence. `main.ts` supplies the reader.
+- **No action on the case** (hard rule #5 / P-05): `committedAnything:false`, every proposal
+  `committed:false`, `wouldRequire` = `POST /v1/service/cases/:caseId/first-response` — a **service agent**
+  replies (a supervisor approves any AI-drafted reply). Gated by the three AI gates.
+- **`tests/integration/ai-service-agent.test.ts`** (2, real API pipeline): escalates a breached urgent case
+  + flags an at-risk one + ignores fresh/already-answered + commits nothing; drafts nothing when all cases
+  are fresh/answered. Backdated cases are seeded through the app's own `serviceCaseAdapter.recordCase`
+  (a case's `openedAt` is server-stamped, so a fresh case can't look old), anchored to the wall clock.
+
+**Honest re-rate — A05 ENGINE_ONLY (20) → WIRED (60), +40 weighted points.** Headline **49.9% → 50.2%**.
+**Milestone: all ten AI agents A01–A10 are now at least WIRED** — the AI-agent surface is complete at the
+WIRED bar (A08 is E2E; A03/A06/A07/A09/A10 WIRED; A01/A02/A04 remain PARTIALLY_WIRED on non-AI legs).
+Held at WIRED, not INTEGRATION_TESTED: A05's `draft_case_response` **content** leg (generating the reply
+text a supervisor approves via the existing draft/approve routes) and an agent-facing **screen** are the
+remaining pieces. Ledger + traceability mirror updated to match.
+
+---
+
 ## A09 Marketing agent → WIRED (15 September 2026)
 
 Continued autonomously. A09's engine (marketing drafting) didn't exist yet, so unlike A10 this wasn't a
