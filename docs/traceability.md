@@ -272,7 +272,7 @@ per-item evidence and any external blocker live in the ledger. Names are from `d
 | A07 | Security/Fraud | WIRED |
 | A08 | Data Quality | E2E VERIFIED |
 | A09 | Marketing | WIRED |
-| A10 | Workforce/SOP | INTEGRATION TESTED |
+| A10 | Workforce/SOP | E2E VERIFIED |
 | WF-01 | Product onboarding | PARTIALLY WIRED |
 | WF-02 | Supplier onboarding | PARTIALLY WIRED |
 | WF-03 | Purchase planning | PARTIALLY WIRED |
