@@ -85,6 +85,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'store-setup', label: 'Store setup', path: '/admin/setup', requires: 'platform.setup.read', group: 'Administration' },
   { id: 'settings', label: 'Settings', path: '/admin/settings', requires: 'admin.settings.manage', group: 'Administration' },
   { id: 'audit', label: 'Audit log', path: '/admin/audit', requires: 'audit.view', group: 'Administration' },
+  // Operations — the A06 incident inbox (a stuck sync queue, a growing dead-letter pile, an unwell
+  // connection, each with its runbook). Gated on the SAME permission the worklist route checks
+  // (`ai.proposal.read`), so the menu never offers a screen the server would refuse (A06 · API-13).
+  { id: 'operations', label: 'Operations', path: '/operations', requires: 'ai.proposal.read', group: 'Administration' },
 ]);
 
 export interface NavGroup {

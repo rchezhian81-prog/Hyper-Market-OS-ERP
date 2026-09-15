@@ -5,6 +5,33 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## A06 Operations operator inbox — slice 3, the screen → A06 INTEGRATION_TESTED (15 September 2026)
+
+The visible screen. Slice 1 gave the backend worklist, slice 2 the on-screen logic; this adds the **served
+web-erp page** a manager actually opens — and lifts A06 from WIRED to INTEGRATION_TESTED.
+
+- **The screen:** `apps/web-erp/web/operations.html` + `operations.js` — the bilingual (EN/TA) view over the
+  tested session model, drawing the open recommendations (each with its runbook steps and, for an operator, a
+  set-aside-with-reason button) and the set-aside ones (who/why + bring-back). Read-only; the dismiss write
+  runs only on an explicit click. Offline it opens into a clearly-marked sample and says the page is stale.
+- **Served + fed from the edge:** registered as the `operations` screen (`screen-server.ts`), fed
+  `operationsInboxData` from the box's policy (`screen-data.ts operationsPayload` + `store-pack.ts
+  PackOperationsInboxPolicy`) — who is looking + what they hold, re-read every render; the worklist itself is
+  the live cloud GET. `browser-entry.ts` boots it over a same-origin dismiss port (`POST
+  /v1/ai/operations/dismissals`) + live worklist GET. Cached in the web-erp **service worker (v18)** so it
+  opens on a dead router. Reachable from the ERP **navigation** (gated `ai.proposal.read`).
+- **Tests:** `the-screens-are-fed.test.ts` now feeds the operations screen (+ refuses it on an empty pack);
+  `every-screen-opens-without-a-network.test.ts` holds it to the offline bar (SW registered, network-first
+  page, stamped stale strip in EN+TA, bundle cached); `edge-feeds-the-screens.test.ts` covers its payload.
+
+**Honest re-rate — A06 WIRED (60) → INTEGRATION_TESTED (75), +15 weighted points.** Headline **50.2% →
+50.4%.** Every A06 leg is now live and integration-tested (run, worklist, session, served+offline screen).
+Held at INTEGRATION_TESTED, not E2E_VERIFIED: a headless-browser e2e driving the real screen's dismiss
+write-path (the analog of `data-quality-dismiss-delivery.e2e.ts`) is the remaining piece — a follow-on slice.
+Ledger + A06 mirror row updated to match.
+
+---
+
 ## A06 Operations operator inbox — slice 2, the session model (15 September 2026)
 
 Continued on the screens track. Slice 1 gave the backend worklist; this is the **on-screen logic** — the

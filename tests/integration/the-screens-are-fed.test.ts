@@ -248,6 +248,7 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
   // Products to publish (ADR-0013). Who may deliver a queued product publish; the queue is the device outbox.
   productPublishReviewPolicy: known({ userId: 'u-owner', permissions: ['catalogue.pack.publish'] }),
   dataQualityPolicy: known({ userId: 'u-owner', permissions: ['ai.proposal.read'] }),
+  operationsInboxPolicy: known({ userId: 'u-owner', permissions: ['ai.proposal.read'] }),
   // Employee self-service (M25). Who is looking + whether they hold `payroll.ess.self`; rota + payslip come live.
   essPolicy: known({ userId: 'u-cash', permissions: ['payroll.ess.self'] }),
   // Admin and security (M01/M02/M33/M34). Support access is never pruned (hard rule #6).
@@ -747,7 +748,7 @@ describe('a box that has been told nothing tells every screen so', () => {
       wasteWriteOffs: notKnown('never'), wastePolicy: notKnown('never'),
       countsQueue: notKnown('never'), countsPolicy: notKnown('never'), fleetPolicy: notKnown('never'),
       productPublishReviewPolicy: notKnown('never'),
-      dataQualityPolicy: notKnown('never'), essPolicy: notKnown('never'),
+      dataQualityPolicy: notKnown('never'), operationsInboxPolicy: notKnown('never'), essPolicy: notKnown('never'),
       accounts: notKnown('never'), supportSessions: notKnown('never'),
       devices: notKnown('never'), versionPolicy: notKnown('never'),
       auditRecords: notKnown('never'), retentionPolicies: notKnown('never'),

@@ -102,6 +102,11 @@ import {
   type DataQualityDismissPort, type DismissOutcome,
 } from './data-quality-inbox-session';
 import {
+  createOperationsInboxSession,
+  type OperationsInboxPorts, type OperationsInboxSession, type OperationsWorklistData,
+  type OperationsDismissPort,
+} from './operations-inbox-session';
+import {
   createFleetSession, type FleetPorts, type FleetSession, type FleetDeviceRow, type FleetSummaryRollup,
 } from './fleet-session';
 import type { DeviceChangeCommand } from './fleet-device-command';
@@ -765,6 +770,91 @@ export async function fetchDataQualityWorklist(): Promise<DataQualityWorklistDat
     });
     if (res.status >= 400) return null;
     return (await res.json()) as DataQualityWorklistData;
+  } catch {
+    return null;
+  }
+}
+
+// ── Operations inbox (A06) — the exact mirror of the Data Quality inbox above ──────────────────────────────
+
+/** What the box tells the Operations inbox screen: who is looking, what they may do, and (optionally) the
+ *  worklist it last carried. The worklist is a LIVE cloud read (`GET /v1/ai/operations/worklist`) refreshed by
+ *  the shell when online; offline the screen shows its clearly-marked sample stand-in. */
+export interface OperationsInboxData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+  readonly worklist?: OperationsWorklistData;
+}
+
+const OPERATIONS_READ_PERMISSION = 'ai.proposal.read';
+const OPERATIONS_DISMISS_PERMISSION = 'ai.suggestion.dismiss';
+const INACTIVE_OPERATIONS_WORKLIST: OperationsWorklistData = Object.freeze({ agentActive: false, open: [], dismissed: [] });
+const NOOP_OPERATIONS_DISMISS_PORT: OperationsDismissPort = { post: async () => 'lost_link' };
+
+export function operationsInboxPortsFromData(
+  data: OperationsInboxData | undefined,
+  worklist?: OperationsWorklistData,
+  dismissPort: OperationsDismissPort = NOOP_OPERATIONS_DISMISS_PORT,
+): OperationsInboxPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    worklist: () => worklist ?? data?.worklist ?? INACTIVE_OPERATIONS_WORKLIST,
+    // Default-deny: an absent permission list can read/dismiss nothing (the server would refuse it anyway).
+    mayRead: () => held.has(OPERATIONS_READ_PERMISSION),
+    mayDismiss: () => held.has(OPERATIONS_DISMISS_PERMISSION),
+    dismissPort: () => dismissPort,
+  };
+}
+
+/** Build the Operations inbox, or `null` when the box carried no payload for it (shell shows the sample). */
+export function bootOperationsInbox(
+  data: OperationsInboxData | undefined,
+  worklist?: OperationsWorklistData,
+  dismissPort?: OperationsDismissPort,
+): OperationsInboxSession | null {
+  if (data === undefined) return null;
+  return createOperationsInboxSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    operationsInboxPortsFromData(data, worklist, dismissPort),
+  );
+}
+
+/** The authenticated POST of an operator's set-aside/reopen decision — the operator's OWN session cookie
+ *  (`credentials: 'same-origin'`), never a service token. A network/timeout is a retryable lost link, not a
+ *  refusal, so a dropped connection never reads as "the server said no". The AI never calls this — a person does. */
+function openOperationsDismissPort(): OperationsDismissPort {
+  return {
+    post: async ({ findingId, dismissed, reason }): Promise<DismissOutcome> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return 'lost_link';
+      const key = globalThis.crypto?.randomUUID?.() ?? `ops-dismiss-${findingId}-${String(dismissed)}`;
+      const body = dismissed ? { findingId, reason } : { findingId, reopen: true };
+      try {
+        const res = await fetchFn('/v1/ai/operations/dismissals', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify(body),
+        });
+        return res.status >= 200 && res.status < 300 ? 'recorded' : 'refused';
+      } catch {
+        return 'lost_link';
+      }
+    },
+  };
+}
+
+/** Read the live worklist (a GET — read-only, commits nothing). Returns null offline/refused so the shell
+ *  keeps whatever it was showing and its stale strip says the page is what the box last told it. */
+export async function fetchOperationsWorklist(): Promise<OperationsWorklistData | null> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return null; // off-browser (tests inject their own http)
+  try {
+    const res = await fetchFn('/v1/ai/operations/worklist', {
+      method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin',
+    });
+    if (res.status >= 400) return null;
+    return (await res.json()) as OperationsWorklistData;
   } catch {
     return null;
   }
@@ -1485,6 +1575,13 @@ interface ManagerWindow {
     refresh(): Promise<DataQualityWorklistData | null>;
     present(worklist: DataQualityWorklistData): DataQualityInboxSession;
   };
+  operationsInboxData?: OperationsInboxData;
+  operationsInboxSession?: OperationsInboxSession;
+  /** The shell reads the live worklist through this and re-presents it — a GET read, never a write. */
+  operationsInbox?: {
+    refresh(): Promise<OperationsWorklistData | null>;
+    present(worklist: OperationsWorklistData): OperationsInboxSession;
+  };
   fleetData?: FleetData;
   fleetSession?: FleetSession;
   /** Where a device change (register/block/retire) queues for the sync agent — device-backed, survives a reload. */
@@ -2014,6 +2111,23 @@ if (browserWindow !== undefined) {
       present: (worklist) => createDataQualityInboxSession(
         { userId: dataQualityData?.userId === undefined ? null : dataQualityData.userId },
         dataQualityInboxPortsFromData(dataQualityData, worklist, dataQualityDismissPort),
+      ),
+    };
+  }
+  // The Operations inbox (A06): boots from the box's policy (who + what they hold), then the shell refreshes
+  // the worklist with a live GET (read-only). Offline it shows its sample stand-in and says so. A06 recommends;
+  // an operator acts (acknowledge the alert, then run the runbook), and setting a recommendation aside is a
+  // HUMAN write in the operator's own name — the AI never writes it.
+  const operationsData = browserWindow.operationsInboxData;
+  const operationsDismissPort = openOperationsDismissPort();
+  const operationsInbox = bootOperationsInbox(operationsData, undefined, operationsDismissPort);
+  if (operationsInbox !== null) {
+    browserWindow.operationsInboxSession = operationsInbox;
+    browserWindow.operationsInbox = {
+      refresh: fetchOperationsWorklist,
+      present: (worklist) => createOperationsInboxSession(
+        { userId: operationsData?.userId === undefined ? null : operationsData.userId },
+        operationsInboxPortsFromData(operationsData, worklist, operationsDismissPort),
       ),
     };
   }

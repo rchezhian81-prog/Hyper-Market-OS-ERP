@@ -49,13 +49,13 @@ import {
   basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
-import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackEssPolicy } from './store-pack';
+import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackEssPolicy } from './store-pack';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'counts', 'product-publish-review', 'data-quality', 'ess', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
+  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'counts', 'product-publish-review', 'data-quality', 'operations', 'ess', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1349,6 +1349,25 @@ export function dataQualityPayload(input: ScreenInput): Record<string, unknown> 
   return payload;
 }
 
+/**
+ * The Operations inbox payload (A06 · API-13 · §7.1 · P-05).
+ *
+ * `null` when the box has not been told who is on the screen. **The recommendations themselves are NOT in this
+ * payload**: they are read live from the cloud (`GET /v1/ai/operations/worklist`, which re-derives them from
+ * the live alerts and honours the kill switch server-side); the shell fetches it when online and shows a
+ * sample stand-in until then. This carries only the operator's CURRENT context — who is looking and what they
+ * hold now — re-read every render; the cloud route re-checks the authority, so this only shapes the UI.
+ */
+export function operationsPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.operationsInboxPolicy.known) return null;
+  const policy: PackOperationsInboxPolicy = input.pack.operationsInboxPolicy.value;
+
+  const payload: Record<string, unknown> = { permissions: policy.permissions };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+
+  return payload;
+}
+
 /** Employee self-service (ESS) — only who is looking and what they hold; the rota and payslip come live from
  *  the cloud (self-scoped), not the pack. Null when the box was not told who is on the screen. */
 export function essPayload(input: ScreenInput): Record<string, unknown> | null {
@@ -1510,6 +1529,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   fleet: 'fleetData',
   'product-publish-review': 'productPublishReviewData',
   'data-quality': 'dataQualityInboxData',
+  operations: 'operationsInboxData',
   ess: 'essData',
   admin: 'adminData',
   ai: 'aiData',
@@ -1540,6 +1560,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   fleet: fleetPayload,
   'product-publish-review': productPublishReviewPayload,
   'data-quality': dataQualityPayload,
+  operations: operationsPayload,
   ess: essPayload,
   admin: adminPayload,
   ai: aiPayload,
