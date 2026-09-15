@@ -221,7 +221,8 @@ describe('API-13 — nothing an agent produces can commit anything', () => {
     const deps = (over: Partial<AiDeps> = {}): AiDeps => ({
       killSwitchOn: () => false, setKillSwitch: () => {}, budget: () => budget(),
       setBudget: () => {}, enabledAgents: () => ['A02'] as readonly AgentId[], setEnabledAgents: () => {}, run: () => [proposal],
-      openProposals: () => [], dataQualityWorklist: () => ({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordDataQualityDisposition: () => {}, now: () => NOW, ...over,
+      openProposals: () => [], dataQualityWorklist: () => ({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordDataQualityDisposition: () => {},
+      operationsWorklist: () => ({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordOperationsDisposition: () => {}, now: () => NOW, ...over,
     });
 
     const killed = kernelFor(aiRoutes(deps({ killSwitchOn: () => true })));
@@ -243,7 +244,8 @@ describe('API-13 — nothing an agent produces can commit anything', () => {
     const deps: AiDeps = {
       killSwitchOn: () => false, setKillSwitch: () => {}, budget: () => budget(),
       setBudget: () => {}, enabledAgents: () => ['A02'], setEnabledAgents: () => {}, openProposals: () => [],
-      dataQualityWorklist: () => ({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordDataQualityDisposition: () => {}, now: () => NOW,
+      dataQualityWorklist: () => ({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordDataQualityDisposition: () => {},
+      operationsWorklist: () => ({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordOperationsDisposition: () => {}, now: () => NOW,
       run: () => [{
         proposalId: 'P-1', agent: 'A02', summary: 'a suggestion',
         wouldRequire: 'POST /v1/purchase/orders', createdAt: NOW,
@@ -263,7 +265,8 @@ describe('API-13 — nothing an agent produces can commit anything', () => {
     const deps: AiDeps = {
       killSwitchOn: () => on, setKillSwitch: (_t, v) => { on = v; }, budget: () => budget(), setBudget: () => {},
       enabledAgents: () => ['A02'], setEnabledAgents: () => {}, run: () => [], openProposals: () => [],
-      dataQualityWorklist: () => ({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordDataQualityDisposition: () => {}, now: () => NOW,
+      dataQualityWorklist: () => ({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordDataQualityDisposition: () => {},
+      operationsWorklist: () => ({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordOperationsDisposition: () => {}, now: () => NOW,
     };
     const k = kernelFor(aiRoutes(deps));
     const res = await handle(k, {

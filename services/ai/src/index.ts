@@ -28,8 +28,9 @@ import {
   type AgentDefinition,
   type AgentId as EngineAgentId,
 } from '../../../packages/ai/src/index';
-import type { DataQualityWorklistItem, DataQualityFinding } from '../../../packages/product/src/index';
+import type { DataQualityWorklistItem, DataQualityFinding, DataQualityWorklist } from '../../../packages/product/src/index';
 import type { MappingQualityFinding } from '../../../packages/import/src/index';
+import type { OperationsFinding } from '../../../packages/ops/src/index';
 
 /**
  * One entry in the Data Quality steward's worklist, tagged by where the suggestion comes from: the
@@ -49,6 +50,14 @@ export interface StewardWorklist {
   readonly openCount: number;
   readonly dismissedCount: number;
 }
+
+/**
+ * The Operations operator's inbox (A06): the live operational-incident recommendations folded with the
+ * operators' dismissals. Each entry carries the full `OperationsFinding` (the incident, its runbook and the
+ * real alert behind it). Re-derived every read from the live alerts, so an acknowledged/cleared incident
+ * leaves the list on its own — the inbox never drifts from the live alert board. It commits nothing.
+ */
+export type OperationsWorklist = DataQualityWorklist<OperationsFinding>;
 
 /**
  * Who the ten agents are — sourced from the tested authority engine (`packages/ai`), not a second
@@ -170,6 +179,20 @@ export interface AiDeps {
    * name — the AI never writes it. `dismissed:false` reopens a previously-dismissed finding.
    */
   readonly recordDataQualityDisposition: (
+    tenantId: string,
+    disposition: { readonly findingId: string; readonly dismissed: boolean; readonly reason: string; readonly by: string; readonly at: string },
+    key: string,
+  ) => Promise<void> | void;
+  /**
+   * The Operations operator's inbox (A06): the live incident recommendations folded with the operators'
+   * dismissals. A read — deterministic, no model, no spend — so it is not behind the budget gate.
+   */
+  readonly operationsWorklist: (tenantId: string) => Promise<OperationsWorklist> | OperationsWorklist;
+  /**
+   * An operator's judgement that a recommendation is (not) worth acting on, recorded in the human's name —
+   * the AI never writes it. `dismissed:false` reopens a previously-dismissed recommendation.
+   */
+  readonly recordOperationsDisposition: (
     tenantId: string,
     disposition: { readonly findingId: string; readonly dismissed: boolean; readonly reason: string; readonly by: string; readonly at: string },
     key: string,
@@ -301,6 +324,66 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
         }
         const at = deps.now();
         await deps.recordDataQualityDisposition(
+          ctx.tenantId,
+          { findingId, dismissed: !reopen, reason, by: ctx.userId, at },
+          ctx.idempotencyKey ?? `${findingId}-${at}`,
+        );
+        return { status: 200, body: { findingId, dismissed: !reopen, by: ctx.userId, at, committedAnything: false } };
+      },
+    },
+    {
+      // The Operations operator's INBOX (A06). The live incident recommendations folded with the operators'
+      // dismissals — a person's worklist, not an action. Re-derived every read from the live alert board, so
+      // an incident that has been acknowledged/cleared leaves the list on its own; the inbox never drifts. It
+      // is the AGENT's output, so it honours the same governance as a run — hidden when the kill switch is on
+      // or A06 is not enabled by name — but it calls no model and spends nothing, so it is NOT behind the
+      // budget gate: an operator's worklist must not vanish because a budget is exhausted. Commits nothing.
+      api: 'API-13', method: 'GET', path: '/v1/ai/operations/worklist',
+      permission: 'ai.proposal.read',
+      handler: async (ctx) => {
+        const killed = await deps.killSwitchOn(ctx.tenantId);
+        const enabled = (await deps.enabledAgents(ctx.tenantId)).includes('A06');
+        if (killed || !enabled) {
+          return {
+            status: 200,
+            body: {
+              agentActive: false,
+              open: [], dismissed: [], openCount: 0, dismissedCount: 0,
+              note: killed
+                ? 'The AI kill switch is on, so the Operations agent is stopped and shows no recommendations. Turn it off to see them again — nothing else in the shop is affected.'
+                : 'The Operations agent (A06) is not switched on for this tenant, so it shows no recommendations. Enable it by name to see them.',
+              committedAnything: false,
+            },
+          };
+        }
+        const worklist = await deps.operationsWorklist(ctx.tenantId);
+        return { status: 200, body: { agentActive: true, ...worklist, committedAnything: false } };
+      },
+    },
+    {
+      // An operator sets a recommendation aside (already being handled, or judged not worth acting on), with a
+      // reason — a HUMAN decision recorded in the human's name (the AI never writes it). `reopen: true` puts it
+      // back on the list. Acting on the incident needs no call here — the recommendation vanishes on its own
+      // once the alert is acknowledged/cleared. Latest decision per finding wins (append-only, hard rule #2/#6).
+      api: 'API-13', method: 'POST', path: '/v1/ai/operations/dismissals',
+      permission: 'ai.suggestion.dismiss', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const findingId = typeof b['findingId'] === 'string' ? b['findingId'].trim() : '';
+        const reopen = b['reopen'] === true;
+        const reason = typeof b['reason'] === 'string' ? b['reason'].trim() : '';
+        if (findingId === '' || (!reopen && reason === '')) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_dismissal',
+            whatHappened: reopen
+              ? 'Reopening a recommendation needs the findingId to reopen.'
+              : 'Setting a recommendation aside needs the findingId and a short reason it is not being acted on.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { "findingId": "…", "reason": "…" } to dismiss, or { "findingId": "…", "reopen": true } to reopen. Nothing was changed.',
+          });
+        }
+        const at = deps.now();
+        await deps.recordOperationsDisposition(
           ctx.tenantId,
           { findingId, dismissed: !reopen, reason, by: ctx.userId, at },
           ctx.idempotencyKey ?? `${findingId}-${at}`,

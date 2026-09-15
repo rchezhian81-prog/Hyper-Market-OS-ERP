@@ -7219,5 +7219,39 @@ export function aiAdapter(input: {
         payload: disposition,
       }));
     },
+
+    /**
+     * The Operations operator's inbox (A06) — the live incident recommendations folded with the operators'
+     * dismissals. A pure READ: it RE-DERIVES the recommendations from the live alerts (the SAME tested
+     * recommendOperationsRunbooks the run uses), so an incident that has been acknowledged/cleared leaves the
+     * list on its own; the inbox never drifts from the live alert board. Dismissals fold latest-per-finding.
+     * Nothing is written here. Without an alerts reader wired, the list is simply empty.
+     */
+    operationsWorklist: async (tenantId) => {
+      const latest = new Map<string, SuggestionDisposition>();
+      for (const d of await allOf<SuggestionDisposition>(input.store, tenantId, STREAM.ai, 'AiOperationsDismissed')) {
+        latest.set(d.findingId, d); // occurrence order → the last decision on a finding wins
+      }
+      const findings = input.operationsAlerts === undefined
+        ? []
+        : recommendOperationsRunbooks(await input.operationsAlerts(tenantId));
+      return buildDataQualityWorklist({ findings, dispositions: [...latest.values()] });
+    },
+
+    /**
+     * An operator's judgement that a recommendation is (not) worth acting on — a HUMAN write, recorded in the
+     * human's name (`by` is the authenticated caller, stamped by the route). Append-only, latest-wins; a
+     * reopen (`dismissed:false`) is another event, never an erasure (hard rule #2/#6).
+     */
+    recordOperationsDisposition: async (tenantId, disposition, key) => {
+      await input.store.append(tenantId, STREAM.ai, makeEvent({
+        id: `ops-disposition-${disposition.findingId}-${disposition.at}`,
+        type: 'AiOperationsDismissed',
+        occurredAt: disposition.at,
+        idempotencyKey: `ops-disposition-${tenantId}-${key}`,
+        source: 'api/ai',
+        payload: disposition,
+      }));
+    },
   };
 }
