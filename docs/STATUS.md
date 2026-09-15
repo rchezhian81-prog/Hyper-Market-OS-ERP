@@ -5,6 +5,29 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## A06 Operations operator inbox — slice 2, the session model (15 September 2026)
+
+Continued on the screens track. Slice 1 gave the backend worklist; this is the **on-screen logic** — the
+tested, DOM-free session model the shell will render, mirroring A08's `data-quality-inbox-session`.
+
+- `apps/web-erp/src/operations-inbox-session.ts`: `createOperationsInboxSession` presents the worklist as
+  **attention-first rows** — a `down` incident reads graver (error tone) than a `degraded` one, and **colour
+  is never the only signal** (an icon + a word ride with every row). It offers the operator's **set-aside /
+  bring-back** actions, **refused locally before any POST** when there's no permission or an empty reason (the
+  screen never sends a write it knows will fail; the AI never writes it). It honours governance: when A06 is
+  off or killed it shows a **plain-English note**, never an empty screen a person misreads as "all clear".
+  Bilingual **EN + Tamil**, one copy object, DOM-free (the shell only renders what this hands over).
+- `tests/unit/erp-operations-inbox-session.test.ts` (12): bilingual completeness + tripwire; open-degraded vs
+  open-down vs set-aside tones; word+icon on every status; clean = empty not error; governance (off → note,
+  no read perm → error, nobody-named); set-aside/reopen through the port with trimmed reason; local refusal
+  without permission/reason; distinct outcome presentations.
+
+**No rung change — A06 stays WIRED, headline unmoved (honest).** Slice 3 — the web-erp shell
+(`operations.html` + `operations.js` + service-worker cache + served-screen registration) and a browser e2e —
+is what lifts A06 to INTEGRATION_TESTED then E2E_VERIFIED.
+
+---
+
 ## A06 Operations operator inbox — slice 1, the worklist backend (15 September 2026)
 
 Owner directive: "keep going until 100%" → chose the **screens** track (lift the now-wired AI helpers toward
