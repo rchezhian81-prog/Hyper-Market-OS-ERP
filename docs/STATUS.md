@@ -5,6 +5,41 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M34-FR-01 — the domain audit trail is now PRODUCED, durable and verifiable (slice 1) (15 September 2026)
+
+Owner-authorised build (the owner chose "tamper-proof audit trail" over the money-path option). An honest
+hardening increment — **not** a rung change. The tested tamper-evident `@sre/audit` trail (who did what,
+before/after, sealed in a hash chain) had cloud reads, but **only over a trail an auditor SUPPLIED** — the
+running system produced no domain trail of its own (the kernel keeps a *separate* request-level `audit_log`).
+This slice makes the domain trail real for the first time: **produced, durable, and verifiable end to end.**
+
+- **The safety guarantee** (the whole reason to do this carefully): the actor on every record is taken from
+  the **authenticated session** (`ctx.userId`) — **never** from the client — and the tamper-seal is computed
+  **server-side** by the tested engine over the real chain tail. So no caller can log an action under another
+  person's name, and no caller can forge a record into the chain. There is **no** edit or delete operation
+  anywhere (hard rule #6).
+- **Durable store:** `auditTrailAdapter` (`services/api/src/adapters.ts`) — one append-only sealed chain per
+  tenant (`AuditRecordSealed`, never folded — every record is its own fact). `recordAudit` folds the current
+  chain and lets the engine seal the new record over the true tail.
+- **One trusted producer (slice 1):** the **credential lifecycle** (`services/platform/src/secrets.ts`) —
+  register / rotate / revoke each seal a record, attributed to the acting user, carrying a **vault reference
+  and state only, NEVER a value** (hard rule #4). Sensitive, gated, and neither a money nor a POS path.
+- **The reads:** `GET /v1/audit/trail` (search the stored chain), `GET …/verify` (verify the whole chain,
+  naming every break — P-08), `GET …/reconstruct` (rebuild an object's state from the evidence alone —
+  NFR-15). Pure reads, gated `audit.retention.read` (`services/finance/src/audit-trail-store.ts`).
+- **Tests:** `tests/integration/audit-trail-store.test.ts` (4 — a sealed record attributed to the actual user
+  with no value; a chained second action that verifies intact and reconstructs to the rotated state; every
+  read gated; restart-safe).
+
+**M34 stays PARTIALLY_WIRED — honest, no headline change (50.7%).** The FR-01 property is now genuinely
+produced, but only **one** producer is wired; "every module records into it" is the remaining follow-on
+(next slices: more producers — role grants, price/refund approvals — each attributing to the session actor).
+An honest caveat is documented in the adapter: two *simultaneous* records for one tenant could fork the
+chain, which `verify` **detects** rather than silently absorbing; per-stream serialisation (as the kernel's
+request log already does) is a follow-on.
+
+---
+
 ## M32-FR-03 — usage signals, now a governed cloud read (15 September 2026)
 
 An honest hardening increment, not a rung change. The credential-usage anomaly detector (`findUsageSignals`

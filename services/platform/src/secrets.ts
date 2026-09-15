@@ -23,6 +23,7 @@ import {
   reviewSecrets, rotateSecret, revokeSecret, findUsageSignals,
   type SecretRef, type SecretKind, type UsageWindow,
 } from '../../../packages/integration/src/index';
+import type { AuditEntry } from '../../../packages/audit/src/index';
 
 export type { SecretRef } from '../../../packages/integration/src/index';
 
@@ -52,8 +53,20 @@ export interface SecretsDeps {
   readonly all: (tenantId: string) => Promise<readonly SecretRef[]> | readonly SecretRef[];
   /** Record a secret reference's latest state (registration / rotation / revocation). */
   readonly record: (tenantId: string, secret: SecretRef) => Promise<void> | void;
+  /**
+   * Seal this credential action into the tamper-evident domain audit trail (M34-FR-01), attributed to
+   * the acting user. Optional — the running system provides it; a bare deps stub may omit it. The actor
+   * is ALWAYS the caller (`ctx.userId`), never client-supplied, and NO secret value is recorded — a
+   * vault REFERENCE and state only (hard rule #4).
+   */
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   readonly now: () => string;
 }
+
+/** The audit before/after view of a secret — references and state only, NEVER a value (hard rule #4). */
+const secretState = (s: SecretRef): Record<string, string> => ({
+  vaultRef: s.vaultRef, state: s.state, version: String(s.version), environment: s.environment, kind: s.kind,
+});
 
 export function secretsRoutes(deps: SecretsDeps): readonly Route[] {
   return [
@@ -143,6 +156,11 @@ export function secretsRoutes(deps: SecretsDeps): readonly Route[] {
           ...(isStr(b['lastRotatedOn']) ? { lastRotatedOn: b['lastRotatedOn'] as string } : {}),
         };
         await deps.record(ctx.tenantId, secret);
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: 'secret.register', objectType: 'secret', objectId: secretId,
+          at: deps.now(), origin: { tenantId: ctx.tenantId, branchId: null },
+          before: null, after: secretState(secret),
+        });
         return { status: 201, body: { secretId, kind: secret.kind, version: secret.version, state: secret.state } };
       },
     },
@@ -180,6 +198,11 @@ export function secretsRoutes(deps: SecretsDeps): readonly Route[] {
           });
         }
         await deps.record(ctx.tenantId, result.next);
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: 'secret.rotate', objectType: 'secret', objectId: secretId,
+          at: deps.now(), origin: { tenantId: ctx.tenantId, branchId: null },
+          before: secretState(current), after: secretState(result.next),
+        });
         return { status: 200, body: result };
       },
     },
@@ -209,6 +232,12 @@ export function secretsRoutes(deps: SecretsDeps): readonly Route[] {
           at: deps.now(),
         });
         await deps.record(ctx.tenantId, result.revoked);
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: 'secret.revoke', objectType: 'secret', objectId: secretId,
+          at: deps.now(), origin: { tenantId: ctx.tenantId, branchId: null },
+          before: secretState(current), after: secretState(result.revoked),
+          reason: b['reason'] as string,
+        });
         return { status: 200, body: result };
       },
     },
