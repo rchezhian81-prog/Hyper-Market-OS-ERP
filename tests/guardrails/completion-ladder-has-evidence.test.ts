@@ -37,6 +37,7 @@ const EVIDENCE: Record<string, string> = {
   M29: 'tests/integration/the-screens-are-fed.test.ts',
   M30: 'tests/integration/data-import.test.ts',
   M33: 'tests/integration/setup-surface.test.ts',
+  M34: 'tests/integration/audit-trail-store.test.ts',
 };
 
 function statusOf(cell: string): string | undefined {

@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M34 re-rate review — PARTIALLY_WIRED → WIRED (16 September 2026)
+
+Owner asked for the re-rate review after the money recorders landed. This is an honest, FR-by-FR
+assessment — **not** a code change (labels + evidence only, backed by the six merged slices #420–#425).
+
+**The finding:** all four M34 FRs are now live on the API **and** integration-tested, and the one gap the
+ledger itself named as the blocker ("nothing yet PRODUCES the domain trail … the follow-on that would take
+the module toward WIRED") is closed.
+
+- **FR-01** (immutable who/what/when/where/before/after): the domain trail is produced by five producers
+  (credentials, privilege, price, refund, payment), durable, sealed/tamper-evident, reconstructable, with
+  no edit/delete path — `tests/integration/audit-trail-store.test.ts` (9).
+- **FR-02** (search / export / legal hold / retention): legal-hold lifecycle + retention plan + evidence
+  pack — `tests/integration/legal-holds.test.ts`.
+- **FR-03** (licence/obligation register + evidence): obligations register + lifecycle + evidence-gaps —
+  `tests/integration/compliance-obligation-lifecycle.test.ts`.
+- **FR-04** (risk/control/incident/remediation/attestation): full register set + gate-blocking —
+  `tests/integration/risk-register.test.ts` + `risk-followthrough.test.ts`.
+
+**Rung: WIRED (60), up from PARTIALLY_WIRED (40) — +20 weighted points, headline 50.7% → 50.9%.**
+
+**Held at WIRED, NOT INTEGRATION_TESTED — the honest ceiling.** Two real gaps remain, and calling the
+module integration-tested-as-a-whole would overstate it:
+1. FR-01 does not yet record **every** sensitive action — purchase-order and stock changes (and most other
+   modules) do not produce audit yet.
+2. FR-02 export/retention still runs over **supplied** trails, not the produced one — the produce→retain/export
+   path is not yet joined up.
+Closing those two is the path from WIRED to INTEGRATION_TESTED, and it's the owner's call whether to pursue it.
+
+---
+
 ## M34-FR-01 — audit trail slice 6: the last money recorder — payments (settlement) (16 September 2026)
 
 The final money recorder, completing the set the owner authorised ("do the money recorders").
