@@ -5,6 +5,32 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## MG-11 cutover-decision screen — INTEGRATION_TESTED → E2E_VERIFIED (16 September 2026)
+
+After the close-out below, the owner chose "harden a screen with end-to-end tests" over stopping. Picked the
+migration screen's **"Can we switch over" tab** (MG-11 — the cutover decision), the one INTEGRATION_TESTED screen
+with an untested write-path (its sibling tabs MG-04 cleaning and MG-06 reconciliation already reached
+E2E_VERIFIED).
+
+- **What the new e2e proves in a real headless browser** (`tests/e2e/migration-decision-delivery.e2e.ts` +3, 8
+  total): the go/no-go **verdict is derived** from the real migration state and rendered (NO GO by honest default
+  when the checks are unanswerable — never a hand-ticked box); a **named operator performs the always-there
+  rollback** safety valve and it is confirmed performed + attributed to them (MG-11 acceptance: a rollback that
+  has been *performed*, not designed; evidence retained — hard rule #6; the shop keeps trading either way — P-01);
+  and with **nobody named** at the desk the rollback is **refused** and nothing happens (§28 — a rollback carries
+  the name of whoever decided it).
+- **No product code changed** — this is test + docs only. The screen, session model and route already existed and
+  were integration-tested; this adds the browser proof that earns E2E_VERIFIED (the MG-04/MG-06 precedent:
+  offline-open + a functional write-path driven in a real browser).
+
+**Re-rate: INTEGRATION_TESTED → E2E_VERIFIED (+10 weighted pts, headline 51.1% → 51.2%).** E2E-verified count now
+9. Held at E2E_VERIFIED, not UAT_VERIFIED: real-store UAT needs the owner/migration-lead on a rehearsal cutover.
+
+**The pinned next step is unchanged: retention periods per data class remains the priority** (see the earlier
+close-out). This e2e was a screen-hardening side task the owner chose; it does not displace that.
+
+---
+
 ## SESSION CLOSE-OUT — M34 tamper-proof audit trail, PARTIALLY_WIRED → INTEGRATION_TESTED (16 September 2026)
 
 **Headline: 50.7% → 51.1% (+0.4 pts over the session). No inflation — every move was a rung re-rate backed by

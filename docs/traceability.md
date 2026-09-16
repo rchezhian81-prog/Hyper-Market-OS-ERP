@@ -315,7 +315,7 @@ per-item evidence and any external blocker live in the ledger. Names are from `d
 | MG-08 | Opening state | INTEGRATION TESTED |
 | MG-09 | Delta | INTEGRATION TESTED |
 | MG-10 | Parallel run | NOT STARTED |
-| MG-11 | Cutover | INTEGRATION TESTED |
+| MG-11 | Cutover | E2E VERIFIED |
 | MG-12 | Archive/retire | INTEGRATION TESTED |
 
 ## Design artifacts (Stage 3–4)
