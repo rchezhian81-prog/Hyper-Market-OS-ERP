@@ -274,7 +274,7 @@ export function buildSurface(deps: {
     ...identityRoutes(store === undefined ? {
       roles: empty([]), permissionsOf: empty([]), recordGrant: () => {},
       branches: empty([]), allocateNumber: () => Promise.resolve(1), now,
-    } : identityAdapter({ store, now, roleCatalogue: ROLE_CATALOGUE, numberSeries: deps.numberSeries })),
+    } : { ...identityAdapter({ store, now, roleCatalogue: ROLE_CATALOGUE, numberSeries: deps.numberSeries }), recordAudit: auditTrail?.recordAudit }),
     // Approval delegation (M02-FR-03) — the honest alternative to the shared login: lend authority
     // time-boxed, capped, unchained, and never used to approve the granter's own request.
     ...delegationRoutes(store === undefined

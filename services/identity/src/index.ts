@@ -15,6 +15,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { Permission, Role, RoleAssignment } from '../../../packages/rbac/src/rbac';
 import { formatNumber, type NumberFormat } from '../../../packages/numbering/src/numbering';
+import type { AuditEntry } from '../../../packages/audit/src/index';
 
 /**
  * Document number formats per type (M01-FR-02) — configuration, not tenant data: what an invoice
@@ -110,6 +111,13 @@ export interface IdentityDeps {
   readonly roles: (tenantId: string) => Promise<readonly Role[]> | readonly Role[];
   readonly permissionsOf: (tenantId: string, userId: string) => Promise<readonly Permission[]> | readonly Permission[];
   readonly recordGrant: (tenantId: string, a: RoleAssignment, g: GrantRequest) => Promise<void> | void;
+  /**
+   * Seal this privilege change into the tamper-evident domain audit trail (M34-FR-01), attributed to the
+   * acting user. Optional — the running system provides it; a bare deps stub may omit it. The actor is
+   * ALWAYS the caller (`ctx.userId`), never client-supplied; a role grant is exactly the "who was given
+   * access, by whom, approved by whom" record an auditor comes looking for (§28, hard rule #5).
+   */
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   readonly branches: (tenantId: string) => Promise<readonly { id: string; name: string }[]> | readonly { id: string; name: string }[];
   /** Allocate the next gap-free sequence number for a tenant's document type (M01-FR-02). */
   readonly allocateNumber: (tenantId: string, docType: string) => Promise<number>;
@@ -159,6 +167,20 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
           });
         }
         await deps.recordGrant(ctx.tenantId, result.assignment!, request);
+        // Seal the privilege change into the audit trail — who was given what, by whom, approved by whom
+        // (§28). Attributed to the acting user; the roles list is not a secret, so it is recorded in full.
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: 'role.grant', objectType: 'user', objectId: request.userId,
+          at: deps.now(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+          before: null,
+          after: {
+            roleId: request.roleId,
+            branchScope: typeof request.branchScope === 'string' ? request.branchScope : request.branchScope.join(','),
+            requestedBy: request.requestedBy,
+            approvedBy: request.approvedBy ?? '',
+          },
+          correlationId: request.grantId,
+        });
         return { status: 201, body: { granted: result.detail } };
       },
     },
