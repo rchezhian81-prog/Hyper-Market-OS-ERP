@@ -5,6 +5,29 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M34-FR-01 — audit trail slice 2: role grants (privilege changes) now recorded too (16 September 2026)
+
+Owner said "keep going", so per the plan I put to them, the next producer after credentials is the
+**privilege change** — non-money, high audit value. A SECOND producer now seals into the same
+tamper-evident chain: **role grants** (`services/identity/src/index.ts`). Granting a role is a privilege
+change (hard rule #5) and exactly the "who was given what access, by whom, approved by whom (§28)" record
+an auditor comes looking for.
+
+- `POST /v1/identity/grants` now seals a `role.grant` record — `objectType: user`, `objectId` the user
+  receiving access, attributed to the **acting user** (`ctx.userId`, never client-supplied), `after`
+  carrying the granted role, branch scope, requester and approver, correlated to the grant id.
+- Same durable store + stored search / verify / reconstruct as slice 1. Additive to the grant handler —
+  the grant's behaviour is unchanged; it just also records.
+- `tests/integration/audit-trail-store.test.ts` +1 (a grant appears in the trail attributed to the actor,
+  with the §28 requester/approver evidence, and the chain verifies intact).
+
+**M34 stays PARTIALLY_WIRED — honest, no headline change (50.7%).** Two producers now record (credentials +
+privilege changes); the remaining sensitive actions — the **money paths** (price / refund / payment
+changes) — and the concurrency serialisation are the follow-on. **I'll return to the owner before wiring
+the money-path producers** (they touch money-path code, additively, but I want their explicit nod first).
+
+---
+
 ## M34-FR-01 — the domain audit trail is now PRODUCED, durable and verifiable (slice 1) (15 September 2026)
 
 Owner-authorised build (the owner chose "tamper-proof audit trail" over the money-path option). An honest
