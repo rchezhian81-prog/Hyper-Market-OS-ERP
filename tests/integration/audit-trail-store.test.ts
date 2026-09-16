@@ -119,6 +119,39 @@ const placePo = (h: ApiHarness, u: string, poId: string, body: Record<string, un
 const writeOff = (h: ApiHarness, u: string, id: string, body: Record<string, unknown>) =>
   h.request({ method: 'POST', path: `/v1/inventory/write-off/${id}`, userId: u, tenantId: A, idempotencyKey: `wo-${id}`, body });
 
+const placeHold = (h: ApiHarness, u: string, body: Record<string, unknown>) =>
+  h.request({ method: 'POST', path: '/v1/audit/legal-holds', userId: u, tenantId: A, idempotencyKey: `hold-${body['holdId']}`, body });
+const planProduced = (h: ApiHarness, u: string, body: Record<string, unknown>) =>
+  h.request({ method: 'POST', path: '/v1/audit/retention/plan-produced', userId: u, tenantId: A, idempotencyKey: `plan-${Math.random()}`, body });
+const evidencePackProduced = (h: ApiHarness, u: string, body: Record<string, unknown>) =>
+  h.request({ method: 'POST', path: '/v1/audit/evidence-pack-produced', userId: u, tenantId: A, idempotencyKey: `pack-${Math.random()}`, body });
+
+describe('FR-02 over the PRODUCED trail — export & retention run on what the system recorded (M34 slice 8)', () => {
+  it('exports the produced trail for a period, named to the exporter, with the chain verified intact', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await register(h, 'u-owner', 'pay', secret(), 'k1'); // produces one sealed record (objectType 'secret')
+
+    const pack = (await evidencePackProduced(h, 'u-owner', { from: '2000-01-01T00:00:00.000Z', until: '2100-01-01T00:00:00.000Z' })).body as { records: Rec[]; exportedBy: string; sourceIntact: boolean };
+    expect(pack.records.length).toBe(1);              // the produced record, not a supplied one
+    expect(pack.exportedBy).toBe('u-owner');          // named to the exporter (nothing leaves anonymously)
+    expect(pack.sourceIntact).toBe(true);             // the produced chain verified at export time (P-08)
+  });
+
+  it('a legal hold over the produced trail beats the retention date (the FR-02 acceptance)', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await register(h, 'u-owner', 'pay', secret(), 'k1');
+
+    // A 0-day policy + far-future asOf makes the record past retention — but a hold covers it.
+    expect((await placeHold(h, 'u-owner', { holdId: 'H1', reason: 'audit in progress', objectType: 'secret' })).status).toBe(201);
+    const plan = (await planProduced(h, 'u-owner', { policies: [{ objectType: 'secret', retainDays: 0 }], asOf: '2100-01-01T00:00:00.000Z' })).body as { decisions: { outcome: string }[]; recordsAssessed: number; source: string };
+    expect(plan.source).toBe('produced-trail');
+    expect(plan.recordsAssessed).toBe(1);
+    expect(plan.decisions.every((d) => d.outcome === 'legal_hold')).toBe(true); // held beats retention
+  });
+});
+
 describe('the audit trail records a purchase — a placed order (M34 slice 7, hard rule #5 coverage)', () => {
   it('seals who ordered what, from whom, for how much, attributed to the buyer; no tender data', async () => {
     const h = apiHarness();

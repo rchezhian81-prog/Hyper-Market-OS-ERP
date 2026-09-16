@@ -26,7 +26,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  planRetention, liftHold, buildEvidencePack,
+  planRetention, liftHold, buildEvidencePack, AuditTrail, InMemoryAuditStore,
   type LegalHold, type RetentionPolicy, type AuditRecord,
 } from '../../../packages/audit/src/index';
 
@@ -67,7 +67,22 @@ export function projectHolds(events: readonly LegalHoldEvent[]): readonly LegalH
 export interface LegalHoldsDeps {
   readonly holds: (tenantId: string) => Promise<readonly LegalHold[]> | readonly LegalHold[];
   readonly recordHoldEvent: (tenantId: string, event: LegalHoldEvent, key: string) => Promise<void> | void;
+  /**
+   * The whole PRODUCED domain audit trail for a tenant, in order (M34-FR-01). Optional — the running
+   * system provides it (the same sealed chain the audit producers write and the search/verify reads use);
+   * a bare deps stub may omit it, in which case the "-produced" routes see an empty trail. This is what
+   * joins FR-02 to the produced trail: retention/export can run over what the system actually recorded,
+   * not only over evidence handed in on the request.
+   */
+  readonly producedRecords?: (tenantId: string) => Promise<readonly AuditRecord[]> | readonly AuditRecord[];
   readonly now: () => string;
+}
+
+/** Whether the produced chain still verifies — the honest `sourceIntact` for an evidence pack (P-08). */
+function chainIntact(records: readonly AuditRecord[]): boolean {
+  const store = new InMemoryAuditStore();
+  for (const r of records) store.append(r);
+  return new AuditTrail(store).verify().intact;
 }
 
 /** Read a hold placement off the request body — only the fields `LegalHold` needs, all validated. */
@@ -216,6 +231,55 @@ export function legalHoldsRoutes(deps: LegalHoldsDeps): readonly Route[] {
         const pack = buildEvidencePack({
           records, from: b['from'] as string, until: b['until'] as string,
           exportedBy: ctx.userId, exportedAt: deps.now(), sourceIntact: b['sourceIntact'] as boolean,
+        });
+        return { status: 200, body: pack };
+      },
+    },
+    {
+      // PLAN over the PRODUCED trail — the same `planRetention`, but run over the trail the system actually
+      // recorded (M34-FR-01) rather than records handed in. Policies are still supplied config; a class
+      // with no policy comes back `no_policy` (silence means keep). Held records past retention come back
+      // `legal_hold`. Deletes nothing. This is the produce->retain join for FR-02.
+      api: 'API-09', method: 'POST', path: '/v1/audit/retention/plan-produced',
+      permission: 'audit.retention.read', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const policies = readAll(b['policies'], readPolicy);
+        if (policies === undefined || !isStr(b['asOf'])) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_retention_plan',
+            whatHappened: 'A produced-trail retention plan needs { policies[] } (objectType, retainDays, optional statutory/basis) and { asOf } (ISO date). The records are the tenant\'s own produced audit trail — not sent in.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the retention policies and the date to assess against. A plan reads; it deletes nothing.',
+          });
+        }
+        const records = (await deps.producedRecords?.(ctx.tenantId)) ?? [];
+        const holds = await deps.holds(ctx.tenantId);
+        const plan = planRetention(records, policies, holds, b['asOf'] as string);
+        return { status: 200, body: { ...plan, source: 'produced-trail', recordsAssessed: records.length } };
+      },
+    },
+    {
+      // EVIDENCE PACK over the PRODUCED trail — assemble the records the system recorded for a period, for
+      // an auditor / inspector / court, named to the exporter, and stating whether the produced chain
+      // verified intact at export time (computed here, not taken on trust). The FR-02 export acceptance,
+      // over the real trail.
+      api: 'API-09', method: 'POST', path: '/v1/audit/evidence-pack-produced',
+      permission: 'audit.retention.read', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (!isStr(b['from']) || !isStr(b['until'])) {
+          throw apiError(400, {
+            code: 'not_readable_as_an_evidence_pack',
+            whatHappened: 'A produced-trail evidence pack needs a { from } and { until } (ISO instants) bounding the period. The records are the tenant\'s own produced audit trail — not sent in.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the period to export. The pack is named to you and carries the trail\'s seal.',
+          });
+        }
+        const records = (await deps.producedRecords?.(ctx.tenantId)) ?? [];
+        const pack = buildEvidencePack({
+          records, from: b['from'] as string, until: b['until'] as string,
+          exportedBy: ctx.userId, exportedAt: deps.now(), sourceIntact: chainIntact(records),
         });
         return { status: 200, body: pack };
       },

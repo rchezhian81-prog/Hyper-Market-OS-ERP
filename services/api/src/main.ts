@@ -571,7 +571,7 @@ export function buildSurface(deps: {
     // deletes nothing. Writes gated audit.hold.manage, reads audit.retention.read.
     ...legalHoldsRoutes(store === undefined
       ? { holds: () => [], recordHoldEvent: () => {}, now }
-      : legalHoldsAdapter({ store, now })),
+      : { ...legalHoldsAdapter({ store, now }), producedRecords: auditTrail?.records }),
     // Audit-trail search / reconstruct / verify (M34-FR-01) — over a supplied sealed trail: narrow it,
     // rebuild an object's state from evidence alone, and name EVERY tamper break (never the first). Pure
     // reads; there is no operation here to edit or drop a record (hard rule #6). Gated audit.retention.read.
