@@ -28,6 +28,7 @@ import {
 } from '../../../packages/purchasing/src/index';
 import { requestApproval, decide, type Approver } from '../../../packages/approvals/src/index';
 import { money, isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
+import type { AuditEntry } from '../../../packages/audit/src/index';
 
 /** A durable purchase order — proposed by a buyer, and (once a second person approves) issued. */
 export interface StoredPurchaseOrder {
@@ -61,6 +62,14 @@ export interface PurchaseOrderDeps {
   readonly supplierBlocked: (tenantId: string, supplierId: string) => Promise<boolean> | boolean;
   /** Record a proposed PO. Idempotent on the PO id. */
   readonly propose: (tenantId: string, po: StoredPurchaseOrder, key: string) => Promise<void> | void;
+  /**
+   * Seal a placed purchase order into the tamper-evident domain audit trail (M34-FR-01), attributed to
+   * the acting buyer. Optional — the running system provides it; a bare deps stub may omit it. The actor
+   * is ALWAYS the caller (`ctx.userId`), never client-supplied; a PO commits the shop to spend, so it is
+   * the "who ordered what, from whom, for how much" record an auditor comes looking for. No card/tender
+   * data exists on a purchase order (hard rule #3).
+   */
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   /** Record the issue decision (the approver + reason). Idempotent on the PO id. */
   readonly issue: (tenantId: string, poId: string, approvedBy: string, issuedAt: string, reason: string, key: string) => Promise<void> | void;
   /** Set a supplier's block state. Append-only; latest wins. */
@@ -162,6 +171,18 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
           amendmentCount: 0,
         };
         await deps.propose(ctx.tenantId, po, ctx.idempotencyKey ?? poId);
+        // Seal the purchase commitment — who ordered what, from whom, for how much — attributed to the
+        // acting buyer. Aggregates only; no card/tender data exists on a PO (hard rule #3).
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: 'purchase.order.place', objectType: 'purchase-order', objectId: poId,
+          at: po.at, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+          before: null,
+          after: {
+            supplierId: po.supplierId, totalMinor: String(po.totalMinor), currency: po.currency,
+            lineCount: String(po.lines.length), status: po.status,
+          },
+          correlationId: poId,
+        });
         return { status: 201, body: { order: po, openCommitment: null } };
       },
     },

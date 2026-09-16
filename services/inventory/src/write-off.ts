@@ -19,6 +19,7 @@ import { Ledger, InMemoryLedgerStore } from '../../../packages/ledger/src/ledger
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
 import { isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
+import type { AuditEntry } from '../../../packages/audit/src/index';
 
 const LOSS_TYPES: readonly LossType[] = ['wastage', 'damage', 'expiry', 'donation', 'destruction'];
 
@@ -60,6 +61,13 @@ export interface WriteOffDeps {
   /** Whether a user holds Manager/Owner authority to approve a material write-off (§28). A named
    *  approver who does not hold it does not count — the same check as the other §28 approvals. */
   readonly canApproveWriteOff: (tenantId: string, userId: string) => Promise<boolean> | boolean;
+  /**
+   * Seal this stock write-off into the tamper-evident domain audit trail (M34-FR-01), attributed to the
+   * raiser. Optional — the running system provides it; a bare deps stub may omit it. The actor is ALWAYS
+   * the caller (`ctx.userId`); a write-off is the archetypal sensitive STOCK change (value leaving the
+   * books), so it is recorded in full — product, loss type, quantity, value, reason and the §28 approver.
+   */
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   readonly now: () => string;
 }
 
@@ -154,6 +162,18 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
           raisedBy: ctx.userId, approvedBy: isStr(b['approvedBy']) ? (b['approvedBy'] as string) : null, at,
         };
         await deps.recordWriteOff(ctx.tenantId, rec);
+        // Seal the stock loss — what left, how much, why, its value and (for a material loss) the §28
+        // approver — attributed to the raiser. A stock write-off carries no card/tender data (hard rule #3).
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: rec.raisedBy, action: 'stock.write_off', objectType: 'product', objectId: rec.productId,
+          at: rec.at, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+          before: null,
+          after: {
+            writeOffId: rec.id, lossType: rec.lossType, qtyRemoved: String(rec.qtyRemoved),
+            valueMinor: String(rec.valueMinor), reasonCode: rec.reasonCode, approvedBy: rec.approvedBy ?? '',
+          },
+          correlationId: rec.id,
+        });
         return { status: 201, body: { id: writeOffId, lossType: rec.lossType, qtyRemoved: rec.qtyRemoved, valueMinor: rec.valueMinor, requiredApproval: rec.requiredApproval, evidenceRef: rec.evidenceRef } };
       },
     },

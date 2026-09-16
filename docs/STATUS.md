@@ -5,6 +5,26 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M34-FR-01 — audit trail slice 7: purchase + stock producers (16 September 2026)
+
+Owner asked to push M34 to integration-tested. Step one of two — complete the audit trail's coverage of
+hard rule #5's sensitive-commit categories. Two more producers now seal into the trail:
+
+- `POST /v1/purchase/orders/:poId` seals a `purchase.order.place` record — who ordered what, from whom, for
+  how much (supplier, total, currency, line count), attributed to the buyer.
+- `POST /v1/inventory/write-off/:id` seals a `stock.write_off` record — what left, how much, why, its value
+  and the §28 approver, attributed to the raiser.
+
+Both aggregates only, no card/tender data (hard rule #3). `services/purchase/src/purchase-orders.ts`,
+`services/inventory/src/write-off.ts` + `main.ts`. `tests/integration/audit-trail-store.test.ts` +2.
+
+**M34 stays WIRED — honest, no headline change (50.9%).** The trail now records **all** of hard rule #5's
+sensitive-commit categories (price, payment, refund, purchase, stock) plus privilege and credentials —
+closing the FR-01 "every sensitive action" gap. The one remaining gap to INTEGRATION_TESTED is **FR-02:
+export/retention over the PRODUCED trail** (next slice). No re-rate until that's closed too.
+
+---
+
 ## M34 re-rate review — PARTIALLY_WIRED → WIRED (16 September 2026)
 
 Owner asked for the re-rate review after the money recorders landed. This is an honest, FR-by-FR

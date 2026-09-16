@@ -114,6 +114,51 @@ const settlementBatchBody = () => ({
 const importBatch = (h: ApiHarness, u: string, body: Record<string, unknown>) =>
   h.request({ method: 'POST', path: '/v1/settlement/batches', userId: u, tenantId: A, idempotencyKey: `sb-${body['batchId']}`, body });
 
+const placePo = (h: ApiHarness, u: string, poId: string, body: Record<string, unknown>) =>
+  h.request({ method: 'POST', path: `/v1/purchase/orders/${poId}`, userId: u, tenantId: A, idempotencyKey: `po-${poId}`, body });
+const writeOff = (h: ApiHarness, u: string, id: string, body: Record<string, unknown>) =>
+  h.request({ method: 'POST', path: `/v1/inventory/write-off/${id}`, userId: u, tenantId: A, idempotencyKey: `wo-${id}`, body });
+
+describe('the audit trail records a purchase — a placed order (M34 slice 7, hard rule #5 coverage)', () => {
+  it('seals who ordered what, from whom, for how much, attributed to the buyer; no tender data', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner'); // holds purchase.order.propose + audit.retention.read
+
+    const r = await placePo(h, 'u-owner', 'PO-1', {
+      supplierId: 'sup-1', lines: [{ productId: 'p1', orderedQty: 10, unitCost: { minor: 5_000, currency: 'INR' } }],
+    });
+    expect(r.status).toBe(201);
+
+    const body = (await trail(h, 'u-owner', { objectType: 'purchase-order', objectId: 'PO-1' })).body as { matches: Rec[]; total: number };
+    expect(body.total).toBe(1);
+    const rec = body.matches[0]!;
+    expect(rec).toMatchObject({ action: 'purchase.order.place', objectType: 'purchase-order', objectId: 'PO-1', actorId: 'u-owner' });
+    expect(rec.after).toMatchObject({ supplierId: 'sup-1', totalMinor: '50000', currency: 'INR', lineCount: '1', status: 'proposed' });
+    expect(JSON.stringify(rec)).not.toMatch(/card|cvv|expiry|tender/i);
+    expect((await verify(h, 'u-owner')).body).toMatchObject({ intact: true, recordsChecked: 1 });
+  });
+});
+
+describe('the audit trail records a stock loss — a write-off (M34 slice 7, hard rule #5 coverage)', () => {
+  it('seals what left, how much, why and its value, attributed to the raiser; verifies intact', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner'); // holds inventory.movement.append + audit.retention.read
+
+    const r = await writeOff(h, 'u-owner', 'WO-1', {
+      productId: 'MILK-1', locationId: 'store-1', qty: 6, uom: 'ea', lossType: 'expiry',
+      reasonCode: 'past-use-by', valueMinor: 30_000, // below the ₹500 material threshold → no approver needed
+    });
+    expect(r.status).toBe(201);
+
+    const body = (await trail(h, 'u-owner', { objectType: 'product', objectId: 'MILK-1' })).body as { matches: Rec[]; total: number };
+    expect(body.total).toBe(1);
+    const rec = body.matches[0]!;
+    expect(rec).toMatchObject({ action: 'stock.write_off', objectType: 'product', objectId: 'MILK-1', actorId: 'u-owner' });
+    expect(rec.after).toMatchObject({ writeOffId: 'WO-1', lossType: 'expiry', qtyRemoved: '6', valueMinor: '30000', reasonCode: 'past-use-by' });
+    expect((await verify(h, 'u-owner')).body).toMatchObject({ intact: true, recordsChecked: 1 });
+  });
+});
+
 describe('the audit trail records a payment — a settlement batch import (M34 slice 6, last money recorder)', () => {
   it('seals who imported which provider batch and its net figure, attributed to the actor; no tender/line data', async () => {
     const h = apiHarness();
