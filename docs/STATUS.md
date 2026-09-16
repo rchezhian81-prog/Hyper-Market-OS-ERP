@@ -32,15 +32,20 @@ small, separately-tested, separately-merged slices plus two honest re-rates:
 All merges via PR with green CI; never pushed to main; `claude/new-session-lw91i4` is reset clean on the merged
 main at the close (commit `10087cd`). Full gate green throughout (634 files / 6791 tests).
 
-**What is next (owner's call — not started, no steer yet).**
-1. **Set the record-retention periods per data class** — how many years to keep sales, GST/tax, HR, and
-   card-settlement records. This is the one remaining M34 item and it is a **legal/policy** input (accountant +
-   lawyer), not a code gap: the engine, wiring and tests already run on whatever policy is supplied. Give me the
-   numbers and I wire them in.
-2. Resume the standing backlog: driving PARTIALLY_WIRED modules up a rung (task #72), or adding browser e2e to
-   push INTEGRATION_TESTED screens to E2E_VERIFIED (task #73). M34 itself has **no served screen**, so it
-   cannot reach E2E_VERIFIED without the owner deciding a back-office audit UI is worth building.
-3. Something else the owner names.
+**➡️ NEXT SESSION STARTS HERE — owner decided (16 Sep 2026): "we'll pick up retention periods next time."**
+So the first task next session is **set the record-retention periods per data class** — how many years to keep
+sales, GST/tax, HR, and card-settlement records. This is a **legal/policy** input (accountant + lawyer), NOT a
+code gap: the engine, wiring and tests already run on whatever policy is supplied, so the work is (a) collect the
+owner's per-class retention periods, then (b) wire them in as the default policy + a test. Do NOT start until the
+owner supplies the periods (never invent a retention period — roadmap source-of-truth rule). If they arrive
+without the numbers, ask for them first: sales/invoices, GST & tax records, HR/payroll, card-settlement batches,
+audit-trail records themselves — each as "keep for N years".
+
+**Other open directions (not chosen — only if the owner redirects).**
+- Resume the standing backlog: driving PARTIALLY_WIRED modules up a rung (task #72), or adding browser e2e to
+  push INTEGRATION_TESTED screens to E2E_VERIFIED (task #73). M34 itself has **no served screen**, so it
+  cannot reach E2E_VERIFIED without the owner deciding a back-office audit UI is worth building.
+- Something else the owner names.
 
 **What is blocked / needs an owner or external decision.**
 - **M34 retention periods per data class** — needs the owner's legal/accounting input (see next-step 1 above).
