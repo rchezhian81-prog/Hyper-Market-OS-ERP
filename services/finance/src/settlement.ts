@@ -26,6 +26,7 @@ import {
   type Investigation, type InvestigationOutcome,
 } from '../../../packages/settlement/src/settlement';
 import type { PosTender, SettlementLine } from '../../../packages/reconciliation/src/reconciliation';
+import type { AuditEntry } from '../../../packages/audit/src/index';
 
 export type { SettlementBatch } from '../../../packages/settlement/src/settlement';
 export type { Investigation } from '../../../packages/settlement/src/settlement';
@@ -50,6 +51,14 @@ export interface SettlementRoutesDeps {
   readonly recordInvestigationOpened: (tenantId: string, inv: Investigation) => Promise<void> | void;
   readonly recordInvestigationEvidence: (tenantId: string, investigationId: string, ref: string, at: string) => Promise<void> | void;
   readonly recordInvestigationResolved: (tenantId: string, inv: Investigation) => Promise<void> | void;
+  /**
+   * Seal an imported settlement batch into the tamper-evident domain audit trail (M34-FR-01), attributed
+   * to the acting user. Optional — the running system provides it; a bare deps stub may omit it. The actor
+   * is ALWAYS the caller (`ctx.userId`), never client-supplied. Only the batch's own aggregate figures are
+   * recorded — provider, currency, date, net total and line count — never a tender instrument or its
+   * secrets (which never exist here anyway — hard rule #3); the per-line references are not recorded.
+   */
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   readonly now: () => string;
 }
 
@@ -114,6 +123,18 @@ export function settlementRoutes(deps: SettlementRoutesDeps): readonly Route[] {
         }
 
         await deps.recordBatch(ctx.tenantId, batch);
+        // Seal the batch import — who brought which provider's settlement file in, its net figure and how
+        // many lines. Aggregates only; no per-line reference and NO tender instrument (hard rule #3).
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: 'settlement.batch.import', objectType: 'settlement-batch', objectId: batch.batchId,
+          at: deps.now(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+          before: null,
+          after: {
+            providerId: batch.providerId, currency: batch.currency, settlementDate: batch.settlementDate,
+            declaredNetMinor: String(batch.declaredNetMinor), lineCount: String(batch.lines.length),
+          },
+          correlationId: batch.batchId,
+        });
         return { status: 201, body: { batchId: batch.batchId, accepted: true, detail: result.detail, lineTotalMinor: result.lineTotalMinor } };
       },
     },

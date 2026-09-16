@@ -5,6 +5,25 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M34-FR-01 — audit trail slice 6: the last money recorder — payments (settlement) (16 September 2026)
+
+The final money recorder, completing the set the owner authorised ("do the money recorders").
+
+- `POST /v1/settlement/batches` now seals a `settlement.batch.import` record — `objectType: settlement-batch`,
+  `objectId` the batch, attributed to the acting user; `after` carrying the provider, currency, settlement
+  date, net figure and line count. **Aggregates only** — no per-line reference and no tender instrument
+  (hard rule #3); a test asserts no card/tender/line-ref data appears in the sealed record.
+- `services/finance/src/settlement.ts` + `main.ts`. `tests/integration/audit-trail-store.test.ts` +1.
+
+**M34 stays PARTIALLY_WIRED — honest, no headline change (50.7%).** Five producers now record — credentials,
+privilege, price, refund, and payment. The domain audit trail is genuinely produced across the sensitive
+money paths for the first time. **A rung re-rate is deliberately NOT taken here:** it needs a full M34
+FR-by-FR review (FR-02 retention/legal-hold now has a *produced* trail to run over; producers for the
+remaining sensitive actions — purchase, stock — are not yet wired). I'll put that assessment to the owner
+rather than inflate the rung on the strength of the producers alone.
+
+---
+
 ## M34-FR-01 — audit trail slice 5: the refund recorder (16 September 2026)
 
 The second money recorder — the card-adjacent one, done carefully. Refunds are now sealed into the trail,

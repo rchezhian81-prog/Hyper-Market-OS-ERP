@@ -106,6 +106,33 @@ const bankSale = (h: ApiHarness, u: string) =>
 const doReturn = (h: ApiHarness, u: string, body: Record<string, unknown>) =>
   h.request({ method: 'POST', path: '/v1/sales/S1/returns', userId: u, tenantId: A, idempotencyKey: `ret-${body['returnId']}`, body });
 
+const settlementBatchBody = () => ({
+  batchId: 'BATCH-1', providerId: 'pinelabs', currency: 'INR', settlementDate: '2026-09-16',
+  lines: [{ id: 'c1', ref: 'PAY-1', amountMinor: 10_000 }, { id: 'c2', ref: 'PAY-2', amountMinor: 5_000 }],
+  declaredGrossMinor: 15_000, declaredFeesMinor: 0, declaredNetMinor: 15_000,
+});
+const importBatch = (h: ApiHarness, u: string, body: Record<string, unknown>) =>
+  h.request({ method: 'POST', path: '/v1/settlement/batches', userId: u, tenantId: A, idempotencyKey: `sb-${body['batchId']}`, body });
+
+describe('the audit trail records a payment — a settlement batch import (M34 slice 6, last money recorder)', () => {
+  it('seals who imported which provider batch and its net figure, attributed to the actor; no tender/line data', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+
+    const r = await importBatch(h, 'u-owner', settlementBatchBody());
+    expect(r.status).toBe(201);
+
+    const body = (await trail(h, 'u-owner', { objectType: 'settlement-batch', objectId: 'BATCH-1' })).body as { matches: Rec[]; total: number };
+    expect(body.total).toBe(1);
+    const rec = body.matches[0]!;
+    expect(rec).toMatchObject({ action: 'settlement.batch.import', objectType: 'settlement-batch', objectId: 'BATCH-1', actorId: 'u-owner' });
+    expect(rec.after).toMatchObject({ providerId: 'pinelabs', currency: 'INR', declaredNetMinor: '15000', lineCount: '2' });
+    // Aggregates only — no per-line reference (PAY-*) and no tender instrument (hard rule #3).
+    expect(JSON.stringify(rec)).not.toMatch(/card|cvv|expiry|tender|PAY-/i);
+    expect((await verify(h, 'u-owner')).body).toMatchObject({ intact: true, recordsChecked: 1 });
+  });
+});
+
 describe('the audit trail records a refund — a money action — with no tender data (M34 slice 5)', () => {
   it('seals the refund fact (amount, reason, status, approver) attributed to the processor; never the tender', async () => {
     const h = apiHarness();

@@ -583,7 +583,7 @@ export function buildSurface(deps: {
       importedBatchIds: empty([]), recordBatch: () => {}, credits: empty([]),
       electronicTenders: empty([]), investigations: empty([]),
       recordInvestigationOpened: () => {}, recordInvestigationEvidence: () => {}, recordInvestigationResolved: () => {}, now,
-    } : settlementAdapter({ store, now })),
+    } : { ...settlementAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     // Pending-tender recovery (D04-FR-02 / M12-FR-03) — reconcile an uncertain card/UPI tender against the
     // provider's own authorisation record: money owed TO the shop and money owed BACK to the customer both
     // surfaced, the day blocked only while the shop holds a customer's money. A pure compute over supplied
