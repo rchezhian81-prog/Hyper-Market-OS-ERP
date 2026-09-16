@@ -5,6 +5,30 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M34 — pushed to INTEGRATION_TESTED (slice 8: FR-02 over the produced trail) (16 September 2026)
+
+Owner asked to push M34 to integration-tested. Slice 8 closes the last gap, and the module is re-rated.
+
+- **FR-02 now runs over the PRODUCED trail** (not just supplied evidence): `POST /v1/audit/retention/plan-produced`
+  runs the tested `planRetention` over the stored produced trail + the tenant's stored legal holds + supplied
+  policies — a legal hold beats the retention date (the FR-02 acceptance), now integration-tested **over the
+  trail the system actually recorded**. `POST /v1/audit/evidence-pack-produced` exports the produced trail for a
+  period, named to the exporter, with `sourceIntact` **computed by verify** (not taken on trust).
+  `services/finance/src/legal-holds.ts` (`producedRecords` dep from the shared audit trail) + `main.ts`.
+  `tests/integration/audit-trail-store.test.ts` +2.
+
+**Re-rate: WIRED → INTEGRATION_TESTED (+15 weighted points, headline 50.9% → 51.1%).** Both gaps the WIRED
+review named are now closed and integration-tested: FR-01 records every hard-rule-#5 sensitive-commit category
+(slice 7), and FR-02 export/retention run over the produced trail (slice 8). All four M34 FRs are wired **and**
+integration-tested through the real pipeline as an integrated whole.
+
+**Held at INTEGRATION_TESTED, NOT E2E_VERIFIED — the honest ceiling.** M34's surfaces are back-office API reads
+with no served screen to drive in a browser, so there is no E2E screen path to verify. The one remaining
+owner/legal item — retention **periods** per data class (M34 open items) — is a deployment-config value, not a
+code or integration gap (the engine, wiring and tests all run on supplied policies).
+
+---
+
 ## M34-FR-01 — audit trail slice 7: purchase + stock producers (16 September 2026)
 
 Owner asked to push M34 to integration-tested. Step one of two — complete the audit trail's coverage of
