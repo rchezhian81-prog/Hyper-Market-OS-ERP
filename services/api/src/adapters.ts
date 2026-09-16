@@ -2946,10 +2946,15 @@ export function secretsAdapter(input: {
  * rule #6). `records` returns the whole chain in order for search / reconstruct / verify. The seal uses
  * the engine's default hasher — the SAME one the read routes verify with — so a stored chain checks out.
  *
- * Honest caveat: sealing folds the tail then appends, so two SIMULTANEOUS records for one tenant could
- * both seal the same sequence; that is rare for sensitive actions and, crucially, DETECTED by `verify`
- * (a sequence gap / broken link) rather than silently wrong (P-08). Per-stream serialisation is a
- * follow-on. The route producers here are idempotent, so a retry never double-records.
+ * Sealing folds the tail then appends, so the read of the tail and the write of the next record must not
+ * interleave with another record for the same tenant, or two records seal the same sequence and fork the
+ * chain. That whole step runs under a PER-TENANT in-process lock (`serialiseByTenant`): concurrent
+ * requests to one API instance seal one at a time, different tenants never contend. This closes the fork
+ * for a single instance (the shop's cloud API); a multi-instance deployment would add a database-level
+ * lock the way the kernel's request-level audit sink does — the generic EventStore has no conditional
+ * append to hang optimistic concurrency on. Either way a fork, were it ever to happen, is DETECTED by
+ * `verify` (a sequence gap / broken link), never silently wrong (P-08); and the route producers are
+ * idempotent, so a retry never double-records.
  */
 export interface AuditTrailDeps {
   readonly records: (tenantId: string) => Promise<readonly AuditRecord[]>;
@@ -2959,9 +2964,18 @@ export interface AuditTrailDeps {
 export function auditTrailAdapter(input: { readonly store: EventStore }): AuditTrailDeps {
   const records = (tenantId: string) =>
     allOf<AuditRecord>(input.store, tenantId, AUDIT_TRAIL_STREAM, 'AuditRecordSealed');
+  // A per-tenant promise chain: each task runs only after the previous one for that tenant has settled,
+  // so the fold-tail-then-append is atomic per tenant. A thrown task does not poison the chain (the tail
+  // stored is `.catch`-guarded), and the caller still sees the real result or error.
+  const tails = new Map<string, Promise<unknown>>();
+  const serialiseByTenant = <T>(tenantId: string, task: () => Promise<T>): Promise<T> => {
+    const run = (tails.get(tenantId) ?? Promise.resolve()).then(task, task);
+    tails.set(tenantId, run.catch(() => undefined));
+    return run;
+  };
   return {
     records,
-    recordAudit: async (tenantId, entry) => {
+    recordAudit: (tenantId, entry) => serialiseByTenant(tenantId, async () => {
       const seed = new InMemoryAuditStore();
       for (const r of await records(tenantId)) seed.append(r);
       // The engine validates the entry (an unattributable record is refused) and seals it over the tail.
@@ -2977,7 +2991,7 @@ export function auditTrailAdapter(input: { readonly store: EventStore }): AuditT
         payload: sealed,
       }));
       return sealed;
-    },
+    }),
   };
 }
 

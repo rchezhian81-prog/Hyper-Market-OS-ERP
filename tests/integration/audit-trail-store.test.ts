@@ -95,6 +95,26 @@ describe('the domain audit trail is produced, durable and verifiable (M34-FR-01)
   });
 });
 
+describe('concurrent sensitive actions never fork the sealed chain (M34 slice 3)', () => {
+  it('serialises per tenant — five SIMULTANEOUS records chain 1..5 and verify intact', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    // Fire five distinct credential registrations at once. Their audit seals fold-then-append the same
+    // per-tenant chain; without the per-tenant lock two would seal the same sequence and fork it.
+    const ids = ['a', 'b', 'c', 'd', 'e'];
+    const results = await Promise.all(
+      ids.map((id) => register(h, 'u-owner', `pay-${id}`, secret({ vaultRef: `vault://p/${id}#v1` }), `k-${id}`)),
+    );
+    expect(results.every((r) => r.status === 201)).toBe(true);
+
+    const body = (await trail(h, 'u-owner')).body as { matches: Rec[]; total: number };
+    expect(body.total).toBe(5);
+    // A clean, gap-free chain 1..5 — no two records claimed the same sequence.
+    expect(body.matches.map((r) => r.sequence).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5]);
+    expect((await verify(h, 'u-owner')).body).toMatchObject({ intact: true, recordsChecked: 5, findings: [] });
+  });
+});
+
 describe('the audit trail spans producers — a role grant (privilege change) is sealed too (M34 slice 2)', () => {
   it('records who was granted what, by whom, attributed to the ACTING user, and verifies intact', async () => {
     const h = apiHarness();
