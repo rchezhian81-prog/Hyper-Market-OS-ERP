@@ -5,6 +5,27 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M34-FR-01 — audit trail slice 3: the sealed chain can't fork under concurrency (16 September 2026)
+
+The robustness tune-up I promised the owner. Slice 1 shipped an honest caveat: sealing folds the chain tail
+then appends, so two *simultaneous* records for one tenant could seal the same sequence and fork the chain
+(`verify` would detect it, but better it can't happen). This closes that for a single API instance.
+
+- `recordAudit` now runs its fold-tail-then-append under a **per-tenant in-process lock** — concurrent
+  requests to one instance seal one at a time; different tenants never contend (`services/api/src/adapters.ts`).
+- A multi-instance deployment would add a database-level lock (as the kernel's request-level audit sink
+  already does with a per-tenant advisory lock); the generic event store exposes no conditional append to
+  hang optimistic concurrency on, so that stays a deployment-topology follow-on. Either way a fork, were it
+  ever to happen, is still **detected** by `verify` (P-08).
+- `tests/integration/audit-trail-store.test.ts` +1 — five SIMULTANEOUS records chain 1..5 with no gap and
+  the whole chain verifies intact.
+
+**M34 stays PARTIALLY_WIRED — honest, no headline change (50.7%).** Two producers record (credentials +
+privilege changes) and the single-instance fork is now closed. The **money-path producers** (price / refund
+/ payment changes) remain — to be wired only after an explicit owner nod.
+
+---
+
 ## M34-FR-01 — audit trail slice 2: role grants (privilege changes) now recorded too (16 September 2026)
 
 Owner said "keep going", so per the plan I put to them, the next producer after credentials is the
