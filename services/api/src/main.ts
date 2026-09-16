@@ -344,7 +344,7 @@ export function buildSurface(deps: {
       order: empty(undefined), all: empty([]), supplierBlocked: empty(false),
       propose: () => {}, issue: () => {}, setSupplierBlocked: () => {},
       amend: () => {}, cancel: () => {}, postReceipt: () => {}, now,
-    } : purchaseOrdersAdapter({ store, now })),
+    } : { ...purchaseOrdersAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     // Supplier scorecards + contract alerts (M06-FR-03) — objective scoring from recorded delivery facts.
     ...supplierScorecardRoutes(store === undefined ? {
       receipts: empty([]), contractsFor: empty([]), allContracts: empty([]),
@@ -435,7 +435,7 @@ export function buildSurface(deps: {
     ...writeOffRoutes(store === undefined ? {
       writeOffExists: empty(false), writeOffs: empty([]), recordWriteOff: () => {},
       writeOffThreshold: () => undefined, recordWriteOffThreshold: () => {}, canApproveWriteOff: () => Promise.resolve(false), now,
-    } : writeOffAdapter({ store, now })),
+    } : { ...writeOffAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     ...productionRoutes(store === undefined ? {
       recipe: empty(undefined), recordRecipe: () => {}, ingredientCost: empty(undefined), recordCost: () => {},
       onHand: empty(0), priorConsumption: empty({}),
