@@ -20,6 +20,7 @@ import {
   type OriginalSale, type RecordedReturn,
 } from '../../../packages/returns/src/return-register';
 import type { RefundStatus } from '../../../packages/returns/src/returns';
+import type { AuditEntry } from '../../../packages/audit/src/index';
 
 export type { OriginalSale, RecordedReturn } from '../../../packages/returns/src/return-register';
 
@@ -71,6 +72,15 @@ export interface ReturnsDeps {
   /** Every synced refund that reconciled with a §28 breach, tenant-wide — the loss surface for a person
    *  to work (hard rule #10). Folded from the returns projection, flagged records only. */
   readonly flaggedReturns: (tenantId: string) => Promise<readonly ReturnRecord[]> | readonly ReturnRecord[];
+  /**
+   * Seal this refund into the tamper-evident domain audit trail (M34-FR-01). Optional — the running
+   * system provides it; a bare deps stub may omit it. It records the refund FACT only — amount, reason,
+   * status and the §28 approver — and NEVER a tender instrument or its secrets (which never exist here
+   * anyway — hard rule #3); `refundTender` is deliberately NOT recorded. On the direct desk path the actor is the
+   * authenticated caller; on the SYNCED path it is the lane's recorded processor (the same trusted
+   * identity already on the return record), marked captured-offline so it is never read as a live session.
+   */
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   readonly now: () => string;
 }
 
@@ -206,6 +216,19 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
           processedBy: request.processedBy, processedAt, reasonCode: request.reasonCode,
           refundMinor: request.refundMinor, refundTender: request.refundTender,
           refundStatus: assessment.refundStatus, lines: request.lines,
+        });
+        // Seal the refund fact — how much, why, its status and the §28 approver — attributed to the
+        // authenticated processor. NO tender instrument is recorded (hard rule #3): refundTender is omitted.
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: 'refund.accept', objectType: 'sale', objectId: saleId,
+          at: processedAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+          before: null,
+          after: {
+            returnId: request.returnId, refundMinor: String(request.refundMinor),
+            reasonCode: request.reasonCode, refundStatus: assessment.refundStatus,
+            approvedBy: request.approvedBy ?? '',
+          },
+          correlationId: request.returnId,
         });
 
         return {
@@ -368,6 +391,20 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
           ...(s.approvedBy === undefined ? {} : { approvedBy: s.approvedBy }),
         };
         await deps.recordReturn(ctx.tenantId, saleId, record);
+        // Seal the refund fact for the offline lane refund too — attributed to the lane's recorded
+        // processor (the same trusted identity on the return record), marked captured-offline so it is
+        // never read as a live cloud session. NO tender instrument is recorded (hard rule #3).
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: record.processedBy, action: 'refund.accept', objectType: 'sale', objectId: saleId,
+          at: record.processedAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null, capturedOffline: true },
+          before: null,
+          after: {
+            returnId: record.returnId, refundMinor: String(record.refundMinor),
+            reasonCode: record.reasonCode, refundStatus: record.refundStatus,
+            approvedBy: record.approvedBy ?? '', flagged: flags.length > 0 ? 'yes' : 'no',
+          },
+          correlationId: record.returnId,
+        });
         // 202: the refund happened and is now reconciled; a §28 breach is surfaced as an exception, not a refusal.
         return { status: 202, body: { returnId: s.returnId, reconciled: true, flags } };
       },

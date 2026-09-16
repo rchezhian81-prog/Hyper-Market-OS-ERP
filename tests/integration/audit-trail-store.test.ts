@@ -95,6 +95,43 @@ describe('the domain audit trail is produced, durable and verifiable (M34-FR-01)
   });
 });
 
+const saleBody = () => ({
+  saleId: 'S1', receiptNumber: 'R-1', laneId: 'lane-1', cashierId: 'u-cash',
+  tradingDay: '2026-09-16', committedAt: '2026-09-16T10:00:00.000Z', totalMinor: 15_000, currency: 'INR', packVersion: 1,
+  lines: [{ productId: 'P1', quantityMinor: 3, uom: 'each', unitPriceMinor: 5_000, lineTotalMinor: 15_000 }],
+  tenders: [{ kind: 'cash', amountMinor: 15_000 }],
+});
+const bankSale = (h: ApiHarness, u: string) =>
+  h.request({ method: 'POST', path: '/v1/sales', userId: u, tenantId: A, idempotencyKey: 'bank-S1', body: saleBody() });
+const doReturn = (h: ApiHarness, u: string, body: Record<string, unknown>) =>
+  h.request({ method: 'POST', path: '/v1/sales/S1/returns', userId: u, tenantId: A, idempotencyKey: `ret-${body['returnId']}`, body });
+
+describe('the audit trail records a refund — a money action — with no tender data (M34 slice 5)', () => {
+  it('seals the refund fact (amount, reason, status, approver) attributed to the processor; never the tender', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');                         // the refund processor + audit reader
+    await h.provisionRole(A, 'u-mgr', 'store_manager');      // a genuine §28 approver (holds pos.return.approve)
+    expect((await bankSale(h, 'u-owner')).status).toBe(202);
+
+    const r = await doReturn(h, 'u-owner', {
+      returnId: 'RT1', reasonCode: 'customer_changed_mind',
+      lines: [{ productId: 'P1', uom: 'each', quantityMinor: 1, disposition: 'resell' }],
+      refundMinor: 5_000, refundTender: 'cash', approvedBy: 'u-mgr',
+    });
+    expect(r.status).toBe(201);
+
+    const body = (await trail(h, 'u-owner', { objectType: 'sale', objectId: 'S1' })).body as { matches: Rec[]; total: number };
+    expect(body.total).toBe(1);
+    const rec = body.matches[0]!;
+    expect(rec).toMatchObject({ action: 'refund.accept', objectType: 'sale', objectId: 'S1', actorId: 'u-owner' });
+    expect(rec.after).toMatchObject({ refundMinor: '5000', reasonCode: 'customer_changed_mind', refundStatus: 'settled', approvedBy: 'u-mgr' });
+    // The refund FACT only — never the tender instrument (hard rule #3). refundTender ('cash') is omitted,
+    // so no tender word may appear anywhere in the sealed record.
+    expect(JSON.stringify(rec)).not.toMatch(/card|cvv|expiry|tender|cash|upi/i);
+    expect((await verify(h, 'u-owner')).body).toMatchObject({ intact: true, recordsChecked: 1 });
+  });
+});
+
 const PRICE_CTX = { mrpMinor: 10_000, costMinor: 5_000, marginFloorBps: 2_000, currency: 'INR' } as const;
 const proposePrice = (h: ApiHarness, actor: string, priceMinor: number, key: string) =>
   h.request({
