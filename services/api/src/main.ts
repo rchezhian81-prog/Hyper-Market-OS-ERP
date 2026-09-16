@@ -325,7 +325,7 @@ export function buildSurface(deps: {
       : cataloguePreviewAdapter({ store, now })),
     ...pricingRoutes(store === undefined
       ? { recordPriceChange: () => {}, canApprove: () => Promise.resolve(false), now }
-      : pricingAdapter({ store, now })),
+      : { ...pricingAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     ...priceListRoutes(store === undefined
       ? { entries: empty([]), recordEntry: () => {}, canApprove: () => Promise.resolve(false), now }
       : priceListAdapter({ store, now })),

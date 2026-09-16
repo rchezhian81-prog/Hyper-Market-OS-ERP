@@ -5,6 +5,26 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M34-FR-01 — audit trail slice 4: the first money recorder — price changes (16 September 2026)
+
+Owner gave the explicit nod ("do the money recorders"). The money producers go in careful, one at a time,
+starting with the one that carries **zero card-data risk** — price changes.
+
+- `POST /v1/prices/changes` now seals a `price.change` record — `objectType: product`, `objectId` the
+  product, attributed to the acting user (`ctx.userId`), `after` carrying the new price, currency, the
+  price-guard verdict and (for a below-cost/below-floor change) the §28 approver; correlated to the change
+  id. A price is a public shelf figure, so it is recorded in full; a test asserts the record carries **no
+  card/tender data** (hard rule #3).
+- Additive to the price-change handler — the governed behaviour (MRP ceiling, separation of duties) is
+  unchanged; it just also records. `services/pricing/src/index.ts` + `main.ts`.
+  `tests/integration/audit-trail-store.test.ts` +1.
+
+**M34 stays PARTIALLY_WIRED — honest, no headline change (50.7%).** Three producers now record (credentials
++ privilege + price). The remaining money recorders — **refunds** (the returns/refund path, which is
+card-adjacent and gets its own careful slice with field vetting) and **payments** (settlement) — are next.
+
+---
+
 ## M34-FR-01 — audit trail slice 3: the sealed chain can't fork under concurrency (16 September 2026)
 
 The robustness tune-up I promised the owner. Slice 1 shipped an honest caveat: sealing folds the chain tail

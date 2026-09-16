@@ -13,6 +13,7 @@ import { apiError } from '../../kernel/src/index';
 import { checkPrice } from '../../../packages/price-guard/src/price-guard';
 import { money, isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
+import type { AuditEntry } from '../../../packages/audit/src/index';
 
 export interface PriceChangeRecord {
   readonly id: string;
@@ -31,6 +32,13 @@ export interface PricingDeps {
   readonly recordPriceChange: (tenantId: string, change: PriceChangeRecord) => Promise<void> | void;
   /** Whether a user holds `price.change.approve` in this tenant — the approver must genuinely hold it. */
   readonly canApprove: (tenantId: string, userId: string) => Promise<boolean>;
+  /**
+   * Seal this price change into the tamper-evident domain audit trail (M34-FR-01), attributed to the
+   * acting user. Optional — the running system provides it; a bare deps stub may omit it. The actor is
+   * ALWAYS the caller (`ctx.userId`), never client-supplied; a price is a public shelf figure, so it is
+   * recorded in full — the "who moved this price, to what, approved by whom (§28)" record.
+   */
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   readonly now: () => string;
 }
 
@@ -115,6 +123,20 @@ export function pricingRoutes(deps: PricingDeps): readonly Route[] {
           verdict: check.verdict, approvedBy: approval?.decidedBy ?? null, reason: check.reason, at: deps.now(),
         };
         await deps.recordPriceChange(ctx.tenantId, record);
+        // Seal the price change into the audit trail — who moved this product's price, to what, and (for a
+        // below-cost/below-floor change) who approved it (§28). No card or tender data is anywhere near a
+        // price; the figure itself is a public shelf fact, so it is recorded in full.
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: 'price.change', objectType: 'product', objectId: record.productId,
+          at: deps.now(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+          before: null,
+          after: {
+            priceMinor: String(record.priceMinor), currency: record.currency,
+            verdict: record.verdict, approvedBy: record.approvedBy ?? '',
+          },
+          ...(record.reason ? { reason: record.reason } : {}),
+          correlationId: record.id,
+        });
         return { status: 201, body: { productId: record.productId, priceMinor: record.priceMinor, verdict: check.verdict, approvedBy: record.approvedBy } };
       },
     },
