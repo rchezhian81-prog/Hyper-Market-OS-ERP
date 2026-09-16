@@ -5,6 +5,27 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M34-FR-01 — audit trail slice 5: the refund recorder (16 September 2026)
+
+The second money recorder — the card-adjacent one, done carefully. Refunds are now sealed into the trail,
+on **both** the online and the offline-synced path:
+
+- `POST /v1/sales/:saleId/returns` (desk/online) seals a `refund.accept` record attributed to the
+  authenticated processor. `POST …/returns/synced` (an offline lane refund synced up) seals one too,
+  attributed to the **lane's recorded processor** (the same trusted identity already on the return record)
+  and marked **captured-offline** — so an offline refund at the till is audited with the right person's
+  name, not the sync agent's (P-01, offline-first).
+- The record carries the refund **fact only** — amount, reason code, status, and the §28 approver. The
+  **tender is deliberately NOT recorded**: no card number/CVV/expiry exists anywhere here (hard rule #3),
+  and `refundTender` is omitted so not even the tender category rides along. A test asserts no tender word
+  appears in the sealed record.
+- `services/pos/src/returns.ts` + `main.ts`. `tests/integration/audit-trail-store.test.ts` +1.
+
+**M34 stays PARTIALLY_WIRED — honest, no headline change (50.7%).** Four producers now record (credentials,
+privilege, price, refund). One money recorder remains — **payments** (settlement) — the last slice.
+
+---
+
 ## M34-FR-01 — audit trail slice 4: the first money recorder — price changes (16 September 2026)
 
 Owner gave the explicit nod ("do the money recorders"). The money producers go in careful, one at a time,
