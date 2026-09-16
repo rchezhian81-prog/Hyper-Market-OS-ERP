@@ -5,6 +5,54 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## SESSION CLOSE-OUT — M34 tamper-proof audit trail, PARTIALLY_WIRED → INTEGRATION_TESTED (16 September 2026)
+
+**Headline: 50.7% → 51.1% (+0.4 pts over the session). No inflation — every move was a rung re-rate backed by
+merged code + integration tests.**
+
+**What changed this session.** The owner chose "tamper-proof audit trail (bigger build)" and asked, in order,
+to *do the money recorders*, *do the re-rate review*, and *push M34 to integration-tested*. Delivered as eight
+small, separately-tested, separately-merged slices plus two honest re-rates:
+
+- **Slices 1–6** (PRs #420–#425): stood up the durable, sealed, tamper-evident **domain audit trail**
+  (`packages/audit`, durable store adapter with per-tenant serialisation) and six producers that seal a record
+  after each sensitive write — **credentials** (register/rotate/revoke), **privilege** (role grant),
+  **price change**, **refund** (online + offline-synced), and **payment** (settlement batch import). Actor is
+  always taken server-side from the authenticated user (or the trusted synced processor), never the client.
+  Aggregates only — **no card/tender data ever** (hard rule #3).
+- **Re-rate #426**: PARTIALLY_WIRED → **WIRED** (+0.2). Honest FR-by-FR review; held at WIRED (not higher)
+  because two real gaps remained.
+- **Slice 7** (PR #427): the last two producers — **purchase orders** and **stock write-offs** — completing
+  coverage of every hard-rule-#5 sensitive-commit category (price/payment/refund/purchase/stock) plus
+  privilege and credentials. Closed gap #1.
+- **Slice 8 + re-rate** (PR #428): **FR-02 export/retention now runs over the PRODUCED trail** — legal-hold
+  and retention-plan over what the system actually recorded, evidence packs with `sourceIntact` computed by
+  verify, not taken on trust. Closed gap #2. Re-rated WIRED → **INTEGRATION_TESTED** (+0.2).
+
+All merges via PR with green CI; never pushed to main; `claude/new-session-lw91i4` is reset clean on the merged
+main at the close (commit `10087cd`). Full gate green throughout (634 files / 6791 tests).
+
+**What is next (owner's call — not started, no steer yet).**
+1. **Set the record-retention periods per data class** — how many years to keep sales, GST/tax, HR, and
+   card-settlement records. This is the one remaining M34 item and it is a **legal/policy** input (accountant +
+   lawyer), not a code gap: the engine, wiring and tests already run on whatever policy is supplied. Give me the
+   numbers and I wire them in.
+2. Resume the standing backlog: driving PARTIALLY_WIRED modules up a rung (task #72), or adding browser e2e to
+   push INTEGRATION_TESTED screens to E2E_VERIFIED (task #73). M34 itself has **no served screen**, so it
+   cannot reach E2E_VERIFIED without the owner deciding a back-office audit UI is worth building.
+3. Something else the owner names.
+
+**What is blocked / needs an owner or external decision.**
+- **M34 retention periods per data class** — needs the owner's legal/accounting input (see next-step 1 above).
+- **M23** (live GST-return filing + e-invoice/e-way-bill) — needs production credentials + CA/legal sign-off.
+- **QG-06** (independent penetration test) — needs an external security vendor.
+
+**Honest picture of the whole product: 51.1%.** At ≥ WIRED: 38.5% of requirements. At ≥ E2E_VERIFIED: 7.7%.
+UAT/production readiness: 0%. The system is being built rung by rung with tests proving each step; it is **not
+yet ready to run the store** — that gap is real and stated here on purpose.
+
+---
+
 ## M34 — pushed to INTEGRATION_TESTED (slice 8: FR-02 over the produced trail) (16 September 2026)
 
 Owner asked to push M34 to integration-tested. Slice 8 closes the last gap, and the module is re-rated.
