@@ -95,6 +95,32 @@ describe('the domain audit trail is produced, durable and verifiable (M34-FR-01)
   });
 });
 
+const PRICE_CTX = { mrpMinor: 10_000, costMinor: 5_000, marginFloorBps: 2_000, currency: 'INR' } as const;
+const proposePrice = (h: ApiHarness, actor: string, priceMinor: number, key: string) =>
+  h.request({
+    method: 'POST', path: '/v1/prices/changes', userId: actor, tenantId: A, idempotencyKey: key,
+    body: { productId: 'P1', priceMinor, ...PRICE_CTX },
+  });
+
+describe('the audit trail records a money action — a price change (M34 slice 4, money recorders)', () => {
+  it('seals who moved the price, to what, attributed to the acting user; verifies intact; carries no tender data', async () => {
+    const h = apiHarness();
+    await h.provisionOwner(A, 'u-pricer'); // holds price.change.propose + audit.retention.read
+
+    const r = await proposePrice(h, 'u-pricer', 8_000, 'kp1'); // within MRP, above the cost floor → allowed
+    expect(r.status).toBe(201);
+
+    const body = (await trail(h, 'u-pricer', { objectType: 'product', objectId: 'P1' })).body as { matches: Rec[]; total: number };
+    expect(body.total).toBe(1);
+    const rec = body.matches[0]!;
+    expect(rec).toMatchObject({ action: 'price.change', objectType: 'product', objectId: 'P1', actorId: 'u-pricer' });
+    expect(rec.after).toMatchObject({ priceMinor: '8000', currency: 'INR', verdict: 'ok' });
+    // A price is a public shelf figure — but the record must never carry card/tender data (hard rule #3).
+    expect(JSON.stringify(rec)).not.toMatch(/card|cvv|expiry|tender/i);
+    expect((await verify(h, 'u-pricer')).body).toMatchObject({ intact: true, recordsChecked: 1 });
+  });
+});
+
 describe('concurrent sensitive actions never fork the sealed chain (M34 slice 3)', () => {
   it('serialises per tenant — five SIMULTANEOUS records chain 1..5 and verify intact', async () => {
     const h = apiHarness();
