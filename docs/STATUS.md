@@ -5,6 +5,43 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M15 loss-prevention investigations screen — built + INTEGRATION_TESTED → E2E_VERIFIED (17 September 2026)
+
+The owner asked to harden **another** screen to E2E_VERIFIED. The clean "add e2e to an existing screen"
+candidates were exhausted (the migration screen was the last), so — the owner's pick — we **built** the
+loss-prevention investigations screen (M15) over the existing worklist backend, in three merged slices following
+the proven A06/A08/A10 inbox pattern:
+
+- **Slice 1 (PR #432):** the tested DOM-free session model (`apps/web-erp/src/loss-prevention-inbox-session.ts`,
+  12 unit tests). Open cases biggest-exposure-first, subject shown only as an opaque reference (never a name —
+  P-04), a close-with-outcome+note action refused locally without permission/outcome/note.
+- **Slice 2 (PR #433):** the served, offline-capable `/loss-prevention` screen + edge wiring
+  (`PackLossPreventionPolicy`, `lossPreventionPayload`, screen-server route, service-worker v20, ERP nav gated
+  `lp.case.read`, browser-entry boot with a live worklist GET + a same-origin close POST). Usable/screen-fed/
+  offline guardrails extended.
+- **Slice 3 (this PR):** the browser e2e — `tests/e2e/loss-prevention-close-delivery.e2e.ts` drives the real
+  screen in headless Chromium: an authorised manager picks a case + outcome + note, the close POSTs to
+  `/v1/loss-prevention/cases/:caseId/close` under their own session and the case drops off on a worklist re-read;
+  a read-only manager sees no close form; an empty note is refused. Offline-open + a11y in
+  `screens-open-offline.e2e.ts`. The server still enforces §28/evidence for a "proven" outcome — the screen never
+  fakes it.
+
+**Re-rate: M15 INTEGRATION_TESTED → E2E_VERIFIED. Headline 51.2% → 51.3% (+10 weighted points, 5320 → 5330 /
+10400).** The E2E-verified count rose 9 → 10 and module-level is now 3 E2E VERIFIED / 3 INTEGRATION TESTED.
+Held at E2E_VERIFIED, not UAT_VERIFIED (a manager working real cases on the shop floor needs the owner —
+externally blocked on rollout).
+
+**Bug found + fixed in passing (honest scoring):** 5330/10400 is exactly 51.25% — an exact .x5 rounding
+boundary — which exposed a latent floating-point bug in `scripts/completion-report.mjs`: it rounded the headline
+as `(ratio×100)×10` (two multiplies), which diverged from the `completion-model-integrity` guardrail's single
+`(ratio×1000)` at the tie, printing 51.2% while the spec computes 51.3% (round-half-up). Fixed the report to the
+single-multiply `pct1(num,den)=Math.round((num/den)×1000)/10` so it matches its own integrity guardrail exactly.
+The honest, spec-defined headline is **51.3%**.
+
+**Pinned next step unchanged: retention periods per data class remains the priority** (see the earlier close-out).
+
+---
+
 ## MG-11 cutover-decision screen — INTEGRATION_TESTED → E2E_VERIFIED (16 September 2026)
 
 After the close-out below, the owner chose "harden a screen with end-to-end tests" over stopping. Picked the
