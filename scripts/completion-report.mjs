@@ -35,7 +35,10 @@ export const LADDER = Object.freeze([
 ]);
 
 const rank = (label) => LADDER.indexOf(label);
-const round1 = (n) => Math.round(n * 10) / 10;
+// One-decimal percentage of num/den. Computed as a SINGLE multiply (ratio × 1000) so the rounding is
+// associativity-stable and matches the integrity guardrail exactly; a two-step (ratio × 100) × 10 can
+// diverge at an exact .x5 boundary through floating-point (e.g. 5330/10400 = 51.25%).
+const pct1 = (num, den) => Math.round((num / den) * 1000) / 10;
 
 /** Compute the full report from a ledger object. Pure — the guardrail test calls this directly. */
 export function computeReport(ledger) {
@@ -57,19 +60,19 @@ export function computeReport(ledger) {
   for (const it of items) counts[it.label] += 1;
 
   const atLeast = (label) => items.filter((it) => rank(it.label) >= rank(label)).length;
-  const pctAtLeast = (label) => round1((atLeast(label) / denominator) * 100);
+  const pctAtLeast = (label) => pct1(atLeast(label), denominator);
 
   // The six separate scores — all reproducible threshold views of the same ledger (see the model doc).
   const scores = {
-    requirementsDesign: round1((items.filter((it) => it.label !== 'NOT_STARTED').length / denominator) * 100),
-    technicalImplementation: round1((weightedPoints / maxPoints) * 100), // the weighted headline
+    requirementsDesign: pct1(items.filter((it) => it.label !== 'NOT_STARTED').length, denominator),
+    technicalImplementation: pct1(weightedPoints, maxPoints), // the weighted headline
     wiredAndIntegrated: pctAtLeast('WIRED'),
     e2eVerification: pctAtLeast('E2E_VERIFIED'),
     uatReadiness: pctAtLeast('UAT_VERIFIED'),
     productionReadiness: pctAtLeast('PRODUCTION_VERIFIED'),
   };
 
-  const productCompletionPct = round1((weightedPoints / maxPoints) * 100);
+  const productCompletionPct = pct1(weightedPoints, maxPoints);
 
   const blocked = items.filter((it) => typeof it.externalBlocker === 'string' && it.externalBlocker.trim() !== '')
     .map((it) => ({ id: it.id, retainedLabel: it.label, blocker: it.externalBlocker }));
@@ -85,7 +88,7 @@ function main() {
   const ledger = JSON.parse(readFileSync(LEDGER_PATH, 'utf8'));
   const report = computeReport(ledger);
   const prev = ledger.baseline?.previousProductCompletionPct ?? report.productCompletionPct;
-  const delta = round1(report.productCompletionPct - prev);
+  const delta = Math.round((report.productCompletionPct - prev) * 10) / 10;
 
   if (process.argv.includes('--json')) {
     process.stdout.write(JSON.stringify({ ...report, previousProductCompletionPct: prev, change: delta, baseline: ledger.baseline }, null, 2) + '\n');
