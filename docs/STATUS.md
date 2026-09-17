@@ -5,6 +5,40 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M30 import/export console — built + INTEGRATION_TESTED → E2E_VERIFIED (17 September 2026)
+
+The owner asked to harden **another** screen to E2E_VERIFIED, and chose the M30 import/export console. As with
+M15, there was no existing screen — the M30 API (validate / commit / export) was integration-tested but had no
+operator surface — so we **built** one over it, in three merged slices following the proven inbox pattern:
+
+- **Slice 1 (PR #435):** the tested DOM-free session model (`apps/web-erp/src/data-io-session.ts`, 13 unit tests
+  + the `the-data-io-screen-is-usable` guardrail). Bilingual EN/TA; export offered only with permission and
+  sensitive columns flagged; a self-approval (approver = the uploader) refused locally before any POST (§28).
+- **Slice 2 (PR #436):** the served, offline-capable `/data-io` screen + edge wiring (`PackDataIoPolicy` +
+  `PackImportTemplate` — the box ships the store's import templates, since validate/commit take the template in
+  the body — `dataIoPayload`, screen-server route, service-worker v21, ERP nav gated `export.read`, browser-entry
+  boot with live `GET /v1/export` + `/v1/exports` and same-origin export/validate/commit POST ports).
+- **Slice 3 (this PR):** the browser e2e — `tests/e2e/data-io-delivery.e2e.ts` drives the real screen in headless
+  Chromium against a stub cloud on one origin: an authorised operator clicks Export → the export POSTs to
+  `/v1/export/:domain` under their own session, the result shows and the recent-exports log **re-reads** (a GET,
+  never a client push); an operator without `export.read` sees the export panel locked and POSTs nothing; the
+  import path — Check (`POST /v1/import/validate` → a preview) then Load with a **separate** approver
+  (`POST /v1/import/commit`) commits, while naming yourself as approver is refused on the screen and never POSTed
+  (§28). Offline-open + a11y in `screens-open-offline.e2e.ts`. The server still re-validates and enforces §28 —
+  the screen never fakes a load.
+
+**Re-rate: M30 INTEGRATION_TESTED → E2E_VERIFIED (+10 weighted points, 5330 → 5340 / 10400).** The headline
+**stays 51.3%**: 5340/10400 = 51.346%, which rounds to 51.3 — the +10 does not cross the 51.35 boundary to 51.4,
+so the honest figure is unchanged. The E2E-verified module count rose 3 → 4 and module-level is now 4 E2E
+VERIFIED / 2 INTEGRATION TESTED. Held at E2E_VERIFIED, not UAT_VERIFIED (an operator loading a real supplier
+file on the shop floor needs the owner — externally blocked on rollout).
+
+**Next up (pinned): retention periods.** Still the standing next priority. It needs the owner's per-data-class
+keep-for-N-years numbers (a legal/deployment-config decision, never invented in code). Stop and ask the owner
+before touching it.
+
+---
+
 ## M15 loss-prevention investigations screen — built + INTEGRATION_TESTED → E2E_VERIFIED (17 September 2026)
 
 The owner asked to harden **another** screen to E2E_VERIFIED. The clean "add e2e to an existing screen"
