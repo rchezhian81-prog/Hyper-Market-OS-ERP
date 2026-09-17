@@ -107,6 +107,10 @@ import {
   type OperationsDismissPort,
 } from './operations-inbox-session';
 import {
+  createLpInboxSession,
+  type LpInboxPorts, type LpInboxSession, type LpWorklistData, type LpCloseCasePort, type CloseResult,
+} from './loss-prevention-inbox-session';
+import {
   createWorkforceInboxSession,
   type WorkforceInboxPorts, type WorkforceInboxSession, type WorkforceWorklistData,
   type WorkforceDismissPort,
@@ -860,6 +864,91 @@ export async function fetchOperationsWorklist(): Promise<OperationsWorklistData 
     });
     if (res.status >= 400) return null;
     return (await res.json()) as OperationsWorklistData;
+  } catch {
+    return null;
+  }
+}
+
+// ── Loss-prevention investigations inbox (M15) — the manager's open-cases screen ────────────────────────────
+
+/** What the box tells the loss-prevention inbox screen: who is looking, what they may do, and (optionally) the
+ *  worklist it last carried. The open cases are a LIVE cloud read (`GET /v1/loss-prevention/cases`) refreshed by
+ *  the shell when online; offline the screen shows its clearly-marked sample stand-in. */
+export interface LossPreventionInboxData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+  readonly worklist?: LpWorklistData;
+}
+
+const LP_READ_PERMISSION = 'lp.case.read';
+const LP_MANAGE_PERMISSION = 'lp.case.manage';
+const EMPTY_LP_WORKLIST: LpWorklistData = Object.freeze({ openCount: 0, totalValueMinor: 0, cases: [] });
+const NOOP_LP_CLOSE_PORT: LpCloseCasePort = { post: async () => 'lost_link' };
+
+export function lpInboxPortsFromData(
+  data: LossPreventionInboxData | undefined,
+  worklist?: LpWorklistData,
+  closePort: LpCloseCasePort = NOOP_LP_CLOSE_PORT,
+): LpInboxPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    worklist: () => worklist ?? data?.worklist ?? EMPTY_LP_WORKLIST,
+    // Default-deny: an absent permission list can read/close nothing (the server would refuse it anyway).
+    mayRead: () => held.has(LP_READ_PERMISSION),
+    mayManage: () => held.has(LP_MANAGE_PERMISSION),
+    closePort: () => closePort,
+  };
+}
+
+/** Build the loss-prevention inbox, or `null` when the box carried no payload for it (shell shows the sample). */
+export function bootLpInbox(
+  data: LossPreventionInboxData | undefined,
+  worklist?: LpWorklistData,
+  closePort?: LpCloseCasePort,
+): LpInboxSession | null {
+  if (data === undefined) return null;
+  return createLpInboxSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    lpInboxPortsFromData(data, worklist, closePort),
+  );
+}
+
+/** The authenticated POST of a manager's close decision — the manager's OWN session cookie
+ *  (`credentials: 'same-origin'`), never a service token. A network/timeout is a retryable lost link, not a
+ *  refusal, so a dropped connection never reads as "the server said no". The caseId rides in the URL; the
+ *  server records the close in the caller's own name and enforces §28/evidence for a "proven" outcome. */
+function openLpClosePort(): LpCloseCasePort {
+  return {
+    post: async ({ caseId, outcome, note }): Promise<CloseResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return 'lost_link';
+      const key = globalThis.crypto?.randomUUID?.() ?? `lp-close-${caseId}-${outcome}`;
+      try {
+        const res = await fetchFn(`/v1/loss-prevention/cases/${encodeURIComponent(caseId)}/close`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ outcome, note }),
+        });
+        return res.status >= 200 && res.status < 300 ? 'closed' : 'refused';
+      } catch {
+        return 'lost_link';
+      }
+    },
+  };
+}
+
+/** Read the live open-investigations worklist (a GET — read-only). Returns null offline/refused so the shell
+ *  keeps whatever it was showing and its stale strip says the page is what the box last told it. */
+export async function fetchLpWorklist(): Promise<LpWorklistData | null> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return null;
+  try {
+    const res = await fetchFn('/v1/loss-prevention/cases', {
+      method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin',
+    });
+    if (res.status >= 400) return null;
+    return (await res.json()) as LpWorklistData;
   } catch {
     return null;
   }
@@ -1672,6 +1761,13 @@ interface ManagerWindow {
     refresh(): Promise<OperationsWorklistData | null>;
     present(worklist: OperationsWorklistData): OperationsInboxSession;
   };
+  lossPreventionInboxData?: LossPreventionInboxData;
+  lossPreventionInboxSession?: LpInboxSession;
+  /** The shell reads the live open-cases worklist through this and re-presents it — a GET read, never a write. */
+  lossPreventionInbox?: {
+    refresh(): Promise<LpWorklistData | null>;
+    present(worklist: LpWorklistData): LpInboxSession;
+  };
   workforceInboxData?: WorkforceInboxData;
   workforceInboxSession?: WorkforceInboxSession;
   /** The shell reads the live worklist through this and re-presents it — a GET read, never a write. */
@@ -2225,6 +2321,23 @@ if (browserWindow !== undefined) {
       present: (worklist) => createOperationsInboxSession(
         { userId: operationsData?.userId === undefined ? null : operationsData.userId },
         operationsInboxPortsFromData(operationsData, worklist, operationsDismissPort),
+      ),
+    };
+  }
+  // The loss-prevention investigations inbox (M15): boots from the box's policy (who + what they hold), then the
+  // shell refreshes the open cases with a live GET (read-only). Offline it shows its sample stand-in and says so.
+  // The one write is a HUMAN close in the manager's own name — never on load, only on an explicit click — and the
+  // server enforces §28/evidence for a "proven" outcome, which the screen never fakes.
+  const lossPreventionData = browserWindow.lossPreventionInboxData;
+  const lpClosePort = openLpClosePort();
+  const lossPreventionInbox = bootLpInbox(lossPreventionData, undefined, lpClosePort);
+  if (lossPreventionInbox !== null) {
+    browserWindow.lossPreventionInboxSession = lossPreventionInbox;
+    browserWindow.lossPreventionInbox = {
+      refresh: fetchLpWorklist,
+      present: (worklist) => createLpInboxSession(
+        { userId: lossPreventionData?.userId === undefined ? null : lossPreventionData.userId },
+        lpInboxPortsFromData(lossPreventionData, worklist, lpClosePort),
       ),
     };
   }

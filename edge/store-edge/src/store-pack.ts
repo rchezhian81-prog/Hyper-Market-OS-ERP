@@ -486,6 +486,16 @@ export interface PackOperationsInboxPolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the loss-prevention investigations screen and what they may do (M15-FR-04). The open cases are
+ *  read live from the cloud (`GET /v1/loss-prevention/cases`), not the pack; this is only who the box was told
+ *  is looking, so the shell can gate on `lp.case.read` before the live read (and offer `lp.case.manage`). */
+export interface PackLossPreventionPolicy {
+  readonly userId?: string;
+  /** The permission codes this user holds — `lp.case.read` to see the worklist, `lp.case.manage` to close a
+   *  case. Never defaulted. The cloud routes re-check both, so this only shapes the UI. */
+  readonly permissions: readonly string[];
+}
+
 /** Who is on the Workforce guidance inbox screen and what they may do (A10 · API-13). The guidance itself is
  *  read live from the cloud (`GET /v1/ai/workforce/worklist`), not the pack; this is only who the box was told
  *  is looking, so the shell can gate on `ai.proposal.read` before the live read. */
@@ -871,6 +881,8 @@ export interface StorePack {
   readonly dataQualityPolicy: Register<PackDataQualityPolicy>;
   /** Who is on the Operations inbox screen and what they may do there (A06). */
   readonly operationsInboxPolicy: Register<PackOperationsInboxPolicy>;
+  /** Who is on the loss-prevention investigations screen and what they may do there (M15-FR-04). */
+  readonly lossPreventionPolicy: Register<PackLossPreventionPolicy>;
   /** Who is on the Workforce guidance inbox screen and what they may do there (A10). */
   readonly workforceInboxPolicy: Register<PackWorkforceInboxPolicy>;
   readonly essPolicy: Register<PackEssPolicy>;
@@ -1015,6 +1027,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     productPublishReviewPolicy: notKnown(why),
     dataQualityPolicy: notKnown(why),
     operationsInboxPolicy: notKnown(why),
+    lossPreventionPolicy: notKnown(why),
     workforceInboxPolicy: notKnown(why),
     essPolicy: notKnown(why),
     accounts: notKnown(why),
@@ -1127,6 +1140,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     productPublishReviewPolicy: section<PackProductPublishReviewPolicy>('productPublishReviewPolicy'),
     dataQualityPolicy: section<PackDataQualityPolicy>('dataQualityPolicy'),
     operationsInboxPolicy: section<PackOperationsInboxPolicy>('operationsInboxPolicy'),
+    lossPreventionPolicy: section<PackLossPreventionPolicy>('lossPreventionPolicy'),
     workforceInboxPolicy: section<PackWorkforceInboxPolicy>('workforceInboxPolicy'),
     essPolicy: section<PackEssPolicy>('essPolicy'),
     accounts: section<readonly unknown[]>('accounts'),

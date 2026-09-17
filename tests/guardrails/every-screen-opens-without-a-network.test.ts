@@ -41,6 +41,7 @@ const SCREENS = [
   { name: 'the products to publish', dir: 'web-erp', view: 'product-publish-review.js', page: 'product-publish-review.html', bundle: 'web-erp.bundle.js' },
   { name: 'the data quality inbox', dir: 'web-erp', view: 'data-quality.js', page: 'data-quality.html', bundle: 'web-erp.bundle.js' },
   { name: 'the operations inbox', dir: 'web-erp', view: 'operations.js', page: 'operations.html', bundle: 'web-erp.bundle.js' },
+  { name: 'the investigations inbox', dir: 'web-erp', view: 'loss-prevention.js', page: 'loss-prevention.html', bundle: 'web-erp.bundle.js' },
   { name: 'the workforce inbox', dir: 'web-erp', view: 'workforce.js', page: 'workforce.html', bundle: 'web-erp.bundle.js' },
   { name: 'the self-service', dir: 'web-erp', view: 'ess.js', page: 'ess.html', bundle: 'web-erp.bundle.js' },
   { name: 'the devices', dir: 'web-erp', view: 'fleet.js', page: 'fleet.html', bundle: 'web-erp.bundle.js' },
