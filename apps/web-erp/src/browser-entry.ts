@@ -111,6 +111,11 @@ import {
   type LpInboxPorts, type LpInboxSession, type LpWorklistData, type LpCloseCasePort, type CloseResult,
 } from './loss-prevention-inbox-session';
 import {
+  createDataIoSession,
+  type DataIoPorts, type DataIoSession, type ExportDomainView, type ExportAuditView,
+  type ExportResult, type ValidateResult, type CommitResult, type ImportPreviewView,
+} from './data-io-session';
+import {
   createWorkforceInboxSession,
   type WorkforceInboxPorts, type WorkforceInboxSession, type WorkforceWorklistData,
   type WorkforceDismissPort,
@@ -954,6 +959,146 @@ export async function fetchLpWorklist(): Promise<LpWorklistData | null> {
   }
 }
 
+// ── Data import/export console (M30) ────────────────────────────────────────────────────────────────────────
+
+/** One import template the box ships — the full spec the validate/commit routes need in their body. */
+export interface FullImportTemplate {
+  readonly id: string; readonly domain: string; readonly label: string; readonly financial: boolean;
+  readonly columns: readonly { readonly name: string; readonly type: string }[];
+  readonly keyColumns: readonly string[];
+}
+
+/** What the box tells the data import/export console: who is looking, what they hold, and the store's import
+ *  templates. The exportable domains and export log come LIVE (GET /v1/export, GET /v1/exports); offline the
+ *  screen shows its sample stand-in. */
+export interface DataIoData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+  readonly importTemplates?: readonly FullImportTemplate[];
+  readonly exportDomains?: readonly ExportDomainView[];
+  readonly recentExports?: readonly ExportAuditView[];
+}
+
+/** The live catalogue + log the shell last read. */
+export interface DataIoLive { readonly domains: readonly ExportDomainView[]; readonly exports: readonly ExportAuditView[]; }
+
+const EXPORT_PERMISSION = 'export.read';
+const IMPORT_READ_PERMISSION = 'purchase.import.read';
+const IMPORT_COMMIT_PERMISSION = 'purchase.import.record';
+
+/** POST an export (POST /v1/export/:domain) under the caller's own session — an audited artifact. */
+async function postExport(domain: string): Promise<ExportResult> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return 'lost_link';
+  const key = globalThis.crypto?.randomUUID?.() ?? `export-${domain}`;
+  try {
+    const res = await fetchFn(`/v1/export/${encodeURIComponent(domain)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+      credentials: 'same-origin', body: '{}',
+    });
+    return res.status >= 200 && res.status < 300 ? 'exported' : 'refused';
+  } catch { return 'lost_link'; }
+}
+
+/** POST a validate (POST /v1/import/validate) — a preview, writes nothing. Resolves the full template body. */
+async function postValidate(template: FullImportTemplate | undefined, req: { text: string; declaredTotalMinor?: number }): Promise<ValidateResult> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined || template === undefined) return 'refused';
+  try {
+    const res = await fetchFn('/v1/import/validate', {
+      method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, credentials: 'same-origin',
+      body: JSON.stringify({
+        template: { id: template.id, domain: template.domain, columns: template.columns, keyColumns: template.keyColumns },
+        text: req.text,
+        ...(req.declaredTotalMinor !== undefined ? { declaredTotalMinor: req.declaredTotalMinor } : {}),
+      }),
+    });
+    if (res.status >= 400) return 'refused';
+    const body = (await res.json()) as { preview?: {
+      totalRows: number; validCount: number; errorRowCount: number;
+      errors: readonly { line: number; column: string; message: string }[];
+      duplicatesForReview: readonly unknown[]; sumMinor?: number; reconciles?: boolean; commitReady: boolean;
+    } };
+    const p = body.preview;
+    if (p === undefined) return 'refused';
+    const view: ImportPreviewView = {
+      totalRows: p.totalRows, validCount: p.validCount, errorRowCount: p.errorRowCount,
+      errors: p.errors.map((e) => ({ line: e.line, column: e.column, message: e.message })),
+      duplicateCount: p.duplicatesForReview.length,
+      ...(p.sumMinor !== undefined ? { sumMinor: p.sumMinor } : {}),
+      ...(p.reconciles !== undefined ? { reconciles: p.reconciles } : {}),
+      commitReady: p.commitReady,
+    };
+    return view;
+  } catch { return 'lost_link'; }
+}
+
+/** POST a commit (POST /v1/import/commit) under §28 — the approver is a SEPARATE person named on the screen;
+ *  the uploader is the caller's own session identity. The server re-validates and enforces §28. */
+async function postCommit(
+  template: FullImportTemplate | undefined,
+  req: { text: string; jobId: string; approver: string; declaredTotalMinor?: number },
+  uploadedBy: string | undefined,
+): Promise<CommitResult> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined || template === undefined) return 'refused';
+  const key = globalThis.crypto?.randomUUID?.() ?? `import-${req.jobId}`;
+  try {
+    const res = await fetchFn('/v1/import/commit', {
+      method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' }, credentials: 'same-origin',
+      body: JSON.stringify({
+        jobId: req.jobId,
+        template: { id: template.id, domain: template.domain, columns: template.columns, keyColumns: template.keyColumns },
+        text: req.text,
+        approval: { decidedBy: req.approver, status: 'approved' },
+        ...(uploadedBy !== undefined ? { uploadedBy } : {}),
+        ...(req.declaredTotalMinor !== undefined ? { declaredTotalMinor: req.declaredTotalMinor } : {}),
+      }),
+    });
+    return res.status >= 200 && res.status < 300 ? 'committed' : 'refused';
+  } catch { return 'lost_link'; }
+}
+
+export function dataIoPortsFromData(data: DataIoData | undefined, live?: DataIoLive): DataIoPorts {
+  const held = new Set(data?.permissions ?? []);
+  const templates = data?.importTemplates ?? [];
+  const findTemplate = (id: string): FullImportTemplate | undefined => templates.find((t) => t.id === id);
+  return {
+    exportDomains: () => live?.domains ?? data?.exportDomains ?? [],
+    recentExports: () => live?.exports ?? data?.recentExports ?? [],
+    importTemplates: () => templates.map((t) => ({ id: t.id, domain: t.domain, label: t.label, financial: t.financial })),
+    mayExport: () => held.has(EXPORT_PERMISSION),
+    mayImport: () => held.has(IMPORT_READ_PERMISSION),
+    mayCommitImport: () => held.has(IMPORT_COMMIT_PERMISSION),
+    runExport: (domain) => postExport(domain),
+    validate: (req) => postValidate(findTemplate(req.templateId), req),
+    commit: (req) => postCommit(findTemplate(req.templateId), req, data?.userId),
+  };
+}
+
+/** Build the data import/export session, or `null` when the box carried no payload (shell shows the sample). */
+export function bootDataIo(data: DataIoData | undefined, live?: DataIoLive): DataIoSession | null {
+  if (data === undefined) return null;
+  return createDataIoSession({ userId: data.userId === undefined ? null : data.userId }, dataIoPortsFromData(data, live));
+}
+
+/** Read the export catalogue + log live (GETs — read-only). Returns null offline so the screen keeps its view. */
+export async function fetchDataIoLive(): Promise<DataIoLive | null> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return null;
+  try {
+    const [dRes, eRes] = await Promise.all([
+      fetchFn('/v1/export', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' }),
+      fetchFn('/v1/exports', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' }),
+    ]);
+    if (dRes.status >= 400 || eRes.status >= 400) return null;
+    const dBody = (await dRes.json()) as { domains?: readonly ExportDomainView[] };
+    const eBody = (await eRes.json()) as { exports?: readonly ExportAuditView[] };
+    return { domains: dBody.domains ?? [], exports: eBody.exports ?? [] };
+  } catch { return null; }
+}
+
 // ── Workforce guidance inbox (A10) — the exact mirror of the Operations inbox above ────────────────────────
 
 /** What the box tells the Workforce guidance inbox screen: who is looking, what they may do, and (optionally)
@@ -1768,6 +1913,13 @@ interface ManagerWindow {
     refresh(): Promise<LpWorklistData | null>;
     present(worklist: LpWorklistData): LpInboxSession;
   };
+  dataIoData?: DataIoData;
+  dataIoSession?: DataIoSession;
+  /** The shell reads the live export catalogue + log through this and re-presents it — GET reads, never writes. */
+  dataIo?: {
+    refresh(): Promise<DataIoLive | null>;
+    present(live: DataIoLive): DataIoSession;
+  };
   workforceInboxData?: WorkforceInboxData;
   workforceInboxSession?: WorkforceInboxSession;
   /** The shell reads the live worklist through this and re-presents it — a GET read, never a write. */
@@ -2338,6 +2490,22 @@ if (browserWindow !== undefined) {
       present: (worklist) => createLpInboxSession(
         { userId: lossPreventionData?.userId === undefined ? null : lossPreventionData.userId },
         lpInboxPortsFromData(lossPreventionData, worklist, lpClosePort),
+      ),
+    };
+  }
+  // The data import/export console (M30): boots from the box's policy (who + what they hold + the store's import
+  // templates), then the shell refreshes the export catalogue + log with live GETs (read-only). The writes —
+  // run an export (audited), validate a file (a preview), commit an import (§28: a SEPARATE approver, never the
+  // uploader) — run only on an explicit click; the server re-validates and is the single gate.
+  const dataIoData = browserWindow.dataIoData;
+  const dataIo = bootDataIo(dataIoData, undefined);
+  if (dataIo !== null) {
+    browserWindow.dataIoSession = dataIo;
+    browserWindow.dataIo = {
+      refresh: fetchDataIoLive,
+      present: (live) => createDataIoSession(
+        { userId: dataIoData?.userId === undefined ? null : dataIoData.userId },
+        dataIoPortsFromData(dataIoData, live),
       ),
     };
   }

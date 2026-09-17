@@ -93,6 +93,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // open case with the money at stake). Gated on the SAME permission the worklist route checks (`lp.case.read`),
   // so the menu never offers a screen the server would refuse (M15-FR-04).
   { id: 'loss-prevention', label: 'Investigations', path: '/loss-prevention', requires: 'lp.case.read', group: 'Administration' },
+  // Data import & export — the M30 console (take data out to an open CSV with an audit trail; bring data in
+  // under §28 maker-checker). Gated on `export.read`, the permission the export catalogue/log checks; the import
+  // routes additionally enforce their own permissions server-side (M30-FR-01/02/03).
+  { id: 'data-io', label: 'Import & export', path: '/data-io', requires: 'export.read', group: 'Administration' },
   // Workforce — the A10 guidance inbox (the day's late staff tasks, a critical overdue one escalated to the
   // manager on duty, each with the recommended action). Gated on the SAME permission the worklist route checks
   // (`ai.proposal.read`), so the menu never offers a screen the server would refuse (A10 · API-13).

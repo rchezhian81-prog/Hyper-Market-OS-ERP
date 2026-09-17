@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Import &amp; export</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      Data import & export console — the operator's screen (M30-FR-01/02/03, API-03, §28, P-06). Every rule
+      lives in the tested session model (apps/web-erp/src/data-io-session.ts), attached as window.dataIoSession
+      and built on the shared packages/ui primitives. EXPORT: pick a domain and take it out to an open CSV
+      (audited; sensitive columns hidden unless allowed). IMPORT: pick a template, paste the file, CHECK it (a
+      preview — errors by line), then LOAD it — which needs a SEPARATE approver (§28: the uploader may never
+      approve their own). Every write runs ONLY on an explicit click, never on load. The exportable domains and
+      the log are read live (GET /v1/export, /v1/exports); offline the screen shows its sample stand-in.
+    -->
+    <style>
+      :root { --bg:#0f172a; --panel:#1e293b; --ink:#f8fafc; --muted:#94a3b8; --ok:#22c55e; --degraded:#f59e0b; --error:#ef4444; --idle:#64748b; --info:#38bdf8; --line:#334155; --tap:48px; }
+      * { box-sizing: border-box; }
+      body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; min-height:100dvh; display:flex; flex-direction:column; }
+      header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; background:var(--panel); flex-wrap:wrap; }
+      .who { font-weight:600; } .who small { display:block; color:var(--muted); font-weight:400; font-size:14px; }
+      .lang { background:var(--line); color:var(--ink); min-height:40px; padding:0 14px; font-size:15px; border:0; border-radius:10px; }
+      .sample,.stale,.nobody { margin:0; padding:10px 16px; font-size:15px; font-weight:600; }
+      .sample { background:var(--degraded); color:#451a03; } .stale { background:#1e3a5f; color:#dbeafe; border-bottom:2px solid var(--info); font-weight:400; }
+      .nobody { background:#3f2d12; color:#fde68a; border-bottom:2px solid var(--degraded); }
+      .sample[hidden],.stale[hidden],.nobody[hidden],[hidden] { display:none !important; }
+      main { flex:1; padding:16px; display:grid; gap:20px; align-content:start; max-width:900px; width:100%; }
+      section.panel { background:var(--panel); border-radius:14px; padding:16px; display:grid; gap:12px; }
+      h2 { margin:0 0 4px; font-size:20px; } h3 { margin:8px 0 0; font-size:16px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+      p.lead { margin:0; color:var(--muted); font-size:15px; }
+      ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
+      li.row { background:var(--bg); border-radius:12px; padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; border-left:5px solid var(--line); }
+      li.row .what { display:grid; gap:2px; } li.row .what small { color:var(--muted); font-size:13px; }
+      .tag { background:#3f2d12; color:#fde68a; border-radius:999px; padding:1px 8px; font-size:12px; margin-left:6px; }
+      label { display:block; margin:8px 0 4px; font-size:14px; color:var(--muted); }
+      select, input, textarea { width:100%; min-height:var(--tap); padding:8px 12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); }
+      textarea { min-height:120px; font-family:ui-monospace,Menlo,Consolas,monospace; }
+      .row2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+      button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--info); color:#042f2e; }
+      button.act.primary { background:var(--good,#22c55e); color:#052e16; }
+      button.act.small { min-height:40px; font-size:14px; background:var(--info); color:#042f2e; }
+      button.act:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, .lang:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+      .preview { background:var(--bg); border-radius:12px; padding:12px 14px; font-size:14px; display:grid; gap:6px; }
+      .preview.ready { border-left:5px solid var(--ok); } .preview.notready { border-left:5px solid var(--error); }
+      .preview .errline { color:#fecaca; font-size:13px; }
+      p.result { margin:0; padding:12px 14px; border-radius:12px; background:var(--bg); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
+      p.result .icon { font-size:18px; }
+      p.result.tone-ok { border-left:6px solid var(--ok); } p.result.tone-degraded { border-left:6px solid var(--degraded); } p.result.tone-error { border-left:6px solid var(--error); }
+      p.locked { margin:0; padding:14px; background:var(--bg); border-radius:12px; color:var(--muted); }
+    </style>
+  </head>
+  <body>
+    <p class="stale" id="stale" hidden></p>
+    <p class="sample" id="sample" hidden></p>
+    <p class="nobody" id="nobody" hidden></p>
+
+    <header>
+      <span class="who" id="who">Import &amp; export <small id="whoami"></small></span>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+
+    <main>
+      <div>
+        <h2 id="title">Import &amp; export</h2>
+        <p class="lead" id="lead"></p>
+      </div>
+
+      <section class="panel" id="export-panel" aria-label="Take data out">
+        <h2 id="export-heading"></h2>
+        <p class="lead" id="export-lead"></p>
+        <p class="locked" id="export-locked" hidden></p>
+        <ul class="rows" id="export-domains" aria-label="Exportable data"></ul>
+        <p class="result" id="export-result" hidden role="status" aria-live="polite"><span class="icon" id="export-result-icon" aria-hidden="true"></span><span id="export-result-text"></span></p>
+        <h3 id="recent-heading"></h3>
+        <ul class="rows" id="recent-exports" aria-label="Recent exports"></ul>
+      </section>
+
+      <section class="panel" id="import-panel" aria-label="Bring data in">
+        <h2 id="import-heading"></h2>
+        <p class="lead" id="import-lead"></p>
+        <p class="locked" id="import-locked" hidden></p>
+        <div id="import-form" hidden>
+          <label for="import-template" id="template-label"></label>
+          <select id="import-template"></select>
+          <label for="import-file" id="file-label"></label>
+          <textarea id="import-file" autocomplete="off" spellcheck="false"></textarea>
+          <label for="import-total" id="total-label"></label>
+          <input id="import-total" type="text" inputmode="numeric" autocomplete="off" />
+          <button id="validate" class="act small" type="button"></button>
+          <p class="result" id="validate-result" hidden role="status" aria-live="polite"><span class="icon" id="validate-result-icon" aria-hidden="true"></span><span id="validate-result-text"></span></p>
+          <div class="preview" id="preview" hidden></div>
+          <div class="row2">
+            <div><label for="import-job" id="job-label"></label><input id="import-job" type="text" autocomplete="off" /></div>
+            <div><label for="import-approver" id="approver-label"></label><input id="import-approver" type="text" autocomplete="off" /></div>
+          </div>
+          <button id="commit" class="act primary" type="button"></button>
+          <p class="result" id="commit-result" hidden role="status" aria-live="polite"><span class="icon" id="commit-result-icon" aria-hidden="true"></span><span id="commit-result-text"></span></p>
+        </div>
+      </section>
+    </main>
+
+    <!--SCREEN-DATA-->
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./data-io.js" type="module"></script>
+  </body>
+</html>

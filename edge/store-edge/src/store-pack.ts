@@ -496,6 +496,29 @@ export interface PackLossPreventionPolicy {
   readonly permissions: readonly string[];
 }
 
+/** One import template the box ships to the data import/export screen (M30-FR-01) — the store's configured
+ *  loads. The full column spec travels because the validate/commit routes take the template in the body; there
+ *  is no proprietary "list templates" route. */
+export interface PackImportTemplate {
+  readonly id: string;
+  readonly domain: string;
+  readonly label: string;
+  /** True when the file carries an amount column and must reconcile to a declared control total. */
+  readonly financial: boolean;
+  readonly columns: readonly { readonly name: string; readonly type: string }[];
+  readonly keyColumns: readonly string[];
+}
+
+/** Who is on the data import/export console and what they may do (M30-FR-01/02/03). The exportable domains and
+ *  the export log are read live from the cloud (`GET /v1/export`, `GET /v1/exports`); the import templates are
+ *  the store's configured loads, shipped here. Permissions shape the UI; the cloud routes re-check them. */
+export interface PackDataIoPolicy {
+  readonly userId?: string;
+  /** `export.read` to export; `purchase.import.read` to validate; `purchase.import.record` to commit. */
+  readonly permissions: readonly string[];
+  readonly importTemplates: readonly PackImportTemplate[];
+}
+
 /** Who is on the Workforce guidance inbox screen and what they may do (A10 · API-13). The guidance itself is
  *  read live from the cloud (`GET /v1/ai/workforce/worklist`), not the pack; this is only who the box was told
  *  is looking, so the shell can gate on `ai.proposal.read` before the live read. */
@@ -883,6 +906,8 @@ export interface StorePack {
   readonly operationsInboxPolicy: Register<PackOperationsInboxPolicy>;
   /** Who is on the loss-prevention investigations screen and what they may do there (M15-FR-04). */
   readonly lossPreventionPolicy: Register<PackLossPreventionPolicy>;
+  /** Who is on the data import/export console, what they may do, and the store's import templates (M30). */
+  readonly dataIoPolicy: Register<PackDataIoPolicy>;
   /** Who is on the Workforce guidance inbox screen and what they may do there (A10). */
   readonly workforceInboxPolicy: Register<PackWorkforceInboxPolicy>;
   readonly essPolicy: Register<PackEssPolicy>;
@@ -1028,6 +1053,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     dataQualityPolicy: notKnown(why),
     operationsInboxPolicy: notKnown(why),
     lossPreventionPolicy: notKnown(why),
+    dataIoPolicy: notKnown(why),
     workforceInboxPolicy: notKnown(why),
     essPolicy: notKnown(why),
     accounts: notKnown(why),
@@ -1141,6 +1167,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     dataQualityPolicy: section<PackDataQualityPolicy>('dataQualityPolicy'),
     operationsInboxPolicy: section<PackOperationsInboxPolicy>('operationsInboxPolicy'),
     lossPreventionPolicy: section<PackLossPreventionPolicy>('lossPreventionPolicy'),
+    dataIoPolicy: section<PackDataIoPolicy>('dataIoPolicy'),
     workforceInboxPolicy: section<PackWorkforceInboxPolicy>('workforceInboxPolicy'),
     essPolicy: section<PackEssPolicy>('essPolicy'),
     accounts: section<readonly unknown[]>('accounts'),
