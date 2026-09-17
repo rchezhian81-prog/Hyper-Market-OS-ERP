@@ -198,6 +198,7 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   productPublishReviewPolicy: known({ userId: 'u-owner', permissions: ['catalogue.pack.publish'] }),
   dataQualityPolicy: known({ userId: 'u-owner', permissions: ['ai.proposal.read'] }),
   operationsInboxPolicy: known({ userId: 'u-owner', permissions: ['ai.proposal.read'] }),
+  lossPreventionPolicy: known({ userId: 'u-mgr', permissions: ['lp.case.read', 'lp.case.manage'] }),
   workforceInboxPolicy: known({ userId: 'u-owner', permissions: ['ai.proposal.read'] }),
   // Employee self-service (M25). Who is looking + whether they hold `payroll.ess.self`; rota + payslip come live.
   essPolicy: known({ userId: 'u-cash', permissions: ['payroll.ess.self'] }),

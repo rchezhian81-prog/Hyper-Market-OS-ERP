@@ -49,13 +49,13 @@ import {
   basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
-import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackWorkforceInboxPolicy, PackEssPolicy } from './store-pack';
+import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackWorkforceInboxPolicy, PackEssPolicy } from './store-pack';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'counts', 'product-publish-review', 'data-quality', 'operations', 'workforce', 'ess', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
+  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'workforce', 'ess', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1369,6 +1369,25 @@ export function operationsPayload(input: ScreenInput): Record<string, unknown> |
 }
 
 /**
+ * The loss-prevention investigations inbox payload (M15-FR-04 · P-03 · §28).
+ *
+ * `null` when the box has not been told who is on the screen. **The open cases themselves are NOT in this
+ * payload**: they are read live from the cloud (`GET /v1/loss-prevention/cases`); the shell fetches it when
+ * online and shows a sample stand-in until then. This carries only the manager's CURRENT context — who is
+ * looking and what they hold now — re-read every render; the cloud routes re-check the authority, so this only
+ * shapes the UI.
+ */
+export function lossPreventionPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.lossPreventionPolicy.known) return null;
+  const policy: PackLossPreventionPolicy = input.pack.lossPreventionPolicy.value;
+
+  const payload: Record<string, unknown> = { permissions: policy.permissions };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+
+  return payload;
+}
+
+/**
  * The Workforce guidance inbox payload (A10 · API-13 · §7.1 · M25-FR-02 · P-05).
  *
  * `null` when the box has not been told who is on the screen. **The guidance itself is NOT in this payload**:
@@ -1549,6 +1568,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   'product-publish-review': 'productPublishReviewData',
   'data-quality': 'dataQualityInboxData',
   operations: 'operationsInboxData',
+  'loss-prevention': 'lossPreventionInboxData',
   workforce: 'workforceInboxData',
   ess: 'essData',
   admin: 'adminData',
@@ -1581,6 +1601,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   'product-publish-review': productPublishReviewPayload,
   'data-quality': dataQualityPayload,
   operations: operationsPayload,
+  'loss-prevention': lossPreventionPayload,
   workforce: workforcePayload,
   ess: essPayload,
   admin: adminPayload,
