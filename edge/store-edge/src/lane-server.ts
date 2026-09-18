@@ -72,6 +72,23 @@ const LANE_ROUTES = ['/lane/sales', '/lane/returns'] as const;
 const LANE_LOOKUP_ROUTE = '/lane/lookup';
 
 /**
+ * The DAY-CLOSE write route: POST /lane/day-close (M14-FR-04). The manager's screen asks the box to
+ * close and LOCK the trading day. The DECISION is the box's — `edge.closeDay` reads the live outbox
+ * depths and the exception register; this socket only relays the request under the same loopback +
+ * application/json authorization the sale and refund routes use (RR-F01). Distinct from those because
+ * its body is `{ dayCloseId, closedBy }`, not a sale/refund record with an id of its own.
+ */
+const LANE_DAY_CLOSE_ROUTE = '/lane/day-close';
+
+/** What the box does when the manager asks to close the day — the authoritative `EdgeProcess.closeDay`. */
+export type LaneDayCloseHandler = (
+  req: { readonly dayCloseId: string; readonly closedBy: string },
+) => Promise<
+  | { readonly closed: true; readonly tradingDay: string; readonly locked: true }
+  | { readonly closed: false; readonly reason: string }
+>;
+
+/**
  * Is this `Origin` header another page on this same machine? `127.0.0.1`, `localhost` and IPv6
  * `[::1]` on any port; nothing else. Undefined (a same-origin or non-browser call that sends no
  * Origin) is not cross-origin, so it needs no allowance and is not one of these.
@@ -164,6 +181,12 @@ export function startLaneServer(input: {
   readonly port: number;
   /** Largest sale payload accepted. A body cap is a denial-of-service control, not tidiness. */
   readonly maxBytes?: number;
+  /**
+   * Close and lock the trading day (M14-FR-04). Absent on a box that does not close the day (e.g. a
+   * standalone lane), in which case POST /lane/day-close answers 404. The manager's screen posts
+   * `{ dayCloseId, closedBy }`; the box makes the authoritative decision.
+   */
+  readonly closeDay?: LaneDayCloseHandler;
 }): Promise<LaneServer> {
   const maxBytes = input.maxBytes ?? 256 * 1024;
 
@@ -213,16 +236,75 @@ export function startLaneServer(input: {
       return;
     }
 
-    // The browser's preflight for the cross-origin POST from the till's screen. Answered only for a
-    // loopback origin; anything else gets no allow header and the browser refuses to send the POST.
-    if (req.method === 'OPTIONS' && route !== undefined) {
+    // The DAY-CLOSE write route: POST /lane/day-close (M14-FR-04). The manager's screen asks the box to
+    // close and LOCK the trading day; the box makes the authoritative decision (edge.closeDay reads the
+    // live outbox depths + exception register). Same loopback + application/json authorization as the
+    // sale/refund routes (RR-F01), decided BEFORE the body is read. Answered 404 on a box that does not
+    // close the day. 200 either way on a real attempt: the *request* was understood; the body says
+    // whether the day closed or the stated blocker why not (P-08).
+    if (req.method === 'POST' && pathname === LANE_DAY_CLOSE_ROUTE) {
+      const doClose = input.closeDay;
+      if (doClose === undefined) {
+        send(res, 404, { closed: false, reason: 'this box does not close the day' }, cors);
+        req.resume();
+        return;
+      }
+      const authRefusal = laneCallRefusal(req.headers.origin, req.headers['content-type']);
+      if (authRefusal !== undefined) {
+        send(res, authRefusal.status, { closed: false, reason: authRefusal.reason }, cors);
+        req.resume();
+        return;
+      }
+      const chunks: Buffer[] = [];
+      let size = 0;
+      let tooBig = false;
+      req.on('data', (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > maxBytes && !tooBig) {
+          tooBig = true;
+          send(res, 413, { closed: false, reason: 'day-close request too large' }, cors);
+          req.destroy();
+          return;
+        }
+        chunks.push(chunk);
+      });
+      req.on('end', () => {
+        if (tooBig) return;
+        void (async () => {
+          let body: unknown;
+          try {
+            body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+          } catch {
+            send(res, 400, { closed: false, reason: 'the day-close request could not be read' }, cors);
+            return;
+          }
+          const b = (body !== null && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+          const dayCloseId = typeof b['dayCloseId'] === 'string' && b['dayCloseId'] !== '' ? (b['dayCloseId'] as string) : undefined;
+          const closedBy = typeof b['closedBy'] === 'string' && b['closedBy'] !== '' ? (b['closedBy'] as string) : undefined;
+          if (dayCloseId === undefined || closedBy === undefined) {
+            send(res, 400, { closed: false, reason: 'closing the day needs a day-close id and who is closing it' }, cors);
+            return;
+          }
+          try {
+            send(res, 200, await doClose({ dayCloseId, closedBy }), cors);
+          } catch (e) {
+            send(res, 200, { closed: false, reason: e instanceof Error ? e.message : String(e) }, cors);
+          }
+        })();
+      });
+      return;
+    }
+
+    // The browser's preflight for the cross-origin POST from the till's or manager's screen. Answered
+    // only for a loopback origin; anything else gets no allow header and the browser refuses the POST.
+    if (req.method === 'OPTIONS' && (route !== undefined || pathname === LANE_DAY_CLOSE_ROUTE)) {
       res.writeHead(isLoopbackOrigin(req.headers.origin) ? 204 : 403, { 'content-length': '0', ...cors });
       res.end();
       return;
     }
 
     if (req.method !== 'POST' || route === undefined) {
-      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `GET ${LANE_LOOKUP_ROUTE}?receipt=…`].join(', ');
+      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `POST ${LANE_DAY_CLOSE_ROUTE}`, `GET ${LANE_LOOKUP_ROUTE}?receipt=…`].join(', ');
       send(res, 404, { error: `the lane socket serves: ${serves}` }, cors);
       return;
     }

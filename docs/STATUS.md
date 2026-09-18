@@ -92,16 +92,20 @@ copying the **completions** pipeline verbatim at its ~9 wiring points:
   day; a blocked case (an unsent sale in the sales outbox blocks the close); restart resilience
   (`dayCloseAgent.health().unsentCount`).
 
-**Slice 3b (next):** the write path — a `/lane/day-close` POST route on the lane server (mirror `/lane/returns`,
-`lane-server.ts:63` + dispatch 283-285) that triggers the box's authoritative `closeDay`, and wire
-`apps/web-erp/web/app.js`'s "Close the day" button (currently `session.closeTheDay` local-only, app.js:706) +
-`browser-entry.ts` to POST to it (the browser's local `closeTheDay` becomes a preview; the box is
-authoritative). **Wiring note (found in 3a):** `closeDay` lives on the `EdgeProcess` (main.ts), NOT on the
-`EdgeNode` the lane server is constructed with — because it needs `snapshot()` + the pack + all four outboxes.
-So `startLaneServer` must be given a `closeDay` handler (a new optional input), and since the lane is currently
-created (~main.ts:440) BEFORE `closeDay` is defined (~after `snapshot()`), either move the lane creation to
-after `closeDay` (nothing between them uses `lane` except the returns) or pass a thunk. Keep it loopback-only
-+ `application/json`-guarded exactly like the sale/return routes (RR-F01).
+**Slice 3b — BUILT: the box's day-close write socket.** `edge/store-edge/src/lane-server.ts` now serves
+`POST /lane/day-close` — it relays `{ dayCloseId, closedBy }` to the box's authoritative `closeDay` under the
+same loopback + `application/json` authorization as the sale/refund routes (a foreign origin/non-JSON body is
+refused BEFORE the box is asked, RR-F01); 200 either way on a real attempt (the body says closed or the stated
+blocker, P-08), 404 on a box that does not close the day. `startLaneServer` gained an optional `closeDay`
+handler (`LaneDayCloseHandler`); `main.ts` wires it through a late-bound relay (`dayCloseRelay`) since the lane
+is created before `closeDay` is defined — no reorder of the sale/refund money path. `tests/unit/lane-server-day-close.test.ts`
+(7): relays a well-formed close + the box's refusal verbatim; 400 on a malformed request without asking the
+box; 403 foreign origin + 415 non-JSON before the box is asked; the browser preflight; 404 when unconfigured.
+
+**Slice 3c (next):** wire `apps/web-erp/web/app.js`'s "Close the day" button (currently `session.closeTheDay`
+local-only, app.js:706) + `browser-entry.ts` to POST to `/lane/day-close` (the browser's local `closeTheDay`
+becomes a preview; the box is authoritative), then a browser e2e (headless Chromium, mirror
+`cash-office-signoff-delivery.e2e.ts`) proving click → box → cloud, then the honest re-rate of M14-FR-04.
 
 **Slice 3c:** browser e2e — drive the served "Close the day" button in headless Chromium → box → cloud (mirror
 `cash-office-signoff-delivery.e2e.ts`), then the honest **re-rate** of M14-FR-04 (INTEGRATION_TESTED/
