@@ -200,6 +200,7 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   operationsInboxPolicy: known({ userId: 'u-owner', permissions: ['ai.proposal.read'] }),
   lossPreventionPolicy: known({ userId: 'u-mgr', permissions: ['lp.case.read', 'lp.case.manage'] }),
   cashOfficePolicy: known({ userId: 'u-cashoffice', permissions: ['till.shift.read', 'till.overshort.review'] }),
+  riskAcceptancePolicy: known({ userId: 'u-seclead', permissions: ['compliance.risk.read', 'compliance.risk.manage'] }),
   dataIoPolicy: known({ userId: 'u-owner', permissions: ['export.read', 'purchase.import.read', 'purchase.import.record'], importTemplates: [{ id: 'products-basic', domain: 'products', label: 'Products', financial: false, columns: [{ name: 'sku', type: 'text' }], keyColumns: ['sku'] }] }),
   workforceInboxPolicy: known({ userId: 'u-owner', permissions: ['ai.proposal.read'] }),
   // Employee self-service (M25). Who is looking + whether they hold `payroll.ess.self`; rota + payslip come live.
