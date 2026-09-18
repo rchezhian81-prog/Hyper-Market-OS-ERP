@@ -5,6 +5,48 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M14-FR-04 reopen — R2: the served accountant/owner reopen SCREEN; M14 re-rated INTEGRATION_TESTED→E2E_VERIFIED (headline 51.6→51.7%) (18 September 2026)
+
+The screen the owner asked for. An accountant/owner can now, in the ERP, **reopen a day that was already
+closed and locked** — for the rare case where an error is found the next morning — with the §28 safeguards you
+set, and it is proven working in a real browser.
+
+- **`apps/web-erp/src/day-reopen-session.ts`** — the tested, DOM-free session model (bilingual English/Tamil,
+  accessible: a locked day reads as a settled OK state with an icon **and** a word, never colour alone). It
+  refuses **before any POST**: no permission, no reason, no named approver, or the reopener naming **themselves**
+  as the approver (§28 self-approval). Every rule is unit-tested.
+- **Served `/day-reopen` screen** (`apps/web-erp/web/day-reopen.{html,js}`) — lists the locked days and offers
+  the reopen form only to a holder of `till.dayclose.approve`. The reopen posts to the **box** (`POST
+  /lane/day-reopen`, cross-port), which is the only thing that can perform it; the screen shows the box's outcome.
+- **Edge wiring** — `PackDayReopenPolicy` → `dayReopenPayload` inject who-is-looking + what they hold;
+  `screen-server.ts` serves the `/day-reopen` route; `navigation.ts` gates the menu on `till.dayclose.read`;
+  the offline shell service worker is bumped to v24 so the screen opens with the network cut.
+
+Tested: `tests/guardrails/the-day-reopen-screen-is-usable.test.ts` (12 — bilingual copy complete, §28
+self-approval refused, reason/approver required, the view defers to the model + writes only on an explicit
+click) and a **real browser e2e** `tests/e2e/day-reopen-delivery.e2e.ts` (2): an authorised owner picks a locked
+day + a reason + a **different** approver and the reopen **reaches the box** (a durable `StoreDayReopened` on the
+box log, queued for the cloud); a **self-approval is refused client-side** (nothing sent, box untouched). The
+day-reopen screen also opens offline + accessible in `screens-open-offline.e2e.ts`.
+
+**Re-rate — honest.** With the reopen now having a real operator screen driven in a browser, all three of M14's
+money/governance operator write-paths — the over/short sign-off (FR-02), the day close (FR-04), and the day
+reopen (FR-04) — are browser-verified end to end. **M14 INTEGRATION_TESTED → E2E_VERIFIED, headline 51.6 →
+51.7% (5375/10400).** This completes the owner's directive.
+
+**What the owner should check (in the store):** on a store computer, open the ERP → **Reopen a locked day**
+(under Administration; visible only to an accountant/owner). Pick a locked day, type the reason, and — this is
+the safeguard — name the **different** person who approved it, then confirm. If you name yourself as the
+approver, it refuses and says why. On success it says the day is reopened. (There must be a second authorised
+person; a single person cannot both reopen and approve — that is the separation-of-duties rule working.)
+
+### Next
+- **Retention periods remain the pinned owner-blocked priority** (unchanged): the archival/disposal execution
+  workflow needs the owner's per-data-class "keep for N years" numbers. Never invent these.
+- M05 pricing/promotions launch screen (task #129, deferred) is the next screen candidate when you want it.
+
+---
+
 ## M14-FR-04 reopen — R1: the box's authoritative REOPEN + its lane socket (owner directed "build the reopen screen — accountant/owner may reopen") (headline unchanged 51.6%) (18 September 2026)
 
 The owner chose to build the controlled-reopen operator path — the last piece before M14 can honestly reach

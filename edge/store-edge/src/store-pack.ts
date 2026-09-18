@@ -521,6 +521,18 @@ export interface PackRiskAcceptancePolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the day-reopen screen and what they may do (M14-FR-04 / §28). The locked days are read live from
+ *  the cloud (`GET /v1/pos/day-close`), not the pack; this is only who the box was told is looking, so the shell
+ *  can gate on `till.dayclose.read` before the live read (and offer `till.dayclose.approve` to reopen). The
+ *  reopener's own id also lets the screen enforce §28 locally — the named approver must be a DIFFERENT person —
+ *  before any POST. */
+export interface PackDayReopenPolicy {
+  readonly userId?: string;
+  /** The permission codes this user holds — `till.dayclose.read` to see the locked days, `till.dayclose.approve`
+   *  to reopen one. Never defaulted. The cloud route re-checks the approver's authority, so this only shapes the UI. */
+  readonly permissions: readonly string[];
+}
+
 /** One import template the box ships to the data import/export screen (M30-FR-01) — the store's configured
  *  loads. The full column spec travels because the validate/commit routes take the template in the body; there
  *  is no proprietary "list templates" route. */
@@ -935,6 +947,8 @@ export interface StorePack {
   readonly cashOfficePolicy: Register<PackCashOfficePolicy>;
   /** Who is on the risk-acceptance / compliance-gates screen and what they may do there (M34-FR-04). */
   readonly riskAcceptancePolicy: Register<PackRiskAcceptancePolicy>;
+  /** Who is on the day-reopen screen and what they may do there (M14-FR-04 / §28). */
+  readonly dayReopenPolicy: Register<PackDayReopenPolicy>;
   /** Who is on the data import/export console, what they may do, and the store's import templates (M30). */
   readonly dataIoPolicy: Register<PackDataIoPolicy>;
   /** Who is on the Workforce guidance inbox screen and what they may do there (A10). */
@@ -1084,6 +1098,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     lossPreventionPolicy: notKnown(why),
     cashOfficePolicy: notKnown(why),
     riskAcceptancePolicy: notKnown(why),
+    dayReopenPolicy: notKnown(why),
     dataIoPolicy: notKnown(why),
     workforceInboxPolicy: notKnown(why),
     essPolicy: notKnown(why),
@@ -1200,6 +1215,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     lossPreventionPolicy: section<PackLossPreventionPolicy>('lossPreventionPolicy'),
     cashOfficePolicy: section<PackCashOfficePolicy>('cashOfficePolicy'),
     riskAcceptancePolicy: section<PackRiskAcceptancePolicy>('riskAcceptancePolicy'),
+    dayReopenPolicy: section<PackDayReopenPolicy>('dayReopenPolicy'),
     dataIoPolicy: section<PackDataIoPolicy>('dataIoPolicy'),
     workforceInboxPolicy: section<PackWorkforceInboxPolicy>('workforceInboxPolicy'),
     essPolicy: section<PackEssPolicy>('essPolicy'),

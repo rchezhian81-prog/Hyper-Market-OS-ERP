@@ -95,6 +95,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'loss-prevention', label: 'Investigations', path: '/loss-prevention', requires: 'lp.case.read', group: 'Administration' },
   { id: 'cash-office', label: 'Over / short sign-off', path: '/cash-office', requires: 'till.shift.read', group: 'Administration' },
   { id: 'risk-acceptance', label: 'Risk acceptance', path: '/risk-acceptance', requires: 'compliance.risk.read', group: 'Administration' },
+  // Reopen a locked day — the controlled, audited unlock (M14-FR-04 / §28). Gated on `till.dayclose.read` (the
+  // permission the locked-day list checks); the reopen itself needs `till.dayclose.approve`, which the box and
+  // cloud enforce, and the screen offers the form only to a holder. Accountant/owner work.
+  { id: 'day-reopen', label: 'Reopen a locked day', path: '/day-reopen', requires: 'till.dayclose.read', group: 'Administration' },
   // Data import & export — the M30 console (take data out to an open CSV with an audit trail; bring data in
   // under §28 maker-checker). Gated on `export.read`, the permission the export catalogue/log checks; the import
   // routes additionally enforce their own permissions server-side (M30-FR-01/02/03).

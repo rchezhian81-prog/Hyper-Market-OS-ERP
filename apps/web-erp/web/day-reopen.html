@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Reopen a locked day</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      Day reopen — the controlled, audited unlock of a locked trading day (M14-FR-04, API-05, P-03, §28). Every
+      rule lives in the tested session model (apps/web-erp/src/day-reopen-session.ts), attached as
+      window.dayReopenSession and built on the shared packages/ui primitives. It lists the still-LOCKED days
+      (most recent first, each with who closed it and when), then a "reopen" form (pick a day, a required reason,
+      and a NAMED approver who is a different person). A reopen is a HUMAN write that runs ONLY on an explicit
+      click, never on load, and it posts to the BOX (POST /lane/day-reopen) — the only place that can perform it.
+      The screen refuses a self-approval (§28) before any POST; the box enforces it and the cloud re-verifies the
+      approver's authority. The locked days are read live (GET /v1/pos/day-close); offline the screen shows its
+      sample stand-in.
+    -->
+    <style>
+      :root { --bg:#0f172a; --panel:#1e293b; --ink:#f8fafc; --muted:#94a3b8; --ok:#22c55e; --degraded:#f59e0b; --error:#ef4444; --idle:#64748b; --info:#38bdf8; --line:#334155; --tap:48px; }
+      * { box-sizing: border-box; }
+      body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; min-height:100dvh; display:flex; flex-direction:column; }
+      header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; background:var(--panel); flex-wrap:wrap; }
+      .who { font-weight:600; } .who small { display:block; color:var(--muted); font-weight:400; font-size:14px; }
+      .lang { background:var(--line); color:var(--ink); min-height:40px; padding:0 14px; font-size:15px; border:0; border-radius:10px; }
+      .sample,.stale,.nobody { margin:0; padding:10px 16px; font-size:15px; font-weight:600; }
+      .sample { background:var(--degraded); color:#451a03; } .stale { background:#1e3a5f; color:#dbeafe; border-bottom:2px solid var(--info); font-weight:400; }
+      .nobody { background:#3f2d12; color:#fde68a; border-bottom:2px solid var(--degraded); }
+      .sample[hidden],.stale[hidden],.nobody[hidden] { display:none; }
+      main { flex:1; padding:16px; display:grid; gap:16px; align-content:start; max-width:900px; width:100%; }
+      h2 { margin:0 0 4px; font-size:20px; } p.lead { margin:0 0 4px; color:var(--muted); font-size:15px; }
+      h3 { margin:8px 0 0; font-size:16px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+      .summary { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+      .summary .count { font-size:18px; font-weight:700; }
+      ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
+      li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); }
+      li.row.tone-ok { border-left-color:var(--ok); } li.row.tone-degraded { border-left-color:var(--degraded); }
+      li.row.tone-error { border-left-color:var(--error); } li.row.tone-idle { border-left-color:var(--idle); }
+      .row .head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+      .row .headline { font-weight:600; font-variant-numeric:tabular-nums; }
+      .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
+      .status .icon { font-size:18px; width:1.4em; text-align:center; }
+      .row .facts { font-size:13px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
+      .signer { background:var(--panel); border-radius:12px; padding:14px; display:grid; gap:10px; }
+      .signer label { font-size:14px; color:var(--muted); }
+      .signer select, .signer input { width:100%; min-height:var(--tap); padding:0 12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); }
+      button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--degraded); color:#451a03; }
+      button.act:focus-visible, select:focus-visible, input:focus-visible, .lang:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+      p.result { margin:0; padding:12px 14px; border-radius:12px; background:var(--panel); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
+      p.result .icon { font-size:18px; }
+      p.result.tone-ok { border-left:6px solid var(--ok); } p.result.tone-degraded { border-left:6px solid var(--degraded); } p.result.tone-error { border-left:6px solid var(--error); }
+      p.result[hidden] { display:none; }
+      p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
+      p.state .icon { font-size:18px; } p.state.tone-error { color:#fecaca; }
+      [hidden] { display:none !important; }
+    </style>
+  </head>
+  <body>
+    <p class="stale" id="stale" hidden></p>
+    <p class="sample" id="sample" hidden></p>
+    <p class="nobody" id="nobody" hidden></p>
+
+    <header>
+      <span class="who" id="who">Reopen <small id="whoami"></small></span>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+
+    <main>
+      <div>
+        <h2 id="title">Reopen a locked day</h2>
+        <p class="lead" id="lead"></p>
+      </div>
+
+      <div class="summary" role="status" aria-live="polite">
+        <span class="count" id="locked-count"></span>
+      </div>
+
+      <h3 id="locked-heading" hidden></h3>
+      <ul class="rows" id="rows" aria-label="Locked days that can be reopened"></ul>
+
+      <section class="signer" id="reopener" hidden aria-label="Reopen a locked day">
+        <h3 id="reopen-heading"></h3>
+        <div>
+          <label for="reopen-day" id="reopen-day-label"></label>
+          <select id="reopen-day"></select>
+        </div>
+        <div>
+          <label for="reopen-reason" id="reopen-reason-label"></label>
+          <input id="reopen-reason" type="text" autocomplete="off" />
+        </div>
+        <div>
+          <label for="reopen-approver" id="reopen-approver-label"></label>
+          <input id="reopen-approver" type="text" autocomplete="off" />
+        </div>
+        <button id="do-reopen" class="act" type="button"></button>
+      </section>
+
+      <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
+      <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+    </main>
+
+    <!--SCREEN-DATA-->
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./day-reopen.js" type="module"></script>
+  </body>
+</html>
