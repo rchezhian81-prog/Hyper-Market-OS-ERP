@@ -111,6 +111,11 @@ import {
   type LpInboxPorts, type LpInboxSession, type LpWorklistData, type LpCloseCasePort, type CloseResult,
 } from './loss-prevention-inbox-session';
 import {
+  createCashOfficeSession,
+  type CashOfficePorts, type CashOfficeSession, type CashOverShortData, type OverShortView,
+  type OverShortSignOffPort, type SignOffResult,
+} from './cash-office-session';
+import {
   createDataIoSession,
   type DataIoPorts, type DataIoSession, type ExportDomainView, type ExportAuditView,
   type ExportResult, type ValidateResult, type CommitResult, type ImportPreviewView,
@@ -954,6 +959,105 @@ export async function fetchLpWorklist(): Promise<LpWorklistData | null> {
     });
     if (res.status >= 400) return null;
     return (await res.json()) as LpWorklistData;
+  } catch {
+    return null;
+  }
+}
+
+// ── Cash-office over/short sign-off (M14-FR-02) ───────────────────────────────────────────────────────────────
+
+/** What the box tells the cash-office over/short screen: who is looking, what they may do, and (optionally) the
+ *  worklist it last carried. The open over/shorts are a LIVE cloud read (`GET /v1/shifts/over-short`) refreshed
+ *  by the shell when online; offline the screen shows its clearly-marked sample stand-in. */
+export interface CashOfficeData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+  readonly worklist?: CashOverShortData;
+}
+
+const OVERSHORT_READ_PERMISSION = 'till.shift.read';
+const OVERSHORT_REVIEW_PERMISSION = 'till.overshort.review';
+const EMPTY_OVERSHORT_WORKLIST: CashOverShortData = Object.freeze({ openCount: 0, totalVarianceMinor: 0, open: [] });
+const NOOP_SIGNOFF_PORT: OverShortSignOffPort = { post: async () => 'lost_link' };
+
+export function cashOfficePortsFromData(
+  data: CashOfficeData | undefined,
+  worklist?: CashOverShortData,
+  signOffPort: OverShortSignOffPort = NOOP_SIGNOFF_PORT,
+): CashOfficePorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    worklist: () => worklist ?? data?.worklist ?? EMPTY_OVERSHORT_WORKLIST,
+    // Default-deny: an absent permission list can read/sign off nothing (the server would refuse it anyway).
+    mayRead: () => held.has(OVERSHORT_READ_PERMISSION),
+    mayReview: () => held.has(OVERSHORT_REVIEW_PERMISSION),
+    signOffPort: () => signOffPort,
+  };
+}
+
+/** Build the cash-office session, or `null` when the box carried no payload for it (shell shows the sample). */
+export function bootCashOffice(
+  data: CashOfficeData | undefined,
+  worklist?: CashOverShortData,
+  signOffPort?: OverShortSignOffPort,
+): CashOfficeSession | null {
+  if (data === undefined) return null;
+  return createCashOfficeSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    cashOfficePortsFromData(data, worklist, signOffPort),
+  );
+}
+
+/** The authenticated POST of a reviewer's over/short sign-off — the reviewer's OWN session cookie
+ *  (`credentials: 'same-origin'`), never a service token. A network/timeout is a retryable lost link, not a
+ *  refusal. The shiftId rides in the URL; the server records the sign-off in the caller's own name and enforces
+ *  §28 (a reviewer may not sign off a drawer they counted). */
+function openSignOffPort(): OverShortSignOffPort {
+  return {
+    post: async ({ shiftId, disposition, note }): Promise<SignOffResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return 'lost_link';
+      const key = globalThis.crypto?.randomUUID?.() ?? `overshort-review-${shiftId}`;
+      try {
+        const res = await fetchFn(`/v1/shifts/${encodeURIComponent(shiftId)}/over-short/review`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ disposition, note }),
+        });
+        return res.status >= 200 && res.status < 300 ? 'signed' : 'refused';
+      } catch {
+        return 'lost_link';
+      }
+    },
+  };
+}
+
+/** One row of the over/short route body (`GET /v1/shifts/over-short`) — the shape the cloud hands back, with the
+ *  reviewed rows carrying their sign-off. */
+interface RawOverShortRow {
+  readonly shiftId: string; readonly tillId: string; readonly cashierId: string; readonly tradingDay: string;
+  readonly varianceMinor: number; readonly reasonCode: string | null; readonly reviewed: boolean;
+}
+
+/** Read the live over/short worklist (a GET — read-only) and keep only the OPEN (unsigned) rows — the ones the
+ *  cash office has to work. Returns null offline/refused so the shell keeps whatever it was showing. */
+export async function fetchOverShortWorklist(): Promise<CashOverShortData | null> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return null;
+  try {
+    const res = await fetchFn('/v1/shifts/over-short', {
+      method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin',
+    });
+    if (res.status >= 400) return null;
+    const body = (await res.json()) as { overShort?: readonly RawOverShortRow[] };
+    const open: OverShortView[] = (body.overShort ?? [])
+      .filter((r) => !r.reviewed)
+      .map((r) => ({
+        shiftId: r.shiftId, tillId: r.tillId, cashierId: r.cashierId, tradingDay: r.tradingDay,
+        varianceMinor: r.varianceMinor, reasonCode: r.reasonCode,
+      }));
+    return { openCount: open.length, totalVarianceMinor: open.reduce((s, r) => s + r.varianceMinor, 0), open };
   } catch {
     return null;
   }
@@ -1913,6 +2017,13 @@ interface ManagerWindow {
     refresh(): Promise<LpWorklistData | null>;
     present(worklist: LpWorklistData): LpInboxSession;
   };
+  cashOfficeData?: CashOfficeData;
+  cashOfficeSession?: CashOfficeSession;
+  /** The shell reads the live over/short worklist through this and re-presents it — a GET read, never a write. */
+  cashOffice?: {
+    refresh(): Promise<CashOverShortData | null>;
+    present(worklist: CashOverShortData): CashOfficeSession;
+  };
   dataIoData?: DataIoData;
   dataIoSession?: DataIoSession;
   /** The shell reads the live export catalogue + log through this and re-presents it — GET reads, never writes. */
@@ -2490,6 +2601,23 @@ if (browserWindow !== undefined) {
       present: (worklist) => createLpInboxSession(
         { userId: lossPreventionData?.userId === undefined ? null : lossPreventionData.userId },
         lpInboxPortsFromData(lossPreventionData, worklist, lpClosePort),
+      ),
+    };
+  }
+  // The cash-office over/short sign-off (M14-FR-02): boots from the box's policy (who + what they hold), then the
+  // shell refreshes the open over/shorts with a live GET (read-only), keeping only the unsigned rows. Offline it
+  // shows its sample stand-in and says so. The one write is a HUMAN sign-off in the reviewer's own name — never on
+  // load, only on an explicit click — and the server enforces §28 (reviewer ≠ cashier), which the screen never fakes.
+  const cashOfficeData = browserWindow.cashOfficeData;
+  const signOffPort = openSignOffPort();
+  const cashOffice = bootCashOffice(cashOfficeData, undefined, signOffPort);
+  if (cashOffice !== null) {
+    browserWindow.cashOfficeSession = cashOffice;
+    browserWindow.cashOffice = {
+      refresh: fetchOverShortWorklist,
+      present: (worklist) => createCashOfficeSession(
+        { userId: cashOfficeData?.userId === undefined ? null : cashOfficeData.userId },
+        cashOfficePortsFromData(cashOfficeData, worklist, signOffPort),
       ),
     };
   }
