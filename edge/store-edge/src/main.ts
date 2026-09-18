@@ -45,7 +45,7 @@ import { ReturnEntitlement, type EntitlementLine } from './entitlement';
 import { buildReceiptLookup } from './receipt-lookup';
 import { returnIdOf } from './cloud-return';
 import { createEdgeNode, type EdgeNode } from './index';
-import { startLaneServer, LANE_HOST, type LaneServer } from './lane-server';
+import { startLaneServer, LANE_HOST, type LaneServer, type LaneDayCloseHandler } from './lane-server';
 import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-server';
 import { readSales } from './read-model';
 import { emptyPack, readPack, type StorePack } from './store-pack';
@@ -526,8 +526,21 @@ export async function startEdge(
 
   // The lane socket. Absent `EDGE_LANE_PORT`, this edge has no screen attached and does the
   // shop-wide work instead — which is what the back-office box is.
+  //
+  // The manager's day close (M14-FR-04) posts to this socket too, but the authoritative `closeDay` is
+  // defined further down (it needs `snapshot()`, the pack and all four outboxes). So the socket is wired
+  // now through a late-bound relay and `closeDay` is attached to it once it exists — no reordering of the
+  // sale/refund money path above, and a POST that somehow arrives before then gets an honest "starting up".
+  const dayCloseRelay: { current?: LaneDayCloseHandler } = {};
   const lanePort = settings['EDGE_LANE_PORT'];
-  const lane = lanePort === undefined ? null : await startLaneServer({ node, port: Number(lanePort) });
+  const lane = lanePort === undefined ? null : await startLaneServer({
+    node,
+    port: Number(lanePort),
+    closeDay: (req) => {
+      const fn = dayCloseRelay.current;
+      return fn !== undefined ? fn(req) : Promise.resolve({ closed: false as const, reason: 'the box is still starting up — try the day close again in a moment' });
+    },
+  });
   if (lane !== null) say(`lane socket on ${LANE_HOST}:${lane.port} — loopback only, nothing on the shop network can reach it`);
 
   /**
@@ -649,6 +662,8 @@ export async function startEdge(
     if (event !== undefined) dayCloseOutbox.enqueue(event);
     return { closed: true, tradingDay: dayToClose, locked: true };
   };
+  // The lane socket, wired above through a relay, can now reach the authoritative close.
+  dayCloseRelay.current = closeDay;
 
   const cloudUrl = settings['CLOUD_API_URL'];
   const cloudToken = settings['CLOUD_API_TOKEN'];
