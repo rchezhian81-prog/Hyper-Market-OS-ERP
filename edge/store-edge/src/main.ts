@@ -596,6 +596,9 @@ export async function startEdge(
     port: Number(screenPort),
     appsDir: settings['EDGE_APPS_DIR'] ?? 'apps',
     snapshot,
+    // The manager's day close (M14-FR-04) posts to this box's lane socket — tell the screen where it is.
+    // Only when this box actually serves a lane; otherwise the screen stays read-only (a local preview).
+    ...(lane === null ? {} : { laneWriteBase: `http://${LANE_HOST}:${lane.port}` }),
   });
   if (screens !== null) {
     say(`screens on ${SCREEN_HOST}:${screens.port} — loopback only, so nothing on the shop network can read the day's takings`);

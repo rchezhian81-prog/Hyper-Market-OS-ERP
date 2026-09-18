@@ -28,6 +28,7 @@ import {
   disconnectedPorts,
   notKnown,
   type ApprovalRegister,
+  type BoxCloseOutcome,
   type DecisionReasonCode,
   type ManagerPorts,
   type ManagerSession,
@@ -2048,6 +2049,13 @@ export function bootMigration(data: MigrationData | undefined, outbox: SyncOutbo
 interface ManagerWindow {
   managerSession?: ManagerSession;
   managerData?: ManagerData;
+  /**
+   * The store computer's own write address (M14-FR-04), injected by the edge screen-server only when
+   * this box serves a lane socket. The manager's day close posts here — cross-port on 127.0.0.1, not
+   * same-origin — because the box owns the real outbox and the authoritative close. Absent means no
+   * box: the screen falls back to a local preview close that only touches this browser.
+   */
+  laneWriteBase?: string;
   buyingSession?: BuyingSession;
   buyingData?: BuyingData;
   /** What the box did not tell the buyer's screen, so the screen can say it rather than guess. */
@@ -2210,6 +2218,47 @@ export function portsFromData(data: ManagerData | undefined): ManagerPorts {
 }
 
 /**
+ * The manager's day-close write to the STORE COMPUTER (M14-FR-04) — the one write this screen makes.
+ *
+ * It is a CROSS-PORT POST on 127.0.0.1, not same-origin: the box serves the manager screen on one
+ * loopback port and listens for writes (the lane socket) on another. `laneWriteBase` names the lane;
+ * the edge screen-server injects it only when this box actually serves one. The box owns the real
+ * outbox and makes the authoritative close decision — this function carries the ask and reports back
+ * exactly what the box decided, and turns a dropped link into a refusal-with-reason (P-08), never a
+ * false "closed".
+ *
+ * `undefined` when no `laneWriteBase` was injected: there is no box to post to, so the manager session
+ * is built without this port, `canCloseViaBox` is false, and the local preview close is used instead.
+ */
+export function openDayClosePort(
+  laneWriteBase: string | undefined,
+): ManagerPorts['requestDayClose'] {
+  if (laneWriteBase === undefined) return undefined;
+  return async ({ dayCloseId, closedBy }): Promise<BoxCloseOutcome> => {
+    const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+    if (fetchFn === undefined) {
+      return { closed: false, reason: 'this screen cannot reach the store computer from here — the day is not closed' };
+    }
+    try {
+      const res = await fetchFn(`${laneWriteBase}/lane/day-close`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify({ dayCloseId, closedBy }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { closed?: boolean; tradingDay?: string; reason?: string };
+      if (res.status >= 200 && res.status < 300 && body.closed === true && typeof body.tradingDay === 'string') {
+        return { closed: true, tradingDay: body.tradingDay };
+      }
+      // Anything else is the box declining to close — surface its own reason rather than a bare "no".
+      return { closed: false, reason: body.reason ?? 'the store computer did not close the day' };
+    } catch {
+      // A network/timeout is a lost link, not a lock. The day stays open and the screen says why.
+      return { closed: false, reason: 'the store computer could not be reached — the day is not closed' };
+    }
+  };
+}
+
+/**
  * Build the manager's session from this store's configuration.
  *
  * Every value here is per-tenant (ADR-0003) — the trading-day cut-off, the approval limit, the
@@ -2228,12 +2277,15 @@ export function bootManager(config?: {
   warehouseId?: string;
   countApprovalThresholdMinor?: number;
   data?: ManagerData;
+  /** The box's lane write address (M14-FR-04). Present = the day close goes to the store computer. */
+  laneWriteBase?: string;
 }): ManagerSession {
   // `??` would be wrong here and was: an explicit `null` means *company-wide*, and `null ?? 'store-1'`
   // quietly demoted a company-wide manager to one branch — where their own scope then blocked them
   // from deciding anything outside it. Only `undefined` means "not configured".
   const branchId = config?.branchId === undefined ? 'store-1' : config.branchId;
   const limit = config?.approvalLimitMinor;
+  const requestDayClose = openDayClosePort(config?.laneWriteBase);
   return createManagerSession(
     {
       storeId: config?.storeId ?? 'store-1',
@@ -2249,7 +2301,9 @@ export function bootManager(config?: {
       warehouseId: config?.warehouseId ?? 'store-1',
       countApprovalThresholdMinor: config?.countApprovalThresholdMinor ?? 100_000,
     },
-    portsFromData(config?.data),
+    // The read registers come from the last-synced payload; the one WRITE port (day close) is added
+    // only when this box serves a lane to post to. `??` on the whole port keeps a missing box honest.
+    { ...portsFromData(config?.data), ...(requestDayClose === undefined ? {} : { requestDayClose }) },
     new Ledger(new InMemoryLedgerStore()),
     new SyncOutbox(),
   );
@@ -2600,7 +2654,12 @@ export function bootReporting(data: ReportingData | undefined): ReportingSession
 // In the browser `globalThis.window` IS the window, so this needs no DOM types.
 const browserWindow = (globalThis as { window?: ManagerWindow }).window;
 if (browserWindow !== undefined) {
-  browserWindow.managerSession = bootManager({ data: browserWindow.managerData });
+  // The day close (M14-FR-04) reaches the store computer when the box injected its lane address;
+  // without it the manager screen falls back to a local preview close that only touches this browser.
+  browserWindow.managerSession = bootManager({
+    data: browserWindow.managerData,
+    laneWriteBase: browserWindow.laneWriteBase,
+  });
   // The buyer's shell shares this bundle: one build, two screens, and each boots only what it was
   // given. A shell that was told nothing gets `undefined` and says so rather than showing zeros.
   const buying = bootBuying(browserWindow.buyingData);

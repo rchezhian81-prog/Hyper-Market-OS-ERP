@@ -5,6 +5,67 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M14-FR-04 day-close — slice 3c: the screen→box→cloud join is CLOSED; M14 re-rated WIRED→INTEGRATION_TESTED (headline 51.4→51.6%) (18 September 2026)
+
+This is the join every earlier slice built toward. The served manager **"Close the day"** button used to lock
+the day against a throwaway in-browser `SyncOutbox()` that **nothing ever drained** — it locked a *page*, not a
+*store*, and nothing reached head office. Slice 3c wires the button to the **store computer** (the box), which
+is the only place that can honestly evaluate the "no unsent items" gate (it holds the live outbox; the browser
+holds only a stale synced snapshot).
+
+What changed:
+- **`apps/web-erp/src/manager-session.ts`** — an optional `requestDayClose` port + `BoxCloseOutcome`, and
+  `canCloseViaBox` + async `closeViaBox(input)`. `closeViaBox` posts **in the manager's own name**
+  (`config.manager.userId`) so the box records who locked the day and the cloud can enforce §28 on any later
+  reopen; it returns exactly what the box decided and locks nothing itself.
+- **`apps/web-erp/src/browser-entry.ts`** — `openDayClosePort(laneWriteBase)`: a **cross-port** POST to
+  `${laneWriteBase}/lane/day-close` (loopback, *not* same-origin — the box serves the screen on one port and
+  its lane socket on another). A dropped link becomes a **refusal-with-reason, never a false "closed"** (P-08).
+  Wired into `bootManager` from `window.laneWriteBase`.
+- **`edge/store-edge/src/main.ts` + `screen-server.ts`** — inject `window.laneWriteBase` onto the manager
+  screen **only when this box serves a lane** (a read-only preview otherwise).
+- **`apps/web-erp/web/app.js`** — the "Close the day" handler now branches on `canCloseViaBox`: the box path
+  awaits `closeViaBox` and shows the box's outcome (locked, or the box's own reason plus the local translated
+  blocker list); it falls back to the local preview close (honest that it only touches this browser) when no
+  box is wired.
+
+Tested:
+- **unit** — `erp-manager-session.test.ts` (box path sends `closedBy`, returns the box decision, surfaces a
+  refusal verbatim, refuses when unwired) and `erp-manager-boot.test.ts` (`openDayClosePort` POSTs cross-port
+  with the manager id, passes a box refusal through, turns a dropped link into a refusal, no false close on a
+  non-2xx).
+- **browser e2e** — `tests/e2e/manager-day-close-delivery.e2e.ts` (2) drives the **real** `/manager` screen
+  served by the **real** `startEdge` in headless Chromium: a clean day **locks ON THE BOX** (a durable
+  `StoreDayClosed` on the box's day-close log, queued for the cloud) and the screen shows "closed and locked";
+  and — the box-is-the-authority case — a sale rung on the box *after* the page loaded makes the box **refuse**,
+  the screen surfacing the box's reason and locking nothing. The box→cloud leg stays integration-tested
+  (`day-close-reaches-the-cloud-through-the-edge`).
+
+**Re-rate — honest, not inflated.** Every M14 FR is now integration-tested end-to-end through the real
+pipeline, and the two operator write-paths (over/short sign-off + day close) are each additionally
+browser-e2e verified. **M14 WIRED→INTEGRATION_TESTED, headline 51.4→51.6% (5365/10400).** Held at
+INTEGRATION_TESTED, **not E2E_VERIFIED**, because the controlled **reopen** (part of FR-04) has
+engine+transport+cloud but **no operator screen** — see "Next".
+
+**What the owner should check (in the store):** on a store computer (a box that serves a lane), open the
+**Store manager** screen → **Close the day** tab → **Check what is still open**, then **Close the day now**.
+On a clean day it should say **"The day is closed and locked."** If a till rang a sale a moment earlier that
+has not yet reached the cloud, it should instead say **"The day cannot close yet"** and tell you why — that is
+the box refusing, correctly, and is the whole point. Nothing to check on a laptop that is not a store box: the
+button there is a read-only preview and says so.
+
+### Next (M14-FR-04 remaining, and the pinned priority)
+- **Controlled REOPEN needs an operator screen** before M14 can honestly reach E2E_VERIFIED. The engine,
+  transport and cloud (which re-verifies the §28 approver) all exist and are integration-tested, but there is
+  no UI to reopen a locked day. **This needs an owner decision**: who may reopen (the §28 authority is the
+  accountant/owner, senior to the manager who closed), and on which screen. Two concrete options — (a) a
+  reopen control on the manager screen gated to the reopen authority; (b) a separate accountant/owner screen.
+  Do not build until the owner chooses.
+- **Retention periods remain the pinned owner-blocked priority** (unchanged): the archival/disposal execution
+  workflow needs the owner's per-data-class "keep for N years" numbers. Never invent these.
+
+---
+
 ## M14-FR-04 day-close — slice 2: the sync transport wire (headline unchanged 51.4%) (18 September 2026)
 
 Slice 1's cloud route (PR #444) merged. This slice is the **wire** that carries a store's locked day up to

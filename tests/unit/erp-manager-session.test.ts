@@ -234,6 +234,52 @@ describe('a disagreement with the engine is shown, not thrown', () => {
   });
 });
 
+describe('the close reaches the store computer when a box is wired (M14-FR-04)', () => {
+  it('has no box path by default, so the local preview close is the only one', () => {
+    // A screen with only the read ports cannot lock a store's day — it has no real outbox to check.
+    const { session } = newSession();
+    expect(session.canCloseViaBox).toBe(false);
+  });
+
+  it('sends the close to the box IN THE MANAGER\'S OWN NAME and returns what the box decided', async () => {
+    // The box is the authority: it reads the real outbox and locks the day. The screen carries the
+    // ask (WHO is closing = the session's manager id, so the cloud can enforce §28 on a later reopen)
+    // and reports back exactly what the box said — it does not lock anything itself.
+    const seen: { dayCloseId?: string; closedBy?: string } = {};
+    const { session } = newSession(clearPorts({
+      requestDayClose: async (req) => {
+        seen.dayCloseId = req.dayCloseId;
+        seen.closedBy = req.closedBy;
+        return { closed: true, tradingDay: '2026-08-04' };
+      },
+    }));
+    expect(session.canCloseViaBox).toBe(true);
+    const outcome = await session.closeViaBox({ dayCloseId: 'dc-box-1', closedAtLocal: AFTER_CUTOFF, closedAt: AT });
+    expect(outcome).toEqual({ closed: true, tradingDay: '2026-08-04' });
+    expect(seen).toEqual({ dayCloseId: 'dc-box-1', closedBy: 'u-mgr' });
+  });
+
+  it('surfaces the box\'s refusal reason verbatim, and locks nothing locally', async () => {
+    // The box can refuse for a fact this screen never saw (a sale rung a second ago). The reason is
+    // the box's own sentence, passed straight through — never a false all-clear (P-08).
+    const { session, outbox } = newSession(clearPorts({
+      requestDayClose: async () => ({ closed: false, reason: '2 items have not reached head office' }),
+    }));
+    const outcome = await session.closeViaBox({ dayCloseId: 'dc-box-2', closedAtLocal: AFTER_CUTOFF, closedAt: AT });
+    expect(outcome).toEqual({ closed: false, reason: '2 items have not reached head office' });
+    // The browser's own throwaway outbox is untouched: the box owns the truth, not this page.
+    expect(outbox.pending()).toHaveLength(0);
+  });
+
+  it('refuses rather than pretends when asked to close via a box that is not wired', async () => {
+    const { session } = newSession();
+    const outcome = await session.closeViaBox({ dayCloseId: 'dc-box-3', closedAtLocal: AFTER_CUTOFF, closedAt: AT });
+    expect(outcome.closed).toBe(false);
+    if (outcome.closed) return;
+    expect(outcome.reason).toMatch(/not connected to the store computer/i);
+  });
+});
+
 describe('the approval inbox', () => {
   const REQUESTS: ApprovalRequest[] = [
     requestApproval({ id: 'a1', subjectType: 'price_change', subjectRef: 'p-1', requestedBy: 'u-buyer', branchId: 'b1', value: money(120_000, 'INR') }),

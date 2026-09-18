@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { bootManager, portsFromData, type ManagerData } from '../../apps/web-erp/src/browser-entry';
+import { describe, it, expect, afterEach } from 'vitest';
+import { bootManager, openDayClosePort, portsFromData, type ManagerData } from '../../apps/web-erp/src/browser-entry';
 import { requestApproval } from '../../packages/approvals/src/index';
 import { money } from '../../packages/contracts/src/money';
 
@@ -135,5 +135,70 @@ describe('the manager it boots is the manager the store configured', () => {
     const queue = session.approvalQueue();
     if (!queue.known) return;
     expect(queue.rows[0]?.actionable).toBe(true);
+  });
+});
+
+describe('the day close reaches the store computer only when the box injected its address (M14-FR-04)', () => {
+  const originalFetch = (globalThis as { fetch?: typeof fetch }).fetch;
+  afterEach(() => {
+    if (originalFetch === undefined) delete (globalThis as { fetch?: typeof fetch }).fetch;
+    else (globalThis as { fetch?: typeof fetch }).fetch = originalFetch;
+  });
+
+  it('boots with NO box path when no lane address was injected', () => {
+    expect(boot({ openExceptions: [], unsentItems: [] }).canCloseViaBox).toBe(false);
+    // openDayClosePort mirrors that: no address means no port at all.
+    expect(openDayClosePort(undefined)).toBeUndefined();
+  });
+
+  it('POSTs the close to the box\'s lane, cross-port, and reports back what the box decided', async () => {
+    const calls: { url: string; body: unknown }[] = [];
+    (globalThis as { fetch?: typeof fetch }).fetch = (async (url: string, init?: { body?: string }) => {
+      calls.push({ url, body: JSON.parse(init?.body ?? '{}') });
+      return { status: 200, json: async () => ({ closed: true, tradingDay: '2026-08-04', locked: true }) };
+    }) as unknown as typeof fetch;
+
+    const session = bootManager({
+      managerId: 'u-mgr', tradingDay: '2026-08-04', tradingDayCutoff: '02:00',
+      laneWriteBase: 'http://127.0.0.1:8899',
+      data: { openExceptions: [], unsentItems: [] },
+    });
+    expect(session.canCloseViaBox).toBe(true);
+    const outcome = await session.closeViaBox({ dayCloseId: 'dc-b1', closedAtLocal: AFTER_CUTOFF, closedAt: AT });
+
+    expect(outcome).toEqual({ closed: true, tradingDay: '2026-08-04' });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe('http://127.0.0.1:8899/lane/day-close');
+    // The manager's own id travels with the ask, so the box records who locked the day (§28 on reopen).
+    expect(calls[0]?.body).toEqual({ dayCloseId: 'dc-b1', closedBy: 'u-mgr' });
+  });
+
+  it('passes the box\'s refusal reason straight through, and never a false close', async () => {
+    (globalThis as { fetch?: typeof fetch }).fetch = (async () => ({
+      status: 200, json: async () => ({ closed: false, reason: 'the day cannot close: 2 items have not reached head office' }),
+    })) as unknown as typeof fetch;
+
+    const port = openDayClosePort('http://127.0.0.1:8899');
+    expect(port).toBeDefined();
+    const outcome = await port!({ dayCloseId: 'dc-b2', closedBy: 'u-mgr' });
+    expect(outcome).toEqual({ closed: false, reason: 'the day cannot close: 2 items have not reached head office' });
+  });
+
+  it('turns a dropped link into a refusal-with-reason, not a lock', async () => {
+    (globalThis as { fetch?: typeof fetch }).fetch = (async () => { throw new Error('ECONNREFUSED'); }) as unknown as typeof fetch;
+    const port = openDayClosePort('http://127.0.0.1:8899');
+    const outcome = await port!({ dayCloseId: 'dc-b3', closedBy: 'u-mgr' });
+    expect(outcome.closed).toBe(false);
+    if (outcome.closed) return;
+    expect(outcome.reason).toMatch(/could not be reached/i);
+  });
+
+  it('does not report a close on a non-2xx or malformed body', async () => {
+    (globalThis as { fetch?: typeof fetch }).fetch = (async () => ({
+      status: 500, json: async () => ({ reason: 'the box fell over' }),
+    })) as unknown as typeof fetch;
+    const port = openDayClosePort('http://127.0.0.1:8899');
+    const outcome = await port!({ dayCloseId: 'dc-b4', closedBy: 'u-mgr' });
+    expect(outcome).toEqual({ closed: false, reason: 'the box fell over' });
   });
 });
