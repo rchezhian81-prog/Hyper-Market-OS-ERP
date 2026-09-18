@@ -5,6 +5,41 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M14 cash-office over/short sign-off — screen built + browser-verified, but M14 HELD at WIRED (honest, no headline change) (18 September 2026)
+
+The owner asked to harden **another** screen to E2E_VERIFIED, and chose the **cash-office day-close (over/short
+sign-off)** screen. We built it in three merged slices over the existing M14 backend (blind shift close +
+`GET /v1/shifts/over-short` worklist + `POST /v1/shifts/:id/over-short/review` sign-off), following the proven
+M15/M30 pattern:
+
+- **Slice 1 (PR #438):** the tested DOM-free session model (`apps/web-erp/src/cash-office-session.ts`, 15 unit
+  tests + the `the-cash-office-screen-is-usable` guardrail). Bilingual EN/TA; open over/shorts biggest-first
+  (Over/Short by a word, not colour); a sign-off refused locally without permission, without a finding, or on
+  the reviewer's own drawer (§28).
+- **Slice 2 (PR #439):** the served, offline-capable `/cash-office` screen + edge wiring (`PackCashOfficePolicy`,
+  `cashOfficePayload`, screen-server route, service-worker v22, ERP nav gated `till.shift.read`, browser-entry
+  boot with a live worklist GET + a same-origin sign-off POST).
+- **Slice 3 (this PR):** the browser e2e — `tests/e2e/cash-office-signoff-delivery.e2e.ts` drives the real
+  screen in headless Chromium: an authorised reviewer picks a shift + finding + note, the sign-off POSTs under
+  their own session and the shift drops off on a worklist re-read; a read-only reviewer sees no form; the
+  reviewer who counted the drawer is refused client-side (§28). Offline-open + a11y in `screens-open-offline.e2e.ts`.
+
+**Honest-accounting decision — NO re-rate, NO points, headline stays 51.3%.** A module rung reflects **all** its
+FRs, and M14's own ledger evidence holds it at **WIRED** because **FR-04 (the day-close trading-day lock) is
+engine-only and edge-destined — not wired to a cloud route**, so the module is not integration-tested as a whole
+and cannot honestly be called E2E_VERIFIED. The over/short sign-off is now genuinely browser-verified end to end
+(a real deliverable and real regression coverage), but that is a **feature-level** E2E of FR-02, not a module
+re-rate. This also corrects an over-optimistic option I put to the owner ("a module re-rate to E2E_VERIFIED")
+before I had checked M14's FR-04 gap — the screen was worth building, but the number does not move.
+
+**What would move it:** wiring M14-FR-04 (the trading-day lock) is separate work — an edge/store control, not a
+cloud route to invent — and needs its own decision. It is not part of this screen work.
+
+**Retention periods** remain the pinned priority, still waiting on the owner's per-data-class keep-for-N-years
+numbers (never invented in code).
+
+---
+
 ## M30 import/export console — built + INTEGRATION_TESTED → E2E_VERIFIED (17 September 2026)
 
 The owner asked to harden **another** screen to E2E_VERIFIED, and chose the M30 import/export console. As with

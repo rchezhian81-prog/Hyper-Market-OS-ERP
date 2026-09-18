@@ -564,6 +564,46 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
     }
   });
 
+  it('the cash-office over/short sign-off screen opens offline AND is accessible (M14-FR-02)', async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.goto(`${base}/cash-office`, { waitUntil: 'load' });
+      await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.serviceWorker.ready.then(() => true));
+      await page.waitForFunction(() => (globalThis as unknown as BrowserWindow).navigator.serviceWorker.controller !== null, { timeout: 15_000 });
+
+      await context.setOffline(true);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+
+      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine)).toBe(false);
+      expect(await page.title()).toContain('Over / short');
+      expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
+      expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
+
+      const a11y = await page.evaluate(() => {
+        const doc = (globalThis as unknown as { document: A11yDoc }).document;
+        const nonEmpty = (v: string | null) => typeof v === 'string' && v.trim().length > 0;
+        const statuses = Array.from(doc.querySelectorAll('.status'));
+        return {
+          langLabelled: nonEmpty(doc.getElementById('lang')?.getAttribute('aria-label') ?? null),
+          listLabelled: nonEmpty(doc.getElementById('rows')?.getAttribute('aria-label') ?? null),
+          statusCount: statuses.length,
+          everyStatusAnnounced: statuses.every((s) => nonEmpty(s.getAttribute('aria-label'))),
+          everyStatusHasWord: statuses.every((s) => nonEmpty(s.textContent)),
+          everyIconHidden: statuses.every((s) => s.querySelector('.icon')?.getAttribute('aria-hidden') === 'true'),
+        };
+      });
+      expect(a11y.langLabelled, 'language toggle has no aria-label').toBe(true);
+      expect(a11y.listLabelled, 'over/short list has no aria-label').toBe(true);
+      expect(a11y.statusCount, 'no over/short status rows rendered to check').toBeGreaterThan(0);
+      expect(a11y.everyStatusAnnounced, 'an over/short status has no screen-reader announcement').toBe(true);
+      expect(a11y.everyStatusHasWord, 'an over/short status conveys state by colour alone').toBe(true);
+      expect(a11y.everyIconHidden, 'an over/short status icon is not hidden from screen readers').toBe(true);
+    } finally {
+      await context.close();
+    }
+  });
+
   it('the till specifically boots its own shell offline, not a browser error page', async () => {
     const context = await browser.newContext();
     try {
