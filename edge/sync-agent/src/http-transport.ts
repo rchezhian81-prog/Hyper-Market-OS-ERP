@@ -120,6 +120,15 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   // fills it (and an empty/absent id yields no path → dead-lettered by name, hard rule #6), no resolver needed.
   ChecklistCompleted: '/v1/hr/workforce/checklists/:checklistId/synced',
   TaskCompleted: '/v1/hr/workforce/tasks/:taskId/complete/synced',
+  // Store/day close + controlled reopen (M14-FR-04, §31/P-01). The store LOCKS its trading day at the
+  // edge — the close decision and its "no unsent items" gate can only be evaluated where the outbox
+  // lives — and the sync agent relays that fact to the dedicated SYNCED route under the store token.
+  // The synced route records the locked day (it trusts what the store decided, as the synced sale/return
+  // routes do) and, for the reopen, RE-VERIFIES the §28 approver on the cloud and record-and-flags a
+  // breach (never silently applies it). `dayCloseId` is a plain payload field matching the path param,
+  // so a template fills it (an empty/absent id yields no path → dead-lettered by name, hard rule #6).
+  StoreDayClosed: '/v1/pos/day-close/:dayCloseId/synced',
+  StoreDayReopened: '/v1/pos/day-close/:dayCloseId/reopen/synced',
 };
 
 /** Fill `:name` segments from the payload, or run a resolver, so a route can address a thing. */

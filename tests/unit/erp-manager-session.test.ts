@@ -75,8 +75,10 @@ describe('the day close answers with a list, not a refusal', () => {
     if (!attempt.closed) return;
     expect(attempt.result.locked).toBe(true);
     expect(attempt.result.closedBy).toBe('u-mgr');
-    // The close itself is queued for cloud like everything else (§31).
-    expect(outbox.pending().map((i) => i.event.type)).toContain('PeriodClosed');
+    // The close itself is queued for cloud like everything else (§31). Its event is `StoreDayClosed`
+    // (the store's trading-day lock, distinct from the finance monthly `PeriodClosed`), which the sync
+    // agent now routes to POST /v1/pos/day-close/:id/synced (M14-FR-04 transport wire).
+    expect(outbox.pending().map((i) => i.event.type)).toContain('StoreDayClosed');
   });
 
   it('names every open exception, not just how many', () => {

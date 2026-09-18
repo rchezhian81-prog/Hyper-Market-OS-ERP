@@ -56,7 +56,14 @@ describe('closeDay', () => {
     expect(result.locked).toBe(true);
     expect(result.tradingDay).toBe('2026-08-02');
     expect(outbox.unsentCount()).toBe(1);
-    expect(outbox.pending()[0]?.event.type).toBe('PeriodClosed');
+    const closed = outbox.pending()[0]?.event;
+    expect(closed?.type).toBe('StoreDayClosed');
+    // The payload is the cloud's synced-day-close contract verbatim, incl. closedAt (which the
+    // cloud route reads from the body, not the event's transport-level occurredAt).
+    expect(closed?.payload).toMatchObject({
+      dayCloseId: 'dc-1', storeId: 'store-1', tradingDay: '2026-08-02',
+      closedBy: 'manager-1', closedAt: '2026-08-02T21:30:00Z', locked: true,
+    });
   });
 
   it('blocks closing a day that has not ended yet (before the cut-off)', () => {
@@ -104,7 +111,13 @@ describe('reopenDay', () => {
     const outbox = new SyncOutbox();
     const result = reopenDay({ ...baseReopen, approval: reopenApproval('dc-1') }, outbox);
     expect(result.approvedBy).toBe('owner-1');
-    expect(outbox.pending()[0]?.event.type).toBe('PeriodReopened');
+    const reopened = outbox.pending()[0]?.event;
+    expect(reopened?.type).toBe('StoreDayReopened');
+    // The payload is the cloud's synced-reopen contract: who reopened, the approver the cloud
+    // re-verifies (§28), and the audited reason.
+    expect(reopened?.payload).toMatchObject({
+      dayCloseId: 'dc-1', reopenedBy: 'manager-1', approvedBy: 'owner-1', reason: 'late supplier credit note',
+    });
   });
 
   it('blocks a reopen with no approval', () => {
