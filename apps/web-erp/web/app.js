@@ -23,8 +23,10 @@
 // **4. No `prompt`, `confirm` or `alert`, and the banner does not fade** — the same two decisions
 // the till screen holds, for the same reasons.
 //
-// Nothing here calls the network. What this screen was told arrives as a last-synced payload and
-// is never presented as live.
+// This screen reads a last-synced payload and never presents it as live. It makes exactly ONE write,
+// and never on load: the manager's day close, and even that is not a raw fetch here — it calls the
+// session's `closeViaBox`, which posts to the store computer through an injected port. The box makes
+// the authoritative decision; this view shows what the box decided and locks nothing itself.
 
 const el = (id) => document.getElementById(id);
 
@@ -258,6 +260,11 @@ function demoSession() {
       { kind: 'items_unsent', count: unsent.length, items: unsent, source: 'unsent' },
     ].filter((b) => b.count > 0),
     closeTheDay: () => ({ closed: false, blockers: [] }),
+    // Sample data has no store computer behind it, so the box path is off (canCloseViaBox false) and
+    // the local preview close is what runs — which on sample data simply reports the blockers, closing
+    // nothing. closeViaBox is never reached here; it returns a translated word, never a composed reason.
+    canCloseViaBox: false,
+    closeViaBox: () => Promise.resolve({ closed: false, reason: t('sampleData') }),
     exceptions: () => ({ known: true, items: open() }),
     tasks: () => ({ known: false, why: 'this is sample data' }),
   };
@@ -702,21 +709,45 @@ el('check-close').addEventListener('click', () => {
 });
 
 el('do-close').addEventListener('click', () => {
-  const stamp = Date.now().toString(36);
-  const attempt = session.closeTheDay({
-    dayCloseId: `dc-${stamp}`, closedAtLocal: localStamp(), closedAt: new Date().toISOString(),
-  });
-  if (attempt.closed) {
-    tell(t('dayClosed'), t('closedNote'), true);
+  void (async () => {
+    const stamp = Date.now().toString(36);
+    const closeInput = { dayCloseId: `dc-${stamp}`, closedAtLocal: localStamp(), closedAt: new Date().toISOString() };
+
+    // Wired to the store computer? Then the close goes THERE. The box makes the authoritative
+    // decision — it reads the real outbox this page never sees — writes the locked day durably and
+    // queues it for head office. This screen shows what the box decided and locks nothing itself.
+    if (session.canCloseViaBox) {
+      const outcome = await session.closeViaBox(closeInput);
+      if (outcome.closed) {
+        tell(t('dayClosed'), t('closedNote'), true);
+        el('do-close').hidden = true;
+        el('blockers').replaceChildren();
+        return;
+      }
+      // The box refused. Its reason is the truth — a sale rung a second ago, the day not yet ended,
+      // or the store computer unreachable. Re-render the local blocker list (translated) where there
+      // is one, and always carry the box's own reason so a manager is never told a bare "no".
+      renderBlockers(session.blockersForClose(localStamp()));
+      el('do-close').hidden = true;
+      tell(t('stillOpen'), outcome.reason || t('closedNote'));
+      return;
+    }
+
+    // No store computer behind this page. The local preview close is honest that it only touches
+    // this browser: it re-checks the blockers and closes nothing that has not reached the cloud.
+    const attempt = session.closeTheDay(closeInput);
+    if (attempt.closed) {
+      tell(t('dayClosed'), t('closedNote'), true);
+      el('do-close').hidden = true;
+      el('blockers').replaceChildren();
+      return;
+    }
+    // Something changed between the check and the tap — a sale rung on a lane, an exception raised.
+    // The list is re-rendered rather than the tap being reported as success.
+    renderBlockers(attempt.blockers);
     el('do-close').hidden = true;
-    el('blockers').replaceChildren();
-    return;
-  }
-  // Something changed between the check and the tap — a sale rung on a lane, an exception raised.
-  // The list is re-rendered rather than the tap being reported as success.
-  renderBlockers(attempt.blockers);
-  el('do-close').hidden = true;
-  tell(t('stillOpen'), t('closedNote'));
+    tell(t('stillOpen'), t('closedNote'));
+  })();
 });
 
 // ── Language ────────────────────────────────────────────────────────────────

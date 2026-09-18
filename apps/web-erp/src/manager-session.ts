@@ -107,7 +107,29 @@ export interface ManagerPorts {
   tasks(tradingDay: string): Register;
   /** What one smallest unit of a product is worth — used to value a count variance exactly. */
   productValue(productId: string): ValueRegister;
+  /**
+   * Ask the STORE COMPUTER to close and lock the trading day (M14-FR-04).
+   *
+   * Absent means this screen is not wired to a box — the local preview close is used instead, and it
+   * only ever writes to this browser. Present means the box is the authority: it re-reads the real
+   * outbox (the only honest source for "has everything reached the cloud?"), makes the gate decision,
+   * writes the locked day durably, and queues `StoreDayClosed` for head office on its own sync agent.
+   * The screen shows whatever the box decides; it never reports a close the box did not make.
+   */
+  requestDayClose?(input: { readonly dayCloseId: string; readonly closedBy: string }): Promise<BoxCloseOutcome>;
 }
+
+/**
+ * What the store computer said when asked to close the day (M14-FR-04).
+ *
+ * `closed: false` carries the box's own `reason` — a sentence from the authority, not a code from
+ * this screen — because the box can refuse for a fact the browser's last-synced payload never saw (a
+ * sale rung on a lane a second ago, still in the box's outbox). The screen surfaces it rather than
+ * reporting a false all-clear (P-08), and never invents a translated blocker to stand in for it.
+ */
+export type BoxCloseOutcome =
+  | { readonly closed: true; readonly tradingDay: string }
+  | { readonly closed: false; readonly reason: string };
 
 /** A register that knows nothing, with the reason it knows nothing. */
 export function notKnown(why: string): { readonly known: false; readonly why: string } {
@@ -378,6 +400,23 @@ export interface ManagerSession {
   blockersForClose(closedAtLocal: string): readonly Blocker[];
   /** Close the day, or come back with the list of what to clear first (M14-FR-04). */
   closeTheDay(input: CloseInput): CloseAttempt;
+  /**
+   * True when this screen is wired to the store computer and the close goes THERE (M14-FR-04).
+   *
+   * The view reads this to choose the path: the box makes the authoritative decision and reaches the
+   * cloud, where the local `closeTheDay` only ever locks this browser. False means no box is wired
+   * (standalone or a demo), and the local preview close is the only close there is.
+   */
+  readonly canCloseViaBox: boolean;
+  /**
+   * Ask the store computer to close and lock the day (M14-FR-04) — the authoritative close.
+   *
+   * Sent in the manager's own name (`config.manager.userId`), so the box records who locked the day
+   * and the cloud can enforce §28 on any later reopen (a reopen needs a different, authorised person).
+   * When no box is wired this refuses with a reason rather than pretending; the view then keeps the
+   * day open and says so.
+   */
+  closeViaBox(input: CloseInput): Promise<BoxCloseOutcome>;
   /** Open exceptions for the day (M15), for the exceptions screen. */
   exceptions(): Register;
   /** Today's checklists and staff tasks (D11-FR-01 / M25). */
@@ -576,6 +615,22 @@ export function createManagerSession(
           }],
         };
       }
+    },
+
+    canCloseViaBox: ports.requestDayClose !== undefined,
+
+    closeViaBox: async (input) => {
+      const post = ports.requestDayClose;
+      // No box wired: this screen cannot lock a store's day on its own, and it must not say it did.
+      // The view falls back to the local preview close (which is honest about only touching this
+      // browser) when it sees `canCloseViaBox` is false; this guards the case it asked anyway.
+      if (post === undefined) {
+        return { closed: false, reason: 'this screen is not connected to the store computer, so it cannot close the day' };
+      }
+      // The box is the authority. It is sent the day-close id and WHO is closing (the manager's own
+      // id), and it decides — reading the real outbox, not this browser's last-synced snapshot. The
+      // screen renders whatever comes back and invents nothing.
+      return post({ dayCloseId: input.dayCloseId, closedBy: config.manager.userId });
     },
 
     exceptions: () => ports.openExceptions(config.tradingDay),

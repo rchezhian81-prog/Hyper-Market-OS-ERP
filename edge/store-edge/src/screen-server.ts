@@ -206,6 +206,13 @@ export function startScreenServer(input: {
   readonly appsDir: string;
   /** Called per request, so every screen reload gets the CURRENT day rather than boot-time state. */
   readonly snapshot: () => ScreenInput;
+  /**
+   * The loopback base of this box's lane write socket, e.g. `http://127.0.0.1:8123` (M14-FR-04).
+   * Injected as `window.laneWriteBase` so the manager's screen can POST the day close to the box (the
+   * one screen action that writes to the box rather than reading a synced snapshot). Absent when this
+   * box serves no lane socket, in which case the screen keeps its local, read-only behaviour.
+   */
+  readonly laneWriteBase?: string;
 }): Promise<ScreenServer> {
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
@@ -260,7 +267,13 @@ export function startScreenServer(input: {
       const payload = payloadFor(route.screen, snap);
       send(res, 200, type, injectPayload(
         body.toString('utf8'), GLOBAL_FOR[route.screen], payload,
-        { catalogueFreshness: catalogueFreshness(snap) },
+        {
+          catalogueFreshness: catalogueFreshness(snap),
+          // The one write a screen makes back to the box: the manager's day close (M14-FR-04). Only
+          // present when this box serves a lane socket to post to; the screen falls back to read-only
+          // (a local preview) when it is absent.
+          ...(input.laneWriteBase === undefined ? {} : { laneWriteBase: input.laneWriteBase }),
+        },
       ));
     })();
   });
