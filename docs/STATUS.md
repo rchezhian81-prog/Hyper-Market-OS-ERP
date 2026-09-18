@@ -5,6 +5,57 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M14-FR-04 day-close — slice 1: the cloud day-close ingestion route (headline unchanged 51.4%) (18 September 2026)
+
+The owner chose to **fix the M14 day-close gap** — the piece that has held M14 at WIRED for several
+sessions. First I confirmed the roadmap's intent (no inventing), and it resolves a worry from earlier notes:
+`docs/requirements/M14.md` FR-04 names **"Integration/reporting: API-05/API-09; day-close evidence pack feeds
+finance (M23) and owner (M29)"**. API-05 is POS and API-09 is Finance (`docs/requirements/index.md`), so that
+line is the **reporting/integration channel**, not a "close the day in the cloud" button. Combined with **P-01**
+(the store keeps trading offline) and the fact that the close's own gate — *no unsent sync items* — can only be
+evaluated where the outbox lives (the edge), the day-close **write path is edge-first and syncs up**. The prior
+note calling FR-04 "edge-destined" was therefore right, not a contradiction.
+
+`packages/day-close` (the close/lock/reopen engine) already exists and is unit-tested (8), but **nothing wired
+it**. So this is a multi-slice feature, and I took the proven returns-pattern order (cloud recording route
+first, testable with synthetic synced payloads, then the edge transport, then the edge drain, then the screen).
+
+**Slice 1 (this PR) — the cloud day-close ingestion route (API-05), integration-tested:**
+
+- `POST /v1/pos/day-close/:dayCloseId/synced` — records a store day the **edge** closed and **locked**. Like the
+  offline-refund route, it **trusts the fact that happened** at the store (relayed under the store's sync token)
+  and never rejects it. Idempotent per day-close id. `till.dayclose.sync` (owner + store manager).
+- `POST /v1/pos/day-close/:dayCloseId/reopen/synced` — records a **controlled reopen** and adds the one control
+  the edge could not fully apply: it **re-verifies the §28 approver** genuinely holds the authority, and
+  **records-and-flags** a breach (`given_without_approval` / `approved_by_the_reopener` /
+  `approver_lacks_authority`) rather than rejecting a reopen that already happened (hard rule #10).
+- `GET /v1/pos/day-close` — the **locked-day list** feeding finance (M23) and the owner (M29): which trading days
+  are final, and which reopens still carry an unresolved §28 breach. `till.dayclose.read`.
+- **No collision with the finance monthly close:** a dedicated stream `streamName(STREAM.cash, 'day-close')` with
+  distinct `StoreDayClosed`/`StoreDayReopened` event types — never `STREAM.periods` (M23-FR-04's `PeriodClosed`).
+- New permissions: `till.dayclose.sync` (owner + store_manager), `till.dayclose.approve` (owner + accountant —
+  the §28 reopen authority, senior to the store manager who reopens, giving clean separation of duties),
+  `till.dayclose.read` (owner + store_manager + accountant).
+- Files: `services/pos/src/day-close.ts`, `dayCloseAdapter` in `services/api/src/adapters.ts`, perms in
+  `services/api/src/roles.ts`, registration in `services/api/src/main.ts`.
+- Tests: `tests/integration/day-close-reconcile-on-sync.test.ts` (6) — records + locks; clean reopen with a
+  genuine approver unlocks with no flags; approver-lacks-authority / no-approver / self-approval are
+  record-and-flagged (202, never rejected); idempotent close; gated (an accountant cannot relay, a cashier
+  cannot read the list); malformed facts are 400-and-kept, a reopen of a never-closed day is 404.
+
+**M14 stays WIRED — no re-rate on slice 1 (honest).** The module ceiling is still WIRED because the edge
+write-path (the decision + lock in `packages/day-close`, not yet wired to the edge node / `edge/store-edge/src/main.ts`),
+the sync transport, and the store-manager day-close **screen** all remain. One latent tidy-up to carry into slice
+2: the engine still emits `PeriodClosed`/`PeriodReopened`; rename those to `StoreDay*` when the transport is
+wired so the edge outbox and the cloud speak the same distinct types.
+
+**What the owner should check:** nothing in the store changes yet — this is backend plumbing that gives the
+cloud a correct, audited place to record a locked trading day and its reopens. The next visible step (a later
+slice) is the store manager being able to close the day on a screen. **Remaining slices: 2** edge translator +
+sync transport, **3** edge node method + main drain + lane route, **4** store-manager day-close screen.
+
+---
+
 ## M34 GRC risk-acceptance screen — built + INTEGRATION_TESTED → E2E_VERIFIED (headline 51.3% → 51.4%) (18 September 2026)
 
 The owner asked to harden **another** screen to E2E_VERIFIED. After the M14 lesson (a WIRED module can hide an

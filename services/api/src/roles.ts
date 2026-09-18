@@ -49,6 +49,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'production.recipe.manage', 'production.plan.commit', 'production.release', 'production.read',
       'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.return.threshold.set', 'pos.restricted.check',
       'cash.movement.record', 'cash.till.read', 'till.shift.close', 'till.shift.read', 'till.overshort.review',
+      'till.dayclose.sync', 'till.dayclose.read', 'till.dayclose.approve',
       'lp.case.manage', 'lp.case.read', 'lp.rule.manage',
       'customer.consent.read', 'customer.consent.write', 'privacy.request.manage', 'loyalty.points.read', 'loyalty.points.write',
       'loyalty.value.issue', 'loyalty.value.redeem', 'loyalty.value.read',
@@ -129,6 +130,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'production.recipe.manage', 'production.plan.commit', 'production.release', 'production.read',
       'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.restricted.check',
       'cash.movement.record', 'cash.till.read', 'till.shift.close', 'till.shift.read', 'till.overshort.review',
+      'till.dayclose.sync', 'till.dayclose.read',
       'lp.case.manage', 'lp.case.read', 'lp.rule.manage',
       'customer.consent.read', 'customer.consent.write', 'privacy.request.manage', 'loyalty.points.read', 'loyalty.points.write',
       'loyalty.value.issue', 'loyalty.value.redeem', 'loyalty.value.read',
@@ -218,6 +220,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'finance.journal.post', 'finance.period.read', 'finance.period.sign', 'finance.creditnote.issue',
       'settlement.batch.import', 'settlement.review.read', 'settlement.investigation.manage',
       'lp.case.read',
+      // The §28 authority to approve a store day-close REOPEN (M14-FR-04) — finance oversight signs off
+      // reopening a locked trading day; the store manager who reopens must be a different person.
+      'till.dayclose.read', 'till.dayclose.approve',
       'b2b.account.manage', 'b2b.account.read', 'b2b.receivable.record', 'b2b.credit.check',
       'b2b.commission.record', 'b2b.commission.read', 'b2b.document.read',
       'concession.contract.manage', 'concession.sale.record', 'concession.charge.read',
