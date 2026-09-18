@@ -93,7 +93,13 @@ export class ReopenApprovalRequiredError extends Error {
  * Close the store day and lock it. Blocks unless the trading day has ended (its
  * cut-off has passed), all reconciliation exceptions are resolved, and there are
  * no unsent items — matching the M14-FR-04 acceptance. On success, emits a locked
- * `PeriodClosed` event and queues it for sync. Idempotent on the day-close id.
+ * `StoreDayClosed` event and queues it for sync. Idempotent on the day-close id.
+ *
+ * The event's payload is the cloud's synced-day-close contract verbatim — the exact
+ * fields `POST /v1/pos/day-close/:dayCloseId/synced` reads (`storeId`, `tradingDay`,
+ * `closedBy`, `closedAt`) plus the id and its lock — so the sync agent relays
+ * `event.payload` straight to that route with no separate translator (the day close
+ * is minted here, not read back off a lane's disk like a refund).
  */
 export function closeDay(input: CloseDayInput, outbox: SyncOutbox): DayCloseResult {
   // A day can only close once its trading-day cut-off has passed (M01-FR-02): the
@@ -112,7 +118,7 @@ export function closeDay(input: CloseDayInput, outbox: SyncOutbox): DayCloseResu
   outbox.enqueue(
     makeEvent({
       id: `${input.id}:closed`,
-      type: 'PeriodClosed',
+      type: 'StoreDayClosed',
       occurredAt: input.closedAt,
       idempotencyKey: `day-close:${input.id}`,
       source: input.storeId,
@@ -121,6 +127,9 @@ export function closeDay(input: CloseDayInput, outbox: SyncOutbox): DayCloseResu
         storeId: input.storeId,
         tradingDay: input.tradingDay,
         closedBy: input.closedBy,
+        // The cloud route reads `closedAt` from the body (the event's occurredAt is transport
+        // metadata, not part of the posted payload), so carry it explicitly.
+        closedAt: input.closedAt,
         locked: true,
       },
     }),
@@ -139,8 +148,9 @@ export function closeDay(input: CloseDayInput, outbox: SyncOutbox): DayCloseResu
 /**
  * Reopen a locked day close — controlled and audited (M14-FR-04). Requires a valid
  * approval for this day close, decided by someone OTHER than the person reopening
- * (§28). Emits a `PeriodReopened` event and queues it for sync. Idempotent on the
- * day-close id.
+ * (§28). Emits a `StoreDayReopened` event and queues it for sync — its payload is the
+ * exact body `POST /v1/pos/day-close/:dayCloseId/reopen/synced` reads (`reopenedBy`,
+ * `reason`, `approvedBy`), which the cloud re-verifies. Idempotent on the day-close id.
  */
 export function reopenDay(input: ReopenDayInput, outbox: SyncOutbox): DayReopenResult {
   const a = input.approval;
@@ -156,7 +166,7 @@ export function reopenDay(input: ReopenDayInput, outbox: SyncOutbox): DayReopenR
   outbox.enqueue(
     makeEvent({
       id: `${input.id}:reopened`,
-      type: 'PeriodReopened',
+      type: 'StoreDayReopened',
       occurredAt: input.reopenedAt,
       idempotencyKey: `day-reopen:${input.id}`,
       source: input.storeId,

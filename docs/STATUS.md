@@ -5,6 +5,51 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M14-FR-04 day-close — slice 2: the sync transport wire (headline unchanged 51.4%) (18 September 2026)
+
+Slice 1's cloud route (PR #444) merged. This slice is the **wire** that carries a store's locked day up to
+it — mirroring how offline refunds reach the cloud.
+
+- The day-close engine (`packages/day-close`) now emits **`StoreDayClosed`/`StoreDayReopened`** events,
+  renamed from `PeriodClosed`/`PeriodReopened`. That closes the latent name overlap with the finance
+  monthly close (M23-FR-04, which keeps its own `PeriodClosed` on `STREAM.periods`) so edge and cloud speak
+  the same distinct types. The close event now carries `closedAt` in its payload, so the engine mints the
+  cloud's synced contract verbatim — **no separate translator needed** (unlike returns, whose disk record
+  differs from its cloud shape).
+- `edge/sync-agent/src/http-transport.ts` `EVENT_ROUTES` now routes `StoreDayClosed` →
+  `POST /v1/pos/day-close/:dayCloseId/synced` and `StoreDayReopened` → `.../reopen/synced` (plain
+  `:dayCloseId` templates). Before this, those events had no route and would dead-letter.
+- `tests/integration/day-close-reaches-the-cloud.test.ts` (4) drives the **real** `closeDay`/`reopenDay` →
+  `SyncOutbox` → `SyncAgent` + `httpTransport` → the real slice-1 cloud route: a locked day reaches the
+  cloud and is recorded locked; a clean §28 reopen (a genuine approver, not the reopener) unlocks it with no
+  flags; an approver-who-lacks-authority reopen is **recorded-and-flagged**, never rejected; an outage waits
+  and reconciles when the line returns (§31). `tests/unit/day-close.test.ts` updated for the new types + payloads.
+
+**Correction found while wiring slice 2 — the earlier plan was wrong about what remained.** The day-close is
+**not** store-edge/lane work, and the operator screen is **not** missing. The served **manager ERP screen**
+(`apps/web-erp/web/app.js`) already has a bilingual **"Close the day"** control wired to
+`createManagerSession.closeTheDay` → the `closeDay` engine (real register-fed counts via
+`ports.openExceptions`/`unsentItems` + a blocker list that refuses on an *unknown* register, never a literal
+0), and `apps/web-erp/src/browser-entry.ts` drains that session's outbox with the sync agent. So the manager
+could always compute and **lock** the day locally — but the queued event had **no transport route and no cloud
+endpoint**, so it dead-lettered and never reached head office. **Slices 1 (cloud route) + 2 (transport route +
+`StoreDay*` rename) complete that dead link:** the manager's close now travels screen → engine → outbox → sync
+agent → `POST /v1/pos/day-close/:id/synced` → recorded locked, feeding finance (M23) / owner (M29).
+
+**M14 held at WIRED — no re-rate (honest, not inflated).** The close path is wired end-to-end and tested at
+**unit** (`erp-manager-session.test.ts`, `day-close.test.ts`) and **integration** (`day-close-reconcile-on-sync`
++ `day-close-reaches-the-cloud`, both through the real engine → sync agent → cloud), but it is **not yet driven
+in a real browser end-to-end** (the served "Close the day" button → outbox → sync-agent → cloud in headless
+Chromium is unproven — only the parts and the transport+cloud legs are), and the controlled **reopen** has
+engine+transport+cloud but **no screen control** yet. A browser e2e of the served close (**slice 3**) is what
+would justify an honest FR-04 re-rate; reopen UI is the piece after that. Headline unchanged **51.4%**.
+
+**What the owner should check:** the plumbing is now complete so that when a manager closes the day on the ERP
+screen, that locked day reaches head office (finance + owner) instead of stopping at the store. The next step
+(slice 3) is to prove that end-to-end in a real browser.
+
+---
+
 ## M14-FR-04 day-close — slice 1: the cloud day-close ingestion route (headline unchanged 51.4%) (18 September 2026)
 
 The owner chose to **fix the M14 day-close gap** — the piece that has held M14 at WIRED for several

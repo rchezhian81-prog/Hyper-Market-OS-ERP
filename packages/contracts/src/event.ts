@@ -45,6 +45,10 @@ export const KNOWN_EVENT_TYPES = [
   'ReconciliationExceptionResolved',
   'PeriodClosed',
   'PeriodReopened',
+  // Store/day close + controlled reopen (M14-FR-04) — the STORE'S trading-day lock, distinct from the
+  // finance monthly PeriodClosed/PeriodReopened above (that is M23-FR-04 on STREAM.periods).
+  'StoreDayClosed',
+  'StoreDayReopened',
   'MigrationTotalSigned',
   'MigrationExceptionResolved',
   'ChecklistCompleted',
