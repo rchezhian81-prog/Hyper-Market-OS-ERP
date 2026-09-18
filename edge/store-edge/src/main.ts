@@ -49,9 +49,10 @@ import { startLaneServer, LANE_HOST, type LaneServer } from './lane-server';
 import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-server';
 import { readSales } from './read-model';
 import { emptyPack, readPack, type StorePack } from './store-pack';
-import type { ScreenInput } from './screen-data';
+import { managerPayload, type ScreenInput } from './screen-data';
 import { hmacSigner } from '../../../services/catalogue/src/index';
-import { makeEvent } from '../../../packages/contracts/src/event';
+import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
+import { closeDay as decideDayClose } from '../../../packages/day-close/src/day-close';
 import { toCloudSale } from './cloud-sale';
 import { toCloudReturn } from './cloud-return';
 import { toCloudChecklist, toCloudTaskCompletion, checklistIdOf, taskIdOf } from './cloud-completion';
@@ -63,6 +64,37 @@ const RETURNS_CURSOR = 'sync-cursor-returns';
 
 /** The completions pipeline's own cursor file (M25-FR-02), so the third log advances independently too. */
 const COMPLETIONS_CURSOR = 'sync-cursor-completions';
+
+/** The store/day-close pipeline's own cursor file (M14-FR-04), so the fourth log advances independently. */
+const DAYCLOSE_CURSOR = 'sync-cursor-day-close';
+
+/**
+ * Mint the `StoreDayClosed` event from a day-close log record — used BOTH by the pipeline's restart
+ * re-queue and by the run-time enqueue in `closeDay`, so both mint the identical event (the cloud route
+ * is idempotent per `dayCloseId` regardless). The record is the cloud's synced-day-close contract as
+ * `closeDay` (the EdgeProcess method) writes it. Read defensively — it is untrusted JSON off the disk.
+ */
+function dayCloseEventFrom(record: string, index: number): DomainEvent | undefined {
+  let parsed: unknown;
+  try { parsed = JSON.parse(record) as unknown; } catch { return undefined; }
+  const p = (parsed !== null && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>;
+  const dayCloseId = typeof p['dayCloseId'] === 'string' && p['dayCloseId'] !== '' ? (p['dayCloseId'] as string) : `record-${index}`;
+  return makeEvent({
+    id: `edge-day-close-${dayCloseId}`,
+    type: 'StoreDayClosed',
+    occurredAt: typeof p['closedAt'] === 'string' ? (p['closedAt'] as string) : new Date().toISOString(),
+    idempotencyKey: `day-close:${dayCloseId}`,
+    source: 'edge/box',
+    payload: {
+      dayCloseId,
+      storeId: p['storeId'],
+      tradingDay: p['tradingDay'],
+      closedBy: p['closedBy'],
+      closedAt: p['closedAt'],
+      locked: true,
+    },
+  });
+}
 
 /** Gap between drains when the last one delivered something. */
 const BASE_INTERVAL_MS = 15_000;
@@ -100,6 +132,12 @@ export interface EdgeProcess {
    */
   readonly completionsLog: OpenFileLog;
   /**
+   * The DAY-CLOSE's own durable log — a separate file from the other three (M14-FR-04). A trading day
+   * the box locked is durable before it is called done, and kept out of the other logs so each
+   * pipeline's restart re-queue only ever reads its own kind of record.
+   */
+  readonly dayCloseLog: OpenFileLog;
+  /**
    * The loopback socket the lane's screen posts a sale to, or null when this edge has no lane —
    * the back-office box runs the same process and does the shop-wide work (ADR-0004).
    */
@@ -109,6 +147,8 @@ export interface EdgeProcess {
   readonly returnsOutbox: SyncOutbox;
   /** The completion pipeline's own outbox — drained by `completionsAgent`, cursored separately again. */
   readonly completionsOutbox: SyncOutbox;
+  /** The day-close pipeline's own outbox — drained by `dayCloseAgent`, cursored separately again. */
+  readonly dayCloseOutbox: SyncOutbox;
   /** What a lane talks to: price a scan, commit a sale, commit a refund, take a new pack. */
   readonly node: EdgeNode;
   /** Null when no cloud is configured — which is a supported way to run, not a fault. */
@@ -117,6 +157,22 @@ export interface EdgeProcess {
   readonly returnsAgent: SyncAgent | null;
   /** The completion pipeline's own sync agent (same transport, own outbox). Null when no cloud. */
   readonly completionsAgent: SyncAgent | null;
+  /** The day-close pipeline's own sync agent (same transport, own outbox). Null when no cloud. */
+  readonly dayCloseAgent: SyncAgent | null;
+  /**
+   * Close and LOCK the store's trading day on the box (M14-FR-04) — the authoritative close, because
+   * the "no unsent items" gate can only be evaluated where the outbox lives. Reads the box's LIVE state
+   * (all outbox depths + the exception register), hands the tested engine the real numbers, and on
+   * success writes the locked day durably and queues it for the cloud. Refuses (with a reason) when the
+   * trading day has not ended, an exception is open, an item is unsent, or the register was never
+   * checked. Available with or without a cloud — the day locks locally regardless (P-01).
+   */
+  readonly closeDay: (
+    req: { readonly dayCloseId: string; readonly closedBy: string },
+  ) => Promise<
+    | { readonly closed: true; readonly tradingDay: string; readonly locked: true }
+    | { readonly closed: false; readonly reason: string }
+  >;
   /**
    * Pull the latest signed catalogue pack from the cloud now, adopt it if it is newer and verifies,
    * and persist it to disk — the inbound refresh (SYNC-01). Null when no cloud is configured. The
@@ -202,6 +258,20 @@ export async function startEdge(
     dataDir: settings['EDGE_DATA_DIR']!,
     capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
     fileName: 'dead-letters-completions',
+  });
+
+  // The DAY-CLOSE's own durable log and its own failed-sync store (M14-FR-04) — a trading day the box
+  // locked is durable before it is called done, and kept out of the other three logs so each pipeline's
+  // restart re-queue only ever reads its own kind of record. A once-a-day, low-volume fourth pipeline.
+  const dayCloseLog = await openFileLog({
+    dataDir: settings['EDGE_DATA_DIR']!,
+    capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
+    fileName: 'day-close.log',
+  });
+  const dayCloseDeadLetterLog = await openFileLog({
+    dataDir: settings['EDGE_DATA_DIR']!,
+    capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
+    fileName: 'dead-letters-day-close',
   });
 
   // Report what was found on the disk, including anything a power cut left half-written. It is
@@ -318,12 +388,25 @@ export async function startEdge(
     },
   });
 
+  // The DAY-CLOSE pipeline (M14-FR-04) — the same machine as the other three over a fourth file. A
+  // trading day the box locked is durable before it is called done, then queued for the cloud and
+  // carried up by its own agent via the `StoreDayClosed` route (already in EVENT_ROUTES). `eventFor`
+  // re-mints the same event on restart, so a close that had not yet reached the cloud when the box
+  // stopped goes when it starts again — never lost (hard rule #6). Never shares a file with the others.
+  const dayClosePipeline = new SyncPipeline({
+    dataDir: settings['EDGE_DATA_DIR']!, log: dayCloseLog, deadLetterLog: dayCloseDeadLetterLog,
+    cursorFile: DAYCLOSE_CURSOR, noun: 'day close', say,
+    eventFor: dayCloseEventFrom,
+  });
+
   const salesRestore = await salesPipeline.restore();
   const returnsRestore = await returnsPipeline.restore();
   const completionsRestore = await completionsPipeline.restore();
+  const dayCloseRestore = await dayClosePipeline.restore();
   const outbox = salesPipeline.outbox;
   const returnsOutbox = returnsPipeline.outbox;
   const completionsOutbox = completionsPipeline.outbox;
+  const dayCloseOutbox = dayClosePipeline.outbox;
 
   if (salesRestore.resendCount > 0) say(`${salesRestore.resendCount} sale(s) from before are still to send.`);
   if (salesRestore.restoredDeadLetters > 0) {
@@ -342,6 +425,13 @@ export async function startEdge(
   if (completionsRestore.resendCount > 0) say(`${completionsRestore.resendCount} completion(s) from before are still to send.`);
   if (completionsRestore.restoredDeadLetters > 0) {
     say(`  ${completionsRestore.restoredDeadLetters} completion(s) the cloud refused earlier are still waiting for a person — kept, with their history.`);
+  }
+  if (dayCloseRestore.brokenCount > 0) {
+    say(`  ${dayCloseRestore.brokenCount} day-close record(s) could not be read whole — kept, not repaired. Raise this.`);
+  }
+  if (dayCloseRestore.resendCount > 0) say(`${dayCloseRestore.resendCount} day close(s) from before are still to send.`);
+  if (dayCloseRestore.restoredDeadLetters > 0) {
+    say(`  ${dayCloseRestore.restoredDeadLetters} day close(s) the cloud refused earlier are still waiting for a person — kept, with their history.`);
   }
 
   // The refund operation-identity guard (RR-F03), rebuilt from the durable returns log so the rule
@@ -498,6 +588,68 @@ export async function startEdge(
     say(`screens on ${SCREEN_HOST}:${screens.port} — loopback only, so nothing on the shop network can read the day's takings`);
   }
 
+  // Close and LOCK the store's trading day, on the box where the live facts live (M14-FR-04, P-01).
+  //
+  // The DECISION belongs here, not in the manager's browser: the "no unsent items" gate can only be
+  // evaluated where the outbox is (the cloud cannot know what has not reached it, and the browser holds
+  // only a last-synced snapshot). So this reads the box's LIVE state — the depth of ALL four outboxes,
+  // and the exception register computed exactly as the manager screen shows it — and hands the tested
+  // engine the real numbers. On success the locked day is durable on the disk BEFORE it is called done,
+  // then queued; its own sync agent carries it to the cloud (`StoreDayClosed`), restart-safe. Offline
+  // makes no difference to the lock — the day is locked locally; the cloud simply hears about it later.
+  const closeDay = async (
+    req: { readonly dayCloseId: string; readonly closedBy: string },
+  ): Promise<
+    | { readonly closed: true; readonly tradingDay: string; readonly locked: true }
+    | { readonly closed: false; readonly reason: string }
+  > => {
+    const input = snapshot();
+    const rule = packCutoff(input.pack);
+    // The day being closed is the most-recently-ENDED trading day: the previous trading date relative
+    // to now. The engine refuses to close a day whose cut-off has not passed (currentTradingDate must
+    // be later than the day closed), so closing the previous date is the only one that can succeed.
+    const currentTradingDate = tradingDate(input.now.slice(0, 16), rule);
+    const dayToClose = ((): string => {
+      const dt = new Date(`${currentTradingDate}T00:00:00Z`);
+      dt.setUTCDate(dt.getUTCDate() - 1);
+      return dt.toISOString().slice(0, 10);
+    })();
+    // LIVE unsent across ALL pipelines — not the manager screen's `unsentItems`, which counts only the
+    // sales outbox. A day must not lock while any refund or completion is still unsent (hard rule #10).
+    const unsentSyncItems = outbox.pending().length + returnsOutbox.pending().length
+      + completionsOutbox.pending().length + dayCloseOutbox.pending().length;
+    // The exception register EXACTLY as the manager screen computes it (so the box and the screen agree).
+    // ABSENT (no loss-prevention rules → nobody is watching) is a hard block, never treated as zero.
+    const openExceptions = managerPayload(input)['openExceptions'];
+    if (openExceptions === undefined) {
+      return { closed: false, reason: 'the day cannot close: this box has no loss-prevention rules, so its exception register was never checked' };
+    }
+    const unresolvedExceptions = (openExceptions as readonly unknown[]).length;
+
+    // Gate-check with the tested engine (a throwaway outbox — the durable write + enqueue below is what
+    // survives a restart, so we do not use the engine's own enqueue here). A blocker throws; surface it.
+    try {
+      decideDayClose({
+        id: req.dayCloseId, storeId: tenantId, tradingDay: dayToClose, closedBy: req.closedBy,
+        closedAtLocal: input.now.slice(0, 16), closedAt: input.now, tradingDayRule: rule,
+        unresolvedExceptions, unsentSyncItems,
+      }, new SyncOutbox());
+    } catch (e) {
+      return { closed: false, reason: e instanceof Error ? e.message : String(e) };
+    }
+
+    // Durable-write-then-enqueue, the same order as every other seam: the locked day is on the disk
+    // before it is called done, then queued. `dayCloseEventFrom` re-mints the identical event on restart.
+    const record = JSON.stringify({
+      dayCloseId: req.dayCloseId, storeId: tenantId, tradingDay: dayToClose,
+      closedBy: req.closedBy, closedAt: input.now, locked: true,
+    });
+    await dayCloseLog.append(record);
+    const event = dayCloseEventFrom(record, 0);
+    if (event !== undefined) dayCloseOutbox.enqueue(event);
+    return { closed: true, tradingDay: dayToClose, locked: true };
+  };
+
   const cloudUrl = settings['CLOUD_API_URL'];
   const cloudToken = settings['CLOUD_API_TOKEN'];
 
@@ -505,17 +657,22 @@ export async function startEdge(
     // Supported, and said plainly. The lanes sell; the queue grows; nobody is told a lie about it.
     say('no cloud is configured, so nothing will be synced. The shop can still trade — that is the point.');
     return {
-      log, returnsLog, completionsLog, outbox, returnsOutbox, completionsOutbox, node, lane, screens,
-      agent: null, returnsAgent: null, completionsAgent: null, refreshPack: null, syncOnce: null,
+      log, returnsLog, completionsLog, dayCloseLog, outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, node, lane, screens,
+      agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, refreshPack: null, syncOnce: null,
+      // The day still locks with no cloud — that is the point of P-01. It queues durably and goes up when
+      // a cloud is configured and reachable; nothing is told a lie in the meantime.
+      closeDay,
       stop: async () => {
         if (lane !== null) await lane.stop();
         if (screens !== null) await screens.stop();
         await log.close();
         await returnsLog.close();
         await completionsLog.close();
+        await dayCloseLog.close();
         await deadLetterLog.close();
         await returnsDeadLetterLog.close();
         await completionsDeadLetterLog.close();
+        await dayCloseDeadLetterLog.close();
       },
     };
   }
@@ -534,6 +691,12 @@ export async function startEdge(
   // exactly its own, so a completion that cannot get through never holds a sale or a refund, and none
   // of the three can ever be re-queued as another.
   const completionsAgent = new SyncAgent(completionsOutbox, httpTransport({
+    baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch,
+  }));
+  // The day-close pipeline's own agent (M14-FR-04) — same transport, its own outbox, for the same
+  // reason each of the others has its own: a day close that cannot get through never holds a sale, a
+  // refund or a completion, and none of the four can ever be re-queued as another.
+  const dayCloseAgent = new SyncAgent(dayCloseOutbox, httpTransport({
     baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch,
   }));
 
@@ -589,6 +752,10 @@ export async function startEdge(
     await completionsPipeline.persistNewDeadLetters(at);
     await completionsPipeline.advanceCursor();
   };
+  const settleDayClose = async (at: string): Promise<void> => {
+    await dayClosePipeline.persistNewDeadLetters(at);
+    await dayClosePipeline.advanceCursor();
+  };
 
   /**
    * One drain of both queues, each settled straight after: sales drain, sales settle (persist any
@@ -610,10 +777,14 @@ export async function startEdge(
     // a sale or a refund.
     const completionsResult = await completionsAgent.drain({ at, ...(opts?.limit === undefined ? {} : { limit: opts.limit }) });
     await settleCompletions(at);
+    // The day-close queue drains right after the completion queue, on the same loop and just as far from
+    // the sale path — its own drain, its own cursor.
+    const dayCloseResult = await dayCloseAgent.drain({ at, ...(opts?.limit === undefined ? {} : { limit: opts.limit }) });
+    await settleDayClose(at);
     return {
-      sent: result.acknowledged + returnsResult.acknowledged + completionsResult.acknowledged,
-      dead: result.deadLettered + returnsResult.deadLettered + completionsResult.deadLettered,
-      remaining: result.remaining + returnsResult.remaining + completionsResult.remaining,
+      sent: result.acknowledged + returnsResult.acknowledged + completionsResult.acknowledged + dayCloseResult.acknowledged,
+      dead: result.deadLettered + returnsResult.deadLettered + completionsResult.deadLettered + dayCloseResult.deadLettered,
+      remaining: result.remaining + returnsResult.remaining + completionsResult.remaining + dayCloseResult.remaining,
     };
   };
 
@@ -650,15 +821,19 @@ export async function startEdge(
     log,
     returnsLog,
     completionsLog,
+    dayCloseLog,
     outbox,
     returnsOutbox,
     completionsOutbox,
+    dayCloseOutbox,
     node,
     lane,
     screens,
     agent,
     returnsAgent,
     completionsAgent,
+    dayCloseAgent,
+    closeDay,
     refreshPack,
     syncOnce: () => drainAndSettle(),
     stop: async () => {
@@ -680,9 +855,14 @@ export async function startEdge(
         await completionsAgent.drain({ at, limit: 20 });
         await settleCompletions(at);
       } catch { /* still queued, and the completions cursor stays where it is */ }
+      try {
+        await dayCloseAgent.drain({ at, limit: 20 });
+        await settleDayClose(at);
+      } catch { /* still queued, and the day-close cursor stays where it is */ }
       const badge = agent.health();
       const returnsBadge = returnsAgent.health();
       const completionsBadge = completionsAgent.health();
+      const dayCloseBadge = dayCloseAgent.health();
       if (badge.unsentCount > 0) {
         say(`stopping with ${badge.unsentCount} sale(s) still to send. They are on the disk and will go when this starts again.`);
       }
@@ -692,14 +872,19 @@ export async function startEdge(
       if (completionsBadge.unsentCount > 0) {
         say(`stopping with ${completionsBadge.unsentCount} completion(s) still to send. They are on the disk and will go when this starts again.`);
       }
+      if (dayCloseBadge.unsentCount > 0) {
+        say(`stopping with ${dayCloseBadge.unsentCount} day close(s) still to send. They are on the disk and will go when this starts again.`);
+      }
       if (lane !== null) await lane.stop();
       if (screens !== null) await screens.stop();
       await log.close();
       await returnsLog.close();
       await completionsLog.close();
+      await dayCloseLog.close();
       await deadLetterLog.close();
       await returnsDeadLetterLog.close();
       await completionsDeadLetterLog.close();
+      await dayCloseDeadLetterLog.close();
     },
   };
 }

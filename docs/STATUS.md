@@ -58,9 +58,9 @@ still missing. The architecturally-correct home for the close is the **store box
 depth + shift/exception registers; the browser only has a stale synced snapshot), whose existing sync agent
 already carries `StoreDayClosed`/`StoreDayReopened` via slice 2's route.
 
-**Slice 3a (next, self-contained, testable without the screen — mirrors how `commitCompletion` shipped as a
-node method with no HTTP route):** add a day-close pipeline to `edge/store-edge/src/main.ts`, copying the
-**completions** pipeline verbatim at its ~9 wiring points:
+**Slice 3a — BUILT (this PR).** Self-contained, testable without the screen (mirrors how `commitCompletion`
+shipped as a node method with no HTTP route). A day-close pipeline was added to `edge/store-edge/src/main.ts`,
+copying the **completions** pipeline verbatim at its ~9 wiring points:
 - `DAYCLOSE_CURSOR = 'sync-cursor-day-close'` (main.ts:65 pattern); `dayCloseLog` = `openFileLog({... fileName:
   'day-close.log'})` + `dayCloseDeadLetterLog` ('dead-letters-day-close') (main.ts:196-205 pattern);
   `dayClosePipeline = new SyncPipeline({... cursorFile: DAYCLOSE_CURSOR, noun: 'day close', eventFor:
@@ -101,8 +101,18 @@ it (the browser's local `closeTheDay` becomes a preview; the box is authoritativ
 `cash-office-signoff-delivery.e2e.ts`), then the honest **re-rate** of M14-FR-04 (INTEGRATION_TESTED/
 E2E_VERIFIED) and M14 module if warranted.
 
-Pausing here at a clean, merged point (slices 1 & 2 in `main`, branch clean) — slice 3a is a large, careful
-edit to the edge's money-sync composition root and is best built as its own focused increment with full care.
+**Built + integration-tested:** `tests/integration/day-close-reaches-the-cloud-through-the-edge.test.ts` (4)
+drives the REAL `startEdge` → `edge.closeDay(...)` → `SyncAgent` + `httpTransport` → the real slice-1 cloud
+route: the box locks the day and it reaches the cloud recorded locked; it REFUSES when the exception register
+was never checked (no LP rules) and nothing reaches the cloud; it REFUSES while a sale is still unsent (the
+gate only the box can evaluate); and after an outage + a restart the locked day is re-queued from its log and
+sent (§31, hard rule #6). Full gate green. **M14 held at WIRED — no re-rate:** the box can now close
+authoritatively and reach head office, but nothing yet TRIGGERS it in production — the served "Close the day"
+button still posts nowhere (slice 3b wires it to the box), so no operator can produce a close yet. Slice 3c
+(browser e2e of the served button → box → cloud) is what earns the honest re-rate.
+
+Slices 3b (the `/lane/day-close` route + wiring `app.js`'s button to POST to the box) and 3c (browser e2e +
+re-rate) remain, as described above.
 
 ---
 
