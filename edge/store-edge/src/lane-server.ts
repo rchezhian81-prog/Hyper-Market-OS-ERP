@@ -80,12 +80,28 @@ const LANE_LOOKUP_ROUTE = '/lane/lookup';
  */
 const LANE_DAY_CLOSE_ROUTE = '/lane/day-close';
 
+/**
+ * The DAY-REOPEN write route: POST /lane/day-reopen (M14-FR-04 / §28). An accountant/owner's screen asks
+ * the box to REOPEN a locked trading day. The DECISION is the box's — `edge.reopenDay` enforces §28 (the
+ * approver must be a different person than the reopener) and appends a compensating reopen to the durable
+ * day-close log. Its body is `{ dayCloseId, reopenedBy, reason, approvedBy }`.
+ */
+const LANE_DAY_REOPEN_ROUTE = '/lane/day-reopen';
+
 /** What the box does when the manager asks to close the day — the authoritative `EdgeProcess.closeDay`. */
 export type LaneDayCloseHandler = (
   req: { readonly dayCloseId: string; readonly closedBy: string },
 ) => Promise<
   | { readonly closed: true; readonly tradingDay: string; readonly locked: true }
   | { readonly closed: false; readonly reason: string }
+>;
+
+/** What the box does when an authority asks to reopen a locked day — the authoritative `EdgeProcess.reopenDay`. */
+export type LaneDayReopenHandler = (
+  req: { readonly dayCloseId: string; readonly reopenedBy: string; readonly reason: string; readonly approvedBy: string },
+) => Promise<
+  | { readonly reopened: true; readonly tradingDay: string }
+  | { readonly reopened: false; readonly reason: string }
 >;
 
 /**
@@ -187,6 +203,12 @@ export function startLaneServer(input: {
    * `{ dayCloseId, closedBy }`; the box makes the authoritative decision.
    */
   readonly closeDay?: LaneDayCloseHandler;
+  /**
+   * Reopen a locked trading day (M14-FR-04 / §28). Absent on a box that does not reopen days, in which
+   * case POST /lane/day-reopen answers 404. The accountant/owner's screen posts
+   * `{ dayCloseId, reopenedBy, reason, approvedBy }`; the box makes the authoritative decision.
+   */
+  readonly reopenDay?: LaneDayReopenHandler;
 }): Promise<LaneServer> {
   const maxBytes = input.maxBytes ?? 256 * 1024;
 
@@ -295,16 +317,80 @@ export function startLaneServer(input: {
       return;
     }
 
+    // The DAY-REOPEN write route: POST /lane/day-reopen (M14-FR-04 / §28). An accountant/owner's screen
+    // asks the box to REOPEN a locked day; the box makes the authoritative decision (edge.reopenDay enforces
+    // approver ≠ reopener). Same loopback + application/json authorization as every other write (RR-F01),
+    // decided BEFORE the body is read. 404 on a box that does not reopen days. 200 either way on a real
+    // attempt: the *request* was understood; the body says whether it reopened or the stated reason why not.
+    if (req.method === 'POST' && pathname === LANE_DAY_REOPEN_ROUTE) {
+      const doReopen = input.reopenDay;
+      if (doReopen === undefined) {
+        send(res, 404, { reopened: false, reason: 'this box does not reopen days' }, cors);
+        req.resume();
+        return;
+      }
+      const authRefusal = laneCallRefusal(req.headers.origin, req.headers['content-type']);
+      if (authRefusal !== undefined) {
+        send(res, authRefusal.status, { reopened: false, reason: authRefusal.reason }, cors);
+        req.resume();
+        return;
+      }
+      const chunks: Buffer[] = [];
+      let size = 0;
+      let tooBig = false;
+      req.on('data', (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > maxBytes && !tooBig) {
+          tooBig = true;
+          send(res, 413, { reopened: false, reason: 'day-reopen request too large' }, cors);
+          req.destroy();
+          return;
+        }
+        chunks.push(chunk);
+      });
+      req.on('end', () => {
+        if (tooBig) return;
+        void (async () => {
+          let body: unknown;
+          try {
+            body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+          } catch {
+            send(res, 400, { reopened: false, reason: 'the day-reopen request could not be read' }, cors);
+            return;
+          }
+          const b = (body !== null && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+          const str = (k: string): string | undefined =>
+            typeof b[k] === 'string' && (b[k] as string).trim() !== '' ? (b[k] as string) : undefined;
+          const dayCloseId = str('dayCloseId');
+          const reopenedBy = str('reopenedBy');
+          const reason = str('reason');
+          const approvedBy = str('approvedBy');
+          // A reopen is audited and §28-governed: it needs the day, who is reopening, why, and who
+          // approved it. A blank any of these is malformed — refused here rather than sent on half-formed.
+          if (dayCloseId === undefined || reopenedBy === undefined || reason === undefined || approvedBy === undefined) {
+            send(res, 400, { reopened: false, reason: 'a reopen needs a day-close id, who is reopening, a reason, and who approved it' }, cors);
+            return;
+          }
+          try {
+            send(res, 200, await doReopen({ dayCloseId, reopenedBy, reason, approvedBy }), cors);
+          } catch (e) {
+            send(res, 200, { reopened: false, reason: e instanceof Error ? e.message : String(e) }, cors);
+          }
+        })();
+      });
+      return;
+    }
+
     // The browser's preflight for the cross-origin POST from the till's or manager's screen. Answered
     // only for a loopback origin; anything else gets no allow header and the browser refuses the POST.
-    if (req.method === 'OPTIONS' && (route !== undefined || pathname === LANE_DAY_CLOSE_ROUTE)) {
+    if (req.method === 'OPTIONS' && (route !== undefined || pathname === LANE_DAY_CLOSE_ROUTE || pathname === LANE_DAY_REOPEN_ROUTE)) {
       res.writeHead(isLoopbackOrigin(req.headers.origin) ? 204 : 403, { 'content-length': '0', ...cors });
       res.end();
       return;
     }
 
     if (req.method !== 'POST' || route === undefined) {
-      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `POST ${LANE_DAY_CLOSE_ROUTE}`, `GET ${LANE_LOOKUP_ROUTE}?receipt=…`].join(', ');
+      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `POST ${LANE_DAY_CLOSE_ROUTE}`, `POST ${LANE_DAY_REOPEN_ROUTE}`, `GET ${LANE_LOOKUP_ROUTE}?receipt=…`].join(', ');
       send(res, 404, { error: `the lane socket serves: ${serves}` }, cors);
       return;
     }

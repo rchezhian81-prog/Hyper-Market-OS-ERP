@@ -5,6 +5,43 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M14-FR-04 reopen — R1: the box's authoritative REOPEN + its lane socket (owner directed "build the reopen screen — accountant/owner may reopen") (headline unchanged 51.6%) (18 September 2026)
+
+The owner chose to build the controlled-reopen operator path — the last piece before M14 can honestly reach
+E2E_VERIFIED. This is **R1: the backend** (the box can now reopen a locked day, and its lane socket accepts
+one), mirroring how the close shipped as box (3a) + lane socket (3b) before the screen (3c). **R2 is the
+served accountant/owner screen + browser e2e + the E2E re-rate** — next.
+
+- **`edge/store-edge/src/main.ts`** — an authoritative `edge.reopenDay({dayCloseId, reopenedBy, reason,
+  approvedBy})`, the mirror of `closeDay`. It finds the locked close in the box's own durable day-close log
+  (refuses if the day was never closed here; a no-op success if already reopened), then runs the tested
+  engine `reopenDay`, which **enforces §28** (the approval must be by a DIFFERENT person than the reopener).
+  On success it appends a **compensating reopen record** to the same day-close log (never edits the close —
+  hard rule #2) and queues `StoreDayReopened` for the cloud. `dayCloseEventFrom` now **discriminates** close
+  vs reopen records (a record carrying `reopenedBy` mints `StoreDayReopened`, not `StoreDayClosed`), so a
+  restart re-queues both with their correct types — a reopen can never silently re-mint as a close.
+- **`edge/store-edge/src/lane-server.ts`** — `POST /lane/day-reopen` relays `{dayCloseId, reopenedBy, reason,
+  approvedBy}` to `edge.reopenDay` under the same loopback + application/json authorization as every other
+  write (RR-F01); 404 on a box that does not reopen, 400 on a missing field (a reopen is audited — it needs
+  all four), 200 either way on a real attempt (reopened, or the stated reason why not — P-08).
+- **The §28 split, unchanged from the design:** the box enforces "a different person approved it"; the
+  **cloud re-verifies** that the named approver genuinely holds `till.dayclose.approve` and record-and-flags
+  a breach (`approver_lacks_authority`), never rejecting a reopen that already happened (hard rule #10).
+
+Tested: `tests/unit/lane-server-day-reopen.test.ts` (7 — relay, §28 refusal relayed verbatim, missing-field
+400s, loopback-only 403, non-JSON 415, preflight 204, 404 when unconfigured) and five new cases in
+`tests/integration/day-close-reaches-the-cloud-through-the-edge.test.ts` driving the **real** `startEdge` →
+`edge.reopenDay` → cloud: a clean reopen reaches head office recorded unlocked with no breach; a reopen whose
+approver lacks authority is recorded-and-FLAGGED; a self-approved reopen is REFUSED at the box (nothing
+reaches the cloud); reopening a day never closed is refused; and after a restart BOTH the close and the reopen
+re-queue with their correct types. **M14 held at INTEGRATION_TESTED — no re-rate: there is still no operator
+screen (R2 earns E2E_VERIFIED).** Headline unchanged **51.6%**.
+
+**What the owner should check:** nothing to click yet — R1 is the store computer's plumbing. The screen the
+accountant/owner will actually use comes in R2, and I'll say when it is ready.
+
+---
+
 ## M14-FR-04 day-close — slice 3c: the screen→box→cloud join is CLOSED; M14 re-rated WIRED→INTEGRATION_TESTED (headline 51.4→51.6%) (18 September 2026)
 
 This is the join every earlier slice built toward. The served manager **"Close the day"** button used to lock

@@ -45,14 +45,14 @@ import { ReturnEntitlement, type EntitlementLine } from './entitlement';
 import { buildReceiptLookup } from './receipt-lookup';
 import { returnIdOf } from './cloud-return';
 import { createEdgeNode, type EdgeNode } from './index';
-import { startLaneServer, LANE_HOST, type LaneServer, type LaneDayCloseHandler } from './lane-server';
+import { startLaneServer, LANE_HOST, type LaneServer, type LaneDayCloseHandler, type LaneDayReopenHandler } from './lane-server';
 import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-server';
 import { readSales } from './read-model';
 import { emptyPack, readPack, type StorePack } from './store-pack';
 import { managerPayload, type ScreenInput } from './screen-data';
 import { hmacSigner } from '../../../services/catalogue/src/index';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
-import { closeDay as decideDayClose } from '../../../packages/day-close/src/day-close';
+import { closeDay as decideDayClose, reopenDay as decideReopenDay } from '../../../packages/day-close/src/day-close';
 import { toCloudSale } from './cloud-sale';
 import { toCloudReturn } from './cloud-return';
 import { toCloudChecklist, toCloudTaskCompletion, checklistIdOf, taskIdOf } from './cloud-completion';
@@ -69,16 +69,43 @@ const COMPLETIONS_CURSOR = 'sync-cursor-completions';
 const DAYCLOSE_CURSOR = 'sync-cursor-day-close';
 
 /**
- * Mint the `StoreDayClosed` event from a day-close log record — used BOTH by the pipeline's restart
- * re-queue and by the run-time enqueue in `closeDay`, so both mint the identical event (the cloud route
- * is idempotent per `dayCloseId` regardless). The record is the cloud's synced-day-close contract as
- * `closeDay` (the EdgeProcess method) writes it. Read defensively — it is untrusted JSON off the disk.
+ * Mint the cloud event from a day-close log record — used BOTH by the pipeline's restart re-queue and
+ * by the run-time enqueue in `closeDay`/`reopenDay`, so both mint the identical event (the cloud routes
+ * are idempotent per `dayCloseId` regardless). The record is the cloud's synced contract as the
+ * EdgeProcess method wrote it. Read defensively — it is untrusted JSON off the disk.
+ *
+ * ONE log holds both closes and reopens (M14-FR-04), so this discriminates on the record's shape: a
+ * record carrying `reopenedBy` is a reopen (mint `StoreDayReopened`, routed to `.../reopen/synced`);
+ * anything else is a close (`StoreDayClosed`). Getting this wrong would re-mint a reopen as a close on
+ * restart — a locked day silently coming back from a reopen — so the discriminator is the whole point.
  */
 function dayCloseEventFrom(record: string, index: number): DomainEvent | undefined {
   let parsed: unknown;
   try { parsed = JSON.parse(record) as unknown; } catch { return undefined; }
   const p = (parsed !== null && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>;
   const dayCloseId = typeof p['dayCloseId'] === 'string' && p['dayCloseId'] !== '' ? (p['dayCloseId'] as string) : `record-${index}`;
+
+  // A reopen record — the controlled, audited unlock of a locked day (§28). Its payload is the body
+  // `POST /v1/pos/day-close/:dayCloseId/reopen/synced` reads (reopenedBy, approvedBy, reason), which the
+  // cloud re-verifies. Kept idempotent per day on `day-reopen:` so a restart re-queue is a no-op there.
+  if (typeof p['reopenedBy'] === 'string') {
+    return makeEvent({
+      id: `edge-day-reopen-${dayCloseId}`,
+      type: 'StoreDayReopened',
+      occurredAt: typeof p['reopenedAt'] === 'string' ? (p['reopenedAt'] as string) : new Date().toISOString(),
+      idempotencyKey: `day-reopen:${dayCloseId}`,
+      source: 'edge/box',
+      payload: {
+        dayCloseId,
+        storeId: p['storeId'],
+        tradingDay: p['tradingDay'],
+        reopenedBy: p['reopenedBy'],
+        approvedBy: p['approvedBy'],
+        reason: p['reason'],
+      },
+    });
+  }
+
   return makeEvent({
     id: `edge-day-close-${dayCloseId}`,
     type: 'StoreDayClosed',
@@ -172,6 +199,19 @@ export interface EdgeProcess {
   ) => Promise<
     | { readonly closed: true; readonly tradingDay: string; readonly locked: true }
     | { readonly closed: false; readonly reason: string }
+  >;
+  /**
+   * Reopen a locked day on the box (M14-FR-04 / §28) — the controlled, audited unlock. Appends a
+   * COMPENSATING reopen to the same durable day-close log (never edits the close — hard rule #2) and
+   * queues `StoreDayReopened` for the cloud. Enforces §28's "a different person approved it" via the
+   * tested engine (approver ≠ reopener); the approver's actual authority is re-verified at the cloud.
+   * Idempotent per day. Available with or without a cloud — the unlock is local regardless (P-01).
+   */
+  readonly reopenDay: (
+    req: { readonly dayCloseId: string; readonly reopenedBy: string; readonly reason: string; readonly approvedBy: string },
+  ) => Promise<
+    | { readonly reopened: true; readonly tradingDay: string }
+    | { readonly reopened: false; readonly reason: string }
   >;
   /**
    * Pull the latest signed catalogue pack from the cloud now, adopt it if it is newer and verifies,
@@ -532,6 +572,7 @@ export async function startEdge(
   // now through a late-bound relay and `closeDay` is attached to it once it exists — no reordering of the
   // sale/refund money path above, and a POST that somehow arrives before then gets an honest "starting up".
   const dayCloseRelay: { current?: LaneDayCloseHandler } = {};
+  const dayReopenRelay: { current?: LaneDayReopenHandler } = {};
   const lanePort = settings['EDGE_LANE_PORT'];
   const lane = lanePort === undefined ? null : await startLaneServer({
     node,
@@ -539,6 +580,10 @@ export async function startEdge(
     closeDay: (req) => {
       const fn = dayCloseRelay.current;
       return fn !== undefined ? fn(req) : Promise.resolve({ closed: false as const, reason: 'the box is still starting up — try the day close again in a moment' });
+    },
+    reopenDay: (req) => {
+      const fn = dayReopenRelay.current;
+      return fn !== undefined ? fn(req) : Promise.resolve({ reopened: false as const, reason: 'the box is still starting up — try the reopen again in a moment' });
     },
   });
   if (lane !== null) say(`lane socket on ${LANE_HOST}:${lane.port} — loopback only, nothing on the shop network can reach it`);
@@ -668,6 +713,72 @@ export async function startEdge(
   // The lane socket, wired above through a relay, can now reach the authoritative close.
   dayCloseRelay.current = closeDay;
 
+  // Reopen a locked day — the controlled, audited unlock (M14-FR-04 / §28). The box owns this for the
+  // same reason it owns the close: the locked day it holds is the source of truth, and the reopen is a
+  // COMPENSATING event appended to the same durable log, never an edit of the close (hard rule #2). The
+  // §28 "a different person approved it" gate is enforced HERE by the tested engine (approver ≠
+  // reopener); whether that named approver genuinely holds `till.dayclose.approve` is re-verified at the
+  // cloud (record-and-flag, never a rejection — hard rule #10). Idempotent per day: a second reopen of an
+  // already-reopened day is a no-op success, never a duplicate compensating event.
+  const reopenDay = async (
+    req: { readonly dayCloseId: string; readonly reopenedBy: string; readonly reason: string; readonly approvedBy: string },
+  ): Promise<
+    | { readonly reopened: true; readonly tradingDay: string }
+    | { readonly reopened: false; readonly reason: string }
+  > => {
+    // Find the close this reopen names, and whether it has already been reopened, from the box's own
+    // durable log — the only honest record of what this box locked. A reopen with no close to reopen, or
+    // a day still open, is refused rather than inventing a compensating event for a lock that isn't there.
+    let close: { readonly tradingDay: string } | undefined;
+    let alreadyReopened = false;
+    for (const entry of await readLog(dayCloseLog.path)) {
+      if (entry.ok !== true) continue;
+      let p: Record<string, unknown>;
+      try { p = JSON.parse(entry.record) as Record<string, unknown>; } catch { continue; }
+      if (p['dayCloseId'] !== req.dayCloseId) continue;
+      if (typeof p['reopenedBy'] === 'string') alreadyReopened = true;
+      else if (typeof p['tradingDay'] === 'string') close = { tradingDay: p['tradingDay'] };
+    }
+    if (close === undefined) {
+      return { reopened: false, reason: 'that day is not closed on this box, so there is nothing to reopen' };
+    }
+    if (alreadyReopened) {
+      // Already reopened — the day is open again. Say so as a success, without a second compensating event.
+      return { reopened: true, tradingDay: close.tradingDay };
+    }
+
+    const now = new Date().toISOString();
+    // Gate-check with the tested engine (a throwaway outbox — the durable write + enqueue below is what
+    // survives a restart). It throws unless the reopen carries an approval by a DIFFERENT person (§28).
+    // The approval is minted from the named approver; the cloud re-verifies that approver's authority.
+    try {
+      decideReopenDay({
+        id: req.dayCloseId, storeId: tenantId, tradingDay: close.tradingDay,
+        reopenedBy: req.reopenedBy, reopenedAt: now, reason: req.reason,
+        approval: {
+          id: `reopen:${req.dayCloseId}`, subjectType: 'day_close_reopen', subjectRef: req.dayCloseId,
+          requestedBy: req.reopenedBy, branchId: null, value: null,
+          status: 'approved', decidedBy: req.approvedBy, reason: req.reason, decidedAt: now,
+        },
+      }, new SyncOutbox());
+    } catch (e) {
+      return { reopened: false, reason: e instanceof Error ? e.message : String(e) };
+    }
+
+    // Durable-write-then-enqueue, the close's mirror. `dayCloseEventFrom` sees `reopenedBy` and mints
+    // `StoreDayReopened` (both on this run and on a restart re-queue), routed to `.../reopen/synced`.
+    const record = JSON.stringify({
+      dayCloseId: req.dayCloseId, storeId: tenantId, tradingDay: close.tradingDay,
+      reopenedBy: req.reopenedBy, approvedBy: req.approvedBy, reason: req.reason, reopenedAt: now,
+    });
+    await dayCloseLog.append(record);
+    const event = dayCloseEventFrom(record, 0);
+    if (event !== undefined) dayCloseOutbox.enqueue(event);
+    return { reopened: true, tradingDay: close.tradingDay };
+  };
+  // The lane socket can reach the authoritative reopen too.
+  dayReopenRelay.current = reopenDay;
+
   const cloudUrl = settings['CLOUD_API_URL'];
   const cloudToken = settings['CLOUD_API_TOKEN'];
 
@@ -678,8 +789,9 @@ export async function startEdge(
       log, returnsLog, completionsLog, dayCloseLog, outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, node, lane, screens,
       agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, refreshPack: null, syncOnce: null,
       // The day still locks with no cloud — that is the point of P-01. It queues durably and goes up when
-      // a cloud is configured and reachable; nothing is told a lie in the meantime.
+      // a cloud is configured and reachable; nothing is told a lie in the meantime. Reopen is the same.
       closeDay,
+      reopenDay,
       stop: async () => {
         if (lane !== null) await lane.stop();
         if (screens !== null) await screens.stop();
@@ -852,6 +964,7 @@ export async function startEdge(
     completionsAgent,
     dayCloseAgent,
     closeDay,
+    reopenDay,
     refreshPack,
     syncOnce: () => drainAndSettle(),
     stop: async () => {
