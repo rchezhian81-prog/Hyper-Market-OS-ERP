@@ -58,6 +58,7 @@ import type { ReturnsDeps, ReturnRecord, RecordedRefund, OriginalSale, RecordedR
 import type { CashDeps, RecordedCashMovement } from '../../pos/src/cash';
 import type { StoredCashMovement } from '../../../packages/cash/src/index';
 import type { ShiftDeps, ClosedShiftRecord, OverShortReview } from '../../pos/src/shift';
+import type { DayCloseDeps, DayCloseRecord, DayReopenRecord } from '../../pos/src/day-close';
 import type { B2BCreditDeps, B2BAccount, RecordedReceivable } from '../../finance/src/b2b-credit';
 import type { B2BCollectionsDeps, Receivable as CollectionsReceivable, RecordedPayment } from '../../finance/src/b2b-collections';
 import type { B2BCommissionDeps, CommissionAccrual } from '../../finance/src/b2b-commission';
@@ -1119,6 +1120,14 @@ const forSaleReturns = (saleId: string): string => streamName(STREAM.sales, 'ret
 const forTillCash = (tillId: string): string => streamName(STREAM.cash, tillId);
 /** Shift closes share one stream (low-volume — a few tills × shifts a day), folded by shift id. */
 const SHIFTS_STREAM = streamName(STREAM.cash, 'shifts');
+/**
+ * Store/day closes and reopens (M14-FR-04) — their own cash-office stream, folded by day-close id.
+ * Deliberately NOT `STREAM.periods`: that stream is the finance monthly period close (M23-FR-04),
+ * which folds `PeriodClosed`/`PeriodReopened` keyed by `YYYY-MM`; the store day close is a distinct
+ * fact keyed by `dayCloseId`, so it keeps its own stream and its own event types to avoid a phantom
+ * period leaking into the finance close.
+ */
+const DAY_CLOSE_STREAM = streamName(STREAM.cash, 'day-close');
 /** Each B2B customer's credit terms and AR movements fold one stream — one customer, not the shop. */
 const forB2BCustomer = (customerId: string): string => streamName(STREAM.b2b, customerId);
 /** Each salesperson's commission accruals fold one stream — one person's earnings, not every deal. */
@@ -2265,6 +2274,57 @@ export function shiftAdapter(input: {
         source: 'api/pos',
         payload: review,
       }));
+    },
+  };
+}
+
+export function dayCloseAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): DayCloseDeps {
+  const closes = (tenantId: string) =>
+    allOf<DayCloseRecord>(input.store, tenantId, DAY_CLOSE_STREAM, 'StoreDayClosed');
+  const reopens = (tenantId: string) =>
+    allOf<DayReopenRecord>(input.store, tenantId, DAY_CLOSE_STREAM, 'StoreDayReopened');
+
+  return {
+    now: input.now,
+
+    dayClose: async (tenantId, dayCloseId) => (await closes(tenantId)).find((r) => r.dayCloseId === dayCloseId),
+    dayReopen: async (tenantId, dayCloseId) => (await reopens(tenantId)).find((r) => r.dayCloseId === dayCloseId),
+    dayCloses: async (tenantId) => closes(tenantId),
+    dayReopens: async (tenantId) => reopens(tenantId),
+
+    recordDayClose: async (tenantId, record) => {
+      await input.store.append(tenantId, DAY_CLOSE_STREAM, makeEvent({
+        id: `store-day-close-${record.dayCloseId}`,
+        type: 'StoreDayClosed',
+        occurredAt: record.closedAt,
+        // The day-close's own id — a re-sent close collapses rather than recording one day closed twice.
+        idempotencyKey: `store-day-close-${tenantId}-${record.dayCloseId}`,
+        source: 'api/pos',
+        payload: record,
+      }));
+    },
+
+    recordDayReopen: async (tenantId, record) => {
+      await input.store.append(tenantId, DAY_CLOSE_STREAM, makeEvent({
+        id: `store-day-reopen-${record.dayCloseId}`,
+        type: 'StoreDayReopened',
+        occurredAt: record.reopenedAt,
+        // One reopen per day-close id — a re-sent reopen collapses rather than recording two.
+        idempotencyKey: `store-day-reopen-${tenantId}-${record.dayCloseId}`,
+        source: 'api/pos',
+        payload: record,
+      }));
+    },
+
+    // The §28 authority to APPROVE a day-close reopen (till.dayclose.approve) — resolved from the
+    // tenant's own grants (the authoritative source the kernel authorizes against), never the request.
+    canApproveDayReopen: async (tenantId, userId) => {
+      const grants = await allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+      const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
+      return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('till.dayclose.approve'));
     },
   };
 }
