@@ -5,6 +5,43 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M34 GRC risk-acceptance screen — built + INTEGRATION_TESTED → E2E_VERIFIED (headline 51.3% → 51.4%) (18 September 2026)
+
+The owner asked to harden **another** screen to E2E_VERIFIED. After the M14 lesson (a WIRED module can hide an
+unwired FR that blocks an honest whole-module E2E), I surveyed **every** module first and found **M34
+(Governance / Risk / Compliance)** as the single clean candidate: already **INTEGRATION_TESTED across all four
+FRs**, its only stated gap to E2E being *"no served screen to drive in a browser,"* with a real operator
+write-path and **no hidden unwired FR**. So this is an honest re-rate, not another M14.
+
+The screen is a **Risk acceptance** desk for the compliance owner: it shows every quality gate that can't pass
+because an open critical risk is registered against it, and lets that owner **accept a risk in their own name
+with a written reason** (which unblocks the gate). Built over the existing backend
+(`GET /v1/compliance/gates/blocked` worklist + `POST /v1/compliance/risks/:id/acceptance`) in three merged slices:
+
+- **Slice 1 (PR #441):** the tested DOM-free session model (`apps/web-erp/src/risk-acceptance-session.ts`, 11
+  unit tests + the `the-risk-acceptance-screen-is-usable` guardrail). Bilingual EN/TA; blocked gates as
+  attention (severity by a word, not colour); an accept refused locally without permission or a rationale.
+- **Slice 2 (PR #442):** the served, offline-capable `/risk-acceptance` screen + edge wiring
+  (`PackRiskAcceptancePolicy`, `riskAcceptancePayload`, screen-server route, service-worker v23, ERP nav gated
+  `compliance.risk.read`, browser-entry boot with a live worklist GET + a same-origin accept POST).
+- **Slice 3 (this PR):** the browser e2e — `tests/e2e/risk-acceptance-delivery.e2e.ts` drives the real screen in
+  headless Chromium: an authorised owner picks a risk + rationale, the accept POSTs under their own session and
+  the gate drops off on a worklist re-read; a read-only user sees no form; an empty rationale is refused
+  client-side. Offline-open + a11y in `screens-open-offline.e2e.ts`.
+
+**Re-rate: M34 INTEGRATION_TESTED → E2E_VERIFIED (+10 weighted points, 5340 → 5350 / 10400).** The headline
+**moves 51.3% → 51.4%** — an honest +0.1 tick (5350/10400 = 51.442% → 51.4). This is the first headline move in
+a few screens, and it is legitimate precisely because M34's whole module was already integration-tested (unlike
+M14). Module-level is now **5 E2E VERIFIED / 1 INTEGRATION TESTED**. Held at E2E_VERIFIED, not UAT_VERIFIED (a
+compliance owner accepting real risks in the running store needs the owner — externally blocked on rollout).
+
+**The screens-to-E2E well is now essentially dry.** The only remaining INTEGRATION_TESTED module (M08 stock
+valuation) is a back-office analytics read with no operator write-path. Further screen work means either wiring
+a gap in a WIRED module first (e.g. M14-FR-04) or a fresh vetting pass. **Retention periods** remain the pinned
+priority, still waiting on the owner's per-data-class keep-for-N-years numbers.
+
+---
+
 ## M14 cash-office over/short sign-off — screen built + browser-verified, but M14 HELD at WIRED (honest, no headline change) (18 September 2026)
 
 The owner asked to harden **another** screen to E2E_VERIFIED, and chose the **cash-office day-close (over/short
