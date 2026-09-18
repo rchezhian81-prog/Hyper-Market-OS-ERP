@@ -44,9 +44,65 @@ Chromium is unproven — only the parts and the transport+cloud legs are), and t
 engine+transport+cloud but **no screen control** yet. A browser e2e of the served close (**slice 3**) is what
 would justify an honest FR-04 re-rate; reopen UI is the piece after that. Headline unchanged **51.4%**.
 
-**What the owner should check:** the plumbing is now complete so that when a manager closes the day on the ERP
-screen, that locked day reaches head office (finance + owner) instead of stopping at the store. The next step
-(slice 3) is to prove that end-to-end in a real browser.
+**What the owner should check:** nothing new to click yet — see the honest correction below about what still
+has to be wired before the served close reaches head office.
+
+### Slice 3 — the real screen→box→cloud join (designed, ready to build; owner approved "build the join")
+
+Verified while planning slice 3: the served "Close the day" button **locks the day locally but does NOT reach
+head office**, because the whole manager ERP shell (`apps/web-erp/web/app.js`) has **no cloud connection at
+all** — `bootManager` (`apps/web-erp/src/browser-entry.ts:2254`) news up a `SyncOutbox()` that nothing drains
+(no `SyncAgent` anywhere in `apps/web-erp/`). So slices 1+2's "reaches head office" was premature: the cloud
+route + transport route exist and are integration-tested, but the join from a served click to the cloud is
+still missing. The architecturally-correct home for the close is the **store box** (it has the *live* outbox
+depth + shift/exception registers; the browser only has a stale synced snapshot), whose existing sync agent
+already carries `StoreDayClosed`/`StoreDayReopened` via slice 2's route.
+
+**Slice 3a (next, self-contained, testable without the screen — mirrors how `commitCompletion` shipped as a
+node method with no HTTP route):** add a day-close pipeline to `edge/store-edge/src/main.ts`, copying the
+**completions** pipeline verbatim at its ~9 wiring points:
+- `DAYCLOSE_CURSOR = 'sync-cursor-day-close'` (main.ts:65 pattern); `dayCloseLog` = `openFileLog({... fileName:
+  'day-close.log'})` + `dayCloseDeadLetterLog` ('dead-letters-day-close') (main.ts:196-205 pattern);
+  `dayClosePipeline = new SyncPipeline({... cursorFile: DAYCLOSE_CURSOR, noun: 'day close', eventFor:
+  dayCloseEventFrom })` (main.ts:299-319); `restore()` + `dayCloseOutbox = dayClosePipeline.outbox`
+  (321-326); `dayCloseAgent = new SyncAgent(dayCloseOutbox, httpTransport({...}))` (536-538, cloud branch
+  only, null in the no-cloud branch); `settleDayClose` (588-591); a line in `drainAndSettle` (611-612) + the
+  stop drain (679-682); the `dayCloseAgent`/`dayCloseOutbox`/`dayCloseLog` fields on `EdgeProcess` (88-142) and
+  both return objects (508-520 no-cloud, 649-704 cloud).
+- `dayCloseEventFrom(record, index)`: parse the day-close log record → mint the `StoreDayClosed` event
+  (payload = the cloud contract `{dayCloseId, storeId, tradingDay, closedBy, closedAt, locked}`, idempotencyKey
+  `day-close:${dayCloseId}`). Used as the pipeline's `eventFor` (restart) AND for the run-time enqueue, so both
+  paths mint the identical event (the cloud route is idempotent per `dayCloseId` regardless).
+- An **authoritative** `closeDay({ dayCloseId, closedBy })` method on the `EdgeProcess` (in main.ts, where
+  `snapshot()`, the pack and all outboxes are in scope): compute LIVE inputs —
+  `unsentSyncItems = outbox.pending().length + returnsOutbox... + completionsOutbox... + dayCloseOutbox...`
+  (sum ALL four; NB `managerPayload.unsentItems` today counts only sales — a pre-existing under-count, so do
+  NOT reuse it for the gate); `unresolvedExceptions` from `managerPayload(snapshot())['openExceptions']` —
+  **if that field is ABSENT (rules unknown), BLOCK the close** (never treat absent as 0), else count =
+  items.length; `tradingDayRule = packCutoff(pack)`; `tradingDay` = the previous trading date of the current
+  `tradingDate(now, rule)` (closeDay requires `currentTradingDate > tradingDay`); `closedAtLocal = now.slice(0,16)`,
+  `closedAt = now`. Run the engine `closeDay(input, throwaway SyncOutbox)` purely for its tested gate checks;
+  on a thrown blocker return `{closed:false, reason}`; on success `commitLocally({saleId: dayCloseId, record,
+  log: dayCloseLog})` then enqueue `dayCloseEventFrom(record)` to `dayCloseOutbox`, return `{closed:true,
+  result}`. Available in BOTH the cloud and no-cloud branches (offline-first: the day locks locally regardless;
+  it drains when the agent exists).
+- Test `tests/integration/day-close-reaches-the-cloud-through-the-edge.test.ts` — mirror
+  `offline-returns-reach-the-cloud-through-the-edge.test.ts`: `startEdge` with a `fetch` stub → `h.raw`, call
+  `edge.closeDay(...)`, `edge.stop()` (or `syncOnce()`) drains, assert `GET /v1/pos/day-close` shows the locked
+  day; a blocked case (an unsent sale in the sales outbox blocks the close); restart resilience
+  (`dayCloseAgent.health().unsentCount`).
+
+**Slice 3b:** the write path — a `/lane/day-close` POST route on the lane server (mirror `/lane/returns`,
+`lane-server.ts:63` + dispatch 283-285) calling `edge.closeDay(...)`, and wire `apps/web-erp/web/app.js`'s
+"Close the day" button (currently `session.closeTheDay` local-only, app.js:706) + `browser-entry.ts` to POST to
+it (the browser's local `closeTheDay` becomes a preview; the box is authoritative).
+
+**Slice 3c:** browser e2e — drive the served "Close the day" button in headless Chromium → box → cloud (mirror
+`cash-office-signoff-delivery.e2e.ts`), then the honest **re-rate** of M14-FR-04 (INTEGRATION_TESTED/
+E2E_VERIFIED) and M14 module if warranted.
+
+Pausing here at a clean, merged point (slices 1 & 2 in `main`, branch clean) — slice 3a is a large, careful
+edit to the edge's money-sync composition root and is best built as its own focused increment with full care.
 
 ---
 
