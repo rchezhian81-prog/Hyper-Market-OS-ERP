@@ -116,6 +116,11 @@ import {
   type OverShortSignOffPort, type SignOffResult,
 } from './cash-office-session';
 import {
+  createRiskAcceptanceSession,
+  type RiskAcceptancePorts, type RiskAcceptanceSession, type BlockedGatesData, type GateBlockView,
+  type RiskAcceptPort, type AcceptResult,
+} from './risk-acceptance-session';
+import {
   createDataIoSession,
   type DataIoPorts, type DataIoSession, type ExportDomainView, type ExportAuditView,
   type ExportResult, type ValidateResult, type CommitResult, type ImportPreviewView,
@@ -1058,6 +1063,93 @@ export async function fetchOverShortWorklist(): Promise<CashOverShortData | null
         varianceMinor: r.varianceMinor, reasonCode: r.reasonCode,
       }));
     return { openCount: open.length, totalVarianceMinor: open.reduce((s, r) => s + r.varianceMinor, 0), open };
+  } catch {
+    return null;
+  }
+}
+
+// ── Risk-acceptance / compliance-gates (M34-FR-04) ────────────────────────────────────────────────────────────
+
+/** What the box tells the risk-acceptance screen: who is looking, what they may do, and (optionally) the
+ *  worklist it last carried. The blocked gates are a LIVE cloud read (`GET /v1/compliance/gates/blocked`)
+ *  refreshed by the shell when online; offline the screen shows its clearly-marked sample stand-in. */
+export interface RiskAcceptanceData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+  readonly worklist?: BlockedGatesData;
+}
+
+const RISK_READ_PERMISSION = 'compliance.risk.read';
+const RISK_MANAGE_PERMISSION = 'compliance.risk.manage';
+const EMPTY_BLOCKED_GATES: BlockedGatesData = Object.freeze({ count: 0, blocked: [] });
+const NOOP_ACCEPT_PORT: RiskAcceptPort = { post: async () => 'lost_link' };
+
+export function riskAcceptancePortsFromData(
+  data: RiskAcceptanceData | undefined,
+  worklist?: BlockedGatesData,
+  acceptPort: RiskAcceptPort = NOOP_ACCEPT_PORT,
+): RiskAcceptancePorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    worklist: () => worklist ?? data?.worklist ?? EMPTY_BLOCKED_GATES,
+    // Default-deny: an absent permission list can read/accept nothing (the server would refuse it anyway).
+    mayRead: () => held.has(RISK_READ_PERMISSION),
+    mayManage: () => held.has(RISK_MANAGE_PERMISSION),
+    acceptPort: () => acceptPort,
+  };
+}
+
+/** Build the risk-acceptance session, or `null` when the box carried no payload for it (shell shows the sample). */
+export function bootRiskAcceptance(
+  data: RiskAcceptanceData | undefined,
+  worklist?: BlockedGatesData,
+  acceptPort?: RiskAcceptPort,
+): RiskAcceptanceSession | null {
+  if (data === undefined) return null;
+  return createRiskAcceptanceSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    riskAcceptancePortsFromData(data, worklist, acceptPort),
+  );
+}
+
+/** The authenticated POST of an acceptance decision — the accepter's OWN session cookie
+ *  (`credentials: 'same-origin'`), never a service token. A network/timeout is a retryable lost link, not a
+ *  refusal. The riskId rides in the URL; the server records the acceptance in the caller's own name and enforces
+ *  the name+rationale rule (§28). */
+function openRiskAcceptPort(): RiskAcceptPort {
+  return {
+    post: async ({ riskId, rationale }): Promise<AcceptResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return 'lost_link';
+      const key = globalThis.crypto?.randomUUID?.() ?? `risk-accept-${riskId}`;
+      try {
+        const res = await fetchFn(`/v1/compliance/risks/${encodeURIComponent(riskId)}/acceptance`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ rationale }),
+        });
+        return res.status >= 200 && res.status < 300 ? 'accepted' : 'refused';
+      } catch {
+        return 'lost_link';
+      }
+    },
+  };
+}
+
+/** Read the live blocked-gates worklist (a GET — read-only). Returns null offline/refused so the shell keeps
+ *  whatever it was showing and its stale strip says the page is what the box last told it. */
+export async function fetchBlockedGates(): Promise<BlockedGatesData | null> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return null;
+  try {
+    const res = await fetchFn('/v1/compliance/gates/blocked', {
+      method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin',
+    });
+    if (res.status >= 400) return null;
+    const body = (await res.json()) as { blocked?: readonly GateBlockView[] };
+    const blocked = body.blocked ?? [];
+    return { count: blocked.length, blocked };
   } catch {
     return null;
   }
@@ -2024,6 +2116,13 @@ interface ManagerWindow {
     refresh(): Promise<CashOverShortData | null>;
     present(worklist: CashOverShortData): CashOfficeSession;
   };
+  riskAcceptanceData?: RiskAcceptanceData;
+  riskAcceptanceSession?: RiskAcceptanceSession;
+  /** The shell reads the live blocked-gates worklist through this and re-presents it — a GET read, never a write. */
+  riskAcceptance?: {
+    refresh(): Promise<BlockedGatesData | null>;
+    present(worklist: BlockedGatesData): RiskAcceptanceSession;
+  };
   dataIoData?: DataIoData;
   dataIoSession?: DataIoSession;
   /** The shell reads the live export catalogue + log through this and re-presents it — GET reads, never writes. */
@@ -2618,6 +2717,23 @@ if (browserWindow !== undefined) {
       present: (worklist) => createCashOfficeSession(
         { userId: cashOfficeData?.userId === undefined ? null : cashOfficeData.userId },
         cashOfficePortsFromData(cashOfficeData, worklist, signOffPort),
+      ),
+    };
+  }
+  // The risk-acceptance / compliance-gates desk (M34-FR-04): boots from the box's policy (who + what they hold),
+  // then the shell refreshes the blocked gates with a live GET (read-only). Offline it shows its sample stand-in
+  // and says so. The one write is a HUMAN acceptance in the accepter's own name — never on load, only on an
+  // explicit click — and the server records the name + rationale (§28), which the screen never fabricates.
+  const riskAcceptanceData = browserWindow.riskAcceptanceData;
+  const riskAcceptPort = openRiskAcceptPort();
+  const riskAcceptance = bootRiskAcceptance(riskAcceptanceData, undefined, riskAcceptPort);
+  if (riskAcceptance !== null) {
+    browserWindow.riskAcceptanceSession = riskAcceptance;
+    browserWindow.riskAcceptance = {
+      refresh: fetchBlockedGates,
+      present: (worklist) => createRiskAcceptanceSession(
+        { userId: riskAcceptanceData?.userId === undefined ? null : riskAcceptanceData.userId },
+        riskAcceptancePortsFromData(riskAcceptanceData, worklist, riskAcceptPort),
       ),
     };
   }

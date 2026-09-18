@@ -49,13 +49,13 @@ import {
   basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
-import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackCashOfficePolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy } from './store-pack';
+import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy } from './store-pack';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'cash-office', 'data-io', 'workforce', 'ess', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
+  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'cash-office', 'risk-acceptance', 'data-io', 'workforce', 'ess', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1407,6 +1407,26 @@ export function cashOfficePayload(input: ScreenInput): Record<string, unknown> |
 }
 
 /**
+ * The risk-acceptance / compliance-gates payload (M34-FR-04 · P-03 · §28).
+ *
+ * `null` when the box has not been told who is on the screen. **The blocked gates themselves are NOT in this
+ * payload**: they are read live from the cloud (`GET /v1/compliance/gates/blocked`); the shell fetches it when
+ * online and shows a sample stand-in until then. This carries only the accepter's CURRENT context — who is
+ * looking + what they hold now (`compliance.risk.read`, `compliance.risk.manage`), re-read every render. The
+ * cloud route re-checks the authority and records an acceptance in the accepter's own name, so this only shapes
+ * the UI.
+ */
+export function riskAcceptancePayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.riskAcceptancePolicy.known) return null;
+  const policy: PackRiskAcceptancePolicy = input.pack.riskAcceptancePolicy.value;
+
+  const payload: Record<string, unknown> = { permissions: policy.permissions };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+
+  return payload;
+}
+
+/**
  * The data import/export console payload (M30-FR-01/02/03 · P-06).
  *
  * `null` when the box has not been told who is on the screen. The exportable domains and the export log are read
@@ -1607,6 +1627,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   operations: 'operationsInboxData',
   'loss-prevention': 'lossPreventionInboxData',
   'cash-office': 'cashOfficeData',
+  'risk-acceptance': 'riskAcceptanceData',
   'data-io': 'dataIoData',
   workforce: 'workforceInboxData',
   ess: 'essData',
@@ -1642,6 +1663,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   operations: operationsPayload,
   'loss-prevention': lossPreventionPayload,
   'cash-office': cashOfficePayload,
+  'risk-acceptance': riskAcceptancePayload,
   'data-io': dataIoPayload,
   workforce: workforcePayload,
   ess: essPayload,

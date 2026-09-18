@@ -508,6 +508,19 @@ export interface PackCashOfficePolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the risk-acceptance / compliance-gates screen and what they may do (M34-FR-04). The blocked gates
+ *  are read live from the cloud (`GET /v1/compliance/gates/blocked`), not the pack; this is only who the box was
+ *  told is looking, so the shell can gate on `compliance.risk.read` before the live read (and offer
+ *  `compliance.risk.manage` to accept a risk). The accepter's own id also names who is at the screen so the
+ *  shell can surface when nobody is named (an acceptance carries the accepter's name). */
+export interface PackRiskAcceptancePolicy {
+  readonly userId?: string;
+  /** The permission codes this user holds — `compliance.risk.read` to see the blocked gates,
+   *  `compliance.risk.manage` to accept a risk. Never defaulted. The cloud route re-checks both, so this only
+   *  shapes the UI. */
+  readonly permissions: readonly string[];
+}
+
 /** One import template the box ships to the data import/export screen (M30-FR-01) — the store's configured
  *  loads. The full column spec travels because the validate/commit routes take the template in the body; there
  *  is no proprietary "list templates" route. */
@@ -920,6 +933,8 @@ export interface StorePack {
   readonly lossPreventionPolicy: Register<PackLossPreventionPolicy>;
   /** Who is on the cash-office over/short sign-off screen and what they may do there (M14-FR-02). */
   readonly cashOfficePolicy: Register<PackCashOfficePolicy>;
+  /** Who is on the risk-acceptance / compliance-gates screen and what they may do there (M34-FR-04). */
+  readonly riskAcceptancePolicy: Register<PackRiskAcceptancePolicy>;
   /** Who is on the data import/export console, what they may do, and the store's import templates (M30). */
   readonly dataIoPolicy: Register<PackDataIoPolicy>;
   /** Who is on the Workforce guidance inbox screen and what they may do there (A10). */
@@ -1068,6 +1083,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     operationsInboxPolicy: notKnown(why),
     lossPreventionPolicy: notKnown(why),
     cashOfficePolicy: notKnown(why),
+    riskAcceptancePolicy: notKnown(why),
     dataIoPolicy: notKnown(why),
     workforceInboxPolicy: notKnown(why),
     essPolicy: notKnown(why),
@@ -1183,6 +1199,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     operationsInboxPolicy: section<PackOperationsInboxPolicy>('operationsInboxPolicy'),
     lossPreventionPolicy: section<PackLossPreventionPolicy>('lossPreventionPolicy'),
     cashOfficePolicy: section<PackCashOfficePolicy>('cashOfficePolicy'),
+    riskAcceptancePolicy: section<PackRiskAcceptancePolicy>('riskAcceptancePolicy'),
     dataIoPolicy: section<PackDataIoPolicy>('dataIoPolicy'),
     workforceInboxPolicy: section<PackWorkforceInboxPolicy>('workforceInboxPolicy'),
     essPolicy: section<PackEssPolicy>('essPolicy'),
