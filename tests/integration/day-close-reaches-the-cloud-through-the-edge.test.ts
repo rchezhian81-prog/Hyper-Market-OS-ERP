@@ -38,7 +38,7 @@ const saleRecord = (saleId: string) => JSON.stringify({
   tenders: [{ kind: 'cash', amount: { minor: 15000, currency: 'INR' } }],
 });
 
-interface Row { dayCloseId: string; locked: boolean; reopened: boolean; closedBy: string }
+interface Row { dayCloseId: string; locked: boolean; reopened: boolean; closedBy: string; reopenedBy: string | null; approvedBy: string | null; governanceFlags: readonly string[] }
 interface ListBody { dayCloses: Row[]; lockedCount: number }
 const dayCloses = async (h: ApiHarness): Promise<ListBody> =>
   (await h.request({ method: 'GET', path: '/v1/pos/day-close', userId: 'u-owner', tenantId: A })).body as ListBody;
@@ -165,5 +165,95 @@ describe('the store day close reaches head office through the real edge (M14-FR-
     const body = await dayCloses(s.h);
     expect(body.lockedCount).toBe(1);
     expect(body.dayCloses[0]).toMatchObject({ dayCloseId: 'dc-3', locked: true });
+  });
+});
+
+describe('the controlled reopen reaches head office through the real edge (M14-FR-04 / §28)', () => {
+  it('reopens a locked day and it reaches the cloud, recorded unlocked with NO §28 breach', async () => {
+    const s = await scene({ withPack: true });
+    await s.h.provisionRole(A, 'u-acct', 'accountant'); // holds till.dayclose.approve — a genuine approver
+    const edge = await s.boot();
+
+    // Close first, and let it reach the cloud (a day must be locked before it can be reopened).
+    expect((await edge.closeDay({ dayCloseId: 'dc-r1', closedBy: 'u-owner' })).closed).toBe(true);
+    await edge.syncOnce!();
+    expect((await dayCloses(s.h)).lockedCount).toBe(1);
+
+    // Reopen it: the owner reopens, a DIFFERENT authority (the accountant) approved it (§28).
+    const outcome = await edge.reopenDay({ dayCloseId: 'dc-r1', reopenedBy: 'u-owner', reason: 'wrong float found next morning', approvedBy: 'u-acct' });
+    expect(outcome.reopened).toBe(true);
+    expect(edge.dayCloseAgent?.health().unsentCount).toBe(1); // the reopen is queued, not yet drained
+    await edge.syncOnce!();
+    expect(edge.dayCloseAgent?.health().unsentCount).toBe(0);
+
+    const body = await dayCloses(s.h);
+    // A reopened day is open again (locked:false), the approver is recorded, and there is no breach flag.
+    expect(body.lockedCount).toBe(0);
+    expect(body.dayCloses[0]).toMatchObject({ dayCloseId: 'dc-r1', locked: false, reopened: true, reopenedBy: 'u-owner', approvedBy: 'u-acct' });
+    expect(body.dayCloses[0]?.governanceFlags).toEqual([]);
+  });
+
+  it('records-and-FLAGS a reopen whose approver lacks the §28 authority (never rejects — hard rule #10)', async () => {
+    const s = await scene({ withPack: true });
+    const edge = await s.boot();
+    expect((await edge.closeDay({ dayCloseId: 'dc-r2', closedBy: 'u-owner' })).closed).toBe(true);
+    await edge.syncOnce!();
+
+    // The named approver (u-mgr, a store_manager) is a DIFFERENT person, so the box's §28 gate passes —
+    // but the store manager does NOT hold till.dayclose.approve. Only the cloud knows that, and it FLAGS it.
+    const outcome = await edge.reopenDay({ dayCloseId: 'dc-r2', reopenedBy: 'u-owner', reason: 'recount', approvedBy: 'u-mgr' });
+    expect(outcome.reopened).toBe(true);
+    await edge.syncOnce!();
+
+    const row = (await dayCloses(s.h)).dayCloses.find((r) => r.dayCloseId === 'dc-r2');
+    expect(row).toMatchObject({ reopened: true, locked: false, approvedBy: 'u-mgr' });
+    expect(row?.governanceFlags).toContain('approver_lacks_authority');
+  });
+
+  it('REFUSES a self-approved reopen at the box (§28) — nothing reaches the cloud', async () => {
+    const s = await scene({ withPack: true });
+    const edge = await s.boot();
+    expect((await edge.closeDay({ dayCloseId: 'dc-r3', closedBy: 'u-owner' })).closed).toBe(true);
+    await edge.syncOnce!();
+
+    // The reopener names themselves as the approver — the engine's §28 gate throws, the box refuses.
+    const outcome = await edge.reopenDay({ dayCloseId: 'dc-r3', reopenedBy: 'u-owner', reason: 'recount', approvedBy: 'u-owner' });
+    expect(outcome.reopened).toBe(false);
+    if (outcome.reopened) return;
+    expect(outcome.reason).toMatch(/different person|approval/i);
+    await edge.syncOnce!();
+    // The day is still locked at the cloud — no reopen was recorded.
+    const body = await dayCloses(s.h);
+    expect(body.lockedCount).toBe(1);
+    expect(body.dayCloses.find((r) => r.dayCloseId === 'dc-r3')?.reopened).toBe(false);
+  });
+
+  it('refuses to reopen a day this box never closed', async () => {
+    const s = await scene({ withPack: true });
+    const edge = await s.boot();
+    const outcome = await edge.reopenDay({ dayCloseId: 'dc-never', reopenedBy: 'u-owner', reason: 'x', approvedBy: 'u-acct' });
+    expect(outcome.reopened).toBe(false);
+    if (outcome.reopened) return;
+    expect(outcome.reason).toMatch(/not closed on this box/i);
+  });
+
+  it('after a restart, re-queues BOTH the close and the reopen with their correct types (never a reopen as a close)', async () => {
+    const s = await scene({ withPack: true });
+    await s.h.provisionRole(A, 'u-acct', 'accountant');
+    const edge = await s.boot();
+    expect((await edge.closeDay({ dayCloseId: 'dc-r4', closedBy: 'u-owner' })).closed).toBe(true);
+    const reopen = await edge.reopenDay({ dayCloseId: 'dc-r4', reopenedBy: 'u-owner', reason: 'recount', approvedBy: 'u-acct' });
+    expect(reopen.reopened).toBe(true);
+    await edge.stop(); // both the close and the reopen are on the disk, undrained
+
+    // A fresh box re-reads its log and re-queues both — the reopen record must re-mint as StoreDayReopened,
+    // never as a close, or a locked day would silently come back. Draining leaves the cloud recorded reopened.
+    const restarted = await s.boot();
+    await restarted.syncOnce!();
+    expect(restarted.dayCloseAgent?.health().unsentCount).toBe(0);
+    const body = await dayCloses(s.h);
+    expect(body.lockedCount).toBe(0);
+    expect(body.dayCloses[0]).toMatchObject({ dayCloseId: 'dc-r4', reopened: true, locked: false, approvedBy: 'u-acct' });
+    expect(body.dayCloses[0]?.governanceFlags).toEqual([]);
   });
 });
