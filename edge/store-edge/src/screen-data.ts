@@ -49,13 +49,13 @@ import {
   basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
-import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy } from './store-pack';
+import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy } from './store-pack';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'cash-office', 'risk-acceptance', 'data-io', 'workforce', 'ess', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
+  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'cash-office', 'risk-acceptance', 'day-reopen', 'data-io', 'workforce', 'ess', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1427,6 +1427,26 @@ export function riskAcceptancePayload(input: ScreenInput): Record<string, unknow
 }
 
 /**
+ * The day-reopen payload (M14-FR-04 · §28).
+ *
+ * `null` when the box has not been told who is on the screen. **The locked days themselves are NOT in this
+ * payload**: they are read live from the cloud (`GET /v1/pos/day-close`); the shell fetches it when online and
+ * shows a sample stand-in until then. This carries only the reopener's CURRENT context — who is looking + what
+ * they hold now (`till.dayclose.read`, `till.dayclose.approve`), re-read every render. The reopener's own id
+ * also lets the screen enforce §28 locally (the named approver must be a DIFFERENT person) before any POST. The
+ * reopen itself posts to the BOX (`POST /lane/day-reopen`), which is the only place that can perform it.
+ */
+export function dayReopenPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.dayReopenPolicy.known) return null;
+  const policy: PackDayReopenPolicy = input.pack.dayReopenPolicy.value;
+
+  const payload: Record<string, unknown> = { permissions: policy.permissions };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+
+  return payload;
+}
+
+/**
  * The data import/export console payload (M30-FR-01/02/03 · P-06).
  *
  * `null` when the box has not been told who is on the screen. The exportable domains and the export log are read
@@ -1628,6 +1648,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   'loss-prevention': 'lossPreventionInboxData',
   'cash-office': 'cashOfficeData',
   'risk-acceptance': 'riskAcceptanceData',
+  'day-reopen': 'dayReopenData',
   'data-io': 'dataIoData',
   workforce: 'workforceInboxData',
   ess: 'essData',
@@ -1664,6 +1685,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   'loss-prevention': lossPreventionPayload,
   'cash-office': cashOfficePayload,
   'risk-acceptance': riskAcceptancePayload,
+  'day-reopen': dayReopenPayload,
   'data-io': dataIoPayload,
   workforce: workforcePayload,
   ess: essPayload,

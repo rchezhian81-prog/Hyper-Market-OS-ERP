@@ -122,6 +122,11 @@ import {
   type RiskAcceptPort, type AcceptResult,
 } from './risk-acceptance-session';
 import {
+  createDayReopenSession,
+  type DayReopenPorts, type DayReopenSession, type DayReopenData, type LockedDayView,
+  type DayReopenPort, type ReopenResult,
+} from './day-reopen-session';
+import {
   createDataIoSession,
   type DataIoPorts, type DataIoSession, type ExportDomainView, type ExportAuditView,
   type ExportResult, type ValidateResult, type CommitResult, type ImportPreviewView,
@@ -1064,6 +1069,103 @@ export async function fetchOverShortWorklist(): Promise<CashOverShortData | null
         varianceMinor: r.varianceMinor, reasonCode: r.reasonCode,
       }));
     return { openCount: open.length, totalVarianceMinor: open.reduce((s, r) => s + r.varianceMinor, 0), open };
+  } catch {
+    return null;
+  }
+}
+
+// ── Day reopen (M14-FR-04 / §28) ──────────────────────────────────────────────────────────────────────────────
+
+/** What the box tells the day-reopen screen: who is looking, what they may do, and (optionally) the worklist it
+ *  last carried. The locked days are a LIVE cloud read (`GET /v1/pos/day-close`) the shell refreshes when online;
+ *  offline the screen shows its clearly-marked sample stand-in. */
+export interface DayReopenScreenData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+  readonly worklist?: DayReopenData;
+}
+
+const DAYCLOSE_READ_PERMISSION = 'till.dayclose.read';
+const DAYCLOSE_APPROVE_PERMISSION = 'till.dayclose.approve';
+const EMPTY_LOCKED_DAYS: DayReopenData = Object.freeze({ lockedCount: 0, locked: [] });
+const NOOP_REOPEN_PORT: DayReopenPort = { post: async () => 'lost_link' };
+
+export function dayReopenPortsFromData(
+  data: DayReopenScreenData | undefined,
+  worklist?: DayReopenData,
+  reopenPort: DayReopenPort = NOOP_REOPEN_PORT,
+): DayReopenPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    worklist: () => worklist ?? data?.worklist ?? EMPTY_LOCKED_DAYS,
+    // Default-deny: an absent permission list can read/reopen nothing (the server would refuse it anyway).
+    mayRead: () => held.has(DAYCLOSE_READ_PERMISSION),
+    mayReopen: () => held.has(DAYCLOSE_APPROVE_PERMISSION),
+    reopenPort: () => reopenPort,
+  };
+}
+
+/** Build the day-reopen session, or `null` when the box carried no payload for it (shell shows the sample). */
+export function bootDayReopen(
+  data: DayReopenScreenData | undefined,
+  worklist?: DayReopenData,
+  reopenPort?: DayReopenPort,
+): DayReopenSession | null {
+  if (data === undefined) return null;
+  return createDayReopenSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    dayReopenPortsFromData(data, worklist, reopenPort),
+  );
+}
+
+/** The reopen write goes to the BOX, not the cloud — cross-port on 127.0.0.1, the same reason the manager's
+ *  close does (the box owns the locked day and re-queues the reopen; the cloud only has a synced-recording
+ *  route). `laneWriteBase` names the box's lane socket; absent, there is no box to post to and the port stays a
+ *  no-op that reports a lost link. A dropped link is a lost link, never a false "reopened" (P-08). */
+export function openDayReopenPort(laneWriteBase: string | undefined, reopenedBy: string | null): DayReopenPort {
+  if (laneWriteBase === undefined || reopenedBy === null || reopenedBy === '') return NOOP_REOPEN_PORT;
+  return {
+    post: async ({ dayCloseId, reason, approvedBy }): Promise<ReopenResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return 'lost_link';
+      try {
+        const res = await fetchFn(`${laneWriteBase}/lane/day-reopen`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', accept: 'application/json' },
+          // The reopener is the authenticated user at this screen (bound at boot from `dayReopenData.userId`);
+          // the named approver rides as `approvedBy`, and the box enforces §28 (approver ≠ reopener).
+          body: JSON.stringify({ dayCloseId, reopenedBy, reason, approvedBy }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { reopened?: boolean };
+        if (res.status >= 200 && res.status < 300 && body.reopened === true) return 'reopened';
+        return 'refused';
+      } catch {
+        return 'lost_link';
+      }
+    },
+  };
+}
+
+/** One row of `GET /v1/pos/day-close` — the cloud's locked-day list. */
+interface RawDayCloseRow {
+  readonly dayCloseId: string; readonly tradingDay: string; readonly closedBy: string; readonly closedAt: string; readonly locked: boolean;
+}
+
+/** Read the live locked-day worklist (a GET — read-only) and keep only the still-LOCKED days — the ones a
+ *  reopen can act on. Returns null offline/refused so the shell keeps whatever it was showing. */
+export async function fetchLockedDays(): Promise<DayReopenData | null> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return null;
+  try {
+    const res = await fetchFn('/v1/pos/day-close', {
+      method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin',
+    });
+    if (res.status >= 400) return null;
+    const body = (await res.json()) as { dayCloses?: readonly RawDayCloseRow[] };
+    const locked: LockedDayView[] = (body.dayCloses ?? [])
+      .filter((r) => r.locked)
+      .map((r) => ({ dayCloseId: r.dayCloseId, tradingDay: r.tradingDay, closedBy: r.closedBy, closedAt: r.closedAt }));
+    return { lockedCount: locked.length, locked };
   } catch {
     return null;
   }
@@ -2131,6 +2233,14 @@ interface ManagerWindow {
     refresh(): Promise<BlockedGatesData | null>;
     present(worklist: BlockedGatesData): RiskAcceptanceSession;
   };
+  dayReopenData?: DayReopenScreenData;
+  dayReopenSession?: DayReopenSession;
+  /** The shell reads the live locked-day worklist through this and re-presents it — a GET read; the reopen
+   *  action itself posts to the box (cross-port), never the cloud. */
+  dayReopen?: {
+    refresh(): Promise<DayReopenData | null>;
+    present(worklist: DayReopenData): DayReopenSession;
+  };
   dataIoData?: DataIoData;
   dataIoSession?: DataIoSession;
   /** The shell reads the live export catalogue + log through this and re-presents it — GET reads, never writes. */
@@ -2793,6 +2903,24 @@ if (browserWindow !== undefined) {
       present: (worklist) => createRiskAcceptanceSession(
         { userId: riskAcceptanceData?.userId === undefined ? null : riskAcceptanceData.userId },
         riskAcceptancePortsFromData(riskAcceptanceData, worklist, riskAcceptPort),
+      ),
+    };
+  }
+  // The day-reopen desk (M14-FR-04 / §28): boots from the box's policy (who + what they hold), then the shell
+  // refreshes the LOCKED days with a live GET from the cloud (read-only). The one write — REOPEN a locked day
+  // with a reason and a NAMED approver — runs only on an explicit click, and it posts to the BOX (cross-port),
+  // not the cloud, because only the box can perform the reopen (it holds the locked day and re-queues it). The
+  // screen refuses a self-approval before any POST (§28); the box enforces it and the cloud re-verifies authority.
+  const dayReopenData = browserWindow.dayReopenData;
+  const reopenPort = openDayReopenPort(browserWindow.laneWriteBase, dayReopenData?.userId === undefined ? null : dayReopenData.userId);
+  const dayReopen = bootDayReopen(dayReopenData, undefined, reopenPort);
+  if (dayReopen !== null) {
+    browserWindow.dayReopenSession = dayReopen;
+    browserWindow.dayReopen = {
+      refresh: fetchLockedDays,
+      present: (worklist) => createDayReopenSession(
+        { userId: dayReopenData?.userId === undefined ? null : dayReopenData.userId },
+        dayReopenPortsFromData(dayReopenData, worklist, reopenPort),
       ),
     };
   }
