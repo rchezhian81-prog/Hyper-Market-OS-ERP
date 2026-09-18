@@ -92,10 +92,16 @@ copying the **completions** pipeline verbatim at its ~9 wiring points:
   day; a blocked case (an unsent sale in the sales outbox blocks the close); restart resilience
   (`dayCloseAgent.health().unsentCount`).
 
-**Slice 3b:** the write path — a `/lane/day-close` POST route on the lane server (mirror `/lane/returns`,
-`lane-server.ts:63` + dispatch 283-285) calling `edge.closeDay(...)`, and wire `apps/web-erp/web/app.js`'s
-"Close the day" button (currently `session.closeTheDay` local-only, app.js:706) + `browser-entry.ts` to POST to
-it (the browser's local `closeTheDay` becomes a preview; the box is authoritative).
+**Slice 3b (next):** the write path — a `/lane/day-close` POST route on the lane server (mirror `/lane/returns`,
+`lane-server.ts:63` + dispatch 283-285) that triggers the box's authoritative `closeDay`, and wire
+`apps/web-erp/web/app.js`'s "Close the day" button (currently `session.closeTheDay` local-only, app.js:706) +
+`browser-entry.ts` to POST to it (the browser's local `closeTheDay` becomes a preview; the box is
+authoritative). **Wiring note (found in 3a):** `closeDay` lives on the `EdgeProcess` (main.ts), NOT on the
+`EdgeNode` the lane server is constructed with — because it needs `snapshot()` + the pack + all four outboxes.
+So `startLaneServer` must be given a `closeDay` handler (a new optional input), and since the lane is currently
+created (~main.ts:440) BEFORE `closeDay` is defined (~after `snapshot()`), either move the lane creation to
+after `closeDay` (nothing between them uses `lane` except the returns) or pass a thunk. Keep it loopback-only
++ `application/json`-guarded exactly like the sale/return routes (RR-F01).
 
 **Slice 3c:** browser e2e — drive the served "Close the day" button in headless Chromium → box → cloud (mirror
 `cash-office-signoff-delivery.e2e.ts`), then the honest **re-rate** of M14-FR-04 (INTEGRATION_TESTED/
