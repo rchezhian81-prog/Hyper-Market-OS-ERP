@@ -496,6 +496,18 @@ export interface PackLossPreventionPolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the cash-office over/short sign-off screen and what they may do (M14-FR-02). The open over/shorts
+ *  are read live from the cloud (`GET /v1/shifts/over-short`), not the pack; this is only who the box was told
+ *  is looking, so the shell can gate on `till.shift.read` before the live read (and offer `till.overshort.review`
+ *  to sign off). The reviewer's own id also lets the screen enforce §28 locally (a reviewer may not sign off a
+ *  drawer they counted themselves) before any POST. */
+export interface PackCashOfficePolicy {
+  readonly userId?: string;
+  /** The permission codes this user holds — `till.shift.read` to see the over/shorts, `till.overshort.review`
+   *  to sign one off. Never defaulted. The cloud route re-checks both, so this only shapes the UI. */
+  readonly permissions: readonly string[];
+}
+
 /** One import template the box ships to the data import/export screen (M30-FR-01) — the store's configured
  *  loads. The full column spec travels because the validate/commit routes take the template in the body; there
  *  is no proprietary "list templates" route. */
@@ -906,6 +918,8 @@ export interface StorePack {
   readonly operationsInboxPolicy: Register<PackOperationsInboxPolicy>;
   /** Who is on the loss-prevention investigations screen and what they may do there (M15-FR-04). */
   readonly lossPreventionPolicy: Register<PackLossPreventionPolicy>;
+  /** Who is on the cash-office over/short sign-off screen and what they may do there (M14-FR-02). */
+  readonly cashOfficePolicy: Register<PackCashOfficePolicy>;
   /** Who is on the data import/export console, what they may do, and the store's import templates (M30). */
   readonly dataIoPolicy: Register<PackDataIoPolicy>;
   /** Who is on the Workforce guidance inbox screen and what they may do there (A10). */
@@ -1053,6 +1067,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     dataQualityPolicy: notKnown(why),
     operationsInboxPolicy: notKnown(why),
     lossPreventionPolicy: notKnown(why),
+    cashOfficePolicy: notKnown(why),
     dataIoPolicy: notKnown(why),
     workforceInboxPolicy: notKnown(why),
     essPolicy: notKnown(why),
@@ -1167,6 +1182,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     dataQualityPolicy: section<PackDataQualityPolicy>('dataQualityPolicy'),
     operationsInboxPolicy: section<PackOperationsInboxPolicy>('operationsInboxPolicy'),
     lossPreventionPolicy: section<PackLossPreventionPolicy>('lossPreventionPolicy'),
+    cashOfficePolicy: section<PackCashOfficePolicy>('cashOfficePolicy'),
     dataIoPolicy: section<PackDataIoPolicy>('dataIoPolicy'),
     workforceInboxPolicy: section<PackWorkforceInboxPolicy>('workforceInboxPolicy'),
     essPolicy: section<PackEssPolicy>('essPolicy'),
