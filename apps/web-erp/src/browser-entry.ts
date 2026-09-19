@@ -70,6 +70,7 @@ import type { OriginalSale, RecordedReturn } from '../../../packages/returns/src
 import type { SatisfactionScore, ServiceCase, SlaPolicy } from '../../../packages/service-desk/src/index';
 import {
   createExpirySession, type ExpiryPorts, type ExpirySession, type RecallRecord,
+  type RecallCloudPort, type RecallCloudResult,
 } from './expiry-session';
 import type { Batch } from '../../../packages/fefo/src/index';
 import {
@@ -408,6 +409,7 @@ export interface ExpiryData {
 export function expiryPortsFromData(
   data: ExpiryData | undefined,
   ledger: Ledger,
+  recallCloud: RecallCloudPort,
 ): ExpiryPorts {
   return {
     batches: () => data?.batches ?? [],
@@ -417,11 +419,21 @@ export function expiryPortsFromData(
     // screen needs to fall back to the product code rather than showing a blank where a food
     // product's name belongs.
     productNames: () => data?.productNames,
+    recallCloud,
   };
 }
 
-/** Build the expiry and recall screen, or `null` when the box was told no near-expiry window. */
-export function bootExpiry(data: ExpiryData | undefined, ledger?: Ledger): ExpirySession | null {
+/**
+ * Build the expiry and recall screen, or `null` when the box was told no near-expiry window.
+ *
+ * The recall write-path defaults to the real same-origin port, so a boxed screen records recalls at
+ * head office out of the box; a test or the offline path can inject its own.
+ */
+export function bootExpiry(
+  data: ExpiryData | undefined,
+  ledger?: Ledger,
+  recallCloud: RecallCloudPort = openRecallCloudPort(),
+): ExpirySession | null {
   if (data === undefined) return null;
   return createExpirySession(
     {
@@ -432,7 +444,7 @@ export function bootExpiry(data: ExpiryData | undefined, ledger?: Ledger): Expir
       now: data.now ?? '1970-01-01T00:00:00.000Z',
       nearExpiryDays: data.nearExpiryDays ?? 0,
     },
-    expiryPortsFromData(data, ledger ?? new Ledger(new InMemoryLedgerStore())),
+    expiryPortsFromData(data, ledger ?? new Ledger(new InMemoryLedgerStore()), recallCloud),
   );
 }
 
@@ -2739,6 +2751,50 @@ export function openPriceChangePort(): PriceChangeCloudPort {
         return { saved: false, reason: 'no connection to head office — the price was not changed' };
       }
     },
+  };
+}
+
+/**
+ * The authenticated POST that records a recall's start and closure at head office as a DURABLE,
+ * CENTRAL record (M10-FR-04, API-04, hard rule #6). One operator-authenticated call under their OWN
+ * session (`credentials: 'same-origin'`, never a service token) to `POST /v1/quality/recalls/:batchId`
+ * (initiate) and `.../closure` (close): the cloud gates it on `quality.recall.initiate`, keeps the
+ * lifecycle event-sourced and never deletes a closed record. A 2xx carrying the recall is the saved
+ * record (initiate returns it on both a new 201 and an already-open 200); a 4xx is the cloud declining
+ * (surfaced, never a false "done"); a dropped link is a lost link, not a recall (P-08).
+ *
+ * The recall BLOCK that stops the till travels on the signed pack and is a separate mechanism; this
+ * is only the record.
+ */
+export function openRecallCloudPort(): RecallCloudPort {
+  const send = async (path: string, body: unknown, lostLink: string): Promise<RecallCloudResult> => {
+    const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+    if (fetchFn === undefined) return { recorded: false, reason: lostLink };
+    const key = globalThis.crypto?.randomUUID?.() ?? `recall-${Date.now()}`;
+    try {
+      const res = await fetchFn(path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(body),
+      });
+      const parsed = (await res.json().catch(() => ({}))) as { recall?: unknown; alreadyOpen?: boolean; whatHappened?: string };
+      if (res.status >= 200 && res.status < 300 && parsed.recall !== undefined) {
+        return { recorded: true, alreadyOpen: parsed.alreadyOpen === true };
+      }
+      // 400/403/409/422 or any other non-2xx — head office declined; surface exactly why it said no.
+      return { recorded: false, reason: parsed.whatHappened ?? 'head office did not record the recall' };
+    } catch {
+      return { recorded: false, reason: lostLink };
+    }
+  };
+  return {
+    initiate: ({ batchId, reason }) =>
+      send(`/v1/quality/recalls/${encodeURIComponent(batchId)}`, { reason },
+        'no connection to head office — the recall was not recorded'),
+    close: ({ batchId, evidenceRef }) =>
+      send(`/v1/quality/recalls/${encodeURIComponent(batchId)}/closure`, { evidenceRef },
+        'no connection to head office — the closure was not recorded'),
   };
 }
 

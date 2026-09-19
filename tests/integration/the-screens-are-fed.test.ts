@@ -2118,10 +2118,14 @@ describe('the expiry and recall screen, fed by the box', () => {
     expect(bootExpiry(undefined)).toBeNull();
   });
 
-  it('starts a recall and says how much is still in customers’ homes', async () => {
+  it('starts a recall, records it at head office, and says how much is still in customers’ homes', async () => {
     const base = await serve(snapshotOf());
-    const screen = bootExpiry((await payloadFromScreen(base, 'expiry'))! as never)!;
-    const outcome = screen.start({ recallId: 'RC-1', batchId: 'B-SOON', reason: 'supplier notice' });
+    // Head office is stubbed as reachable here; the browser e2e drives the real same-origin POST.
+    const screen = bootExpiry((await payloadFromScreen(base, 'expiry'))! as never, undefined, {
+      initiate: async () => ({ recorded: true }),
+      close: async () => ({ recorded: true }),
+    })!;
+    const outcome = await screen.start({ recallId: 'RC-1', batchId: 'B-SOON', reason: 'supplier notice' });
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     expect(outcome.recall.productId).toBe('p1');
@@ -2131,9 +2135,9 @@ describe('the expiry and recall screen, fed by the box', () => {
   it('refuses a batch this box has never heard of', async () => {
     const base = await serve(snapshotOf());
     const screen = bootExpiry((await payloadFromScreen(base, 'expiry'))! as never)!;
-    const outcome = screen.start({ recallId: 'RC-1', batchId: 'B-NOPE', reason: 'glass' });
+    const outcome = await screen.start({ recallId: 'RC-1', batchId: 'B-NOPE', reason: 'glass' });
     expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
+    if (outcome.ok || 'notSent' in outcome) return;
     expect(outcome.refusal).toBe('no_such_batch');
   });
 
@@ -2143,10 +2147,10 @@ describe('the expiry and recall screen, fed by the box', () => {
     }));
     const payload = (await payloadFromScreen(base, 'expiry'))!;
     expect('userId' in payload, '"userId" must be absent, not invented').toBe(false);
-    const outcome = bootExpiry(payload as never)!
+    const outcome = await bootExpiry(payload as never)!
       .start({ recallId: 'RC-1', batchId: 'B-SOON', reason: 'glass' });
     expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
+    if (outcome.ok || 'notSent' in outcome) return;
     expect(outcome.refusal).toBe('nobody_is_named_at_this_desk');
   });
 
@@ -2157,9 +2161,9 @@ describe('the expiry and recall screen, fed by the box', () => {
     };
     const base = await serve(snapshotOf({ pack: pack({ recalls: known([started]) }) }));
     const screen = bootExpiry((await payloadFromScreen(base, 'expiry'))! as never)!;
-    const outcome = screen.close({ recallId: 'RC-1', evidence: '  ', recoveredQty: 0, disposedQty: 0 });
+    const outcome = await screen.close({ recallId: 'RC-1', evidence: '  ', recoveredQty: 0, disposedQty: 0 });
     expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
+    if (outcome.ok || 'notSent' in outcome) return;
     expect(outcome.refusal).toBe('needs_evidence');
   });
 });
