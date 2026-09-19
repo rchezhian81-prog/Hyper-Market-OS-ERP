@@ -290,6 +290,8 @@ function sampleSession() {
     historyFor: () => [],
     simulate: () => ({ promotionId: 'sample', verdict: 'improves_margin', promoUnitMargin: { minor: 0, currency: 'INR' }, baselineUnitMargin: { minor: 0, currency: 'INR' }, baselineTotalMargin: { minor: 0, currency: 'INR' }, promoTotalMargin: { minor: 0, currency: 'INR' }, incrementalMargin: { minor: 0, currency: 'INR' }, breakEvenUnits: 0, blocksApproval: false, detail: 'this is sample data' }),
     launch: () => ({ ok: false, detail: 'this is sample data' }),
+    canLaunchToCloud: false,
+    launchToCloud: async () => ({ launched: false, reason: 'this is sample data' }),
     quote: () => ({ grossTotal: { minor: 0, currency: 'INR' }, discount: { minor: 0, currency: 'INR' }, netTotal: { minor: 0, currency: 'INR' }, applied: [] }),
   };
 }
@@ -850,6 +852,9 @@ el('assign-shelf').addEventListener('click', () => {
 // ── An offer ────────────────────────────────────────────────────────────────
 
 let lastSimulation = null;
+// The exact input the simulation was run on — the launch re-sends it so head office re-simulates from the
+// numbers, never trusting a client-computed result.
+let lastSimulationInput = null;
 
 el('simulate').addEventListener('click', () => {
   const id = el('promo-id').value.trim();
@@ -864,7 +869,7 @@ el('simulate').addEventListener('click', () => {
   }
   const funding = el('promo-funding').value.trim();
 
-  lastSimulation = session.simulate({
+  lastSimulationInput = {
     promotionId: id,
     description: id,
     normalPrice: { minor: toMinor(normal), currency: 'INR' },
@@ -873,7 +878,8 @@ el('simulate').addEventListener('click', () => {
     baselineUnits: baseline,
     expectedUnits: expected,
     ...(funding === '' ? {} : { vendorFundingPerUnit: { minor: toMinor(funding), currency: 'INR' } }),
-  });
+  };
+  lastSimulation = session.simulate(lastSimulationInput);
   renderSimulation(lastSimulation);
 });
 
@@ -900,19 +906,32 @@ function renderSimulation(simulation) {
 }
 
 el('launch').addEventListener('click', async () => {
-  if (lastSimulation === null) return;
+  if (lastSimulation === null || lastSimulationInput === null) return;
 
-  let approval;
+  // A margin-losing offer needs a §28 approver: a DIFFERENT person who holds the pricing-approval authority.
+  // Asked on screen; the cloud re-checks the authority (a name in a box is not one).
+  let approver;
   if (lastSimulation.blocksApproval) {
     const answer = await askApprover(t('whoApproves'), t('whoApprovesNote'), approvers().filter((a) => a !== me()), true);
     if (answer === null) return;
-    approval = {
-      subjectRef: lastSimulation.promotionId, status: 'approved',
-      decidedBy: answer.who, rationale: answer.reason,
-    };
+    approver = { approvedBy: answer.who, rationale: answer.reason };
   }
 
-  const outcome = session.launch(lastSimulation, approval);
+  // Wired to head office? Then the launch goes THERE (M05-FR-03/04): the cloud re-simulates the input and
+  // re-checks §28, records the launch, and it is read back by finance/reporting. The screen shows what the
+  // cloud decided and launches nothing itself.
+  if (session.canLaunchToCloud) {
+    const outcome = await session.launchToCloud({ input: lastSimulationInput, ...(approver === undefined ? {} : { approval: approver }) });
+    if (!outcome.launched) { tell(t('read'), outcome.reason); return; }
+    tell(t('offerStarted'), lastSimulationInput.promotionId, true);
+    el('launch').hidden = true;
+    return;
+  }
+
+  // No head office behind this page: the local launch is honest that it only validates in this browser.
+  const localApproval = approver === undefined ? undefined
+    : { subjectRef: lastSimulation.promotionId, status: 'approved', decidedBy: approver.approvedBy, rationale: approver.rationale };
+  const outcome = session.launch(lastSimulation, localApproval);
   if (!outcome.ok) { tell(t('read'), outcome.detail); return; }
   tell(t('offerStarted'), lastSimulation.promotionId, true);
   el('launch').hidden = true;

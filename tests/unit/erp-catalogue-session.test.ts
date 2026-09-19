@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   createCatalogueSession, PUBLISH_REFUSAL_KINDS,
   type CataloguePorts, type CatalogueConfig,
+  type PromotionLaunchInput, type PromotionLaunchOutcome, type PromotionLaunchPort,
 } from '../../apps/web-erp/src/catalogue-session';
 import {
   completeness, worklist,
@@ -530,6 +531,76 @@ describe('a promotion is simulated before anybody can launch it', () => {
     );
     expect(quote.discount.minor).toBe(0);
     expect(quote.applied).toEqual([]);
+  });
+});
+
+// ── The launch reaches head office, or says plainly that it did not ──────────
+//
+// `launch` only validates in this browser; `launchToCloud` is the DURABLE launch. The screen must never
+// claim a launch it could not record (P-08), and a screen with no cloud behind it must say so rather than
+// pretend. The cloud is the authority — it re-simulates the INPUT and re-checks §28 — so this session only
+// carries the ask and renders back what head office decided; it invents no verdict of its own.
+describe('a promotion launch is recorded at head office, honestly', () => {
+  const launchInput: PromotionLaunchInput = {
+    input: {
+      promotionId: 'promo-1', description: '10% off dal',
+      normalPrice: money(145_00, 'INR'), promoPrice: money(130_00, 'INR'),
+      unitCost: money(100_00, 'INR'), baselineUnits: 100, expectedUnits: 200,
+    },
+  };
+
+  // A stub head office that records what it was asked and answers however the test needs.
+  const cloud = (answer: PromotionLaunchOutcome) => {
+    const calls: PromotionLaunchInput[] = [];
+    const port: PromotionLaunchPort = { post: async (input) => { calls.push(input); return answer; } };
+    return { calls, launchPromotion: () => port };
+  };
+
+  it('knows it cannot reach head office when no launch port is wired', () => {
+    const s = session();
+    expect(s.canLaunchToCloud).toBe(false);
+  });
+
+  it('refuses to pretend — an unwired screen returns launched:false with a plain reason, not a launch', async () => {
+    const s = session();
+    const outcome = await s.launchToCloud(launchInput);
+    expect(outcome).toEqual({
+      launched: false,
+      reason: 'this screen is not connected to head office, so it cannot launch the offer',
+    });
+  });
+
+  it('knows it CAN reach head office when a launch port is wired', () => {
+    const s = session({ launchPromotion: cloud({ launched: true, verdict: 'improves_margin', approvedBy: null }).launchPromotion });
+    expect(s.canLaunchToCloud).toBe(true);
+  });
+
+  it('sends the simulation INPUT to head office and renders back exactly what it decided', async () => {
+    const office = cloud({ launched: true, verdict: 'improves_margin', approvedBy: null });
+    const s = session({ launchPromotion: office.launchPromotion });
+    const outcome = await s.launchToCloud(launchInput);
+    // The screen forwarded the ask untouched — the cloud re-simulates from the input, not from a client verdict.
+    expect(office.calls).toEqual([launchInput]);
+    expect(outcome).toEqual({ launched: true, verdict: 'improves_margin', approvedBy: null });
+  });
+
+  it('carries the §28 approver alongside a margin-losing offer, and reports whom the cloud accepted', async () => {
+    const office = cloud({ launched: true, verdict: 'below_floor', approvedBy: 'u-owner' });
+    const s = session({ launchPromotion: office.launchPromotion });
+    const withApprover: PromotionLaunchInput = {
+      input: { ...launchInput.input, promoPrice: money(80_00, 'INR') },
+      approval: { approvedBy: 'u-owner', rationale: 'footfall driver for Pongal' },
+    };
+    const outcome = await s.launchToCloud(withApprover);
+    expect(office.calls[0]?.approval).toEqual({ approvedBy: 'u-owner', rationale: 'footfall driver for Pongal' });
+    expect(outcome).toEqual({ launched: true, verdict: 'below_floor', approvedBy: 'u-owner' });
+  });
+
+  it('surfaces the cloud’s refusal verbatim — a name in a box is not authority, and the screen never overrides it', async () => {
+    const office = cloud({ launched: false, reason: 'head office did not launch the offer' });
+    const s = session({ launchPromotion: office.launchPromotion });
+    const outcome = await s.launchToCloud(launchInput);
+    expect(outcome).toEqual({ launched: false, reason: 'head office did not launch the offer' });
   });
 });
 

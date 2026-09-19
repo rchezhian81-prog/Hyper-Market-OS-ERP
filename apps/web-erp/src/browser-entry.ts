@@ -41,6 +41,7 @@ import { createBuyingSession, type BuyingPorts, type BuyingSession, type Invoice
 import {
   createCatalogueSession,
   type CataloguePorts, type CatalogueSession,
+  type PromotionLaunchPort, type PromotionLaunchOutcome,
 } from './catalogue-session';
 import { bootWarehouseSupervisor, type SupervisorData, type WarehouseSupervisorSession } from './warehouse-supervisor-session';
 import type { Category, ProductRecord } from '../../../packages/product/src/index';
@@ -2539,7 +2540,42 @@ export function catalogueGaps(data: CatalogueData | undefined): readonly Catalog
  * 100% margin and the floor check then passes, confidently and wrongly, at the moment a buyer is
  * relying on it.
  */
-export function cataloguePortsFromData(data: CatalogueData | undefined, outbox?: SyncOutbox): CataloguePorts {
+/**
+ * The authenticated POST that records a promotion launch at head office (M05-FR-03/04, API-02). One
+ * operator-authenticated call under their OWN session (`credentials: 'same-origin'`, never a service token) to
+ * `POST /v1/promotions/:id/launch`: the cloud re-simulates the input and re-checks §28 (a margin-losing offer
+ * needs a different, authorised approver). A 2xx `launched` is a launch; a 422 is the cloud refusing (surfaced,
+ * never a false "launched"); a dropped link is a lost link, not a launch (P-08).
+ */
+export function openPromotionLaunchPort(): PromotionLaunchPort {
+  return {
+    post: async ({ input, approval }): Promise<PromotionLaunchOutcome> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return { launched: false, reason: 'no connection to head office — the offer was not launched' };
+      const key = globalThis.crypto?.randomUUID?.() ?? `promotion-launch-${input.promotionId}`;
+      try {
+        const res = await fetchFn(`/v1/promotions/${encodeURIComponent(input.promotionId)}/launch`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          // The cloud reads the simulation input from the body and re-runs it; the §28 approver + reason ride
+          // alongside for a margin-losing offer. A name typed in a box is not authority — the cloud verifies it.
+          body: JSON.stringify({ ...input, ...(approval === undefined ? {} : { approvedBy: approval.approvedBy, rationale: approval.rationale }) }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { launched?: boolean; verdict?: string; approvedBy?: string | null; whatHappened?: string };
+        if (res.status >= 200 && res.status < 300 && body.launched === true) {
+          return { launched: true, verdict: body.verdict ?? 'launched', approvedBy: body.approvedBy ?? null };
+        }
+        // 422 (needs approval / approver may not approve) or any other non-2xx — the cloud declined; surface why.
+        return { launched: false, reason: body.whatHappened ?? 'head office did not launch the offer' };
+      } catch {
+        return { launched: false, reason: 'no connection to head office — the offer was not launched' };
+      }
+    },
+  };
+}
+
+export function cataloguePortsFromData(data: CatalogueData | undefined, outbox?: SyncOutbox, launchPromotion?: PromotionLaunchPort): CataloguePorts {
   const costOf = (productId: string): CostRegister => {
     const minor = data?.costsMinor?.[productId];
     if (minor === undefined) {
@@ -2577,12 +2613,13 @@ export function cataloguePortsFromData(data: CatalogueData | undefined, outbox?:
     promotions: () => data?.promotions ?? [],
     shelfMap: () => map,
     ...(outbox === undefined ? {} : { outbox: () => outbox }),
+    ...(launchPromotion === undefined ? {} : { launchPromotion: () => launchPromotion }),
   };
 }
 
 /** Build the product-and-pricing session, or `null` when this box was told nothing about it. The outbox, when
  *  given, is the durable queue the Save button commits a publish to. */
-export function bootCatalogue(data: CatalogueData | undefined, outbox?: SyncOutbox): CatalogueSession | null {
+export function bootCatalogue(data: CatalogueData | undefined, outbox?: SyncOutbox, launchPromotion?: PromotionLaunchPort): CatalogueSession | null {
   if (data === undefined) return null;
   return createCatalogueSession(
     {
@@ -2595,7 +2632,7 @@ export function bootCatalogue(data: CatalogueData | undefined, outbox?: SyncOutb
       today: data.today ?? '1970-01-01',
       marginFloorBps: data.marginFloorBps ?? 0,
     },
-    cataloguePortsFromData(data, outbox),
+    cataloguePortsFromData(data, outbox, launchPromotion),
   );
 }
 
@@ -2780,7 +2817,9 @@ if (browserWindow !== undefined) {
   // The product publish this screen commits queues in a DEVICE-backed outbox, so a Save made while the link is
   // down survives the operator closing and reopening the tab before it syncs (P-01, §31).
   const catalogueOutbox = browserWindow.catalogueOutbox ?? openCatalogueOutbox();
-  const catalogue = bootCatalogue(browserWindow.catalogueData, catalogueOutbox);
+  // The Save-price publish rides the offline outbox; the promotion LAUNCH is an online governed action that
+  // POSTs to head office on an explicit click (M05-FR-03/04) — the cloud re-simulates and re-checks §28.
+  const catalogue = bootCatalogue(browserWindow.catalogueData, catalogueOutbox, openPromotionLaunchPort());
   if (catalogue !== null) {
     browserWindow.catalogueSession = catalogue;
     browserWindow.catalogueGaps = catalogueGaps(browserWindow.catalogueData);

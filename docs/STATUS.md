@@ -5,6 +5,51 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M05 pricing/promotions — P1: the promotion LAUNCH on the catalogue screen now reaches head office (browser-verified); M05 stays WIRED (headline unchanged 51.7%) (19 September 2026)
+
+The pricing/promotions screen the owner asked to start. The catalogue screen could already **simulate** an offer
+in the browser — what an offer does to the margin before it starts — but pressing **Start this offer** only
+computed and validated *in that browser*; nothing was recorded at head office. This slice wires the launch to the
+cloud and proves it in a real browser. (This is **P1 — the promotion launch**. **P2 — the price change** — is the
+other operator write-path on this screen and is next; M05 reaches E2E_VERIFIED only when both are browser-verified,
+so **M05 stays WIRED for this slice** — honest, no rung change.)
+
+- **`apps/web-erp/src/catalogue-session.ts`** — a new `launchToCloud(input)` on the tested session and a
+  `canLaunchToCloud` flag. It sends the simulation **INPUT** (never a client-computed verdict) through an
+  injected port; the cloud re-simulates and re-checks §28 for itself. With no cloud wired it refuses with a plain
+  reason rather than pretending it launched (P-08). A margin-losing offer carries the §28 approver + written
+  reason alongside, for the cloud to verify — a name typed in a box is not authority.
+- **`apps/web-erp/src/browser-entry.ts`** — `openPromotionLaunchPort()`: one operator-authenticated
+  `POST /v1/promotions/:id/launch` under the operator's **own** session (`credentials: 'same-origin'`, never a
+  service token), idempotency-keyed; a 2xx `launched` is a launch, a 422 is the cloud refusing (surfaced, never
+  a false "launched"), a dropped link is a lost link. Wired into the catalogue boot.
+- **`apps/web-erp/web/catalogue.js`** — the **Start this offer** button now launches at head office when the
+  screen is connected: it re-sends the exact simulation input, asks for a §28 approver on-screen (never a browser
+  prompt) for a margin-losing offer, shows what the cloud decided, and never claims a launch that did not happen.
+
+Tested: `tests/unit/erp-catalogue-session.test.ts` (+6 — the launch reaches the port, carries the §28 approver,
+refuses plainly when unwired, surfaces the cloud's refusal), `tests/unit/erp-catalogue-boot.test.ts` (new, 6 —
+the POST is under the operator's own session, keyed, the input flattened, a 422/dropped-link never a false
+launch), and a **real browser e2e** `tests/e2e/catalogue-promotion-launch-delivery.e2e.ts` (3): a
+margin-improving offer launches with nobody's signature and the POST carries the input; a margin-losing offer
+asks for a §28 approver on-screen and the launch carries that approver + reason; a cloud 422 shows the reason
+verbatim and the button stays so the person can try again.
+
+**What the owner should check (in the store):** on a store computer, open the ERP → **Products and prices** →
+**Offer** tab. Type an offer (a name, the normal and offer prices, what it costs you, and the units), press
+**Work out what it costs** to see the margin, then **Start this offer**. If the offer *loses* money, it asks who
+approved it — you must name a **different** person (not yourself), with a reason — before it will start. On
+success it says the offer started. This is the separation-of-duties rule working: a deliberate loss-leader needs
+a second authorised person, never one person deciding alone.
+
+### Next
+- **M05 P2 — the price change write-path** (`activatePrice` → `POST /v1/prices/changes`) + its browser e2e, then
+  **re-rate M05 → E2E_VERIFIED**. That completes the pricing/promotions screen.
+- **Retention periods remain the pinned owner-blocked priority** (unchanged): the archival/disposal execution
+  workflow needs the owner's per-data-class "keep for N years" numbers. Never invent these.
+
+---
+
 ## M14-FR-04 reopen — R2: the served accountant/owner reopen SCREEN; M14 re-rated INTEGRATION_TESTED→E2E_VERIFIED (headline 51.6→51.7%) (18 September 2026)
 
 The screen the owner asked for. An accountant/owner can now, in the ERP, **reopen a day that was already

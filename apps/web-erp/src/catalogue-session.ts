@@ -52,6 +52,27 @@ import {
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { queueProductPublish, type PublishQueueResult, type ProductPublishBarcode } from './catalogue-publish-command';
 
+/**
+ * A promotion launch to record at head office (M05-FR-03/04) — the simulation INPUT (the cloud re-simulates
+ * from it, never trusting a client's numbers) plus, for a margin-losing offer, the §28 approver + reason.
+ */
+export interface PromotionLaunchInput {
+  readonly input: Parameters<typeof simulatePromotion>[0];
+  /** Present only for a margin-losing offer: a DIFFERENT person who holds the pricing-approval authority. */
+  readonly approval?: { readonly approvedBy: string; readonly rationale: string };
+}
+
+/** What head office said when asked to launch — its own verdict, or the reason it did not. */
+export type PromotionLaunchOutcome =
+  | { readonly launched: true; readonly verdict: string; readonly approvedBy: string | null }
+  | { readonly launched: false; readonly reason: string };
+
+/** The authenticated POST that records a launch at head office. Injected, so the model opens no socket itself;
+ *  the cloud re-simulates and re-checks §28 (a margin-losing offer needs a different, authorised approver). */
+export interface PromotionLaunchPort {
+  post(input: PromotionLaunchInput): Promise<PromotionLaunchOutcome>;
+}
+
 /** What this surface can see about the shop, and what it honestly cannot. */
 export interface CataloguePorts {
   /** The tenant's own department hierarchy. Which fields matter is theirs to say, never ours. */
@@ -85,6 +106,12 @@ export interface CataloguePorts {
    * plainly when it is absent rather than dropping the intent silently.
    */
   outbox?(): SyncOutbox;
+  /**
+   * Records a promotion launch at head office (M05-FR-03/04). Absent for a read-only screen (or a test that
+   * never launches): `launchToCloud` then refuses rather than pretending. The cloud is the authority — it
+   * re-simulates and re-checks §28 — so this only carries the ask and reports back what head office decided.
+   */
+  launchPromotion?(): PromotionLaunchPort;
 }
 
 export interface CatalogueConfig {
@@ -244,7 +271,8 @@ export interface CatalogueSession {
   /** What a promotion would do to margin before anybody launches it (M05-FR-04). */
   simulate(input: Parameters<typeof simulatePromotion>[0]): SimulationResult;
 
-  /** Launch a promotion. A margin-losing one needs a named approver and a written reason. */
+  /** Launch a promotion LOCALLY — the tested guard (a margin-losing one needs a named approver + reason). This
+   *  computes and validates but persists nowhere; the durable launch is `launchToCloud` when a box is wired. */
   launch(simulation: SimulationResult, approval?: Parameters<typeof approveForLaunch>[1]): {
     readonly ok: true;
     readonly approvedBy: string | null;
@@ -252,6 +280,20 @@ export interface CatalogueSession {
     readonly ok: false;
     readonly detail: string;
   };
+
+  /**
+   * True when this screen can record a launch at head office (M05-FR-03/04). The view reads it to choose the
+   * path: `launchToCloud` reaches the cloud (recorded, and read back by finance/reporting), where the local
+   * `launch` only validates in this browser. False means no cloud is wired (a standalone/demo view).
+   */
+  readonly canLaunchToCloud: boolean;
+
+  /**
+   * Launch a promotion at head office (M05-FR-03/04) — the authoritative launch. Sends the simulation INPUT (the
+   * cloud re-simulates, never trusting a client's numbers) plus, for a margin-losing offer, the §28 approver +
+   * reason. Returns what the cloud decided; refuses with a reason rather than pretending when no cloud is wired.
+   */
+  launchToCloud(input: PromotionLaunchInput): Promise<PromotionLaunchOutcome>;
 
   /** The best price a basket would get under the approved rules — the same answer as the lane. */
   quote(lines: readonly BasketLine[], at: string): PromotionResult;
@@ -499,6 +541,21 @@ export function createCatalogueSession(
         if (e instanceof PromotionApprovalRequiredError) return { ok: false, detail: e.message };
         throw e;
       }
+    },
+
+    canLaunchToCloud: ports.launchPromotion !== undefined,
+
+    launchToCloud: async (input) => {
+      const port = ports.launchPromotion;
+      // No cloud wired: this screen cannot record a launch on its own, and must not say it did. The view
+      // falls back to the local `launch` (honest that it only validates in this browser) when it sees
+      // `canLaunchToCloud` is false; this guards the case it asked anyway.
+      if (port === undefined) {
+        return { launched: false, reason: 'this screen is not connected to head office, so it cannot launch the offer' };
+      }
+      // The cloud is the authority — it re-simulates the input and re-checks §28. The screen renders whatever
+      // it decides and invents nothing.
+      return port().post(input);
     },
 
     // Only ACTIVE promotions, and `bestPrice` checks the window again itself. A draft or stopped
