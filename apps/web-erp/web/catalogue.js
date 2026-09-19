@@ -286,10 +286,14 @@ function sampleSession() {
       refusals: ['no_mrp_recorded'], detail: ['this is sample data'],
     }),
     activatePrice: () => ({ ok: false, refusals: ['no_mrp_recorded'], detail: ['this is sample data'] }),
+    canChangePriceInCloud: false,
+    changePriceInCloud: async () => ({ saved: false, reason: 'this is sample data' }),
     rollBack: (e) => e,
     historyFor: () => [],
     simulate: () => ({ promotionId: 'sample', verdict: 'improves_margin', promoUnitMargin: { minor: 0, currency: 'INR' }, baselineUnitMargin: { minor: 0, currency: 'INR' }, baselineTotalMargin: { minor: 0, currency: 'INR' }, promoTotalMargin: { minor: 0, currency: 'INR' }, incrementalMargin: { minor: 0, currency: 'INR' }, breakEvenUnits: 0, blocksApproval: false, detail: 'this is sample data' }),
     launch: () => ({ ok: false, detail: 'this is sample data' }),
+    canLaunchToCloud: false,
+    launchToCloud: async () => ({ launched: false, reason: 'this is sample data' }),
     quote: () => ({ grossTotal: { minor: 0, currency: 'INR' }, discount: { minor: 0, currency: 'INR' }, netTotal: { minor: 0, currency: 'INR' }, applied: [] }),
   };
 }
@@ -682,21 +686,39 @@ function renderProposal(proposal, productId) {
 el('save-price').addEventListener('click', async () => {
   if (lastProposal === null) return;
 
-  let approval;
+  // A below-cost / below-floor price needs a §28 approver: a DIFFERENT person who holds the pricing-approval
+  // authority. Asked on screen; the cloud re-checks the authority (a name in a box is not one). The person
+  // setting the price is not in this list, and a name picked here is checked against the setter anyway.
+  let approver;
   if (lastProposal.needsApproval) {
-    // Separation of duties is asked for on screen and enforced in the model — the person setting
-    // the price is not in this list, and a name picked here is checked against the setter anyway.
     const answer = await askApprover(t('whoApproves'), t('whoApprovesNote'), approvers().filter((a) => a !== me()), true);
     if (answer === null) return;
-    approval = {
-      id: `ap-${lastProposal.draft.id}`, subjectType: 'price_change', subjectRef: lastProposal.draft.id,
-      requestedBy: me(), branchId: null, value: null,
-      status: 'approved', decidedBy: answer.who, reason: answer.reason,
-      decidedAt: new Date().toISOString(),
-    };
+    approver = { approvedBy: answer.who, rationale: answer.reason };
   }
 
-  const outcome = session.activatePrice(lastProposal, approval);
+  // Wired to head office? Then the change goes THERE (M05-FR-02): the cloud re-runs the guard (MRP ceiling,
+  // cost, margin floor) and re-checks §28, records the append-only change, and it is read back by the lane. The
+  // screen shows what the cloud decided and changes nothing itself.
+  if (session.canChangePriceInCloud) {
+    const outcome = await session.changePriceInCloud({
+      productId: lastProposal.draft.productId,
+      priceMinor: lastProposal.draft.price.minor,
+      ...(approver === undefined ? {} : { approval: approver }),
+    });
+    if (!outcome.saved) { tell(t('read'), outcome.reason); return; }
+    tell(t('priceSaved'), `${inr(lastProposal.draft.price.minor)} — ${t('priceSavedNote')}`, true);
+    el('save-price').hidden = true;
+    return;
+  }
+
+  // No head office behind this page: the local activation is honest that it only validates in this browser.
+  const localApproval = approver === undefined ? undefined : {
+    id: `ap-${lastProposal.draft.id}`, subjectType: 'price_change', subjectRef: lastProposal.draft.id,
+    requestedBy: me(), branchId: null, value: null,
+    status: 'approved', decidedBy: approver.approvedBy, reason: approver.rationale,
+    decidedAt: new Date().toISOString(),
+  };
+  const outcome = session.activatePrice(lastProposal, localApproval);
   if (!outcome.ok) {
     tell(t('read'), outcome.refusals.map((r) => words(PRICE_REFUSAL_WORDS, r)).join(' '));
     return;
@@ -850,6 +872,9 @@ el('assign-shelf').addEventListener('click', () => {
 // ── An offer ────────────────────────────────────────────────────────────────
 
 let lastSimulation = null;
+// The exact input the simulation was run on — the launch re-sends it so head office re-simulates from the
+// numbers, never trusting a client-computed result.
+let lastSimulationInput = null;
 
 el('simulate').addEventListener('click', () => {
   const id = el('promo-id').value.trim();
@@ -864,7 +889,7 @@ el('simulate').addEventListener('click', () => {
   }
   const funding = el('promo-funding').value.trim();
 
-  lastSimulation = session.simulate({
+  lastSimulationInput = {
     promotionId: id,
     description: id,
     normalPrice: { minor: toMinor(normal), currency: 'INR' },
@@ -873,7 +898,8 @@ el('simulate').addEventListener('click', () => {
     baselineUnits: baseline,
     expectedUnits: expected,
     ...(funding === '' ? {} : { vendorFundingPerUnit: { minor: toMinor(funding), currency: 'INR' } }),
-  });
+  };
+  lastSimulation = session.simulate(lastSimulationInput);
   renderSimulation(lastSimulation);
 });
 
@@ -900,19 +926,32 @@ function renderSimulation(simulation) {
 }
 
 el('launch').addEventListener('click', async () => {
-  if (lastSimulation === null) return;
+  if (lastSimulation === null || lastSimulationInput === null) return;
 
-  let approval;
+  // A margin-losing offer needs a §28 approver: a DIFFERENT person who holds the pricing-approval authority.
+  // Asked on screen; the cloud re-checks the authority (a name in a box is not one).
+  let approver;
   if (lastSimulation.blocksApproval) {
     const answer = await askApprover(t('whoApproves'), t('whoApprovesNote'), approvers().filter((a) => a !== me()), true);
     if (answer === null) return;
-    approval = {
-      subjectRef: lastSimulation.promotionId, status: 'approved',
-      decidedBy: answer.who, rationale: answer.reason,
-    };
+    approver = { approvedBy: answer.who, rationale: answer.reason };
   }
 
-  const outcome = session.launch(lastSimulation, approval);
+  // Wired to head office? Then the launch goes THERE (M05-FR-03/04): the cloud re-simulates the input and
+  // re-checks §28, records the launch, and it is read back by finance/reporting. The screen shows what the
+  // cloud decided and launches nothing itself.
+  if (session.canLaunchToCloud) {
+    const outcome = await session.launchToCloud({ input: lastSimulationInput, ...(approver === undefined ? {} : { approval: approver }) });
+    if (!outcome.launched) { tell(t('read'), outcome.reason); return; }
+    tell(t('offerStarted'), lastSimulationInput.promotionId, true);
+    el('launch').hidden = true;
+    return;
+  }
+
+  // No head office behind this page: the local launch is honest that it only validates in this browser.
+  const localApproval = approver === undefined ? undefined
+    : { subjectRef: lastSimulation.promotionId, status: 'approved', decidedBy: approver.approvedBy, rationale: approver.rationale };
+  const outcome = session.launch(lastSimulation, localApproval);
   if (!outcome.ok) { tell(t('read'), outcome.detail); return; }
   tell(t('offerStarted'), lastSimulation.promotionId, true);
   el('launch').hidden = true;

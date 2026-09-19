@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   createCatalogueSession, PUBLISH_REFUSAL_KINDS,
   type CataloguePorts, type CatalogueConfig,
+  type PromotionLaunchInput, type PromotionLaunchOutcome, type PromotionLaunchPort,
+  type PriceChangeCloudOutcome, type PriceChangeCloudPort,
 } from '../../apps/web-erp/src/catalogue-session';
 import {
   completeness, worklist,
@@ -530,6 +532,162 @@ describe('a promotion is simulated before anybody can launch it', () => {
     );
     expect(quote.discount.minor).toBe(0);
     expect(quote.applied).toEqual([]);
+  });
+});
+
+// ── The launch reaches head office, or says plainly that it did not ──────────
+//
+// `launch` only validates in this browser; `launchToCloud` is the DURABLE launch. The screen must never
+// claim a launch it could not record (P-08), and a screen with no cloud behind it must say so rather than
+// pretend. The cloud is the authority — it re-simulates the INPUT and re-checks §28 — so this session only
+// carries the ask and renders back what head office decided; it invents no verdict of its own.
+describe('a promotion launch is recorded at head office, honestly', () => {
+  const launchInput: PromotionLaunchInput = {
+    input: {
+      promotionId: 'promo-1', description: '10% off dal',
+      normalPrice: money(145_00, 'INR'), promoPrice: money(130_00, 'INR'),
+      unitCost: money(100_00, 'INR'), baselineUnits: 100, expectedUnits: 200,
+    },
+  };
+
+  // A stub head office that records what it was asked and answers however the test needs.
+  const cloud = (answer: PromotionLaunchOutcome) => {
+    const calls: PromotionLaunchInput[] = [];
+    const port: PromotionLaunchPort = { post: async (input) => { calls.push(input); return answer; } };
+    return { calls, launchPromotion: () => port };
+  };
+
+  it('knows it cannot reach head office when no launch port is wired', () => {
+    const s = session();
+    expect(s.canLaunchToCloud).toBe(false);
+  });
+
+  it('refuses to pretend — an unwired screen returns launched:false with a plain reason, not a launch', async () => {
+    const s = session();
+    const outcome = await s.launchToCloud(launchInput);
+    expect(outcome).toEqual({
+      launched: false,
+      reason: 'this screen is not connected to head office, so it cannot launch the offer',
+    });
+  });
+
+  it('knows it CAN reach head office when a launch port is wired', () => {
+    const s = session({ launchPromotion: cloud({ launched: true, verdict: 'improves_margin', approvedBy: null }).launchPromotion });
+    expect(s.canLaunchToCloud).toBe(true);
+  });
+
+  it('sends the simulation INPUT to head office and renders back exactly what it decided', async () => {
+    const office = cloud({ launched: true, verdict: 'improves_margin', approvedBy: null });
+    const s = session({ launchPromotion: office.launchPromotion });
+    const outcome = await s.launchToCloud(launchInput);
+    // The screen forwarded the ask untouched — the cloud re-simulates from the input, not from a client verdict.
+    expect(office.calls).toEqual([launchInput]);
+    expect(outcome).toEqual({ launched: true, verdict: 'improves_margin', approvedBy: null });
+  });
+
+  it('carries the §28 approver alongside a margin-losing offer, and reports whom the cloud accepted', async () => {
+    const office = cloud({ launched: true, verdict: 'below_floor', approvedBy: 'u-owner' });
+    const s = session({ launchPromotion: office.launchPromotion });
+    const withApprover: PromotionLaunchInput = {
+      input: { ...launchInput.input, promoPrice: money(80_00, 'INR') },
+      approval: { approvedBy: 'u-owner', rationale: 'footfall driver for Pongal' },
+    };
+    const outcome = await s.launchToCloud(withApprover);
+    expect(office.calls[0]?.approval).toEqual({ approvedBy: 'u-owner', rationale: 'footfall driver for Pongal' });
+    expect(outcome).toEqual({ launched: true, verdict: 'below_floor', approvedBy: 'u-owner' });
+  });
+
+  it('surfaces the cloud’s refusal verbatim — a name in a box is not authority, and the screen never overrides it', async () => {
+    const office = cloud({ launched: false, reason: 'head office did not launch the offer' });
+    const s = session({ launchPromotion: office.launchPromotion });
+    const outcome = await s.launchToCloud(launchInput);
+    expect(outcome).toEqual({ launched: false, reason: 'head office did not launch the offer' });
+  });
+});
+
+// ── The price change reaches head office, or says plainly that it did not ─────
+//
+// `activatePrice` only validates in this browser; `changePriceInCloud` is the DURABLE, governed change. The
+// session assembles the figures the cloud re-checks (the MRP in force TODAY, the landed cost, the currency and
+// the margin floor) from the SAME authoritative sources the local proposal uses — never a figure typed on the
+// screen — and refuses cleanly, without a POST, when a figure it cannot check is missing. The cloud is the
+// authority: it re-runs `checkPrice` (MRP ceiling / cost / floor) and re-checks §28. The screen carries the ask
+// and renders what head office decided; it invents no verdict of its own (P-08).
+describe('a price change is recorded at head office, honestly (M05-FR-02)', () => {
+  // A stub head office that records the raw figures it was asked and answers however the test needs.
+  const priceCloud = (answer: PriceChangeCloudOutcome) => {
+    const calls: Parameters<PriceChangeCloudPort['post']>[0][] = [];
+    const port: PriceChangeCloudPort = { post: async (input) => { calls.push(input); return answer; } };
+    return { calls, changePrice: () => port };
+  };
+
+  it('knows it cannot reach head office when no change port is wired', () => {
+    expect(session().canChangePriceInCloud).toBe(false);
+  });
+
+  it('refuses to pretend — an unwired screen returns saved:false with a plain reason, not a change', async () => {
+    const outcome = await session().changePriceInCloud({ productId: 'p1', priceMinor: 150_00 });
+    expect(outcome).toEqual({
+      saved: false,
+      reason: 'this screen is not connected to head office, so it cannot change the price',
+    });
+  });
+
+  it('knows it CAN reach head office when a change port is wired', () => {
+    const s = session({ changePrice: priceCloud({ saved: true, verdict: 'ok', approvedBy: null }).changePrice });
+    expect(s.canChangePriceInCloud).toBe(true);
+  });
+
+  it('assembles the MRP-in-force-today, the landed cost, currency and floor, and sends them with the price', async () => {
+    const office = priceCloud({ saved: true, verdict: 'ok', approvedBy: null });
+    const s = session({ changePrice: office.changePrice });
+    const outcome = await s.changePriceInCloud({ productId: 'p1', priceMinor: 150_00 });
+    // The screen sends the SAME figures its own proposal would use — the cloud re-runs the guard over them,
+    // it does not trust a client verdict. MRP 160.00 (in force today), cost 100.00, floor 2000bp, INR.
+    expect(office.calls).toEqual([{
+      productId: 'p1', priceMinor: 150_00,
+      mrpMinor: 160_00, costMinor: 100_00, currency: 'INR', marginFloorBps: 2000,
+    }]);
+    expect(outcome).toEqual({ saved: true, verdict: 'ok', approvedBy: null });
+  });
+
+  it('refuses without a POST when the cost is unknown — a margin nobody can compute is not one that passed', async () => {
+    const office = priceCloud({ saved: true, verdict: 'ok', approvedBy: null });
+    const s = session({ changePrice: office.changePrice, costOf: () => ({ known: false, why: 'no cost recorded' }) });
+    const outcome = await s.changePriceInCloud({ productId: 'p1', priceMinor: 150_00 });
+    expect(office.calls, 'a figure that cannot be checked was sent anyway').toEqual([]);
+    expect(outcome.saved).toBe(false);
+    if (outcome.saved) return;
+    expect(outcome.reason).toMatch(/what this product cost/i);
+  });
+
+  it('refuses without a POST when the product has no MRP — the legal ceiling cannot be checked', async () => {
+    const office = priceCloud({ saved: true, verdict: 'ok', approvedBy: null });
+    const noMrp: ProductRecord = { ...FINISHED, mrpHistory: [] };
+    const s = session({ changePrice: office.changePrice, products: () => [noMrp] });
+    const outcome = await s.changePriceInCloud({ productId: 'p1', priceMinor: 150_00 });
+    expect(office.calls).toEqual([]);
+    expect(outcome.saved).toBe(false);
+    if (outcome.saved) return;
+    expect(outcome.reason).toMatch(/no MRP/i);
+  });
+
+  it('carries the §28 approver alongside a below-cost price, and reports whom the cloud accepted', async () => {
+    const office = priceCloud({ saved: true, verdict: 'below_cost', approvedBy: 'u-owner' });
+    const s = session({ changePrice: office.changePrice });
+    const outcome = await s.changePriceInCloud({
+      productId: 'p1', priceMinor: 90_00,
+      approval: { approvedBy: 'u-owner', rationale: 'clearing short-dated stock before it is written off' },
+    });
+    expect(office.calls[0]?.approval).toEqual({ approvedBy: 'u-owner', rationale: 'clearing short-dated stock before it is written off' });
+    expect(outcome).toEqual({ saved: true, verdict: 'below_cost', approvedBy: 'u-owner' });
+  });
+
+  it('surfaces the cloud’s refusal verbatim — the screen never overrides an above-MRP or below-floor refusal', async () => {
+    const office = priceCloud({ saved: false, reason: 'The price is above the printed MRP — a legal ceiling no approval can lift.' });
+    const s = session({ changePrice: office.changePrice });
+    const outcome = await s.changePriceInCloud({ productId: 'p1', priceMinor: 200_00 });
+    expect(outcome).toEqual({ saved: false, reason: 'The price is above the printed MRP — a legal ceiling no approval can lift.' });
   });
 });
 

@@ -41,6 +41,8 @@ import { createBuyingSession, type BuyingPorts, type BuyingSession, type Invoice
 import {
   createCatalogueSession,
   type CataloguePorts, type CatalogueSession,
+  type PromotionLaunchPort, type PromotionLaunchOutcome,
+  type PriceChangeCloudPort, type PriceChangeCloudOutcome,
 } from './catalogue-session';
 import { bootWarehouseSupervisor, type SupervisorData, type WarehouseSupervisorSession } from './warehouse-supervisor-session';
 import type { Category, ProductRecord } from '../../../packages/product/src/index';
@@ -2539,7 +2541,82 @@ export function catalogueGaps(data: CatalogueData | undefined): readonly Catalog
  * 100% margin and the floor check then passes, confidently and wrongly, at the moment a buyer is
  * relying on it.
  */
-export function cataloguePortsFromData(data: CatalogueData | undefined, outbox?: SyncOutbox): CataloguePorts {
+/**
+ * The authenticated POST that records a promotion launch at head office (M05-FR-03/04, API-02). One
+ * operator-authenticated call under their OWN session (`credentials: 'same-origin'`, never a service token) to
+ * `POST /v1/promotions/:id/launch`: the cloud re-simulates the input and re-checks §28 (a margin-losing offer
+ * needs a different, authorised approver). A 2xx `launched` is a launch; a 422 is the cloud refusing (surfaced,
+ * never a false "launched"); a dropped link is a lost link, not a launch (P-08).
+ */
+export function openPromotionLaunchPort(): PromotionLaunchPort {
+  return {
+    post: async ({ input, approval }): Promise<PromotionLaunchOutcome> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return { launched: false, reason: 'no connection to head office — the offer was not launched' };
+      const key = globalThis.crypto?.randomUUID?.() ?? `promotion-launch-${input.promotionId}`;
+      try {
+        const res = await fetchFn(`/v1/promotions/${encodeURIComponent(input.promotionId)}/launch`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          // The cloud reads the simulation input from the body and re-runs it; the §28 approver + reason ride
+          // alongside for a margin-losing offer. A name typed in a box is not authority — the cloud verifies it.
+          body: JSON.stringify({ ...input, ...(approval === undefined ? {} : { approvedBy: approval.approvedBy, rationale: approval.rationale }) }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { launched?: boolean; verdict?: string; approvedBy?: string | null; whatHappened?: string };
+        if (res.status >= 200 && res.status < 300 && body.launched === true) {
+          return { launched: true, verdict: body.verdict ?? 'launched', approvedBy: body.approvedBy ?? null };
+        }
+        // 422 (needs approval / approver may not approve) or any other non-2xx — the cloud declined; surface why.
+        return { launched: false, reason: body.whatHappened ?? 'head office did not launch the offer' };
+      } catch {
+        return { launched: false, reason: 'no connection to head office — the offer was not launched' };
+      }
+    },
+  };
+}
+
+/**
+ * The authenticated POST that records a governed price change at head office (M05-FR-02, API-02). One
+ * operator-authenticated call under their OWN session (`credentials: 'same-origin'`, never a service token) to
+ * `POST /v1/prices/changes`: the cloud re-runs `checkPrice` over the figures (MRP ceiling, cost, margin floor)
+ * and re-checks §28 (a below-cost/below-floor price needs a different, authorised approver). A 2xx carrying a
+ * verdict is the recorded change; a 422 is the cloud refusing (surfaced, never a false "saved"); a dropped link
+ * is a lost link, not a change (P-08).
+ */
+export function openPriceChangePort(): PriceChangeCloudPort {
+  return {
+    post: async ({ productId, priceMinor, mrpMinor, costMinor, currency, marginFloorBps, approval }): Promise<PriceChangeCloudOutcome> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return { saved: false, reason: 'no connection to head office — the price was not changed' };
+      const key = globalThis.crypto?.randomUUID?.() ?? `price-change-${productId}-${priceMinor}`;
+      try {
+        const res = await fetchFn('/v1/prices/changes', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          // The cloud re-runs the guard over these raw figures; the §28 approver + reason ride alongside for a
+          // below-cost/below-floor price. A name typed in a box is not authority — the cloud verifies it holds
+          // `price.change.approve` and is not the setter.
+          body: JSON.stringify({
+            productId, priceMinor, mrpMinor, costMinor, currency, marginFloorBps,
+            ...(approval === undefined ? {} : { approval: { decidedBy: approval.approvedBy, reason: approval.rationale } }),
+          }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { verdict?: string; approvedBy?: string | null; whatHappened?: string };
+        if (res.status >= 200 && res.status < 300 && typeof body.verdict === 'string') {
+          return { saved: true, verdict: body.verdict, approvedBy: body.approvedBy ?? null };
+        }
+        // 422 (above MRP / below cost / below floor without a valid approver) or any other non-2xx — surface why.
+        return { saved: false, reason: body.whatHappened ?? 'head office did not change the price' };
+      } catch {
+        return { saved: false, reason: 'no connection to head office — the price was not changed' };
+      }
+    },
+  };
+}
+
+export function cataloguePortsFromData(data: CatalogueData | undefined, outbox?: SyncOutbox, launchPromotion?: PromotionLaunchPort, changePrice?: PriceChangeCloudPort): CataloguePorts {
   const costOf = (productId: string): CostRegister => {
     const minor = data?.costsMinor?.[productId];
     if (minor === undefined) {
@@ -2577,12 +2654,14 @@ export function cataloguePortsFromData(data: CatalogueData | undefined, outbox?:
     promotions: () => data?.promotions ?? [],
     shelfMap: () => map,
     ...(outbox === undefined ? {} : { outbox: () => outbox }),
+    ...(launchPromotion === undefined ? {} : { launchPromotion: () => launchPromotion }),
+    ...(changePrice === undefined ? {} : { changePrice: () => changePrice }),
   };
 }
 
 /** Build the product-and-pricing session, or `null` when this box was told nothing about it. The outbox, when
  *  given, is the durable queue the Save button commits a publish to. */
-export function bootCatalogue(data: CatalogueData | undefined, outbox?: SyncOutbox): CatalogueSession | null {
+export function bootCatalogue(data: CatalogueData | undefined, outbox?: SyncOutbox, launchPromotion?: PromotionLaunchPort, changePrice?: PriceChangeCloudPort): CatalogueSession | null {
   if (data === undefined) return null;
   return createCatalogueSession(
     {
@@ -2595,7 +2674,7 @@ export function bootCatalogue(data: CatalogueData | undefined, outbox?: SyncOutb
       today: data.today ?? '1970-01-01',
       marginFloorBps: data.marginFloorBps ?? 0,
     },
-    cataloguePortsFromData(data, outbox),
+    cataloguePortsFromData(data, outbox, launchPromotion, changePrice),
   );
 }
 
@@ -2780,7 +2859,10 @@ if (browserWindow !== undefined) {
   // The product publish this screen commits queues in a DEVICE-backed outbox, so a Save made while the link is
   // down survives the operator closing and reopening the tab before it syncs (P-01, §31).
   const catalogueOutbox = browserWindow.catalogueOutbox ?? openCatalogueOutbox();
-  const catalogue = bootCatalogue(browserWindow.catalogueData, catalogueOutbox);
+  // The product publish rides the offline outbox; the promotion LAUNCH (M05-FR-03/04) and the price CHANGE
+  // (M05-FR-02) are online governed actions that POST to head office on an explicit click — the cloud re-runs
+  // the guard (re-simulate / re-check the MRP+cost+floor) and re-checks §28 for itself.
+  const catalogue = bootCatalogue(browserWindow.catalogueData, catalogueOutbox, openPromotionLaunchPort(), openPriceChangePort());
   if (catalogue !== null) {
     browserWindow.catalogueSession = catalogue;
     browserWindow.catalogueGaps = catalogueGaps(browserWindow.catalogueData);
