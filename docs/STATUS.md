@@ -5,6 +5,41 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M08 stock-health dashboard — slice 1: the tested, DOM-free session model (headline unchanged 51.9%) (19 September 2026)
+
+The owner chose to build the **stock health dashboard** — the one missing manager view of the store's most
+important truth, stock. M08 (inventory ledger & availability) is the only module at INTEGRATION_TESTED, one
+rung from E2E; unlike the last few screens it has no single "action", because the stock *changes* (sales,
+deliveries, write-offs) happen on other screens that are already tested. Its natural manager surface is a
+**read-only** dashboard over the numbers the system already projects. Built in three slices; this is slice 1,
+the tested engine (no wiring yet).
+
+- **`apps/web-erp/src/inventory-health-session.ts`** — a DOM-free session model that folds the five inventory
+  reads (availability, exceptions, valuation, ageing, performance) into one view: **exceptions first** (negative
+  stock, worst-first — the ledger and the shelf disagree), then the **honest gaps named** (stock with no cost
+  recorded, and a ratio the engine could not compute, each shown as itself and never as a guessed zero — P-08),
+  then the headline numbers (stock value, turns, days of cover, GMROI). Every signal carries a tone **and** an
+  icon **and** a word (colour is never the only signal), and the whole view carries an "as of" time. It is
+  read-only: no write path, no approval, nothing to commit.
+- **`tests/unit/erp-inventory-health-session.test.ts`** (12) — bilingual EN/TA copy complete; a reader without
+  `inventory.availability.read` sees a not-permitted state and no figures; a screen told nothing says so rather
+  than reporting a false zero; negative stock is surfaced worst-first as attention; uncosted/aged stock each
+  raise their own signal and are never valued at a guess; a not-meaningful ratio is passed through, not invented;
+  KPIs appear only for the sections the screen was told about; freshness is the most recent section timestamp.
+
+No rung change — **M08 stays INTEGRATION_TESTED, headline unchanged 51.9%.** The served screen + edge wiring is
+slice 2, and the browser e2e + the honest re-rate to E2E_VERIFIED is slice 3. The "is-usable" guardrail lands in
+slice 2 with the shipped screen files (its session-level a11y/bilingual checks are already covered by the unit
+tests above).
+
+### Next
+- **M08 slice 2**: the served offline-capable `/stock-health` screen + edge wiring (payload, screen-server
+  route, navigation gated `inventory.availability.read`, service-worker bump) + the "is-usable" guardrail.
+- **Retention periods remain the pinned owner-blocked priority** (unchanged): the archival/disposal execution
+  workflow needs the owner's per-data-class "keep for N years" numbers. Never invent these.
+
+---
+
 ## M05 pricing/promotions — P2: the price CHANGE on the catalogue screen now reaches head office (browser-verified); M05 re-rated WIRED→E2E_VERIFIED (headline 51.7→51.9%) (19 September 2026)
 
 The second and last operator write-path on the pricing/promotions screen. The **Change a price** Save used to
