@@ -171,13 +171,13 @@ describe('closing a recall costs something', () => {
   });
 
   it('refuses to close with no evidence', () => {
-    const close = code(MODEL).slice(code(MODEL).indexOf('close: (input)'));
+    const close = code(MODEL).slice(code(MODEL).indexOf('close: async (input)'));
     expect(close).toMatch(/input\.evidence\.trim\(\) === ''/);
     expect(close).toMatch(/needs_evidence/);
   });
 
   it('refuses to close quietly while stock is unaccounted for', () => {
-    const close = code(MODEL).slice(code(MODEL).indexOf('close: (input)'));
+    const close = code(MODEL).slice(code(MODEL).indexOf('close: async (input)'));
     expect(close).toMatch(/stillOut > 0 && \(input\.acceptUnrecovered \?\? ''\)\.trim\(\) === ''/);
     expect(close).toMatch(/stock_not_accounted_for/);
     // …and when it IS closed anyway, the reason goes into the record, which is all that survives.
@@ -185,14 +185,14 @@ describe('closing a recall costs something', () => {
   });
 
   it('never edits a closed recall — a correction is a new record', () => {
-    const close = code(MODEL).slice(code(MODEL).indexOf('close: (input)'));
+    const close = code(MODEL).slice(code(MODEL).indexOf('close: async (input)'));
     expect(close).toMatch(/already_closed/);
     expect(close).toMatch(/never an edit/);
   });
 
   it('starts and closes nothing under a name nobody holds', () => {
     expect(code(MODEL)).toMatch(/readonly userId: string \| null/);
-    for (const fn of ['start: (input)', 'close: (input)']) {
+    for (const fn of ['start: async (input)', 'close: async (input)']) {
       const body = code(MODEL).slice(code(MODEL).indexOf(fn));
       expect(body.indexOf('config.userId === null'), `${fn} does not check who is asking`)
         .toBeGreaterThan(-1);

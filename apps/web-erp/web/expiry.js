@@ -47,6 +47,7 @@ const WORDS = {
     recoveredLabel: 'Got back', disposedLabel: 'Destroyed',
     acceptLabel: 'If some is still out there, why are you closing it?',
     ok: 'OK', read: 'Please read this', done: 'Done',
+    notSent: 'Not sent to head office, so it is not recorded. Nothing was saved — try again when the store computer is back online.',
     nobodyNamed: 'This store box has not been told who is using this screen. Nothing can be started or closed — a recall carries the name of whoever ran it.',
     sampleData: 'Sample data — this is not your shop.',
   },
@@ -71,6 +72,7 @@ const WORDS = {
     recoveredLabel: 'திரும்பப் பெற்றது', disposedLabel: 'அழிக்கப்பட்டது',
     acceptLabel: 'சில இன்னும் வெளியே இருந்தால், ஏன் இதை மூடுகிறீர்கள்?',
     ok: 'சரி', read: 'இதைப் படிக்கவும்', done: 'முடிந்தது',
+    notSent: 'தலைமை அலுவலகத்திற்கு அனுப்பப்படவில்லை, எனவே பதிவு செய்யப்படவில்லை. எதுவும் சேமிக்கப்படவில்லை — கடை கணினி மீண்டும் இணையும்போது மீண்டும் முயற்சிக்கவும்.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று இந்தக் கடைப் பெட்டிக்குத் தெரியவில்லை. எதையும் தொடங்கவோ மூடவோ முடியாது — திரும்பப் பெறுதல் அதை நடத்தியவரின் பெயரைச் சுமக்கும்.',
     sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
   },
@@ -200,21 +202,30 @@ function emptyLine(text) {
 
 // ── Recalls ─────────────────────────────────────────────────────────────────
 
-el('start').addEventListener('click', () => {
-  const outcome = session.start({
-    recallId: `RC-${el('batch').value.trim()}-${Date.now()}`,
-    batchId: el('batch').value.trim(),
-    reason: el('reason').value,
-  });
-  if (!outcome.ok) {
-    tell(t('read'), `${words(START_REFUSAL_WORDS, outcome.refusal)} ${outcome.detail}`);
-    return;
+el('start').addEventListener('click', async () => {
+  const go = el('start');
+  go.disabled = true;
+  try {
+    const outcome = await session.start({
+      recallId: `RC-${el('batch').value.trim()}-${Date.now()}`,
+      batchId: el('batch').value.trim(),
+      reason: el('reason').value,
+    });
+    if (!outcome.ok) {
+      // A dropped link or a head-office refusal is NOT a start. Say so plainly, keep the form, and
+      // never clear it as if it had worked (P-08).
+      if (outcome.notSent === true) { tell(t('read'), `${t('notSent')} ${outcome.reason}`); return; }
+      tell(t('read'), `${words(START_REFUSAL_WORDS, outcome.refusal)} ${outcome.detail}`);
+      return;
+    }
+    // Recorded at head office. The number that matters, said first and said plainly.
+    tell(t('done'), `${outcome.view.stillOutThere} ${t('stillOut')}. ${outcome.view.identifiedCustomers} ${t('canContact')}, ${outcome.view.anonymousSales} ${t('cannotContact')}.`, true);
+    el('batch').value = '';
+    el('reason').value = '';
+    renderRecalls();
+  } finally {
+    go.disabled = false;
   }
-  // The number that matters, said first and said plainly.
-  tell(t('done'), `${outcome.view.stillOutThere} ${t('stillOut')}. ${outcome.view.identifiedCustomers} ${t('canContact')}, ${outcome.view.anonymousSales} ${t('cannotContact')}.`, true);
-  el('batch').value = '';
-  el('reason').value = '';
-  renderRecalls();
 });
 
 function renderRecalls() {
@@ -281,20 +292,27 @@ function openCloseForm(view, row) {
   go.type = 'button';
   go.className = 'danger';
   go.textContent = t('closeIt');
-  go.addEventListener('click', () => {
-    const outcome = session.close({
-      recallId: view.recall.recallId,
-      evidence: evidence.value,
-      recoveredQty: Number(recovered.value.replace(/[^0-9]/g, '') || '0'),
-      disposedQty: Number(disposed.value.replace(/[^0-9]/g, '') || '0'),
-      acceptUnrecovered: accept.value,
-    });
-    if (!outcome.ok) {
-      tell(t('read'), `${words(CLOSE_REFUSAL_WORDS, outcome.refusal)} ${outcome.detail}`);
-      return;
+  go.addEventListener('click', async () => {
+    go.disabled = true;
+    try {
+      const outcome = await session.close({
+        recallId: view.recall.recallId,
+        evidence: evidence.value,
+        recoveredQty: Number(recovered.value.replace(/[^0-9]/g, '') || '0'),
+        disposedQty: Number(disposed.value.replace(/[^0-9]/g, '') || '0'),
+        acceptUnrecovered: accept.value,
+      });
+      if (!outcome.ok) {
+        // A dropped link or a head-office refusal leaves the recall OPEN. Never a false "closed" (P-08).
+        if (outcome.notSent === true) { tell(t('read'), `${t('notSent')} ${outcome.reason}`); return; }
+        tell(t('read'), `${words(CLOSE_REFUSAL_WORDS, outcome.refusal)} ${outcome.detail}`);
+        return;
+      }
+      tell(t('done'), outcome.recall.closure.evidence, true);
+      renderRecalls();
+    } finally {
+      go.disabled = false;
     }
-    tell(t('done'), outcome.recall.closure.evidence, true);
-    renderRecalls();
   });
 
   const label = (text, node) => {

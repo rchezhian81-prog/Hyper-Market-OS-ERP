@@ -38,6 +38,29 @@ import {
 import { traceBatch, type BatchTrace } from '../../../packages/traceability/src/index';
 import type { Ledger } from '../../../packages/ledger/src/ledger';
 
+/** What head office said when asked to record a recall's start or its closure. */
+export type RecallCloudResult =
+  | { readonly recorded: true; readonly alreadyOpen?: boolean }
+  | { readonly recorded: false; readonly reason: string };
+
+/**
+ * The authenticated write that makes a recall a DURABLE, CENTRAL record (M10-FR-04, hard rule #6) —
+ * not a note that lives only in one browser tab.
+ *
+ * The till-block that stops a recalled item selling travels to every lane on the signed pack and
+ * holds with the cable out; that is a different mechanism. This port is the recall RECORD: who
+ * started it and why, and the evidence it was closed with. Because the record is the thing an
+ * inspector reads afterwards, the screen reports a recall started or closed **only when this port
+ * confirms head office saved it** — a dropped link is an honest "not sent", never a false "done"
+ * (P-08). The record is authoritative once, and only once, head office holds it.
+ */
+export interface RecallCloudPort {
+  /** Record a recall's start. Idempotent on the batch: an already-open batch is one effect. */
+  initiate(input: { readonly batchId: string; readonly reason: string }): Promise<RecallCloudResult>;
+  /** Record a recall's closure, with the evidence reference it is closed on (never blank). */
+  close(input: { readonly batchId: string; readonly evidenceRef: string }): Promise<RecallCloudResult>;
+}
+
 /** What the desk can see, and what it honestly cannot. */
 export interface ExpiryPorts {
   /** Every batch this box knows of, with its expiry and state. */
@@ -48,6 +71,12 @@ export interface ExpiryPorts {
   recalls(): readonly RecallRecord[];
   /** Product names, so a screen about food safety does not show product codes to a person. */
   productNames(): Readonly<Record<string, string>> | undefined;
+  /**
+   * Records a recall's start and closure at head office. The screen refuses to report either as done
+   * until this confirms the central record was saved — a recall nobody else can see is a recall
+   * nobody did.
+   */
+  recallCloud: RecallCloudPort;
 }
 
 export interface ExpiryConfig {
@@ -141,12 +170,16 @@ export interface RecallView {
 }
 
 export type StartOutcome =
-  | { readonly ok: true; readonly recall: RecallRecord; readonly view: RecallView }
-  | { readonly ok: false; readonly refusal: StartRefusal; readonly detail: string };
+  | { readonly ok: true; readonly recall: RecallRecord; readonly view: RecallView; readonly alreadyOpen: boolean }
+  | { readonly ok: false; readonly refusal: StartRefusal; readonly detail: string }
+  // The local guards passed and the box tried head office, which did not save the record — the link
+  // was down, or the cloud declined. Never reported as a start (P-08); it is a "not sent", to retry.
+  | { readonly ok: false; readonly notSent: true; readonly reason: string };
 
 export type CloseOutcome =
   | { readonly ok: true; readonly recall: RecallRecord }
-  | { readonly ok: false; readonly refusal: CloseRefusal; readonly detail: string };
+  | { readonly ok: false; readonly refusal: CloseRefusal; readonly detail: string }
+  | { readonly ok: false; readonly notSent: true; readonly reason: string };
 
 export interface ExpirySession {
   /** What is expired or close to it, earliest first — the list M10-FR-01 asks for first. */
@@ -155,9 +188,12 @@ export interface ExpirySession {
   wouldAllocate(productId: string, qty: number): FefoResult;
   /** Every recall this shop has run, open ones first. */
   recalls(): readonly RecallView[];
-  /** Start a recall on a batch, or refuse and say why. */
-  start(input: { readonly recallId: string; readonly batchId: string; readonly reason: string }): StartOutcome;
-  /** Close one, which requires evidence and the stock accounted for. */
+  /**
+   * Start a recall on a batch, or refuse and say why. Records it at head office; the returned outcome
+   * is a start only when the central record was saved (P-08). Awaits the cloud, so it is async.
+   */
+  start(input: { readonly recallId: string; readonly batchId: string; readonly reason: string }): Promise<StartOutcome>;
+  /** Close one, which requires evidence and the stock accounted for, and a saved central record. */
   close(input: {
     readonly recallId: string;
     readonly evidence: string;
@@ -165,7 +201,7 @@ export interface ExpirySession {
     readonly disposedQty: number;
     /** Set only when closing with stock still out there, which needs a reason of its own. */
     readonly acceptUnrecovered?: string;
-  }): CloseOutcome;
+  }): Promise<CloseOutcome>;
 }
 
 export function createExpirySession(config: ExpiryConfig, ports: ExpiryPorts): ExpirySession {
@@ -208,7 +244,9 @@ export function createExpirySession(config: ExpiryConfig, ports: ExpiryPorts): E
         || b.recall.startedAt.localeCompare(a.recall.startedAt));
     },
 
-    start: (input) => {
+    start: async (input) => {
+      // Local guards run FIRST, before the network. A malformed recall never reaches head office —
+      // and none of these outcomes is a "not sent", because nothing was sent.
       if (config.userId === null) {
         return {
           ok: false,
@@ -248,10 +286,17 @@ export function createExpirySession(config: ExpiryConfig, ports: ExpiryPorts): E
         startedBy: config.userId,
         startedAt: config.now,
       };
-      return { ok: true, recall, view: viewOf(recall) };
+      // The recall is only real once head office has the record. A dropped link is a lost link, not a
+      // recall — reported honestly so the person retries, never a false "done" (P-08, hard rule #6).
+      const saved = await ports.recallCloud.initiate({ batchId: recall.batchId, reason: recall.reason });
+      if (!saved.recorded) {
+        return { ok: false, notSent: true, reason: saved.reason };
+      }
+      return { ok: true, recall, view: viewOf(recall), alreadyOpen: saved.alreadyOpen === true };
     },
 
-    close: (input) => {
+    close: async (input) => {
+      // As with start, every local guard runs before the network — nothing here is a "not sent".
       if (config.userId === null) {
         return {
           ok: false,
@@ -295,6 +340,18 @@ export function createExpirySession(config: ExpiryConfig, ports: ExpiryPorts): E
         };
       }
 
+      // Composed once, and carried by BOTH the durable central record and the local one — the record
+      // is all that survives for an inspector, and must state what was done, including how much was
+      // closed out still unaccounted for.
+      const composedEvidence = stillOut > 0
+        ? `${input.evidence} — closed with ${stillOut} unaccounted for: ${input.acceptUnrecovered!.trim()}`
+        : input.evidence;
+      // Head office records the closure on that evidence. A dropped link or a cloud refusal is an
+      // honest "not sent", never a false "closed" (P-08).
+      const saved = await ports.recallCloud.close({ batchId: recall.batchId, evidenceRef: composedEvidence });
+      if (!saved.recorded) {
+        return { ok: false, notSent: true, reason: saved.reason };
+      }
       return {
         ok: true,
         recall: {
@@ -302,9 +359,7 @@ export function createExpirySession(config: ExpiryConfig, ports: ExpiryPorts): E
           closure: {
             closedBy: config.userId,
             closedAt: config.now,
-            evidence: stillOut > 0
-              ? `${input.evidence} — closed with ${stillOut} unaccounted for: ${input.acceptUnrecovered!.trim()}`
-              : input.evidence,
+            evidence: composedEvidence,
             recoveredQty: input.recoveredQty,
             disposedQty: input.disposedQty,
           },

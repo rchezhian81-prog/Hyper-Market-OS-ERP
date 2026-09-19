@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   createExpirySession, START_REFUSAL_KINDS, CLOSE_REFUSAL_KINDS,
   type ExpiryConfig, type ExpiryPorts, type RecallRecord,
+  type RecallCloudPort, type RecallCloudResult,
 } from '../../apps/web-erp/src/expiry-session';
 import { Ledger, InMemoryLedgerStore } from '../../packages/ledger/src/index';
 import { makeEvent } from '../../packages/contracts/src/event';
@@ -16,7 +17,9 @@ import type { Batch } from '../../packages/fefo/src/index';
  *   • the oldest stock goes out first, and expired stock goes out to nobody;
  *   • a recall says how much is **still in customers' homes**, not just how much is on the shelf;
  *   • a recall cannot be closed without evidence, and cannot be quietly closed with stock missing;
- *   • the shop is told how many buyers it can actually contact, and how many it cannot.
+ *   • the shop is told how many buyers it can actually contact, and how many it cannot;
+ *   • **a recall is reported started or closed ONLY when head office has the record** — a dropped
+ *     link is an honest "not sent", never a false "done" (M10-FR-04, hard rule #6, P-08).
  */
 
 const NOW = '2026-08-06T14:00:00.000Z';
@@ -58,6 +61,35 @@ const CONFIG: ExpiryConfig = {
   tenantId: 't1', storeId: 'store-1', userId: 'u-qc', now: NOW, nearExpiryDays: 7,
 };
 
+/** A head-office stub that RECORDS what it was asked, and answers however the test wants. */
+function recordingCloud(result: RecallCloudResult = { recorded: true }): {
+  readonly initiated: { readonly batchId: string; readonly reason: string }[];
+  readonly closed: { readonly batchId: string; readonly evidenceRef: string }[];
+  readonly port: RecallCloudPort;
+} {
+  const initiated: { batchId: string; reason: string }[] = [];
+  const closed: { batchId: string; evidenceRef: string }[] = [];
+  return {
+    initiated, closed,
+    port: {
+      initiate: async (input) => { initiated.push(input); return result; },
+      close: async (input) => { closed.push(input); return result; },
+    },
+  };
+}
+
+/** A head office that cannot be reached — the offline / cable-out case. */
+const lostLinkCloud = (): RecallCloudPort => ({
+  initiate: async () => ({ recorded: false, reason: 'no connection to head office — the recall was not recorded' }),
+  close: async () => ({ recorded: false, reason: 'no connection to head office — the closure was not recorded' }),
+});
+
+/** A head office that is reachable but declines (e.g. permission / no open recall). */
+const decliningCloud = (reason: string): RecallCloudPort => ({
+  initiate: async () => ({ recorded: false, reason }),
+  close: async () => ({ recorded: false, reason }),
+});
+
 function ports(over: Partial<ExpiryPorts> = {}): ExpiryPorts {
   const ledger = ledgerWithTrace();
   return {
@@ -65,6 +97,8 @@ function ports(over: Partial<ExpiryPorts> = {}): ExpiryPorts {
     ledger: () => ledger,
     recalls: () => [],
     productNames: () => ({ p1: 'Toor dal 1kg', p2: 'Milk 1L' }),
+    // By default head office is reachable and saves — the happy path most tests assume.
+    recallCloud: recordingCloud().port,
     ...over,
   };
 }
@@ -127,8 +161,8 @@ describe('what is going out of date, earliest first', () => {
 // ── Starting a recall ───────────────────────────────────────────────────────
 
 describe('starting a recall', () => {
-  it('starts one and immediately says how much is still out there', () => {
-    const outcome = desk().start({ recallId: 'RC-1', batchId: 'B-SOON', reason: 'supplier notice' });
+  it('starts one and immediately says how much is still out there', async () => {
+    const outcome = await desk().start({ recallId: 'RC-1', batchId: 'B-SOON', reason: 'supplier notice' });
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     // 10 units sold off this batch and none recovered yet.
@@ -137,54 +171,90 @@ describe('starting a recall', () => {
     expect(outcome.recall.startedBy).toBe('u-qc');
   });
 
-  it('says how many buyers can be contacted and how many cannot', () => {
+  it('says how many buyers can be contacted and how many cannot', async () => {
     // A shop that can contact one of three buyers needs to know it is one of three — the other
     // two are the reason for a notice on the door.
-    const outcome = desk().start({ recallId: 'RC-1', batchId: 'B-SOON', reason: 'glass' });
+    const outcome = await desk().start({ recallId: 'RC-1', batchId: 'B-SOON', reason: 'glass' });
     if (!outcome.ok) return;
     expect(outcome.view.identifiedCustomers).toBe(1);
     expect(outcome.view.anonymousSales).toBe(2);
     expect(outcome.view.soldOn).toHaveLength(3);
   });
 
-  it('needs a reason, because it is the first thing anybody asks afterwards', () => {
-    const outcome = desk().start({ recallId: 'RC-1', batchId: 'B-SOON', reason: '   ' });
+  it('records the start at head office — the durable record, not a note on one screen', async () => {
+    const cloud = recordingCloud();
+    const outcome = await desk({ recallCloud: cloud.port })
+      .start({ recallId: 'RC-1', batchId: 'B-SOON', reason: 'supplier notice: glass' });
+    expect(outcome.ok).toBe(true);
+    // The batch and the reason reached head office exactly.
+    expect(cloud.initiated).toEqual([{ batchId: 'B-SOON', reason: 'supplier notice: glass' }]);
+  });
+
+  it('is NOT a start when head office cannot be reached — an honest "not sent", never a false done', async () => {
+    const outcome = await desk({ recallCloud: lostLinkCloud() })
+      .start({ recallId: 'RC-1', batchId: 'B-SOON', reason: 'glass' });
     expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
+    if (outcome.ok || !('notSent' in outcome)) return;
+    expect(outcome.notSent).toBe(true);
+    expect(outcome.reason).toContain('no connection');
+  });
+
+  it('surfaces a head-office refusal rather than inventing a success', async () => {
+    const outcome = await desk({ recallCloud: decliningCloud('head office says this batch is not yours') })
+      .start({ recallId: 'RC-1', batchId: 'B-SOON', reason: 'glass' });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok || !('notSent' in outcome)) return;
+    expect(outcome.reason).toContain('not yours');
+  });
+
+  it('needs a reason, because it is the first thing anybody asks afterwards', async () => {
+    const outcome = await desk().start({ recallId: 'RC-1', batchId: 'B-SOON', reason: '   ' });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok || 'notSent' in outcome) return;
     expect(outcome.refusal).toBe('needs_a_reason');
     expect(outcome.detail).toContain('inspector');
   });
 
-  it('refuses a batch this box has never heard of', () => {
-    const outcome = desk().start({ recallId: 'RC-1', batchId: 'B-NOPE', reason: 'glass' });
-    if (outcome.ok) return;
+  it('refuses a batch this box has never heard of', async () => {
+    const outcome = await desk().start({ recallId: 'RC-1', batchId: 'B-NOPE', reason: 'glass' });
+    if (outcome.ok || 'notSent' in outcome) return;
     expect(outcome.refusal).toBe('no_such_batch');
     expect(outcome.detail).toContain('code on the packaging');
   });
 
-  it('refuses to start the same recall twice, which would split the evidence', () => {
-    const outcome = desk({ recalls: () => [STARTED] })
+  it('does not trouble head office when a local guard already refuses', async () => {
+    // A malformed recall never reaches the network — nothing is "not sent" because nothing was sent.
+    const cloud = recordingCloud();
+    const outcome = await desk({ recallCloud: cloud.port })
+      .start({ recallId: 'RC-1', batchId: 'B-NOPE', reason: 'glass' });
+    expect(outcome.ok).toBe(false);
+    expect(cloud.initiated).toEqual([]);
+  });
+
+  it('refuses to start the same recall twice, which would split the evidence', async () => {
+    const outcome = await desk({ recalls: () => [STARTED] })
       .start({ recallId: 'RC-2', batchId: 'B-SOON', reason: 'glass' });
     expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
+    if (outcome.ok || 'notSent' in outcome) return;
     expect(outcome.refusal).toBe('already_recalled');
     expect(outcome.detail).toContain('u-qc');
   });
 
-  it('allows a NEW recall on a batch whose earlier one is closed', () => {
+  it('allows a NEW recall on a batch whose earlier one is closed', async () => {
     const closed: RecallRecord = {
       ...STARTED,
       closure: { closedBy: 'u-qc', closedAt: NOW, evidence: 'destroyed', recoveredQty: 10, disposedQty: 0 },
     };
-    expect(desk({ recalls: () => [closed] })
-      .start({ recallId: 'RC-2', batchId: 'B-SOON', reason: 'second notice' }).ok).toBe(true);
+    const outcome = await desk({ recalls: () => [closed] })
+      .start({ recallId: 'RC-2', batchId: 'B-SOON', reason: 'second notice' });
+    expect(outcome.ok).toBe(true);
   });
 
-  it('starts nothing when the box does not know who is asking', () => {
-    const outcome = desk({}, { userId: null })
+  it('starts nothing when the box does not know who is asking', async () => {
+    const outcome = await desk({}, { userId: null })
       .start({ recallId: 'RC-1', batchId: 'B-SOON', reason: 'glass' });
     expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
+    if (outcome.ok || 'notSent' in outcome) return;
     expect(outcome.refusal).toBe('nobody_is_named_at_this_desk');
     expect(START_REFUSAL_KINDS).toHaveLength(4);
   });
@@ -195,8 +265,8 @@ describe('starting a recall', () => {
 describe('a recall is not finished when it is started', () => {
   const withOpen = (over: Partial<ExpiryPorts> = {}) => desk({ recalls: () => [STARTED], ...over });
 
-  it('closes when the stock is accounted for and there is evidence', () => {
-    const outcome = withOpen().close({
+  it('closes when the stock is accounted for and there is evidence', async () => {
+    const outcome = await withOpen().close({
       recallId: 'RC-1', evidence: 'collected by supplier, note 4471', recoveredQty: 6, disposedQty: 4,
     });
     expect(outcome.ok).toBe(true);
@@ -205,28 +275,61 @@ describe('a recall is not finished when it is started', () => {
     expect(outcome.recall.closure?.evidence).toContain('note 4471');
   });
 
-  it('refuses to close with no evidence — that is a recall nobody did', () => {
-    const outcome = withOpen().close({ recallId: 'RC-1', evidence: '  ', recoveredQty: 10, disposedQty: 0 });
-    expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
-    expect(outcome.refusal).toBe('needs_evidence');
-    expect(outcome.detail).toContain('what was actually done');
+  it('records the closure at head office on the composed evidence, and closes only when saved', async () => {
+    const cloud = recordingCloud();
+    const outcome = await withOpen({ recallCloud: cloud.port }).close({
+      recallId: 'RC-1', evidence: 'collected by supplier, note 4471', recoveredQty: 6, disposedQty: 4,
+    });
+    expect(outcome.ok).toBe(true);
+    // The batch and the exact evidence reference reached head office — the record is what survives.
+    expect(cloud.closed).toEqual([{ batchId: 'B-SOON', evidenceRef: 'collected by supplier, note 4471' }]);
   });
 
-  it('refuses to close quietly while stock is unaccounted for', () => {
+  it('sends the "unaccounted for" note as the durable evidence, because the record is all that survives', async () => {
+    const cloud = recordingCloud();
+    await withOpen({ recallCloud: cloud.port }).close({
+      recallId: 'RC-1', evidence: 'collected what we could', recoveredQty: 2, disposedQty: 0,
+      acceptUnrecovered: 'notice placed on the door; 8 not traceable',
+    });
+    expect(cloud.closed[0]?.evidenceRef).toContain('8 unaccounted for');
+    expect(cloud.closed[0]?.evidenceRef).toContain('notice placed on the door');
+  });
+
+  it('is NOT closed when head office cannot be reached — the recall stays open (P-08)', async () => {
+    const outcome = await withOpen({ recallCloud: lostLinkCloud() }).close({
+      recallId: 'RC-1', evidence: 'collected by supplier, note 4471', recoveredQty: 6, disposedQty: 4,
+    });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok || !('notSent' in outcome)) return;
+    expect(outcome.reason).toContain('no connection');
+  });
+
+  it('refuses to close with no evidence — that is a recall nobody did', async () => {
+    const cloud = recordingCloud();
+    const outcome = await withOpen({ recallCloud: cloud.port })
+      .close({ recallId: 'RC-1', evidence: '  ', recoveredQty: 10, disposedQty: 0 });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok || 'notSent' in outcome) return;
+    expect(outcome.refusal).toBe('needs_evidence');
+    expect(outcome.detail).toContain('what was actually done');
+    // The guard runs before the network — a blank close never reaches head office.
+    expect(cloud.closed).toEqual([]);
+  });
+
+  it('refuses to close quietly while stock is unaccounted for', async () => {
     // Blocking the till is the easy half. This is the half that gets skipped.
-    const outcome = withOpen().close({
+    const outcome = await withOpen().close({
       recallId: 'RC-1', evidence: 'collected what we could', recoveredQty: 2, disposedQty: 0,
     });
     expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
+    if (outcome.ok || 'notSent' in outcome) return;
     expect(outcome.refusal).toBe('stock_not_accounted_for');
     expect(outcome.detail).toContain('8 of this batch');
     expect(outcome.detail).toContain("customers' homes");
   });
 
-  it('allows it WITH a reason, because in a real recall some of it is eaten', () => {
-    const outcome = withOpen().close({
+  it('allows it WITH a reason, because in a real recall some of it is eaten', async () => {
+    const outcome = await withOpen().close({
       recallId: 'RC-1', evidence: 'collected what we could', recoveredQty: 2, disposedQty: 0,
       acceptUnrecovered: 'notice placed on the door and in the paper; 8 not traceable',
     });
@@ -237,32 +340,32 @@ describe('a recall is not finished when it is started', () => {
     expect(outcome.recall.closure?.evidence).toContain('notice placed on the door');
   });
 
-  it('refuses to close one that is already closed, rather than editing it', () => {
+  it('refuses to close one that is already closed, rather than editing it', async () => {
     const closed: RecallRecord = {
       ...STARTED,
       closure: { closedBy: 'u-boss', closedAt: '2026-08-06T10:00:00.000Z', evidence: 'done', recoveredQty: 10, disposedQty: 0 },
     };
-    const outcome = desk({ recalls: () => [closed] })
+    const outcome = await desk({ recalls: () => [closed] })
       .close({ recallId: 'RC-1', evidence: 'again', recoveredQty: 0, disposedQty: 0 });
     expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
+    if (outcome.ok || 'notSent' in outcome) return;
     expect(outcome.refusal).toBe('already_closed');
     expect(outcome.detail).toContain('never an edit');
   });
 
-  it('refuses a recall that does not exist', () => {
-    const outcome = withOpen().close({ recallId: 'RC-NOPE', evidence: 'x', recoveredQty: 0, disposedQty: 0 });
-    if (outcome.ok) return;
+  it('refuses a recall that does not exist', async () => {
+    const outcome = await withOpen().close({ recallId: 'RC-NOPE', evidence: 'x', recoveredQty: 0, disposedQty: 0 });
+    if (outcome.ok || 'notSent' in outcome) return;
     expect(outcome.refusal).toBe('no_such_recall');
   });
 
-  it('closes nothing when the box does not know who is asking', () => {
-    const outcome = withOpen().close({ recallId: 'RC-1', evidence: 'x', recoveredQty: 10, disposedQty: 0 });
+  it('closes nothing when the box does not know who is asking', async () => {
+    const outcome = await withOpen().close({ recallId: 'RC-1', evidence: 'x', recoveredQty: 10, disposedQty: 0 });
     expect(outcome.ok).toBe(true);
-    const anonymous = desk({ recalls: () => [STARTED] }, { userId: null })
+    const anonymous = await desk({ recalls: () => [STARTED] }, { userId: null })
       .close({ recallId: 'RC-1', evidence: 'x', recoveredQty: 10, disposedQty: 0 });
     expect(anonymous.ok).toBe(false);
-    if (anonymous.ok) return;
+    if (anonymous.ok || 'notSent' in anonymous) return;
     expect(anonymous.refusal).toBe('nobody_is_named_at_this_desk');
     expect(CLOSE_REFUSAL_KINDS).toHaveLength(5);
   });
