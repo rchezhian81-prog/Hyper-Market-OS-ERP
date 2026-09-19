@@ -5,6 +5,39 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M08 stock-health dashboard — slice 3: browser e2e; M08 re-rated INTEGRATION_TESTED→E2E_VERIFIED (headline 51.9→52.0%) (19 September 2026)
+
+The last step. The stock-health screen is now proven working in a real browser, so **M08 is honestly re-rated to
+E2E_VERIFIED**.
+
+- **`tests/e2e/stock-health-delivery.e2e.ts`** (3, real Chromium) — an authorised manager opens `/stock-health`
+  and the five inventory reads (availability, exceptions, valuation, ageing, performance) reach the cloud under
+  their own session and render: exceptions first (a negative-stock signal as attention), the headline numbers,
+  and the "as of" time; **Refresh** re-reads on demand (a browser→cloud read); a reader **without**
+  `inventory.availability.read` sees a plain not-permitted state and no figures. Plus the screen joins
+  `screens-open-offline.e2e.ts` (opens offline + accessible).
+
+**Re-rate — honest, and the judgment stated plainly.** M08's manager-facing surface is this read dashboard; the
+stock *changes* (POS sale, goods receipt, write-off) are appended by other modules' own screens, which are
+integration-tested and — for the POS sale — already E2E-verified. With the dashboard now browser-verified,
+**M08 INTEGRATION_TESTED → E2E_VERIFIED, headline 51.9 → 52.0% (5410/10400).** The module ladder now reads
+**8 E2E VERIFIED · 0 INTEGRATION TESTED · 12 WIRED**. Held at E2E_VERIFIED, not UAT_VERIFIED (needs a manager
+reading real stock health on the shop floor).
+
+**What the owner should check (in the store):** on a store computer, open the ERP → **Inventory → Stock
+health**. You should see, top to bottom: anything needing attention (like negative stock) first, then your
+headline numbers — stock value, how fast stock sells (turns), days of cover, and profit per rupee of stock
+(GMROI) — each with an "as of" time. Press **Refresh** to pull the latest. It only shows numbers; nothing on it
+changes your stock. If a staff member without stock-view permission opens it, it says they do not have
+permission rather than showing figures.
+
+### Next
+- The stock-health dashboard is complete to E2E_VERIFIED. The next module/screen is the owner's to choose.
+- **Retention periods remain the pinned owner-blocked priority** (unchanged): the archival/disposal execution
+  workflow needs the owner's per-data-class "keep for N years" numbers. Never invent these.
+
+---
+
 ## M08 stock-health dashboard — slice 2: the served /stock-health screen + edge wiring (headline unchanged 51.9%) (19 September 2026)
 
 The visible screen, over slice 1's tested engine. A manager can now open **Stock health** in the ERP and see,
