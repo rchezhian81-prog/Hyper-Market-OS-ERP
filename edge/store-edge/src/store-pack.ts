@@ -533,6 +533,17 @@ export interface PackDayReopenPolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is looking at the READ-ONLY stock-health dashboard (M08) and whether they may read it. The figures
+ *  themselves are read live from the cloud (`GET /v1/inventory/…`), not the pack; this is only who the box was
+ *  told is looking, so the shell can gate on `inventory.availability.read` before the live read. Nothing here is
+ *  written — the dashboard changes no stock. */
+export interface PackStockHealthPolicy {
+  readonly userId?: string;
+  /** The permission codes this user holds — `inventory.availability.read` to see stock health. Never defaulted;
+   *  the cloud routes re-check it, so this only shapes the UI. */
+  readonly permissions: readonly string[];
+}
+
 /** One import template the box ships to the data import/export screen (M30-FR-01) — the store's configured
  *  loads. The full column spec travels because the validate/commit routes take the template in the body; there
  *  is no proprietary "list templates" route. */
@@ -949,6 +960,8 @@ export interface StorePack {
   readonly riskAcceptancePolicy: Register<PackRiskAcceptancePolicy>;
   /** Who is on the day-reopen screen and what they may do there (M14-FR-04 / §28). */
   readonly dayReopenPolicy: Register<PackDayReopenPolicy>;
+  /** Who is on the READ-ONLY stock-health dashboard and whether they may read it (M08). */
+  readonly stockHealthPolicy: Register<PackStockHealthPolicy>;
   /** Who is on the data import/export console, what they may do, and the store's import templates (M30). */
   readonly dataIoPolicy: Register<PackDataIoPolicy>;
   /** Who is on the Workforce guidance inbox screen and what they may do there (A10). */
@@ -1099,6 +1112,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     cashOfficePolicy: notKnown(why),
     riskAcceptancePolicy: notKnown(why),
     dayReopenPolicy: notKnown(why),
+    stockHealthPolicy: notKnown(why),
     dataIoPolicy: notKnown(why),
     workforceInboxPolicy: notKnown(why),
     essPolicy: notKnown(why),
@@ -1216,6 +1230,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     cashOfficePolicy: section<PackCashOfficePolicy>('cashOfficePolicy'),
     riskAcceptancePolicy: section<PackRiskAcceptancePolicy>('riskAcceptancePolicy'),
     dayReopenPolicy: section<PackDayReopenPolicy>('dayReopenPolicy'),
+    stockHealthPolicy: section<PackStockHealthPolicy>('stockHealthPolicy'),
     dataIoPolicy: section<PackDataIoPolicy>('dataIoPolicy'),
     workforceInboxPolicy: section<PackWorkforceInboxPolicy>('workforceInboxPolicy'),
     essPolicy: section<PackEssPolicy>('essPolicy'),

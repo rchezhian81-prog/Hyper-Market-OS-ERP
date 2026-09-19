@@ -129,6 +129,10 @@ import {
   type DayReopenPort, type ReopenResult,
 } from './day-reopen-session';
 import {
+  createStockHealthSession,
+  type StockHealthPorts, type StockHealthSession, type StockHealthData,
+} from './inventory-health-session';
+import {
   createDataIoSession,
   type DataIoPorts, type DataIoSession, type ExportDomainView, type ExportAuditView,
   type ExportResult, type ValidateResult, type CommitResult, type ImportPreviewView,
@@ -1171,6 +1175,121 @@ export async function fetchLockedDays(): Promise<DayReopenData | null> {
   } catch {
     return null;
   }
+}
+
+// ── Stock health (M08 — read-only) ────────────────────────────────────────────────────────────────────────────
+
+/** What the box tells the stock-health screen: who is looking, what they may read, and (optionally) a snapshot
+ *  of the figures to render before/without a live read. */
+export interface StockHealthScreenData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+  readonly snapshot?: StockHealthData;
+}
+
+const INVENTORY_READ_PERMISSION = 'inventory.availability.read';
+const EMPTY_STOCK_HEALTH: StockHealthData = Object.freeze({});
+
+export function stockHealthPortsFromData(
+  data: StockHealthScreenData | undefined,
+  snapshot?: StockHealthData,
+): StockHealthPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    snapshot: () => snapshot ?? data?.snapshot ?? EMPTY_STOCK_HEALTH,
+    // Default-deny: an absent permission list can read nothing (the server would refuse it anyway).
+    mayRead: () => held.has(INVENTORY_READ_PERMISSION),
+  };
+}
+
+/** Build the stock-health session, or `null` when the box carried no payload for it (shell shows the sample). */
+export function bootStockHealth(
+  data: StockHealthScreenData | undefined,
+  snapshot?: StockHealthData,
+): StockHealthSession | null {
+  if (data === undefined) return null;
+  return createStockHealthSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    stockHealthPortsFromData(data, snapshot),
+  );
+}
+
+/** Read one inventory GET and return its parsed body, or null (offline, refused, or unreadable). Read-only. */
+async function getInventory(path: string): Promise<Record<string, unknown> | null> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return null;
+  try {
+    const res = await fetchFn(path, { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    if (res.status >= 400) return null;
+    return (await res.json()) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+/** Read the live stock-health figures — the five inventory reads folded into one snapshot (all GETs, read-only).
+ *  Each section is optional: a read that fails leaves that section absent rather than a false zero (P-08).
+ *  Returns null only when NOTHING could be read, so the shell keeps whatever it was showing. */
+export async function fetchStockHealth(): Promise<StockHealthData | null> {
+  const [availability, exceptions, valuation, ageing, performance] = await Promise.all([
+    getInventory('/v1/inventory/availability'),
+    getInventory('/v1/inventory/exceptions'),
+    getInventory('/v1/inventory/valuation'),
+    getInventory('/v1/inventory/ageing'),
+    getInventory('/v1/inventory/performance'),
+  ]);
+  if (availability === null && exceptions === null && valuation === null && ageing === null && performance === null) {
+    return null;
+  }
+
+  const out: {
+    availability?: StockHealthData['availability']; negative?: StockHealthData['negative'];
+    valuation?: StockHealthData['valuation']; ageing?: StockHealthData['ageing'];
+    performance?: StockHealthData['performance'];
+    asAt: Record<string, string>;
+  } = { asAt: {} };
+
+  type Money = { readonly minor: number; readonly currency: string };
+  const asStr = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+
+  if (availability !== null && Array.isArray(availability['rows'])) {
+    out.availability = (availability['rows'] as Record<string, unknown>[]).map((r) => ({
+      productId: String(r['productId']), locationId: String(r['locationId']), onHandMinor: Number(r['onHandMinor']),
+    }));
+    const at = asStr(availability['asAt']); if (at !== undefined) out.asAt['availability'] = at;
+  }
+  if (exceptions !== null && Array.isArray(exceptions['negative'])) {
+    out.negative = (exceptions['negative'] as Record<string, unknown>[]).map((r) => ({
+      productId: String(r['productId']), locationId: String(r['locationId']), onHandMinor: Number(r['onHandMinor']),
+      detail: String(r['detail'] ?? ''), ownerAction: String(r['ownerAction'] ?? ''),
+    }));
+    const at = asStr(exceptions['asAt']); if (at !== undefined) out.asAt['negative'] = at;
+  }
+  if (valuation !== null && typeof valuation['totalValueMinor'] === 'number') {
+    const rows = Array.isArray(valuation['rows']) ? (valuation['rows'] as Record<string, unknown>[]) : [];
+    const currency = ((rows[0]?.['value'] as Money | undefined)?.currency) ?? 'INR';
+    out.valuation = { totalValueMinor: valuation['totalValueMinor'] as number, currency };
+    const at = asStr(valuation['asAt']); if (at !== undefined) out.asAt['valuation'] = at;
+  }
+  if (ageing !== null && typeof ageing['totalValue'] === 'object' && ageing['totalValue'] !== null) {
+    const total = ageing['totalValue'] as Money;
+    const oldest = (ageing['oldestBucketValue'] as Money | undefined) ?? { minor: 0, currency: total.currency };
+    out.ageing = {
+      oldestBucketValueMinor: oldest.minor, totalValueMinor: total.minor,
+      unvaluedMinor: Number(ageing['unvaluedMinor'] ?? 0), currency: total.currency,
+    };
+    const at = asStr(ageing['asAt']); if (at !== undefined) out.asAt['ageing'] = at;
+  }
+  if (performance !== null && typeof performance['turns'] === 'object' && performance['turns'] !== null) {
+    const ratio = (v: unknown): { readonly kind: 'ratio'; readonly bp: number } | { readonly kind: 'not_meaningful'; readonly because: string } =>
+      v as { kind: 'ratio'; bp: number } | { kind: 'not_meaningful'; because: string };
+    out.performance = {
+      turns: ratio(performance['turns']), daysOfCover: ratio(performance['daysOfCover']), gmroi: ratio(performance['gmroi']),
+    };
+    const at = asStr(performance['asAt']); if (at !== undefined) out.asAt['performance'] = at;
+  }
+
+  return out;
 }
 
 // ── Risk-acceptance / compliance-gates (M34-FR-04) ────────────────────────────────────────────────────────────
@@ -2243,6 +2362,13 @@ interface ManagerWindow {
     refresh(): Promise<DayReopenData | null>;
     present(worklist: DayReopenData): DayReopenSession;
   };
+  stockHealthData?: StockHealthScreenData;
+  stockHealthSession?: StockHealthSession;
+  /** The shell reads the live stock-health figures through this and re-presents them — GET reads, never writes. */
+  stockHealth?: {
+    refresh(): Promise<StockHealthData | null>;
+    present(snapshot: StockHealthData): StockHealthSession;
+  };
   dataIoData?: DataIoData;
   dataIoSession?: DataIoSession;
   /** The shell reads the live export catalogue + log through this and re-presents it — GET reads, never writes. */
@@ -3003,6 +3129,21 @@ if (browserWindow !== undefined) {
       present: (worklist) => createDayReopenSession(
         { userId: dayReopenData?.userId === undefined ? null : dayReopenData.userId },
         dayReopenPortsFromData(dayReopenData, worklist, reopenPort),
+      ),
+    };
+  }
+  // The stock-health dashboard (M08 — read-only): boots from the box's policy (who + whether they hold
+  // inventory.availability.read + an optional snapshot), then the shell refreshes the five inventory figures
+  // with live GETs (read-only). It changes nothing — the stock movements happen on other screens.
+  const stockHealthData = browserWindow.stockHealthData;
+  const stockHealth = bootStockHealth(stockHealthData, undefined);
+  if (stockHealth !== null) {
+    browserWindow.stockHealthSession = stockHealth;
+    browserWindow.stockHealth = {
+      refresh: fetchStockHealth,
+      present: (snapshot) => createStockHealthSession(
+        { userId: stockHealthData?.userId === undefined ? null : stockHealthData.userId },
+        stockHealthPortsFromData(stockHealthData, snapshot),
       ),
     };
   }
