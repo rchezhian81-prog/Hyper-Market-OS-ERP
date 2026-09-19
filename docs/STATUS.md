@@ -29,8 +29,11 @@ merged PRs (#455, #456, #457), took M10 from WIRED to **E2E_VERIFIED**.
 
 **Re-rate — honest, and the judgment stated plainly.** FR-04 (recall lifecycle) — the module's defining,
 food-safety-critical governed action — is the workflow now proven end to end. FR-02 (cold-chain) and FR-03
-(lot-trace) remain API-wired, not separately browser-e2e'd; the recall **BLOCK** at the till travels on the
-signed pack and is unchanged (still holds offline). **M10 WIRED → E2E_VERIFIED, headline 52.0 → 52.3%
+(lot-trace) are **integration-tested API surfaces** (`quality-cold-chain` 5 + `lot-trace` 9 cases) with **no
+operator screen by current design** — cold-chain assess runs at goods-receipt, and the lot-trace figures a
+person needs in a recall (received/sold/still-out + contactable buyers) are already on the recall view — so they
+are not a browser-e2e gap for M10; a dedicated screen for either would be a new feature, not a debt owed here.
+The recall **BLOCK** at the till travels on the signed pack and is unchanged (still holds offline). **M10 WIRED → E2E_VERIFIED, headline 52.0 → 52.3%
 (5435/10400).** The module ladder now reads **9 E2E VERIFIED · 0 INTEGRATION TESTED · 11 WIRED**.
 
 **What the owner should check (in the store):** on a store computer, open the ERP → **Expiry and recall** →
