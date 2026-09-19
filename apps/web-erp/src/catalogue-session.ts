@@ -73,6 +73,41 @@ export interface PromotionLaunchPort {
   post(input: PromotionLaunchInput): Promise<PromotionLaunchOutcome>;
 }
 
+/**
+ * A governed price change to record at head office (M05-FR-02, API-02). What the operator typed — the product
+ * and the new price — plus, for a below-cost / below-margin-floor price, the §28 approver + written reason. The
+ * MRP ceiling, the landed cost, the currency and the margin floor are assembled by the session from the same
+ * authoritative sources the local proposal uses, never typed here; the cloud re-runs `checkPrice` over them.
+ */
+export interface PriceChangeCloudInput {
+  readonly productId: string;
+  readonly priceMinor: number;
+  /** Present only for a below-cost / below-floor price: a DIFFERENT person who holds `price.change.approve`. */
+  readonly approval?: { readonly approvedBy: string; readonly rationale: string };
+}
+
+/** What head office said when asked to change a price — its own verdict, or the reason it did not. */
+export type PriceChangeCloudOutcome =
+  | { readonly saved: true; readonly verdict: string; readonly approvedBy: string | null }
+  | { readonly saved: false; readonly reason: string };
+
+/** The authenticated POST that records a governed price change at head office (M05-FR-02, API-02). Injected, so
+ *  the model opens no socket itself; the cloud re-runs `checkPrice` (MRP ceiling, cost, margin floor) and
+ *  re-checks §28 (a below-cost/below-floor price needs a different, authorised approver). It receives the raw
+ *  figures the session assembled — a price above MRP or below cost is the cloud's to refuse, never the screen's
+ *  to wave through. */
+export interface PriceChangeCloudPort {
+  post(input: {
+    readonly productId: string;
+    readonly priceMinor: number;
+    readonly mrpMinor: number;
+    readonly costMinor: number;
+    readonly currency: string;
+    readonly marginFloorBps: number;
+    readonly approval?: { readonly approvedBy: string; readonly rationale: string };
+  }): Promise<PriceChangeCloudOutcome>;
+}
+
 /** What this surface can see about the shop, and what it honestly cannot. */
 export interface CataloguePorts {
   /** The tenant's own department hierarchy. Which fields matter is theirs to say, never ours. */
@@ -112,6 +147,13 @@ export interface CataloguePorts {
    * re-simulates and re-checks §28 — so this only carries the ask and reports back what head office decided.
    */
   launchPromotion?(): PromotionLaunchPort;
+  /**
+   * Records a governed price change at head office (M05-FR-02). Absent for a read-only screen (or a test that
+   * never changes a price): `changePriceInCloud` then refuses rather than pretending. The cloud is the
+   * authority — it re-runs `checkPrice` and re-checks §28 — so this only carries the ask and reports back what
+   * head office decided.
+   */
+  changePrice?(): PriceChangeCloudPort;
 }
 
 export interface CatalogueConfig {
@@ -294,6 +336,23 @@ export interface CatalogueSession {
    * reason. Returns what the cloud decided; refuses with a reason rather than pretending when no cloud is wired.
    */
   launchToCloud(input: PromotionLaunchInput): Promise<PromotionLaunchOutcome>;
+
+  /**
+   * True when this screen can record a price change at head office (M05-FR-02). The view reads it to choose the
+   * path: `changePriceInCloud` reaches the cloud (recorded, append-only, read back by the lane), where the local
+   * `activatePrice` only validates in this browser. False means no cloud is wired (a standalone/demo view).
+   */
+  readonly canChangePriceInCloud: boolean;
+
+  /**
+   * Change a price at head office (M05-FR-02) — the authoritative change. The session assembles the MRP in force
+   * today, the landed cost, the currency and the margin floor from the same sources the local proposal uses (so
+   * it refuses cleanly, without a POST, when the cost or MRP is unknown rather than sending a figure that cannot
+   * be checked), and sends them with the new price plus, for a below-cost/below-floor price, the §28 approver +
+   * reason. The cloud re-runs `checkPrice` and re-checks §28; this returns what it decided, and refuses with a
+   * reason rather than pretending when no cloud is wired.
+   */
+  changePriceInCloud(input: PriceChangeCloudInput): Promise<PriceChangeCloudOutcome>;
 
   /** The best price a basket would get under the approved rules — the same answer as the lane. */
   quote(lines: readonly BasketLine[], at: string): PromotionResult;
@@ -556,6 +615,44 @@ export function createCatalogueSession(
       // The cloud is the authority — it re-simulates the input and re-checks §28. The screen renders whatever
       // it decides and invents nothing.
       return port().post(input);
+    },
+
+    canChangePriceInCloud: ports.changePrice !== undefined,
+
+    changePriceInCloud: async (input) => {
+      const port = ports.changePrice;
+      // No cloud wired: the view falls back to the local `activatePrice` when `canChangePriceInCloud` is false;
+      // this guards the case it asked anyway, and must not claim a change it did not make.
+      if (port === undefined) {
+        return { saved: false, reason: 'this screen is not connected to head office, so it cannot change the price' };
+      }
+      // The MRP in force TODAY, from the effective-dated history — the same read the local proposal uses, never
+      // the newest recorded (a future MRP increase must not raise today's ceiling before its pack ships).
+      const product = ports.products().find((p) => p.productId === input.productId);
+      const mrp = (product?.mrpHistory ?? [])
+        .filter((m) => m.effectiveFrom <= config.today)
+        .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom))
+        .at(-1)?.value;
+      // A price with no ceiling and no known cost cannot be checked for the law or the margin. Refuse here,
+      // plainly, rather than POST a figure the cloud would reject with a less legible error (P-08).
+      if (mrp === undefined) {
+        return { saved: false, reason: 'this product has no MRP recorded, so the legal ceiling cannot be checked' };
+      }
+      const cost = ports.costOf(input.productId);
+      if (!cost.known) {
+        return { saved: false, reason: 'this screen has not been told what this product cost, so the margin cannot be checked' };
+      }
+      // The cloud is the authority — it re-runs `checkPrice` over these figures and re-checks §28. The screen
+      // sends the raw figures it already trusts for the local proposal and renders whatever the cloud decides.
+      return port().post({
+        productId: input.productId,
+        priceMinor: input.priceMinor,
+        mrpMinor: mrp.minor,
+        costMinor: cost.cost.minor,
+        currency: config.currency,
+        marginFloorBps: config.marginFloorBps,
+        ...(input.approval === undefined ? {} : { approval: input.approval }),
+      });
     },
 
     // Only ACTIVE promotions, and `bestPrice` checks the window again itself. A draft or stopped

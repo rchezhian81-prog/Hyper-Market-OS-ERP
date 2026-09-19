@@ -286,6 +286,8 @@ function sampleSession() {
       refusals: ['no_mrp_recorded'], detail: ['this is sample data'],
     }),
     activatePrice: () => ({ ok: false, refusals: ['no_mrp_recorded'], detail: ['this is sample data'] }),
+    canChangePriceInCloud: false,
+    changePriceInCloud: async () => ({ saved: false, reason: 'this is sample data' }),
     rollBack: (e) => e,
     historyFor: () => [],
     simulate: () => ({ promotionId: 'sample', verdict: 'improves_margin', promoUnitMargin: { minor: 0, currency: 'INR' }, baselineUnitMargin: { minor: 0, currency: 'INR' }, baselineTotalMargin: { minor: 0, currency: 'INR' }, promoTotalMargin: { minor: 0, currency: 'INR' }, incrementalMargin: { minor: 0, currency: 'INR' }, breakEvenUnits: 0, blocksApproval: false, detail: 'this is sample data' }),
@@ -684,21 +686,39 @@ function renderProposal(proposal, productId) {
 el('save-price').addEventListener('click', async () => {
   if (lastProposal === null) return;
 
-  let approval;
+  // A below-cost / below-floor price needs a §28 approver: a DIFFERENT person who holds the pricing-approval
+  // authority. Asked on screen; the cloud re-checks the authority (a name in a box is not one). The person
+  // setting the price is not in this list, and a name picked here is checked against the setter anyway.
+  let approver;
   if (lastProposal.needsApproval) {
-    // Separation of duties is asked for on screen and enforced in the model — the person setting
-    // the price is not in this list, and a name picked here is checked against the setter anyway.
     const answer = await askApprover(t('whoApproves'), t('whoApprovesNote'), approvers().filter((a) => a !== me()), true);
     if (answer === null) return;
-    approval = {
-      id: `ap-${lastProposal.draft.id}`, subjectType: 'price_change', subjectRef: lastProposal.draft.id,
-      requestedBy: me(), branchId: null, value: null,
-      status: 'approved', decidedBy: answer.who, reason: answer.reason,
-      decidedAt: new Date().toISOString(),
-    };
+    approver = { approvedBy: answer.who, rationale: answer.reason };
   }
 
-  const outcome = session.activatePrice(lastProposal, approval);
+  // Wired to head office? Then the change goes THERE (M05-FR-02): the cloud re-runs the guard (MRP ceiling,
+  // cost, margin floor) and re-checks §28, records the append-only change, and it is read back by the lane. The
+  // screen shows what the cloud decided and changes nothing itself.
+  if (session.canChangePriceInCloud) {
+    const outcome = await session.changePriceInCloud({
+      productId: lastProposal.draft.productId,
+      priceMinor: lastProposal.draft.price.minor,
+      ...(approver === undefined ? {} : { approval: approver }),
+    });
+    if (!outcome.saved) { tell(t('read'), outcome.reason); return; }
+    tell(t('priceSaved'), `${inr(lastProposal.draft.price.minor)} — ${t('priceSavedNote')}`, true);
+    el('save-price').hidden = true;
+    return;
+  }
+
+  // No head office behind this page: the local activation is honest that it only validates in this browser.
+  const localApproval = approver === undefined ? undefined : {
+    id: `ap-${lastProposal.draft.id}`, subjectType: 'price_change', subjectRef: lastProposal.draft.id,
+    requestedBy: me(), branchId: null, value: null,
+    status: 'approved', decidedBy: approver.approvedBy, reason: approver.rationale,
+    decidedAt: new Date().toISOString(),
+  };
+  const outcome = session.activatePrice(lastProposal, localApproval);
   if (!outcome.ok) {
     tell(t('read'), outcome.refusals.map((r) => words(PRICE_REFUSAL_WORDS, r)).join(' '));
     return;
