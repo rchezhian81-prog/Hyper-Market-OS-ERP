@@ -5,6 +5,47 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M10 expiry & recall — the recall write-path wired to head office; M10 re-rated WIRED→E2E_VERIFIED (headline 52.0→52.3%) (19 September 2026)
+
+The recall screen started and closed **product recalls** on a local, in-memory ledger and **posted nowhere** — a
+food-safety record that lived in one browser tab and said "Done" from a pure local compute. Three slices, three
+merged PRs (#455, #456, #457), took M10 from WIRED to **E2E_VERIFIED**.
+
+- **Slice 1 (PR #455) — the write-path.** `apps/web-erp/src/expiry-session.ts` `start`/`close` are now async:
+  every local guard runs FIRST (who is named, a reason, a known batch, no double-recall, evidence, stock
+  accounted for), then the record is written to head office via a new injected `RecallCloudPort`. Success is
+  reported **only** when the cloud confirms it saved; a dropped link or a cloud refusal is an honest **"not
+  sent"**, never a false "done" (P-08, hard rule #6). `browser-entry.ts` `openRecallCloudPort()` — one
+  operator-authenticated, same-origin POST to `/v1/quality/recalls/:batchId` and `.../closure`, `credentials` +
+  `idempotency-key`, surfacing the cloud's own refusal reason. `expiry.js` awaits the outcome and shows a
+  bilingual "not sent"; the form is never cleared as if it worked.
+- **Slice 2 (PR #456) — `tests/guardrails/the-expiry-screen-is-usable.test.ts`** (10): the write reaches head
+  office; a dropped link is never a false success; the view issues **no** write verb of its own (the POST lives
+  in the injected port); recalls fire only on an explicit click; bilingual "not sent"; shell markers.
+- **Slice 3 (PR #457) — `tests/e2e/expiry-recall-delivery.e2e.ts`** (3, headless Chromium vs a same-origin stub
+  cloud): an authorised **start** posts `{reason}` + idempotency-key and the screen confirms only after the save
+  and clears the form; a **403** is surfaced and never claimed as a start, the form kept; an authorised **close**
+  of an open recall posts the `{evidenceRef}`.
+
+**Re-rate — honest, and the judgment stated plainly.** FR-04 (recall lifecycle) — the module's defining,
+food-safety-critical governed action — is the workflow now proven end to end. FR-02 (cold-chain) and FR-03
+(lot-trace) remain API-wired, not separately browser-e2e'd; the recall **BLOCK** at the till travels on the
+signed pack and is unchanged (still holds offline). **M10 WIRED → E2E_VERIFIED, headline 52.0 → 52.3%
+(5435/10400).** The module ladder now reads **9 E2E VERIFIED · 0 INTEGRATION TESTED · 11 WIRED**.
+
+**What the owner should check (in the store):** on a store computer, open the ERP → **Expiry and recall** →
+**Recalls**. Start a recall on a batch with a reason → it should confirm and show how much is still out with
+customers. Pull the network cable and start another → it should say **"not sent"**, not "Done". Close a recall
+with the evidence box empty → it should refuse. Nothing about stopping a recalled item at the till changed — that
+still works with the internet off.
+
+### Next
+- M10 is complete to E2E_VERIFIED. The next module/screen is the owner's to choose.
+- **Retention periods remain the pinned owner-blocked priority** (unchanged): the archival/disposal execution
+  workflow needs the owner's per-data-class "keep for N years" numbers. Never invent these.
+
+---
+
 ## M08 stock-health dashboard — slice 3: browser e2e; M08 re-rated INTEGRATION_TESTED→E2E_VERIFIED (headline 51.9→52.0%) (19 September 2026)
 
 The last step. The stock-health screen is now proven working in a real browser, so **M08 is honestly re-rated to
