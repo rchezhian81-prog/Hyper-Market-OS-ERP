@@ -102,7 +102,7 @@ export interface StockHealthConfig {
 
 export type CopyKey =
   | 'title' | 'lead' | 'langName'
-  | 'signalsHeading' | 'kpisHeading' | 'asOfLabel'
+  | 'signalsHeading' | 'kpisHeading' | 'asOfLabel' | 'refresh'
   | 'sigHealthy' | 'sigNegative' | 'sigUncosted' | 'sigAged'
   | 'ownerActionLabel'
   | 'kpiStockValue' | 'kpiUncosted' | 'kpiAged' | 'kpiTurns' | 'kpiDaysOfCover' | 'kpiGmroi'
@@ -114,7 +114,7 @@ export const STOCK_HEALTH_COPY: BilingualCopy<CopyKey> = {
   en: {
     title: 'Stock health', langName: 'தமிழ்',
     lead: 'The health of the money tied up in your stock — read from the one true stock record. Nothing is changed here. What needs attention is at the top; the headline figures are below, each with the time it was true.',
-    signalsHeading: 'What needs attention', kpisHeading: 'The numbers', asOfLabel: 'As of',
+    signalsHeading: 'What needs attention', kpisHeading: 'The numbers', asOfLabel: 'As of', refresh: 'Refresh',
     sigHealthy: 'Stock looks healthy — nothing to chase.',
     sigNegative: 'Negative stock — the record and the shelf disagree',
     sigUncosted: 'Stock with no cost recorded — it cannot be valued',
@@ -132,7 +132,7 @@ export const STOCK_HEALTH_COPY: BilingualCopy<CopyKey> = {
   ta: {
     title: 'சரக்கு நலன்', langName: 'English',
     lead: 'உங்கள் சரக்கில் முடங்கியுள்ள பணத்தின் நலன் — உண்மையான ஒரே சரக்குப் பதிவிலிருந்து வாசிக்கப்படுகிறது. இங்கே எதுவும் மாற்றப்படவில்லை. கவனம் தேவைப்படுவது மேலே; தலைப்பு எண்கள் கீழே, ஒவ்வொன்றும் அது உண்மையாக இருந்த நேரத்துடன்.',
-    signalsHeading: 'கவனம் தேவைப்படுவது', kpisHeading: 'எண்கள்', asOfLabel: 'நிலவரம்',
+    signalsHeading: 'கவனம் தேவைப்படுவது', kpisHeading: 'எண்கள்', asOfLabel: 'நிலவரம்', refresh: 'புதுப்பி',
     sigHealthy: 'சரக்கு நன்றாக உள்ளது — துரத்த எதுவும் இல்லை.',
     sigNegative: 'எதிர்மறை சரக்கு — பதிவும் அலமாரியும் ஒத்துப்போகவில்லை',
     sigUncosted: 'விலை பதிவு இல்லாத சரக்கு — மதிப்பிட முடியாது',

@@ -57,6 +57,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'stock', label: 'Stock', path: '/stock', requires: 'stock.view', group: 'Inventory' },
   { id: 'counts', label: 'Stock counts', path: '/counts', requires: 'count.view', group: 'Inventory' },
   { id: 'waste', label: 'Waste & write-off', path: '/waste', requires: 'waste.view', group: 'Inventory' },
+  { id: 'stock-health', label: 'Stock health', path: '/stock-health', requires: 'inventory.availability.read', group: 'Inventory' },
 
   { id: 'sales', label: 'Sales', path: '/sales', requires: 'sales.view', group: 'Trading' },
   { id: 'returns', label: 'Returns', path: '/returns', requires: 'return.view', group: 'Trading' },

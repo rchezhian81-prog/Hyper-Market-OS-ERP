@@ -5,6 +5,42 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M08 stock-health dashboard — slice 2: the served /stock-health screen + edge wiring (headline unchanged 51.9%) (19 September 2026)
+
+The visible screen, over slice 1's tested engine. A manager can now open **Stock health** in the ERP and see,
+offline-first, what needs attention and the headline stock numbers — read-only, changing nothing.
+
+- **`apps/web-erp/web/stock-health.{html,js}`** — the served, offline-capable screen. It draws only what the
+  session hands it: the worst-first signals into `#rows` (each a tone + icon + word, screen-reader labelled,
+  decorative icon hidden), the headline KPIs into `#kpis` (money, turns/GMROI as ratios, days of cover;
+  a not-meaningful figure shows a dash with the reason), and the "as of" time. A **Refresh** button re-reads the
+  live figures (a GET); offline it keeps its view and the stale strip says so. No write verb anywhere; no
+  prompt/confirm/alert; a sample stand-in when the box has told it nothing.
+- **Edge wiring** — `PackStockHealthPolicy` (store-pack) → `stockHealthPayload` (screen-data, injects only who is
+  looking + whether they hold `inventory.availability.read`; the figures are read live, never shipped in the
+  pack) → registered in `SCREENS`/`GLOBAL_FOR`/`BUILDERS`; `screen-server` serves the `/stock-health` route;
+  `navigation` offers **Stock health** in the Inventory group gated on `inventory.availability.read`; the offline
+  shell service worker is bumped **v24 → v25** with `stock-health.js` precached.
+- **`apps/web-erp/src/browser-entry.ts`** — `bootStockHealth` + `stockHealthPortsFromData` (default-deny on the
+  read permission) + `fetchStockHealth` (the five inventory GETs folded into one snapshot, each section optional
+  so a failed read is absent, never a false zero — P-08) + the boot block wiring `window.stockHealth`.
+
+Tested: `tests/guardrails/the-stock-health-screen-is-usable.test.ts` (9 — bilingual copy complete, every signal
+a word+icon never colour alone, reads from the session, **no write verb**, no browser dialog, a11y aria wiring,
+shell markers) plus the screen joins `every-screen-opens-without-a-network` and `the-screens-are-fed` /
+`edge-feeds-the-screens`. Full gate green.
+
+No rung change — **M08 stays INTEGRATION_TESTED, headline unchanged 51.9%.** Slice 3 is the browser e2e (drive
+the real screen, prove the live refresh and offline-open) + the honest re-rate to E2E_VERIFIED.
+
+### Next
+- **M08 slice 3**: the browser e2e + `screens-open-offline` entry, then the honest re-rate M08 →
+  E2E_VERIFIED (headline → 52.0%).
+- **Retention periods remain the pinned owner-blocked priority** (unchanged): the archival/disposal execution
+  workflow needs the owner's per-data-class "keep for N years" numbers. Never invent these.
+
+---
+
 ## M08 stock-health dashboard — slice 1: the tested, DOM-free session model (headline unchanged 51.9%) (19 September 2026)
 
 The owner chose to build the **stock health dashboard** — the one missing manager view of the store's most
