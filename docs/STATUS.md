@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M28 write-off capture screen — slice 1: the DOM-free session model (no rung change) (20 September 2026)
+
+The write-off WRITE path (`POST /v1/inventory/write-off/:id`) has been WIRED + §28-guarded server-side for a
+while, with a read-only /waste REVIEW screen. The remaining M28-FR-01 follow-on the ledger names is the
+shop-floor **capture** screen — letting staff record a loss from the floor. This is slice 1 of that screen.
+
+- **`apps/web-erp/src/write-off-capture-session.ts`** — the tested, DOM-free session model (mirror of the
+  risk-acceptance / cash-office write screens). It shapes the operator's choices (item, quantity, value, a
+  chosen loss-type chip — never free text, M15) into the governed write-off POST, and — as defence-in-depth
+  that mirrors the server — refuses BEFORE any POST the cases the operator can see are wrong: no permission, an
+  incomplete form, or a **material** loss (value ≥ the injected tenant threshold) with **no evidence**, **no
+  separate approver**, or **the raiser approving their own** loss (§28). Every money/stock rule stays
+  server-side (threshold, evidence, approver authority, raiser = authenticated caller); the model holds none of
+  its own. English + Tamil from one copy object; outcomes mapped to one glanceable status (colour never the
+  only signal). No AI records a loss (hard rule #5).
+- `tests/unit/erp-write-off-capture-session.test.ts` (16): bilingual completeness, the loss-type chips, the
+  materiality boundary, and every local refusal (no permission / incomplete / material-no-evidence /
+  material-no-approver / material-self-approval) proven to make **no POST**, plus the server outcomes passed
+  straight through and each mapped to a distinct status.
+
+**Honest rung: M28 stays PARTIALLY_WIRED (no rung change, no headline change).** This is slice 1 of 3 — the
+served offline-capable screen + edge wiring (slice 2) and the browser e2e (slice 3) follow; only then is the
+capture path browser-verified. Money/stock feature, built deliberately at the owner's "keep going".
+
+### Next
+- M28 capture screen slice 2 (served screen + edge wiring) then slice 3 (browser e2e).
+- **Owner input still useful:** the store-credit cap number (`POST /v1/pos/store-credit-cap`).
+- **Retention periods remain the pinned owner-blocked priority** — never invent these.
+
+---
+
 ## M32 integration gateway — connector delivery queue wired; M32 re-rated PARTIALLY_WIRED→WIRED (headline 52.6→52.8%) (20 September 2026)
 
 The last gap the ledger named for M32 is closed: an outbound connector message now has a **durable cloud
