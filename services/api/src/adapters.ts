@@ -2175,6 +2175,25 @@ export function returnsAdapter(input: {
         payload: { returnWindowDays },
       }));
     },
+
+    // The tenant's store-credit issuance cap (M13-FR-03 / M17) — tenant-wide config, append-only (latest
+    // wins). Undefined until the owner sets one, so store-credit refunds stay unavailable until then.
+    storeCreditCap: async (tenantId) => {
+      const all = await allOf<{ capMinor: number }>(input.store, tenantId, streamName(STREAM.returns, 'store-credit-cap'), 'StoreCreditCapSet');
+      const last = all[all.length - 1];
+      return last === undefined ? undefined : last.capMinor;
+    },
+    recordStoreCreditCap: async (tenantId, capMinor, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, streamName(STREAM.returns, 'store-credit-cap'), makeEvent({
+        id: `store-credit-cap-${d}`,
+        type: 'StoreCreditCapSet',
+        occurredAt: input.now(),
+        idempotencyKey: `store-credit-cap-${tenantId}-${d}`,
+        source: 'api/pos',
+        payload: { capMinor },
+      }));
+    },
     // The §28 authority to approve a refund (M13-FR-03) — pos.return.approve, held by a supervisor/manager
     // (owner + store_manager), above the cashier. A named approver who does not hold it does not count.
     canApproveRefund: async (tenantId, userId) => {
