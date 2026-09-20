@@ -5,6 +5,31 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M13 returns — the cashier can now pick the store-credit customer, FR-03 SC-5 (20 September 2026)
+
+The store-credit track is now usable at the counter: when a cashier chooses **store credit** as the
+refund method, the POS refund screen asks **who** the credit belongs to.
+
+- **`apps/pos/web/app.js`** — `startRefund` now, only when store credit is chosen, captures the customer
+  scanned or keyed (English + Tamil) and passes it as `customerRef` on the submitted draft
+  (`RefundDraftInput.customerRef`, already carried end to end since SC-4). A store-credit refund with no
+  customer is stopped on-screen with a plain message — credit cannot go to nobody, the same rule the
+  engine and the cloud enforce. Cash/card/UPI refunds are unchanged (no extra step).
+- **Tests:** guardrail `tests/guardrails/the-till-screen-is-usable.test.ts` asserts the capture and the
+  no-customer stop; the offline refund e2e `tests/e2e/the-served-till-takes-a-refund.e2e.ts` adds a
+  real-Chromium case proving a store-credit refund carries the customer onto the box's own returns log
+  with no cloud configured.
+
+**Honest rung: M13 stays PARTIALLY_WIRED.** The store-credit track (SC-1..SC-5) is now complete: engine,
+cloud desk, offline sync, and the on-screen capture. **Exchanges remain owner-deferred to R5 (CH-01).**
+
+### Next
+- The store-credit feature is now end-to-end usable. The next module/track is the owner's to choose.
+- **Owner input still useful:** the store-credit cap number (`POST /v1/pos/store-credit-cap`).
+- **Retention periods remain the pinned owner-blocked priority** — never invent these.
+
+---
+
 ## M13 returns — offline store credit wired end-to-end, FR-03 SC-4 (20 September 2026)
 
 A store-credit refund taken at the lane **with the cable out** now becomes a real, spendable balance at the
