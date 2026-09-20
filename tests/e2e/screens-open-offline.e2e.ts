@@ -270,6 +270,55 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
     }
   });
 
+  it('the write-off CAPTURE screen opens offline AND is accessible (M28-FR-01)', async () => {
+    // The WRITE sibling of the read-only /waste review — the shop-floor "record a loss" desk. It opens the same
+    // way every other screen does (SW-cached, offline), and what it renders is accessible. Its DOM is a FORM,
+    // not a `#rows` worklist, so the check binds to THIS screen's chrome: the language toggle, the capture
+    // section and the loss-type chip group all carry aria-labels, and offline it shows its clearly-labelled
+    // sample form (five chosen loss-type chips, each a real button with aria-pressed) so there is real content,
+    // not an empty shell. Recording a loss is a HUMAN write behind an explicit click; nothing is sent on load.
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.goto(`${base}/write-off-capture`, { waitUntil: 'load' });
+      await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.serviceWorker.ready.then(() => true));
+      await page.waitForFunction(() => (globalThis as unknown as BrowserWindow).navigator.serviceWorker.controller !== null, { timeout: 15_000 });
+
+      await context.setOffline(true);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+
+      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine)).toBe(false);
+      expect(await page.title()).toContain('Record a loss');
+      expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
+      expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
+
+      const a11y = await page.evaluate(() => {
+        const doc = (globalThis as unknown as { document: A11yDoc }).document;
+        const nonEmpty = (v: string | null) => typeof v === 'string' && v.trim().length > 0;
+        const capturer = doc.getElementById('capturer');
+        const chips = Array.from(doc.querySelectorAll('#loss-types button'));
+        return {
+          langLabelled: nonEmpty(doc.getElementById('lang')?.getAttribute('aria-label') ?? null),
+          formShown: capturer !== null && capturer.getAttribute('hidden') === null,
+          formLabelled: nonEmpty(capturer?.getAttribute('aria-label') ?? null),
+          chipGroupLabelled: nonEmpty(doc.getElementById('loss-types')?.getAttribute('aria-label') ?? null),
+          chipCount: chips.length,
+          everyChipHasPressed: chips.every((c) => nonEmpty(c.getAttribute('aria-pressed'))),
+          everyChipHasWord: chips.every((c) => nonEmpty(c.textContent)),
+        };
+      });
+      expect(a11y.langLabelled, 'language toggle has no aria-label').toBe(true);
+      expect(a11y.formShown, 'the capture form did not render offline (sample)').toBe(true);
+      expect(a11y.formLabelled, 'the capture form has no aria-label').toBe(true);
+      expect(a11y.chipGroupLabelled, 'the loss-type chip group has no aria-label').toBe(true);
+      expect(a11y.chipCount, 'no loss-type chips rendered to check').toBeGreaterThan(0);
+      expect(a11y.everyChipHasPressed, 'a loss-type chip has no aria-pressed state').toBe(true);
+      expect(a11y.everyChipHasWord, 'a loss-type chip conveys its kind by colour alone').toBe(true);
+    } finally {
+      await context.close();
+    }
+  });
+
   it('the stock-count review screen opens offline AND is accessible (M09-FR-04)', async () => {
     const context = await browser.newContext();
     try {
