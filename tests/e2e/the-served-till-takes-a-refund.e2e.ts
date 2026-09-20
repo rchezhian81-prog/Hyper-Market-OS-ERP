@@ -140,6 +140,52 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     expect(await readLog(edge.log.path)).toHaveLength(1);
   });
 
+  it('a store-credit refund carries the customer onto this box\'s disk, offline (M13-FR-03/§31)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sre-served-refund-'));
+    dirs.push(dir);
+    const edge: EdgeProcess = (await startEdge({
+      EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+    }, () => {}))!;
+    stops.push(() => edge.stop());
+
+    const context = await browser.newContext();
+    stops.push(() => context.close());
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${edge.screens!.port}/pos/`, { waitUntil: 'load' });
+    await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession !== undefined, undefined, { timeout: 15_000 });
+
+    const result = await page.evaluate(async () => {
+      const w = globalThis as unknown as PosWindow;
+      w.posSession!.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
+      await w.posSession!.tenderCash('S-3', 'R-0003', '2026-08-28T10:10:00Z');
+      const bill = await w.posSession!.lookupRefund('R-0003');
+      if (bill === null) return { found: false } as const;
+      // Store credit chosen: the draft carries the customer it belongs to (M13-FR-03). Offline, store
+      // credit settles at the lane like cash — the credit is issued at the cloud when it reconciles.
+      const out = await bill.submit({
+        returnId: 'RT-3', number: 'RT-0003', reasonCode: 'customer_changed_mind',
+        lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
+        refundMinor: 75_520, refundTender: 'store_credit',
+        approval: { by: 'u-manager', reason: 'checked the goods' },
+        customerRef: 'c-asha',
+      });
+      return { found: true, out } as const;
+    });
+
+    expect(result.found).toBe(true);
+    if (!result.found) return;
+    expect(result.out.kind).toBe('settled'); // store credit settles offline, like cash
+
+    // The customer rode onto the box's returns record, so the credit can be issued to them on sync.
+    const refunds = await readLog(edge.returnsLog.path);
+    expect(refunds).toHaveLength(1);
+    const rec = refunds[0]?.ok === true ? JSON.parse(refunds[0].record) as { refundTender: string; customerRef?: string } : null;
+    expect(rec?.refundTender).toBe('store_credit');
+    expect(rec?.customerRef).toBe('c-asha');
+    expect(edge.returnsOutbox.unsentCount()).toBe(1);
+  });
+
   it('refuses to give money back without a manager — every refund needs §28 approval', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'sre-served-refund-'));
     dirs.push(dir);

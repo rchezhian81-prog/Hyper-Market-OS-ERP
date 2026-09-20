@@ -74,6 +74,9 @@ const WORDS = {
     refundGiving: 'Refunding',
     refundHow: 'How is the refund given?',
     storeCredit: 'Store credit',
+    refundCustomerId: 'Store credit: scan the customer loyalty card or key their number',
+    refundCustomerHint: 'Store credit is money on the customer account — it must go to a named customer',
+    refundNeedCustomer: 'Store credit must go to a customer. Scan their loyalty card or key their number — or choose a different refund method.',
     refundCondition: 'What condition is the item in?',
     dispResell: 'Good — back on the shelf',
     dispDamaged: 'Damaged — not for sale',
@@ -125,6 +128,9 @@ const WORDS = {
     refundGiving: 'திரும்பத் தருவது',
     refundHow: 'திரும்பப் பணம் எப்படித் தரப்படுகிறது?',
     storeCredit: 'கடை வரவு',
+    refundCustomerId: 'கடை வரவு: வாடிக்கையாளர் விசுவாச அட்டையை ஸ்கேன் செய்யவும் அல்லது அவர்களின் எண்ணை உள்ளிடவும்',
+    refundCustomerHint: 'கடை வரவு என்பது வாடிக்கையாளர் கணக்கில் உள்ள பணம் — அது ஒரு பெயரிடப்பட்ட வாடிக்கையாளருக்கே செல்ல வேண்டும்',
+    refundNeedCustomer: 'கடை வரவு ஒரு வாடிக்கையாளருக்கே செல்ல வேண்டும். அவர்களின் விசுவாச அட்டையை ஸ்கேன் செய்யவும் அல்லது எண்ணை உள்ளிடவும் — அல்லது வேறு முறையைத் தேர்ந்தெடுக்கவும்.',
     refundCondition: 'பொருளின் நிலை என்ன?',
     dispResell: 'நல்லது — அலமாரிக்குத் திரும்ப',
     dispDamaged: 'சேதம் — விற்பனைக்கு அல்ல',
@@ -666,6 +672,16 @@ async function startRefund() {
   ]);
   if (refundTender === null) return;
 
+  // 4a. Store credit is money on the customer's account, so it must go to a NAMED customer (M13-FR-03).
+  // Capture them scanned or keyed; if none is given, the credit cannot be issued to nobody — stop and
+  // say so (the engine and the cloud both refuse a store-credit refund with no customer).
+  let customerRef;
+  if (refundTender === 'store_credit') {
+    const who = await askScanOrKey({ title: t('refundCustomerId'), hint: t('refundCustomerHint') });
+    if (who === null || who === '' || who === '0') { tell(t('read'), t('refundNeedCustomer')); return; }
+    customerRef = String(who);
+  }
+
   // 5. A manager approves where the policy requires it (§28). The default is every refund; a manager
   // scans their badge or keys their staff code — a DIFFERENT person from the cashier, which the engine
   // enforces and the cloud re-verifies on sync.
@@ -696,6 +712,7 @@ async function startRefund() {
       lines: [{ productId, uom: line.uom, quantityMinor: qty, disposition }],
       refundMinor, refundTender,
       ...(approval ? { approval } : {}),
+      ...(customerRef ? { customerRef } : {}),
     });
   } catch (e) {
     // submit is written not to throw, but a lost connection to the store can still reject here — treat

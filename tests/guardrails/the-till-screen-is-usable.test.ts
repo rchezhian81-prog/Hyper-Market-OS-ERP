@@ -177,6 +177,16 @@ describe('the refund screen gives money back, safely', () => {
     // the policy says so (the default is every refund), captured scanned or keyed.
     expect(code(APP)).toMatch(/needsApproval\(/);
   });
+
+  it('captures the customer for a store-credit refund, and refuses to issue it to nobody (M13-FR-03)', () => {
+    // Store credit is money on a customer's account, so the screen asks WHO it belongs to (scanned or
+    // keyed) whenever store credit is chosen, passes it as customerRef, and stops with a plain message
+    // if none is given — credit cannot go to nobody (the engine and the cloud refuse it too).
+    expect(code(APP)).toMatch(/refundTender === 'store_credit'/);
+    expect(code(APP)).toContain("t('refundCustomerId')");
+    expect(code(APP)).toContain("t('refundNeedCustomer')");
+    expect(code(APP)).toMatch(/customerRef/);
+  });
 });
 
 describe('the receipt still waits for the disk', () => {
