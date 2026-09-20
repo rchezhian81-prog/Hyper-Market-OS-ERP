@@ -134,6 +134,10 @@ import {
   type StockHealthPorts, type StockHealthSession, type StockHealthData,
 } from './inventory-health-session';
 import {
+  createGoodsReceiptSession,
+  type GoodsReceiptPorts, type GoodsReceiptSession, type GoodsReceiptData, type GrnRecordView, type GrnDiscrepancyView,
+} from './goods-receipt-session';
+import {
   createDataIoSession,
   type DataIoPorts, type DataIoSession, type ExportDomainView, type ExportAuditView,
   type ExportResult, type ValidateResult, type CommitResult, type ImportPreviewView,
@@ -1304,6 +1308,86 @@ export async function fetchStockHealth(): Promise<StockHealthData | null> {
   return out;
 }
 
+// ── Goods-receipt review (M07-FR-02/03 — read-only) ──────────────────────────────────────────────────────────
+
+/** What the box tells the goods-receipt review screen: who is looking, what they may read, and (optionally) a
+ *  snapshot of the deliveries. The GRN list is a LIVE cloud read (`GET /v1/inventory/goods-receipt`), refreshed by
+ *  the shell when online; offline the screen shows its clearly-marked sample stand-in. Read-only — capture is the
+ *  handheld's, on the offline dock (§31). */
+export interface GoodsReceiptScreenData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+  readonly snapshot?: GoodsReceiptData;
+}
+
+const EMPTY_GOODS_RECEIPT: GoodsReceiptData = Object.freeze({});
+
+export function goodsReceiptPortsFromData(
+  data: GoodsReceiptScreenData | undefined,
+  snapshot?: GoodsReceiptData,
+): GoodsReceiptPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    snapshot: () => snapshot ?? data?.snapshot ?? EMPTY_GOODS_RECEIPT,
+    // Default-deny: an absent permission list can read nothing (the server would refuse it anyway).
+    mayRead: () => held.has(INVENTORY_READ_PERMISSION),
+  };
+}
+
+/** Build the goods-receipt review session, or `null` when the box carried no payload (shell shows the sample). */
+export function bootGoodsReceipt(
+  data: GoodsReceiptScreenData | undefined,
+  snapshot?: GoodsReceiptData,
+): GoodsReceiptSession | null {
+  if (data === undefined) return null;
+  return createGoodsReceiptSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    goodsReceiptPortsFromData(data, snapshot),
+  );
+}
+
+/** Read the live GRN list — one GET, read-only — and fold it into the review snapshot. Returns null when nothing
+ *  could be read, so the shell keeps whatever it was showing. Each delivery's checked outcome (its valued
+ *  discrepancies and whether it needs a second person) is carried through as-is; nothing is recomputed here. */
+export async function fetchGoodsReceipt(): Promise<GoodsReceiptData | null> {
+  const body = await getInventory('/v1/inventory/goods-receipt');
+  if (body === null || !Array.isArray(body['receipts'])) return null;
+
+  type Money = { readonly minor: number; readonly currency: string };
+  const money = (v: unknown): Money => (typeof v === 'object' && v !== null ? v as Money : { minor: 0, currency: 'INR' });
+  const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+
+  const receipts: GrnRecordView[] = (body['receipts'] as Record<string, unknown>[]).map((g) => {
+    const captured = (g['captured'] ?? {}) as Record<string, unknown>;
+    const lines = Array.isArray(captured['lines']) ? captured['lines'] as Record<string, unknown>[] : [];
+    const dv = money(captured['discrepancyValue']);
+    const discrepancies: GrnDiscrepancyView[] = (Array.isArray(captured['discrepancies']) ? captured['discrepancies'] as Record<string, unknown>[] : []).map((d) => {
+      const val = money(d['value']);
+      return {
+        kind: String(d['kind']) as GrnDiscrepancyView['kind'],
+        productId: String(d['productId'] ?? ''), quantityMinor: num(d['quantityMinor']),
+        valueMinor: val.minor, currency: val.currency,
+        requiresApproval: d['requiresApproval'] === true, detail: String(d['detail'] ?? ''),
+      };
+    });
+    return {
+      grnId: String(g['grnId'] ?? ''), number: String(g['number'] ?? ''),
+      poId: typeof g['poId'] === 'string' ? g['poId'] : null,
+      warehouseId: String(g['warehouseId'] ?? ''), receivedBy: String(g['receivedBy'] ?? ''),
+      receivedAt: String(g['receivedAt'] ?? ''),
+      requiresApproval: captured['requiresApproval'] === true,
+      discrepancyValueMinor: dv.minor, currency: dv.currency,
+      sellableMinor: num(g['availableMinor']),
+      quarantinedMinor: lines.reduce((s, l) => s + num(l['quarantinedMinor']), 0),
+      rejectedMinor: lines.reduce((s, l) => s + num(l['rejectedMinor']), 0),
+      discrepancies,
+    };
+  });
+
+  // The "as of" is the moment the list was read — an honest freshness stamp for a live pull.
+  return { receipts, asAt: new Date().toISOString() };
+}
+
 // ── Risk-acceptance / compliance-gates (M34-FR-04) ────────────────────────────────────────────────────────────
 
 /** What the box tells the risk-acceptance screen: who is looking, what they may do, and (optionally) the
@@ -2381,6 +2465,13 @@ interface ManagerWindow {
     refresh(): Promise<StockHealthData | null>;
     present(snapshot: StockHealthData): StockHealthSession;
   };
+  goodsReceiptData?: GoodsReceiptScreenData;
+  goodsReceiptSession?: GoodsReceiptSession;
+  /** The shell reads the live GRN list through this and re-presents it — a GET read, never a write. */
+  goodsReceipt?: {
+    refresh(): Promise<GoodsReceiptData | null>;
+    present(snapshot: GoodsReceiptData): GoodsReceiptSession;
+  };
   dataIoData?: DataIoData;
   dataIoSession?: DataIoSession;
   /** The shell reads the live export catalogue + log through this and re-presents it — GET reads, never writes. */
@@ -3200,6 +3291,21 @@ if (browserWindow !== undefined) {
       present: (snapshot) => createStockHealthSession(
         { userId: stockHealthData?.userId === undefined ? null : stockHealthData.userId },
         stockHealthPortsFromData(stockHealthData, snapshot),
+      ),
+    };
+  }
+  // The goods-receipt review screen (M07 — read-only): boots from the box's policy (who + whether they hold
+  // inventory.availability.read), then the shell refreshes the GRN list with a live GET. It changes nothing —
+  // receiving is captured on the handheld, on the offline dock (§31); this only reviews the outcome.
+  const goodsReceiptData = browserWindow.goodsReceiptData;
+  const goodsReceipt = bootGoodsReceipt(goodsReceiptData, undefined);
+  if (goodsReceipt !== null) {
+    browserWindow.goodsReceiptSession = goodsReceipt;
+    browserWindow.goodsReceipt = {
+      refresh: fetchGoodsReceipt,
+      present: (snapshot) => createGoodsReceiptSession(
+        { userId: goodsReceiptData?.userId === undefined ? null : goodsReceiptData.userId },
+        goodsReceiptPortsFromData(goodsReceiptData, snapshot),
       ),
     };
   }
