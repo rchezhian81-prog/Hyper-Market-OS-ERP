@@ -46,6 +46,15 @@ describe('toCloudReturn — the lane refund record → the cloud synced-return c
     expect('approvedBy' in emptyApprover).toBe(false);
   });
 
+  it('carries customerRef for a store-credit refund, only when present, so the cloud can issue the credit (M13-FR-03/§31)', () => {
+    const withCustomer = toCloudReturn({ ...RETURN_RECORD, refundTender: 'store_credit', customerRef: 'c-asha' });
+    expect(withCustomer.customerRef).toBe('c-asha');
+    // A cash refund, or a store-credit refund with no customer captured, leaves the field absent so the
+    // cloud tells "no customer" apart from "this customer" and record-and-flags the former (P-08).
+    expect('customerRef' in toCloudReturn(RETURN_RECORD)).toBe(false);
+    expect('customerRef' in toCloudReturn({ ...RETURN_RECORD, customerRef: '' })).toBe(false);
+  });
+
   it('tolerates a bare id in place of returnId, both here and in returnIdOf', () => {
     expect(toCloudReturn({ ...RETURN_RECORD, returnId: undefined, id: 'RT9' }).returnId).toBe('RT9');
     expect(returnIdOf({ returnId: 'RT1' })).toBe('RT1');

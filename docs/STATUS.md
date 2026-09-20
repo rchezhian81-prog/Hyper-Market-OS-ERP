@@ -5,6 +5,43 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M13 returns — offline store credit wired end-to-end, FR-03 SC-4 (20 September 2026)
+
+A store-credit refund taken at the lane **with the cable out** now becomes a real, spendable balance at the
+cloud the moment it reconciles. This is the offline mirror (§31) of the SC-3 desk path.
+
+- **The customer rides the whole way.** `customerRef` — who the credit belongs to — is now carried from the
+  refund screen surface (`apps/pos/src/refund-view.ts`, `apps/pos/src/browser-entry.ts`
+  `RefundDraftInput`) → the till's edge record (`apps/pos/src/till-session.ts` `toReturnRecord`) → the edge→cloud
+  translator (`edge/store-edge/src/cloud-return.ts` `toCloudReturn`) → the sync transport body →
+  `POST /v1/sales/:saleId/returns/synced`. It is carried only when present, so a cash refund stays absent.
+- **Record-and-flag, never a rejection.** The credit was already handed over at the lane, so on sync the cloud
+  ISSUES it (`services/pos/src/returns.ts` synced handler → `issueRefundCredit`, folded into the return's atomic
+  `appendBatch`) rather than refusing (the desk route refuses because the decision is still being made; here it
+  is done). A breach becomes a **visible governance exception** on `GET /v1/pos/return-governance-exceptions`:
+  `store_credit_over_cap` when the lane exceeded the owner cap (or none is set — credit still issued), and
+  `store_credit_no_customer` when no customer was captured (then **nothing** is issued — credit cannot go to
+  nobody). Two new `RefundGovernanceFinding` members carry those (`packages/returns/src/assess-return.ts`).
+- `tests/integration/offline-store-credit-reaches-the-cloud.test.ts` (3, through the REAL `startEdge` → returns
+  `SyncAgent` → real cloud API + stored-value read): clean issuance to the captured customer; an over-cap refund
+  STILL issues the credit AND flags it; a no-customer refund issues nothing AND flags it. Plus unit coverage:
+  `toCloudReturn` forwards `customerRef` (absent when none); `commitReturn`'s `ReturnAccepted` carries it for
+  store credit and omits it for cash; the till serialises it onto the edge record.
+
+**Honest rung: M13 stays PARTIALLY_WIRED.** Store credit is now wired + integration-tested on BOTH the cloud desk
+(SC-3) and the offline lane→sync path (SC-4). But **exchanges remain owner-deferred to R5 (CH-01)** — a real
+M13-FR-03 requirement that is scheduled-not-done, which by the deferral's own terms keeps M13 PARTIALLY_WIRED.
+Not inflated. (Also still open, and not part of this offline-sync work: a customer-picker field on the POS refund
+web panel `app.js` — the tested surface now carries `customerRef`, but the on-screen input for it is a small
+follow-on screen slice.)
+
+### Next
+- The store-credit track (SC-1..SC-4) is now complete on both paths; the next module/track is the owner's to choose.
+- **Owner input still useful:** the store-credit cap number (`POST /v1/pos/store-credit-cap`).
+- **Retention periods remain the pinned owner-blocked priority** — never invent these.
+
+---
+
 ## M13 returns — store credit wired end-to-end at the desk, FR-03 SC-3 (20 September 2026)
 
 A `store_credit` refund now issues a real, spendable balance at the live return desk — capped by the owner,

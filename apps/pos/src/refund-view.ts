@@ -70,6 +70,9 @@ export interface RefundDraft {
   readonly refundTender: TenderKind;
   /** A manager's decision, when the refund requires one (§28). */
   readonly approval?: DecidedRequest;
+  /** The customer a store-credit refund is issued to (M13-FR-03 / §31). Rides the ReturnAccepted event
+   *  so an offline store-credit refund can issue the credit to them when it reconciles at the cloud. */
+  readonly customerRef?: string;
 }
 
 /**
@@ -194,6 +197,7 @@ export function createRefundView(deps: RefundViewDeps): RefundView {
       approvalThresholdMinor: deps.policy.approvalThresholdMinor,
       ...(deps.policy.noReceiptCapMinor === undefined ? {} : { noReceiptCapMinor: deps.policy.noReceiptCapMinor }),
       ...(draft.approval === undefined ? {} : { approval: draft.approval }),
+      ...(draft.customerRef === undefined ? {} : { customerRef: draft.customerRef }),
     };
 
     try {

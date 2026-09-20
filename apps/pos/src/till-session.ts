@@ -183,6 +183,9 @@ export function createTillSession(
     laneId: full.laneId,
     processedBy: full.processedBy,
     ...(full.approval?.decidedBy === undefined ? {} : { approvedBy: full.approval.decidedBy }),
+    // The customer a store-credit refund belongs to (M13-FR-03 / §31) — carried onto the edge record so
+    // `toCloudReturn` forwards it and the cloud issues the credit to them when the refund reconciles.
+    ...(full.customerRef === undefined ? {} : { customerRef: full.customerRef }),
     reasonCode: full.reasonCode,
     refundMinor: full.refund.minor,
     currency: full.refund.currency,

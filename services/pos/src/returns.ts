@@ -180,6 +180,9 @@ interface SyncedReturn {
   readonly refundStatus: RefundStatus;
   readonly processedAt: string;
   readonly lines: readonly ReturnRequestLine[];
+  /** The customer a store-credit refund taken offline belongs to (M13-FR-03 / §31), carried on the
+   *  ReturnAccepted event so the cloud can issue the credit to them when it reconciles. */
+  readonly customerRef?: string;
 }
 
 function readSyncedReturn(body: unknown): SyncedReturn | undefined {
@@ -204,6 +207,7 @@ function readSyncedReturn(body: unknown): SyncedReturn | undefined {
     refundStatus: b['refundStatus'] === 'settled' ? 'settled' : 'pending',
     processedAt: isStr(b['processedAt']) ? (b['processedAt'] as string) : '',
     lines: b['lines'] as ReturnRequestLine[],
+    ...(isStr(b['customerRef']) ? { customerRef: b['customerRef'] as string } : {}),
   };
 }
 
@@ -603,15 +607,42 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
         });
         const flags = [...governanceFlags, ...crossLaneFlags];
 
+        // Store credit taken offline (§31): the credit was handed to the customer at the lane, so on sync
+        // the cloud ISSUES it — record-and-flag, never a rejection (the money already moved). It is issued
+        // to the customer captured at the lane; if that is missing, or the amount exceeds the tenant cap
+        // (or no cap is set), the credit is still recorded and a visible governance exception is flagged.
+        const processedAt = s.processedAt === '' ? deps.now() : s.processedAt;
+        let storeCredit: StoreCreditIssue | undefined;
+        if (s.refundTender === 'store_credit' && s.refundMinor > 0) {
+          if (s.customerRef === undefined) {
+            flags.push('store_credit_no_customer'); // cannot issue to nobody — a person must resolve it
+          } else {
+            const capMinor = await deps.storeCreditCap(ctx.tenantId);
+            if (capMinor === undefined || s.refundMinor > capMinor) {
+              flags.push('store_credit_over_cap');
+            }
+            // Issue the credit regardless (it happened at the lane) — capMinor set to the amount so it
+            // always issues; the over-cap breach above is what surfaces a lane that ignored its cap.
+            const issue = issueRefundCredit({
+              ownerRef: s.customerRef, amountMinor: s.refundMinor, returnId: s.returnId,
+              at: processedAt, capMinor: s.refundMinor,
+            });
+            if (issue.ok) {
+              storeCredit = { movement: issue.movement!, ...(issue.instrument === undefined ? {} : { instrument: issue.instrument }) };
+            }
+          }
+        }
+
         const record: ReturnRecord = {
           returnId: s.returnId, number: s.number, originalSaleId: saleId,
-          processedBy: s.processedBy, processedAt: s.processedAt === '' ? deps.now() : s.processedAt,
+          processedBy: s.processedBy, processedAt,
           reasonCode: s.reasonCode, refundMinor: s.refundMinor, refundTender: s.refundTender,
           refundStatus: s.refundStatus, lines: s.lines,
           ...(flags.length > 0 ? { governanceFlags: flags } : {}),
           ...(s.approvedBy === undefined ? {} : { approvedBy: s.approvedBy }),
+          ...(s.customerRef === undefined ? {} : { customerRef: s.customerRef }),
         };
-        await deps.recordReturn(ctx.tenantId, saleId, record);
+        await deps.recordReturn(ctx.tenantId, saleId, record, storeCredit);
         // Seal the refund fact for the offline lane refund too — attributed to the lane's recorded
         // processor (the same trusted identity on the return record), marked captured-offline so it is
         // never read as a live cloud session. NO tender instrument is recorded (hard rule #3).

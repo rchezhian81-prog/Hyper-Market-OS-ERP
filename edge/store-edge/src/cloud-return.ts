@@ -41,6 +41,9 @@ export interface CloudReturn {
   readonly refundMinor: number;
   readonly refundTender: string;
   readonly processedAt: string;
+  /** The customer a store-credit refund belongs to (M13-FR-03 / §31); absent for a cash/card refund or
+   *  when no customer was captured at the lane. Carried so the cloud issues the credit to them on sync. */
+  readonly customerRef?: string;
   readonly lines: readonly CloudReturnLine[];
 }
 
@@ -65,6 +68,7 @@ export function toCloudReturn(record: unknown): CloudReturn {
   const r = (record !== null && typeof record === 'object' ? record : {}) as Rec;
   const originalSaleId = str(r['originalSaleId']);
   const approvedBy = str(r['approvedBy']);
+  const customerRef = str(r['customerRef']);
   const lines: readonly CloudReturnLine[] = Array.isArray(r['lines'])
     ? (r['lines'] as unknown[]).map(toCloudLine)
     : [];
@@ -79,6 +83,9 @@ export function toCloudReturn(record: unknown): CloudReturn {
     refundMinor: int(r['refundMinor']) ?? 0,
     refundTender: str(r['refundTender']) ?? '',
     processedAt: str(r['processedAt']) ?? '',
+    // Carried only when present, so a cash/card refund (and one with no customer captured) stays absent —
+    // the cloud tells "no customer" apart from "this customer" and record-and-flags the former (P-08).
+    ...(customerRef === undefined ? {} : { customerRef }),
     lines,
   };
 }

@@ -168,6 +168,9 @@ export interface RefundDraftInput {
   readonly refundTender: TenderKind;
   readonly noReceipt?: boolean;
   readonly approval?: { readonly by: string; readonly reason: string };
+  /** The customer a store-credit refund is issued to (M13-FR-03 / §31), so an offline store-credit
+   *  refund can issue the credit to them when it reconciles at the cloud. */
+  readonly customerRef?: string;
 }
 
 /** A looked-up bill, ready for the refund screen to show and act on. */
@@ -315,6 +318,7 @@ export function bootPos(config?: {
           refundMinor: draft.refundMinor, refundTender: draft.refundTender,
           noReceipt: draft.noReceipt ?? false,
           ...(approval === undefined ? {} : { approval }),
+          ...(draft.customerRef === undefined ? {} : { customerRef: draft.customerRef }),
         });
       },
     };
