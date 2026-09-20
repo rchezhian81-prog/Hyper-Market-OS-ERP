@@ -219,7 +219,7 @@ describe('the surface holds no money rule of its own', () => {
       captured = input;
       return { id: input.id, number: input.number, originalSaleId: input.originalSaleId, noReceipt: false,
         refund: input.refund, refundTender: input.refundTender, refundStatus: 'settled',
-        requiredApproval: false, restockedLines: 1, processedAt: input.processedAt };
+        requiredApproval: false, restockedLines: 1, recallHeldLines: 0, processedAt: input.processedAt };
     };
     await view({ refund, priorRefunds: [{ returnId: 'R-old', originalSaleId: 'S-1', refundMinor: 5_000 }] })
       .submit(draft());

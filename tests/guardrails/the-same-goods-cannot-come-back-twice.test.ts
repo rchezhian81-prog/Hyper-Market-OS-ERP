@@ -96,8 +96,11 @@ describe('the at-most-once rule is given something to check against', () => {
   it('records WHAT came back on the event, not just how many lines', () => {
     // `lineCount: 2` cannot answer "how much of this line has already come back?", so nothing
     // downstream — the cloud included — could compute the figure the guard needs.
+    // The event carries a line per returned line (derived one-to-one from input.lines via `resolved`),
+    // each with its quantity — not just a count.
+    expect(code(RETURNS)).toMatch(/const resolved = input\.lines\.map/);
     const event = code(RETURNS).slice(code(RETURNS).indexOf("type: 'ReturnAccepted'"));
-    expect(event).toMatch(/lines: input\.lines\.map/);
+    expect(event).toMatch(/lines: resolved\.map/);
     expect(event).toMatch(/quantityMinor: Math\.abs\(line\.quantityMinor\)/);
   });
 

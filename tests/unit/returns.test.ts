@@ -117,6 +117,58 @@ describe('commitReturn', () => {
     expect('condition' in line!).toBe(false);
   });
 
+  it('forces a returned recalled batch OFF resale — held in quarantine, never back on the shelf (M13-FR-02 / M10)', () => {
+    const ledger = new Ledger(new InMemoryLedgerStore());
+    const outbox = new SyncOutbox();
+    const ret = commitReturn(baseInput({
+      lines: [{
+        productId: 'p1', uom: 'ea', quantityMinor: 2, originalQtyMinor: 3,
+        disposition: 'resell' as const, batchId: 'LOT-RECALL',
+      }],
+    }), ledger, outbox, (b) => b === 'LOT-RECALL');
+
+    // The refund still happens — a recall WANTS the goods back — but the unit is held, not resold.
+    expect(ret.refundStatus).toBe('settled');
+    expect(ret.restockedLines).toBe(0);
+    expect(ret.recallHeldLines).toBe(1);
+    const move = ledger.entries()[0]?.event.payload as Move & { recallHeld?: boolean };
+    expect(move.state).toBe('quarantine'); // NOT on_hand
+    expect(move.disposition).toBe('quarantine');
+    expect(move.recallHeld).toBe(true);
+    const evLine = (outbox.pending()[0]?.event.payload as { lines: { disposition?: string; recallHeld?: boolean }[] }).lines[0];
+    expect(evLine?.disposition).toBe('quarantine');
+    expect(evLine?.recallHeld).toBe(true);
+  });
+
+  it('leaves a resell line alone when its batch is NOT recalled (and by default nothing is recalled)', () => {
+    const recalledLine = [{ productId: 'p1', uom: 'ea', quantityMinor: 2, originalQtyMinor: 3, disposition: 'resell' as const, batchId: 'LOT-OK' }];
+
+    const l1 = new Ledger(new InMemoryLedgerStore());
+    const o1 = new SyncOutbox();
+    const notRecalled = commitReturn(baseInput({ lines: recalledLine }), l1, o1, () => false);
+    expect(notRecalled.restockedLines).toBe(1);
+    expect(notRecalled.recallHeldLines).toBe(0);
+    expect((l1.entries()[0]?.event.payload as Move).state).toBe('on_hand');
+
+    const l2 = new Ledger(new InMemoryLedgerStore());
+    const o2 = new SyncOutbox();
+    const defaulted = commitReturn(baseInput({ lines: recalledLine }), l2, o2); // no predicate → nothing recalled
+    expect(defaulted.restockedLines).toBe(1);
+    expect(defaulted.recallHeldLines).toBe(0);
+  });
+
+  it('does not touch a recalled line that was not going to be resold (quarantine/scrap already)', () => {
+    const ledger = new Ledger(new InMemoryLedgerStore());
+    const outbox = new SyncOutbox();
+    const ret = commitReturn(baseInput({
+      lines: [{ productId: 'p1', uom: 'ea', quantityMinor: 2, originalQtyMinor: 3, disposition: 'scrap' as const, batchId: 'LOT-RECALL' }],
+    }), ledger, outbox, (b) => b === 'LOT-RECALL');
+    // Scrap keeps no stock and was never resell, so there is nothing to force and no hold to count.
+    expect(ret.recallHeldLines).toBe(0);
+    expect(ret.restockedLines).toBe(0);
+    expect(ledger.entries()).toHaveLength(0); // scrap: destroyed, no movement
+  });
+
   it('requires a reason code', () => {
     const ledger = new Ledger(new InMemoryLedgerStore());
     const outbox = new SyncOutbox();
