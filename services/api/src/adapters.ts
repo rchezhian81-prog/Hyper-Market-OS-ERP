@@ -120,6 +120,7 @@ import type { WasteDeps, WasteRecord, WasteCoverage } from '../../inventory/src/
 import type { IntegrationDeps, CertifiedEntry, AdapterConfig, AdapterHeartbeat } from '../../platform/src/integration';
 import type { WebhookDeps, WebhookConfig } from '../../platform/src/webhooks';
 import type { ConnectorMappingDeps, Mapping } from '../../platform/src/connectors';
+import { replayConnectorQueue, type ConnectorDeliveryDeps, type ConnectorDeliveryEvent } from '../../platform/src/connector-delivery';
 import type { SecretsDeps, SecretRef } from '../../platform/src/secrets';
 import type { OrgStructureDeps, OrgNode, GstRegistration } from '../../platform/src/org-structure';
 import type { DrReadinessDeps, DrDrillRecord } from '../../platform/src/dr-readiness';
@@ -1146,6 +1147,8 @@ const forPackaging = (packagingId: string): string => streamName(STREAM.packagin
 const forWebhook = (provider: string): string => streamName(STREAM.integration, 'webhook', provider);
 /** Each connector mapping version folds one stream — one (connector, version), not every mapping. */
 const forConnectorMapping = (connectorId: string, version: string): string => streamName(STREAM.integration, 'mapping', connectorId, version);
+/** Each connector's delivery queue folds its own stream — the enqueue/deliver/fail log for that connector. */
+const forConnectorDelivery = (connectorId: string): string => streamName(STREAM.integration, 'delivery', connectorId);
 // Managed secret references (M32-FR-03) live on one shared stream — the latest state per secret id.
 const SECRETS_STREAM = streamName(STREAM.integration, 'secrets');
 // The domain-level audit trail (M34-FR-01) — one tenant-wide append-only chain of sealed records.
@@ -3022,6 +3025,37 @@ export function connectorAdapter(input: {
         idempotencyKey: `conn-map-${tenantId}-${mapping.connectorId}-${mapping.version}-${mapping.rules.length}-${mapping.required.join('.')}`,
         source: 'api/platform',
         payload: mapping,
+      }));
+    },
+  };
+}
+
+/**
+ * Connector delivery-queue store (M32-FR-02). Each enqueue / delivery / failure is an append-only
+ * `ConnectorDelivery` fact on that connector's own stream; the current queue is the tested
+ * `@sre/integration` engine (`drainConnector`) replayed over them — the retry-then-dead-letter state
+ * machine runs once, in the fold, and a dead-lettered message is kept, never dropped (hard rule #6).
+ */
+export function connectorDeliveryAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): ConnectorDeliveryDeps {
+  return {
+    now: input.now,
+    // Replay is tenant-agnostic (the stream is already tenant-scoped); stamp the request's tenant back onto
+    // each message so the read carries it (and satisfies the cross-tenant response backstop, OB-01).
+    queue: async (tenantId, connectorId) =>
+      replayConnectorQueue(await allOf<ConnectorDeliveryEvent>(input.store, tenantId, forConnectorDelivery(connectorId), 'ConnectorDelivery'))
+        .map((m) => ({ ...m, tenantId })),
+    record: async (tenantId, connectorId, event, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, forConnectorDelivery(connectorId), makeEvent({
+        id: `conn-dq-${event.change}-${event.id}-${d}`,
+        type: 'ConnectorDelivery',
+        occurredAt: event.at,
+        idempotencyKey: `conn-dq-${tenantId}-${connectorId}-${event.change}-${event.id}-${d}`,
+        source: 'api/platform',
+        payload: event,
       }));
     },
   };
