@@ -5,6 +5,49 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M24 Supplier portal — the stored state survives a restart → M24 re-rated INTEGRATION TESTED (20 September 2026)
+
+The honest catch-up pattern applied to **M24 (Supplier portal)**. Here the genuine gap was **durability** —
+none of the module's warm-process tests proved its stored state comes BACK after a crash.
+
+- **The finding.** All four M24 FRs are already wired + integration-tested with real RBAC and per-tenant
+  isolation — FR-01 supplier-facing scoped reads (`supplier-portal-scoping`), FR-02 submissions
+  (`supplier-portal`), FR-03 compliance-at-action (`supplier-portal-compliance`), FR-04 statement +
+  refusal-audit + probe detection (`supplier-portal-statement`, `supplier-portal-probing`). The module was
+  held at WIRED conservatively.
+- **The real gap.** The portal keeps three pieces of stored, event-sourced state: the refusal/probe **audit
+  trail** (`PortalActionAudited` → `findProbing`), the buyer **review queue**, and the running **statement**.
+  Every existing test exercised them on a fresh, warm process — none proved they rebuild after a service or
+  store-edge-box restart. For the audit trail that is **hard rule #6** (audit evidence must never be lost);
+  for all three it is **P-04** tested recovery and **P-08** no silent failure. A probe pattern a shop was
+  about to act on, or a supplier balance mid-reconciliation, silently vanishing on a restart is exactly the
+  loss those rules forbid.
+- **The increment.** `tests/integration/supplier-portal-durability.test.ts` (1) rebuilds a NEW API surface
+  over the SAME persisted event store (`apiHarness({ store: h.store })`) and proves all three come back
+  exactly as they stood: the 3-attempt probe pattern still surfaces, the catalogue is still awaiting review
+  (the accepted invoice still not queued), and the statement rebuilt to the same reconciled ₹4,000 balance.
+  It then proves the rebuilt state is LIVE, not frozen — a 4th probe after the restart makes it four, and a
+  fresh statement line lands on the rebuilt balance.
+
+**Honest rung: M24 WIRED → INTEGRATION TESTED** (module ladder now 10 E2E VERIFIED · 8 INTEGRATION TESTED ·
+5 WIRED · 13 PARTIALLY WIRED). Headline **54.1% → 54.2%** (5640/10400, +15 weighted pts). Held below
+E2E VERIFIED: the supplier-facing screen (external IdP + browser flow) is not yet browser-driven end to end.
+Ledger, module ladder + summary counts, the FR-02/FR-04 evidence rows and the guardrail registry all
+updated. Full gate green (7107 passed).
+
+### Next
+- **Owner input still useful:** the store-credit cap number (`POST /v1/pos/store-credit-cap`).
+- **Retention periods remain the pinned owner-blocked priority** — never invent these.
+- **The clean WIRED→INTEGRATION_TESTED re-rate seam is now essentially exhausted.** Remaining WIRED (M03,
+  M16, M25, M29): M16 has a real FR gap (FR-03/FR-04 unit-only), M03 an un-integration-tested FR-04
+  (images/bulk-edit), M29 an FR-01 that is unit-only — none of those is a clean re-rate. M25 has every FR
+  integration-tested, so it is the only remaining honest re-rate candidate, but re-rating it would be a
+  paperwork bump backed by existing coverage unless a genuine missing property is found. The higher-value
+  work from here is an owner-input item (store-credit cap / retention) → real capability, or a pilot-facing
+  screen driven browser-end-to-end.
+
+---
+
 ## M32 Integration gateway — managed-secrets per-tenant isolation → M32 re-rated INTEGRATION TESTED (20 September 2026)
 
 Honest catch-up for **M32 (Integration gateway)**, and a note on a module correctly SKIPPED.

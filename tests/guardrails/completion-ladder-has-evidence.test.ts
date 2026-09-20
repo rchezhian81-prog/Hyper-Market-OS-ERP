@@ -32,7 +32,7 @@ const EVIDENCE: Record<string, string> = {
   M16: 'tests/integration/customer-segments-stateful.test.ts',
   M15: 'tests/integration/duplicate-bank.test.ts',
   M17: 'tests/integration/coupons.test.ts',
-  M24: 'tests/integration/supplier-portal-scoping.test.ts',
+  M24: 'tests/integration/supplier-portal-durability.test.ts',
   M25: 'tests/integration/offline-completions-reach-the-cloud-through-the-edge.test.ts',
   M26: 'tests/integration/facilities-incidents.test.ts',
   M28: 'tests/e2e/write-off-capture-delivery.e2e.ts',
