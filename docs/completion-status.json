@@ -137,8 +137,8 @@
     },
     {
       "id": "M26",
-      "label": "WIRED",
-      "evidence": "RTM: WIRED, every FR integration-tested; IoT pending"
+      "label": "INTEGRATION_TESTED",
+      "evidence": "RTM: every FR M26-FR-01/02/03/04 wired on the live API with real RBAC + per-tenant isolation AND integration-tested (tests/integration/facilities-assets.test.ts, facilities-monitoring.test.ts, facilities-schedules.test.ts, facilities-incidents.test.ts — each covering the FR behaviour, a 403 RBAC deny, 404 unknown, 400 malformed, 422 business-rule codes, and cross-tenant isolation). **Re-rated WIRED → INTEGRATION_TESTED 2026-09-20:** the module was conservatively held at WIRED though its own record already read 'every FR integration-tested; IoT pending' — and IoT/sensor ingestion (D14) is a hardware/deployment step, not an FR gap (the FR-02 route already accepts sensor/manual_probe/log_sheet readings and is fully tested). This increment adds the one recovery property those suites lacked: tests/integration/facilities-durability.test.ts proves the whole event-sourced surface (asset AMC alerts, a cold room holding stock on a breach, an overdue compliance task, an open serious incident) REBUILDS from the event store after a restart and keeps appending afterwards (P-04 tested recovery, P-08, FND-01 append-only) — the same restart-rebuild bar the other event-sourced surfaces carry (goods-receipt, warehouse-counts, connector-delivery). Held below E2E_VERIFIED: the operator-facing owner-app/mobile facilities surfaces are not browser-e2e'd, and live sensor/IoT ingestion (D14) remains a deployment step."
     },
     {
       "id": "M27",

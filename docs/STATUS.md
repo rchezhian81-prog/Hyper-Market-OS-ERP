@@ -5,6 +5,44 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M26 Facilities — durability restart-rebuild test → M26 re-rated INTEGRATION TESTED (20 September 2026)
+
+An honest one-rung catch-up for **M26 (Facilities & assets)**, backed by a genuinely new recovery test.
+
+- **The finding.** M26 sat at WIRED though its own ledger note already read *"every FR integration-tested;
+  IoT pending"*. On verification, all four FRs are wired on the live API AND integration-tested through the
+  real pipeline with RBAC + per-tenant isolation: FR-01 assets/AMC/downtime/energy
+  (`tests/integration/facilities-assets.test.ts`), FR-02 equipment/power monitoring
+  (`facilities-monitoring.test.ts`), FR-03 maintenance/compliance schedules (`facilities-schedules.test.ts`),
+  FR-04 incidents + evidence pack (`facilities-incidents.test.ts`). Each suite exercises the FR behaviour, a
+  403 RBAC deny, 404 unknown, 400 malformed, 422 business-rule codes, and cross-tenant isolation. IoT/sensor
+  ingestion (D14) — the only thing the record held it below the line for — is a hardware/deployment step, not
+  an FR gap (the FR-02 route already accepts sensor/manual_probe/log_sheet readings and is fully tested).
+- **The increment (real new test, not padding).** The one property those suites did not prove is the one an
+  auditor's control surface actually depends on: that what was recorded SURVIVES the process restarting. Added
+  **`tests/integration/facilities-durability.test.ts` (1)** — it records across all four FRs (a critical
+  asset with no AMC, a breached cold room holding ₹1,84,000 of stock, an overdue compliance task, an open
+  serious incident), then builds a NEW surface over the SAME event store and proves every fact rebuilds from
+  the log, and that a fresh append still lands afterwards (P-04 tested recovery, P-08, FND-01 append-only —
+  the same restart-rebuild bar goods-receipt / warehouse-counts / connector-delivery carry).
+- Adding another RBAC test would have been padding — the coverage was already there; the durability gap was
+  the genuine one, so that is what this increment fills.
+
+**Honest rung: M26 WIRED → INTEGRATION TESTED** (module ladder now 10 E2E VERIFIED · 2 INTEGRATION TESTED ·
+11 WIRED · 13 PARTIALLY WIRED). Headline **53.2% → 53.4%** (5550/10400, +15 weighted pts). Held below
+E2E VERIFIED: the facilities operator surface (owner-app/mobile) is not browser-e2e'd, and live IoT
+ingestion (D14) remains a deployment step. Ledger, module ladder + summary counts, and the M26 evidence in
+the completion-status ledger all updated; the guardrail evidence registry already pointed at a facilities
+integration test. Full gate green.
+
+### Next
+- **Owner input still useful:** the store-credit cap number (`POST /v1/pos/store-credit-cap`).
+- **Retention periods remain the pinned owner-blocked priority** — never invent these.
+- Further honest WIRED → INTEGRATION TESTED re-rates are available (e.g. M09, M11) where every FR is already
+  integration-tested; pick them up one clean increment at a time.
+
+---
+
 ## M28 write-off capture screen — slice 3: the browser e2e → M28 re-rated E2E VERIFIED (20 September 2026)
 
 The final slice. The shop-floor **capture** screen is now proven end to end in a REAL headless browser, and M28
