@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Refund-exceptions review screen — slice 2 of 3 (served screen + edge wiring) (20 September 2026)
+
+The served `/return-governance` screen the owner can actually open. Built on the tested session model from
+slice 1, wired end to end through the established served-screen pattern.
+
+- **Served view** `apps/web-erp/web/return-governance.{html,js}`: renders the flagged refunds from the bundled
+  session (biggest refund first; each row shows WHAT BROKE in words — the governance flags — plus the ₹ amount,
+  who gave and approved it, the customer, reason and lane); bilingual EN/TA; every exception reads as attention
+  with an icon + word (colour never the only signal); a labelled sample when the box has said nothing, and a
+  stale strip when the page is a cached one (P-08).
+- **Live read + wiring** `apps/web-erp/src/browser-entry.ts`: `bootReturnGovernance` /
+  `fetchReturnGovernanceExceptions` / `returnGovernancePortsFromData` read `GET /v1/pos/return-governance-exceptions`
+  live (a GET), deriving the ₹ total for the summary. Nav `/return-governance` (`lp.case.read`), SW bumped to
+  `sre-erp-shell-v28` with the file cached, and the box injects who+permissions via a new
+  `PackReturnGovernancePolicy` (`edge/store-edge/src/{store-pack,screen-data,screen-server}.ts`) — the exceptions
+  themselves stay a cloud read, never in the pack.
+- **READ-ONLY, enforced.** A breach is worked out of band (the money already moved at the lane), so the served
+  view holds **no write verb at all** — `tests/guardrails/the-return-governance-screen-is-usable.test.ts` (9)
+  asserts no POST/PUT/PATCH/DELETE, plus the usual usability rules (no browser dialogs, defers to the session,
+  aria-labelled status + icon, bundle + data marker + labelled toggle/list). Also updated the two full-`StorePack`
+  test fixtures for the new register. Full gate green.
+
+**No module rung moves yet** — slice 3 (Chromium browser e2e: opens offline, accessible, shows a seeded
+exception) earns the E2E VERIFIED crossing.
+
+### Next
+- Slice 3: `tests/e2e/…` browser e2e for `/return-governance`, then re-rate assessment.
+- Owner-input still genuinely useful (not blocking): the **store-credit cap rupee number** and **retention periods**.
+
+---
+
 ## Refund-exceptions review screen — slice 1 of 3 (owner picked "store-credit cap") (20 September 2026)
 
 The owner delegated the next build ("you pick" → I'd committed to the store-credit cap). **Investigating first

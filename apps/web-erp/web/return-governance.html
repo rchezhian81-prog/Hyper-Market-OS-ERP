@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Refund exceptions</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      Refund-exceptions review screen — the owner/manager/accountant's control-by-exception surface
+      (M13-FR-01/03, M17, API-05, P-03, P-08, hard rule #10). Every rule lives in the tested session model
+      (apps/web-erp/src/return-governance-session.ts), attached as window.returnGovernanceSession and built on
+      the shared packages/ui primitives. It shows every FLAGGED refund — a store credit over the owner's cap
+      or with no cap set, a credit with no customer, a §28 approval breach, or more sent back than the bill sold
+      or was paid — biggest refund first, each with WHAT BROKE shown in words. READ-ONLY: a breach is worked
+      out of band (the money already moved at the lane), so there is no write here. The exceptions are read live
+      (GET /v1/pos/return-governance-exceptions); offline the screen shows its clearly-marked sample stand-in.
+    -->
+    <style>
+      :root { --bg:#0f172a; --panel:#1e293b; --ink:#f8fafc; --muted:#94a3b8; --ok:#22c55e; --degraded:#f59e0b; --error:#ef4444; --idle:#64748b; --info:#38bdf8; --line:#334155; --tap:48px; }
+      * { box-sizing: border-box; }
+      body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; min-height:100dvh; display:flex; flex-direction:column; }
+      header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; background:var(--panel); flex-wrap:wrap; }
+      .who { font-weight:600; } .who small { display:block; color:var(--muted); font-weight:400; font-size:14px; }
+      .lang { background:var(--line); color:var(--ink); min-height:40px; padding:0 14px; font-size:15px; border:0; border-radius:10px; }
+      .sample,.stale,.nobody { margin:0; padding:10px 16px; font-size:15px; font-weight:600; }
+      .sample { background:var(--degraded); color:#451a03; } .stale { background:#1e3a5f; color:#dbeafe; border-bottom:2px solid var(--info); font-weight:400; }
+      .nobody { background:#3f2d12; color:#fde68a; border-bottom:2px solid var(--degraded); }
+      .sample[hidden],.stale[hidden],.nobody[hidden] { display:none; }
+      main { flex:1; padding:16px; display:grid; gap:16px; align-content:start; max-width:900px; width:100%; }
+      h2 { margin:0 0 4px; font-size:20px; } p.lead { margin:0 0 4px; color:var(--muted); font-size:15px; }
+      h3 { margin:8px 0 0; font-size:16px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+      .summary { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+      .summary .count { font-size:18px; font-weight:700; } .summary .count.attention { color:var(--degraded); }
+      .summary .exposure { font-size:16px; font-weight:600; font-variant-numeric:tabular-nums; }
+      ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
+      li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); }
+      li.row.tone-ok { border-left-color:var(--ok); } li.row.tone-degraded { border-left-color:var(--degraded); }
+      li.row.tone-error { border-left-color:var(--error); } li.row.tone-idle { border-left-color:var(--idle); }
+      .row .head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+      .row .headline { font-weight:600; } .row .value { font-weight:700; font-variant-numeric:tabular-nums; }
+      .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
+      .status .icon { font-size:18px; width:1.4em; text-align:center; }
+      .row .flags { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:13px; }
+      .row .flags-label { color:var(--muted); font-weight:600; }
+      .row .chip { background:#3f2d12; color:#fde68a; border:1px solid var(--degraded); border-radius:999px; padding:2px 10px; font-size:12px; font-weight:600; }
+      .row .facts { font-size:13px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
+      p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
+      p.state .icon { font-size:18px; } p.state.tone-error { color:#fecaca; }
+      .lang:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+      [hidden] { display:none !important; }
+    </style>
+  </head>
+  <body>
+    <p class="stale" id="stale" hidden></p>
+    <p class="sample" id="sample" hidden></p>
+    <p class="nobody" id="nobody" hidden></p>
+
+    <header>
+      <span class="who" id="who">Refund exceptions <small id="whoami"></small></span>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+
+    <main>
+      <div>
+        <h2 id="title">Refund exceptions</h2>
+        <p class="lead" id="lead"></p>
+      </div>
+
+      <div class="summary" role="status" aria-live="polite">
+        <span class="count attention" id="open-count"></span>
+        <span class="exposure" id="exposure"></span>
+      </div>
+
+      <h3 id="list-heading" hidden></h3>
+      <ul class="rows" id="rows" aria-label="Refund exceptions to review"></ul>
+
+      <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+    </main>
+
+    <!--SCREEN-DATA-->
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./return-governance.js" type="module"></script>
+  </body>
+</html>

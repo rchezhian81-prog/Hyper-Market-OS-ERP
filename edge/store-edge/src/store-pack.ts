@@ -510,6 +510,16 @@ export interface PackLossPreventionPolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the refund-exceptions review screen and what they may do (M13-FR-01/03 · M17). The flagged refunds
+ *  are read live from the cloud (`GET /v1/pos/return-governance-exceptions`), not the pack; this is only who the
+ *  box was told is looking, so the shell can gate on `lp.case.read` before the live read. Read-only screen. */
+export interface PackReturnGovernancePolicy {
+  readonly userId?: string;
+  /** The permission codes this user holds — `lp.case.read` to see the exceptions. Never defaulted; the cloud
+   *  route re-checks it, so this only shapes the UI. */
+  readonly permissions: readonly string[];
+}
+
 /** Who is on the cash-office over/short sign-off screen and what they may do (M14-FR-02). The open over/shorts
  *  are read live from the cloud (`GET /v1/shifts/over-short`), not the pack; this is only who the box was told
  *  is looking, so the shell can gate on `till.shift.read` before the live read (and offer `till.overshort.review`
@@ -978,6 +988,8 @@ export interface StorePack {
   readonly operationsInboxPolicy: Register<PackOperationsInboxPolicy>;
   /** Who is on the loss-prevention investigations screen and what they may do there (M15-FR-04). */
   readonly lossPreventionPolicy: Register<PackLossPreventionPolicy>;
+  /** Who is on the refund-exceptions review screen and what they may do there (M13-FR-01/03 · M17). */
+  readonly returnGovernancePolicy: Register<PackReturnGovernancePolicy>;
   /** Who is on the cash-office over/short sign-off screen and what they may do there (M14-FR-02). */
   readonly cashOfficePolicy: Register<PackCashOfficePolicy>;
   /** Who is on the risk-acceptance / compliance-gates screen and what they may do there (M34-FR-04). */
@@ -1136,6 +1148,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     dataQualityPolicy: notKnown(why),
     operationsInboxPolicy: notKnown(why),
     lossPreventionPolicy: notKnown(why),
+    returnGovernancePolicy: notKnown(why),
     cashOfficePolicy: notKnown(why),
     riskAcceptancePolicy: notKnown(why),
     dayReopenPolicy: notKnown(why),
@@ -1256,6 +1269,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     dataQualityPolicy: section<PackDataQualityPolicy>('dataQualityPolicy'),
     operationsInboxPolicy: section<PackOperationsInboxPolicy>('operationsInboxPolicy'),
     lossPreventionPolicy: section<PackLossPreventionPolicy>('lossPreventionPolicy'),
+    returnGovernancePolicy: section<PackReturnGovernancePolicy>('returnGovernancePolicy'),
     cashOfficePolicy: section<PackCashOfficePolicy>('cashOfficePolicy'),
     riskAcceptancePolicy: section<PackRiskAcceptancePolicy>('riskAcceptancePolicy'),
     dayReopenPolicy: section<PackDayReopenPolicy>('dayReopenPolicy'),

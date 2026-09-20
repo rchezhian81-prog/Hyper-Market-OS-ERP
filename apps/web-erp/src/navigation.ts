@@ -99,6 +99,11 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // open case with the money at stake). Gated on the SAME permission the worklist route checks (`lp.case.read`),
   // so the menu never offers a screen the server would refuse (M15-FR-04).
   { id: 'loss-prevention', label: 'Investigations', path: '/loss-prevention', requires: 'lp.case.read', group: 'Administration' },
+  // Refund exceptions — the M13/M17 governance surface: refunds that reconciled with a rule broken (store credit
+  // over the owner's cap, a credit with no customer, a §28 approval breach, more sent back than the bill sold or
+  // was paid). Gated on the SAME permission the exceptions route checks (`lp.case.read`), so the menu never offers
+  // a screen the server would refuse (P-03 control-by-exception, P-08 no silent failure).
+  { id: 'return-governance', label: 'Refund exceptions', path: '/return-governance', requires: 'lp.case.read', group: 'Administration' },
   { id: 'cash-office', label: 'Over / short sign-off', path: '/cash-office', requires: 'till.shift.read', group: 'Administration' },
   { id: 'risk-acceptance', label: 'Risk acceptance', path: '/risk-acceptance', requires: 'compliance.risk.read', group: 'Administration' },
   // Reopen a locked day — the controlled, audited unlock (M14-FR-04 / §28). Gated on `till.dayclose.read` (the
