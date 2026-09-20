@@ -5,6 +5,45 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M32 integration gateway — connector delivery queue wired; M32 re-rated PARTIALLY_WIRED→WIRED (headline 52.6→52.8%) (20 September 2026)
+
+The last gap the ledger named for M32 is closed: an outbound connector message now has a **durable cloud
+delivery queue with a visible dead-letter queue**, not just a mapping validator.
+
+- **`services/platform/src/connector-delivery.ts`** — the transport-facing half of the connector, the exact
+  mirror of the M31-FR-04 notification queue, over the tested `@sre/integration` `drainConnector` engine:
+  `POST /v1/integration/connectors/:id/queue/:messageId` enqueues a mapped record (idempotent on the id),
+  `…/delivered` marks it through (a **duplicate counts as delivered** — after a timeout the destination usually
+  has it), `…/failed` records a failure that the fold turns into **retry-then-dead-letter** (`permanent: true`
+  dead-letters at once — a rejected record should not burn nine retries; retryable backs off and dead-letters
+  after `maxAttempts`), and `GET …/queue/pending` / `…/queue/dead-letters` read what is waiting and what is
+  poison. A **dead letter is kept, never dropped** (hard rule #6) — there is no purge route here, and none in
+  the engine (a unit test already asserts the verb does not exist).
+- **`replayConnectorQueue`** rebuilds the queue by replaying each recorded outcome through `drainConnector`
+  one message at a time, so the retry/dead-letter state machine is the tested engine's, run once — not a second
+  copy. Event-sourced (`ConnectorDelivery` per connector), restart-safe. Adapter + `main.ts` wiring; gated
+  `platform.setup.write` (enqueue/deliver/fail) + `platform.health.read` (pending/dead-letters).
+- `tests/integration/connector-delivery.test.ts` (4, real API + RBAC + restart): enqueue idempotency + delivery
+  + pending drop-off (durable across restart); retryable → dead-letter after maxAttempts (kept, off pending);
+  permanent → dead-letter at once; validation/404/RBAC (owner writes+reads, manager reads only, cashier neither)
+  + per-tenant isolation.
+
+**Honest rung: M32 PARTIALLY_WIRED → WIRED (+20 weighted pts, headline 52.6 → 52.8%, 5490/10400).** All four
+FRs are now wired (FR-01 webhooks + versioned APIs, FR-02 mapping + delivery, FR-03 secrets + usage signals,
+FR-04 certified matrix/adapters/health). **Held at WIRED, not INTEGRATION_TESTED:** the outbound network
+transport that actually posts a pending message to a real destination (and then calls `…/delivered`/`…/failed`)
+is a deployment/worker step — a network path, not a cloud endpoint — the same standard by which the M31-FR-04
+notification queue treats its channel transport. Module ladder now **9 E2E VERIFIED · 1 INTEGRATION TESTED ·
+12 WIRED · 14 PARTIALLY WIRED**.
+
+### Next
+- The next module/track is the owner's to choose (see the survey: M18-FR-03 order routing and M28-FR-01
+  write-off capture screen are the next clean, non-owner-blocked candidates).
+- **Owner input still useful:** the store-credit cap number (`POST /v1/pos/store-credit-cap`).
+- **Retention periods remain the pinned owner-blocked priority** — never invent these.
+
+---
+
 ## M13 returns — the cashier can now pick the store-credit customer, FR-03 SC-5 (20 September 2026)
 
 The store-credit track is now usable at the counter: when a cashier chooses **store credit** as the
