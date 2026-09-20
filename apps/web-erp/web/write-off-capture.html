@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Record a loss</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      Write-off CAPTURE desk — the shop-floor "record a loss" screen (M28-FR-01, API-04, §28, P-02, P-03).
+      Every rule lives in the tested session model (apps/web-erp/src/write-off-capture-session.ts), attached as
+      window.writeOffCaptureSession and built on the shared packages/ui primitives. The operator picks the item,
+      the quantity and value, a CHOSEN loss-type chip (never free text), captures a photo/witness for a big loss
+      and names a separate manager to approve it. Recording is a HUMAN write in the raiser's own name that runs
+      ONLY on an explicit click, never on load; the session refuses BEFORE any POST the cases the operator can
+      see are wrong (no permission, an incomplete form, or a material loss with no evidence / no separate
+      approver / the raiser approving their own — §28), and the server re-checks all of it and records the loss
+      in the caller's own name via POST /v1/inventory/write-off/:id. Offline the screen shows its sample stand-in.
+    -->
+    <style>
+      :root { --bg:#0f172a; --panel:#1e293b; --ink:#f8fafc; --muted:#94a3b8; --ok:#22c55e; --degraded:#f59e0b; --error:#ef4444; --idle:#64748b; --info:#38bdf8; --line:#334155; --tap:48px; }
+      * { box-sizing: border-box; }
+      body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; min-height:100dvh; display:flex; flex-direction:column; }
+      header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; background:var(--panel); flex-wrap:wrap; }
+      .who { font-weight:600; } .who small { display:block; color:var(--muted); font-weight:400; font-size:14px; }
+      .lang { background:var(--line); color:var(--ink); min-height:40px; padding:0 14px; font-size:15px; border:0; border-radius:10px; }
+      .sample,.stale,.nobody { margin:0; padding:10px 16px; font-size:15px; font-weight:600; }
+      .sample { background:var(--degraded); color:#451a03; } .stale { background:#1e3a5f; color:#dbeafe; border-bottom:2px solid var(--info); font-weight:400; }
+      .nobody { background:#3f2d12; color:#fde68a; border-bottom:2px solid var(--degraded); }
+      .sample[hidden],.stale[hidden],.nobody[hidden] { display:none; }
+      main { flex:1; padding:16px; display:grid; gap:16px; align-content:start; max-width:760px; width:100%; }
+      h2 { margin:0 0 4px; font-size:20px; } p.lead { margin:0 0 4px; color:var(--muted); font-size:15px; }
+      .capturer { background:var(--panel); border-radius:12px; padding:14px; display:grid; gap:12px; }
+      .capturer label { font-size:14px; color:var(--muted); display:block; margin-bottom:4px; }
+      .capturer input { width:100%; min-height:var(--tap); padding:0 12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); }
+      .row2 { display:grid; grid-template-columns:2fr 1fr; gap:12px; }
+      fieldset { border:0; margin:0; padding:0; }
+      .chips { display:flex; gap:8px; flex-wrap:wrap; }
+      button.chip { min-height:var(--tap); padding:0 16px; border:2px solid var(--line); border-radius:999px; font-size:15px; font-weight:600; background:var(--bg); color:var(--ink); }
+      button.chip.chosen { border-color:var(--info); background:#0b2942; color:#e0f2fe; }
+      button.chip.chosen::before { content:'✓ '; }
+      .material-hint { margin:0; padding:10px 12px; border-radius:10px; background:var(--bg); font-size:14px; display:inline-flex; gap:8px; align-items:center; }
+      .material-hint .icon { font-size:16px; }
+      .material-hint.tone-degraded { border-left:4px solid var(--degraded); } .material-hint.tone-idle { border-left:4px solid var(--idle); color:var(--muted); }
+      .material-hint[hidden] { display:none; }
+      .threshold { font-size:13px; color:var(--muted); }
+      button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--degraded); color:#451a03; }
+      button.act:focus-visible, button.chip:focus-visible, input:focus-visible, .lang:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+      p.result { margin:0; padding:12px 14px; border-radius:12px; background:var(--panel); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
+      p.result .icon { font-size:18px; }
+      p.result.tone-ok { border-left:6px solid var(--ok); } p.result.tone-degraded { border-left:6px solid var(--degraded); } p.result.tone-error { border-left:6px solid var(--error); }
+      p.result[hidden] { display:none; }
+      p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
+      p.state .icon { font-size:18px; } p.state.tone-error { color:#fecaca; }
+      [hidden] { display:none !important; }
+    </style>
+  </head>
+  <body>
+    <p class="stale" id="stale" hidden></p>
+    <p class="sample" id="sample" hidden></p>
+    <p class="nobody" id="nobody" hidden></p>
+
+    <header>
+      <span class="who" id="who">Record a loss <small id="whoami"></small></span>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+
+    <main>
+      <div>
+        <h2 id="title">Record a loss</h2>
+        <p class="lead" id="lead"></p>
+      </div>
+
+      <section class="capturer" id="capturer" hidden aria-label="Record a stock write-off">
+        <div>
+          <label for="wo-product" id="product-label"></label>
+          <input id="wo-product" type="text" autocomplete="off" />
+        </div>
+        <div>
+          <label for="wo-location" id="location-label"></label>
+          <input id="wo-location" type="text" autocomplete="off" />
+        </div>
+        <div class="row2">
+          <div>
+            <label for="wo-qty" id="qty-label"></label>
+            <input id="wo-qty" type="number" min="1" step="1" inputmode="numeric" autocomplete="off" />
+          </div>
+          <div>
+            <label for="wo-uom" id="uom-label"></label>
+            <input id="wo-uom" type="text" value="ea" autocomplete="off" />
+          </div>
+        </div>
+        <div>
+          <label for="wo-value" id="value-label"></label>
+          <input id="wo-value" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" />
+          <p class="threshold" id="threshold-hint"></p>
+        </div>
+        <fieldset>
+          <label id="loss-type-label"></label>
+          <div class="chips" id="loss-types" role="group" aria-label="Kind of loss"></div>
+        </fieldset>
+        <p class="material-hint" id="material-hint" hidden role="status" aria-live="polite"><span class="icon" id="material-hint-icon" aria-hidden="true"></span><span id="material-hint-text"></span></p>
+        <div>
+          <label for="wo-evidence" id="evidence-label"></label>
+          <input id="wo-evidence" type="text" autocomplete="off" />
+        </div>
+        <div>
+          <label for="wo-approver" id="approver-label"></label>
+          <input id="wo-approver" type="text" autocomplete="off" />
+        </div>
+        <button id="record" class="act" type="button"></button>
+      </section>
+
+      <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
+      <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+    </main>
+
+    <!--SCREEN-DATA-->
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./write-off-capture.js" type="module"></script>
+  </body>
+</html>

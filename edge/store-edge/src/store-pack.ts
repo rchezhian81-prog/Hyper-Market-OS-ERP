@@ -442,6 +442,20 @@ export interface PackWastePolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the shop-floor write-off CAPTURE screen and what they may do (M28-FR-01 · §28). The loss is
+ *  RECORDED here (not just reviewed) through the governed `POST /v1/inventory/write-off/:id`, so this carries
+ *  who is looking + what they hold now (`inventory.movement.append` to record) AND the tenant's material-loss
+ *  threshold — the value at/above which evidence + a §28 approver are required. The cloud route re-checks the
+ *  permission, re-sources the threshold and re-verifies the approver's authority, so this only shapes the UI. */
+export interface PackWriteOffCapturePolicy {
+  readonly userId?: string;
+  /** The permission codes this user holds — `inventory.movement.append` to record a loss. Never defaulted. */
+  readonly permissions: readonly string[];
+  /** The tenant's material-loss threshold in paise. Absent means the shop has set none, so the screen shows the
+   *  engine default (`DEFAULT_WRITE_OFF_THRESHOLD_MINOR`) — the same line the server enforces, never a guess. */
+  readonly materialThresholdMinor?: number;
+}
+
 /** Who is on the stock-count review screen and what they may do (M09-FR-04). */
 export interface PackCountsPolicy {
   readonly userId?: string;
@@ -944,6 +958,8 @@ export interface StorePack {
   readonly wasteWriteOffs: Register<readonly unknown[]>;
   /** Who is on the waste review screen and what they may do there. */
   readonly wastePolicy: Register<PackWastePolicy>;
+  /** Who is on the shop-floor write-off CAPTURE screen, what they hold, and the material-loss threshold (M28-FR-01). */
+  readonly writeOffCapturePolicy: Register<PackWriteOffCapturePolicy>;
   /**
    * Every reconciled blind count folded to a review row, for the stock-count screen (M09-FR-04).
    *
@@ -1112,6 +1128,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     gstReturnsPolicy: notKnown(why),
     wasteWriteOffs: notKnown(why),
     wastePolicy: notKnown(why),
+    writeOffCapturePolicy: notKnown(why),
     countsQueue: notKnown(why),
     countsPolicy: notKnown(why),
     fleetPolicy: notKnown(why),
@@ -1231,6 +1248,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     gstReturnsPolicy: section<PackGstReturnsPolicy>('gstReturnsPolicy'),
     wasteWriteOffs: section<readonly unknown[]>('wasteWriteOffs'),
     wastePolicy: section<PackWastePolicy>('wastePolicy'),
+    writeOffCapturePolicy: section<PackWriteOffCapturePolicy>('writeOffCapturePolicy'),
     countsQueue: section<readonly unknown[]>('countsQueue'),
     countsPolicy: section<PackCountsPolicy>('countsPolicy'),
     fleetPolicy: section<PackFleetPolicy>('fleetPolicy'),

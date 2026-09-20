@@ -98,6 +98,11 @@ import {
   createWasteReviewSession, type WasteReviewPorts, type WasteReviewSession, type WriteOffRow,
 } from './waste-review-session';
 import {
+  createWriteOffCaptureSession,
+  type WriteOffCapturePorts, type WriteOffCaptureSession, type WriteOffCapturePort, type CaptureResult,
+} from './write-off-capture-session';
+import { DEFAULT_WRITE_OFF_THRESHOLD_MINOR } from '../../../packages/waste/src/waste';
+import {
   createCountsReviewSession, type CountsReviewPorts, type CountsReviewSession, type CountRow,
 } from './counts-session';
 import {
@@ -712,6 +717,98 @@ export function bootWaste(data: WasteData | undefined): WasteReviewSession | nul
     { userId: data.userId === undefined ? null : data.userId },
     wastePortsFromData(data),
   );
+}
+
+/** What the box tells the shop-floor write-off CAPTURE screen (M28-FR-01 · §28): who is looking, what they
+ *  hold, and the tenant's material-loss threshold. Absent means the box carried no payload for it, and the
+ *  shell shows its clearly-marked sample stand-in. */
+export interface WriteOffCaptureData {
+  readonly userId?: string;
+  /** The permission codes this user holds — `inventory.movement.append` to record a loss. Never defaulted. */
+  readonly permissions?: readonly string[];
+  /** The tenant's material-loss threshold in paise. Absent → the engine default (the same line the server
+   *  enforces), never a fabricated number presented as the shop's. */
+  readonly materialThresholdMinor?: number;
+}
+
+const WRITE_OFF_APPEND_PERMISSION = 'inventory.movement.append';
+/** Off-browser / tests inject their own http; a real port is wired in the boot body. */
+const NOOP_CAPTURE_PORT: WriteOffCapturePort = { post: async () => 'lost_link' };
+
+export function writeOffCapturePortsFromData(
+  data: WriteOffCaptureData | undefined,
+  capturePort: WriteOffCapturePort = NOOP_CAPTURE_PORT,
+): WriteOffCapturePorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    // Default-deny: an absent permission list can record nothing (the server would refuse it anyway).
+    mayCapture: () => held.has(WRITE_OFF_APPEND_PERMISSION),
+    capturePort: () => capturePort,
+  };
+}
+
+/** Build the write-off capture screen, or `null` when the box carried no payload for it (shell shows the
+ *  sample). The threshold is the injected tenant policy; absent, the engine default is used — the SAME line the
+ *  server enforces, never invented here. */
+export function bootWriteOffCapture(
+  data: WriteOffCaptureData | undefined,
+  capturePort?: WriteOffCapturePort,
+): WriteOffCaptureSession | null {
+  if (data === undefined) return null;
+  return createWriteOffCaptureSession(
+    {
+      userId: data.userId === undefined ? null : data.userId,
+      materialThresholdMinor: data.materialThresholdMinor ?? DEFAULT_WRITE_OFF_THRESHOLD_MINOR,
+    },
+    writeOffCapturePortsFromData(data, capturePort),
+  );
+}
+
+/** The authenticated POST of a stock write-off — the raiser's OWN session cookie (`credentials: 'same-origin'`),
+ *  never a service token. The server records the loss in the caller's own name and enforces the threshold,
+ *  evidence and §28 separate-approver rules; the screen never fabricates an approver or an evidence reference.
+ *  A network/timeout is a retryable lost link, not a refusal. The writeOffId rides in the URL (idempotency —
+ *  a re-send under the same id records once). No AI calls this — a person does (hard rule #5). */
+function openWriteOffCapturePort(): WriteOffCapturePort {
+  return {
+    post: async (input): Promise<CaptureResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return 'lost_link';
+      const { writeOffId, ...body } = input;
+      try {
+        const res = await fetchFn(`/v1/inventory/write-off/${encodeURIComponent(writeOffId)}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': writeOffId, accept: 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify(body),
+        });
+        if (res.status === 201) return 'recorded';
+        if (res.status === 409) return 'conflict';
+        if (res.status === 422) {
+          const code = await readErrorCode(res);
+          if (code === 'write_off_needs_evidence') return 'needs_evidence';
+          if (code === 'write_off_needs_approval') return 'needs_approval';
+          if (code === 'approver_may_not_approve') return 'approver_not_authorised';
+          return 'refused';
+        }
+        if (res.status === 400) return 'refused';
+        return 'refused';
+      } catch {
+        return 'lost_link';
+      }
+    },
+  };
+}
+
+/** Read the `code` from a governed-route error body, tolerantly — a body that does not parse maps to a plain
+ *  refusal rather than throwing (the screen still shows the operator an honest outcome). */
+async function readErrorCode(res: Response): Promise<string | undefined> {
+  try {
+    const body = (await res.json()) as { code?: string };
+    return body.code;
+  } catch {
+    return undefined;
+  }
 }
 
 /** What the box tells the stock-count review screen — the last-synced reconciled counts plus who is looking. */
@@ -2413,6 +2510,12 @@ interface ManagerWindow {
   gstReturnsOutbox?: SyncOutbox;
   wasteData?: WasteData;
   wasteSession?: WasteReviewSession;
+  writeOffCaptureData?: WriteOffCaptureData;
+  writeOffCaptureSession?: WriteOffCaptureSession;
+  /** The injected write path the screen posts a loss through — the raiser's own session, never a service token. */
+  writeOffCapture?: {
+    capturePort(): WriteOffCapturePort;
+  };
   countsData?: CountsData;
   countsSession?: CountsReviewSession;
   dataQualityInboxData?: DataQualityInboxData;
@@ -3175,6 +3278,18 @@ if (browserWindow !== undefined) {
   }
   const waste = bootWaste(browserWindow.wasteData);
   if (waste !== null) browserWindow.wasteSession = waste;
+  // The shop-floor write-off CAPTURE screen (M28-FR-01 · §28): boots from the box's policy (who + what they
+  // hold + the material-loss threshold). The one write is a HUMAN record in the raiser's own name — never on
+  // load, only on an explicit click — posted to the governed write-off route under the operator's own session;
+  // the server sources the threshold, enforces evidence + a separate §28 approver, and records the loss in the
+  // caller's own name, none of which the screen fabricates. No AI records a loss (hard rule #5).
+  const writeOffCaptureData = browserWindow.writeOffCaptureData;
+  const writeOffCapturePort = openWriteOffCapturePort();
+  const writeOffCapture = bootWriteOffCapture(writeOffCaptureData, writeOffCapturePort);
+  if (writeOffCapture !== null) {
+    browserWindow.writeOffCaptureSession = writeOffCapture;
+    browserWindow.writeOffCapture = { capturePort: () => writeOffCapturePort };
+  }
   const counts = bootCounts(browserWindow.countsData);
   if (counts !== null) browserWindow.countsSession = counts;
   // The Data Quality inbox (A08): boots from the box's policy (who + what they hold), then the shell refreshes

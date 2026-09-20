@@ -58,6 +58,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'stock', label: 'Stock', path: '/stock', requires: 'stock.view', group: 'Inventory' },
   { id: 'counts', label: 'Stock counts', path: '/counts', requires: 'count.view', group: 'Inventory' },
   { id: 'waste', label: 'Waste & write-off', path: '/waste', requires: 'waste.view', group: 'Inventory' },
+  // Record a write-off from the shop floor — the WRITE sibling of the read-only /waste review. Gated on the
+  // SAME authority the governed write-off route checks (`inventory.movement.append`), so the menu never offers
+  // it to someone the server would refuse; §28/evidence/threshold all stay server-side (M28-FR-01).
+  { id: 'write-off-capture', label: 'Record a write-off', path: '/write-off-capture', requires: 'inventory.movement.append', group: 'Inventory' },
   { id: 'stock-health', label: 'Stock health', path: '/stock-health', requires: 'inventory.availability.read', group: 'Inventory' },
 
   { id: 'sales', label: 'Sales', path: '/sales', requires: 'sales.view', group: 'Trading' },
