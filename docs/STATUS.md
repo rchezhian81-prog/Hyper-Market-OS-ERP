@@ -5,6 +5,39 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M13 returns — store credit wired end-to-end at the desk, FR-03 SC-3 (20 September 2026)
+
+A `store_credit` refund now issues a real, spendable balance at the live return desk — capped by the owner,
+issued to a named customer, recorded atomically with the return.
+
+- **`services/pos/src/returns.ts`** — `POST /v1/sales/:saleId/returns` with `refundTender: 'store_credit'` reads
+  the return's `customerRef` (required — store credit is money on account; refused `store_credit_needs_a_customer`
+  otherwise), sources the owner cap, calls `issueRefundCredit` (SC-1), and hands the resulting instrument +
+  `refund_to_credit` movement to `recordReturn`. Refused (no money moved) when the cap is unset
+  (`store_credit_unavailable`), over cap (`store_credit_over_cap`), or invalid. The response carries the
+  instrument id + new balance; the audit seal records the instrument id (never a tender instrument, hard rule #3).
+- **`services/api/src/adapters.ts`** — `recordReturn` now appends the `StoredValueIssued` + `StoredValueMovement`
+  events **in the return's own atomic `appendBatch`**, so the return and the credit land together or not at all;
+  each keeps its own idempotency key, so a lane retry issues the credit exactly once. Same event shapes the
+  stored-value adapter writes, so balance projection / household pooling / liability reconciliation read it
+  identically.
+- `tests/integration/store-credit-refund.test.ts` (5, real API + stored-value read): the issued balance equals
+  the refund and is spendable; cap-unset, no-customer, and over-cap refusals move no money; a retry on the same
+  return id does not double the credit.
+
+**Honest rung: M13 stays PARTIALLY_WIRED.** Store credit is now wired + integration-tested on the cloud desk, but
+(a) the offline mirror (§31 — store-credit refunds at the lane within the cap) remains, and (b) **exchanges remain
+owner-deferred to R5 (CH-01)** — a real M13-FR-03 requirement that is scheduled-not-done, which by the deferral's
+own terms keeps M13 PARTIALLY_WIRED. Not inflated.
+
+### Next
+- FR-03 SC-4 (optional): the offline store-credit mirror at the lane (§31), within the cap.
+- The store-credit **cloud** path is complete; the next module/track is the owner's to choose.
+- **Owner input still useful:** the store-credit cap number (`POST /v1/pos/store-credit-cap`).
+- **Retention periods remain the pinned owner-blocked priority** — never invent these.
+
+---
+
 ## M13 returns — the owner-set store-credit issuance cap, FR-03 SC-2 (20 September 2026)
 
 The owner's per-tenant limit on how much store credit a refund may create (M17) — the policy SC-1's engine
