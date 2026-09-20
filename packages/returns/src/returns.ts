@@ -44,6 +44,13 @@ export interface ReturnLineInput {
   /** Quantity already returned against this original line (caller-projected). */
   readonly alreadyReturnedMinor?: number;
   readonly disposition: Disposition;
+  /** The returned item's assessed condition (M13-FR-02) — captured for the return-reason/disposition
+   *  reports. The disposition, not this, decides where the stock goes; this records *why*. */
+  readonly condition?: string;
+  /** The batch/lot the returned unit belongs to (M13-FR-02) — preserved onto the stock movement and
+   *  the ReturnAccepted event so a recall (M10) can follow a returned unit back to its lot. Omit (or
+   *  `null`) when the product carries no batch. */
+  readonly batchId?: string | null;
 }
 
 export interface CommitReturnInput {
@@ -274,6 +281,9 @@ export function commitReturn(
           uom: line.uom,
           state, // availability depends on disposition (M13-FR-02)
           disposition: line.disposition,
+          // Batch/lot preserved onto the stock movement so a recall (M10) can trace the returned unit
+          // back to its lot (M13-FR-02). Only present when the returned line named one.
+          ...(line.batchId === undefined || line.batchId === null ? {} : { batchId: line.batchId }),
         },
       }),
     );
@@ -321,6 +331,10 @@ export function commitReturn(
           uom: line.uom,
           quantityMinor: Math.abs(line.quantityMinor),
           disposition: line.disposition,
+          // Condition (why it came back) and batch/lot (for M10 recall trace) preserved through the
+          // return where the line named them (M13-FR-02). Absent when not captured.
+          ...(line.condition === undefined ? {} : { condition: line.condition }),
+          ...(line.batchId === undefined || line.batchId === null ? {} : { batchId: line.batchId }),
         })),
       },
     }),

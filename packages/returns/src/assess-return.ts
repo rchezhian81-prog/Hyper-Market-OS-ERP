@@ -38,6 +38,12 @@ export interface ReturnRequestLine {
   /** Quantity coming back now, in the UOM's smallest unit. Magnitude, always > 0. */
   readonly quantityMinor: number;
   readonly disposition: Disposition;
+  /** The returned item's assessed condition (M13-FR-02) — captured for the reason/disposition reports.
+   *  The disposition, not this, decides where the stock goes; this records *why*. */
+  readonly condition?: string;
+  /** The batch/lot the returned unit belongs to (M13-FR-02) — preserved on the recorded return so a
+   *  recall (M10) can follow it back to its lot. Omit (or `null`) when the product carries no batch. */
+  readonly batchId?: string | null;
 }
 
 export interface ReturnRequest {
