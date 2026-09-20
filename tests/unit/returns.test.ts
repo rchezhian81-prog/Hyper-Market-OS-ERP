@@ -86,6 +86,37 @@ describe('commitReturn', () => {
     expect(outbox.unsentCount()).toBe(1);
   });
 
+  it('preserves batch/lot and condition through the return — onto the stock movement AND the event (M13-FR-02)', () => {
+    const ledger = new Ledger(new InMemoryLedgerStore());
+    const outbox = new SyncOutbox();
+    commitReturn(baseInput({
+      lines: [{
+        productId: 'p1', uom: 'ea', quantityMinor: 2, originalQtyMinor: 3,
+        disposition: 'resell' as const, condition: 'sealed', batchId: 'LOT-42',
+      }],
+    }), ledger, outbox);
+
+    // The stock movement carries the batch, so a recall (M10) can trace this returned unit to its lot.
+    const move = ledger.entries()[0]?.event.payload as Move & { batchId?: string };
+    expect(move.batchId).toBe('LOT-42');
+    // The ReturnAccepted event carries both batch and condition, line by line.
+    const line = (outbox.pending()[0]?.event.payload as { lines: { batchId?: string; condition?: string }[] }).lines[0];
+    expect(line?.batchId).toBe('LOT-42');
+    expect(line?.condition).toBe('sealed');
+  });
+
+  it('omits batch/condition cleanly when a return line names none (a non-batched product)', () => {
+    const ledger = new Ledger(new InMemoryLedgerStore());
+    const outbox = new SyncOutbox();
+    commitReturn(baseInput(), ledger, outbox); // baseInput has no batchId/condition
+
+    const move = ledger.entries()[0]?.event.payload as Record<string, unknown>;
+    expect('batchId' in move).toBe(false);
+    const line = (outbox.pending()[0]?.event.payload as { lines: Record<string, unknown>[] }).lines[0];
+    expect('batchId' in line!).toBe(false);
+    expect('condition' in line!).toBe(false);
+  });
+
   it('requires a reason code', () => {
     const ledger = new Ledger(new InMemoryLedgerStore());
     const outbox = new SyncOutbox();

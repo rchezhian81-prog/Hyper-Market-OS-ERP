@@ -5,6 +5,33 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M13 returns — condition + serial/batch preserved through the return, FR-02 slice 3 (20 September 2026)
+
+The returned goods now carry their **lot** and **condition** all the way through, so a recall (M10) can trace a
+returned unit back to its batch. Third M13 increment this session.
+
+- **`packages/returns/src/returns.ts`** — a return line gains optional `condition` (why it came back) and
+  `batchId` (the lot). `commitReturn` writes `batchId` onto the inbound `InventoryMoved` **stock movement** AND
+  writes both onto the **`ReturnAccepted`** event, line by line. A non-batched product emits no `batchId` (clean
+  omission, not a null on the wire).
+- **`packages/returns/src/assess-return.ts`** — the cloud `ReturnRequestLine` gains the same optionals, so the
+  desk record carries them when a caller sends them (type consistency with the offline path).
+- The disposition rule (only `resell` re-enters sellable) already keeps a damaged return off the shelf; this slice
+  adds the *traceability* half of FR-02.
+- `tests/unit/returns.test.ts` (+2): batch + condition preserved on the movement and the event; omitted cleanly
+  when a line names none. All optional fields → **zero blast radius** on existing literals/tests.
+
+**Honest rung: M13 stays PARTIALLY_WIRED.** FR-02 now has eligibility (wired), disposition→availability, and
+batch/condition traceability. The **last FR-02 piece is recall-blocked-off-resale (M10)** — a returned unit under
+recall must be forced off sellable stock; that's the next slice. FR-03 exchanges/store-credit still pending.
+
+### Next
+- M13-FR-02 slice 4: a returned item whose batch is under recall (M10) is forced to quarantine, never `resell`.
+- Then FR-03 exchanges/store-credit, toward M13 WIRED.
+- **Retention periods remain the pinned owner-blocked priority** — never invent these.
+
+---
+
 ## M13 returns — return-eligibility WIRED on the desk guard + owner window config, FR-02 slice 2 (20 September 2026)
 
 The window rule from slice 1 is now enforced on the live desk return (PR #463 → this). Two merged PRs so far
