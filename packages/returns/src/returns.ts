@@ -77,6 +77,9 @@ export interface CommitReturnInput {
   readonly noReceiptCapMinor?: number;
   /** An approval decision — required for a material or no-receipt refund. */
   readonly approval?: DecidedRequest;
+  /** The customer a store-credit refund is issued to (M13-FR-03 / §31) — carried on the ReturnAccepted
+   *  event so the cloud issues the credit to them when the offline refund reconciles on sync. */
+  readonly customerRef?: string;
 }
 
 /** A refund to cash/store credit settles offline immediately; a card/UPI refund
@@ -339,6 +342,8 @@ export function commitReturn(
         // engine only checked decidedBy ≠ processedBy; the cloud checks they genuinely hold the authority.
         ...(input.approval?.decidedBy === undefined ? {} : { approvedBy: input.approval.decidedBy }),
         reasonCode: input.reasonCode,
+        // The customer a store-credit refund belongs to, so the cloud issues the credit on sync (§31).
+        ...(input.customerRef === undefined ? {} : { customerRef: input.customerRef }),
         refundMinor: input.refund.minor,
         currency: input.refund.currency,
         refundTender: input.refundTender,

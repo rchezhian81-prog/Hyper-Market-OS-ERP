@@ -117,6 +117,23 @@ describe('commitReturn', () => {
     expect('condition' in line!).toBe(false);
   });
 
+  it('carries customerRef on ReturnAccepted for a store-credit refund, so the cloud issues the credit on sync (M13-FR-03/§31)', () => {
+    const ledger = new Ledger(new InMemoryLedgerStore());
+    const outbox = new SyncOutbox();
+    commitReturn(baseInput({ refundTender: 'store_credit', customerRef: 'c-asha' }), ledger, outbox);
+    const payload = outbox.pending()[0]?.event.payload as { refundTender: string; customerRef?: string };
+    expect(payload.refundTender).toBe('store_credit');
+    expect(payload.customerRef).toBe('c-asha');
+  });
+
+  it('omits customerRef cleanly when a refund names no customer (a plain cash refund)', () => {
+    const ledger = new Ledger(new InMemoryLedgerStore());
+    const outbox = new SyncOutbox();
+    commitReturn(baseInput(), ledger, outbox); // baseInput has no customerRef
+    const payload = outbox.pending()[0]?.event.payload as Record<string, unknown>;
+    expect('customerRef' in payload).toBe(false);
+  });
+
   it('forces a returned recalled batch OFF resale — held in quarantine, never back on the shelf (M13-FR-02 / M10)', () => {
     const ledger = new Ledger(new InMemoryLedgerStore());
     const outbox = new SyncOutbox();

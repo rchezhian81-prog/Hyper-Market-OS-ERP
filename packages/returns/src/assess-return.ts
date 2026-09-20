@@ -113,7 +113,12 @@ export type RefundGovernanceFinding =
   // A synced refund never rejects (the money already left the lane), so these are surfaced as visible
   // exceptions the same way the §28 findings are (record-and-flag, hard rule #10). GAP-REFUND-XLANE-01.
   | 'over_returned_goods'         // cumulative returned of a product now exceeds what the bill sold
-  | 'refund_exceeds_paid';        // cumulative refunded on the bill now exceeds what it was paid
+  | 'refund_exceeds_paid'         // cumulative refunded on the bill now exceeds what it was paid
+  // Store-credit issuance breaches on an offline refund reconciling on sync (M13-FR-03 / M17). The credit
+  // was handed to the customer at the lane, so on sync the cloud ISSUES it (record-and-flag) and surfaces
+  // these as visible exceptions rather than refusing.
+  | 'store_credit_over_cap'       // the credit issued offline exceeded the tenant's issuance cap (or none set)
+  | 'store_credit_no_customer';   // a store-credit refund arrived with no customer to issue the credit to
 
 /**
  * The §28 findings on an already-given (synced) refund, in order of precedence. Pure: the caller supplies

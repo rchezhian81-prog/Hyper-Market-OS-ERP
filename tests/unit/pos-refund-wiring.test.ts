@@ -98,6 +98,20 @@ describe('completing a refund through the surface', () => {
     expect(out.kind).toBe('pending');
   });
 
+  it('carries the customer of a store-credit refund onto the record the edge stores (M13-FR-03/§31)', async () => {
+    let posted: { refundTender?: string; customerRef?: string } | undefined;
+    const durableReturn: DurableWrite = async (_id, record) => { posted = JSON.parse(record); return { committed: true, durable: true, detail: '', laneMessage: 'ok' }; };
+    const found = (await boot({ durableReturn }).lookupRefund('B-1'))!;
+    const out = await found.submit({
+      returnId: 'R-SC', number: 'RET-SC', reasonCode: 'damaged', lines: [line],
+      refundMinor: 5_000, refundTender: 'store_credit', customerRef: 'c-asha',
+    });
+    expect(out.kind).toBe('settled'); // store credit settles offline, like cash
+    // The customer rode to the edge record, so the offline refund can issue the credit on sync.
+    expect(posted?.refundTender).toBe('store_credit');
+    expect(posted?.customerRef).toBe('c-asha');
+  });
+
   it('the surface passes the engine trusted line facts from the looked-up bill', async () => {
     let posted: Partial<CommitReturnInput> & { lines?: { originalQtyMinor?: number }[] } | undefined;
     const durableReturn: DurableWrite = async (_id, record) => { posted = JSON.parse(record); return { committed: true, durable: true, detail: '', laneMessage: 'ok' }; };
