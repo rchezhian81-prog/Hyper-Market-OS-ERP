@@ -2104,13 +2104,17 @@ export function returnsAdapter(input: {
         returnId: r.returnId, originalSaleId: r.originalSaleId, refundMinor: r.refundMinor,
       })),
 
-    recordReturn: async (tenantId, saleId, record) => {
+    recordReturn: async (tenantId, saleId, record, storeCredit) => {
       // The register entry and its reporting projection are ONE atomic batch (audit FND-01). Before,
       // the projection was a second, additive append that a crash could drop — leaving the money and
       // the per-sale register correct but the tenant-wide returns-netting report short one return.
       // Batching them removes that window: both land together or neither does, and each keeps its own
       // idempotency key so a lane retrying an unconfirmed refund still dedups the whole batch (the
       // money leaves once however many times the till re-sends it).
+      // A store-credit refund issues a spendable instrument IN THE SAME BATCH (M13-FR-03) — the return
+      // and the credit land together or not at all, each with its own idempotency key so a lane retry
+      // issues the credit once. Same event shapes the stored-value adapter writes, so the balance
+      // projection, household pooling and liability reconciliation read it identically.
       await input.store.appendBatch(tenantId, [
         {
           stream: forSaleReturns(saleId),
@@ -2136,6 +2140,31 @@ export function returnsAdapter(input: {
             payload: record,
           }),
         },
+        // A fresh store-credit instrument (when one was opened) on the shared index, so it can be found
+        // and pooled by owner.
+        ...(storeCredit?.instrument === undefined ? [] : [{
+          stream: STORED_VALUE_INDEX,
+          event: makeEvent({
+            id: `sv-issue-${storeCredit.instrument.instrumentId}`,
+            type: 'StoredValueIssued',
+            occurredAt: storeCredit.instrument.issuedAt,
+            idempotencyKey: `sv-issue-${tenantId}-${storeCredit.instrument.instrumentId}`,
+            source: 'api/pos',
+            payload: storeCredit.instrument,
+          }),
+        }]),
+        // The refund_to_credit movement on the instrument's own stream, where the balance folds.
+        ...(storeCredit === undefined ? [] : [{
+          stream: forInstrument(storeCredit.movement.instrumentId),
+          event: makeEvent({
+            id: `sv-mv-${storeCredit.movement.movementId}`,
+            type: 'StoredValueMovement',
+            occurredAt: storeCredit.movement.at,
+            idempotencyKey: `sv-mv-${tenantId}-${storeCredit.movement.movementId}`,
+            source: 'api/pos',
+            payload: storeCredit.movement,
+          }),
+        }]),
       ]);
     },
 

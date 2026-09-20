@@ -23,7 +23,18 @@ import {
   assessReturnEligibility, isDataFault, readReturnWindowDays,
 } from '../../../packages/returns/src/return-eligibility';
 import type { RefundStatus } from '../../../packages/returns/src/returns';
+import {
+  issueRefundCredit, type Instrument, type ValueMovement,
+} from '../../../packages/loyalty/src/stored-value';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+
+/** A store-credit issuance to persist ATOMICALLY with a return (M13-FR-03) — the fresh instrument (when
+ *  one was opened) and the `refund_to_credit` movement, both landing in the return's own append batch so
+ *  the return and the spendable credit are recorded together or not at all. */
+export interface StoreCreditIssue {
+  readonly instrument?: Instrument;
+  readonly movement: ValueMovement;
+}
 
 export type { OriginalSale, RecordedReturn } from '../../../packages/returns/src/return-register';
 
@@ -52,6 +63,9 @@ export interface ReturnRecord {
   readonly governanceFlags?: readonly RefundGovernanceFinding[];
   /** Who approved it at the lane, carried on a synced refund so the exception names the claimed approver. */
   readonly approvedBy?: string;
+  /** The customer the refund belongs to — required for a store-credit refund (the credit is issued to
+   *  them), carried on the record for reporting. Absent for cash/card refunds. */
+  readonly customerRef?: string;
 }
 
 export interface ReturnsDeps {
@@ -61,8 +75,10 @@ export interface ReturnsDeps {
   readonly priorReturns: (tenantId: string, saleId: string) => Promise<readonly RecordedReturn[]> | readonly RecordedReturn[];
   /** Every refund already given against this bill (for the money cap). */
   readonly priorRefunds: (tenantId: string, saleId: string) => Promise<readonly RecordedRefund[]> | readonly RecordedRefund[];
-  /** Append the accepted return. Idempotent on the return id. */
-  readonly recordReturn: (tenantId: string, saleId: string, record: ReturnRecord) => Promise<void> | void;
+  /** Append the accepted return. Idempotent on the return id. When `storeCredit` is present (a
+   *  store-credit refund), its instrument + `refund_to_credit` movement are appended in the SAME atomic
+   *  batch, so the return and the spendable credit land together or not at all (M13-FR-03). */
+  readonly recordReturn: (tenantId: string, saleId: string, record: ReturnRecord, storeCredit?: StoreCreditIssue) => Promise<void> | void;
   /** The tenant's refund approval threshold (M13-FR-03) — `undefined` means none set, so the default
    *  (0 — every refund needs a §28 approver) applies. Sourced SERVER-SIDE: the caller cannot declare
    *  their own threshold in the body and call a refund "immaterial". */
@@ -130,6 +146,14 @@ function readReturn(body: unknown, saleId: string): ReturnRequest | undefined {
 function readOverrideApprover(body: unknown): string | undefined {
   if (body === null || typeof body !== 'object') return undefined;
   const v = (body as Record<string, unknown>)['outOfWindowApprovedBy'];
+  return typeof v === 'string' && v.trim() !== '' ? v : undefined;
+}
+
+/** The customer a store-credit refund belongs to (M13-FR-03) — read from the body; store credit is
+ *  money on account and must be issued to someone, so a store-credit refund without it is refused. */
+function readCustomerRef(body: unknown): string | undefined {
+  if (body === null || typeof body !== 'object') return undefined;
+  const v = (body as Record<string, unknown>)['customerRef'];
   return typeof v === 'string' && v.trim() !== '' ? v : undefined;
 }
 
@@ -295,12 +319,52 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
           });
         }
 
+        // Store credit as a refund method (M13-FR-03 / M17): a `store_credit` refund ISSUES a real,
+        // spendable balance — the shop taking on a liability, so it is capped and issued to a named
+        // customer. Computed here, after every refusal check has passed, and appended atomically WITH
+        // the return below (the credit and the return land together or not at all). No money has moved,
+        // so an over-cap / uncapped / customerless store-credit refund is refused here, never recorded.
+        let storeCredit: StoreCreditIssue | undefined;
+        let creditBalanceMinor: number | undefined;
+        if (request.refundTender === 'store_credit' && request.refundMinor > 0) {
+          const customerRef = readCustomerRef(ctx.body);
+          if (customerRef === undefined) {
+            throw apiError(422, {
+              code: 'store_credit_needs_a_customer',
+              whatHappened: 'A store-credit refund must name the customer it is issued to (customerRef) — store credit is money held on account and cannot belong to nobody.',
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Identify the customer and send the refund again, or refund by another method. No money has moved.',
+            });
+          }
+          const capMinor = await deps.storeCreditCap(ctx.tenantId);
+          const issue = issueRefundCredit({
+            ownerRef: customerRef, amountMinor: request.refundMinor, returnId: request.returnId,
+            at: processedAt, ...(capMinor === undefined ? {} : { capMinor }),
+          });
+          if (!issue.ok) {
+            const code = issue.outcome === 'cap_not_configured' ? 'store_credit_unavailable'
+              : issue.outcome === 'cap_exceeded' ? 'store_credit_over_cap'
+                : 'store_credit_amount_invalid';
+            throw apiError(422, {
+              code,
+              whatHappened: issue.detail,
+              wasItSaved: 'not_saved',
+              nextSafeAction: issue.outcome === 'cap_not_configured'
+                ? 'Set a store-credit cap (owner) before issuing store credit, or refund by another method. No money has moved.'
+                : 'Lower the store-credit amount or refund by another method. No money has moved.',
+            });
+          }
+          storeCredit = { movement: issue.movement!, ...(issue.instrument === undefined ? {} : { instrument: issue.instrument }) };
+          creditBalanceMinor = issue.balanceAfterMinor;
+        }
+
         await deps.recordReturn(ctx.tenantId, saleId, {
           returnId: request.returnId, number: request.number, originalSaleId: saleId,
           processedBy: request.processedBy, processedAt, reasonCode: request.reasonCode,
           refundMinor: request.refundMinor, refundTender: request.refundTender,
           refundStatus: assessment.refundStatus, lines: request.lines,
-        });
+          ...(storeCredit === undefined ? {} : { customerRef: readCustomerRef(ctx.body) }),
+        }, storeCredit);
         // Seal the refund fact — how much, why, its status and the §28 approver — attributed to the
         // authenticated processor. NO tender instrument is recorded (hard rule #3): refundTender is omitted.
         await deps.recordAudit?.(ctx.tenantId, {
@@ -313,6 +377,8 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
             approvedBy: request.approvedBy ?? '',
             // An out-of-window return let through by a supervisor is visible on the trail (§28, P-08).
             ...(outOfWindowApprovedBy === undefined ? {} : { outOfWindowApprovedBy }),
+            // The store-credit instrument issued by this refund (no tender instrument — hard rule #3).
+            ...(storeCredit === undefined ? {} : { storeCreditInstrumentId: storeCredit.movement.instrumentId }),
           },
           correlationId: request.returnId,
         });
@@ -324,6 +390,11 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
             refundStatus: assessment.refundStatus,
             restockedLines: assessment.restockedLines,
             remaining: assessment.remaining,
+            // When the refund was issued as store credit, the desk gets the instrument + its balance so
+            // it can tell the customer their new store-credit balance (M13-FR-03).
+            ...(storeCredit === undefined ? {} : {
+              storeCredit: { instrumentId: storeCredit.movement.instrumentId, balanceMinor: creditBalanceMinor },
+            }),
           },
         };
       },
