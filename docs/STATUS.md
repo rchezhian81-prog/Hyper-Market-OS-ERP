@@ -5,6 +5,45 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M07 goods receipt — a read-only review screen; M07 re-rated PARTIALLY_WIRED→INTEGRATION_TESTED (headline 52.3→52.6%) (20 September 2026)
+
+The back door of the shop, where most stock is lost, now has a manager's review screen. Receiving itself is
+captured on the handheld, offline (§31, per roadmap) — this is the desk view of what came in and what didn't
+arrive as ordered. Three slices, three merged PRs (#459, #460, #461).
+
+- **Slice 1 (PR #459) — the session model.** `apps/web-erp/src/goods-receipt-session.ts`: deliveries needing a
+  second person (§28) first, then the ones with a valued difference from the order (worst money first), then the
+  clean ones; every row tone+icon+word, every difference valued and named, bilingual, two empty states told
+  apart, permission-gated. 13 unit tests.
+- **Slice 2 (PR #460) — the served screen + edge wiring.** `goods-receipt.{html,js}` (offline-capable, Refresh
+  re-reads a GET, no write verb); `PackGoodsReceiptPolicy` → `goodsReceiptPayload`; `screen-server`
+  `/goods-receipt`; navigation in Purchasing gated `inventory.availability.read`; sw v25→v26. Usability guardrail
+  (9). No new role — owner + store manager already hold the read permission.
+- **Slice 3 (PR #461) — browser e2e + re-rate.** `tests/e2e/goods-receipt-delivery.e2e.ts` (3, headless
+  Chromium): an authorised manager sees deliveries exceptions-first with the differences priced + an as-of;
+  Refresh re-reads; a reader without the permission sees a plain not-permitted state and no rows. Plus offline-open.
+
+**Re-rate — honest, and the judgment stated plainly.** The goods-receipt **routes** are integration-tested
+(`tests/integration/goods-receipt.test.ts`, 7 cases), and the new **review screen** is browser-verified. But the
+module's **defining action — receiving / GRN capture — is captured on the offline handheld (§31)** and is
+integration-tested, **not** browser-e2e'd; what I browser-verified is the read-only review of the checked
+outcomes. So **M07 PARTIALLY_WIRED → INTEGRATION_TESTED, headline 52.3 → 52.6% (5470/10400)** — deliberately
+**not** E2E_VERIFIED, which would need the capture write-path itself proven in a browser (a future handheld e2e).
+Module ladder: **9 E2E VERIFIED · 1 INTEGRATION TESTED · 11 WIRED**.
+
+**What the owner should check (in the store):** on a store computer, open the ERP → **Purchasing → Goods receipt
+review**. You should see recent deliveries with the problem ones first — the ones needing a second person to
+accept, and the ones where what arrived differed from the order (short, excess, damaged, expired), each priced.
+It changes nothing and cannot receive stock (that stays on the handheld). If a staff member without stock-view
+permission opens it, it says they do not have permission rather than showing figures.
+
+### Next
+- M07's review screen is done. The next module/screen is the owner's to choose.
+- **Retention periods remain the pinned owner-blocked priority** (unchanged): the archival/disposal execution
+  workflow needs the owner's per-data-class "keep for N years" numbers. Never invent these.
+
+---
+
 ## M10 expiry & recall — the recall write-path wired to head office; M10 re-rated WIRED→E2E_VERIFIED (headline 52.0→52.3%) (19 September 2026)
 
 The recall screen started and closed **product recalls** on a local, in-memory ledger and **posted nowhere** — a
