@@ -158,6 +158,103 @@ export function redeemValue(input: {
   };
 }
 
+export type RefundCreditRefusal =
+  | 'cap_not_configured' // the owner has not set an issuance cap — fail safe, issue nothing (M17)
+  | 'cap_exceeded' //       this credit would take issuance past the owner's cap
+  | 'invalid_amount' //     store credit must be a positive whole amount
+  | 'duplicate_movement'; // this refund's credit has already been issued (idempotent no-op)
+
+export interface RefundCreditResult {
+  readonly ok: boolean;
+  readonly outcome: 'issued' | RefundCreditRefusal;
+  readonly instrumentId: string;
+  readonly amountMinor: number;
+  readonly balanceAfterMinor: number;
+  readonly detail: string;
+  /** Set ONLY when a fresh store-credit instrument was created (load onto an existing one omits it). */
+  readonly instrument?: Instrument;
+  /** The `refund_to_credit` movement to persist. Absent on a refusal or a duplicate. */
+  readonly movement?: ValueMovement;
+}
+
+/**
+ * Issue store credit as a refund (M13-FR-03 / M17-FR-03) — the write side of `refund_to_credit`, which
+ * the balance projection and liability reconciliation already anticipate but nothing has ever created.
+ * A refund handed back as store credit is **the shop taking on a liability**, so it is capped, honest
+ * and idempotent:
+ *
+ *   • **Capped by the OWNER's number, fail-safe when unset.** `capMinor` is the owner's per-tenant
+ *     issuance limit (never invented here — the route sources it, like the refund threshold). When it
+ *     is not configured, no credit is issued (`cap_not_configured`) rather than a guessed default — the
+ *     same discipline the refund screen uses for the no-receipt cap. `alreadyIssuedMinor` lets the
+ *     caller enforce the cap over a window (per customer per day, say) rather than only per refund.
+ *   • **Idempotent on the return id.** The movement id is derived from `returnId`, so a retry that has
+ *     already been recorded is a no-op (`duplicate_movement`), never a second credit.
+ *   • **Creates a fresh store-credit instrument, or loads onto an existing one.** Pass `existing` (+ its
+ *     `existingMovements`) to top up the customer's store-credit account; omit it to open a new one
+ *     funded by this refund. The balance is always PROJECTED, never stored (hard rule #2).
+ *
+ * Pure and deterministic: the caller supplies the clock, the cap and any prior-issuance figure.
+ */
+export function issueRefundCredit(input: {
+  readonly ownerRef: string;
+  readonly amountMinor: number;
+  readonly returnId: string;
+  readonly at: string;
+  readonly channel?: 'store' | 'app' | 'web' | 'phone';
+  readonly capMinor?: number;
+  readonly alreadyIssuedMinor?: number;
+  readonly existing?: Instrument;
+  readonly existingMovements?: readonly ValueMovement[];
+}): RefundCreditResult {
+  const channel = input.channel ?? 'store';
+  const instrumentId = input.existing?.instrumentId ?? `store-credit:${input.returnId}`;
+  const movementId = `refund-credit:${input.returnId}`;
+  const priorMovements = input.existingMovements ?? [];
+  const balance = balanceOf(priorMovements, instrumentId);
+  const base = { instrumentId, amountMinor: Math.max(0, input.amountMinor), balanceAfterMinor: balance };
+
+  // Already recorded (a retry) — one credit, never two (idempotent on the return id).
+  if (priorMovements.some((m) => m.movementId === movementId)) {
+    return { ...base, ok: false, outcome: 'duplicate_movement', detail: 'the store credit for this refund has already been issued' };
+  }
+  if (!Number.isSafeInteger(input.amountMinor) || input.amountMinor <= 0) {
+    return { ...base, ok: false, outcome: 'invalid_amount', detail: 'store credit must be a positive whole amount in paise' };
+  }
+  // The owner's cap decides. Unset → issue nothing (fail safe), never a guessed default (M17).
+  if (input.capMinor === undefined) {
+    return { ...base, ok: false, outcome: 'cap_not_configured', detail: 'no store-credit issuance cap is set, so store credit cannot be issued until the owner sets one' };
+  }
+  const alreadyIssued = input.alreadyIssuedMinor ?? 0;
+  if (alreadyIssued + input.amountMinor > input.capMinor) {
+    return { ...base, ok: false, outcome: 'cap_exceeded', detail: `issuing ${input.amountMinor} would take store credit to ${alreadyIssued + input.amountMinor}, above the ${input.capMinor} cap` };
+  }
+
+  const movement: ValueMovement = {
+    movementId,
+    instrumentId,
+    kind: 'refund_to_credit',
+    deltaMinor: input.amountMinor, // positive: value added to the customer's account
+    at: input.at,
+    channel,
+    customerRef: input.ownerRef,
+    reason: `refund to store credit on return ${input.returnId}`,
+  };
+  const result: RefundCreditResult = {
+    ok: true,
+    outcome: 'issued',
+    instrumentId,
+    amountMinor: input.amountMinor,
+    balanceAfterMinor: balance + input.amountMinor,
+    detail: `${input.amountMinor} issued as store credit; balance ${balance + input.amountMinor}`,
+    movement,
+    ...(input.existing === undefined
+      ? { instrument: { instrumentId, kind: 'store_credit', ownerRef: input.ownerRef, issuedAt: input.at } as Instrument }
+      : {}),
+  };
+  return result;
+}
+
 export interface DoubleSpend {
   readonly instrumentId: string;
   readonly ownerRef: string;
