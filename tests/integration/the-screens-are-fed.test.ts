@@ -238,6 +238,8 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
     { id: 'wo-2', productId: 'MILK-1', lossType: 'expiry', qtyRemoved: 6, uom: 'ea', valueMinor: 30_000, currency: 'INR', requiredApproval: false },
   ]),
   wastePolicy: known({ userId: 'u-mgr', permissions: ['waste.view'] }),
+  // Shop-floor write-off capture (M28-FR-01 · §28). Who may record a loss + the tenant's material-loss threshold.
+  writeOffCapturePolicy: known({ userId: 'u-floor', permissions: ['inventory.movement.append'], materialThresholdMinor: 50_000 }),
   // Stock counts (M09-FR-04). The reconciled blind counts folded to review rows, and who may review them.
   countsQueue: known([
     { id: 'c-1', productId: 'RICE-5', expectedMinor: 20, countedMinor: 16, varianceMinor: -4, valueMinor: 240_000, currency: 'INR', uom: 'ea', requiredApproval: true, adjusted: true, counterId: 'u-floor', approvedBy: 'u-mgr' },
@@ -753,7 +755,7 @@ describe('a box that has been told nothing tells every screen so', () => {
       gstReconciliationQueue: notKnown('never'), gstReconciliationPolicy: notKnown('never'),
       categoryPolicyCategories: notKnown('never'), categoryPolicyPolicy: notKnown('never'),
       gstReturnsQueue: notKnown('never'), gstReturnsPolicy: notKnown('never'),
-      wasteWriteOffs: notKnown('never'), wastePolicy: notKnown('never'),
+      wasteWriteOffs: notKnown('never'), wastePolicy: notKnown('never'), writeOffCapturePolicy: notKnown('never'),
       countsQueue: notKnown('never'), countsPolicy: notKnown('never'), fleetPolicy: notKnown('never'),
       productPublishReviewPolicy: notKnown('never'),
       dataQualityPolicy: notKnown('never'), operationsInboxPolicy: notKnown('never'), lossPreventionPolicy: notKnown('never'), cashOfficePolicy: notKnown('never'), riskAcceptancePolicy: notKnown('never'), dayReopenPolicy: notKnown('never'), stockHealthPolicy: notKnown('never'), goodsReceiptPolicy: notKnown('never'), dataIoPolicy: notKnown('never'), workforceInboxPolicy: notKnown('never'), essPolicy: notKnown('never'),

@@ -49,13 +49,14 @@ import {
   basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
-import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackGoodsReceiptPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy } from './store-pack';
+import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackGoodsReceiptPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy } from './store-pack';
+import { DEFAULT_WRITE_OFF_THRESHOLD_MINOR } from '../../../packages/waste/src/waste';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'goods-receipt', 'data-io', 'workforce', 'ess', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
+  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'write-off-capture', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'goods-receipt', 'data-io', 'workforce', 'ess', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1270,6 +1271,29 @@ export function wastePayload(input: ScreenInput): Record<string, unknown> | null
 }
 
 /**
+ * The shop-floor write-off CAPTURE payload (M28-FR-01 · API-04 · §28).
+ *
+ * `null` when the box has not been told who is on the screen — a screen that invented its own permissions would
+ * decide, on its own authority, who may record the shop's losses. **The material-loss threshold is sourced from
+ * the pack**, and where the shop has set none the engine default (`DEFAULT_WRITE_OFF_THRESHOLD_MINOR`) is used —
+ * the SAME line the server enforces, never a fabricated number presented as the shop's. The blocked cases
+ * (evidence, a separate §28 approver, the raiser=caller rule) are all re-checked by the governed route; this
+ * only shapes the operator's choices into the request.
+ */
+export function writeOffCapturePayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.writeOffCapturePolicy.known) return null;
+  const policy: PackWriteOffCapturePolicy = input.pack.writeOffCapturePolicy.value;
+
+  const payload: Record<string, unknown> = {
+    permissions: policy.permissions,
+    materialThresholdMinor: policy.materialThresholdMinor ?? DEFAULT_WRITE_OFF_THRESHOLD_MINOR,
+  };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+
+  return payload;
+}
+
+/**
  * The stock-count review payload (M09-FR-04).
  *
  * `null` when the box has not been told who is on the screen — a screen inventing its own permissions would
@@ -1670,6 +1694,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   'category-policy': 'categoryPolicyData',
   'gst-returns': 'gstReturnsData',
   waste: 'wasteData',
+  'write-off-capture': 'writeOffCaptureData',
   counts: 'countsData',
   fleet: 'fleetData',
   'product-publish-review': 'productPublishReviewData',
@@ -1709,6 +1734,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   'category-policy': categoryPolicyPayload,
   'gst-returns': gstReturnsPayload,
   waste: wastePayload,
+  'write-off-capture': writeOffCapturePayload,
   counts: countsPayload,
   fleet: fleetPayload,
   'product-publish-review': productPublishReviewPayload,

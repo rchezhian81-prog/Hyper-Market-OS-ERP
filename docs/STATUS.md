@@ -5,6 +5,43 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M28 write-off capture screen — slice 2: the SERVED, offline-capable screen + edge wiring (no rung change) (20 September 2026)
+
+Slice 2 of the shop-floor **capture** screen: the tested slice-1 session model is now driven by a real served
+screen, mirroring the risk-acceptance write-screen pattern end to end. Nothing in slice 1 was rewritten.
+
+- **`apps/web-erp/web/write-off-capture.html` + `write-off-capture.js`** — the served shell. It collects the
+  item, location, quantity, value (₹), a **chosen** loss-type chip (never free text), evidence, and a separate
+  approver for a big loss, reads `window.writeOffCaptureSession` (a clearly-marked sample stand-in when the box
+  has not spoken, so the shell always opens), and records **only on an explicit click**. It holds no money/stock
+  rule; the "big loss" hint is computed from the injected threshold via the bundled session. English + Tamil; a
+  language toggle; the stale/sample strips; service-worker registration. No prompt/confirm/alert, and **no
+  fetch/XHR in the view** — the audited POST lives in the injected port.
+- **`apps/web-erp/src/browser-entry.ts`** — wires `window.writeOffCaptureSession = createWriteOffCaptureSession(...)`
+  from `window.writeOffCaptureData` and exposes `window.writeOffCapture.capturePort()`, which POSTs to
+  `POST /v1/inventory/write-off/:id` under the operator's own session (`credentials: 'same-origin'`, the
+  writeOffId as the idempotency key) and maps 201/409/422(codes)/400/network to the capture result. No AI path.
+- **Edge**: `edge/store-edge/src/screen-data.ts` (new `writeOffCapturePayload` + screen registration),
+  `store-pack.ts` (new `writeOffCapturePolicy` carrying who + `inventory.movement.append` + the material
+  threshold; honest absence → engine default `DEFAULT_WRITE_OFF_THRESHOLD_MINOR`, never a fabricated number),
+  `screen-server.ts` (the `/write-off-capture` route). Nav item added (Inventory group, gated
+  `inventory.movement.append`). Service worker precaches the shell (CACHE **v26 → v27**).
+- `tests/guardrails/the-write-off-capture-screen-is-usable.test.ts` (16) binds the bilingual copy and pins the
+  usability guarantees (no dialogs, no view-side socket, chosen-not-typed loss type, material loss reads as
+  attention, write only on click). The offline-shells guardrail now covers the new screen too, and the two
+  screen-enumerating suites gained its pack policy. ERP bundle rebuilt. **Full gate green: GATE_EXIT=0, 7100
+  passed / 262 skipped.**
+
+**Honest rung: M28 stays PARTIALLY_WIRED (no rung change, no headline change).** Slice 2 of 3 — the browser
+e2e (slice 3) follows; only then is the capture path browser-verified.
+
+### Next
+- M28 capture screen slice 3 (browser offline + a11y e2e).
+- **Owner input still useful:** the store-credit cap number (`POST /v1/pos/store-credit-cap`).
+- **Retention periods remain the pinned owner-blocked priority** — never invent these.
+
+---
+
 ## M28 write-off capture screen — slice 1: the DOM-free session model (no rung change) (20 September 2026)
 
 The write-off WRITE path (`POST /v1/inventory/write-off/:id`) has been WIRED + §28-guarded server-side for a
