@@ -5,6 +5,38 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M17 Loyalty — money-path durability restart-rebuild test → M17 re-rated INTEGRATION TESTED (20 September 2026)
+
+The honest catch-up pattern applied to a **money-adjacent** module: **M17 (Loyalty / stored-value)**.
+
+- **The finding.** M17 sat at WIRED though its own note read *"all four FRs integration-tested"* — held there
+  only because coupons (FR-02) was the most recently wired leg. Verified: FR-01 points (`loyalty-points.test.ts`),
+  FR-02 coupons/referrals (`coupons.test.ts`), FR-03 gift cards/store credit (`stored-value.test.ts` +
+  `stored-value-liability.test.ts`, incl. a real-PostgreSQL e2e), FR-04 household pooling
+  (`household-pooling.test.ts`) — all through the real API with per-tenant RBAC.
+- **The increment (real new money-path test).** Points and gift-card/store-credit balances are money-like —
+  each projected from append-only movements, never a stored figure. FR-02 and FR-04 already had restart proofs;
+  FR-01 and FR-03 did not. Added `tests/integration/loyalty-durability.test.ts` (1): earns/burns points and
+  issues + redeems a gift card, then builds a NEW surface over the SAME event store and proves both balances
+  rebuild from the log, and that further movements still apply (the never-negative guards still holding against
+  the rebuilt state). **A balance that silently reset to zero or "unknown" on a restart is money lost or
+  created** — P-04 tested recovery, P-08, FND-01, hard rule #2.
+
+**Honest rung: M17 WIRED → INTEGRATION TESTED** (module ladder now 10 E2E VERIFIED · 5 INTEGRATION TESTED ·
+8 WIRED · 13 PARTIALLY WIRED). Headline **53.7% → 53.8%** (5595/10400, +15 weighted pts). Held below
+E2E VERIFIED: no browser-e2e'd loyalty operator surface. Ledger, module ladder + summary counts, the
+M17-FR-01 evidence, and STATUS all updated; the guardrail evidence registry already pointed at
+`tests/integration/coupons.test.ts`. Full gate green.
+
+### Next
+- **Owner input still useful:** the store-credit cap number (`POST /v1/pos/store-credit-cap`).
+- **Retention periods remain the pinned owner-blocked priority** — never invent these.
+- Remaining WIRED modules (M03, M06, M16, M24, M25, M29, M32) need individual vetting before any re-rate —
+  some have genuine gaps (e.g. M02 identity/MFA is deliberately incomplete and must stay lower). Continue one
+  honest, verified increment at a time.
+
+---
+
 ## M09 Warehouse — durability restart-rebuild test → M09 re-rated INTEGRATION TESTED (20 September 2026)
 
 The same honest catch-up pattern, applied to **M09 (Warehouse / stock operations)** — the third domain module
