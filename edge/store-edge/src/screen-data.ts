@@ -49,13 +49,13 @@ import {
   basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
-import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy } from './store-pack';
+import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackGoodsReceiptPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy } from './store-pack';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'data-io', 'workforce', 'ess', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
+  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'goods-receipt', 'data-io', 'workforce', 'ess', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1462,6 +1462,21 @@ export function stockHealthPayload(input: ScreenInput): Record<string, unknown> 
 }
 
 /**
+ * The goods-receipt review payload (M07-FR-02/03 · P-03). Who is looking and what they hold, so the shell can
+ * gate on `inventory.availability.read` before the live read; the GRN list itself is read live from the cloud,
+ * never shipped in the pack.
+ */
+export function goodsReceiptPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.goodsReceiptPolicy.known) return null;
+  const policy: PackGoodsReceiptPolicy = input.pack.goodsReceiptPolicy.value;
+
+  const payload: Record<string, unknown> = { permissions: policy.permissions };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+
+  return payload;
+}
+
+/**
  * The data import/export console payload (M30-FR-01/02/03 · P-06).
  *
  * `null` when the box has not been told who is on the screen. The exportable domains and the export log are read
@@ -1665,6 +1680,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   'risk-acceptance': 'riskAcceptanceData',
   'day-reopen': 'dayReopenData',
   'stock-health': 'stockHealthData',
+  'goods-receipt': 'goodsReceiptData',
   'data-io': 'dataIoData',
   workforce: 'workforceInboxData',
   ess: 'essData',
@@ -1703,6 +1719,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   'risk-acceptance': riskAcceptancePayload,
   'day-reopen': dayReopenPayload,
   'stock-health': stockHealthPayload,
+  'goods-receipt': goodsReceiptPayload,
   'data-io': dataIoPayload,
   workforce: workforcePayload,
   ess: essPayload,

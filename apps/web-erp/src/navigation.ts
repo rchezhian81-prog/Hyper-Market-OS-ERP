@@ -53,6 +53,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'suppliers', label: 'Suppliers', path: '/suppliers', requires: 'supplier.view', group: 'Purchasing' },
   { id: 'purchase-orders', label: 'Purchase orders', path: '/purchase-orders', requires: 'po.view', group: 'Purchasing' },
   { id: 'receiving', label: 'Receiving', path: '/receiving', requires: 'grn.view', group: 'Purchasing' },
+  { id: 'goods-receipt', label: 'Goods receipt review', path: '/goods-receipt', requires: 'inventory.availability.read', group: 'Purchasing' },
 
   { id: 'stock', label: 'Stock', path: '/stock', requires: 'stock.view', group: 'Inventory' },
   { id: 'counts', label: 'Stock counts', path: '/counts', requires: 'count.view', group: 'Inventory' },
