@@ -76,6 +76,13 @@ export interface ReturnsDeps {
   readonly returnWindow: (tenantId: string) => Promise<number | undefined> | number | undefined;
   /** Set the tenant's return window — append-only config (latest wins), owner-only. */
   readonly recordReturnWindow: (tenantId: string, returnWindowDays: number, key: string) => Promise<void> | void;
+  /** The tenant's store-credit ISSUANCE cap in minor units (M13-FR-03 / M17) — the most store credit a
+   *  refund may create. `undefined` means the owner has not set one, so store-credit refunds are
+   *  UNAVAILABLE (fail-safe: no credit is issued until a cap exists — never a guessed default). Sourced
+   *  SERVER-SIDE: the caller cannot declare their own cap in the body. */
+  readonly storeCreditCap: (tenantId: string) => Promise<number | undefined> | number | undefined;
+  /** Set the tenant's store-credit issuance cap — append-only config (latest wins), owner-only. */
+  readonly recordStoreCreditCap: (tenantId: string, capMinor: number, key: string) => Promise<void> | void;
   /** Whether a user holds `pos.return.approve` — the §28 authority to approve a refund (a supervisor/
    *  manager above the cashier). A named approver who does not hold it does not count. */
   readonly canApproveRefund: (tenantId: string, userId: string) => Promise<boolean> | boolean;
@@ -124,6 +131,15 @@ function readOverrideApprover(body: unknown): string | undefined {
   if (body === null || typeof body !== 'object') return undefined;
   const v = (body as Record<string, unknown>)['outOfWindowApprovedBy'];
   return typeof v === 'string' && v.trim() !== '' ? v : undefined;
+}
+
+/** Validate a store-credit issuance cap from an untrusted body — a whole number of paise ≥ 0 (M13-FR-03
+ *  / M17). Config, not a per-refund input: a caller cannot declare their own cap to issue more credit. */
+function readStoreCreditCap(v: unknown): number | 'invalid' {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return 'invalid';
+  const c = (v as Record<string, unknown>)['capMinor'];
+  if (typeof c !== 'number' || !Number.isInteger(c) || c < 0) return 'invalid';
+  return c;
 }
 
 /** A refund that ALREADY HAPPENED at the lane, relayed by the sync agent. Unlike the desk return, the
@@ -433,6 +449,38 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
         const now = deps.now();
         await deps.recordReturnWindow(ctx.tenantId, returnWindowDays, `${returnWindowDays}-${now}`);
         return { status: 200, body: { returnWindowDays, setAt: now } };
+      },
+    },
+    {
+      // The store-credit ISSUANCE cap (M13-FR-03 / M17) — the most store credit a refund may create.
+      // READ so the desk can see the policy (a cashier reads it). `null` + isSet:false means the owner
+      // has not set one, so store-credit refunds are UNAVAILABLE until they do (fail-safe, P-08).
+      api: 'API-05', method: 'GET', path: '/v1/pos/store-credit-cap',
+      permission: 'pos.return.record',
+      handler: async (ctx) => {
+        const stored = await deps.storeCreditCap(ctx.tenantId);
+        return { status: 200, body: { capMinor: stored ?? null, isSet: stored !== undefined } };
+      },
+    },
+    {
+      // Set the store-credit issuance cap (M13-FR-03 / M17) — an owner decision. Recorded append-only
+      // (latest wins). Body: { capMinor } — a whole amount in paise ≥ 0 (0 = store credit is switched off).
+      // Not a per-refund input; a caller cannot declare their own cap to hand out more credit.
+      api: 'API-05', method: 'POST', path: '/v1/pos/store-credit-cap',
+      permission: 'pos.storecredit.cap.set', idempotent: true,
+      handler: async (ctx) => {
+        const capMinor = readStoreCreditCap(ctx.body);
+        if (capMinor === 'invalid') {
+          throw apiError(400, {
+            code: 'not_readable_as_a_store_credit_cap',
+            whatHappened: 'A store-credit cap needs { capMinor } — a whole amount in paise ≥ 0 (0 switches store-credit refunds off).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the most store credit a single refund may create.',
+          });
+        }
+        const now = deps.now();
+        await deps.recordStoreCreditCap(ctx.tenantId, capMinor, `${capMinor}-${now}`);
+        return { status: 200, body: { capMinor, setAt: now } };
       },
     },
     {

@@ -5,6 +5,33 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M13 returns — the owner-set store-credit issuance cap, FR-03 SC-2 (20 September 2026)
+
+The owner's per-tenant limit on how much store credit a refund may create (M17) — the policy SC-1's engine
+consumes. Mirrors the refund-threshold / return-window config pattern exactly.
+
+- **`services/pos/src/returns.ts`** — `GET`/`POST /v1/pos/store-credit-cap` read/set the cap; the desk reads it
+  (`pos.return.record`), only the **owner** sets it (new permission `pos.storecredit.cap.set`). `readStoreCreditCap`
+  validates `{ capMinor }` as a whole amount ≥ 0 (0 = store credit switched off). **Unset ⇒ store-credit refunds
+  stay unavailable** (fail-safe; the GET shows `isSet:false`) — never a guessed default.
+- **`services/api/src/adapters.ts`** — `storeCreditCap`/`recordStoreCreditCap` over an append-only
+  `StoreCreditCapSet` stream (latest-wins). `services/api/src/roles.ts` grants the owner the new permission;
+  `services/api/src/main.ts` bare stub updated.
+- `tests/integration/store-credit-cap.test.ts` (4, real API + RBAC): unset reads fail-safe; owner-only setter
+  (cashier/manager 403); latest-wins and 0 accepted; malformed 400 saves nothing.
+
+**Honest rung: M13 stays PARTIALLY_WIRED.** The cap is now settable and read server-side; the remaining SC slice
+is wiring `issueRefundCredit` (SC-1) into the cloud return route so a `store_credit` refund actually issues the
+instrument under this cap (needs a customer ref on the return), then the offline mirror (§31). Exchanges stay
+deferred (CH-01).
+
+### Next
+- FR-03 SC-3: wire `issueRefundCredit` into `POST /v1/sales/:saleId/returns` — a `store_credit` refund issues the
+  spendable instrument under the SC-2 cap, atomically with the return; customer ref required for store-credit.
+- **Retention periods remain the pinned owner-blocked priority** — never invent these.
+
+---
+
 ## M13 returns — store-credit refund issuance engine; exchanges held per CH-01, FR-03 SC-1 (20 September 2026)
 
 **Important governance note.** I offered to build M13-FR-03 and, on checking, found **CH-01 in

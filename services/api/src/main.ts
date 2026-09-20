@@ -480,6 +480,7 @@ export function buildSurface(deps: {
       originalSale: empty(undefined), priorReturns: empty([]), priorRefunds: empty([]),
       recordReturn: () => {}, refundThreshold: () => undefined, recordRefundThreshold: () => {}, canApproveRefund: () => Promise.resolve(false),
       returnWindow: () => undefined, recordReturnWindow: () => {},
+      storeCreditCap: () => undefined, recordStoreCreditCap: () => {},
       flaggedReturns: empty([]), now,
     } : { ...returnsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     ...cashRoutes(store === undefined
