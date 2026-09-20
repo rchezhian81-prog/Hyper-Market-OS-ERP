@@ -5,6 +5,40 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M32 Integration gateway — managed-secrets per-tenant isolation → M32 re-rated INTEGRATION TESTED (20 September 2026)
+
+Honest catch-up for **M32 (Integration gateway)**, and a note on a module correctly SKIPPED.
+
+- **Skipped M16 (CRM) — a real gap, not a re-rate.** Vetting found M16's own ledger says *"lifting to
+  INTEGRATION_TESTED … are follow-ons"* and its FR-03 (data-rights) / FR-04 rows carry unit tests only. So
+  M16 is genuinely not at the INTEGRATION_TESTED bar; re-rating it would be inflation. Left at WIRED.
+- **M32 was genuinely ready.** All four FRs are wired + integration-tested with RBAC + per-tenant: FR-01
+  gateway/matrix (`the-seams-hold` + `webhooks` + `integration-gateway`), FR-02 connector delivery + dead
+  letter (`connector-delivery`, restart-safe), FR-03 managed secrets (`managed-secrets`, restart-safe), FR-04
+  adapters/mapping (`connector-mapping` + `integration-gateway`). It was held at WIRED for a DEPLOYMENT reason
+  — the outbound network path that posts a connector message to a real destination is a worker step — which is
+  an E2E-line concern, correctly keeping it below E2E_VERIFIED, not an integration gap.
+- **The increment.** The one isolation gap was FR-03 managed secrets (credential references, hard rule #4 /
+  SEC-04). `tests/integration/managed-secrets-tenant-isolation.test.ts` (1) proves one shop can neither SEE
+  nor ROTATE nor REVOKE another shop's credential references — tenant B gets an empty inventory and a ≥400 on
+  rotate/revoke of tenant A's secret, leaving A's reference active v1. Even a vault reference names where
+  another shop's live payment/connector credential lives (P-04, OB-01).
+
+**Honest rung: M32 WIRED → INTEGRATION TESTED** (module ladder now 10 E2E VERIFIED · 7 INTEGRATION TESTED ·
+6 WIRED · 13 PARTIALLY WIRED). Headline **53.9% → 54.1%** (5625/10400, +15 weighted pts). Held below
+E2E VERIFIED: the outbound connector transport to a real destination remains a deployment step. Ledger,
+module ladder + summary counts, and the M32-FR-03 evidence all updated; the guardrail registry already
+pointed at `connector-delivery.test.ts`. Full gate green.
+
+### Next
+- **Owner input still useful:** the store-credit cap number (`POST /v1/pos/store-credit-cap`).
+- **Retention periods remain the pinned owner-blocked priority** — never invent these.
+- Remaining WIRED (M03, M16, M24, M25, M29): M16 has a real FR gap (above); M03 has an un-integration-tested
+  FR-04 (images/bulk-edit); M24/M25/M29 still to vet. The clean re-rate seam is nearly worked through — after
+  it, the higher-value work is owner-input items and pilot-facing screens.
+
+---
+
 ## M06 Purchase — per-tenant isolation test on the money path → M06 re-rated INTEGRATION TESTED (20 September 2026)
 
 The honest catch-up pattern applied to **M06 (Supplier / procurement)** — but here the genuine gap was NOT
