@@ -51,8 +51,8 @@
     },
     {
       "id": "M09",
-      "label": "WIRED",
-      "evidence": "RTM: WIRED, all four FRs integration-tested"
+      "label": "INTEGRATION_TESTED",
+      "evidence": "RTM: all four FRs wired on the live API with real RBAC + per-tenant isolation AND integration-tested — FR-01 bins/put-away (tests/integration/warehouse-bins.test.ts + physical-to-system.test.ts), FR-02 advisory replenishment (replenishment.test.ts), FR-03 in-transit transfers + days-of-cover allocation (warehouse-transfers.test.ts + physical-to-system.test.ts), FR-04 blind cycle counts (warehouse-counts.test.ts). **Re-rated WIRED → INTEGRATION_TESTED 2026-09-20:** the module's own note already read 'all four FRs integration-tested' — it was held at WIRED conservatively (the OA-9 visual warehouse shell is a follow-on, an E2E-rung concern, not an integration gap). This increment adds the recovery property those suites lacked: tests/integration/warehouse-durability.test.ts proves a bin's projected contents, a transfer held in-transit (the van is a place), and a blind-count correction layered on M08 all REBUILD from the event store after a restart, and that appends continue afterwards (P-04 tested recovery, P-08, FND-01 append-only) — the same restart-rebuild bar goods-receipt / connector-delivery / facilities / production carry. Held below E2E_VERIFIED: the offline warehouse PWA execution surface + the Web ERP supervisory screen are not browser-e2e'd (OA-9)."
     },
     {
       "id": "M10",
