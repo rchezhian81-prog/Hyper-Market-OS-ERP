@@ -5,6 +5,44 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M25 Workforce — per-tenant isolation of the HR stores → M25 re-rated INTEGRATION TESTED (20 September 2026)
+
+The honest catch-up pattern applied to **M25 (Workforce/HR)** — the last module eligible for a clean re-rate.
+The genuine gap was **per-tenant isolation of sensitive staff data**.
+
+- **The finding.** Every M25 FR already has a live-API integration test with RBAC and a restart-rebuild
+  (FR-01 roster-store, FR-03 cert-store, FR-04 sop-store, plus attendance/checklist/task/payslip stores, and
+  the FR-02 offline acceptance in `offline-completions-reach-the-cloud-through-the-edge`). So the per-FR
+  integration-coverage audit the prior accounting demanded is met. Adding yet another durability test would
+  have been padding.
+- **The real gap.** Those store tests each exercised **one** tenant. Nothing proved that one shop cannot see
+  or write another shop's HR records — and these stores hold the most sensitive personal data in the product:
+  staff names and shifts, qualifications, hours worked, and pay. A cross-tenant leak here is a **staff-data
+  breach**, not a wrong number (P-04, OB-01, hard rule #6).
+- **The increment.** `tests/integration/workforce-tenant-isolation.test.ts` (1): tenant A records a deli
+  worker, an understaffed shift, a food-handling certificate, a day's hours and an issued payslip; tenant B
+  (a legitimate owner of a different shop) then gets an empty roster-gaps view, empty certificate/attendance
+  lists, zero labour cost, a 404 on A's employee task-gate, and zero payslips — and B writing under the same
+  ids creates B's own records, leaving tenant A's picture exactly as it stood.
+
+**Honest rung: M25 WIRED → INTEGRATION TESTED** (module ladder now 10 E2E VERIFIED · 9 INTEGRATION TESTED ·
+4 WIRED · 13 PARTIALLY WIRED). Headline **54.2% → 54.4%** (5655/10400, +15 weighted pts). Held below
+E2E VERIFIED: the manager rostering/checklist write-path screens are not yet browser-driven (only the ESS
+employee screen has a browser e2e). Ledger, module ladder + summary counts, the four durable-store FR-row
+evidence columns and the guardrail registry all updated. Full gate green.
+
+### Next
+- **This exhausts the clean re-rate seam.** The remaining WIRED modules (M03, M16, M29) each have a *real*
+  FR gap that a re-rate would paper over — M16-FR-03/FR-04 unit-only, M03-FR-04 (images/bulk-edit)
+  un-integration-tested, M29-FR-01 unit-only. None should be re-rated; each needs actual new integration
+  coverage first.
+- **The higher-value work is now the only honest work:** an owner-input item — the **store-credit cap**
+  (`POST /v1/pos/store-credit-cap`) or the **retention periods** (pinned owner-blocked; never invent) → wire
+  a real capability; or a **pilot-facing screen** driven browser-end-to-end (e.g. the buyer's PO screen or an
+  owner reporting view) to earn an E2E VERIFIED.
+
+---
+
 ## M24 Supplier portal — the stored state survives a restart → M24 re-rated INTEGRATION TESTED (20 September 2026)
 
 The honest catch-up pattern applied to **M24 (Supplier portal)**. Here the genuine gap was **durability** —
