@@ -5,6 +5,25 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Release plan written — path to a store pilot, and why there's no firm date yet (20 September 2026)
+
+At the owner's request ("when will we finish?"), added **`docs/release-plan.md`** — an owner-facing, plain-English
+plan grounded entirely in the live ledger and the roadmap's own R0–R8 structure. Key points: the build is 52.6%
+by the weighted measure; **nothing is UAT- or production-verified yet** (both 0%); the nearest real milestone is
+a **store pilot on the R2 "Store Core" scope** (M01–M15, M23, M29, M30, M32–M35), of which **16 of 22 modules are
+already integrated (WIRED+) and 9 fully E2E-verified**; the remaining pilot build gap is **6 partly-built modules
+(M01, M04, M13, M23, M32, M35)** plus hardening plus your in-store UAT. No firm date is given because it depends
+on owner decisions (retention numbers, pilot scope) and outside parties (M23 GST production credentials + CA
+sign-off; QG-06 independent penetration test) — all laid out in the doc, with the single most useful next
+decisions at the end. No code changed.
+
+### Next
+- The plan names the decisions that unblock a real date: retention numbers, pilot scope, and starting the GST /
+  pen-test lead-time items. The next build target is the owner's to choose (the doc recommends finishing the 6
+  partly-built R2 modules toward a pilot).
+
+---
+
 ## M07 goods receipt — a read-only review screen; M07 re-rated PARTIALLY_WIRED→INTEGRATION_TESTED (headline 52.3→52.6%) (20 September 2026)
 
 The back door of the shop, where most stock is lost, now has a manager's review screen. Receiving itself is
