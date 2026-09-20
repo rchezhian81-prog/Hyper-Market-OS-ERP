@@ -2156,6 +2156,25 @@ export function returnsAdapter(input: {
         payload: { thresholdMinor },
       }));
     },
+
+    // The tenant's return window (M13-FR-02) — tenant-wide config, append-only (latest wins). Undefined
+    // until the owner sets one, so a return is not age-restricted until then (AVR-07).
+    returnWindow: async (tenantId) => {
+      const all = await allOf<{ returnWindowDays: number }>(input.store, tenantId, streamName(STREAM.returns, 'return-window'), 'ReturnWindowSet');
+      const last = all[all.length - 1];
+      return last === undefined ? undefined : last.returnWindowDays;
+    },
+    recordReturnWindow: async (tenantId, returnWindowDays, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, streamName(STREAM.returns, 'return-window'), makeEvent({
+        id: `return-window-${d}`,
+        type: 'ReturnWindowSet',
+        occurredAt: input.now(),
+        idempotencyKey: `return-window-${tenantId}-${d}`,
+        source: 'api/pos',
+        payload: { returnWindowDays },
+      }));
+    },
     // The §28 authority to approve a refund (M13-FR-03) — pos.return.approve, held by a supervisor/manager
     // (owner + store_manager), above the cashier. A named approver who does not hold it does not count.
     canApproveRefund: async (tenantId, userId) => {

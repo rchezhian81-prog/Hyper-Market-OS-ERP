@@ -19,6 +19,9 @@ import {
   returnRegister, returnableLines, overReturned, alreadyRefundedMinor,
   type OriginalSale, type RecordedReturn,
 } from '../../../packages/returns/src/return-register';
+import {
+  assessReturnEligibility, isDataFault, readReturnWindowDays,
+} from '../../../packages/returns/src/return-eligibility';
 import type { RefundStatus } from '../../../packages/returns/src/returns';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 
@@ -66,6 +69,13 @@ export interface ReturnsDeps {
   readonly refundThreshold: (tenantId: string) => Promise<number | undefined> | number | undefined;
   /** Set the tenant's refund approval threshold — append-only config (latest wins), owner-only. */
   readonly recordRefundThreshold: (tenantId: string, thresholdMinor: number, key: string) => Promise<void> | void;
+  /** The tenant's return WINDOW in whole days (M13-FR-02) — how long after a sale a return is accepted
+   *  without a supervisor. `undefined` means the owner has not set a policy, so returns are NOT age-restricted
+   *  yet (the money guards still apply); the desk shows this plainly (P-08). Sourced SERVER-SIDE: the caller
+   *  cannot declare their own window in the body and call a stale return "in window" (AVR-07). */
+  readonly returnWindow: (tenantId: string) => Promise<number | undefined> | number | undefined;
+  /** Set the tenant's return window — append-only config (latest wins), owner-only. */
+  readonly recordReturnWindow: (tenantId: string, returnWindowDays: number, key: string) => Promise<void> | void;
   /** Whether a user holds `pos.return.approve` — the §28 authority to approve a refund (a supervisor/
    *  manager above the cashier). A named approver who does not hold it does not count. */
   readonly canApproveRefund: (tenantId: string, userId: string) => Promise<boolean> | boolean;
@@ -105,6 +115,15 @@ function readReturn(body: unknown, saleId: string): ReturnRequest | undefined {
     processedBy: '',          // set to ctx.userId in the handler
     approvalThresholdMinor: 0, // set from the tenant policy in the handler
   };
+}
+
+/** The supervisor who authorised an out-of-window return (M13-FR-02, §28). A route-level field like
+ *  `processedBy`: read straight from the body here, and the handler re-checks the named person genuinely
+ *  holds the authority (`canApproveRefund`) and differs from the processor — a name alone is not authority. */
+function readOverrideApprover(body: unknown): string | undefined {
+  if (body === null || typeof body !== 'object') return undefined;
+  const v = (body as Record<string, unknown>)['outOfWindowApprovedBy'];
+  return typeof v === 'string' && v.trim() !== '' ? v : undefined;
 }
 
 /** A refund that ALREADY HAPPENED at the lane, relayed by the sync agent. Unlike the desk return, the
@@ -185,6 +204,55 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
         const processedAt = parsed.processedAt === '' ? deps.now() : parsed.processedAt;
         const request: ReturnRequest = { ...parsed, processedBy: ctx.userId, approvalThresholdMinor: thresholdMinor, processedAt };
 
+        // Return eligibility (M13-FR-02): the shop takes goods back only within its return window. The
+        // window is the OWNER's policy (AVR-07) — enforced only once it is set; until then a return is not
+        // age-restricted (the money guards below still apply) and the desk shows "no window set" (P-08). A
+        // return inside the window proceeds; past it, a supervisor may authorise the exception (§28); a
+        // return dated before its own sale is a data fault no one can authorise. No money has moved, so a
+        // blocked return is REFUSED here, not recorded.
+        let outOfWindowApprovedBy: string | undefined;
+        const returnWindowDays = await deps.returnWindow(ctx.tenantId);
+        if (returnWindowDays !== undefined) {
+          const elig = assessReturnEligibility({ soldAt: sale.committedAt, returnedAt: processedAt, returnWindowDays });
+          if (!elig.eligible) {
+            if (isDataFault(elig.status)) {
+              throw apiError(422, {
+                code: elig.status,
+                whatHappened: elig.detail,
+                wasItSaved: 'not_saved',
+                nextSafeAction: 'No money has moved. The sale or return date looks wrong — fix the record rather than authorise it.',
+              });
+            }
+            // Past the window — a supervisor/manager may authorise the exception (§28).
+            const overrideBy = readOverrideApprover(ctx.body);
+            if (overrideBy === undefined) {
+              throw apiError(422, {
+                code: elig.status,
+                whatHappened: elig.detail,
+                wasItSaved: 'not_saved',
+                nextSafeAction: 'Have a supervisor/manager authorise this out-of-window return (send outOfWindowApprovedBy), or it cannot be taken. No money has moved.',
+              });
+            }
+            if (overrideBy === ctx.userId) {
+              throw apiError(422, {
+                code: 'out_of_window_self_authorised',
+                whatHappened: `${ctx.userId} cannot authorise their own out-of-window return (§28).`,
+                wasItSaved: 'not_saved',
+                nextSafeAction: 'A different supervisor/manager must authorise it. No money has moved.',
+              });
+            }
+            if (!(await deps.canApproveRefund(ctx.tenantId, overrideBy))) {
+              throw apiError(422, {
+                code: 'out_of_window_approver_may_not_authorise',
+                whatHappened: `${overrideBy} does not hold the authority to authorise an out-of-window return.`,
+                wasItSaved: 'not_saved',
+                nextSafeAction: 'A supervisor/manager (one who can approve refunds) must authorise it. No money has moved.',
+              });
+            }
+            outOfWindowApprovedBy = overrideBy; // recorded on the audit trail below
+          }
+        }
+
         const assessment = assessReturn({ sale, priorReturns, priorRefunds, request });
         if (!assessment.ok) {
           throw apiError(422, {
@@ -227,6 +295,8 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
             returnId: request.returnId, refundMinor: String(request.refundMinor),
             reasonCode: request.reasonCode, refundStatus: assessment.refundStatus,
             approvedBy: request.approvedBy ?? '',
+            // An out-of-window return let through by a supervisor is visible on the trail (§28, P-08).
+            ...(outOfWindowApprovedBy === undefined ? {} : { outOfWindowApprovedBy }),
           },
           correlationId: request.returnId,
         });
@@ -331,6 +401,38 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
         const now = deps.now();
         await deps.recordRefundThreshold(ctx.tenantId, thresholdMinor, `${thresholdMinor}-${now}`);
         return { status: 200, body: { thresholdMinor, setAt: now } };
+      },
+    },
+    {
+      // The return WINDOW (M13-FR-02) — how many days after a sale a return is accepted without a
+      // supervisor. READ so the desk can see the policy it is working to (a cashier reads it). `null`
+      // + isSet:false means the owner has not set one yet, so returns are not age-restricted (P-08).
+      api: 'API-05', method: 'GET', path: '/v1/pos/return-window',
+      permission: 'pos.return.record',
+      handler: async (ctx) => {
+        const stored = await deps.returnWindow(ctx.tenantId);
+        return { status: 200, body: { returnWindowDays: stored ?? null, isSet: stored !== undefined } };
+      },
+    },
+    {
+      // Set the return window (M13-FR-02) — an owner decision (AVR-07). Recorded append-only (latest wins).
+      // Body: { returnWindowDays } — a whole number of days ≥ 0 (0 = a return is accepted only on the sale
+      // day itself). Not a per-refund input; a caller cannot declare their own window to slip a stale return.
+      api: 'API-05', method: 'POST', path: '/v1/pos/return-window',
+      permission: 'pos.return.window.set', idempotent: true,
+      handler: async (ctx) => {
+        const returnWindowDays = readReturnWindowDays(ctx.body);
+        if (returnWindowDays === 'invalid') {
+          throw apiError(400, {
+            code: 'not_readable_as_a_return_window',
+            whatHappened: 'A return window needs { returnWindowDays } — a whole number of days ≥ 0 (0 means a return is accepted only on the sale day).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the number of days after a sale within which a return is accepted without a supervisor.',
+          });
+        }
+        const now = deps.now();
+        await deps.recordReturnWindow(ctx.tenantId, returnWindowDays, `${returnWindowDays}-${now}`);
+        return { status: 200, body: { returnWindowDays, setAt: now } };
       },
     },
     {
