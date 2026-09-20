@@ -5,6 +5,39 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M09 Warehouse — durability restart-rebuild test → M09 re-rated INTEGRATION TESTED (20 September 2026)
+
+The same honest catch-up pattern, applied to **M09 (Warehouse / stock operations)** — the third domain module
+this session to earn INTEGRATION TESTED on a real recovery test.
+
+- **The finding.** M09 sat at WIRED though its own ledger note already read *"all four FRs integration-tested"*.
+  Verified: FR-01 bins/put-away (`warehouse-bins.test.ts` + `physical-to-system.test.ts`), FR-02 advisory
+  replenishment (`replenishment.test.ts`), FR-03 in-transit transfers + days-of-cover allocation
+  (`warehouse-transfers.test.ts`), FR-04 blind cycle counts (`warehouse-counts.test.ts`) — all through the
+  real API with RBAC + per-tenant isolation. The OA-9 visual warehouse shell is a follow-on (an E2E-rung
+  concern), not an integration gap.
+- **The increment (real new test).** Added `tests/integration/warehouse-durability.test.ts` (1): registers a
+  bin and puts stock away, dispatches a transfer to in-transit with a separate approver (§28), and commits a
+  blind-count correction; then builds a NEW surface over the SAME event store and proves the bin contents, the
+  in-transit transfer (the van is a place), and the count correction layered on M08 all rebuild from the log —
+  and that a further put-away still lands, so the rebuilt surface is live, not a read-only replay (P-04 tested
+  recovery, P-08, FND-01 append-only).
+
+**Honest rung: M09 WIRED → INTEGRATION TESTED** (module ladder now 10 E2E VERIFIED · 4 INTEGRATION TESTED ·
+9 WIRED · 13 PARTIALLY WIRED). Headline **53.5% → 53.7%** (5580/10400, +15 weighted pts). Held below
+E2E VERIFIED: the offline warehouse PWA execution surface + the Web ERP supervisory screen are not
+browser-e2e'd (OA-9). Ledger, module ladder + summary counts, the M09-FR-01 evidence, and STATUS all updated;
+the guardrail evidence registry already pointed at `tests/integration/warehouse-counts.test.ts`. Full gate green.
+
+### Next
+- **Owner input still useful:** the store-credit cap number (`POST /v1/pos/store-credit-cap`).
+- **Retention periods remain the pinned owner-blocked priority** — never invent these.
+- The clean WIRED → INTEGRATION TESTED re-rate track (a genuine restart-rebuild test per module) is largely
+  worked through for the core stock/finance modules; remaining WIRED modules should be checked individually
+  before assuming the same pattern applies (some, e.g. M02, have real FR gaps that keep them honestly lower).
+
+---
+
 ## M11 In-store production — durability restart-rebuild test + stale-doc fix → M11 re-rated INTEGRATION TESTED (20 September 2026)
 
 The same honest catch-up pattern as M26, applied to **M11 (Fresh food / in-store production)**.
