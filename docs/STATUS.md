@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M13 returns — the return-eligibility (window) engine, FR-02 slice 1 (20 September 2026)
+
+Owner chose "finish the pilot modules"; starting with **M13 (returns/exchanges)**, whose offline-refund path is
+already complete and integration-tested but whose **FR-02 controls were absent**. This first slice builds the
+biggest genuine gap as a pure, unit-tested engine — the FR-02 acceptance _"an out-of-window return is blocked per
+policy."_
+
+- **`packages/returns/src/return-eligibility.ts`** — `assessReturnEligibility(soldAt, returnedAt, returnWindowDays,
+  hasAuthorisedOverride)`: inside the window → eligible, no second person; **past the window → blocked unless a
+  supervisor authorises an override (§28)**; **secure by default (P-04/P-08): an unset window blocks the same way**
+  (an unset policy must never read as "any return of any age is fine"). A return dated **before its own sale**, or
+  on an **unreadable date**, is a **data fault no override can clear** — the record must be fixed. Pure, no clock.
+- The window NUMBER stays the **owner's per-tenant policy** (roadmap AVR-07 — never invented). `readReturnWindowDays`
+  validates it as config, not a per-request input (mirroring the refund-threshold pattern).
+- `tests/unit/return-eligibility.test.ts` (14): within/boundary/same-instant; out-of-window blocked and
+  override-cleared; unset-window blocked and override-cleared; invalid window treated as unset; before-sale and
+  unreadable-date faults are non-overridable; the config validator.
+
+**Honest rung: M13 stays PARTIALLY_WIRED.** This is the engine only. Wiring it into the cloud desk guard
+(`assessReturn`) with integration tests is the next slice; condition capture, serial/batch preservation, and
+recall-blocked-off-resale (M10) are the remaining FR-02 pieces after that.
+
+### Next
+- M13-FR-02 slice 2: wire `assessReturnEligibility` into the cloud return route + integration tests.
+- Then the rest of FR-02 (condition, serial/batch, recall-block), then FR-03 exchanges/store-credit, toward M13 WIRED.
+- **Retention periods remain the pinned owner-blocked priority** — the archival/disposal workflow needs the owner's
+  per-data-class "keep for N years" numbers. Never invent these.
+
+---
+
 ## Release plan written — path to a store pilot, and why there's no firm date yet (20 September 2026)
 
 At the owner's request ("when will we finish?"), added **`docs/release-plan.md`** — an owner-facing, plain-English
