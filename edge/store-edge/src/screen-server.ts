@@ -74,6 +74,7 @@ export const APP_SHELL: Readonly<Record<ScreenName, AppShell>> = Object.freeze({
   'data-quality': { dir: 'web-erp', file: 'data-quality.html' },
   'operations': { dir: 'web-erp', file: 'operations.html' },
   'loss-prevention': { dir: 'web-erp', file: 'loss-prevention.html' },
+  'return-governance': { dir: 'web-erp', file: 'return-governance.html' },
   'cash-office': { dir: 'web-erp', file: 'cash-office.html' },
   'risk-acceptance': { dir: 'web-erp', file: 'risk-acceptance.html' },
   'day-reopen': { dir: 'web-erp', file: 'day-reopen.html' },

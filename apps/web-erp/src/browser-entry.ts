@@ -120,6 +120,10 @@ import {
   type LpInboxPorts, type LpInboxSession, type LpWorklistData, type LpCloseCasePort, type CloseResult,
 } from './loss-prevention-inbox-session';
 import {
+  createReturnGovernanceSession,
+  type ReturnGovernancePorts, type ReturnGovernanceSession, type ReturnGovernanceData as ReturnGovernanceExceptions,
+} from './return-governance-session';
+import {
   createCashOfficeSession,
   type CashOfficePorts, type CashOfficeSession, type CashOverShortData, type OverShortView,
   type OverShortSignOffPort, type SignOffResult,
@@ -1089,6 +1093,68 @@ export async function fetchLpWorklist(): Promise<LpWorklistData | null> {
     });
     if (res.status >= 400) return null;
     return (await res.json()) as LpWorklistData;
+  } catch {
+    return null;
+  }
+}
+
+// ── Refund-exceptions review screen (M13-FR-01/03 · M17) — the governance/loss surface ─────────────────────────
+
+/** What the box tells the refund-exceptions screen: who is looking, what they may do, and (optionally) the
+ *  exceptions it last carried. The flagged refunds are a LIVE cloud read
+ *  (`GET /v1/pos/return-governance-exceptions`) refreshed by the shell when online; offline the screen shows
+ *  its clearly-marked sample stand-in. Read-only — there is no write from this screen. */
+export interface ReturnGovernanceData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+  readonly exceptions?: ReturnGovernanceExceptions;
+}
+
+const RETURN_GOVERNANCE_READ_PERMISSION = 'lp.case.read';
+const EMPTY_RETURN_GOVERNANCE: ReturnGovernanceExceptions = Object.freeze({ exceptionCount: 0, totalRefundMinor: 0, exceptions: [] });
+
+export function returnGovernancePortsFromData(
+  data: ReturnGovernanceData | undefined,
+  exceptions?: ReturnGovernanceExceptions,
+): ReturnGovernancePorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    exceptions: () => exceptions ?? data?.exceptions ?? EMPTY_RETURN_GOVERNANCE,
+    // Default-deny: an absent permission list can read nothing (the server would refuse it anyway).
+    mayRead: () => held.has(RETURN_GOVERNANCE_READ_PERMISSION),
+  };
+}
+
+/** Build the refund-exceptions screen, or `null` when the box carried no payload for it (shell shows the sample). */
+export function bootReturnGovernance(
+  data: ReturnGovernanceData | undefined,
+  exceptions?: ReturnGovernanceExceptions,
+): ReturnGovernanceSession | null {
+  if (data === undefined) return null;
+  return createReturnGovernanceSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    returnGovernancePortsFromData(data, exceptions),
+  );
+}
+
+/** Read the live refund exceptions (a GET — read-only). Returns null offline/refused so the shell keeps
+ *  whatever it was showing and its stale strip says the page is what the box last told it. The cloud route
+ *  hands back `{ count, exceptions }`; the ₹ total is derived here for the summary. */
+export async function fetchReturnGovernanceExceptions(): Promise<ReturnGovernanceExceptions | null> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return null;
+  try {
+    const res = await fetchFn('/v1/pos/return-governance-exceptions', {
+      method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin',
+    });
+    if (res.status >= 400) return null;
+    const raw = (await res.json()) as { count?: number; exceptions?: ReturnGovernanceExceptions['exceptions'] };
+    const exceptions = raw.exceptions ?? [];
+    return {
+      exceptionCount: raw.count ?? exceptions.length,
+      totalRefundMinor: exceptions.reduce((sum, e) => sum + e.refundMinor, 0),
+      exceptions,
+    };
   } catch {
     return null;
   }
@@ -2532,6 +2598,13 @@ interface ManagerWindow {
     refresh(): Promise<OperationsWorklistData | null>;
     present(worklist: OperationsWorklistData): OperationsInboxSession;
   };
+  returnGovernanceData?: ReturnGovernanceData;
+  returnGovernanceSession?: ReturnGovernanceSession;
+  /** The shell reads the live refund exceptions through this and re-presents them — a GET read, never a write. */
+  returnGovernance?: {
+    refresh(): Promise<ReturnGovernanceExceptions | null>;
+    present(exceptions: ReturnGovernanceExceptions): ReturnGovernanceSession;
+  };
   lossPreventionInboxData?: LossPreventionInboxData;
   lossPreventionInboxSession?: LpInboxSession;
   /** The shell reads the live open-cases worklist through this and re-presents it — a GET read, never a write. */
@@ -3339,6 +3412,22 @@ if (browserWindow !== undefined) {
       present: (worklist) => createLpInboxSession(
         { userId: lossPreventionData?.userId === undefined ? null : lossPreventionData.userId },
         lpInboxPortsFromData(lossPreventionData, worklist, lpClosePort),
+      ),
+    };
+  }
+  // The refund-exceptions review screen (M13-FR-01/03 · M17): boots from the box's policy (who + what they hold),
+  // then the shell refreshes the flagged refunds with a live GET (read-only). Offline it shows its sample stand-in
+  // and says so. READ-ONLY — a breach is worked out of band (the money already moved at the lane), so there is no
+  // write from this screen; the cloud route re-checks `lp.case.read`, so this only shapes the UI (P-03/P-08).
+  const returnGovernanceData = browserWindow.returnGovernanceData;
+  const returnGovernance = bootReturnGovernance(returnGovernanceData);
+  if (returnGovernance !== null) {
+    browserWindow.returnGovernanceSession = returnGovernance;
+    browserWindow.returnGovernance = {
+      refresh: fetchReturnGovernanceExceptions,
+      present: (exceptions) => createReturnGovernanceSession(
+        { userId: returnGovernanceData?.userId === undefined ? null : returnGovernanceData.userId },
+        returnGovernancePortsFromData(returnGovernanceData, exceptions),
       ),
     };
   }
