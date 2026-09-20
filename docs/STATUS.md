@@ -5,6 +5,40 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M06 Purchase — per-tenant isolation test on the money path → M06 re-rated INTEGRATION TESTED (20 September 2026)
+
+The honest catch-up pattern applied to **M06 (Supplier / procurement)** — but here the genuine gap was NOT
+durability (the PO ledger is already restart-safe, 8 restart assertions in `purchase-orders.test.ts`), it was
+**per-tenant isolation**.
+
+- **The finding.** All four M06 FRs are wired + integration-tested with RBAC and restart-rebuild — FR-01
+  onboarding/bank-change/blocked-supplier, FR-02 requisition→RFQ→quote-compare→PO issue under §28, FR-03
+  contracts/scorecards/rebates, FR-04 amend/cancel/receive + open-commitment netting. The module was held at
+  WIRED conservatively. Adding another durability test would have been redundant padding.
+- **The real gap.** `purchase-orders.test.ts` only ever exercised ONE tenant — there was no proof that one
+  shop cannot see or move another shop's purchase orders and open commitments. On a money path that is the
+  worst kind of cross-tenant failure.
+- **The increment.** `tests/integration/purchase-tenant-isolation.test.ts` (1): tenant A issues a ₹600 PO
+  under two people; tenant B (a legitimate owner of a different shop) then gets an empty PO list, a 404 on
+  tenant A's PO, a not-known commitment, and an amendment attempt against A's PO id that leaves tenant A
+  entirely untouched (P-04, OB-01 tenant isolation). Also refreshed the stale M06-FR-02 traceability row,
+  which still read "Foundation built" with only a unit test.
+
+**Honest rung: M06 WIRED → INTEGRATION TESTED** (module ladder now 10 E2E VERIFIED · 6 INTEGRATION TESTED ·
+7 WIRED · 13 PARTIALLY WIRED). Headline **53.8% → 53.9%** (5610/10400, +15 weighted pts). Held below
+E2E VERIFIED: buyer-facing PO/commitment screens are not browser-e2e'd. Ledger, module ladder + summary
+counts, and the M06-FR-02 evidence all updated; the guardrail evidence registry already pointed at
+`purchase-orders.test.ts`. Full gate green.
+
+### Next
+- **Owner input still useful:** the store-credit cap number (`POST /v1/pos/store-credit-cap`).
+- **Retention periods remain the pinned owner-blocked priority** — never invent these.
+- Remaining WIRED (M03, M16, M24, M25, M29, M32) still to vet individually — the honest gap differs per module
+  (durability vs per-tenant vs a genuine FR hole); check each before any re-rate, and skip ones with a real
+  unfinished FR (e.g. M02 identity/MFA stays lower).
+
+---
+
 ## M17 Loyalty — money-path durability restart-rebuild test → M17 re-rated INTEGRATION TESTED (20 September 2026)
 
 The honest catch-up pattern applied to a **money-adjacent** module: **M17 (Loyalty / stored-value)**.
