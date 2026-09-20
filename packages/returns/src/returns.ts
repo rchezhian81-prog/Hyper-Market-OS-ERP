@@ -96,6 +96,9 @@ export interface CommittedReturn {
   readonly requiredApproval: boolean;
   /** Lines whose disposition = resell — the units back in sellable stock. */
   readonly restockedLines: number;
+  /** Lines whose batch was under recall, so their resell was forced to quarantine (M13-FR-02 / M10).
+   *  Visible so the desk/report can show a returned unit was HELD, not resold (P-08), never silent. */
+  readonly recallHeldLines: number;
   readonly processedAt: string;
 }
 
@@ -249,23 +252,44 @@ export function assertReturnValid(input: CommitReturnInput): ReturnValidity {
  * and enqueues a ReturnAccepted event — all with no network call. A card/UPI
  * refund is recorded as a PENDING reversal (never assumed successful). Idempotent
  * on the return id.
+ *
+ * `isRecalled` blocks a recalled batch from re-entering sellable stock (M13-FR-02 / M10-FR-04): a
+ * returned `resell` line whose batch is under an open recall is forced to `quarantine` (HELD, not
+ * resold) and flagged `recallHeld`. The return itself is still accepted and refunded — recalled goods
+ * are exactly what a recall wants back — only their disposition is overridden.
  */
 export function commitReturn(
   input: CommitReturnInput,
   stockLedger: Ledger,
   outbox: SyncOutbox,
+  /** Whether a batch is under an OPEN recall (M10-FR-04). Injected — pure and offline-safe (a cached
+   *  recall set), the same division as the POS sale block. Defaults to "nothing recalled". */
+  isRecalled: (batchId: string) => boolean = () => false,
 ): CommittedReturn {
   const { noReceipt, requiredApproval } = assertReturnValid(input);
+
+  // Resolve each line's EFFECTIVE disposition first. A returned unit whose batch is under recall (M10)
+  // must never go back on the shelf, whatever the desk chose: force resell → quarantine so it is HELD,
+  // not resold (M13-FR-02 "recall-blocked item handled per M10"). We WANT recalled goods back, so the
+  // return is accepted and refunded normally — only its disposition is overridden, and visibly so.
+  const resolved = input.lines.map((line) => {
+    const recallHeld = line.disposition === 'resell'
+      && typeof line.batchId === 'string' && line.batchId.trim() !== ''
+      && isRecalled(line.batchId);
+    return { line, disposition: (recallHeld ? 'quarantine' : line.disposition) as Disposition, recallHeld };
+  });
 
   // Append one stock movement per kept line (resell/quarantine/damaged); a scrapped
   // unit is destroyed and keeps no stock. Only resell re-enters sellable stock.
   let restockedLines = 0;
-  for (const line of input.lines) {
-    const state = DISPOSITION_STATE[line.disposition];
+  let recallHeldLines = 0;
+  for (const { line, disposition, recallHeld } of resolved) {
+    if (recallHeld) recallHeldLines += 1;
+    const state = DISPOSITION_STATE[disposition];
     if (state === null) {
       continue; // scrap: destroyed, no stock kept
     }
-    if (line.disposition === 'resell') {
+    if (disposition === 'resell') {
       restockedLines += 1;
     }
     stockLedger.append(
@@ -280,10 +304,13 @@ export function commitReturn(
           deltaMinor: Math.abs(line.quantityMinor), // inbound: stock comes back
           uom: line.uom,
           state, // availability depends on disposition (M13-FR-02)
-          disposition: line.disposition,
+          disposition, // the EFFECTIVE disposition (recalled resell is forced to quarantine)
           // Batch/lot preserved onto the stock movement so a recall (M10) can trace the returned unit
           // back to its lot (M13-FR-02). Only present when the returned line named one.
           ...(line.batchId === undefined || line.batchId === null ? {} : { batchId: line.batchId }),
+          // A recalled unit held off the shelf is marked so the movement is not read as an ordinary
+          // quarantine — the return system overrode the desk's resell (P-08, never silent).
+          ...(recallHeld ? { recallHeld: true } : {}),
         },
       }),
     );
@@ -326,15 +353,16 @@ export function commitReturn(
         //
         // The stock movements above carry a quantity, but they are keyed by product and carry no
         // original sale, so a returned unit cannot be attributed to the bill it came off.
-        lines: input.lines.map((line) => ({
+        lines: resolved.map(({ line, disposition, recallHeld }) => ({
           productId: line.productId,
           uom: line.uom,
           quantityMinor: Math.abs(line.quantityMinor),
-          disposition: line.disposition,
+          disposition, // the EFFECTIVE disposition (a recalled resell reads as quarantine)
           // Condition (why it came back) and batch/lot (for M10 recall trace) preserved through the
           // return where the line named them (M13-FR-02). Absent when not captured.
           ...(line.condition === undefined ? {} : { condition: line.condition }),
           ...(line.batchId === undefined || line.batchId === null ? {} : { batchId: line.batchId }),
+          ...(recallHeld ? { recallHeld: true } : {}),
         })),
       },
     }),
@@ -350,6 +378,7 @@ export function commitReturn(
     refundStatus,
     requiredApproval,
     restockedLines,
+    recallHeldLines,
     processedAt: input.processedAt,
   });
 }

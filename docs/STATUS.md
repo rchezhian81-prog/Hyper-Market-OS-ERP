@@ -5,6 +5,35 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M13 returns — a recalled batch that comes back is HELD, never resold, FR-02 slice 4 (20 September 2026)
+
+The last FR-02 rule: a returned unit whose batch is under recall (M10) must not go back on the shelf. Fourth M13
+increment this session; FR-02 is now complete at the domain level.
+
+- **`packages/returns/src/returns.ts`** — `commitReturn` takes an injected `isRecalled(batchId)` predicate
+  (pure, offline-safe — a cached recall set, the same division as the POS sale block). A returned `resell` line
+  whose batch is under an open recall is **forced to `quarantine`** — HELD, not resold — and flagged `recallHeld`
+  on the `InventoryMoved` stock movement AND the `ReturnAccepted` event, and counted in
+  `CommittedReturn.recallHeldLines` (visible, never silent — P-08). The return is **still accepted and refunded**
+  (a recall wants the goods back); only the disposition is overridden.
+- `tests/unit/returns.test.ts` (+3): recalled resell → quarantine (state, disposition, flags, counts, refund
+  still settles); a not-recalled batch and the default predicate leave resell alone; a recalled line already
+  scrap/quarantine is untouched. All backward-compatible (the predicate defaults to "nothing recalled") → **zero
+  blast radius** on the three other `commitReturn` callers (till/edge/service).
+
+**Honest rung: M13 stays PARTIALLY_WIRED.** FR-02 is now complete at the domain level — eligibility (wired +
+integration-tested), disposition→availability, batch/condition traceability, and recall-off-resale (engine rule,
+unit-tested). Wiring the cached recall set through the till/edge return path is a follow-on. **FR-03
+exchanges/store-credit remain entirely unbuilt**, so the module is not yet WIRED.
+
+### Next
+- M13-FR-03: exchanges + store-credit refunds (the remaining sub-feature before M13 → WIRED).
+- Optional follow-on: pass the edge's cached recall set into the till/edge `commitReturn` so recall-off-resale is
+  enforced in the running store, not only in the engine.
+- **Retention periods remain the pinned owner-blocked priority** — never invent these.
+
+---
+
 ## M13 returns — condition + serial/batch preserved through the return, FR-02 slice 3 (20 September 2026)
 
 The returned goods now carry their **lot** and **condition** all the way through, so a recall (M10) can trace a
