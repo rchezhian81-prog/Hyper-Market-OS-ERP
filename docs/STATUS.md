@@ -5,6 +5,44 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M28 write-off capture screen — slice 3: the browser e2e → M28 re-rated E2E VERIFIED (20 September 2026)
+
+The final slice. The shop-floor **capture** screen is now proven end to end in a REAL headless browser, and M28
+is re-rated **PARTIALLY WIRED → E2E VERIFIED** — an honest catch-up, not an inflation (see the reasoning below).
+
+- **`tests/e2e/write-off-capture-delivery.e2e.ts` (6)** — drives the actual served `/write-off-capture` screen
+  in headless Chromium against a stub cloud on the same origin, mirroring the loss-prevention / risk-acceptance
+  delivery suites. It proves what units cannot: an authorised raiser fills the form and clicks **Record the
+  loss**, and the loss POSTs to `POST /v1/inventory/write-off/:id` **under their own session**, with the
+  operation identity riding as BOTH the URL id and the `idempotency-key` header, and no invented evidence or
+  approver on a small loss; a **material** loss with **no evidence** / **no separate approver** / **the raiser
+  approving their own** (§28) is refused **client-side with NOTHING sent**; a material loss with evidence AND a
+  separate approver POSTs carrying `evidenceRef` + `approvedBy`; and a user **without** `inventory.movement.append`
+  sees no form and sends nothing.
+- **`tests/e2e/screens-open-offline.e2e.ts`** — a new case proves the capture screen opens with the network cut
+  AND is accessible: the language toggle, the capture section and the loss-type chip group are all labelled, and
+  the five chosen loss-type chips each carry an `aria-pressed` state (colour is never the only signal).
+- All 31 e2e pass under real Chromium (25 offline-open + 6 capture delivery).
+
+**Honest rung: M28 PARTIALLY WIRED → E2E VERIFIED (headline 52.6% → 53.2%, +0.6 pts).** This is a catch-up, not
+an inflation: **all four M28 FRs have been wired on the live API with real RBAC + per-tenant isolation AND
+integration-tested since 7 Aug** (FR-01 write-off, FR-02 scrap, FR-03 packaging, FR-04 sustainability). The
+module was held conservatively at PARTIALLY WIRED for the one missing piece — a shop-floor operator surface to
+RECORD a loss and its browser proof. That surface is now complete (slices 1–3) and browser-verified end to end,
+the same E2E bar M07/M08/M10/M14/M15/M30/M34 crossed. Every money/stock rule (threshold, evidence, §28 approver
+authority, raiser = authenticated caller) stays server-side. Ledger updated consistently:
+`docs/completion-status.json`, the module ladder + summary counts in `docs/traceability.md`, the M28-FR-01 row,
+a work-package row, and the evidence registry in `tests/guardrails/completion-ladder-has-evidence.test.ts`.
+
+### Next
+- **Owner input still useful:** the store-credit cap number (`POST /v1/pos/store-credit-cap`).
+- **Retention periods remain the pinned owner-blocked priority** — never invent these.
+- Follow-ons that do NOT hold M28's rung down: upward `adjusted` corrections as a first-class flow (a correction
+  is already recordable as a new compensating write-off id — hard rule #2), the offline-QUEUED write-off flow
+  (§31), and the M29 sustainability drill-through (M28-FR-04).
+
+---
+
 ## M28 write-off capture screen — slice 2: the SERVED, offline-capable screen + edge wiring (no rung change) (20 September 2026)
 
 Slice 2 of the shop-floor **capture** screen: the tested slice-1 session model is now driven by a real served
