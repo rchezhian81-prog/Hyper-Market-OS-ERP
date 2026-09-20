@@ -479,6 +479,7 @@ export function buildSurface(deps: {
     ...returnsRoutes(store === undefined ? {
       originalSale: empty(undefined), priorReturns: empty([]), priorRefunds: empty([]),
       recordReturn: () => {}, refundThreshold: () => undefined, recordRefundThreshold: () => {}, canApproveRefund: () => Promise.resolve(false),
+      returnWindow: () => undefined, recordReturnWindow: () => {},
       flaggedReturns: empty([]), now,
     } : { ...returnsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     ...cashRoutes(store === undefined

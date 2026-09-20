@@ -5,6 +5,43 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M13 returns — return-eligibility WIRED on the desk guard + owner window config, FR-02 slice 2 (20 September 2026)
+
+The window rule from slice 1 is now enforced on the live desk return (PR #463 → this). Two merged PRs so far
+this session on M13.
+
+- **`services/pos/src/returns.ts`** — `POST /v1/sales/:saleId/returns` now runs `assessReturnEligibility`
+  (`sale.committedAt` → `processedAt`) against the tenant's window. Inside the window → proceeds; past it →
+  **422 `outside_window` unless a supervisor authorises it** (`outOfWindowApprovedBy`, re-checked via
+  `canApproveRefund`, must differ from the processor — §28; a self- or unauthorised override is refused); a
+  return dated before its sale / on an unreadable date is a data fault, refused. The exception is sealed on the
+  audit trail (`outOfWindowApprovedBy`).
+- **The window is the owner's policy, enforced once set.** `GET`/`POST /v1/pos/return-window` read/set it;
+  owner-only via new permission **`pos.return.window.set`**. Adapter `returnWindow`/`recordReturnWindow` over an
+  append-only `ReturnWindowSet` stream (latest wins). **Until the owner sets a window, returns are not
+  age-restricted** (the money guards — refund ≤ paid, §28 approver — are always on) and the desk read shows
+  `isSet:false` (P-08).
+- **A deliberate refinement of slice 1's framing, stated plainly:** slice 1 described the *engine's* safe
+  default (unset window → needs a manager). Wiring that literally would jam the desk (block every return until a
+  policy exists) and impose an age policy the owner never chose. So the desk enforces the window **once set**,
+  and shows clearly when none is set. The strict engine default remains a tested primitive.
+- `tests/integration/returns-eligibility.test.ts` (6, real API + RBAC): unset window not age-restricted +
+  `isSet:false`; owner-only setter (cashier/manager 403); malformed window 400; in-window accepted / out-of-window
+  blocked; supervisor override allowed, self/unauthorised refused; before-sale data fault non-overridable.
+
+**Honest rung: M13 stays PARTIALLY_WIRED.** FR-02's window control is now wired + integration-tested, but
+condition capture, serial/batch preservation, and recall-blocked-off-resale (M10) remain, and FR-03 exchanges/
+store-credit are still pending — so the module is not yet WIRED.
+
+### Next
+- M13-FR-02 slice 3: condition + serial/batch capture carried through the return (traceability), then
+  recall-blocked items forced off resale (M10).
+- Then FR-03 exchanges/store-credit, toward M13 WIRED.
+- **Retention periods remain the pinned owner-blocked priority** — never invent these.
+- **Owner input still useful (not blocking):** your return window in days (`POST /v1/pos/return-window`).
+
+---
+
 ## M13 returns — the return-eligibility (window) engine, FR-02 slice 1 (20 September 2026)
 
 Owner chose "finish the pilot modules"; starting with **M13 (returns/exchanges)**, whose offline-refund path is
