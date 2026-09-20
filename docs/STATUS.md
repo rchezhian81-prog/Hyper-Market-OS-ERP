@@ -5,6 +5,39 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Refund-exceptions review screen — slice 3 of 3: BROWSER-VERIFIED (20 September 2026)
+
+The refund-exceptions screen is now proven in a real browser — all three slices done.
+
+- **The e2e** `tests/e2e/return-governance-delivery.e2e.ts` (2) drives headless Chromium against a stub cloud:
+  an authorised reviewer opens `/return-governance` and the flagged refund renders from the LIVE
+  `GET /v1/pos/return-governance-exceptions` with its ₹ amount and WHAT BROKE in words; and — the property a
+  governance VIEW must hold — **not one write verb ever reaches the server** (read-only, end to end). A user
+  without `lp.case.read` sees no exceptions and still nothing is written. `tests/e2e/screens-open-offline.e2e.ts`
+  gains a `/return-governance` block proving it opens with the network cut and is accessible. Both pass in the
+  pre-installed Chromium; they self-skip where no browser is present (like every other delivery e2e), so CI's
+  browserless verify job stays green.
+- **HONEST RUNG — no completion-% change.** The screen is a real deepening, but **M13 stays PARTIALLY_WIRED**:
+  its module rung is governed by its weakest FR, exchanges (EX track), which the owner deferred to R5 (CH-01)
+  and which is not built. A browser-verified screen does not lift a module past a deferred requirement — that
+  would be inflation. So the screen is done and browser-verified; the module rung is unchanged, deliberately.
+
+### The store-credit-cap theme (owner picked "you pick") — where it landed
+The owner delegated the next build. Investigating first showed the **store-credit cap itself is already fully
+built and tested** (config + cloud-desk enforcement + offline record-and-flag); the only thing pending is the
+owner's rupee number (config, not code). The genuine gap was that the cap breaches — and the other refund
+governance flags — had **no human-facing screen**. That screen is now built across three tested slices and
+browser-verified. Net: a real, on-theme capability delivered without fabricating work on finished code and
+without inventing the owner's number.
+
+### Next
+- Owner-input is now the highest-value remaining work I can't do alone: the **store-credit cap rupee number**
+  and the **retention periods** (both pinned owner-blocked; never invented).
+- Otherwise: another pilot-facing screen to browser-verify, or genuine deepening on a module with a real gap
+  (M03/M16/M29) — each needs actual new integration coverage, not a re-rate.
+
+---
+
 ## Refund-exceptions review screen — slice 2 of 3 (served screen + edge wiring) (20 September 2026)
 
 The served `/return-governance` screen the owner can actually open. Built on the tested session model from
