@@ -5,6 +5,41 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M13 returns — store-credit refund issuance engine; exchanges held per CH-01, FR-03 SC-1 (20 September 2026)
+
+**Important governance note.** I offered to build M13-FR-03 and, on checking, found **CH-01 in
+`docs/registers/changes.md` (owner-approved 24 Aug 2026) defers exchanges + no-receipt cloud flows to R5.** The
+owner's fresh "build exchanges" choice therefore conflicted with a prior written decision. I stopped, surfaced it,
+and the owner chose to **honour CH-01 and build the STORE-CREDIT half of FR-03 instead** (store credit is not
+deferred by CH-01). A pure exchange-settlement engine I had started was **reverted, unshipped**. No written
+deferral was silently reversed.
+
+- **`packages/loyalty/src/stored-value.ts`** — `issueRefundCredit(ownerRef, amountMinor, returnId, at, capMinor,
+  alreadyIssuedMinor?, existing?, existingMovements?)`: finally **writes the `refund_to_credit` movement** the
+  balance projection and liability reconciliation already anticipated but nothing ever created. Opens a fresh
+  store-credit instrument or loads onto an existing one, so a refund handed back as store credit becomes a real
+  spendable, liability-tracked balance (M23). **Capped by the owner's number, fail-safe when unset**
+  (`cap_not_configured` — never a guessed default; M17); a window cap via `alreadyIssuedMinor`; **idempotent on the
+  return id** (`duplicate_movement`); refuses a non-positive/fractional amount. Pure — clock/cap/prior-issuance
+  injected.
+- `tests/unit/loyalty-stored-value.test.ts` (+7): new instrument, top-up an existing account, idempotent retry,
+  cap-not-set fail-safe, cap-exceeded (window-aware), invalid amount, and the issued credit **reconciles as a
+  liability**.
+
+**Honest rung: M13 stays PARTIALLY_WIRED.** This is the store-credit issuance engine only. Remaining SC slices:
+an owner-configurable per-tenant issuance cap route (M17), then wiring `issueRefundCredit` into the cloud return
+route (a `store_credit` refund issues the instrument — needs a customer ref on the return), then the offline
+mirror (§31). Exchanges stay deferred (CH-01).
+
+### Next
+- FR-03 SC-2: owner-configurable per-tenant store-credit issuance cap (route + adapter + owner permission),
+  fail-safe unset — mirrors the refund-threshold/return-window pattern.
+- FR-03 SC-3: wire `issueRefundCredit` into `POST /v1/sales/:saleId/returns` (customer ref required for a
+  store_credit refund; issue the spendable instrument atomically with the return).
+- **Retention periods remain the pinned owner-blocked priority** — never invent these.
+
+---
+
 ## M13 returns — a recalled batch that comes back is HELD, never resold, FR-02 slice 4 (20 September 2026)
 
 The last FR-02 rule: a returned unit whose batch is under recall (M10) must not go back on the shelf. Fourth M13

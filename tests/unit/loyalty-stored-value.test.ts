@@ -4,6 +4,7 @@ import {
   balanceOf,
   householdBalance,
   redeemValue,
+  issueRefundCredit,
   findDoubleSpends,
   reconcileLiability,
   flagVelocity,
@@ -109,6 +110,66 @@ describe('a gift card cannot be overdrawn, and offline is capped not forbidden',
     expect(
       redeemValue({ instrument: CARD, movements: LOADED, movement: mv({ deltaMinor: 5_000 }) }).outcome,
     ).toBe('invalid_amount');
+  });
+});
+
+describe('a refund issued as store credit becomes a real spendable balance (M13-FR-03 / M17)', () => {
+  const AT = '2026-08-05T10:00:00Z';
+
+  it('opens a fresh store-credit instrument with a refund_to_credit movement', () => {
+    const r = issueRefundCredit({ ownerRef: 'c-asha', amountMinor: 20_000, returnId: 'RT-9', at: AT, capMinor: 100_000 });
+    expect(r.ok).toBe(true);
+    expect(r.outcome).toBe('issued');
+    expect(r.instrument).toEqual({ instrumentId: 'store-credit:RT-9', kind: 'store_credit', ownerRef: 'c-asha', issuedAt: AT });
+    expect(r.movement?.kind).toBe('refund_to_credit');
+    expect(r.movement?.deltaMinor).toBe(20_000); // positive — value added to the customer's account
+    expect(r.movement?.customerRef).toBe('c-asha');
+    expect(r.balanceAfterMinor).toBe(20_000);
+    // The issued credit is spendable AND counts as a liability the shop owes (M23).
+    expect(balanceOf([r.movement!], r.instrumentId)).toBe(20_000);
+    expect(reconcileLiability({ movements: [r.movement!], postedLiabilityMinor: 20_000 }).reconciles).toBe(true);
+  });
+
+  it('tops up an existing store-credit account instead of opening a new one', () => {
+    const existing: Instrument = { instrumentId: 'SC-asha', kind: 'store_credit', ownerRef: 'c-asha', issuedAt: '2026-07-01T00:00:00Z' };
+    const existingMovements: ValueMovement[] = [
+      { movementId: 'seed', instrumentId: 'SC-asha', kind: 'issue', deltaMinor: 5_000, at: '2026-07-01T00:00:00Z', channel: 'store' },
+    ];
+    const r = issueRefundCredit({ ownerRef: 'c-asha', amountMinor: 15_000, returnId: 'RT-10', at: AT, capMinor: 100_000, existing, existingMovements });
+    expect(r.ok).toBe(true);
+    expect(r.instrument).toBeUndefined(); // no new instrument
+    expect(r.instrumentId).toBe('SC-asha');
+    expect(r.movement?.deltaMinor).toBe(15_000);
+    expect(r.balanceAfterMinor).toBe(20_000); // 5,000 + 15,000
+  });
+
+  it('is idempotent on the return id — a retry issues no second credit', () => {
+    const first = issueRefundCredit({ ownerRef: 'c-asha', amountMinor: 20_000, returnId: 'RT-9', at: AT, capMinor: 100_000 });
+    const retry = issueRefundCredit({ ownerRef: 'c-asha', amountMinor: 20_000, returnId: 'RT-9', at: AT, capMinor: 100_000, existingMovements: [first.movement!] });
+    expect(retry.ok).toBe(false);
+    expect(retry.outcome).toBe('duplicate_movement');
+    expect(retry.movement).toBeUndefined();
+  });
+
+  it('issues NOTHING when the owner has not set a cap (fail safe, never a guessed default)', () => {
+    const r = issueRefundCredit({ ownerRef: 'c-asha', amountMinor: 20_000, returnId: 'RT-11', at: AT });
+    expect(r.ok).toBe(false);
+    expect(r.outcome).toBe('cap_not_configured');
+    expect(r.movement).toBeUndefined();
+  });
+
+  it('refuses issuance past the owner cap, counting what was already issued in the window', () => {
+    const under = issueRefundCredit({ ownerRef: 'c-asha', amountMinor: 20_000, returnId: 'RT-12', at: AT, capMinor: 50_000, alreadyIssuedMinor: 20_000 });
+    expect(under.ok).toBe(true); // 20k + 20k = 40k ≤ 50k
+    const over = issueRefundCredit({ ownerRef: 'c-asha', amountMinor: 20_000, returnId: 'RT-13', at: AT, capMinor: 50_000, alreadyIssuedMinor: 40_000 });
+    expect(over.ok).toBe(false); // 40k + 20k = 60k > 50k
+    expect(over.outcome).toBe('cap_exceeded');
+  });
+
+  it('refuses a non-positive or fractional amount', () => {
+    for (const bad of [0, -100, 12.5]) {
+      expect(issueRefundCredit({ ownerRef: 'c-asha', amountMinor: bad, returnId: 'RT-x', at: AT, capMinor: 100_000 }).outcome).toBe('invalid_amount');
+    }
   });
 });
 
