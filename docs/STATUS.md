@@ -5,6 +5,42 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Refund-exceptions review screen — slice 1 of 3 (owner picked "store-credit cap") (20 September 2026)
+
+The owner delegated the next build ("you pick" → I'd committed to the store-credit cap). **Investigating first
+saved us from fake work:** the store-credit cap is *already fully built and tested* — the owner's per-tenant
+cap config surface (`store-credit-cap.test.ts`), the cloud desk enforcement that refuses a refund above the
+cap (`store-credit-refund.test.ts` → `store_credit_over_cap`, fail-safe when unset), and the offline path
+that record-and-flags an over-cap or no-customer credit taken at the lane
+(`offline-store-credit-reaches-the-cloud.test.ts`). The only thing genuinely pending on the cap is the owner
+typing the actual rupee number into a live store — config, not code. I did **not** fabricate build work on
+finished code.
+
+- **The genuine, on-theme, non-blocked gap.** Those breaches (`store_credit_over_cap`,
+  `store_credit_no_customer`, plus the §28 refund-governance and cross-lane loss flags) are surfaced only by
+  a backend read route (`GET /v1/pos/return-governance-exceptions`, `lp.case.read`). **There was no screen**
+  for the owner/manager/accountant to see and act on them — a breach recorded but never seen is exactly the
+  silent failure P-08 forbids (and, for loss, control-by-exception P-03 / hard rule #10).
+- **Slice 1 (this increment).** A tested DOM-free session model
+  `apps/web-erp/src/return-governance-session.ts` (`createReturnGovernanceSession`): read-only review inbox,
+  presents each flagged return with its governance flags (all 7 `RefundGovernanceFinding` values labelled
+  EN+TA via an exhaustive map the type enforces), ₹ amount, processor/approver/customer with fallbacks,
+  reason and date; every exception reads as attention with an icon + word (colour never the only signal);
+  `lp.case.read`-gated; fail-safe empty / not-permitted states. `tests/unit/erp-return-governance-session.test.ts`
+  (12). Full gate green (7120 passed).
+
+**No module rung moves yet** — a screen earns E2E VERIFIED only when it is browser-driven. Slice 2 adds the
+served `/return-governance` screen + edge wiring + the is-usable DOM guardrail; slice 3 the Chromium e2e.
+
+### Next
+- Slice 2: served screen (`apps/web-erp/web/return-governance.{html,js}`) + edge screen-data/pack + SW bump +
+  nav + browser-entry live-fetch-with-sample-fallback + `the-return-governance-screen-is-usable` guardrail.
+- Slice 3: `tests/e2e/…` browser e2e → the screen opens offline, is accessible, and shows a seeded exception.
+- Owner-input still genuinely useful (not blocking this build): the **store-credit cap rupee number** and the
+  **retention periods** — both config/decisions only the owner can make; never invented.
+
+---
+
 ## M25 Workforce — per-tenant isolation of the HR stores → M25 re-rated INTEGRATION TESTED (20 September 2026)
 
 The honest catch-up pattern applied to **M25 (Workforce/HR)** — the last module eligible for a clean re-rate.
