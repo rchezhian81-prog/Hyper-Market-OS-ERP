@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M11 In-store production — durability restart-rebuild test + stale-doc fix → M11 re-rated INTEGRATION TESTED (20 September 2026)
+
+The same honest catch-up pattern as M26, applied to **M11 (Fresh food / in-store production)**.
+
+- **The finding.** M11 sat at WIRED though its own ledger note already read *"all four FRs integration-tested"*.
+  Verified: FR-01 run + short-refusal + idempotency, FR-03 quality release, FR-04 departments + Legal-Metrology
+  labels are all in `tests/integration/production.test.ts`; FR-02 catch-weight costing in
+  `tests/integration/weighed-costing.test.ts` — all through the real API with RBAC + per-tenant isolation.
+- **The increment (real new test).** Added `tests/integration/production-durability.test.ts` (1): commits a
+  2-batch run, quality-releases it, then builds a NEW surface over the SAME event store and proves the released
+  batch, the enabled department, and the depleted shelf (prior consumption stays layered) all rebuild from the
+  log — and that a fresh run still commits afterwards, so the rebuilt surface is live, not a read-only replay
+  (P-04 tested recovery, P-08, FND-01 append-only).
+- **Honesty fix.** Corrected a stale, factually-wrong fragment in the M11-FR-01 traceability cell that still
+  called FR-02/03/04 *"engine-only"* long after they were wired + integration-tested.
+
+**Honest rung: M11 WIRED → INTEGRATION TESTED** (module ladder now 10 E2E VERIFIED · 3 INTEGRATION TESTED ·
+10 WIRED · 13 PARTIALLY WIRED). Headline **53.4% → 53.5%** (5565/10400, +15 weighted pts). Held below
+E2E VERIFIED: the in-store production operator surface is not browser-e2e'd. Ledger, module ladder + summary
+counts, the M11-FR-01 evidence, and STATUS all updated; the guardrail evidence registry already pointed at
+`tests/integration/production.test.ts`. Full gate green.
+
+### Next
+- **Owner input still useful:** the store-credit cap number (`POST /v1/pos/store-credit-cap`).
+- **Retention periods remain the pinned owner-blocked priority** — never invent these.
+- Same honest re-rate available for **M09 (Warehouse)** — all four FRs integration-tested, no restart-rebuild
+  test yet; that is the next clean increment.
+
+---
+
 ## M26 Facilities — durability restart-rebuild test → M26 re-rated INTEGRATION TESTED (20 September 2026)
 
 An honest one-rung catch-up for **M26 (Facilities & assets)**, backed by a genuinely new recovery test.
