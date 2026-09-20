@@ -37,8 +37,13 @@ notification queue treats its channel transport. Module ladder now **9 E2E VERIF
 12 WIRED · 14 PARTIALLY WIRED**.
 
 ### Next
-- The next module/track is the owner's to choose (see the survey: M18-FR-03 order routing and M28-FR-01
-  write-off capture screen are the next clean, non-owner-blocked candidates).
+- The next module/track is the owner's to choose. **CORRECTION (do not repeat):** M18-FR-03 order routing is
+  **NOT** a clean candidate — its API-07 wiring is **owner-blocked** on the serviceability model (AVR-13 /
+  OA-11: per-location delivery radius, slot capacities, express minutes, dark-store list — business decisions
+  the build may not invent; traceability line ~592). An earlier survey mis-flagged it; do not wire it until the
+  owner supplies that data. The remaining non-blocked domain candidate the survey named is **M28-FR-01** — the
+  shop-floor write-off CAPTURE screen (a money/stock write path with §28, higher risk — owner should choose it
+  deliberately).
 - **Owner input still useful:** the store-credit cap number (`POST /v1/pos/store-credit-cap`).
 - **Retention periods remain the pinned owner-blocked priority** — never invent these.
 
