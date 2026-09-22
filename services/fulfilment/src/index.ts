@@ -237,10 +237,19 @@ function readCollections(v: unknown): readonly CodCollection[] | undefined {
 }
 
 export function fulfilmentRoutes(deps: FulfilmentDeps): readonly Route[] {
+  // The home-delivery surface (driver attempts, order transitions, driver runs) and cash-on-delivery
+  // reconciliation are the optional DELIVERY feature (M36-FR-01 · §35): every route carries
+  // `entitlement: 'delivery'`, so a shop whose plan does not include delivery reaches none of them
+  // (default-deny, feature_not_entitled). This is safe against the core sale — a `DeliveryAttempted`
+  // event is only ever produced by the delivery domain, never by a POS sale, so a non-delivery shop
+  // never reaches `/v1/delivery/attempts` even through the edge sync drain. Deliberately NOT gated here:
+  // the shared order-fulfilment surface (`/v1/fulfilment/orders/:id/{pack,dispatch,manifest}` in
+  // `packing.ts`, `fulfilment.pack.*`) — that is click-and-collect too, which a pickup-only shop uses
+  // without home delivery.
   return [
     {
       api: 'API-08', method: 'POST', path: '/v1/delivery/attempts',
-      permission: 'delivery.attempt.record', idempotent: true,
+      permission: 'delivery.attempt.record', entitlement: 'delivery', idempotent: true,
       handler: async (ctx) => {
         const attempt = ctx.body as DeliveryAttempt;
         const check = checkAttempt(attempt);
@@ -276,7 +285,7 @@ export function fulfilmentRoutes(deps: FulfilmentDeps): readonly Route[] {
       // step is recorded append-only in the driver's own name. The single-attempt route above stays for the
       // driver's per-run log; this is the order's own lifecycle, which a dispatcher reads to answer "where is it".
       api: 'API-08', method: 'POST', path: '/v1/delivery/orders/:orderId/transition',
-      permission: 'delivery.attempt.record', idempotent: true,
+      permission: 'delivery.attempt.record', entitlement: 'delivery', idempotent: true,
       handler: async (ctx) => {
         const orderId = ctx.params['orderId'] ?? '';
         const b = (ctx.body ?? {}) as Record<string, unknown>;
@@ -327,7 +336,7 @@ export function fulfilmentRoutes(deps: FulfilmentDeps): readonly Route[] {
       // Where is this order? Its current delivery state and the full append-only step history — what a
       // dispatcher reads when a customer rings, and the record that settles a "it never arrived" dispute.
       api: 'API-08', method: 'GET', path: '/v1/delivery/orders/:orderId',
-      permission: 'delivery.run.read',
+      permission: 'delivery.run.read', entitlement: 'delivery',
       handler: async (ctx) => {
         const orderId = ctx.params['orderId'] ?? '';
         const history = await deps.deliveryState(ctx.tenantId, orderId);
@@ -337,7 +346,7 @@ export function fulfilmentRoutes(deps: FulfilmentDeps): readonly Route[] {
     },
     {
       api: 'API-08', method: 'GET', path: '/v1/delivery/runs/:driverId',
-      permission: 'delivery.run.read',
+      permission: 'delivery.run.read', entitlement: 'delivery',
       handler: async (ctx) => {
         const driverId = ctx.params['driverId'] ?? '';
         const runDate = ctx.query['runDate'] ?? deps.now().slice(0, 10);
@@ -360,7 +369,7 @@ export function fulfilmentRoutes(deps: FulfilmentDeps): readonly Route[] {
       // { expectations:[{orderId, expectedMinor}], collections:[{orderId, collectedMinor, method}] }. A pure
       // compute — the caller supplies both sides (like channel reconciliation); nothing is written.
       api: 'API-08', method: 'POST', path: '/v1/fulfilment/cod/reconcile',
-      permission: 'delivery.run.read', idempotent: true,
+      permission: 'delivery.run.read', entitlement: 'delivery', idempotent: true,
       handler: async (ctx) => {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         const expectations = readExpectations(b['expectations']);

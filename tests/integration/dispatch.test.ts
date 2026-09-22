@@ -32,6 +32,7 @@ const reconcile = (h: ApiHarness, u: string, driverId: string) =>
 async function cast(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');                    // delivery.dispatch.manage + delivery.run.read + attempt.record
+  await h.enableFeature(A, 'delivery');               // this shop's plan includes home delivery (M36-FR-01)
   await h.provisionRole(A, 'u-mgr', 'store_manager'); // same delivery perms
   await h.provisionRole(A, 'u-cash', 'cashier');      // none
   return h;

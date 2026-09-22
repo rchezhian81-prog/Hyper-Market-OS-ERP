@@ -108,6 +108,8 @@ describe.skipIf(!DATABASE_URL)('the API remembers (real PostgreSQL)', () => {
       router: built.router!,
       authenticate: () => ({ tenantId: TENANT, userId: 'u-manager', branchId: 'b-main' }),
       access: ACCESS, idempotency: new MemoryIdempotencyStore(),
+      // This shop runs home delivery (M36-FR-01) — so the gated /v1/delivery/* routes are reachable.
+      entitlements: () => ['delivery'],
       newTraceId: () => `trace-${RUN}`,
     };
   });
