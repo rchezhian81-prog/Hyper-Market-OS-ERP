@@ -206,6 +206,7 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   dayReopenPolicy: known({ userId: 'u-accountant', permissions: ['till.dayclose.read', 'till.dayclose.approve'] }),
   stockHealthPolicy: known({ userId: 'u-manager', permissions: ['inventory.availability.read'] }),
   storedValuePolicy: known({ userId: 'u-manager', permissions: ['lp.case.read'] }),
+  integrationHealthPolicy: known({ userId: 'u-admin', permissions: ['platform.health.read'] }),
   goodsReceiptPolicy: known({ userId: 'u-manager', permissions: ['inventory.availability.read'] }),
   dataIoPolicy: known({ userId: 'u-owner', permissions: ['export.read', 'purchase.import.read', 'purchase.import.record'], importTemplates: [{ id: 'products-basic', domain: 'products', label: 'Products', financial: false, columns: [{ name: 'sku', type: 'text' }], keyColumns: ['sku'] }] }),
   workforceInboxPolicy: known({ userId: 'u-owner', permissions: ['ai.proposal.read'] }),
