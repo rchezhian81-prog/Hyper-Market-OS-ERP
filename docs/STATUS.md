@@ -5,6 +5,31 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M17 stored-value oversight screen — slice 2: served screen + edge wiring (22 September 2026, owner: keep-going)
+
+Slice 2 of the M17 stored-value oversight desk — the visible screen over the tested session model from slice 1.
+
+- **The served screen** `apps/web-erp/web/stored-value.{html,js}` (the twenty-fourth web-erp screen): renders the
+  three worst-first feeds from `window.storedValueSession` (the tested model re-decides nothing) — a customer
+  reference looks up that household's double-spends, a posted figure reconciles the liability, and the velocity
+  watch is store-wide. Every row reads by icon **and** word; the screen issues **no write verb** (asserted by the
+  guardrail); offline it shows a sample stand-in and the stale strip. Bilingual EN/TA (the session copy grew the
+  chrome keys it needed — refresh/reconcile/lookup/labels — kept in the one bilingual object).
+- **browser-entry** `bootStoredValue` + `storedValuePortsFromData` + three read fetches (`fetchStoredValueVelocity`
+  / `…Liability(posted)` / `…DoubleSpends(ownerRef)` — all GETs, `credentials: 'same-origin'`, a failure leaves
+  that feed absent rather than a false zero) + the `window.storedValue` api (refresh / reconcile / lookup / present,
+  merging into one folded `StoredValueOversightData`).
+- **edge wiring**: `storedValuePayload` (who + `lp.case.read`, figures read live not shipped), `SCREENS`
+  += `stored-value`, `GLOBAL_FOR`/`payloadFor` entries, `PackStoredValuePolicy` (+ the pack's `notKnown` default and
+  `section()` builder), `APP_SHELL` entry, SW cache `v33 → v34` (+ `stored-value.js` in the shell list).
+- **guardrail** `tests/guardrails/the-stored-value-screen-is-usable.test.ts` (10) + the two screen-registry fixtures
+  extended (`the-screens-are-fed` now feeds 24 screens; `edge-feeds-the-screens`). Full gate green.
+
+Same offline-first contract as every ERP screen. **No rung change yet** — M17 stays INTEGRATION_TESTED until slice
+3's browser e2e drives it to E2E_VERIFIED.
+
+---
+
 ## M17 stored-value oversight screen — slice 1: tested session model (22 September 2026, owner: pick-next)
 
 With the M36 paywall arc closed, the owner said **"keep going, pick the next module yourself."** I picked **M17
