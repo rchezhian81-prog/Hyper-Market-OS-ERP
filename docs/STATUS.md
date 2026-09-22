@@ -5,6 +5,35 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M17 stored-value oversight screen — slice 1: tested session model (22 September 2026, owner: pick-next)
+
+With the M36 paywall arc closed, the owner said **"keep going, pick the next module yourself."** I picked **M17
+(Loyalty/stored-value)** — it sits one rung below E2E (INTEGRATION_TESTED), its whole backend is already wired +
+integration-tested (points, gift cards, store credit, household balances, liability reconciliation, velocity,
+coupons), and it had **no operator screen**. So the E2E gap is a served screen; I'm building it as the proven
+3-slice pattern.
+
+The screen is a **stored-value oversight desk** — a control-by-exception read dashboard (P-03) for the money the
+shop owes on gift cards / store credit, on the loss/books gate `lp.case.read` (not the cashier's balance read,
+P-04). It folds three cloud feeds worst-first: **given away twice** (cross-channel double-spends — settled loss,
+both sides kept, hard rule #10), **liability vs the books** (the signed gap between the cards' outstanding balance
+and the posted liability — unrecorded debt, never guessed), and **draining fast** (redemption-velocity watch flags,
+detect-only). It reads and reports; it commits nothing.
+
+- **Slice 1 (this PR).** `apps/web-erp/src/stored-value-session.ts` — the tested DOM-free session model: the three
+  feeds presented worst-first (double-spends by overspend, velocity by value), each row reading by icon **and**
+  word never colour alone (`presentStatus`); the liability gap carries its sign and reads OK when it reconciles,
+  error when it does not, and is simply absent until a posted figure is supplied (never a guessed reconciliation);
+  a reader without `lp.case.read` sees a not-permitted state and nothing else; all-clear is a calm empty state.
+  Bilingual EN/TA. `tests/unit/erp-stored-value-session.test.ts` (10).
+- **Slice 2 (next).** The served `/stored-value` screen + browser-entry (fetch the three feeds, posted-figure input
+  for the liability reconcile) + edge wiring (payload, pack policy, screen-server route + SCREENS, SW bump) +
+  `the-stored-value-screen-is-usable` guardrail + fixtures.
+- **Slice 3.** Browser e2e (a manager opens the desk, sees a double-spend and a books gap worst-first, enters the
+  posted figure and the gap reconciles/does not) → re-rate M17 INTEGRATION_TESTED → E2E_VERIFIED.
+
+---
+
 ## M36-FR-01 paywall — per-route enforcement COMPLETE; customer app gated at provisioning (22 September 2026, owner decision)
 
 Closing out M36-FR-01 route enforcement (task #163). The owner asked to gate the customer app and to **map it
