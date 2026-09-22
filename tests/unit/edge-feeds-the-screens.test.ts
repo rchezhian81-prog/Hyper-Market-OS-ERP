@@ -212,6 +212,8 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   essPolicy: known({ userId: 'u-cash', permissions: ['payroll.ess.self'] }),
   // Manager rostering (M25-FR-01). Who is looking + what they hold; the gaps and staff come live from the cloud.
   rosteringPolicy: known({ userId: 'u-manager', permissions: ['workforce.roster.read', 'workforce.roster.manage'] }),
+  // Manager checklist (M25-FR-02). Who is looking + what they hold; the day's checklists come live from the cloud.
+  checklistPolicy: known({ userId: 'u-manager', permissions: ['workforce.checklist.read', 'workforce.roster.manage'] }),
   // Admin and security (M01/M02/M33/M34). Support access is never pruned (hard rule #6).
   accounts: known([{
     userId: 'u-meena', tenantId: 't1', username: 'meena',

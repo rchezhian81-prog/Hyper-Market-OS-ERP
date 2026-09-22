@@ -630,6 +630,17 @@ export interface PackRosteringPolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the manager checklist screen and what they may do (M25-FR-02 · API-11). The day's checklists are
+ *  read live from the cloud (`GET /v1/hr/workforce/checklists`), not the pack; this is only who the box was told
+ *  is looking, so the shell can gate on `workforce.checklist.read` (to see) and `workforce.roster.manage` (to
+ *  sign off) before the live read. The cloud routes re-check both. */
+export interface PackChecklistPolicy {
+  readonly userId?: string;
+  /** The permission codes this user holds — `workforce.checklist.read` to see, `workforce.roster.manage` to
+   *  sign off. Never defaulted; the cloud routes re-check them, so this only shapes the UI. */
+  readonly permissions: readonly string[];
+}
+
 /** Who administers this shop, and the windows it judges accounts and devices by. */
 export interface PackAdminPolicy {
   /** Days without a login after which an account is stale enough to review. Per-tenant. */
@@ -1018,6 +1029,8 @@ export interface StorePack {
   readonly essPolicy: Register<PackEssPolicy>;
   /** Who is on the manager rostering screen and what they may do there (M25-FR-01). */
   readonly rosteringPolicy: Register<PackRosteringPolicy>;
+  /** Who is on the manager checklist screen and what they may do there (M25-FR-02). */
+  readonly checklistPolicy: Register<PackChecklistPolicy>;
   /** Every account, so joiners, movers and leavers can be reviewed (M02-FR-04). */
   readonly accounts: Register<readonly unknown[]>;
   /**
@@ -1171,6 +1184,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     workforceInboxPolicy: notKnown(why),
     essPolicy: notKnown(why),
     rosteringPolicy: notKnown(why),
+    checklistPolicy: notKnown(why),
     accounts: notKnown(why),
     supportSessions: notKnown(why),
     devices: notKnown(why),
@@ -1293,6 +1307,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     workforceInboxPolicy: section<PackWorkforceInboxPolicy>('workforceInboxPolicy'),
     essPolicy: section<PackEssPolicy>('essPolicy'),
     rosteringPolicy: section<PackRosteringPolicy>('rosteringPolicy'),
+    checklistPolicy: section<PackChecklistPolicy>('checklistPolicy'),
     accounts: section<readonly unknown[]>('accounts'),
     supportSessions: section<readonly unknown[]>('supportSessions'),
     devices: section<readonly unknown[]>('devices'),
