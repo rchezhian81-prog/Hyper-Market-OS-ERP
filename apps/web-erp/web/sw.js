@@ -32,7 +32,7 @@
 // gives the browser a syntax error, and the screen then boots into its sample stand-in for a reason
 // nobody can see.
 
-const CACHE = 'sre-erp-shell-v28';
+const CACHE = 'sre-erp-shell-v29';
 
 /** Committed files. A missing one is a packaging fault and should fail the install loudly. */
 const SHELL = ['./app.js', './buying.js', './catalogue.js', './merchandising.js', './reporting.js', './service.js', './expiry.js', './finance.js', './gst-reconciliation.js', './category-policy.js', './gst-returns.js', './waste.js', './write-off-capture.js', './counts.js', './fleet.js', './product-publish-review.js', './data-quality.js', './operations.js', './loss-prevention.js', './return-governance.js', './cash-office.js', './risk-acceptance.js', './day-reopen.js', './stock-health.js', './goods-receipt.js', './data-io.js', './workforce.js', './ess.js', './admin.js', './ai.js', './migration.js', './manifest.webmanifest'];
