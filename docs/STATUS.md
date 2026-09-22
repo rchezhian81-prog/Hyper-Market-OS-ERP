@@ -5,6 +5,39 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M36-FR-01 paywall — the loyalty programme is now a paid feature (22 September 2026, owner-directed)
+
+Continuing M36-FR-01 (task #163). The owner said **"keep going with loyalty, map it first."** Mapping first, as
+with the departments, surfaced the critical distinction:
+
+- **`/v1/loyalty/*` (`services/customer/src/coupons.ts`) = the loyalty MARKETING programme** — 5 routes: issue/read/
+  redeem a coupon, personalised offers, referral payouts. Self-contained, **no runtime caller anywhere** (POS, edge,
+  customer-app and sync all clean — confirmed by grep); only `tests/integration/coupons.test.ts` exercises them. This
+  is the clean, safe gate — the exact concession/B2B route-tag shape.
+- **`/v1/stored-value/*` (`services/customer/src/stored-value.ts`) = CUSTOMER MONEY** — gift cards and store credit.
+  **Store credit is issued by the core returns flow every shop runs** (`services/pos/src/returns.ts`, M13-FR-03).
+  Gating this behind the optional `loyalty` feature would let a shop take a customer's money (a gift card, or a refund
+  paid as store credit) and then **refuse to let them spend it** once a plan lapses — trapping customer money. Hard no.
+  **Left ungated, on purpose, and recorded.**
+- **`/v1/customers/:id/points` (points earn/burn)** — on the customer-identity surface, earned during sales. Its own
+  judgment call; **deferred**, not gated in this pass.
+
+**What shipped (this PR).** Route-tag pattern on the marketing programme only:
+- `services/customer/src/coupons.ts` — all 5 `/v1/loyalty/*` routes tagged `entitlement: 'loyalty'` (checked after the
+  permission, default-deny, `feature_not_entitled` 403), with a header comment recording why stored value + points are
+  deliberately excluded.
+- `tests/integration/coupons.test.ts` — `enableFeature(A, 'loyalty')` in the shared `cast()` (covers all existing
+  tests, restart test included), plus 3 gate cases (a full owner without the feature is refused issue AND read; enabled
+  → in; per-tenant isolation). Gate green: tsc + eslint + secret-scan + 7273 tests.
+- docs: traceability + completion-status updated — loyalty moves from "follow-on" into "enforced", with the customer-
+  money exclusion spelled out.
+
+**M36 stays PARTIALLY_WIRED.** Remaining optional-feature route families to gate: **delivery** and **customer_app**.
+Deferred as before: central-kitchen naming, food court + pharmacy (no module). Points earn/burn and all of stored value
+are deliberately never part of the loyalty paywall. Paid-plan **tier** stays owner-blocked (OA-12).
+
+---
+
 ## M36-FR-01 paywall — the specialised departments are now a paid feature (22 September 2026, owner-directed)
 
 Continuing M36-FR-01 (task #163). The kernel's per-route entitlement mechanism (`Route.entitlement`, PR #507) and
