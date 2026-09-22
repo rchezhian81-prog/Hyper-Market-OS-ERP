@@ -29,6 +29,7 @@ describe('b2b collections: aged from the due date, a dispute is not chased, stop
   it('ages from the due date and excludes a disputed invoice from the chaseable figure', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     await invoice(h, A, 'u-owner', 'CUST1', 'inv-1', { number: 'INV-1', issuedOn: '2026-07-21', dueOn: '2026-08-20', grossMinor: 100_000 });
     await invoice(h, A, 'u-owner', 'CUST1', 'inv-2', { number: 'INV-2', issuedOn: '2026-08-16', dueOn: '2026-09-15', grossMinor: 50_000 });
     await invoice(h, A, 'u-owner', 'CUST1', 'inv-3', { number: 'INV-3', issuedOn: '2026-04-01', dueOn: '2026-05-01', grossMinor: 200_000, disputed: true, disputeReason: 'short delivery' });
@@ -44,6 +45,7 @@ describe('b2b collections: aged from the due date, a dispute is not chased, stop
   it('allocates a payment oldest-due-first and holds an overpayment unapplied', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     await invoice(h, A, 'u-owner', 'CUST1', 'inv-1', { number: 'INV-1', issuedOn: '2026-07-21', dueOn: '2026-08-20', grossMinor: 100_000 });
     await invoice(h, A, 'u-owner', 'CUST1', 'inv-2', { number: 'INV-2', issuedOn: '2026-08-16', dueOn: '2026-09-15', grossMinor: 50_000 });
 
@@ -66,6 +68,7 @@ describe('b2b collections: aged from the due date, a dispute is not chased, stop
   it('escalates to a reminder, and recommends stopping supply for a person to commit', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     await invoice(h, A, 'u-owner', 'CUST1', 'inv-1', { number: 'INV-1', issuedOn: '2026-07-21', dueOn: '2026-08-20', grossMinor: 100_000 });
 
     // 11 days overdue on 31 Aug, above the 7-day reminder threshold, below final notice → a reminder.
@@ -83,6 +86,7 @@ describe('b2b collections: aged from the due date, a dispute is not chased, stop
   it('is authorized (record vs read split), per-tenant, and refuses unknown/malformed', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     await h.provisionRole(A, 'u-mgr', 'store_manager'); // reads AR, does NOT record receivables
     await h.provisionRole(A, 'u-cash', 'cashier');
     await invoice(h, A, 'u-owner', 'CUST1', 'inv-1', { number: 'INV-1', issuedOn: '2026-07-21', dueOn: '2026-08-20', grossMinor: 100_000 });
@@ -95,6 +99,7 @@ describe('b2b collections: aged from the due date, a dispute is not chased, stop
     expect((await invoice(h, A, 'u-owner', 'CUST1', 'inv-bad', { number: 'B', issuedOn: 'not-a-date', dueOn: '2026-08-20', grossMinor: 1 })).status).toBe(400);
 
     await h.seedOwner(B, 'u-owner-b');
+    await h.enableFeature(B, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     expect((await ageing(h, B, 'u-owner-b', 'CUST1', '2026-08-31')).status).toBe(404);
   });
 });

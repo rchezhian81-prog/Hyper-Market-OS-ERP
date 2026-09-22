@@ -47,6 +47,7 @@ describe('b2b AR reconciliation: the sub-ledger vs the GL, exact and signed (M22
   it('agrees when the collections ageing total equals the finance AR balance', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     await bothLedgers(h, A, 'CUST1', 150_000); // 100,000 + 50,000 on both sides
 
     const r = (await reconcile(h, A, 'u-owner', 'CUST1', '2026-08-31')).body as Recon;
@@ -59,6 +60,7 @@ describe('b2b AR reconciliation: the sub-ledger vs the GL, exact and signed (M22
   it('surfaces a drift where the portal shows MORE than finance (customer asked for money the books do not record)', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     await bothLedgers(h, A, 'CUST1', 100_000); // portal 150,000, finance only 100,000
 
     const r = (await reconcile(h, A, 'u-owner', 'CUST1', '2026-08-31')).body as Recon;
@@ -70,6 +72,7 @@ describe('b2b AR reconciliation: the sub-ledger vs the GL, exact and signed (M22
   it('surfaces the WORST case — the sub-ledger is empty while finance records a debt — instead of 404ing it away', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     // No collections invoice at all; finance says 90,000 is owed. The customer's portal would show
     // NOTHING due while the books say otherwise — a report that must appear, not disappear as "no data".
     await receivable(h, A, 'u-owner', 'CUST1', 'm-1', { kind: 'invoice', amountMinor: 90_000 });
@@ -87,6 +90,7 @@ describe('b2b AR reconciliation: the sub-ledger vs the GL, exact and signed (M22
   it('gates the reconciliation ONE RUNG above the ageing read (a manager reads ageing, not the reconciliation)', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     await h.provisionRole(A, 'u-mgr', 'store_manager'); // b2b.account.read — NOT b2b.receivable.record
     await h.provisionRole(A, 'u-acct', 'accountant');   // b2b.receivable.record
     await h.provisionRole(A, 'u-cash', 'cashier');       // neither
@@ -106,6 +110,7 @@ describe('b2b AR reconciliation: the sub-ledger vs the GL, exact and signed (M22
   it('404s only when NEITHER ledger knows the customer, needs a date, and is tenant-scoped', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     await bothLedgers(h, A, 'CUST1', 150_000);
 
     // Nothing on either ledger for GHOST → 404 (there is genuinely nothing to reconcile).
@@ -115,6 +120,7 @@ describe('b2b AR reconciliation: the sub-ledger vs the GL, exact and signed (M22
 
     // The customer exists only in tenant A (§35) — tenant B sees neither ledger.
     await h.seedOwner(B, 'u-owner-b');
+    await h.enableFeature(B, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     expect((await reconcile(h, B, 'u-owner-b', 'CUST1', '2026-08-31')).status).toBe(404);
   });
 });
@@ -143,6 +149,7 @@ describe.skipIf(!DATABASE_URL)('b2b AR reconciliation, end to end on real Postgr
     const sql = pgClient(client);
     const h = apiHarness({ store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql) });
     await h.seedOwner(E2E_TENANT, 'u-owner');
+    await h.enableFeature(E2E_TENANT, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     await h.provisionRole(E2E_TENANT, 'u-mgr', 'store_manager');
 
     const cust = `${RUN}-CUST`;

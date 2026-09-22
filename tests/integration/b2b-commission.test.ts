@@ -22,6 +22,7 @@ describe('b2b commission: computed exactly, capped, projected, and a re-send doe
   it('records commission computed by the engine, rounds half-up, and applies the cap', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
 
     // 5% of 10,00,000 = 50,000 exactly.
     expect((await accrue(h, A, 'u-owner', 'SP1', 'a1', { baseMinor: 1_000_000, rateBps: 500 })).body).toMatchObject({ commissionMinor: 50_000 });
@@ -39,6 +40,7 @@ describe('b2b commission: computed exactly, capped, projected, and a re-send doe
   it('projects the running total and collapses a re-sent accrual (append-only, never twice)', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
 
     await accrue(h, A, 'u-owner', 'SP2', 'a1', { baseMinor: 500_000, rateBps: 400 });      // 20,000
     // The SAME accrual id, a DIFFERENT transport key so it reaches the handler again — the store append
@@ -53,6 +55,7 @@ describe('b2b commission: computed exactly, capped, projected, and a re-send doe
   it('is authorized (record vs read split), per-tenant, and refuses unknown/malformed', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     await h.provisionRole(A, 'u-acct', 'accountant');       // records AND reads
     await h.provisionRole(A, 'u-mgr', 'store_manager');     // reads, does NOT record
     await h.provisionRole(A, 'u-cash', 'cashier');          // neither
@@ -71,6 +74,7 @@ describe('b2b commission: computed exactly, capped, projected, and a re-send doe
 
     // Another tenant sees nothing of A's salesperson.
     await h.seedOwner(B, 'u-owner-b');
+    await h.enableFeature(B, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     expect((await owed(h, B, 'u-owner-b', 'SP3')).status).toBe(404);
   });
 });

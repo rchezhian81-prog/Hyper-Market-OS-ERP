@@ -50,6 +50,7 @@ export function b2bCommissionRoutes(deps: B2BCommissionDeps): readonly Route[] {
       // the declared rate — the caller never states the payout, so a fitted figure cannot be slipped in.
       api: 'API-09', method: 'POST', path: '/v1/b2b/commissions/:salespersonId/accruals/:accrualId',
       permission: 'b2b.commission.record', idempotent: true,
+      entitlement: 'b2b',
       handler: async (ctx) => {
         const salespersonId = ctx.params['salespersonId'] ?? '';
         const accrualId = ctx.params['accrualId'] ?? '';
@@ -104,6 +105,7 @@ export function b2bCommissionRoutes(deps: B2BCommissionDeps): readonly Route[] {
       // What a salesperson has earned so far — the sum of the accruals, projected, never a stored total.
       api: 'API-09', method: 'GET', path: '/v1/b2b/commissions/:salespersonId',
       permission: 'b2b.commission.read',
+      entitlement: 'b2b',
       handler: async (ctx) => {
         const salespersonId = ctx.params['salespersonId'] ?? '';
         const accruals = await deps.accruals(ctx.tenantId, salespersonId);
