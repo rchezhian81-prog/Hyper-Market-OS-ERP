@@ -5,6 +5,40 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M32 integration-health screen — slice 1: tested session model (22 September 2026, owner: keep-going)
+
+M17 is closed to E2E. Continuing **"keep going, pick the next module yourself,"** I picked **M32 (Integration
+gateway)** — it sits at INTEGRATION_TESTED and its honest E2E gap is that it has **no served operator surface**
+(all four FRs are wired + integration-tested; its ceiling note was "back-office API reads, no screen to drive
+in a browser"). So the E2E gap is a screen; I'm building it as the proven 3-slice pattern.
+
+The screen is an **integration-health desk** — a control-by-exception read dashboard (P-03) answering the
+owner's real question: *are my outside connections actually alive, or has one died quietly?* It reads one cloud
+feed, `GET /v1/integration/health` (gated `platform.health.read`, M32-FR-04), which judges every adapter
+(Tally, the GST portal, the card/UPI providers, WhatsApp) by **when it last actually worked** — not by whether
+it is switched on. A connection green on any configuration dashboard but silent for nine days is exactly how an
+integration dies, and this surfaces it. Worst-first: **gone quiet** (silent) and **failing** lead, **wobbling**
+(degraded) next, **working / switched off** are the calm remainder. And the reassurance that matters most: the
+**till keeps trading regardless** (`posUnaffected`, hard rule #1) — a red row is a queue to clear later, never a
+shop that cannot sell.
+
+- **Slice 1 (this PR).** `apps/web-erp/src/integration-health-session.ts` — the tested DOM-free session model:
+  the adapters folded worst-first (the screen guarantees the order, not the engine), each row reading by icon
+  **and** word never colour alone (`presentStatus` — silent/failing error, degraded watch, healthy/disabled
+  calm); the last-worked figure formatted for a person ("never worked" / "42 min ago"); `posUnaffected` surfaced
+  as the till-safe reassurance; a reader without `platform.health.read` sees a not-permitted state and nothing
+  else; all-clear and no-connections-yet are calm states. Bilingual EN/TA.
+  `tests/unit/erp-integration-health-session.test.ts` (13).
+- **Slice 2 (next).** The served `/integration-health` screen + browser-entry (fetch the health feed) + edge
+  wiring (payload, pack policy, screen-server route + SCREENS, SW bump) + is-usable guardrail.
+- **Slice 3.** Browser e2e (an admin opens the desk → sees a silent connection at the top + the till-safe line;
+  a user without the permission sees the refused state) → re-rate M32 INTEGRATION_TESTED → E2E_VERIFIED.
+
+No rung change yet — M32 stays INTEGRATION_TESTED until slice 3's browser e2e. (The secret-inventory review
+section, `GET /v1/integration/secrets`, `platform.setup.read`, is a later follow-on on this same desk.)
+
+---
+
 ## M17 stored-value oversight screen — slice 3: browser e2e → M17 E2E_VERIFIED (22 September 2026, owner: keep-going)
 
 The third and last slice — the served `/stored-value` screen is now proven end to end in a **real headless
