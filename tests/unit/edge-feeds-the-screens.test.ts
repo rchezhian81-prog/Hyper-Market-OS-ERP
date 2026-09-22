@@ -214,6 +214,8 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   rosteringPolicy: known({ userId: 'u-manager', permissions: ['workforce.roster.read', 'workforce.roster.manage'] }),
   // Manager checklist (M25-FR-02). Who is looking + what they hold; the day's checklists come live from the cloud.
   checklistPolicy: known({ userId: 'u-manager', permissions: ['workforce.checklist.read', 'workforce.roster.manage'] }),
+  // Production quality-release (M11-FR-03). Who is looking + what they hold; the runs come live from the cloud.
+  productionPolicy: known({ userId: 'u-qc', permissions: ['production.read', 'production.release'] }),
   // Admin and security (M01/M02/M33/M34). Support access is never pruned (hard rule #6).
   accounts: known([{
     userId: 'u-meena', tenantId: 't1', username: 'meena',

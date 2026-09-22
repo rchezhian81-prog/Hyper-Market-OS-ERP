@@ -137,6 +137,11 @@ import {
   type SubmitChecklistPort, type SubmitResult as ChecklistSubmitResult,
 } from './checklist-session';
 import {
+  createProductionSession,
+  type ProductionPorts, type ProductionSession, type ProductionData, type ProductionRun,
+  type ReleasePort, type ReleaseResult,
+} from './production-session';
+import {
   createCashOfficeSession,
   type CashOfficePorts, type CashOfficeSession, type CashOverShortData, type OverShortView,
   type OverShortSignOffPort, type SignOffResult,
@@ -1292,6 +1297,95 @@ export async function fetchChecklistWorklist(): Promise<ChecklistData | null> {
     if (res.status >= 400) return null;
     const body = (await res.json()) as { checklists?: unknown };
     return { checklists: Array.isArray(body.checklists) ? (body.checklists as readonly StoredChecklist[]) : [] };
+  } catch {
+    return null;
+  }
+}
+
+// ── Production quality-release screen (M11-FR-03) — the "which finished batches may go on sale" desk ───────
+
+/** What the box tells the production screen: who is looking, what they may do, and (optionally) the board it
+ *  last carried. The runs are a LIVE cloud read (`GET /v1/production/runs`) refreshed by the shell when online;
+ *  offline the screen shows its clearly-marked sample stand-in. */
+export interface ProductionScreenData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+  readonly worklist?: ProductionData;
+}
+
+const PRODUCTION_READ_PERMISSION = 'production.read';
+const PRODUCTION_RELEASE_PERMISSION = 'production.release';
+const EMPTY_PRODUCTION: ProductionData = Object.freeze({ runs: [] });
+const NOOP_RELEASE_PORT: ReleasePort = { post: async () => 'lost_link' };
+
+export function productionPortsFromData(
+  data: ProductionScreenData | undefined,
+  worklist?: ProductionData,
+  releasePort: ReleasePort = NOOP_RELEASE_PORT,
+): ProductionPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    worklist: () => worklist ?? data?.worklist ?? EMPTY_PRODUCTION,
+    // Default-deny: an absent permission list can read/release nothing (the server would refuse it anyway).
+    mayRead: () => held.has(PRODUCTION_READ_PERMISSION),
+    mayRelease: () => held.has(PRODUCTION_RELEASE_PERMISSION),
+    releasePort: () => releasePort,
+  };
+}
+
+/** Build the production screen, or `null` when the box carried no payload for it (shell shows the sample). */
+export function bootProduction(
+  data: ProductionScreenData | undefined,
+  worklist?: ProductionData,
+  releasePort?: ReleasePort,
+): ProductionSession | null {
+  if (data === undefined) return null;
+  return createProductionSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    productionPortsFromData(data, worklist, releasePort),
+  );
+}
+
+/** The authenticated POST of a QC operator's release decision — the operator's OWN session cookie
+ *  (`credentials: 'same-origin'`), never a service token. A network/timeout is a retryable lost link, not a
+ *  refusal, so a dropped connection never reads as "the server said no". The runId rides in the URL; the server
+ *  records the decision in the caller's own name, re-checks `production.release`, and refuses an expired batch.
+ *  A 2xx on a pass is a release; a 2xx on a fail is a recorded hold (the batch stays in quarantine). */
+function openReleasePort(): ReleasePort {
+  return {
+    post: async ({ runId, qcPassed, notes }): Promise<ReleaseResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return 'lost_link';
+      const key = globalThis.crypto?.randomUUID?.() ?? `release-${runId}-${qcPassed ? 'pass' : 'fail'}`;
+      try {
+        const res = await fetchFn(`/v1/production/runs/${encodeURIComponent(runId)}/release`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ qcPassed, ...(notes === undefined ? {} : { notes }) }),
+        });
+        if (res.status < 200 || res.status >= 300) return 'refused';
+        return qcPassed ? 'released' : 'held';
+      } catch {
+        return 'lost_link';
+      }
+    },
+  };
+}
+
+/** Read the live production board (a GET — read-only). Returns null offline/refused so the shell keeps whatever
+ *  it was showing and its stale strip says the page is what the box last told it. The cloud route hands back
+ *  `{ runs, asAt }`; only the runs are needed (the session recomputes the rest). */
+export async function fetchProductionBoard(): Promise<ProductionData | null> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return null;
+  try {
+    const res = await fetchFn('/v1/production/runs', {
+      method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin',
+    });
+    if (res.status >= 400) return null;
+    const body = (await res.json()) as { runs?: unknown };
+    return { runs: Array.isArray(body.runs) ? (body.runs as readonly ProductionRun[]) : [] };
   } catch {
     return null;
   }
@@ -2825,6 +2919,13 @@ interface ManagerWindow {
     refresh(): Promise<ChecklistData | null>;
     present(worklist: ChecklistData): ChecklistSession;
   };
+  productionData?: ProductionScreenData;
+  productionSession?: ProductionSession;
+  /** The shell reads the live production board through this and re-presents it — a GET read, never a write. */
+  production?: {
+    refresh(): Promise<ProductionData | null>;
+    present(worklist: ProductionData): ProductionSession;
+  };
   cashOfficeData?: CashOfficeData;
   cashOfficeSession?: CashOfficeSession;
   /** The shell reads the live over/short worklist through this and re-presents it — a GET read, never a write. */
@@ -3708,6 +3809,24 @@ if (browserWindow !== undefined) {
       present: (worklist) => createChecklistSession(
         { userId: checklistData?.userId === undefined ? null : checklistData.userId },
         checklistPortsFromData(checklistData, worklist, submitChecklistPort),
+      ),
+    };
+  }
+  // The production quality-release screen (M11-FR-03): boots from the box's policy (who + what they hold), then
+  // the shell refreshes the board with a live GET (read-only). Offline it shows its sample stand-in and says so.
+  // The one write is a HUMAN release (or hold) in the operator's own name — never on load, only on an explicit
+  // click — and the server re-checks `production.release` and refuses an expired batch, which the screen never
+  // fakes (hard rule #5: no AI releases food for sale).
+  const productionData = browserWindow.productionData;
+  const releasePort = openReleasePort();
+  const production = bootProduction(productionData, undefined, releasePort);
+  if (production !== null) {
+    browserWindow.productionSession = production;
+    browserWindow.production = {
+      refresh: fetchProductionBoard,
+      present: (worklist) => createProductionSession(
+        { userId: productionData?.userId === undefined ? null : productionData.userId },
+        productionPortsFromData(productionData, worklist, releasePort),
       ),
     };
   }
