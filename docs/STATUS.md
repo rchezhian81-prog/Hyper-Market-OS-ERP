@@ -5,6 +5,41 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M36-FR-01 paywall — home delivery is now a paid feature (22 September 2026, owner-directed)
+
+Continuing M36-FR-01 (task #163). The owner said **"keep going with delivery, map it first."** Mapping surfaced
+the boundary that shapes the change — the same care as loyalty:
+
+- **`/v1/delivery/*` (`services/fulfilment/src/{index,dispatch}.ts`) = HOME DELIVERY.** 8 routes: record a driver
+  attempt, transition an order's delivery state, read an order's state / a driver's run, and plan / reassign /
+  read a day's dispatch. Plus **`/v1/fulfilment/cod/reconcile`** (cash-on-delivery reconciliation, M19-FR-04) —
+  delivery-specific. All tagged `entitlement: 'delivery'`.
+- **Safe against the core sale.** A `DeliveryAttempted` event is only ever produced by the delivery domain
+  (`deliveryAdapter`), **never by a POS sale** — verified. So a non-delivery shop never reaches a delivery route,
+  even through the edge sync-agent's `DeliveryAttempted → /v1/delivery/attempts` drain (a delivery shop has the
+  feature; a non-delivery shop generates no such event). Hard rule #1 is untouched.
+- **Deliberately NOT gated: the shared pick/pack surface.** `/v1/fulfilment/orders/:id/{pack,dispatch,manifest}`
+  (`packing.ts`, `fulfilment.pack.*`) is the order-fulfilment surface **click-and-collect uses too** — a
+  pickup-only shop packs orders without running home delivery. Gating it behind `delivery` would break that shop.
+  Left ungated, recorded.
+
+**What shipped (this PR).** Route-tag pattern on the two fulfilment route files:
+- `services/fulfilment/src/index.ts` (5 routes) + `services/fulfilment/src/dispatch.ts` (3 routes) tagged
+  `entitlement: 'delivery'`, with a header comment recording the safety argument and the pick/pack exclusion.
+- Tests: `enableFeature(A, 'delivery')` added to the delivery/dispatch/COD integration suites; `it-remembers`
+  (real-PG durability) gains a static `entitlements: () => ['delivery']` on its kernel for the one delivery route
+  it exercises; plus 3 gate cases in `delivery-state.test.ts` (owner without the feature refused write AND read;
+  enabled → in; per-tenant isolation). Gate green: tsc + eslint + secret-scan + 7276 tests.
+- docs: traceability + completion-status move delivery into "enforced", with the pick/pack and customer-money
+  exclusions spelled out.
+
+**M36 stays PARTIALLY_WIRED.** The one remaining optional-feature route family to gate is **customer_app**.
+Everything else optional is now enforced (concession, B2B, the three departments, loyalty, delivery) or deliberately
+excluded (stored value + points = customer money / sale path; shared pick-pack = click-and-collect). Central-kitchen
+naming and food court / pharmacy stay deferred. Paid-plan **tier** stays owner-blocked (OA-12).
+
+---
+
 ## M36-FR-01 paywall — the loyalty programme is now a paid feature (22 September 2026, owner-directed)
 
 Continuing M36-FR-01 (task #163). The owner said **"keep going with loyalty, map it first."** Mapping first, as

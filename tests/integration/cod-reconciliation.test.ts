@@ -21,6 +21,7 @@ type Recon = {
 async function cast(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
+  await h.enableFeature(A, 'delivery'); // COD reconciliation is part of home delivery (M36-FR-01)
   await h.provisionRole(A, 'u-mgr', 'store_manager'); // delivery.run.read
   await h.provisionRole(A, 'u-cash', 'cashier');       // not
   return h;

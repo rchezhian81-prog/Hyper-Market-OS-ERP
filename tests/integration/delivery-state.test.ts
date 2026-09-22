@@ -9,6 +9,7 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 // where any order has got to.
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
 
 const transition = (h: ApiHarness, u: string, orderId: string, body: unknown, key: string) =>
@@ -22,6 +23,7 @@ describe('the order delivery lifecycle (M19-FR-03 state machine, made durable)',
   it('walks assigned → out_for_delivery → delivered (with proof), and reads the state + history back', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'delivery'); // this shop's plan includes home delivery (M36-FR-01)
 
     // An order not yet moved reads as `assigned` — the machine's start, with no history.
     const before = (await readOrder(h, 'u-owner', 'ord-1')).body as StateBody;
@@ -49,6 +51,7 @@ describe('the order delivery lifecycle (M19-FR-03 state machine, made durable)',
   it('refuses to mark delivered without proof — the state does not move', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'delivery'); // this shop's plan includes home delivery (M36-FR-01)
     expect((await transition(h, 'u-owner', 'ord-2', { event: 'depart' }, 'p1')).status).toBe(200);
 
     const noProof = await transition(h, 'u-owner', 'ord-2', { event: 'deliver' }, 'p2');
@@ -63,6 +66,7 @@ describe('the order delivery lifecycle (M19-FR-03 state machine, made durable)',
   it('refuses an out-of-order step — cannot deliver an order that never departed', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'delivery'); // this shop's plan includes home delivery (M36-FR-01)
     const early = await transition(h, 'u-owner', 'ord-3', { event: 'deliver', proof: { kind: 'signature', ref: 'S-1' } }, 'x1');
     expect(early.status).toBe(409);
     expect(codeOf(early)).toBe('invalid_delivery_transition');
@@ -72,6 +76,7 @@ describe('the order delivery lifecycle (M19-FR-03 state machine, made durable)',
   it('a failed stop can be reattempted then delivered, or returned to origin — never a silence', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'delivery'); // this shop's plan includes home delivery (M36-FR-01)
 
     // Reattempt path.
     await transition(h, 'u-owner', 'ord-4', { event: 'depart' }, 'r1');
@@ -94,6 +99,7 @@ describe('the order delivery lifecycle (M19-FR-03 state machine, made durable)',
   it('gates the write and the read, and refuses a malformed transition', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'delivery'); // this shop's plan includes home delivery (M36-FR-01)
     await h.provisionRole(A, 'u-cash', 'cashier'); // holds neither delivery permission
 
     expect((await transition(h, 'u-cash', 'ord-6', { event: 'depart' }, 'g1')).status).toBe(403);
@@ -101,5 +107,35 @@ describe('the order delivery lifecycle (M19-FR-03 state machine, made durable)',
     const bad = await transition(h, 'u-owner', 'ord-6', { event: 'teleport' }, 'g2');
     expect(bad.status).toBe(400);
     expect(codeOf(bad)).toBe('not_readable_as_a_delivery_transition');
+  });
+});
+
+describe('home delivery is a paid feature — off until the shop enables it (M36-FR-01, §35)', () => {
+  it('refuses feature_not_entitled for a shop whose plan has no delivery — even a full owner', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner'); // a real owner, but this shop never bought home delivery
+    const res = await transition(h, 'u-owner', 'ord-1', { event: 'depart' }, 'd1');
+    expect(res.status).toBe(403);
+    expect(codeOf(res)).toBe('feature_not_entitled');
+    // Reading a delivery's state is off too — about the PLAN, not a missing order.
+    expect(codeOf(await readOrder(h, 'u-owner', 'ord-1'))).toBe('feature_not_entitled');
+  });
+
+  it('lets the same shop in once the delivery feature is enabled', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'delivery');
+    expect((await transition(h, 'u-owner', 'ord-1', { event: 'depart' }, 'd1')).status).toBe(200);
+  });
+
+  it('is per-tenant: enabling delivery for one shop never turns it on for another', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'delivery');
+    await h.seedOwner(B, 'u-owner-b'); // B has an owner but no delivery feature
+    expect((await transition(h, 'u-owner', 'ord-1', { event: 'depart' }, 'd1')).status).toBe(200);
+    const bRes = await h.request({ method: 'POST', path: '/v1/delivery/orders/ord-1/transition', userId: 'u-owner-b', tenantId: B, idempotencyKey: 'db', body: { event: 'depart' } });
+    expect(bRes.status).toBe(403);
+    expect(codeOf(bRes)).toBe('feature_not_entitled');
   });
 });

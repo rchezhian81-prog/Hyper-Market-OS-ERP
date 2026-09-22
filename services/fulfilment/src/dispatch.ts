@@ -109,7 +109,7 @@ export function dispatchRoutes(deps: DispatchDeps): readonly Route[] {
     {
       // PLAN — draft today's routes. Every order is routed or on the unplanned list with a reason.
       api: 'API-08', method: 'POST', path: '/v1/delivery/dispatch/:runDate/plan',
-      permission: 'delivery.dispatch.manage', idempotent: true,
+      permission: 'delivery.dispatch.manage', entitlement: 'delivery', idempotent: true,
       handler: async (ctx) => {
         const runDate = ctx.params['runDate'] ?? '';
         const b = (ctx.body ?? {}) as Record<string, unknown>;
@@ -123,7 +123,7 @@ export function dispatchRoutes(deps: DispatchDeps): readonly Route[] {
     {
       // REASSIGN — a driver is off the road: a FULL re-plan without them (not a patch). Supersedes the plan.
       api: 'API-08', method: 'POST', path: '/v1/delivery/dispatch/:runDate/reassign',
-      permission: 'delivery.dispatch.manage', idempotent: true,
+      permission: 'delivery.dispatch.manage', entitlement: 'delivery', idempotent: true,
       handler: async (ctx) => {
         const runDate = ctx.params['runDate'] ?? '';
         const b = (ctx.body ?? {}) as Record<string, unknown>;
@@ -140,7 +140,7 @@ export function dispatchRoutes(deps: DispatchDeps): readonly Route[] {
     {
       // READ the stored plan for a run date.
       api: 'API-08', method: 'GET', path: '/v1/delivery/dispatch/:runDate',
-      permission: 'delivery.run.read',
+      permission: 'delivery.run.read', entitlement: 'delivery',
       handler: async (ctx) => {
         const runDate = ctx.params['runDate'] ?? '';
         const plan = await deps.plan(ctx.tenantId, runDate);
