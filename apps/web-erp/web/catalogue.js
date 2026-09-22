@@ -1009,7 +1009,10 @@ el('sample').hidden = real !== undefined;
 el('price-from').value = today();
 paintChrome();
 renderItems();
-show('items');
+// Open the tab the menu asked for. The "Pricing" and "Promotions" menu items redirect here with
+// ?tab=price / ?tab=promo (screen-server SCREEN_ALIASES); anything else opens on the item list.
+const wantedTab = new URLSearchParams(window.location.search).get('tab');
+show(TABS.includes(wantedTab) ? wantedTab : 'items');
 
 // ── The shell's own honesty about where this page came from ─────────────────
 //

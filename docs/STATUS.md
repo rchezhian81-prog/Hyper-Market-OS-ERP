@@ -5,6 +5,35 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Pricing / Promotions menu links wired to the real screen (22 September 2026)
+
+The owner asked to "start the pricing/promotions screen." **Investigating first showed the screen already
+exists and is browser-verified** — it is the "Products and prices" (`catalogue`) screen, with **Price** and
+**Promotions** tabs (governed price change under MRP/margin + §28; promotion simulate→launch under §28), all
+E2E-verified (M05 is at E2E VERIFIED). The genuine gap was that the ERP menu carried separate **"Pricing"** and
+**"Promotions"** items (`/pricing`, `/promotions`) — plus **"Products"** (`/products`) — that the store box did
+not serve: dead links. The owner chose (via a clarifying question) to **wire those menu links to the existing
+tested screen**, not build a duplicate.
+
+- **The wiring.** `edge/store-edge/src/screen-server.ts` gains `SCREEN_ALIASES`: `/products` → `/catalogue/`,
+  `/pricing` → `/catalogue/?tab=price`, `/promotions` → `/catalogue/?tab=promo`, handled in `redirectFor`
+  (before the trailing-slash rule, so both `/pricing` and `/pricing/` land there with no redirect loop).
+  `apps/web-erp/web/catalogue.js` reads `?tab=` on boot and opens that tab (was always `items`). Reuses the
+  one browser-verified screen — no duplicate (P-07: the menu never offers a screen the box would 404).
+- **Tests.** `tests/unit/screen-router.test.ts` (6): the redirect targets, the trailing-slash form, no loop,
+  the target resolves to the catalogue shell, and an alias is not itself a served screen (no shadowing).
+  `tests/e2e/pricing-promotions-menu-links.e2e.ts` (3, real Chromium): `/pricing` lands on the catalogue
+  screen with the **price** tab active, `/promotions` → **promo**, `/products` → the item list. Run 5× for
+  stability after fixing a test-only context-close race (the routing was always correct).
+- **No rung change.** M05 was already E2E VERIFIED; this is a navigation fix to reach it, not new module
+  maturity — no completion-% change. Full gate green.
+
+### Next
+- Owner-input still the highest-value work I can't do alone: **store-credit cap rupee number**, **retention periods**.
+- Otherwise: another pilot-facing screen, or genuine deepening on a module with a real gap (M03/M16/M29).
+
+---
+
 ## Refund-exceptions review screen — slice 3 of 3: BROWSER-VERIFIED (20 September 2026)
 
 The refund-exceptions screen is now proven in a real browser — all three slices done.
