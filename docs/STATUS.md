@@ -28,9 +28,15 @@ with a name typed into an "approved by" box — nothing reached head office, and
   its local compute (P-01). `tests/unit/erp-buying-session.test.ts` (+6). Full gate green (GATE_EXIT=0, 7141 pass).
 - **M06 stays INTEGRATION_TESTED** — this is the tested delivery leg only.
 
-### Next (M06 → E2E, remaining slices)
-- **Slice 2:** browser-entry POST port (`openProposePurchaseOrderPort`, credentials same-origin, idempotency-key,
-  network failure → `proposed:false`) + wire `buying.js`'s "Raise order" button to `proposeToCloud`.
+- **Slice 2 (DONE, 22 Sep 2026, no rung change).** `browser-entry.ts` `openProposePurchaseOrderPort` POSTs to
+  `/v1/purchase/orders/:poId` (credentials same-origin, the PO id as the idempotency key so a re-click collapses
+  to one order, a dropped link → `proposed:false`), threaded through `buyingPortsFromData`/`bootBuying` and always
+  wired at mount. `buying.js`'s "Raise the order" button now calls `session.proposeToCloud` in the buyer's own
+  name — the old typed-name `askApprover` PO path is **gone** (issuing is the separate §28 `/approval` act) — and
+  shows "Order proposed — waiting for a second person to approve it" only after the cloud saved it (EN+TA). SW
+  shell cache v28→v29. `tests/unit/erp-buying-boot.test.ts` (+10). Full gate green (GATE_EXIT=0, 7151 passed).
+
+### Next (M06 → E2E, remaining slice)
 - **Slice 3:** browser e2e (real Chromium) driving the buyer screen's PO-propose (and invoice-capture) write-path
   to a stub cloud, then honestly re-rate **M06 → E2E_VERIFIED**.
 - Owner-input still the highest-value work I can't do alone: **store-credit cap rupee number**, **retention periods**.

@@ -37,7 +37,11 @@ import {
   type ValueRegister,
 } from './manager-session';
 import type { ApprovalRequest } from '../../../packages/approvals/src/approvals';
-import { createBuyingSession, type BuyingPorts, type BuyingSession, type InvoiceLine } from './buying-session';
+import {
+  createBuyingSession,
+  type BuyingPorts, type BuyingSession, type InvoiceLine,
+  type ProposePurchaseOrderPort, type ProposePurchaseOrderOutcome,
+} from './buying-session';
 import {
   createCatalogueSession,
   type CataloguePorts, type CatalogueSession,
@@ -2869,17 +2873,64 @@ export function buyingGaps(data: BuyingData | undefined): readonly BuyingGap[] {
  * The empty answers here are therefore load-bearing refusals, not tidy defaults, and every one of
  * them is reported by `buyingGaps` so the screen can name it.
  */
-export function buyingPortsFromData(data: BuyingData | undefined): BuyingPorts {
+/**
+ * The authenticated POST that PROPOSES a purchase order at head office (M06-FR-02, API-03). One call under the
+ * buyer's OWN session (`credentials: 'same-origin'`, never a service token) to `POST /v1/purchase/orders/:poId`:
+ * the cloud attributes the requisitioner to the authenticated caller and keeps the PO event-sourced. The PO id is
+ * the idempotency key, so a re-click of "raise" for the same order collapses to one PO — never a duplicate order
+ * to a supplier. The proposal carries no approver: issuing is a separate second-person §28 act (the `/approval`
+ * route), never something this screen does. A 2xx carrying the proposed order is the saved proposal; any other
+ * status is the cloud declining (surfaced, never a false "raised"); a dropped link is a lost link, not an order (P-08).
+ */
+export function openProposePurchaseOrderPort(): ProposePurchaseOrderPort {
+  return {
+    post: async ({ poId, supplierId, lines }): Promise<ProposePurchaseOrderOutcome> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return { proposed: false, reason: 'no connection to head office — the order was not raised' };
+      try {
+        const res = await fetchFn(`/v1/purchase/orders/${encodeURIComponent(poId)}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': poId, accept: 'application/json' },
+          credentials: 'same-origin',
+          // The Money-shaped lines are exactly what the route reads ({ productId, orderedQty, unitCost: { minor, currency } });
+          // the requisitioner is the authenticated caller, so no buyer name is sent, and no approver rides along.
+          body: JSON.stringify({ supplierId, lines }),
+        });
+        const body = (await res.json().catch(() => ({}))) as {
+          order?: { requisitionedBy?: string; totalMinor?: number };
+          whatHappened?: string;
+        };
+        if (
+          res.status >= 200 && res.status < 300 &&
+          body.order !== undefined &&
+          typeof body.order.requisitionedBy === 'string' &&
+          typeof body.order.totalMinor === 'number'
+        ) {
+          return { proposed: true, requisitionedBy: body.order.requisitionedBy, totalMinor: body.order.totalMinor };
+        }
+        return { proposed: false, reason: body.whatHappened ?? 'head office did not raise the order' };
+      } catch {
+        return { proposed: false, reason: 'no connection to head office — the order was not raised' };
+      }
+    },
+  };
+}
+
+export function buyingPortsFromData(data: BuyingData | undefined, proposeOrder?: ProposePurchaseOrderPort): BuyingPorts {
   return {
     knownProductIds: () => data?.productIds ?? [],
     orderedLines: (poId) => data?.ordered?.[poId] ?? [],
     receivedLines: (poId) => data?.received?.[poId] ?? [],
     capturedLines: (invoiceId) => data?.captured?.[invoiceId] ?? [],
+    // Only when a real cloud port was passed at mount: an offline box (or a test with none) keeps its
+    // local compute and `canProposeToCloud` reads false, so the screen never offers to raise an order
+    // it cannot actually send (P-01/P-08).
+    ...(proposeOrder === undefined ? {} : { proposeOrder: () => proposeOrder }),
   };
 }
 
 /** Build the buyer's session, or `null` when this box was told nothing about buying. */
-export function bootBuying(data: BuyingData | undefined): BuyingSession | null {
+export function bootBuying(data: BuyingData | undefined, proposeOrder?: ProposePurchaseOrderPort): BuyingSession | null {
   if (data === undefined) return null;
   return createBuyingSession(
     {
@@ -2891,7 +2942,7 @@ export function bootBuying(data: BuyingData | undefined): BuyingSession | null {
       priceToleranceBps: data.priceToleranceBps ?? 100,
       immaterialMinor: data.immaterialMinor ?? 100,
     },
-    buyingPortsFromData(data),
+    buyingPortsFromData(data, proposeOrder),
   );
 }
 
@@ -3300,7 +3351,7 @@ if (browserWindow !== undefined) {
   });
   // The buyer's shell shares this bundle: one build, two screens, and each boots only what it was
   // given. A shell that was told nothing gets `undefined` and says so rather than showing zeros.
-  const buying = bootBuying(browserWindow.buyingData);
+  const buying = bootBuying(browserWindow.buyingData, openProposePurchaseOrderPort());
   if (buying !== null) {
     browserWindow.buyingSession = buying;
     browserWindow.buyingGaps = buyingGaps(browserWindow.buyingData);

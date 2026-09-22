@@ -66,6 +66,7 @@ const WORDS = {
     addItem: 'Add this item', raiseIt: 'Raise the order', noLinesYet: 'No items added yet.',
     needPoLine: 'Add at least one item first.', needPoFields: 'Fill in the item, how many, and the price.',
     orderRaised: 'Order raised', whoApprovesPo: 'Who approved this order?',
+    orderProposed: 'Order proposed — waiting for a second person to approve it',
     sampleData: 'Sample data — this is not your shop.',
     notConnected: 'This screen has not been given anything by the store box yet.',
     remove: 'Remove', lineTotal: 'Line total', whatIsWrong: 'What is wrong',
@@ -102,6 +103,7 @@ const WORDS = {
     addItem: 'இந்தப் பொருளைச் சேர்', raiseIt: 'ஆர்டரைத் தயாரி', noLinesYet: 'இன்னும் பொருட்கள் சேர்க்கப்படவில்லை.',
     needPoLine: 'குறைந்தது ஒரு பொருளையாவது சேர்க்கவும்.', needPoFields: 'பொருள், எண்ணிக்கை, விலை — எல்லாவற்றையும் நிரப்பவும்.',
     orderRaised: 'ஆர்டர் தயாரிக்கப்பட்டது', whoApprovesPo: 'இந்த ஆர்டரை யார் ஒப்புதல் அளித்தார்?',
+    orderProposed: 'ஆர்டர் முன்மொழியப்பட்டது — வேறு ஒருவர் ஒப்புதல் அளிக்கக் காத்திருக்கிறது',
     sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
     notConnected: 'கடை கணினியிடமிருந்து இந்தத் திரைக்கு இன்னும் எதுவும் வரவில்லை.',
     remove: 'நீக்கு', lineTotal: 'வரி மொத்தம்', whatIsWrong: 'என்ன தவறு',
@@ -500,29 +502,25 @@ el('add-po-line').addEventListener('click', () => {
 
 el('raise-po').addEventListener('click', async () => {
   if (poLines.length === 0) { tell(t('read'), t('needPoLine')); return; }
-  const who = await askApprover(t('whoApprovesPo'), t('whoApprovesNote'), approvers());
-  if (who === null) return;
 
+  // Raising an order PROPOSES it to head office in the buyer's OWN name (§28). It does NOT ask the buyer
+  // to type an "approved by" name here — issuing is a separate second person's act, which head office
+  // enforces by the authenticated identity of whoever approves it. So there is no self-approval to make.
   const stamp = Date.now().toString(36).toUpperCase();
-  try {
-    const po = session.raisePurchaseOrder({
-      id: `PO-${stamp}`, number: `PO-${stamp}`,
-      supplierId: el('po-supplier').value.trim(),
-      at: new Date().toISOString(),
-      lines: poLines,
-      approval: {
-        id: `ap-PO-${stamp}`, subjectType: 'purchase_order', subjectRef: `PO-${stamp}`,
-        requestedBy: window.buyingData?.buyerId ?? 'buyer', branchId: null, value: null,
-        status: 'approved', decidedBy: who, reason: 'within_policy',
-        decidedAt: new Date().toISOString(),
-      },
-    });
-    tell(t('orderRaised'), `${po.number} · ${inr(po.total.minor)}`, true);
+  const poId = `PO-${stamp}`;
+  const out = await session.proposeToCloud({
+    poId,
+    supplierId: el('po-supplier').value.trim(),
+    lines: poLines,
+  });
+  if (out.proposed) {
+    // Only after head office genuinely saved the proposal — never a false "raised" on a dropped link (P-08).
+    tell(t('orderProposed'), `${poId} · ${inr(out.totalMinor)}`, true);
     poLines = [];
     renderPoLines();
-  } catch (e) {
-    // The engine's refusal — a blocked supplier, a self-approval — said rather than swallowed.
-    tell(t('read'), String(e && e.message ? e.message : e));
+  } else {
+    // A blocked supplier, a lost link, or a box not connected to head office — said plainly, never swallowed.
+    tell(t('read'), out.reason);
   }
 });
 
