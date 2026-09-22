@@ -166,6 +166,11 @@ import {
   type StockHealthPorts, type StockHealthSession, type StockHealthData,
 } from './inventory-health-session';
 import {
+  createStoredValueOversightSession,
+  type StoredValueOversightPorts, type StoredValueOversightSession, type StoredValueOversightData,
+  type DoubleSpendView, type VelocityFlagView, type LiabilityReconciliationView,
+} from './stored-value-session';
+import {
   createGoodsReceiptSession,
   type GoodsReceiptPorts, type GoodsReceiptSession, type GoodsReceiptData, type GrnRecordView, type GrnDiscrepancyView,
 } from './goods-receipt-session';
@@ -1866,6 +1871,88 @@ export async function fetchStockHealth(): Promise<StockHealthData | null> {
   return out;
 }
 
+// ── Stored-value oversight (M17-FR-03/04 — read-only) ────────────────────────────────────────────────────────
+
+/** What the box tells the stored-value oversight screen: who is looking and what they may read. */
+export interface StoredValueScreenData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+}
+
+const STORED_VALUE_READ_PERMISSION = 'lp.case.read';
+
+export function storedValuePortsFromData(
+  data: StoredValueScreenData | undefined,
+  current: StoredValueOversightData,
+): StoredValueOversightPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    oversight: () => current,
+    // Default-deny: an absent permission list reads nothing (the loss/books gate the cloud re-checks anyway).
+    mayRead: () => held.has(STORED_VALUE_READ_PERMISSION),
+  };
+}
+
+/** Build the stored-value oversight session over the given folded data, or null when the box carried no payload. */
+export function bootStoredValue(
+  data: StoredValueScreenData | undefined,
+  current: StoredValueOversightData,
+): StoredValueOversightSession | null {
+  if (data === undefined) return null;
+  return createStoredValueOversightSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    storedValuePortsFromData(data, current),
+  );
+}
+
+/** Read one stored-value GET and return its parsed body, or null (offline, refused, or unreadable). Read-only. */
+async function getStoredValue(path: string): Promise<Record<string, unknown> | null> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return null;
+  try {
+    const res = await fetchFn(path, { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    if (res.status >= 400) return null;
+    return (await res.json()) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+/** Read the store-wide redemption-velocity watch (GET, read-only); null when unreadable. */
+export async function fetchStoredValueVelocity(): Promise<readonly VelocityFlagView[] | null> {
+  const body = await getStoredValue('/v1/stored-value/velocity');
+  if (body === null || !Array.isArray(body['flags'])) return null;
+  return (body['flags'] as Record<string, unknown>[]).map((f) => ({
+    instrumentId: String(f['instrumentId']), count: Number(f['count']), valueMinor: Number(f['valueMinor']),
+    windowMinutes: Number(f['windowMinutes']), detail: String(f['detail'] ?? ''),
+  }));
+}
+
+/** Reconcile the stored-value liability against the books' posted figure (GET, read-only); null when unreadable. */
+export async function fetchStoredValueLiability(postedMinor: number): Promise<LiabilityReconciliationView | null> {
+  if (!Number.isInteger(postedMinor) || postedMinor < 0) return null;
+  const body = await getStoredValue(`/v1/stored-value/liability?posted=${postedMinor}`);
+  if (body === null || typeof body['outstandingMinor'] !== 'number') return null;
+  return {
+    outstandingMinor: Number(body['outstandingMinor']), issuedMinor: Number(body['issuedMinor']),
+    redeemedMinor: Number(body['redeemedMinor']), expiredMinor: Number(body['expiredMinor']),
+    postedLiabilityMinor: Number(body['postedLiabilityMinor']), differenceMinor: Number(body['differenceMinor']),
+    reconciles: body['reconciles'] === true, detail: String(body['detail'] ?? ''),
+  };
+}
+
+/** Look up one household's cross-channel double-spends (GET, read-only); null when unreadable. */
+export async function fetchStoredValueDoubleSpends(ownerRef: string): Promise<readonly DoubleSpendView[] | null> {
+  if (ownerRef.trim() === '') return null;
+  const body = await getStoredValue(`/v1/stored-value/households/${encodeURIComponent(ownerRef)}/double-spends`);
+  if (body === null || !Array.isArray(body['doubleSpends'])) return null;
+  return (body['doubleSpends'] as Record<string, unknown>[]).map((d) => ({
+    instrumentId: String(d['instrumentId']), ownerRef: String(d['ownerRef']), overspentMinor: Number(d['overspentMinor']),
+    channels: Array.isArray(d['channels']) ? (d['channels'] as unknown[]).map((c) => String(c)) : [],
+    detail: String(d['detail'] ?? ''),
+  }));
+}
+
 // ── Goods-receipt review (M07-FR-02/03 — read-only) ──────────────────────────────────────────────────────────
 
 /** What the box tells the goods-receipt review screen: who is looking, what they may read, and (optionally) a
@@ -3064,6 +3151,17 @@ interface ManagerWindow {
     refresh(): Promise<StockHealthData | null>;
     present(snapshot: StockHealthData): StockHealthSession;
   };
+  storedValueData?: StoredValueScreenData;
+  storedValueSession?: StoredValueOversightSession;
+  /** The shell reads the three stored-value oversight feeds through this and re-presents them — GETs, never
+   *  writes: refresh() the store-wide velocity watch, reconcile() the liability vs a posted figure, lookup() one
+   *  household's double-spends. Each returns the merged data (or null offline), which present() renders. */
+  storedValue?: {
+    refresh(): Promise<StoredValueOversightData | null>;
+    reconcile(postedMinor: number): Promise<StoredValueOversightData | null>;
+    lookup(ownerRef: string): Promise<StoredValueOversightData | null>;
+    present(data: StoredValueOversightData): StoredValueOversightSession;
+  };
   goodsReceiptData?: GoodsReceiptScreenData;
   goodsReceiptSession?: GoodsReceiptSession;
   /** The shell reads the live GRN list through this and re-presents it — a GET read, never a write. */
@@ -4038,6 +4136,41 @@ if (browserWindow !== undefined) {
         { userId: stockHealthData?.userId === undefined ? null : stockHealthData.userId },
         stockHealthPortsFromData(stockHealthData, snapshot),
       ),
+    };
+  }
+  // The stored-value oversight desk (M17 — read-only): boots from the box's policy (who + whether they hold
+  // lp.case.read), then the shell reads the three loss/books feeds with live GETs. It changes nothing — stored
+  // value moves on other screens (a gift-card sale, a refund to credit); this only surfaces the exposure.
+  const storedValueData = browserWindow.storedValueData;
+  let storedValueCurrent: StoredValueOversightData = { liability: null, doubleSpends: [], velocity: [], asAt: '' };
+  const storedValue = bootStoredValue(storedValueData, storedValueCurrent);
+  if (storedValue !== null) {
+    browserWindow.storedValueSession = storedValue;
+    const presentStoredValue = (data: StoredValueOversightData): StoredValueOversightSession =>
+      createStoredValueOversightSession(
+        { userId: storedValueData?.userId === undefined ? null : storedValueData.userId },
+        storedValuePortsFromData(storedValueData, data),
+      );
+    browserWindow.storedValue = {
+      refresh: async () => {
+        const velocity = await fetchStoredValueVelocity();
+        if (velocity === null) return null;
+        storedValueCurrent = { ...storedValueCurrent, velocity };
+        return storedValueCurrent;
+      },
+      reconcile: async (postedMinor) => {
+        const liability = await fetchStoredValueLiability(postedMinor);
+        if (liability === null) return null;
+        storedValueCurrent = { ...storedValueCurrent, liability };
+        return storedValueCurrent;
+      },
+      lookup: async (ownerRef) => {
+        const doubleSpends = await fetchStoredValueDoubleSpends(ownerRef);
+        if (doubleSpends === null) return null;
+        storedValueCurrent = { ...storedValueCurrent, doubleSpends };
+        return storedValueCurrent;
+      },
+      present: presentStoredValue,
     };
   }
   // The goods-receipt review screen (M07 — read-only): boots from the box's policy (who + whether they hold

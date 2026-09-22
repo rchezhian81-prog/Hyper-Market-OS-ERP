@@ -86,6 +86,7 @@ export interface StoredValueOversightConfig {
 
 export type CopyKey =
   | 'title' | 'lead' | 'langName'
+  | 'refresh' | 'asOfLabel' | 'reconcileBtn' | 'lookupBtn' | 'postedFigureLabel' | 'ownerRefLabel'
   | 'lossHeading' | 'lossCount' | 'lossExposure' | 'lossNone'
   | 'gapHeading' | 'gapNeedsPosted' | 'gapReconciled'
   | 'outstandingLabel' | 'postedLabel' | 'differenceLabel' | 'issuedLabel' | 'redeemedLabel' | 'expiredLabel'
@@ -100,6 +101,8 @@ export const STORED_VALUE_COPY: BilingualCopy<CopyKey> = {
   en: {
     title: 'Stored-value oversight', langName: 'தமிழ்',
     lead: 'The money the shop owes on gift cards and store credit — and where it quietly leaks. Settled losses first (a card spent twice while channels were out of sync — real money paid out, both sides kept), then any gap between the cards’ balance and what the books posted, then cards draining unusually fast that a person should look at. This screen reads and reports; it changes nothing.',
+    refresh: 'Refresh', asOfLabel: 'As of', reconcileBtn: 'Reconcile', lookupBtn: 'Look up',
+    postedFigureLabel: 'Liability posted in the books (₹)', ownerRefLabel: 'Customer reference',
     lossHeading: 'Given away twice', lossCount: 'to settle', lossExposure: 'Paid out twice',
     lossNone: 'No cross-channel double-spends — nothing given away twice.',
     gapHeading: 'Liability vs the books', gapNeedsPosted: 'Enter the liability the books currently carry to reconcile the cards against it — nothing is assumed.',
@@ -118,6 +121,8 @@ export const STORED_VALUE_COPY: BilingualCopy<CopyKey> = {
   ta: {
     title: 'சேமிப்பு-மதிப்பு கண்காணிப்பு', langName: 'English',
     lead: 'பரிசு அட்டைகள் மற்றும் கடை வரவில் கடை கடன்பட்டுள்ள பணம் — அது எங்கே அமைதியாகக் கசிகிறது. முதலில் நிலைபெற்ற இழப்புகள் (சேனல்கள் ஒத்திசைவின்றி இருந்தபோது இருமுறை செலவழிக்கப்பட்ட அட்டை — உண்மையான பணம், இரண்டு பக்கமும் வைக்கப்படுகிறது), பின்னர் அட்டைகளின் இருப்புக்கும் கணக்கில் பதிந்ததற்கும் இடையிலான வித்தியாசம், பின்னர் வழக்கத்திற்கு மாறாக விரைவாகக் குறையும் அட்டைகள். இந்தத் திரை படித்து அறிக்கை செய்கிறது; எதையும் மாற்றாது.',
+    refresh: 'புதுப்பி', asOfLabel: 'நிலவரம்', reconcileBtn: 'சரிபார்', lookupBtn: 'தேடு',
+    postedFigureLabel: 'கணக்கில் பதிந்த கடன் (₹)', ownerRefLabel: 'வாடிக்கையாளர் குறிப்பு',
     lossHeading: 'இருமுறை கொடுக்கப்பட்டது', lossCount: 'தீர்க்க வேண்டியவை', lossExposure: 'இருமுறை செலுத்தப்பட்டது',
     lossNone: 'சேனல்கள் இடையே இரட்டைச் செலவு இல்லை — இருமுறை எதுவும் கொடுக்கப்படவில்லை.',
     gapHeading: 'கடன் vs கணக்கு', gapNeedsPosted: 'அட்டைகளை ஒப்பிட, கணக்கில் தற்போது உள்ள கடன் தொகையை உள்ளிடவும் — எதுவும் ஊகிக்கப்படாது.',
