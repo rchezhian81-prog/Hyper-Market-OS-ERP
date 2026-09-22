@@ -99,6 +99,13 @@ export const forbidden = (permission: string): ApiError => apiError(403, {
   nextSafeAction: 'Ask somebody with that permission to do it. Nothing was changed.',
 });
 
+export const featureNotEntitled = (feature: string): ApiError => apiError(403, {
+  code: 'feature_not_entitled',
+  whatHappened: `This shop's plan does not include the "${feature}" feature, so this cannot be used here.`,
+  wasItSaved: 'not_saved',
+  nextSafeAction: 'Enable the feature for this shop (a plan/entitlement change), then try again. Nothing was changed.',
+});
+
 export const idempotencyKeyMissing = (): ApiError => apiError(400, {
   code: 'idempotency_key_missing',
   whatHappened: 'A write arrived without an Idempotency-Key, so a repeat of it could not be told from a new one.',

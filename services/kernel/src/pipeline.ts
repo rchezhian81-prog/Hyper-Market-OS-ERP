@@ -20,7 +20,7 @@
 
 import { AccessControl } from '../../../packages/rbac/src/rbac';
 import {
-  ApiError, apiError, forbidden, idempotencyKeyMissing, idempotencyKeyReused,
+  ApiError, apiError, forbidden, featureNotEntitled, idempotencyKeyMissing, idempotencyKeyReused,
   notFound, rateLimited, tooManySignInAttempts, unauthenticated,
 } from './errors';
 import { isWrite, type Method, type Router } from './router';
@@ -198,6 +198,14 @@ export function scanOutbound(body: unknown, tenantId: string): readonly Outbound
 export type AccessResolver = (tenantId: string) => AccessControl | Promise<AccessControl>;
 
 /**
+ * Reads which OPTIONAL/paid features a tenant's plan has enabled (M36-FR-01). Keyed on the SIGNED
+ * tenant, never anything the caller supplied. Returns the enabled feature keys (see `@sre/tenant`'s
+ * `OPTIONAL_FEATURES`); a tenant with none yields an empty list, and every feature stays off for it
+ * — default-deny, exactly like access grants. Async because the entitlements live in a store.
+ */
+export type EntitlementResolver = (tenantId: string) => readonly string[] | Promise<readonly string[]>;
+
+/**
  * One request, seen from outside — what a log line, a metric and a trace are all made from. Emitted
  * once per request on the way out, whichever way it went. Provider-neutral: the kernel produces this
  * value and knows nothing about where it is logged, counted or traced (P-06).
@@ -224,6 +232,14 @@ export interface KernelOptions {
   readonly authenticate: Authenticator;
   readonly access: AccessControl | AccessResolver;
   readonly idempotency: IdempotencyStore;
+  /**
+   * Reads a tenant's enabled OPTIONAL/paid features (M36-FR-01 per-route entitlement enforcement).
+   * Optional in the type — a test that touches no entitlement-tagged route omits it — and supplied in
+   * a deployment. When a matched route names an `entitlement`, the pipeline consults this AFTER the
+   * permission check and refuses (403 `feature_not_entitled`) unless the tenant has that feature on.
+   * A route that names a feature while this is absent is refused (fail-closed), never allowed through.
+   */
+  readonly entitlements?: EntitlementResolver;
   readonly audit?: AuditSink;
   /**
    * Request rate limiter (audit FND-03). Optional in the type (a test that is not about limiting
@@ -384,6 +400,18 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
       userId: principal.userId, permission: route.permission, branchId: principal.branchId,
     })) {
       throw forbidden(route.permission);
+    }
+
+    // Per-tenant FEATURE ENTITLEMENT (M36-FR-01): a route that belongs to an optional/paid feature is
+    // refused for a tenant whose plan has not enabled it — default-deny, ON TOP of the permission check
+    // above (a paid feature the shop did not buy is off even for a user who holds the permission). Core
+    // routes carry no `entitlement` and skip this. The tenant comes from the SIGNED principal, never
+    // anything the caller supplied. A route that names a feature while no resolver is wired refuses
+    // (fail-closed) rather than letting a paid feature through un-gated.
+    if (route.entitlement !== undefined) {
+      if (opts.entitlements === undefined) throw featureNotEntitled(route.entitlement);
+      const entitled = await opts.entitlements(principal.tenantId);
+      if (!entitled.includes(route.entitlement)) throw featureNotEntitled(route.entitlement);
     }
 
     const write = isWrite(route.method);
