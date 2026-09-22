@@ -619,6 +619,17 @@ export interface PackEssPolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the manager rostering screen and what they may do (M25-FR-01 · API-11). The roster gaps and the
+ *  staff who can fill them are read live from the cloud (`GET /v1/hr/workforce/roster` + `/roster-gaps`), not
+ *  the pack; this is only who the box was told is looking, so the shell can gate on `workforce.roster.read`
+ *  (to see) and `workforce.roster.manage` (to assign) before the live reads. The cloud routes re-check both. */
+export interface PackRosteringPolicy {
+  readonly userId?: string;
+  /** The permission codes this user holds — `workforce.roster.read` to see, `workforce.roster.manage` to
+   *  assign. Never defaulted; the cloud routes re-check them, so this only shapes the UI. */
+  readonly permissions: readonly string[];
+}
+
 /** Who administers this shop, and the windows it judges accounts and devices by. */
 export interface PackAdminPolicy {
   /** Days without a login after which an account is stale enough to review. Per-tenant. */
@@ -1005,6 +1016,8 @@ export interface StorePack {
   /** Who is on the Workforce guidance inbox screen and what they may do there (A10). */
   readonly workforceInboxPolicy: Register<PackWorkforceInboxPolicy>;
   readonly essPolicy: Register<PackEssPolicy>;
+  /** Who is on the manager rostering screen and what they may do there (M25-FR-01). */
+  readonly rosteringPolicy: Register<PackRosteringPolicy>;
   /** Every account, so joiners, movers and leavers can be reviewed (M02-FR-04). */
   readonly accounts: Register<readonly unknown[]>;
   /**
@@ -1157,6 +1170,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     dataIoPolicy: notKnown(why),
     workforceInboxPolicy: notKnown(why),
     essPolicy: notKnown(why),
+    rosteringPolicy: notKnown(why),
     accounts: notKnown(why),
     supportSessions: notKnown(why),
     devices: notKnown(why),
@@ -1278,6 +1292,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     dataIoPolicy: section<PackDataIoPolicy>('dataIoPolicy'),
     workforceInboxPolicy: section<PackWorkforceInboxPolicy>('workforceInboxPolicy'),
     essPolicy: section<PackEssPolicy>('essPolicy'),
+    rosteringPolicy: section<PackRosteringPolicy>('rosteringPolicy'),
     accounts: section<readonly unknown[]>('accounts'),
     supportSessions: section<readonly unknown[]>('supportSessions'),
     devices: section<readonly unknown[]>('devices'),

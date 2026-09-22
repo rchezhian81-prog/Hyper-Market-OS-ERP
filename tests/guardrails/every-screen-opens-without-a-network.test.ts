@@ -50,6 +50,7 @@ const SCREENS = [
   { name: 'the import/export console', dir: 'web-erp', view: 'data-io.js', page: 'data-io.html', bundle: 'web-erp.bundle.js' },
   { name: 'the workforce inbox', dir: 'web-erp', view: 'workforce.js', page: 'workforce.html', bundle: 'web-erp.bundle.js' },
   { name: 'the self-service', dir: 'web-erp', view: 'ess.js', page: 'ess.html', bundle: 'web-erp.bundle.js' },
+  { name: 'the rostering', dir: 'web-erp', view: 'rostering.js', page: 'rostering.html', bundle: 'web-erp.bundle.js' },
   { name: 'the devices', dir: 'web-erp', view: 'fleet.js', page: 'fleet.html', bundle: 'web-erp.bundle.js' },
   { name: 'the store setup', dir: 'web-erp', view: 'setup.js', page: 'setup.html', bundle: 'web-erp.bundle.js' },
   { name: 'the owner', dir: 'owner-app', view: 'app.js', page: 'index.html', bundle: 'owner-app.bundle.js' },

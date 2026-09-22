@@ -83,6 +83,7 @@ export const APP_SHELL: Readonly<Record<ScreenName, AppShell>> = Object.freeze({
   'data-io': { dir: 'web-erp', file: 'data-io.html' },
   'workforce': { dir: 'web-erp', file: 'workforce.html' },
   ess: { dir: 'web-erp', file: 'ess.html' },
+  rostering: { dir: 'web-erp', file: 'rostering.html' },
   admin: { dir: 'web-erp', file: 'admin.html' },
   ai: { dir: 'web-erp', file: 'ai.html' },
   migration: { dir: 'web-erp', file: 'migration.html' },
