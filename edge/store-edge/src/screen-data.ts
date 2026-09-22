@@ -49,14 +49,14 @@ import {
   basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
-import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackReturnGovernancePolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackGoodsReceiptPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy, PackRosteringPolicy, PackChecklistPolicy, PackProductionPolicy } from './store-pack';
+import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackReturnGovernancePolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackGoodsReceiptPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy, PackRosteringPolicy, PackChecklistPolicy, PackProductionPolicy, PackFacilitiesPolicy } from './store-pack';
 import { DEFAULT_WRITE_OFF_THRESHOLD_MINOR } from '../../../packages/waste/src/waste';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'write-off-capture', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'return-governance', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'goods-receipt', 'data-io', 'workforce', 'ess', 'rostering', 'checklist', 'production', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
+  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'write-off-capture', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'return-governance', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'goods-receipt', 'data-io', 'workforce', 'ess', 'rostering', 'checklist', 'production', 'facilities', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1608,6 +1608,20 @@ export function productionPayload(input: ScreenInput): Record<string, unknown> |
   return payload;
 }
 
+/** Facilities maintenance & compliance (M26-FR-03) — only who is looking and what they hold; the overdue tasks
+ *  (cleaning, pest, fire/electrical safety, statutory checks) come live from the cloud
+ *  (`GET /v1/facilities/overdue`), not the pack. Null when the box was not told who is on the screen. The cloud
+ *  routes re-check both permissions, so this only shapes the UI. */
+export function facilitiesPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.facilitiesPolicy.known) return null;
+  const policy: PackFacilitiesPolicy = input.pack.facilitiesPolicy.value;
+
+  const payload: Record<string, unknown> = { permissions: policy.permissions };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+
+  return payload;
+}
+
 /**
  * The admin and security payload (M01 · M02 · M33 · M34 · D12).
  *
@@ -1772,6 +1786,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   rostering: 'rosteringData',
   checklist: 'checklistData',
   production: 'productionData',
+  facilities: 'facilitiesData',
   admin: 'adminData',
   ai: 'aiData',
   migration: 'migrationData',
@@ -1816,6 +1831,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   rostering: rosteringPayload,
   checklist: checklistPayload,
   production: productionPayload,
+  facilities: facilitiesPayload,
   admin: adminPayload,
   ai: aiPayload,
   migration: migrationPayload,

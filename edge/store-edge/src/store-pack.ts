@@ -652,6 +652,18 @@ export interface PackProductionPolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the facilities maintenance & compliance screen and what they may do (M26-FR-03 · API-11). The
+ *  overdue tasks (cleaning, pest, fire/electrical safety, statutory) are read live from the cloud
+ *  (`GET /v1/facilities/overdue`), not the pack; this is only who the box was told is looking, so the shell can
+ *  gate on `facilities.overdue.read` (to see) and `facilities.task.record` (to mark a check done) before the live
+ *  read. The cloud routes re-check both. */
+export interface PackFacilitiesPolicy {
+  readonly userId?: string;
+  /** The permission codes this user holds — `facilities.overdue.read` to see, `facilities.task.record` to mark a
+   *  check done. Never defaulted; the cloud routes re-check them, so this only shapes the UI. */
+  readonly permissions: readonly string[];
+}
+
 /** Who administers this shop, and the windows it judges accounts and devices by. */
 export interface PackAdminPolicy {
   /** Days without a login after which an account is stale enough to review. Per-tenant. */
@@ -1044,6 +1056,8 @@ export interface StorePack {
   readonly checklistPolicy: Register<PackChecklistPolicy>;
   /** Who is on the production quality-release screen and what they may do there (M11-FR-03). */
   readonly productionPolicy: Register<PackProductionPolicy>;
+  /** Who is on the facilities maintenance & compliance screen and what they may do there (M26-FR-03). */
+  readonly facilitiesPolicy: Register<PackFacilitiesPolicy>;
   /** Every account, so joiners, movers and leavers can be reviewed (M02-FR-04). */
   readonly accounts: Register<readonly unknown[]>;
   /**
@@ -1199,6 +1213,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     rosteringPolicy: notKnown(why),
     checklistPolicy: notKnown(why),
     productionPolicy: notKnown(why),
+    facilitiesPolicy: notKnown(why),
     accounts: notKnown(why),
     supportSessions: notKnown(why),
     devices: notKnown(why),
@@ -1323,6 +1338,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     rosteringPolicy: section<PackRosteringPolicy>('rosteringPolicy'),
     checklistPolicy: section<PackChecklistPolicy>('checklistPolicy'),
     productionPolicy: section<PackProductionPolicy>('productionPolicy'),
+    facilitiesPolicy: section<PackFacilitiesPolicy>('facilitiesPolicy'),
     accounts: section<readonly unknown[]>('accounts'),
     supportSessions: section<readonly unknown[]>('supportSessions'),
     devices: section<readonly unknown[]>('devices'),
