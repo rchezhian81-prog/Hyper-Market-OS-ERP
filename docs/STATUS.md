@@ -5,6 +5,31 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M32 integration-health screen — slice 3: browser e2e → M32 E2E_VERIFIED (22 September 2026, owner: keep-going)
+
+The third and last slice — the served `/integration-health` desk is now proven end to end in a **real headless
+browser**, so M32 (Integration gateway) moves **INTEGRATION_TESTED → E2E_VERIFIED** (an honest +10 weighted).
+
+- **`tests/e2e/integration-health-delivery.e2e.ts`** (headless Chromium vs a same-origin stub cloud, 2 cases):
+  - An **authorised admin** (`platform.health.read`) opens the desk → the health picture reads **live on load**,
+    the connection that has gone **silent** sits at the **top** (worst-first, P-03 — judged by when it last
+    worked, not by whether it is switched on), the **till-safe reassurance** shows (`posUnaffected`, hard rule
+    #1), and across the **whole session not one write verb** (POST/PUT/PATCH/DELETE) leaves the screen.
+  - A user **without** `platform.health.read` sees the not-permitted state and **none** of the health data, even
+    though the feed exists (the server also answers 403 — defence in depth, P-04).
+- **Re-rate (honest, +10 weighted):** `docs/completion-status.json` M32 → E2E_VERIFIED; the module ladder rung +
+  the module-level summary in `docs/traceability.md` (18 E2E · 1 INTEGRATION); `EVIDENCE.M32` in
+  `tests/guardrails/completion-ladder-has-evidence.test.ts` now points at the browser proof. Ladder guardrails
+  green.
+- **Honest scope:** M32's operator-facing surface IS this health-monitoring view; the connector-delivery and
+  secret-lifecycle **write** paths are machine-to-machine / owner-config API surfaces with **no operator screen
+  by design** (integration-tested, the same standard as M10's cold-chain/lot-trace API surfaces). Held below
+  UAT_VERIFIED: the outbound connector transport to a real destination remains a deployment step.
+
+**M32 is complete to the E2E bar.** Only one module now sits at INTEGRATION_TESTED (M24 supplier portal).
+
+---
+
 ## M32 integration-health screen — slice 2: served screen + edge wiring (22 September 2026, owner: keep-going)
 
 Slice 2 of the M32 integration-health desk — the visible screen over the tested session model from slice 1.
