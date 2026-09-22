@@ -5,6 +5,40 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M11 production quality-release screen — slices 1-3 → E2E_VERIFIED (22 September 2026, owner-directed)
+
+The owner said "go ahead with the M11 screen." M11's one named E2E gap was the in-store production
+**quality-release** operator surface — the screen a QC person uses to decide which freshly-made batches may go on
+sale. The release route was already wired + integration-tested (`services/inventory/src/production.ts`: `POST
+/v1/production/runs/:runId/release`, gated `production.release`, refusing an expired/already-released batch; `GET
+/v1/production/runs` reads the board); the operator had no screen. Built as the same proven 3-slice pattern, all
+three merged.
+
+- **Slice 1 (PR #501, merged).** `apps/web-erp/src/production-session.ts` — the tested DOM-free session model:
+  the finished batches still in quarantine read **worst-first** (a production exception is an error, a
+  cost-not-known batch degraded, an off yield degraded, a clean batch idle; colour never the only signal); the
+  release refuses locally before any POST when the operator lacks `production.release`, is nobody-named, or names
+  a batch the board does not hold. `tests/unit/erp-production-session.test.ts` (17).
+- **Slice 2 (PR #502, merged).** The served `/production` screen (`apps/web-erp/web/production.{html,js}`, the
+  twenty-first web-erp screen) + browser-entry boot + `openReleasePort` (POST
+  `/v1/production/runs/:runId/release` `{qcPassed, notes?}`, credentials same-origin, idempotency-key; 2xx pass →
+  released, 2xx fail → held, non-2xx → refused, dropped link → lost_link — never a false "released", P-08) +
+  `fetchProductionBoard` (GET `/v1/production/runs`) + edge wiring (`productionPayload`, `PackProductionPolicy`,
+  screen-server route + SCREENS 'production', SW v32) + `the-production-screen-is-usable` guardrail (9). Same
+  offline contract as every screen.
+- **Slice 3 (this PR).** `tests/e2e/production-delivery.e2e.ts` drives real headless Chromium vs a same-origin
+  stub cloud: an authorised QC operator (`production.read` + `production.release`) sees a batch awaiting release,
+  clicks **Release for sale** → the `{qcPassed:true}` POST reaches `/v1/production/runs/:runId/release` under
+  their own session, and the batch **drops off the board on a RE-READ** (the server folds it released:true — a
+  re-derive, never a client shuffle); a read-only user (`production.read` only) sees the board but is offered NO
+  release/hold buttons and sends nothing (P-04). Both cases pass against the pre-installed Chromium.
+- **M11 INTEGRATION_TESTED → E2E_VERIFIED. +10 weighted → 54.8% → 54.9%.** Module ladder now 15 E2E VERIFIED · 4
+  INTEGRATION TESTED · 4 WIRED · 13 PARTIALLY WIRED. Held below UAT_VERIFIED (needs a QC operator releasing real
+  batches on the shop floor). This is the food-safety-critical operator surface: no AI releases food for sale
+  (hard rule #5) — the release is a human click, in the operator's own name, server-re-checked.
+
+---
+
 ## M25 manager checklist screen — slices 1-3 built + browser-verified (22 September 2026, owner-directed)
 
 The owner said "go ahead with the M25 rostering screen" again after the rostering screen was already done; on
