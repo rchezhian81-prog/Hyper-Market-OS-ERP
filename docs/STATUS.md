@@ -36,10 +36,21 @@ with a name typed into an "approved by" box — nothing reached head office, and
   shows "Order proposed — waiting for a second person to approve it" only after the cloud saved it (EN+TA). SW
   shell cache v28→v29. `tests/unit/erp-buying-boot.test.ts` (+10). Full gate green (GATE_EXIT=0, 7151 passed).
 
-### Next (M06 → E2E, remaining slice)
-- **Slice 3:** browser e2e (real Chromium) driving the buyer screen's PO-propose (and invoice-capture) write-path
-  to a stub cloud, then honestly re-rate **M06 → E2E_VERIFIED**.
+- **Slice 3 (DONE, 22 Sep 2026) — M06 re-rated INTEGRATION_TESTED → E2E_VERIFIED.** `tests/e2e/buying-po-delivery.e2e.ts`
+  (5 cases, real headless Chromium vs a stub cloud on one origin, stable over 6 runs) proves **both** operator
+  write-paths on the buyer screen: (1) the **PO-raise** reaches head office (`POST /v1/purchase/orders/:poId`
+  under the buyer's own session, keyed by the PO id, no approver — issuing is a separate §28 act; a 422 shown
+  verbatim and never a false raise; an empty order refused before any POST); (2) the **invoice-capture** (A-03)
+  commits atomically with a second person's on-screen approval, **offline-first with no network call**, and the
+  buyer is refused their own approval (§28). With both write-paths browser-verified — the M05 "both write-paths"
+  bar — the re-rate is honest. **+10 weighted pts → 5665/10400 = 54.5%** (from 54.4% immediately prior). Module
+  ladder now **11 E2E VERIFIED · 8 INTEGRATION TESTED · 4 WIRED · 13 PARTIALLY WIRED**. Held below UAT_VERIFIED
+  (needs a buyer raising a real order / capturing a real invoice on the shop floor). Full gate green.
+
+### Next
 - Owner-input still the highest-value work I can't do alone: **store-credit cap rupee number**, **retention periods**.
+- Otherwise: another INTEGRATION_TESTED module toward E2E where a real operator screen exists, or a genuine
+  deepening on a PARTIALLY_WIRED module whose gap needs no owner decision.
 
 ---
 
