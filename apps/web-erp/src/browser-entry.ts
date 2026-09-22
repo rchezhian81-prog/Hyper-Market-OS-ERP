@@ -132,6 +132,11 @@ import {
   type RosteringPorts, type RosteringSession, type RosteringData, type AssignPort, type AssignResult,
 } from './rostering-session';
 import {
+  createChecklistSession,
+  type ChecklistPorts, type ChecklistSession, type ChecklistData, type StoredChecklist,
+  type SubmitChecklistPort, type SubmitResult as ChecklistSubmitResult,
+} from './checklist-session';
+import {
   createCashOfficeSession,
   type CashOfficePorts, type CashOfficeSession, type CashOverShortData, type OverShortView,
   type OverShortSignOffPort, type SignOffResult,
@@ -1199,6 +1204,94 @@ export async function fetchRosteringWorklist(): Promise<RosteringData | null> {
       shifts: Array.isArray(roster.shifts) ? (roster.shifts as RosteringData['shifts']) : [],
       assignments: Array.isArray(roster.assignments) ? (roster.assignments as RosteringData['assignments']) : [],
     };
+  } catch {
+    return null;
+  }
+}
+
+// ── Manager checklist screen (M25-FR-02) — the "did the shift open/close, and what is outstanding" desk ────
+
+/** What the box tells the checklist screen: who is looking, what they may do, and (optionally) the worklist it
+ *  last carried. The checklists are a LIVE cloud read (`GET /v1/hr/workforce/checklists`) refreshed by the shell
+ *  when online; offline the screen shows its clearly-marked sample stand-in. */
+export interface ChecklistScreenData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+  readonly worklist?: ChecklistData;
+}
+
+const CHECKLIST_READ_PERMISSION = 'workforce.checklist.read';
+const CHECKLIST_MANAGE_PERMISSION = 'workforce.roster.manage';
+const EMPTY_CHECKLISTS: ChecklistData = Object.freeze({ checklists: [] });
+const NOOP_SUBMIT_CHECKLIST_PORT: SubmitChecklistPort = { post: async () => 'lost_link' };
+
+export function checklistPortsFromData(
+  data: ChecklistScreenData | undefined,
+  worklist?: ChecklistData,
+  submitPort: SubmitChecklistPort = NOOP_SUBMIT_CHECKLIST_PORT,
+): ChecklistPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    worklist: () => worklist ?? data?.worklist ?? EMPTY_CHECKLISTS,
+    // Default-deny: an absent permission list can read/sign nothing (the server would refuse it anyway).
+    mayRead: () => held.has(CHECKLIST_READ_PERMISSION),
+    mayManage: () => held.has(CHECKLIST_MANAGE_PERMISSION),
+    submitPort: () => submitPort,
+  };
+}
+
+/** Build the checklist screen, or `null` when the box carried no payload for it (shell shows the sample). */
+export function bootChecklist(
+  data: ChecklistScreenData | undefined,
+  worklist?: ChecklistData,
+  submitPort?: SubmitChecklistPort,
+): ChecklistSession | null {
+  if (data === undefined) return null;
+  return createChecklistSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    checklistPortsFromData(data, worklist, submitPort),
+  );
+}
+
+/** The authenticated POST of a manager's signed checklist — the manager's OWN session cookie
+ *  (`credentials: 'same-origin'`), never a service token. A network/timeout is a retryable lost link, not a
+ *  refusal, so a dropped connection never reads as "the server said no". The checklistId rides in the URL; the
+ *  server records the checklist in the caller's own name and re-checks `workforce.roster.manage` (and refuses a
+ *  blocking item still outstanding). */
+function openSubmitChecklistPort(): SubmitChecklistPort {
+  return {
+    post: async ({ checklistId, kind, items, signedBy, branchId, forDate }): Promise<ChecklistSubmitResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return 'lost_link';
+      const key = globalThis.crypto?.randomUUID?.() ?? `checklist-${checklistId}-${signedBy}`;
+      try {
+        const res = await fetchFn(`/v1/hr/workforce/checklists/${encodeURIComponent(checklistId)}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ kind, items, signedBy, ...(branchId === undefined ? {} : { branchId }), ...(forDate === undefined ? {} : { forDate }) }),
+        });
+        return res.status >= 200 && res.status < 300 ? 'recorded' : 'refused';
+      } catch {
+        return 'lost_link';
+      }
+    },
+  };
+}
+
+/** Read the live checklist worklist (a GET — read-only). Returns null offline/refused so the shell keeps
+ *  whatever it was showing and its stale strip says the page is what the box last told it. The cloud route hands
+ *  back `{ checklists, count, blocked }`; only the checklists are needed (the session recomputes the rest). */
+export async function fetchChecklistWorklist(): Promise<ChecklistData | null> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return null;
+  try {
+    const res = await fetchFn('/v1/hr/workforce/checklists', {
+      method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin',
+    });
+    if (res.status >= 400) return null;
+    const body = (await res.json()) as { checklists?: unknown };
+    return { checklists: Array.isArray(body.checklists) ? (body.checklists as readonly StoredChecklist[]) : [] };
   } catch {
     return null;
   }
@@ -2725,6 +2818,13 @@ interface ManagerWindow {
     refresh(): Promise<RosteringData | null>;
     present(worklist: RosteringData): RosteringSession;
   };
+  checklistData?: ChecklistScreenData;
+  checklistSession?: ChecklistSession;
+  /** The shell reads the live checklist worklist through this and re-presents it — a GET read, never a write. */
+  checklist?: {
+    refresh(): Promise<ChecklistData | null>;
+    present(worklist: ChecklistData): ChecklistSession;
+  };
   cashOfficeData?: CashOfficeData;
   cashOfficeSession?: CashOfficeSession;
   /** The shell reads the live over/short worklist through this and re-presents it — a GET read, never a write. */
@@ -3590,6 +3690,24 @@ if (browserWindow !== undefined) {
       present: (worklist) => createRosteringSession(
         { userId: rosteringData?.userId === undefined ? null : rosteringData.userId },
         rosteringPortsFromData(rosteringData, worklist, assignPort),
+      ),
+    };
+  }
+  // The manager checklist screen (M25-FR-02): boots from the box's policy (who + what they hold), then the shell
+  // refreshes the day's checklists with a live GET (read-only). Offline it shows its sample stand-in and says so.
+  // The one write is a HUMAN sign-off in the manager's own name — never on load, only on an explicit click — and
+  // the server re-checks `workforce.roster.manage` and refuses a blocking item still outstanding, which the
+  // screen never fakes (hard rule #5: no AI signs a checklist).
+  const checklistData = browserWindow.checklistData;
+  const submitChecklistPort = openSubmitChecklistPort();
+  const checklist = bootChecklist(checklistData, undefined, submitChecklistPort);
+  if (checklist !== null) {
+    browserWindow.checklistSession = checklist;
+    browserWindow.checklist = {
+      refresh: fetchChecklistWorklist,
+      present: (worklist) => createChecklistSession(
+        { userId: checklistData?.userId === undefined ? null : checklistData.userId },
+        checklistPortsFromData(checklistData, worklist, submitChecklistPort),
       ),
     };
   }

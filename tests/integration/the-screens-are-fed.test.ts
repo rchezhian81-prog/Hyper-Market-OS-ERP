@@ -264,6 +264,8 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
   essPolicy: known({ userId: 'u-cash', permissions: ['payroll.ess.self'] }),
   // Manager rostering (M25-FR-01). Who is looking + what they hold; the gaps and staff come live from the cloud.
   rosteringPolicy: known({ userId: 'u-manager', permissions: ['workforce.roster.read', 'workforce.roster.manage'] }),
+  // Manager checklist (M25-FR-02). Who is looking + what they hold; the day's checklists come live from the cloud.
+  checklistPolicy: known({ userId: 'u-manager', permissions: ['workforce.checklist.read', 'workforce.roster.manage'] }),
   // Admin and security (M01/M02/M33/M34). Support access is never pruned (hard rule #6).
   accounts: known([{
     userId: 'u-meena', tenantId: 't1', username: 'meena',
@@ -761,7 +763,7 @@ describe('a box that has been told nothing tells every screen so', () => {
       wasteWriteOffs: notKnown('never'), wastePolicy: notKnown('never'), writeOffCapturePolicy: notKnown('never'),
       countsQueue: notKnown('never'), countsPolicy: notKnown('never'), fleetPolicy: notKnown('never'),
       productPublishReviewPolicy: notKnown('never'),
-      dataQualityPolicy: notKnown('never'), operationsInboxPolicy: notKnown('never'), lossPreventionPolicy: notKnown('never'), returnGovernancePolicy: notKnown('never'), cashOfficePolicy: notKnown('never'), riskAcceptancePolicy: notKnown('never'), dayReopenPolicy: notKnown('never'), stockHealthPolicy: notKnown('never'), goodsReceiptPolicy: notKnown('never'), dataIoPolicy: notKnown('never'), workforceInboxPolicy: notKnown('never'), essPolicy: notKnown('never'), rosteringPolicy: notKnown('never'),
+      dataQualityPolicy: notKnown('never'), operationsInboxPolicy: notKnown('never'), lossPreventionPolicy: notKnown('never'), returnGovernancePolicy: notKnown('never'), cashOfficePolicy: notKnown('never'), riskAcceptancePolicy: notKnown('never'), dayReopenPolicy: notKnown('never'), stockHealthPolicy: notKnown('never'), goodsReceiptPolicy: notKnown('never'), dataIoPolicy: notKnown('never'), workforceInboxPolicy: notKnown('never'), essPolicy: notKnown('never'), rosteringPolicy: notKnown('never'), checklistPolicy: notKnown('never'),
       accounts: notKnown('never'), supportSessions: notKnown('never'),
       devices: notKnown('never'), versionPolicy: notKnown('never'),
       auditRecords: notKnown('never'), retentionPolicies: notKnown('never'),
