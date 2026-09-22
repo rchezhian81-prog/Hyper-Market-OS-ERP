@@ -5,6 +5,31 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M09 warehouse supervisor screen browser-verified — slice 1 toward E2E (22 September 2026)
+
+After the M06 arc merged, "keep going." Next honest target: **M09 (warehouse)**, INTEGRATION_TESTED with two
+built operator surfaces already writing to durable outboxes but neither browser-e2e'd (OA-9): the Web ERP
+**supervisor** screen and the offline handheld **warehouse-app**. (Considered but set aside: M36 per-route
+entitlement enforcement — higher value (+20) but it sits on the security-critical request pipeline with real
+tenant-access blast radius, a commercial-layer call I've flagged for the owner rather than reshape alone.)
+
+- **Slice 1 (DONE, no rung change).** `tests/e2e/warehouse-supervisor-delivery.e2e.ts` (3 cases, real headless
+  Chromium, stable over 3 runs) drives the served supervisor screen: an authorised supervisor **Approves** a
+  request and the decision lands **durably in the box's outbox** (offline-first, §31/P-01, no network call); the
+  request the supervisor **raised themselves** shows blocked with no Approve button and nothing queued (§28
+  maker-checker); **proposing a transfer** queues it to the same outbox. Full gate green.
+- **M09 stays INTEGRATION_TESTED** — the handheld warehouse-app (receive / put-away / count) is the remaining
+  surface to browser-verify (slice 2), after which M09 → E2E_VERIFIED honestly (both surfaces, the M06 bar).
+
+### Next
+- **Slice 2:** e2e the handheld warehouse-app write-paths → re-rate **M09 → E2E_VERIFIED**.
+- Owner decision worth having: **M36 per-route entitlement enforcement** (stops a tenant using a feature its
+  plan doesn't include) — the highest-value remaining PARTIALLY_WIRED→WIRED, but it changes tenant access on the
+  paid product, so I'd like a nod before reshaping the request pipeline.
+- Still owner-blocked (I won't invent): **store-credit cap rupee number**, **retention periods**.
+
+---
+
 ## Buyer's PO write-path reaches head office — M06 slice 1 toward E2E (22 September 2026)
 
 After the menu-links task merged (#488), "keep going." I surveyed the ladder for the next honest increment.
