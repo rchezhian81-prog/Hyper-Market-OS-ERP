@@ -18,14 +18,22 @@ tenant-access blast radius, a commercial-layer call I've flagged for the owner r
   request and the decision lands **durably in the box's outbox** (offline-first, §31/P-01, no network call); the
   request the supervisor **raised themselves** shows blocked with no Approve button and nothing queued (§28
   maker-checker); **proposing a transfer** queues it to the same outbox. Full gate green.
-- **M09 stays INTEGRATION_TESTED** — the handheld warehouse-app (receive / put-away / count) is the remaining
-  surface to browser-verify (slice 2), after which M09 → E2E_VERIFIED honestly (both surfaces, the M06 bar).
+- **Slice 2 (DONE, 22 Sep 2026) — M09 re-rated INTEGRATION_TESTED → E2E_VERIFIED.**
+  `tests/e2e/warehouse-handheld-delivery.e2e.ts` (3 cases, real headless Chromium, stable over 3 runs) drives
+  the offline handheld warehouse-app exactly as the shop does (a scan = keyboard typing a code + Enter, no input
+  box): a worker **receives** a known delivery barcode → the goods-received event lands in the **device outbox**
+  (offline-first, §31/P-01, no network); a good item **put away** into a pickable bin queues the movement; a
+  **recalled** item scanned into a pickable bin is refused on screen with nothing queued (M10-FR-04). With **both**
+  operator surfaces browser-verified (supervisor in slice 1, handheld here — the M06 "both surfaces" bar), the
+  re-rate is honest. **+10 weighted pts → 5675/10400 = 54.6%** (from 54.5% immediately prior). Module ladder now
+  **12 E2E VERIFIED · 7 INTEGRATION TESTED · 4 WIRED · 13 PARTIALLY WIRED**. Held below UAT_VERIFIED. Full gate green.
 
 ### Next
-- **Slice 2:** e2e the handheld warehouse-app write-paths → re-rate **M09 → E2E_VERIFIED**.
 - Owner decision worth having: **M36 per-route entitlement enforcement** (stops a tenant using a feature its
   plan doesn't include) — the highest-value remaining PARTIALLY_WIRED→WIRED, but it changes tenant access on the
   paid product, so I'd like a nod before reshaping the request pipeline.
+- Otherwise: another INTEGRATION_TESTED module toward E2E (M07 goods-receipt handheld capture, M11 production,
+  M17 loyalty, M25 workforce, M26 facilities — several need a new operator screen built first).
 - Still owner-blocked (I won't invent): **store-credit cap rupee number**, **retention periods**.
 
 ---
