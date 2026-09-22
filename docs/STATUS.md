@@ -5,6 +5,35 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M07 goods-receipt re-rated → E2E_VERIFIED — the GRN-capture handheld is now proven (22 September 2026)
+
+"keep going." The M09 handheld receive e2e (merged with M09 slice 2) turned out to close M07's exact E2E
+gap: the warehouse handheld's **receive IS M07's GRN capture** (`WarehouseSession.receive` → `receiveScan`
+→ a `GoodsReceived` event against the grnId), and M07's ledger had explicitly said E2E "would require the
+capture write-path itself proven in a browser (a future handheld e2e)." That e2e now exists.
+
+- **Strengthened the capture-path browser proof** (so the re-rate isn't a single happy scan): added a
+  receive-**refusal** case to `tests/e2e/warehouse-handheld-delivery.e2e.ts` — an **unknown barcode** scanned
+  at the back door is refused with **nothing queued** (an off-catalogue scan never silently becomes stock,
+  P-08), alongside the existing known-barcode receive that lands the goods-received event in the device outbox.
+- **Both M07 operator surfaces are now browser-verified:** the read-only goods-receipt **review** screen
+  (`tests/e2e/goods-receipt-delivery.e2e.ts`) and the **GRN-capture handheld** (the receive path of the
+  warehouse handheld e2e). One real handheld surface legitimately satisfies both M09 execution and M07 GRN
+  capture — not double-counting.
+- **M07 INTEGRATION_TESTED → E2E_VERIFIED. +10 weighted → 5685/10400 = 54.7%** (from 54.6%). Module ladder now
+  **13 E2E VERIFIED · 6 INTEGRATION TESTED · 4 WIRED · 13 PARTIALLY WIRED**. Held below UAT_VERIFIED. The richer
+  receiving cases (damaged→quarantine, over-delivery→§28, batch/expiry-incomplete) stay integration-tested; the
+  three-way match + dock/ASN are back-office API surfaces with no separate screen. Full gate green.
+
+### Next
+- Owner decision worth having: **M36 per-route entitlement enforcement** — the highest-value remaining
+  PARTIALLY_WIRED→WIRED (+20), but it changes tenant access on the paid product, so I'd like a nod first.
+- Otherwise: another INTEGRATION_TESTED module toward E2E (M11 production, M17 loyalty, M25 workforce, M26
+  facilities — each needs an operator screen built first), or a genuine deepening.
+- Still owner-blocked (I won't invent): **store-credit cap rupee number**, **retention periods**.
+
+---
+
 ## M09 warehouse supervisor screen browser-verified — slice 1 toward E2E (22 September 2026)
 
 After the M06 arc merged, "keep going." Next honest target: **M09 (warehouse)**, INTEGRATION_TESTED with two

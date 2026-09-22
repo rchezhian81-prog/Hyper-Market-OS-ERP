@@ -164,4 +164,19 @@ describe.skipIf(!HAVE_BROWSER)('warehouse handheld delivery, end to end in a rea
       await teardown();
     }
   });
+
+  it('receiving an UNKNOWN barcode is refused at the back door — nothing queued (M07 GRN capture, §31)', async () => {
+    // The GRN capture is the goods-receipt module's defining action; an off-catalogue scan must not
+    // silently become stock. This proves the capture write-path REFUSES in a real browser, not only accepts.
+    const { page, teardown } = await open(assignment());
+    try {
+      await page.click('#receive');
+      await scan(page, '000NOTREAL'); // not in the assignment's barcode catalogue → unknown_barcode
+      // The refusal is felt on screen; nothing was received, so the device outbox stays empty (P-08).
+      await page.waitForSelector('#banner:not([hidden]), .banner:not([hidden])', { timeout: 10_000 }).catch(() => undefined);
+      expect(await unsent(page)).toBe(0);
+    } finally {
+      await teardown();
+    }
+  });
 });
