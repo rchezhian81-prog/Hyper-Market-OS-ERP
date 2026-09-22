@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## M25 manager rostering screen — slices 1+2: session model + served screen (22 September 2026, owner-directed)
+## M25 manager rostering screen — slices 1-3 → E2E_VERIFIED (22 September 2026, owner-directed)
 
 The owner chose "go ahead with the M25 rostering screen." M25's named E2E gap is the manager rostering/checklist
 write-path screen. The durable roster backend already exists (roster store + `GET /v1/hr/workforce/roster-gaps`
@@ -28,8 +28,17 @@ over the tested `rosterGaps` engine + `POST /v1/hr/workforce/shifts/:shiftId/ass
   'rostering' + SW v30). Meets the same offline contract every screen does (network-first, stamped cache, stale
   strip EN/TA, sample stand-in). `tests/guardrails/the-rostering-screen-is-usable.test.ts` (9) + `/rostering`
   served in `tests/integration/the-screens-are-fed.test.ts`. Full gate green (GATE_EXIT=0, 7176 passed).
-- **M25 stays INTEGRATION_TESTED** — slice 3 is the browser e2e (assign write-path → cloud under the manager's
-  own session; a no-manage user sees no assign control) → re-rate M25 → E2E_VERIFIED.
+- **Slice 3 (DONE) — the browser e2e → M25 E2E_VERIFIED.** `tests/e2e/rostering-delivery.e2e.ts` drives real
+  headless Chromium against a same-origin stub cloud: an authorised manager (`workforce.roster.read` +
+  `workforce.roster.manage`) picks a short shift + an eligible person, clicks Assign, and the `{role}` POST
+  reaches `/v1/hr/workforce/shifts/:shiftId/assignments/:employeeId` under their own session; the gap then
+  **drops off on a worklist RE-READ** (the two GETs re-run — a server re-derive, never a client-side shuffle);
+  a **read-only user** sees the gaps but no assign form and sends nothing (P-04). Both e2e cases pass against
+  the pre-installed Chromium.
+- **M25 INTEGRATION_TESTED → E2E_VERIFIED. +10 weighted → 5695/10400 = 54.8%** (from 54.7%). Module ladder now
+  **14 E2E VERIFIED · 5 INTEGRATION TESTED · 4 WIRED · 13 PARTIALLY WIRED**. Held below UAT_VERIFIED (needs a
+  manager rostering the real shop). The M25 checklist write-path screen remains a separate future surface; the
+  module's FR-01 named E2E gap (the rostering assignment write-path) is what closed here.
 
 ---
 
