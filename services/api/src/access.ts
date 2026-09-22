@@ -46,6 +46,32 @@ export function tenantAccessResolver(
   };
 }
 
+/**
+ * A per-tenant FEATURE-ENTITLEMENT resolver for the kernel (M36-FR-01 · §35). Reads the tenant's
+ * `TenantEntitlementSet` events and folds them into the set of optional/paid features currently ON —
+ * latest change per feature wins, DEFAULT OFF. The kernel refuses a route that names an `entitlement`
+ * the tenant has not enabled, so a paid feature the shop did not buy is off even for a user who holds
+ * the permission.
+ *
+ * This is the SAME fold `platformAdapter().entitlements` serves the `/v1/platform/entitlements` routes
+ * from, so enabling a feature through that API turns its routes on. Read every request, like access:
+ * a stale cache is a feature a lapsed plan still reaches. Default-deny survives — a tenant with no
+ * entitlement history reaches no optional-feature route (fail closed).
+ */
+export function tenantEntitlementResolver(
+  store: EventStore,
+): (tenantId: string) => Promise<readonly string[]> {
+  return async (tenantId) => {
+    const changes = await store.readStream(tenantId, STREAM.platform, { type: 'TenantEntitlementSet' });
+    const state = new Map<string, boolean>();
+    for (const e of changes) {
+      const p = e.event.payload as { feature: string; enabled: boolean };
+      state.set(p.feature, p.enabled);
+    }
+    return [...state.entries()].filter(([, on]) => on).map(([feature]) => feature);
+  };
+}
+
 export type GenesisOutcome = 'seeded' | 'already_bootstrapped';
 
 /**

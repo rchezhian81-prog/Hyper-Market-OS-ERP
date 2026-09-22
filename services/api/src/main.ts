@@ -30,7 +30,7 @@ import {
   structuredLogger, combineObservers, RequestMetrics, TokenBucketRateLimiter, BackoffAuthThrottle,
   type Route,
 } from '../../kernel/src/index';
-import { tenantAccessResolver, seedGenesisOwner } from './access';
+import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } from './access';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
 import { labellingRoutes } from '../../catalogue/src/labelling';
@@ -1055,6 +1055,12 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
     // a tenant with no grants still authorises nothing — but now for the right reason, and a
     // provisioned tenant's owner and staff can actually act.
     access: tenantAccessResolver(store, ROLE_CATALOGUE),
+    // Per-tenant FEATURE ENTITLEMENT (M36-FR-01 · §35). A route that names an optional/paid feature is
+    // refused for a tenant whose plan has not enabled it — default-deny, on top of the permission check.
+    // Reads the SAME `TenantEntitlementSet` fold the `/v1/platform/entitlements` API writes, so enabling a
+    // feature there turns its routes on. A route naming a feature is fail-closed without this resolver, so
+    // the production surface always supplies it.
+    entitlements: tenantEntitlementResolver(store),
     // Durable and shared. In memory it emptied on every restart and was never shared between
     // instances, so the guard that refuses a different request under a used key was quietly not
     // there — which is not a crash, and would never have shown up in a test.

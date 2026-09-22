@@ -13,7 +13,7 @@ import { makeEvent } from '../../packages/contracts/src/event';
 import { buildRouter, handle, MemoryIdempotencyStore, type HttpRequest, type HttpResponse, type RequestObservation } from '../../services/kernel/src/index';
 import { tokenAuthenticator } from '../../services/identity/src/index';
 import { buildSurface } from '../../services/api/src/main';
-import { tenantAccessResolver, seedGenesisOwner } from '../../services/api/src/access';
+import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } from '../../services/api/src/access';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from '../../services/api/src/roles';
 import { STREAM } from '../../services/api/src/adapters';
 import { LocalIdp } from './local-idp';
@@ -48,6 +48,16 @@ async function appendGrant(store: EventStore, tenant: string, userId: string, ro
   }));
 }
 
+/** Turn an optional/paid feature on for a tenant — the same `TenantEntitlementSet` event the platform
+ *  entitlements API writes, so a route tagged with that feature (M36-FR-01) becomes reachable for it. */
+async function appendEntitlement(store: EventStore, tenant: string, feature: string, enabled: boolean): Promise<void> {
+  await store.append(tenant, STREAM.platform, makeEvent({
+    id: `entitlement-${feature}-${enabled}`, type: 'TenantEntitlementSet', occurredAt: AT,
+    idempotencyKey: `entitlement-${tenant}-${feature}-${AT}`, source: 'test/provision',
+    payload: { feature, enabled, at: AT, by: 'test' },
+  }));
+}
+
 export interface ApiHarness {
   readonly store: EventStore;
   readonly idp: LocalIdp;
@@ -64,6 +74,8 @@ export interface ApiHarness {
   provisionOwner(tenantId: string, userId: string): Promise<void>;
   /** Provision any catalogue role directly, for setting up a scenario's cast. */
   provisionRole(tenantId: string, userId: string, roleId: string): Promise<void>;
+  /** Turn an optional/paid feature on for a tenant, so routes tagged with it (M36-FR-01) are reachable. */
+  enableFeature(tenantId: string, feature: string): Promise<void>;
 }
 
 /**
@@ -80,6 +92,7 @@ export function apiHarness(opts: { store?: EventStore; idempotency?: Idempotency
     router: built.router!,
     authenticate: tokenAuthenticator(TEST_IDP.policy()),
     access: tenantAccessResolver(store, ROLE_CATALOGUE),
+    entitlements: tenantEntitlementResolver(store),
     idempotency,
     ...(opts.observe === undefined ? {} : { observe: opts.observe }),
     newTraceId: () => 'trace-e2e',
@@ -101,5 +114,6 @@ export function apiHarness(opts: { store?: EventStore; idempotency?: Idempotency
     seedOwner: async (tenantId, userId) => { await seedGenesisOwner(store, OWNER_ROLE_ID, tenantId, userId, AT); },
     provisionOwner: (tenantId, userId) => appendGrant(store, tenantId, userId, OWNER_ROLE_ID),
     provisionRole: (tenantId, userId, roleId) => appendGrant(store, tenantId, userId, roleId),
+    enableFeature: (tenantId, feature) => appendEntitlement(store, tenantId, feature, true),
   };
 }

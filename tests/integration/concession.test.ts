@@ -38,6 +38,7 @@ describe('concession: the tills hold the partner\'s money, and the charge is exa
   it('charges the higher of rent and revenue share', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'dept.concession'); // this shop runs a concession counter (M36-FR-01)
     await setContract(h, A, 'u-owner', 'C1');
     await sale(h, A, 'u-owner', 'C1', s('s1', 2_000_000, '2026-08-05'));
     await sale(h, A, 'u-owner', 'C1', s('s2', 2_000_000, '2026-08-10'));
@@ -50,6 +51,7 @@ describe('concession: the tills hold the partner\'s money, and the charge is exa
   it('lets a refund reduce the revenue base by construction', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'dept.concession'); // this shop runs a concession counter (M36-FR-01)
     await setContract(h, A, 'u-owner', 'C1');
     await sale(h, A, 'u-owner', 'C1', s('s1', 2_000_000, '2026-08-05'));
     await sale(h, A, 'u-owner', 'C1', s('s2', 2_000_000, '2026-08-10'));
@@ -62,6 +64,7 @@ describe('concession: the tills hold the partner\'s money, and the charge is exa
   it('settles the collected money as a liability, deposit stated but not netted', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'dept.concession'); // this shop runs a concession counter (M36-FR-01)
     await setContract(h, A, 'u-owner', 'C1');
     await sale(h, A, 'u-owner', 'C1', s('s1', 2_000_000, '2026-08-05'));
     await sale(h, A, 'u-owner', 'C1', s('s2', 2_000_000, '2026-08-10'));
@@ -74,6 +77,7 @@ describe('concession: the tills hold the partner\'s money, and the charge is exa
   it('flags a till-vs-counter difference as a valued exception', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'dept.concession'); // this shop runs a concession counter (M36-FR-01)
     await setContract(h, A, 'u-owner', 'C1');
     await sale(h, A, 'u-owner', 'C1', s('s1', 2_000_000, '2026-08-05'));
     await sale(h, A, 'u-owner', 'C1', s('s2', 2_000_000, '2026-08-10'));
@@ -86,6 +90,7 @@ describe('concession: the tills hold the partner\'s money, and the charge is exa
   it('is authorized and per-tenant, and refuses unknown/ malformed', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'dept.concession'); // this shop runs a concession counter (M36-FR-01)
     await h.provisionRole(A, 'u-cash', 'cashier'); // a cashier does not run concession settlement
     await setContract(h, A, 'u-owner', 'C1');
 
@@ -94,6 +99,7 @@ describe('concession: the tills hold the partner\'s money, and the charge is exa
     expect((await setContract(h, A, 'u-owner', 'CX', contract({ basis: 'nonsense' }))).status).toBe(400);
 
     await h.seedOwner(B, 'u-owner-b');
+    await h.enableFeature(B, 'dept.concession'); // this shop runs a concession counter (M36-FR-01)
     expect((await charge(h, B, 'u-owner-b', 'C1', '2026-08-01', '2026-08-31')).status).toBe(404); // A's contract did not leak
   });
 });
@@ -119,6 +125,7 @@ describe('concession ownership + eligibility (M27)', () => {
   it('may-trade blocks a lapsed insurance / unapproved / expired counter, every reason at once', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'dept.concession'); // this shop runs a concession counter (M36-FR-01)
     await setContract(h, A, 'u-owner', 'OK', tradeable());
     const ok = (await mayTrade(h, A, 'u-owner', 'OK', '2026-06-01')).body as { mayTrade: boolean; blockedBy: string[] };
     expect(ok.mayTrade).toBe(true);
@@ -137,6 +144,7 @@ describe('concession ownership + eligibility (M27)', () => {
   it('projects the deposit as a liability; an unapproved forfeit stays a liability', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'dept.concession'); // this shop runs a concession counter (M36-FR-01)
     await depositMove(h, A, 'u-owner', 'JEWEL', 'd1', { kind: 'received', amountMinor: 1_000_000 });
     await depositMove(h, A, 'u-owner', 'JEWEL', 'd2', { kind: 'refunded', amountMinor: 200_000 });
     // A forfeit with nobody's name on it must NOT reduce the liability.
@@ -153,6 +161,7 @@ describe('concession ownership + eligibility (M27)', () => {
   it('values only the stock the store owns and names what it excluded', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'dept.concession'); // this shop runs a concession counter (M36-FR-01)
     const lots = [
       { lotId: 'l1', productId: 'p1', branchId: 'BR1', qty: 10, unitCostMinor: 5_000, ownership: 'own' },
       { lotId: 'l2', productId: 'gold', branchId: 'BR1', qty: 2, unitCostMinor: 2_000_000, ownership: 'concession', ownerId: 'JEWEL' },
@@ -166,6 +175,7 @@ describe('concession ownership + eligibility (M27)', () => {
   it('refuses store staff writing off the concession\'s stock, and flags a concessionaire touching what is not theirs', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'dept.concession'); // this shop runs a concession counter (M36-FR-01)
     const concessionLot = { lotId: 'l2', productId: 'gold', branchId: 'BR1', qty: 2, unitCostMinor: 2_000_000, ownership: 'concession', ownerId: 'JEWEL' };
     // Store staff cannot write off somebody else's stock.
     const wo = (await stockAccess(h, A, 'u-owner', { lot: concessionLot, actorId: 'u-staff', actorKind: 'store_staff', action: 'write_off' }, 'sa1')).body as { allowed: boolean; outcome: string };
@@ -182,6 +192,7 @@ describe('concession ownership + eligibility (M27)', () => {
   it('gates the new routes and survives a restart (deposit rebuilds from the event store)', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'dept.concession'); // this shop runs a concession counter (M36-FR-01)
     await h.provisionRole(A, 'u-cash', 'cashier');
     // A cashier cannot record a deposit movement (needs concession.contract.manage).
     expect((await depositMove(h, A, 'u-cash', 'JEWEL', 'd1', { kind: 'received', amountMinor: 1_000_000 })).status).toBe(403);
@@ -189,5 +200,31 @@ describe('concession ownership + eligibility (M27)', () => {
 
     const restarted = apiHarness({ store: h.store });
     expect(((await depositPos(restarted, A, 'u-owner', 'JEWEL')).body as { outstandingLiabilityMinor: number }).outstandingLiabilityMinor).toBe(1_000_000);
+  });
+});
+
+describe('a concession route is a paid feature — off until the shop enables it (M36-FR-01, §35)', () => {
+  it('refuses feature_not_entitled for a shop whose plan has no concession — even a full owner', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner'); // a real owner, but this shop never bought the concession department
+    const res = await setContract(h, A, 'u-owner', 'C1');
+    expect(res.status).toBe(403);
+    expect((res.body as { error?: { code?: string } }).error?.code).toBe('feature_not_entitled');
+  });
+
+  it('lets the same shop in once the concession feature is enabled', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'dept.concession');
+    expect((await setContract(h, A, 'u-owner', 'C1')).status).toBeLessThan(300);
+  });
+
+  it('is per-tenant: enabling concession for one shop never turns it on for another', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'dept.concession');
+    await h.seedOwner(B, 'u-owner-b'); // B has an owner but no concession feature
+    expect((await setContract(h, A, 'u-owner', 'C1')).status).toBeLessThan(300);
+    expect((await setContract(h, B, 'u-owner-b', 'C1')).status).toBe(403);
   });
 });
