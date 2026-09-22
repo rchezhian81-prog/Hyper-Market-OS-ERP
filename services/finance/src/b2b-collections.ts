@@ -55,6 +55,7 @@ export function b2bCollectionsRoutes(deps: B2BCollectionsDeps): readonly Route[]
       // Record a structured receivable invoice — number, terms (issued/due) and gross. Ageing needs these.
       api: 'API-09', method: 'POST', path: '/v1/b2b/collections/:customerId/invoices/:invoiceId',
       permission: 'b2b.receivable.record', idempotent: true,
+      entitlement: 'b2b',
       handler: async (ctx) => {
         const customerId = ctx.params['customerId'] ?? '';
         const invoiceId = ctx.params['invoiceId'] ?? '';
@@ -84,6 +85,7 @@ export function b2bCollectionsRoutes(deps: B2BCollectionsDeps): readonly Route[]
       // UNAPPLIED and visible, never netted into a balance.
       api: 'API-09', method: 'POST', path: '/v1/b2b/collections/:customerId/payments/:receiptId',
       permission: 'b2b.receivable.record', idempotent: true,
+      entitlement: 'b2b',
       handler: async (ctx) => {
         const customerId = ctx.params['customerId'] ?? '';
         const receiptId = ctx.params['receiptId'] ?? '';
@@ -104,6 +106,7 @@ export function b2bCollectionsRoutes(deps: B2BCollectionsDeps): readonly Route[]
       // The ageing report — from the DUE DATE, with a chaseable figure that excludes disputes.
       api: 'API-09', method: 'GET', path: '/v1/b2b/collections/:customerId/ageing',
       permission: 'b2b.account.read',
+      entitlement: 'b2b',
       handler: async (ctx) => {
         const customerId = ctx.params['customerId'] ?? '';
         const asAt = ctx.query['asOf'];
@@ -117,6 +120,7 @@ export function b2bCollectionsRoutes(deps: B2BCollectionsDeps): readonly Route[]
       // The dunning step — and stopping supply is RECOMMENDED, never automatic (needsHuman).
       api: 'API-09', method: 'GET', path: '/v1/b2b/collections/:customerId/dunning',
       permission: 'b2b.account.read',
+      entitlement: 'b2b',
       handler: async (ctx) => {
         const customerId = ctx.params['customerId'] ?? '';
         const asAt = ctx.query['asOf'];
@@ -138,6 +142,7 @@ export function b2bCollectionsRoutes(deps: B2BCollectionsDeps): readonly Route[]
       // receivables), exactly as the settlement day-review reconciliation is kept off the shop floor.
       api: 'API-09', method: 'GET', path: '/v1/b2b/collections/:customerId/reconciliation',
       permission: 'b2b.receivable.record',
+      entitlement: 'b2b',
       handler: async (ctx) => {
         const customerId = ctx.params['customerId'] ?? '';
         const asAt = ctx.query['asOf'];

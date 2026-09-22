@@ -105,6 +105,7 @@ export function b2bDocumentsRoutes(deps: B2BDocumentsDeps): readonly Route[] {
       // Issue a quotation — non-committing, and it draws a number only once the lines are valid.
       api: 'API-09', method: 'POST', path: '/v1/b2b/documents/:customerId/quotations/:documentId',
       permission: 'b2b.document.issue', idempotent: true,
+      entitlement: 'b2b',
       handler: async (ctx) => {
         const customerId = ctx.params['customerId'] ?? '';
         const documentId = ctx.params['documentId'] ?? '';
@@ -146,6 +147,7 @@ export function b2bDocumentsRoutes(deps: B2BDocumentsDeps): readonly Route[] {
       // Convert a quotation into a sales order — at the quoted price, inside the window, with credit cleared.
       api: 'API-09', method: 'POST', path: '/v1/b2b/documents/:customerId/orders/:documentId',
       permission: 'b2b.document.issue', idempotent: true,
+      entitlement: 'b2b',
       handler: async (ctx) => {
         const customerId = ctx.params['customerId'] ?? '';
         const documentId = ctx.params['documentId'] ?? '';
@@ -192,6 +194,7 @@ export function b2bDocumentsRoutes(deps: B2BDocumentsDeps): readonly Route[] {
       // no tax claim and draws from its own series. There is no refusal path; the order must exist.
       api: 'API-09', method: 'POST', path: '/v1/b2b/documents/:customerId/proformas/:documentId',
       permission: 'b2b.document.issue', idempotent: true,
+      entitlement: 'b2b',
       handler: async (ctx) => {
         const customerId = ctx.params['customerId'] ?? '';
         const documentId = ctx.params['documentId'] ?? '';
@@ -208,6 +211,7 @@ export function b2bDocumentsRoutes(deps: B2BDocumentsDeps): readonly Route[] {
       // number only on success.
       api: 'API-09', method: 'POST', path: '/v1/b2b/documents/:customerId/challans/:documentId',
       permission: 'b2b.document.issue', idempotent: true,
+      entitlement: 'b2b',
       handler: async (ctx) => {
         const customerId = ctx.params['customerId'] ?? '';
         const documentId = ctx.params['documentId'] ?? '';
@@ -248,6 +252,7 @@ export function b2bDocumentsRoutes(deps: B2BDocumentsDeps): readonly Route[] {
       // an invoice that would exceed what the challans record is refused. A number is drawn only on success.
       api: 'API-09', method: 'POST', path: '/v1/b2b/documents/:customerId/invoices/:documentId',
       permission: 'b2b.document.issue', idempotent: true,
+      entitlement: 'b2b',
       handler: async (ctx) => {
         const customerId = ctx.params['customerId'] ?? '';
         const documentId = ctx.params['documentId'] ?? '';
@@ -279,6 +284,7 @@ export function b2bDocumentsRoutes(deps: B2BDocumentsDeps): readonly Route[] {
       // the number that matters — goods gone out of the door with no claim on them.
       api: 'API-09', method: 'GET', path: '/v1/b2b/documents/:customerId/orders/:orderId/chain',
       permission: 'b2b.document.read',
+      entitlement: 'b2b',
       handler: async (ctx) => {
         const customerId = ctx.params['customerId'] ?? '';
         const orderId = ctx.params['orderId'] ?? '';
@@ -294,6 +300,7 @@ export function b2bDocumentsRoutes(deps: B2BDocumentsDeps): readonly Route[] {
       // Read a stored document — the quotation or the order it became.
       api: 'API-09', method: 'GET', path: '/v1/b2b/documents/:customerId/:documentId',
       permission: 'b2b.document.read',
+      entitlement: 'b2b',
       handler: async (ctx) => {
         const customerId = ctx.params['customerId'] ?? '';
         const documentId = ctx.params['documentId'] ?? '';

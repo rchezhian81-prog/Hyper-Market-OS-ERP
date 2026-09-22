@@ -49,6 +49,7 @@ export function b2bCreditRoutes(deps: B2BCreditDeps): readonly Route[] {
       // one applies; re-setting the same limit collapses.
       api: 'API-09', method: 'POST', path: '/v1/b2b/accounts/:customerId',
       permission: 'b2b.account.manage', idempotent: true,
+      entitlement: 'b2b',
       handler: async (ctx) => {
         const customerId = ctx.params['customerId'] ?? '';
         const b = (ctx.body ?? {}) as { creditLimitMinor?: unknown; currency?: unknown };
@@ -69,6 +70,7 @@ export function b2bCreditRoutes(deps: B2BCreditDeps): readonly Route[] {
       // Record an AR movement: an invoice raised (owed goes up) or a payment/credit note (goes down).
       api: 'API-09', method: 'POST', path: '/v1/b2b/accounts/:customerId/receivables',
       permission: 'b2b.receivable.record', idempotent: true,
+      entitlement: 'b2b',
       handler: async (ctx) => {
         const customerId = ctx.params['customerId'] ?? '';
         const b = (ctx.body ?? {}) as { movementId?: unknown; kind?: unknown; amountMinor?: unknown; ref?: unknown };
@@ -98,6 +100,7 @@ export function b2bCreditRoutes(deps: B2BCreditDeps): readonly Route[] {
       // so; it does not silently override.
       api: 'API-09', method: 'POST', path: '/v1/b2b/accounts/:customerId/credit-check',
       permission: 'b2b.credit.check', idempotent: true,
+      entitlement: 'b2b',
       handler: async (ctx) => {
         const customerId = ctx.params['customerId'] ?? '';
         const b = (ctx.body ?? {}) as { orderId?: unknown; orderValueMinor?: unknown; contractExpired?: unknown; contractPolicy?: unknown; approvedBy?: unknown; reason?: unknown };
@@ -146,6 +149,7 @@ export function b2bCreditRoutes(deps: B2BCreditDeps): readonly Route[] {
     {
       api: 'API-09', method: 'GET', path: '/v1/b2b/accounts/:customerId',
       permission: 'b2b.account.read',
+      entitlement: 'b2b',
       handler: async (ctx) => {
         const customerId = ctx.params['customerId'] ?? '';
         const account = await deps.account(ctx.tenantId, customerId);

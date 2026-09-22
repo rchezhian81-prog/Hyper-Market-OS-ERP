@@ -37,6 +37,7 @@ describe('b2b document chain: a number is drawn only on success, conversion is a
   it('draws a gap-free number only on success — a rejected quotation leaves no gap', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
 
     // A quotation for zero units is refused as a business rule — well-formed, but not an offer — and
     // it draws NO number.
@@ -59,6 +60,7 @@ describe('b2b document chain: a number is drawn only on success, conversion is a
   it('converts at the quoted price once credit is cleared, and refuses a second conversion', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     expect((await setLimit(h, A, 'u-owner', 'CUST1', 200_000)).status).toBe(201);
 
     await quote(h, A, 'u-owner', 'CUST1', 'q1', [LINE]);
@@ -79,6 +81,7 @@ describe('b2b document chain: a number is drawn only on success, conversion is a
   it('refuses conversion until credit control clears it: no account → blocked, over-limit → blocked, sufficient → cleared', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     await quote(h, A, 'u-owner', 'CUST1', 'q1', [LINE]);   // gross 1,05,000
 
     // No credit account set — credit control has not cleared them.
@@ -102,6 +105,7 @@ describe('b2b document chain: a number is drawn only on success, conversion is a
   it('is authorized (issue vs read split), per-tenant, and refuses unknown/malformed', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     await h.provisionRole(A, 'u-mgr', 'store_manager');  // issues AND reads
     await h.provisionRole(A, 'u-acct', 'accountant');    // reads, does NOT issue
     await h.provisionRole(A, 'u-cash', 'cashier');       // neither
@@ -120,6 +124,7 @@ describe('b2b document chain: a number is drawn only on success, conversion is a
 
     // Another tenant sees nothing of A's documents.
     await h.seedOwner(B, 'u-owner-b');
+    await h.enableFeature(B, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     expect((await read(h, B, 'u-owner-b', 'CUST1', 'q1')).status).toBe(404);
   });
 });

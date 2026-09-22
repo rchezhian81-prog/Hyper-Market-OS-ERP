@@ -29,6 +29,7 @@ describe('B2B orders are checked against a credit limit and contract (M22-FR-01,
   it('projects the outstanding balance from invoices and payments', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     expect((await setAccount(h, A, 'u-owner', 'ACME', { creditLimitMinor: 100_000 })).status).toBe(201);
 
     await receivable(h, A, 'u-owner', 'ACME', { movementId: 'i1', kind: 'invoice', amountMinor: 30_000 });
@@ -40,6 +41,7 @@ describe('B2B orders are checked against a credit limit and contract (M22-FR-01,
   it('allows an order within the limit', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     await setAccount(h, A, 'u-owner', 'ACME', { creditLimitMinor: 100_000 });
     await receivable(h, A, 'u-owner', 'ACME', { movementId: 'i1', kind: 'invoice', amountMinor: 20_000 });
 
@@ -50,6 +52,7 @@ describe('B2B orders are checked against a credit limit and contract (M22-FR-01,
   it('blocks an over-limit order pending a separate approver (§28)', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     await setAccount(h, A, 'u-owner', 'ACME', { creditLimitMinor: 100_000 });
     await receivable(h, A, 'u-owner', 'ACME', { movementId: 'i1', kind: 'invoice', amountMinor: 20_000 });
 
@@ -69,6 +72,7 @@ describe('B2B orders are checked against a credit limit and contract (M22-FR-01,
   it('blocks an expired contract by default, releasable with approval', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     await setAccount(h, A, 'u-owner', 'ACME', { creditLimitMinor: 100_000 });
 
     const blocked = (await creditCheck(h, A, 'u-owner', 'ACME', { orderId: 'O3', orderValueMinor: 1_000, contractExpired: true })).body as Decision;
@@ -80,6 +84,7 @@ describe('B2B orders are checked against a credit limit and contract (M22-FR-01,
   it('applies the latest credit limit when it changes', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     await setAccount(h, A, 'u-owner', 'ACME', { creditLimitMinor: 100_000 }, 'acc-1');
     await setAccount(h, A, 'u-owner', 'ACME', { creditLimitMinor: 150_000 }, 'acc-2'); // raised
     expect(((await getAccount(h, A, 'u-owner', 'ACME')).body as Acct).creditLimitMinor).toBe(150_000);
@@ -88,6 +93,7 @@ describe('B2B orders are checked against a credit limit and contract (M22-FR-01,
   it('is authorized and per-tenant, and 404s an unknown account', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     await h.provisionRole(A, 'u-cash', 'cashier'); // a cashier does not run B2B credit
     await setAccount(h, A, 'u-owner', 'ACME', { creditLimitMinor: 100_000 });
 
@@ -98,6 +104,33 @@ describe('B2B orders are checked against a credit limit and contract (M22-FR-01,
 
     // Tenant B has no account for ACME.
     await h.seedOwner(B, 'u-owner-b');
+    await h.enableFeature(B, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     expect((await getAccount(h, B, 'u-owner-b', 'ACME')).status).toBe(404);
+  });
+});
+
+describe('a B2B route is a paid feature — off until the shop enables it (M36-FR-01, §35)', () => {
+  it('refuses feature_not_entitled for a shop whose plan has no B2B — even a full owner', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner'); // a real owner, but this shop never bought the B2B module
+    const res = await setAccount(h, A, 'u-owner', 'ACME', { creditLimitMinor: 100_000 });
+    expect(res.status).toBe(403);
+    expect((res.body as { error?: { code?: string } }).error?.code).toBe('feature_not_entitled');
+  });
+
+  it('lets the same shop in once the B2B feature is enabled', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b');
+    expect((await setAccount(h, A, 'u-owner', 'ACME', { creditLimitMinor: 100_000 })).status).toBeLessThan(300);
+  });
+
+  it('is per-tenant: enabling B2B for one shop never turns it on for another', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b');
+    await h.seedOwner(B, 'u-owner-b'); // B has an owner but no B2B feature
+    expect((await setAccount(h, A, 'u-owner', 'ACME', { creditLimitMinor: 100_000 })).status).toBeLessThan(300);
+    expect((await setAccount(h, B, 'u-owner-b', 'ACME', { creditLimitMinor: 100_000 })).status).toBe(403);
   });
 });

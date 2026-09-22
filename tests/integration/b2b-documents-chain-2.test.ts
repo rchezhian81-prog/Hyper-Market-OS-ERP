@@ -44,6 +44,7 @@ interface Chain { complete: boolean; orderedMinor: number; deliveredMinor: numbe
 // Seed an owner, a generous credit limit, and an order 'so1' derived from quotation 'q1'.
 async function makeOrder(h: ApiHarness, cust: string): Promise<void> {
   await h.seedOwner(A, 'u-owner');
+  await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
   await setLimit(h, A, 'u-owner', cust, 1_000_000);
   await quote(h, A, 'u-owner', cust, 'q1', LINES);
   expect((await order(h, A, 'u-owner', cust, 'so1', 'q1')).status).toBe(201);
@@ -139,6 +140,7 @@ describe('b2b document chain part 2: proforma, challan (what left), invoice-from
     expect((await chain(h, A, 'u-acct', 'CUST1', 'so1')).status).toBe(200);   // an accountant may read
 
     await h.seedOwner(B, 'u-owner-b');
+    await h.enableFeature(B, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     expect((await chain(h, B, 'u-owner-b', 'CUST1', 'so1')).status).toBe(404);
   });
 });
