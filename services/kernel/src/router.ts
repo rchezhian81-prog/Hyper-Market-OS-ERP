@@ -55,6 +55,16 @@ export interface Route {
    */
   readonly permission: Permission;
   /**
+   * The OPTIONAL/paid FEATURE this endpoint belongs to (M36-FR-01), one of `@sre/tenant`'s
+   * `OPTIONAL_FEATURES` (e.g. `delivery`, `loyalty`, `b2b`, `dept.pharmacy`). When set, the pipeline
+   * refuses the call for a tenant whose plan has NOT enabled that feature — **default-deny, and on
+   * top of the permission check**: a paid feature the shop did not buy is off even for a user who
+   * holds the permission. **Absent means a CORE endpoint, always available.** A route that names a
+   * feature but reaches a pipeline with no entitlement resolver is refused (fail-closed), never
+   * silently allowed.
+   */
+  readonly entitlement?: string;
+  /**
    * Writes only: the caller must send `Idempotency-Key` and a replay returns the first result.
    *
    * Declared rather than assumed, because the edge→cloud path makes this mandatory: a till that

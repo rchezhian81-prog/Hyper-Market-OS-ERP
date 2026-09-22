@@ -5,7 +5,7 @@
 // A service supplies its routes and its domain logic; it does not re-implement any of this.
 
 export {
-  ApiError, apiError, unauthenticated, forbidden, idempotencyKeyMissing, idempotencyKeyReused,
+  ApiError, apiError, unauthenticated, forbidden, featureNotEntitled, idempotencyKeyMissing, idempotencyKeyReused,
   notFound,
   type SavedState, type ApiErrorBody, type ErrorRefusal,
 } from './errors';
@@ -22,6 +22,7 @@ export {
   type Principal, type HttpRequest, type HttpResponse, type Authenticator,
   type StoredResult, type IdempotencyStore, type AuditSink, type KernelOptions,
   type OutboundFinding, type RequestObservation,
+  type AccessResolver, type EntitlementResolver,
 } from './pipeline';
 
 export {
