@@ -5,6 +5,31 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M17 stored-value oversight screen — slice 3: browser e2e → M17 E2E_VERIFIED (22 September 2026, owner: keep-going)
+
+The third and last slice — the served `/stored-value` screen is now proven end to end in a **real headless
+browser**, so M17 (Loyalty/stored-value) moves **INTEGRATION_TESTED → E2E_VERIFIED** (an honest +10 weighted).
+
+- **`tests/e2e/stored-value-oversight-delivery.e2e.ts`** (headless Chromium vs a same-origin stub cloud, 2 cases):
+  - An **authorised loss manager** (`lp.case.read`) opens the desk → the velocity watch reads **live on load** and
+    the fastest-draining card sits at the **top**; a customer reference looks up that household's double-spends
+    (`GET …/households/:ownerRef/double-spends`) with the **biggest overspend at the top** (worst-first, P-03);
+    entering the books' posted figure reconciles the cards (`GET …/liability?posted=<minor>`) — a figure that does
+    **not** match reads *unrecorded debt* (error), the exact figure reads *reconciled* (ok), so the gate reflects
+    the number entered, never a guess. Across the **whole session not one write verb** (POST/PUT/PATCH/DELETE)
+    leaves the screen — it reads and reports, it commits nothing.
+  - A user **without** `lp.case.read` sees the not-permitted state and **none** of the loss/gap/watch data, even
+    though the feeds exist (the server also answers 403 — defence in depth, P-04).
+- **Re-rate (honest, +10 weighted):** `docs/completion-status.json` M17 → E2E_VERIFIED; the module ladder rung +
+  the module-level summary in `docs/traceability.md` (17 E2E · 2 INTEGRATION); `EVIDENCE.M17` in
+  `tests/guardrails/completion-ladder-has-evidence.test.ts` now points at the browser proof. Headline
+  **55.0 → 55.0%** (5715 → 5725 / 10400; the E2E-verification sub-score 22.1 → 23.1%). Ladder guardrails green.
+
+**M17 is complete to the E2E bar.** UAT_VERIFIED would need a manager reading real stored-value exposure on the
+shop floor.
+
+---
+
 ## M17 stored-value oversight screen — slice 2: served screen + edge wiring (22 September 2026, owner: keep-going)
 
 Slice 2 of the M17 stored-value oversight desk — the visible screen over the tested session model from slice 1.
