@@ -641,6 +641,17 @@ export interface PackChecklistPolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the production quality-release screen and what they may do (M11-FR-03 · API-04). The production runs
+ *  (finished batches in quarantine) are read live from the cloud (`GET /v1/production/runs`), not the pack; this
+ *  is only who the box was told is looking, so the shell can gate on `production.read` (to see) and
+ *  `production.release` (to release for sale) before the live read. The cloud routes re-check both. */
+export interface PackProductionPolicy {
+  readonly userId?: string;
+  /** The permission codes this user holds — `production.read` to see, `production.release` to release a batch
+   *  for sale. Never defaulted; the cloud routes re-check them, so this only shapes the UI. */
+  readonly permissions: readonly string[];
+}
+
 /** Who administers this shop, and the windows it judges accounts and devices by. */
 export interface PackAdminPolicy {
   /** Days without a login after which an account is stale enough to review. Per-tenant. */
@@ -1031,6 +1042,8 @@ export interface StorePack {
   readonly rosteringPolicy: Register<PackRosteringPolicy>;
   /** Who is on the manager checklist screen and what they may do there (M25-FR-02). */
   readonly checklistPolicy: Register<PackChecklistPolicy>;
+  /** Who is on the production quality-release screen and what they may do there (M11-FR-03). */
+  readonly productionPolicy: Register<PackProductionPolicy>;
   /** Every account, so joiners, movers and leavers can be reviewed (M02-FR-04). */
   readonly accounts: Register<readonly unknown[]>;
   /**
@@ -1185,6 +1198,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     essPolicy: notKnown(why),
     rosteringPolicy: notKnown(why),
     checklistPolicy: notKnown(why),
+    productionPolicy: notKnown(why),
     accounts: notKnown(why),
     supportSessions: notKnown(why),
     devices: notKnown(why),
@@ -1308,6 +1322,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     essPolicy: section<PackEssPolicy>('essPolicy'),
     rosteringPolicy: section<PackRosteringPolicy>('rosteringPolicy'),
     checklistPolicy: section<PackChecklistPolicy>('checklistPolicy'),
+    productionPolicy: section<PackProductionPolicy>('productionPolicy'),
     accounts: section<readonly unknown[]>('accounts'),
     supportSessions: section<readonly unknown[]>('supportSessions'),
     devices: section<readonly unknown[]>('devices'),
