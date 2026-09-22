@@ -176,11 +176,29 @@ export function routeOf(url: string): { readonly screen: ScreenName; readonly fi
  *
  * Returns the location to redirect to, or `null` when the path is already fine.
  */
+/**
+ * Menu aliases (P-07): nav paths that are NOT their own screen but open an existing one on a tab.
+ *
+ * "Products", "Pricing" and "Promotions" are three menu items (navigation.ts) for the ONE built and
+ * browser-verified "Products and prices" screen (`catalogue`, M03/M05 — its tabs are items/price/promo).
+ * Rather than duplicate that tested screen three times, each menu item opens it on the right tab, so the
+ * menu never offers a dead link the box would 404. The catalogue shell reads `?tab=` and shows that tab.
+ */
+export const SCREEN_ALIASES: Readonly<Record<string, string>> = Object.freeze({
+  products: '/catalogue/',
+  pricing: '/catalogue/?tab=price',
+  promotions: '/catalogue/?tab=promo',
+});
+
 export function redirectFor(url: string): string | null {
   const [path, query] = url.split('?');
   const parts = (path ?? '').split('/').filter((p) => p !== '');
   if (parts.length !== 1) return null;
   const name = parts[0]!;
+  // A menu alias opens its target screen on the right tab (/pricing → /catalogue/?tab=price). Checked
+  // before the trailing-slash rule so both /pricing and /pricing/ land there without a redirect loop.
+  const alias = SCREEN_ALIASES[name];
+  if (alias !== undefined) return alias;
   if (!(SCREENS as readonly string[]).includes(name)) return null;
   if ((path ?? '').endsWith('/')) return null;
   return `/${name}/${query === undefined ? '' : `?${query}`}`;
