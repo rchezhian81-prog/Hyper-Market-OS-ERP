@@ -3882,6 +3882,9 @@ export function writeOffAdapter(input: {
 export function productionAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
+  /** The tenant's enabled paid features (M36-FR-01) — injected from main so the fold lives in one place
+   *  (`tenantEntitlementResolver`). Absent → default-deny: no specialised department can be operated. */
+  readonly entitledFeatures?: (tenantId: string) => Promise<readonly string[]> | readonly string[];
 }): ProductionDeps {
   // Recipes and runs live on one append-only production stream, LAYERED on M08 (as counts does).
   // Recipes fold by id (latest wins); runs fold by id. The on-hand a run is checked against is M08
@@ -3996,6 +3999,8 @@ export function productionAdapter(input: {
       const enabled = await allOf<{ departmentId: string }>(input.store, tenantId, productionStream, 'ProductionDepartmentEnabled');
       return [...new Set(enabled.map((e) => e.departmentId))];
     },
+
+    entitledFeatures: input.entitledFeatures ?? (() => []),
 
     recordDepartmentEnabled: async (tenantId, departmentId) => {
       await input.store.append(tenantId, productionStream, makeEvent({

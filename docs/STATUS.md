@@ -5,6 +5,56 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M36-FR-01 paywall — the specialised departments are now a paid feature (22 September 2026, owner-directed)
+
+Continuing M36-FR-01 (task #163). The kernel's per-route entitlement mechanism (`Route.entitlement`, PR #507) and
+the first two feature families — concession (#508) and B2B (#509) — were already merged. The owner chose, via a
+decision prompt, to **gate the specialised departments (`dept.*`) next**. Investigation first, as promised —
+"I'll show you the exact mapping before it's final" — turned up a real structural surprise the roadmap's feature
+list hides:
+
+- **Departments are NOT a route family.** There is no `/v1/bakery/*` or `/v1/pharmacy/*`. Bakery, deli, meat &
+  fish, cafe and the central kitchen are `departmentId` **settings on the shared `/v1/production/*` surface**,
+  already gated at the handler by `enabledDepartments` (a store switches each on). So the concession/B2B
+  route-tag pattern does not apply — a production route serves every department, and tagging it with one feature
+  would break the others.
+- **The feature list only partly lines up with what is built.** `dept.bakery`/`dept.deli`/`dept.meat_fish` match
+  the department ids exactly. `dept.central_kitchen` does **not** (the code calls it `kitchen`). `dept.food_court`
+  and `dept.pharmacy` have **no module, no route, no catalogue entry** at all (pharmacy exists only as an OTC
+  "pharmacy-lite" product *category*, a different thing the roadmap already defers to a separately-approved
+  extension). `dept.concession` is the one that IS a route family — already gated.
+- **Owner decision (via prompt): "Gate the 3 that fit."** So only bakery, deli and meat & fish are brought under
+  the plan now; central kitchen, food court and pharmacy are **formally deferred** (recorded here, not silently
+  dropped) until their names/modules are settled.
+
+**What shipped (this PR).** The gate lives in the production **service**, keyed on the department, not on a route:
+- `packages/production/src/departments.ts` — `DEPARTMENT_FEATURE` (`bakery→dept.bakery`, `deli→dept.deli`,
+  `meat_fish→dept.meat_fish`) + `requiredFeatureFor` / `planAllowsDepartment` (a department with no feature is
+  always allowed; a gated one is off unless its feature is on — default-deny).
+- `services/inventory/src/production.ts` — a new `entitledFeatures` dep and a `requirePlanForDepartment` check on
+  **every** department touch-point: switching a department on (blocks with a clear "your plan does not include
+  this", never a silent no-op — P-08), committing a production run, printing a pack label, and the operated-list
+  read (a department whose plan lapsed is no longer listed as operable). Plan check fires **before** the
+  "not operated" check so the shop hears about the plan, not the switch. Throws the shared `feature_not_entitled`
+  (403) the concession/B2B gates use.
+- `services/api/src/{adapters,main}.ts` — `productionAdapter` takes the resolver injected from `main` as
+  `tenantEntitlementResolver(store)` (the SAME fold the control plane writes; no import cycle, no duplicated logic).
+- Tests: `tests/unit/production.test.ts` (+2, the pure map/deny logic) and `tests/integration/production.test.ts`
+  (+4, through the real API + RBAC: a full owner without `dept.bakery` cannot enable the bakery or produce for it →
+  `feature_not_entitled`; with the feature on, enable + produce + it appears operated; per-tenant isolation). Full
+  gate green (tsc + eslint + secret-scan + 7270 unit/integration tests). Existing production tests use `cafe`
+  (ungated) and are unchanged.
+- **Also fixed the stale traceability** the concession/B2B PRs (#507-#509) left behind: `docs/traceability.md` and
+  `docs/completion-status.json` said hard per-route enforcement was "not yet enforced" — now corrected to reflect
+  that it is LIVE for concession, B2B and the three departments.
+
+**M36 stays PARTIALLY_WIRED** (correct — no headline change). Remaining before a re-rate: gate the other
+optional-feature route families that exist (delivery, customer_app, loyalty — owner to choose next), reconcile the
+central-kitchen name, and build food court / pharmacy before their features can mean anything. Paid-plan **tier**
+(which plan grants which feature) stays owner-blocked, OA-12.
+
+---
+
 ## M26 facilities maintenance & compliance screen — slices 1-3 → E2E_VERIFIED (22 September 2026)
 
 Continuing the autonomous E2E-screens program (task #73): M26 was the next INTEGRATION_TESTED module with a

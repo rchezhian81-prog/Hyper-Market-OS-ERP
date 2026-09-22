@@ -87,6 +87,36 @@ export const DEPARTMENT_CATALOGUE: Readonly<Record<string, ProductionDepartment>
   },
 };
 
+/**
+ * The paid-plan feature (M36-FR-01 · §35) a specialised department needs before a store may operate it.
+ * A department that is NOT listed here needs no feature and is available to any store that runs
+ * production (the cafe; the central kitchen for now). This gates ONLY the three whose department id
+ * already matches its feature name exactly — bakery, deli, meat & fish (owner decision 2026-09-22).
+ * Central kitchen (`kitchen` here versus the `dept.central_kitchen` feature name), food court and
+ * pharmacy are deferred until their names/modules are settled — see docs/STATUS.md. Enrolling a new
+ * department here is the whole change needed to bring it under the plan; nothing else keys off the id.
+ */
+export const DEPARTMENT_FEATURE: Readonly<Record<string, string>> = {
+  bakery: 'dept.bakery',
+  deli: 'dept.deli',
+  meat_fish: 'dept.meat_fish',
+};
+
+/** The paid feature a department needs, or `undefined` when it needs none (an always-available one). */
+export function requiredFeatureFor(departmentId: string): string | undefined {
+  return DEPARTMENT_FEATURE[departmentId];
+}
+
+/**
+ * Whether a tenant's plan lets it operate a department: true when the department needs no paid feature,
+ * or when the feature it needs is among the tenant's enabled ones. Default-deny — a gated department is
+ * off for a plan that does not list its feature (P-04, fail closed).
+ */
+export function planAllowsDepartment(departmentId: string, entitledFeatures: readonly string[]): boolean {
+  const feature = DEPARTMENT_FEATURE[departmentId];
+  return feature === undefined || entitledFeatures.includes(feature);
+}
+
 export class DepartmentNotOperatedError extends Error {
   constructor(
     public readonly departmentId: string,

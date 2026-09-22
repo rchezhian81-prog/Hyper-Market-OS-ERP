@@ -442,8 +442,8 @@ export function buildSurface(deps: {
       recipe: empty(undefined), recordRecipe: () => {}, ingredientCost: empty(undefined), recordCost: () => {},
       onHand: empty(0), priorConsumption: empty({}),
       runExists: empty(false), runs: empty([]), run: empty(undefined), recordRun: () => {}, recordRelease: () => {},
-      enabledDepartments: empty([]), recordDepartmentEnabled: () => {}, now,
-    } : productionAdapter({ store, now })),
+      enabledDepartments: empty([]), recordDepartmentEnabled: () => {}, entitledFeatures: empty([]), now,
+    } : productionAdapter({ store, now, entitledFeatures: tenantEntitlementResolver(store) })),
     // Weighed-department costing (M11-FR-02) — recipe-less weigh-in/weigh-out cost + yield exceptions.
     ...weighedCostingRoutes(store === undefined ? {
       weighedRuns: empty([]), weighedRun: empty(undefined), recordWeighedRun: () => {}, now,

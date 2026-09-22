@@ -188,7 +188,7 @@
     {
       "id": "M36",
       "label": "PARTIALLY_WIRED",
-      "evidence": "RTM: branding/export/entitlement wired; per-route enforcement follow-on"
+      "evidence": "RTM: branding/export/entitlement-control-plane wired; per-route entitlement enforcement now LIVE (kernel Route.entitlement, checked after permission, default-deny, fail-closed, feature_not_entitled 403) for concession (9 /v1/concession/*), B2B (18 /v1/b2b/*) and the specialised production departments bakery/deli/meat_fish — the departments gated in the production service keyed on the department (DEPARTMENT_FEATURE), not route-tagged since a department is a parameter on the shared /v1/production/* surface (a shop cannot switch on, produce for, label output of, or list a department its plan excludes); tenantEntitlementResolver folds the SAME TenantEntitlementSet the control plane writes. Remaining follow-on (route families exist, not yet tagged): delivery, customer_app, loyalty. Deferred: central_kitchen (id 'kitchen' != feature 'dept.central_kitchen'), food_court + pharmacy (no module built). Paid-plan tier (Plan grants/suspension/metering-to-invoice) owner-blocked OA-12. Module stays PARTIALLY_WIRED until every optional-feature route is enforced"
     },
     {
       "id": "D01",
