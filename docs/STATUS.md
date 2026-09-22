@@ -5,6 +5,40 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M26 facilities maintenance & compliance screen — slices 1-3 → E2E_VERIFIED (22 September 2026)
+
+Continuing the autonomous E2E-screens program (task #73): M26 was the next INTEGRATION_TESTED module with a
+natural, un-browser-tested operator surface. The facilities service already wired + integration-tested the overdue
+list (`GET /v1/facilities/overdue` folding the pure `findOverdue`) and the mark-done write (`POST
+/v1/facilities/tasks/:taskId/complete`, gated `facilities.task.record`, refusing a completion with no required
+evidence or a self-verified safety check — §28); the manager had no screen. Built as the proven 3-slice pattern,
+all three merged.
+
+- **Slice 1 (PR #504, merged).** `apps/web-erp/src/facilities-session.ts` — the tested DOM-free session model:
+  the overdue cleaning/pest/fire/electrical/statutory checks read **worst-first** (a compliance risk a regulator
+  would care about is an error and shouts loudest; then escalated, then plain-late, then due-today; colour never
+  the only signal); the mark-done refuses locally before any POST without the record permission / a named user /
+  a task the board holds, and is POSTed in the completer's own name. `tests/unit/erp-facilities-session.test.ts` (15).
+- **Slice 2 (PR #505, merged).** The served `/facilities` screen (`apps/web-erp/web/facilities.{html,js}`, the
+  twenty-second web-erp screen) + browser-entry boot + `openCompletePort` (POST
+  `/v1/facilities/tasks/:taskId/complete` `{completedBy, evidenceRefs?, verifiedBy?, note?}`, credentials
+  same-origin, idempotency-key; 2xx → completed, non-2xx → refused, dropped link → lost_link) +
+  `fetchFacilitiesBoard` (GET `/v1/facilities/overdue?asOf=<today>`) + edge wiring (`facilitiesPayload`,
+  `PackFacilitiesPolicy`, screen-server route + SCREENS 'facilities', SW v33) +
+  `the-facilities-screen-is-usable` guardrail (9). Same offline contract as every screen.
+- **Slice 3 (this PR).** `tests/e2e/facilities-delivery.e2e.ts` drives real headless Chromium vs a same-origin
+  stub cloud: an authorised manager (`facilities.overdue.read` + `facilities.task.record`) fills the evidence +
+  verifier, clicks **Mark done** → the `{completedBy, evidenceRefs, verifiedBy}` POST reaches
+  `/v1/facilities/tasks/:taskId/complete` under their own session (completedBy in their own name, never a
+  body-supplied value), and the check **drops off the overdue list on a RE-READ** (the server re-derives it — a
+  completed check is not overdue); a read-only user (`facilities.overdue.read` only) sees the list but NO
+  mark-done button and sends nothing (P-04). Both cases pass against the pre-installed Chromium.
+- **M26 INTEGRATION_TESTED → E2E_VERIFIED. +10 weighted → 54.9% → 55.0%.** Module ladder now 16 E2E VERIFIED · 3
+  INTEGRATION TESTED · 4 WIRED · 13 PARTIALLY WIRED. Held below UAT_VERIFIED (needs a manager closing out real
+  checks on the shop floor); live sensor/IoT ingestion (D14) remains a deployment step, not a screen gap.
+
+---
+
 ## M11 production quality-release screen — slices 1-3 → E2E_VERIFIED (22 September 2026, owner-directed)
 
 The owner said "go ahead with the M11 screen." M11's one named E2E gap was the in-store production
