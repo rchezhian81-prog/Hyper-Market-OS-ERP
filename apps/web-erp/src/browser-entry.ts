@@ -171,6 +171,11 @@ import {
   type DoubleSpendView, type VelocityFlagView, type LiabilityReconciliationView,
 } from './stored-value-session';
 import {
+  createIntegrationHealthSession,
+  type IntegrationHealthPorts, type IntegrationHealthSession, type IntegrationHealthData,
+  type AdapterHealthView, type AdapterHealthState,
+} from './integration-health-session';
+import {
   createGoodsReceiptSession,
   type GoodsReceiptPorts, type GoodsReceiptSession, type GoodsReceiptData, type GrnRecordView, type GrnDiscrepancyView,
 } from './goods-receipt-session';
@@ -1953,6 +1958,67 @@ export async function fetchStoredValueDoubleSpends(ownerRef: string): Promise<re
   }));
 }
 
+// ── Integration health (M32-FR-04 — read-only) ───────────────────────────────────────────────────────────────
+
+export interface IntegrationHealthScreenData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+}
+
+const INTEGRATION_HEALTH_READ_PERMISSION = 'platform.health.read';
+
+export function integrationHealthPortsFromData(
+  data: IntegrationHealthScreenData | undefined,
+  current: IntegrationHealthData,
+): IntegrationHealthPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    health: () => current,
+    // Default-deny: an absent permission list reads nothing (the cloud re-checks platform.health.read anyway).
+    mayRead: () => held.has(INTEGRATION_HEALTH_READ_PERMISSION),
+  };
+}
+
+/** Build the integration-health session over the given folded data, or null when the box carried no payload. */
+export function bootIntegrationHealth(
+  data: IntegrationHealthScreenData | undefined,
+  current: IntegrationHealthData,
+): IntegrationHealthSession | null {
+  if (data === undefined) return null;
+  return createIntegrationHealthSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    integrationHealthPortsFromData(data, current),
+  );
+}
+
+const ADAPTER_STATES: readonly AdapterHealthState[] = ['healthy', 'degraded', 'failing', 'silent', 'disabled'];
+
+/** Read the live integration-health picture (a GET — read-only); null when unreadable (offline or refused). */
+export async function fetchIntegrationHealth(): Promise<IntegrationHealthData | null> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return null;
+  try {
+    const res = await fetchFn('/v1/integration/health', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    if (res.status >= 400) return null;
+    const body = (await res.json()) as Record<string, unknown>;
+    if (!Array.isArray(body['adapters'])) return null;
+    const adapters: AdapterHealthView[] = (body['adapters'] as Record<string, unknown>[]).map((a) => {
+      const state = ADAPTER_STATES.includes(a['state'] as AdapterHealthState) ? (a['state'] as AdapterHealthState) : 'silent';
+      const mins = a['minutesSinceLastSuccess'];
+      return {
+        adapterId: String(a['adapterId']), category: String(a['category'] ?? ''), state,
+        minutesSinceLastSuccess: mins === 'never' ? 'never' : Number(mins),
+        consecutiveFailures: Number(a['consecutiveFailures'] ?? 0),
+        shopKeepsTrading: a['shopKeepsTrading'] !== false,
+        detail: String(a['detail'] ?? ''),
+      };
+    });
+    return { adapters, posUnaffected: body['posUnaffected'] !== false, asAt: String(body['asAt'] ?? '') };
+  } catch {
+    return null;
+  }
+}
+
 // ── Goods-receipt review (M07-FR-02/03 — read-only) ──────────────────────────────────────────────────────────
 
 /** What the box tells the goods-receipt review screen: who is looking, what they may read, and (optionally) a
@@ -3162,6 +3228,14 @@ interface ManagerWindow {
     lookup(ownerRef: string): Promise<StoredValueOversightData | null>;
     present(data: StoredValueOversightData): StoredValueOversightSession;
   };
+  integrationHealthData?: IntegrationHealthScreenData;
+  integrationHealthSession?: IntegrationHealthSession;
+  /** The shell reads the live integration-health picture through this and re-presents it — a GET read, never a
+   *  write: refresh() the adapter health picture, which present() renders. */
+  integrationHealth?: {
+    refresh(): Promise<IntegrationHealthData | null>;
+    present(data: IntegrationHealthData): IntegrationHealthSession;
+  };
   goodsReceiptData?: GoodsReceiptScreenData;
   goodsReceiptSession?: GoodsReceiptSession;
   /** The shell reads the live GRN list through this and re-presents it — a GET read, never a write. */
@@ -4171,6 +4245,29 @@ if (browserWindow !== undefined) {
         return storedValueCurrent;
       },
       present: presentStoredValue,
+    };
+  }
+  // The integration-health desk (M32 — read-only): boots from the box's policy (who + whether they hold
+  // platform.health.read), then the shell refreshes the adapter health picture with a live GET. It changes
+  // nothing — it only surfaces which outside connections have gone quiet, and reassures the till never stops.
+  const integrationHealthData = browserWindow.integrationHealthData;
+  let integrationHealthCurrent: IntegrationHealthData = { adapters: [], posUnaffected: true, asAt: '' };
+  const integrationHealth = bootIntegrationHealth(integrationHealthData, integrationHealthCurrent);
+  if (integrationHealth !== null) {
+    browserWindow.integrationHealthSession = integrationHealth;
+    const presentIntegrationHealth = (data: IntegrationHealthData): IntegrationHealthSession =>
+      createIntegrationHealthSession(
+        { userId: integrationHealthData?.userId === undefined ? null : integrationHealthData.userId },
+        integrationHealthPortsFromData(integrationHealthData, data),
+      );
+    browserWindow.integrationHealth = {
+      refresh: async () => {
+        const fresh = await fetchIntegrationHealth();
+        if (fresh === null) return null;
+        integrationHealthCurrent = fresh;
+        return integrationHealthCurrent;
+      },
+      present: presentIntegrationHealth,
     };
   }
   // The goods-receipt review screen (M07 — read-only): boots from the box's policy (who + whether they hold

@@ -577,6 +577,14 @@ export interface PackStoredValuePolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the READ-ONLY integration-health desk and whether they may read it (M32-FR-04). Only who is looking
+ *  and what they hold, so the shell can gate on `platform.health.read` before the live read; the adapter health
+ *  picture is read live from the cloud (a GET), never shipped in the pack. Nothing here is written. */
+export interface PackIntegrationHealthPolicy {
+  readonly userId?: string;
+  readonly permissions: readonly string[];
+}
+
 /** Who is on the READ-ONLY goods-receipt review screen and whether they may read it (M07). Only who is looking
  *  and what they hold, so the shell can gate on `inventory.availability.read` before the live read. Nothing here
  *  is written — capture is the handheld's; this screen only reviews the outcome. */
@@ -1054,6 +1062,8 @@ export interface StorePack {
   readonly stockHealthPolicy: Register<PackStockHealthPolicy>;
   /** Who is on the READ-ONLY stored-value oversight desk and whether they may read it (M17). */
   readonly storedValuePolicy: Register<PackStoredValuePolicy>;
+  /** Who is on the READ-ONLY integration-health desk and whether they may read it (M32). */
+  readonly integrationHealthPolicy: Register<PackIntegrationHealthPolicy>;
   /** Who is on the READ-ONLY goods-receipt review screen and whether they may read it (M07). */
   readonly goodsReceiptPolicy: Register<PackGoodsReceiptPolicy>;
   /** Who is on the data import/export console, what they may do, and the store's import templates (M30). */
@@ -1218,6 +1228,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     dayReopenPolicy: notKnown(why),
     stockHealthPolicy: notKnown(why),
     storedValuePolicy: notKnown(why),
+    integrationHealthPolicy: notKnown(why),
     goodsReceiptPolicy: notKnown(why),
     dataIoPolicy: notKnown(why),
     workforceInboxPolicy: notKnown(why),
@@ -1344,6 +1355,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     dayReopenPolicy: section<PackDayReopenPolicy>('dayReopenPolicy'),
     stockHealthPolicy: section<PackStockHealthPolicy>('stockHealthPolicy'),
     storedValuePolicy: section<PackStoredValuePolicy>('storedValuePolicy'),
+    integrationHealthPolicy: section<PackIntegrationHealthPolicy>('integrationHealthPolicy'),
     goodsReceiptPolicy: section<PackGoodsReceiptPolicy>('goodsReceiptPolicy'),
     dataIoPolicy: section<PackDataIoPolicy>('dataIoPolicy'),
     workforceInboxPolicy: section<PackWorkforceInboxPolicy>('workforceInboxPolicy'),

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Integration health</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      Integration health — the owner / admin's READ-ONLY control-by-exception view of whether the shop's outside
+      connections (Tally, the GST portal, the card/UPI providers, WhatsApp) are actually alive (M32-FR-04, API-11,
+      P-03, P-08, hard rule #1). Every rule lives in the tested session model
+      (apps/web-erp/src/integration-health-session.ts), attached as window.integrationHealthSession and built on
+      the shared packages/ui + packages/a11y primitives. One feed, worst-first: a connection that has gone quiet
+      or is failing (judged by WHEN IT LAST WORKED, not by whether it is switched on) is first; working / switched
+      off are the calm remainder. The reassurance that matters most rides at the top: the till keeps trading
+      regardless — no connection here can stop a sale. It reads and reports; it CHANGES nothing — no write verb
+      anywhere. The health picture is read live on load and Refresh (GET). Offline the screen shows its sample
+      stand-in and says so. No prompt/confirm/alert.
+    -->
+    <style>
+      :root { --bg:#0f172a; --panel:#1e293b; --ink:#f8fafc; --muted:#94a3b8; --ok:#22c55e; --degraded:#f59e0b; --error:#ef4444; --idle:#64748b; --info:#38bdf8; --line:#334155; --tap:48px; }
+      * { box-sizing: border-box; }
+      body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; min-height:100dvh; display:flex; flex-direction:column; }
+      header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; background:var(--panel); flex-wrap:wrap; }
+      .who { font-weight:600; } .who small { display:block; color:var(--muted); font-weight:400; font-size:14px; }
+      .lang { background:var(--line); color:var(--ink); min-height:40px; padding:0 14px; font-size:15px; border:0; border-radius:10px; }
+      .sample,.stale { margin:0; padding:10px 16px; font-size:15px; font-weight:600; }
+      .sample { background:var(--degraded); color:#451a03; } .stale { background:#1e3a5f; color:#dbeafe; border-bottom:2px solid var(--info); font-weight:400; }
+      .sample[hidden],.stale[hidden] { display:none; }
+      main { flex:1; padding:16px; display:grid; gap:16px; align-content:start; max-width:900px; width:100%; }
+      h2 { margin:0 0 4px; font-size:20px; } p.lead { margin:0 0 4px; color:var(--muted); font-size:15px; }
+      h3 { margin:8px 0 0; font-size:16px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+      .bar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; justify-content:space-between; }
+      .asof { color:var(--muted); font-size:14px; }
+      button { min-height:40px; padding:0 14px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--line); color:var(--ink); }
+      button:focus-visible, .lang:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+      p.reassure { margin:0; padding:12px 14px; background:#052e2b; color:#a7f3d0; border-radius:12px; border-left:6px solid var(--ok); font-size:15px; display:flex; gap:8px; align-items:center; }
+      p.reassure.warn { background:#3f2d02; color:#fde68a; border-left-color:var(--degraded); }
+      p.reassure .icon { font-size:18px; }
+      ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
+      li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); }
+      li.row.tone-ok { border-left-color:var(--ok); } li.row.tone-degraded { border-left-color:var(--degraded); }
+      li.row.tone-error { border-left-color:var(--error); } li.row.tone-idle { border-left-color:var(--idle); }
+      .row .head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+      .row .headline { font-weight:600; }
+      .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
+      .status .icon { font-size:18px; width:1.4em; text-align:center; }
+      .row .facts { font-size:13px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; font-variant-numeric:tabular-nums; }
+      p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
+      p.state .icon { font-size:18px; } p.state.tone-error { color:#fecaca; }
+      .muted { color:var(--muted); font-size:14px; margin:0; }
+      [hidden] { display:none !important; }
+    </style>
+  </head>
+  <body>
+    <p class="stale" id="stale" hidden></p>
+    <p class="sample" id="sample" hidden></p>
+
+    <header>
+      <span class="who" id="who">Integration health <small id="whoami"></small></span>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+
+    <main>
+      <div>
+        <h2 id="title">Integration health</h2>
+        <p class="lead" id="lead"></p>
+      </div>
+
+      <div class="bar">
+        <span class="asof" id="asof" role="status" aria-live="polite"></span>
+        <button class="refresh" id="refresh" type="button"></button>
+      </div>
+
+      <p class="reassure" id="till-safe" hidden><span class="icon" id="till-safe-icon" aria-hidden="true">✓</span><span id="till-safe-text"></span></p>
+
+      <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+
+      <h3 id="attention-heading"></h3>
+      <ul class="rows" id="attention" aria-label="Connections needing a look"></ul>
+      <p class="muted" id="attention-none" hidden></p>
+
+      <h3 id="calm-heading"></h3>
+      <ul class="rows" id="calm" aria-label="Connections working or switched off"></ul>
+    </main>
+
+    <!--SCREEN-DATA-->
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./integration-health.js" type="module"></script>
+  </body>
+</html>

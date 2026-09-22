@@ -49,14 +49,14 @@ import {
   basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
-import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackReturnGovernancePolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackStoredValuePolicy, PackGoodsReceiptPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy, PackRosteringPolicy, PackChecklistPolicy, PackProductionPolicy, PackFacilitiesPolicy } from './store-pack';
+import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackReturnGovernancePolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackStoredValuePolicy, PackIntegrationHealthPolicy, PackGoodsReceiptPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy, PackRosteringPolicy, PackChecklistPolicy, PackProductionPolicy, PackFacilitiesPolicy } from './store-pack';
 import { DEFAULT_WRITE_OFF_THRESHOLD_MINOR } from '../../../packages/waste/src/waste';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'write-off-capture', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'return-governance', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'stored-value', 'goods-receipt', 'data-io', 'workforce', 'ess', 'rostering', 'checklist', 'production', 'facilities', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
+  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'write-off-capture', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'return-governance', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'stored-value', 'integration-health', 'goods-receipt', 'data-io', 'workforce', 'ess', 'rostering', 'checklist', 'production', 'facilities', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1520,6 +1520,21 @@ export function storedValuePayload(input: ScreenInput): Record<string, unknown> 
 }
 
 /**
+ * The integration-health payload (M32-FR-04 · P-03 · P-08). Who is looking and what they hold, so the shell can
+ * gate on `platform.health.read` before the live read; the adapter health picture itself is read live from the
+ * cloud (a GET), never shipped in the pack. Read-only — nothing here is written.
+ */
+export function integrationHealthPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.integrationHealthPolicy.known) return null;
+  const policy: PackIntegrationHealthPolicy = input.pack.integrationHealthPolicy.value;
+
+  const payload: Record<string, unknown> = { permissions: policy.permissions };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+
+  return payload;
+}
+
+/**
  * The goods-receipt review payload (M07-FR-02/03 · P-03). Who is looking and what they hold, so the shell can
  * gate on `inventory.availability.read` before the live read; the GRN list itself is read live from the cloud,
  * never shipped in the pack.
@@ -1795,6 +1810,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   'day-reopen': 'dayReopenData',
   'stock-health': 'stockHealthData',
   'stored-value': 'storedValueData',
+  'integration-health': 'integrationHealthData',
   'goods-receipt': 'goodsReceiptData',
   'data-io': 'dataIoData',
   workforce: 'workforceInboxData',
@@ -1841,6 +1857,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   'day-reopen': dayReopenPayload,
   'stock-health': stockHealthPayload,
   'stored-value': storedValuePayload,
+  'integration-health': integrationHealthPayload,
   'goods-receipt': goodsReceiptPayload,
   'data-io': dataIoPayload,
   workforce: workforcePayload,

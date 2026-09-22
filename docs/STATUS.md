@@ -5,6 +5,31 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M32 integration-health screen — slice 2: served screen + edge wiring (22 September 2026, owner: keep-going)
+
+Slice 2 of the M32 integration-health desk — the visible screen over the tested session model from slice 1.
+
+- **The served screen** `apps/web-erp/web/integration-health.{html,js}` (the twenty-fifth web-erp screen):
+  renders the adapter health picture from `window.integrationHealthSession` (the tested model re-decides
+  nothing) — the connections that have gone quiet or are failing first (worst-first), then working / switched
+  off — plus the till-safe reassurance banner at the top (`posUnaffected`). Every row reads by icon **and** word;
+  the screen issues **no write verb** (asserted by the guardrail); offline it shows a sample stand-in and the
+  stale strip. Bilingual EN/TA.
+- **browser-entry** `bootIntegrationHealth` + `integrationHealthPortsFromData` + `fetchIntegrationHealth` (GET
+  `/v1/integration/health`, `credentials: 'same-origin'`, a failure leaves the picture absent rather than a
+  false all-green) + the `window.integrationHealth` api (refresh / present).
+- **edge wiring**: `integrationHealthPayload` (who + `platform.health.read`, the health picture read live not
+  shipped), `SCREENS` += `integration-health`, `GLOBAL_FOR`/`payloadFor` entries, `PackIntegrationHealthPolicy`
+  (+ the pack's `notKnown` default and `section()` builder), `APP_SHELL` entry, SW cache `v34 → v35`
+  (+ `integration-health.js` in the shell list).
+- **guardrail** `tests/guardrails/the-integration-health-screen-is-usable.test.ts` (10) + the two screen-registry
+  fixtures extended (`the-screens-are-fed` now feeds 25 screens; `edge-feeds-the-screens`). Full gate green.
+
+Same offline-first contract as every ERP screen. **No rung change yet** — M32 stays INTEGRATION_TESTED until
+slice 3's browser e2e drives it to E2E_VERIFIED.
+
+---
+
 ## M32 integration-health screen — slice 1: tested session model (22 September 2026, owner: keep-going)
 
 M17 is closed to E2E. Continuing **"keep going, pick the next module yourself,"** I picked **M32 (Integration
