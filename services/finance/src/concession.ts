@@ -65,6 +65,7 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
     {
       api: 'API-09', method: 'POST', path: '/v1/concession/contracts/:contractId',
       permission: 'concession.contract.manage', idempotent: true,
+      entitlement: 'dept.concession',
       handler: async (ctx) => {
         const contractId = ctx.params['contractId'] ?? '';
         const b = (ctx.body ?? {}) as Record<string, unknown>;
@@ -106,6 +107,7 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
       // revenue share is never charged on money that went back to a customer.
       api: 'API-09', method: 'POST', path: '/v1/concession/contracts/:contractId/sales',
       permission: 'concession.sale.record', idempotent: true,
+      entitlement: 'dept.concession',
       handler: async (ctx) => {
         const contractId = ctx.params['contractId'] ?? '';
         const b = (ctx.body ?? {}) as Record<string, unknown>;
@@ -136,6 +138,7 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
     {
       api: 'API-09', method: 'GET', path: '/v1/concession/contracts/:contractId/charge',
       permission: 'concession.charge.read',
+      entitlement: 'dept.concession',
       handler: async (ctx) => {
         const contractId = ctx.params['contractId'] ?? '';
         const from = ctx.query['from']; const to = ctx.query['to'];
@@ -156,6 +159,7 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
       // difference is a valued exception, not a rounding note.
       api: 'API-09', method: 'GET', path: '/v1/concession/contracts/:contractId/settlement',
       permission: 'concession.charge.read',
+      entitlement: 'dept.concession',
       handler: async (ctx) => {
         const contractId = ctx.params['contractId'] ?? '';
         const from = ctx.query['from']; const to = ctx.query['to']; const banked = ctx.query['bankedForThemMinor'];
@@ -175,6 +179,7 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
       // / not-approved / inactive), with expiry warnings so a counter can be renewed before it shuts.
       api: 'API-09', method: 'GET', path: '/v1/concession/contracts/:contractId/may-trade',
       permission: 'concession.charge.read',
+      entitlement: 'dept.concession',
       handler: async (ctx) => {
         const contractId = ctx.params['contractId'] ?? '';
         const contract = await deps.contract(ctx.tenantId, contractId);
@@ -193,6 +198,7 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
       // forfeit needs a named approver (the engine keeps an unapproved forfeit as a liability).
       api: 'API-09', method: 'POST', path: '/v1/concession/concessionaires/:concessionaireId/deposit-movements/:movementId',
       permission: 'concession.contract.manage', idempotent: true,
+      entitlement: 'dept.concession',
       handler: async (ctx) => {
         const concessionaireId = (ctx.params['concessionaireId'] ?? '').trim();
         const movementId = (ctx.params['movementId'] ?? '').trim();
@@ -221,6 +227,7 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
       // counted as a liability (the commonest small shop-in-shop fraud is a deposit booked as rent).
       api: 'API-09', method: 'GET', path: '/v1/concession/concessionaires/:concessionaireId/deposit',
       permission: 'concession.charge.read',
+      entitlement: 'dept.concession',
       handler: async (ctx) => {
         const concessionaireId = (ctx.params['concessionaireId'] ?? '').trim();
         if (concessionaireId === '') throw notFound('concessionaire (none named)');
@@ -234,6 +241,7 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
       // insurance schedule and the tax position at once. What is excluded is named + valued, never dropped.
       api: 'API-09', method: 'POST', path: '/v1/concession/valuation',
       permission: 'concession.charge.read', idempotent: true,
+      entitlement: 'dept.concession',
       handler: async (ctx) => {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         const lots = b['lots'];
@@ -254,6 +262,7 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
       // it — somebody else's inventory written off by our staff is a bill we cannot argue with.
       api: 'API-09', method: 'POST', path: '/v1/concession/stock-access',
       permission: 'concession.charge.read', idempotent: true,
+      entitlement: 'dept.concession',
       handler: async (ctx) => {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         if (!isLot(b['lot']) || !isStr(b['actorId']) || typeof b['actorKind'] !== 'string'
