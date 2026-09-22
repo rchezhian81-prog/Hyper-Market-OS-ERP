@@ -102,11 +102,17 @@ async function issueCoupon(deps: CouponDeps, tenantId: string, coupon: Coupon, k
 }
 
 export function couponRoutes(deps: CouponDeps): readonly Route[] {
+  // The whole coupon/offer/referral surface is the optional LOYALTY MARKETING PROGRAMME (M36-FR-01 · §35):
+  // every route carries `entitlement: 'loyalty'`, so a shop whose plan does not include loyalty reaches
+  // none of them (default-deny, feature_not_entitled). Deliberately NOT gated here: STORED VALUE
+  // (gift cards + store credit, `/v1/stored-value/*`) — that is CUSTOMER MONEY, and store credit is
+  // issued by the core returns flow every shop runs (M13-FR-03), so paywalling it would trap a
+  // customer's refund. Points earn/burn (`/v1/customers/:id/points`) is likewise left ungated for now.
   return [
     {
       // Define/issue a coupon. Body: the coupon shape (issuedAt is stamped server-side).
       api: 'API-06', method: 'POST', path: '/v1/loyalty/coupons/:code',
-      permission: 'loyalty.coupon.issue', idempotent: true,
+      permission: 'loyalty.coupon.issue', entitlement: 'loyalty', idempotent: true,
       handler: async (ctx) => {
         const code = (ctx.params['code'] ?? '').trim();
         if (code === '') throw notFound('coupon (no code given)');
@@ -118,7 +124,7 @@ export function couponRoutes(deps: CouponDeps): readonly Route[] {
     {
       // Read a coupon and its redemptions — the lane's authoritative cache source.
       api: 'API-06', method: 'GET', path: '/v1/loyalty/coupons/:code',
-      permission: 'loyalty.coupon.read',
+      permission: 'loyalty.coupon.read', entitlement: 'loyalty',
       handler: async (ctx) => {
         const code = (ctx.params['code'] ?? '').trim();
         const coupon = await deps.coupon(ctx.tenantId, code);
@@ -133,7 +139,7 @@ export function couponRoutes(deps: CouponDeps): readonly Route[] {
       // — a visible 409, never a silent accept (hard rule #10). Body: { saleId, basketMinor, customerRef?,
       // customerSegments? }.
       api: 'API-06', method: 'POST', path: '/v1/loyalty/coupons/:code/redemptions/:redemptionId',
-      permission: 'loyalty.coupon.redeem', idempotent: true,
+      permission: 'loyalty.coupon.redeem', entitlement: 'loyalty', idempotent: true,
       handler: async (ctx) => {
         const code = (ctx.params['code'] ?? '').trim();
         const redemptionId = (ctx.params['redemptionId'] ?? '').trim();
@@ -180,7 +186,7 @@ export function couponRoutes(deps: CouponDeps): readonly Route[] {
       // Issue a PERSONALISED offer — consent-gated (M16-FR-02). Body: { customerRef, coupon:{...},
       // consents:[], customerSegments? }. On issue the offer is a real coupon and is recorded as one.
       api: 'API-06', method: 'POST', path: '/v1/loyalty/offers',
-      permission: 'loyalty.coupon.issue', idempotent: true,
+      permission: 'loyalty.coupon.issue', entitlement: 'loyalty', idempotent: true,
       handler: async (ctx) => {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         const couponBody = b['coupon'];
@@ -221,7 +227,7 @@ export function couponRoutes(deps: CouponDeps): readonly Route[] {
       // twice) and 201; not-yet-qualifying or self-referral → 200 with the named reason (a legitimate
       // "not payable" answer, not a server fault).
       api: 'API-06', method: 'POST', path: '/v1/loyalty/referrals/:referralId',
-      permission: 'loyalty.coupon.issue', idempotent: true,
+      permission: 'loyalty.coupon.issue', entitlement: 'loyalty', idempotent: true,
       handler: async (ctx) => {
         const referralId = (ctx.params['referralId'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;

@@ -10,6 +10,7 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 // loyalty.coupon.read. Coupons + redemptions are event-sourced, so the register survives a restart.
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const FUTURE = '2099-12-31';
 const PAST = '2000-01-01';
 
@@ -32,6 +33,7 @@ const singleUse = (extra: Record<string, unknown> = {}) =>
 async function cast(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
+  await h.enableFeature(A, 'loyalty'); // this shop's plan includes the loyalty programme (M36-FR-01)
   await h.provisionRole(A, 'u-mgr', 'store_manager'); // issue + redeem + read
   await h.provisionRole(A, 'u-cashier', 'cashier');   // redeem + read only
   return h;
@@ -153,5 +155,35 @@ describe('coupons, offers and referrals (M17-FR-02)', () => {
     // A fresh harness over the SAME store is a cold start — the register folds from events.
     const restarted = apiHarness({ store: h.store });
     expect((await read(restarted, 'u-owner', 'KEEP')).body).toMatchObject({ redemptionCount: 1 });
+  });
+});
+
+describe('the loyalty programme is a paid feature — off until the shop enables it (M36-FR-01, §35)', () => {
+  it('refuses feature_not_entitled for a shop whose plan has no loyalty — even a full owner', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner'); // a real owner, but this shop never bought the loyalty module
+    const res = await define(h, 'u-owner', 'SAVE', singleUse(), 'k1');
+    expect(res.status).toBe(403);
+    expect(codeOf(res)).toBe('feature_not_entitled');
+    // The whole programme is off — even reading a coupon is refused about the PLAN, not a missing coupon (404).
+    expect(codeOf(await read(h, 'u-owner', 'SAVE'))).toBe('feature_not_entitled');
+  });
+
+  it('lets the same shop in once the loyalty feature is enabled', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'loyalty');
+    expect((await define(h, 'u-owner', 'SAVE', singleUse(), 'k1')).status).toBe(201);
+  });
+
+  it('is per-tenant: enabling loyalty for one shop never turns it on for another', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'loyalty');
+    await h.seedOwner(B, 'u-owner-b'); // B has an owner but no loyalty feature
+    expect((await define(h, 'u-owner', 'SAVE', singleUse(), 'k1')).status).toBe(201);
+    const bRes = await h.request({ method: 'POST', path: '/v1/loyalty/coupons/SAVE', userId: 'u-owner-b', tenantId: B, idempotencyKey: 'kb', body: singleUse() });
+    expect(bRes.status).toBe(403);
+    expect(codeOf(bRes)).toBe('feature_not_entitled');
   });
 });
