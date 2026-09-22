@@ -5,6 +5,8 @@ import {
   DEPARTMENT_CATALOGUE,
   DepartmentNotOperatedError,
   UnknownDepartmentError,
+  requiredFeatureFor,
+  planAllowsDepartment,
   planProduction,
   produceBatch,
   validateRecipe,
@@ -104,6 +106,28 @@ describe('departments — never a module for a counter the store does not have',
   it('operates nothing when a tenant has switched nothing on — the default', () => {
     expect(operatedDepartments([])).toEqual([]);
     expect(() => requireDepartment('cafe', [])).toThrow(/it operates: none/);
+  });
+});
+
+describe('specialised departments are gated by the paid plan (M36-FR-01, §35)', () => {
+  it('names a paid feature only for the three gated departments, and none for the free ones', () => {
+    // Owner decision 2026-09-22: gate only the three whose id already matches its feature name exactly.
+    expect(requiredFeatureFor('bakery')).toBe('dept.bakery');
+    expect(requiredFeatureFor('deli')).toBe('dept.deli');
+    expect(requiredFeatureFor('meat_fish')).toBe('dept.meat_fish');
+    // The cafe, and (until its name is reconciled) the central kitchen, need no feature — deferred.
+    expect(requiredFeatureFor('cafe')).toBeUndefined();
+    expect(requiredFeatureFor('kitchen')).toBeUndefined();
+  });
+
+  it('allows a free department for any plan, and a gated one only when its feature is on (default-deny)', () => {
+    expect(planAllowsDepartment('cafe', [])).toBe(true); // free — always allowed
+    expect(planAllowsDepartment('kitchen', [])).toBe(true); // free for now — allowed
+    expect(planAllowsDepartment('bakery', [])).toBe(false); // gated, no feature → denied (fail closed)
+    expect(planAllowsDepartment('bakery', ['dept.bakery'])).toBe(true); // feature on → allowed
+    // One department's feature does not unlock another.
+    expect(planAllowsDepartment('deli', ['dept.bakery'])).toBe(false);
+    expect(planAllowsDepartment('meat_fish', ['dept.meat_fish', 'dept.deli'])).toBe(true);
   });
 });
 

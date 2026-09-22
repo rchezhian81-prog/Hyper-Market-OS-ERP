@@ -247,6 +247,60 @@ describe('production departments & labels: build only for a department the store
   });
 });
 
+const registerBakeryRecipe = (h: ApiHarness, t: string, u: string, recipeId = 'rb', key?: string) =>
+  h.request({
+    method: 'POST', path: `/v1/production/recipes/${recipeId}`, userId: u, tenantId: t, idempotencyKey: key ?? `rc-${recipeId}`,
+    body: {
+      departmentId: 'bakery', outputProductId: 'LOAF', outputQuantityMinor: 1, outputUom: 'ea',
+      inputs: [{ productId: 'FLOUR', quantityMinor: 100, uom: 'g' }],
+      shelfLifeHours: 24, expectedYieldBp: 10_000, yieldToleranceBp: 500,
+    },
+  });
+
+describe('a specialised department is a paid feature — off until the shop enables it (M36-FR-01, §35)', () => {
+  it('refuses enabling the bakery for a shop whose plan does not include it — even a full owner', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner'); // a real owner, but this shop never bought the bakery module
+    const res = await enableDept(h, A, 'u-owner', 'bakery', 'dept-bakery');
+    expect(res.status).toBe(403);
+    expect(codeOf(res)).toBe('feature_not_entitled');
+    // A free department is unaffected — the cafe still switches on.
+    expect((await enableDept(h, A, 'u-owner', 'cafe')).status).toBe(201);
+  });
+
+  it('refuses producing for the bakery without the feature — naming the plan, before the "not operated" check', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await seedOnHand(h, A, 'u-owner', 'FLOUR', 500);
+    await registerBakeryRecipe(h, A, 'u-owner', 'rb'); // registering a recipe is not producing — allowed
+    const out = await commitRun(h, A, 'u-owner', 'run-b', { recipeId: 'rb', batches: 1, actualOutputMinor: 1, outputBatchId: 'L1', locationId: 'KITCHEN' });
+    expect(out.status).toBe(403);
+    expect(codeOf(out)).toBe('feature_not_entitled');
+  });
+
+  it('lets the same shop enable and produce once the bakery feature is on', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'dept.bakery'); // this shop's plan now includes the bakery
+    expect((await enableDept(h, A, 'u-owner', 'bakery', 'dept-bakery')).status).toBe(201);
+    await seedOnHand(h, A, 'u-owner', 'FLOUR', 500);
+    await registerBakeryRecipe(h, A, 'u-owner', 'rb');
+    expect((await commitRun(h, A, 'u-owner', 'run-b', { recipeId: 'rb', batches: 1, actualOutputMinor: 1, outputBatchId: 'L1', locationId: 'KITCHEN' })).status).toBe(201);
+    // The operated list now shows the bakery.
+    const body = (await h.request({ method: 'GET', path: '/v1/production/departments', userId: 'u-owner', tenantId: A })).body as { operated: { departmentId: string }[] };
+    expect(body.operated.map((d) => d.departmentId)).toContain('bakery');
+  });
+
+  it('is per-tenant: enabling the bakery for one shop never turns it on for another', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'dept.bakery');
+    await h.seedOwner(B, 'u-owner-b'); // B has an owner but no bakery feature
+    expect((await enableDept(h, A, 'u-owner', 'bakery', 'dept-bakery')).status).toBe(201);
+    expect(codeOf(await enableDept(h, B, 'u-owner-b', 'bakery', 'dept-bakery-b'))).toBe('feature_not_entitled');
+  });
+});
+
 describe('production costing is authoritative — from the cost register, never faked as zero (M11-FR-02)', () => {
   const base = async (h: ApiHarness) => {
     await h.seedOwner(A, 'u-owner');

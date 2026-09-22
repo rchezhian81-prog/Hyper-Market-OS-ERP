@@ -17,7 +17,7 @@
 // Append-only (#2); idempotent on the run id.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, featureNotEntitled } from '../../kernel/src/index';
 import {
   produceBatch, validateRecipe, InvalidRecipeError, InsufficientMaterialError,
   type Recipe, type RecipeInput, type ProductionException,
@@ -26,6 +26,7 @@ import { releaseForSale, buildPackLabel, renderLabel, IncompleteLabelError, type
 import {
   requireDepartment, operatedDepartments, DEPARTMENT_CATALOGUE,
   DepartmentNotOperatedError, UnknownDepartmentError,
+  requiredFeatureFor, planAllowsDepartment,
 } from '../../../packages/production/src/departments';
 import type { StockMovement } from '../../../packages/stock/src/position';
 import { isCurrencyCode, money, type CurrencyCode, type Money } from '../../../packages/contracts/src/money';
@@ -90,6 +91,8 @@ export interface ProductionDeps {
   /** The production departments this tenant has switched on (M11-FR-04). */
   readonly enabledDepartments: (tenantId: string) => Promise<readonly string[]> | readonly string[];
   readonly recordDepartmentEnabled: (tenantId: string, departmentId: string) => Promise<void> | void;
+  /** The paid-plan features this tenant has enabled (M36-FR-01) — gates the specialised departments. */
+  readonly entitledFeatures: (tenantId: string) => Promise<readonly string[]> | readonly string[];
   readonly now: () => string;
 }
 
@@ -192,9 +195,11 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
           });
         }
 
-        // The store must actually operate this department (M11-FR-04 / §2.2) — you cannot produce for a
-        // meat counter you do not have; the compliance obligations that come with it would apply to a
-        // department that does not exist.
+        // The store's PLAN must include this department (M36-FR-01), and the store must actually operate it
+        // (M11-FR-04 / §2.2) — you cannot produce for a meat counter you did not buy, nor for one you have
+        // not switched on; the compliance obligations that come with it would apply to a department that
+        // does not exist. Plan first, so a shop without the module hears "your plan", not "not operated".
+        await requirePlanForDepartment(deps, ctx.tenantId, recipe.departmentId);
         const departmentRefusal = refuseDepartment(recipe.departmentId, await deps.enabledDepartments(ctx.tenantId));
         if (departmentRefusal !== null) throw departmentRefusal;
 
@@ -338,6 +343,10 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
             nextSafeAction: 'Enable one of the departments the product supports. Nothing was changed.',
           });
         }
+        // A specialised department is a paid feature (M36-FR-01) — a shop can only switch on one its plan
+        // includes. Blocking here (rather than silently recording an event that never takes effect) keeps
+        // the failure visible (P-08): the shop hears "your plan does not include this", not nothing.
+        await requirePlanForDepartment(deps, ctx.tenantId, departmentId);
         await deps.recordDepartmentEnabled(ctx.tenantId, departmentId);
         return { status: 201, body: { departmentId, department: DEPARTMENT_CATALOGUE[departmentId] } };
       },
@@ -348,7 +357,11 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
       permission: 'production.read',
       handler: async (ctx) => {
         const enabled = await deps.enabledDepartments(ctx.tenantId);
-        return { status: 200, body: { operated: operatedDepartments(enabled), available: Object.keys(DEPARTMENT_CATALOGUE) } };
+        const features = await deps.entitledFeatures(ctx.tenantId);
+        // Report only departments the plan still covers (M36-FR-01): a department switched on while its
+        // module was in the plan but since dropped is no longer operable, so it is not listed as operated.
+        const operated = operatedDepartments(enabled).filter((d) => planAllowsDepartment(d.departmentId, features));
+        return { status: 200, body: { operated, available: Object.keys(DEPARTMENT_CATALOGUE) } };
       },
     },
     {
@@ -381,6 +394,7 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
         if (run === undefined) {
           throw apiError(404, { code: 'run_not_found', whatHappened: `No production run "${runId}".`, wasItSaved: 'not_saved', nextSafeAction: 'Commit the run first.' });
         }
+        await requirePlanForDepartment(deps, ctx.tenantId, run.departmentId);
         const enabled = await deps.enabledDepartments(ctx.tenantId);
         const departmentRefusal = refuseDepartment(run.departmentId, enabled);
         if (departmentRefusal !== null) throw departmentRefusal;
@@ -435,6 +449,20 @@ function refuseDepartment(departmentId: string, enabled: readonly string[]): Ret
     }
     throw e;
   }
+}
+
+/**
+ * Refuse a specialised department the tenant's PLAN does not include (M36-FR-01 · §35). A department
+ * with no required feature (the cafe; the central kitchen for now) always passes. Default-deny: a gated
+ * department is off for a plan that has not enabled its feature, so a shop that never bought the bakery
+ * module cannot switch it on, produce for it, or label its output — even a full owner. Throws the shared
+ * `feature_not_entitled` (403) the concession and B2B gates use, so every paywall refusal reads alike.
+ */
+async function requirePlanForDepartment(deps: ProductionDeps, tenantId: string, departmentId: string): Promise<void> {
+  const feature = requiredFeatureFor(departmentId);
+  if (feature === undefined) return;
+  const features = await deps.entitledFeatures(tenantId);
+  if (!features.includes(feature)) throw featureNotEntitled(feature);
 }
 
 /** The consumed ingredients of a run, from its ledger movements (the ones that left `on_hand`). */
