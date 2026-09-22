@@ -142,6 +142,11 @@ import {
   type ReleasePort, type ReleaseResult,
 } from './production-session';
 import {
+  createFacilitiesSession,
+  type FacilitiesPorts, type FacilitiesSession, type FacilitiesData, type OverdueTask,
+  type CompletePort, type CompleteResult,
+} from './facilities-session';
+import {
   createCashOfficeSession,
   type CashOfficePorts, type CashOfficeSession, type CashOverShortData, type OverShortView,
   type OverShortSignOffPort, type SignOffResult,
@@ -1386,6 +1391,103 @@ export async function fetchProductionBoard(): Promise<ProductionData | null> {
     if (res.status >= 400) return null;
     const body = (await res.json()) as { runs?: unknown };
     return { runs: Array.isArray(body.runs) ? (body.runs as readonly ProductionRun[]) : [] };
+  } catch {
+    return null;
+  }
+}
+
+// ── Facilities maintenance & compliance screen (M26-FR-03) — the "what statutory / safety check is overdue" desk ─
+
+/** What the box tells the facilities screen: who is looking, what they may do, and (optionally) the overdue list
+ *  it last carried. The overdue tasks are a LIVE cloud read (`GET /v1/facilities/overdue`) refreshed by the shell
+ *  when online; offline the screen shows its clearly-marked sample stand-in. */
+export interface FacilitiesScreenData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+  readonly worklist?: FacilitiesData;
+}
+
+const FACILITIES_READ_PERMISSION = 'facilities.overdue.read';
+const FACILITIES_COMPLETE_PERMISSION = 'facilities.task.record';
+const EMPTY_FACILITIES: FacilitiesData = Object.freeze({ overdue: [] });
+const NOOP_COMPLETE_PORT: CompletePort = { post: async () => 'lost_link' };
+
+export function facilitiesPortsFromData(
+  data: FacilitiesScreenData | undefined,
+  worklist?: FacilitiesData,
+  completePort: CompletePort = NOOP_COMPLETE_PORT,
+): FacilitiesPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    worklist: () => worklist ?? data?.worklist ?? EMPTY_FACILITIES,
+    // Default-deny: an absent permission list can read/complete nothing (the server would refuse it anyway).
+    mayRead: () => held.has(FACILITIES_READ_PERMISSION),
+    mayComplete: () => held.has(FACILITIES_COMPLETE_PERMISSION),
+    completePort: () => completePort,
+  };
+}
+
+/** Build the facilities screen, or `null` when the box carried no payload for it (shell shows the sample). */
+export function bootFacilities(
+  data: FacilitiesScreenData | undefined,
+  worklist?: FacilitiesData,
+  completePort?: CompletePort,
+): FacilitiesSession | null {
+  if (data === undefined) return null;
+  return createFacilitiesSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    facilitiesPortsFromData(data, worklist, completePort),
+  );
+}
+
+/** The authenticated POST of a facilities manager's "it's done" decision — the manager's OWN session cookie
+ *  (`credentials: 'same-origin'`), never a service token. A network/timeout is a retryable lost link, not a
+ *  refusal, so a dropped connection never reads as "the server said no". The taskId rides in the URL; the server
+ *  records the decision in the caller's own name, re-checks `facilities.task.record`, and refuses a completion
+ *  with no required evidence or a self-verified safety check (§28). A 2xx is a recorded completion; a 4xx/5xx is
+ *  a refusal the screen surfaces rather than fakes (P-08). */
+function openCompletePort(): CompletePort {
+  return {
+    post: async ({ taskId, completedBy, evidenceRefs, verifiedBy, note }): Promise<CompleteResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return 'lost_link';
+      const key = globalThis.crypto?.randomUUID?.() ?? `complete-${taskId}-${completedBy}`;
+      try {
+        const res = await fetchFn(`/v1/facilities/tasks/${encodeURIComponent(taskId)}/complete`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            completedBy,
+            ...(evidenceRefs === undefined ? {} : { evidenceRefs }),
+            ...(verifiedBy === undefined ? {} : { verifiedBy }),
+            ...(note === undefined ? {} : { note }),
+          }),
+        });
+        if (res.status < 200 || res.status >= 300) return 'refused';
+        return 'completed';
+      } catch {
+        return 'lost_link';
+      }
+    },
+  };
+}
+
+/** Read the live overdue board (a GET — read-only). Returns null offline/refused so the shell keeps whatever it
+ *  was showing and its stale strip says the page is what the box last told it. The cloud route hands back
+ *  `{ overdue, complianceRisks, asAt }`; only the overdue tasks are needed (the session recomputes the rest).
+ *  The route measures lateness against today, so a local YYYY-MM-DD is passed as `?asOf=`. */
+export async function fetchFacilitiesBoard(): Promise<FacilitiesData | null> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return null;
+  const asOf = new Date().toISOString().slice(0, 10);
+  try {
+    const res = await fetchFn(`/v1/facilities/overdue?asOf=${asOf}`, {
+      method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin',
+    });
+    if (res.status >= 400) return null;
+    const body = (await res.json()) as { overdue?: unknown };
+    return { overdue: Array.isArray(body.overdue) ? (body.overdue as readonly OverdueTask[]) : [] };
   } catch {
     return null;
   }
@@ -2926,6 +3028,13 @@ interface ManagerWindow {
     refresh(): Promise<ProductionData | null>;
     present(worklist: ProductionData): ProductionSession;
   };
+  facilitiesData?: FacilitiesScreenData;
+  facilitiesSession?: FacilitiesSession;
+  /** The shell reads the live overdue board through this and re-presents it — a GET read, never a write. */
+  facilities?: {
+    refresh(): Promise<FacilitiesData | null>;
+    present(worklist: FacilitiesData): FacilitiesSession;
+  };
   cashOfficeData?: CashOfficeData;
   cashOfficeSession?: CashOfficeSession;
   /** The shell reads the live over/short worklist through this and re-presents it — a GET read, never a write. */
@@ -3827,6 +3936,24 @@ if (browserWindow !== undefined) {
       present: (worklist) => createProductionSession(
         { userId: productionData?.userId === undefined ? null : productionData.userId },
         productionPortsFromData(productionData, worklist, releasePort),
+      ),
+    };
+  }
+  // The facilities maintenance & compliance screen (M26-FR-03): boots from the box's policy (who + what they
+  // hold), then the shell refreshes the overdue list with a live GET (read-only). Offline it shows its sample
+  // stand-in and says so. The one write is a HUMAN "mark done" in the manager's own name — never on load, only on
+  // an explicit click — and the server re-checks `facilities.task.record` and refuses a completion with no
+  // required evidence or a self-verified safety check (§28), which the screen never fakes (P-08).
+  const facilitiesData = browserWindow.facilitiesData;
+  const completePort = openCompletePort();
+  const facilities = bootFacilities(facilitiesData, undefined, completePort);
+  if (facilities !== null) {
+    browserWindow.facilitiesSession = facilities;
+    browserWindow.facilities = {
+      refresh: fetchFacilitiesBoard,
+      present: (worklist) => createFacilitiesSession(
+        { userId: facilitiesData?.userId === undefined ? null : facilitiesData.userId },
+        facilitiesPortsFromData(facilitiesData, worklist, completePort),
       ),
     };
   }

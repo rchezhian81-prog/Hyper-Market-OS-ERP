@@ -53,6 +53,7 @@ const SCREENS = [
   { name: 'the rostering', dir: 'web-erp', view: 'rostering.js', page: 'rostering.html', bundle: 'web-erp.bundle.js' },
   { name: 'the checklist', dir: 'web-erp', view: 'checklist.js', page: 'checklist.html', bundle: 'web-erp.bundle.js' },
   { name: 'the production', dir: 'web-erp', view: 'production.js', page: 'production.html', bundle: 'web-erp.bundle.js' },
+  { name: 'the facilities', dir: 'web-erp', view: 'facilities.js', page: 'facilities.html', bundle: 'web-erp.bundle.js' },
   { name: 'the devices', dir: 'web-erp', view: 'fleet.js', page: 'fleet.html', bundle: 'web-erp.bundle.js' },
   { name: 'the store setup', dir: 'web-erp', view: 'setup.js', page: 'setup.html', bundle: 'web-erp.bundle.js' },
   { name: 'the owner', dir: 'owner-app', view: 'app.js', page: 'index.html', bundle: 'owner-app.bundle.js' },
