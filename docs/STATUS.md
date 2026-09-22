@@ -5,22 +5,31 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## M25 manager rostering screen — slice 1: DOM-free session model (22 September 2026, owner-directed)
+## M25 manager rostering screen — slices 1+2: session model + served screen (22 September 2026, owner-directed)
 
 The owner chose "go ahead with the M25 rostering screen." M25's named E2E gap is the manager rostering/checklist
 write-path screen. The durable roster backend already exists (roster store + `GET /v1/hr/workforce/roster-gaps`
 over the tested `rosterGaps` engine + `POST /v1/hr/workforce/shifts/:shiftId/assignments/:employeeId`, gated
 `workforce.roster.manage`). Building the screen as the proven 3-slice pattern.
 
-- **Slice 1 (DONE, no rung change).** `apps/web-erp/src/rostering-session.ts` — the DOM-free session model: it
-  shows every roster GAP **worst first** (a role with NOBODY at all is an error tone, a partial shortfall a
-  warning; colour never the only signal — icon + word ride with each), offers **per gap the eligible staff**
-  (active, hold the role, not already on that shift — a leaver is never cover), and the one action is **assign**
-  a person to the short shift, gated `workforce.roster.manage` and eligibility-checked BEFORE any POST (P-04);
-  a roster the box was never told is `not known`, never "no gaps" (P-08); bilingual EN/TA. `tests/unit/
-  erp-rostering-session.test.ts` (16). Full gate green (GATE_EXIT=0, 7167 passed).
-- **M25 stays INTEGRATION_TESTED** — slice 2 serves the screen + edge wiring + is-usable guardrail; slice 3 the
-  browser e2e (assign write-path → cloud under the manager's own session) → re-rate M25 → E2E_VERIFIED.
+- **Slice 1 (DONE, no rung change, PR #495 merged).** `apps/web-erp/src/rostering-session.ts` — the DOM-free
+  session model: it shows every roster GAP **worst first** (a role with NOBODY at all is an error tone, a partial
+  shortfall a warning; colour never the only signal — icon + word ride with each), offers **per gap the eligible
+  staff** (active, hold the role, not already on that shift — a leaver is never cover), and the one action is
+  **assign** a person to the short shift, gated `workforce.roster.manage` and eligibility-checked BEFORE any POST
+  (P-04); a roster the box was never told is `not known`, never "no gaps" (P-08); bilingual EN/TA.
+  `tests/unit/erp-rostering-session.test.ts` (16).
+- **Slice 2 (DONE, no rung change).** The served `/rostering` screen + edge wiring: `apps/web-erp/web/rostering.
+  {html,js}` render only what the session hands them (no rule in the view); `apps/web-erp/src/browser-entry.ts`
+  boots it and wires `openAssignPort` (same-origin POST to `/v1/hr/workforce/shifts/:shiftId/assignments/
+  :employeeId`, `credentials` + `idempotency-key`, dropped link → lost_link) and `fetchRosteringWorklist` (two
+  read-only GETs — `/roster` + `/roster-gaps` — combined for the eligibility view); the edge serves it as the
+  nineteenth web-erp screen (`rosteringPayload` + `PackRosteringPolicy` + `screen-server` route + `SCREENS`
+  'rostering' + SW v30). Meets the same offline contract every screen does (network-first, stamped cache, stale
+  strip EN/TA, sample stand-in). `tests/guardrails/the-rostering-screen-is-usable.test.ts` (9) + `/rostering`
+  served in `tests/integration/the-screens-are-fed.test.ts`. Full gate green (GATE_EXIT=0, 7176 passed).
+- **M25 stays INTEGRATION_TESTED** — slice 3 is the browser e2e (assign write-path → cloud under the manager's
+  own session; a no-manage user sees no assign control) → re-rate M25 → E2E_VERIFIED.
 
 ---
 

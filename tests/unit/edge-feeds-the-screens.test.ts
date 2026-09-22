@@ -210,6 +210,8 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   workforceInboxPolicy: known({ userId: 'u-owner', permissions: ['ai.proposal.read'] }),
   // Employee self-service (M25). Who is looking + whether they hold `payroll.ess.self`; rota + payslip come live.
   essPolicy: known({ userId: 'u-cash', permissions: ['payroll.ess.self'] }),
+  // Manager rostering (M25-FR-01). Who is looking + what they hold; the gaps and staff come live from the cloud.
+  rosteringPolicy: known({ userId: 'u-manager', permissions: ['workforce.roster.read', 'workforce.roster.manage'] }),
   // Admin and security (M01/M02/M33/M34). Support access is never pruned (hard rule #6).
   accounts: known([{
     userId: 'u-meena', tenantId: 't1', username: 'meena',

@@ -128,6 +128,10 @@ import {
   type ReturnGovernancePorts, type ReturnGovernanceSession, type ReturnGovernanceData as ReturnGovernanceExceptions,
 } from './return-governance-session';
 import {
+  createRosteringSession,
+  type RosteringPorts, type RosteringSession, type RosteringData, type AssignPort, type AssignResult,
+} from './rostering-session';
+import {
   createCashOfficeSession,
   type CashOfficePorts, type CashOfficeSession, type CashOverShortData, type OverShortView,
   type OverShortSignOffPort, type SignOffResult,
@@ -1097,6 +1101,104 @@ export async function fetchLpWorklist(): Promise<LpWorklistData | null> {
     });
     if (res.status >= 400) return null;
     return (await res.json()) as LpWorklistData;
+  } catch {
+    return null;
+  }
+}
+
+// ── Manager rostering screen (M25-FR-01) — the "who is on, what is the roster short" desk ──────────────────
+
+/** What the box tells the rostering screen: who is looking, what they may do, and (optionally) the worklist it
+ *  last carried. The gaps and the roster context are a LIVE cloud read (`GET /v1/hr/workforce/roster` +
+ *  `/roster-gaps`) refreshed by the shell when online; offline the screen shows its clearly-marked sample
+ *  stand-in. */
+export interface RosteringScreenData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+  readonly worklist?: RosteringData;
+}
+
+const ROSTER_READ_PERMISSION = 'workforce.roster.read';
+const ROSTER_MANAGE_PERMISSION = 'workforce.roster.manage';
+const EMPTY_ROSTERING: RosteringData = Object.freeze({ gaps: [], employees: [], shifts: [], assignments: [] });
+const NOOP_ASSIGN_PORT: AssignPort = { post: async () => 'lost_link' };
+
+export function rosteringPortsFromData(
+  data: RosteringScreenData | undefined,
+  worklist?: RosteringData,
+  assignPort: AssignPort = NOOP_ASSIGN_PORT,
+): RosteringPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    worklist: () => worklist ?? data?.worklist ?? EMPTY_ROSTERING,
+    // Default-deny: an absent permission list can read/assign nothing (the server would refuse it anyway).
+    mayRead: () => held.has(ROSTER_READ_PERMISSION),
+    mayManage: () => held.has(ROSTER_MANAGE_PERMISSION),
+    assignPort: () => assignPort,
+  };
+}
+
+/** Build the rostering screen, or `null` when the box carried no payload for it (shell shows the sample). */
+export function bootRostering(
+  data: RosteringScreenData | undefined,
+  worklist?: RosteringData,
+  assignPort?: AssignPort,
+): RosteringSession | null {
+  if (data === undefined) return null;
+  return createRosteringSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    rosteringPortsFromData(data, worklist, assignPort),
+  );
+}
+
+/** The authenticated POST of a manager's assignment — the manager's OWN session cookie
+ *  (`credentials: 'same-origin'`), never a service token. A network/timeout is a retryable lost link, not a
+ *  refusal, so a dropped connection never reads as "the server said no". The shift and employee ride in the
+ *  URL; the server records the assignment in the caller's own name and re-checks `workforce.roster.manage`. */
+function openAssignPort(): AssignPort {
+  return {
+    post: async ({ shiftId, employeeId, role }): Promise<AssignResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return 'lost_link';
+      const key = globalThis.crypto?.randomUUID?.() ?? `asg-${shiftId}-${employeeId}-${role}`;
+      try {
+        const res = await fetchFn(
+          `/v1/hr/workforce/shifts/${encodeURIComponent(shiftId)}/assignments/${encodeURIComponent(employeeId)}`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ role }),
+          },
+        );
+        return res.status >= 200 && res.status < 300 ? 'assigned' : 'refused';
+      } catch {
+        return 'lost_link';
+      }
+    },
+  };
+}
+
+/** Read the live roster worklist: the stored roster (employees/shifts/assignments) folded with the cloud's
+ *  gaps engine. Two GETs (both read-only, `workforce.roster.read`); returns null offline/refused so the shell
+ *  keeps whatever it was showing and its stale strip says the page is what the box last told it. */
+export async function fetchRosteringWorklist(): Promise<RosteringData | null> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return null;
+  try {
+    const [rosterRes, gapsRes] = await Promise.all([
+      fetchFn('/v1/hr/workforce/roster', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' }),
+      fetchFn('/v1/hr/workforce/roster-gaps', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' }),
+    ]);
+    if (rosterRes.status >= 400 || gapsRes.status >= 400) return null;
+    const roster = (await rosterRes.json()) as { employees?: unknown; shifts?: unknown; assignments?: unknown };
+    const gapsBody = (await gapsRes.json()) as { gaps?: unknown };
+    return {
+      gaps: Array.isArray(gapsBody.gaps) ? (gapsBody.gaps as RosteringData['gaps']) : [],
+      employees: Array.isArray(roster.employees) ? (roster.employees as RosteringData['employees']) : [],
+      shifts: Array.isArray(roster.shifts) ? (roster.shifts as RosteringData['shifts']) : [],
+      assignments: Array.isArray(roster.assignments) ? (roster.assignments as RosteringData['assignments']) : [],
+    };
   } catch {
     return null;
   }
@@ -2616,6 +2718,13 @@ interface ManagerWindow {
     refresh(): Promise<LpWorklistData | null>;
     present(worklist: LpWorklistData): LpInboxSession;
   };
+  rosteringData?: RosteringScreenData;
+  rosteringSession?: RosteringSession;
+  /** The shell reads the live roster worklist through this and re-presents it — GET reads, never a write. */
+  rostering?: {
+    refresh(): Promise<RosteringData | null>;
+    present(worklist: RosteringData): RosteringSession;
+  };
   cashOfficeData?: CashOfficeData;
   cashOfficeSession?: CashOfficeSession;
   /** The shell reads the live over/short worklist through this and re-presents it — a GET read, never a write. */
@@ -3463,6 +3572,24 @@ if (browserWindow !== undefined) {
       present: (worklist) => createLpInboxSession(
         { userId: lossPreventionData?.userId === undefined ? null : lossPreventionData.userId },
         lpInboxPortsFromData(lossPreventionData, worklist, lpClosePort),
+      ),
+    };
+  }
+  // The manager rostering screen (M25-FR-01): boots from the box's policy (who + what they hold), then the shell
+  // refreshes the roster gaps with live GETs (read-only). Offline it shows its sample stand-in and says so. The
+  // one write is a HUMAN assignment in the manager's own name — never on load, only on an explicit click — and
+  // the server re-checks `workforce.roster.manage` and records it in the caller's name (no AI writes a roster,
+  // hard rule #5).
+  const rosteringData = browserWindow.rosteringData;
+  const assignPort = openAssignPort();
+  const rostering = bootRostering(rosteringData, undefined, assignPort);
+  if (rostering !== null) {
+    browserWindow.rosteringSession = rostering;
+    browserWindow.rostering = {
+      refresh: fetchRosteringWorklist,
+      present: (worklist) => createRosteringSession(
+        { userId: rosteringData?.userId === undefined ? null : rosteringData.userId },
+        rosteringPortsFromData(rosteringData, worklist, assignPort),
       ),
     };
   }
