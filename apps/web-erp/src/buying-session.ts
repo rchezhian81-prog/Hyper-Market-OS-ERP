@@ -154,6 +154,45 @@ export interface BuyingPorts {
   receivedLines(poId: string): readonly { readonly productId: string; readonly qty: number }[];
   /** Invoice lines already captured, so a second capture of one invoice is visible. */
   capturedLines(invoiceId: string): readonly InvoiceLine[];
+  /**
+   * PROPOSE a purchase order at head office (M06-FR-02, API-03). Absent when this box cannot reach the
+   * cloud — then `canProposeToCloud` is false and the screen keeps its local-only compute rather than
+   * pretending an order was raised (P-01/P-08). The requisitioner is attributed to the AUTHENTICATED
+   * buyer by the cloud, never a name in the body.
+   */
+  proposeOrder?(): ProposePurchaseOrderPort;
+}
+
+/**
+ * A purchase order to PROPOSE at head office (M06-FR-02, API-03). What the buyer typed — the PO id,
+ * the supplier and the lines. The requisitioner is the AUTHENTICATED buyer (the cloud attributes it,
+ * never a name in the body), and NO approver rides with it: a proposed PO awaits a SECOND person's
+ * approval (§28), which the buyer may not give from this screen. Only an issued PO becomes an open
+ * commitment, so proposing commits no money.
+ */
+export interface ProposePurchaseOrderInput {
+  readonly poId: string;
+  readonly supplierId: string;
+  readonly lines: readonly { readonly productId: string; readonly orderedQty: number; readonly unitCostMinor: number }[];
+}
+
+/** What head office said when asked to propose a PO — the proposed order, or the reason it did not land. */
+export type ProposePurchaseOrderOutcome =
+  | { readonly proposed: true; readonly requisitionedBy: string; readonly totalMinor: number }
+  | { readonly proposed: false; readonly reason: string };
+
+/**
+ * The authenticated POST that records a PROPOSED purchase order at head office (M06-FR-02, API-03). Injected,
+ * so the model opens no socket itself; the cloud attributes the requisitioner to the authenticated caller and a
+ * blocked supplier is the cloud's to refuse. The proposal carries no approver — issuing is a separate §28 act,
+ * so a buyer can never both raise and approve their own order.
+ */
+export interface ProposePurchaseOrderPort {
+  post(input: {
+    readonly poId: string;
+    readonly supplierId: string;
+    readonly lines: readonly { readonly productId: string; readonly orderedQty: number; readonly unitCost: Money }[];
+  }): Promise<ProposePurchaseOrderOutcome>;
 }
 
 export type CaptureRefusal =
@@ -198,6 +237,22 @@ export interface BuyingSession {
     readonly supplierBlocked?: boolean;
     readonly approval?: DecidedRequest;
   }): IssuedPurchaseOrder;
+
+  /**
+   * True when this box can reach head office to propose a PO. False offline / on a box the cloud port was
+   * never wired into — the screen then keeps its local compute and does not offer to raise an order it
+   * cannot actually send (P-01/P-08).
+   */
+  readonly canProposeToCloud: boolean;
+
+  /**
+   * PROPOSE a purchase order at head office (M06-FR-02). The requisitioner is the authenticated buyer; the
+   * proposal carries NO approver — issuing is a SECOND person's act (§28), so a buyer can never both raise and
+   * approve their own order from this screen. Reports `proposed: true` ONLY when the cloud saved it; a blocked
+   * supplier, an empty order, or a dropped link is an honest `proposed: false` with the reason, never a false
+   * "raised" (P-08). Proposing commits no money — only an issued PO becomes an open commitment.
+   */
+  proposeToCloud(input: ProposePurchaseOrderInput): Promise<ProposePurchaseOrderOutcome>;
 
   /** What is on order and not yet received — no longer *not known* (M06). */
   openCommitment(input: Parameters<typeof computeOpenCommitment>[0]): OpenCommitment;
@@ -289,6 +344,34 @@ export function createBuyingSession(config: BuyingConfig, ports: BuyingPorts): B
       ...(input.supplierBlocked === undefined ? {} : { supplierBlocked: input.supplierBlocked }),
       ...(input.approval === undefined ? {} : { approval: input.approval }),
     }),
+
+    canProposeToCloud: ports.proposeOrder !== undefined,
+
+    proposeToCloud: async (input) => {
+      const port = ports.proposeOrder;
+      // No cloud wired: the screen keeps its local compute when `canProposeToCloud` is false; this guards
+      // the case it asked anyway, and must never claim an order it did not send (P-01/P-08).
+      if (port === undefined) {
+        return { proposed: false, reason: 'this screen is not connected to head office, so it cannot raise an order' };
+      }
+      // Fail fast, before any POST, on what the screen already knows is wrong (P-08): an order with no lines
+      // is not an order, and a buyer with no supplier chosen is not raising one. A clearer refusal here than
+      // a 4xx the cloud would send back for the same thing.
+      if (input.lines.length === 0) {
+        return { proposed: false, reason: 'this order has no lines, so there is nothing to raise' };
+      }
+      if (input.supplierId.trim() === '') {
+        return { proposed: false, reason: 'no supplier is chosen for this order' };
+      }
+      // The cloud is the authority — it attributes the requisitioner to the authenticated buyer and refuses a
+      // blocked supplier. The proposal carries NO approver: issuing is a separate §28 act the buyer may not do,
+      // and a dropped link or a refusal comes back as `proposed: false`, never a false "raised".
+      return port().post({
+        poId: input.poId,
+        supplierId: input.supplierId,
+        lines: input.lines.map((l) => ({ productId: l.productId, orderedQty: l.orderedQty, unitCost: inr(l.unitCostMinor) })),
+      });
+    },
 
     openCommitment: (input) => computeOpenCommitment(input),
 

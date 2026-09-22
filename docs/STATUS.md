@@ -5,6 +5,38 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Buyer's PO write-path reaches head office — M06 slice 1 toward E2E (22 September 2026)
+
+After the menu-links task merged (#488), "keep going." I surveyed the ladder for the next honest increment.
+The two owner-blocked items (**store-credit cap rupee number**, **retention periods**) I cannot invent, and the
+remaining PARTIALLY_WIRED→WIRED flips need owner FR-attribution calls (M19/M20/M21) or cross-cutting changes
+(M27 needs an ownership dimension on the M08 stock ledger — an ADR-level change, not one clean increment). So I
+took the **INTEGRATION_TESTED→E2E_VERIFIED** track on **M06 (purchasing)**, whose operator surface is genuinely
+the buyer's ERP screen (no handheld dependency, unlike M07/M09).
+
+**The gap.** The buyer's screen (`apps/web-erp/src/buying-session.ts`) computed/**issued** a PO *in the browser*
+with a name typed into an "approved by" box — nothing reached head office, and the typed-name approver was a weak
+§28 stand-in. This is the same state the catalogue screen was in before its cloud-delivery wiring (P1/P2).
+
+- **Slice 1 (this increment, no rung change).** `createBuyingSession` now exposes `canProposeToCloud` +
+  `proposeToCloud`: it assembles `{ supplierId, lines[unitCost:Money] }` and **proposes** the order through an
+  injected `ProposePurchaseOrderPort` (destined for `POST /v1/purchase/orders/:poId` under the buyer's OWN
+  session). The cloud attributes the requisitioner to the authenticated caller and **no approver rides with the
+  proposal** — issuing stays a separate second-person §28 act the buyer cannot do from this screen (this *hardens*
+  §28, not just relocates it). Reports `proposed:true` only when the cloud saved it; a blocked supplier, an empty
+  order, or a dropped link is an honest `proposed:false` with the reason (P-08); an offline box with no port keeps
+  its local compute (P-01). `tests/unit/erp-buying-session.test.ts` (+6). Full gate green (GATE_EXIT=0, 7141 pass).
+- **M06 stays INTEGRATION_TESTED** — this is the tested delivery leg only.
+
+### Next (M06 → E2E, remaining slices)
+- **Slice 2:** browser-entry POST port (`openProposePurchaseOrderPort`, credentials same-origin, idempotency-key,
+  network failure → `proposed:false`) + wire `buying.js`'s "Raise order" button to `proposeToCloud`.
+- **Slice 3:** browser e2e (real Chromium) driving the buyer screen's PO-propose (and invoice-capture) write-path
+  to a stub cloud, then honestly re-rate **M06 → E2E_VERIFIED**.
+- Owner-input still the highest-value work I can't do alone: **store-credit cap rupee number**, **retention periods**.
+
+---
+
 ## Pricing / Promotions menu links wired to the real screen (22 September 2026)
 
 The owner asked to "start the pricing/promotions screen." **Investigating first showed the screen already

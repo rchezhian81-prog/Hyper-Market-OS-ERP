@@ -3,6 +3,7 @@ import {
   createBuyingSession, lineArithmeticErrors, UnreadableInvoiceFileError,
   SUPPLIER_INVOICE_TEMPLATE,
   type BuyingConfig, type BuyingPorts, type InvoiceLine,
+  type ProposePurchaseOrderPort, type ProposePurchaseOrderOutcome,
 } from '../../apps/web-erp/src/buying-session';
 import type { DecidedRequest } from '../../packages/approvals/src/index';
 import { money } from '../../packages/contracts/src/money';
@@ -320,5 +321,95 @@ describe('the template stays the shape the shop was told to send', () => {
 
   it('sums the LINE TOTAL against the printed invoice total', () => {
     expect(SUPPLIER_INVOICE_TEMPLATE.amountColumn).toBe('lineTotalMinor');
+  });
+});
+
+/**
+ * **Raising a purchase order reaches head office (M06-FR-02 · §28 · P-08).**
+ *
+ * The buyer's screen used to ISSUE a PO locally with a name typed into an "approved by" box — a weak
+ * §28 stand-in a determined buyer could put their own manager's name into. `proposeToCloud` PROPOSES the
+ * order at head office under the buyer's OWN session instead: the cloud attributes the requisitioner to
+ * the authenticated caller, and NO approver rides with the proposal, so issuing is a genuinely separate
+ * second-person act the buyer cannot perform here. And it never claims an order it did not send — a
+ * blocked supplier, an empty order or a dropped link comes back as an honest `proposed: false` (P-08).
+ */
+describe('raising a purchase order reaches head office (M06-FR-02 · §28)', () => {
+  interface Recorder {
+    calls: Parameters<ProposePurchaseOrderPort['post']>[0][];
+    port: ProposePurchaseOrderPort;
+  }
+  // A port that records what the session sent and answers with a fixed outcome — the cloud's own verdict.
+  const recordingPort = (outcome: ProposePurchaseOrderOutcome): Recorder => {
+    const calls: Parameters<ProposePurchaseOrderPort['post']>[0][] = [];
+    return { calls, port: { post: async (input) => { calls.push(input); return outcome; } } };
+  };
+
+  const CLEAN_LINES = [
+    { productId: 'p1', orderedQty: 10, unitCostMinor: 5000 },
+    { productId: 'p2', orderedQty: 4, unitCostMinor: 2500 },
+  ]; // total = 60000
+
+  it('proposes a clean order and reports proposed only after the cloud saved it', async () => {
+    const rec = recordingPort({ proposed: true, requisitionedBy: 'u-buyer', totalMinor: 60000 });
+    const s = session({ proposeOrder: () => rec.port });
+    expect(s.canProposeToCloud).toBe(true);
+
+    const out = await s.proposeToCloud({ poId: 'PO-20', supplierId: 'sup-1', lines: CLEAN_LINES });
+
+    expect(out).toEqual({ proposed: true, requisitionedBy: 'u-buyer', totalMinor: 60000 });
+    // The body carried the poId, the supplier and the lines with a proper Money unit cost.
+    expect(rec.calls).toHaveLength(1);
+    expect(rec.calls[0]?.poId).toBe('PO-20');
+    expect(rec.calls[0]?.supplierId).toBe('sup-1');
+    expect(rec.calls[0]?.lines).toEqual([
+      { productId: 'p1', orderedQty: 10, unitCost: { minor: 5000, currency: 'INR' } },
+      { productId: 'p2', orderedQty: 4, unitCost: { minor: 2500, currency: 'INR' } },
+    ]);
+  });
+
+  it('carries NO approver — a proposed order is a proposal, not a self-approved issue (§28)', async () => {
+    const rec = recordingPort({ proposed: true, requisitionedBy: 'u-buyer', totalMinor: 60000 });
+    await session({ proposeOrder: () => rec.port }).proposeToCloud({ poId: 'PO-21', supplierId: 'sup-1', lines: CLEAN_LINES });
+    const sent = rec.calls[0] as Record<string, unknown>;
+    // Nothing in the proposal can name an approver; issuing is a separate authenticated second-person act.
+    expect(sent).not.toHaveProperty('approval');
+    expect(sent).not.toHaveProperty('approvedBy');
+    expect(JSON.stringify(sent)).not.toContain('approv');
+  });
+
+  it('surfaces the cloud refusal verbatim and never reports a false raise', async () => {
+    // The cloud refuses a blocked supplier — the screen shows exactly that, and reports NOT proposed.
+    const rec = recordingPort({ proposed: false, reason: 'supplier is blocked, so no new order may be raised' });
+    const out = await session({ proposeOrder: () => rec.port })
+      .proposeToCloud({ poId: 'PO-22', supplierId: 'sup-blocked', lines: CLEAN_LINES });
+    expect(out).toEqual({ proposed: false, reason: 'supplier is blocked, so no new order may be raised' });
+    expect(rec.calls).toHaveLength(1); // it DID ask the cloud; the cloud is the authority on the block
+  });
+
+  it('refuses an empty order before any POST (P-08)', async () => {
+    const rec = recordingPort({ proposed: true, requisitionedBy: 'u-buyer', totalMinor: 0 });
+    const out = await session({ proposeOrder: () => rec.port })
+      .proposeToCloud({ poId: 'PO-23', supplierId: 'sup-1', lines: [] });
+    expect(out.proposed).toBe(false);
+    if (!out.proposed) expect(out.reason).toContain('no lines');
+    expect(rec.calls).toHaveLength(0); // nothing left the screen
+  });
+
+  it('refuses when no supplier is chosen before any POST (P-08)', async () => {
+    const rec = recordingPort({ proposed: true, requisitionedBy: 'u-buyer', totalMinor: 60000 });
+    const out = await session({ proposeOrder: () => rec.port })
+      .proposeToCloud({ poId: 'PO-24', supplierId: '  ', lines: CLEAN_LINES });
+    expect(out.proposed).toBe(false);
+    if (!out.proposed) expect(out.reason).toContain('supplier');
+    expect(rec.calls).toHaveLength(0);
+  });
+
+  it('a box with no cloud wired cannot propose, and says so rather than pretending', async () => {
+    const s = session(); // default ports: no proposeOrder
+    expect(s.canProposeToCloud).toBe(false);
+    const out = await s.proposeToCloud({ poId: 'PO-25', supplierId: 'sup-1', lines: CLEAN_LINES });
+    expect(out.proposed).toBe(false);
+    if (!out.proposed) expect(out.reason).toContain('not connected to head office');
   });
 });
