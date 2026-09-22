@@ -5,6 +5,38 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M25 manager checklist screen — slices 1-3 built + browser-verified (22 September 2026, owner-directed)
+
+The owner said "go ahead with the M25 rostering screen" again after the rostering screen was already done; on
+being told it was complete they chose to **build the M25 checklist screen** next — the sibling manager surface
+and the last named M25 operator-surface gap. Built as the same proven 3-slice pattern, all three merged.
+
+- **Slice 1 (PR #498, merged).** `apps/web-erp/src/checklist-session.ts` — the tested DOM-free session model:
+  every opening/closing/handover checklist read **worst-first** (a BLOCKING item still outstanding shouts
+  loudest — the shop cannot run; then unsigned, then carried, then done; colour never the only signal); the one
+  action is **sign and submit**, gated `workforce.roster.manage` and checked before any POST (P-04), ticking
+  items done but never un-ticking a shift's tick, signed in the manager's own name (hard rule #5).
+  `tests/unit/erp-checklist-session.test.ts` (17).
+- **Slice 2 (PR #499, merged).** The served `/checklist` screen (`apps/web-erp/web/checklist.{html,js}`, the
+  twentieth web-erp screen) + browser-entry boot + `openSubmitChecklistPort` (POST
+  `/v1/hr/workforce/checklists/:checklistId`, credentials same-origin, idempotency-key, dropped link →
+  lost_link) + `fetchChecklistWorklist` (GET `/v1/hr/workforce/checklists`) + edge wiring (`checklistPayload`,
+  `PackChecklistPolicy`, screen-server route + SCREENS 'checklist', SW v31) + `the-checklist-screen-is-usable`
+  guardrail (9). Same offline contract as every screen.
+- **Slice 3 (this PR).** `tests/e2e/checklist-delivery.e2e.ts` drives real headless Chromium vs a same-origin
+  stub cloud: an authorised manager (`workforce.checklist.read` + `workforce.roster.manage`) ticks the
+  outstanding blocking item and clicks Sign → the `{kind, items, signedBy}` POST reaches
+  `/v1/hr/workforce/checklists/:checklistId` under their own session (the blocking item now done, signedBy the
+  manager), and the checklist **re-reads complete on a worklist RE-READ** (the sign button drops off); a
+  read-only user sees the checklist but no sign button and sends nothing (P-04). Both cases pass against the
+  pre-installed Chromium.
+- **M25 was already E2E_VERIFIED via the rostering write-path — no rung / completion-% change (stays 54.8%).**
+  This closes the module's OTHER named operator surface (the checklist sign-off screen). Held below
+  UAT_VERIFIED (needs a manager working real checklists on the shop floor). **With this, the owner-directed M25
+  workforce-screen program — rostering + checklist — is complete and both are browser-verified.**
+
+---
+
 ## M25 manager rostering screen — slices 1-3 → E2E_VERIFIED (22 September 2026, owner-directed)
 
 The owner chose "go ahead with the M25 rostering screen." M25's named E2E gap is the manager rostering/checklist
