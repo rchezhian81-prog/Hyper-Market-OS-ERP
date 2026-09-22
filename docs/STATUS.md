@@ -5,6 +5,41 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M36-FR-01 paywall — per-route enforcement COMPLETE; customer app gated at provisioning (22 September 2026, owner decision)
+
+Closing out M36-FR-01 route enforcement (task #163). The owner asked to gate the customer app and to **map it
+first**. Mapping showed the customer app is **not a server route family** — so, like the departments, the route-tag
+pattern does not apply, and the owner decided **"call route-gating done."**
+
+The map:
+- **`customer_app` = M20, a SERVED CLIENT SCREEN.** The shopper's browser loads `apps/customer-app/web/`, fed by the
+  edge (`customerPayload` in `edge/store-edge/src/screen-data.ts`), with browse/cart/checkout logic running
+  client-side from `packages/storefront/*`. `apps/customer-app` makes **no `/v1/*` calls of its own**.
+- **Its cloud dependencies are all shared/core or a legal right** — none route-gateable behind `customer_app`:
+  the shared **catalogue** (core, P-02); the cross-channel **OMS** (`/v1/orders/*`, M18 — used by delivery,
+  click-and-collect, B2B, in-store; gating it would break them); **delivery** (already gated); and the **privacy /
+  data-subject-request** surface (`/v1/privacy/data-requests/*`), which is a customer's DPDP legal right and must
+  never sit behind a paywall.
+- **Decision (owner, via prompt): route-gating is DONE.** A shop that doesn't buy the customer app simply isn't
+  served/deployed the customer-app screen — that commercial gate belongs at app provisioning/onboarding, not the
+  kernel route-entitlement mechanism. No code change for `customer_app`.
+
+**Per-route feature enforcement (M36-FR-01) is now COMPLETE for every server-side optional feature:** concession,
+B2B, the three specialised departments (bakery/deli/meat & fish), the loyalty programme, and home delivery + COD.
+Deliberately excluded, on record: stored value + points (customer money / sale path), the shared pick-pack surface
+(click-and-collect), and `customer_app` (a client screen, gated at provisioning).
+
+**M36 stays PARTIALLY_WIRED** — and now for exactly two reasons, neither a route gate:
+1. the **paid-plan TIER** (which plan grants which feature; `Plan` grants, suspension, metering-to-invoice) is
+   **owner-blocked, OA-12** — it needs the owner's pricing/plan model;
+2. **partner FR-04** is still engine-only.
+
+This is a docs-only increment recording the decision and correcting the stale "customer_app is a remaining route
+follow-on" note in the traceability/ledger (it never was a route family). Deferred as before: central-kitchen naming,
+food court + pharmacy (no module).
+
+---
+
 ## M36-FR-01 paywall — home delivery is now a paid feature (22 September 2026, owner-directed)
 
 Continuing M36-FR-01 (task #163). The owner said **"keep going with delivery, map it first."** Mapping surfaced
