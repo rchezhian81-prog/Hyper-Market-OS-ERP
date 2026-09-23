@@ -22,8 +22,8 @@ import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
   publishTemplateVersion, currentVersion, issueDocument, reproduceDocument,
-  assessTemplateRetention, planDocumentRetention,
-  type TemplateVersion, type DocumentKind, type IssuedDocument,
+  assessTemplateRetention, planDocumentRetention, decideDisposal,
+  type TemplateVersion, type DocumentKind, type IssuedDocument, type DocumentDisposal,
 } from '../../../packages/documents/src/index';
 
 export type { TemplateVersion } from '../../../packages/documents/src/index';
@@ -58,6 +58,10 @@ export interface DocumentsDeps {
   readonly allVersions: (tenantId: string) => Promise<readonly TemplateVersion[]> | readonly TemplateVersion[];
   /** EVERY issued document for a tenant — for the retention plan. */
   readonly allIssued: (tenantId: string) => Promise<readonly IssuedDocument[]> | readonly IssuedDocument[];
+  /** Every recorded disposal decision — the append-only fold that says which documents are already disposed. */
+  readonly disposals: (tenantId: string) => Promise<readonly DocumentDisposal[]> | readonly DocumentDisposal[];
+  /** Record a disposal decision, append-only. Idempotent on the document id — a re-send collapses. */
+  readonly recordDisposal: (tenantId: string, disposal: DocumentDisposal) => Promise<void> | void;
   readonly now: () => string;
 }
 
@@ -211,8 +215,47 @@ export function documentsRoutes(deps: DocumentsDeps): readonly Route[] {
           throw apiError(400, { code: 'retention_date_invalid', whatHappened: '?today=, if given, must be a YYYY-MM-DD date.', wasItSaved: 'not_saved', nextSafeAction: 'Send a valid date or omit it for today.' });
         }
         const on = today ?? deps.now().slice(0, 10);
-        const plan = planDocumentRetention({ documents: await deps.allIssued(ctx.tenantId), today: on });
-        return { status: 200, body: { today: on, count: plan.length, proposedForDisposalCount: plan.filter((p) => p.action === 'propose_disposal').length, plan } };
+        // A document already disposed drops off the plan — it is no longer a live thing to decide about
+        // (the disposal fact is kept forever; hard rule #6). Everything else is assessed as before.
+        const disposedIds = new Set((await deps.disposals(ctx.tenantId)).map((x) => x.documentId));
+        const live = (await deps.allIssued(ctx.tenantId)).filter((d) => !disposedIds.has(d.documentId));
+        const plan = planDocumentRetention({ documents: live, today: on });
+        return { status: 200, body: { today: on, count: plan.length, disposedCount: disposedIds.size, proposedForDisposalCount: plan.filter((p) => p.action === 'propose_disposal').length, plan } };
+      },
+    },
+    {
+      // ISSUED-DOCUMENT disposal EXECUTION (M31): record an authorised human's decision to dispose of a
+      // document whose retention has ended. It NEVER deletes a legal-held or statutory record, nor one still
+      // inside its retention, nor one with no retention policy (hard rule #6) — `decideDisposal` re-checks
+      // eligibility from the document itself, trusting no client verdict. A disposer is named (the
+      // authenticated caller) and a reason is required (§28). Append-only; a re-send collapses on the id.
+      api: 'API-11', method: 'POST', path: '/v1/documents/:documentId/disposal',
+      permission: 'document.retention.dispose', idempotent: true,
+      handler: async (ctx) => {
+        const documentId = ctx.params['documentId'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const reason = typeof b['reason'] === 'string' ? b['reason'] : '';
+        const document = await deps.issued(ctx.tenantId, documentId);
+        const alreadyDisposed = (await deps.disposals(ctx.tenantId)).some((x) => x.documentId === documentId);
+        const decision = decideDisposal({ document, today: deps.now().slice(0, 10), disposedBy: ctx.userId, reason, alreadyDisposed });
+        if (!decision.allowed) {
+          const status = decision.outcome === 'unknown_document' ? 404
+            : decision.outcome === 'already_disposed' ? 409
+              : decision.outcome === 'needs_a_reason' || decision.outcome === 'nobody_named' ? 400
+                : 409; // legal_hold / statutory / within_retention / no_retention_policy — not eligible
+          throw apiError(status, {
+            code: `disposal_refused_${decision.outcome}`,
+            whatHappened: decision.detail,
+            wasItSaved: 'not_saved',
+            nextSafeAction: status === 400
+              ? 'Send a { reason } for the disposal. Nothing was disposed.'
+              : status === 404
+                ? 'Check the document id. Nothing was disposed.'
+                : 'This document may not be disposed — a hold, a statutory record, still-in-retention, or already disposed. Nothing was disposed.',
+          });
+        }
+        await deps.recordDisposal(ctx.tenantId, decision.disposal!);
+        return { status: 200, body: { disposed: true, disposal: decision.disposal } };
       },
     },
   ];

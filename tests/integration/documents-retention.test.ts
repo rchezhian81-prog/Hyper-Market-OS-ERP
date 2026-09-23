@@ -19,6 +19,8 @@ const retTemplates = (h: ApiHarness, u: string) =>
   h.request({ method: 'GET', path: '/v1/documents/retention/templates', userId: u, tenantId: A });
 const retDocuments = (h: ApiHarness, u: string, today?: string) =>
   h.request({ method: 'GET', path: '/v1/documents/retention/documents', userId: u, tenantId: A, ...(today ? { query: { today } } : {}) });
+const dispose = (h: ApiHarness, u: string, documentId: string, body: unknown, key: string) =>
+  h.request({ method: 'POST', path: `/v1/documents/${documentId}/disposal`, userId: u, tenantId: A, idempotencyKey: key, body });
 
 const INV_V1 = { kind: 'tax_invoice', body: 'INV v1 {{total}}', createdBy: 'u-designer', approvedBy: 'u-owner', changeNote: 'initial', at: '2026-07-01T00:00:00Z' };
 const INV_V2 = { ...INV_V1, body: 'INV v2 {{total}}', changeNote: 'new address', at: '2026-08-01T00:00:00Z' };
@@ -80,5 +82,57 @@ describe('document retention & archival (M31): assess versions, propose document
     expect(codeOf(await retDocuments(h, 'u-owner', '04-09-2026'))).toBe('retention_date_invalid');
     expect((await retTemplates(h, 'u-cash')).status).toBe(403);
     expect((await retDocuments(h, 'u-cash')).status).toBe(403);
+  });
+});
+
+describe('document DISPOSAL execution (M31): an authorised human disposes only what retention allows — never held/statutory', () => {
+  async function seeded(): Promise<ApiHarness> {
+    const h = await cast();
+    await publish(h, 'u-owner', 'rcpt', RCPT_V1, 'p-rcpt');
+    await publish(h, 'u-owner', 'inv', INV_V1, 'p-inv');
+    // past retention, ordinary kind → the one thing that MAY be disposed
+    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-expired', kind: 'receipt', subjectRef: 's4', data: { total: '4' }, retainUntil: '2020-01-01' }, 'i-expired');
+    // never-disposable cases
+    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-hold', kind: 'receipt', subjectRef: 's1', data: { total: '1' }, retainUntil: '2020-01-01', legalHold: true }, 'i-hold');
+    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-future', kind: 'receipt', subjectRef: 's3', data: { total: '3' }, retainUntil: '2099-01-01' }, 'i-future');
+    await issue(h, 'u-owner', 'inv', { documentId: 'd-tax', kind: 'tax_invoice', subjectRef: 's5', data: { total: '5' }, retainUntil: '2020-01-01' }, 'i-tax');
+    return h;
+  }
+
+  it('disposes a document past retention (named + reasoned), records it append-only, and drops it off the proposal list', async () => {
+    const h = await seeded();
+    const before = (await retDocuments(h, 'u-owner')).body as { proposedForDisposalCount: number };
+    expect(before.proposedForDisposalCount).toBe(1); // only d-expired
+
+    const res = await dispose(h, 'u-owner', 'd-expired', { reason: 'past its retention, sampled and cleared by records' }, 'x1');
+    expect(res.status).toBe(200);
+    const b = res.body as { disposed: boolean; disposal: { documentId: string; disposedBy: string; reason: string; retainedUntil: string } };
+    expect(b.disposed).toBe(true);
+    expect(b.disposal.disposedBy).toBe('u-owner');          // the authenticated caller, never a service identity
+    expect(b.disposal.retainedUntil).toBe('2020-01-01');    // the justification kept with the decision
+
+    const after = (await retDocuments(h, 'u-owner')).body as { proposedForDisposalCount: number; disposedCount: number };
+    expect(after.disposedCount).toBe(1);
+    expect(after.proposedForDisposalCount).toBe(0);         // the disposed one is no longer a live thing to decide
+  });
+
+  it('REFUSES a legal-held, a statutory, and a still-in-retention document (hard rule #6)', async () => {
+    const h = await seeded();
+    expect(codeOf(await dispose(h, 'u-owner', 'd-hold', { reason: 'x' }, 'x2'))).toBe('disposal_refused_legal_hold');
+    expect(codeOf(await dispose(h, 'u-owner', 'd-tax', { reason: 'x' }, 'x3'))).toBe('disposal_refused_statutory');
+    expect(codeOf(await dispose(h, 'u-owner', 'd-future', { reason: 'x' }, 'x4'))).toBe('disposal_refused_within_retention');
+    // and none of them was recorded as disposed
+    expect(((await retDocuments(h, 'u-owner')).body as { disposedCount: number }).disposedCount).toBe(0);
+  });
+
+  it('needs a reason (400), a real document (404), never a second disposal (409), and the dispose permission (403)', async () => {
+    const h = await seeded();
+    expect((await dispose(h, 'u-owner', 'd-expired', {}, 'x5')).status).toBe(400);
+    expect(codeOf(await dispose(h, 'u-owner', 'd-expired', {}, 'x5b'))).toBe('disposal_refused_needs_a_reason');
+    expect((await dispose(h, 'u-owner', 'no-such-doc', { reason: 'x' }, 'x6')).status).toBe(404);
+    expect((await dispose(h, 'u-cash', 'd-expired', { reason: 'x' }, 'x7')).status).toBe(403); // cashier lacks document.retention.dispose
+
+    expect((await dispose(h, 'u-owner', 'd-expired', { reason: 'first and only disposal' }, 'x8')).status).toBe(200);
+    expect(codeOf(await dispose(h, 'u-owner', 'd-expired', { reason: 'trying again' }, 'x9'))).toBe('disposal_refused_already_disposed');
   });
 });

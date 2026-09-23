@@ -93,6 +93,7 @@ import type { PackagingDeps, PackagingItem, PackagingMovement } from '../../inve
 import type { ComplianceDeps, Obligation } from '../../compliance/src/index';
 import type { RiskRegisterDeps, Risk, Control, Incident, Remediation, Attestation } from '../../compliance/src/risk';
 import type { DocumentsDeps, TemplateVersion, IssuedDocument } from '../../platform/src/documents';
+import type { DocumentDisposal } from '../../../packages/documents/src/index';
 import type { SuspendedBillsDeps, SuspendedBill } from '../../pos/src/suspended-bills';
 import type { QuotationsDeps } from '../../pos/src/quotations';
 import type { Quotation } from '../../../packages/suspended-sales/src/index';
@@ -461,6 +462,22 @@ export function documentsAdapter(input: {
 
     /** EVERY issued document for the tenant — the whole `DocumentIssued` fold, for retention. */
     allIssued: async (tenantId) => allOf<IssuedDocument>(input.store, tenantId, STREAM.documents, 'DocumentIssued'),
+
+    /** Every recorded disposal decision — the append-only `DocumentDisposed` fold (M31, hard rule #6). */
+    disposals: async (tenantId) => allOf<DocumentDisposal>(input.store, tenantId, STREAM.documents, 'DocumentDisposed'),
+
+    /** Record a disposal decision, append-only. Idempotent on the document id — a re-sent disposal collapses
+     *  rather than double-recording, and the fact is never deleted (hard rule #6). */
+    recordDisposal: async (tenantId, disposal: DocumentDisposal) => {
+      await input.store.append(tenantId, STREAM.documents, makeEvent({
+        id: `doc-disposed-${disposal.documentId}`,
+        type: 'DocumentDisposed',
+        occurredAt: input.now(), // a full ISO instant for the ledger; disposal.at carries the business day
+        idempotencyKey: `doc-disposed-${tenantId}-${disposal.documentId}`,
+        source: 'api/platform',
+        payload: disposal,
+      }));
+    },
   };
 }
 

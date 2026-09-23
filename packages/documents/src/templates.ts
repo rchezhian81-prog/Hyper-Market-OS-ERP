@@ -388,3 +388,84 @@ export function planDocumentRetention(input: {
     };
   });
 }
+
+/** The recorded fact that an authorised human disposed of a document past its retention (M31-FR / §34 / PRV-08). */
+export interface DocumentDisposal {
+  readonly documentId: string;
+  readonly kind: DocumentKind;
+  /** The authenticated person who decided — never a service identity. */
+  readonly disposedBy: string;
+  readonly reason: string;
+  readonly at: string;
+  /** The retention date that had already passed — the justification, kept with the decision. */
+  readonly retainedUntil: string;
+}
+
+export type DisposalRefusal =
+  | 'nobody_named'
+  | 'needs_a_reason'
+  | 'unknown_document'
+  | 'already_disposed'
+  | 'legal_hold'
+  | 'statutory'
+  | 'no_retention_policy'
+  | 'within_retention';
+
+export interface DisposalDecision {
+  readonly allowed: boolean;
+  readonly outcome: 'disposed' | DisposalRefusal;
+  /** Present only when `allowed` — the append-only fact to record. */
+  readonly disposal?: DocumentDisposal;
+  readonly detail: string;
+}
+
+/**
+ * Decide a disposal — the EXECUTION half of retention (M31). The plan (`planDocumentRetention`)
+ * proposes; this records what an authorised human then decides, and it **re-checks eligibility from
+ * the document itself**, never trusting that the caller only asked about a proposed one. Disposal is
+ * allowed for a single document ONLY when the plan would propose it: never a legal-held one, never a
+ * statutory kind, never one still inside its retention, never one with no retention policy (silence
+ * never means discard — hard rule #6). A disposer must be named and give a reason (§28). The decision
+ * is a fact to append, never a deletion the caller performs blind.
+ */
+export function decideDisposal(input: {
+  readonly document: IssuedDocument | undefined;
+  readonly today: string;
+  readonly disposedBy: string;
+  readonly reason: string;
+  /** True when this document already has a recorded disposal — a disposal is decided once. */
+  readonly alreadyDisposed?: boolean;
+  readonly statutoryKinds?: readonly DocumentKind[];
+}): DisposalDecision {
+  const d = input.document;
+  if (d === undefined) {
+    return { allowed: false, outcome: 'unknown_document', detail: 'no such issued document — nothing to dispose' };
+  }
+  if (input.disposedBy.trim() === '') {
+    return { allowed: false, outcome: 'nobody_named', detail: 'a disposal must name the person who decided it (§28) — nobody was named' };
+  }
+  if (input.reason.trim() === '') {
+    return { allowed: false, outcome: 'needs_a_reason', detail: 'a disposal needs a reason that can be defended later — none was given' };
+  }
+  if (input.alreadyDisposed === true) {
+    return { allowed: false, outcome: 'already_disposed', detail: `${d.documentId} was already disposed — a disposal is decided once, never repeated` };
+  }
+
+  // Re-check eligibility from the document, using the SAME rules as the plan (single source of truth).
+  const [plan] = planDocumentRetention({ documents: [d], today: input.today, ...(input.statutoryKinds === undefined ? {} : { statutoryKinds: input.statutoryKinds }) });
+  if (plan === undefined || plan.action !== 'propose_disposal') {
+    const refusal: DisposalRefusal =
+      d.legalHold === true ? 'legal_hold'
+        : new Set<DocumentKind>(input.statutoryKinds ?? ['tax_invoice', 'credit_note', 'goods_receipt', 'statement']).has(d.kind) ? 'statutory'
+          : d.retainUntil === undefined ? 'no_retention_policy'
+            : 'within_retention';
+    return { allowed: false, outcome: refusal, detail: plan?.reason ?? 'this document may not be disposed' };
+  }
+
+  return {
+    allowed: true,
+    outcome: 'disposed',
+    disposal: { documentId: d.documentId, kind: d.kind, disposedBy: input.disposedBy, reason: input.reason.trim(), at: input.today, retainedUntil: d.retainUntil! },
+    detail: `${d.kind.replace('_', ' ')} ${d.documentId} disposed by ${input.disposedBy} — retention ended ${d.retainUntil}`,
+  };
+}
