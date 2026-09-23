@@ -5,6 +5,33 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M31 document-retention disposal execution wired (23 September 2026, owner-directed "keep building")
+
+The owner chose "keep building features (I choose)". First increment: the **disposal EXECUTION** half of
+document retention (M31) — the piece the ledger named as remaining. The retention *plan* already proposed
+which documents a person may be asked about disposing of; now an authorised human can **record that
+decision**, safely.
+
+- **`packages/documents/src/templates.ts`** — `decideDisposal` (pure): re-checks eligibility from the
+  document itself (never trusts that the caller only asked about a proposed one) and returns `disposed`
+  or a specific refusal — **never** a legal-held one, a statutory kind, one still inside retention, or
+  one with no policy (hard rule #6). A disposer must be named and a reason given (§28).
+- **`services/platform/src/documents.ts`** — `POST /v1/documents/:documentId/disposal` records the
+  decision as an **append-only `DocumentDisposed`** fact (idempotent on the document id; the fact is
+  never deleted), and the retention proposal list drops a disposed document. Refusals map to honest
+  codes (`disposal_refused_legal_hold` / `…_statutory` / `…_within_retention` / `…_needs_a_reason` /
+  404 / 409). Gated a new **`document.retention.dispose`** (owner + store manager).
+- **`services/api/src/adapters.ts`** — `documentsAdapter` gains `disposals` (the `DocumentDisposed`
+  fold) + `recordDisposal` (append-only, full-ISO `occurredAt`).
+- **Tests:** `tests/unit/documents-templates.test.ts` (+`decideDisposal` cases) and
+  `tests/integration/documents-retention.test.ts` (now 6: a past-retention document disposed by an
+  authorised, reasoned decision drops off the list; held/statutory/within-retention refused; no-reason
+  400; unknown 404; repeat 409; a cashier 403).
+- **M31 stays PARTIALLY_WIRED** (honest deepening, no rung change): the batch re-issue workflow and the
+  channel transport (a deployment step) remain. Traceability + completion-status note updated.
+
+---
+
 ## Paid-plan tiers priced — OA-12 answered and closed (23 September 2026, owner-directed)
 
 The owner made the last of his three decisions: the paid-plan prices. He **ratified the existing three-tier

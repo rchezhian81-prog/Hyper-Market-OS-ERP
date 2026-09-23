@@ -7,6 +7,7 @@ import {
   reproduceDocument,
   assessTemplateRetention,
   planDocumentRetention,
+  decideDisposal,
   type IssuedDocument,
   type Renderer,
 } from '../../packages/documents/src/templates';
@@ -263,5 +264,42 @@ describe('retention holds for the whole chain (hard rule #6)', () => {
       today: '2026-08-05',
     });
     expect(plans[0]?.action).toBe('keep');
+  });
+});
+
+// M31 disposal EXECUTION — the human decision after the plan proposes. It re-checks eligibility from the
+// document itself (never trusts the caller only asked about a proposed one) and never disposes a held or
+// statutory record, one still in retention, or one with no policy (hard rule #6). Named + reasoned (§28).
+const issued = (over: Partial<IssuedDocument> = {}): IssuedDocument => ({
+  documentId: 'd1', tenantId: 't', kind: 'receipt', subjectRef: 's1', templateId: 'rcpt',
+  templateVersion: 1, content: 'x', issuedAt: '2026-01-01T00:00:00Z', issuedBy: 'u-owner',
+  retainUntil: '2020-01-01', ...over,
+});
+
+describe('decideDisposal: disposes only what retention allows, named and reasoned', () => {
+  const base = { today: '2026-09-04', disposedBy: 'u-owner', reason: 'past retention, cleared' };
+
+  it('allows a past-retention ordinary document and returns the fact to record', () => {
+    const d = decideDisposal({ ...base, document: issued() });
+    expect(d.allowed).toBe(true);
+    expect(d.outcome).toBe('disposed');
+    expect(d.disposal).toMatchObject({ documentId: 'd1', disposedBy: 'u-owner', retainedUntil: '2020-01-01' });
+    expect(d.disposal?.reason).toBe('past retention, cleared');
+  });
+
+  it('refuses a legal hold, a statutory kind, a still-in-retention, and a no-policy document (hard rule #6)', () => {
+    expect(decideDisposal({ ...base, document: issued({ legalHold: true }) }).outcome).toBe('legal_hold');
+    expect(decideDisposal({ ...base, document: issued({ kind: 'tax_invoice' }) }).outcome).toBe('statutory');
+    expect(decideDisposal({ ...base, document: issued({ retainUntil: '2099-01-01' }) }).outcome).toBe('within_retention');
+    expect(decideDisposal({ ...base, document: issued({ retainUntil: undefined }) }).outcome).toBe('no_retention_policy');
+    // none of the refusals carry a disposal fact
+    expect(decideDisposal({ ...base, document: issued({ legalHold: true }) }).disposal).toBeUndefined();
+  });
+
+  it('refuses an unknown document, a missing reason, an unnamed disposer, and a repeat disposal', () => {
+    expect(decideDisposal({ ...base, document: undefined }).outcome).toBe('unknown_document');
+    expect(decideDisposal({ ...base, document: issued(), reason: '  ' }).outcome).toBe('needs_a_reason');
+    expect(decideDisposal({ ...base, document: issued(), disposedBy: '' }).outcome).toBe('nobody_named');
+    expect(decideDisposal({ ...base, document: issued(), alreadyDisposed: true }).outcome).toBe('already_disposed');
   });
 });
