@@ -1,0 +1,12 @@
+{
+  "name": "SRE Hyper Market — Supplier portal",
+  "short_name": "SRE Supplier",
+  "description": "See what you have sent us and your statement — your own account with SRE.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": []
+}
