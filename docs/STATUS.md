@@ -5,6 +5,32 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M24 supplier portal screen — slice 3: browser e2e → M24 E2E_VERIFIED (23 September 2026, owner-directed)
+
+The third and last slice — the served supplier portal is now proven end to end in a **real headless browser**,
+so M24 (Supplier self-service) moves **INTEGRATION_TESTED → E2E_VERIFIED** (an honest +10 weighted). This was
+the **last module below E2E**, so with it done **every module M01–M36 is now WIRED or higher, and the two
+lowest-remaining are the durability-tested WIRED four** — no module sits at INTEGRATION_TESTED any more.
+
+- **`tests/e2e/supplier-portal-delivery.e2e.ts`** (headless Chromium vs a same-origin stub cloud, 2 cases):
+  - An **authorised supplier** (`supplier.portal.self`) opens the portal → both feeds read **live on load**, the
+    submission still **awaiting our decision** leads (never a false "accepted" — §28), the statement panel shows
+    the closing balance (₹3,000.00) with the **disputed** amount (₹500.00) kept **separate**, and across the
+    **whole session not one write verb** (POST/PUT/PATCH/DELETE) leaves the screen.
+  - A login **without** `supplier.portal.self` sees the not-a-supplier-login state and **none** of the account
+    data, even though the feeds exist (the server also answers 403 — defence in depth, §35/P-04).
+- **Re-rate (honest, +10 weighted):** `docs/completion-status.json` M24 → E2E_VERIFIED; the module ladder rung +
+  the module-level summary in `docs/traceability.md` (19 E2E · 0 INTEGRATION); `EVIDENCE.M24` in
+  `tests/guardrails/completion-ladder-has-evidence.test.ts` now points at the browser proof. Headline
+  **55.1 → 55.2%** (5735 → 5745 / 10400; the E2E-verification sub-score 24.0 → 25.0%). Ladder guardrails green.
+
+**M24 is complete to the E2E bar.** Held below UAT_VERIFIED: needs a real supplier logging in through the
+external IdP on the shop floor. **Milestone: every one of the 36 modules is now at least WIRED, and 19 are
+browser-verified end to end; the four WIRED (M02/M03/M16/M29) and the PARTIALLY_WIRED thirteen are what remain,
+several of the latter genuinely blocked on owner decisions or outside parties.**
+
+---
+
 ## M24 supplier portal screen — slice 2: served supplier-app screen (23 September 2026, owner-directed)
 
 Slice 2 of the M24 supplier portal — the visible page over the tested session model from slice 1.
