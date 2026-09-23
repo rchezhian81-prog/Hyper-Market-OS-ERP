@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M24 supplier portal screen — slice 2: served supplier-app screen (23 September 2026, owner-directed)
+
+Slice 2 of the M24 supplier portal — the visible page over the tested session model from slice 1.
+
+Architecture note (mapped before building): the supplier portal is **cloud-served**, like the marketing/login
+pages in `apps/site` — NOT a store-box screen. So it is its **own app** (`apps/supplier-app`, the customer-app
+pattern: `src/browser-entry.ts` + `web/`), with its own bundle (`node scripts/build-app.mjs supplier-app`), and
+it is **not** wired into the store-edge screen-server / store-pack (the store box has no supplier data, and a
+supplier does not connect to one store's box). The page is fed only WHO is looking (`window.supplierData` =
+the authenticated login's userId + permissions, injected by the cloud session), and both feeds are read live.
+
+- **`apps/supplier-app/web/index.html` + `app.js`** (the served page): renders the two feeds from
+  `window.supplierPortalSession` (the tested model re-decides nothing) — what the supplier sent (waiting-on-us
+  first, then processed) and its statement (the named figures + the closing balance, disputed shown separately,
+  a reconcile status; "not accessible" line when the login lacks the grant, never a zero). Every row reads by
+  icon **and** word; the page issues **no write verb** (asserted by the guardrail); offline it shows a sample
+  stand-in + the stale strip; a skip link + labelled lists for WCAG (NFR-07 — a public surface). Bilingual EN/TA.
+- **`apps/supplier-app/src/browser-entry.ts`**: `bootSupplierPortal` + `supplierPortalPortsFromData` +
+  `fetchSupplierSubmissions` (`GET /v1/supplier-portal/me/submissions`) + `fetchSupplierStatement`
+  (`GET /v1/supplier-portal/me/statement`) — both GETs, `credentials: 'same-origin'`, read together and a feed
+  that fails stays absent rather than a false empty — + the `window.supplierPortal` api (refresh / present).
+- **`apps/supplier-app/web/{sw.js,manifest.webmanifest}`**: the app's own offline shell (cache
+  `sre-supplier-shell-v1`, network-first page, stale-stamped) + PWA manifest.
+- **guardrail** `tests/guardrails/the-supplier-portal-screen-is-usable.test.ts` (10).
+
+No edge screen-data / store-pack / screen-server changes (cloud-served, so it is outside the store box's screen
+registry, exactly as `apps/site` is). **No rung change yet** — M24 stays INTEGRATION_TESTED until slice 3's
+browser e2e drives it to E2E_VERIFIED.
+
+---
+
 ## M24 supplier portal screen — slice 1: tested session model (23 September 2026, owner-directed)
 
 M32 is closed to E2E. **The owner chose (asked which direction to take next) the supplier portal screen** —
