@@ -5,6 +5,39 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M24 supplier portal screen — slice 1: tested session model (23 September 2026, owner-directed)
+
+M32 is closed to E2E. **The owner chose (asked which direction to take next) the supplier portal screen** —
+M24 (Supplier self-service) is the **last** module still at INTEGRATION_TESTED, and its honest E2E gap is that
+it has no served operator surface. Building it as the proven 3-slice pattern.
+
+The supplier portal is different from every screen so far: it is the one surface a party **outside** the
+business uses, so it is a SUPPLIER-facing cloud page (not the store box). It reads two feeds, both scoped to the
+supplier's OWN partner id on the server (never a parameter — a request naming another partner is refused and
+recorded as a probe, M24-FR-04): **my submissions** (`GET /v1/supplier-portal/me/submissions` — what the
+supplier sent and whether the buyer has acted yet; nothing a supplier submits is in force on its own, §28) and
+**my statement** (`GET /v1/supplier-portal/me/statement` — the money the shop owes it, disputed shown
+separately, `accessible:false` is a permission answer NOT a zero). Gated `supplier.portal.self`. Built as the
+customer-app pattern (`apps/supplier-app/src` + `web`).
+
+- **Slice 1 (this PR).** `apps/supplier-app/src/supplier-portal-session.ts` (`createSupplierPortalSession`) — the
+  tested DOM-free session model: submissions split awaiting-the-buyer (the ones the supplier waits on) from
+  processed, newest first, each reading by icon **and** word (a "waiting on us" state, never a false "accepted");
+  the statement's figures with the disputed amount carried SEPARATELY from the outstanding balance and a
+  reconcile status (error when it does not reconcile — the supplier should raise it); a login without the
+  statement grant sees "not accessible" (never a balance of zero — P-08); a non-supplier login sees a
+  not-permitted state; all-clear is a calm empty state. Bilingual EN/TA.
+  `tests/unit/supplier-portal-session.test.ts` (13).
+- **Slice 2 (next).** The served supplier-app screen (`index.html` + `app.js` + browser-entry read fetches + SW +
+  manifest) + serving (screen-server `APP_SHELL` key) + is-usable guardrail.
+- **Slice 3.** Browser e2e (a supplier opens the portal → sees a submission awaiting the buyer + its statement;
+  a non-supplier login sees the refused state) → re-rate M24 INTEGRATION_TESTED → E2E_VERIFIED.
+
+No rung change yet — M24 stays INTEGRATION_TESTED until slice 3's browser e2e. (This is the READ/status view of
+M24-FR-01 self-service; a supplier SUBMITS through the separate POST routes, already wired + integration-tested.)
+
+---
+
 ## M32 integration-health screen — slice 3: browser e2e → M32 E2E_VERIFIED (22 September 2026, owner: keep-going)
 
 The third and last slice — the served `/integration-health` desk is now proven end to end in a **real headless
