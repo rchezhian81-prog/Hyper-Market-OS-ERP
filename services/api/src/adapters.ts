@@ -188,7 +188,7 @@ import type { PromotionCatalogueDeps } from '../../pricing/src/promotion-catalog
 import type { Promotion } from '../../../packages/promotions/src/promotions';
 import { expired } from '../../orders/src/index';
 import type {
-  Reservation, OrdersDeps, PlacedOrder, OrderTransition, OrderStateView, StoredSubstitution,
+  Reservation, OrdersDeps, PlacedOrder, OrderTransition, OrderStateView, StoredSubstitution, StoredBackorder,
 } from '../../orders/src/index';
 import type { DeliveryAttempt, DeliveryStateRecord, FulfilmentDeps } from '../../fulfilment/src/index';
 import type { DispatchDeps } from '../../fulfilment/src/dispatch';
@@ -5990,6 +5990,23 @@ export function ordersAdapter(input: {
     /** The substitution decisions recorded on an order — a fold of its `LineSubstituted` events. */
     orderSubstitutions: async (tenantId, orderId) =>
       allOf<StoredSubstitution>(input.store, tenantId, forOrder(orderId), 'LineSubstituted'),
+
+    /** Record a backorder against an order, append-only (M18-FR-02). Idempotent on the order id — the
+     *  shortfall is recorded once, so a replay is one fact, never a second backorder. */
+    recordBackorder: async (tenantId, bo: StoredBackorder) => {
+      await input.store.append(tenantId, forOrder(bo.orderId), makeEvent({
+        id: `ord-bo-${bo.orderId}`,
+        type: 'OrderBackordered',
+        occurredAt: bo.at,
+        idempotencyKey: `ord-bo-${tenantId}-${bo.orderId}`,
+        source: 'api/orders',
+        payload: bo,
+      }));
+    },
+
+    /** The backorders recorded against an order — a fold of its `OrderBackordered` events. */
+    orderBackorders: async (tenantId, orderId) =>
+      allOf<StoredBackorder>(input.store, tenantId, forOrder(orderId), 'OrderBackordered'),
   };
 }
 

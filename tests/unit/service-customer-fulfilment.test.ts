@@ -231,6 +231,7 @@ describe('all three register cleanly on the kernel', () => {
       recordPlaced: () => {}, orderState: () => undefined, orderReservations: () => [],
       recordTransition: () => {}, releaseReservations: () => {},
       recordSubstitution: () => {}, orderSubstitutions: () => [],
+      recordBackorder: () => {}, orderBackorders: () => [],
     };
     const fulfilment: FulfilmentDeps = {
       appendAttempt: () => {}, attempts: () => [], assigned: () => [], deliveryState: () => [], recordDeliveryTransition: () => {}, now: () => NOW,
