@@ -24,7 +24,7 @@ describe('the landing page exists and describes the real product', () => {
   });
 
   it('shows all three plans at the prices actually billed (PROPOSED_PLANS)', () => {
-    for (const price of ['₹2,000', '₹5,000', '₹12,000']) {
+    for (const price of ['₹10,000', '₹13,000', '₹15,000']) {
       expect(landing, `the landing page must show ${price}`).toContain(price);
     }
     for (const name of ['Starter', 'Standard', 'Growth']) expect(landing).toContain(name);
@@ -60,7 +60,7 @@ describe('the subscribe page makes the auto-debit honest and RBI-shaped', () => 
   });
 
   it('shows the same plan prices as are billed', () => {
-    for (const price of ['₹2,000', '₹5,000', '₹12,000']) expect(subscribe).toContain(price);
+    for (const price of ['₹10,000', '₹13,000', '₹15,000']) expect(subscribe).toContain(price);
   });
 
   it('states the RBI mandate terms and that no card is stored', () => {

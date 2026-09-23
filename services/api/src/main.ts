@@ -196,14 +196,18 @@ import type { EventStore } from '../../../packages/persistence/src/event-store';
 const now = (): string => new Date().toISOString();
 
 /**
- * Proposed subscription plans (WP5 / ADR-0014). These prices are DEFAULTS pending the owner's final
- * pricing (an owner action, `docs/OWNER-ACTION-REGISTER.md`) — configuration, not invented facts. All
- * sit under the ₹15,000 no-OTP ceiling so the monthly debit runs automatically. Amounts are in paise.
+ * Subscription plans (WP5 / ADR-0014 / M36-FR-01). These prices are the OWNER'S, set in answer to
+ * OA-12 on 23 Sep 2026 (`docs/OWNER-ACTION-REGISTER.md`) — not invented, not placeholders. The owner
+ * ratified the existing three-tier STRUCTURE (Starter / Standard / Growth, and what each grants) and
+ * set the prices. All three sit at or under the ₹15,000 RBI e-mandate no-OTP ceiling, so the monthly
+ * debit runs automatically with no per-debit OTP (up to ₹15,000 is exempt from additional-factor
+ * authentication; the higher ₹1 lakh limit is category-specific — insurance/MF/card bills — and does
+ * not cover a software subscription). Amounts are in paise.
  */
 const PROPOSED_PLANS: readonly BillingPlan[] = [
-  { planId: 'starter', name: 'Starter', grants: ['loyalty'], limits: { lanes: 2, branches: 1, named_users: 10 }, monthlyPriceMinor: 200_000 },
-  { planId: 'standard', name: 'Standard', grants: ['loyalty', 'delivery'], limits: { lanes: 6, branches: 1, named_users: 40 }, monthlyPriceMinor: 500_000, overageMinor: { lanes: 100_000 } },
-  { planId: 'growth', name: 'Growth', grants: ['loyalty', 'delivery', 'customer_app', 'b2b'], limits: { lanes: 15, branches: 3, named_users: 120 }, monthlyPriceMinor: 1_200_000, overageMinor: { lanes: 90_000 } },
+  { planId: 'starter', name: 'Starter', grants: ['loyalty'], limits: { lanes: 2, branches: 1, named_users: 10 }, monthlyPriceMinor: 1_000_000 },
+  { planId: 'standard', name: 'Standard', grants: ['loyalty', 'delivery'], limits: { lanes: 6, branches: 1, named_users: 40 }, monthlyPriceMinor: 1_300_000, overageMinor: { lanes: 100_000 } },
+  { planId: 'growth', name: 'Growth', grants: ['loyalty', 'delivery', 'customer_app', 'b2b'], limits: { lanes: 15, branches: 3, named_users: 120 }, monthlyPriceMinor: 1_500_000, overageMinor: { lanes: 90_000 } },
 ];
 
 /**

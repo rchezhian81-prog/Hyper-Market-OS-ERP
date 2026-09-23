@@ -5,6 +5,30 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Paid-plan tiers priced — OA-12 answered and closed (23 September 2026, owner-directed)
+
+The owner made the last of his three decisions: the paid-plan prices. He **ratified the existing three-tier
+structure** (Starter / Standard / Growth and what each grants — option A of the three I offered) and **set the
+prices himself.**
+
+- **The RBI check that shaped it.** He first gave ₹10,000 / ₹17,500 / ₹25,000. I checked before wiring: a UPI
+  Autopay / e-mandate recurring debit runs automatically (no monthly OTP) only **up to ₹15,000** (verified against
+  the RBI 2026 e-mandate framework; the ₹1 lakh limit is category-specific — insurance / mutual funds / card
+  bills — and does not cover a software subscription). Two of his prices exceeded that, so I put the consequence
+  to him with two options; he chose **all three fully auto-debited, no monthly OTP**, and set the final prices.
+- **Final prices (all ≤ ₹15,000, auto-debit with no OTP):** **Starter ₹10,000 · Standard ₹13,000 · Growth ₹15,000.**
+- **Wired:** `services/api/src/main.ts` `PROPOSED_PLANS` (paise 1_000_000 / 1_300_000 / 1_500_000; **grants and tier
+  names unchanged** — this changed prices only, per the owner ratifying the existing structure); the marketing site
+  `apps/site/web/index.html` and `subscribe.html` (displayed prices + the "up to ₹15,000, no monthly OTP" wording,
+  since Growth now sits exactly at the ceiling); `tests/guardrails/the-commercial-site-is-honest.test.ts` (expected
+  prices) and `tests/integration/subscription-billing.test.ts` (simulated charge amount) updated to match.
+- **OA-12 closed** on its commercial-pricing half (register updated). Metered-ceiling billing and
+  suspend-for-non-payment stay a later R8 commercialisation concern — not needed for the single-tenant pilot.
+- No new module rung: this is pricing configuration over the already-wired billing surface (M36-FR-01 /
+  subscription billing), not new maturity. Full gate green.
+
+---
+
 ## Owner decisions recorded + retention default schedule wired (23 September 2026, owner-directed)
 
 The owner unblocked three of his open decision items. This entry records all three in writing (project
