@@ -5,6 +5,34 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M31 (Documents/numbering) re-rated PARTIALLY_WIRED → WIRED — honest under-report correction (23 September 2026)
+
+Continuing "keep building", I went to build "batch re-issue" (which I'd named as M31's remaining piece) and
+found it is **not a roadmap requirement** — M31's requirements are FR-01…FR-04, none of which is batch
+re-issue. On checking those four, **all are live on the API and integration-tested**, so M31 was **under-rated**
+at PARTIALLY_WIRED. This is a rating **correction**, not a new feature.
+
+- **FR-01** versioned template register + issue/reproduce (frozen content) + retention proposal + disposal
+  execution — `documents-templates.test.ts`, `document-issue.test.ts`, `documents-retention.test.ts`.
+- **FR-02** receipt/invoice/PO/GRN/statement generation from committed records with gap-free numbering —
+  `document-issue.test.ts` + `packages/receipt`.
+- **FR-03** consent-safe send guard, blocked-on-breach — `notification-guard.test.ts`.
+- **FR-04** notification retry/dead-letter queue + suppression + template approval + budget —
+  `notification-queue.test.ts`.
+
+The **only** remainder is the message **channel transport** (SMS/WhatsApp/email/push provider integration) —
+a deployment/worker step, the **same standard M32 was rated WIRED under**. "Batch re-issue" is not a roadmap
+FR and does not hold a module below WIRED; if the owner wants a batch-reissue capability, it would need to be
+named as a real requirement first (I did not invent it).
+
+- **Re-rate (honest, +0.2 pts):** `docs/completion-status.json` M31 → WIRED; the module ladder rung + the
+  module-level summary in `docs/traceability.md` (now **5 WIRED · 12 PARTIALLY WIRED**); `EVIDENCE.M31` added
+  to `tests/guardrails/completion-ladder-has-evidence.test.ts` (→ `documents-retention.test.ts`). Headline
+  **55.2 → 55.4%** (previous 55.2%). Held at WIRED, not higher: no single operator screen drives the whole
+  documents surface, and the transport is a deployment step.
+
+---
+
 ## M31 document-retention disposal execution wired (23 September 2026, owner-directed "keep building")
 
 The owner chose "keep building features (I choose)". First increment: the **disposal EXECUTION** half of
