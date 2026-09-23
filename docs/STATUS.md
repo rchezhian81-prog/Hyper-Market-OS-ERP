@@ -5,6 +5,35 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M18-FR-02 backorder of the un-promised remainder wired on the cloud OMS (23 September 2026, "keep building")
+
+A promise reserves what the shelf allows and tells the customer before they pay — but until now the
+**un-promised remainder simply vanished**. A customer who ordered 5 bags and could be given 3 left the
+promise call knowing they were short, and nothing in the system recorded the 2 that were owed. That is
+exactly the silent gap P-08 exists to close, and M18-FR-02 names it: "a partial order fulfils what's
+available and **backorders the rest per policy**".
+
+- **`services/orders/src/index.ts`** — `planBackorder` (pure engine): the shortfall is what was
+  **ORDERED minus what is actually RESERVED** for the order — a figure already on the ledger, never a
+  fresh availability guess, so recording it **can never oversell**. A line held in full has no
+  shortfall; a line held in part or not at all is backordered for exactly the gap. Two new routes:
+  `POST /v1/orders/:orderId/backorder` (records the shortfall append-only as `OrderBackordered`,
+  returns `nothing_to_backorder` when the order is held in full, refuses a second backorder and a
+  backorder on a finished order) and `GET /v1/orders/:orderId/backorders` (reads it back — the
+  exception is visible, never buried). Write gated `order.backorder.manage`, read gated `order.read`.
+- **`services/api/src/adapters.ts`** — `recordBackorder`/`orderBackorders` over the order stream
+  (`OrderBackordered`, idempotent on the order id — the shortfall is one fact, never a second
+  backorder on replay); `order.backorder.manage` granted to Owner + Store manager in `roles.ts`.
+- **Tests:** `tests/unit/orders-backorder.test.ts` (5: full/partial/zero/mixed/over-reserved) +
+  `tests/integration/orders-backorder.test.ts` (6: partial→recorded+read, zero→whole-order,
+  full→records nothing, append-only refusal, unknown/finished refusal, RBAC gating) — through the
+  **real** pipeline, real RBAC, stock projected from the real inventory ledger.
+- **M18 stays PARTIALLY_WIRED (honest, no headline change):** the module rung is governed by its
+  weakest FR, and routing (FR-03) + refund PROCESSING are still engine-only. This is a real FR-02
+  deepening, not a rung change; the headline number does not move.
+
+---
+
 ## M31 (Documents/numbering) re-rated PARTIALLY_WIRED → WIRED — honest under-report correction (23 September 2026)
 
 Continuing "keep building", I went to build "batch re-issue" (which I'd named as M31's remaining piece) and

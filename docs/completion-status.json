@@ -97,7 +97,7 @@
     {
       "id": "M18",
       "label": "PARTIALLY_WIRED",
-      "evidence": "RTM: lifecycle/reservation/cancel/substitution/channel-reconcile wired; multi-line amendment batching follow-on"
+      "evidence": "RTM: lifecycle/reservation/cancel/substitution/channel-reconcile wired; backorder of the un-promised remainder now wired (M18-FR-02): POST /v1/orders/:id/backorder records ORDERED-minus-RESERVED shortfall append-only as OrderBackordered so recording it can never oversell, returns nothing_to_backorder when the order is held in full, refuses a second backorder (append-only, one per order) and a backorder on a finished order, GET /v1/orders/:id/backorders reads it back, gated order.backorder.manage (write) / order.read (read) — closes the P-08 gap where a partial promise dropped the remainder silently; planBackorder engine in services/orders/src/index.ts, OrderBackordered fold in services/api/src/adapters.ts, tests/unit/orders-backorder.test.ts + tests/integration/orders-backorder.test.ts. Routing FR-03 and refund PROCESSING still engine-only; multi-line amendment batching follow-on. STAYS PARTIALLY_WIRED: the module rung is governed by its weakest FR (FR-03 routing is owner-gated), so this is a real FR-02 deepening, not a rung change"
     },
     {
       "id": "M19",

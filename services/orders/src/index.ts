@@ -160,6 +160,61 @@ export interface StoredSubstitution {
   readonly at: string;
 }
 
+/** One line of an order that could not be reserved in full — ordered more than was held (M18-FR-02). */
+export interface BackorderLine {
+  readonly productId: string;
+  readonly requestedMinor: number;
+  readonly reservedMinor: number;
+  readonly shortfallMinor: number;
+}
+
+export type BackorderOutcome = 'backordered' | 'nothing_to_backorder';
+
+/** The un-promised remainder of an order — what a partial promise could NOT hold. */
+export interface BackorderPlan {
+  readonly orderId: string;
+  readonly outcome: BackorderOutcome;
+  readonly lines: readonly BackorderLine[];
+  readonly detail: string;
+}
+
+/** A backorder recorded against an order, append-only (M18-FR-02) — the shortfall is recorded once. */
+export interface StoredBackorder {
+  readonly orderId: string;
+  readonly lines: readonly BackorderLine[];
+  readonly at: string;
+}
+
+/**
+ * Work out the un-promised remainder of an order and record it, so a partial promise is a visible
+ * exception rather than a silently dropped line (M18-FR-02 "backorders the rest per policy"; P-08).
+ *
+ * The shortfall is what was ORDERED minus what is actually RESERVED for the order — a figure already
+ * on the ledger, never a fresh availability guess, so recording a backorder can never oversell. A
+ * line whose whole quantity is held has no shortfall and is not backordered. (The reservation model
+ * holds one reservation per product per order, so a product appears on at most one line here.)
+ */
+export function planBackorder(input: {
+  readonly orderId: string;
+  readonly lines: readonly OrderLine[];
+  readonly reserved: ReadonlyMap<string, number>;
+}): BackorderPlan {
+  const lines = input.lines.flatMap((l): BackorderLine[] => {
+    const reservedMinor = input.reserved.get(l.productId) ?? 0;
+    const shortfallMinor = Math.max(0, l.quantityMinor - reservedMinor);
+    return shortfallMinor > 0
+      ? [{ productId: l.productId, requestedMinor: l.quantityMinor, reservedMinor, shortfallMinor }]
+      : [];
+  });
+  const outcome: BackorderOutcome = lines.length > 0 ? 'backordered' : 'nothing_to_backorder';
+  return {
+    orderId: input.orderId, outcome, lines,
+    detail: outcome === 'backordered'
+      ? `${input.orderId}: ${lines.length} line(s) short of stock, recorded as a backorder rather than dropped`
+      : `${input.orderId}: everything ordered is held — nothing to backorder`,
+  };
+}
+
 export interface OrdersDeps {
   readonly onHand: (tenantId: string, locationId: string) => Promise<ReadonlyMap<string, number>> | ReadonlyMap<string, number>;
   readonly outstanding: (tenantId: string, locationId: string) => Promise<readonly Reservation[]> | readonly Reservation[];
@@ -175,6 +230,9 @@ export interface OrdersDeps {
   // Substitution (M18-FR-04): record the picker's substitution decision on a line, append-only.
   readonly recordSubstitution: (tenantId: string, sub: StoredSubstitution) => Promise<void> | void;
   readonly orderSubstitutions: (tenantId: string, orderId: string) => Promise<readonly StoredSubstitution[]> | readonly StoredSubstitution[];
+  // Backorder (M18-FR-02): record the un-promised remainder of an order, append-only, and read it back.
+  readonly recordBackorder: (tenantId: string, bo: StoredBackorder) => Promise<void> | void;
+  readonly orderBackorders: (tenantId: string, orderId: string) => Promise<readonly StoredBackorder[]> | readonly StoredBackorder[];
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -389,6 +447,77 @@ export function ordersRoutes(deps: OrdersDeps): readonly Route[] {
             refundDue: result.refundMinor > 0, tellTheCustomer: result.tellTheCustomer,
           },
         };
+      },
+    },
+    // Record the un-promised remainder of an order as a backorder (M18-FR-02 "backorders the rest per
+    // policy"). The shortfall is what was ORDERED minus what is actually RESERVED for the order — a fact
+    // already on the ledger, so recording it can never oversell. A fully-held order has nothing to
+    // backorder (200, records nothing). Append-only and idempotent on the order id: the shortfall is
+    // recorded once; a re-run once a backorder exists is refused, and a backorder on a finished order is
+    // refused. P-08: a partial promise must leave a VISIBLE exception, never a silently dropped line.
+    {
+      api: 'API-07', method: 'POST', path: '/v1/orders/:orderId/backorder',
+      permission: 'order.backorder.manage', idempotent: true,
+      handler: async (ctx) => {
+        const orderId = ctx.params['orderId'] ?? '';
+        const current = await deps.orderState(ctx.tenantId, orderId);
+        if (current === undefined) {
+          throw apiError(404, {
+            code: 'order_unknown',
+            whatHappened: `No order "${orderId}" has been placed.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Check the order reference. Nothing was changed.',
+          });
+        }
+        if (isTerminal(current.state)) {
+          throw apiError(409, {
+            code: 'order_finished',
+            whatHappened: `Order "${orderId}" is ${current.state} — a backorder cannot be recorded against a finished order.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was changed. A change to a finished order is a new order.',
+          });
+        }
+        const already = await deps.orderBackorders(ctx.tenantId, orderId);
+        if (already.length > 0) {
+          throw apiError(409, {
+            code: 'already_backordered',
+            whatHappened: `Order "${orderId}" already has a recorded backorder — the shortfall is recorded once (append-only).`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was changed. Read the backorder, or place a new order for more.',
+          });
+        }
+        // Ordered minus actually-reserved — never a fresh availability check, so this cannot oversell.
+        const reservations = await deps.orderReservations(ctx.tenantId, orderId, current.locationId);
+        const reserved = new Map<string, number>();
+        for (const r of reservations) reserved.set(r.productId, (reserved.get(r.productId) ?? 0) + r.quantityMinor);
+        const plan = planBackorder({ orderId, lines: current.lines, reserved });
+        if (plan.outcome === 'nothing_to_backorder') {
+          // Everything ordered is held: no exception to record, and no error — a truthful "nothing owed".
+          return { status: 200, body: plan };
+        }
+        const at = deps.now();
+        await deps.recordBackorder(ctx.tenantId, { orderId, lines: plan.lines, at });
+        return { status: 201, body: { ...plan, at } };
+      },
+    },
+    // Read an order's backorders — the visible exception a partial promise leaves (M18-FR-02, P-08).
+    // Registered as a deeper path than `/v1/orders/:orderId`, so it is never captured as an order id.
+    {
+      api: 'API-07', method: 'GET', path: '/v1/orders/:orderId/backorders',
+      permission: 'order.read',
+      handler: async (ctx) => {
+        const orderId = ctx.params['orderId'] ?? '';
+        const state = await deps.orderState(ctx.tenantId, orderId);
+        if (state === undefined) {
+          throw apiError(404, {
+            code: 'order_unknown',
+            whatHappened: `No order "${orderId}" has been placed.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Check the order reference. Nothing was changed.',
+          });
+        }
+        const backorders = await deps.orderBackorders(ctx.tenantId, orderId);
+        return { status: 200, body: { orderId, backorders } };
       },
     },
     // Reconcile a sales channel against our own ledger, in BOTH directions (M18-FR-04). The two failures are

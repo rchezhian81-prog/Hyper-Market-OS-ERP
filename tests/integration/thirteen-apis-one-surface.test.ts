@@ -58,7 +58,7 @@ const ALL: readonly Route[] = [
     openExceptions: () => [], now: () => NOW,
   }),
   ...customerRoutes({ consentRecords: () => [], appendConsent: () => {}, pointsBalance: () => undefined, pointsMovements: () => [], recordPointsMovement: () => {}, now: () => NOW }),
-  ...ordersRoutes({ onHand: () => new Map(), outstanding: () => [], holdReservations: () => {}, holdMinutes: 60, now: () => NOW, recordPlaced: () => {}, orderState: () => undefined, orderReservations: () => [], recordTransition: () => {}, releaseReservations: () => {}, recordSubstitution: () => {}, orderSubstitutions: () => [] }),
+  ...ordersRoutes({ onHand: () => new Map(), outstanding: () => [], holdReservations: () => {}, holdMinutes: 60, now: () => NOW, recordPlaced: () => {}, orderState: () => undefined, orderReservations: () => [], recordTransition: () => {}, releaseReservations: () => {}, recordSubstitution: () => {}, orderSubstitutions: () => [], recordBackorder: () => {}, orderBackorders: () => [] }),
   ...fulfilmentRoutes({ appendAttempt: () => {}, attempts: () => [], assigned: () => [], deliveryState: () => [], recordDeliveryTransition: () => {}, now: () => NOW }),
   ...financeRoutes({
     periodStates: () => new Map(), nextOpenPeriod: () => '2026-08', appendJournal: () => {},
