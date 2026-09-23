@@ -5,6 +5,52 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Owner decisions recorded + retention default schedule wired (23 September 2026, owner-directed)
+
+The owner unblocked three of his open decision items. This entry records all three in writing (project
+discipline: never treat silence as approval, capture decisions) and ships the first as a tested increment.
+
+**1. Record-retention schedule — DONE (owner: "adopt my proposed schedule").** The owner-approved DEFAULT
+audit-retention schedule is now wired and tested:
+- **`packages/audit/src/retention-schedule.ts`** — `DEFAULT_AUDIT_RETENTION` names a policy for every audit
+  object type the M34 producers actually seal (`user` role-grants, `secret` credential lifecycle, `product`
+  price-change/stock write-off, `purchase-order`, `sale` refunds, `settlement-batch`). **Every class is
+  `statutory: true`** — hard rule #6, audit evidence never ages out of the retention route — with the owner's
+  **8-year** minimum-keep floor and a plain-English basis for an auditor. Plus `defaultRetentionPolicyFor()`
+  and `retentionPoliciesOrDefault()`.
+- **`services/finance/src/legal-holds.ts`** — both `POST /v1/audit/retention/plan` and `…/plan-produced` now
+  **fall back to the default schedule when `policies[]` is omitted** (a *malformed* one is still rejected 400).
+  Before, omitting policies classified the whole trail as `no_policy` ("kept, because silence"); now it comes
+  back **`statutory` — never deleted**, which is the truth. A legal hold still outranks everything.
+- **Deliberately scoped:** it does NOT touch the statute-accurate finance engine (`statutory-retention.ts`:
+  GST 72m / income-tax 72m / Companies Act 96m, longest wins) which serves financial RECORDS — a different body
+  of evidence. The **customer-personal-data DPDP clock (anonymise 24 months after last activity)** is a separate
+  follow-on on the data-rights engine (`packages/customer/src/data-rights.ts`), noted for a later increment.
+- **Tests:** `tests/unit/audit-retention-schedule.test.ts` (10) + two new cases in
+  `tests/integration/audit-trail-store.test.ts` (omit → statutory; malformed → 400). Deepens **M34-FR-02**
+  (already WIRED — rung unchanged, this is a correctness/clarity gain, not a re-rate). Traceability row updated.
+
+**2. Store-credit cap — RECORDED (owner: "set the limit manually by owner").** Confirmed the correct posture is
+already in place: **no hard-coded default**; the cap stays **fail-safe unset** (store-credit refunds unavailable
+until the owner sets it) and is owner-set at runtime via `POST /v1/pos/store-credit-cap` (owner-only
+`pos.storecredit.cap.set`). No code change needed. A small owner-facing screen to set it is a possible follow-on.
+
+**3. Paid-plan tiers (OA-12) — PARKED with concrete options; NOT guessed.** The owner approved "3 tiers as
+proposed," but on going to wire it I found a **coherent, LIVE 3-tier catalogue already exists** and is consistent
+across code (`services/api/src/main.ts` `PROPOSED_PLANS`), the marketing site (`apps/site/web/index.html` +
+`subscribe.html`), the billing integration test, and `the-commercial-site-is-honest` guardrail: **Starter ₹2,000**
+(core POS/stock/GST + loyalty), **Standard ₹5,000** (+ home delivery), **Growth ₹12,000** (+ customer app + B2B),
+all under the ₹15,000 auto-debit ceiling. The grouping I had sketched to the owner (Starter with no optional
+features; customer-app mid-tier; perishable departments bundled into the top tier; renamed "Premium") **differs**
+from this live catalogue, and my sketch was made believing no catalogue existed. Because a wrong guess would make
+the live marketing site mis-sell, I did **not** change it on assumption. Recorded in `docs/OWNER-ACTION-REGISTER.md`
+(OA-12) with three concrete options: **(A)** ratify the live catalogue as-is (smallest); **(B)** adopt the sketch
+and rewrite the marketing site to match (customer-facing change); **(C)** a hybrid the owner specifies. Prices stay
+the owner's to set in every case. **Low urgency** — SRE runs single-tenant with everything enabled; plans matter
+only when selling to other retailers.
+
+---
+
 ## M24 supplier portal screen — slice 3: browser e2e → M24 E2E_VERIFIED (23 September 2026, owner-directed)
 
 The third and last slice — the served supplier portal is now proven end to end in a **real headless browser**,

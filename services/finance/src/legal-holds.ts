@@ -27,6 +27,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
   planRetention, liftHold, buildEvidencePack, AuditTrail, InMemoryAuditStore,
+  retentionPoliciesOrDefault,
   type LegalHold, type RetentionPolicy, type AuditRecord,
 } from '../../../packages/audit/src/index';
 
@@ -192,19 +193,21 @@ export function legalHoldsRoutes(deps: LegalHoldsDeps): readonly Route[] {
       // PLAN — what may be reviewed for deletion and what is frozen. Runs the tested `planRetention` over
       // the supplied records + policies AND the tenant's stored holds; a held record past its retention
       // date comes back `legal_hold`, never eligible. Deletes nothing (a POST because the records are a
-      // body; it writes nothing).
+      // body; it writes nothing). `policies` is OPTIONAL: omit it and the owner-approved default schedule
+      // (DEFAULT_AUDIT_RETENTION — every audit class statutory, hard rule #6) is used; send a MALFORMED
+      // one and it is still rejected (a bad policy set is a mistake to surface, not to paper over).
       api: 'API-09', method: 'POST', path: '/v1/audit/retention/plan',
       permission: 'audit.retention.read', idempotent: true,
       handler: async (ctx) => {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         const records = readAll(b['records'], readRecord);
-        const policies = readAll(b['policies'], readPolicy);
+        const policies = retentionPoliciesOrDefault(readAll(b['policies'], readPolicy), b['policies'] !== undefined);
         if (records === undefined || policies === undefined || !isStr(b['asOf'])) {
           throw apiError(400, {
             code: 'not_readable_as_a_retention_plan',
-            whatHappened: 'A retention plan needs { records[] } (each with sequence, objectType, objectId, at, actorId), { policies[] } (objectType, retainDays, optional statutory/basis) and { asOf } (ISO date).',
+            whatHappened: 'A retention plan needs { records[] } (each with sequence, objectType, objectId, at, actorId) and { asOf } (ISO date). { policies[] } (objectType, retainDays, optional statutory/basis) is OPTIONAL — omit it for the owner-approved default schedule; only a malformed policies[] is rejected.',
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Send the audit records to assess, the retention policies, and the date to assess against. A plan reads; it deletes nothing.',
+            nextSafeAction: 'Send the audit records to assess and the date to assess against. Add policies[] only to override the default schedule. A plan reads; it deletes nothing.',
           });
         }
         const holds = await deps.holds(ctx.tenantId);
@@ -237,20 +240,22 @@ export function legalHoldsRoutes(deps: LegalHoldsDeps): readonly Route[] {
     },
     {
       // PLAN over the PRODUCED trail — the same `planRetention`, but run over the trail the system actually
-      // recorded (M34-FR-01) rather than records handed in. Policies are still supplied config; a class
-      // with no policy comes back `no_policy` (silence means keep). Held records past retention come back
-      // `legal_hold`. Deletes nothing. This is the produce->retain join for FR-02.
+      // recorded (M34-FR-01) rather than records handed in. `policies` is OPTIONAL: omit it and the
+      // owner-approved default schedule (every audit class statutory, hard rule #6) is used, so the
+      // produced trail is classified rather than coming back all `no_policy`; a malformed policies[] is
+      // still rejected. Held records past retention come back `legal_hold`. Deletes nothing. This is the
+      // produce->retain join for FR-02.
       api: 'API-09', method: 'POST', path: '/v1/audit/retention/plan-produced',
       permission: 'audit.retention.read', idempotent: true,
       handler: async (ctx) => {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        const policies = readAll(b['policies'], readPolicy);
+        const policies = retentionPoliciesOrDefault(readAll(b['policies'], readPolicy), b['policies'] !== undefined);
         if (policies === undefined || !isStr(b['asOf'])) {
           throw apiError(400, {
             code: 'not_readable_as_a_retention_plan',
-            whatHappened: 'A produced-trail retention plan needs { policies[] } (objectType, retainDays, optional statutory/basis) and { asOf } (ISO date). The records are the tenant\'s own produced audit trail — not sent in.',
+            whatHappened: 'A produced-trail retention plan needs { asOf } (ISO date); { policies[] } (objectType, retainDays, optional statutory/basis) is OPTIONAL — omit it for the owner-approved default schedule. The records are the tenant\'s own produced audit trail — not sent in.',
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Send the retention policies and the date to assess against. A plan reads; it deletes nothing.',
+            nextSafeAction: 'Send the date to assess against. Add policies[] only to override the default schedule. A plan reads; it deletes nothing.',
           });
         }
         const records = (await deps.producedRecords?.(ctx.tenantId)) ?? [];
