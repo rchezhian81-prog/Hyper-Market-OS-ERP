@@ -20,7 +20,7 @@ const subscribe = (h: ReturnType<typeof apiHarness>, key = 'sub-1') =>
   h.request({ method: 'POST', path: '/v1/platform/subscription', userId: OWNER, tenantId: T, idempotencyKey: key, body: { planId: 'standard', rail: 'upi_autopay' } });
 
 const chargeWebhook = (h: ReturnType<typeof apiHarness>, key: string, outcome: 'succeeded' | 'failed', chargeRef: string) => {
-  const event = { tenantId: T, subscriptionRef: 'sbx', outcome, chargeRef, amountMinor: 500_000, at: '2026-10-05T00:00:00.000Z' };
+  const event = { tenantId: T, subscriptionRef: 'sbx', outcome, chargeRef, amountMinor: 1_300_000, at: '2026-10-05T00:00:00.000Z' };
   return h.request({
     method: 'POST', path: '/v1/platform/billing/webhook', userId: OWNER, tenantId: T,
     idempotencyKey: key, body: { event, signature: sandboxSignature(JSON.stringify(event)) },
@@ -78,7 +78,7 @@ describe('WP5 subscription billing over the real surface', () => {
     expect(bodyOf(ok).applied).toBe(true);
     expect(bodyOf(ok).dunning.state).toBe('current');
 
-    const event = { tenantId: T, subscriptionRef: 'sbx', outcome: 'succeeded', chargeRef: 'chg-2', amountMinor: 500_000, at: '2026-10-05T00:00:00.000Z' };
+    const event = { tenantId: T, subscriptionRef: 'sbx', outcome: 'succeeded', chargeRef: 'chg-2', amountMinor: 1_300_000, at: '2026-10-05T00:00:00.000Z' };
     const forged = await h.request({ method: 'POST', path: '/v1/platform/billing/webhook', userId: OWNER, tenantId: T, idempotencyKey: 'wh-forge', body: { event, signature: 'sandbox:forged' } });
     expect(forged.status).toBe(400);
   });
