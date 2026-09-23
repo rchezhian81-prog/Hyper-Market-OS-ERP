@@ -150,6 +150,29 @@ describe('FR-02 over the PRODUCED trail — export & retention run on what the s
     expect(plan.recordsAssessed).toBe(1);
     expect(plan.decisions.every((d) => d.outcome === 'legal_hold')).toBe(true); // held beats retention
   });
+
+  it('OMITTING policies uses the owner-approved default schedule — the trail is statutory, not "no policy"', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await register(h, 'u-owner', 'pay', secret(), 'k1'); // one sealed 'secret' record
+
+    // No policies[] field at all. Before the default schedule, this classified everything as
+    // no_policy ("kept, because silence"); now the trail comes back statutory — never deletable.
+    const plan = (await planProduced(h, 'u-owner', { asOf: '2100-01-01T00:00:00.000Z' })).body as { decisions: { outcome: string }[]; statutoryCount: number; noPolicyCount: number };
+    expect(plan.decisions.every((d) => d.outcome === 'statutory')).toBe(true);
+    expect(plan.statutoryCount).toBe(1);
+    expect(plan.noPolicyCount).toBe(0);
+  });
+
+  it('a MALFORMED policies[] is still rejected (400) — a bad policy set is surfaced, never papered over', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await register(h, 'u-owner', 'pay', secret(), 'k1');
+
+    // policies field present but unreadable (missing retainDays) → 400, NOT a silent fallback.
+    const bad = await planProduced(h, 'u-owner', { policies: [{ objectType: 'secret' }], asOf: '2100-01-01T00:00:00.000Z' });
+    expect(bad.status).toBe(400);
+  });
 });
 
 describe('the audit trail records a purchase — a placed order (M34 slice 7, hard rule #5 coverage)', () => {
