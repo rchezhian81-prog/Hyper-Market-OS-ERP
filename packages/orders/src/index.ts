@@ -19,6 +19,9 @@
 //     swap or a short-pick is a refund (prepaid) or a smaller total to collect (COD/pay-at-store);
 //     a dearer swap is capped at the original price unless the customer EXPLICITLY approved paying
 //     more. Composes `applySubstitution`; basket promo/tax/loyalty recompute is the next slice.
+//   • `substitution-exceptions.ts` (M19-FR-01) — the OWNED, VALUED worklist of swaps a person must act
+//     on (refund due, collect adjustment, above-cap charge, policy short-pick), worst first, so a swap
+//     that owes money or left the customer short is never silent (P-08).
 //
 // Pure and deterministic. Grows one reviewed, tested unit at a time.
 
@@ -28,3 +31,4 @@ export * from './fulfilment-plan';
 export * from './amendments';
 export * from './substitution-policy';
 export * from './substitution-money';
+export * from './substitution-exceptions';
