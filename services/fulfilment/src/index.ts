@@ -177,8 +177,15 @@ export interface FulfilmentDeps {
   readonly now: () => string;
 }
 
-/** The five lifecycle events the tested state machine accepts, for validating the caller's input. */
-const DELIVERY_EVENTS: readonly DeliveryEvent[] = ['depart', 'deliver', 'fail', 'reattempt', 'rto'];
+/** The lifecycle events the tested state machine accepts, for validating the caller's input. `pick_up`
+ *  (parcels into the driver's custody) and `arrive` (driver at the door, before the outcome) are the
+ *  fuller path; `deliver_partial` records a partial delivery. The engine is the authority on which are
+ *  legal from the order's current state — this list only rejects a word the machine has never heard. */
+const DELIVERY_EVENTS: readonly DeliveryEvent[] = ['pick_up', 'depart', 'arrive', 'deliver', 'deliver_partial', 'fail', 'reattempt', 'rto'];
+
+/** The events that hand goods to the customer and therefore require proof (photo/OTP/signature) before
+ *  the state can move — a full delivery or a partial one (hard rule #6: evidence and state never drift). */
+const DELIVERS_GOODS: ReadonlySet<DeliveryEvent> = new Set<DeliveryEvent>(['deliver', 'deliver_partial']);
 
 /** The current state of an order from its append-only history — the machine's start (`assigned`) until it moves. */
 function currentDeliveryState(history: readonly DeliveryStateRecord[]): DeliveryState {
@@ -278,10 +285,13 @@ export function fulfilmentRoutes(deps: FulfilmentDeps): readonly Route[] {
     },
     {
       // Move ONE order through its delivery lifecycle (M19-FR-03) — the full tested state machine made durable.
-      // A stop leaves `assigned` only by `depart`, is `deliver`ed (with PROOF — a delivery marked delivered with
-      // no photo/OTP/signature cannot be defended when the customer says it never arrived, hard rule #6) or
-      // `fail`ed, and a failed stop is `reattempt`ed or returned to origin (`rto`) — never a silence. The machine
-      // refuses an out-of-order step (409) and a proofless delivery (422) BEFORE anything is written, and the
+      // The lifecycle: assigned → picked_up → out_for_delivery → attempted → delivered / partially_delivered /
+      // failed, and a failed stop is `reattempt`ed or returned to origin (`rto`) — never a silence. Handing goods
+      // over — a full `deliver` OR a `deliver_partial` — needs PROOF (a hand-over with no photo/OTP/signature
+      // cannot be defended when the customer says it never arrived, hard rule #6). `pick_up` (parcels into the
+      // driver's custody) and `arrive` (at the door, before the outcome) are recordable but optional: offline a
+      // driver may go straight to `depart`/`deliver` in one tap, so those direct steps stay valid. The machine
+      // refuses an out-of-order step (409) and a proofless hand-over (422) BEFORE anything is written, and the
       // step is recorded append-only in the driver's own name. The single-attempt route above stays for the
       // driver's per-run log; this is the order's own lifecycle, which a dispatcher reads to answer "where is it".
       api: 'API-08', method: 'POST', path: '/v1/delivery/orders/:orderId/transition',
@@ -293,7 +303,7 @@ export function fulfilmentRoutes(deps: FulfilmentDeps): readonly Route[] {
         if (typeof event !== 'string' || !DELIVERY_EVENTS.includes(event as DeliveryEvent)) {
           throw apiError(400, {
             code: 'not_readable_as_a_delivery_transition',
-            whatHappened: 'A delivery transition needs { "event": "depart" | "deliver" | "fail" | "reattempt" | "rto" } (and a proof on deliver).',
+            whatHappened: 'A delivery transition needs { "event": "pick_up" | "depart" | "arrive" | "deliver" | "deliver_partial" | "fail" | "reattempt" | "rto" } (and a proof on deliver / deliver_partial).',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send the lifecycle event to record. Nothing was changed.',
           });
@@ -301,24 +311,24 @@ export function fulfilmentRoutes(deps: FulfilmentDeps): readonly Route[] {
         const ev = event as DeliveryEvent;
         const from = currentDeliveryState(await deps.deliveryState(ctx.tenantId, orderId));
         const proof = readProof(b['proof']);
-        // Proof is required to mark an order delivered — checked before the transition, so a proofless
-        // "delivered" never even reaches the state machine (hard rule #6).
-        if (ev === 'deliver') {
+        // Proof is required whenever goods are handed over — a full OR a partial delivery — checked before
+        // the transition, so a proofless hand-over never even reaches the state machine (hard rule #6).
+        if (DELIVERS_GOODS.has(ev)) {
           try {
             assertProofOfDelivery(proof);
           } catch {
             throw apiError(422, {
               code: 'delivered_without_proof',
-              whatHappened: 'a delivery marked delivered with no proof (photo, OTP or signature) cannot be defended when the customer says it never arrived',
+              whatHappened: 'a delivery (full or partial) recorded with no proof (photo, OTP or signature) cannot be defended when the customer says the goods never arrived',
               wasItSaved: 'not_saved',
-              nextSafeAction: 'Capture a photo/OTP/signature reference and send { "event": "deliver", "proof": { "kind": "otp", "ref": "…" } } again. The order still shows as out for delivery.',
+              nextSafeAction: 'Capture a photo/OTP/signature reference and send { "event": "deliver" | "deliver_partial", "proof": { "kind": "otp", "ref": "…" } } again. The order has not moved.',
             });
           }
         }
         if (!canTransitionDelivery(from, ev)) {
           throw apiError(409, {
             code: 'invalid_delivery_transition',
-            whatHappened: `a delivery cannot "${ev}" from "${from}" — the lifecycle is assigned → out_for_delivery → delivered/failed, and a failed stop is reattempted or returned to origin`,
+            whatHappened: `a delivery cannot "${ev}" from "${from}" — the lifecycle is assigned → picked_up → out_for_delivery → attempted → delivered/partially_delivered/failed, and a failed stop is reattempted or returned to origin`,
             wasItSaved: 'not_saved',
             nextSafeAction: 'Read the order\'s current state (GET /v1/delivery/orders/:orderId) and send a step it allows. Nothing was changed.',
           });
@@ -326,7 +336,7 @@ export function fulfilmentRoutes(deps: FulfilmentDeps): readonly Route[] {
         const to = transitionDelivery(from, ev);
         const record: DeliveryStateRecord = {
           orderId, from, to, event: ev, by: ctx.userId, at: deps.now(),
-          ...(ev === 'deliver' && proof !== undefined ? { proofRef: proof.ref } : {}),
+          ...(DELIVERS_GOODS.has(ev) && proof !== undefined ? { proofRef: proof.ref } : {}),
         };
         await deps.recordDeliveryTransition(ctx.tenantId, record);
         return { status: 200, body: { orderId, state: to, final: isTerminalDelivery(to) } };
