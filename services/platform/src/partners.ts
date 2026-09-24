@@ -20,12 +20,12 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
-  checkPartnerAccess, certificationStatus,
+  checkPartnerAccess, certificationStatus, seedSandbox,
   type PartnerCredential, type PartnerAccessDecision, type ApiVersion, type Environment,
-  type Certification, type CertificationStatus,
+  type Certification, type CertificationStatus, type SandboxTenant, type SandboxSeedResult,
 } from '../../../packages/platform/src/partner';
 
-export type { PartnerCredential, Certification } from '../../../packages/platform/src/partner';
+export type { PartnerCredential, Certification, SandboxTenant } from '../../../packages/platform/src/partner';
 
 const ENVIRONMENTS: readonly Environment[] = ['sandbox', 'production'];
 const VERSION_STATUSES: readonly ApiVersion['status'][] = ['current', 'supported', 'deprecated', 'retired'];
@@ -81,8 +81,16 @@ export interface PartnerDeps {
   readonly certification: (tenantId: string, partnerId: string, connectorId: string) => Promise<Certification | undefined> | Certification | undefined;
   /** Append a connector certification, keyed latest-wins per partner+connector. Idempotent on the key. */
   readonly recordCertification: (tenantId: string, certification: Certification) => Promise<void> | void;
+  /** The registered sandbox tenant (latest-wins on its own id), or undefined. */
+  readonly sandbox: (tenantId: string, sandboxId: string) => Promise<SandboxTenant | undefined> | SandboxTenant | undefined;
+  /** Register a sandbox tenant, append-only. Idempotent on the sandbox id + expiry. */
+  readonly recordSandbox: (tenantId: string, sandbox: SandboxTenant) => Promise<void> | void;
   readonly now: () => string;
 }
+
+/** One record offered for a sandbox seed — its id and whether it was generated or copied from production. */
+const isSeedRecord = (v: unknown): v is { readonly recordId: string; readonly origin: 'generated' | 'production' } =>
+  isObj(v) && isStr(v['recordId']) && (v['origin'] === 'generated' || v['origin'] === 'production');
 
 export function partnerRoutes(deps: PartnerDeps): readonly Route[] {
   return [
@@ -217,6 +225,60 @@ export function partnerRoutes(deps: PartnerDeps): readonly Route[] {
           today: deps.now().slice(0, 10),
         });
         return { status: 200, body: { ...status, asAt: deps.now() } };
+      },
+    },
+    {
+      // Register a partner sandbox tenant — a synthetic-data-only space with an expiry. A sandbox holds
+      // generated data and NOTHING else (hard rule #7), so syntheticDataOnly is always true, never a body flag.
+      api: 'API-11', method: 'POST', path: '/v1/platform/partners/sandboxes/:sandboxId',
+      permission: 'platform.partner.manage', idempotent: true,
+      handler: async (ctx) => {
+        const sandboxId = ctx.params['sandboxId'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (!isStr(b['partnerId']) || !isDate(b['createdOn']) || !isDate(b['expiresOn'])) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_sandbox',
+            whatHappened: 'A sandbox needs { partnerId, createdOn (YYYY-MM-DD), expiresOn (YYYY-MM-DD) }. A sandbox holds generated data only.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the sandbox fields. Nothing was stored.',
+          });
+        }
+        const sandbox: SandboxTenant = {
+          tenantId: sandboxId, partnerId: b['partnerId'] as string,
+          createdOn: b['createdOn'] as string, expiresOn: b['expiresOn'] as string, syntheticDataOnly: true,
+        };
+        await deps.recordSandbox(ctx.tenantId, sandbox);
+        // Report the sandbox's own id as `sandboxId`, never `tenantId` — a foreign tenantId in a response
+        // trips the cross-tenant response backstop (OB-01), and the sandbox id is not the request tenant.
+        return { status: 201, body: { sandboxId: sandbox.tenantId, partnerId: sandbox.partnerId, createdOn: sandbox.createdOn, expiresOn: sandbox.expiresOn, syntheticDataOnly: sandbox.syntheticDataOnly } };
+      },
+    },
+    {
+      // Seed a partner sandbox. Production-origin data REFUSES THE WHOLE SEED (hard rule #7) — realistic
+      // data is generated, never copied, whatever the reason given; an expired sandbox refuses too. Reads
+      // the stored sandbox (never a body flag) and runs the tested seedSandbox engine.
+      api: 'API-11', method: 'POST', path: '/v1/platform/partners/sandboxes/:sandboxId/seed',
+      permission: 'platform.partner.manage', idempotent: true,
+      handler: async (ctx) => {
+        const sandboxId = ctx.params['sandboxId'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const records = Array.isArray(b['records']) && b['records'].every(isSeedRecord)
+          ? (b['records'] as { recordId: string; origin: 'generated' | 'production' }[]) : undefined;
+        if (records === undefined) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_sandbox_seed',
+            whatHappened: 'A sandbox seed needs { records[] } — each { recordId, origin (generated|production) }.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the records to seed. Nothing was stored.',
+          });
+        }
+        const sandbox = await deps.sandbox(ctx.tenantId, sandboxId);
+        if (sandbox === undefined) throw notFound(`partner sandbox ${sandboxId}`);
+        const result: SandboxSeedResult = seedSandbox({ sandbox, records, today: deps.now().slice(0, 10) });
+        // 200 with the decision either way (like the access-check): a refused seed reports seeded:false with
+        // its reason (production_data_refused / expired). The engine validates; nothing is copied in. Report
+        // the sandbox id as `sandboxId`, never `tenantId` (OB-01 cross-tenant response backstop).
+        return { status: 200, body: { sandboxId: result.tenantId, seeded: result.seeded, outcome: result.outcome, records: result.records, detail: result.detail, asAt: deps.now() } };
       },
     },
   ];

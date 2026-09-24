@@ -128,7 +128,7 @@ import type { DrReadinessDeps, DrDrillRecord } from '../../platform/src/dr-readi
 import type { ShelfCountDeps, ShelfCount } from '../../inventory/src/shelf-count';
 import { projectFleet, type DeviceRegistryDeps, type DeviceRegistryEvent } from '../../platform/src/device-registry';
 import { projectVersionPolicy, type VersionPolicyDeps, type VersionPolicyEvent } from '../../platform/src/version-policy';
-import type { PartnerDeps, PartnerCredential, Certification } from '../../platform/src/partners';
+import type { PartnerDeps, PartnerCredential, Certification, SandboxTenant } from '../../platform/src/partners';
 import { projectJobs, type BackgroundJobsDeps, type BackgroundJobEvent } from '../../platform/src/background-jobs';
 import { projectSupportAccess, type SupportAccessDeps, type SupportAccessEvent } from '../../platform/src/support-access-lifecycle';
 import { type StatusCentreDeps } from '../../platform/src/status-centre';
@@ -6540,6 +6540,21 @@ export function partnerAdapter(input: {
         idempotencyKey: `partner-cert-${tenantId}-${certification.partnerId}-${certification.connectorId}-${key}`,
         source: 'api/platform',
         payload: certification,
+      }));
+    },
+    // A registered sandbox tenant, latest-wins on its own id (a re-register with a new expiry is a new
+    // version; the history stays, hard rule #6). A sandbox holds synthetic data only.
+    sandbox: async (tenantId, sandboxId) =>
+      latest<SandboxTenant>(input.store, tenantId, streamName(STREAM.platform, 'partner-sandbox', sandboxId), 'PartnerSandboxSet'),
+    recordSandbox: async (tenantId, sandbox) => {
+      const key = `${sandbox.createdOn}-${sandbox.expiresOn}`;
+      await input.store.append(tenantId, streamName(STREAM.platform, 'partner-sandbox', sandbox.tenantId), makeEvent({
+        id: `partner-sandbox-${sandbox.tenantId}-${key}`,
+        type: 'PartnerSandboxSet',
+        occurredAt: input.now(),
+        idempotencyKey: `partner-sandbox-${tenantId}-${sandbox.tenantId}-${key}`,
+        source: 'api/platform',
+        payload: sandbox,
       }));
     },
   };

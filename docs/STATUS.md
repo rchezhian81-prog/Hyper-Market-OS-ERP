@@ -5,6 +5,29 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M36-FR-04 slice 3: sandbox register + seed wired — partner core complete (24 September 2026, "keep going")
+
+The third and last of M36-FR-04's tested engines. A partner sandbox holds generated data and **nothing
+else** (hard rule #7) — production data is refused outright, whatever the reason given, because the
+result is otherwise a copy of a retailer's customer list on a developer's laptop.
+
+- **`services/platform/src/partners.ts`** — a durable, append-only **sandbox-tenant registry**
+  (`POST /v1/platform/partners/sandboxes/:sandboxId`, `syntheticDataOnly` always true, never a body flag)
+  plus `POST /v1/platform/partners/sandboxes/:sandboxId/seed` running the tested `seedSandbox`: a seed
+  with **any** production-origin record refuses the **whole** seed; an expired sandbox refuses. Responses
+  report the sandbox's id as `sandboxId`, never `tenantId` (the OB-01 cross-tenant response backstop
+  rejects a foreign `tenantId` in a body — a small trap worth noting for future platform-registry work).
+- **`services/api/src/adapters.ts`** — `partnerAdapter` gains `sandbox`/`recordSandbox` over a per-sandbox
+  append-only sub-stream.
+- **Tests:** `tests/integration/partner-sandbox.test.ts` (4): generated seed accepted, production-origin
+  refused (whole seed), expired refused, unknown 404 + RBAC gating.
+- **Milestone:** all three M36-FR-04 partner engines — `checkPartnerAccess` + `certificationStatus` +
+  `seedSandbox` — are now wired on API-11. **M36 stays PARTIALLY_WIRED:** the paid-plan tier is
+  owner-blocked (OA-12), and FR-04's full acceptance (connector SDK, docs, live sandbox provisioning) is
+  broader than the enforcement engines. No headline change.
+
+---
+
 ## M36-FR-04 slice 2: connector certification register + status wired (24 September 2026, "keep going")
 
 The second leg of the partner ecosystem, directly after the access-check core. A connector certified
