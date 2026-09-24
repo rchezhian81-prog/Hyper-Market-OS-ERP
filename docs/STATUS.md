@@ -5,6 +5,35 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M19 picker substitution — browser-verified end to end (24 September 2026, buildable-work programme, M19 slice B6)
+
+The picker substitution SCREEN already existed (`apps/picker-app/web/app.js` — bilingual EN/TA, scan the
+swap, capture the customer's approval reference, refuse a swap without it) and was wired to the REAL tested
+`PickSession` via `apps/picker-app/src/browser-entry.ts` (`window.pickSession`). What it lacked was a
+**browser end-to-end proof**: units cannot show that a picker at the actual screen — where a scan is the
+handheld's keyboard emitting keydown events on the window and there is deliberately no text box to type a
+"yes" into — makes an agreed swap land durably in the device outbox, and that a swap without the customer's
+confirmation reference is refused on screen with nothing queued (A04 / P-08). That proof is now added.
+
+- **`tests/e2e/picker-substitution-delivery.e2e.ts`** (new, +2, headless Chromium) — builds the picker
+  bundle, serves it, injects a one-line wave, and drives the real screen: (1) select the line, scan the
+  substitute item, scan the customer's approval reference → the line becomes `substituted` and a
+  `PickLineResolved` event lands in the **device outbox** (§31/P-01, offline-first); (2) cancel the
+  reference scan → the swap is **refused on screen and nothing is queued** (A04 — a substitution is never
+  the picker's silent choice). The scanner is driven by dispatching the same `keydown` events the shop's
+  scanner hardware emits on the window — the exact code path the screen listens on.
+- **Honest scope / rung:** the picker substitution flow is now **E2E_VERIFIED** in a real browser. **M19
+  stays PARTIALLY_WIRED** overall (headline unchanged) — the remaining buildable follow-ups still tracked:
+  B5b (M31 notification enqueue for the bilingual message — deferred pending a design decision, since the
+  notification queue carries no message body today) and A3 (delivery-app device pickUp/arrive/partial
+  events + screen + e2e). The substitution WRITE path (B3), exception worklist (B4b) and now the picker
+  SCREEN are all proven.
+
+**Next:** continue the buildable-work programme automatically — A3 (delivery-app device events + screen +
+e2e), or per the owner's sequence (M19→M18→M22→M20→M01) the next module's buildable gaps.
+
+---
+
 ## M19 substitution exception worklist — tenant-wide, on the cloud (24 September 2026, buildable-work programme, M19 slice B4b)
 
 Back to an M19 buildable follow-up, kept tracked (not dropped) since the substitution engine track finished.
