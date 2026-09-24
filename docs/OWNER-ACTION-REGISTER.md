@@ -5,7 +5,15 @@ authorizations, paid vendor selections, production credentials, and irreversible
 build does **not** stop waiting for these; each row names exactly what is blocked and what continues
 without it. Recommended defaults are given so a decision is a yes/no, not an open question.
 
-**Last updated:** 23 September 2026 (**Three owner decisions recorded.** (1) **Record-retention schedule — ANSWERED**
+**Last updated:** 24 September 2026 (**Outside-party clocks started (owner).** For the narrow-and-deep
+pilot (`docs/runbooks/pilot-plan-narrow-deep.md` §6), the owner has **initiated** the outside-party
+onboarding/procurement that gates full production — payment provider (OA-4 / EX-03), GST production
+credentials + CA (EX-07), independent penetration test (EX-13), store hardware (EX-09), and the
+FSSAI / Legal-Metrology / local licences (EX-08). Recorded **⏳ Started 2026-09-24** in
+`docs/registers/external-dependencies.md`; each stays **not-satisfied** until the actual
+credential/contract/hardware/certificate is in hand and wired. None blocks the **test-mode** pilot —
+they run in parallel for their lead times. The pilot itself now needs only its calendar dates.)
+Earlier: 23 September 2026 (**Three owner decisions recorded.** (1) **Record-retention schedule — ANSWERED**
 ("adopt my proposed schedule"): the owner-approved DEFAULT audit-retention schedule is now **wired and tested**
 (`packages/audit/src/retention-schedule.ts`) — every audit class the M34 producers seal is kept **statutory**
 (hard rule #6, never deleted through retention) with an 8-year minimum floor, and both retention-plan routes fall

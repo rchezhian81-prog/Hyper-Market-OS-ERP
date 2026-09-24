@@ -189,18 +189,21 @@ They come straight from the run-sheet's migration and go-live blocks:
 
 ---
 
-## 6. What to start now (outside-party clocks — they have lead times)
+## 6. Outside-party clocks — ⏳ started by the owner, 24 September 2026
 
-None of these blocks a **test-mode pilot**, but each gates full production, so starting them now runs
-their clocks in parallel:
+None of these blocks a **test-mode pilot**, but each gates full production, so the owner **started them
+now** to run their (long) lead times in parallel. "Started" = the process is under way (an application
+filed, a vendor contacted, a quote requested), **not delivered**: the external-dependency register
+(`docs/registers/external-dependencies.md`) moves each to **Satisfied** only when it is actually in hand
+and wired.
 
-- **Payment provider** — an RBI-authorised, tokenising provider for live card/UPI, refunds and
-  settlement (register EX-03). *Pilot runs in test mode without it.*
-- **GST production credentials + a CA sign-off** — for live e-invoice / e-way-bill / GSTR filing
-  (EX-07 / UAT-10 context). *Pilot calculates GST but does not file.*
-- **Independent penetration test** — a paid external vendor, before **customer** launch (UAT-10 / EX-13).
-- **Hardware & licences** — confirm the department's tills/scanners/printers/scales (EX-09) and enter
-  the real FSSAI / Legal Metrology / trade / fire certificates (EX-08).
+- ⏳ **Payment provider** — an RBI-authorised, tokenising provider for live card/UPI, refunds and
+  settlement (EX-03). *Pilot runs in test mode without it.*
+- ⏳ **GST production credentials + a CA** — for live e-invoice / e-way-bill / GSTR filing (EX-07).
+  *Pilot calculates GST but does not file.*
+- ⏳ **Independent penetration test** — a paid external vendor, before **customer** launch (EX-13 / UAT-10).
+- ⏳ **Hardware & licences** — the department's tills/scanners/printers/scales (EX-09) and the real
+  FSSAI / Legal Metrology / trade / fire certificates (EX-08).
 
 ---
 
