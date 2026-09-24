@@ -20,18 +20,18 @@ fixed now instead of a surprise later.
 
 ---
 
-## 1. Confirm these first (your real-world choices)
+## 1. Confirmed choices (owner, 24 September 2026)
 
-This plan is drafted with a **recommended** default for each; please confirm or change them. I have
-**not** assumed any of these are final — they are yours to set.
+The owner accepted the recommended defaults ("defaults are fine, dates TBC"). These are the **locked**
+choices for this pilot; only the calendar dates remain to be filled in (§3).
 
-| # | Choice | Recommended default | Why |
+| # | Choice | Confirmed | Why |
 | --- | --- | --- | --- |
-| A | **Which department** | **Packaged / ambient groceries** (dry goods: staples, packaged foods, household) | The simplest, lowest-risk slice to prove the spine: barcode-scanned, fixed price, standard GST, **no weighing, no cold-chain, no expiry pressure, no age limits.** If the core works cleanly here, everything harder builds on a proven base. |
-| B | **How many lanes** | **Start on 1 lane; add a 2nd** once Day 1's break-things drills pass | Deep first, then a little wider. Two lanes also lets you prove the parked-bill "refused on a second lane" check (UAT-14). |
-| C | **Which staff** | 2–3 named cashiers + 1 manager who can approve exceptions | Enough to run real quiet-hours trading and to exercise the "a second, senior person approves" rules. |
-| D | **How long** | ~**1–2 weeks**: 2 set-up days, then quiet-hours trading, then a review | Long enough to hit a **day-close and a cash-up** several times; short enough to stay controlled. |
-| E | **Dates & the quiet slot** | e.g. weekday mornings | Drop your calendar dates into the blank columns below. |
+| A | **Which department** | ✅ **Packaged / ambient groceries** (dry goods: staples, packaged foods, household) | The simplest, lowest-risk slice to prove the spine: barcode-scanned, fixed price, standard GST, **no weighing, no cold-chain, no expiry pressure, no age limits.** If the core works cleanly here, everything harder builds on a proven base. |
+| B | **How many lanes** | ✅ **Start on 1 lane; add a 2nd** once Day 1's break-things drills pass | Deep first, then a little wider. Two lanes also lets you prove the parked-bill "refused on a second lane" check (UAT-14). |
+| C | **Which staff** | ✅ **2–3 named cashiers + 1 manager** who can approve exceptions | Enough to run real quiet-hours trading and to exercise the "a second, senior person approves" rules. |
+| D | **How long** | ✅ ~**1–2 weeks**: 2 set-up days, then quiet-hours trading, then a review | Long enough to hit a **day-close and a cash-up** several times; short enough to stay controlled. |
+| E | **Dates & the quiet slot** | ⏳ **TBC — owner to fill in** (recommended: weekday mornings) | Drop your calendar dates into the schedule table in §3 when set. |
 
 **What the pilot runs on:** the chosen department's **real product list, prices and taxes**, loaded
 with the import tools — **not** your full historical data. The big data migration (your whole
@@ -71,8 +71,20 @@ Parking these is what makes the pilot **narrow**. Nothing here is cancelled; eac
 
 ## 3. The plan, in order
 
-Dates are **relative** — drop your own in the blank column. Shift or merge freely; a quiet week can
-do a "day" in an afternoon. Tick each as it passes.
+Dates are **relative** — drop your own into the schedule table below (and beside each block). Shift or
+merge freely; a quiet week can do a "day" in an afternoon. Tick each as it passes.
+
+**Schedule at a glance** — the booked sequence; fill the date column when you set them. Lanes are the
+confirmed progression: **one lane** through the break-things day, **add the second** for the trading days.
+
+| Step | Day | Lanes | Your date |
+| --- | --- | --- | --- |
+| Set-up Day 1 — settings & the safety base | S1 | — | __________ |
+| Set-up Day 2 — load the shelf; ask & confirm | S2 | — | __________ |
+| Pilot Day 1 — it keeps trading when things break | P1 | 1 | __________ |
+| Pilot Day 2 — the money is honest, safety holds | P2 | 1 | __________ |
+| Trading days 3…N — real quiet-hours trading | P3–P? | **add 2nd lane** | __________ |
+| Review & decision — go / no-go | last | — | __________ |
 
 ### Set-up Day 1 — settings and the safety base *(mostly the owner)*
 *Date: __________*

@@ -5,6 +5,19 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Pilot-plan defaults confirmed by owner (24 September 2026, "defaults are fine, dates TBC")
+
+The owner accepted the recommended §1 choices. `docs/runbooks/pilot-plan-narrow-deep.md` updated: §1 flipped
+from "confirm-or-change" to **locked** — department = **packaged/ambient groceries**, lanes = **1 then add a
+2nd**, staff = **2–3 cashiers + 1 manager**, duration = **~1–2 weeks**, dates = **TBC (owner to fill)**. Added a
+**schedule-at-a-glance** table (S1/S2 → P1/P2 → trading days → review, with a date-fill column and the confirmed
+lane progression) so it reads as a booked plan. Docs only; no code; headline stays 55.4%.
+
+**Still owner's to supply:** the calendar dates/quiet slot, and the go-ahead to start the outside-party clocks
+(payment provider, GST + CA, hardware, licences).
+
+---
+
 ## Narrow-and-deep pilot plan drafted (24 September 2026, owner chose "Option 1, narrow and deep")
 
 The owner picked the narrow-and-deep pilot shape (one department, 1–2 lanes, full trading day, ~1–2 weeks) and
