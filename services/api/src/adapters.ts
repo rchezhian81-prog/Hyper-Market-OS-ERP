@@ -3937,6 +3937,26 @@ export function writeOffAdapter(input: {
       const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
       return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('inventory.movement.append'));
     },
+    // Non-own owners currently holding stock of this product at this location (M27-FR-02), folded from
+    // the M08 ledger's `ownership` field. Own stock never blocks a store write-off, so it is skipped;
+    // a non-own owner with positive on-hand means the shelf holds somebody else's inventory here.
+    ownersOfStockAt: async (tenantId, productId, locationId) => {
+      const events = await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' });
+      const here = events
+        .map((e) => payloadOf<Movement>(e))
+        .filter((m) => m.productId === productId && m.locationId === locationId);
+      const byOwner = new Map<string, { ownership: StockOwnership; ownerId: string; qty: number }>();
+      for (const m of here) {
+        const ownership: StockOwnership = m.ownership ?? 'own';
+        if (ownership === 'own') continue;
+        const ownerId = m.ownerId ?? 'unknown';
+        const key = `${ownership}\u001f${ownerId}`;
+        const acc = byOwner.get(key) ?? { ownership, ownerId, qty: 0 };
+        acc.qty += m.quantityMinor * EFFECT_ON_HAND[m.kind];
+        byOwner.set(key, acc);
+      }
+      return [...byOwner.values()].filter((o) => o.qty > 0).map((o) => ({ ownership: o.ownership, ownerId: o.ownerId }));
+    },
   };
 }
 

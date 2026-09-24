@@ -14,6 +14,7 @@ import {
   DEFAULT_WRITE_OFF_THRESHOLD_MINOR, readWriteOffThreshold,
   type LossType, type WrittenOff,
 } from '../../../packages/waste/src/waste';
+import { checkStockAccess, type OwnershipStatus } from '../../../packages/concession/src/index';
 import { ApprovalRequiredError } from '../../../packages/adjustment/src/adjustment';
 import { Ledger, InMemoryLedgerStore } from '../../../packages/ledger/src/ledger';
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
@@ -62,6 +63,13 @@ export interface WriteOffDeps {
    *  approver who does not hold it does not count — the same check as the other §28 approvals. */
   readonly canApproveWriteOff: (tenantId: string, userId: string) => Promise<boolean> | boolean;
   /**
+   * The NON-OWN owners (concession / consignment / customer) currently holding stock of this product at
+   * this location, folded from the M08 ledger's `ownership` field (M27-FR-02). Empty ⇒ the store owns all
+   * stock there, so a store write-off is fine. Any entry means the shelf holds somebody else's inventory,
+   * which store staff may not write off — a loss on it is the owner's to record, not the store's.
+   */
+  readonly ownersOfStockAt: (tenantId: string, productId: string, locationId: string) => Promise<readonly { readonly ownership: OwnershipStatus; readonly ownerId: string }[]> | readonly { readonly ownership: OwnershipStatus; readonly ownerId: string }[];
+  /**
    * Seal this stock write-off into the tamper-evident domain audit trail (M34-FR-01), attributed to the
    * raiser. Optional — the running system provides it; a bare deps stub may omit it. The actor is ALWAYS
    * the caller (`ctx.userId`); a write-off is the archetypal sensitive STOCK change (value leaving the
@@ -101,6 +109,32 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
             wasItSaved: 'not_saved',
             nextSafeAction: 'Use a new write-off id. Nothing was changed.',
           });
+        }
+
+        // Cross-access blocked (M27-FR-02): store staff cannot write off stock the store does not own.
+        // If the shelf holds concession/consignment/customer stock of this product, refuse — somebody
+        // else's inventory written off by our staff is a bill we cannot argue with. The rule runs on the
+        // tested `checkStockAccess` engine; it only ever fires once non-own stock is present (every
+        // store-owned product is unaffected), so it cannot disturb an ordinary loss.
+        const others = await deps.ownersOfStockAt(ctx.tenantId, b['productId'] as string, b['locationId'] as string);
+        if (others.length > 0) {
+          const owner = others[0]!;
+          const decision = checkStockAccess({
+            lot: {
+              lotId: `${b['productId'] as string}@${b['locationId'] as string}`,
+              productId: b['productId'] as string, branchId: b['locationId'] as string,
+              qty: 0, unitCostMinor: 0, ownership: owner.ownership, ownerId: owner.ownerId,
+            },
+            actorId: ctx.userId, actorKind: 'store_staff', action: 'write_off',
+          });
+          if (!decision.allowed) {
+            throw apiError(422, {
+              code: 'stock_not_owned_by_the_store',
+              whatHappened: `${b['productId'] as string} at ${b['locationId'] as string} holds stock owned by ${owner.ownerId} (${owner.ownership}); store staff cannot write off stock the store does not own (M27-FR-02).`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'A loss on concession/consignment/customer stock is the owner\'s to record, not the store\'s. Nothing was recorded.',
+            });
+          }
         }
 
         const currency = (b['currency'] as CurrencyCode) ?? 'INR';
