@@ -5,6 +5,39 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M19 substitution exception worklist — tenant-wide, on the cloud (24 September 2026, buildable-work programme, M19 slice B4b)
+
+Back to an M19 buildable follow-up, kept tracked (not dropped) since the substitution engine track finished.
+Raises the substitution **exception worklist** (B4's pure engine) from engine-only to **WIRED on the cloud**:
+one tenant-wide, valued list of swaps a person must act on, so nothing owing money or leaving a customer
+short waits unseen (P-08).
+
+- **`services/orders/src/index.ts`** — new read route `GET /v1/orders/substitution-exceptions` (gated
+  `order.read` — a management view of order money-at-risk; owner/manager, not the cashier — the same gate as
+  the backorder exception read). It folds **every** recorded swap for the tenant, maps each `StoredSubstitution`
+  to the engine's `SubstitutionRecordView`, and runs the tested `substitutionExceptions` (B4): worst (most
+  money at stake) first, `{exceptions, count, atRiskMinor}`. It prices nothing itself — the amounts are already
+  on the recorded decisions. Registered BEFORE `/v1/orders/:orderId` so the literal path is never captured as
+  an order id.
+- **`services/api/src/adapters.ts`** — `recordSubstitution` now ALSO appends each decision to a per-tenant
+  INDEX stream (`streamName(STREAM.orders,'substitutions')`) with its own idempotency key (a replay appends
+  both, folds once); new `allSubstitutions` folds the index. The per-order stream stays the book of record;
+  the index is a read model, exactly as the returns/e-invoice indexes sit beside their per-aggregate streams.
+- **`services/orders/src/index.ts`** (OrdersDeps) + **`services/api/src/main.ts`** stub — `allSubstitutions`.
+- **`tests/integration/substitution-exceptions.test.ts`** (+5) — folds swaps across DIFFERENT orders,
+  worst-first, atRiskMinor sums, and OMITS a same-price swap that owes nothing (above_cap_charge 8000 →
+  refund_due 2000 → policy_short_pick 0; ord-d same-price absent); empty when nothing substituted; per-tenant
+  isolation; durable across a cold restart; `order.read` gate (cashier 403, owner 200).
+- **Honest scope / rung:** raises M19-FR-01's exception worklist to WIRED-on-cloud. **M19 stays
+  PARTIALLY_WIRED** overall (headline unchanged) — the remaining buildable follow-ups still tracked: B6
+  (picker/customer substitution screen + browser e2e), B5b (M31 notification enqueue), A3 (delivery-app device
+  pickUp/arrive/partial + screen + e2e).
+
+**Next:** continue the buildable-work programme automatically — a remaining M19 follow-up (B5b notify enqueue,
+or the B6/A3 browser slices) or, per the owner's sequence (M19→M18→M22→M20→M01), begin M22 (B2B) buildable work.
+
+---
+
 ## M18 serviceability + routing simulator — a dry run before live maps or final numbers (24 September 2026, buildable-work programme, M18 slice S3)
 
 Third M18 slice — a deterministic **dry run** of the whole delivery decision over synthetic fixtures, so the
