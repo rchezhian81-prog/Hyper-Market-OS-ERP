@@ -5,6 +5,38 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M36-FR-04 partner access-control: credential registry + access-check wired (24 September 2026, "keep going")
+
+**Honest sequencing note:** M27's clean cloud work was complete, and a thorough scan found no clean,
+in-release-band increment left (the rest is external-service-, deletion-, edge- or UAT-gated). The
+cleanest remaining buildable piece was the **partner ecosystem (M36-FR-04), which belongs to R8** — a
+fully-tested engine (`packages/platform/src/partner.ts`) sitting entirely unwired. Pulled forward on the
+owner's "keep going / you pick", flagged to the owner, consistent with this project's breadth-first build.
+
+A partner ecosystem is a set of people we do not employ holding credentials to systems we are
+responsible for. This first slice wires the security core:
+
+- **`services/platform/src/partners.ts`** (new) — a durable, append-only **partner-credential registry**
+  (`POST /v1/platform/partners/:credentialId` register, `POST …/revoke`, `GET …/:credentialId`) scoped to
+  the tenants that engaged the partner (empty means none, never "all"), plus the authoritative
+  `POST /v1/platform/partners/access-check` running the tested `checkPartnerAccess`. Refusals: a **sandbox
+  credential presented against production** (a security event, hard rule #7), an out-of-scope tenant, a
+  revoked/expired credential, and an **unversioned call** (refused, never defaulted to latest). The
+  security principal is the STORED credential, never the request body; the version catalogue is the
+  calling gateway's own config and is consulted only AFTER every security check, so it cannot widen access.
+- **`services/api/src/adapters.ts`** — `partnerAdapter` folds each credential's own append-only sub-stream
+  latest-wins (register and revoke are both versions; the history stays, hard rule #6).
+- **`services/api/src/roles.ts`** — `platform.partner.manage` (register/revoke) + `platform.partner.read`
+  (access-check/read) on the Platform administrator role.
+- **Tests:** `tests/integration/partner-access-control.test.ts` (7): register/read/allow, sandbox-in-
+  production refused (security event), out-of-scope tenant refused, unversioned refused, revoke → refused
+  (credential not deleted), unknown 404s, RBAC gating — real pipeline, real RBAC.
+- **M36 stays PARTIALLY_WIRED (honest):** this lands the enforcement core only; `seedSandbox` and the full
+  certification store are engine-only follow-ons, and the paid-plan tier stays owner-blocked (OA-12). No
+  headline change.
+
+---
+
 ## M27-FR-02 access half: store staff can no longer write off concession stock (24 September 2026, "keep going")
 
 The companion to the valuation half. FR-02 has two acceptance criteria — concession stock excluded from
