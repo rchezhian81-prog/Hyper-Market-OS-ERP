@@ -5,6 +5,38 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M19 substitution POLICY engine — preference + restrictions + controlled-item refusal (24 September 2026, buildable-work programme, slice B1)
+
+Third slice, and the start of **Track B** — the owner-approved substitution policy, which is the
+FR-01 gap actually holding M19 at PARTIALLY_WIRED. **Ordering note (my call, no owner input needed —
+the dependency dictates it):** the driver-device slice (A3) needs partial-delivery *money* handling,
+which depends on the money-recalculation engine built in **B2**; so Track B (substitution policy +
+money) comes before A3, and the device's partial-delivery screen/e2e folds into A3 once B2 exists.
+
+- **`packages/orders/src/substitution-policy.ts`** (new) — `assessSubstitution` decides eligibility
+  BEFORE `applySubstitution`'s money: customer **preference** (`no_substitution` / `best_match` /
+  `contact_me`) and **restrictions** (blocked brands, blocked categories, avoided allergens, a weighed
+  line's size tolerance) → `auto_accept` (shop may pick — best_match), `needs_confirmation` (ask first —
+  contact_me, or when allergen data is unverifiable) or `refused` with a machine-readable reason.
+  Safety/consent refusals hold under **every** preference: a **controlled item (ageRestricted) is never
+  auto-substituted**, and a substitute introducing an **avoided allergen** is refused even under
+  best_match. Pure; composes with the existing money engine.
+- **`tests/unit/orders-substitution-policy.test.ts`** (+12) — every preference mode; controlled refused
+  under best_match (ordered or substitute); allergen introduced refused; unknown allergen data → never
+  auto-accept; blocked brand (case-insensitive) / category; weight tolerance in/out; no-tolerance = no
+  size check; safety beats preference. Barrel + README updated.
+- **Honest scope / rung:** engine-only. **M19 stays PARTIALLY_WIRED** — this is the FR-01 eligibility
+  half; the money recalculation (B2: promo/tax/loyalty on a swap, prepaid-refund vs COD correction),
+  the write-path wiring (B3), exception queue (B4), notification/Tamil (B5) and screen/e2e (B6) follow.
+  Headline **unchanged** (no re-rate, no inflation). Faithful to the owner's explicitly-approved policy
+  — nothing invented.
+
+**Next:** slice B2 — the pure total-recalculation engine composing `applySubstitution` with promotions
+(`bestPrice`), tax (`resolveGstRate`) and loyalty, splitting the outcome into prepaid-refund vs
+COD/pay-at-store correction facts.
+
+---
+
 ## M19 delivery lifecycle wired into the durable transition route (24 September 2026, buildable-work programme, slice A2)
 
 Second slice. A1 added the states to the pure engine; this wires them into the **live durable order-lifecycle

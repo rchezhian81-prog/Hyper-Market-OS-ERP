@@ -41,7 +41,17 @@ with **no oversell** (**M18-FR-02** / §6.2).
   **both directions** — an order the channel has and we do not is a customer waiting for
   something nobody is picking; one we have and it does not is a phantom that will never be
   paid for.
+- **`src/substitution-policy.ts`** (M19-FR-01) — the eligibility question that comes *before*
+  `applySubstitution`'s money. `assessSubstitution` reads a customer's **preference**
+  (`no_substitution` / `best_match` / `contact_me`) and their **restrictions**
+  (blocked brands, blocked categories, avoided allergens, a weighed line's size tolerance) and
+  returns `auto_accept` (the shop may pick it — `best_match`), `needs_confirmation` (ask first —
+  `contact_me`, or when allergen data can't be verified) or `refused` with a machine-readable
+  reason. Safety- and consent-critical refusals hold under **every** preference: a **controlled
+  item is never auto-substituted**, and a substitute that introduces an **avoided allergen** is
+  refused even under `best_match`. Composes with `applySubstitution`, which does the money.
 
-> Tested in `tests/unit/orders-fulfilment-plan.test.ts` (12) and
-> `tests/unit/orders-amendments.test.ts` (15), and proven end to end in
+> Tested in `tests/unit/orders-fulfilment-plan.test.ts` (12),
+> `tests/unit/orders-amendments.test.ts` (15) and
+> `tests/unit/orders-substitution-policy.test.ts` (12), and proven end to end in
 > `tests/integration/pick-to-doorstep.test.ts` (Stage 15 gate).
