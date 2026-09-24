@@ -20,11 +20,12 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
-  checkPartnerAccess,
+  checkPartnerAccess, certificationStatus,
   type PartnerCredential, type PartnerAccessDecision, type ApiVersion, type Environment,
+  type Certification, type CertificationStatus,
 } from '../../../packages/platform/src/partner';
 
-export type { PartnerCredential } from '../../../packages/platform/src/partner';
+export type { PartnerCredential, Certification } from '../../../packages/platform/src/partner';
 
 const ENVIRONMENTS: readonly Environment[] = ['sandbox', 'production'];
 const VERSION_STATUSES: readonly ApiVersion['status'][] = ['current', 'supported', 'deprecated', 'retired'];
@@ -54,11 +55,32 @@ function readCredential(credentialId: string, b: Record<string, unknown>): Partn
   };
 }
 
+/** One contract-version a certification was tested against — the shape inside `againstVersions`. */
+const isCertVersion = (v: unknown): v is { readonly contract: string; readonly version: string } =>
+  isObj(v) && isStr(v['contract']) && isStr(v['version']);
+
+/** Read a certification to register off the request body — the certificationId comes from the path. */
+function readCertification(certificationId: string, b: Record<string, unknown>): Certification | undefined {
+  const against = Array.isArray(b['againstVersions']) && b['againstVersions'].length > 0 && b['againstVersions'].every(isCertVersion)
+    ? (b['againstVersions'] as { contract: string; version: string }[]) : undefined;
+  if (!isStr(b['partnerId']) || !isStr(b['connectorId']) || !isDate(b['certifiedOn']) || against === undefined || !isStr(b['certifiedBy'])) {
+    return undefined;
+  }
+  return {
+    certificationId, partnerId: b['partnerId'] as string, connectorId: b['connectorId'] as string,
+    certifiedOn: b['certifiedOn'] as string, againstVersions: against, certifiedBy: b['certifiedBy'] as string,
+  };
+}
+
 export interface PartnerDeps {
   /** The current version of a partner credential, folded latest-wins from the append-only log. */
   readonly credential: (tenantId: string, credentialId: string) => Promise<PartnerCredential | undefined> | PartnerCredential | undefined;
   /** Append a credential version (register or revoke). Idempotent on the key. */
   readonly recordCredential: (tenantId: string, credential: PartnerCredential, key: string) => Promise<void> | void;
+  /** The current certification for a connector (latest-wins per partner+connector), or undefined. */
+  readonly certification: (tenantId: string, partnerId: string, connectorId: string) => Promise<Certification | undefined> | Certification | undefined;
+  /** Append a connector certification, keyed latest-wins per partner+connector. Idempotent on the key. */
+  readonly recordCertification: (tenantId: string, certification: Certification) => Promise<void> | void;
   readonly now: () => string;
 }
 
@@ -144,6 +166,57 @@ export function partnerRoutes(deps: PartnerDeps): readonly Route[] {
         const credential = await deps.credential(ctx.tenantId, credentialId);
         if (credential === undefined) throw notFound(`partner credential ${credentialId}`);
         return { status: 200, body: { ...credential, asAt: deps.now() } };
+      },
+    },
+    {
+      // Register a connector certification — the versions it was TESTED against, who signed it off, when.
+      // Append-only, latest-wins per partner+connector. Deeper path than /:credentialId, so no capture.
+      api: 'API-11', method: 'POST', path: '/v1/platform/partners/certifications/:certificationId',
+      permission: 'platform.partner.manage', idempotent: true,
+      handler: async (ctx) => {
+        const certificationId = ctx.params['certificationId'] ?? '';
+        const certification = readCertification(certificationId, (ctx.body ?? {}) as Record<string, unknown>);
+        if (certification === undefined) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_certification',
+            whatHappened: 'A certification needs { partnerId, connectorId, certifiedOn (YYYY-MM-DD), againstVersions[] (each { contract, version }), certifiedBy }.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the certification fields. Nothing was stored.',
+          });
+        }
+        await deps.recordCertification(ctx.tenantId, certification);
+        return { status: 201, body: { certificationId, partnerId: certification.partnerId, connectorId: certification.connectorId, certifiedOn: certification.certifiedOn } };
+      },
+    },
+    {
+      // Is this connector still certified? A connector certified against v1 and running unchanged against
+      // v4 is not certified, it is old with a badge — `stale_version` (still runs, flagged) — while a
+      // never-certified connector CANNOT run in production. The current-versions catalogue is the calling
+      // gateway's own config, supplied in the body.
+      api: 'API-11', method: 'POST', path: '/v1/platform/partners/:partnerId/certifications/:connectorId/status',
+      permission: 'platform.partner.read', idempotent: true,
+      handler: async (ctx) => {
+        const partnerId = ctx.params['partnerId'] ?? '';
+        const connectorId = ctx.params['connectorId'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const currentVersions = Array.isArray(b['currentVersions']) && b['currentVersions'].every(isApiVersion) ? (b['currentVersions'] as ApiVersion[]) : undefined;
+        if (currentVersions === undefined || (b['validMonths'] !== undefined && (!Number.isInteger(b['validMonths']) || (b['validMonths'] as number) <= 0))) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_certification_status_check',
+            whatHappened: 'A certification-status check needs { currentVersions[] (each { contract, version, status }) } and optionally a whole positive validMonths.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the current contract versions. This only decides — it stores nothing.',
+          });
+        }
+        const certification = await deps.certification(ctx.tenantId, partnerId, connectorId);
+        const status: CertificationStatus = certificationStatus({
+          connectorId, partnerId,
+          ...(certification === undefined ? {} : { certification }),
+          currentVersions,
+          ...(b['validMonths'] !== undefined ? { validMonths: b['validMonths'] as number } : {}),
+          today: deps.now().slice(0, 10),
+        });
+        return { status: 200, body: { ...status, asAt: deps.now() } };
       },
     },
   ];

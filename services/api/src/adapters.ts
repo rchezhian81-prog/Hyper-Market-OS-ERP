@@ -128,7 +128,7 @@ import type { DrReadinessDeps, DrDrillRecord } from '../../platform/src/dr-readi
 import type { ShelfCountDeps, ShelfCount } from '../../inventory/src/shelf-count';
 import { projectFleet, type DeviceRegistryDeps, type DeviceRegistryEvent } from '../../platform/src/device-registry';
 import { projectVersionPolicy, type VersionPolicyDeps, type VersionPolicyEvent } from '../../platform/src/version-policy';
-import type { PartnerDeps, PartnerCredential } from '../../platform/src/partners';
+import type { PartnerDeps, PartnerCredential, Certification } from '../../platform/src/partners';
 import { projectJobs, type BackgroundJobsDeps, type BackgroundJobEvent } from '../../platform/src/background-jobs';
 import { projectSupportAccess, type SupportAccessDeps, type SupportAccessEvent } from '../../platform/src/support-access-lifecycle';
 import { type StatusCentreDeps } from '../../platform/src/status-centre';
@@ -6524,6 +6524,22 @@ export function partnerAdapter(input: {
         idempotencyKey: `partner-cred-${tenantId}-${credential.credentialId}-${key}`,
         source: 'api/platform',
         payload: credential,
+      }));
+    },
+    // A connector's certification, latest-wins on its own per-partner+connector sub-stream (a re-cert is a
+    // new version; the history stays, hard rule #6). Keyed on the certification's tested versions + date so
+    // a re-send of the same certification collapses while a genuine re-certification is a new fact.
+    certification: async (tenantId, partnerId, connectorId) =>
+      latest<Certification>(input.store, tenantId, streamName(STREAM.platform, 'partner-cert', partnerId, connectorId), 'PartnerCertificationSet'),
+    recordCertification: async (tenantId, certification) => {
+      const key = `${certification.certifiedOn}-${certification.againstVersions.map((v) => `${v.contract}:${v.version}`).join(',')}`;
+      await input.store.append(tenantId, streamName(STREAM.platform, 'partner-cert', certification.partnerId, certification.connectorId), makeEvent({
+        id: `partner-cert-${certification.certificationId}-${key}`,
+        type: 'PartnerCertificationSet',
+        occurredAt: input.now(),
+        idempotencyKey: `partner-cert-${tenantId}-${certification.partnerId}-${certification.connectorId}-${key}`,
+        source: 'api/platform',
+        payload: certification,
       }));
     },
   };
