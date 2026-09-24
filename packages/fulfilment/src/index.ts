@@ -7,8 +7,14 @@
 //     than from what was ordered.
 //   • `cod.ts`      (M19-FR-04) — cash-on-delivery reconciled to the paisa, with short,
 //     over, uncollected and unexpected each a valued exception; never card data.
+//   • `serviceability-simulator.ts` (M18-FR-01/FR-03, D08/D09) — a deterministic DRY RUN of the whole
+//     delivery decision (policy-on-date → serviceability → routing) over synthetic addresses, baskets
+//     and slots, so the chain is verifiable before live maps or the owner's final numbers. Composes
+//     `resolveServiceabilityPolicy` + `checkServiceability` + `routeOrder`; flags a serviceable order
+//     that no location can fill; distances are straight-line and say so.
 
 export * from './delivery';
 export * from './packing';
 export * from './cod';
 export * from './routing';
+export * from './serviceability-simulator';

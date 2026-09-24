@@ -47,3 +47,18 @@ delivered one.
 
 > Tested in `tests/unit/fulfilment-packing.test.ts` (16) and proven end to end in
 > `tests/integration/pick-to-doorstep.test.ts` (Stage 15 gate).
+
+- **`src/serviceability-simulator.ts`** (M18-FR-01/FR-03, D08/D09) — a **dry run** of the whole
+  delivery decision over made-up data, so the store can rehearse deliveries **before** live maps or
+  the owner's final radii and slots. `simulateServiceabilityAndRouting({ runLabel, scenarios, fixtures })`
+  puts each synthetic order through the same three decisions a real order meets — the policy in force
+  **on the order's date** (`resolveServiceabilityPolicy`), store-level serviceability and fee
+  (`checkServiceability`), then which location fills it (`routeOrder`) — and returns a readable line
+  per scenario plus running totals. It **composes** those tested functions and decides nothing of its
+  own. A **correct refusal** (out-of-area, below-minimum) is counted, not flagged; a **serviceable
+  order no location can fill**, and an **unfulfillable pickup**, are flagged for a person — that gap
+  is what sells an order the shop cannot keep (P-08). **Distances are straight-line** and the report
+  says so (`distancesAre`), exactly like `planDispatch`. Pure and deterministic — same fixtures, same
+  report.
+
+> Tested in `tests/unit/fulfilment-serviceability-simulator.test.ts`.

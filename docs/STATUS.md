@@ -5,6 +5,41 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M18 serviceability + routing simulator — a dry run before live maps or final numbers (24 September 2026, buildable-work programme, M18 slice S3)
+
+Third M18 slice — a deterministic **dry run** of the whole delivery decision over synthetic fixtures, so the
+store can rehearse deliveries **before** live maps or the owner's final radii/slots. It **composes** the three
+tested functions a real order meets, in order, and decides nothing of its own.
+
+- **`packages/fulfilment/src/serviceability-simulator.ts`** (new) — `simulateServiceabilityAndRouting({
+  runLabel, scenarios, fixtures })` runs each synthetic order through the policy in force **on its date**
+  (`resolveServiceabilityPolicy`, storefront), store-level serviceability + fee (`checkServiceability`,
+  storefront), then which location fills it (`routeOrder`, orders). Returns a readable line per scenario
+  (`verdict`: deliverable / pickup_ready / out_of_area / below_minimum / unroutable, the resolved policy
+  source, the fee that would be charged, and a plain-English `tellTheCustomer`) plus running `totals`. A
+  **correct refusal** (out-of-area, below-minimum) is counted, never flagged; a **serviceable order no
+  location can fill** and an **unfulfillable pickup** are **flagged** for a person — that gap is what sells an
+  order the shop cannot keep (P-08). **Distances are straight-line** and the report says so (`distancesAre`),
+  exactly like `planDispatch`. Pure and deterministic — same fixtures, same report.
+- **`packages/fulfilment/src/index.ts`** + **README** — barrel + documented. Placed in `fulfilment` because
+  it already depends on `orders` (`metresBetween`) and nothing imports it, so it can also compose `storefront`
+  without a cycle.
+- **`tests/unit/fulfilment-serviceability-simulator.test.ts`** (+9) — default vs. far (correct refusal, not
+  flagged); policy switches on the effective-from boundary (fee 0 → ₹30); below-minimum refusal; the
+  serviceable-but-no-stock **config-inconsistency flag**; pickup routes with no address + unfulfillable pickup
+  flagged; express-promise nothing can meet vs. a slower promise deliverable; a delivery with no address
+  flagged; totals + fee-sum + `distancesAre`; and byte-for-byte **determinism** across two runs.
+- **Honest scope / rung:** **M18 stays PARTIALLY_WIRED** (headline unchanged). This completes the buildable
+  **simulator** piece of the M18 umbrella. Real radii/slots/addresses remain the owner-configurable **pilot
+  input** (data, not code); **live road-distance maps** stay a pending outside-world gate (the dry run is
+  straight-line and says so). The same schedule the owner configures on the S2 API feeds this dry run.
+
+**Next:** continue the buildable-work programme (M18 → M22 → M20 → M01). M19 buildable follow-ups still
+tracked (B6 substitution screen + e2e, B4b tenant-wide exception read route, B5b M31 notify enqueue, A3
+delivery-app device events + screen + e2e).
+
+---
+
 ## M18 serviceability config store + route — owner-configurable, effective-dated, on the API (24 September 2026, buildable-work programme, M18 slice S2)
 
 Second M18 slice — makes the effective-dated serviceability policy REAL and owner-configurable on the cloud
