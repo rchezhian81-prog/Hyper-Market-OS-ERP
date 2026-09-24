@@ -112,3 +112,82 @@ describe('order substitution write path (M18-FR-04)', () => {
     expect((await sub(h, 'u-cash', 'ord-7', { offer: offer(), decision: 'confirmed' }, 'sub-7c')).status).toBe(403);
   });
 });
+
+// M19-FR-01 — the substitution POLICY + tender-aware MONEY, wired onto the same write path (B3).
+// The eligibility engine and the money-settlement engine are enforced at the boundary: a policy refusal
+// blocks the swap even when the picker sent "confirmed", and when the caller says how the order is paid,
+// the settlement (refund vs collect-less, an approved dearer swap above the cap) is recorded on the line.
+describe('order substitution — policy gate + tender money (M19-FR-01)', () => {
+  const attrs = (over: Record<string, unknown> = {}) => ({ productId: 'MILK-ALT', name: 'Milk 1L alt', brand: 'arokya', categoryId: 'dairy', ...over });
+  const orderedAttrs = { productId: 'MILK', name: 'Milk 1L', brand: 'aavin', categoryId: 'dairy' };
+
+  it('a policy REFUSAL blocks the swap even when the picker sent "confirmed" — short-picked, charged nothing', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await place(h, 'u-owner', 'ord-p1');
+    const res = await sub(h, 'u-owner', 'ord-p1', {
+      offer: offer(),
+      decision: 'confirmed',
+      rules: { preference: 'best_match' },
+      orderedAttrs,
+      substituteAttrs: attrs({ ageRestricted: true }), // a controlled item — never auto-substituted
+    });
+    expect(res.status).toBe(201);
+    const body = res.body as { outcome: string; chargeMinor: number; eligibility: string; policyReason: string };
+    expect(body.eligibility).toBe('refused');
+    expect(body.policyReason).toBe('controlled_item');
+    expect(body.outcome).toBe('short_picked'); // blocked despite "confirmed"
+    expect(body.chargeMinor).toBe(0);
+  });
+
+  it('best_match + a cheaper swap on a prepaid order records a prepaid refund of the difference', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await place(h, 'u-owner', 'ord-p2');
+    const res = await sub(h, 'u-owner', 'ord-p2', {
+      offer: offer(), // ordered 10000, substitute 8000
+      decision: 'confirmed',
+      rules: { preference: 'best_match' },
+      orderedAttrs,
+      substituteAttrs: attrs(),
+      tender: 'prepaid',
+    });
+    const body = res.body as { eligibility: string; chargeMinor: number; settlementKind: string; settlementMinor: number };
+    expect(body.eligibility).toBe('auto_accept');
+    expect(body.chargeMinor).toBe(8_000);
+    expect(body.settlementKind).toBe('prepaid_refund');
+    expect(body.settlementMinor).toBe(2_000);
+  });
+
+  it('a dearer swap explicitly approved on a COD order collects more (above the cap)', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await place(h, 'u-owner', 'ord-p3');
+    const res = await sub(h, 'u-owner', 'ord-p3', {
+      offer: offer({ substituteUnitPriceMinor: 6_000 }), // substitute line 12000 vs ordered 10000
+      decision: 'confirmed',
+      rules: { preference: 'best_match' },
+      orderedAttrs,
+      substituteAttrs: attrs(),
+      tender: 'cod',
+      approvedAboveCap: true,
+    });
+    const body = res.body as { chargeMinor: number; aboveCap: boolean; settlementKind: string; settlementMinor: number };
+    expect(body.chargeMinor).toBe(12_000);
+    expect(body.aboveCap).toBe(true);
+    expect(body.settlementKind).toBe('collect_more');
+    expect(body.settlementMinor).toBe(2_000);
+  });
+
+  it('stays backward-compatible — a plain offer+decision with no rules or tender behaves as before', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await place(h, 'u-owner', 'ord-p4');
+    const res = await sub(h, 'u-owner', 'ord-p4', { offer: offer(), decision: 'confirmed' });
+    const body = res.body as { outcome: string; chargeMinor: number; eligibility?: string; settlementKind?: string };
+    expect(body.outcome).toBe('substituted');
+    expect(body.chargeMinor).toBe(8_000);
+    expect(body.eligibility).toBeUndefined();
+    expect(body.settlementKind).toBeUndefined();
+  });
+});

@@ -5,6 +5,41 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M19 substitution policy + tender money WIRED into the /substitute route (24 September 2026, buildable-work programme, slice B3)
+
+Fifth slice, and the one that makes the substitution policy REAL on the API. B1 (eligibility) and B2a
+(tender money) are now enforced at the boundary on `POST /v1/orders/:orderId/substitute` (API-07).
+
+- **`services/orders/src/index.ts`** — the substitute route now accepts two OPTIONAL, backward-compatible
+  input groups (a plain M18 call omits both and behaves exactly as before):
+  - `{ rules, orderedAttrs, substituteAttrs }` → runs `assessSubstitution`. A **`refused`** eligibility
+    (controlled item, avoided allergen, blocked brand/category, size out of tolerance) **BLOCKS the swap
+    even on a "confirmed" decision** — the line is short-picked, never applied "because the picker said
+    yes". `auto_accept`/`needs_confirmation` proceed with the picker's decision.
+    `eligibility` + `policyReason` are recorded and returned.
+  - `{ tender, approvedAboveCap }` → runs `settleSubstitutionMoney`; the tender-aware settlement
+    (`settlementKind` + `settlementMinor` + `aboveCap`) is recorded on the line and returned.
+  - `StoredSubstitution` (the append-only `LineSubstituted` payload) gained these as **optional** fields —
+    the adapter stores the whole record, so no adapter change; a plain M18 substitution reads back unchanged.
+    Both paths **compose the tested `packages/orders` engines** — no substitution logic is copied into the route.
+- **`tests/integration/order-substitution.test.ts`** (+4) — a policy refusal (controlled item) blocks a
+  "confirmed" swap (short-picked, charged nothing); best_match + cheaper + prepaid → `prepaid_refund` of the
+  difference; a dearer swap approved on COD → `collect_more` above the cap; and a plain offer+decision with
+  no rules/tender stays byte-for-byte backward compatible. Route doc comment updated.
+- **Honest scope / rung:** the substitution write path now enforces eligibility + tender money end to end.
+  **M19 stays PARTIALLY_WIRED** for now — the remaining substitution work is the exception queue (B4),
+  customer notification + Tamil (B5) and the picker/customer screen + browser e2e (B6); a re-rate to
+  INTEGRATION_TESTED is a deliberate later step once those land, not claimed here. Headline **unchanged**.
+- **Architectural note (honest):** there is **no standalone "B2b" basket-recompute engine**. Prices are
+  tax-inclusive MRP (GST is *extracted* by M12's `extractInclusiveGst`) and loyalty earn is M17's engine —
+  so promotion/tax/loyalty recomputation after a swap must **compose** M05/M12/M17 at the wiring layer over
+  the post-swap basket, never duplicate them. That basket-promo recompute is a later route-level slice.
+
+**Next:** slice B4 — the substitution exception queue + reconciliation (a valued, owned worklist of swaps
+needing attention), modelled on the existing `refundExceptions` pattern.
+
+---
+
 ## M19 substitution MONEY-settlement engine — cap + explicit approval + tender split (24 September 2026, buildable-work programme, slice B2a)
 
 Fourth slice. B1 decided WHETHER a swap may happen; this decides **how the money moves** once it does.
