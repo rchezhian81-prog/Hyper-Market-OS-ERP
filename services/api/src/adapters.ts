@@ -194,6 +194,8 @@ import { expired } from '../../orders/src/index';
 import type {
   Reservation, OrdersDeps, PlacedOrder, OrderTransition, OrderStateView, StoredSubstitution, StoredBackorder,
 } from '../../orders/src/index';
+import type { ServiceabilityConfigDeps } from '../../orders/src/serviceability';
+import type { ServiceabilityPeriod } from '../../../packages/storefront/src/index';
 import type { DeliveryAttempt, DeliveryStateRecord, FulfilmentDeps } from '../../fulfilment/src/index';
 import type { DispatchDeps } from '../../fulfilment/src/dispatch';
 import { assignedOrderIds, type DispatchPlan } from '../../../packages/fulfilment/src/index';
@@ -1746,6 +1748,34 @@ export function taxClassAdapter(input: {
       }));
     },
     schedule: (tenantId, hsnCode) => allOf<GstRatePeriod>(input.store, tenantId, forHsn(hsnCode), 'TaxRateSet'),
+  };
+}
+
+/**
+ * The per-tenant serviceability policy store (M18-FR-01 / D08) — the effective-dated radius/fee/threshold/
+ * minimum that says which addresses the store delivers to and on what terms. A policy is a
+ * `ServiceabilityPolicySet` event on one per-tenant stream; the schedule is every period ever set
+ * (append-only, a change is a new later-dated period — hard rule #2). The route enforces the
+ * one-policy-per-date rule before appending, and the tested `resolveServiceabilityPolicy` picks the period
+ * in force (or the D08 default until the owner configures real radii).
+ */
+export function serviceabilityAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): ServiceabilityConfigDeps {
+  const stream = streamName(STREAM.delivery, 'serviceability');
+  return {
+    setPeriod: async (tenantId, period, key) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `svc-${period.effectiveFrom}-${key}`,
+        type: 'ServiceabilityPolicySet',
+        occurredAt: input.now(),
+        idempotencyKey: `svc-${tenantId}-${period.effectiveFrom}-${key}`,
+        source: 'api/orders',
+        payload: period,
+      }));
+    },
+    schedule: (tenantId) => allOf<ServiceabilityPeriod>(input.store, tenantId, stream, 'ServiceabilityPolicySet'),
   };
 }
 

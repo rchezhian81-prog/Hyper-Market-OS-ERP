@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M18 serviceability config store + route — owner-configurable, effective-dated, on the API (24 September 2026, buildable-work programme, M18 slice S2)
+
+Second M18 slice — makes the effective-dated serviceability policy REAL and owner-configurable on the cloud
+API, mirroring the durable tax-class rate-schedule pattern.
+
+- **`services/orders/src/serviceability.ts`** (new) — three API-07 routes: `POST /v1/serviceability/periods/
+  :effectiveFrom` (set the policy effective from a date, `delivery.serviceability.manage`; append-only,
+  one-policy-per-date — a different policy on the same date is refused 409, an identical re-send is
+  idempotent), `GET /v1/serviceability?on=YYYY-MM-DD` (resolve the policy in force via the tested
+  `resolveServiceabilityPolicy` — **never 404s**, falls back to the D08 default until configured), and
+  `GET /v1/serviceability/periods` (the schedule history). Gated `delivery.serviceability.read` for reads.
+- **`services/api/src/adapters.ts`** — `serviceabilityAdapter`: append-only `ServiceabilityPolicySet` on a
+  per-tenant stream (`streamName(STREAM.delivery,'serviceability')`), folded to the schedule; restart-safe.
+- **`services/api/src/main.ts`** — registered with the store-undefined stub; **`roles.ts`** —
+  `delivery.serviceability.manage` + `.read` granted to owner + store_manager.
+- **`tests/integration/serviceability-config.test.ts`** (+6) — default before configured (never 404);
+  set + resolve + effective-from boundary + **durable across a cold restart**; schedule list sorted;
+  one-policy-per-date refusal + idempotent re-send; per-tenant isolation; malformed 400 + missing-date 400 +
+  permission gating (cashier 403).
+- **Honest scope / rung:** the owner can now configure real radii/fees/slots by date on the live API, and
+  the store is serviceable on the D08 default until he does. **M18 stays PARTIALLY_WIRED** (headline
+  unchanged) — the next slice composes this into the customer-facing serviceability *check* and adds a
+  deterministic routing/slotting **simulator** with synthetic fixtures. Actual production radii/slots remain
+  the owner-configurable **pilot input** (data, not code).
+
+**Next:** M18 slice S3 — a deterministic serviceability+routing **simulator** over synthetic address/slot
+fixtures (composing `checkServiceability` + `resolveServiceabilityPolicy` + `routeOrder`), so a dry run can
+be verified without live maps or the owner's final numbers.
+
+---
+
 ## M18 effective-dated serviceability-policy resolver (24 September 2026, buildable-work programme, M18 slice S1)
 
 **Module pivot (honest, per the owner's sequence).** M19's substitution ENGINE track is complete and
