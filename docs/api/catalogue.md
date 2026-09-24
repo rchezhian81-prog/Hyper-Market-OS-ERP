@@ -332,6 +332,20 @@
   is logged (who reached which transactions) as an **append-only** `DrillAudited`, read at
   `GET /v1/reporting/drill-audits` — restart-safe (§28). Pure reads/computes — they write nothing but the
   audit.
+- **Delivery lifecycle (API-08, M19-FR-03 · hard rule #6 · P-08):** where has this order got to, and who
+  found what at the door. `POST /v1/delivery/orders/:orderId/transition` (`delivery.attempt.record`) moves
+  one order through the tested state machine (`packages/fulfilment`, one authority — not a second copy of the
+  rules): `assigned → picked_up → out_for_delivery → attempted → delivered / partially_delivered / failed`,
+  with a failed stop `reattempt`ed or returned to origin (`rto`). **Handing goods over — a full `deliver` OR a
+  `deliver_partial` — needs PROOF** (photo/OTP/signature) or it is refused `422` (`delivered_without_proof`);
+  an out-of-order step is refused `409` (`invalid_delivery_transition`); `delivered`, `partially_delivered`
+  and `returned_to_origin` are terminal. `pick_up` (parcels into the driver's custody) and `arrive` (at the
+  door, before the outcome) are recordable but optional — offline a driver may go straight to the outcome in
+  one tap. Every step is **append-only** in the driver's own name and the proof rides with the delivered step
+  (evidence and state never drift, #6). `GET /v1/delivery/orders/:orderId` (`delivery.run.read`) reads the
+  current state and full history — what a dispatcher reads when a customer rings. The whole delivery surface
+  is the paid **delivery** feature (M36-FR-01): a plan without it reaches none of it (`feature_not_entitled`).
+  Restart-safe.
 - **Packing & dispatch (API-08, M19-FR-02 · D09 · M10-FR-02):** the two moments between the shelf and the
   van — one where a mistake is free to catch, one where it is expensive to make.
   `POST /v1/fulfilment/orders/:id/pack` (`fulfilment.pack.record`) runs `packOrder` — a **weighed line's

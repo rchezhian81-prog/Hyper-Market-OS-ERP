@@ -5,6 +5,38 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M19 delivery lifecycle wired into the durable transition route (24 September 2026, buildable-work programme, slice A2)
+
+Second slice. A1 added the states to the pure engine; this wires them into the **live durable order-lifecycle
+transition route** so a dispatcher/driver can actually drive the fuller machine on the API.
+
+- **`services/fulfilment/src/index.ts`** — the durable `POST /v1/delivery/orders/:orderId/transition` route
+  now accepts `pick_up`, `arrive` and `deliver_partial` (extended `DELIVERY_EVENTS`). A **partial delivery
+  requires PROOF** exactly like a full one — a new `DELIVERS_GOODS` set drives the proof gate — and its proof
+  reference is recorded append-only with the step (#6). The 400/409 messages and the route's doc comment now
+  describe the full lifecycle `assigned → picked_up → out_for_delivery → attempted →
+  delivered / partially_delivered / failed`. The engine remains the single authority on which steps are legal
+  (CORE-01) — the route only rejects a word the machine has never heard.
+- **`tests/integration/delivery-state.test.ts`** (+2) — the full canonical path on the live surface
+  (`pick_up → depart → arrive → deliver_partial` with proof → `partially_delivered`, terminal, history +
+  proofRef verified), and a partial delivery **refused without proof** (state unmoved). The existing FR-03
+  walk, proof/out-of-order/entitlement tests still pass unchanged (back-compat).
+- **`docs/api/catalogue.md`** — added the previously-undocumented **Delivery lifecycle** (API-08, M19-FR-03)
+  entry describing the transition + read routes and the full state set.
+- **Honest scope / rung:** M19 stays **PARTIALLY_WIRED** — FR-02 packing, FR-03 delivery-state and FR-04 COD
+  are wired/integration-tested, but the module's next bar waits on the **substitution POLICY** (FR-01, the
+  owner-approved superset) built in Track B, and on the driver device + screen + browser e2e (slice A3).
+  Headline **unchanged** (no re-rate, no inflation).
+- **Deferred within A2 (stated, not hidden):** the per-run **attempt route** (`POST /v1/delivery/attempts`)
+  and `reconcileRun` still recognise full delivered/failed only — a partial **attempt outcome + partial COD**
+  couples to the money-recalculation engine (Track B slice B2) and is built there, not padded in here.
+
+**Next:** slice A3 — propagate the new transitions to the driver device (`apps/delivery-app`) + served screen
++ browser e2e (synthetic fixtures; live geofence/hardware stay pilot gates); then the substitution-policy
+track (B1–B6).
+
+---
+
 ## M19 delivery state machine extended — picked up / attempted / partially delivered (24 September 2026, buildable-work programme, slice A1)
 
 First slice of the owner-directed buildable-work programme (**M19 → M18 → M22 → M20 → M01**, then buildable

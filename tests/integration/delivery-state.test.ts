@@ -48,6 +48,42 @@ describe('the order delivery lifecycle (M19-FR-03 state machine, made durable)',
     expect(after.history!.find((s) => s.event === 'deliver')!.proofRef).toBe('OTP-4821');
   });
 
+  it('walks the full path assigned → picked_up → out_for_delivery → attempted → partially_delivered (with proof)', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'delivery');
+
+    expect((await transition(h, 'u-owner', 'ord-p', { event: 'pick_up' }, 'p-1')).status).toBe(200);
+    expect(((await readOrder(h, 'u-owner', 'ord-p')).body as StateBody).state).toBe('picked_up');
+    expect((await transition(h, 'u-owner', 'ord-p', { event: 'depart' }, 'p-2')).status).toBe(200);
+    expect((await transition(h, 'u-owner', 'ord-p', { event: 'arrive' }, 'p-3')).status).toBe(200);
+    expect(((await readOrder(h, 'u-owner', 'ord-p')).body as StateBody).state).toBe('attempted');
+
+    // A partial delivery hands SOME lines over — so it needs proof, like a full delivery, and it is a
+    // terminal outcome (the undelivered remainder is put right by a compensating money/stock event).
+    const partial = await transition(h, 'u-owner', 'ord-p', { event: 'deliver_partial', proof: { kind: 'photo', ref: 'PH-77' } }, 'p-4');
+    expect(partial.status).toBe(200);
+    expect((partial.body as StateBody).state).toBe('partially_delivered');
+    expect((partial.body as StateBody).final).toBe(true);
+
+    const after = (await readOrder(h, 'u-owner', 'ord-p')).body as StateBody;
+    expect(after.history!.map((s) => s.event)).toEqual(['pick_up', 'depart', 'arrive', 'deliver_partial']);
+    expect(after.history!.find((s) => s.event === 'deliver_partial')!.proofRef).toBe('PH-77'); // proof rides with the hand-over (#6)
+    // Terminal — a partially delivered order accepts nothing more.
+    expect((await transition(h, 'u-owner', 'ord-p', { event: 'rto' }, 'p-5')).status).toBe(409);
+  });
+
+  it('refuses a partial delivery without proof — the state does not move', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'delivery');
+    await transition(h, 'u-owner', 'ord-pp', { event: 'depart' }, 'pp-1');
+    const noProof = await transition(h, 'u-owner', 'ord-pp', { event: 'deliver_partial' }, 'pp-2');
+    expect(noProof.status).toBe(422);
+    expect(codeOf(noProof)).toBe('delivered_without_proof');
+    expect(((await readOrder(h, 'u-owner', 'ord-pp')).body as StateBody).state).toBe('out_for_delivery'); // unmoved
+  });
+
   it('refuses to mark delivered without proof — the state does not move', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
