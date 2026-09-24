@@ -15,6 +15,10 @@
 //     restrictions, decides whether a substitute may be offered at all, and whether the shop
 //     may pick it (`best_match`) or must ask first (`contact_me`). Controlled items are never
 //     auto-substituted. Composes with `amendments.applySubstitution`, which does the money.
+//   • `substitution-money.ts` (M19-FR-01) — HOW the money moves once a swap is decided: a cheaper
+//     swap or a short-pick is a refund (prepaid) or a smaller total to collect (COD/pay-at-store);
+//     a dearer swap is capped at the original price unless the customer EXPLICITLY approved paying
+//     more. Composes `applySubstitution`; basket promo/tax/loyalty recompute is the next slice.
 //
 // Pure and deterministic. Grows one reviewed, tested unit at a time.
 
@@ -23,3 +27,4 @@ export * from './reservation';
 export * from './fulfilment-plan';
 export * from './amendments';
 export * from './substitution-policy';
+export * from './substitution-money';

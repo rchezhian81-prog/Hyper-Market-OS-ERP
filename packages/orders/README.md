@@ -50,8 +50,15 @@ with **no oversell** (**M18-FR-02** / §6.2).
   reason. Safety- and consent-critical refusals hold under **every** preference: a **controlled
   item is never auto-substituted**, and a substitute that introduces an **avoided allergen** is
   refused even under `best_match`. Composes with `applySubstitution`, which does the money.
+- **`src/substitution-money.ts`** (M19-FR-01) — HOW the money moves once a swap is decided.
+  `settleSubstitutionMoney` composes `applySubstitution` and maps the outcome onto the tender: a
+  **cheaper** swap or a **short-pick** is a refund (prepaid) or a smaller total to collect
+  (COD/pay-at-store); a **dearer** swap is **capped at the original price unless the customer
+  explicitly approved** paying more (then an additional charge / collect-more). `settlementMinor` is
+  always ≥ 0 — the direction is in `settlementKind`.
 
 > Tested in `tests/unit/orders-fulfilment-plan.test.ts` (12),
-> `tests/unit/orders-amendments.test.ts` (15) and
-> `tests/unit/orders-substitution-policy.test.ts` (12), and proven end to end in
+> `tests/unit/orders-amendments.test.ts` (15),
+> `tests/unit/orders-substitution-policy.test.ts` (12) and
+> `tests/unit/orders-substitution-money.test.ts` (10), and proven end to end in
 > `tests/integration/pick-to-doorstep.test.ts` (Stage 15 gate).

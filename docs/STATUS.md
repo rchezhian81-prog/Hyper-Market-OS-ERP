@@ -5,6 +5,31 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M19 substitution MONEY-settlement engine — cap + explicit approval + tender split (24 September 2026, buildable-work programme, slice B2a)
+
+Fourth slice. B1 decided WHETHER a swap may happen; this decides **how the money moves** once it does.
+
+- **`packages/orders/src/substitution-money.ts`** (new) — `settleSubstitutionMoney` composes the
+  existing `applySubstitution` and maps the outcome onto the **tender**: a **cheaper** swap or a
+  **short-pick** is a refund on a prepaid order or a smaller total to collect on COD/pay-at-store; a
+  **dearer** swap is **capped at the original price UNLESS the customer explicitly approved** paying more
+  (`approvedAboveCap` → an additional charge / collect-more). `settlementKind` carries the direction
+  (`prepaid_refund` / `prepaid_additional_charge` / `collect_less` / `collect_more` / `none`) and
+  `settlementMinor` is always ≥ 0. Pure; no new pricing of its own.
+- **`tests/unit/orders-substitution-money.test.ts`** (+10) — cheaper→refund/collect-less across all three
+  tenders; dearer capped (no settlement) vs dearer approved (additional charge / collect-more); same
+  price = none; declined/no-answer refunds or uncharges the whole line; settlementMinor never negative.
+  Barrel + README updated.
+- **Honest scope / rung:** engine-only. **M19 stays PARTIALLY_WIRED**; headline **unchanged**. This is
+  the **single-line** money settlement — basket-wide **promotion/tax/loyalty recomputation** after a
+  swap (a swap can break a multi-buy, change the HSN, or move loyalty earn) is the next slice **B2b**,
+  which builds on this.
+
+**Next:** slice B2b — basket recompute composing `bestPrice` (promotions), `resolveGstRate` (per-HSN
+tax) and loyalty earn over the post-swap basket, feeding the net delta into this settlement.
+
+---
+
 ## M19 substitution POLICY engine — preference + restrictions + controlled-item refusal (24 September 2026, buildable-work programme, slice B1)
 
 Third slice, and the start of **Track B** — the owner-approved substitution policy, which is the
