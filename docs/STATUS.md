@@ -5,6 +5,31 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Pilot-readiness docs refreshed to the live ledger (24 September 2026, "shift to pilot/store-UAT readiness")
+
+Owner-chosen pivot: with the clean pure-cloud build queue confirmed exhausted (two deep re-scans), the highest-value
+move is no longer building — it is preparing the store pilot. The two owner-facing summary docs had drifted stale
+against the ledger, so they were refreshed to the current truth rather than duplicated by a fifth overview.
+
+- **`docs/release-plan.md`** — updated from 52.6%/16-E2E (20 Sep) to the current **55.4% / 26 E2E** (via
+  `scripts/completion-report.mjs`). Corrected §4's R2 "Store Core" pilot mapping: of the 22 R2 modules, **14 are
+  E2E-verified, 3 wired (M02/M03/M29), 5 partly built (M01, M04, M13, M23, M35)** — and, crucially, made honest
+  that of those 5, **M04 (planogram store→R6) and M13 (exchanges→R5) are owner-deferred out of pilot scope and
+  M23 (live GST filing) is externally blocked**, so the true remaining pilot *build* gap is just M01 (doc
+  templates + report roll-ups) + M35 (op-health legs) + hardening M02/M03/M29. Added the roadmap anchor
+  ("M5 Controlled Store Core", 1 Apr 2027) and cross-references to the existing registers/runbooks.
+- **`docs/readiness-to-go-live.md`** — refreshed from 48.0%/3-E2E (14 Sep) to **55.4% / 26 E2E**; six-score table
+  and item distribution corrected; §3–§5/§7 narrative brought current (the buildable queue is now nearly empty;
+  the honest next step is store UAT, not more building); kept the still-true "what 100% honestly means" anchor.
+- **Not touched:** `docs/runbooks/store-go-live-checklist.md` (timeless, tied to UAT-01…58 — no stale figures),
+  `docs/registers/uat-calendar.md`, the pilot runbooks, and `docs/completion-status.json` (no rung change this
+  increment — docs only). Headline stays **55.4%**.
+
+**Owner's next decision (surfaced):** name the pilot scope (departments/tills/staff), and start the outside-party
+clocks (payment onboarding, GST credentials + CA, pen-test, hardware, licences) — these have lead times.
+
+---
+
 ## M10-FR-02 slice 1: cloud quality hold/release register wired (24 September 2026, "re-scan for any missed gap")
 
 A fresh deep re-scan (owner-requested) turned up one more genuinely clean, roadmap-backed, pure-cloud
