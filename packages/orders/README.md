@@ -56,9 +56,15 @@ with **no oversell** (**M18-FR-02** / §6.2).
   (COD/pay-at-store); a **dearer** swap is **capped at the original price unless the customer
   explicitly approved** paying more (then an additional charge / collect-more). `settlementMinor` is
   always ≥ 0 — the direction is in `settlementKind`.
+- **`src/substitution-exceptions.ts`** (M19-FR-01) — the **owned, valued worklist** of swaps a person
+  must act on. `substitutionExceptions` turns the recorded decisions into a worst-first queue
+  (`refund_due`, `collect_adjustment`, `above_cap_charge`, `policy_short_pick`) with an `atRiskMinor`
+  total, so a swap that owes money or left the customer short is never silent (P-08). Mirrors the
+  valued-exception shape of `reconcileCod` / `reconcileChannel`.
 
 > Tested in `tests/unit/orders-fulfilment-plan.test.ts` (12),
 > `tests/unit/orders-amendments.test.ts` (15),
-> `tests/unit/orders-substitution-policy.test.ts` (12) and
-> `tests/unit/orders-substitution-money.test.ts` (10), and proven end to end in
+> `tests/unit/orders-substitution-policy.test.ts` (12),
+> `tests/unit/orders-substitution-money.test.ts` (10) and
+> `tests/unit/orders-substitution-exceptions.test.ts` (9), and proven end to end in
 > `tests/integration/pick-to-doorstep.test.ts` (Stage 15 gate).

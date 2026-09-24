@@ -5,6 +5,31 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M19 substitution exception-queue engine — the owned, valued worklist (24 September 2026, buildable-work programme, slice B4)
+
+Sixth slice. The recorded substitution decisions now become a triageable worklist so no swap that owes
+money or left the customer short waits unseen (P-08).
+
+- **`packages/orders/src/substitution-exceptions.ts`** (new) — `substitutionExceptions(records)` turns the
+  recorded decisions into an **owned, valued, worst-first** queue: `refund_due` (a cheaper swap / short-pick
+  owes the customer, prepaid), `collect_adjustment` (a COD/pay-at-store total must change before settlement),
+  `above_cap_charge` (a dearer swap charged above the original price under approval — surfaced first so the
+  approval can be stood behind), and `policy_short_pick` (a swap the policy refused left the line short).
+  Returns `atRiskMinor` (total money at stake) and a deterministic order (amount, then order, then line).
+  Pure; reads the amounts already on the records, prices nothing itself. Mirrors `reconcileCod` /
+  `reconcileChannel`.
+- **`tests/unit/orders-substitution-exceptions.test.ts`** (+9) — each exception kind; above-cap ranked
+  first; the M18 no-tender refund fact still surfaces; a refused-no-tender swap is a policy_short_pick; a
+  same-price swap is ignored; worst-first deterministic ordering; empty set = empty queue. Barrel + README.
+- **Honest scope / rung:** engine-only. **M19 stays PARTIALLY_WIRED**; headline **unchanged**. The
+  tenant-wide read route needs a per-tenant substitution index (the records are stored per-order today), so
+  the worklist READ is a deliberate follow-up (B4b), not claimed here.
+
+**Next:** slice B5 — customer notification of a substitution/partial-delivery through the M31 notification
+queue + Tamil rendering of the customer-facing strings (English today); then B6 picker/customer screen + e2e.
+
+---
+
 ## M19 substitution policy + tender money WIRED into the /substitute route (24 September 2026, buildable-work programme, slice B3)
 
 Fifth slice, and the one that makes the substitution policy REAL on the API. B1 (eligibility) and B2a
