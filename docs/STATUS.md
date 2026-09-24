@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M20-FR-04 — the erasure plan can now be CARRIED OUT (24 September 2026, buildable-work programme, M20 slice)
+
+M18 and M19 buildable programmes are complete; the sequence moves to M22 → M20. **M22 has no clean buildable
+slice** (all four FRs are wired; the only gap is the customer-facing collections portal, which needs external
+B2B-customer auth — a live gate). So the next buildable slice is in **M20-FR-04**: the DSR module could
+_compute_ an erasure plan (`planErasure`) but nothing could _execute_ it — the plan's execution was a named
+follow-on.
+
+- **`packages/customer/src/erasure-executor.ts`** (new) — `executeErasurePlan(plan, sources, at)` carries a
+  plan out against a registry of **`ErasableSource`** adapters, one per data category. **Provider-neutral by
+  design:** the real domain stores (orders, loyalty, the served profile, …) register as sources at the edge;
+  tests use in-memory fakes; the executor never knows which — so it is fully buildable and tested now, with the
+  real-store registration the one wiring step left. Three rules it will not break: a **retained** category is
+  **never touched**, not even when a store is registered for it (audit evidence and tax/GST invoices survive
+  intact — hard rule #6, the retain branch never calls the source); a category the plan wanted actioned but
+  with **no source, or whose source raised**, becomes a **visible exception** in the report — never a silent
+  skip that would claim an erasure that never happened (P-08); and **one failing store never aborts the
+  erasure**. The report is a plain value an **append-only** trail records.
+- **`tests/unit/customer-erasure-executor.test.ts`** (new, +9) — erase / minimise through a source; the
+  **retain tripwire** (a source that throws if ever called, proving a retained category is left alone);
+  no-source and failing-source exceptions; a mixed plan reported in order with totals summed; an async source
+  awaited; the empty plan.
+- **Honest scope / rung:** **M20-FR-04 stays PARTIALLY WIRED** (headline unchanged, backlog counts unchanged).
+  The remaining named follow-ons are the ones that need live infrastructure: **registering the real domain
+  stores** behind these adapters (needs the live per-domain data model), and the **customer-app→cloud call**.
+
+**Next:** continue the buildable-work programme automatically — assess whether M20/M01 have a further clean
+buildable slice, else STOP and report an honest status with the remaining live/owner gates.
+
+---
+
 ## M19 delivery-app — "Partly delivered" on the screen, browser-verified (24 September 2026, buildable-work programme, M19 slice A3 part 2)
 
 Part 1 put `deliverPartial` on the phone's session model; this surfaces it on the driver's SCREEN and proves

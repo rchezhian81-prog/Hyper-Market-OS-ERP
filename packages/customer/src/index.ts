@@ -27,6 +27,7 @@
 export * from './matching';
 export * from './consent';
 export * from './data-rights';
+export * from './erasure-executor';
 export * from './segments';
 export * from './child-data-guard';
 export * from './breach-notification';

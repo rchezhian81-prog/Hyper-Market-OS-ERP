@@ -25,6 +25,18 @@ data.
   deletes someone else's account and an unverified access request hands over their shopping
   history. `overdueRequests` calls out requests that are late *and still unverified*, because
   that queue is entirely the shop's and has simply not been worked.
+- **`src/erasure-executor.ts`** (M16-FR-03 / M20-FR-04) — the step that **carries out** an
+  `ErasurePlan`. A plan on its own deletes nothing; `executeErasurePlan` applies it against a
+  registry of **`ErasableSource`** adapters — one per data category, each knowing how to erase or
+  minimise its own store. **Provider-neutral**: the real domain stores register as sources at the
+  edge, tests use in-memory fakes, and the executor never knows which — so it is fully buildable and
+  tested now, with the real-store registration the one remaining wiring step. Three rules it will not
+  break: a **retained** category is **never touched**, not even if a store is registered for it (audit
+  evidence and tax/GST invoices survive intact — hard rule #6, and the retain branch never calls the
+  source); a category the plan wanted actioned but with **no registered source, or whose source
+  raised**, becomes a **visible exception** in the report, never a silent skip that would claim an
+  erasure that never happened (P-08); and **one failing store does not abort the erasure** — the other
+  categories still run. The report is a plain value an **append-only** trail records.
 - **`src/segments.ts`** (M16-FR-04) — segments and lifetime value are **derived opinions about
   a person**, not facts, and acting on them changes how the shop treats someone. So: **no
   profiling without a lawful basis** — a non-consenting customer comes back as `not_profiled`
