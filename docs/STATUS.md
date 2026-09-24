@@ -5,6 +5,53 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Buildable-work programme — honest STOP-POINT reached (24 September 2026)
+
+This session drove the owner's prioritised sequence — **M19 → M18 → M22 → M20 → M01, then
+M23/M27/M35** — to its highest honest buildable maturity, provider-neutral and simulator-verified,
+never depending on a live provider or real store to make progress. **15 PRs merged this session
+(#541–#555).** Every automated gate stayed green (tsc + eslint + secret-scan + vitest, 711 files /
+7,516 tests).
+
+**After a close per-module review, the buildable work in this sequence is now exhausted.** Every
+remaining gap needs something I cannot supply autonomously without guessing — a live provider, real
+data, live app↔cloud connectivity, external authentication, or a specific owner decision. Per the
+governing directive ("if NOTHING buildable remains without a live/owner gate, STOP and report
+honestly rather than manufacture low-value work"), I am stopping here rather than inventing partial
+engines disconnected from their gated halves.
+
+**Remaining gap per sequence module, and the gate each needs:**
+
+| Module | Remaining gap | Gate type |
+|---|---|---|
+| **M18** OMS | Refund PROCESSING (money movement); multi-line amendment batching; FR-03 routing rung | **Owner / live payment** — FR-03 is owner-gated; refund processing needs the payment provider |
+| **M19** Fulfilment | M19-FR-01 "customer-confirmed substitution" rung: the write-path exists (under M18-FR-04) — whether it satisfies M19-FR-01 is a cross-module FR-attribution call | **Owner decision** (roadmap attribution, not an autonomous re-rate) |
+| **M20** Customer app | Erasure-plan EXECUTION against the real domain stores (engine now built & merged, #555); customer-app→cloud DSR call | **Live** — real per-domain store registration + a design decision on erasure over append-only ledgers; live cloud connectivity |
+| **M22** B2B | Customer-facing collections portal (`scopeToCustomer`) | **Live** — external B2B-customer authentication |
+| **M01** Foundation | Org-scoped report roll-ups; M31 document templates | **Ambiguous / owner** — roll-up shape is unspecified (STOP-and-ask); templates are an M31 concern |
+| **M23** Finance/Tally | Tally drain; period-close totals from a genuine second control-total source | **Live provider / data** — Tally integration + a real second source |
+| **M27** Concession | POS-side concession-sale attribution (FR-03 till) — the cloud sale-record route + settlement ARE wired; the gap is attributing a concession sale AT the offline-first till | **Owner design decision** — touches the core POS sale path (hard rule #1); where/how attribution flows is a design call |
+| **M35** Ops/DR | Edge signal collection (real telemetry, not supplied evidence); end-to-end backup/DR orchestration | **Live infrastructure** |
+
+**What needs an owner decision or live input to unblock further work:**
+1. **Live provider credentials / sandboxes** — payment (refunds), Tally (finance drain), and the
+   second control-total source for period close.
+2. **Real data-store integration** — registering the actual customer/orders/loyalty stores behind the
+   new erasure adapters, incl. a decision on how erasure reconciles with append-only ledgers.
+3. **External authentication** — for the B2B collections portal and the customer app's cloud calls.
+4. **Owner roadmap decisions** — the M19-FR-01 substitution FR-attribution; whether to wire concession
+   attribution into the offline-first till (M27-FR-03) and how; the shape/value of M01 org-scoped
+   report roll-ups.
+5. **In-store UAT / pilot** — the pilot plan and readiness checklist are already drafted
+   (`docs/readiness-to-go-live.md`, the pilot-plan entries); execution needs the store, staff and
+   real hardware.
+
+**Next session:** do not restart autonomous slice-work in this sequence — it is at an honest floor.
+Pick up whichever gate the owner unblocks (a provider sandbox, a real store to wire, or a decision
+above), or move to a different roadmap area if the owner redirects.
+
+---
+
 ## M20-FR-04 — the erasure plan can now be CARRIED OUT (24 September 2026, buildable-work programme, M20 slice)
 
 M18 and M19 buildable programmes are complete; the sequence moves to M22 → M20. **M22 has no clean buildable
