@@ -5,6 +5,28 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M03 Catalogue re-rated WIRED → INTEGRATION_TESTED — honest hardening (24 September 2026, "do the honest hardening")
+
+Second of the owner-approved M02/M03/M29 hardening set. No new capability, no production code change
+(the catalogue is already event-sourced).
+
+- **`tests/integration/product-master-durability.test.ts`** (new, 3) — consolidates the module-level
+  property the per-leg catalogue suites did not assert: after a cold restart the **product master**
+  (latest-per-id), the **barcode registry** (one-code-one-item) and the **per-HSN tax schedule** all
+  rebuild from the event store; latest-wins survives the restart (one entry, newest version); and the
+  catalogue is **tenant-isolated** — tenant B cannot see A's product or barcode, and is not blocked by
+  A's id/SKU/barcode namespace.
+- **Honest scope:** `product-merge` and `pack-hierarchy` already proved their own cold-restart rebuild,
+  and the product-truth core (FR-01/02/03) was already integration-tested per-leg — this consolidates the
+  whole catalogue's durability + isolation to the peer INTEGRATION_TESTED bar.
+- **Re-rate:** M03 WIRED → INTEGRATION_TESTED; headline **55.6 → 55.7** (+15 wt, 5795/10400). Full-104
+  counts: WIRED 7, INTEGRATION_TESTED 11, E2E_VERIFIED 26 (module-level 3 WIRED / 2 INTEGRATION_TESTED /
+  19 E2E). Ladder cell + summary line + evidence updated; evidence guardrail already satisfied.
+
+**Next (last of the set):** M29 reporting durability. After that, bucket A is exhausted.
+
+---
+
 ## M02 Identity/RBAC re-rated WIRED → INTEGRATION_TESTED — honest hardening (24 September 2026, "do the honest hardening")
 
 The owner asked to "pick up the pending requirements to complete this project." A fresh bucketed worklist
