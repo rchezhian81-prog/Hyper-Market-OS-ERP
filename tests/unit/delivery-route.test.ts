@@ -161,3 +161,60 @@ describe('end-of-shift settlement (M19-FR-04)', () => {
     expect(JSON.stringify(route.route())).not.toMatch(/customerName|phone|email/i);
   });
 });
+
+// The extended delivery lifecycle on the driver's phone (M19-FR-01/FR-03): picked up from the store,
+// arrived at the door, and a PARTIAL delivery — the customer kept some of the order, with proof.
+describe('RouteSession — picked-up, arrived and partial delivery (M19-FR-01/FR-03)', () => {
+  it('drives the full lifecycle: pick up → depart → arrive → deliver', () => {
+    const route = newRoute();
+    expect(route.pickUp('s1').state).toBe('picked_up'); // left the shelf
+    expect(route.depart('s1').state).toBe('out_for_delivery');
+    expect(route.arrive('s1').state).toBe('attempted'); // reached the door
+    expect(route.deliver('s1', OTP, { codCollectedMinor: 250_00 }).state).toBe('delivered');
+  });
+
+  it('refuses an out-of-order lifecycle step (arrive before departing; pick up after departing)', () => {
+    const route = newRoute();
+    expect(() => route.arrive('s1')).toThrow(InvalidDeliveryTransitionError); // not out for delivery yet
+    route.depart('s1');
+    expect(() => route.pickUp('s1')).toThrow(InvalidDeliveryTransitionError); // already gone
+  });
+
+  it('records a partial delivery with proof — terminal, COD on the books, cannot be re-delivered', () => {
+    const route = newRoute();
+    route.depart('s1');
+    expect(() => route.deliverPartial('s1', undefined, { codCollectedMinor: 100_00 })).toThrow(ProofRequiredError);
+
+    const stop = route.deliverPartial('s1', OTP, { codCollectedMinor: 100_00, codMethod: 'cash' });
+    expect(stop.state).toBe('partially_delivered');
+    expect(stop.proof).toEqual(OTP);
+    expect(route.codHeld()).toEqual(money(100_00, 'INR')); // cash taken on a partial is not off the books
+    // Terminal: the undelivered remainder is a downstream compensating event, not a re-delivery here.
+    expect(() => route.deliver('s1', OTP)).toThrow(InvalidDeliveryTransitionError);
+  });
+
+  it('allows a partial delivery straight from arrival too', () => {
+    const route = newRoute();
+    route.depart('s1');
+    route.arrive('s1');
+    expect(route.deliverPartial('s1', OTP, { codCollectedMinor: 50_00 }).state).toBe('partially_delivered');
+  });
+
+  it('counts a partial as a terminal outcome — the route completes with a mix of delivered and partial', () => {
+    const route = newRoute();
+    route.depart('s1');
+    route.deliverPartial('s1', OTP, { codCollectedMinor: 100_00 });
+    route.depart('s2');
+    route.deliver('s2', OTP); // prepaid
+    expect(route.progress()).toMatchObject({ total: 2, delivered: 1, partiallyDelivered: 1, remaining: 0, complete: true });
+  });
+
+  it('settles a partial delivery to what was actually collected — no false short for the undelivered part', () => {
+    const route = newRoute();
+    route.depart('s1'); // s1 expects ₹250 COD in full
+    route.deliverPartial('s1', OTP, { codCollectedMinor: 100_00, codMethod: 'cash' }); // only some goods handed over
+    const settlement = route.settle();
+    expect(settlement.matchedCount).toBe(1); // reconciles to the ₹100 actually taken
+    expect(settlement.exceptionCount).toBe(0);
+  });
+});
