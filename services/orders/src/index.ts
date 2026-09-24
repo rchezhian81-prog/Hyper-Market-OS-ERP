@@ -17,6 +17,18 @@ import { apiError } from '../../kernel/src/index';
 import type { OrderState, OrderEvent } from '../../../packages/orders/src/lifecycle';
 import { transitionOrder, canTransition, isTerminal } from '../../../packages/orders/src/lifecycle';
 import { applySubstitution, reconcileChannel, type SubstitutionOffer, type SubstitutionDecision, type SubstitutionOutcome, type ChannelOrder } from '../../../packages/orders/src/amendments';
+import {
+  assessSubstitution,
+  type CustomerSubstitutionRules,
+  type ProductAttributes,
+  type SubstitutionPreference,
+  type SubstitutionEligibility,
+} from '../../../packages/orders/src/substitution-policy';
+import {
+  settleSubstitutionMoney,
+  type TenderMode,
+  type SubstitutionSettlementKind,
+} from '../../../packages/orders/src/substitution-money';
 
 export interface Reservation {
   readonly reservationId: string;
@@ -158,6 +170,19 @@ export interface StoredSubstitution {
    *  ISSUED downstream by the finance/refund surface, never kept. */
   readonly refundMinor: number;
   readonly at: string;
+  // M19-FR-01 policy + tender-aware money (optional — absent on a plain M18 substitution decision):
+  /** The eligibility the policy engine returned, when the caller supplied the customer's rules + attributes. */
+  readonly eligibility?: SubstitutionEligibility;
+  /** Why the policy refused or asked for confirmation (a controlled item, an allergen, a blocked brand, …). */
+  readonly policyReason?: string;
+  /** How the order is paid — drives the settlement direction, when supplied. */
+  readonly tender?: TenderMode;
+  /** The tender-aware settlement: prepaid_refund / prepaid_additional_charge / collect_less / collect_more / none. */
+  readonly settlementKind?: SubstitutionSettlementKind;
+  /** The settlement amount, always >= 0; the direction is in `settlementKind`. */
+  readonly settlementMinor?: number;
+  /** True only when a dearer substitute was charged ABOVE the original price under explicit approval. */
+  readonly aboveCap?: boolean;
 }
 
 /** One line of an order that could not be reserved in full — ordered more than was held (M18-FR-02). */
@@ -249,6 +274,43 @@ const isOffer = (v: unknown): v is SubstitutionOffer =>
   && isStr((v as Record<string, unknown>)['substituteProductId']) && isStr((v as Record<string, unknown>)['substituteName'])
   && isNonNegInt((v as Record<string, unknown>)['substituteUnitPriceMinor']) && isPosInt((v as Record<string, unknown>)['substituteQuantityMinor'])
   && isStr((v as Record<string, unknown>)['offeredAt']);
+
+const SUB_PREFERENCES: readonly SubstitutionPreference[] = ['no_substitution', 'best_match', 'contact_me'];
+const TENDER_MODES: readonly TenderMode[] = ['prepaid', 'cod', 'pay_at_store'];
+const strList = (v: unknown): readonly string[] => (Array.isArray(v) ? v.filter(isStr) : []);
+
+/** The optional M19-FR-01 substitution POLICY inputs: the customer's rules + the two products' attributes.
+ *  Absent → a plain M18 substitution (no eligibility gate). All-or-nothing: eligibility runs only when the
+ *  customer rules and BOTH product attribute sets are readable. */
+const readSubRules = (v: unknown): CustomerSubstitutionRules | undefined => {
+  if (typeof v !== 'object' || v === null) return undefined;
+  const r = v as Record<string, unknown>;
+  if (typeof r['preference'] !== 'string' || !SUB_PREFERENCES.includes(r['preference'] as SubstitutionPreference)) return undefined;
+  return {
+    preference: r['preference'] as SubstitutionPreference,
+    ...(Array.isArray(r['blockedBrands']) ? { blockedBrands: strList(r['blockedBrands']) } : {}),
+    ...(Array.isArray(r['blockedCategories']) ? { blockedCategories: strList(r['blockedCategories']) } : {}),
+    ...(Array.isArray(r['avoidAllergens']) ? { avoidAllergens: strList(r['avoidAllergens']) } : {}),
+    ...(isNonNegInt(r['weightToleranceBps']) ? { weightToleranceBps: r['weightToleranceBps'] } : {}),
+  };
+};
+
+const readAttrs = (v: unknown): ProductAttributes | undefined => {
+  if (typeof v !== 'object' || v === null) return undefined;
+  const a = v as Record<string, unknown>;
+  if (!isStr(a['productId']) || !isStr(a['name'])) return undefined;
+  return {
+    productId: a['productId'], name: a['name'],
+    ...(isStr(a['brand']) ? { brand: a['brand'] } : {}),
+    ...(isStr(a['categoryId']) ? { categoryId: a['categoryId'] } : {}),
+    ...(isNonNegInt(a['sizeMinor']) ? { sizeMinor: a['sizeMinor'] } : {}),
+    ...(Array.isArray(a['allergens']) ? { allergens: strList(a['allergens']) } : {}),
+    ...(typeof a['ageRestricted'] === 'boolean' ? { ageRestricted: a['ageRestricted'] } : {}),
+  };
+};
+
+const readTender = (v: unknown): TenderMode | undefined =>
+  typeof v === 'string' && TENDER_MODES.includes(v as TenderMode) ? (v as TenderMode) : undefined;
 
 /** One order as a channel or our ledger reports it: an id, a value, and a state — the three things
  *  reconciliation compares. */
@@ -388,12 +450,23 @@ export function ordersRoutes(deps: OrdersDeps): readonly Route[] {
     // more for our failure to stock the item; where the substitute is cheaper a refund is due, recorded as
     // a fact here and ISSUED downstream by the finance/refund surface (never kept). Append-only: a line is
     // substituted once (a re-decision is refused), and a substitution on a finished order is refused.
+    //
+    // M19-FR-01 extends this write path with two OPTIONAL, backward-compatible inputs (a plain M18 call
+    // omits both): `{ rules, orderedAttrs, substituteAttrs }` runs the substitution POLICY — a `refused`
+    // eligibility (a controlled item, an avoided allergen, a blocked brand/category, a size out of
+    // tolerance) BLOCKS the swap even on a "confirmed" decision, short-picking the line; and `{ tender,
+    // approvedAboveCap }` runs the tender-aware MONEY settlement (refund vs collect-less, and an approved
+    // dearer swap above the cap). Both compose the tested `packages/orders` engines — no logic is copied.
     {
       api: 'API-07', method: 'POST', path: '/v1/orders/:orderId/substitute',
       permission: 'order.lifecycle.manage', idempotent: true,
       handler: async (ctx) => {
         const orderId = ctx.params['orderId'] ?? '';
-        const b = (ctx.body ?? {}) as { offer?: unknown; decision?: unknown };
+        const b = (ctx.body ?? {}) as {
+          offer?: unknown; decision?: unknown;
+          rules?: unknown; orderedAttrs?: unknown; substituteAttrs?: unknown;
+          tender?: unknown; approvedAboveCap?: unknown;
+        };
         if (!isOffer(b.offer) || !SUB_DECISIONS.includes(b.decision as SubstitutionDecision)) {
           throw apiError(400, {
             code: 'not_readable_as_a_substitution',
@@ -430,12 +503,47 @@ export function ordersRoutes(deps: OrdersDeps): readonly Route[] {
           });
         }
 
-        const result = applySubstitution({ offer, decision: b.decision as SubstitutionDecision });
+        const decision = b.decision as SubstitutionDecision;
+
+        // M19-FR-01 POLICY gate (optional): when the caller supplies the customer's rules and both
+        // products' attributes, the eligibility engine decides whether the swap may be offered at all.
+        // A `refused` policy result BLOCKS the swap regardless of the picker's decision — a controlled
+        // item, an avoided allergen or a blocked brand is short-picked, never applied "because the
+        // picker said confirmed". `auto_accept` / `needs_confirmation` proceed with the picker's decision.
+        const bodyRules = readSubRules(b['rules']);
+        const orderedAttrs = readAttrs(b['orderedAttrs']);
+        const substituteAttrs = readAttrs(b['substituteAttrs']);
+        let eligibility: SubstitutionEligibility | undefined;
+        let policyReason: string | undefined;
+        let effectiveDecision = decision;
+        if (bodyRules !== undefined && orderedAttrs !== undefined && substituteAttrs !== undefined) {
+          const assessed = assessSubstitution({ lineId: offer.lineId, ordered: orderedAttrs, substitute: substituteAttrs, rules: bodyRules });
+          eligibility = assessed.eligibility;
+          policyReason = assessed.reason;
+          if (assessed.eligibility === 'refused') effectiveDecision = 'declined'; // policy blocks it → short-pick, charge nothing
+        }
+
+        const result = applySubstitution({ offer, decision: effectiveDecision });
+
+        // M19-FR-01 tender-aware MONEY (optional): when the caller supplies how the order is paid, the
+        // settlement engine decides how the difference moves (refund vs collect-less, and an approved
+        // dearer swap above the cap). Without a tender, the plain M18 charge/refund fact is recorded.
+        const tender = readTender(b['tender']);
+        const approvedAboveCap = b['approvedAboveCap'] === true;
+        const money = tender !== undefined
+          ? settleSubstitutionMoney({ offer, decision: effectiveDecision, tender, approvedAboveCap })
+          : undefined;
+        const chargeMinor = money?.chargeMinor ?? result.chargeMinor;
+        const tellTheCustomer = money?.tellTheCustomer ?? result.tellTheCustomer;
+
         const at = deps.now();
         const sub: StoredSubstitution = {
-          orderId, lineId: result.lineId, decision: b.decision as SubstitutionDecision, outcome: result.outcome,
+          orderId, lineId: result.lineId, decision, outcome: result.outcome,
           pickProductId: result.pickProductId ?? null, pickQuantityMinor: result.pickQuantityMinor,
-          chargeMinor: result.chargeMinor, refundMinor: result.refundMinor, at,
+          chargeMinor, refundMinor: result.refundMinor, at,
+          ...(eligibility !== undefined ? { eligibility } : {}),
+          ...(policyReason !== undefined ? { policyReason } : {}),
+          ...(money !== undefined ? { tender, settlementKind: money.settlementKind, settlementMinor: money.settlementMinor, aboveCap: money.aboveCap } : {}),
         };
         await deps.recordSubstitution(ctx.tenantId, sub);
         return {
@@ -443,8 +551,10 @@ export function ordersRoutes(deps: OrdersDeps): readonly Route[] {
           body: {
             orderId, lineId: result.lineId, outcome: result.outcome,
             pickProductId: result.pickProductId ?? null, pickQuantityMinor: result.pickQuantityMinor,
-            chargeMinor: result.chargeMinor, refundMinor: result.refundMinor,
-            refundDue: result.refundMinor > 0, tellTheCustomer: result.tellTheCustomer,
+            chargeMinor, refundMinor: result.refundMinor,
+            refundDue: result.refundMinor > 0, tellTheCustomer,
+            ...(eligibility !== undefined ? { eligibility, policyReason } : {}),
+            ...(money !== undefined ? { tender, settlementKind: money.settlementKind, settlementMinor: money.settlementMinor, aboveCap: money.aboveCap } : {}),
           },
         };
       },
