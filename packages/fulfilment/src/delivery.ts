@@ -4,27 +4,71 @@
 // when the CUSTOMER has confirmed it (A04 / hard rule #5 spirit) — the store never
 // swaps an item on a customer without consent. Pure and deterministic; offline the
 // caller queues these as events.
+//
+// The full delivery lifecycle (M19 target):
+//
+//   assigned → picked up → out for delivery → attempted → delivered
+//                                                        → partially delivered
+//                                                        → failed → reattempt / returned to origin
+//
+// - `order ready` is NOT a state here: it belongs to the ORDER lifecycle
+//   (`packed`/`dispatched`); a ready order handed to a run ENTERS this machine at
+//   `assigned`. We do not duplicate it as a delivery state.
+// - `picked_up` is the parcels leaving the store's custody into the driver's; `arrive`
+//   records the driver at the door BEFORE the outcome is known — useful for a failed or
+//   partial attempt. Recording arrival is optional: offline a driver may go straight to
+//   the outcome from `out_for_delivery` in one action, so those direct transitions stay
+//   valid too (never force a second tap on a low-spec phone with no signal).
+// - `partially_delivered` is TERMINAL: some lines were delivered WITH proof and the
+//   customer interaction is complete. The undelivered remainder is corrected by
+//   compensating money/stock events downstream (append-only, hard rule #2) — it is NOT
+//   modelled by moving the whole delivery into `returned_to_origin`, which stays reserved
+//   for the whole-order-undelivered case reached via `failed → rto`.
 
 export type DeliveryState =
   | 'assigned'
+  | 'picked_up'
   | 'out_for_delivery'
+  | 'attempted'
   | 'delivered'
+  | 'partially_delivered'
   | 'failed'
   | 'returned_to_origin';
 
-export type DeliveryEvent = 'depart' | 'deliver' | 'fail' | 'reattempt' | 'rto';
+export type DeliveryEvent =
+  | 'pick_up'
+  | 'depart'
+  | 'arrive'
+  | 'deliver'
+  | 'deliver_partial'
+  | 'fail'
+  | 'reattempt'
+  | 'rto';
 
 const TRANSITIONS: Readonly<Record<DeliveryState, Partial<Record<DeliveryEvent, DeliveryState>>>> =
   Object.freeze({
-    assigned: { depart: 'out_for_delivery' },
-    out_for_delivery: { deliver: 'delivered', fail: 'failed' },
+    // The driver takes custody of the parcels, then departs. Departing straight from
+    // `assigned` (without a separate pick-up ping) stays valid for offline one-tap use.
+    assigned: { pick_up: 'picked_up', depart: 'out_for_delivery' },
+    picked_up: { depart: 'out_for_delivery' },
+    // At the door the driver may record arrival first (`arrive`) or go straight to an
+    // outcome. Every outcome is reachable both ways so the device never loses an event.
+    out_for_delivery: {
+      arrive: 'attempted',
+      deliver: 'delivered',
+      deliver_partial: 'partially_delivered',
+      fail: 'failed',
+    },
+    attempted: { deliver: 'delivered', deliver_partial: 'partially_delivered', fail: 'failed' },
     failed: { reattempt: 'out_for_delivery', rto: 'returned_to_origin' },
     delivered: {},
+    partially_delivered: {},
     returned_to_origin: {},
   });
 
 const TERMINAL: ReadonlySet<DeliveryState> = new Set<DeliveryState>([
   'delivered',
+  'partially_delivered',
   'returned_to_origin',
 ]);
 

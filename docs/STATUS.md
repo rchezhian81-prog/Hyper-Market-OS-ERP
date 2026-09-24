@@ -5,6 +5,40 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M19 delivery state machine extended — picked up / attempted / partially delivered (24 September 2026, buildable-work programme, slice A1)
+
+First slice of the owner-directed buildable-work programme (**M19 → M18 → M22 → M20 → M01**, then buildable
+parts of M23/M27/M35). The owner's correction governs it: a missing live provider, physical till, real route
+data or production credential must **not** stop provider-neutral implementation and simulated verification;
+those are recorded as **separate pending gates**, not development blockers.
+
+- **`packages/fulfilment/src/delivery.ts`** — the delivery state machine now carries the full M19 lifecycle:
+  `assigned → picked_up → out_for_delivery → attempted → delivered / partially_delivered / failed`, with
+  `failed → reattempt` (back to out-for-delivery) or `failed → rto` (returned_to_origin). New **states**
+  `picked_up`, `attempted`, `partially_delivered`; new **events** `pick_up`, `arrive`, `deliver_partial`.
+  `partially_delivered` is **terminal** — the customer received some lines with proof; the undelivered
+  remainder is a compensating money/stock event downstream (hard rule #2), NOT a move into
+  `returned_to_origin` (which stays reserved for the whole-order-undelivered case). `order ready` is
+  deliberately **not** modelled here — it belongs to the order lifecycle (`packed`/`dispatched`); a ready
+  order enters this machine at `assigned`. The existing direct transitions (`assigned → depart`,
+  `out_for_delivery → deliver`/`deliver_partial`/`fail`) stay valid so a low-spec phone with no signal is
+  never forced into a second tap.
+- **`tests/unit/fulfilment.test.ts`** (+5) — full canonical path; partial delivery as its own terminal
+  outcome; attempt → fail → reattempt/rto; back-compat offline shortcuts still valid; illegal new
+  transitions refused. README updated.
+- **Honest scope / rung:** engine-only capability. **M19 stays PARTIALLY_WIRED** — the new states are proven
+  at the engine level but not yet wired into the durable service route (slice A2) or the driver device +
+  screen + browser e2e (slice A3). Headline **unchanged** (no rung change, no inflation).
+- **Separate pending gates (not dev blockers):** real fleet/route data, live geofence GPS, physical
+  handhelds — simulated with synthetic fixtures in later slices; pilot/UAT verification remains.
+
+**Next:** slice A2 — wire `pick_up`/`arrive`/`deliver_partial` into the durable transition route
+(`services/fulfilment/src/index.ts`), extend `stateAfterAttempt`/`AttemptOutcome` for a partial outcome,
+add integration coverage + the API-08 catalogue entry; then A3 (device/screen/e2e); then the
+substitution-policy track (B1–B6).
+
+---
+
 ## M03 Catalogue re-rated WIRED → INTEGRATION_TESTED — honest hardening (24 September 2026, "do the honest hardening")
 
 Second of the owner-approved M02/M03/M29 hardening set. No new capability, no production code change
