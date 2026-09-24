@@ -5,6 +5,29 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Narrow-and-deep pilot plan drafted (24 September 2026, owner chose "Option 1, narrow and deep")
+
+The owner picked the narrow-and-deep pilot shape (one department, 1–2 lanes, full trading day, ~1–2 weeks) and
+asked for the formal plan. Delivered as a new runbook that **scopes** the existing pilot assets — it adds no new
+tests, it selects and orders the subset that applies to a single ambient-grocery department and parks the rest.
+
+- **`docs/runbooks/pilot-plan-narrow-deep.md`** (new) — owner-facing. §1 flags the genuine owner-input choices
+  (department [recommended: packaged/ambient groceries], lanes, staff, dates) as **confirm-or-change**, not
+  silently assumed. §2 lists what's in vs parked (fresh/cold-chain, online, self-checkout, AI-drafting, supplier
+  portal, SaaS, Tally, migration) each with where it resumes. §3 is the phased plan (2 set-up days → break-things
+  Day 1 → honest-money/safety Day 2 → real quiet-hours trading days → go/no-go review), every line carrying its
+  real **UAT-##** from the register. §4 exit criteria + the "Pilot 2: fresh & cold-chain" fast-follow. §5 the
+  migration + go-live block (after the pilot). §6 the outside-party clocks to start now. Notes the new M10-FR-02
+  **quality hold/release** as an added safety check alongside the recall drill (UAT-12).
+- Grounded in and cross-referenced to `docs/registers/uat-calendar.md` (source of truth), `pilot-run-sheet.md`,
+  `store-go-live-checklist.md` and `release-plan.md` — deliberately not duplicating them. Docs only; no code, no
+  rung change; headline stays 55.4%.
+
+**Owner's next call:** confirm/adjust the §1 choices (which department, lanes, staff, dates), and give the
+go-ahead to start the §6 outside-party clocks.
+
+---
+
 ## Pilot-readiness docs refreshed to the live ledger (24 September 2026, "shift to pilot/store-UAT readiness")
 
 Owner-chosen pivot: with the clean pure-cloud build queue confirmed exhausted (two deep re-scans), the highest-value
