@@ -4,10 +4,17 @@ Picking, packing and delivery — **M19**. Turn a confirmed order into an accura
 delivered one.
 
 - **`src/delivery.ts`**
-  - `transitionDelivery(from, event)` — the delivery state machine (`assigned →
-    out_for_delivery → delivered`, or `failed → reattempt`/`returned_to_origin`); only allowed
-    transitions apply (`InvalidDeliveryTransitionError`). Helpers `canTransitionDelivery`,
-    `isTerminalDelivery`.
+  - `transitionDelivery(from, event)` — the full delivery state machine (M19):
+    `assigned → picked_up → out_for_delivery → attempted → delivered / partially_delivered /
+    failed`, with `failed → reattempt` (back to `out_for_delivery`) or `failed → rto`
+    (`returned_to_origin`). Only allowed transitions apply (`InvalidDeliveryTransitionError`).
+    Helpers `canTransitionDelivery`, `isTerminalDelivery`. `partially_delivered` is a **terminal**
+    outcome — the customer received some lines with proof; the undelivered remainder is a
+    compensating money/stock event downstream (hard rule #2), not a move into `returned_to_origin`.
+    `order ready` is **not** modelled here: it belongs to the order lifecycle (`packed`/
+    `dispatched`); a ready order enters this machine at `assigned`. The direct offline shortcuts
+    (`assigned → depart`, `out_for_delivery → deliver`/`deliver_partial`/`fail`) stay valid so a
+    low-spec phone with no signal is never forced into a second tap.
   - `assertProofOfDelivery(proof)` — a delivery is complete only with **proof** (photo / OTP /
     signature); missing proof throws `ProofRequiredError` (M19-FR-03).
   - `confirmSubstitution(input)` — a short-pick substitution applies **only when the customer

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   transitionDelivery,
+  canTransitionDelivery,
   isTerminalDelivery,
   assertProofOfDelivery,
   confirmSubstitution,
@@ -33,6 +34,58 @@ describe('delivery lifecycle', () => {
 
   it('refuses an illegal transition', () => {
     expect(() => transitionDelivery('assigned', 'deliver')).toThrow(InvalidDeliveryTransitionError);
+  });
+
+  // M19: the full lifecycle — picked up, out for delivery, attempted, then delivered /
+  // partially delivered / failed / returned. The customer got some goods on a partial,
+  // so it is a COMPLETE (terminal) delivery, distinct from a whole-order return.
+  it('walks the full path assigned → picked_up → out_for_delivery → attempted → delivered', () => {
+    let state: DeliveryState = 'assigned';
+    state = transitionDelivery(state, 'pick_up');
+    expect(state).toBe('picked_up');
+    state = transitionDelivery(state, 'depart');
+    expect(state).toBe('out_for_delivery');
+    state = transitionDelivery(state, 'arrive');
+    expect(state).toBe('attempted');
+    state = transitionDelivery(state, 'deliver');
+    expect(state).toBe('delivered');
+    expect(isTerminalDelivery(state)).toBe(true);
+  });
+
+  it('records a partial delivery as its own terminal outcome (some lines delivered, with proof)', () => {
+    const attempted = transitionDelivery('out_for_delivery', 'arrive');
+    const partial = transitionDelivery(attempted, 'deliver_partial');
+    expect(partial).toBe('partially_delivered');
+    expect(isTerminalDelivery('partially_delivered')).toBe(true);
+    // Terminal — nothing follows a partial on the delivery machine; the undelivered
+    // remainder is a compensating money/stock event downstream, not a state change.
+    expect(canTransitionDelivery('partially_delivered', 'rto')).toBe(false);
+    expect(canTransitionDelivery('partially_delivered', 'deliver')).toBe(false);
+  });
+
+  it('an attempt can also fail, then reattempt or return to origin', () => {
+    const attempted = transitionDelivery('out_for_delivery', 'arrive');
+    const failed = transitionDelivery(attempted, 'fail');
+    expect(failed).toBe('failed');
+    expect(transitionDelivery('failed', 'reattempt')).toBe('out_for_delivery');
+    expect(transitionDelivery('failed', 'rto')).toBe('returned_to_origin');
+    expect(isTerminalDelivery('returned_to_origin')).toBe(true);
+  });
+
+  it('keeps the direct offline shortcuts valid — no second tap forced with no signal', () => {
+    // Depart straight from assigned (no separate pick-up ping) …
+    expect(transitionDelivery('assigned', 'depart')).toBe('out_for_delivery');
+    // … and resolve the outcome straight from out_for_delivery (no separate arrival ping).
+    expect(transitionDelivery('out_for_delivery', 'deliver')).toBe('delivered');
+    expect(transitionDelivery('out_for_delivery', 'deliver_partial')).toBe('partially_delivered');
+    expect(transitionDelivery('out_for_delivery', 'fail')).toBe('failed');
+  });
+
+  it('refuses the illegal new transitions too', () => {
+    expect(() => transitionDelivery('assigned', 'deliver_partial')).toThrow(InvalidDeliveryTransitionError);
+    expect(() => transitionDelivery('picked_up', 'deliver')).toThrow(InvalidDeliveryTransitionError);
+    expect(() => transitionDelivery('out_for_delivery', 'pick_up')).toThrow(InvalidDeliveryTransitionError);
+    expect(() => transitionDelivery('delivered', 'deliver_partial')).toThrow(InvalidDeliveryTransitionError);
   });
 });
 
