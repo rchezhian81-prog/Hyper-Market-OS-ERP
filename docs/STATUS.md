@@ -5,6 +5,26 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M36-FR-04 slice 2: connector certification register + status wired (24 September 2026, "keep going")
+
+The second leg of the partner ecosystem, directly after the access-check core. A connector certified
+against v1 and running unchanged against v4 is not certified — it is old with a badge.
+
+- **`services/platform/src/partners.ts`** — a durable, append-only **connector-certification registry**
+  (`POST /v1/platform/partners/certifications/:certificationId`, latest-wins per partner+connector) plus
+  `POST /v1/platform/partners/:partnerId/certifications/:connectorId/status` running the tested
+  `certificationStatus`: a **never-certified** connector cannot run in production; a **stale-version** or
+  **expired** one still runs but is flagged and dated (`behind[]` names the contracts where the certified
+  version is no longer current). The current-version catalogue is the calling gateway's config, in the body.
+- **`services/api/src/adapters.ts`** — `partnerAdapter` gains `certification`/`recordCertification` over a
+  per-partner+connector append-only sub-stream (a re-certification is a new version; the history stays).
+- **Tests:** `tests/integration/partner-certification.test.ts` (4): current, never-certified (can't run),
+  stale-version (runs, flagged, `behind` named), RBAC gating.
+- **M36 stays PARTIALLY_WIRED:** only `seedSandbox` remains engine-only; paid-plan tier owner-blocked
+  (OA-12). No headline change.
+
+---
+
 ## M36-FR-04 partner access-control: credential registry + access-check wired (24 September 2026, "keep going")
 
 **Honest sequencing note:** M27's clean cloud work was complete, and a thorough scan found no clean,
