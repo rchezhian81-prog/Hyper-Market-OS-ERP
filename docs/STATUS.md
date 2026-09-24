@@ -5,6 +5,23 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Outside-party clocks marked started by owner (24 September 2026, "note the outside-party clocks as started")
+
+The owner directed that the pilot's outside-party onboarding be recorded as **started**. Logged as
+**⏳ Started 2026-09-24** — onboarding **initiated, not delivered** (each stays not-Satisfied until the real
+credential/contract/hardware/certificate is in hand and wired):
+
+- `docs/registers/external-dependencies.md` — a dated note plus a **⏳ Started 2026-09-24** marker on the
+  five rows: EX-03 (payment provider), EX-07 (GST / e-invoice credentials + CA), EX-08 (FSSAI / Legal
+  Metrology / local licences), EX-09 (store hardware), EX-13 (independent penetration test).
+- `docs/OWNER-ACTION-REGISTER.md` — prepended a dated log entry (history preserved).
+- `docs/runbooks/pilot-plan-narrow-deep.md` §6 — heading + items flipped to "⏳ started 24 Sep 2026".
+
+None blocks the test-mode pilot; they run in parallel for their lead times. Docs only; no code, no rung
+change; headline stays 55.4%. **The pilot now needs only its calendar dates.**
+
+---
+
 ## Pilot-plan defaults confirmed by owner (24 September 2026, "defaults are fine, dates TBC")
 
 The owner accepted the recommended §1 choices. `docs/runbooks/pilot-plan-narrow-deep.md` updated: §1 flipped
