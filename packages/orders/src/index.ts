@@ -22,6 +22,8 @@
 //   • `substitution-exceptions.ts` (M19-FR-01) — the OWNED, VALUED worklist of swaps a person must act
 //     on (refund due, collect adjustment, above-cap charge, policy short-pick), worst first, so a swap
 //     that owes money or left the customer short is never silent (P-08).
+//   • `substitution-messages.ts` (M19-FR-01, P-07 §19) — the customer-facing message for a substitution
+//     outcome in English OR Tamil, so the notification the customer receives speaks their language.
 //
 // Pure and deterministic. Grows one reviewed, tested unit at a time.
 
@@ -32,3 +34,4 @@ export * from './amendments';
 export * from './substitution-policy';
 export * from './substitution-money';
 export * from './substitution-exceptions';
+export * from './substitution-messages';

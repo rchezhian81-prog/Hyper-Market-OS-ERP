@@ -61,10 +61,16 @@ with **no oversell** (**M18-FR-02** / §6.2).
   (`refund_due`, `collect_adjustment`, `above_cap_charge`, `policy_short_pick`) with an `atRiskMinor`
   total, so a swap that owes money or left the customer short is never silent (P-08). Mirrors the
   valued-exception shape of `reconcileCod` / `reconcileChannel`.
+- **`src/substitution-messages.ts`** (M19-FR-01, P-07 §19) — the customer-facing message for a
+  substitution outcome in **English OR Tamil** (`substitutionMessage(input, lang)`), so the notification
+  the customer receives speaks their language. Product name and rupee amount interpolate into both; English
+  is the fallback but every kind ships both by construction. Pure — sends nothing (the M31 queue and the
+  live SMS/push transport are separate slices/gates).
 
 > Tested in `tests/unit/orders-fulfilment-plan.test.ts` (12),
 > `tests/unit/orders-amendments.test.ts` (15),
 > `tests/unit/orders-substitution-policy.test.ts` (12),
-> `tests/unit/orders-substitution-money.test.ts` (10) and
-> `tests/unit/orders-substitution-exceptions.test.ts` (9), and proven end to end in
+> `tests/unit/orders-substitution-money.test.ts` (10),
+> `tests/unit/orders-substitution-exceptions.test.ts` (9) and
+> `tests/unit/orders-substitution-messages.test.ts` (9), and proven end to end in
 > `tests/integration/pick-to-doorstep.test.ts` (Stage 15 gate).
