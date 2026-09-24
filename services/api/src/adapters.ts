@@ -148,7 +148,8 @@ import { AuditTrail, InMemoryAuditStore, type AuditEntry, type AuditRecord } fro
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project, EFFECT_ON_HAND } from '../../inventory/src/index';
-import type { Movement, Availability, InventoryDeps } from '../../inventory/src/index';
+import type { Movement, Availability, InventoryDeps, StockOwnership } from '../../inventory/src/index';
+import { splitStoreValuation, type OwnedStockValue } from '../../../packages/concession/src/index';
 import type { GoodsReceiptDeps, GrnRecord } from '../../inventory/src/goods-receipt';
 import { weightedAverageValuation, type ValuationMovement } from '../../../packages/stock/src/valuation';
 import { agedStockLots, type DatedMovement } from '../../../packages/stock/src/ageing-source';
@@ -2492,6 +2493,49 @@ export function concessionAdapter(input: {
 
     depositMovements: async (tenantId, concessionaireId) =>
       allOf<DepositMovement>(input.store, tenantId, forConcessionaire(concessionaireId), 'ConcessionDepositMoved'),
+
+    /**
+     * The branch's stock, valued at weighted-average cost and SPLIT by owner (M27-FR-02), folded
+     * from the same M08 movement ledger as on-hand and valuation. Each ownership pool is valued
+     * SEPARATELY — a concessionaire's gold cost is never averaged into the store's rice — then
+     * `splitStoreValuation` reports what the store owns and names what it does not. Reads the
+     * append-only ledger; writes nothing.
+     */
+    storeValuation: async (tenantId, branchId) => {
+      const events = await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' });
+      const movements = events
+        .map((e) => payloadOf<Movement>(e))
+        .sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0));
+
+      const groups = new Map<string, Movement[]>();
+      for (const m of movements) {
+        const ownership: StockOwnership = m.ownership ?? 'own';
+        const ownerId = ownership === 'own' ? 'store' : (m.ownerId ?? 'unknown');
+        const key = `${ownership}\u001f${ownerId}`;
+        groups.set(key, [...(groups.get(key) ?? []), m]);
+      }
+
+      const rows: OwnedStockValue[] = [];
+      for (const [key, ms] of groups) {
+        const [ownership, ownerId] = key.split('\u001f') as [StockOwnership, string];
+        const valued = weightedAverageValuation(
+          ms.map((m): ValuationMovement => ({
+            productId: m.productId, locationId: m.locationId,
+            effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
+            isPurchaseReceipt: m.kind === 'received',
+            ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
+          })),
+          'INR',
+        );
+        for (const v of valued) {
+          rows.push({
+            productId: v.productId, locationId: v.locationId,
+            ownership, ownerId, valueMinor: v.value.minor, onHandMinor: v.onHandMinor,
+          });
+        }
+      }
+      return splitStoreValuation({ branchId, rows });
+    },
 
     recordDepositMovement: async (tenantId, movement) => {
       await input.store.append(tenantId, forConcessionaire(movement.concessionaireId), makeEvent({

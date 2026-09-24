@@ -50,6 +50,14 @@ export type MovementKind =
   | 'received' | 'sold' | 'returned' | 'transferred_in' | 'transferred_out'
   | 'adjusted' | 'wasted' | 'counted';
 
+/**
+ * Who owns a lot of stock on the store's shelves (M27-FR-02, M08 ownership field). Absent on a
+ * movement ⇒ the store's own. Concession / consignment / customer-property stock sits on our
+ * shelves and moves through our tills but belongs to somebody else, so it is EXCLUDED from the
+ * store's valuation and its access is restricted (least privilege, P-04).
+ */
+export type StockOwnership = 'own' | 'concession' | 'consignment' | 'customer_property';
+
 /** What each kind does to on-hand. Declared, never inferred from a sign on the quantity. */
 export const EFFECT_ON_HAND: Readonly<Record<MovementKind, 1 | -1>> = {
   received: 1, returned: 1, transferred_in: 1, counted: 1, adjusted: 1,
@@ -83,7 +91,19 @@ export interface Movement {
    * but reported as unvalued rather than folded in at zero (P-08). Ignored for non-receipts.
    */
   readonly unitCostMinor?: number;
+  /**
+   * Who owns this stock (M27-FR-02). Absent ⇒ the store's own. Set on a `received` movement, with
+   * `ownerId`, when the goods belong to a concessionaire / consignor / customer rather than the
+   * store — so the ownership rides on the append-only ledger itself (the M08 `ownership` field), and
+   * the store's valuation can exclude what it does not own without a second source of truth.
+   */
+  readonly ownership?: StockOwnership;
+  /** The owner (concessionaire / consignor / customer) when `ownership` is not 'own'. */
+  readonly ownerId?: string;
 }
+
+/** The owner of a movement's stock — absent ownership means the store owns it (M27-FR-02). */
+export const ownershipOf = (m: Movement): StockOwnership => m.ownership ?? 'own';
 
 export interface Availability {
   readonly productId: string;
@@ -128,7 +148,7 @@ export function project(
     }));
 }
 
-export type MovementRefusal = 'adjustment_without_a_reason' | 'adjustment_not_approved' | 'quantity_not_positive';
+export type MovementRefusal = 'adjustment_without_a_reason' | 'adjustment_not_approved' | 'quantity_not_positive' | 'ownership_without_an_owner';
 
 export interface MovementCheck {
   readonly ok: boolean;
@@ -161,6 +181,12 @@ export function checkMovement(m: Movement): MovementCheck {
         detail: `${m.enteredBy} entered and approved this ${m.kind}. Writing stock off is the one movement that makes a difference disappear, so it takes two people (§28)`,
       };
     }
+  }
+  if (m.ownership !== undefined && m.ownership !== 'own' && (m.ownerId === undefined || m.ownerId.trim() === '')) {
+    return {
+      ok: false, refusedBecause: 'ownership_without_an_owner',
+      detail: `stock marked ${m.ownership} must name its owner — concession/consignment/customer stock is excluded from the store's valuation, and without an owner it cannot be told apart from the store's own or attributed back to whoever it belongs to`,
+    };
   }
   return { ok: true, detail: `${m.kind} ${m.quantityMinor} of ${m.productId} at ${m.locationId}` };
 }
