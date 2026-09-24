@@ -872,7 +872,7 @@ export function buildSurface(deps: {
     // against the STORED credential (sandbox-in-production, out-of-scope tenant, revoked/expired, unversioned
     // all refused). Append-only; the security principal is authoritative from the ledger, never the body.
     ...partnerRoutes(store === undefined
-      ? { credential: () => undefined, recordCredential: () => {}, certification: () => undefined, recordCertification: () => {}, now }
+      ? { credential: () => undefined, recordCredential: () => {}, certification: () => undefined, recordCertification: () => {}, sandbox: () => undefined, recordSandbox: () => {}, now }
       : partnerAdapter({ store, now })),
     // Durable background-job registry (M33-FR-01) — an admin schedules jobs, a runner reports each run's
     // outcome, and a FAILED job is visible (a dedicated exception view) and retryable. Append-only, restart-safe.
