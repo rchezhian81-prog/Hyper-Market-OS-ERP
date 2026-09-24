@@ -5,6 +5,30 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M19 bilingual (EN/TA) substitution customer-message builder (24 September 2026, buildable-work programme, slice B5)
+
+Seventh slice. The substitution engines already produced the English customer sentence; this renders the
+same outcome in **English OR Tamil** so the customer's notification speaks their language (P-07, §19).
+
+- **`packages/orders/src/substitution-messages.ts`** (new) — `substitutionMessage(input, lang)` returns
+  the customer-facing sentence for each outcome (item left out / cheaper→refund / cheaper→collect-less /
+  dearer approved→charged more / same-or-capped→original price) in `en` or `ta`, with the product name and
+  rupee amount interpolated into both. Follows the repo's established `packages/ui` `BilingualCopy`
+  precedent; English is the fallback but every kind ships both by construction. Pure — it sends nothing.
+- **`tests/unit/orders-substitution-messages.test.ts`** (+9) — right kind per outcome; English content per
+  situation (named item, refunded amount, extra charge, original-price promise); **every kind renders real
+  Tamil script that differs from the English (genuinely translated)**; product name + rupee amount survive
+  into Tamil; samples and templates agree; no-answer reads as not-available. Barrel + README updated.
+- **Honest scope / rung:** engine-only. **M19 stays PARTIALLY_WIRED**; headline **unchanged**. The
+  **enqueue through the M31 notification queue** (consent-guarded, dead-letter) is a wiring slice (B5b), and
+  the **live SMS/push transport is a separate A01 gate** — this builds the message CONTENT, not the wire.
+
+**Next:** slice B6 — the picker/customer substitution screen + browser e2e (served page over the tested
+engines, synthetic fixtures); then the tenant-wide exception-queue read (B4b) and the notification enqueue
+(B5b). After M19's buildable substitution + delivery work is exhausted, the sequence moves to M18.
+
+---
+
 ## M19 substitution exception-queue engine — the owned, valued worklist (24 September 2026, buildable-work programme, slice B4)
 
 Sixth slice. The recorded substitution decisions now become a triageable worklist so no swap that owes
