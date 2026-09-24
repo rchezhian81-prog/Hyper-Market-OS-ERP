@@ -5,6 +5,34 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M10-FR-02 slice 1: cloud quality hold/release register wired (24 September 2026, "re-scan for any missed gap")
+
+A fresh deep re-scan (owner-requested) turned up one more genuinely clean, roadmap-backed, pure-cloud
+increment: a tested engine pair sitting entirely unwired — the same gold-standard pattern as the partner
+work. M10-FR-02's flow ends "… → **hold/release**", its §28 permission is "**quality release by
+authorized QC**", and its acceptance is "**quality-held stock is not sellable until released**". The
+cold-chain *assess* verdict was already wired but is deliberately stateless — it decides, it does not
+remember. This slice is the memory.
+
+- **`services/inventory/src/quality-hold.ts`** (new) — a durable, append-only **hold/release register**
+  on API-04: `POST /v1/quality/holds/:batchId` places a hold (gated `quality.hold.manage`);
+  `POST .../release` runs the tested `releaseFromQualityHold` engine, gated to authorized QC
+  (`quality.hold.release`, a **new** §28 permission as its own least-privilege code), and **refuses** a
+  failed/outstanding sample, an open cold-chain breach, an expired batch or an unnamed releaser (422/409,
+  **nothing appended — the hold stands**); `GET /v1/quality/holds[/:batchId]` reads the register held-first.
+- **`services/api/src/adapters.ts`** — `qualityHoldAdapter`: `QualityHeld`/`QualityReleased` on the
+  tenant's quality-hold stream, latest-wins per batch, retained forever (hard rule #2/#6), restart-safe.
+- **`services/api/src/roles.ts`** — `quality.hold.manage` + `quality.hold.release` on owner + store_manager.
+- **Tests:** `tests/unit/quality-hold.test.ts` (5, adapter fold + restart) + `tests/integration/quality-hold.test.ts`
+  (11, full real pipeline: place/read, clean release names the QC, each refusal + hold-stands, RBAC gating,
+  no-double-hold, already-released 409, restart-safe).
+- **M10 stays E2E_VERIFIED** (already E2E via FR-04); this adds an integration-tested sub-capability, no
+  rung change. **Honest scope:** this is the cloud **governance register**. The held-stock **at-till /
+  offline sale-block** — the enforcement half of "not sellable until released" — is a separate follow-on
+  slice, to be carried on the signed pack exactly as the recall block is (M10-FR-04). **Not claimed here.**
+
+---
+
 ## M36-FR-04 slice 3: sandbox register + seed wired — partner core complete (24 September 2026, "keep going")
 
 The third and last of M36-FR-04's tested engines. A partner sandbox holds generated data and **nothing

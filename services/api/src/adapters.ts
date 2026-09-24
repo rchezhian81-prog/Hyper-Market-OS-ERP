@@ -49,6 +49,8 @@ import type { IncomingSale, IncomingTender, SaleException, PosDeps } from '../..
 import type { LotTraceDeps } from '../../inventory/src/lot-trace';
 import type { RecallDeps } from '../../inventory/src/recall';
 import { RecallRegistry, type RecallRecord } from '../../../packages/traceability/src/index';
+import type { QualityHoldDeps } from '../../inventory/src/quality-hold';
+import type { QualityHold } from '../../../packages/quality/src/index';
 import type { SalesHistoryDeps } from '../../inventory/src/sales-history';
 import type { SoldLine } from '../../../packages/demand/src/sales-history';
 import type { OutboundLotRecord } from '../../../packages/quality/src/index';
@@ -1940,6 +1942,54 @@ export function recallAdapter(input: {
         idempotencyKey: `recall-${tenantId}-${record.batchId}-close-${key}`,
         source: 'api/inventory',
         payload: record,
+      }));
+    },
+  };
+}
+
+/**
+ * The quality hold/release register (M10-FR-02) — the durable cloud record of every quality hold. Each
+ * placement is a `QualityHeld` event and each release a `QualityReleased` event on the tenant's
+ * quality-hold stream, each carrying the resulting `QualityHold`; nothing is ever overwritten (hard
+ * rule #2/#6). The current state per batch is the latest event's record; the write surface runs the
+ * tested `releaseFromQualityHold` engine over that current hold.
+ */
+export function qualityHoldAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): QualityHoldDeps {
+  const stream = streamName(STREAM.inventory, 'quality-holds');
+  const events = (tenantId: string) => input.store.readStream(tenantId, stream); // both types, oldest first
+  const latestByBatch = async (tenantId: string): Promise<Map<string, QualityHold>> => {
+    const byBatch = new Map<string, QualityHold>();
+    for (const e of await events(tenantId)) {
+      const h = payloadOf<QualityHold>(e);
+      byBatch.set(h.batchId, h); // each event's payload IS the resulting record; latest wins
+    }
+    return byBatch;
+  };
+  return {
+    now: input.now,
+    hold: async (tenantId, batchId) => (await latestByBatch(tenantId)).get(batchId),
+    holds: async (tenantId) => [...(await latestByBatch(tenantId)).values()],
+    recordHeld: async (tenantId, hold, key) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `qhold-${hold.batchId}-held-${key}`,
+        type: 'QualityHeld',
+        occurredAt: input.now(),
+        idempotencyKey: `qhold-${tenantId}-${hold.batchId}-held-${key}`,
+        source: 'api/inventory',
+        payload: hold,
+      }));
+    },
+    recordReleased: async (tenantId, hold, key) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `qhold-${hold.batchId}-released-${key}`,
+        type: 'QualityReleased',
+        occurredAt: input.now(),
+        idempotencyKey: `qhold-${tenantId}-${hold.batchId}-released-${key}`,
+        source: 'api/inventory',
+        payload: hold,
       }));
     },
   };
