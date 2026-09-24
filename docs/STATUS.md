@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M19 delivery-app — the full lifecycle on the driver's phone (24 September 2026, buildable-work programme, M19 slice A3 part 1)
+
+The A1 delivery state machine gained `picked_up`, `attempted` and `partially_delivered` (PR #541), but the
+driver's `RouteSession` still only drove the old events (`depart`/`deliver`/`fail`/`reattempt`/`rto`). This
+wires the new lifecycle onto the phone's session model.
+
+- **`apps/delivery-app/src/route-session.ts`** — three new methods composing the tested `transitionDelivery`:
+  `pickUp` (`assigned → picked_up`, picked up from the store), `arrive` (`out_for_delivery → attempted`, at
+  the doorstep), and `deliverPartial` (`out_for_delivery`/`attempted → partially_delivered`) — a **terminal**
+  outcome where the customer kept SOME of the order with proof. Like a full delivery it requires proof,
+  records the COD actually taken (so partial-delivery cash is never off the books — §31/P-01), flags a
+  geofence mismatch rather than blocking, and evaluates the contribution rule (D09). `pickUp`/`arrive` are
+  optional recorded steps — a low-signal phone can still `depart` straight from `assigned`. `progress()` now
+  reports `partiallyDelivered` and treats `picked_up`/`attempted` as in-flight (never "complete"); `codHeld()`
+  includes partial-delivery cash; `settle()` reconciles a partial to what was actually collected — **no false
+  short** for the undelivered part (its money is a downstream compensating event, M18/M23).
+- **`tests/unit/delivery-route.test.ts`** (15 → 21) — the full lifecycle path (pick up → depart → arrive →
+  deliver); out-of-order steps refused (`InvalidDeliveryTransitionError`); a partial delivery requires proof,
+  is terminal (cannot be re-delivered), records COD on the books, and works from both `out_for_delivery` and
+  `attempted`; progress counts the partial and the route completes with a delivered+partial mix; settle
+  reconciles the partial with no false short.
+- **Honest scope / rung:** engine methods on the phone's session are done and unit-tested. **M19 stays
+  PARTIALLY_WIRED** (headline unchanged). **Part 2 (next):** surface `pickUp`/`arrive`/`deliverPartial` on the
+  delivery-app SCREEN (`web/app.js`) and prove it in a headless-browser e2e (the same handheld harness as the
+  picker e2e). B5b (M31 notify enqueue) stays deferred pending a design decision.
+
+**Next:** M19 A3 part 2 — the delivery-app screen buttons + browser e2e for the new lifecycle events.
+
+---
+
 ## M19 picker substitution — browser-verified end to end (24 September 2026, buildable-work programme, M19 slice B6)
 
 The picker substitution SCREEN already existed (`apps/picker-app/web/app.js` — bilingual EN/TA, scan the

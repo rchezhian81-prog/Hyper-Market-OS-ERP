@@ -83,6 +83,8 @@ export interface ContributionRule {
 export interface RouteProgress {
   readonly total: number;
   readonly delivered: number;
+  /** Stops where the customer received SOME of the order, with proof — a terminal outcome. */
+  readonly partiallyDelivered: number;
   readonly failed: number;
   readonly returned: number;
   readonly remaining: number;
@@ -164,12 +166,17 @@ export class RouteSession {
 
   progress(): RouteProgress {
     const delivered = this.stops.filter((s) => s.state === 'delivered').length;
+    const partiallyDelivered = this.stops.filter((s) => s.state === 'partially_delivered').length;
     const failed = this.stops.filter((s) => s.state === 'failed').length;
     const returned = this.stops.filter((s) => s.state === 'returned_to_origin').length;
-    const remaining = this.stops.filter((s) => s.state === 'assigned' || s.state === 'out_for_delivery').length;
+    // Everything not yet at a terminal state — including the new in-flight states picked_up and
+    // attempted — so a stop that has left the shelf but not reached a resolution is never "complete".
+    const IN_FLIGHT = new Set<DeliveryState>(['assigned', 'picked_up', 'out_for_delivery', 'attempted']);
+    const remaining = this.stops.filter((s) => IN_FLIGHT.has(s.state)).length;
     return {
       total: this.stops.length,
       delivered,
+      partiallyDelivered,
       failed,
       returned,
       remaining,
@@ -225,10 +232,37 @@ export class RouteSession {
     );
   }
 
+  /**
+   * Mark the order **picked up from the store** before the van leaves (M19-FR-03 lifecycle:
+   * `assigned → picked_up`). It is a distinct, recorded step so a stop that left the building can be
+   * told from one still on the shelf — the difference a customer asking "where is my order?" needs.
+   * Optional in the flow: a driver can still `depart` straight from `assigned`, so a low-signal phone
+   * is never forced into a second tap. The state machine refuses an illegal transition.
+   */
+  pickUp(stopId: string): Stop {
+    const stop = this.stopOrThrow(stopId);
+    const next: Stop = { ...stop, state: transitionDelivery(stop.state, 'pick_up') };
+    this.replace(next);
+    return next;
+  }
+
   /** Leave for a stop. Refuses an illegal transition (the state machine is the rule). */
   depart(stopId: string): Stop {
     const stop = this.stopOrThrow(stopId);
     const next: Stop = { ...stop, state: transitionDelivery(stop.state, 'depart') };
+    this.replace(next);
+    return next;
+  }
+
+  /**
+   * Mark **arrival at the doorstep** (M19-FR-03 lifecycle: `out_for_delivery → attempted`). It records
+   * that the driver reached the address, which is what separates a genuine failed attempt ("nobody
+   * home", recorded from `attempted`) from a stop that was never actually driven to. Deliver, partial
+   * delivery and fail all remain reachable from here, exactly as from `out_for_delivery`.
+   */
+  arrive(stopId: string): Stop {
+    const stop = this.stopOrThrow(stopId);
+    const next: Stop = { ...stop, state: transitionDelivery(stop.state, 'arrive') };
     this.replace(next);
     return next;
   }
@@ -275,6 +309,42 @@ export class RouteSession {
     return next;
   }
 
+  /**
+   * Complete a **partial delivery** — the customer received some of the order and kept it, with proof
+   * (M19-FR-01/FR-03 lifecycle: `out_for_delivery`/`attempted → partially_delivered`). It is a
+   * TERMINAL outcome: the customer has some goods with proof, and the undelivered remainder is a
+   * compensating money/stock event downstream (hard rule #2 — a ledger is never overwritten), NOT a
+   * return of the whole stop. Like a full delivery it requires proof, records the COD actually taken
+   * for what was handed over (so no cash the driver holds goes unrecorded — §31/P-01), flags a
+   * geofence mismatch rather than blocking, and evaluates the contribution rule (D09).
+   */
+  deliverPartial(
+    stopId: string,
+    proof: ProofOfDelivery | undefined,
+    options: { codCollectedMinor?: number; codMethod?: string; withinGeofence?: boolean } = {},
+  ): Stop {
+    const stop = this.stopOrThrow(stopId);
+    // Throws ProofRequiredError when proof is missing or empty — some goods were handed over.
+    assertProofOfDelivery(proof);
+
+    const collected = options.codCollectedMinor ?? 0;
+    if (!Number.isSafeInteger(collected) || collected < 0) {
+      throw new CodAmountError(stopId);
+    }
+
+    const partial: Stop = {
+      ...stop,
+      state: transitionDelivery(stop.state, 'deliver_partial'),
+      proof,
+      codCollectedMinor: collected,
+      codMethod: options.codMethod,
+      geofenceMismatch: options.withinGeofence === false ? true : undefined,
+    };
+    const next: Stop = { ...partial, contributionFlag: this.contributionFlagFor(partial) };
+    this.replace(next);
+    return next;
+  }
+
   /** Record a failed delivery with a reason — never quietly dropped (M19-FR-04). */
   fail(stopId: string, reason: string): Stop {
     const stop = this.stopOrThrow(stopId);
@@ -305,10 +375,11 @@ export class RouteSession {
     return this.stops.filter((s) => s.contributionFlag !== undefined);
   }
 
-  /** Total cash the driver should be holding, from delivered stops. */
+  /** Total cash the driver should be holding — from delivered AND partially-delivered stops, so cash
+   *  taken on a partial delivery is never off the books (§31/P-01). */
   codHeld(): Money {
     const total = this.stops
-      .filter((s) => s.state === 'delivered')
+      .filter((s) => s.state === 'delivered' || s.state === 'partially_delivered')
       .reduce((sum, s) => sum + (s.codCollectedMinor ?? 0), 0);
     return money(total, this.currency);
   }
@@ -320,12 +391,17 @@ export class RouteSession {
    * (hard rule #3). Feeds finance reconciliation (M23).
    */
   settle(): CodReconResult {
+    // A full delivery is expected to collect the order's whole COD; a partial delivery reconciles to
+    // what was actually taken for the goods handed over — the undelivered remainder's money is a
+    // compensating event settled downstream (M18/M23), never a driver "short" invented here.
     const deliveredStops = this.stops.filter((s) => s.state === 'delivered' && s.codMinor > 0);
-    const expectations: CodExpectation[] = deliveredStops.map((s) => ({
+    const partialStops = this.stops.filter((s) => s.state === 'partially_delivered' && (s.codCollectedMinor ?? 0) > 0);
+    const settledStops = [...deliveredStops, ...partialStops];
+    const expectations: CodExpectation[] = settledStops.map((s) => ({
       orderId: s.orderRef,
-      expectedMinor: s.codMinor,
+      expectedMinor: s.state === 'partially_delivered' ? (s.codCollectedMinor ?? 0) : s.codMinor,
     }));
-    const collections: CodCollection[] = deliveredStops
+    const collections: CodCollection[] = settledStops
       .filter((s) => (s.codCollectedMinor ?? 0) > 0)
       .map((s) => ({
         orderId: s.orderRef,

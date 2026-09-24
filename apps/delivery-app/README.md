@@ -13,8 +13,15 @@ device, and nothing awaits the network (§31 delivery row).
 - **Nothing is "delivered" without proof** — photo / OTP / signature per policy (M19-FR-03),
   delegated to `packages/fulfilment`; a missing or blank proof throws and the stop stays
   out-for-delivery.
-- **The order of a stop is a state machine** — depart → deliver, or fail → reattempt /
-  return-to-origin. Delivering before departing is refused.
+- **The order of a stop is a state machine** — the full lifecycle: `pickUp` (picked up from the
+  store, `assigned → picked_up`) → `depart` → `arrive` (at the doorstep, `out_for_delivery →
+  attempted`) → `deliver` / `deliverPartial` / `fail` → `reattempt` / `returnToOrigin`. `pickUp` and
+  `arrive` are optional recorded steps (a low-signal phone can still `depart` straight from
+  `assigned`); an out-of-order step is refused.
+- **A partial delivery is a terminal outcome** (`deliverPartial`, `→ partially_delivered`) — the
+  customer kept some of the order, with proof; cash taken is recorded (never off the books) and the
+  undelivered remainder is a downstream compensating money/stock event (hard rule #2), not a return
+  of the whole stop.
 - **COD is recorded to the paisa** and reconciled at end of shift by the tested COD engine:
   **short / over / uncollected / unexpected** each surface as a **valued exception** feeding
   finance (M23), and a **card method is refused** — COD is cash/UPI only (hard rule #3).
