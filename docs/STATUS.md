@@ -5,6 +5,33 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M02 Identity/RBAC re-rated WIRED → INTEGRATION_TESTED — honest hardening (24 September 2026, "do the honest hardening")
+
+The owner asked to "pick up the pending requirements to complete this project." A fresh bucketed worklist
+(built + verified against the code) confirmed the buildable-without-owner remainder is small and mostly
+**incremental hardening** — I said so plainly and the owner chose "do the honest hardening." First of that
+set, done honestly (no new capability, no production code change):
+
+- **`tests/integration/access-durability.test.ts`** (new, 3) — consolidates the **module-level** durability
+  property the per-leg M02 suites did not assert: after a cold restart (a fresh API surface over the same
+  event store) the **core role-grant authorization itself rebuilds and still ENFORCES** (a granted cashier
+  stays a cashier and is still refused a grant; the owner keeps `identity.role.grant`); **cross-tenant
+  isolation holds across the restart**; and **grants + delegation + emergency access all rebuild together**
+  from one store.
+- **Honest scope (stated, not hidden):** `authorization-is-enforced` already proved the authorization
+  matrix + cross-tenant isolation + a real-Postgres write/read, and `approval-delegation` + `emergency-access`
+  each already proved their own record survives a restart. This is a **consolidation to the peer
+  INTEGRATION_TESTED bar** (the same bar M06/M17/M32-style modules reached), not a new feature.
+- **Re-rate:** M02 WIRED → INTEGRATION_TESTED; headline **55.4 → 55.6** (+15 wt, 5780/10400). Counts:
+  WIRED 8, INTEGRATION_TESTED 10, E2E_VERIFIED 26. Evidence guardrail already satisfied (M02 points at an
+  integration test). Traceability ladder cell + completion-status evidence updated.
+
+**Next in this honest-hardening set (owner-approved):** the same durability/isolation consolidation for
+**M03** (catalogue) and **M29** (reporting). After that, bucket A is exhausted — the rest is owner-deferred,
+external-blocked, or store/UAT-only.
+
+---
+
 ## Outside-party clocks marked started by owner (24 September 2026, "note the outside-party clocks as started")
 
 The owner directed that the pilot's outside-party onboarding be recorded as **started**. Logged as
