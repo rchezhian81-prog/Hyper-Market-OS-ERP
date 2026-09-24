@@ -553,7 +553,7 @@ export function buildSurface(deps: {
       holdMinutes: HOLD_MINUTES, now,
       recordPlaced: () => {}, orderState: empty(undefined), orderReservations: empty([]),
       recordTransition: () => {}, releaseReservations: () => {},
-      recordSubstitution: () => {}, orderSubstitutions: empty([]),
+      recordSubstitution: () => {}, orderSubstitutions: empty([]), allSubstitutions: empty([]),
       recordBackorder: () => {}, orderBackorders: empty([]),
     } : ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES })),
     // Serviceability configuration (M18-FR-01 / D08) — the per-tenant, effective-dated delivery radius/fee/

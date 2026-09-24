@@ -1113,6 +1113,11 @@ const forOrderManifest = (orderId: string): string => streamName(STREAM.delivery
 const forLocation = (locationId: string): string => streamName(STREAM.reservations, locationId);
 /** Each order's lifecycle folds one stream — one order's history end-to-end, not the whole shop's. */
 const forOrder = (orderId: string): string => streamName(STREAM.orders, orderId);
+/** A tenant-wide INDEX of substitution decisions, appended beside the per-order stream so the
+ *  substitution exception worklist (M19-FR-01) can be folded shop-wide without walking every order.
+ *  The per-order `forOrder` stream stays the book of record; this is a read model, exactly as the
+ *  returns/e-invoice indexes keep a tenant-wide projection beside the per-aggregate stream. */
+const forSubstitutionIndex = streamName(STREAM.orders, 'substitutions');
 const forInvoice = (invoiceId: string): string => streamName(STREAM.purchase, 'invoice', invoiceId);
 /** Each supplier partner's portal config and submissions fold one stream — one partner, not the shop. */
 const forPortalPartner = (partnerId: string): string => streamName(STREAM.purchase, 'partner', partnerId);
@@ -6130,11 +6135,26 @@ export function ordersAdapter(input: {
         source: 'api/orders',
         payload: sub,
       }));
+      // Also index it tenant-wide so the exception worklist folds without walking every order. Its own
+      // idempotency key (distinct from the per-order one) means a replay appends both, but folds once.
+      await input.store.append(tenantId, forSubstitutionIndex, makeEvent({
+        id: `ord-sub-idx-${sub.orderId}-${sub.lineId}`,
+        type: 'LineSubstituted',
+        occurredAt: sub.at,
+        idempotencyKey: `ord-sub-idx-${tenantId}-${sub.orderId}-${sub.lineId}`,
+        source: 'api/orders',
+        payload: sub,
+      }));
     },
 
     /** The substitution decisions recorded on an order — a fold of its `LineSubstituted` events. */
     orderSubstitutions: async (tenantId, orderId) =>
       allOf<StoredSubstitution>(input.store, tenantId, forOrder(orderId), 'LineSubstituted'),
+
+    /** Every substitution decision recorded for the tenant — a fold of the tenant-wide index, so the
+     *  exception worklist (M19-FR-01) is answered shop-wide without reading each order's stream. */
+    allSubstitutions: async (tenantId) =>
+      allOf<StoredSubstitution>(input.store, tenantId, forSubstitutionIndex, 'LineSubstituted'),
 
     /** Record a backorder against an order, append-only (M18-FR-02). Idempotent on the order id — the
      *  shortfall is recorded once, so a replay is one fact, never a second backorder. */
