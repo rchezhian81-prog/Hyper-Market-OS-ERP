@@ -35,6 +35,7 @@ const WORDS = {
     myRoute: 'My route', stopsDone: 'stops done', waiting: 'waiting to sync', allSent: 'everything sent',
     cashCarrying: 'Cash you are carrying', collect: 'Collect', prepaid: 'Already paid',
     delivered: 'Delivered', couldNotDeliver: 'Could not deliver', endOfShift: 'End of shift — hand cash over',
+    partlyDelivered: 'Partly delivered', partialOk: 'Recorded as partly delivered',
     cancel: 'Cancel', ok: 'OK', read: 'Please read this',
     tapStopFirst: 'Tap the stop you are at first.',
     howProved: 'How did you prove the delivery?', photo: 'Photo at the door', otp: 'Customer’s OTP',
@@ -67,6 +68,7 @@ const WORDS = {
     myRoute: 'என் வழி', stopsDone: 'நிறுத்தங்கள் முடிந்தன', waiting: 'அனுப்பக் காத்திருக்கிறது', allSent: 'அனைத்தும் அனுப்பப்பட்டன',
     cashCarrying: 'நீங்கள் வைத்திருக்கும் பணம்', collect: 'வாங்க வேண்டியது', prepaid: 'ஏற்கனவே செலுத்தப்பட்டது',
     delivered: 'கொடுக்கப்பட்டது', couldNotDeliver: 'கொடுக்க முடியவில்லை', endOfShift: 'ஷிப்ட் முடிவு — பணத்தை ஒப்படை',
+    partlyDelivered: 'ஓரளவு கொடுக்கப்பட்டது', partialOk: 'ஓரளவு கொடுக்கப்பட்டதாக பதிவானது',
     cancel: 'ரத்து', ok: 'சரி', read: 'இதைப் படிக்கவும்',
     tapStopFirst: 'முதலில் நீங்கள் இருக்கும் நிறுத்தத்தைத் தொடவும்.',
     howProved: 'கொடுத்ததை எப்படி நிரூபித்தீர்கள்?', photo: 'வாசலில் புகைப்படம்', otp: 'வாடிக்கையாளரின் OTP',
@@ -101,8 +103,11 @@ const t = (key) => WORDS[lang][key] ?? WORDS.en[key];
 /** What a stop's state is called, in both languages. Guarded against the model's own union. */
 const STATE_WORDS = {
   assigned: { en: 'Waiting', ta: 'காத்திருக்கிறது' },
+  picked_up: { en: 'Picked up', ta: 'எடுக்கப்பட்டது' },
   out_for_delivery: { en: 'On the way', ta: 'வழியில்' },
+  attempted: { en: 'At the door', ta: 'வாசலில்' },
   delivered: { en: 'Delivered', ta: 'கொடுக்கப்பட்டது' },
+  partially_delivered: { en: 'Partly delivered', ta: 'ஓரளவு கொடுக்கப்பட்டது' },
   failed: { en: 'Not delivered', ta: 'கொடுக்கப்படவில்லை' },
   returned_to_origin: { en: 'Back to store', ta: 'கடைக்குத் திரும்பியது' },
 };
@@ -158,6 +163,13 @@ function sampleRoute() {
       if (!proof) { const e = new Error('proof'); e.name = 'ProofRequiredError'; throw e; }
       const s = find(id);
       s.state = 'delivered';
+      s.codCollectedMinor = o?.codCollectedMinor ?? 0;
+      return s;
+    },
+    deliverPartial: (id, proof, o) => {
+      if (!proof) { const e = new Error('proof'); e.name = 'ProofRequiredError'; throw e; }
+      const s = find(id);
+      s.state = 'partially_delivered';
       s.codCollectedMinor = o?.codCollectedMinor ?? 0;
       return s;
     },
@@ -354,6 +366,7 @@ function render() {
   el('held-label').textContent = t('cashCarrying');
   el('held').textContent = inr(session.codHeld().minor);
   el('deliver').textContent = t('delivered');
+  el('delivered-partial').textContent = t('partlyDelivered');
   el('failed').textContent = t('couldNotDeliver');
   el('handover').textContent = t('endOfShift');
   renderQueue();
@@ -421,6 +434,72 @@ el('deliver').addEventListener('click', async () => {
     if (stop.state === 'assigned') session.depart(stop.stopId);
     session.deliver(stop.stopId, { kind, ref }, { codCollectedMinor: collected, codMethod: method });
     tell(t('deliveredOk'), `${stop.area}${collected > 0 ? ` · ${inr(collected)}` : ''}`, true);
+  } catch (e) {
+    tell(t('read'), e && e.name === 'ProofRequiredError' ? t('noProof') : String(e && e.message ? e.message : e));
+  }
+  render();
+});
+
+/**
+ * A PARTIAL delivery — the customer kept some of the order.
+ *
+ * The same proof-then-money order as a full delivery, because it happens at the same doorstep and the
+ * model refuses it without proof. What differs is meaning: this is a **terminal** outcome, the cash
+ * recorded is only what was taken for the goods handed over, and the undelivered remainder is settled
+ * downstream (never a driver "short"). The button exists so this real situation is a recorded outcome
+ * rather than a driver forcing a full "delivered" or a "failed" onto a stop that was neither.
+ */
+el('delivered-partial').addEventListener('click', async () => {
+  const stop = selected();
+  if (stop === null) { tell(t('read'), t('tapStopFirst')); return; }
+  if (stop.state === 'delivered' || stop.state === 'partially_delivered' || stop.state === 'returned_to_origin') {
+    tell(t('read'), t('stopDone')); return;
+  }
+
+  const kind = await ask({
+    title: t('howProved'),
+    mode: 'choice',
+    options: PROOF_KINDS.map((p) => ({ value: p.kind, label: t(p.word) })),
+  });
+  if (kind === null) return;
+
+  let ref = kind;
+  if (PROOF_KINDS.find((p) => p.kind === kind)?.needsRef) {
+    const entered = await ask({ title: t('proofRef'), mode: 'number' });
+    if (entered === null) return;
+    ref = String(entered);
+  }
+
+  let collected = 0;
+  let method;
+  if (stop.codMinor > 0) {
+    method = await ask({
+      title: t('howPaid'),
+      mode: 'choice',
+      options: PAY_METHODS.map((p) => ({ value: p.method, label: t(p.word) })),
+    });
+    if (method === null) return;
+
+    const answer = await ask({
+      title: t('howMuchCollected'),
+      mode: 'number',
+      hint: `${t('expected')}: ${inr(stop.codMinor)}`,
+      initial: String(Math.round(stop.codMinor / 100)),
+      onChange: (rupees) => {
+        const minor = Math.round(rupees * 100);
+        if (minor < stop.codMinor) return t('collectedLess');
+        if (minor > stop.codMinor) return t('collectedMore');
+        return '';
+      },
+    });
+    if (answer === null) return;
+    collected = Math.round(Number(answer) * 100);
+  }
+
+  try {
+    if (stop.state === 'assigned') session.depart(stop.stopId);
+    session.deliverPartial(stop.stopId, { kind, ref }, { codCollectedMinor: collected, codMethod: method });
+    tell(t('partialOk'), `${stop.area}${collected > 0 ? ` · ${inr(collected)}` : ''}`, true);
   } catch (e) {
     tell(t('read'), e && e.name === 'ProofRequiredError' ? t('noProof') : String(e && e.message ? e.message : e));
   }

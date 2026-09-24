@@ -5,6 +5,33 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M19 delivery-app — "Partly delivered" on the screen, browser-verified (24 September 2026, buildable-work programme, M19 slice A3 part 2)
+
+Part 1 put `deliverPartial` on the phone's session model; this surfaces it on the driver's SCREEN and proves
+it in a real browser.
+
+- **`apps/delivery-app/web/app.js` + `index.html`** — a new **"Partly delivered"** button (bilingual EN/TA)
+  that mirrors the "Delivered" flow — proof first (the model refuses a partial without it), then the cash
+  actually taken — and calls `session.deliverPartial(...)` (auto-departing an `assigned` stop first, like
+  "Delivered" does). New state labels for `picked_up`/`attempted`/`partially_delivered`; the sample/offline
+  session gained a `deliverPartial` stub so the demo screen never throws.
+- **`tests/e2e/delivery-route-partial-delivery.e2e.ts`** (new, +2, headless Chromium) — builds the delivery
+  bundle, injects a one-stop route, and drives the real screen: (1) select the stop → "Partly delivered" →
+  choose proof → the stop becomes `partially_delivered` and the event(s) land in the **device outbox**
+  (§31/P-01, offline-first); (2) cancel at the proof step → **refused on screen, nothing queued** (M19-FR-03 /
+  P-08). Scan/DOM driven via clicks (the delivery screen uses on-screen choice/keypad sheets, not the window
+  scanner).
+- **Honest scope / rung:** the driver's **partial-delivery flow is now E2E_VERIFIED** in a real browser.
+  `pickUp`/`arrive` remain engine-only optional recorded steps (the screen auto-departs, so surfacing them
+  would clutter a deliberately minimal driver screen without changing the core flow) — available for a future
+  screen iteration if the owner wants that tracking granularity. **M19 stays PARTIALLY_WIRED** (headline
+  unchanged). Remaining tracked follow-up: B5b (M31 notify enqueue — deferred pending a design decision).
+
+**Next:** continue the buildable-work programme automatically — assess M22/M20/M01 buildable gaps per the
+owner's sequence (M19→M18→M22→M20→M01), or a remaining tracked follow-up.
+
+---
+
 ## M19 delivery-app — the full lifecycle on the driver's phone (24 September 2026, buildable-work programme, M19 slice A3 part 1)
 
 The A1 delivery state machine gained `picked_up`, `attempted` and `partially_delivered` (PR #541), but the
