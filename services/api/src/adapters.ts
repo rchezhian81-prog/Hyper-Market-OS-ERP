@@ -128,6 +128,7 @@ import type { DrReadinessDeps, DrDrillRecord } from '../../platform/src/dr-readi
 import type { ShelfCountDeps, ShelfCount } from '../../inventory/src/shelf-count';
 import { projectFleet, type DeviceRegistryDeps, type DeviceRegistryEvent } from '../../platform/src/device-registry';
 import { projectVersionPolicy, type VersionPolicyDeps, type VersionPolicyEvent } from '../../platform/src/version-policy';
+import type { PartnerDeps, PartnerCredential } from '../../platform/src/partners';
 import { projectJobs, type BackgroundJobsDeps, type BackgroundJobEvent } from '../../platform/src/background-jobs';
 import { projectSupportAccess, type SupportAccessDeps, type SupportAccessEvent } from '../../platform/src/support-access-lifecycle';
 import { type StatusCentreDeps } from '../../platform/src/status-centre';
@@ -6496,6 +6497,33 @@ export function versionPolicyAdapter(input: {
         idempotencyKey: `version-policy-${tenantId}-${key}`,
         source: 'api/platform',
         payload: event,
+      }));
+    },
+  };
+}
+
+/**
+ * The durable partner-credential registry (M36-FR-04). Each credential lives on its own append-only
+ * sub-stream, folded latest-wins, so register and revoke are both versions and the history stays
+ * (hard rule #6). The access-check reads the current version as the authoritative security principal.
+ */
+export function partnerAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): PartnerDeps {
+  const streamFor = (credentialId: string): string => streamName(STREAM.platform, 'partner', credentialId);
+  return {
+    now: input.now,
+    credential: async (tenantId, credentialId) =>
+      latest<PartnerCredential>(input.store, tenantId, streamFor(credentialId), 'PartnerCredentialSet'),
+    recordCredential: async (tenantId, credential, key) => {
+      await input.store.append(tenantId, streamFor(credential.credentialId), makeEvent({
+        id: `partner-cred-${credential.credentialId}-${key}`,
+        type: 'PartnerCredentialSet',
+        occurredAt: input.now(),
+        idempotencyKey: `partner-cred-${tenantId}-${credential.credentialId}-${key}`,
+        source: 'api/platform',
+        payload: credential,
       }));
     },
   };

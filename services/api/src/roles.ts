@@ -208,6 +208,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'platform.plan.read', 'platform.subscription.read', 'platform.billing.webhook',
       'platform.job.read', 'platform.job.manage',
       'platform.service.read', 'platform.service.manage',
+      'platform.partner.manage', 'platform.partner.read',
     ],
   },
   {

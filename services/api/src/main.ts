@@ -131,6 +131,7 @@ import { alertLifecycleRoutes } from '../../platform/src/alert-lifecycle';
 import { deviceRoutes } from '../../platform/src/devices';
 import { deviceRegistryRoutes } from '../../platform/src/device-registry';
 import { versionPolicyRoutes } from '../../platform/src/version-policy';
+import { partnerRoutes } from '../../platform/src/partners';
 import { backgroundJobsRoutes } from '../../platform/src/background-jobs';
 import { supportAccessLifecycleRoutes } from '../../platform/src/support-access-lifecycle';
 import { statusCentreRoutes } from '../../platform/src/status-centre';
@@ -185,7 +186,7 @@ import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, dataExportAdapter, financeAdapter, settlementAdapter,
-  customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter,
+  customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
@@ -866,6 +867,13 @@ export function buildSurface(deps: {
     ...versionPolicyRoutes(store === undefined
       ? { policy: () => undefined, recordPolicyEvent: () => {}, now }
       : versionPolicyAdapter({ store, now })),
+    // Durable partner-credential registry + access-check (M36-FR-04, hard rule #7) — an admin registers a
+    // partner credential scoped to the tenants that engaged it, and the access-check decides a partner call
+    // against the STORED credential (sandbox-in-production, out-of-scope tenant, revoked/expired, unversioned
+    // all refused). Append-only; the security principal is authoritative from the ledger, never the body.
+    ...partnerRoutes(store === undefined
+      ? { credential: () => undefined, recordCredential: () => {}, now }
+      : partnerAdapter({ store, now })),
     // Durable background-job registry (M33-FR-01) — an admin schedules jobs, a runner reports each run's
     // outcome, and a FAILED job is visible (a dedicated exception view) and retryable. Append-only, restart-safe.
     ...backgroundJobsRoutes(store === undefined
