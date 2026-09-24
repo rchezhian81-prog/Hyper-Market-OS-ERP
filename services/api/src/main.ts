@@ -440,7 +440,8 @@ export function buildSurface(deps: {
     } : countsAdapter({ store, now })),
     ...writeOffRoutes(store === undefined ? {
       writeOffExists: empty(false), writeOffs: empty([]), recordWriteOff: () => {},
-      writeOffThreshold: () => undefined, recordWriteOffThreshold: () => {}, canApproveWriteOff: () => Promise.resolve(false), now,
+      writeOffThreshold: () => undefined, recordWriteOffThreshold: () => {}, canApproveWriteOff: () => Promise.resolve(false),
+      ownersOfStockAt: () => [], now,
     } : { ...writeOffAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     ...productionRoutes(store === undefined ? {
       recipe: empty(undefined), recordRecipe: () => {}, ingredientCost: empty(undefined), recordCost: () => {},

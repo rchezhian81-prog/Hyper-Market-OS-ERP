@@ -5,6 +5,30 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M27-FR-02 access half: store staff can no longer write off concession stock (24 September 2026, "keep going")
+
+The companion to the valuation half. FR-02 has two acceptance criteria — concession stock excluded from
+the store's valuation (done, PR #529) AND *"only the concessionaire accesses it; cross-access blocked."*
+This closes the access half at the highest-value write path: the governed **write-off** route, where the
+engine's own warning bites — *"somebody else's inventory written off by our staff is a bill we cannot
+argue with."*
+
+- **`services/inventory/src/write-off.ts`** — before committing a loss, the route reads the M08 ledger's
+  ownership (new `ownersOfStockAt` dep) and, when the product+location holds concession/consignment/
+  customer stock, runs the tested `checkStockAccess` engine as `store_staff` / `write_off`; a refusal
+  becomes `422 stock_not_owned_by_the_store`, naming the owner. Nothing is recorded.
+- **`services/api/src/adapters.ts`** — `ownersOfStockAt` folds the `InventoryMoved` stream for that
+  product+location, grouped by owner, returning the NON-OWN owners with positive on-hand. Own stock never
+  blocks a store write-off, so the guard **fires only once concession stock is present** — every ordinary
+  loss on the store's own goods is untouched (backward-compatible).
+- **Tests:** `tests/integration/concession-write-off-guard.test.ts` (3): concession product refused,
+  own-stock loss allowed, guard is per product+location — through the real pipeline and real ledger.
+- **M27 stays PARTIALLY_WIRED (honest):** the store-valuation and the write-off-access halves of FR-02
+  are now both fed from the real ledger; POS-side concession-sale attribution (FR-03) remains a separate
+  wire. A real deepening, not a rung change; no headline movement.
+
+---
+
 ## M27-FR-02 concession stock ownership now on the M08 ledger — excluded from the store valuation (24 September 2026, owner chose "the bigger in-sequence piece")
 
 The clean, in-sequence cloud increments had thinned to almost nothing at ~55% (a scan found only an R8
