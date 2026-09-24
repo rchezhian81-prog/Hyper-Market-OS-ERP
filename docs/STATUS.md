@@ -5,6 +5,41 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M18 effective-dated serviceability-policy resolver (24 September 2026, buildable-work programme, M18 slice S1)
+
+**Module pivot (honest, per the owner's sequence).** M19's substitution ENGINE track is complete and
+integration-tested — B1 eligibility, B2a money (cap/approval/tender), B3 route wiring, B4 exception queue,
+B5 bilingual (EN/TA) messages — and the delivery state machine is complete through the durable API
+(A1 engine, A2 route). Per the owner's sequence (M19 → **M18** → M22 → M20 → M01) I've moved to M18.
+**M19 is NOT claimed finished:** its remaining buildable UI/wiring — B6 (picker/customer substitution
+screen + browser e2e), B4b (tenant-wide exception read route + index), B5b (M31 notification enqueue) and
+A3 (delivery-app device pickUp/arrive/partial + screen + e2e) — stay **tracked follow-ups**.
+
+First M18 slice, matching the owner's ask ("effective-dated serviceability … do not require my final
+production radii … mark actual serviceability data as owner-configurable before pilot"):
+
+- **`packages/storefront/src/serviceability-schedule.ts`** (new) — `resolveServiceabilityPolicy({schedule,
+  on})` picks the serviceability policy (radius / fee / free-threshold / minimum) in force on a date from a
+  per-tenant **effective-dated** schedule, the same boundary rule as `resolveGstRate` (a new policy applies
+  from its effective-from day). Until the owner configures real radii — an empty schedule, or a date before
+  the first period — the **D08 default (10 km)** applies, so the store is serviceable from day one and the
+  owner replaces the numbers by adding a period, no code change. A **malformed** period (bad date, duplicate
+  effective date, negative/non-whole field) throws `InvalidServiceabilitySchedule` — a config error is
+  visible, never silently defaulted (P-08). Pure; composes with the existing `checkServiceability`.
+- **`tests/unit/storefront-serviceability-schedule.test.ts`** (+9) — default when unconfigured / before the
+  earliest period; picks the period in force and switches on the effective-from boundary; order-independent;
+  throws on bad date / negative-or-fractional field / duplicate date / bad resolve-date; default is frozen.
+  Barrel updated.
+- **Honest scope / rung:** engine-only. **M18 stays PARTIALLY_WIRED**; headline **unchanged**. Actual
+  radii/slots remain an **owner-configurable pilot input** (the schedule is data). Next M18 slices: wire the
+  resolver into the serviceability read path with an owner-configurable effective-dated store, then a
+  deterministic routing/slotting **simulator** with synthetic fixtures (no live maps).
+
+**Next:** M18 slice S2 — a per-tenant effective-dated serviceability-policy store + read/config route that
+feeds `resolveServiceabilityPolicy` into `checkServiceability`, integration-tested.
+
+---
+
 ## M19 bilingual (EN/TA) substitution customer-message builder (24 September 2026, buildable-work programme, slice B5)
 
 Seventh slice. The substitution engines already produced the English customer sentence; this renders the

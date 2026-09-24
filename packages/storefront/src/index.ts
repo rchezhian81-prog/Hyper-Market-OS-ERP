@@ -7,8 +7,12 @@
 //     filled, slots that cannot be sold twice, a payment that is never assumed, tracking
 //     that states its age, and a privacy centre showing everything held, including what
 //     cannot be erased.
+//   • `serviceability-schedule.ts` (M18-FR-01 / D08) — the serviceability policy (radius, fee,
+//     free threshold, minimum) in force ON A DATE, from a per-tenant effective-dated schedule;
+//     the D08 default (10 km) applies until the owner configures real radii — no code change.
 //
 // Pure and deterministic: no clock, no network, no card data (hard rule #3).
 
 export * from './browse';
 export * from './checkout';
+export * from './serviceability-schedule';
