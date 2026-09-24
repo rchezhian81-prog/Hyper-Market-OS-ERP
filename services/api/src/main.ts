@@ -620,7 +620,8 @@ export function buildSurface(deps: {
     } : b2bDocumentsAdapter({ store, now, numberSeries: deps.numberSeries })),
     ...concessionRoutes(store === undefined ? {
       contract: empty(undefined), sales: empty([]), recordContract: () => {}, recordSale: () => {},
-      depositMovements: empty([]), recordDepositMovement: () => {}, now,
+      depositMovements: empty([]), recordDepositMovement: () => {},
+      storeValuation: (_t, branchId) => ({ branchId, ownedValueMinor: 0, ownedLots: 0, excluded: [], excludedValueMinor: 0, detail: 'no store' }), now,
     } : concessionAdapter({ store, now })),
     ...scrapRoutes(store === undefined ? {
       scrapSales: empty([]), recordScrapSale: () => {}, recordPosted: () => {}, now,

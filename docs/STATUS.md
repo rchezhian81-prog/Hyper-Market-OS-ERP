@@ -5,6 +5,42 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M27-FR-02 concession stock ownership now on the M08 ledger — excluded from the store valuation (24 September 2026, owner chose "the bigger in-sequence piece")
+
+The clean, in-sequence cloud increments had thinned to almost nothing at ~55% (a scan found only an R8
+partner piece left clean). Put to the owner, they chose the **bigger in-sequence piece: concession
+stock-ownership separation (M27-FR-02)**.
+
+The mistake this prevents is boring and universal: **concession stock ending up in the store's
+valuation.** A jeweller's ₹40,00,000 of gold sits on the store's shelves and moves through the store's
+tills, and one day it lands in a stock valuation for the accountant — and the balance sheet, the
+insurance schedule and the tax position are all wrong, because the number "looks about right". The
+engine to prevent it (`valueOwnStock`) existed but ran only over lots the caller supplied; nothing
+tagged real stock as somebody else's.
+
+- **`services/inventory/src/index.ts`** — ownership now rides on the **M08 movement ledger itself**
+  (the field M27-FR-02 names): a `received` movement carries `ownership` (`own` | `concession` |
+  `consignment` | `customer_property`) and `ownerId`; absent ⇒ the store's own (backward-compatible,
+  so every existing movement stays store-owned). `checkMovement` refuses non-own stock that names no
+  owner (`ownership_without_an_owner`) — it could not otherwise be told apart or attributed back.
+- **`packages/concession/src/concession.ts`** — `splitStoreValuation` (pure): over stock already
+  valued per owner, reports what the store owns and EXCLUDES + NAMES what it does not.
+- **`services/api/src/adapters.ts`** — `storeValuation` folds the real ledger, valuing **each owner's
+  pool separately** (a concessionaire's cost never averages into the store's) by reusing
+  `weightedAverageValuation` per owner, then `splitStoreValuation`.
+- **`services/finance/src/concession.ts`** — `GET /v1/concession/branches/:branchId/store-valuation`
+  returns the store-vs-others split from the live ledger; gated `concession.charge.read` + entitlement
+  `dept.concession`. Reads only; the append-only ledger is untouched.
+- **Tests:** `tests/unit/concession-store-valuation.test.ts` (7) + `tests/integration/concession-store-valuation.test.ts`
+  (4: own+concession excluded and named, separate WAC pools, owner-less concession refused, RBAC +
+  entitlement gating) — through the real pipeline, real RBAC, stock from the real inventory ledger.
+- **M27 stays PARTIALLY_WIRED (honest, no headline change):** the store-valuation half of FR-02 is now
+  fed from the real ledger, but stock-ACCESS enforcement is not yet gated at the M08 write path, and
+  POS-side concession-sale attribution (FR-03) is a separate wire. A real FR-02 deepening, not a rung
+  change.
+
+---
+
 ## M18-FR-02 backorder of the un-promised remainder wired on the cloud OMS (23 September 2026, "keep building")
 
 A promise reserves what the shelf allows and tells the customer before they pay — but until now the

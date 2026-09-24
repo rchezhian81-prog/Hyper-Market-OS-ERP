@@ -25,7 +25,7 @@ import { apiError, notFound } from '../../kernel/src/index';
 import {
   computePeriodCharge, settleConcession, mayConcessionTrade, depositPosition, valueOwnStock, checkStockAccess,
   type ConcessionContract, type ConcessionSale, type ConcessionChargeBasis,
-  type DepositMovement, type OwnedLot, type OwnershipStatus,
+  type DepositMovement, type OwnedLot, type OwnershipStatus, type ValuationResult,
 } from '../../../packages/concession/src/index';
 
 export type { ConcessionContract, ConcessionSale, DepositMovement } from '../../../packages/concession/src/index';
@@ -57,6 +57,12 @@ export interface ConcessionDeps {
   readonly depositMovements: (tenantId: string, concessionaireId: string) => Promise<readonly DepositMovement[]> | readonly DepositMovement[];
   /** Record a deposit movement (received / refunded / forfeited). Idempotent on the movement id. */
   readonly recordDepositMovement: (tenantId: string, movement: DepositMovement) => Promise<void> | void;
+  /**
+   * The branch's stock valued at weighted-average cost, split into what the STORE owns and what it
+   * does not (M27-FR-02) — concession / consignment / customer stock EXCLUDED and named by owner.
+   * Folded from the M08 movement ledger's `ownership` field, valuing each owner's pool separately.
+   */
+  readonly storeValuation: (tenantId: string, branchId: string) => Promise<ValuationResult> | ValuationResult;
   readonly now: () => string;
 }
 
@@ -254,6 +260,22 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
           });
         }
         return { status: 200, body: { ...valueOwnStock({ branchId: b['branchId'] as string, lots: lots as OwnedLot[] }), asAt: deps.now() } };
+      },
+    },
+    {
+      // Value the branch's stock straight from the M08 ledger, split into what the STORE owns and what
+      // it does not (M27-FR-02). The stateless POST above values caller-supplied lots; this reads the
+      // REAL append-only movement ledger, where each received lot carries its `ownership`, and values
+      // each owner's pool separately — a concessionaire's cost is never averaged into the store's.
+      // Concession/consignment/customer stock is EXCLUDED and named; a valuation that swept it in would
+      // overstate the balance sheet, the insurance schedule and the tax position at once. Reads only.
+      api: 'API-09', method: 'GET', path: '/v1/concession/branches/:branchId/store-valuation',
+      permission: 'concession.charge.read',
+      entitlement: 'dept.concession',
+      handler: async (ctx) => {
+        const branchId = ctx.params['branchId'] ?? '';
+        const result = await deps.storeValuation(ctx.tenantId, branchId);
+        return { status: 200, body: { ...result, asAt: deps.now() } };
       },
     },
     {

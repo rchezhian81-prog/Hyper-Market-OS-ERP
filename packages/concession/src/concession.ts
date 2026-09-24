@@ -135,6 +135,74 @@ export function valueOwnStock(input: {
   };
 }
 
+/**
+ * A per-owner slice of a branch's valued stock, folded from the M08 movement ledger at
+ * weighted-average cost (M27-FR-02). `ownerId` names the concessionaire / consignor / customer for
+ * non-own stock, and a stable sentinel (`'store'`) for the store's own.
+ */
+export interface OwnedStockValue {
+  readonly productId: string;
+  readonly locationId: string;
+  readonly ownership: OwnershipStatus;
+  readonly ownerId: string;
+  readonly valueMinor: number;
+  readonly onHandMinor: number;
+}
+
+/**
+ * Split a branch's valued stock into what the STORE owns and what it does not, **straight from the
+ * M08 ledger** (M27-FR-02).
+ *
+ * The same guarantee as `valueOwnStock`, but over stock ALREADY valued at weighted-average cost per
+ * owner (so a concessionaire's cost is never averaged into the store's) rather than caller-supplied
+ * simple lots. Concession, consignment and customer-property stock is EXCLUDED from the store's
+ * value and NAMED by owner — never silently dropped, because an unexplained gap between the shelf
+ * and the balance sheet is its own kind of trouble at an audit.
+ */
+export function splitStoreValuation(input: {
+  readonly branchId: string;
+  readonly rows: readonly OwnedStockValue[];
+}): ValuationResult {
+  const here = input.rows.filter((r) => r.locationId === input.branchId);
+  const mine = here.filter((r) => r.ownership === 'own');
+  const theirs = here.filter((r) => r.ownership !== 'own');
+
+  const sum = (rows: readonly OwnedStockValue[]): number => rows.reduce((s, r) => s + r.valueMinor, 0);
+
+  const byOwner = new Map<string, OwnedStockValue[]>();
+  for (const r of theirs) {
+    const key = `${r.ownership}|${r.ownerId}`;
+    byOwner.set(key, [...(byOwner.get(key) ?? []), r]);
+  }
+
+  const excluded = [...byOwner]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, rows]) => {
+      const [ownership, ownerId] = key.split('|');
+      return {
+        ownership: (ownership ?? 'own') as OwnershipStatus,
+        ownerId: ownerId ?? 'unknown',
+        lots: rows.length,
+        valueMinor: sum(rows),
+      };
+    });
+
+  const ownedValueMinor = sum(mine);
+  const excludedValueMinor = sum(theirs);
+
+  return {
+    branchId: input.branchId,
+    ownedValueMinor,
+    ownedLots: mine.length,
+    excluded,
+    excludedValueMinor,
+    detail:
+      excludedValueMinor === 0
+        ? `${ownedValueMinor} across ${mine.length} product line(s), all owned by the store`
+        : `${ownedValueMinor} owned by the store; ${excludedValueMinor} on these shelves belongs to somebody else and is EXCLUDED from the valuation, the insurance schedule and the tax position`,
+  };
+}
+
 export type StockAccessOutcome = 'allowed' | 'not_your_stock' | 'not_permitted';
 
 export interface StockAccessDecision {
