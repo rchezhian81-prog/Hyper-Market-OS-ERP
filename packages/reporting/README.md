@@ -29,11 +29,17 @@ consistently, always with **how current they are**.
     is the most dangerous number on the screen); **reconciles** the node to its children; **enforces
     scope** (§28 — a branch manager's total is recomputed to their branch, with what was withheld
     named); and returns a worst-first `contributors` list for the drill-down.
+  - `consolidationExportRows(report)` / `CONSOLIDATION_EXPORT_COLUMNS` — flatten a report's contributors
+    into export rows (branch / family / period / gross / net / commission; money as whole minor units, an
+    absent measure `'0'` never blank). This only *shapes* the data; authorisation, branch scope and the
+    audit record are applied by `@sre/export`'s `exportDomain` — **the one export path**, so a consolidation
+    export is default-deny on the report-read permission, a branch view carries only its branch, and every
+    export is logged (M30-FR-02 / NFR-12 / §28). No proprietary-only route to the numbers.
 
 > Pure and deterministic (the caller supplies `asOf`; no clock). Composes the `Money` currency
 > type, `freshness`, and (for the transaction-level drill) `@sre/owner-control`. Tested in
-> `tests/unit/reporting.test.ts` and `tests/unit/reporting-consolidation.test.ts` (15). Part of the
-> repository layout in `CLAUDE.md`.
+> `tests/unit/reporting.test.ts` and `tests/unit/reporting-consolidation.test.ts` (21, incl. the
+> export-with-authorization+audit leg). Part of the repository layout in `CLAUDE.md`.
 >
 > **Durable surface (API-10):** `services/reporting/src/consolidation-route.ts` makes the
 > consolidation engine live — branches `POST /v1/consolidation/contributions` (idempotent by
@@ -43,3 +49,9 @@ consistently, always with **how current they are**.
 > durable read applies the identical idempotency / correction-supersedes / refuse-stale rules across
 > a cold restart. Ingestion `reporting.consolidation.manage`; reads `reporting.report.read`. Proven
 > in `tests/integration/reporting-consolidation.test.ts` (7).
+>
+> **Head-office screen (Item 4c):** `apps/web-erp/web/company-report.html` + `.js` is a thin client over
+> the roll-up — company total, freshness badge, named missing/withheld branches, per-branch drill-down and
+> an authorised CSV export. Bilingual EN/TA, browser-verified end to end against the production `consolidate`
+> + `exportDomain` over synthetic multi-branch fixtures in `tests/e2e/company-report.e2e.ts` (1, real browser;
+> self-skips with none). No money maths in the browser.

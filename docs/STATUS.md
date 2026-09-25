@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Item 4c — company-wide reports: the drill-down screen + authorised export — COMPLETES Item 4 (25 September 2026)
+
+Slices 4a/4b built the pure engine and the durable roll-up surface; this is what the head office actually
+sees, and how the numbers leave. **Item 4 is now complete.**
+- **`packages/reporting/src/consolidation.ts`** — added `consolidationExportRows(report)` + `CONSOLIDATION_EXPORT_COLUMNS`.
+  It only *shapes* a report's per-branch contributors into export rows (branch / family / period / gross /
+  net / commission, money as whole minor units, an absent measure `'0'` never blank). Authorisation, branch
+  scope and the audit record stay with **`packages/export/src/export.ts`**'s `exportDomain` — the same one
+  export path the whole system uses, not a second one. No proprietary-only route to the numbers (NFR-12).
+- **`apps/web-erp/web/company-report.html` + `.js`** (new) — a THIN CLIENT: no consolidation, no money maths.
+  It renders the roll-up honestly — company total in rupees, a **freshness badge** (fresh/stale/missing,
+  never stale-as-fresh), missing and withheld branches **named**, a reconcile line, the worst-first per-branch
+  drill-down, and an **Export CSV** button that fetches the authorised file. Bilingual EN/TA, 44px targets,
+  `aria-live` status, both colour themes.
+- **`tests/unit/reporting-consolidation.test.ts`** (+6, now 21) — the export-rows mapper (worst-first order,
+  money as minor units, absent measure `'0'`, every column present) and the **export-with-authorization+audit
+  leg**: default-deny on `reporting.report.read`; a branch manager exports only their branch; the owner
+  exports the whole company and it is logged (M30-FR-02 / §28).
+- **`tests/e2e/company-report.e2e.ts`** (new, +1, real Chromium) — a Node backend runs the production
+  `consolidate` + `exportDomain` over synthetic multi-branch fixtures; the browser proves a company total,
+  a stale badge + named-missing branch that blocks reconciliation (P-08), drill to contributors, a scoped
+  view that **recomputes** the total + **names** the withheld (§28), and an export that carries only the
+  scoped branch, then both branches company-wide. Self-skips with no browser.
+- **Honest rung:** implementation + unit + integration + simulator-browser E2E done; UAT with the owner on
+  real multi-branch data is pending the pilot.
+- **Next:** Item 5 (customer delete-my-data policy — DEVELOPMENT-APPROVED, legal confirmation required), then
+  Item 6 (ledger maturity update + one consolidated Owner Action Register at the external-gate boundary).
+
+---
+
 ## Item 4b — company-wide reports: durable ingestion + roll-up read route (API-10) (25 September 2026)
 
 Slice 4a built the pure consolidation engine; this makes it **live and durable** on the API surface.
