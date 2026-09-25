@@ -44,6 +44,12 @@ export interface IdentityClaims {
    * whether a re-authentication or a second factor is still required.
    */
   readonly amr?: readonly string[];
+  /**
+   * When the person actually authenticated (`auth_time`, epoch seconds) — distinct from when the
+   * token was issued (`iat`), because a refreshed token keeps the original auth_time. A sensitive
+   * action reads this to decide whether the login is still fresh enough or a re-authentication is due.
+   */
+  readonly authTime?: number;
   /** The branch the person is scoped to, when applicable (`branch_id`). */
   readonly branchId?: string;
 }

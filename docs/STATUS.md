@@ -5,6 +5,24 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Item 1 (login) slice 1d — tenant/account binding + MFA/re-auth step-up (25 September 2026)
+
+Fourth slice of the portal login: what to trust a verified identity for.
+- **`packages/identity/src/access-binding.ts`** (new) — `bindCustomerPrincipal` resolves verified
+  claims into a principal scoped to the request's tenant, carrying the subject's active org
+  memberships, and **refuses a cross-tenant token** (OB-01). `evaluateStepUp` gates sensitive
+  actions (change bank details / bulk export / delete account) on **both** a second factor and a
+  fresh login (`auth_time`) — else `needs_second_factor` / `needs_reauth` (SEC-03).
+- **`packages/identity/src/oidc-port.ts` + `tests/support/local-idp.ts`** — added the OIDC-standard
+  `auth_time` claim so freshness is faithful (not conflated with token issuance).
+- **`tests/unit/identity-access-binding.test.ts`** (new, +9) — binding with orgs / cross-tenant
+  refusal / no-org retail account; step-up allow / needs-second-factor / needs-reauth (stale +
+  unknown auth_time) / second-factor-reported-first.
+- **Honest rung:** implementation complete + tested. Next Item-1 slices: session expiry/revocation/
+  audit → authenticated browser E2E.
+
+---
+
 ## Item 1 (login) slice 1c — organization invitation & membership (25 September 2026)
 
 Third slice of the portal login. A B2B customer is a business with several people, each needing their
