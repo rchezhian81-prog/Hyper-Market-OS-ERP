@@ -49,8 +49,33 @@ about this module follows from that one fact.
     day the counter leaves. A forfeit with **nobody's name on it is not a forfeit** and stays a
     liability. There is no balance setter anywhere in the module.
 
+- **`src/concession-tagging.ts`** — till-side capture at **sale AND line-item** level (owner
+  decision). `computePeriodCharge`/`settleConcession` work off coarse period totals; this is the
+  fine-grained truth the till records so those totals can be trusted and audited.
+  - `captureConcessionTag(input)` / `captureConcessionTagIdempotent(input, existing)` — a
+    **cashier** records a line **from an approved source** (a docket, an app reference), never
+    invents it. It snapshots the commission scheme **as it stood** (a later contract change never
+    re-prices a posted line), computes `net = gross − discount` and the commission in **exact
+    integer money** (BigInt), and is **idempotent** on the till's own key — a resend or a
+    double-scan returns the original tag, never a second charge.
+  - `reverseConcessionTag(...)` / `adjustConcessionTag(...)` — a posted tag is **never
+    rewritten**. A mistake is a **reversal** (whole line negated) or an **adjustment**
+    (compensating delta), each a NEW append-only tag naming the one it corrects (hard rule #2).
+    Correcting is a **supervisor**'s act (`mayCorrectConcessionTag` refuses a cashier — SoD, §28),
+    and a refused correction is **recorded**, never silent (P-08).
+  - A **return / cancellation** carries negative money and names the sale it reverses, so
+    commission is never taken on money that went back to a customer.
+  - `markSettlementStatus(...)` — the settlement run sets `pending → included_in_charge →
+    settled`; the till never guesses it. Every capture and correction is an append-only
+    `ConcessionTagEvent` (who, when, from which source — hard rules #2 #6).
+  - `concessionTagTotals({ tags, tenantId, concessionaireId?, from?, to? })` — folds the tag
+    stream into per-concession gross / net / commission, **netting reversals and returns by
+    construction**, so it **feeds** `computePeriodCharge` / `settleConcession` rather than
+    duplicating them.
+
 > Pure and deterministic: the clock is injected, no I/O. Composes with `packages/stock`
 > (ownership on the ledger), `packages/day-close` (what the tills banked) and
-> `packages/finance` (the liability). Tested in `tests/unit/concession.test.ts` (30) and proven
-> end to end in `tests/integration/beyond-the-till.test.ts` (Stage 16 gate). Part of the
-> repository layout in `CLAUDE.md`.
+> `packages/finance` (the liability). Tested in `tests/unit/concession.test.ts` (30),
+> `tests/unit/concession-tagging.test.ts` (17) and proven end to end in
+> `tests/integration/beyond-the-till.test.ts` (Stage 16 gate). Part of the repository layout in
+> `CLAUDE.md`.

@@ -9,5 +9,12 @@
 // and every blocker is reported at once (FR-04).
 //
 // A per-tenant optional feature (ADR-0003), built where a store runs concessions.
+//
+// `concession-tagging.ts` adds the till-side, sale + line-item capture (owner decision): which
+// concession/partner, on which counter, under which commission scheme, at which till/shift, sold what —
+// line by line — with the money broken down (gross/discount/tax/net/commission). A cashier captures from an
+// approved source (idempotently); a supervisor corrects by reversal/adjustment, never rewriting a posted
+// sale (SoD, hard rule #2). It feeds `computePeriodCharge` / `settleConcession` via `concessionTagTotals`.
 
 export * from './concession';
+export * from './concession-tagging';

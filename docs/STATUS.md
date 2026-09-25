@@ -5,6 +5,39 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Item 3 — till-side concession tagging (sale + line-item) — engine slice (25 September 2026)
+
+The owner's third approved item: capture, at the till, which concession/partner sold what — line by line —
+under which commission scheme, and how the money broke down; a cashier records from an approved source, a
+supervisor corrects by reversal/adjustment, never a silent rewrite.
+- **`packages/concession/src/concession-tagging.ts`** (new) — a pure, deterministic engine over the
+  existing concession domain (which had only a coarse `ConcessionSale`):
+  - **`captureConcessionTag` / `captureConcessionTagIdempotent`** — a **cashier** records a line from an
+    **approved source** (docket / app ref): operator/partner, counter, contract, till/shift, product/qty,
+    gross/discount/tax. It **snapshots the commission scheme as it stood** (a later contract change never
+    re-prices a posted line), computes `net = gross − discount` and commission in **exact integer money**
+    (BigInt, sign-preserving), and is **idempotent** on the till's key — a resend/double-scan returns the
+    original, never a second charge.
+  - **`reverseConcessionTag` / `adjustConcessionTag`** — never rewrite a posted tag; emit a NEW append-only
+    reversal (whole line negated) or adjustment (compensating delta) naming the one it corrects (hard rule
+    #2). **Correcting is a supervisor's act** (`mayCorrectConcessionTag` refuses a cashier — SoD §28); the
+    refusal is **recorded**, not silent (P-08).
+  - **Returns/cancellations** carry negative money + name the sale they reverse (commission never taken on
+    money returned). **`markSettlementStatus`** — the settlement run sets `pending → included_in_charge →
+    settled`, never guessed at the till. **`concessionTagTotals`** folds the stream (netting reversals/
+    returns) to feed `computePeriodCharge` / `settleConcession`.
+- **`tests/unit/concession-tagging.test.ts`** (new, +17) — full-field capture; commission on gross/net;
+  fixed-rent = no per-line commission; exact-integer (no float drift); idempotent resend + tenant isolation;
+  cashier-cannot-correct (recorded) + supervisor reversal/adjustment; already-reversed refused; linked
+  return nets commission; settlement-status advance; totals scoped by tenant/partner/window.
+- **Barrel** `packages/concession/src/index.ts` exports the engine.
+- **Honest rung:** pure engine + unit proof are **implementation-complete**. Buildable follow-on: the POS
+  **simulator integration + browser E2E** (till rings a concession line → tag captured → supervisor
+  reversal). **Physical-till verification is pending for the pilot.**
+- **Next:** Item 3b (simulator + E2E), then Items 4–6.
+
+---
+
 ## Item 2 — delivery-substitution exception OWNERSHIP (25 September 2026)
 
 The owner's second approved item: not deriving the exceptions (that engine already exists), but deciding
