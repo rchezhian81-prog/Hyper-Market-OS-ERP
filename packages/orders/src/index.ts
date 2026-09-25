@@ -24,6 +24,11 @@
 //     that owes money or left the customer short is never silent (P-08).
 //   • `substitution-messages.ts` (M19-FR-01, P-07 §19) — the customer-facing message for a substitution
 //     outcome in English OR Tamil, so the notification the customer receives speaks their language.
+//   • `substitution-exception-ownership.ts` (M19 / D09, owner decision) — WHOSE job each exception is,
+//     by when, and what happens if nobody works it: role queues (fulfilment supervisor / customer-service
+//     desk / finance-recon / duty manager), SLA timers, breach-driven escalation, reassignment, reason
+//     codes and an append-only audit — routed to a ROLE, so nothing is lost when a shift ends; a picker
+//     proposes but never approves a restricted exception (SoD, §28).
 //
 // Pure and deterministic. Grows one reviewed, tested unit at a time.
 
@@ -35,3 +40,4 @@ export * from './substitution-policy';
 export * from './substitution-money';
 export * from './substitution-exceptions';
 export * from './substitution-messages';
+export * from './substitution-exception-ownership';
