@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Item 5a — customer "delete my data": the erasure-governance engine (25 September 2026)
+
+Item 5 begins. The plan engine (`data-rights.ts`) and the executor (`erasure-executor.ts`) already exist
+and are tested; the M20-FR-04 executor is provider-neutral but was **never wired to a route**. The owner's
+Item 5 also asked for controls that did **not** exist: **maker-checker**, a **privacy tombstone**, and
+**prevent-restore**. This slice is that pure governance engine.
+- **`packages/customer/src/erasure-governance.ts`** (new):
+  - `authoriseErasureExecution({request, plan, maker, checker, at})` — **maker-checker (SoD §28)** on top
+    of data-subject verification. Verifying proves who asked; it does not authorise staff to run a
+    deletion. A second, distinct officer must approve; the preparer can't be the approver. Refuses
+    `not_verified` / `checker_missing` / `maker_is_checker` / `plan_mismatch` / `not_an_erasure`.
+  - `sealTombstone({authorisation, report, at})` — a **PII-free** privacy tombstone from the two-person
+    authorisation + the execution report: categories erased / minimised / retained (statute + release date
+    carried), evidence the erasure happened with no personal data on it, honest (`complete:false`) when the
+    run left exceptions (P-08).
+  - `guardAgainstRestore({attempt, tombstones, at})` — **prevent restore**: a late sync / re-import that
+    would re-create an erased subject's PII becomes a **visible exception**, never silent last-write-wins
+    (hard rule #10); a lawful retained record that only references the pseudonymised ref is allowed.
+- **`tests/unit/customer-erasure-governance.test.ts`** (new, +13) — maker-checker happy path + every
+  refusal; tombstone derivation, PII-free assertion, incomplete-honesty; restore allowed/refused/PII-free,
+  tenant isolation.
+- Barrel: `packages/customer/src/index.ts` exports the new module.
+- **HONEST SCOPE / LEGAL:** this is the **technical** workflow. It is **DEVELOPMENT-APPROVED**, and it is
+  **NOT** a claim of legal compliance — the retention policy, the immutable-financial-history boundary and
+  the processor list all need a lawyer's confirmation before go-live.
+- **Next (Item 5):** 5b processor/sub-processor erasure notification (provider-neutral, durable delivery +
+  dead-letter); 5c wire executor + authorisation + tombstone onto the live route (RBAC, `privacy` stream,
+  integration test); 5d served DPO erasure console + browser E2E. Then Item 6.
+
+---
+
 ## Item 4c — company-wide reports: the drill-down screen + authorised export — COMPLETES Item 4 (25 September 2026)
 
 Slices 4a/4b built the pure engine and the durable roll-up surface; this is what the head office actually

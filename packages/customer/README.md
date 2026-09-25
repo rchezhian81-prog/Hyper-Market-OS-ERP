@@ -37,6 +37,20 @@ data.
   raised**, becomes a **visible exception** in the report, never a silent skip that would claim an
   erasure that never happened (P-08); and **one failing store does not abort the erasure** — the other
   categories still run. The report is a plain value an **append-only** trail records.
+- **`src/erasure-governance.ts`** (M20-FR-04 / PRV / DPDP, owner decision — **DEVELOPMENT-APPROVED,
+  LEGAL CONFIRMATION REQUIRED**: the technical workflow, not a claim of legal compliance) — the three
+  controls **around** carrying out an erasure. **`authoriseErasureExecution`** is maker-checker on top
+  of the data-subject verification: a destructive, irreversible deletion needs a **second, distinct**
+  authorised officer to approve it, and the officer who prepares/runs it can never be that approver
+  (SoD §28); an unverified request still refuses. **`sealTombstone`** writes a **PII-free** privacy
+  tombstone from the two-person authorisation and the execution report — which categories were erased,
+  which minimised, which the law kept (with the statute and release date) — evidence the erasure
+  happened that holds no personal data itself, and is honest when the erasure was incomplete.
+  **`guardAgainstRestore`** stops an erased subject quietly coming back: a late offline sync, a
+  re-import or a cached copy that would re-create the person's PII becomes a **visible exception**, never
+  a silent last-write-wins (hard rule #10, P-08), while a lawful retained record that only references the
+  pseudonymised ref is allowed through. Pure and deterministic; the caller records each on an append-only
+  trail. Wiring it onto the live route + a served DPO console are the buildable follow-ons.
 - **`src/segments.ts`** (M16-FR-04) — segments and lifetime value are **derived opinions about
   a person**, not facts, and acting on them changes how the shop treats someone. So: **no
   profiling without a lawful basis** — a non-consenting customer comes back as `not_profiled`
@@ -79,5 +93,6 @@ data.
   returning "unknown" for a malformed date rather than a silent zero.
 
 > Pure and deterministic. PII is minimized and compared via normalized values only. Tested in
-> `tests/unit/customer.test.ts` (9), `tests/unit/customer-data-rights.test.ts` (12) and
-> `tests/unit/customer-segments.test.ts` (15). Part of the repository layout in `CLAUDE.md`.
+> `tests/unit/customer.test.ts` (9), `tests/unit/customer-data-rights.test.ts` (12),
+> `tests/unit/customer-erasure-executor.test.ts`, `tests/unit/customer-erasure-governance.test.ts` (13)
+> and `tests/unit/customer-segments.test.ts` (15). Part of the repository layout in `CLAUDE.md`.
