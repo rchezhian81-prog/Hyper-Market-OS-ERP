@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Item 4b — company-wide reports: durable ingestion + roll-up read route (API-10) (25 September 2026)
+
+Slice 4a built the pure consolidation engine; this makes it **live and durable** on the API surface.
+- **`services/reporting/src/consolidation-route.ts`** (new) — three routes:
+  - `POST /v1/consolidation/contributions` (`reporting.consolidation.manage`, idempotent) — a branch's
+    numbers for one family/period. The route asks the engine's `ingestContribution` whether it is
+    `ingested`/`replaced_by_correction` (append) or `ignored_duplicate`/`refused_stale_revision` (nothing
+    written) — so a re-send never doubles and a correction supersedes (hard rules #2 #10).
+  - `POST /v1/consolidation/memberships` (`reporting.consolidation.manage`) — a branch's effective-dated
+    parent, append-only.
+  - `GET /v1/consolidation?node=&family=&period=` (`reporting.report.read`) — runs the tested `consolidate`:
+    summed exact-integer measures, worst freshness, missing/stale named, reconciliation, and **scope**
+    (`?scope=br-1,br-2` recomputes to those branches + names the withheld; absent = company-wide, §28).
+- **`services/api/src/adapters.ts`** — `consolidationAdapter` over two append-only streams under a new
+  `reporting` stream key; the durable read **folds every contribution event through the engine's own
+  `ingestContribution`**, so the stored answer and a fresh ingest can never disagree, even after a cold
+  restart. Mounted in **`main.ts`** (store-undefined fallback); `reporting.consolidation.manage` granted to
+  the owner in **`roles.ts`**.
+- **`tests/integration/reporting-consolidation.test.ts`** (new, +7) — two branches roll up + reconcile;
+  same-revision ignored / correction supersedes; missing branch named + no reconcile; scope recompute +
+  withheld named; **durable across cold restart** (the correction, not the original, survives); per-tenant
+  isolation; a cashier refused both ingest and read.
+- **Route path note:** mounted at `/v1/consolidation` (not under `/v1/reports/`) to avoid colliding with the
+  existing `GET /v1/reports/:name` dashboard route.
+- **Honest rung:** durable ingestion + roll-up read, integration-proven. Remaining (4c): the
+  export-with-authorization+audit leg (composing `packages/export`) + the served EN/TA drill-down screen +
+  browser E2E over synthetic multi-branch fixtures.
+- **Next:** Item 4c, then Items 5–6.
+
+---
+
 ## Item 4 — company-wide reports (org roll-ups + drill-down) — engine slice 4a (25 September 2026)
 
 The owner's fourth approved item: roll every branch's numbers up the organisation, honestly. Foundations

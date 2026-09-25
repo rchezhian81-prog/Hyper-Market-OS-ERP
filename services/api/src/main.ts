@@ -158,6 +158,7 @@ import { legalHoldsRoutes } from '../../finance/src/legal-holds';
 import { auditSearchRoutes } from '../../finance/src/audit-search';
 import { storedAuditTrailRoutes } from '../../finance/src/audit-trail-store';
 import { reportingRoutes } from '../../reporting/src/index';
+import { consolidationRoutes } from '../../reporting/src/consolidation-route';
 import { scheduledBriefRoutes } from '../../reporting/src/scheduled-brief';
 import { ownerAlertsRoutes } from '../../reporting/src/owner-alerts';
 import { drillThroughRoutes } from '../../reporting/src/drill-through';
@@ -189,7 +190,7 @@ import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, dataExportAdapter, financeAdapter, settlementAdapter,
   customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter,
-  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter,
+  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
@@ -827,6 +828,12 @@ export function buildSurface(deps: {
     ...reportingRoutes(store === undefined
       ? { figures: empty([]), now }
       : reportingAdapter({ store, now, records: REPORTING_RECORDS, produced: REPORTING_PRODUCED })),
+    // Company-wide consolidation (M01/M29/D13, owner decision) — branches POST contributions + memberships,
+    // the head office GETs the roll-up for a node/family/period. Idempotent by revision, effective-dated,
+    // reconciled, scope-enforced (the tested @sre/reporting consolidation engine).
+    ...consolidationRoutes(store === undefined
+      ? { recordContribution: () => {}, contributions: empty([]), recordMembership: () => {}, memberships: empty([]), now }
+      : consolidationAdapter({ store, now })),
     // Scheduled daily brief (M29-FR-04) — the brief that sends itself: a durable schedule (due time, language),
     // which briefs are due now (a MISSED day carried, never skipped), an append-only send record (a day sent
     // twice is one send), and a brief composed complete WITHOUT AI (the numbers are the brief; narrative is
