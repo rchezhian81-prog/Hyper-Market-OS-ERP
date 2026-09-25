@@ -74,18 +74,20 @@ Status key: ✅ **present** (exists + verified) · 🟡 **partial** (exists, nee
 
 ## Phase 7 — Pilot gates
 - ✅ present: gate concepts across `store-go-live-checklist.md` + `pilot-plan-narrow-deep.md`.
-- 🟡 partial → **my next work package:** a single **pilot-gate checklist** (authenticated E2E, tenant
-  isolation, POS offline/cable-pull, test-mode tender, backup/restore, monitoring/alerts, rollback rehearsal,
-  critical security checks, pilot users/permissions) each with a green/red status + evidence link, and the
-  **defect policy** (P0/P1 block, P2 documented acceptance, P3/P4 backlog). Final gate = ⛔ **owner UAT
-  approval + owner GO**.
+- ✅ **pilot-gate checklist + defect policy built** — `PILOT-GATES.md`: 10 gates (G1 baseline … G10 named
+  incident owner) each with evidence + green/⛔-live state, and the defect policy (P0/P1 block; P2 documented
+  acceptance; P3/P4 backlog; P0/P1 never downgraded, P2 always written down, nothing closed without a retest).
+  The ⛔-live gates (UAT sign-off, live rollback drill, incident owner) are the content of the owner GO.
 
 ## Phase 8 — Store pilot plan
 - ✅ present: `pilot-plan-narrow-deep.md`, `pilot-run-sheet.md`, `pilot-setup-workbook`, `cutover-weekend.md`,
   `in-store-install.md`. The narrow-and-deep plan (one branch, parallel run, daily reconciliation, no legacy
   retirement, rollback trigger) is already the owner-chosen option.
-- 🟡 partial → **my final work package:** a **consolidated readiness package** that ties the above together and
-  a one-page GO request. ⛔ activation, physical-store scheduling, and **final pilot GO** are owner-only.
+- ✅ **consolidated readiness package built** — `PILOT-READINESS-PACKAGE.md` ties Phases 1–7 together, states
+  the store pilot plan (one branch, parallel legacy, named incident owner, daily reconciliation, rollback
+  trigger, no live providers), lists the Owner Action items, and ends with the GO decision (2–3 concrete
+  options). ⛔ activation, physical-store scheduling, and **final pilot GO** are owner-only — **no pilot is
+  activated automatically; awaiting the owner's GO.**
 
 ## External gates (I will STOP and ask — never do autonomously)
 

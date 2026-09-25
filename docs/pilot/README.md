@@ -22,6 +22,8 @@ Prepared for the owner's authorization to move from development into **controlle
 | `FEATURE-SAFETY.md` | **(Phase 3)** which dangerous capabilities are off/gated by default (asserted by `tests/integration/pilot-feature-safety.test.ts`), and the honest boundaries incl. GAP-SEC-06 |
 | `FAILURE-DRILLS.md` | **(Phase 6)** the 16 resilience scenarios → control → proving test, the consolidated `tests/integration/pilot-failure-drills.test.ts`, and the live drills left for stand-up |
 | `UAT-ROLE-CHECKLIST.md` | **(Phase 5)** the role-based UAT checklist — 12 roles × connected flows with per-case fields for the tester and business sign-off |
+| `PILOT-GATES.md` | **(Phase 7)** the 10 blocking pilot gates (evidence + state) and the P0–P4 defect policy |
+| `PILOT-READINESS-PACKAGE.md` | **(Phase 8)** the consolidated GO decision — where we are, the store pilot plan, the Owner Action list, and the STOP-for-owner-GO |
 
 Infra: `../../infra/compose/docker-compose.pilot.yml` (resource/capacity overlay) · `../../infra/compose/.env.pilot.example` (pilot env template, placeholders only).
 
