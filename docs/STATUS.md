@@ -5,6 +5,29 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Item 5b — customer "delete my data": processor/sub-processor erasure notification (25 September 2026)
+
+An erasure isn't finished when the shop's own stores are cleared — the data it **shared** with processors
+(SMS gateway, email sender, loyalty/analytics) must be erased there too. This slice plans that, reusing the
+existing durable connector queue rather than inventing a second one.
+- **`packages/customer/src/processor-erasure-notice.ts`** (new) — `planProcessorErasureNotices({tombstone,
+  processors, at})` emits **one notice per processor holding an affected (erased/minimised) category**, for
+  that intersection only; a processor that shared only a **retained** category gets no notice. Each notice
+  carries a provider-neutral `erase` instruction and a **stable key per (request, processor)** (idempotent).
+- **Reuses** `packages/integration/src/connector.ts` (M32-FR-02): the notices ride the connector queue, so a
+  reachable processor is delivered and an unreachable one is retried then **dead-lettered for a person —
+  never lost** (hard rules #6 #8, P-08). No new queue.
+- **`tests/unit/customer-processor-erasure-notice.test.ts`** (new, +6) — intersection logic, retained-only
+  exclusion, idempotent keys, neutral instruction, and a composition test with the **real**
+  `drainConnector`/`deadLetters` proving delivered-vs-dead-lettered.
+- Barrel + customer README updated.
+- **LEGAL:** technical workflow only — the processor list and what each is told need a lawyer's confirmation.
+- **Next (Item 5):** 5c wire executor + authorisation + tombstone + processor-notice enqueue onto the live
+  route (RBAC, `privacy` stream, register simulated sources/processors, integration test); 5d served DPO
+  console + browser E2E. Then Item 6.
+
+---
+
 ## Item 5a — customer "delete my data": the erasure-governance engine (25 September 2026)
 
 Item 5 begins. The plan engine (`data-rights.ts`) and the executor (`erasure-executor.ts`) already exist
