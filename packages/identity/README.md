@@ -90,8 +90,22 @@ sensitive action knows how the person proved themselves. Delivery is the provide
 port — a real SMS/WhatsApp provider implements it (externally gated); the code-revealing **simulator**
 lives in `tests/support` (never production, for the same reason the IdP does).
 
+### Organization invitation & membership (`src/org-membership.ts`)
+
+A B2B customer is a business with several people, each needing their **own** login into the same
+account — never a shared one (hard rule #4, A-17). So people join by **invitation**: `inviteToOrg`
+mints a one-time token, storing **only its hash** (a capability, like a password-reset link), and
+returns the plaintext once to be delivered. `acceptInvite` binds the **subject from trusted claims**
+(slice 1a) to the org with a role — single-use, time-boxed, revocable (`pending → accepted / expired
+/ revoked`), and **tenant- and org-scoped**: an invite from one tenant cannot be accepted into
+another (OB-01), and refusals are ordered so a wrong tenant / spent / revoked / expired invite is
+refused before the token is even compared. `roleOf` / `activeMemberships` answer who is in an org,
+never across the tenant/org boundary or after removal (`removeMember` marks, never deletes).
+Delivery of the invite is the same provider-neutral gated sender the OTP flow uses.
+
 Pure and deterministic — the timestamp is injected, there is no clock, no I/O. Tested in
 `tests/unit/identity-account.test.ts` (18), `tests/unit/identity-lifecycle.test.ts` (16),
-`tests/unit/identity-test-idp.test.ts` (10 — the IdP↔verifier interlock and its refusals) and
-`tests/unit/identity-otp.test.ts` (10 — OTP lifecycle + the OTP→token composition). Part
+`tests/unit/identity-test-idp.test.ts` (10 — the IdP↔verifier interlock and its refusals),
+`tests/unit/identity-otp.test.ts` (10 — OTP lifecycle + the OTP→token composition) and
+`tests/unit/identity-org-membership.test.ts` (10 — the invite lifecycle + tenant/org-scoped binding). Part
 of the repository layout in `CLAUDE.md`.
