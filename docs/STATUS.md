@@ -5,6 +5,24 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Pilot Phase 6 — failure-drill report + consolidated resilience test (25 September 2026)
+
+Non-production. Assembled the pilot failure-drill evidence and a single runnable resilience check.
+- **`docs/pilot/FAILURE-DRILLS.md`** (new) — maps all 16 required failure scenarios (offline, restart,
+  duplicate/replay, concurrent tills, session expiry/revocation, unauthorized-role, cross-tenant, negative
+  stock, duplicate prevention, lost provider reply, stale/conflict, partial delivery/refund, backup, restore,
+  rollback, monitoring) to the control + the existing proving test(s). All 16 already have automated proof.
+- **`tests/integration/pilot-failure-drills.test.ts`** (new, 5 tests) — co-locates the surface-level
+  invariants for one tenant: idempotent replay = one effect; OMS never oversells (reserved == on-hand);
+  unauthorized write → 403; cross-tenant isolation; tampered/expired token → 401 (valid token accepted).
+- Honest remainder: two items are **live drills on the stood-up box** (⛔ EX-01/OA-5) — the full rollback
+  rehearsal (redeploy + restore-to-clean under simulated failure; the backup/restore half is already executed)
+  and confirming alert delivery reaches the named incident owner. Gap assessment Phase-6 → ✅; README updated.
+- Maturity: **integration tested**. **Next:** Phase 5 (UAT assets, 12 roles) → Phase 7 (gate checklist +
+  defect policy) → Phase 8 (readiness package + store pilot plan) → **STOP for owner GO**.
+
+---
+
 ## Pilot Phase 3 — feature-safety verification (25 September 2026)
 
 Non-production. Proved, through the REAL cloud surface for a FRESH pilot tenant, that the dangerous "live"
