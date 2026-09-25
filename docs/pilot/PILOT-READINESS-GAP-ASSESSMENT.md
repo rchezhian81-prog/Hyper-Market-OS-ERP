@@ -55,9 +55,11 @@ Status key: ✅ **present** (exists + verified) · 🟡 **partial** (exists, nee
 
 ## Phase 5 — Formal UAT
 - ✅ present: `uat-calendar.md` register, `store-go-live-checklist.md`, role model in `roles.ts`.
-- 🔴 gap → **my next work package:** a **role-based UAT checklist** (12 roles × connected flows) with the
-  required per-case fields (requirement ID, role, prerequisite, steps, expected, actual, evidence, pass/fail,
-  severity, defect ref, retest, business sign-off). Authoring the assets is autonomous; **execution + business
+- ✅ **role-based UAT checklist authored** — `UAT-ROLE-CHECKLIST.md` covers 12 pilot roles (cashier, store
+  manager, owner, accountant, CA, warehouse/GRN, picker, delivery, buyer, supplier, customer, platform admin)
+  across their connected flows, each case carrying the required per-case fields (requirement ID, role,
+  prerequisite, steps, expected, actual, pass/fail, severity, defect ref, retest, business sign-off), keyed to
+  the seeded demo tenant and cross-referenced to the `UAT-##` witness register. **Execution + business
   sign-off is the owner/store** (⛔ for sign-off).
 
 ## Phase 6 — Pilot failure tests
