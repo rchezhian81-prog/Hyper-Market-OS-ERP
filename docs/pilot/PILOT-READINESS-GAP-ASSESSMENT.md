@@ -26,9 +26,13 @@ Status key: ✅ **present** (exists + verified) · 🟡 **partial** (exists, nee
 ## Phase 3 — Feature safety
 - ✅ present: entitlements default-off (`checkEntitlement`), test-IdP guardrail (`no-test-idp-in-production`),
   AI kill switch + budget, maker-checker on money/privilege/erasure, `MIGRATION_TARGET_KIND` gate.
-- 🟡 partial → **my next work package:** a single **feature-safety verification test/checklist** that asserts
-  every DISABLED-by-default capability (from the feature matrix) is off in a pilot config, and that
-  re-authentication is required for the sensitive actions. Mostly assembling existing guards into one proof.
+- ✅ **feature-safety verification built** — `tests/integration/pilot-feature-safety.test.ts` (8 cases) asserts,
+  against the REAL surface for a fresh pilot tenant, that live GST/e-invoice is not live + killable, the AI kill
+  switch is ON, every optional feature is OFF (and a gated route is refused until enabled), migration refuses a
+  production target, the cutover checklist is NO-GO by default, §28 self-approval is refused, and a
+  no-grant user is default-denied. Documented in `FEATURE-SAFETY.md`, which also records the honest boundaries:
+  payroll bank-file release + "delete my data" are **gated** (maker-checker/RBAC) not default-off, and
+  **API-tier step-up re-auth does not exist (GAP-SEC-06)** — a pre-production security item, not a pilot claim.
 
 ## Phase 4 — Pilot data
 - ✅ present: import engine (M30), catalogue pack builder, `pilot-setup-workbook.xlsx`, synthetic fixtures used

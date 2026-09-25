@@ -5,6 +5,26 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Pilot Phase 3 — feature-safety verification (25 September 2026)
+
+Non-production. Proved, through the REAL cloud surface for a FRESH pilot tenant, that the dangerous "live"
+capabilities are off or gated by default.
+- **`tests/integration/pilot-feature-safety.test.ts`** (8 tests) asserts: live GST/e-invoice portal not live +
+  killable; AI kill switch ON (`503 kill_switch_is_on`); every optional feature OFF and a gated route refused
+  (`403 feature_not_entitled`) until enabled; migration refuses a production target (`403 target_is_production`);
+  cutover checklist NO-GO by default; §28 self-approval refused (`422 approved_by_the_setter`); a no-grant user
+  default-denied.
+- **`tests/support/api-harness.ts`** — added an optional `migrationTargetKind` so the never-touch-production
+  guard can be asserted with a `'production'` surface.
+- **`docs/pilot/FEATURE-SAFETY.md`** (new) — the control behind each capability, what's asserted, and the honest
+  boundaries: payroll bank-file release + "delete my data" are **gated** (maker-checker/RBAC), not default-off;
+  and **API-tier step-up re-auth does not exist (GAP-SEC-06)** — recorded as a pre-production security item, not
+  claimed as a pilot control. Gap assessment Phase-3 row → ✅; README updated.
+- Maturity: **integration tested**. **Next:** Phase 6 (failure-drill report) → Phase 5 (UAT assets) → Phase 7
+  (gate checklist) → Phase 8 (readiness package) → **STOP for owner GO**.
+
+---
+
 ## Pilot Phase 4d — controlled seed dataset: trading transactions (Phase 4 COMPLETE) (25 September 2026)
 
 Non-production. Completed the pilot seed with a representative set of live-shaped transactions, each laid
