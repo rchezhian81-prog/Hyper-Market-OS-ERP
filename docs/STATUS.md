@@ -5,6 +5,30 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Item 6 — the consolidated Owner Action Register + ledger; the six-item program CLOSES; STOP (25 September 2026)
+
+All six owner-approved buildable items are now merged and gate-green. This final slice is the honest
+external-gate boundary the owner asked for — no new feature, just the consolidated ledger and the STOP.
+- **`docs/OWNER-ACTION-REGISTER.md`** — new **"Owner-decisions program — six buildable items"** table with a
+  maturity legend that distinguishes *implementation complete* / *automated-test verified* / *simulator- or
+  browser-E2E verified* / *provider or hardware verification pending* / *UAT pending* / *production
+  verification pending* / *legal confirmation required*. Each item names the ONE external gate it still needs:
+  - **1 Portal login** → a real production IdP + `IDP_*` secrets (OA-4); test IdP covers the pilot.
+  - **2 Substitution-exception ownership** → UAT on real orders; a live SLA-breach alert needs a provider.
+  - **3 Concession tagging** → physical-till verification on a real POS lane.
+  - **4 Company-wide reports** → UAT on real multi-branch data (pilot is one store; proven on synthetic).
+  - **5 Delete-my-data** → **LEGAL confirmation required**; real domain-store erasure sources + real
+    processor delivery; UAT/production. **Development-approved, not a compliance claim.**
+  - **6** → this register + ledger note (the boundary artefact).
+- **`docs/completion-status.json`** — a dated changelog note recording the program's close; headline % left
+  unchanged on purpose (these are cross-cutting deepenings of already-counted modules, not new denominator
+  units), with the honest per-item maturity + gates pointed to the register.
+- **STOP.** Per the owner's instruction, no further padding work is started. Everything remaining is an
+  external gate — legal, provider, hardware, UAT, or production go-live — that only the owner can move. The
+  build waits here (and on the standing OA-1…OA-14 rows).
+
+---
+
 ## Item 5d — customer "delete my data": the DPO erasure console — COMPLETES Item 5 (25 September 2026)
 
 The last piece — the DPO's screen. **Item 5 is now complete.**

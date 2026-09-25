@@ -5,7 +5,16 @@ authorizations, paid vendor selections, production credentials, and irreversible
 build does **not** stop waiting for these; each row names exactly what is blocked and what continues
 without it. Recommended defaults are given so a decision is a yes/no, not an open question.
 
-**Last updated:** 24 September 2026 (**Outside-party clocks started (owner).** For the narrow-and-deep
+**Last updated:** 25 September 2026 (**The six approved buildable items are CLOSED (owner-decisions program).**
+The owner authorised six buildable work packages — B2B/customer-portal login, delivery-substitution exception
+ownership, till-side concession tagging, company-wide reports, the customer "delete my data" workflow, and this
+consolidated register — to be built provider-neutral + simulated, one focused PR at a time, then to STOP at the
+honest external-gate boundary. **All six are now implemented, automatically tested, and merged.** What remains
+for each is an EXTERNAL gate the build cannot satisfy on its own — a legal confirmation, a paid provider, physical
+hardware, owner UAT, or a production go-live. Those are enumerated, per item, with their honest maturity rung, in
+the new **"Owner-decisions program — six buildable items"** table below. Per the owner's instruction, no further
+padding work is started; the build stops here and waits on these gates.)
+Earlier: 24 September 2026 (**Outside-party clocks started (owner).** For the narrow-and-deep
 pilot (`docs/runbooks/pilot-plan-narrow-deep.md` §6), the owner has **initiated** the outside-party
 onboarding/procurement that gates full production — payment provider (OA-4 / EX-03), GST production
 credentials + CA (EX-07), independent penetration test (EX-13), store hardware (EX-09), and the
@@ -64,6 +73,36 @@ supervisory/admin surface, both on the same authoritative warehouse/inventory se
 duplicated business logic. Build backend integration first, then the two surfaces. See the OA-9 note
 below. Earlier: added OA-9 as an open decision; created during the project-recovery kickoff after the
 read-only audit and the Phase 1 RBAC repair).
+
+## Owner-decisions program — six buildable items (status at the external-gate boundary, 25 September 2026)
+
+The owner approved six work packages to be built provider-neutral + simulated, one focused PR at a time, then
+to **STOP** at the honest external-gate boundary. **All six are implemented, automatically tested and merged.**
+This table is the consolidated ledger: what was built, how far it is proven, and the ONE external gate each
+still needs. The maturity rungs are deliberately distinguished so nothing reads as "done" that a person still
+has to authorise, buy, plug in, accept, or switch on in production.
+
+**Maturity legend.** ✅ *Implementation complete* — merged. ✅ *Automated-test verified* — unit/integration
+green in the full gate. ✅ *Simulator / browser-E2E verified* — real Chromium against the production engine over
+simulated data. ⏳ *Provider/hardware verification pending* — needs a paid provider or a physical device.
+⏳ *UAT pending* — owner/store acceptance on real data during the pilot. ⏳ *Production verification pending* —
+real go-live with production credentials/data. ⚠️ *Legal confirmation required* — a lawyer must confirm before
+go-live (Item 5 only).
+
+| Item | What was built (merged) | Maturity reached | External gate still needed (who / what) |
+|---|---|---|---|
+| **1 — B2B / customer-portal login** (provider-neutral OIDC/OAuth + test IdP) | The portal login through a standards-based identity adapter, with a test IdP kept out of production by a guardrail. | ✅ implementation complete · ✅ automated-test + browser-E2E verified (against the test IdP) | ⏳ **Provider:** a real production IdP must be selected and `IDP_*` secrets provisioned (**OA-4**); then ⏳ production verification. The test IdP is correct for the pilot. |
+| **2 — Delivery-substitution exception ownership** (M19; PR #564) | `packages/orders/src/substitution-exception-ownership.ts` — role-based queues (fulfilment supervisor / customer-service desk / finance-recon / duty manager), SLA timers, escalation, reassignment, reason codes, append-only audit; the picker proposes but never approves; nothing disappears when a shift ends. | ✅ implementation complete · ✅ automated-test verified (unit ×22) | ⏳ **UAT:** the four-role workflow on real orders during the pilot. A live SLA-breach *alert* to a real notification provider is a separate provider gate (test-mode covers the pilot). |
+| **3 — Till-side concession tagging** (M27; PRs #565, #566) | `packages/concession/src/concession-tagging.ts` (sale + line level, snapshotted commission, idempotent, append-only; cashier records, supervisor corrects by reversal) + a POS thin-client panel + browser E2E. | ✅ implementation complete · ✅ automated-test verified (unit ×17) · ✅ simulator-browser-E2E verified (×1) | ⏳ **Hardware:** physical-till verification on a real POS lane with a real docket/partner-counter flow, in the pilot. |
+| **4 — Company-wide reports** (M01/M29/D13; PRs #567, #568, #569) | `packages/reporting/src/consolidation.ts` (effective-dated org roll-up, worst-freshness, missing/stale named, reconciliation, scope) + durable roll-up route + the drill-down screen with an authorised CSV export + browser E2E. | ✅ implementation complete · ✅ automated-test verified (unit ×21, integration ×7) · ✅ simulator-browser-E2E verified (×1, synthetic multi-branch) | ⏳ **UAT:** acceptance on real multi-branch data. The pilot is a single store, so the cross-branch roll-up is proven only on synthetic fixtures until a second branch exists. |
+| **5 — Customer "delete my data"** (M20; PRs #570, #571, #572, #573) | `packages/customer/src/erasure-governance.ts` (maker-checker, PII-free tombstone, prevent-restore) + `processor-erasure-notice.ts` (provider-neutral, on the durable dead-letter queue) + `services/customer/src/erasure-execution.ts` (locate → approve → execute → tombstone → notify, live) + the DPO console + browser E2E. | ✅ implementation complete · ✅ automated-test verified (unit + integration ×8) · ✅ simulator-browser-E2E verified (×1) | ⚠️ **Legal confirmation REQUIRED** — a lawyer must confirm the retention policy, the immutable-financial-history boundary and the processor list. ⏳ **Provider/data:** registering the REAL domain stores (orders, loyalty, profile) as erasure sources (the live-data-model step) and real processor delivery (SMS/email/loyalty/analytics). ⏳ UAT + production verification. **Development-approved; NOT a compliance claim.** |
+| **6 — This register + STOP** | This consolidated ledger and the maturity note in `docs/completion-status.json`. | ✅ implementation complete | — (this IS the boundary artefact). |
+
+**STOP.** This closes the six approved buildable items. Everything remaining above is an external gate — a
+legal confirmation, a paid provider, physical hardware, owner UAT, or a production go-live — that the build
+cannot satisfy autonomously. Per the owner's instruction, **no further padding work is started**; the build
+waits here for the owner to act on the gates (and on the standing OA-1…OA-14 rows below, which remain open as
+listed).
 
 ## OA-9 decision (owner-approved, 8 August 2026) — dual-interface warehouse
 
