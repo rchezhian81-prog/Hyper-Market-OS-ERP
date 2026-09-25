@@ -51,6 +51,33 @@ an approver who is not the requester. It **cannot be extended in place** — an 
 a new grant with a new approval, which is exactly what stops "temporary" access becoming
 permanent through a series of quiet nudges (SEC-11: no perpetual support access).
 
+## Letting outside people in — the OIDC/OAuth port (`src/oidc-port.ts`)
+
+Staff accounts above are for people the store employs. But the store must also let **outside**
+people in — a B2B customer checking their account (M22), a retail customer managing their own
+data (M20) — and it must do so **without ever holding their password** (hard rule #4). That is
+federated identity: a provider authenticates the person and asserts a few **trusted claims**;
+the store believes the claims because they are signed, and binds its own accounts from them —
+never from anything the caller typed into a header or a path (OB-01).
+
+- **`IdentityProviderPort`** is provider-neutral. A real OIDC/OAuth provider maps its ID-token
+  claims onto `IdentityClaims` (`subject`, `tenantId`, optional `email`/`phoneNumber`/`amr`/
+  `branchId`); the local/test IdP mints them directly. Everything downstream depends on the
+  **port**, so choosing the production provider is a composition-root swap, not a rewrite (P-06).
+  Selecting that provider and holding its credentials is the only externally-gated part.
+- **`createLocalTestIdp`** (in `tests/support/local-idp.ts`, **never production**) is a real,
+  deterministic IdP for development and E2E — not a mock. It issues the exact compact **HS256 JWS**
+  that `services/identity/token.ts` `verifyToken` already verifies, signing with a secret from
+  configuration. Point it at the API's own `secret`/`issuer`/`audience` and the two interlock: a
+  token it mints is accepted, and a token signed with any other key, issued for anyone else, or left
+  to expire is refused by the **same verifier that guards production** — which is what the unit tests
+  prove, round trip and every forgery path. It lives under `tests/support` because **production must
+  never be able to mint a token** — a module that can mint is a token factory (hard rule #4) — a
+  property the `no-test-idp-in-production` guardrail enforces (now across `packages/` too). The
+  **port** here holds no minting code: it is the contract a real provider implements at the edge by
+  verifying its upstream token and re-issuing a short-lived internal one.
+
 Pure and deterministic — the timestamp is injected, there is no clock, no I/O. Tested in
-`tests/unit/identity-account.test.ts` (18) and `tests/unit/identity-lifecycle.test.ts`
-(16). Part of the repository layout in `CLAUDE.md`.
+`tests/unit/identity-account.test.ts` (18), `tests/unit/identity-lifecycle.test.ts` (16) and
+`tests/unit/identity-test-idp.test.ts` (10 — the IdP↔verifier interlock and its refusals). Part
+of the repository layout in `CLAUDE.md`.

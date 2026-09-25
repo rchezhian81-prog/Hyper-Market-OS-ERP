@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Owner decisions received — gates opened; Item 1 (login) slice 1a done (25 September 2026)
+
+The owner reviewed the stop-point below, accepted the 16 merged PRs, and issued **six approved
+decisions** that unblock the gated work (portal login; delivery-substitution exception ownership;
+till-side concession tagging; company-wide reports; a development-approved delete-my-data policy;
+and a ledger-maturity + Owner-Action-Register close-out). Directive: build them **one focused PR at
+a time**, provider-neutral + simulated, then hold at the true external-gate boundary — no padding.
+Tracked as tasks #202–#208.
+
+**Item 1 (B2B/customer portal login) — slice 1a: the provider-neutral OIDC/OAuth port + deterministic
+local/test IdP.**
+- **`packages/identity/src/oidc-port.ts`** (new) — `IdentityProviderPort` + `IdentityClaims`: the
+  provider-neutral contract a real OIDC/OAuth provider and the local/test IdP both implement.
+  Downstream binds tenant/customer accounts from the **signed claims**, never a header/path (OB-01).
+- **`tests/support/local-idp.ts`** — `createLocalTestIdp`: a **real** deterministic IdP (not a mock)
+  that mints the exact compact HS256 JWS the existing `verifyToken` verifies. Point it at the API's
+  own secret/issuer/audience and the two interlock. It lives in `tests/support`, **never
+  production** — a module that can mint tokens is a token factory (hard rule #4); the port itself
+  holds no minting code. The `no-test-idp-in-production` guardrail was **extended to scan `packages/`**
+  too, so a minter re-exported from a package barrel can never reach a deployment.
+- **`tests/unit/identity-test-idp.test.ts`** (new, +10) — drives the port through the **real
+  `verifyToken`**: accepted round-trip (+ branch→null); tampered payload, foreign signing key,
+  expired, wrong issuer, wrong audience each refused; deterministic issuance.
+- **Honest rung:** implementation complete + simulator-verified. Production IdP/SMS selection and
+  credentials remain externally blocked for **live verification only**. Next slices: customer OTP
+  simulator → org invitation/membership → tenant/customer-account binding → MFA/re-auth → session
+  expiry/revocation/audit → authenticated browser E2E.
+
+---
+
 ## Buildable-work programme — honest STOP-POINT reached (24 September 2026)
 
 This session drove the owner's prioritised sequence — **M19 → M18 → M22 → M20 → M01, then

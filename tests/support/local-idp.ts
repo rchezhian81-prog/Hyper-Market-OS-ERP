@@ -8,6 +8,12 @@
 // `services/`, `apps/`, or `edge/` imports it, so the "no minting in production" property holds.
 
 import { createHmac } from 'node:crypto';
+import type {
+  IdentityClaims,
+  IdentityProviderPort,
+  IssueOptions,
+  IssuedToken,
+} from '../../packages/identity/src/index';
 
 export interface IdpClaims {
   readonly sub: string;
@@ -65,6 +71,66 @@ export class LocalIdp {
   withDifferentKey(secret: string): LocalIdp {
     return new LocalIdp({ ...this.config, secret });
   }
+}
+
+// ── Provider-neutral port implementation (M02 / M20 / M22) ───────────────────
+//
+// `IdentityProviderPort` (the productized contract) lives in `packages/identity` as types only —
+// production-safe. This is its deterministic TEST implementation, carrying the full claim set the
+// port defines (including email / phone / amr, which the older `LocalIdp.issue` above does not).
+// It lives HERE, in tests/support, for the same reason `LocalIdp` does: production must never be
+// able to mint a token (hard rule #4), which the `no-test-idp-in-production` guardrail enforces.
+
+/** What the local/test IdP needs to interlock with the API's `TokenPolicy`. */
+export interface LocalTestIdpConfig {
+  /** The provider's stable id (recorded on the audit trail). */
+  readonly providerId: string;
+  /** Who the token says issued it (`iss`) — must equal the verifier's `policy.issuer`. */
+  readonly issuer: string;
+  /** Who the token is for (`aud`) — must include the verifier's `policy.audience`. */
+  readonly audience: string;
+  /** The HMAC signing secret — must equal the verifier's `policy.secret`. From configuration only. */
+  readonly secret: string;
+}
+
+/**
+ * A deterministic local/test identity provider that implements the provider-neutral port.
+ *
+ * It mints the exact compact HS256 JWS `verifyToken` verifies. Deterministic: the same claims and
+ * options produce the same token, byte for byte. Pure of I/O — the clock is injected via
+ * `IssueOptions.issuedAtMs`.
+ */
+export function createLocalTestIdp(config: LocalTestIdpConfig): IdentityProviderPort {
+  return {
+    providerId: config.providerId,
+    issue(claims: IdentityClaims, options: IssueOptions): IssuedToken {
+      const iat = Math.floor(options.issuedAtMs / 1000);
+      const exp = iat + options.ttlSeconds;
+      const header = b64url({ alg: 'HS256', typ: 'JWT' });
+      // Key order fixed literally so the encoding is deterministic; `verifyToken` reads by key.
+      const payloadObject: Record<string, unknown> = {
+        iss: config.issuer,
+        aud: config.audience,
+        sub: claims.subject,
+        tenant_id: claims.tenantId,
+        iat,
+        exp,
+      };
+      if (claims.branchId !== undefined) payloadObject['branch_id'] = claims.branchId;
+      if (claims.email !== undefined) payloadObject['email'] = claims.email;
+      if (claims.phoneNumber !== undefined) payloadObject['phone_number'] = claims.phoneNumber;
+      if (claims.amr !== undefined) payloadObject['amr'] = [...claims.amr];
+
+      const payload = b64url(payloadObject);
+      const signature = createHmac('sha256', config.secret)
+        .update(`${header}.${payload}`)
+        .digest('base64url');
+      return {
+        token: `${header}.${payload}.${signature}`,
+        expiresAt: new Date(exp * 1000).toISOString(),
+      };
+    },
+  };
 }
 
 /** Corrupt a token's signature (flip the last character) — for "bad signature" tests. */
