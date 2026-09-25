@@ -76,6 +76,8 @@ about this module follows from that one fact.
 > Pure and deterministic: the clock is injected, no I/O. Composes with `packages/stock`
 > (ownership on the ledger), `packages/day-close` (what the tills banked) and
 > `packages/finance` (the liability). Tested in `tests/unit/concession.test.ts` (30),
-> `tests/unit/concession-tagging.test.ts` (17) and proven end to end in
-> `tests/integration/beyond-the-till.test.ts` (Stage 16 gate). Part of the repository layout in
+> `tests/unit/concession-tagging.test.ts` (17), proven end to end in
+> `tests/integration/beyond-the-till.test.ts` (Stage 16 gate), and the till-side tagging panel is
+> browser-verified in `tests/e2e/concession-tagging.e2e.ts` (a cashier records → idempotent resend →
+> cashier reversal refused → supervisor reversal backs it out). Part of the repository layout in
 > `CLAUDE.md`.

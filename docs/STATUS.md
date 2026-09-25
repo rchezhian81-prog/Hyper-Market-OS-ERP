@@ -5,6 +5,25 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Item 3b — concession tagging POS-simulator + browser E2E — **Item 3 COMPLETE** (25 September 2026)
+
+The second slice of Item 3: the till panel, proven in a real browser.
+- **`apps/pos/web/concession-tag.html` + `web/concession-tag.js`** (new) — a **thin-client** till panel:
+  no pricing, no commission logic, no minter; it posts the docket fields to the backend and reflects the
+  append-only tag stream the backend returns. Bilingual EN/TA, 44px targets, accessible.
+- **`tests/e2e/concession-tagging.e2e.ts`** (new, +1 real-browser) — a Node backend runs the SAME
+  production engine (`captureConcessionTagIdempotent`, `reverseConcessionTag`, `concessionTagTotals`);
+  **real Chromium** drives: a cashier records a line from an approved source → it lands in the stream with
+  the engine-computed commission (15000); a **resend with the same idempotency key does not charge twice**
+  (stream does not grow); a **CASHIER reversal is refused server-side** (SoD §28, over the wire); a
+  **SUPERVISOR reversal backs it out** (negated tag appended, net → 0). Passed against real Chromium
+  (482ms); self-skips with no browser.
+- **ITEM 3 (till-side concession tagging) buildable scope is now COMPLETE:** the pure engine (3a) + the
+  simulated-till browser E2E (3b). The only remaining gate is **physical-till verification at the pilot**.
+- **Next:** Item 4 (company-wide reports: org roll-ups + drill-down), then Items 5–6.
+
+---
+
 ## Item 3 — till-side concession tagging (sale + line-item) — engine slice (25 September 2026)
 
 The owner's third approved item: capture, at the till, which concession/partner sold what — line by line —
