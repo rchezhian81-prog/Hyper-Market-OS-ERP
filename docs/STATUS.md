@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Item 4 — company-wide reports (org roll-ups + drill-down) — engine slice 4a (25 September 2026)
+
+The owner's fourth approved item: roll every branch's numbers up the organisation, honestly. Foundations
+already existed — `packages/reporting/src/sales-summary.ts` (single-scope KPIs), `.../freshness.ts`
+(last-refresh), `packages/owner-control/src/drill-through.ts` (scope-enforced drill-to-source),
+`packages/export/src/export.ts` (export + audit). This slice adds the missing **consolidation** layer.
+- **`packages/reporting/src/consolidation.ts`** (new) — a pure, deterministic roll-up engine over all the
+  report families (sales, returns, margin, stock/wastage, purchases/payables, cash recon, tax, workforce,
+  delivery, exceptions) via a generic exact-integer measure map:
+  - **`ingestContribution`** — idempotent on `(branch, period, family)` + `revision`: same revision IGNORED
+    (never doubles), higher REPLACES (late/corrected data), lower REFUSED as stale (hard rule #10).
+  - **`resolveHierarchyAsOf` / `branchesUnder`** — the **effective-dated** structure in force AT the period
+    (a mid-year opening isn't in an earlier month; a company move is attributed correctly).
+  - **`consolidate`** — sums exact-integer measures across branches that reported; carries **worst
+    freshness** + names **missing/stale** branches (never shows stale as fresh, P-08); **reconciles** parent
+    to children; **enforces scope** (§28 — total recomputed to the viewer's branches, withheld named);
+    returns a worst-first `contributors` drill-down.
+- **`tests/unit/reporting-consolidation.test.ts`** (new, +15) — idempotent/supersede/refuse-stale; effective
+  dating (mid-period open, company move both ways); scope; sum + reconcile + missing named; worst-freshness
+  + stale named + never-synced → missing; scoped total recomputed + withheld named; drill-down order; a
+  non-sales family.
+- **Barrel** `packages/reporting/src/index.ts` exports the engine.
+- **Honest rung:** pure engine + unit proof are **implementation-complete**. Buildable follow-ons (slices
+  4b/4c): durable per-tenant ingestion route; export-with-authorization+audit leg (composing
+  `packages/export`); the served EN/TA drill-down screen + integration/browser E2E over synthetic
+  multi-branch fixtures.
+- **Next:** Item 4 slices 4b/4c, then Items 5–6.
+
+---
+
 ## Item 3b — concession tagging POS-simulator + browser E2E — **Item 3 COMPLETE** (25 September 2026)
 
 The second slice of Item 3: the till panel, proven in a real browser.

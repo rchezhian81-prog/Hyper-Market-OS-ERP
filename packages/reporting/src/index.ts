@@ -6,3 +6,4 @@
 export * from './sales-summary';
 export * from './freshness';
 export * from './catalogue';
+export * from './consolidation';
