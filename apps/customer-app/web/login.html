@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE — Sign in</title>
+    <!--
+      The customer / B2B portal sign-in (M02 / M20 / M22). A THIN CLIENT by design: it holds no
+      password, no signing key and no token-minting code. It asks the auth backend to send a one-time
+      code to the customer's phone, submits the code the customer read off their phone, and — on a
+      verified sign-in — holds only the short-lived session token the backend returns, in memory.
+
+      In production the backend is the real IdP / cloud auth API. In the browser E2E it is a local
+      Node server running the SAME production engines with the local/test IdP and OTP simulator, so a
+      minter never enters this page (hard rule #4).
+    -->
+    <style>
+      :root {
+        --bg: #f7f7f9; --panel: #ffffff; --ink: #14161a; --muted: #5b6270;
+        --line: #d9dce3; --accent: #1f6f4a; --accent-ink: #ffffff;
+        --good: #1f6f4a; --warn: #8a5a00; --danger: #a12622;
+      }
+      :root:not([data-theme='light']) {
+        @media (prefers-color-scheme: dark) {
+          --bg: #12141a; --panel: #1b1e27; --ink: #eef0f4; --muted: #a3abba;
+          --line: #313746; --accent: #43c78a; --accent-ink: #06251a;
+          --good: #43c78a; --warn: #e0a53a; --danger: #f0857f;
+        }
+      }
+      :root[data-theme='dark'] {
+        --bg: #12141a; --panel: #1b1e27; --ink: #eef0f4; --muted: #a3abba;
+        --line: #313746; --accent: #43c78a; --accent-ink: #06251a;
+        --good: #43c78a; --warn: #e0a53a; --danger: #f0857f;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--ink);
+        font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        min-height: 100dvh; display: grid; place-items: center; padding: 16px;
+      }
+      main {
+        width: min(420px, 100%); background: var(--panel); border: 1px solid var(--line);
+        border-radius: 16px; padding: 24px; display: grid; gap: 16px;
+      }
+      h1 { margin: 0; font-size: 22px; }
+      p.lede { margin: 0; color: var(--muted); font-size: 15px; }
+      label { display: grid; gap: 6px; font-size: 14px; font-weight: 600; }
+      input {
+        font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
+        background: var(--bg); color: var(--ink); min-height: 44px;
+      }
+      button {
+        font: inherit; font-weight: 600; min-height: 44px; border-radius: 10px; border: 0;
+        background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px;
+      }
+      button.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible { outline: 3px solid #7fb8ff; outline-offset: 2px; }
+      .step[hidden] { display: none; }
+      .actions { display: grid; gap: 10px; }
+      .status { font-size: 15px; min-height: 22px; }
+      .status.good { color: var(--good); }
+      .status.warn { color: var(--warn); }
+      .status.err { color: var(--danger); }
+      .result { font-size: 15px; min-height: 22px; }
+      .foot { color: var(--muted); font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Sign in <span lang="ta">/ உள்நுழைக</span></h1>
+      <p class="lede">We will send a one-time code to your phone. <span lang="ta">உங்கள் தொலைபேசிக்கு ஒரு முறை குறியீடு அனுப்பப்படும்.</span></p>
+
+      <!-- Step 1: phone → send code -->
+      <section class="step" id="step-phone">
+        <label for="phone">Mobile number <span lang="ta">/ கைபேசி எண்</span>
+          <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+9190000 00000" />
+        </label>
+        <button id="send-code" type="button">Send code</button>
+      </section>
+
+      <!-- Step 2: code → verify -->
+      <section class="step" id="step-code" hidden>
+        <label for="code">Enter the code <span lang="ta">/ குறியீட்டை உள்ளிடவும்</span>
+          <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" />
+        </label>
+        <button id="verify" type="button">Verify &amp; sign in</button>
+      </section>
+
+      <!-- Step 3: signed in -->
+      <section class="step" id="step-account" hidden aria-labelledby="account-h">
+        <h2 id="account-h" style="margin:0;font-size:18px;">You are signed in <span lang="ta">/ உள்நுழைந்துள்ளீர்கள்</span></h2>
+        <div class="actions">
+          <button id="view-orders" class="secondary" type="button">View my orders</button>
+          <button id="change-bank" class="secondary" type="button">Change bank details</button>
+          <button id="sign-out" type="button">Sign out</button>
+        </div>
+        <p class="result" id="result" role="status" aria-live="polite"></p>
+      </section>
+
+      <p class="status" id="status" role="status" aria-live="polite"></p>
+      <p class="foot">The store never sees your password. A code proves it is you.</p>
+    </main>
+    <script type="module" src="./login.js"></script>
+  </body>
+</html>

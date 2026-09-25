@@ -31,3 +31,15 @@ out when nothing arrives.
   what is in stock — they accept the smaller quantity, or they do not.
 
 Tested in `tests/unit/customer-app.test.ts`.
+
+## The sign-in screen (`web/login.html` + `web/login.js`) — a thin client (M02 / M20 / M22)
+
+The portal sign-in is a **thin client**: it holds no password, no signing key and no token-minting
+code. It asks the auth backend to send a one-time code to the customer's phone, submits the code they
+read off it, and on a verified sign-in holds only the short-lived session token, in memory. Everything
+that mints or verifies lives on the backend — the real IdP / cloud auth API in production, and in the
+browser E2E a local Node server running the SAME production engines (`@sre/identity`) with the
+local/test IdP and OTP simulator, so a minter never enters the page (hard rule #4). The screen proves,
+in a real browser: sign in by OTP → an ordinary action is allowed → a sensitive one (change bank
+details) prompts step-up → sign-out **revokes** the session so the same still-unexpired token is
+refused server-side. Verified in `tests/e2e/customer-login.e2e.ts` (self-skips with no browser).
