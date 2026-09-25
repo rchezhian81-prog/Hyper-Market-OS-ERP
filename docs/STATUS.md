@@ -5,6 +5,23 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Item 1 (login) slice 1c — organization invitation & membership (25 September 2026)
+
+Third slice of the portal login. A B2B customer is a business with several people, each needing their
+OWN login into the same account — never a shared one (hard rule #4, A-17). So they join by invitation.
+- **`packages/identity/src/org-membership.ts`** (new) — `inviteToOrg` mints a one-time token, stores
+  **only its hash** (a capability, never persisted); `acceptInvite` binds the **subject from trusted
+  claims** to the org with a role — single-use, time-boxed, revocable, **tenant/org-scoped** (OB-01).
+  `roleOf`/`activeMemberships` answer who is in an org; `removeMember` marks, never deletes.
+- **`tests/unit/identity-org-membership.test.ts`** (new, +10) — token never stored; accept binds
+  subject→org; wrong-token / already-accepted / expired / revoked / cross-tenant each refused;
+  role lookup scoped by tenant/org/removal.
+- **Honest rung:** implementation complete + tested; invite delivery (email/SMS) is the same gated
+  sender the OTP flow uses. Next Item-1 slices: tenant/customer-account binding → MFA/re-auth →
+  session expiry/revocation/audit → authenticated browser E2E.
+
+---
+
 ## Item 1 (login) slice 1b — customer mobile OTP (25 September 2026)
 
 Second slice of the portal login. The retail customer's second factor is a code to their phone.
