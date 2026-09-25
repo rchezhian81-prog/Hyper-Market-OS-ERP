@@ -33,23 +33,21 @@ Status key: ✅ **present** (exists + verified) · 🟡 **partial** (exists, nee
 ## Phase 4 — Pilot data
 - ✅ present: import engine (M30), catalogue pack builder, `pilot-setup-workbook.xlsx`, synthetic fixtures used
   across tests.
-- 🟡 partial (in progress) → the **controlled pilot seed dataset** is being built as a reproducible,
-  demo-marked applier that drives the REAL cloud routes (`db/seed/pilot/`, see `PILOT-SEED-DATASET.md`).
-  - **Slice 4a done:** the applier framework + the FOUNDATION — genesis owner, six role logins, entitlements
-    (loyalty/delivery/dept.concession), and the org skeleton (GST registration → company → branch → warehouse),
-    proven by `tests/integration/pilot-seed.test.ts` and tenant-isolated so demo data cannot reach a real tenant.
-  - **Slice 4b done:** the CATALOGUE — HSN tax-rate schedules, five products published through the real
-    compliance gate (incl. a regulated food category exercising the allergen/origin gate), barcodes, pack
-    hierarchies, and governed prices (below MRP, above cost).
-  - **Slice 4c done:** TRADING PARTNERS + STOCK — two suppliers (+ supplier portal login), two warehouse
-    bins, a goods receipt through the real receiving gate (batch/expiry → sellable on-hand), and two demo
-    customers (consent + loyalty points).
-  - **Remaining slice:** 4d trading transactions (tills/shifts, online orders, serviceability, concession,
-    promos, demo-marked payroll, sandbox GST) — then this row flips to ✅.
+- ✅ **the controlled pilot seed dataset is built** — a reproducible, demo-marked applier that drives the
+  REAL cloud routes (`db/seed/pilot/`, see `PILOT-SEED-DATASET.md`), proven end-to-end in
+  `tests/integration/pilot-seed.test.ts` (22 cases) and tenant-isolated so demo data cannot reach a real tenant.
+  - **4a foundation** — genesis owner, six role logins, entitlements, org skeleton (GST reg → company → branch → warehouse).
+  - **4b catalogue** — HSN tax-rate schedules, five products through the real compliance gate (incl. a regulated
+    food category), barcodes, pack hierarchies, governed prices.
+  - **4c trading partners + stock** — two suppliers (+ portal login), two bins, a goods receipt through the real
+    receiving gate (batch/expiry → sellable on-hand), two demo customers (consent + points).
+  - **4d transactions** — till float + clean shift close, serviceability period, concession contract, coupons,
+    an OMS order reserving seeded stock, a demo-marked payroll draft, and a sandbox e-invoice through the real
+    Rule-46 gate.
   - **Operational packaging note:** the applier is the reproducible seed mechanism; wiring it to a running pilot
     API + the pilot's test IdP for a real stand-up run lands with the environment stand-up (⛔ EX-01 / OA-5 host
-    decision). Categories with no write route yet (delivery slot definitions, tender-type config) are recorded in
-    `PILOT-SEED-DATASET.md` rather than faked.
+    decision). Categories with no write route (delivery slot definitions, tender-type config) are recorded in
+    `PILOT-SEED-DATASET.md` rather than faked. Maturity: **integration tested** → pilot verified on stand-up.
 
 ## Phase 5 — Formal UAT
 - ✅ present: `uat-calendar.md` register, `store-go-live-checklist.md`, role model in `roles.ts`.

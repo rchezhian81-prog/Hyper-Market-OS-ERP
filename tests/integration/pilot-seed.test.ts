@@ -6,9 +6,9 @@
 
 import { describe, it, expect } from 'vitest';
 import { apiHarness } from '../support/api-harness';
-import { applyPilotFoundation, applyPilotCatalogue, applyPilotTradingPartners } from '../../db/seed/pilot/apply';
+import { applyPilotFoundation, applyPilotCatalogue, applyPilotTradingPartners, applyPilotTransactions } from '../../db/seed/pilot/apply';
 import {
-  PILOT_FOUNDATION, PILOT_CATALOGUE, PILOT_TRADING_PARTNERS, PILOT_DEMO_SUPPLIER_LOGIN,
+  PILOT_FOUNDATION, PILOT_CATALOGUE, PILOT_TRADING_PARTNERS, PILOT_TRANSACTIONS, PILOT_DEMO_SUPPLIER_LOGIN,
   PILOT_DEMO_TENANT, PILOT_DEMO_BRANCH, PILOT_DEMO_GSTIN, SEED_MARKER,
 } from '../../db/seed/pilot/dataset';
 
@@ -191,5 +191,48 @@ describe('pilot seed — trading partners + stock (Phase 4c)', () => {
     expect(points.status).toBe(200);
     expect((points.body as { pointsBalance?: number; known: boolean }).known).toBe(true);
     expect((points.body as { pointsBalance?: number }).pointsBalance).toBe(100);
+  });
+});
+
+describe('pilot seed — trading transactions (Phase 4d)', () => {
+  const seed = async () => {
+    const h = apiHarness();
+    await applyPilotFoundation(h, PILOT_FOUNDATION, { throwOnError: true });
+    await applyPilotCatalogue(h, PILOT_CATALOGUE, OWNER, { throwOnError: true });
+    await applyPilotTradingPartners(h, PILOT_TRADING_PARTNERS, OWNER, { throwOnError: true });
+    const report = await applyPilotTransactions(h, PILOT_TRANSACTIONS, OWNER);
+    return { h, report };
+  };
+
+  it('lays down every transaction through the real routes — till, shift, serviceability, concession, coupon, order, payroll, e-invoice', async () => {
+    const { report } = await seed();
+    const failed = report.steps.filter((s) => !s.ok);
+    expect(failed, `failed steps: ${JSON.stringify(failed)}`).toHaveLength(0);
+    expect(report.ok).toBe(true);
+  });
+
+  it('the OMS order is placed (reserved from seeded stock)', async () => {
+    const { h } = await seed();
+    const res = await h.request({ method: 'GET', path: '/v1/orders/order-demo-1', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
+    expect(res.status).toBe(200);
+  });
+
+  it('the sandbox e-invoice reached the register (submitted through the Rule-46 gate)', async () => {
+    const { h } = await seed();
+    const res = await h.request({ method: 'GET', path: '/v1/finance/e-invoice/invoices/einv-demo-1', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
+    expect(res.status).toBe(200);
+  });
+
+  it('the demo payroll draft exists', async () => {
+    const { h } = await seed();
+    const res = await h.request({ method: 'GET', path: '/v1/hr/payroll/pay-run/payrun-demo-2026-08', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
+    expect(res.status).toBe(200);
+  });
+
+  it('a coupon is issued and readable', async () => {
+    const { h } = await seed();
+    const res = await h.request({ method: 'GET', path: '/v1/loyalty/coupons/DEMO10PCT', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
+    expect(res.status).toBe(200);
+    expect((res.body as { coupon: { code: string } }).coupon.code).toBe('DEMO10PCT');
   });
 });

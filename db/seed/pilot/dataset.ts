@@ -370,3 +370,162 @@ export const PILOT_TRADING_PARTNERS: PilotTradingPartners = {
 
 /** The demo supplier login that Slice 4c provisions the `supplier` role for. */
 export const PILOT_DEMO_SUPPLIER_LOGIN = 'pilot-supplier';
+
+// ── Slice 4d: trading transactions ────────────────────────────────────────────
+// A representative set of live-shaped transactions, all demo-marked and in the demo tenant, laid
+// down through the real POS/OMS/finance routes so each passes its own guard.
+
+export interface SeedTillFloat {
+  readonly tillId: string;
+  readonly movementId: string;
+  readonly amountMinor: number;
+  readonly custodianId: string;
+  readonly tradingDay: string;
+}
+
+export interface SeedShiftClose {
+  readonly shiftId: string;
+  readonly tillId: string;
+  readonly cashierId: string;
+  readonly tradingDay: string;
+  readonly openingFloatMinor: number;
+  readonly cashSalesMinor: number;
+  readonly pickupsMinor: number;
+  readonly cashRefundsMinor: number;
+  readonly countedCashMinor: number;
+  readonly toleranceMinor: number;
+}
+
+export interface SeedOrder {
+  readonly orderId: string;
+  readonly locationId: string;
+  readonly lines: readonly { readonly productId: string; readonly quantityMinor: number }[];
+}
+
+export interface SeedServiceability {
+  readonly effectiveFrom: string;
+  readonly radiusMetres?: number;
+  readonly minimumOrderMinor?: number;
+  readonly deliveryFeeMinor?: number;
+  readonly freeDeliveryAboveMinor?: number;
+}
+
+export type SeedConcessionBasis = 'fixed_rent' | 'revenue_share' | 'higher_of_both';
+
+export interface SeedConcessionContract {
+  readonly contractId: string;
+  readonly concessionaireId: string;
+  readonly name: string;
+  readonly branchId: string;
+  readonly startsOn: string;
+  readonly endsOn: string;
+  readonly basis: SeedConcessionBasis;
+  readonly depositMinor: number;
+  readonly revenueShareBps?: number;
+  readonly fixedRentMinor?: number;
+  readonly approvedBy?: string;
+}
+
+export type SeedCouponKind = 'amount_off' | 'percent_off' | 'free_item' | 'referral' | 'membership';
+
+export interface SeedCoupon {
+  readonly code: string;
+  readonly kind: SeedCouponKind;
+  readonly validUntil: string;
+  readonly maxRedemptions: number;
+  readonly maxPerCustomer: number;
+  readonly valueMinor?: number;
+  readonly percentBps?: number;
+}
+
+export interface SeedPayRun {
+  readonly payRunId: string;
+  readonly payPeriod: string;
+  readonly actor: string;
+  readonly netTotalMinor?: number;
+  readonly employeeCount?: number;
+}
+
+export type SeedSupplyType = 'b2b' | 'b2c' | 'export' | 'sez' | 'deemed_export';
+export type SeedEInvoiceDocType = 'INV' | 'CRN' | 'DBN';
+
+export interface SeedTaxInvoice {
+  readonly documentType: string;
+  readonly supplierGstin: string;
+  readonly invoiceNumber: string;
+  readonly invoiceDate: string;
+  readonly hsnCode: string;
+  readonly taxableMinor: number;
+  readonly rateBps: number;
+  readonly placeOfSupply: 'intra_state' | 'inter_state';
+  readonly taxComponents: readonly string[];
+}
+
+export interface SeedEInvoice {
+  readonly invoiceId: string;
+  readonly annualTurnoverMinor: number;
+  readonly supplyType: SeedSupplyType;
+  readonly documentType: SeedEInvoiceDocType;
+  readonly recipientGstin?: string;
+  readonly invoice: SeedTaxInvoice;
+}
+
+export interface PilotTransactions {
+  readonly tenantId: string;
+  readonly tillFloats: readonly SeedTillFloat[];
+  readonly shiftCloses: readonly SeedShiftClose[];
+  readonly serviceability: readonly SeedServiceability[];
+  readonly concessions: readonly SeedConcessionContract[];
+  readonly coupons: readonly SeedCoupon[];
+  readonly orders: readonly SeedOrder[];
+  readonly payRuns: readonly SeedPayRun[];
+  readonly eInvoices: readonly SeedEInvoice[];
+}
+
+/** A second synthetic checksum-valid GSTIN (Tamil Nadu) for a demo B2B recipient. */
+export const PILOT_DEMO_RECIPIENT_GSTIN = '33AAECS9988Q1Z7';
+
+export const PILOT_TRANSACTIONS: PilotTransactions = {
+  tenantId: PILOT_DEMO_TENANT,
+  tillFloats: [
+    { tillId: 'till-demo-1', movementId: 'cash-demo-open-1', amountMinor: 500_000, custodianId: 'pilot-cashier', tradingDay: RECEIVED_ON },
+  ],
+  shiftCloses: [
+    {
+      shiftId: 'shift-demo-1', tillId: 'till-demo-1', cashierId: 'pilot-cashier', tradingDay: RECEIVED_ON,
+      openingFloatMinor: 500_000, cashSalesMinor: 0, pickupsMinor: 0, cashRefundsMinor: 0,
+      countedCashMinor: 500_000, toleranceMinor: 10_000,
+    },
+  ],
+  serviceability: [
+    { effectiveFrom: TAX_FROM, radiusMetres: 8000, minimumOrderMinor: 20_000, deliveryFeeMinor: 3000, freeDeliveryAboveMinor: 50_000 },
+  ],
+  concessions: [
+    {
+      contractId: 'conc-demo-1', concessionaireId: 'concnaire-demo-1', name: 'Demo Bakery Counter (demo)',
+      branchId: BRANCH_ID, startsOn: '2026-09-01', endsOn: '2027-08-31', basis: 'revenue_share',
+      depositMinor: 5_000_000, revenueShareBps: 1000, approvedBy: 'pilot-owner',
+    },
+  ],
+  coupons: [
+    { code: 'DEMO10PCT', kind: 'percent_off', validUntil: '2027-03-31', maxRedemptions: 1000, maxPerCustomer: 1, percentBps: 1000 },
+    { code: 'DEMO50OFF', kind: 'amount_off', validUntil: '2027-03-31', maxRedemptions: 500, maxPerCustomer: 1, valueMinor: 5000 },
+  ],
+  orders: [
+    { orderId: 'order-demo-1', locationId: WAREHOUSE_ID, lines: [{ productId: 'prod-rice', quantityMinor: 5000 }] },
+  ],
+  payRuns: [
+    { payRunId: 'payrun-demo-2026-08', payPeriod: '2026-08', actor: 'pilot-accountant', netTotalMinor: 15_000_000, employeeCount: 12 },
+  ],
+  eInvoices: [
+    {
+      invoiceId: 'einv-demo-1', annualTurnoverMinor: 6_000_000_000, supplyType: 'b2b', documentType: 'INV',
+      recipientGstin: PILOT_DEMO_RECIPIENT_GSTIN,
+      invoice: {
+        documentType: 'Tax Invoice', supplierGstin: PILOT_DEMO_GSTIN, invoiceNumber: 'DEMO-INV-0001',
+        invoiceDate: '2026-09-20', hsnCode: '19053100', taxableMinor: 100_000, rateBps: 1800,
+        placeOfSupply: 'intra_state', taxComponents: ['CGST', 'SGST'],
+      },
+    },
+  ],
+};

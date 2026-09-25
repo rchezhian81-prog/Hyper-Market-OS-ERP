@@ -5,6 +5,26 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Pilot Phase 4d — controlled seed dataset: trading transactions (Phase 4 COMPLETE) (25 September 2026)
+
+Non-production. Completed the pilot seed with a representative set of live-shaped transactions, each laid
+down through its own real POS/OMS/finance guard.
+- **`db/seed/pilot/dataset.ts`** — added `PILOT_TRANSACTIONS`: a till float (opens the till), a clean
+  blind-count shift close (no variance), a serviceability period, a revenue-share concession contract, two
+  coupons, an OMS order that reserves the stock seeded in 4c, a **demo-marked** payroll draft, and a B2B
+  sandbox e-invoice submitted through the real Rule-46 eligibility + field gate.
+- **`db/seed/pilot/apply.ts`** — added `applyPilotTransactions`; the full seed now applies as
+  foundation → catalogue → trading partners → transactions.
+- **`tests/integration/pilot-seed.test.ts`** — now **22 tests**: 4d cases assert every transaction lands
+  (the order is placed, the e-invoice reaches the register, the payroll draft exists, a coupon is issued).
+- **Phase 4 COMPLETE:** gap assessment Phase-4 row flipped to ✅; `PILOT-SEED-DATASET.md` marks all four
+  slices done. Maturity: **integration tested** (→ pilot verified when run against the stood-up environment,
+  ⛔ EX-01/OA-5).
+- **Next per the 8-phase plan:** Phase 3 (feature-safety proof) → Phase 6 (failure-drill report) → Phase 5
+  (UAT assets) → Phase 7 (gate checklist) → Phase 8 (readiness package) → **STOP for owner GO**.
+
+---
+
 ## Pilot Phase 4c — controlled seed dataset: suppliers + stock + bins + customers (25 September 2026)
 
 Non-production. Extended the pilot seed with trading partners and on-hand stock, laid down through the
