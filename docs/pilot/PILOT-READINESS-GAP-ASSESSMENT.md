@@ -63,9 +63,12 @@ Status key: ✅ **present** (exists + verified) · 🟡 **partial** (exists, nee
 ## Phase 6 — Pilot failure tests
 - ✅ present: a large resilience suite already exists (offline/restart/idempotency/cross-tenant/duplicate/
   stale-conflict/partial-delivery/audit-tamper) — see the evidence index.
-- 🟡 partial → **my next work package:** a **failure-drill report** that runs and records these as one pilot
-  drill, plus the three not-yet-as-drills: **backup creation + restore to a clean env**, **rollback
-  rehearsal**, and **monitoring-alert delivery**. All doable autonomously against the pilot stack.
+- ✅ **failure-drill report built** — `FAILURE-DRILLS.md` maps all 16 required scenarios to their control +
+  proving test(s), and `tests/integration/pilot-failure-drills.test.ts` (5 cases) co-locates the
+  surface-level invariants (idempotent replay, no oversell/negative stock, unauthorized 403, cross-tenant
+  isolation, tampered/expired token 401). Backup + restore-to-clean is **executed** (`BACKUP-RESTORE-REHEARSAL.md`).
+  Two items remain **live drills on the stood-up box** (⛔ EX-01/OA-5): the full rollback rehearsal
+  (redeploy + restore under simulated failure) and confirming alert delivery reaches the named incident owner.
 
 ## Phase 7 — Pilot gates
 - ✅ present: gate concepts across `store-go-live-checklist.md` + `pilot-plan-narrow-deep.md`.
