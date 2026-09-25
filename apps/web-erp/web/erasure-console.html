@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE — Erasure console</title>
+    <!--
+      Data-protection officer's erasure console (M20-FR-04 / DPDP, owner decision). DEVELOPMENT-APPROVED;
+      LEGAL CONFIRMATION REQUIRED — this drives the technical workflow, it is not a claim of legal compliance.
+      A THIN CLIENT by design: it holds no erasure logic. It shows the located PII for a verified request, and
+      drives the two-person control — a CHECKER approves, then a MAKER (a different person) carries it out; the
+      backend runs the production @sre/customer engines (plan / authorise / execute / tombstone / prevent-
+      restore). Retained records (tax invoices, audit evidence) are kept and shown as such, never deleted
+      (hard rule #6). In the browser E2E the backend is a local Node server running those same engines.
+    -->
+    <style>
+      :root {
+        --bg: #f5f6f8; --panel: #ffffff; --ink: #14161a; --muted: #59606e;
+        --line: #d8dbe2; --accent: #514f9c; --accent-ink: #ffffff;
+        --good: #1f6f4a; --warn: #8a5a00; --danger: #a12622;
+      }
+      :root:not([data-theme='light']) {
+        @media (prefers-color-scheme: dark) {
+          --bg: #12131a; --panel: #1b1d27; --ink: #eef0f4; --muted: #a3abba;
+          --line: #313746; --accent: #a5a3f0; --accent-ink: #10102a;
+          --good: #43c78a; --warn: #e0a53a; --danger: #f0857f;
+        }
+      }
+      :root[data-theme='dark'] {
+        --bg: #12131a; --panel: #1b1d27; --ink: #eef0f4; --muted: #a3abba;
+        --line: #313746; --accent: #a5a3f0; --accent-ink: #10102a;
+        --good: #43c78a; --warn: #e0a53a; --danger: #f0857f;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; min-height: 100dvh; padding: 16px; display: grid; place-items: start center; }
+      main { width: min(680px, 100%); display: grid; gap: 16px; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: grid; gap: 12px; }
+      h1 { margin: 0; font-size: 22px; } h2 { margin: 0; font-size: 17px; }
+      p.lede { margin: 0; color: var(--muted); font-size: 14px; }
+      .legal { font-size: 12px; color: var(--warn); font-weight: 600; }
+      label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; }
+      input { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: 44px; }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; }
+      button { font: inherit; font-weight: 600; min-height: 44px; border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible { outline: 3px solid #7fb8ff; outline-offset: 2px; }
+      table { width: 100%; border-collapse: collapse; font-size: 14px; }
+      th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); }
+      .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; border: 1px solid var(--line); }
+      .pill.held { color: var(--muted); } .pill.erased { color: var(--danger); } .pill.minimised { color: var(--warn); } .pill.retained { color: var(--good); }
+      .status { font-size: 14px; min-height: 20px; }
+      .status.good { color: var(--good); } .status.warn { color: var(--warn); } .status.err { color: var(--danger); }
+      .foot { color: var(--muted); font-size: 12px; }
+      dt { font-weight: 700; font-size: 13px; } dd { margin: 0 0 8px; font-size: 14px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section>
+        <h1>Erasure console <span lang="ta">/ அழிப்பு பலகை</span></h1>
+        <p class="lede">Carry out a verified "delete my data" request under the two-person rule. <span lang="ta">இரு-நபர் விதியின் கீழ்.</span></p>
+        <p class="legal">Development workflow — legal confirmation required before go-live. / சட்ட உறுதிப்பாடு தேவை.</p>
+        <label for="actor">Acting as (staff id) <span lang="ta">/ பணியாளர்</span>
+          <input id="actor" value="dpo-ravi" />
+        </label>
+        <p class="foot">The person who approves an erasure cannot be the one who runs it. Change this id between approving and executing.</p>
+      </section>
+
+      <section aria-labelledby="pii-h">
+        <h2 id="pii-h">Personal data we hold <span lang="ta">/ நாங்கள் வைத்துள்ள தரவு</span></h2>
+        <table>
+          <thead><tr><th>Category</th><th>Records</th><th>Status</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <button id="locate" class="secondary" type="button">Refresh <span lang="ta">/ புதுப்பி</span></button>
+      </section>
+
+      <section aria-labelledby="act-h">
+        <h2 id="act-h">Two-person erasure <span lang="ta">/ இரு-நபர் அழிப்பு</span></h2>
+        <div class="row">
+          <button id="approve" type="button">Approve as checker <span lang="ta">/ ஒப்புதல்</span></button>
+          <button id="execute" type="button">Execute as maker <span lang="ta">/ செயல்படுத்து</span></button>
+        </div>
+        <p class="status" id="status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="tomb-h">
+        <h2 id="tomb-h">Erasure record (tombstone) <span lang="ta">/ அழிப்புப் பதிவு</span></h2>
+        <p class="lede" id="tomb-empty">No erasure has been carried out yet.</p>
+        <dl id="tomb" hidden>
+          <dt>Deleted</dt><dd id="t-erased"></dd>
+          <dt>Kept but anonymised</dt><dd id="t-minimised"></dd>
+          <dt>Kept in full (required by law)</dt><dd id="t-retained"></dd>
+          <dt>Approved by / carried out by</dt><dd id="t-people"></dd>
+        </dl>
+        <p class="foot">The tombstone holds no name, phone or address — only what was done. It is how we prove the erasure happened without keeping the person.</p>
+      </section>
+
+      <section aria-labelledby="restore-h">
+        <h2 id="restore-h">Prevent restore <span lang="ta">/ மீட்பைத் தடு</span></h2>
+        <p class="lede">A late import must not quietly bring an erased person back.</p>
+        <button id="restore" class="secondary" type="button">Try to re-add marketing data <span lang="ta">/ மீண்டும் சேர்</span></button>
+        <p class="status" id="restore-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script type="module" src="./erasure-console.js"></script>
+  </body>
+</html>

@@ -5,6 +5,29 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Item 5d — customer "delete my data": the DPO erasure console — COMPLETES Item 5 (25 September 2026)
+
+The last piece — the DPO's screen. **Item 5 is now complete.**
+- **`apps/web-erp/web/erasure-console.html` + `.js`** (new) — a THIN CLIENT: shows the located PII for a
+  verified request and drives the two-person rule (a checker approves; a different maker executes). Renders
+  the honest outcome (deleted / kept-but-anonymised / kept-in-full-by-law) and carries a
+  **legal-confirmation-required** banner so the screen never implies compliance. Bilingual EN/TA, 44px,
+  `aria-live`, both themes. No erasure logic in the browser.
+- **`tests/e2e/erasure-console.e2e.ts`** (new, +1, real Chromium) — a Node backend runs the production
+  `@sre/customer` engines over an in-memory holding; the browser proves: located PII shown; no-approver
+  refused; same-officer approve+execute refused (SoD §28); a different maker completes it (marketing erased,
+  audit record minimised, tax invoice retained-untouched); prevent-restore refuses a re-import. Self-skips
+  with no browser.
+- **Item 5 recap (all merged):** 5a governance engine (maker-checker, tombstone, prevent-restore); 5b
+  processor notification (provider-neutral, durable dead-letter); 5c live execution route; 5d this console.
+- **HONEST SCOPE / LEGAL:** implementation + unit + integration + simulator-browser E2E done. Registering
+  the REAL domain stores as erasable sources, and the **legal sign-off**, are external/deferred items for
+  the Owner Action Register. Not a compliance claim.
+- **Next:** Item 6 — ledger maturity update + the ONE consolidated Owner Action Register at the external-gate
+  boundary, then STOP.
+
+---
+
 ## Item 5c — customer "delete my data": the governed erasure carried out on the live surface (25 September 2026)
 
 The engines were built in 5a/5b; the M20-FR-04 executor was provider-neutral but never wired to a route.
