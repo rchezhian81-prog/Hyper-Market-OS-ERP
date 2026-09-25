@@ -23,7 +23,8 @@
     "packages/**/*.ts",
     "services/**/*.ts",
     "apps/**/*.ts",
-    "edge/**/*.ts"
+    "edge/**/*.ts",
+    "db/**/*.ts"
   ],
   "exclude": ["node_modules", "dist", "build"]
 }

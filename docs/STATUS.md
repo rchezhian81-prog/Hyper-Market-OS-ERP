@@ -5,6 +5,32 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Pilot Phase 4a — controlled seed dataset: framework + foundation (25 September 2026)
+
+Non-production. Started the **controlled pilot seed dataset** — a single, reproducible, clearly-non-real
+dataset for the pilot/UAT, applied by driving the REAL cloud routes so seeded data passes the same guards
+as real data (no back-door rows). The demo marker is **structural**: everything is scoped to the demo
+tenant `pilot-demo`, and tenant isolation means it can never mix with a real tenant's data or exports.
+- **`db/seed/pilot/dataset.ts`** (new) — the data + types (demo tenant, six role logins, entitlements, org
+  skeleton) with a `SEED_MARKER` and a synthetic checksum-valid GSTIN. **`db/seed/pilot/apply.ts`** (new) —
+  the applier: an injected `SeedClient` (the `apiHarness` satisfies it) drives genesis owner, role
+  provisioning, entitlements, and the org routes (GST reg → company → branch → warehouse, each created draft
+  then activated through the real guard); fail-loud report, no silent partial seed. **`db/seed/pilot/index.ts`**.
+- **`tests/integration/pilot-seed.test.ts`** (7 tests) — applies the foundation against the real surface and
+  asserts: every step lands, idempotent re-apply, org readable + branch active under the demo GSTIN, each role
+  login carries its permissions, entitlements on, and **cross-tenant isolation** (a different tenant sees none).
+- **`tsconfig.json`** — added `db/**/*.ts` to `include` so seed code is typechecked (db held only .sql/.md before).
+- **`docs/pilot/PILOT-SEED-DATASET.md`** (new) — what it seeds, why it stays non-real, honest boundaries
+  (no write route yet for delivery-slot defs / tender-type config), and the slice roadmap. Gap assessment
+  Phase-4 row moved 🔴 → 🟡.
+- **Operational packaging note:** a standalone runnable seed script is deferred to the environment stand-up
+  (⛔ EX-01/OA-5) — the repo's `--experimental-strip-types` script runtime cannot load the service graph, and a
+  real run needs the running pilot API + test IdP. The tested applier IS the reproducible mechanism today.
+- **Next:** Phase 4b catalogue + tax/HSN + prices → 4c suppliers + stock + bins + customers → 4d trading
+  transactions → then Phase 3 / 6 / 5 / 7 / 8. Maturity: **integration tested** (→ pilot verified on stand-up).
+
+---
+
 ## Pilot Phase 2 — safe pilot environment (profile + monitoring + backup/restore rehearsal) (25 September 2026)
 
 Non-production. Delivered the isolated pilot environment definition, the monitoring watch-list, and an

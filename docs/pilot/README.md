@@ -18,6 +18,7 @@ Prepared for the owner's authorization to move from development into **controlle
 | `SAFE-PILOT-ENVIRONMENT.md` | **(Phase 2)** the isolated pilot environment: how to bring it up + the isolation/HTTPS/RBAC/capacity checklist |
 | `MONITORING-AND-ALERTS.md` | **(Phase 2)** what to watch, thresholds, and where alerts go |
 | `BACKUP-RESTORE-REHEARSAL.md` | **(Phase 2)** executed backup + restore-into-clean-env evidence |
+| `PILOT-SEED-DATASET.md` | **(Phase 4)** the controlled, demo-marked seed dataset (`../../db/seed/pilot/`): what it seeds, how it stays non-real, and the slice roadmap |
 
 Infra: `../../infra/compose/docker-compose.pilot.yml` (resource/capacity overlay) · `../../infra/compose/.env.pilot.example` (pilot env template, placeholders only).
 
