@@ -5,6 +5,24 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Pilot Phase 7 + 8 — pilot gates + defect policy + consolidated readiness package (STOP for owner GO) (25 September 2026)
+
+Non-production. The final pilot-preparation package.
+- **`docs/pilot/PILOT-GATES.md`** (new) — 10 blocking gates (G1 release baseline … G10 named incident owner),
+  each with its evidence and green / ⛔-live state, plus the defect policy (P0/P1 block; P2 documented
+  acceptance; P3/P4 backlog; P0/P1 never downgraded; P2 always written down; nothing closed without a retest).
+- **`docs/pilot/PILOT-READINESS-PACKAGE.md`** (new) — the consolidated GO decision: a phase-by-phase status
+  table (Phases 1–7 ✅), the store pilot plan (one branch, legacy kept in parallel, named incident owner,
+  daily reconciliation, rollback trigger, no live providers), the Owner Action list (EX-01/OA-5 host, OA-4
+  IdP, OA-6 genesis, EX-09 hardware, paid/statutory providers, UAT sign-off, live rollback drill, legal/CA/HR,
+  GAP-SEC-06), and the recommendation with 2–3 concrete options. Gap assessment Phases 7 & 8 → ✅; README updated.
+- **This is the STOP.** No pilot is activated automatically; standing up on a real host, connecting any live
+  provider, touching real data, or starting the floor pilot are all owner-only. **Awaiting the owner's GO.**
+- The 8-phase controlled-pilot-preparation program (Phases 1–8) is now complete on the software side; the
+  remaining items are external gates and the owner's decisions.
+
+---
+
 ## Pilot Phase 5 — role-based UAT checklist (25 September 2026)
 
 Non-production. Authored the formal UAT assets.
