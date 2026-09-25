@@ -5,6 +5,35 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Item 5c — customer "delete my data": the governed erasure carried out on the live surface (25 September 2026)
+
+The engines were built in 5a/5b; the M20-FR-04 executor was provider-neutral but never wired to a route.
+This slice makes the whole governed erasure reachable on the cloud, over a simulated (event-sourced)
+located-PII holding — composing the engines, re-deciding nothing.
+- **`services/customer/src/erasure-execution.ts`** (new) — five routes (API-06):
+  - `POST/GET /v1/privacy/pii/:customerRef[/:category]` — **locate PII** (record/read the categories held);
+    recording for an already-erased subject is refused (**prevent-restore**, hard rule #10).
+  - `POST …/erasure-approval` (`privacy.erasure.approve`) — the **checker's** act.
+  - `POST …/erasure-execution` (`privacy.erasure.execute`) — the **maker's** act: plan from the located PII →
+    `authoriseErasureExecution` (refuses unverified / no-checker / maker=checker) → `executeErasurePlan`
+    against the holdings (retained never touched, #6) → `sealTombstone` → enqueue processor notices on the
+    durable connector queue → request `fulfilled`/`partially_fulfilled` honestly.
+  - `GET …/tombstone` — the PII-free evidence.
+- **`services/api/src/adapters.ts`** — `erasureExecutionAdapter` over a new `STREAM.privacy` with
+  pii/approvals/tombstones/processor-notices sub-streams (append-only, event-sourced). **`main.ts`** mounts
+  it (store-undefined fallback); **`roles.ts`** grants `privacy.erasure.approve` / `privacy.erasure.execute`
+  to owner + store_manager.
+- **`tests/integration/erasure-execution.test.ts`** (new, +8) — full path; retained untouched;
+  maker=checker / no-checker / unverified refused; prevent-restore; RBAC (cashier 403); durable across cold
+  restart; per-tenant.
+- **HONEST SCOPE / LEGAL:** the governed workflow over a **simulated** located-PII holding. Registering the
+  REAL domain stores (orders, loyalty, profile) as erasable sources is the live-data-model step — an
+  external/deferred item for the Owner Action Register. Technical workflow only; not a compliance claim.
+- **Next:** 5d served DPO erasure console + browser E2E → completes Item 5. Then Item 6 (ledger maturity +
+  the consolidated Owner Action Register, then STOP).
+
+---
+
 ## Item 5b — customer "delete my data": processor/sub-processor erasure notification (25 September 2026)
 
 An erasure isn't finished when the shop's own stores are cleared — the data it **shared** with processors

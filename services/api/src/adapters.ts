@@ -179,6 +179,8 @@ import { collapseConsent } from '../../customer/src/segments';
 import { assembleProfiles, draftMarketingAudiences } from '../../../packages/customer/src/index';
 import type { SegmentPolicy, OrderFact, ComplaintFact, CustomerProfile as SegCustomerProfile, CustomerConsent as SegCustomerConsent, MarketingAudienceDraft } from '../../../packages/customer/src/index';
 import type { DataRightsDeps, DataSubjectRequest } from '../../customer/src/data-rights';
+import type { ErasureExecutionDeps, PiiEntry, ErasureApproval } from '../../customer/src/erasure-execution';
+import type { PrivacyTombstone } from '../../../packages/customer/src/index';
 import type { ServiceCaseDeps, ServiceCase, CompensationRecord, DraftDecisionRecord } from '../../customer/src/service-cases';
 import type { CampaignDeps, CampaignPlanRecord } from '../../customer/src/campaigns';
 import type { AiDraft, SatisfactionScore, CompensationPolicy, SlaView } from '../../../packages/service-desk/src/index';
@@ -278,6 +280,9 @@ export const STREAM = {
   warehouse: 'warehouse',
   orders: 'orders',
   reporting: 'reporting',
+  /** Data-subject privacy execution (M20-FR-04 / DPDP): the located-PII holdings, erasure approvals,
+   *  sealed tombstones and processor-erasure notices — tenant-wide, append-only. */
+  privacy: 'privacy',
   /** The domain-level, tamper-evident audit trail (M34-FR-01) — tenant-wide, append-only, one sealed
    *  record per sensitive action, NEVER folded (every record is its own fact; the chain is the evidence). */
   audit: 'audit',
@@ -1081,6 +1086,12 @@ const forCustomer = (customerId: string): string => streamName(STREAM.consent, c
 // Data-subject requests are TENANT-WIDE (one stream, every request) so the overdue read sees the whole
 // privacy queue in one fold — the queue a regulator asks about first (M20-FR-04 / DPDP).
 const DATA_REQUESTS_STREAM = streamName(STREAM.consent, 'data-requests');
+// Privacy EXECUTION sub-streams (M20-FR-04), all tenant-wide and append-only: the located-PII holdings, the
+// checker's erasure approvals, the sealed PII-free tombstones, and the processor-erasure notices enqueued.
+const PII_STREAM = streamName(STREAM.privacy, 'pii');
+const ERASURE_APPROVAL_STREAM = streamName(STREAM.privacy, 'approvals');
+const TOMBSTONE_STREAM = streamName(STREAM.privacy, 'tombstones');
+const PRIVACY_NOTICE_STREAM = streamName(STREAM.privacy, 'processor-notices');
 // Risks are TENANT-WIDE (one stream, every risk) so the gate-blocking reads fold the whole register in
 // one pass (M34-FR-04). A sub-stream of compliance, kept apart from obligations.
 const RISK_STREAM = streamName(STREAM.compliance, 'risk');
@@ -5783,6 +5794,77 @@ export function dataRightsAdapter(input: {
         idempotencyKey: `data-request-${tenantId}-${key}`,
         source: 'api/customer',
         payload: request,
+      }));
+    },
+  };
+}
+
+/**
+ * Erasure EXECUTION (M20-FR-04 / DPDP) — carrying out a verified erasure under the two-person control. Four
+ * append-only sub-streams: located-PII holdings folded to the latest state per (customer, category) — the
+ * simulated, provider-neutral source the executor acts on; the checker's approvals (latest per request); the
+ * sealed PII-free tombstones; and the processor-erasure notices enqueued on the connector queue. Request
+ * lifecycle rides the SAME `DataSubjectRequestRecorded` stream as the data-rights routes, so a `GET
+ * …/data-requests/:id` reflects the fulfilled state after execution. Everything rebuilds from the store on a
+ * cold restart, so the tombstone, the holdings' erased/minimised state and the approval all survive.
+ */
+export function erasureExecutionAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): ErasureExecutionDeps {
+  const foldRequests = async (tenantId: string): Promise<Map<string, DataSubjectRequest>> => {
+    const all = await allOf<DataSubjectRequest>(input.store, tenantId, DATA_REQUESTS_STREAM, 'DataSubjectRequestRecorded');
+    const byId = new Map<string, DataSubjectRequest>();
+    for (const r of all) byId.set(r.requestId, r);
+    return byId;
+  };
+  const foldPii = async (tenantId: string, customerRef: string): Promise<readonly PiiEntry[]> => {
+    const all = await allOf<PiiEntry>(input.store, tenantId, PII_STREAM, 'CustomerPiiRecorded');
+    const byKey = new Map<string, PiiEntry>();
+    for (const e of all) if (e.customerRef === customerRef) byKey.set(e.category, e); // latest state per category
+    return [...byKey.values()];
+  };
+  return {
+    now: input.now,
+    request: async (tenantId, requestId) => (await foldRequests(tenantId)).get(requestId),
+    recordRequest: async (tenantId, requestId, request, key) => {
+      await input.store.append(tenantId, DATA_REQUESTS_STREAM, makeEvent({
+        id: `data-request-${key}`, type: 'DataSubjectRequestRecorded', occurredAt: input.now(),
+        idempotencyKey: `data-request-${tenantId}-${key}`, source: 'api/customer', payload: request,
+      }));
+    },
+    piiFor: (tenantId, customerRef) => foldPii(tenantId, customerRef),
+    recordPii: async (tenantId, entry, key) => {
+      await input.store.append(tenantId, PII_STREAM, makeEvent({
+        id: `pii-${key}`, type: 'CustomerPiiRecorded', occurredAt: input.now(),
+        idempotencyKey: `pii-${tenantId}-${key}`, source: 'api/customer', payload: entry,
+      }));
+    },
+    approvalFor: async (tenantId, requestId) => {
+      const all = await allOf<ErasureApproval>(input.store, tenantId, ERASURE_APPROVAL_STREAM, 'ErasureApproved');
+      let latest: ErasureApproval | undefined;
+      for (const a of all) if (a.requestId === requestId) latest = a; // latest approval wins
+      return latest;
+    },
+    recordApproval: async (tenantId, approval, key) => {
+      await input.store.append(tenantId, ERASURE_APPROVAL_STREAM, makeEvent({
+        id: `erasure-approval-${key}`, type: 'ErasureApproved', occurredAt: input.now(),
+        idempotencyKey: `erasure-approval-${tenantId}-${key}`, source: 'api/customer', payload: approval,
+      }));
+    },
+    tombstonesFor: (tenantId) => allOf<PrivacyTombstone>(input.store, tenantId, TOMBSTONE_STREAM, 'PrivacyTombstoneSealed'),
+    tombstoneFor: async (tenantId, requestId) =>
+      (await allOf<PrivacyTombstone>(input.store, tenantId, TOMBSTONE_STREAM, 'PrivacyTombstoneSealed')).find((t) => t.requestId === requestId),
+    recordTombstone: async (tenantId, tombstone, key) => {
+      await input.store.append(tenantId, TOMBSTONE_STREAM, makeEvent({
+        id: `tombstone-${key}`, type: 'PrivacyTombstoneSealed', occurredAt: input.now(),
+        idempotencyKey: `tombstone-${tenantId}-${key}`, source: 'api/customer', payload: tombstone,
+      }));
+    },
+    enqueueNotice: async (tenantId, message, key) => {
+      await input.store.append(tenantId, PRIVACY_NOTICE_STREAM, makeEvent({
+        id: `privacy-notice-${key}`, type: 'ProcessorNoticeEnqueued', occurredAt: input.now(),
+        idempotencyKey: `privacy-notice-${tenantId}-${key}`, source: 'api/customer', payload: message,
       }));
     },
   };
