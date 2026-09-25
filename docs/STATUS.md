@@ -5,6 +5,40 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Item 2 — delivery-substitution exception OWNERSHIP (25 September 2026)
+
+The owner's second approved item: not deriving the exceptions (that engine already exists), but deciding
+**whose job each one is, by when, and what happens when a shift ends before anyone works it.**
+- **`packages/orders/src/substitution-exception-ownership.ts`** (new) — a pure ownership engine over the
+  derived exceptions from `packages/orders/src/substitution-exceptions.ts`:
+  - **Routes to a ROLE, never a person** (`ownerForKind`): money (refund due / collect adjustment /
+    above-cap charge) → **finance/payment-reconciliation**; a short-picked line (customer got less) →
+    **customer-service/online-order desk**; anything else → **fulfilment supervisor** (primary owner).
+    Routing to a role is *why nothing disappears when a shift ends or access is lost* — a claim is
+    `release`d back to the role queue and the next shift finds it in `queueFor`.
+  - **Picker proposes, never approves** (SoD, §28): `mayApprove('picker')` is false; `resolveException`
+    refuses a picker and **records** the refusal (`resolve_refused`, P-08) — item stays open, still owed
+    to someone who can approve. `proposedBy` records the proposer, never the approver.
+  - **SLA timers + breach escalation** (`slaStatus`, `escalate`, `sweepEscalations`): `DEFAULT_SLA` CS 30m
+    / supervisor 60m / finance 120m / duty 240m; a breach escalates to the next owner (CS→supervisor,
+    finance/supervisor→duty manager; duty manager terminal, stays visible). A resolved item's clock is
+    stopped — never breaches, never escalates.
+  - **Append-only audit** on every routing/claim/release/reassign/escalation/resolution + refusal
+    (`ExceptionAuditEvent`, hard rules #2 #6). Pure/deterministic: clock injected, no I/O.
+- **`tests/unit/orders-substitution-exception-ownership.test.ts`** (new, +22) — routing by kind; SLA
+  within/breached/resolved-stopped; claim→in_progress; release-back-to-queue on `access_revoked` (proves
+  nothing disappears); reassign clears the claim; picker-cannot-resolve (refusal recorded); owner
+  resolves then already_resolved; escalation to next owner + duty-manager-terminal + sweep; worst-first
+  `queueFor` with tenant isolation.
+- **Barrel:** `packages/orders/src/index.ts` now exports the ownership engine.
+- **Honest rung:** the pure engine + unit proof are **implementation-complete**. Buildable follow-ons:
+  wiring the ownership state onto the fulfilment exception read route (so the tenant-wide worklist
+  carries owner/SLA/breach) + the supervisor/desk screen + browser e2e; the M31 notification enqueue for
+  the SLA-breach alert. A **live** breach alert to a real notification provider is externally gated.
+- **Next:** Item 3 (till-side concession tagging), then Items 4–6.
+
+---
+
 ## Fix — the ERP admin app could not be built for a browser (pre-existing, found during Item 2) (25 September 2026)
 
 A defect on `main`, not new work: the full quality gate failed at the browser-build step, and the cause
