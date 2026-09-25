@@ -1,0 +1,44 @@
+# Pilot overlay for the SRE Retail OS stack (non-production).
+#
+# Layers resource/capacity limits and pilot-safe restart policy on top of
+# docker-compose.yml, WITHOUT changing the application. Isolation from any other
+# stack comes from a distinct compose PROJECT NAME (separate volumes + network),
+# and pilot secrets/config come from a separate env file — never committed.
+#
+# Bring the pilot up (from infra/compose/):
+#   cp .env.pilot.example .env.pilot            # then fill in generated secrets
+#   docker compose -p sre-pilot \
+#     -f docker-compose.yml -f docker-compose.pilot.yml \
+#     --env-file .env.pilot up -d
+#
+# Project name `sre-pilot` namespaces the volumes as `sre-pilot_db-data` /
+# `sre-pilot_edge-data` — separate storage, separate database, separate from a dev
+# stack on the same host. HTTPS: terminate TLS in front of the `web`/`api` ports
+# (a reverse proxy or an nginx TLS server block); the pilot must not be reached over
+# plain HTTP. See docs/pilot/SAFE-PILOT-ENVIRONMENT.md.
+
+services:
+  db:
+    # Capacity limits so a runaway query cannot take the whole host.
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 256
+
+  api:
+    mem_limit: 768m
+    cpus: 1.0
+    pids_limit: 256
+    environment:
+      # Pilot posture, made explicit even though the base already defaults these.
+      NODE_ENV: production
+      MIGRATION_TARGET_KIND: rehearsal
+
+  edge:
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 256
+
+  web:
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 128
