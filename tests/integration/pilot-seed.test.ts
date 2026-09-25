@@ -6,9 +6,9 @@
 
 import { describe, it, expect } from 'vitest';
 import { apiHarness } from '../support/api-harness';
-import { applyPilotFoundation } from '../../db/seed/pilot/apply';
+import { applyPilotFoundation, applyPilotCatalogue } from '../../db/seed/pilot/apply';
 import {
-  PILOT_FOUNDATION, PILOT_DEMO_TENANT, PILOT_DEMO_BRANCH, PILOT_DEMO_GSTIN, SEED_MARKER,
+  PILOT_FOUNDATION, PILOT_CATALOGUE, PILOT_DEMO_TENANT, PILOT_DEMO_BRANCH, PILOT_DEMO_GSTIN, SEED_MARKER,
 } from '../../db/seed/pilot/dataset';
 
 const OWNER = PILOT_FOUNDATION.genesisOwner.userId;
@@ -89,5 +89,52 @@ describe('pilot seed — foundation (Phase 4a)', () => {
     const res = await h.request({ method: 'GET', path: '/v1/org/nodes', userId: 'other-owner', tenantId: 'some-other-tenant' });
     expect(res.status).toBe(200);
     expect((res.body as { nodeCount: number }).nodeCount).toBe(0);
+  });
+});
+
+describe('pilot seed — catalogue (Phase 4b)', () => {
+  const seed = async () => {
+    const h = apiHarness();
+    await applyPilotFoundation(h, PILOT_FOUNDATION, { throwOnError: true });
+    const report = await applyPilotCatalogue(h, PILOT_CATALOGUE, OWNER);
+    return { h, report };
+  };
+
+  it('lays down tax rates, products, barcodes, packs and prices through the real routes', async () => {
+    const { report } = await seed();
+    const failed = report.steps.filter((s) => !s.ok);
+    expect(failed, `failed steps: ${JSON.stringify(failed)}`).toHaveLength(0);
+    expect(report.ok).toBe(true);
+  });
+
+  it('publishes every product through the compliance gate (count matches the dataset)', async () => {
+    const { h } = await seed();
+    const res = await h.request({ method: 'GET', path: '/v1/catalogue/products', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
+    expect(res.status).toBe(200);
+    expect((res.body as { count: number }).count).toBe(PILOT_CATALOGUE.products.length);
+  });
+
+  it('a regulated food product keeps its safety content and tax class', async () => {
+    const { h } = await seed();
+    const res = await h.request({ method: 'GET', path: '/v1/catalogue/products/prod-biscuit', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
+    expect(res.status).toBe(200);
+    const product = (res.body as { product: { taxClass: string; lifecycle: string; safety?: { allergens?: string[] } } }).product;
+    expect(product.taxClass).toBe('19053100');
+    expect(product.lifecycle).toBe('active');
+    expect(product.safety?.allergens).toContain('wheat');
+  });
+
+  it('a barcode resolves to exactly its product', async () => {
+    const { h } = await seed();
+    const res = await h.request({ method: 'GET', path: '/v1/catalogue/barcodes/8900000000123', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
+    expect(res.status).toBe(200);
+    expect((res.body as { barcode: { productId: string } }).barcode.productId).toBe('prod-rice');
+  });
+
+  it('a pack hierarchy is stored with its exact conversions', async () => {
+    const { h } = await seed();
+    const res = await h.request({ method: 'GET', path: '/v1/catalogue/products/prod-biscuit/pack', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
+    expect(res.status).toBe(200);
+    expect((res.body as { pack: { levels: unknown[] } }).pack.levels).toHaveLength(2);
   });
 });

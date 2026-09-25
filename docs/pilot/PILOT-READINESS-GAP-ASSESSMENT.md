@@ -38,9 +38,12 @@ Status key: ✅ **present** (exists + verified) · 🟡 **partial** (exists, nee
   - **Slice 4a done:** the applier framework + the FOUNDATION — genesis owner, six role logins, entitlements
     (loyalty/delivery/dept.concession), and the org skeleton (GST registration → company → branch → warehouse),
     proven by `tests/integration/pilot-seed.test.ts` and tenant-isolated so demo data cannot reach a real tenant.
-  - **Remaining slices:** 4b catalogue + tax/HSN + prices/MRP; 4c suppliers + stock (batches/expiry) + warehouse
-    bins + customers; 4d trading transactions (tills/shifts, online orders, serviceability, concession, promos,
-    demo-marked payroll, sandbox GST) — then this row flips to ✅.
+  - **Slice 4b done:** the CATALOGUE — HSN tax-rate schedules, five products published through the real
+    compliance gate (incl. a regulated food category exercising the allergen/origin gate), barcodes, pack
+    hierarchies, and governed prices (below MRP, above cost).
+  - **Remaining slices:** 4c suppliers + stock (batches/expiry) + warehouse bins + customers; 4d trading
+    transactions (tills/shifts, online orders, serviceability, concession, promos, demo-marked payroll,
+    sandbox GST) — then this row flips to ✅.
   - **Operational packaging note:** the applier is the reproducible seed mechanism; wiring it to a running pilot
     API + the pilot's test IdP for a real stand-up run lands with the environment stand-up (⛔ EX-01 / OA-5 host
     decision). Categories with no write route yet (delivery slot definitions, tender-type config) are recorded in

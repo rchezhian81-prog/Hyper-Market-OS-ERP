@@ -40,9 +40,21 @@ clearly-non-real dataset for that purpose.
 - **Org skeleton:** a GST registration → a company → an active branch (filed under the demo GSTIN) → a
   warehouse. Each node is created as a draft and then activated through the real activation guard.
 
+## What Slice 4b adds (the catalogue)
+
+- **Tax/HSN:** four HSN rate schedules (rice 5%, edible oil 5%, toiletries 18%, biscuits 18%),
+  effective-dated and append-only.
+- **Categories:** a non-regulated household category and a **regulated food** category — so the
+  food-safety publish gate (allergen declaration + country of origin) is genuinely exercised.
+- **Products:** five, each **published through the real compliance gate** (mandatory name/SKU/UOM/
+  category/HSN, plus safety content for the food items), carrying a barcode and, for two, a pack
+  hierarchy (base + case, exact conversions enforced).
+- **Prices:** a governed price for every product — below MRP and above cost, so no separate approval is
+  needed (the price guard still runs).
+
 ## Roadmap (later slices, same applier framework)
 
-- **4b** — catalogue (products + categories + barcodes + UOM), tax/HSN rate schedules, prices + MRP.
+- **4b** — catalogue (products + categories + barcodes + UOM), tax/HSN rate schedules, prices + MRP. ✅ done.
 - **4c** — suppliers, stock via goods-receipt (batches + expiry), warehouse bins, customers.
 - **4d** — trading transactions: tills/shifts, sample online orders, serviceability zones, a concession
   contract, promotions/coupons, a **demo-marked** payroll draft run, sandbox GST/e-invoice records.

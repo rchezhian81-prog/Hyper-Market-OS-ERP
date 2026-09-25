@@ -5,6 +5,23 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Pilot Phase 4b — controlled seed dataset: catalogue + tax/HSN + prices (25 September 2026)
+
+Non-production. Extended the pilot seed with a small, realistic mini-catalogue laid down through the REAL
+catalogue/pricing routes (same guards as real data).
+- **`db/seed/pilot/dataset.ts`** — added `PILOT_CATALOGUE`: 4 HSN tax-rate schedules, 2 categories (one
+  non-regulated household, one **regulated food** so the allergen/origin publish gate is exercised), 5
+  products, 5 barcodes, 2 pack hierarchies, 5 governed prices (below MRP, above cost → no approval needed).
+- **`db/seed/pilot/apply.ts`** — refactored to a shared `makeRunner` and added `applyPilotCatalogue`: drives
+  tax rates → product publish (through the compliance gate, categories inline) → barcodes → packs → prices.
+- **`tests/integration/pilot-seed.test.ts`** — now 12 tests: catalogue lands (every step ok), product count
+  matches, a regulated food product keeps its safety content + tax class, a barcode resolves to its product,
+  and a pack hierarchy stores its exact conversions.
+- Gap assessment 4b marked done; `PILOT-SEED-DATASET.md` updated. Maturity: **integration tested**.
+- **Next:** 4c suppliers + stock (goods-receipt batches/expiry) + warehouse bins + customers → 4d trading.
+
+---
+
 ## Pilot Phase 4a — controlled seed dataset: framework + foundation (25 September 2026)
 
 Non-production. Started the **controlled pilot seed dataset** — a single, reproducible, clearly-non-real
