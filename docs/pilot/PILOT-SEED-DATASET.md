@@ -63,12 +63,28 @@ clearly-non-real dataset for that purpose.
 - **Customers:** two demo customers, each with a consent record (with evidence); one carries a loyalty
   points movement.
 
-## Roadmap (later slices, same applier framework)
+## What Slice 4d adds (trading transactions)
 
+A representative set of live-shaped transactions, all demo-marked, each through its own real guard:
+- **Till + shift:** a till float (opens the till) and a clean blind-count shift close (no variance).
+- **Serviceability:** a delivery-zone period (radius, fee, minimum order, free-delivery threshold).
+- **Concession:** a revenue-share concession contract for the demo bakery counter.
+- **Coupons:** a percent-off and an amount-off coupon.
+- **OMS order:** an order that **reserves against the stock seeded in 4c**.
+- **Payroll:** a clearly **demo-marked draft** pay run (no approval).
+- **Sandbox e-invoice:** a B2B invoice submitted through the real Rule-46 eligibility + field gate
+  (turnover over ₹5 crore + registered buyer), landing in the e-invoice register as `submitted`.
+
+## Roadmap — all slices complete ✅
+
+- **4a** — framework + foundation (identity, entitlements, org). ✅ done.
 - **4b** — catalogue (products + categories + barcodes + UOM), tax/HSN rate schedules, prices + MRP. ✅ done.
 - **4c** — suppliers, stock via goods-receipt (batches + expiry), warehouse bins, customers. ✅ done.
-- **4d** — trading transactions: tills/shifts, sample online orders, serviceability zones, a concession
-  contract, promotions/coupons, a **demo-marked** payroll draft run, sandbox GST/e-invoice records.
+- **4d** — trading transactions (tills/shifts, online orders, serviceability, concession, coupons,
+  demo-marked payroll, sandbox e-invoice). ✅ done.
+
+The full seed applies as `applyPilotFoundation` → `applyPilotCatalogue` → `applyPilotTradingPartners`
+→ `applyPilotTransactions`, all proven end-to-end in `tests/integration/pilot-seed.test.ts`.
 
 ## Honest boundaries
 
@@ -88,5 +104,6 @@ clearly-non-real dataset for that purpose.
 
 ## Maturity
 
-**Slice 4a: integration tested** (the seed lays down through the real surface and every step is asserted).
-It becomes **pilot verified** when it is run against the stood-up pilot environment.
+**All four slices: integration tested** — the whole seed lays down through the real surface and every
+step is asserted in `tests/integration/pilot-seed.test.ts`. It becomes **pilot verified** when it is run
+against the stood-up pilot environment (⛔ EX-01 / OA-5).

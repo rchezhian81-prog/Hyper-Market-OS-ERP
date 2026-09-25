@@ -11,7 +11,7 @@
 // No silent partial seed (P-08): every step is recorded, and the report's `ok` is false if any step
 // did not land. A caller that wants fail-fast can pass `{ throwOnError: true }`.
 
-import type { PilotFoundation, PilotCatalogue, PilotTradingPartners } from './dataset';
+import type { PilotFoundation, PilotCatalogue, PilotTradingPartners, PilotTransactions } from './dataset';
 
 export interface SeedResponse {
   readonly status: number;
@@ -338,6 +338,131 @@ export async function applyPilotTradingPartners(
         `seed-points-${customer.points.movementId}`,
       );
     }
+  }
+
+  return { tenantId, steps, ok: steps.every((s) => s.ok) };
+}
+
+/**
+ * Seed the pilot trading transactions (Slice 4d) on top of foundation + catalogue + trading partners:
+ * a till float (opens the till), a clean shift close (no variance), a serviceability period, a
+ * concession contract, coupons, an OMS order that reserves seeded stock, a demo-marked payroll draft,
+ * and a sandbox e-invoice submitted through the real Rule-46 gate. Driven as the owner, who holds every
+ * permission involved. Each write goes through its own real guard.
+ */
+export async function applyPilotTransactions(
+  client: SeedClient,
+  data: PilotTransactions,
+  actorUserId: string,
+  options: ApplyOptions = {},
+): Promise<SeedReport> {
+  const tenantId = data.tenantId;
+  const { steps, post } = makeRunner(client, tenantId, actorUserId, options);
+
+  // 1. Till floats — a float issue opens/assigns the till.
+  for (const f of data.tillFloats) {
+    await post(
+      `till float ${f.tillId}`,
+      `/v1/tills/${encodeURIComponent(f.tillId)}/cash-movements`,
+      { movementId: f.movementId, kind: 'float_issue', amountMinor: f.amountMinor, currency: 'INR', custodianId: f.custodianId, tradingDay: f.tradingDay },
+      `seed-cash-${f.movementId}`,
+    );
+  }
+
+  // 2. Shift closes — a clean blind count with no variance.
+  for (const s of data.shiftCloses) {
+    await post(
+      `shift close ${s.shiftId}`,
+      `/v1/shifts/${encodeURIComponent(s.shiftId)}/close`,
+      {
+        tillId: s.tillId, cashierId: s.cashierId, tradingDay: s.tradingDay,
+        openingFloatMinor: s.openingFloatMinor, cashSalesMinor: s.cashSalesMinor, pickupsMinor: s.pickupsMinor,
+        cashRefundsMinor: s.cashRefundsMinor, countedCashMinor: s.countedCashMinor, toleranceMinor: s.toleranceMinor,
+      },
+      `seed-shift-${s.shiftId}`,
+    );
+  }
+
+  // 3. Serviceability periods (delivery zone rules).
+  for (const sv of data.serviceability) {
+    await post(
+      `serviceability ${sv.effectiveFrom}`,
+      `/v1/serviceability/periods/${encodeURIComponent(sv.effectiveFrom)}`,
+      {
+        ...(sv.radiusMetres === undefined ? {} : { radiusMetres: sv.radiusMetres }),
+        ...(sv.minimumOrderMinor === undefined ? {} : { minimumOrderMinor: sv.minimumOrderMinor }),
+        ...(sv.deliveryFeeMinor === undefined ? {} : { deliveryFeeMinor: sv.deliveryFeeMinor }),
+        ...(sv.freeDeliveryAboveMinor === undefined ? {} : { freeDeliveryAboveMinor: sv.freeDeliveryAboveMinor }),
+      },
+      `seed-serviceability-${sv.effectiveFrom}`,
+    );
+  }
+
+  // 4. Concession contracts.
+  for (const c of data.concessions) {
+    await post(
+      `concession ${c.contractId}`,
+      `/v1/concession/contracts/${encodeURIComponent(c.contractId)}`,
+      {
+        concessionaireId: c.concessionaireId, name: c.name, branchId: c.branchId, startsOn: c.startsOn, endsOn: c.endsOn,
+        basis: c.basis, depositMinor: c.depositMinor,
+        ...(c.revenueShareBps === undefined ? {} : { revenueShareBps: c.revenueShareBps }),
+        ...(c.fixedRentMinor === undefined ? {} : { fixedRentMinor: c.fixedRentMinor }),
+        ...(c.approvedBy === undefined ? {} : { approvedBy: c.approvedBy }),
+      },
+      `seed-concession-${c.contractId}`,
+    );
+  }
+
+  // 5. Coupons.
+  for (const cp of data.coupons) {
+    await post(
+      `coupon ${cp.code}`,
+      `/v1/loyalty/coupons/${encodeURIComponent(cp.code)}`,
+      {
+        kind: cp.kind, validUntil: cp.validUntil, maxRedemptions: cp.maxRedemptions, maxPerCustomer: cp.maxPerCustomer,
+        ...(cp.valueMinor === undefined ? {} : { valueMinor: cp.valueMinor }),
+        ...(cp.percentBps === undefined ? {} : { percentBps: cp.percentBps }),
+      },
+      `seed-coupon-${cp.code}`,
+    );
+  }
+
+  // 6. OMS orders — reserve against the stock seeded in 4c.
+  for (const o of data.orders) {
+    await post(
+      `order ${o.orderId}`,
+      `/v1/orders/${encodeURIComponent(o.orderId)}/promise`,
+      { lines: o.lines, locationId: o.locationId },
+      `seed-order-${o.orderId}`,
+    );
+  }
+
+  // 7. Payroll — a demo-marked DRAFT pay run (no approval; clearly non-real).
+  for (const p of data.payRuns) {
+    await post(
+      `pay run ${p.payRunId}`,
+      `/v1/hr/payroll/pay-run/${encodeURIComponent(p.payRunId)}/append`,
+      {
+        action: 'draft', payPeriod: p.payPeriod, actor: p.actor,
+        ...(p.netTotalMinor === undefined ? {} : { netTotalMinor: p.netTotalMinor }),
+        ...(p.employeeCount === undefined ? {} : { employeeCount: p.employeeCount }),
+      },
+      `seed-payrun-${p.payRunId}`,
+    );
+  }
+
+  // 8. Sandbox e-invoices — submitted through the real Rule-46 eligibility + field gate.
+  for (const e of data.eInvoices) {
+    await post(
+      `e-invoice ${e.invoiceId}`,
+      `/v1/finance/e-invoice/invoices/${encodeURIComponent(e.invoiceId)}/submit`,
+      {
+        invoice: e.invoice, annualTurnoverMinor: e.annualTurnoverMinor, supplyType: e.supplyType, documentType: e.documentType,
+        ...(e.recipientGstin === undefined ? {} : { recipientGstin: e.recipientGstin }),
+      },
+      `seed-einvoice-${e.invoiceId}`,
+    );
   }
 
   return { tenantId, steps, ok: steps.every((s) => s.ok) };
