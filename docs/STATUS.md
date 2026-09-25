@@ -5,6 +5,29 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Pilot Phase 1 — baseline verification + release-candidate package (25 September 2026)
+
+Owner authorized moving from development into **controlled pilot preparation and UAT** (non-production only),
+accepting the baseline through PR #574. Phase 1 = verify the baseline and produce the release-candidate package.
+- **Baseline verified on the release SHA `c45b948`:** working tree clean; branch synced with `main`; **no open
+  PRs**; full gate green (`pnpm run check` — typecheck/lint/secret-scan/unit+integration/perf 31/e2e 130);
+  `pnpm audit --audit-level=high` pass (2 moderate only); SBOM no drift; and the **real-PostgreSQL 16**
+  DB/migration suite green (**287 files / 1820 tests; 11/11 migrations applied**) on a disposable cluster.
+- **RC identity:** commit **`c45b948`** is the authoritative immutable marker; annotated tag `pilot-rc-1`
+  created locally. **Remote tag push is blocked by this session's branch-scoped credentials (HTTP 403)** —
+  recorded honestly with the one-line publish command in `docs/pilot/RELEASE-MANIFEST.md`; nothing depends on
+  the remote tag (everything pins the SHA).
+- **New package `docs/pilot/`** (9 docs): release manifest, deployment checklist, env-var inventory (no
+  secrets), migration+rollback plan, compatibility checklist, known-limitations register (KL-01…14), pilot
+  feature matrix (ON/SIMULATED/DISABLED), evidence index, and the **8-phase pilot-readiness gap assessment**
+  (the roadmap for Phases 2–8).
+- **Next (autonomous):** Phase 2 pilot-environment profile + monitoring/alerts + backup/restore rehearsal →
+  Phase 4 seed dataset → Phase 3 feature-safety proof → Phase 6 failure-drill report → Phase 5 UAT assets →
+  Phase 7 gate checklist → Phase 8 consolidated readiness package. **STOP for owner GO** (and the external
+  gates: providers, credentials, legal/CA/HR, expenditure, hardware, physical scheduling, pilot/production GO).
+
+---
+
 ## Item 6 — the consolidated Owner Action Register + ledger; the six-item program CLOSES; STOP (25 September 2026)
 
 All six owner-approved buildable items are now merged and gate-green. This final slice is the honest
