@@ -6,9 +6,10 @@
 
 import { describe, it, expect } from 'vitest';
 import { apiHarness } from '../support/api-harness';
-import { applyPilotFoundation, applyPilotCatalogue } from '../../db/seed/pilot/apply';
+import { applyPilotFoundation, applyPilotCatalogue, applyPilotTradingPartners } from '../../db/seed/pilot/apply';
 import {
-  PILOT_FOUNDATION, PILOT_CATALOGUE, PILOT_DEMO_TENANT, PILOT_DEMO_BRANCH, PILOT_DEMO_GSTIN, SEED_MARKER,
+  PILOT_FOUNDATION, PILOT_CATALOGUE, PILOT_TRADING_PARTNERS, PILOT_DEMO_SUPPLIER_LOGIN,
+  PILOT_DEMO_TENANT, PILOT_DEMO_BRANCH, PILOT_DEMO_GSTIN, SEED_MARKER,
 } from '../../db/seed/pilot/dataset';
 
 const OWNER = PILOT_FOUNDATION.genesisOwner.userId;
@@ -136,5 +137,59 @@ describe('pilot seed — catalogue (Phase 4b)', () => {
     const res = await h.request({ method: 'GET', path: '/v1/catalogue/products/prod-biscuit/pack', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
     expect(res.status).toBe(200);
     expect((res.body as { pack: { levels: unknown[] } }).pack.levels).toHaveLength(2);
+  });
+});
+
+describe('pilot seed — trading partners + stock (Phase 4c)', () => {
+  const seed = async () => {
+    const h = apiHarness();
+    await applyPilotFoundation(h, PILOT_FOUNDATION, { throwOnError: true });
+    await applyPilotCatalogue(h, PILOT_CATALOGUE, OWNER, { throwOnError: true });
+    const report = await applyPilotTradingPartners(h, PILOT_TRADING_PARTNERS, OWNER);
+    return { h, report };
+  };
+
+  it('lays down suppliers, bins, a goods receipt and customers through the real routes', async () => {
+    const { report } = await seed();
+    const failed = report.steps.filter((s) => !s.ok);
+    expect(failed, `failed steps: ${JSON.stringify(failed)}`).toHaveLength(0);
+    expect(report.ok).toBe(true);
+  });
+
+  it('the goods receipt turns the delivery into sellable stock', async () => {
+    const { h } = await seed();
+    const grn = await h.request({ method: 'GET', path: '/v1/inventory/goods-receipt/grn-demo-001', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
+    expect(grn.status).toBe(200);
+    expect((grn.body as { grn: { availableMinor: number } }).grn.availableMinor).toBeGreaterThan(0);
+
+    const avail = await h.request({ method: 'GET', path: '/v1/inventory/availability', userId: OWNER, tenantId: PILOT_DEMO_TENANT, query: { productId: 'prod-rice' } });
+    expect(avail.status).toBe(200);
+    expect((avail.body as { rows: unknown[] }).rows.length).toBeGreaterThan(0);
+  });
+
+  it('a warehouse bin is stored', async () => {
+    const { h } = await seed();
+    const res = await h.request({ method: 'GET', path: '/v1/warehouse/bins/bin-demo-a1', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
+    expect(res.status).toBe(200);
+    expect((res.body as { binId: string; pickable: boolean }).binId).toBe('bin-demo-a1');
+  });
+
+  it('the supplier portal login carries the supplier role', async () => {
+    const { h } = await seed();
+    const me = await h.request({ method: 'GET', path: '/v1/identity/me', userId: PILOT_DEMO_SUPPLIER_LOGIN, tenantId: PILOT_DEMO_TENANT });
+    expect(me.status).toBe(200);
+    expect((me.body as { permissions: readonly string[] }).permissions).toContain('supplier.portal.self');
+  });
+
+  it('a demo customer has a consent record and a points balance', async () => {
+    const { h } = await seed();
+    const consent = await h.request({ method: 'GET', path: '/v1/customers/cust-demo-1/consent', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
+    expect(consent.status).toBe(200);
+    expect((consent.body as { records: unknown[] }).records.length).toBeGreaterThan(0);
+
+    const points = await h.request({ method: 'GET', path: '/v1/customers/cust-demo-1/points', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
+    expect(points.status).toBe(200);
+    expect((points.body as { pointsBalance?: number; known: boolean }).known).toBe(true);
+    expect((points.body as { pointsBalance?: number }).pointsBalance).toBe(100);
   });
 });
