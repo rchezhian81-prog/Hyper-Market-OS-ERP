@@ -77,7 +77,21 @@ never from anything the caller typed into a header or a path (OB-01).
   **port** here holds no minting code: it is the contract a real provider implements at the edge by
   verifying its upstream token and re-issuing a short-lived internal one.
 
+### Customer mobile OTP (`src/otp.ts`)
+
+A retail customer has no laptop and no password manager; their honest second factor is a code to the
+phone they already hold. `beginOtpChallenge` mints a short numeric code, stores **only its salted
+hash** (the code is a credential — never written to the challenge, a log or the database, hard rule
+#4), and hands the plaintext to the sender. `verifyOtp` accepts it **within a time window**, on a
+**small attempt budget**, **single-use** (a verified code cannot be replayed) and **tenant-scoped**
+(the right digits for the wrong tenant are refused — OB-01), and returns the challenge's new state so
+nothing is lost silently. On success the portal mints a token stamped `amr:['otp']`, so a later
+sensitive action knows how the person proved themselves. Delivery is the provider-neutral **`OtpSender`**
+port — a real SMS/WhatsApp provider implements it (externally gated); the code-revealing **simulator**
+lives in `tests/support` (never production, for the same reason the IdP does).
+
 Pure and deterministic — the timestamp is injected, there is no clock, no I/O. Tested in
-`tests/unit/identity-account.test.ts` (18), `tests/unit/identity-lifecycle.test.ts` (16) and
-`tests/unit/identity-test-idp.test.ts` (10 — the IdP↔verifier interlock and its refusals). Part
+`tests/unit/identity-account.test.ts` (18), `tests/unit/identity-lifecycle.test.ts` (16),
+`tests/unit/identity-test-idp.test.ts` (10 — the IdP↔verifier interlock and its refusals) and
+`tests/unit/identity-otp.test.ts` (10 — OTP lifecycle + the OTP→token composition). Part
 of the repository layout in `CLAUDE.md`.

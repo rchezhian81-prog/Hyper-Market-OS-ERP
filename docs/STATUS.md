@@ -5,6 +5,25 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Item 1 (login) slice 1b — customer mobile OTP (25 September 2026)
+
+Second slice of the portal login. The retail customer's second factor is a code to their phone.
+- **`packages/identity/src/otp.ts`** (new) — `beginOtpChallenge` mints a code and stores **only its
+  salted hash** (the code is a credential — hard rule #4); `verifyOtp` accepts it within a time
+  window, on an attempt budget, **single-use** and **tenant-scoped** (OB-01). Delivery is the
+  provider-neutral **`OtpSender`** port (real SMS gated).
+- **`tests/support/otp-simulator.ts`** (new, **never production**) — a code-revealing SMS stand-in
+  for dev/E2E; covered by the `no-test-idp-in-production` guardrail.
+- **`tests/unit/identity-otp.test.ts`** (new, +10) — lifecycle (verify / wrong-code-spends-an-attempt
+  / exhausted / expired / replay refused / cross-tenant refused / code never stored) + the
+  **composition**: a sent code completes the flow and mints a token stamped `amr:['otp']` the real
+  `verifyToken` accepts; a failed OTP mints nothing.
+- **Honest rung:** implementation complete + simulator-verified; live SMS provider is the only gate.
+  Next Item-1 slices: org invitation/membership → tenant/customer-account binding → MFA/re-auth →
+  session expiry/revocation/audit → authenticated browser E2E.
+
+---
+
 ## Owner decisions received — gates opened; Item 1 (login) slice 1a done (25 September 2026)
 
 The owner reviewed the stop-point below, accepted the 16 merged PRs, and issued **six approved
