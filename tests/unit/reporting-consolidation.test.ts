@@ -5,10 +5,14 @@ import {
   branchesUnder,
   visibleBranches,
   consolidate,
+  consolidationExportRows,
+  CONSOLIDATION_EXPORT_COLUMNS,
   type BranchContribution,
   type BranchMembership,
   type ReportScope,
 } from '../../packages/reporting/src/index';
+import { exportDomain, type ExportSpec } from '../../packages/export/src/index';
+import { AccessControl, AccessDeniedError, type Role, type RoleAssignment } from '../../packages/rbac/src/index';
 
 // Company-wide consolidation (M01 / M29 / D13, owner decision) — org roll-ups + drill-down. Idempotent
 // branch ingestion; corrections supersede; effective-dated hierarchy; provenance + worst-freshness; missing
@@ -172,5 +176,96 @@ describe('consolidate — roll up, reconcile, carry provenance, enforce scope', 
     ];
     const r = consolidate({ nodeId: 'co-1', family: 'returns', period: '2026-09', contributions, memberships, scope: ALL, asOf: '2026-09-10T10:00:00.000Z', staleAfterSeconds: 86_400 });
     expect(r.measures).toEqual({ refundMinor: 5500, count: 4 });
+  });
+});
+
+// The export-with-authorization + audit leg (owner decision, M30-FR-02 / §28). A consolidated report can be
+// taken out as an open CSV — but only through the ONE export path the rest of the system uses, so authorization,
+// branch scope and the audit record are enforced identically. `consolidationExportRows` shapes the data;
+// `@sre/export`'s `exportDomain` applies the controls. No proprietary-only route to the numbers (NFR-12 / OD-09).
+describe('consolidationExportRows — flatten contributors to export rows', () => {
+  const report = consolidate({
+    nodeId: 'co-1', family: 'sales', period: '2026-09',
+    contributions: [
+      contrib({ branchId: 'br-1', measures: { grossMinor: 100000, netMinor: 90000, commissionMinor: 1500 } }),
+      contrib({ branchId: 'br-2', measures: { grossMinor: 250000, netMinor: 225000 } }), // no commission measure
+    ],
+    memberships, scope: ALL, asOf: '2026-09-10T10:00:00.000Z', staleAfterSeconds: 86_400,
+  });
+
+  it('emits one row per contributor, worst-first, with the report family and period on every row', () => {
+    const rows = consolidationExportRows(report);
+    expect(rows.map((r) => r['branch_id'])).toEqual(['br-2', 'br-1']); // worst-first, same order as the drill-down
+    expect(rows.every((r) => r['family'] === 'sales' && r['period'] === '2026-09')).toBe(true);
+  });
+
+  it('emits money as whole minor units and a missing measure as "0", never blank (a sum is never fooled)', () => {
+    const rows = consolidationExportRows(report);
+    const br1 = rows.find((r) => r['branch_id'] === 'br-1')!;
+    expect(br1).toMatchObject({ gross_minor: '100000', net_minor: '90000', commission_minor: '1500' });
+    const br2 = rows.find((r) => r['branch_id'] === 'br-2')!;
+    expect(br2['commission_minor']).toBe('0'); // absent measure → '0', not ''
+  });
+
+  it('every declared export column is present on every row', () => {
+    for (const row of consolidationExportRows(report)) {
+      for (const col of CONSOLIDATION_EXPORT_COLUMNS) expect(row[col]).toBeDefined();
+    }
+  });
+});
+
+describe('exporting a consolidated report — authorization, branch scope and audit are enforced', () => {
+  const SPEC: ExportSpec = {
+    domain: 'reporting.consolidation',
+    requires: 'reporting.report.read',
+    branchColumn: 'branch_id',
+    columns: [
+      { name: 'branch_id', type: 'text', description: 'Contributing branch' },
+      { name: 'family', type: 'enum' },
+      { name: 'period', type: 'text' },
+      { name: 'gross_minor', type: 'money_minor' },
+      { name: 'net_minor', type: 'money_minor' },
+      { name: 'commission_minor', type: 'money_minor' },
+    ],
+  };
+  const rows = consolidationExportRows(
+    consolidate({
+      nodeId: 'co-1', family: 'sales', period: '2026-09',
+      contributions: [
+        contrib({ branchId: 'br-1', measures: { grossMinor: 100000, netMinor: 90000 } }),
+        contrib({ branchId: 'br-2', measures: { grossMinor: 250000, netMinor: 225000 } }),
+      ],
+      memberships, scope: ALL, asOf: '2026-09-10T10:00:00.000Z', staleAfterSeconds: 86_400,
+    }),
+  );
+  const ROLES: Role[] = [
+    { id: 'owner', name: 'Owner', permissions: ['reporting.report.read'] },
+    { id: 'mgr', name: 'Branch manager', permissions: ['reporting.report.read'] },
+    { id: 'cashier', name: 'Cashier', permissions: ['sales.view'] },
+  ];
+  const ASSIGNMENTS: RoleAssignment[] = [
+    { userId: 'owner-1', roleId: 'owner', branchScope: 'all' },
+    { userId: 'mgr-1', roleId: 'mgr', branchScope: ['br-1'] },
+    { userId: 'cashier-1', roleId: 'cashier', branchScope: ['br-1'] },
+  ];
+  const access = new AccessControl(ROLES, ASSIGNMENTS);
+  const AT = '2026-09-25T10:00:00.000Z';
+
+  it('refuses a user without the report-read permission (default-deny, P-04)', () => {
+    expect(() => exportDomain(SPEC, rows, access, { userId: 'cashier-1', branchId: 'br-1', at: AT })).toThrow(AccessDeniedError);
+  });
+
+  it('a branch manager exports only their branch — another branch never leaves in the file (§28)', () => {
+    const out = exportDomain(SPEC, rows, access, { userId: 'mgr-1', branchId: 'br-1', at: AT });
+    expect(out.audit.rowCount).toBe(1);
+    expect(out.csv).toContain('br-1');
+    expect(out.csv).not.toContain('br-2');
+  });
+
+  it('the owner exports the whole company, and the export is logged (M30-FR-02)', () => {
+    const out = exportDomain(SPEC, rows, access, { userId: 'owner-1', branchId: null, at: AT });
+    expect(out.audit).toMatchObject({ userId: 'owner-1', domain: 'reporting.consolidation', branchId: null, rowCount: 2 });
+    expect(out.csv).toContain('br-1');
+    expect(out.csv).toContain('br-2');
   });
 });

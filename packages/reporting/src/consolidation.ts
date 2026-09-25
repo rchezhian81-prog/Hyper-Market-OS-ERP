@@ -246,3 +246,25 @@ export function consolidate(input: {
       (roll.state !== 'fresh' ? `; data is ${roll.state}` : ''),
   };
 }
+
+/** The column names of a consolidation export, in order. `branch_id` is the scope column. */
+export const CONSOLIDATION_EXPORT_COLUMNS = ['branch_id', 'family', 'period', 'gross_minor', 'net_minor', 'commission_minor'] as const;
+
+/**
+ * Flatten a consolidated report's per-branch contributors into export rows (string cells, the shape
+ * `@sre/export`'s `exportDomain` consumes). Money is emitted as whole minor units; a measure the family
+ * does not carry is `'0'`, never blank, so a downstream sum is never fooled. The caller pairs these rows
+ * with an `ExportSpec` (permission + `branchColumn: 'branch_id'`) so authorization, branch scope and the
+ * audit record are enforced by the one export path the rest of the system uses — this only shapes the data.
+ */
+export function consolidationExportRows(report: ConsolidatedReport): readonly Record<string, string>[] {
+  const cell = (m: Readonly<Record<string, number>>, k: string): string => String(m[k] ?? 0);
+  return report.contributors.map((c) => ({
+    branch_id: c.branchId,
+    family: report.family,
+    period: report.period,
+    gross_minor: cell(c.measures, 'grossMinor'),
+    net_minor: cell(c.measures, 'netMinor'),
+    commission_minor: cell(c.measures, 'commissionMinor'),
+  }));
+}
