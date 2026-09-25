@@ -52,10 +52,21 @@ clearly-non-real dataset for that purpose.
 - **Prices:** a governed price for every product — below MRP and above cost, so no separate approval is
   needed (the price guard still runs).
 
+## What Slice 4c adds (trading partners + stock)
+
+- **Suppliers:** two supplier partners with portal grants; the food supplier's portal login is
+  provisioned the `supplier` role (completing the login deferred from 4a).
+- **Warehouse bins:** an ambient and a chilled bin in the demo warehouse.
+- **Stock:** one goods receipt run **through the real receiving gate** — five lines received into the
+  warehouse; the three food lines are batch-tracked with a batch id and a future expiry, all in good
+  condition, so they become **sellable on-hand** (the gate refuses expired/undocumented batches).
+- **Customers:** two demo customers, each with a consent record (with evidence); one carries a loyalty
+  points movement.
+
 ## Roadmap (later slices, same applier framework)
 
 - **4b** — catalogue (products + categories + barcodes + UOM), tax/HSN rate schedules, prices + MRP. ✅ done.
-- **4c** — suppliers, stock via goods-receipt (batches + expiry), warehouse bins, customers.
+- **4c** — suppliers, stock via goods-receipt (batches + expiry), warehouse bins, customers. ✅ done.
 - **4d** — trading transactions: tills/shifts, sample online orders, serviceability zones, a concession
   contract, promotions/coupons, a **demo-marked** payroll draft run, sandbox GST/e-invoice records.
 

@@ -5,6 +5,25 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Pilot Phase 4c — controlled seed dataset: suppliers + stock + bins + customers (25 September 2026)
+
+Non-production. Extended the pilot seed with trading partners and on-hand stock, laid down through the
+REAL supplier/warehouse/inventory/customer routes.
+- **`db/seed/pilot/dataset.ts`** — added `PILOT_TRADING_PARTNERS`: 2 suppliers (+ a `supplier` portal
+  login), 2 warehouse bins (ambient + chilled), one goods receipt (5 lines; the 3 food lines batch-tracked
+  with a future expiry, all condition `good` → sellable on-hand through the real receiving gate), and 2 demo
+  customers (consent-with-evidence; one with a loyalty points movement).
+- **`db/seed/pilot/apply.ts`** — added `applyPilotTradingPartners`: suppliers (+ role-provision each login)
+  → bins → goods receipt → customers (consent + points).
+- **`tests/integration/pilot-seed.test.ts`** — now 17 tests: 4c cases assert the receipt turns the delivery
+  into sellable stock (availability > 0), a bin is stored, the supplier login carries `supplier.portal.self`,
+  and a demo customer has a consent record + a 100-point balance.
+- Gap assessment 4c marked done; `PILOT-SEED-DATASET.md` updated. Maturity: **integration tested**.
+- **Next:** 4d trading transactions (tills/shifts, online orders, serviceability, concession, promos,
+  demo-marked payroll, sandbox GST/e-invoice) — the last Phase-4 slice.
+
+---
+
 ## Pilot Phase 4b — controlled seed dataset: catalogue + tax/HSN + prices (25 September 2026)
 
 Non-production. Extended the pilot seed with a small, realistic mini-catalogue laid down through the REAL

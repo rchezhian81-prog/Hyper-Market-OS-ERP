@@ -197,6 +197,8 @@ export interface PilotCatalogue {
 
 const INR = 'INR';
 const TAX_FROM = '2026-01-01';
+const RECEIVED_ON = '2026-09-25';
+const DEMO_EXPIRY = '2027-06-30';
 
 export const PILOT_CATALOGUE: PilotCatalogue = {
   tenantId: PILOT_DEMO_TENANT,
@@ -251,3 +253,120 @@ export const PILOT_CATALOGUE: PilotCatalogue = {
     },
   ],
 };
+
+// ── Slice 4c: suppliers + stock (batches/expiry) + warehouse bins + customers ──
+// Trading partners and on-hand stock, all in the demo tenant. Stock is created through the real
+// goods-receipt gate (batch-tracked food needs a batch + a FUTURE expiry, condition 'good' → sellable).
+
+/** Supplier portal grant — matches the catalogue in services/purchase supplier-portal. */
+export type SeedPortalGrant =
+  | 'view_orders' | 'acknowledge_orders' | 'submit_asn' | 'submit_invoice'
+  | 'submit_catalogue' | 'respond_rfq' | 'raise_claim' | 'view_statement';
+
+export interface SeedSupplier {
+  readonly partnerId: string;
+  readonly name: string;
+  readonly grants: readonly SeedPortalGrant[];
+  /** Portal login user ids (each is provisioned the `supplier` role). */
+  readonly logins: readonly string[];
+}
+
+export type SeedBinZone = 'ambient' | 'chilled' | 'frozen' | 'secure' | 'quarantine';
+
+export interface SeedBin {
+  readonly binId: string;
+  readonly storeId: string;
+  readonly capacityMinor: number;
+  readonly pickable: boolean;
+  readonly zone?: SeedBinZone;
+}
+
+export interface SeedReceiptLine {
+  readonly lineId: string;
+  readonly productId: string;
+  readonly orderedMinor: number;
+  readonly countedMinor: number;
+  readonly uom: string;
+  readonly unitCostMinor: number;
+  readonly condition: 'good' | 'damaged' | 'temperature_breach';
+  readonly batchId?: string;
+  readonly expiry?: string;
+}
+
+export interface SeedGoodsReceipt {
+  readonly grnId: string;
+  readonly warehouseId: string;
+  readonly receivedOnDate: string;
+  readonly currency: string;
+  readonly lines: readonly SeedReceiptLine[];
+  readonly rules: readonly { readonly productId: string; readonly batchTracked: boolean }[];
+  readonly policy: { readonly excessToleranceBp: number; readonly shortageToleranceBp: number; readonly nearExpiryDays: number };
+}
+
+export interface SeedCustomer {
+  readonly customerId: string;
+  readonly consent: { readonly purpose: string; readonly channel: string; readonly given: boolean; readonly evidence: string };
+  readonly points?: { readonly movementId: string; readonly kind: 'earn'; readonly points: number; readonly sourceRef?: string };
+}
+
+export interface PilotTradingPartners {
+  readonly tenantId: string;
+  readonly suppliers: readonly SeedSupplier[];
+  readonly bins: readonly SeedBin[];
+  readonly goodsReceipts: readonly SeedGoodsReceipt[];
+  readonly customers: readonly SeedCustomer[];
+}
+
+export const PILOT_TRADING_PARTNERS: PilotTradingPartners = {
+  tenantId: PILOT_DEMO_TENANT,
+  suppliers: [
+    {
+      partnerId: 'sup-demo-foods', name: 'Demo Foods Distributors (demo)',
+      grants: ['view_orders', 'acknowledge_orders', 'submit_invoice', 'view_statement'],
+      logins: ['pilot-supplier'],
+    },
+    {
+      partnerId: 'sup-demo-household', name: 'Demo Household Supplies (demo)',
+      grants: ['view_orders', 'submit_asn'],
+      logins: [],
+    },
+  ],
+  bins: [
+    { binId: 'bin-demo-a1', storeId: WAREHOUSE_ID, capacityMinor: 1_000_000, pickable: true, zone: 'ambient' },
+    { binId: 'bin-demo-c1', storeId: WAREHOUSE_ID, capacityMinor: 500_000, pickable: true, zone: 'chilled' },
+  ],
+  goodsReceipts: [
+    {
+      grnId: 'grn-demo-001', warehouseId: WAREHOUSE_ID, receivedOnDate: RECEIVED_ON, currency: INR,
+      policy: { excessToleranceBp: 500, shortageToleranceBp: 500, nearExpiryDays: 30 },
+      rules: [
+        { productId: 'prod-soap', batchTracked: false },
+        { productId: 'prod-brush', batchTracked: false },
+        { productId: 'prod-rice', batchTracked: true },
+        { productId: 'prod-biscuit', batchTracked: true },
+        { productId: 'prod-oil', batchTracked: true },
+      ],
+      lines: [
+        { lineId: 'l1', productId: 'prod-soap', orderedMinor: 100_000, countedMinor: 100_000, uom: 'each', unitCostMinor: 2000, condition: 'good' },
+        { lineId: 'l2', productId: 'prod-brush', orderedMinor: 60_000, countedMinor: 60_000, uom: 'each', unitCostMinor: 1500, condition: 'good' },
+        { lineId: 'l3', productId: 'prod-rice', orderedMinor: 200_000, countedMinor: 200_000, uom: 'kg', unitCostMinor: 5000, condition: 'good', batchId: 'BATCH-RICE-2609', expiry: DEMO_EXPIRY },
+        { lineId: 'l4', productId: 'prod-biscuit', orderedMinor: 80_000, countedMinor: 80_000, uom: 'each', unitCostMinor: 1800, condition: 'good', batchId: 'BATCH-BISC-2609', expiry: DEMO_EXPIRY },
+        { lineId: 'l5', productId: 'prod-oil', orderedMinor: 120_000, countedMinor: 120_000, uom: 'litre', unitCostMinor: 9000, condition: 'good', batchId: 'BATCH-OIL-2609', expiry: DEMO_EXPIRY },
+      ],
+    },
+  ],
+  customers: [
+    {
+      customerId: 'cust-demo-1',
+      consent: { purpose: 'transactional', channel: 'in_store', given: true, evidence: 'captured at the till on 2026-09-25 (demo)' },
+      points: { movementId: 'pts-demo-1', kind: 'earn', points: 100, sourceRef: 'seed-welcome-bonus' },
+    },
+    {
+      customerId: 'cust-demo-2',
+      consent: { purpose: 'marketing', channel: 'sms', given: true, evidence: 'opted in via SMS keyword JOIN (demo)' },
+    },
+  ],
+};
+
+/** The demo supplier login that Slice 4c provisions the `supplier` role for. */
+export const PILOT_DEMO_SUPPLIER_LOGIN = 'pilot-supplier';

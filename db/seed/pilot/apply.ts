@@ -11,7 +11,7 @@
 // No silent partial seed (P-08): every step is recorded, and the report's `ok` is false if any step
 // did not land. A caller that wants fail-fast can pass `{ throwOnError: true }`.
 
-import type { PilotFoundation, PilotCatalogue } from './dataset';
+import type { PilotFoundation, PilotCatalogue, PilotTradingPartners } from './dataset';
 
 export interface SeedResponse {
   readonly status: number;
@@ -248,6 +248,96 @@ export async function applyPilotCatalogue(
       },
       `seed-price-${product.productId}`,
     );
+  }
+
+  return { tenantId, steps, ok: steps.every((s) => s.ok) };
+}
+
+/**
+ * Seed the pilot trading partners + on-hand stock (Slice 4c) on top of foundation + catalogue:
+ * suppliers (and their portal logins, provisioned the `supplier` role), warehouse bins, a goods
+ * receipt that turns a delivery into sellable stock through the REAL receiving gate (batch-tracked
+ * food carries a batch + a future expiry), and demo customers (consent + a points movement). Driven
+ * as the owner, who holds every permission involved.
+ */
+export async function applyPilotTradingPartners(
+  client: SeedClient,
+  data: PilotTradingPartners,
+  actorUserId: string,
+  options: ApplyOptions = {},
+): Promise<SeedReport> {
+  const tenantId = data.tenantId;
+  const { steps, record, post } = makeRunner(client, tenantId, actorUserId, options);
+
+  // 1. Suppliers, then provision each portal login the `supplier` role.
+  for (const supplier of data.suppliers) {
+    await post(
+      `supplier ${supplier.partnerId}`,
+      `/v1/supplier-portal/partners/${encodeURIComponent(supplier.partnerId)}`,
+      { grants: supplier.grants, documents: [], requiredDocuments: [], logins: supplier.logins },
+      `seed-supplier-${supplier.partnerId}`,
+    );
+    for (const login of supplier.logins) {
+      try {
+        await client.provisionRole(tenantId, login, 'supplier');
+        record({ what: `supplier login ${login}`, ok: true });
+      } catch (err) {
+        record({ what: `supplier login ${login}`, ok: false, detail: err instanceof Error ? err.message : String(err) });
+      }
+    }
+  }
+
+  // 2. Warehouse bins.
+  for (const bin of data.bins) {
+    await post(
+      `bin ${bin.binId}`,
+      `/v1/warehouse/bins/${encodeURIComponent(bin.binId)}`,
+      { storeId: bin.storeId, capacityMinor: bin.capacityMinor, pickable: bin.pickable, ...(bin.zone === undefined ? {} : { zone: bin.zone }) },
+      `seed-bin-${bin.binId}`,
+    );
+  }
+
+  // 3. Goods receipts — the real receiving gate turns each delivery into sellable stock.
+  for (const grn of data.goodsReceipts) {
+    await post(
+      `goods receipt ${grn.grnId}`,
+      `/v1/inventory/goods-receipt/${encodeURIComponent(grn.grnId)}`,
+      {
+        warehouseId: grn.warehouseId,
+        receivedOnDate: grn.receivedOnDate,
+        currency: grn.currency,
+        rules: grn.rules,
+        policy: grn.policy,
+        lines: grn.lines.map((l) => ({
+          lineId: l.lineId, productId: l.productId, orderedMinor: l.orderedMinor, countedMinor: l.countedMinor,
+          uom: l.uom, unitCost: { minor: l.unitCostMinor, currency: grn.currency }, condition: l.condition,
+          ...(l.batchId === undefined ? {} : { batchId: l.batchId }),
+          ...(l.expiry === undefined ? {} : { expiry: l.expiry }),
+        })),
+      },
+      `seed-grn-${grn.grnId}`,
+    );
+  }
+
+  // 4. Customers — a consent record (with evidence) and, where given, a points movement.
+  for (const customer of data.customers) {
+    await post(
+      `customer consent ${customer.customerId}`,
+      `/v1/customers/${encodeURIComponent(customer.customerId)}/consent`,
+      customer.consent,
+      `seed-consent-${customer.customerId}`,
+    );
+    if (customer.points !== undefined) {
+      await post(
+        `customer points ${customer.customerId}`,
+        `/v1/customers/${encodeURIComponent(customer.customerId)}/points`,
+        {
+          movementId: customer.points.movementId, kind: customer.points.kind, points: customer.points.points,
+          ...(customer.points.sourceRef === undefined ? {} : { sourceRef: customer.points.sourceRef }),
+        },
+        `seed-points-${customer.points.movementId}`,
+      );
+    }
   }
 
   return { tenantId, steps, ok: steps.every((s) => s.ok) };
