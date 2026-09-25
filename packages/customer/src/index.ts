@@ -26,6 +26,10 @@
 //     authorisation (a second officer must approve; the preparer cannot, SoD §28), a PII-free
 //     privacy tombstone recording what was erased/kept, and a prevent-restore guard that turns a
 //     late sync/re-import re-creating an erased subject into a visible exception (hard rule #10).
+//   • `processor-erasure-notice.ts` (M20-FR-04 / PRV / DPDP, owner decision) — plans the notices that tell
+//     the processors/sub-processors we SHARED a customer's data with to erase their copy too, provider-
+//     neutrally: one notice per processor holding an affected category, enqueued on the existing durable
+//     connector queue (retry + read-never-deleted dead letter), never a new queue.
 //
 // Pure and deterministic. Grows one reviewed, tested unit at a time.
 
@@ -34,6 +38,7 @@ export * from './consent';
 export * from './data-rights';
 export * from './erasure-executor';
 export * from './erasure-governance';
+export * from './processor-erasure-notice';
 export * from './segments';
 export * from './child-data-guard';
 export * from './breach-notification';

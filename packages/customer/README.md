@@ -51,6 +51,15 @@ data.
   a silent last-write-wins (hard rule #10, P-08), while a lawful retained record that only references the
   pseudonymised ref is allowed through. Pure and deterministic; the caller records each on an append-only
   trail. Wiring it onto the live route + a served DPO console are the buildable follow-ons.
+- **`src/processor-erasure-notice.ts`** (M20-FR-04 / PRV / DPDP, owner decision) — when the shop erases a
+  customer, the data it **shared** with processors/sub-processors (an SMS gateway, an email sender, a
+  loyalty or analytics provider) must be erased there too. `planProcessorErasureNotices` produces **one
+  notice per processor that holds an affected category**, for that intersection only — a processor that
+  shared only a legally-retained category is **not** told to erase (there is nothing to erase there). It
+  invents **no** delivery queue: each notice is a message on the shop's existing tested, provider-neutral
+  **connector queue** (`packages/integration/src/connector.ts`, M32-FR-02), so an unreachable processor is
+  retried and then **dead-lettered for a person, never lost** (hard rules #6 #8, P-08), and a stable key
+  per (request, processor) means a resend never doubles. Pure and deterministic; nothing is sent here.
 - **`src/segments.ts`** (M16-FR-04) — segments and lifetime value are **derived opinions about
   a person**, not facts, and acting on them changes how the shop treats someone. So: **no
   profiling without a lawful basis** — a non-consenting customer comes back as `not_profiled`
@@ -94,5 +103,6 @@ data.
 
 > Pure and deterministic. PII is minimized and compared via normalized values only. Tested in
 > `tests/unit/customer.test.ts` (9), `tests/unit/customer-data-rights.test.ts` (12),
-> `tests/unit/customer-erasure-executor.test.ts`, `tests/unit/customer-erasure-governance.test.ts` (13)
-> and `tests/unit/customer-segments.test.ts` (15). Part of the repository layout in `CLAUDE.md`.
+> `tests/unit/customer-erasure-executor.test.ts`, `tests/unit/customer-erasure-governance.test.ts` (13),
+> `tests/unit/customer-processor-erasure-notice.test.ts` (6) and `tests/unit/customer-segments.test.ts` (15).
+> Part of the repository layout in `CLAUDE.md`.
