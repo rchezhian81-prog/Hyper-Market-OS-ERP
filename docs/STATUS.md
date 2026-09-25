@@ -5,6 +5,27 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Item 1 (login) slice 1f — authenticated browser E2E — **Item 1 COMPLETE** (25 September 2026)
+
+Final slice of the portal login: the whole flow proven in a real browser.
+- **`apps/customer-app/web/login.html` + `web/login.js`** (new) — the served sign-in screen, a **thin
+  client**: no password, no signing key, no token-minting code (hard rule #4); holds only the
+  short-lived session token in memory.
+- **`tests/e2e/customer-login.e2e.ts`** (new, +1 real-browser) — the Node server plays the auth
+  backend with the **production engines** (`beginOtpChallenge`/`verifyOtp`, `verifyToken`,
+  `evaluateStepUp`, `decideTokenSession`, `revokeSession`) + local/test IdP + OTP simulator. Chromium
+  drives: phone → the code that reached the phone (simulator) → verified OTP sign-in mints a session →
+  ordinary action **allowed** → sensitive action prompts **step-up** → **sign-out REVOKES** so the
+  same still-unexpired token, replayed from the browser, is refused `session_invalid`. Passed against
+  real Chromium (762ms); self-skips with no browser.
+- **ITEM 1 (B2B/customer portal login) buildable scope is now COMPLETE** across 1a–1f: provider-neutral
+  OIDC/OAuth port + local/test IdP; customer OTP; org invitation/membership; tenant/account binding +
+  MFA/re-auth step-up; session expiry/revocation/audit; authenticated browser E2E. The only remaining
+  gate is the **production IdP/SMS provider selection + credentials** (live verification).
+- **Next:** Item 2 (delivery-substitution exception ownership), then Items 3–6.
+
+---
+
 ## Item 1 (login) slice 1e — session revocation & auth audit (25 September 2026)
 
 Fifth slice of the portal login: cutting a session short, and recording who did what.
