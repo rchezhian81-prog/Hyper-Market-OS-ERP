@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE — Concession line</title>
+    <!--
+      Till-side concession tagging panel (M27, owner decision). A THIN CLIENT by design: it holds no
+      pricing, no commission logic and no minter. A cashier records a partner-counter line FROM AN
+      APPROVED SOURCE (a docket / app reference); the backend runs the production @sre/concession engine
+      (captureConcessionTagIdempotent / reverseConcessionTag) and returns the tag. Only a supervisor may
+      correct a posted tag, by a reversal — never a silent rewrite (SoD §28, hard rule #2). In production
+      the backend is the cloud POS/concession API; in the browser E2E it is a local Node server running
+      the SAME engine, so no money logic ever enters this page.
+    -->
+    <style>
+      :root {
+        --bg: #f7f7f9; --panel: #ffffff; --ink: #14161a; --muted: #5b6270;
+        --line: #d9dce3; --accent: #1f6f4a; --accent-ink: #ffffff;
+        --good: #1f6f4a; --warn: #8a5a00; --danger: #a12622;
+      }
+      :root:not([data-theme='light']) {
+        @media (prefers-color-scheme: dark) {
+          --bg: #12141a; --panel: #1b1e27; --ink: #eef0f4; --muted: #a3abba;
+          --line: #313746; --accent: #43c78a; --accent-ink: #06251a;
+          --good: #43c78a; --warn: #e0a53a; --danger: #f0857f;
+        }
+      }
+      :root[data-theme='dark'] {
+        --bg: #12141a; --panel: #1b1e27; --ink: #eef0f4; --muted: #a3abba;
+        --line: #313746; --accent: #43c78a; --accent-ink: #06251a;
+        --good: #43c78a; --warn: #e0a53a; --danger: #f0857f;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--ink);
+        font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        min-height: 100dvh; padding: 16px; display: grid; place-items: start center;
+      }
+      main { width: min(640px, 100%); display: grid; gap: 16px; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: grid; gap: 12px; }
+      h1 { margin: 0; font-size: 22px; }
+      h2 { margin: 0; font-size: 17px; }
+      p.lede { margin: 0; color: var(--muted); font-size: 14px; }
+      label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; }
+      input, select {
+        font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
+        background: var(--bg); color: var(--ink); min-height: 44px;
+      }
+      .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      button {
+        font: inherit; font-weight: 600; min-height: 44px; border-radius: 10px; border: 0;
+        background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px;
+      }
+      button.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible { outline: 3px solid #7fb8ff; outline-offset: 2px; }
+      .status { font-size: 14px; min-height: 20px; }
+      .status.good { color: var(--good); } .status.warn { color: var(--warn); } .status.err { color: var(--danger); }
+      table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 14px; }
+      th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+      th:first-child, td:first-child { text-align: left; }
+      .totals { font-weight: 700; }
+      .foot { color: var(--muted); font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section>
+        <h1>Concession line <span lang="ta">/ கூட்டுறவு வரி</span></h1>
+        <p class="lede">Record a partner-counter sale from the approved docket. <span lang="ta">அங்கீகரிக்கப்பட்ட ஆவணத்திலிருந்து பதிவு செய்யவும்.</span></p>
+
+        <label for="role">You are <span lang="ta">/ நீங்கள்</span>
+          <select id="role">
+            <option value="cashier">Cashier / விற்பனையாளர்</option>
+            <option value="supervisor">Supervisor / மேற்பார்வையாளர்</option>
+          </select>
+        </label>
+
+        <div class="grid2">
+          <label for="concessionaireId">Partner <span lang="ta">/ கூட்டாளர்</span>
+            <input id="concessionaireId" value="jeweller-1" />
+          </label>
+          <label for="counterId">Counter <span lang="ta">/ கவுண்டர்</span>
+            <input id="counterId" value="counter-gold" />
+          </label>
+          <label for="productId">Product <span lang="ta">/ பொருள்</span>
+            <input id="productId" value="ring-22k" />
+          </label>
+          <label for="qty">Qty <span lang="ta">/ அளவு</span>
+            <input id="qty" type="number" inputmode="numeric" value="1" min="1" />
+          </label>
+          <label for="grossMinor">Gross (paise) <span lang="ta">/ மொத்தம்</span>
+            <input id="grossMinor" type="number" inputmode="numeric" value="100000" />
+          </label>
+          <label for="discountMinor">Discount (paise) <span lang="ta">/ தள்ளுபடி</span>
+            <input id="discountMinor" type="number" inputmode="numeric" value="0" />
+          </label>
+          <label for="taxMinor">Tax (paise) <span lang="ta">/ வரி</span>
+            <input id="taxMinor" type="number" inputmode="numeric" value="3000" />
+          </label>
+          <label for="source">Approved source <span lang="ta">/ ஆதாரம்</span>
+            <input id="source" value="docket-8842" />
+          </label>
+        </div>
+        <button id="record" type="button">Record line</button>
+        <p class="status" id="status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section>
+        <h2>Tagged lines <span lang="ta">/ பதிவு செய்யப்பட்ட வரிகள்</span></h2>
+        <table>
+          <thead>
+            <tr><th>Tag</th><th>Kind</th><th>Gross</th><th>Net</th><th>Commission</th><th>Reverse</th></tr>
+          </thead>
+          <tbody id="rows"></tbody>
+          <tfoot>
+            <tr class="totals"><td colspan="2">Totals (net of reversals)</td><td id="t-gross">0</td><td id="t-net">0</td><td id="t-commission">0</td><td></td></tr>
+          </tfoot>
+        </table>
+        <p class="foot">A posted line is never rewritten. Only a supervisor may reverse one; the reversal is added on top and the original stays.</p>
+      </section>
+    </main>
+    <script type="module" src="./concession-tag.js"></script>
+  </body>
+</html>
