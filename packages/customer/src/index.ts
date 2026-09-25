@@ -21,6 +21,11 @@
 //   • `retention-clock.ts` (C3 / DPDP s.8(7)) — the automated clock that erases personal data
 //     once its purpose is served or consent is withdrawn, through a pre-erasure notice, keeping
 //     what the law requires (minimise / retain) as `planErasure` does.
+//   • `erasure-governance.ts` (M20-FR-04 / PRV / DPDP, owner decision — DEVELOPMENT-APPROVED,
+//     LEGAL CONFIRMATION REQUIRED) — the controls around carrying out an erasure: maker-checker
+//     authorisation (a second officer must approve; the preparer cannot, SoD §28), a PII-free
+//     privacy tombstone recording what was erased/kept, and a prevent-restore guard that turns a
+//     late sync/re-import re-creating an erased subject into a visible exception (hard rule #10).
 //
 // Pure and deterministic. Grows one reviewed, tested unit at a time.
 
@@ -28,6 +33,7 @@ export * from './matching';
 export * from './consent';
 export * from './data-rights';
 export * from './erasure-executor';
+export * from './erasure-governance';
 export * from './segments';
 export * from './child-data-guard';
 export * from './breach-notification';
