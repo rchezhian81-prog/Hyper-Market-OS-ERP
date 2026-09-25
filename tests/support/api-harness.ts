@@ -82,10 +82,17 @@ export interface ApiHarness {
  * Build a harness over the given store (in-memory by default) and idempotency store. Pass a
  * `SqlEventStore` + `SqlIdempotencyStore` for a real-database E2E; omit both for a fast in-memory one.
  */
-export function apiHarness(opts: { store?: EventStore; idempotency?: IdempotencyStore; observe?: (o: RequestObservation) => void } = {}): ApiHarness {
+export function apiHarness(opts: {
+  store?: EventStore;
+  idempotency?: IdempotencyStore;
+  observe?: (o: RequestObservation) => void;
+  /** The migration target kind the surface runs against — defaults to the safe 'rehearsal'. Pass
+   *  'production' to assert the never-touch-production guard (`assertSafeTarget` → 403). */
+  migrationTargetKind?: 'rehearsal' | 'staging' | 'local' | 'production';
+} = {}): ApiHarness {
   const store = opts.store ?? new InMemoryEventStore();
   const idempotency = opts.idempotency ?? new MemoryIdempotencyStore();
-  const built = buildRouter(buildSurface({ signingKey: PACK_KEY, migrationTargetKind: 'rehearsal', store }));
+  const built = buildRouter(buildSurface({ signingKey: PACK_KEY, migrationTargetKind: opts.migrationTargetKind ?? 'rehearsal', store }));
   if (!built.ok) throw new Error(`surface malformed: ${built.refusals.map((r) => r.detail).join('; ')}`);
 
   const kernel: Kernel = {
