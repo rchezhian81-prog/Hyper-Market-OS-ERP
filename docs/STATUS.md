@@ -5,6 +5,23 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Item 1 (login) slice 1e — session revocation & auth audit (25 September 2026)
+
+Fifth slice of the portal login: cutting a session short, and recording who did what.
+- **`packages/identity/src/session-revocation.ts`** (new) — `decideTokenSession` checks an
+  **append-only revocation list BEFORE expiry**, so a sign-out or admin/security revocation kills a
+  still-unexpired token immediately (`revoked`/`expired`/`active`, revocation first, **tenant-scoped**
+  OB-01). `revokeSession` is append-only (hard rule #2). Login/step-up/revoke and their **refusals**
+  (P-08) are recorded as append-only `AuthAuditEvent`s; `authEventsFor` reads a subject's events
+  tenant-scoped. `packages/identity/src/account.ts` `checkSession` already covers idle/absolute/device/offline expiry.
+- **`tests/unit/identity-session-revocation.test.ts`** (new, +9) — revoke-before-expiry, precedence
+  over expiry, cross-tenant isolation, append-only; auth-audit scoping + refusal events.
+- **Honest rung:** implementation complete + tested. **One Item-1 slice remains:** authenticated
+  browser E2E (login → session → step-up via Chromium + local IdP + OTP simulator), which completes
+  Item 1's buildable scope; the live IdP/SMS provider remains the only external gate.
+
+---
+
 ## Item 1 (login) slice 1d — tenant/account binding + MFA/re-auth step-up (25 September 2026)
 
 Fourth slice of the portal login: what to trust a verified identity for.
