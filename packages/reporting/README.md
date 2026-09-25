@@ -34,3 +34,12 @@ consistently, always with **how current they are**.
 > type, `freshness`, and (for the transaction-level drill) `@sre/owner-control`. Tested in
 > `tests/unit/reporting.test.ts` and `tests/unit/reporting-consolidation.test.ts` (15). Part of the
 > repository layout in `CLAUDE.md`.
+>
+> **Durable surface (API-10):** `services/reporting/src/consolidation-route.ts` makes the
+> consolidation engine live — branches `POST /v1/consolidation/contributions` (idempotent by
+> revision) and `POST /v1/consolidation/memberships`, and the head office `GET /v1/consolidation`
+> for a `?node=&family=&period=` roll-up (optional `?asOf=`, `?scope=`). Every stream append-only;
+> the resolved contribution set is folded through the engine's own `ingestContribution`, so the
+> durable read applies the identical idempotency / correction-supersedes / refuse-stale rules across
+> a cold restart. Ingestion `reporting.consolidation.manage`; reads `reporting.report.read`. Proven
+> in `tests/integration/reporting-consolidation.test.ts` (7).

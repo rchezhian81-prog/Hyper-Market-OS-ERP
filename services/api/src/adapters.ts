@@ -211,8 +211,9 @@ import type { DurableTenantSettings } from '../../../packages/tenant/src/index';
 import { InMemoryNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
 import { figure } from '../../reporting/src/index';
 import type { ReportingDeps, Figure } from '../../reporting/src/index';
-import { salesSummary } from '../../../packages/reporting/src/index';
-import type { Producer, SaleFact } from '../../../packages/reporting/src/index';
+import type { ConsolidationDeps } from '../../reporting/src/consolidation-route';
+import { salesSummary, ingestContribution } from '../../../packages/reporting/src/index';
+import type { Producer, SaleFact, BranchContribution, BranchMembership } from '../../../packages/reporting/src/index';
 import type { MigrationDeps } from '../../migration/src/index';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import type { DomainFinding, Acceptance } from '../../../packages/migration/src/verification-report';
@@ -276,6 +277,7 @@ export const STREAM = {
   lossPrevention: 'loss-prevention',
   warehouse: 'warehouse',
   orders: 'orders',
+  reporting: 'reporting',
   /** The domain-level, tamper-evident audit trail (M34-FR-01) — tenant-wide, append-only, one sealed
    *  record per sensitive action, NEVER folded (every record is its own fact; the chain is the evidence). */
   audit: 'audit',
@@ -1781,6 +1783,52 @@ export function serviceabilityAdapter(input: {
       }));
     },
     schedule: (tenantId) => allOf<ServiceabilityPeriod>(input.store, tenantId, stream, 'ServiceabilityPolicySet'),
+  };
+}
+
+/**
+ * The per-tenant company-wide consolidation store (M01 / M29 / D13, owner decision). Two append-only
+ * streams: branch CONTRIBUTIONS (a branch's numbers for one family/period) and org MEMBERSHIPS (a branch's
+ * effective-dated parent). The resolved contribution set is folded through the engine's own
+ * `ingestContribution`, so the durable read applies the identical idempotency / correction-supersedes /
+ * refuse-stale rules a fresh ingest would — a re-send never doubles a total and a later revision wins,
+ * even after a cold restart (hard rules #2 #10). The tested `consolidate` rolls it up.
+ */
+export function consolidationAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): ConsolidationDeps {
+  const contribStream = streamName(STREAM.reporting, 'consolidation-contributions');
+  const memberStream = streamName(STREAM.reporting, 'consolidation-memberships');
+  return {
+    recordContribution: async (tenantId, contribution, key) => {
+      await input.store.append(tenantId, contribStream, makeEvent({
+        id: `cc-${contribution.branchId}-${contribution.period}-${contribution.family}-${contribution.revision}`,
+        type: 'ConsolidationContributionIngested',
+        occurredAt: input.now(),
+        idempotencyKey: `cc-${tenantId}-${key}`,
+        source: 'api/reporting',
+        payload: contribution,
+      }));
+    },
+    // Fold EVERY contribution event through the engine's ingest rule, so a replayed/late/corrected event
+    // resolves to exactly one contribution per (branch, period, family) — the same resolution the route uses.
+    contributions: async (tenantId) => {
+      const events = await allOf<BranchContribution>(input.store, tenantId, contribStream, 'ConsolidationContributionIngested');
+      return events.reduce<readonly BranchContribution[]>((acc, c) => ingestContribution(acc, c).store, []);
+    },
+    recordMembership: async (tenantId, membership, key) => {
+      await input.store.append(tenantId, memberStream, makeEvent({
+        id: `cm-${membership.branchId}-${membership.from}`,
+        type: 'ConsolidationMembershipSet',
+        occurredAt: input.now(),
+        idempotencyKey: `cm-${tenantId}-${key}`,
+        source: 'api/reporting',
+        payload: membership,
+      }));
+    },
+    memberships: (tenantId) => allOf<BranchMembership>(input.store, tenantId, memberStream, 'ConsolidationMembershipSet'),
+    now: input.now,
   };
 }
 

@@ -67,7 +67,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'concession.contract.manage', 'concession.sale.record', 'concession.charge.read',
       'scrap.sale.record', 'scrap.review.read', 'waste.view', 'count.view',
       'shelf.count.record', 'shelf.count.read', 'planogram.compliance.read', 'merchandising.space.read', 'merchandising.display.manage', 'merchandising.range.manage', 'merchandising.range.read', 'approvals.delegation.grant', 'approvals.delegation.read',
-      'reporting.dashboard.read', 'reporting.report.read',
+      'reporting.dashboard.read', 'reporting.report.read', 'reporting.consolidation.manage',
       'platform.health.read', 'platform.alert.manage', 'platform.device.manage', 'platform.flag.read', 'platform.flag.write',
       'platform.setup.read', 'platform.setup.write',
       'platform.support.request', 'platform.support.grant', 'platform.support.read',
