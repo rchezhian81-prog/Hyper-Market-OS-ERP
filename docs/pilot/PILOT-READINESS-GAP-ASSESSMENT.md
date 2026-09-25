@@ -33,11 +33,18 @@ Status key: ✅ **present** (exists + verified) · 🟡 **partial** (exists, nee
 ## Phase 4 — Pilot data
 - ✅ present: import engine (M30), catalogue pack builder, `pilot-setup-workbook.xlsx`, synthetic fixtures used
   across tests.
-- 🔴 gap → **my next work package:** a single **controlled pilot seed dataset** (org/branch/users/roles,
-  products+barcodes+UOM, suppliers/customers, tax/HSN, stock+batches+expiry, warehouses/bins, prices/MRP/
-  promos, tills/shifts/tenders, sample online orders, delivery zones/slots, concession sources, **demo-marked**
-  payroll, sandbox GST records) as a reproducible seed script, clearly labelled non-real, never mixed with real
-  exports.
+- 🟡 partial (in progress) → the **controlled pilot seed dataset** is being built as a reproducible,
+  demo-marked applier that drives the REAL cloud routes (`db/seed/pilot/`, see `PILOT-SEED-DATASET.md`).
+  - **Slice 4a done:** the applier framework + the FOUNDATION — genesis owner, six role logins, entitlements
+    (loyalty/delivery/dept.concession), and the org skeleton (GST registration → company → branch → warehouse),
+    proven by `tests/integration/pilot-seed.test.ts` and tenant-isolated so demo data cannot reach a real tenant.
+  - **Remaining slices:** 4b catalogue + tax/HSN + prices/MRP; 4c suppliers + stock (batches/expiry) + warehouse
+    bins + customers; 4d trading transactions (tills/shifts, online orders, serviceability, concession, promos,
+    demo-marked payroll, sandbox GST) — then this row flips to ✅.
+  - **Operational packaging note:** the applier is the reproducible seed mechanism; wiring it to a running pilot
+    API + the pilot's test IdP for a real stand-up run lands with the environment stand-up (⛔ EX-01 / OA-5 host
+    decision). Categories with no write route yet (delivery slot definitions, tender-type config) are recorded in
+    `PILOT-SEED-DATASET.md` rather than faked.
 
 ## Phase 5 — Formal UAT
 - ✅ present: `uat-calendar.md` register, `store-go-live-checklist.md`, role model in `roles.ts`.
