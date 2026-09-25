@@ -5,6 +5,21 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Pilot Phase 5 — role-based UAT checklist (25 September 2026)
+
+Non-production. Authored the formal UAT assets.
+- **`docs/pilot/UAT-ROLE-CHECKLIST.md`** (new) — 12 pilot roles (cashier, store manager, owner, accountant,
+  CA, warehouse/GRN, picker, delivery, buyer, supplier, customer, platform admin), each with connected-flow
+  UAT cases carrying the required per-case fields (requirement ID, role, prerequisite, steps, expected,
+  actual, pass/fail, severity, defect ref, retest, business sign-off), keyed to the seeded demo tenant and
+  cross-referenced to the `UAT-##` witness register. Gap assessment Phase-5 → ✅; README updated.
+- **Authoring is autonomous; execution + business sign-off is the owner/store** (⛔). Maturity: **UAT assets
+  authored** (→ UAT approved on sign-off).
+- **Next:** Phase 7 (pilot-gate checklist + defect policy) + Phase 8 (consolidated readiness package + store
+  pilot plan) → **STOP for owner GO**.
+
+---
+
 ## Pilot Phase 6 — failure-drill report + consolidated resilience test (25 September 2026)
 
 Non-production. Assembled the pilot failure-drill evidence and a single runnable resilience check.

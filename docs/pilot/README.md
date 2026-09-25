@@ -21,6 +21,7 @@ Prepared for the owner's authorization to move from development into **controlle
 | `PILOT-SEED-DATASET.md` | **(Phase 4)** the controlled, demo-marked seed dataset (`../../db/seed/pilot/`): what it seeds, how it stays non-real, and the slice roadmap |
 | `FEATURE-SAFETY.md` | **(Phase 3)** which dangerous capabilities are off/gated by default (asserted by `tests/integration/pilot-feature-safety.test.ts`), and the honest boundaries incl. GAP-SEC-06 |
 | `FAILURE-DRILLS.md` | **(Phase 6)** the 16 resilience scenarios → control → proving test, the consolidated `tests/integration/pilot-failure-drills.test.ts`, and the live drills left for stand-up |
+| `UAT-ROLE-CHECKLIST.md` | **(Phase 5)** the role-based UAT checklist — 12 roles × connected flows with per-case fields for the tester and business sign-off |
 
 Infra: `../../infra/compose/docker-compose.pilot.yml` (resource/capacity overlay) · `../../infra/compose/.env.pilot.example` (pilot env template, placeholders only).
 
