@@ -120,6 +120,7 @@ export function createLocalTestIdp(config: LocalTestIdpConfig): IdentityProvider
       if (claims.email !== undefined) payloadObject['email'] = claims.email;
       if (claims.phoneNumber !== undefined) payloadObject['phone_number'] = claims.phoneNumber;
       if (claims.amr !== undefined) payloadObject['amr'] = [...claims.amr];
+      if (claims.authTime !== undefined) payloadObject['auth_time'] = claims.authTime;
 
       const payload = b64url(payloadObject);
       const signature = createHmac('sha256', config.secret)

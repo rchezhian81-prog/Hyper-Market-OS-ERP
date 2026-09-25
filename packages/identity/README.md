@@ -103,9 +103,22 @@ refused before the token is even compared. `roleOf` / `activeMemberships` answer
 never across the tenant/org boundary or after removal (`removeMember` marks, never deletes).
 Delivery of the invite is the same provider-neutral gated sender the OTP flow uses.
 
+### Binding a verified identity, and step-up for sensitive actions (`src/access-binding.ts`)
+
+Once a token is verified, two questions remain. **Who is this, here?** `bindCustomerPrincipal` resolves
+verified `IdentityClaims` into a `CustomerPrincipal` scoped to the request's tenant, carrying the org
+memberships the subject actually holds — and **refuses** a token whose tenant is not the tenant being
+acted in (OB-01), so a correctly-signed token for one customer can never act as another. **Is this
+enough for THIS action?** `evaluateStepUp` allows an ordinary action on a single factor, but a
+sensitive one (change bank details, bulk export, delete account) needs **both** a second factor in the
+session's `amr` **and** a login still fresh enough (`auth_time`, not `iat`) — otherwise it is refused
+`needs_second_factor` or `needs_reauth`, reporting the missing second factor first because that is the
+harder requirement to satisfy. Pure decisions over data the caller already holds; nothing mints a token.
+
 Pure and deterministic — the timestamp is injected, there is no clock, no I/O. Tested in
 `tests/unit/identity-account.test.ts` (18), `tests/unit/identity-lifecycle.test.ts` (16),
 `tests/unit/identity-test-idp.test.ts` (10 — the IdP↔verifier interlock and its refusals),
-`tests/unit/identity-otp.test.ts` (10 — OTP lifecycle + the OTP→token composition) and
-`tests/unit/identity-org-membership.test.ts` (10 — the invite lifecycle + tenant/org-scoped binding). Part
+`tests/unit/identity-otp.test.ts` (10 — OTP lifecycle + the OTP→token composition),
+`tests/unit/identity-org-membership.test.ts` (10 — the invite lifecycle + tenant/org-scoped binding)
+and `tests/unit/identity-access-binding.test.ts` (9 — principal binding + step-up decisions). Part
 of the repository layout in `CLAUDE.md`.

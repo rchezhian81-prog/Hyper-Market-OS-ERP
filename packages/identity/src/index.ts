@@ -8,3 +8,4 @@ export * from './lifecycle';
 export * from './oidc-port';
 export * from './otp';
 export * from './org-membership';
+export * from './access-binding';
