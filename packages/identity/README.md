@@ -115,10 +115,22 @@ session's `amr` **and** a login still fresh enough (`auth_time`, not `iat`) — 
 `needs_second_factor` or `needs_reauth`, reporting the missing second factor first because that is the
 harder requirement to satisfy. Pure decisions over data the caller already holds; nothing mints a token.
 
+### Session revocation & auth audit (`src/session-revocation.ts`)
+
+`account.ts` decides a server-side session's idle / absolute / device / offline expiry. This adds what
+the **token** path needs: an **append-only revocation list**, checked **before** expiry, so a
+sign-out or an admin/security revocation cuts a token short **the instant it happens** — a
+stolen-but-unexpired token, a left-open laptop, a departed employee cannot wait for `exp`.
+`decideTokenSession` returns `revoked` / `expired` / `active`, revocation first and taking precedence,
+and it is **tenant-scoped** (a revocation in one tenant never touches another, OB-01). Login, step-up
+and revoke — and their **refusals** (P-08) — are recorded as append-only `AuthAuditEvent`s, so who
+signed in, how, when, and who cut them off is answerable (`authEventsFor`, tenant+subject scoped).
+
 Pure and deterministic — the timestamp is injected, there is no clock, no I/O. Tested in
 `tests/unit/identity-account.test.ts` (18), `tests/unit/identity-lifecycle.test.ts` (16),
 `tests/unit/identity-test-idp.test.ts` (10 — the IdP↔verifier interlock and its refusals),
 `tests/unit/identity-otp.test.ts` (10 — OTP lifecycle + the OTP→token composition),
-`tests/unit/identity-org-membership.test.ts` (10 — the invite lifecycle + tenant/org-scoped binding)
-and `tests/unit/identity-access-binding.test.ts` (9 — principal binding + step-up decisions). Part
+`tests/unit/identity-org-membership.test.ts` (10 — the invite lifecycle + tenant/org-scoped binding),
+`tests/unit/identity-access-binding.test.ts` (9 — principal binding + step-up decisions) and
+`tests/unit/identity-session-revocation.test.ts` (9 — revoke-before-expiry + auth audit). Part
 of the repository layout in `CLAUDE.md`.
