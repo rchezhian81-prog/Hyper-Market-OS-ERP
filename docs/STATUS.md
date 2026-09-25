@@ -5,6 +5,30 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Fix — the ERP admin app could not be built for a browser (pre-existing, found during Item 2) (25 September 2026)
+
+A defect on `main`, not new work: the full quality gate failed at the browser-build step, and the cause
+was already merged.
+- **What was broken:** `apps/web-erp/src/admin-session.ts` imported `accessReview` from the `@sre/identity`
+  **barrel**. Item 1's login work had added `otp.ts` + `org-membership.ts` to that barrel, and both
+  `import 'node:crypto'` — which has no browser build. So `esbuild --platform=browser` refused the whole
+  **web-erp** bundle and the ERP back-office screen could not be served at all.
+- **Why nothing caught it:** the browser-target build only ran inside an e2e `beforeAll`, and the e2e
+  suite **self-skips with no Chromium**, so a browser-less CI never attempted the bundle; the `*-boot`
+  unit tests import the same code through Node (where `node:crypto` resolves), so they stayed green.
+- **The fix (a boundary):** `accessReview` + its types live in `packages/identity/src/account.ts`, which
+  uses no node built-in — so `admin-session.ts` and `browser-entry.ts` now import from that module, not
+  the barrel. The OTP/org-membership minters stay server-side (hard rule #4). Bundle rebuilds cleanly.
+- **The recurrence guard:** `tests/guardrails/the-browser-apps-bundle.test.ts` (new, +9) runs the SAME
+  browser-target esbuild the deploy build runs, for **every** app with a browser entry (auto-discovered),
+  but **in memory** (`write:false` — no Chromium, no files, no network). It runs in the ordinary suite,
+  so a node-only import reaching a browser bundle now fails CI on any box. Proven to bite (reintroducing
+  the barrel import fails the web-erp case) and to pass once fixed (all 8 apps green).
+- **Honest note:** this restores green so Item 2 (and everything after) can merge. Item 2's own work was
+  set aside while this landed and resumes next.
+
+---
+
 ## Item 1 (login) slice 1f — authenticated browser E2E — **Item 1 COMPLETE** (25 September 2026)
 
 Final slice of the portal login: the whole flow proven in a real browser.

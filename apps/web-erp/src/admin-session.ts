@@ -32,7 +32,11 @@ import {
   type Device, type DeviceDecision, type FleetSummary, type OwnerApproval,
   type SupportAccessRequest, type SupportSession, type VersionPolicy,
 } from '../../../packages/platform-admin/src/index';
-import { accessReview, type AccessReviewRow, type UserAccount } from '../../../packages/identity/src/index';
+// Import from the specific module, NOT the `@sre/identity` barrel: the barrel also re-exports the OTP and
+// org-membership engines, which use `node:crypto` and cannot be bundled for the browser. `accessReview`
+// and its types live in `account.ts`, which is browser-safe (no node built-ins). See the browser-apps
+// bundle guardrail.
+import { accessReview, type AccessReviewRow, type UserAccount } from '../../../packages/identity/src/account';
 import { planRetention, type AuditRecord, type LegalHold, type RetentionPlan, type RetentionPolicy } from '../../../packages/audit/src/index';
 import type { Role, RoleAssignment } from '../../../packages/rbac/src/index';
 

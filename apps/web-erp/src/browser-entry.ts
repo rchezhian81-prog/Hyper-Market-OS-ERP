@@ -224,7 +224,9 @@ import type {
   ControlTotal, HistoryExclusion, LegacyArchive, LegacySource, MigrationException,
   ParallelDayResult, ParallelDifference, TeamMember,
 } from '../../../packages/migration/src/index';
-import type { UserAccount } from '../../../packages/identity/src/index';
+// From the specific module, not the `@sre/identity` barrel (which re-exports node:crypto-using engines that
+// break the browser bundle). Type-only here, but kept off the barrel for consistency with admin-session.
+import type { UserAccount } from '../../../packages/identity/src/account';
 import type { AuditRecord, LegalHold, RetentionPolicy } from '../../../packages/audit/src/index';
 import type { Producer } from '../../../packages/reporting/src/index';
 
