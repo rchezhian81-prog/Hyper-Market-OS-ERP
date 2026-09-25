@@ -15,6 +15,11 @@ Prepared for the owner's authorization to move from development into **controlle
 | `PILOT-FEATURE-MATRIX.md` | what is ON / SIMULATED / DISABLED for the pilot |
 | `EVIDENCE-INDEX.md` | pointers to the gate/test/record evidence |
 | `PILOT-READINESS-GAP-ASSESSMENT.md` | the 8-phase plan vs. what exists, gaps, and external gates — the roadmap for Phases 2–8 |
+| `SAFE-PILOT-ENVIRONMENT.md` | **(Phase 2)** the isolated pilot environment: how to bring it up + the isolation/HTTPS/RBAC/capacity checklist |
+| `MONITORING-AND-ALERTS.md` | **(Phase 2)** what to watch, thresholds, and where alerts go |
+| `BACKUP-RESTORE-REHEARSAL.md` | **(Phase 2)** executed backup + restore-into-clean-env evidence |
+
+Infra: `../../infra/compose/docker-compose.pilot.yml` (resource/capacity overlay) · `../../infra/compose/.env.pilot.example` (pilot env template, placeholders only).
 
 **Non-production.** Not approved for public launch, live statutory submission, live payroll, irreversible
 migration, or destructive production actions. External gates and owner GO are tracked in

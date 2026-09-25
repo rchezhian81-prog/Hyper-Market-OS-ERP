@@ -5,6 +5,27 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Pilot Phase 2 — safe pilot environment (profile + monitoring + backup/restore rehearsal) (25 September 2026)
+
+Non-production. Delivered the isolated pilot environment definition, the monitoring watch-list, and an
+**executed** backup/restore rehearsal.
+- **`infra/compose/docker-compose.pilot.yml`** (new) — overlay adding per-service `mem_limit`/`cpus`/
+  `pids_limit` and pilot posture; isolation via a distinct compose project (`-p sre-pilot` → separate volumes/
+  network/DB). **`infra/compose/.env.pilot.example`** (new) — pilot env template (placeholders only; separate
+  DB, fresh keys, test IdP, `NODE_ENV=production`, `MIGRATION_TARGET_KIND=rehearsal`).
+- **`docs/pilot/SAFE-PILOT-ENVIRONMENT.md`** — isolation/HTTPS/secure-cookie/RBAC+tenant/audit/capacity/admin
+  checklist, each row tied to how it's met + evidence; the do-not-connect list (Phase 3).
+- **`docs/pilot/MONITORING-AND-ALERTS.md`** — health + trading-integrity watch-list (unsent counter, sync lag,
+  dead-letter depth, reconciliation diff, audit chain), thresholds, escalation.
+- **`docs/pilot/BACKUP-RESTORE-REHEARSAL.md`** — **executed** on a disposable PG16: backup (event_ledger 3
+  rows, money `SaleCommitted`=17499, SHA-256), restore into a **clean** DB **reconciles exactly** (rows +
+  money + seq), and restore-over-non-empty **refused**. Real M35 restore proof, not assumed.
+- **External gate:** actual cloud host + managed PG + spend (EX-01 / OA-5) — the one-box pilot needs none.
+- **Next:** Phase 4 controlled seed dataset → Phase 3 feature-safety proof → Phase 6 failure-drill report →
+  Phase 5 UAT assets → Phase 7 gate checklist → Phase 8 readiness package → **STOP for owner GO**.
+
+---
+
 ## Pilot Phase 1 — baseline verification + release-candidate package (25 September 2026)
 
 Owner authorized moving from development into **controlled pilot preparation and UAT** (non-production only),
