@@ -54,7 +54,7 @@ flowchart TB
 | **Repudiation** | Audit on every write and refusal (`pipeline.ts:274-290,386-388`); `SqlAuditSink` wired (`main.ts:411`) | Implemented | audit_log has no hash-chain columns → durable table is append-only but not tamper-*evident* by itself |
 | **Information disclosure** (cross-tenant, PAN, error leakage) | `scanOutbound` 500s on foreign tenantId or card-shaped body (`pipeline.ts:144-180`); flat `unauthenticated`; three-part error, no stack (`errors.ts`) | Implemented (strong) | Isolation is **application-level only — no Postgres RLS, no `tenants` FK** (defense rests on the one backstop) — GAP-DATA-02 |
 | **Denial of service** | — | **Missing** | **No rate limiting / throttling / 429 / auth-attempt lockout** in the kernel (only the AI budget 429). Documented in threat model, not enforced (OWASP API4:2023) — GAP-SEC-04 |
-| **Elevation of privilege** | RBAC default-deny, no wildcards; maker-checker blocks granting a permission the approver lacks (`identity/src/index.ts:94-100`); SoD baked into role table | Implemented (strong) | Support-access **expiry enforced in web-erp session, not the API request tier** (`admin-session.ts` vs `services/api`) — GAP-SEC-06 |
+| **Elevation of privilege** | RBAC default-deny, no wildcards; maker-checker blocks granting a permission the approver lacks (`identity/src/index.ts:94-100`); SoD baked into role table; **API-tier step-up re-auth** on the privilege-grant + erasure-execution routes (fresh MFA ≤300s from the SIGNED token, `step-up.ts`) | Implemented (strong) | GAP-SEC-06 **substantially closed** — step-up mechanism now at the API tier and enforced on privilege grant + erasure; **follow-on:** extend to payroll release + bulk product publish (action-level) |
 | **AI-specific** (prompt injection, excessive agency, unsafe tool use) | Closed `FORBIDDEN_TOOLS`, gateway drops ungranted tools, admission-before-transport, untrusted evidence fenced not concatenated, provider-neutral guardrail (`packages/ai/src/authority.ts`,`gateway.ts`,`safety.ts`) | Implemented (structurally strong) | Injection detection is **advisory (`blocks:false`)**; **no standing red-team battery**; **never run against a real model** — GAP-AI-01 |
 
 ## Privacy / DPDP 2023
@@ -88,7 +88,10 @@ the system (RESEARCH §9). Status: **Implemented, not production-verified** (no 
    to `audit_log`). Tamper-evidence weaker than documented; mitigated only by droppable DB triggers. *(GAP-SEC-03)*
 4. **No rate limiting / DoS control / auth-attempt lockout.** *(GAP-SEC-04)*
 5. **No token revocation / short-TTL strategy** — dependent on the (unchosen) IdP. *(GAP-SEC-05)*
-6. **Support-access expiry not enforced at the API tier.** *(GAP-SEC-06)*
+6. **API-tier step-up re-auth — SUBSTANTIALLY CLOSED.** Recent MFA/re-auth is now enforced at the API tier
+   (`services/kernel/src/step-up.ts`, from the SIGNED token's `auth_time`/`amr`) on the privilege-grant and
+   erasure-execution routes; direct-call bypass is refused 403. Follow-on: payroll release + bulk product
+   publish. *(GAP-SEC-06)*
 7. **Tenant isolation is application-level only — add Postgres RLS + `tenants` FK** as defense-in-depth. *(GAP-DATA-02)*
 8. **AI never exercised against a real model**; injection detection advisory; no standing red-team. *(GAP-AI-01)*
 9. **TLS / secret-store / key-rotation are deployment-layer with no in-repo evidence** (no TLS in nginx; `.env`

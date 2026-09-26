@@ -190,6 +190,19 @@ export function verifyToken(token: string, policy: TokenPolicy, nowMs: number): 
   }
 
   const branch = payload['branch_id'];
+
+  // Step-up evidence (SEC-03 / GAP-SEC-06), read only now the signature is verified. `auth_time` is
+  // WHEN the person last authenticated (distinct from `iat`: a refreshed token keeps the original
+  // auth_time), and `amr` is HOW. A sensitive route reads these to decide whether a recent re-auth /
+  // MFA is still fresh enough. Both are optional here — a token without them simply fails a step-up
+  // check on the routes that demand it, and is fine everywhere else.
+  const authTimeClaim = payload['auth_time'];
+  const authTime = typeof authTimeClaim === 'number' ? authTimeClaim : undefined;
+  const amrClaim = payload['amr'];
+  const amr = Array.isArray(amrClaim)
+    ? amrClaim.filter((m): m is string => typeof m === 'string')
+    : undefined;
+
   return {
     ok: true,
     principal: {
@@ -197,6 +210,8 @@ export function verifyToken(token: string, policy: TokenPolicy, nowMs: number): 
       userId,
       // Null is "every branch this user's roles allow", which RBAC then narrows. It is not "any".
       branchId: typeof branch === 'string' && branch !== '' ? branch : null,
+      ...(authTime === undefined ? {} : { authTime }),
+      ...(amr === undefined || amr.length === 0 ? {} : { amr }),
     },
     detail: `${userId} of ${tenantId}`,
   };

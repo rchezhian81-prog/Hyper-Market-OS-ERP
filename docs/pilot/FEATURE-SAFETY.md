@@ -31,18 +31,27 @@ real end-to-end assertion.
   **step-up re-auth** on release is a **web-erp session control, not an API control** (see the gap below).
 - **"Delete my data" production execution.** The erasure execution route is **wired and executable**, gated
   by RBAC (`privacy.erasure.approve` / `privacy.erasure.execute`) + a two-person rule + subject verification
-  + a prevent-restore guard (covered by `tests/integration/erasure-execution.test.ts`). It is **not** a
-  default-off feature flag, and it is **DEVELOPMENT-APPROVED, LEGAL-CONFIRMATION-REQUIRED** — the code wires
-  the workflow, it does not make a compliance claim. In the pilot it runs against synthetic PII only.
+  + a prevent-restore guard (covered by `tests/integration/erasure-execution.test.ts`), **and now by API-tier
+  step-up re-auth** (see below). It is **not** a default-off feature flag, and it is **DEVELOPMENT-APPROVED,
+  LEGAL-CONFIRMATION-REQUIRED** — the code wires the workflow, it does not make a compliance claim. In the
+  pilot it runs against synthetic PII only.
 
-## Known gap — do NOT rely on this
+## Step-up re-authentication — now enforced at the API tier (GAP-SEC-06 substantially closed)
 
-- **Recent re-authentication / step-up for sensitive actions does not exist at the API tier.** The kernel
-  request pipeline and `services/identity` do not check token freshness or require re-auth for sensitive
-  routes; step-up lives only in the browser/session layer (`web-erp` payroll re-auth, `customer-app`). This
-  is recorded as **GAP-SEC-06** in `docs/audit/SECURITY_PRIVACY_THREAT_MODEL.md`. For the pilot, sensitive
-  actions are protected by RBAC + maker-checker + audit, **not** by API-tier step-up. Closing GAP-SEC-06 (an
-  auth-tier freshness check) is a pre-production security item, tracked for the owner.
+- **API-tier step-up now EXISTS.** The kernel request pipeline enforces a per-route **recent
+  re-authentication** check (`services/kernel/src/step-up.ts`), read from the SIGNED token's `auth_time` /
+  `amr` after permission + entitlement and before the handler, so a **direct API call cannot bypass** the
+  browser re-auth prompt — which was the whole of GAP-SEC-06. A route declares `reauth: { withinSeconds, amr }`;
+  a missing, stale, or weaker-than-required sign-in is refused **403 `reauthentication_required`**.
+- **Enforced on the two §28 sensitive routes now gated:** a **privilege grant** (`POST /v1/identity/grants`)
+  and an **irreversible erasure** (`POST /v1/privacy/data-requests/:id/erasure-execution`), both requiring a
+  fresh (≤300s) MFA-backed re-auth. Proven by `tests/integration/step-up-reauth.test.ts` (direct-call
+  bypass, missing/stale/weak evidence all → 403) and `tests/unit/step-up.test.ts` (the pure rule).
+- **Remaining (tracked follow-on, not a pilot blocker):** extending the same declaration to the other named
+  re-auth actions — payroll approve/lock/**bank-file release** and settlement release (action-level within
+  `pay-run/:id/append`, `docs/design/screens/payroll.md`), and **bulk/sensitive-category product publish**
+  (`ADR-0013`). These remain protected in the meantime by RBAC + maker-checker + audit (+ the web-erp session
+  re-auth), and — being off/build-only in the pilot — transmit nothing live regardless.
 
 ## What the pilot must still do (operational, not code)
 
@@ -54,5 +63,7 @@ real end-to-end assertion.
 ## Maturity
 
 **Integration tested** — the default-safe controls are asserted end-to-end against the real surface for a
-fresh tenant. Re-verify on the stood-up pilot environment (⛔ EX-01 / OA-5), and treat GAP-SEC-06 (API-tier
-re-auth) as an open pre-production security item.
+fresh tenant. Re-verify on the stood-up pilot environment (⛔ EX-01 / OA-5). **GAP-SEC-06 (API-tier step-up
+re-auth) is substantially closed:** the mechanism is implemented and enforced on the privilege-grant and
+erasure-execution routes; the remaining named re-auth actions (payroll release, bulk product publish) are a
+tracked follow-on.

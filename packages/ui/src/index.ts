@@ -9,3 +9,4 @@
 export * from './copy';
 export * from './states';
 export * from './queue-status';
+export * from './demo-banner';

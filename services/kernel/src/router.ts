@@ -10,6 +10,7 @@
 // difference shows up exactly on the endpoint nobody wrote a test for.
 
 import type { Permission } from '../../../packages/rbac/src/rbac';
+import type { ReauthRequirement } from './step-up';
 
 export type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
@@ -71,6 +72,15 @@ export interface Route {
    * loses the reply resends, and a sale applied twice is money.
    */
   readonly idempotent?: boolean;
+  /**
+   * Sensitive actions (§28, SEC-03): require a RECENT re-authentication — and, where declared, a
+   * specific factor such as MFA — enforced at the API boundary (closes GAP-SEC-06). The pipeline
+   * checks the SIGNED token's `auth_time`/`amr` against this AFTER permission + entitlement and
+   * refuses (403 `reauthentication_required`) if the sign-in is missing, too weak, or too old.
+   * **Absent means no step-up** — an ordinary action. The evidence comes from the token the IdP
+   * signed, never anything the caller asserts in the request.
+   */
+  readonly reauth?: ReauthRequirement;
   readonly handler: Handler;
 }
 
@@ -79,6 +89,7 @@ export type RouteRefusal =
   | 'write_without_idempotency'
   | 'read_declaring_idempotency'
   | 'route_without_permission'
+  | 'step_up_window_not_positive'
   | 'two_routes_for_one_address';
 
 export interface RegisterResult {
@@ -145,6 +156,12 @@ export class Router {
         detail: `${route.method} ${route.path} is a read declaring idempotency. Harmless in itself, and it means the author believed a guarantee that is not being applied here — which is worse than not having it`,
       };
     }
+    if (route.reauth !== undefined && !(route.reauth.withinSeconds > 0)) {
+      return {
+        ok: false, refusedBecause: 'step_up_window_not_positive',
+        detail: `${route.method} ${route.path} declares a step-up re-auth with a non-positive window. A window of zero or less can never be satisfied, so the route would be permanently unusable rather than "recently re-authenticated" (SEC-03)`,
+      };
+    }
     if (this.routes.some((r) => r.method === route.method && r.path === route.path)) {
       return {
         ok: false, refusedBecause: 'two_routes_for_one_address',
@@ -179,6 +196,7 @@ export class Router {
     return this.routes.map((r) => ({
       api: r.api, method: r.method, path: r.path, permission: r.permission,
       ...(r.idempotent === undefined ? {} : { idempotent: r.idempotent }),
+      ...(r.reauth === undefined ? {} : { reauth: r.reauth }),
       handler: r.handler,
     }));
   }

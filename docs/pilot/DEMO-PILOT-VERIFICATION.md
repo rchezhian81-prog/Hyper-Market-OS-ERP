@@ -175,7 +175,9 @@ No gate was marked green on code review alone; each ✅ cites an executed test o
 UAT matrix, the seed, the build, and the backup/restore drill passed. There are therefore no P0/P1 to
 block, no P2 to document for acceptance, and no P3/P4 to backlog from this run. The one pre-existing,
 already-documented item carried forward is a **pre-production** security hardening note, not a pilot
-defect: **GAP-SEC-06** (no API-tier step-up re-auth) — see `FEATURE-SAFETY.md` and §11/§12.
+item: **GAP-SEC-06** (API-tier step-up re-auth) is now **substantially closed** — the mechanism is
+implemented and enforced on the privilege-grant + erasure routes; only a follow-on (payroll release, bulk
+product publish) remains — see `FEATURE-SAFETY.md` and §10/§12.
 
 The defect policy (`PILOT-GATES.md`) remains in force for the human UAT and live drills that follow:
 P0/P1 block and are never downgraded; P2 needs written acceptance with a target release; P3/P4 backlog;
@@ -205,10 +207,13 @@ the person who owns them are stand-up-on-the-box + owner actions (⛔ G7/G10).
   refused every action outside its authority, and a business route refuses the platform admin.
 - No secrets in the repo, build artifacts or logs (`secret-scan` clean; SBOM generated).
 - Audit trail is tamper-evident (hash chain, migration 0010); `verify:audit` available.
-- **GAP-SEC-06 (open, pre-production):** there is no API-tier step-up re-authentication for the most
-  sensitive actions. It does **not** block the demo pilot (no live money/statutory actions run), and it
-  **must** be closed before production launch. Independent penetration test (EX-13/QG-06) is also a
-  pre-customer-launch gate.
+- **GAP-SEC-06 (substantially closed):** API-tier step-up re-authentication now **exists and is enforced** —
+  the kernel pipeline checks a recent, MFA-backed re-auth from the SIGNED token (`auth_time`/`amr`,
+  `services/kernel/src/step-up.ts`) on the privilege-grant and erasure-execution routes, and a **direct API
+  call cannot bypass** it (refused 403 `reauthentication_required`). Proven by `tests/unit/step-up.test.ts`
+  and `tests/integration/step-up-reauth.test.ts`. **Follow-on** (not a pilot blocker): extend the same
+  declaration to payroll release and bulk product publish. Independent penetration test (EX-13/QG-06) remains
+  a pre-customer-launch gate.
 
 ## 11. Maturity of this verification
 

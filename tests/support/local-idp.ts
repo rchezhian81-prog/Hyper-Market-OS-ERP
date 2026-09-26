@@ -23,6 +23,18 @@ export interface IdpClaims {
   readonly ttlSeconds?: number;
   /** Not-before, seconds from now (optional). */
   readonly notBeforeSeconds?: number;
+  /**
+   * `auth_time` for step-up (SEC-03 / GAP-SEC-06), as SECONDS FROM NOW (0 = just re-authenticated;
+   * negative = in the past). Default `0` (a fresh sign-in), so an ordinary token satisfies a step-up
+   * route. Pass a large negative (e.g. `-10000`) to mint a stale re-auth, or `null` to omit the claim
+   * entirely (a token with NO re-auth evidence).
+   */
+  readonly authTimeFromNowSeconds?: number | null;
+  /**
+   * `amr` — the authentication methods to record. Default `['pwd', 'mfa']` (a real, MFA-backed
+   * sign-in). Pass `['pwd']` to mint a single-factor sign-in, or `null` to omit the claim.
+   */
+  readonly amr?: readonly string[] | null;
 }
 
 export interface LocalIdpConfig {
@@ -47,11 +59,19 @@ export class LocalIdp {
   issue(claims: IdpClaims): string {
     const nowSec = Math.floor((this.config.now?.() ?? Date.now()) / 1000);
     const header = b64url({ alg: this.config.alg ?? 'HS256', typ: 'JWT' });
+    // Step-up evidence carried by default so an ordinary token satisfies a sensitive route
+    // (SEC-03 / GAP-SEC-06). `null` on either field omits it, for the "no/weak re-auth" negatives.
+    const authTime = claims.authTimeFromNowSeconds === null
+      ? undefined
+      : nowSec + (claims.authTimeFromNowSeconds ?? 0);
+    const amr = claims.amr === null ? undefined : (claims.amr ?? ['pwd', 'mfa']);
     const payload = b64url({
       sub: claims.sub,
       tenant_id: claims.tenantId,
       ...(claims.branchId === undefined ? {} : { branch_id: claims.branchId }),
       ...(claims.notBeforeSeconds === undefined ? {} : { nbf: nowSec + claims.notBeforeSeconds }),
+      ...(authTime === undefined ? {} : { auth_time: authTime }),
+      ...(amr === undefined ? {} : { amr: [...amr] }),
       iss: this.config.issuer,
       aud: this.config.audience,
       exp: nowSec + (claims.ttlSeconds ?? 3600),

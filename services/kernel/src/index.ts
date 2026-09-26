@@ -6,9 +6,14 @@
 
 export {
   ApiError, apiError, unauthenticated, forbidden, featureNotEntitled, idempotencyKeyMissing, idempotencyKeyReused,
-  notFound,
+  notFound, reauthenticationRequired,
   type SavedState, type ApiErrorBody, type ErrorRefusal,
 } from './errors';
+
+export {
+  evaluateStepUp,
+  type ReauthRequirement, type ReauthEvidence, type ReauthShortfall, type ReauthDecision,
+} from './step-up';
 
 export {
   Router, buildRouter, isWrite, WRITE_METHODS,

@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Option 1 (continued) — hosted-demo prep: GAP-SEC-06 fix, demo banner, deployment package (26 September 2026)
+
+**Status (recorded accurately, owner's words):** _Demo verification completed in a temporary environment;
+persistent hosted demo, host-specific recovery evidence and human UAT pending._
+
+Owner authorized continuing Option 1 to a hosted demo (Option 2 — real product/price data — remains
+unapproved). Completed the reversible technical work; the only blocker is the hosting purchase/access.
+
+- **GAP-SEC-06 resolved (substantially).** API-tier **step-up re-authentication** now exists and is enforced:
+  `services/kernel/src/step-up.ts` (pure rule) + a pipeline check reading the SIGNED token's `auth_time`/`amr`
+  after permission+entitlement, before the handler. Applied to the two §28 sensitive routes — **privilege
+  grant** (`POST /v1/identity/grants`) and **irreversible erasure** — both requiring a fresh (≤300s)
+  MFA-backed re-auth. A **direct API call cannot bypass** it (403 `reauthentication_required`). Proven by
+  `tests/unit/step-up.test.ts` (10) + `tests/integration/step-up-reauth.test.ts` (8). Security register,
+  threat model and `FEATURE-SAFETY.md` updated consistently. Follow-on: payroll release + bulk product publish.
+- **DEMO / PILOT — NOT PRODUCTION banner** (`packages/ui/src/demo-banner.ts`, bilingual EN/TA) wired into the
+  web-erp bundle behind a build-time flag (`PILOT_DEMO_BANNER=1`, esbuild define); off in production. Tested
+  (`tests/unit/demo-banner.test.ts`, 7) and verified baked into the flagged build.
+- **Deployment package** (`docs/pilot/DEMO-PILOT-DEPLOYMENT-PLAN.md`): no free persistent host exists;
+  recommended = one India-region MilesWeb Linux VPS (2 vCPU / 8 GB / 100 GB NVMe, ~₹949–1,149/mo + GST,
+  indicative — **not verified live**, the proxy blocks the provider site) + alternative (managed VPS); sizing
+  justified from measured demo usage; backup/off-site, access requirements and deploy steps included.
+- **Human-UAT prep** (`docs/pilot/DEMO-PILOT-UAT-WALKTHROUGH.md`): access method, role→workflow→evidence map,
+  automated vs human acceptance recorded separately; live integrations + real data stay off.
+- **Host-specific verification (⛔ pending host):** reproducible install on the box, service restart +
+  persistence, monitoring test-alert delivery, live rollback drill — all need the stood-up host.
+- **The one blocker = hosting purchase/access (EX-01/OA-5).** Deployment package is finished; awaiting only
+  that decision. No real data imported, no store operation started.
+
+---
+
 ## Option 1 — demo-pilot verification executed (non-production, synthetic data) (26 September 2026)
 
 Owner authorized **Option 1**: stand up a safe, isolated, non-production pilot environment and run the
