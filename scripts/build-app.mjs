@@ -46,6 +46,10 @@ const options = {
   minify: process.env.NODE_ENV === 'production',
   legalComments: 'none',
   logLevel: 'info',
+  // Build-time flag for the "DEMO / PILOT — NOT PRODUCTION" banner. The hosted demo builds with
+  // PILOT_DEMO_BANNER=1 so the banner shows; a production build leaves it unset, so it does not.
+  // Baked in at build time (esbuild `define`) rather than read at runtime — a browser has no env.
+  define: { PILOT_DEMO_BANNER: JSON.stringify(process.env.PILOT_DEMO_BANNER ?? '') },
 };
 
 if (process.argv.includes('--watch')) {

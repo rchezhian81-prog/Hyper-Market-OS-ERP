@@ -99,6 +99,26 @@ export const forbidden = (permission: string): ApiError => apiError(403, {
   nextSafeAction: 'Ask somebody with that permission to do it. Nothing was changed.',
 });
 
+/**
+ * A sensitive action needs a RECENT re-authentication (and, where required, a stronger factor) and
+ * the sign-in does not carry one (SEC-03 / GAP-SEC-06). **403, not 401**: the caller IS
+ * authenticated — the token is valid — so telling them "you are not signed in" would be wrong and
+ * would make a client drop the whole session. What they lack is *freshness/strength* for THIS action,
+ * which they fix by re-authenticating, not by starting over. (RFC 9470 leans 401
+ * `insufficient_user_authentication`; we keep the session and use 403 with a distinct code so the
+ * client re-challenges for the action without discarding an otherwise-valid login.)
+ */
+export const reauthenticationRequired = (shortfall: string, withinSeconds: number): ApiError => apiError(403, {
+  code: 'reauthentication_required',
+  whatHappened: shortfall === 'reauth_factor_insufficient'
+    ? 'This action needs a stronger recent sign-in (multi-factor), which this session does not carry.'
+    : shortfall === 'reauth_expired'
+      ? 'The recent re-authentication for this action has gone stale, so it must be done again.'
+      : 'This action needs a recent re-authentication, and this session carries none.',
+  wasItSaved: 'not_saved',
+  nextSafeAction: `Re-authenticate (sign in again, completing any second factor) within the last ${withinSeconds} second(s), then retry. Nothing was changed.`,
+});
+
 export const featureNotEntitled = (feature: string): ApiError => apiError(403, {
   code: 'feature_not_entitled',
   whatHappened: `This shop's plan does not include the "${feature}" feature, so this cannot be used here.`,

@@ -21,15 +21,24 @@
 import { AccessControl } from '../../../packages/rbac/src/rbac';
 import {
   ApiError, apiError, forbidden, featureNotEntitled, idempotencyKeyMissing, idempotencyKeyReused,
-  notFound, rateLimited, tooManySignInAttempts, unauthenticated,
+  notFound, rateLimited, reauthenticationRequired, tooManySignInAttempts, unauthenticated,
 } from './errors';
 import { isWrite, type Method, type Router } from './router';
+import { evaluateStepUp } from './step-up';
 import type { RateLimiter, AuthThrottle } from './rate-limit';
 
 export interface Principal {
   readonly tenantId: string;
   readonly userId: string;
   readonly branchId: string | null;
+  /**
+   * `auth_time` (epoch seconds) — when the person last authenticated, taken from the SIGNED token.
+   * Used by per-route step-up (SEC-03 / GAP-SEC-06); absent for tokens that carry none, which fails a
+   * step-up check but is fine for an ordinary route.
+   */
+  readonly authTime?: number;
+  /** `amr` — the authentication methods the IdP recorded, from the SIGNED token. */
+  readonly amr?: readonly string[];
 }
 
 export interface HttpRequest {
@@ -261,6 +270,12 @@ export interface KernelOptions {
   readonly observe?: (o: RequestObservation) => void;
   /** Injected so a reply is reproducible in a test and traceable in production. */
   readonly newTraceId: () => string;
+  /**
+   * The clock the STEP-UP re-auth check reads to decide whether a sign-in is still fresh (SEC-03 /
+   * GAP-SEC-06). Milliseconds since the epoch. Optional in the type (a test that touches no
+   * step-up route omits it) and defaults to `Date.now`; injected in a test that drives freshness.
+   */
+  readonly now?: () => number;
 }
 
 /** In-memory idempotency, tenant-scoped. Real deployments swap the port for PostgreSQL. */
@@ -412,6 +427,21 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
       if (opts.entitlements === undefined) throw featureNotEntitled(route.entitlement);
       const entitled = await opts.entitlements(principal.tenantId);
       if (!entitled.includes(route.entitlement)) throw featureNotEntitled(route.entitlement);
+    }
+
+    // Per-route STEP-UP RE-AUTHENTICATION (SEC-03 / §28 / GAP-SEC-06): a sensitive action requires a
+    // RECENT re-auth — and, where declared, a specific factor such as MFA. Enforced HERE, at the API
+    // boundary, so a direct API call cannot bypass a browser-only re-auth prompt (the whole of
+    // GAP-SEC-06). After permission + entitlement so a caller who may not use the route learns
+    // nothing from it; before the body is read or any write is attempted. The evidence is the SIGNED
+    // token's `auth_time`/`amr`, never anything the caller asserts in the request.
+    if (route.reauth !== undefined) {
+      const decision = evaluateStepUp(
+        route.reauth,
+        { ...(principal.authTime === undefined ? {} : { authTime: principal.authTime }), ...(principal.amr === undefined ? {} : { amr: principal.amr }) },
+        opts.now?.() ?? Date.now(),
+      );
+      if (!decision.ok) throw reauthenticationRequired(decision.shortfall!, route.reauth.withinSeconds);
     }
 
     const write = isWrite(route.method);

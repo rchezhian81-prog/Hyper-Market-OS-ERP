@@ -151,6 +151,11 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
     {
       api: 'API-01', method: 'POST', path: '/v1/identity/grants',
       permission: 'identity.role.grant', idempotent: true,
+      // A privilege grant is a §28 sensitive action (SEC-03): it requires a RECENT re-authentication
+      // with a second factor, enforced at the API boundary so a direct call cannot bypass it
+      // (GAP-SEC-06). Maker-checker still applies on top; this adds "and the person doing it
+      // authenticated strongly, recently".
+      reauth: { withinSeconds: 300, amr: ['mfa'] },
       handler: async (ctx) => {
         const request = ctx.body as GrantRequest;
         const result = grantRole({

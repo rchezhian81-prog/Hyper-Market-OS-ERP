@@ -61,10 +61,14 @@ async function appendEntitlement(store: EventStore, tenant: string, feature: str
 export interface ApiHarness {
   readonly store: EventStore;
   readonly idp: LocalIdp;
-  /** Send a request through the real pipeline as `userId` of `tenantId` (auto-mints a token). */
+  /** Send a request through the real pipeline as `userId` of `tenantId` (auto-mints a token).
+   *  `authTimeFromNowSeconds`/`amr` steer the step-up (SEC-03/GAP-SEC-06) evidence the token carries —
+   *  omit for a fresh MFA sign-in; pass a large negative or `null` (auth_time) or `['pwd']`/`null`
+   *  (amr) to drive the missing/stale/weak-re-auth cases. */
   request(input: {
     method: Method; path: string; userId: string; tenantId: string; branchId?: string;
     body?: unknown; idempotencyKey?: string; query?: Readonly<Record<string, string>>;
+    authTimeFromNowSeconds?: number | null; amr?: readonly string[] | null;
   }): Promise<HttpResponse>;
   /** Send a request with an explicit Authorization token (or none) and optional extra headers. */
   raw(input: { method: Method; path: string; token?: string; body?: unknown; idempotencyKey?: string; headers?: Record<string, string> }): Promise<HttpResponse>;
@@ -114,8 +118,12 @@ export function apiHarness(opts: {
   return {
     store,
     idp: TEST_IDP,
-    request: ({ method, path, userId, tenantId, branchId, body, idempotencyKey, query }) =>
-      handle(kernel, { method, path, body, ...(query === undefined ? {} : { query }), headers: headers(TEST_IDP.issue({ sub: userId, tenantId, branchId }), idempotencyKey) }),
+    request: ({ method, path, userId, tenantId, branchId, body, idempotencyKey, query, authTimeFromNowSeconds, amr }) =>
+      handle(kernel, { method, path, body, ...(query === undefined ? {} : { query }), headers: headers(TEST_IDP.issue({
+        sub: userId, tenantId, branchId,
+        ...(authTimeFromNowSeconds === undefined ? {} : { authTimeFromNowSeconds }),
+        ...(amr === undefined ? {} : { amr }),
+      }), idempotencyKey) }),
     raw: ({ method, path, token, body, idempotencyKey, headers: extra }) =>
       handle(kernel, { method, path, body, headers: headers(token, idempotencyKey, extra) }),
     seedOwner: async (tenantId, userId) => { await seedGenesisOwner(store, OWNER_ROLE_ID, tenantId, userId, AT); },

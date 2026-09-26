@@ -156,6 +156,10 @@ export function erasureExecutionRoutes(deps: ErasureExecutionDeps): readonly Rou
       // the holdings, seals a PII-free tombstone, and enqueues the processor notices. Body: { processors?[] }.
       api: 'API-06', method: 'POST', path: '/v1/privacy/data-requests/:requestId/erasure-execution',
       permission: 'privacy.erasure.execute', idempotent: true,
+      // Irreversible erasure is a §28 sensitive action: it requires a RECENT re-authentication with a
+      // second factor, enforced at the API boundary so a direct call cannot bypass it (SEC-03,
+      // GAP-SEC-06). Two-person authorisation + subject verification still apply on top.
+      reauth: { withinSeconds: 300, amr: ['mfa'] },
       handler: async (ctx) => {
         const requestId = (ctx.params['requestId'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
