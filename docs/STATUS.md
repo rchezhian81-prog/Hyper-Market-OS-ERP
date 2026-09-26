@@ -5,6 +5,26 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Option 1 (hosted) — managed VPS purchase spec prepared (awaiting owner approval) (26 September 2026)
+
+Owner direction: prefer a **separate India-region managed VPS** (MilesWeb **VM4** — 4 vCPU / 8 GB / 160 GB
+NVMe candidate). Prepared the exact purchase specification; **nothing purchased**; existing production
+servers stay separate.
+- **`docs/pilot/DEMO-PILOT-HOST-PURCHASE-SPEC.md`** (new) — VM4 **validated against measured usage** (suitable,
+  ~3× RAM / ~4× disk headroom); billing/taxes/renewal, Ubuntu-LTS + Docker support, encrypted off-site backup
+  (destination/retention/cost), the **managed responsibility matrix** (provider vs us), and compulsory-extras
+  — every provider-side value flagged **[CONFIRM]** because the environment's network policy blocks the
+  provider site (the advertised monthly rate is **not** assumed to be the billing option). Ends with **one
+  consolidated provider-question message** and the approval ask.
+- **Payroll approve/lock/bank-file release** and **bulk/sensitive-category product publish** recorded as
+  **open GAP-SEC-06 follow-ups, kept DISABLED** until API-tier step-up is implemented **and tested** for them
+  (`PILOT-FEATURE-MATRIX.md`). Step-up already enforced on privilege-grant + erasure-execution.
+- **Next:** on approval + secure access, deploy synthetic data on the box, verify HTTPS + auth, run
+  host-specific restart/restore/rollback, hand over the demo URL + staff UAT walkthrough — reported
+  **separately** from the temporary-machine results.
+
+---
+
 ## Option 1 (continued) — hosted-demo prep: GAP-SEC-06 fix, demo banner, deployment package (26 September 2026)
 
 **Status (recorded accurately, owner's words):** _Demo verification completed in a temporary environment;

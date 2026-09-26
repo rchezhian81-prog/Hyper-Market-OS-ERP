@@ -45,6 +45,11 @@ owner GO + external gate to enable.
 - **Production messaging** (real SMS/WhatsApp/email to customers).
 - **Production payment capture** (real card/UPI money).
 - **Irreversible legacy-data migration** into production (`MIGRATION_TARGET_KIND` stays `rehearsal`).
+- **Payroll approve / lock / bank-file release** and **bulk / sensitive-category product publish** — kept
+  **DISABLED** pending the **API-tier step-up** follow-up for those specific actions (open GAP-SEC-06
+  follow-up). Step-up is already enforced on privilege-grant + erasure-execution; these two remain off until
+  step-up is implemented **and tested** for them. In the demo they are not exercised (payroll bank-file is
+  build-only with no connector; product changes are synthetic-catalogue only).
 
 ## Controls required for sensitive pilot actions
 
