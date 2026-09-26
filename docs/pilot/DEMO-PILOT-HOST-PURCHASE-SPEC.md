@@ -9,6 +9,26 @@ Existing production servers stay separate._
 so every value marked **[CONFIRM]** must be read off your MilesWeb dashboard / a support reply before
 purchase. The advertised monthly rate is **not assumed** to be the actual billing option (§ Billing).
 
+## Concluded recommendation
+
+**Spec:** proceed with **MilesWeb Managed VPS VM4 — 4 vCPU / 8 GB RAM / 160 GB NVMe, Ubuntu LTS 24.04,
+India datacentre**, HTTPS in front, plus a **separate encrypted off-site backup** bucket. VM4 runs the demo
+with generous headroom (§A) **and** matches the eventual real-pilot sizing (`cost-forecast.md` Shape B,
+4 vCPU / 8–16 GB) — so the same box can carry the real pilot later with no migration. (If this were strictly
+a short throwaway demo and cost were the only priority, the one-tier-smaller **2 vCPU / 8 GB / 100 GB**
+managed plan would also suffice — the email asks for both prices so the choice is on real numbers.)
+
+**Vendor:** **MilesWeb is a sound, economical choice for this** — it is India-region (DPDP data residency),
+**managed** (owner-preferred: they patch the OS), Docker-capable, billed in **INR with a GST invoice**, and
+it is an **existing relationship** (one vendor, one bill, familiar support). The realistic ways to go
+"cheaper" trade money for operational burden: a **self-managed** VPS (Hostinger India, or DigitalOcean
+Bangalore) is cheaper per-spec but puts OS patching, monitoring and recovery back on us (the exact burden the
+cost model flagged) — not worth it for a managed demo. A genuine India managed-cloud alternative to
+**benchmark** against is **E2E Networks** (Indian, INR), but there is no existing relationship and less
+hand-holding. Providers **without an India datacentre (e.g. Contabo) are ruled out** by data residency.
+**Net: proceed with MilesWeb VM4-managed; use the quoted price to sanity-check, and only switch if the quote
+is materially worse than a benchmark.**
+
 ## A. Suitability — VM4 validated against measured application usage
 
 Measured footprint of the four-service stack (from `docker-compose.pilot.yml` limits + the rehearsal):
@@ -103,3 +123,33 @@ and the final total (incl. GST + any extras) is acceptable. Then, under the exis
 I deploy synthetic data, verify HTTPS + authentication, run the host-specific restart/restore/rollback
 tests, and hand over the demo URL + staff UAT walkthrough — reported **separately** from the temporary-machine
 results already completed.
+
+## I. Copyable email to MilesWeb
+
+> **Subject:** Managed VPS VM4 — pre-purchase questions (India, Docker, managed scope)
+>
+> Hello MilesWeb team,
+>
+> I'm setting up a separate, non-production server for an internal project and am looking at the
+> **Managed VPS VM4 (4 vCPU / 8 GB RAM / 160 GB NVMe)**. Before I order, could you confirm the following:
+>
+> 1. **Price & billing** — the current price of **VM4 (managed)**; is a **monthly** billing option available
+>    or only quarterly/annual? Please give the **upfront total** for the shortest available term and the
+>    **renewal** price. Is **18% GST** added, and will I get a **GST invoice**? For comparison, please also
+>    quote the next-smaller managed plan (**2 vCPU / 8 GB / 100 GB**).
+> 2. **Datacentre & bandwidth** — which **India** datacentre(s) is VM4 available in, and how much
+>    **bandwidth** is included?
+> 3. **OS & Docker** — is **Ubuntu LTS (22.04 / 24.04)** supported, and is **Docker / container runtime**
+>    allowed on the managed VM4?
+> 4. **Managed scope** — on the managed plan, exactly what do you handle: **OS patching (cadence + reboot
+>    policy), firewall, monitoring + alerting, backups (frequency + retention), and recovery (RTO/RPO)** —
+>    and what remains my responsibility?
+> 5. **Off-site backups** — do you offer **encrypted, S3-compatible object storage in India** for my own
+>    backups? Please share pricing and retention options. (If not, I'll use a separate bucket.)
+> 6. **Compulsory extras** — are there any **mandatory licences or add-ons** (control panel, backup or
+>    monitoring add-ons) with a separate charge, or is everything included in the managed VM4 price?
+>
+> Thank you — once I have these I can place the order.
+>
+> Best regards,
+> [your name]
