@@ -27,6 +27,7 @@ Prepared for the owner's authorization to move from development into **controlle
 | `DEMO-PILOT-VERIFICATION.md` | **(Option 1)** the executed demo-pilot verification & handoff — hosting decision, deployment manifest, gate/UAT/backup/restore/rollback evidence, security findings, and the GO / CONDITIONAL-GO / NO-GO recommendation (backed by `tests/integration/demo-uat.test.ts`) |
 | `DEMO-PILOT-DEPLOYMENT-PLAN.md` | **(Option 1, hosted)** the concrete deployment package — target confirmation, sizing from measured demo usage, recommended + alternative hosting plan (price/region/specs), backup/off-site, access requirements, deploy steps; the one decision requested is the hosting purchase |
 | `DEMO-PILOT-UAT-WALKTHROUGH.md` | **(Option 1, hosted)** the human-UAT access + role walkthrough + coverage map (automated vs human acceptance recorded separately); complements `UAT-ROLE-CHECKLIST.md` |
+| `DEMO-PILOT-HOST-PURCHASE-SPEC.md` | **(Option 1, hosted)** the exact **managed VPS (MilesWeb VM4)** purchase specification for approval — suitability vs measured usage, billing/taxes/renewal, OS + Docker support, off-site backup, the managed responsibility matrix, licences, and the consolidated provider-question list. **Nothing purchased.** |
 
 Infra: `../../infra/compose/docker-compose.pilot.yml` (resource/capacity overlay) · `../../infra/compose/.env.pilot.example` (pilot env template, placeholders only).
 
