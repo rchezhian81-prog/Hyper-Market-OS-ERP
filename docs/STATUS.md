@@ -5,6 +5,34 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Option 1 — demo-pilot verification executed (non-production, synthetic data) (26 September 2026)
+
+Owner authorized **Option 1**: stand up a safe, isolated, non-production pilot environment and run the
+complete deployment tests and operational drills using synthetic/demo data only. Executed all the
+reversible technical work; stopped at the owner/external gates.
+
+- **`docs/pilot/DEMO-PILOT-VERIFICATION.md`** (new) — the single Option-1 handoff (owner's §8): hosting
+  decision table, deployment manifest, environment architecture, enabled/disabled features, test-user role
+  matrix (no passwords), gate results with evidence, demo-UAT results, defect log, backup/restore + rollback
+  proof, monitoring status, security findings, remaining external deps, and the readiness recommendation.
+- **`tests/integration/demo-uat.test.ts`** (new) — the role-based access matrix executed on the fully-seeded
+  demo tenant: all 7 enforced roles authenticate; each is refused (403) an action outside its authority; the
+  same route that refuses the wrong role allows the right one; tenant isolation holds.
+- **Executed evidence:** fresh-DB migrations (11/11, idempotent) on a separate `sre_pilot` DB; real-PG suite
+  (290 files, 1855 tests, exit 0); full gate green (typecheck/lint/secret-scan/unit+integration/perf/e2e);
+  reproducible build + SBOM (218 components); backup → restore-into-clean → reconcile-exact, and
+  overwrite-refusal. **No defect of any severity found.**
+- **Hosting finding:** no free persistent host exists; this build container is a verification harness only
+  (no Docker daemon, not persistent). Recommended standing host = **Option B (one India-region VM,
+  ₹6,465–12,500/mo)**, within the ₹15k D3 ceiling — owner expenditure (EX-01/OA-5), not provisioned.
+- **Recommendation: CONDITIONAL GO** — everything provable without a real host/real data/paid provider/human
+  sign-off passes. Conditions are the ⛔-live items: host (EX-01), incident owner (G10), human UAT sign-off
+  (G8), live rollback drill (G9). **No standing pilot created, no live provider connected.**
+- **STOP.** Per the owner's instruction, requesting **separate approval for Option 2** (loading a controlled
+  copy of real product/price data). No real in-store pilot started automatically.
+
+---
+
 ## Pilot Phase 7 + 8 — pilot gates + defect policy + consolidated readiness package (STOP for owner GO) (25 September 2026)
 
 Non-production. The final pilot-preparation package.

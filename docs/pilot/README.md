@@ -24,6 +24,7 @@ Prepared for the owner's authorization to move from development into **controlle
 | `UAT-ROLE-CHECKLIST.md` | **(Phase 5)** the role-based UAT checklist — 12 roles × connected flows with per-case fields for the tester and business sign-off |
 | `PILOT-GATES.md` | **(Phase 7)** the 10 blocking pilot gates (evidence + state) and the P0–P4 defect policy |
 | `PILOT-READINESS-PACKAGE.md` | **(Phase 8)** the consolidated GO decision — where we are, the store pilot plan, the Owner Action list, and the STOP-for-owner-GO |
+| `DEMO-PILOT-VERIFICATION.md` | **(Option 1)** the executed demo-pilot verification & handoff — hosting decision, deployment manifest, gate/UAT/backup/restore/rollback evidence, security findings, and the GO / CONDITIONAL-GO / NO-GO recommendation (backed by `tests/integration/demo-uat.test.ts`) |
 
 Infra: `../../infra/compose/docker-compose.pilot.yml` (resource/capacity overlay) · `../../infra/compose/.env.pilot.example` (pilot env template, placeholders only).
 
