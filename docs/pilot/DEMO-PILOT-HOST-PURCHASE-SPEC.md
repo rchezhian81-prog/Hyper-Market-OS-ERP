@@ -9,14 +9,35 @@ Existing production servers stay separate._
 so every value marked **[CONFIRM]** must be read off your MilesWeb dashboard / a support reply before
 purchase. The advertised monthly rate is **not assumed** to be the actual billing option (§ Billing).
 
-## Concluded recommendation
+## Concluded recommendation (with verified MilesWeb prices)
 
-**Spec:** proceed with **MilesWeb Managed VPS VM4 — 4 vCPU / 8 GB RAM / 160 GB NVMe, Ubuntu LTS 24.04,
-India datacentre**, HTTPS in front, plus a **separate encrypted off-site backup** bucket. VM4 runs the demo
-with generous headroom (§A) **and** matches the eventual real-pilot sizing (`cost-forecast.md` Shape B,
-4 vCPU / 8–16 GB) — so the same box can carry the real pilot later with no migration. (If this were strictly
-a short throwaway demo and cost were the only priority, the one-tier-smaller **2 vCPU / 8 GB / 100 GB**
-managed plan would also suffice — the email asks for both prices so the choice is on real numbers.)
+MilesWeb's published **Managed VPS** monthly prices (from the owner's pricing screenshot, 26 Sep 2026, ex-GST):
+
+| Plan | vCPU | RAM | NVMe | Bandwidth | ₹/mo (1-month) |
+|---|---|---|---|---|---|
+| VM1 | 1 | 1 GB | 25 GB | 1 TB | ₹1,499 |
+| VM2 | 1 | 2 GB | 55 GB | 2 TB | ₹1,699 |
+| **VM3** | **2** | **4 GB** | **80 GB** | 3 TB | **₹2,999** |
+| VM4 | 4 | 8 GB | 160 GB | 4 TB | ₹5,499 |
+
+All Managed VPS, full root, dedicated IP, 1 Gbps, 32 global DCs. **Monthly billing is available** (good — a
+demo should not prepay annually). Add **+18% GST**: VM3 ≈ **₹3,539/mo**, VM4 ≈ **₹6,489/mo** incl. GST.
+
+**Recommended for the demo: VM3 (2 vCPU / 4 GB / 80 GB, ₹2,999/mo ex-GST), monthly.** It is **sufficient**
+for the synthetic-data demo (the stack's ceilings are ~2.4 GB RAM / ~3 vCPU / ~40 GB disk — VM3's 4 GB and
+80 GB cover it with adequate, if not generous, headroom; 2 vCPU is fine for demo load since CPU is
+time-shared). It saves **₹2,500/mo** vs VM4 and monthly billing keeps commitment low.
+
+**Choose VM4 (8 GB) instead only if** this same box is meant to also carry the eventual **real pilot**
+(more concurrent tills + real catalogue → `cost-forecast.md` Shape B wants 8–16 GB). For a pure demo that is
+overkill; if the demo later graduates to the real pilot, upgrade VM3 → VM4 then.
+
+**Two make-or-break confirmations before buying (from the pending email reply):**
+1. **India datacentre** — "32 global DCs" must include an **India** location (Mumbai/Pune) that is
+   selectable for this plan (DPDP data residency). If it cannot be provisioned in India, do not buy.
+2. **Docker/containers allowed on the managed plan** — the whole stack runs in containers; a managed plan
+   that forbids Docker will not work.
+   (Price, monthly billing, managed and root access are already confirmed by the pricing page.)
 
 **Vendor:** **MilesWeb is a sound, economical choice for this** — it is India-region (DPDP data residency),
 **managed** (owner-preferred: they patch the OS), Docker-capable, billed in **INR with a GST invoice**, and
