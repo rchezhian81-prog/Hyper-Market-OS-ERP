@@ -51,7 +51,10 @@ Then start Claude Code in the repo (next step) and sign in when prompted.
 ```bash
 sudo mkdir -p /opt/sre && sudo chown sre:sre /opt/sre && cd /opt/sre
 git clone <REPO_URL> app && cd app
-git checkout pilot-rc-1        # the accepted release runtime (tag)
+# Deploy the DEFAULT branch (main). It includes the GAP-SEC-06 step-up fix, the DEMO banner and
+# the pilot seed tooling — all added AFTER the `pilot-rc-1` tag. Do NOT check out pilot-rc-1: that
+# tag is the pre-fix baseline and is missing the security fix and the demo tooling. Record the SHA:
+git rev-parse HEAD
 pnpm install --frozen-lockfile
 ```
 
@@ -127,7 +130,9 @@ Run these **on the box** and record results (this is what was pending a real hos
 ## Appendix — first prompt for the on-server Claude Code session
 > You are on the pilot demo server (MilesWeb VM3, Mumbai, Ubuntu 22.04), non-production, **synthetic data
 > only**. Follow `docs/pilot/DEMO-PILOT-STANDUP-RUNBOOK.md` exactly. Stand up the isolated demo: harden the
-> box, install Docker, deploy the repo at tag `pilot-rc-1`, generate secrets on the box, put HTTPS in front,
+> box, install Docker, deploy the repo's **default branch (main)** — which includes the GAP-SEC-06 fix, the
+> DEMO banner and the seed tooling added after the `pilot-rc-1` tag (do NOT use pilot-rc-1) — generate secrets
+> on the box, put HTTPS in front,
 > bring up the `sre-pilot` compose stack, run migrations, build the shells with `PILOT_DEMO_BANNER=1`, seed the
 > `pilot-demo` synthetic dataset through the real routes via the test IdP, then run the §9 host-specific checks
 > and capture evidence. **Do NOT** import real product/price data (Option 2 is unapproved), connect any live
