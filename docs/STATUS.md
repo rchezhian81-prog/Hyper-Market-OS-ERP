@@ -5,6 +5,26 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Option 1 (hosted) — VM3 purchased; stand-up runbook prepared for the on-server session (27 September 2026)
+
+Owner **purchased MilesWeb Managed VPS VM3** (Mumbai / Ubuntu 22.04, order **#7709463384**, ₹3,538.82 incl
+GST, monthly). Owner chose to **install Claude Code on the server** and let a session there run the deployment.
+- **`docs/pilot/DEMO-PILOT-STANDUP-RUNBOOK.md`** (new) — the self-contained stand-up runbook to run **on the
+  box**: harden → toolchain (Node 22 / pnpm / Docker / Claude Code) → clone at `pilot-rc-1` → secrets on the
+  box → HTTPS in front → `sre-pilot` compose up + migrate + `standup:check` GREEN → build shells with
+  `PILOT_DEMO_BANNER=1` → seed the `pilot-demo` synthetic data through the real routes via the test IdP → §9
+  host-specific checks (restart/persistence, backup→restore-into-clean, rollback, monitoring test-alert) →
+  hand over + **report hosted results separately**. Includes the exact **first prompt** for the on-server
+  Claude Code session and all Option-1 guardrails (synthetic only; no live providers; payroll-release +
+  bulk-publish stay disabled).
+- **Constraint noted honestly:** this build sandbox cannot reach the new server (locked-down + ephemeral), so
+  the deployment is executed **on the box** by the on-server Claude session / developer; I provide the runbook
+  and verify pasted output. **No secrets are shared in chat.**
+- **Next:** dev installs Claude Code on the VPS, gives it the first prompt; the on-server session executes the
+  runbook and reports the hosted demo results separately.
+
+---
+
 ## Option 1 (hosted) — managed VPS purchase spec prepared (awaiting owner approval) (26 September 2026)
 
 Owner direction: prefer a **separate India-region managed VPS** (MilesWeb **VM4** — 4 vCPU / 8 GB / 160 GB
