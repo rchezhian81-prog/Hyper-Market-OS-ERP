@@ -38,7 +38,29 @@ services:
     cpus: 0.5
     pids_limit: 256
 
+  # Hosted demo front: HTTPS on :443 is the ONLY port published to the network. The base publishes
+  # the web port on every interface (a store LAN needs that for its tills); on an internet-facing
+  # host that would be plain HTTP past the firewall — Docker-published ports bypass UFW — so the
+  # pilot REPLACES the list (`!override`) and keeps plain HTTP on localhost for standup:check only.
+  # The certificate comes from the host (TLS_CERT_DIR, default /etc/sre-pilot/tls), never from git.
   web:
     mem_limit: 128m
     cpus: 0.5
     pids_limit: 128
+    ports: !override
+      - '127.0.0.1:${WEB_PORT:-8080}:80'
+      - '${TLS_PORT:-443}:443'
+    depends_on:
+      - migrate
+      - api
+    volumes: !override
+      - ../../apps/pos/web:/usr/share/nginx/html/pos:ro
+      - ../../apps/owner-app/web:/usr/share/nginx/html/owner:ro
+      - ../../apps/web-erp/web:/usr/share/nginx/html/erp:ro
+      - ../../apps/picker-app/web:/usr/share/nginx/html/picker:ro
+      - ../../apps/delivery-app/web:/usr/share/nginx/html/delivery:ro
+      - ../../apps/customer-app/web:/usr/share/nginx/html/customer:ro
+      - ../../apps/warehouse-app/web:/usr/share/nginx/html/warehouse:ro
+      - ../../apps/supplier-app/web:/usr/share/nginx/html/supplier:ro
+      - ./nginx.pilot.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${TLS_CERT_DIR:-/etc/sre-pilot/tls}:/etc/nginx/tls:ro
