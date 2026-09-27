@@ -32,12 +32,18 @@ time-shared). It saves **₹2,500/mo** vs VM4 and monthly billing keeps commitme
 (more concurrent tills + real catalogue → `cost-forecast.md` Shape B wants 8–16 GB). For a pure demo that is
 overkill; if the demo later graduates to the real pilot, upgrade VM3 → VM4 then.
 
-**Two make-or-break confirmations before buying (from the pending email reply):**
-1. **India datacentre** — "32 global DCs" must include an **India** location (Mumbai/Pune) that is
-   selectable for this plan (DPDP data residency). If it cannot be provisioned in India, do not buy.
-2. **Docker/containers allowed on the managed plan** — the whole stack runs in containers; a managed plan
-   that forbids Docker will not work.
-   (Price, monthly billing, managed and root access are already confirmed by the pricing page.)
+**Two make-or-break confirmations — both now satisfied from MilesWeb's public pages** (secondhand, since
+the site can't be opened from the build environment — verify visually on the order screen):
+1. **India datacentre — YES.** MilesWeb lists India datacentres incl. **Mumbai** (ISO-certified Tier 4) and
+   Nashik, with a dedicated Mumbai VPS page — so an India location is selectable (DPDP residency OK). At
+   checkout, **choose Mumbai**.
+2. **Docker/containers — YES (via full root).** Managed VPS gives **full root access** (their KVM VPS), so
+   Docker installs and runs; Plesk even exposes Docker in its UI. At checkout, choose **Ubuntu LTS** and **no
+   control panel** (Plesk/cPanel not needed for a Docker deployment — avoids an extra licence).
+
+Price, monthly billing, managed and full-root access are confirmed by the pricing page. The email reply is
+now only for **commercial fine print** — the exact **GST-inclusive** total, the **renewal** price, and
+confirmation that **no control-panel licence is force-bundled** — none of which is a blocker to ordering.
 
 **Vendor:** **MilesWeb is a sound, economical choice for this** — it is India-region (DPDP data residency),
 **managed** (owner-preferred: they patch the OS), Docker-capable, billed in **INR with a GST invoice**, and
