@@ -5,6 +5,27 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Option 1 (hosted) — ON-SERVER stand-up executed on VM3 (27 September 2026)
+
+Session run **on the box** (MilesWeb VM3, Mumbai) per `DEMO-PILOT-STANDUP-RUNBOOK.md`; results reported
+**separately** in **`docs/pilot/HOSTED-DEMO-RESULTS.md`** (new). Branch `claude/pilot-hosted-standup`
+(commit on the box; **not pushed — the box has no GitHub credential**).
+- **Done:** UFW on (22 + 443 only); secrets generated on the box (`.env.pilot`, 0600, git-ignored);
+  self-signed TLS (owner chose no domain); `sre-pilot` stack up, 11/11 migrations, `standup:check` GREEN
+  5/5; 8 shells built with `PILOT_DEMO_BANNER=1`; HTTPS verified (TLS 1.3); 80/8080/8081/5432 NOT
+  reachable from the network. Full suite 7,749 passed / 0 failed; clean-export secret scan clean.
+- **New:** HTTPS-only pilot front (`nginx.pilot.conf`, overlay `!override`) + guardrail (9 tests); hosted
+  seed runner `pnpm run seed:pilot -- --operator "<name>"` + integration test over a real socket (8).
+- **Kept by owner instruction:** SSH password login ON (no key yet); no `sre` user yet.
+- **Defects:** H-01 (P1) **no browser sign-in exists** → human UAT blocked, owner decision; H-02 fixed
+  (web port bypassed UFW); H-03 edge restart-loop with no cloud; H-04 banner only in ERP shell; H-05
+  secret-scan flags git-ignored files; H-06 BOOTSTRAP_OWNER_* not passed by compose; H-07 fixed.
+- **Waiting on the owner:** (1) run the seed command (it grants the demo roles — a human act, hard rule
+  #5); (2) H-01 sign-in decision; (3) a way to push the branch (deploy key/token) so a PR can be opened;
+  (4) named incident owner + alert channel for §9.5. Rollback drill (§9.7) will pause for approval.
+
+---
+
 ## Option 1 (hosted) — VM3 purchased; stand-up runbook prepared for the on-server session (27 September 2026)
 
 Owner **purchased MilesWeb Managed VPS VM3** (Mumbai / Ubuntu 22.04, order **#7709463384**, ₹3,538.82 incl
