@@ -20,8 +20,18 @@
 //
 // Pure data + types: no clock, no I/O.
 
-/** The one demo tenant every pilot-seed record lives in. Tenant isolation is the demo marker. */
-export const PILOT_DEMO_TENANT = 'pilot-demo';
+/**
+ * The one demo tenant every pilot-seed record lives in. Tenant isolation is the demo marker.
+ *
+ * A UUID, because the ledger's `tenant_id` column is `uuid` (ADR-0003; migrations 0001/0002/0007/0009).
+ * It used to be the string 'pilot-demo', which every in-memory test accepted and the first seed of a
+ * REAL database refused on its first write ("invalid input syntax for type uuid") — found on the
+ * hosted demo box, 27–28 Sep 2026. Fixed and recognisable: the `de30…` prefix and trailing `1` mark it
+ * as the synthetic demo tenant; no real tenant is ever issued this id. Its human label is below.
+ */
+export const PILOT_DEMO_TENANT = 'de300000-0000-4000-8000-000000000001';
+/** The demo tenant's human-readable name, for operator output and docs. */
+export const PILOT_DEMO_TENANT_LABEL = 'pilot-demo';
 
 /** A stamp carried into the seed report, docs and any operator output so nobody mistakes this for
  *  real data. Mirrors the platform's existing `syntheticDataOnly` convention (partner sandboxes). */

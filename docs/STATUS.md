@@ -5,6 +5,25 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Option 1 (hosted) — demo sign-in, banners on all shells, seed tenant-id fix (27–28 September 2026)
+
+On the box, branch `claude/pilot-hosted-standup` (still not pushed — owner: a developer copies it across).
+- **Built (owner decision A):** DEMO-ONLY sign-in `infra/pilot/demo-login` (pilot overlay only) + browser
+  check `pnpm run check:browser`; DEMO banner on all 8 shells. Payroll bank-file release + bulk publish
+  remain DISABLED; seed enables only loyalty/delivery/dept.concession.
+- **Owner's first seed run was RED (H-08):** the demo tenant id `'pilot-demo'` is not a UUID, which the
+  ledger requires. Fixed (`de300000-…-000000000001`), proven on a throwaway real PostgreSQL; box setting
+  updated; demo DB untouched. Full suite 7,788 passed / 0 failed.
+- **Found (H-11, P1, owner decision):** screens take identity/data only from the store-edge screen server
+  (ADR-0004, loopback). From the cloud front they show sample views even when signed in, so browser UAT
+  needs more than a login. Options to put to the owner: (A) demo-only identity bridge for the live ERP +
+  supplier pages; (B) serve the edge screen server behind HTTPS (needs an ADR); (C) API-level UAT only.
+- **Also:** H-09 login-file mount fixed; H-10 self-signed cert blocks service workers (offline demo).
+- **Waiting on the owner:** re-run the seed; H-11 decision; real name + contact for monitoring alerts
+  (the message carried the placeholder `<NAME>, <email/phone>`).
+
+---
+
 ## Option 1 (hosted) — ON-SERVER stand-up executed on VM3 (27 September 2026)
 
 Session run **on the box** (MilesWeb VM3, Mumbai) per `DEMO-PILOT-STANDUP-RUNBOOK.md`; results reported

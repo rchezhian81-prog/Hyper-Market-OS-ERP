@@ -27,6 +27,17 @@ import {
 } from './refund-view';
 import type { ReturnableLine } from '../../../packages/returns/src/return-register';
 
+import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
+
+// The "DEMO / PILOT — NOT PRODUCTION" strip, exactly as the ERP shell mounts it. `PILOT_DEMO_BANNER` is a
+// build-time constant baked in by esbuild (`scripts/build-app.mjs`): '1' in the hosted-demo build, empty
+// in production. `typeof` guards the unbundled case (identifier absent) and a non-browser import.
+declare const PILOT_DEMO_BANNER: string;
+const demoBannerDoc = (globalThis as { document?: unknown }).document;
+if (demoBannerDoc !== undefined && demoBannerDoc !== null) {
+  mountDemoBanner(demoBannerDoc as BannerDocument, typeof PILOT_DEMO_BANNER === 'string' ? PILOT_DEMO_BANNER : '');
+}
+
 /**
  * This lane's reserved receipt-number range (M01-FR-02), provisioned per lane in the signed local
  * config pack. Two offline lanes drawing from DISTINCT ranges can never mint the same receipt

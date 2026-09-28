@@ -155,3 +155,53 @@ describe('hosted pilot seed — rate limit', () => {
     expect(res.status).toBe(429);
   });
 });
+
+// ── The regression that reached the demo box ─────────────────────────────────
+// The ledger's tenant_id is `uuid` (ADR-0003). The demo tenant was once 'pilot-demo', which the
+// in-memory store accepted and a real PostgreSQL refused on the very first write. So: the id must be a
+// UUID (always checked), and the whole hosted seed is proven against a REAL PostgreSQL when one is set.
+
+describe('the demo tenant id fits the real ledger', () => {
+  it('is a UUID — the shape the tenant_id column enforces', () => {
+    expect(PILOT_DEMO_TENANT).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+});
+
+const REAL_DATABASE_URL = process.env['DATABASE_URL'];
+
+describe.skipIf(!REAL_DATABASE_URL)('hosted pilot seed — REAL PostgreSQL ledger', () => {
+  it('lays down the whole synthetic dataset into a real ledger, idempotently', async () => {
+    const pg = await import('pg');
+    const { SqlEventStore } = await import('../../packages/persistence/src/event-store');
+    const { pgPoolClient } = await import('../../packages/persistence/src/pg-client');
+    const pool = new pg.default.Pool({ connectionString: REAL_DATABASE_URL, max: 4 });
+    try {
+      const store = new SqlEventStore(pgPoolClient(pool));
+      const built = buildRouter(buildSurface({ signingKey: PACK_KEY, migrationTargetKind: 'rehearsal', store }));
+      if (!built.ok) throw new Error(built.refusals.map((r) => r.detail).join('; '));
+      const s = startHttpServer({
+        router: built.router!, authenticate: tokenAuthenticator(IDP),
+        access: tenantAccessResolver(store, ROLE_CATALOGUE), entitlements: tenantEntitlementResolver(store),
+        idempotency: new MemoryIdempotencyStore(), newTraceId: () => 'trace-hosted-seed-pg', port: 0,
+        dependenciesReachable: () => true,
+      });
+      running.push(s);
+      if (!s.server.listening) await new Promise<void>((r) => s.server.once('listening', () => r()));
+      const baseUrl = `http://127.0.0.1:${(s.server.address() as { port: number }).port}`;
+      const client = hostedSeedClient({ baseUrl, idp: IDP, store, operator: 'pg-test-operator', tenantId: PILOT_DEMO_TENANT });
+
+      for (let run = 0; run < 2; run += 1) {
+        for (const report of [
+          await applyPilotFoundation(client, PILOT_FOUNDATION),
+          await applyPilotCatalogue(client, PILOT_CATALOGUE, OWNER),
+          await applyPilotTradingPartners(client, PILOT_TRADING_PARTNERS, OWNER),
+          await applyPilotTransactions(client, PILOT_TRANSACTIONS, OWNER),
+        ]) expect(failed(report), JSON.stringify(failed(report))).toEqual([]);
+      }
+      const grants = await store.readStream(PILOT_DEMO_TENANT, STREAM.identity, { type: 'RoleGranted' });
+      expect(grants.filter((g) => g.event.source === 'pilot/seed')).toHaveLength(PILOT_FOUNDATION.users.length + 1);
+    } finally {
+      await pool.end();
+    }
+  }, 180_000);
+});

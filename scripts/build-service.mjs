@@ -31,6 +31,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SERVICES = {
   api: { entry: 'services/api/src/start.ts', outfile: 'services/api/dist/start.js' },
   edge: { entry: 'edge/store-edge/src/start.ts', outfile: 'edge/store-edge/dist/start.js' },
+  // DEMO-ONLY sign-in: run only by the pilot compose overlay (see infra/pilot/demo-login/login.ts).
+  'demo-login': { entry: 'infra/pilot/demo-login/main.ts', outfile: 'infra/pilot/demo-login/dist/demo-login.mjs' },
 };
 
 const name = process.argv[2];
