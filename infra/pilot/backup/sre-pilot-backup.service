@@ -1,0 +1,13 @@
+# Nightly ENCRYPTED demo backup (owner option C, 28 Sep 2026). Installed on the demo box only:
+#   cp infra/pilot/backup/sre-pilot-backup.* /etc/systemd/system/ && systemctl daemon-reload
+#   systemctl enable --now sre-pilot-backup.timer
+[Unit]
+Description=SRE demo pilot encrypted database backup
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/sre/app/infra/pilot/backup/encrypted-backup.sh
+TimeoutStartSec=600
+NoNewPrivileges=true
