@@ -5,6 +5,18 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Option 1 (hosted) — hardening option B, partial: backups encrypted; SSH switch-over ON HOLD (28 September 2026)
+
+- **Done:** encrypted on-box backups (owner option C; nightly timer; private key held only by the owner,
+  shredded from the box); non-root `sre` user created (password locked, no key yet).
+- **ON HOLD by owner decision (28 Sep):** key-only SSH + disabling root/password login. Root + password SSH
+  stay ON. To be completed **before real data (Option 2)**, after the owner confirms the MilesWeb emergency
+  console works. Required then: owner public key → `sre`, `passwd sre`, second-window test, then disable.
+- **Before real data also:** off-site encrypted backups; a restore drill using the owner's saved key.
+- **Now:** owner creates his own demo OWNER login (`pnpm run demo-login:add`) to click through the data.
+
+---
+
 ## Option 1 (hosted) — ALL runbook §9 host checks passed on VM3 (28 September 2026)
 
 - **§9.5 monitoring ✅** — scheduled probe (every 5 min) → Healthchecks.io (owner option A, free
