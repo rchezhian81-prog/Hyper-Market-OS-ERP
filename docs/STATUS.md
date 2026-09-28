@@ -5,6 +5,21 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Option 1 (hosted) — §9 host checks complete except the alert test (28 September 2026)
+
+- **§9.7 rollback ✅** (owner option A): back to `e72b4ae` in 4 s, forward in 3 s; data identical; DB
+  compatible (11 checked, 0 applied); browser check green after.
+- **§9.4 offline + concurrent tills ✅** (owner option A): machine login `pilot-store-edge` (cashier role)
+  provisioned by the owner's seed run; edge syncing; drill GREEN — 3 sales on two tills with the cloud
+  down, 0 in cloud, all 3 banked exactly once 115 s after reconnect, replay not double-counted.
+- **§9.5 monitoring ⛔** — incident owner named **Chezhian**; the alert email arrived as `<l>` (not an
+  address) — waiting for a valid address before the test alert.
+- Payroll bank-file release + bulk product publish remain DISABLED. Branch not pushed (owner: a developer
+  copies it across).
+- **Next:** valid alert email → wire + test alert; personal tester logins; human UAT on the 19 live pages.
+
+---
+
 ## Option 1 (hosted) — §9 host checks: restart ✅, backup→restore ✅; offline + rollback await owner (28 September 2026)
 
 - **§9.3 restart + persistence ✅** — whole stack stopped/started; ledger fingerprint identical; GREEN.

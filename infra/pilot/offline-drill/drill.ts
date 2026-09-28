@@ -79,6 +79,7 @@ async function main(): Promise<number> {
     lane1.tenderCash(ids[0]!, `DR-${stamp}-1`, new Date().toISOString()),
     lane2.tenderCash(ids[1]!, `DR-${stamp}-2`, new Date().toISOString()),
   ]);
+  lane1.newSale(); // the till starts a fresh bill after a paid one
   lane1.scan({ productId: 'prod-brush', description: 'Demo Toothbrush (demo)', unitPriceMinor: 2500, qty: 3 });
   const r3 = await lane1.tenderCash(ids[2]!, `DR-${stamp}-3`, new Date().toISOString());
   const offlineMs = Date.now() - t0;
