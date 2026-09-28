@@ -5,6 +5,26 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Option 1 (hosted) — §9 host checks: restart ✅, backup→restore ✅; offline + rollback await owner (28 September 2026)
+
+- **§9.3 restart + persistence ✅** — whole stack stopped/started; ledger fingerprint identical; GREEN.
+- **§9.6 backup → restore into a clean DB ✅** — reconciles exactly; audit chain intact; overwrite refused.
+- **§9.4 offline/concurrent tills ⛔ owner decision** — the store edge needs its own synthetic login with
+  `pos.sale.sync`; granting it is a person's act (hard rule #5), and borrowing the cashier's login would be a
+  shared identity (hard rule #4). Options put to the owner: (A) add synthetic `pilot-store-edge` with the
+  existing `cashier` role (smallest role that can sync) to the seed, owner re-runs the seed, then the drill;
+  (B) first define a sync-only store-edge role (least privilege; confirm against the roadmap);
+  (C) rely on the automated offline proof for the demo.
+- **§9.5 monitoring test alert ⛔** — no real incident-owner name/contact yet.
+- **§9.7 rollback ⏸ paused for approval.** Plan: (1) fresh backup; (2) redeploy the previous build
+  `e72b4ae` (services/, edge/, packages/, db/migrations/ are byte-identical to the current branch, so the
+  DB is compatible — 11/11 migrations either way); (3) GREEN + fingerprint check; (4) roll forward to the
+  current branch; (5) GREEN + fingerprint + browser check. Demo unavailable ~5–10 min; the previous build
+  has no demo sign-in/bridge/banner while it runs. Optional (6): restore the fresh backup OVER the live
+  demo DB with `--force` — destructive (synthetic data, backed up) — only with explicit approval.
+
+---
+
 ## Option 1 (hosted) — seed GREEN; browser sign-in verified; demo identity bridge (option A) (28 September 2026)
 
 - Owner re-ran the seed: **GREEN** (68 ledger events, synthetic demo tenant).
