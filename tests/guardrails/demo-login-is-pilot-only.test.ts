@@ -50,6 +50,14 @@ describe('the demo sign-in is pilot-only', () => {
     expect(svc).not.toMatch(/\.json:\/etc\/[^\n]*:ro/);
   });
 
+  it('the identity bridge is injected only by the pilot front, with a whitelisted page path', () => {
+    expect(BASE_NGINX).not.toMatch(/sub_filter|screen-data\.js/);
+    const subs = NGINX.split('\n').filter((l) => /^\s*sub_filter\s'/.test(l));
+    expect(subs).toEqual([`    sub_filter '<!--SCREEN-DATA-->' '<script src="/login/screen-data.js?page=$sre_bridge_page"></script>';`]);
+    // Only plain shell paths reach the HTML attribute; anything else becomes "" (the bridge then says nothing).
+    expect(NGINX).toMatch(/map \$uri \$sre_bridge_page \{ ~\^\/\[a-z\]\+\/\(\?:\[a-z0-9-\]\+\\\.html\)\?\$ \$uri; default ""; \}/);
+  });
+
   it('nothing in the product imports it', () => {
     const offenders = loadCodeEntries(['services', 'apps', 'edge', 'packages'])
       .filter((e) => /demo-login|infra\/pilot/.test(e.content))

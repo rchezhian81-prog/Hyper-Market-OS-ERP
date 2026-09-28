@@ -17,6 +17,7 @@ import { mkdirSync, readFileSync, writeFileSync, renameSync, chownSync, statSync
 import { join } from 'node:path';
 import { chromium, type BrowserContext } from 'playwright-core';
 import { addLogin, generatePassword, loginFileProblems, COOKIE_NAME, type DemoLoginFile } from '../demo-login/login';
+import { BRIDGED_PAGES } from '../demo-login/screen-bridge';
 
 const arg = (name: string, fallback?: string): string | undefined => {
   const i = process.argv.indexOf(`--${name}`);
@@ -31,17 +32,24 @@ interface RoleCase {
   readonly forbidden?: string;
   /** An API read this role MUST be allowed (expect 200). */
   readonly allowed?: string;
+  /** Identity-bridged pages (H-11) this role opens; each must boot identified and read live /v1 data. */
+  readonly bridged?: readonly string[];
 }
 
 // Role → screen → a refused and an allowed read, drawn from demo-uat.test.ts's role matrix.
 const CASES: readonly RoleCase[] = [
-  { userId: 'pilot-owner', screen: '/owner/', allowed: '/v1/platform/entitlements' },
-  { userId: 'pilot-manager', screen: '/erp/', forbidden: '/v1/platform/entitlements' },
-  { userId: 'pilot-cashier', screen: '/pos/', forbidden: '/v1/platform/entitlements' },
+  { userId: 'pilot-owner', screen: '/owner/', allowed: '/v1/platform/entitlements',
+    bridged: ['/erp/operations.html', '/erp/data-quality.html', '/erp/workforce.html', '/erp/integration-health.html',
+      '/erp/risk-acceptance.html', '/erp/stored-value.html', '/erp/production.html', '/erp/facilities.html',
+      '/erp/checklist.html', '/erp/return-governance.html', '/erp/ess.html'] },
+  { userId: 'pilot-manager', screen: '/erp/', forbidden: '/v1/platform/entitlements',
+    bridged: ['/erp/rostering.html', '/erp/loss-prevention.html', '/erp/cash-office.html', '/erp/stock-health.html',
+      '/erp/goods-receipt.html', '/erp/day-reopen.html', '/erp/data-io.html'] },
+  { userId: 'pilot-cashier', screen: '/pos/', forbidden: '/v1/platform/entitlements', bridged: ['/erp/stock-health.html'] },
   { userId: 'pilot-accountant', screen: '/erp/finance.html', forbidden: '/v1/platform/entitlements' },
   { userId: 'pilot-ca', screen: '/erp/', forbidden: '/v1/platform/entitlements' },
   { userId: 'pilot-platform-admin', screen: '/erp/admin.html' },
-  { userId: 'pilot-supplier', screen: '/supplier/', forbidden: '/v1/platform/entitlements' },
+  { userId: 'pilot-supplier', screen: '/supplier/', forbidden: '/v1/platform/entitlements', bridged: ['/supplier/'] },
 ];
 
 function readFile(path: string): DemoLoginFile {
@@ -75,6 +83,7 @@ interface Result {
   afterSignOut: number;
   screenshot: string;
   browserNotes?: string[];
+  bridgedPages?: Array<{ page: string; identified: boolean; apiCalls: Array<{ path: string; status: number }>; screenSays: string }>;
 }
 
 async function main(): Promise<number> {
@@ -178,11 +187,28 @@ async function main(): Promise<number> {
         afterSignOut: 0, screenshot, browserNotes: problems,
       };
 
+      // The identity-bridged pages: booted as this person, reading live /v1 data (H-11).
+      result.bridgedPages = [];
+      for (const bp of c.bridged ?? []) {
+        const global = BRIDGED_PAGES[bp.endsWith('/') ? `${bp}index.html` : bp]?.global ?? '';
+        const before = apiCalls.length;
+        await page.goto(`${base}${bp}`);
+        await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => undefined);
+        const identified = await page.evaluate((g) => {
+          const d = (window as unknown as Record<string, { userId?: unknown } | undefined>)[g];
+          return d !== undefined && typeof d.userId === 'string';
+        }, global);
+        const says = (await page.locator('main, body').first().innerText().catch(() => '')).replace(/\s+/g, ' ').trim().slice(0, 200);
+        result.bridgedPages.push({ page: bp, identified, apiCalls: apiCalls.slice(before).filter((a) => a.path !== '/v1/identity/me'), screenSays: says });
+        await page.screenshot({ path: join(out, `${c.userId}${bp.replace(/[/.]/g, '_')}.png`) });
+      }
+
       // Sign out from the sign-in page's own button, then the API must refuse again.
       await page.goto(`${base}/login/`);
       await Promise.all([page.waitForURL((u) => u.pathname.startsWith('/login'), { timeout: 15_000 }), page.click('form[action="/login/logout"] button')]);
-      // Ask from a screen, not the sign-in page: the sign-in page's CSP (default-src 'none') forbids fetch.
-      await page.goto(`${base}${c.screen}`);
+      // Ask from a screen, not the sign-in page (its CSP forbids fetch), and not a bridged page (signed
+      // out, the identity bridge rightly sends it to sign in, which would interrupt the probe).
+      await page.goto(`${base}/erp/finance.html`);
       await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => undefined);
       result.afterSignOut = await status('/v1/identity/me');
       results.push(result);
@@ -208,7 +234,10 @@ async function main(): Promise<number> {
       + `${r.forbidden === undefined ? '' : ` | out-of-role ${r.forbidden.status}`}${r.allowed === undefined ? '' : ` | in-role ${r.allowed.status}`}`
       + ` | after sign-out ${r.afterSignOut} | screen /v1 calls: ${r.screenApiCalls.map((a) => `${a.path} ${a.status}`).join(', ') || 'none'}`);
     console.log(`    screen says: "${r.screenSays.slice(0, 160)}"`);
-    for (const n of r.browserNotes ?? []) console.log(`    note: ${n}`);
+    for (const b of r.bridgedPages ?? []) {
+      console.log(`    ${b.page}: identified ${b.identified ? '✓' : '✗'} | live /v1: ${b.apiCalls.map((a) => `${a.path} ${a.status}`).join(', ') || 'none'}`);
+      console.log(`        says: "${b.screenSays.replace(/^DEMO \/ PILOT[^|]*\|[^A-Za-z]*/, '').slice(0, 130)}"`);
+    }
   }
   console.log(`Evidence: ${join(out, 'browser-check.json')} + screenshots`);
   return 0;

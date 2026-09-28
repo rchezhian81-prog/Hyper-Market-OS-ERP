@@ -5,6 +5,22 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Option 1 (hosted) — seed GREEN; browser sign-in verified; demo identity bridge (option A) (28 September 2026)
+
+- Owner re-ran the seed: **GREEN** (68 ledger events, synthetic demo tenant).
+- Browser check found every real-browser sign-in refused 403 (H-12: `Origin: null` under no-referrer) —
+  fixed; all 7 roles now sign in / are refused out-of-role (403) / sign out (401) in real Chromium.
+- **Owner chose option A** for H-11: DEMO-ONLY identity bridge injects only `{userId, permissions}` from
+  the live API into 18 ERP pages + the supplier portal, which then read live data from `/v1`. Verified in
+  the browser: 20/20 page visits identified, live reads 200; cashier refused stock health by the API.
+  Remaining sample-only screens still need the store edge (listed in HOSTED-DEMO-RESULTS H-11).
+- Payroll bank-file release + bulk product publish remain DISABLED.
+- **Waiting on the owner:** real name + contact for monitoring alerts; personal tester logins
+  (`pnpm run demo-login:add`, run in his own SSH window); remaining §9 host checks (restart,
+  backup→restore, offline/edge sync, rollback — rollback pauses for approval).
+
+---
+
 ## Option 1 (hosted) — demo sign-in, banners on all shells, seed tenant-id fix (27–28 September 2026)
 
 On the box, branch `claude/pilot-hosted-standup` (still not pushed — owner: a developer copies it across).

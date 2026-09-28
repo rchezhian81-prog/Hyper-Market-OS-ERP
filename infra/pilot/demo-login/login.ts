@@ -243,7 +243,7 @@ ${error === undefined ? '' : `<p class="err" role="alert">${esc(error)}</p>`}
 <p>Your login is personal. Do not share it. This is a demo with made-up data.</p>`);
 }
 
-function cookieOf(headers: LoginRequest['headers']): string | undefined {
+export function cookieOf(headers: LoginRequest['headers']): string | undefined {
   const raw = headers['cookie'];
   if (raw === undefined) return undefined;
   for (const part of raw.split(';')) {

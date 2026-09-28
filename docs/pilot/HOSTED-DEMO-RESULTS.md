@@ -81,6 +81,18 @@ front does not provide. So: **authentication and authorisation are proven in a b
 role's actual workflow on screen is not yet possible on this host.** Temporary `check.*` logins were
 created in memory for the run and removed afterwards (login file empty again).
 
+## §9.1 identity bridge — live pages in a browser (28 Sep 2026, option A)
+
+| Role | Bridged pages opened | Identified as the person | Live `/v1` reads |
+|---|---|---|---|
+| owner | operations, data-quality, workforce, integration-health, risk-acceptance, stored-value, production, facilities, checklist, return-governance, ess (11) | 11/11 | all 200 |
+| store manager | rostering, loss-prevention, cash-office, stock-health, goods-receipt, day-reopen, data-io (7) | 7/7 | all 200 (stock health: 5 reads) |
+| cashier | stock-health (out of role) | 1/1 | all **403** → "You do not have permission to see stock health." |
+| supplier | supplier portal | 1/1 | statement + submissions 200 |
+
+Screenshots per role + page: `/var/lib/sre-pilot/evidence/browser-check/`. The injected permissions only
+decide what a screen offers; the API re-checks every read (the cashier row proves it).
+
 ## Defects found on the host (policy: `PILOT-GATES.md`)
 
 | ID | Sev | Defect | State |
@@ -96,7 +108,7 @@ created in memory for the run and removed afterwards (login file empty again).
 | H-09 | P2 | The demo sign-in mounted its login FILE; logins are replaced atomically, and a single-file bind mount keeps the old inode, so new logins were never seen. | **Fixed** — directory mount `/etc/sre-pilot/demo-login/`; guardrail asserts it. |
 | H-10 | P2 | With the self-signed certificate, browsers refuse to register the shells' service worker ("SSL certificate error when fetching the script"), so **offline mode cannot be demonstrated in a browser** on this host. | Open — consequence of the no-domain choice; a real certificate (domain) removes it. |
 | H-12 | P1 | Every real-browser sign-in was refused 403: the sign-in pages inherited `Referrer-Policy: no-referrer`, under which Chrome posts the form with `Origin: null`, which the cross-site check refuses. (curl, sending a real Origin, passed.) | **Fixed** — sign-in pages use `same-origin`; nginx `/login` no longer inherits the server header. Unit + guardrail tests; live browser check green. |
-| H-11 | **P1** | **Screens get identity + data only from the store-edge screen server** (ADR-0004: `window.<screen>Data` injected at `<!--SCREEN-DATA-->`, loopback-only). Served statically from the cloud front, every screen boots without identity/permissions and shows its sample / "told me nothing" view — even after a valid sign-in. The live `/v1` calls (ERP pages, supplier portal) also gate client-side on injected permissions. | **Open — owner decision** (options in STATUS). The demo sign-in (H-01) is necessary but not sufficient for browser UAT. |
+| H-11 | **P1** | **Screens got identity + data only from the store-edge screen server** (ADR-0004, loopback). Served from the cloud front, every screen booted without identity and showed its sample / "told me nothing" view, even after a valid sign-in. | **Mitigated for 19 pages (owner decision A, 28 Sep).** DEMO-ONLY identity bridge (`infra/pilot/demo-login/screen-bridge.ts`): the HTTPS front replaces `<!--SCREEN-DATA-->` with a classic script from `/login/screen-data.js`, which verifies the session and injects ONLY `{ userId, permissions }` read from the live `GET /v1/identity/me` — the same shape the store edge injects for these pages; no business data. 18 ERP pages + the supplier portal then read their own data live from `/v1`. Browser check: 20/20 bridged page visits identified, all live reads 200; the cashier on stock health gets 403 from the API and "You do not have permission". **Still sample-only (need the store edge):** ERP home/manager, finance, admin, buying, catalogue, reporting and the other edge-fed pages; POS, owner, picker, delivery, warehouse, customer shells; day-reopen is read-only (its Reopen posts to the store box). Tests: `tests/unit/demo-identity-bridge.test.ts` (28, incl. drift vs the edge's GLOBAL_FOR and marker-before-bundle for every bridged page) + guardrail. |
 
 ## Open items (not done, and why)
 

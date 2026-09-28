@@ -14,6 +14,7 @@ import {
   addLogin, createDemoLoginHandler, FailureThrottle, generatePassword, loginFileProblems, startupRefusals,
   type DemoLoginFile,
 } from './login';
+import { createScreenBridgeHandler } from './screen-bridge';
 
 const arg = (name: string): string | undefined => {
   const i = process.argv.indexOf(`--${name}`);
@@ -52,6 +53,21 @@ function serve(): void {
     audit: (line) => { process.stdout.write(`${JSON.stringify({ at: new Date().toISOString(), ...line })}\n`); },
   });
 
+  // The identity bridge (H-11): asks the INTERNAL API who the session is. Never the public front.
+  const apiUrl = (env['API_INTERNAL_URL'] ?? 'http://api:8081').replace(/\/+$/, '');
+  const bridge = createScreenBridgeHandler({
+    idp: { secret: env['IDP_SIGNING_KEY']!, issuer: env['IDP_ISSUER']!, audience: env['IDP_AUDIENCE']! },
+    now: () => Date.now(),
+    fetchMe: async (token, forwardedFor) => {
+      const res = await fetch(`${apiUrl}/v1/identity/me`, {
+        // The person's own address, so the API's per-IP limits apply per tester, not to this service.
+        headers: { authorization: `Bearer ${token}`, accept: 'application/json', 'x-forwarded-for': forwardedFor },
+        signal: AbortSignal.timeout(5000),
+      });
+      return { status: res.status, body: res.ok ? await res.json() as unknown : undefined };
+    },
+  });
+
   const port = Number(env['PORT'] ?? '8090');
   const server = createServer((req, res) => {
     const chunks: Buffer[] = [];
@@ -66,7 +82,20 @@ function serve(): void {
       try {
         const headers: Record<string, string | undefined> = {};
         for (const [k, v] of Object.entries(req.headers)) headers[k] = Array.isArray(v) ? v.join(', ') : v;
-        const out = handle({ method: req.method ?? 'GET', url: req.url ?? '/', headers, body: Buffer.concat(chunks).toString('utf8') });
+        const request = { method: req.method ?? 'GET', url: req.url ?? '/', headers, body: Buffer.concat(chunks).toString('utf8') };
+        if (request.method === 'GET' && request.url.startsWith('/login/screen-data.js')) {
+          void bridge(request).then(
+            (out) => { res.writeHead(out.status, out.headers).end(out.body); },
+            (err: unknown) => {
+              process.stderr.write(`demo identity bridge error: ${err instanceof Error ? err.message : String(err)}\n`);
+              // Fail closed and visibly: the page boots "told nothing", exactly as without the bridge.
+              res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' })
+                .end('/* demo identity bridge unavailable — the screen shows what it knows without it */\n');
+            },
+          );
+          return;
+        }
+        const out = handle(request);
         res.writeHead(out.status, out.headers).end(out.body);
       } catch (err) {
         process.stderr.write(`demo sign-in error: ${err instanceof Error ? err.message : String(err)}\n`);
