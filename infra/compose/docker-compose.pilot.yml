@@ -42,6 +42,14 @@ services:
       # binds it to 127.0.0.1 INSIDE the container and nothing publishes it, so nothing outside the box's
       # own container can reach it — the same loopback-only property a store lane has.
       EDGE_LANE_PORT: '8095'
+      # DEMO store box (ADR-0016): the edge's own screen server, still bound to 127.0.0.1 inside this
+      # container; the demo relay below reaches it through the shared network namespace.
+      EDGE_SCREEN_PORT: '8097'
+      EDGE_APPS_DIR: /app/apps
+    volumes:
+      # The screens the demo store box serves (read-only). The till bundle is the DEMO build (its lane
+      # base points at /store-lane); a store's edge serves its own shells from its own disk.
+      - ../../apps:/app/apps:ro
 
   # Hosted demo front: HTTPS on :443 is the ONLY port published to the network. The base publishes
   # the web port on every interface (a store LAN needs that for its tills); on an internet-facing
@@ -104,3 +112,26 @@ services:
     mem_limit: 64m
     cpus: 0.25
     pids_limit: 32
+
+  # DEMO ONLY (ADR-0016): the relay to the demo store box's loopback screen server + lane socket. It
+  # shares the edge's network namespace (so the edge still binds only 127.0.0.1) and publishes nothing;
+  # the HTTPS front forwards to it (edge:8096) only after the demo sign-in's auth_request. Not in the base
+  # (store) compose file.
+  edge-relay:
+    image: nginx:alpine
+    restart: unless-stopped
+    network_mode: 'service:edge'
+    depends_on:
+      - edge
+    volumes:
+      - ./nginx.edge-relay.conf:/etc/nginx/conf.d/default.conf:ro
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+    cpus: 0.25
+    pids_limit: 64

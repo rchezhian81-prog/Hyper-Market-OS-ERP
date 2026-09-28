@@ -146,3 +146,25 @@ export function createScreenBridgeHandler(deps: ScreenBridgeDeps): (req: LoginRe
     return { status: 200, headers: { ...SCRIPT_HEADERS }, body: out.script };
   };
 }
+
+// ── The gate for the DEMO store box (ADR-0016): GET /login/verify, /login/verify-sell ────────────────
+// Called by the HTTPS front's `auth_request` before it forwards anything to the demo store edge. A valid
+// demo session is enough to SEE the edge's screens; writing to its lane (a sale) also needs the API to
+// say the person may sell (`pos.sale.sync`). Answers only 204 (go on), 401 (no session) or 403 (not
+// allowed) — no body, nothing about the person leaks.
+
+export const SELL_PERMISSION = 'pos.sale.sync';
+
+export function createSessionGateHandler(deps: Omit<ScreenBridgeDeps, 'pages'>): (req: LoginRequest) => Promise<LoginResponse> {
+  const plain = (status: number): LoginResponse => ({ status, headers: { 'cache-control': 'no-store' }, body: '' });
+  return async (req) => {
+    const path = new URL(req.url, 'https://demo.invalid').pathname;
+    const token = cookieOf(req.headers);
+    if (token === undefined || !verifyToken(token, deps.idp, deps.now()).ok) return plain(401);
+    if (path !== '/login/verify-sell') return plain(204);
+    const res = await deps.fetchMe(token, req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 'unknown');
+    if (res.status === 401) return plain(401);
+    const perms = (res.body as { permissions?: unknown } | undefined)?.permissions;
+    return res.status === 200 && Array.isArray(perms) && perms.includes(SELL_PERMISSION) ? plain(204) : plain(403);
+  };
+}

@@ -126,3 +126,43 @@ describe('identity bridge — cannot drift from the screens', () => {
     });
   }
 });
+
+// ── The gate for the DEMO store box (ADR-0016) ───────────────────────────────
+import { createSessionGateHandler, SELL_PERMISSION } from '../../infra/pilot/demo-login/screen-bridge';
+
+describe('demo store box gate — who may see, who may sell', () => {
+  const gate = (me: { status: number; body: unknown }) => {
+    const calls: string[] = [];
+    const h = createSessionGateHandler({ idp: IDP, now: () => NOW, fetchMe: async (t) => { calls.push(t); return me; } });
+    return { h, calls };
+  };
+  const req = (path: string, cookie?: string) => ({
+    method: 'GET', url: path, body: '', headers: cookie === undefined ? {} : { cookie: `${COOKIE_NAME}=${cookie}` },
+  });
+
+  it('no session → 401 for seeing and for selling, without asking the API', async () => {
+    const { h, calls } = gate({ status: 200, body: { permissions: [SELL_PERMISSION] } });
+    expect((await h(req('/login/verify'))).status).toBe(401);
+    expect((await h(req('/login/verify-sell'))).status).toBe(401);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('a forged session (wrong key) → 401', async () => {
+    const { h, calls } = gate({ status: 200, body: { permissions: [SELL_PERMISSION] } });
+    expect((await h(req('/login/verify-sell', token('pilot-cashier', 'q'.repeat(48))))).status).toBe(401);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('any valid session may SEE the store box screens', async () => {
+    const { h } = gate({ status: 200, body: { permissions: [] } });
+    const res = await h(req('/login/verify', token('pilot-ca')));
+    expect(res.status).toBe(204);
+    expect(res.body).toBe('');
+  });
+
+  it('SELLING needs the API to say the person may sell (pos.sale.sync)', async () => {
+    expect((await gate({ status: 200, body: { permissions: [SELL_PERMISSION] } }).h(req('/login/verify-sell', token('pilot-cashier')))).status).toBe(204);
+    expect((await gate({ status: 200, body: { permissions: ['export.read'] } }).h(req('/login/verify-sell', token('pilot-ca')))).status).toBe(403);
+    expect((await gate({ status: 401, body: undefined }).h(req('/login/verify-sell', token('pilot-cashier')))).status).toBe(401);
+  });
+});

@@ -80,3 +80,37 @@ describe('the demo sign-in is pilot-only', () => {
     expect(login).not.toMatch(/add_header Referrer-Policy/);
   });
 });
+
+describe('the DEMO store box relay (ADR-0016) is pilot-only and gated', () => {
+  const RELAY = readFileSync('infra/compose/nginx.edge-relay.conf', 'utf8');
+
+  it('the base (store) compose file has no relay and no screen server exposure', () => {
+    expect(BASE).not.toMatch(/edge-relay|EDGE_SCREEN_PORT|network_mode/);
+  });
+
+  it('the relay shares the edge namespace and publishes no port', () => {
+    const svc = serviceBlock(PILOT, 'edge-relay');
+    expect(svc).toMatch(/network_mode: 'service:edge'/);
+    expect(svc).not.toMatch(/^\s+ports:/m);
+    expect(svc).toMatch(/read_only: true/);
+  });
+
+  it('the relay only forwards to the edge loopback sockets, screens read-only', () => {
+    expect(RELAY).toMatch(/proxy_pass http:\/\/127\.0\.0\.1:8097\/;/);
+    expect(RELAY).toMatch(/proxy_pass http:\/\/127\.0\.0\.1:8095;/);
+    expect(RELAY).toMatch(/location \/store\/ \{\s*limit_except GET \{ deny all; \}/);
+    expect(RELAY).toMatch(/location \/ \{ return 404; \}/);
+  });
+
+  it('the HTTPS front reaches the relay only behind the demo sign-in gate', () => {
+    const store = /location \/store\/ \{([^}]*)\}/.exec(NGINX)?.[1] ?? '';
+    const lane = /location \/store-lane\/ \{([^}]*)\}/.exec(NGINX)?.[1] ?? '';
+    expect(store).toMatch(/auth_request \/_auth\/verify;/);
+    expect(lane).toMatch(/auth_request \/_auth\/verify-sell;/);
+    for (const block of [store, lane]) expect(block).toMatch(/proxy_pass http:\/\/\$sre_relay;/);
+    // Nothing else in the front talks to the relay.
+    expect(NGINX.split("\n").filter((l) => !l.trim().startsWith("#") && l.includes("edge:8096"))).toHaveLength(2);
+    expect(NGINX).toMatch(/location = \/_auth\/verify \{\s*internal;/);
+    expect(NGINX).toMatch(/location = \/_auth\/verify-sell \{\s*internal;/);
+  });
+});

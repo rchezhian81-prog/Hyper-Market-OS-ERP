@@ -33,6 +33,17 @@ import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/d
 // build-time constant baked in by esbuild (`scripts/build-app.mjs`): '1' in the hosted-demo build, empty
 // in production. `typeof` guards the unbundled case (identifier absent) and a non-browser import.
 declare const PILOT_DEMO_BANNER: string;
+
+// DEMO ONLY (ADR-0016). Where this till's edge answers. A build-time constant (esbuild `define`): the
+// hosted-demo build sets it to the same-origin path of the demo store box (`/store-lane`), so a till in a
+// remote browser reaches the demo edge through the signed-in HTTPS front. A production build leaves it
+// empty, which compiles to the store's own loopback — `http://127.0.0.1:<port>` — exactly as before.
+declare const PILOT_DEMO_LANE_BASE: string;
+const DEMO_LANE_BASE = typeof PILOT_DEMO_LANE_BASE === 'string' ? PILOT_DEMO_LANE_BASE : '';
+/** The base URL of this till's edge: the store's loopback, unless the DEMO build says otherwise. */
+export function laneBase(port: number, demoBase: string = DEMO_LANE_BASE): string {
+  return demoBase === '' ? `http://127.0.0.1:${port}` : demoBase;
+}
 const demoBannerDoc = (globalThis as { document?: unknown }).document;
 if (demoBannerDoc !== undefined && demoBannerDoc !== null) {
   mountDemoBanner(demoBannerDoc as BannerDocument, typeof PILOT_DEMO_BANNER === 'string' ? PILOT_DEMO_BANNER : '');
@@ -114,7 +125,7 @@ function laneDurableTo(
     let lastError: unknown;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
-        const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+        const response = await fetch(`${laneBase(port)}${path}`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: record,
@@ -159,7 +170,7 @@ export type LaneLookup = (receipt: string) => Promise<SaleLookupResult | null>;
 
 export function laneLookup(port: number = DEFAULT_LANE_PORT): LaneLookup {
   return async (receipt) => {
-    const response = await fetch(`http://127.0.0.1:${port}/lane/lookup?receipt=${encodeURIComponent(receipt)}`);
+    const response = await fetch(`${laneBase(port)}/lane/lookup?receipt=${encodeURIComponent(receipt)}`);
     const body = await response.json() as { found?: boolean } & Partial<SaleLookupResult>;
     return body.found === true && body.sale !== undefined
       ? { sale: body.sale, returns: body.returns ?? [], refunds: body.refunds ?? [] }

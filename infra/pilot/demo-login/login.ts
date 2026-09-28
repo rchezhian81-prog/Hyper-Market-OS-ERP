@@ -193,6 +193,9 @@ const SHELLS: ReadonlyArray<readonly [string, string]> = [
   ['/erp/', 'Store & back office (ERP)'], ['/pos/', 'Till (POS)'], ['/owner/', 'Owner'],
   ['/warehouse/', 'Warehouse'], ['/picker/', 'Picker'], ['/delivery/', 'Delivery'],
   ['/customer/', 'Customer'], ['/supplier/', 'Supplier portal'],
+  // The DEMO store box (ADR-0016): screens served by the demo store edge itself.
+  ['/store/pos/', 'Demo store box — till'], ['/store/manager/', 'Demo store box — manager day'],
+  ['/store/owner/', 'Demo store box — owner'],
 ];
 
 /** Only a same-origin path to one of the shells is a valid place to go back to (no open redirect). */
