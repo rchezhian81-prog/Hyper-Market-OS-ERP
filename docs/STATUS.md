@@ -5,6 +5,58 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Option 1 (hosted) — demo stood up on VM3; owner gap summary + Step-1 real-data plan (28 September 2026)
+
+**Hosted stand-up executed on the box** (MilesWeb VM3, Mumbai, Ubuntu 22.04) by the on-server Claude Code session,
+with the owner running every human step. **Reported** outcomes — evidence lives on the server branch
+`claude/pilot-hosted-standup`, **not yet merged**; treat as unconfirmed in this repository until reconciled:
+HTTPS + UFW; `standup:check` GREEN 5/5; suite green on the box (7,849 tests); synthetic `pilot-demo` tenant seeded
+through the real routes (a UUID-tenant-id bug in the seed found and fixed on the box); demo login page (pilot-only
+guardrail) — all 7 demo roles sign in / see only their own work / are refused others' / sign out, verified in a real
+Chrome browser; wrong password, cross-site sign-in and forged cookie refused; DEMO banner (EN/TA) built into all 8
+shells; Option-A demo-only data bridge (19 live-data ERP/supplier pages show demo data after sign-in; store-floor
+screens sample-only until an in-store computer serves them — **H-11**); restart (~14 s, 68 records identical),
+encrypted backup → restore-into-clean (overwrite refused without `--force`; nightly backup; private key held
+off-server by the owner) and rollback to `e72b4ae` and forward (4 s / 3 s) — all passed; monitoring (6 checks /
+5 min) + Healthchecks.io alerting with test "down"/"up" emails received (incident owner for the demo: Chezhian);
+demo store-edge running behind the sign-in check under **ADR 0016** (demo-only); demo price-list publish command
+written but **not run by the AI** (a human step); offline-sync drill prepared, pending. **Open findings:** **H-13**
+— on the demo a till sale did not reduce on-hand stock on the stock screen (sales history / turns / days-of-cover
+did update) — pending a roadmap check before any change; key-based server login switch-over prepared but **ON
+HOLD** by owner decision (must-do before any real data). Payroll bank-file release + bulk product publish stayed
+**DISABLED**; all data synthetic; no live providers; no server address or credential recorded here.
+
+**Owner direction (28 Sep 2026):** use the system day-to-day in the real hypermarket **in parallel with the
+existing ERP** (not retired). Asked: "are there any gaps in the requirements?" — answered from the registers, with
+each document independently fact-checked against its sources before saving:
+- **`docs/pilot/OWNER-GAP-SUMMARY.md`** (new) — requirements written 99%; engines ~97% built (140/144); ladder
+  26/104 end-to-end, **0/104 UAT, 0/104 production**; parallel run is the designed plan (MG-10 / G10 / rollback =
+  keep trading on legacy); six gap buckets (real data; hardware + one-PC till KL-08; outside accounts — deferrable
+  in mirror mode; sign-offs G8 / EX-13 / CA / licences; security-for-production incl. the GAP-SEC-06 follow-on that
+  keeps payroll bank-file + bulk publish DISABLED; the unfilled daily-reconciliation role R-05 / G10); the H-13 and
+  sample-data questions answered without resolving H-13; decisions **P** (how to run in parallel) and **L** (start
+  real-data preparation?) as options with consequences.
+- **`docs/pilot/STEP-1-REAL-DATA-PLAN.md`** (new) — preparation for the **Option 2** decision (which **remains
+  unapproved**): guardrails (written GO; never the `pilot-demo` tenant/server — G4; legacy DB never touched — OB-06
+  / hard rule #7; `MIGRATION_TARGET_KIND=rehearsal`; exceptions kept; QG-07 + CA signatures; every load a named
+  human), the ten steps with who / what / done / tools, the export checklist (data-requirements B1–B7 + the six
+  witnesses), and decisions **D0** (where the real-data environment lives), **D3** (first-load shape; recommendation:
+  one department's catalogue + prices first), **D4** (when to give the GO).
+- **Honest finding recorded (from the research):** **no real-data bulk loader exists** —
+  `POST /v1/migration/trial-loads` is a timing projection over declared counts; the M30 import commit writes an
+  audit record only; the only working load path is the per-record routes (how the demo seed loads). Also: the signed
+  verification report is unreachable (no writers for `ExtractionRun` / `MigrationFindingRaised` /
+  `MigrationReportSigned`; `signVerificationReport` unrouted); the six witness engines have no routes; **MG-10
+  parallel run NOT STARTED**; no procedure for a second real tenant beside `pilot-demo`; delta capture undefined.
+  Build items are listed in the plan's §7.2 — **none is authorised by these documents.**
+- **Next:** owner writes Decisions P / L and D0 / D3 / D4; reconcile `claude/pilot-hosted-standup` into main
+  (HOSTED-DEMO-RESULTS.md, ADR 0016, H-11 / H-13); answer H-13 against the roadmap; then — only on a written Option 2
+  GO — build + test the loader / tenant procedure / report writers before any real load.
+- **Blocked / needs owner:** Option 2 GO (unapproved); R-05 / G10 names + maximum parallel duration; emergency-console
+  confirmation before the server login switch-over; store hardware (EX-09).
+
+---
+
 ## Option 1 (hosted) — VM3 purchased; stand-up runbook prepared for the on-server session (27 September 2026)
 
 Owner **purchased MilesWeb Managed VPS VM3** (Mumbai / Ubuntu 22.04, order **#7709463384**, ₹3,538.82 incl
