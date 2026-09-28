@@ -5,6 +5,24 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Option 1 (hosted) — ALL runbook §9 host checks passed on VM3 (28 September 2026)
+
+- **§9.5 monitoring ✅** — scheduled probe (every 5 min) → Healthchecks.io (owner option A, free
+  Hobbyist plan); test alert sent 11:03 UTC; the incident owner **Chezhian** confirmed receipt of both the
+  DOWN and the UP email.
+- **Host checks, all green:** §9.1 browser sign-in + permissions (7 roles) and 19 live pages via the demo
+  identity bridge · §9.2 RBAC/isolation · §9.3 restart + persistence · §9.4 offline + two tills,
+  exactly-once · §9.5 alerting · §9.6 backup → restore into a clean DB · §9.7 rollback (4 s) / forward (3 s).
+- **Still open (not blockers for the demo, each an owner item):** personal tester logins + human UAT
+  (G8); key-only SSH + non-root user (deferred by owner); encrypted off-site backups; a real domain +
+  certificate (fixes H-10 browser offline); screens that need the store edge stay sample-only on the
+  cloud demo (H-11); a sync-only store-edge role (least privilege); the branch
+  `claude/pilot-hosted-standup` to be copied across by a developer and merged through a PR.
+- Payroll bank-file release + bulk product publish remain DISABLED; synthetic data only; Option 2
+  (real product/price data) remains unapproved.
+
+---
+
 ## Option 1 (hosted) — §9 host checks complete except the alert test (28 September 2026)
 
 - **§9.7 rollback ✅** (owner option A): back to `e72b4ae` in 4 s, forward in 3 s; data identical; DB
