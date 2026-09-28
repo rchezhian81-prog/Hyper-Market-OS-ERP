@@ -53,11 +53,11 @@ Unauthenticated `GET /v1/…` over HTTPS → **401** `unauthenticated`, "Nothing
 |---|---|---|
 | 1 | Authenticated browser workflows | **Sign-in + access: ✅ all 7 roles** (28 Sep, `pnpm run check:browser`, headless Chromium over the live HTTPS URL; evidence + screenshots in `/var/lib/sre-pilot/evidence/browser-check/`). **Screens show no live shop data: ⛔ H-11.** See the table below. |
 | 2 | RBAC + tenant isolation (live) | _pending seed_ |
-| 3 | Restart + persistence | _pending seed_ |
-| 4 | Offline / reconnection + concurrent tills | _pending seed + edge token_ |
-| 5 | Monitoring + test alert | ⛔ needs the named incident owner + alert channel (G10) |
-| 6 | Backup → restore into clean DB | _pending seed_ |
-| 7 | Deployment rollback | _pending — will pause for owner approval before any redeploy/restore over the running demo_ |
+| 3 | Restart + persistence | ✅ **28 Sep 07:22 UTC.** Whole `sre-pilot` stack stopped (site unreachable) and started: ready in ~14 s; ledger **68 events, max seq 68, content fingerprint `1eb109c4…` identical before/after**; 45 idempotency keys identical; `standup:check` GREEN 5/5. Docker + containerd enabled at boot; every demo container `unless-stopped` (edge deliberately stopped until connected). Server itself not rebooted (would drop the owner's SSH session). |
+| 4 | Offline / reconnection + concurrent tills | ⛔ **owner decision** — the store edge needs its own synthetic login holding `pos.sale.sync`; no such login exists and granting one is a privilege change (hard rule #5 → a person does it via the seed). Using the cashier's login would be a shared identity (hard rule #4). In a browser, offline is additionally blocked by the self-signed certificate (H-10). Automated proof of the offline path stands (`FAILURE-DRILLS.md`). |
+| 5 | Monitoring + test alert | ⛔ needs the named incident owner + alert channel (G10) — owner's message still carried the placeholder `<NAME>, <email/phone>` |
+| 6 | Backup → restore into clean DB | ✅ **28 Sep 07:23 UTC.** `db:backup` → `bk-2026-09-28T07-23-00-932Z` (sha256 `60d40a09…`, 8 tables: event_ledger 68, audit_log 201, idempotency_keys 45, schema_migrations 11) in `/var/lib/sre-pilot/backups` (root-only dir; **unencrypted**, not off-site). Restored into a separate throwaway PostgreSQL 16: **reconciles exactly**; ledger fingerprint `1eb109c4…` identical to live; audit hash chain **intact** (201 records; tenants = demo 120, the owner's failed first seed 45 under the old id, unauthenticated probes 36 — all kept, hard rule #6). Second restore over the non-empty target **REFUSED** without `--force`. Throwaway DB removed. |
+| 7 | Deployment rollback | ⏸ **paused for owner approval** (plan in STATUS). No redeploy or restore over the running demo has been done. |
 
 ## §9.1 browser check — results (28 Sep 2026, after the owner's GREEN seed: 68 ledger events, demo tenant)
 
