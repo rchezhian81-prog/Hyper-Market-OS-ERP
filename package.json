@@ -27,6 +27,7 @@
     "build:demo-login": "node scripts/build-service.mjs demo-login",
     "demo-login:add": "node infra/pilot/demo-login/dist/demo-login.mjs add",
     "check:browser": "node scripts/pilot-browser-check.mjs",
+    "drill:offline": "node scripts/pilot-offline-drill.mjs",
     "db:migrate": "node scripts/migrate.mjs",
     "build:pos": "node scripts/build-app.mjs pos",
     "build:owner": "node scripts/build-app.mjs owner-app",

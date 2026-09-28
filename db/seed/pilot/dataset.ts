@@ -30,6 +30,8 @@
  * as the synthetic demo tenant; no real tenant is ever issued this id. Its human label is below.
  */
 export const PILOT_DEMO_TENANT = 'de300000-0000-4000-8000-000000000001';
+/** Machine identities in the demo: they sync, they never sign in as a person (hard rule #4). */
+export const PILOT_MACHINE_USERS: readonly string[] = Object.freeze(['pilot-store-edge']);
 /** The demo tenant's human-readable name, for operator output and docs. */
 export const PILOT_DEMO_TENANT_LABEL = 'pilot-demo';
 
@@ -107,6 +109,11 @@ export const PILOT_FOUNDATION: PilotFoundation = {
     { userId: 'pilot-accountant', displayName: 'Pilot Accountant (demo)', role: 'accountant' },
     { userId: 'pilot-ca', displayName: 'Pilot Chartered Accountant (demo)', role: 'chartered_accountant' },
     { userId: 'pilot-platform-admin', displayName: 'Pilot Platform Admin (demo)', role: 'platform_admin' },
+    // The STORE EDGE's own machine identity, so the box can sync its queued sales (`pos.sale.sync`) for the
+    // hosted offline/reconnect drill (runbook §9.4; owner decision 28 Sep 2026, option A). `cashier` is the
+    // smallest existing role that carries the sync permission; a sync-only role does not exist yet. Never a
+    // person's login: the demo sign-in refuses it (PILOT_MACHINE_USERS), so no human shares its identity.
+    { userId: 'pilot-store-edge', displayName: 'Pilot Store Edge — machine (demo)', role: 'cashier' },
   ],
   entitlements: ['loyalty', 'delivery', 'dept.concession'],
   gstRegistrations: [

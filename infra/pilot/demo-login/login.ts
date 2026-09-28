@@ -27,7 +27,7 @@ import { randomBytes, randomInt, scryptSync, timingSafeEqual } from 'node:crypto
 import { LocalIdp } from '../../../tests/support/local-idp';
 import { verifyToken } from '../../../services/identity/src/token';
 import { DEMO_BANNER_TEXT_EN, DEMO_BANNER_TEXT_TA } from '../../../packages/ui/src/demo-banner';
-import { PILOT_DEMO_TENANT } from '../../../db/seed/pilot/dataset';
+import { PILOT_DEMO_TENANT, PILOT_MACHINE_USERS } from '../../../db/seed/pilot/dataset';
 
 /** The synthetic demo tenant — the SAME id the seed lays down (a UUID; see db/seed/pilot/dataset.ts). */
 export const DEMO_TENANT = PILOT_DEMO_TENANT;
@@ -90,6 +90,7 @@ export function loginFileProblems(file: unknown): string[] {
   for (const l of f.logins) {
     if (!LOGIN_SHAPE.test(l.login ?? '')) problems.push(`login "${l.login}" is not a valid login name`);
     if (!(l.userId ?? '').startsWith('pilot-')) problems.push(`login "${l.login}" maps to "${l.userId}", which is not a synthetic pilot-* user`);
+    if (PILOT_MACHINE_USERS.includes(l.userId)) problems.push(`login "${l.login}" maps to "${l.userId}", a machine identity — no person signs in as the store box`);
     if (logins.has(l.login)) problems.push(`login "${l.login}" appears twice`);
     // One person per identity: two logins on one user would make the audit trail unable to say who.
     if (users.has(l.userId)) problems.push(`user "${l.userId}" has more than one login (no shared identities)`);

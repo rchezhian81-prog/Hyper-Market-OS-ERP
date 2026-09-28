@@ -35,6 +35,9 @@ clearly-non-real dataset for that purpose.
 - **Genesis owner** (`pilot-owner`) via the guarded once-only genesis path.
 - **Five more role logins:** store manager, cashier, accountant, chartered accountant, platform admin —
   each carrying its real role permissions (asserted in the test).
+- **One machine identity (28 Sep 2026, owner decision):** `pilot-store-edge`, the store edge's own login for
+  syncing queued sales in the hosted offline drill; role `cashier` (smallest existing role with
+  `pos.sale.sync`). The demo sign-in refuses it as a person's login.
 - **Entitlements:** `loyalty`, `delivery`, `dept.concession` (turned on so the routes gated on them
   become reachable in later slices).
 - **Org skeleton:** a GST registration → a company → an active branch (filed under the demo GSTIN) → a

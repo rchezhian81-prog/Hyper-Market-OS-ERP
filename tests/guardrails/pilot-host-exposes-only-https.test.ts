@@ -68,6 +68,12 @@ describe('the hosted demo exposes only HTTPS to the network', () => {
     }
   });
 
+  it('the edge publishes no port — its lane socket stays inside its own container', () => {
+    expect(publishedPorts(serviceBlock(BASE, 'edge'))).toEqual([]);
+    expect(serviceBlock(PILOT, 'edge')).not.toMatch(/^\s+ports:/m);
+    expect(serviceBlock(PILOT, 'edge')).toMatch(/EDGE_LANE_PORT: '8095'/);
+  });
+
   it('the certificate is mounted from the host, never from the repository', () => {
     const web = serviceBlock(PILOT, 'web');
     expect(web).toMatch(/\$\{TLS_CERT_DIR:-\/etc\/sre-pilot\/tls\}:\/etc\/nginx\/tls:ro/);

@@ -37,6 +37,11 @@ services:
     mem_limit: 512m
     cpus: 0.5
     pids_limit: 256
+    environment:
+      # The till's lane socket, for the hosted offline/concurrent-tills drill (runbook §9.4). The edge
+      # binds it to 127.0.0.1 INSIDE the container and nothing publishes it, so nothing outside the box's
+      # own container can reach it — the same loopback-only property a store lane has.
+      EDGE_LANE_PORT: '8095'
 
   # Hosted demo front: HTTPS on :443 is the ONLY port published to the network. The base publishes
   # the web port on every interface (a store LAN needs that for its tills); on an internet-facing

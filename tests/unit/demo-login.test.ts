@@ -170,6 +170,8 @@ describe('demo sign-in — credentials', () => {
     expect(() => addLogin(FILE, { ...base, login: 'ravi.cashier', userId: 'pilot-manager' })).toThrow(/appears twice/);
     expect(() => addLogin(FILE, { ...base, login: 'second.cashier', userId: 'pilot-cashier' })).toThrow(/more than one login/);
     expect(loginFileProblems({ nope: true })).toEqual(['not a version-1 demo login file']);
+    // The store box's machine identity can never become a person's login.
+    expect(() => addLogin(FILE, { ...base, login: 'someone', userId: 'pilot-store-edge' })).toThrow(/machine identity/);
   });
 });
 
