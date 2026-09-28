@@ -46,7 +46,11 @@ services:
       # container; the demo relay below reaches it through the shared network namespace.
       EDGE_SCREEN_PORT: '8097'
       EDGE_APPS_DIR: /app/apps
+      # The DEMO store pack (products from the published price list), read once at start-up. Built on the
+      # box by a person: `pnpm run demo:store-pack`. A directory mount, so a rebuilt pack is seen on restart.
+      EDGE_PACK_FILE: /etc/store-pack/store-pack.json
     volumes:
+      - ${DEMO_STORE_PACK_DIR:-/etc/sre-pilot/store-pack}:/etc/store-pack:ro
       # The screens the demo store box serves (read-only). The till bundle is the DEMO build (its lane
       # base points at /store-lane); a store's edge serves its own shells from its own disk.
       - ../../apps:/app/apps:ro

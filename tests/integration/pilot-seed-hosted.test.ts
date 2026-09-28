@@ -12,6 +12,10 @@ import { tenantAccessResolver, tenantEntitlementResolver } from '../../services/
 import { ROLE_CATALOGUE } from '../../services/api/src/roles';
 import { STREAM } from '../../services/api/src/adapters';
 import { hostedSeedClient, hostedSeedRefusals, publishPilotPack } from '../../db/seed/pilot/hosted';
+import { buildDemoStorePack } from '../../db/seed/pilot/store-pack';
+import { readPack } from '../../edge/store-edge/src/store-pack';
+import { posPayload, type ScreenInput } from '../../edge/store-edge/src/screen-data';
+import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import {
   applyPilotFoundation, applyPilotCatalogue, applyPilotTradingPartners, applyPilotTransactions,
 } from '../../db/seed/pilot/apply';
@@ -123,6 +127,42 @@ describe('demo price list for the demo store box (ADR-0016)', () => {
     // Same day, same store: the idempotency key makes a second run the same publish, not a new one.
     const again = await publishPilotPack(client, OWNER, PILOT_DEMO_BRANCH, '2026-09-28');
     expect([200, 201]).toContain(again.status);
+  }, 60_000);
+
+  it('the DEMO store pack built from the published list feeds the edge till screen with those products and prices', async () => {
+    const { store, baseUrl } = await liveApi();
+    const client = hostedSeedClient({ baseUrl, idp: IDP, store, operator: 'test-operator', tenantId: PILOT_DEMO_TENANT });
+    await applyPilotFoundation(client, PILOT_FOUNDATION, { throwOnError: true });
+    await applyPilotCatalogue(client, PILOT_CATALOGUE, OWNER, { throwOnError: true });
+    await applyPilotTradingPartners(client, PILOT_TRADING_PARTNERS, OWNER, { throwOnError: true });
+    expect([200, 201]).toContain((await publishPilotPack(client, OWNER, PILOT_DEMO_BRANCH, '2026-09-28')).status);
+
+    const get = (path: string) => client.request({ method: 'GET', path, userId: OWNER, tenantId: PILOT_DEMO_TENANT });
+    const [pack, master, stock] = [await get('/v1/catalogue/pack'), await get('/v1/catalogue/products'), await get('/v1/inventory/availability')];
+    expect([pack.status, master.status, stock.status]).toEqual([200, 200, 200]);
+    const built = buildDemoStorePack({
+      snapshot: (pack.body as { snapshot: CatalogueSnapshot }).snapshot,
+      master: (master.body as { products: [] }).products,
+      availability: (stock.body as { rows: [] }).rows,
+      builtBy: 'test-operator', builtAt: '2026-09-28T10:00:00.000Z',
+    });
+
+    // Through the EDGE's own reader and till payload — exactly what the demo box will do at boot.
+    const edgePack = readPack(JSON.parse(JSON.stringify(built)) as unknown, '2026-09-28T10:00:00.000Z');
+    expect(edgePack.products.known).toBe(true);
+    const till = posPayload({ pack: edgePack } as unknown as ScreenInput);
+    expect(till).not.toBeNull();
+    const products = (till as { products: Array<{ productId: string; unitPriceMinor: number }> }).products;
+    const byId = new Map(products.map((p) => [p.productId, p.unitPriceMinor] as const));
+    for (const p of PILOT_CATALOGUE.products) expect(byId.get(p.productId)).toBe(p.price.priceMinor);
+
+    // Honest gaps: no cost (the published pack carries none) and no other section was invented.
+    for (const p of built.products) expect(p).not.toHaveProperty('unitCostMinor');
+    expect(Object.keys(built).sort()).toEqual(['_comment', 'products', 'version']);
+    expect(edgePack.approvals.known).toBe(false);
+    // Categories come from the product master, not a guess; stock from the ledger (the seeded receipt).
+    expect(built.products.every((p) => p['categoryId'] !== 'uncategorised')).toBe(true);
+    expect(built.products.some((p) => Number(p['availableMinor']) > 0)).toBe(true);
   }, 60_000);
 
   it('the store box machine login cannot publish prices (it may only read the pack)', async () => {

@@ -114,3 +114,21 @@ describe('the DEMO store box relay (ADR-0016) is pilot-only and gated', () => {
     expect(NGINX).toMatch(/location = \/_auth\/verify-sell \{\s*internal;/);
   });
 });
+
+describe('the DEMO store box pack + day-close redirect (ADR-0016)', () => {
+  const RELAY = readFileSync('infra/compose/nginx.edge-relay.conf', 'utf8');
+
+  it('the store pack is read-only in the edge and only in the pilot overlay', () => {
+    const edge = serviceBlock(PILOT, 'edge');
+    expect(edge).toMatch(/EDGE_PACK_FILE: \/etc\/store-pack\/store-pack\.json/);
+    expect(edge).toMatch(/\$\{DEMO_STORE_PACK_DIR:-\/etc\/sre-pilot\/store-pack\}:\/etc\/store-pack:ro/);
+    expect(BASE).not.toMatch(/EDGE_PACK_FILE/);
+  });
+
+  it('only the relay rewrites the lane address, and only to the signed-in same-origin path', () => {
+    expect(RELAY).toMatch(/sub_filter 'window\.laneWriteBase = "http:\/\/127\.0\.0\.1:8095"' 'window\.laneWriteBase = "\/store-lane"';/);
+    expect(RELAY.match(/sub_filter '/g)).toHaveLength(1);
+    // The lane path it points at is gated for sellers only.
+    expect(/location \/store-lane\/ \{([^}]*)\}/.exec(NGINX)?.[1] ?? '').toMatch(/auth_request \/_auth\/verify-sell;/);
+  });
+});

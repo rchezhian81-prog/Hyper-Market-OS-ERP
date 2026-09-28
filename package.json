@@ -25,6 +25,7 @@
     "token:store": "node scripts/issue-store-token.mjs",
     "seed:pilot": "node scripts/seed-pilot-hosted.mjs",
     "demo:publish-pack": "node scripts/demo-publish-pack.mjs",
+    "demo:store-pack": "node scripts/demo-store-pack.mjs",
     "build:demo-login": "node scripts/build-service.mjs demo-login",
     "demo-login:add": "node infra/pilot/demo-login/dist/demo-login.mjs add",
     "check:browser": "node scripts/pilot-browser-check.mjs",
