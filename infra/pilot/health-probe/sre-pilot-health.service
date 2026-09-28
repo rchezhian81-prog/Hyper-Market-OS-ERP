@@ -1,0 +1,16 @@
+# Hosted demo health probe → Healthchecks.io (runbook §9.5). Installed on the demo box only:
+#   cp infra/pilot/health-probe/sre-pilot-health.* /etc/systemd/system/ && systemctl daemon-reload
+#   systemctl enable --now sre-pilot-health.timer
+# The ping URL lives in /etc/sre-pilot/healthchecks-url (root-only), never in this file.
+[Unit]
+Description=SRE demo pilot health probe (reports to Healthchecks.io)
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/sre/app
+ExecStart=/usr/bin/node /opt/sre/app/infra/pilot/health-probe/probe.mjs
+TimeoutStartSec=180
+NoNewPrivileges=true
+PrivateTmp=true
