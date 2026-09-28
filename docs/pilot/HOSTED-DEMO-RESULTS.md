@@ -51,7 +51,7 @@ Unauthenticated `GET /v1/…` over HTTPS → **401** `unauthenticated`, "Nothing
 
 | # | Check | Result |
 |---|---|---|
-| 1 | Authenticated browser workflows | ⛔ **blocked by H-01** — there is no browser sign-in. |
+| 1 | Authenticated browser workflows | **Sign-in + access: ✅ all 7 roles** (28 Sep, `pnpm run check:browser`, headless Chromium over the live HTTPS URL; evidence + screenshots in `/var/lib/sre-pilot/evidence/browser-check/`). **Screens show no live shop data: ⛔ H-11.** See the table below. |
 | 2 | RBAC + tenant isolation (live) | _pending seed_ |
 | 3 | Restart + persistence | _pending seed_ |
 | 4 | Offline / reconnection + concurrent tills | _pending seed + edge token_ |
@@ -59,11 +59,33 @@ Unauthenticated `GET /v1/…` over HTTPS → **401** `unauthenticated`, "Nothing
 | 6 | Backup → restore into clean DB | _pending seed_ |
 | 7 | Deployment rollback | _pending — will pause for owner approval before any redeploy/restore over the running demo_ |
 
+## §9.1 browser check — results (28 Sep 2026, after the owner's GREEN seed: 68 ledger events, demo tenant)
+
+No session → `/v1/identity/me` **401**. Wrong password → **401**, no cookie. For every role, through the real sign-in page:
+
+| Role (demo user) | Screen | Signed in | Cookie | Banner | `/v1/identity/me` | Out-of-role read | After sign-out |
+|---|---|---|---|---|---|---|---|
+| owner | /owner/ | ✅ | HttpOnly · Secure · SameSite=Strict | ✅ | 200 (226 perms) | in-role read 200 | 401 |
+| store manager | /erp/ | ✅ | same | ✅ | 200 (149) | 403 | 401 |
+| cashier | /pos/ | ✅ | same | ✅ | 200 (20) | 403 | 401 |
+| accountant | /erp/finance.html | ✅ | same | ✅ | 200 (31) | 403 | 401 |
+| chartered accountant | /erp/ | ✅ | same | ✅ | 200 (4) | 403 | 401 |
+| platform admin | /erp/admin.html | ✅ | same | ✅ | 200 (25) | — | 401 |
+| supplier | /supplier/ | ✅ | same | ✅ | 200 (2) | 403 | 401 |
+
+**What the screens show (H-11):** none of the seven screens made a live `/v1` call; the manager screen reads
+"Not known — this screen has not received that list from the store yet" (trading day 1970-01-01), finance /
+admin / supplier say "Sample data — this is not your shop", the till is empty with no catalogue. Identity,
+permissions and data reach the screens only from the store-edge screen server (ADR-0004), which the cloud
+front does not provide. So: **authentication and authorisation are proven in a browser; working through a
+role's actual workflow on screen is not yet possible on this host.** Temporary `check.*` logins were
+created in memory for the run and removed afterwards (login file empty again).
+
 ## Defects found on the host (policy: `PILOT-GATES.md`)
 
 | ID | Sev | Defect | State |
 |---|---|---|---|
-| H-01 | **P1** | **No browser sign-in existed.** The API accepts only `Authorization: Bearer` tokens; the shells call it with the session cookie (`credentials: 'same-origin'`) and never send a token; nothing issues a browser session (the test IdP is a test library, not a running service). So no role can use a shell against the live API. `KNOWN-LIMITATIONS.md` KL-01 ("staff/portal login works with test credentials") is therefore inaccurate for browsers. | **Built (owner decision A)** — DEMO-ONLY `infra/pilot/demo-login` (pilot overlay only; refuses to start outside the demo tenant; scrypt-hashed personal logins; throttle; HttpOnly+Secure+SameSite=Strict cookie → Bearer on `/v1/` only; single-factor, so step-up routes still refuse). Unit 18 + guardrail 5. Live: wrong password 401, cross-site 403, forged cookie 401. **Full successful browser sign-in per role: pending the seed.** |
+| H-01 | **P1** | **No browser sign-in existed.** The API accepts only `Authorization: Bearer` tokens; the shells call it with the session cookie (`credentials: 'same-origin'`) and never send a token; nothing issues a browser session (the test IdP is a test library, not a running service). So no role can use a shell against the live API. `KNOWN-LIMITATIONS.md` KL-01 ("staff/portal login works with test credentials") is therefore inaccurate for browsers. | **Built (owner decision A)** — DEMO-ONLY `infra/pilot/demo-login` (pilot overlay only; refuses to start outside the demo tenant; scrypt-hashed personal logins; throttle; HttpOnly+Secure+SameSite=Strict cookie → Bearer on `/v1/` only; single-factor, so step-up routes still refuse). Unit 18 + guardrail 5. Live: wrong password 401, cross-site 403, forged cookie 401. **Browser sign-in verified for all 7 roles (28 Sep).** |
 | H-02 | P2 | The base compose file publishes the web port on **all interfaces**; on an internet-facing host that is plain HTTP, and Docker-published ports bypass UFW. | **Fixed** for the pilot: overlay `!override` → loopback + 443 only; guardrail `tests/guardrails/pilot-host-exposes-only-https.test.ts` (9). Base kept (a store LAN needs it). |
 | H-03 | P2 | The `edge` container restart-loops when neither a cloud nor a lane/screen port is configured: `startEdge` returns with nothing holding the process, it exits 0, Docker restarts it. | Open. Mitigated on the demo by configuring edge→cloud sync (needs the seeded store login). |
 | H-04 | P2 | The DEMO / NOT PRODUCTION banner was compiled into the ERP shell only. | **Fixed** — all 8 shells mount it from `PILOT_DEMO_BANNER`; `tests/unit/demo-banner-every-shell.test.ts` (16) builds each bundle and proves on-for-demo / off-for-production; verified live on all 8. |
@@ -73,6 +95,7 @@ Unauthenticated `GET /v1/…` over HTTPS → **401** `unauthenticated`, "Nothing
 | H-08 | **P1** | **The demo tenant id was `'pilot-demo'`, but the ledger's `tenant_id` is `uuid` (ADR-0003).** Every in-memory test accepted it; the first seed of the real demo DB failed RED on step one (`invalid input syntax for type uuid`), then every route 500'd. | **Fixed** — `PILOT_DEMO_TENANT = de300000-0000-4000-8000-000000000001` (label `pilot-demo`); box `.env.pilot` updated. Proven on a throwaway real PostgreSQL 16 (whole dataset ×2, all steps land) and the old id reproduces the failure; UUID-shape test always runs. Demo DB was untouched (0 rows). |
 | H-09 | P2 | The demo sign-in mounted its login FILE; logins are replaced atomically, and a single-file bind mount keeps the old inode, so new logins were never seen. | **Fixed** — directory mount `/etc/sre-pilot/demo-login/`; guardrail asserts it. |
 | H-10 | P2 | With the self-signed certificate, browsers refuse to register the shells' service worker ("SSL certificate error when fetching the script"), so **offline mode cannot be demonstrated in a browser** on this host. | Open — consequence of the no-domain choice; a real certificate (domain) removes it. |
+| H-12 | P1 | Every real-browser sign-in was refused 403: the sign-in pages inherited `Referrer-Policy: no-referrer`, under which Chrome posts the form with `Origin: null`, which the cross-site check refuses. (curl, sending a real Origin, passed.) | **Fixed** — sign-in pages use `same-origin`; nginx `/login` no longer inherits the server header. Unit + guardrail tests; live browser check green. |
 | H-11 | **P1** | **Screens get identity + data only from the store-edge screen server** (ADR-0004: `window.<screen>Data` injected at `<!--SCREEN-DATA-->`, loopback-only). Served statically from the cloud front, every screen boots without identity/permissions and shows its sample / "told me nothing" view — even after a valid sign-in. The live `/v1` calls (ERP pages, supplier portal) also gate client-side on injected permissions. | **Open — owner decision** (options in STATUS). The demo sign-in (H-01) is necessary but not sufficient for browser UAT. |
 
 ## Open items (not done, and why)

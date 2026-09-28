@@ -141,6 +141,11 @@ describe('demo sign-in — refusals', () => {
     expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'");
     expect(res.headers['cache-control']).toBe('no-store');
   });
+
+  it("uses Referrer-Policy same-origin — under no-referrer a browser posts the form with Origin: null and every sign-in is refused", () => {
+    const res = setup().handle({ method: 'GET', url: '/login/', body: '', headers: {} });
+    expect(res.headers['referrer-policy']).toBe('same-origin');
+  });
 });
 
 describe('demo sign-in — credentials', () => {

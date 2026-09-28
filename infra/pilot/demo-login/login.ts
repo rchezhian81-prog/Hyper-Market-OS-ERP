@@ -226,7 +226,10 @@ const SECURITY_HEADERS = {
   'cache-control': 'no-store',
   'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
   'x-content-type-options': 'nosniff',
-  'referrer-policy': 'no-referrer',
+  // NOT 'no-referrer': under it Chrome sends `Origin: null` on the sign-in form's POST, which the
+  // cross-site check (rightly) refuses — every real browser sign-in failed 403 on the demo box, 28 Sep
+  // 2026. 'same-origin' gives our own form its true Origin and still sends nothing to other sites.
+  'referrer-policy': 'same-origin',
 };
 
 function formPage(next: string, error?: string): string {

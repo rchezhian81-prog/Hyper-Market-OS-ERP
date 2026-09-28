@@ -181,6 +181,9 @@ async function main(): Promise<number> {
       // Sign out from the sign-in page's own button, then the API must refuse again.
       await page.goto(`${base}/login/`);
       await Promise.all([page.waitForURL((u) => u.pathname.startsWith('/login'), { timeout: 15_000 }), page.click('form[action="/login/logout"] button')]);
+      // Ask from a screen, not the sign-in page: the sign-in page's CSP (default-src 'none') forbids fetch.
+      await page.goto(`${base}${c.screen}`);
+      await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => undefined);
       result.afterSignOut = await status('/v1/identity/me');
       results.push(result);
       await ctx.close();

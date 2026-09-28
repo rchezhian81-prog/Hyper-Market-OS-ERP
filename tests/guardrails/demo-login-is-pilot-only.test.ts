@@ -66,5 +66,9 @@ describe('the demo sign-in is pilot-only', () => {
     const login = /location \/login \{([^}]*)\}/.exec(NGINX)?.[1] ?? '';
     expect(login).not.toMatch(/Authorization/);
     expect(login).toMatch(/proxy_set_header X-Forwarded-For \$remote_addr;/);
+    // The /login location must NOT inherit the server's `Referrer-Policy: no-referrer` (a browser then
+    // posts the sign-in with Origin: null and it is refused): it declares its own header set.
+    expect(login).toMatch(/add_header /);
+    expect(login).not.toMatch(/add_header Referrer-Policy/);
   });
 });
