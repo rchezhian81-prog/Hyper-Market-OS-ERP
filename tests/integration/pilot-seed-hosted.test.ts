@@ -11,13 +11,13 @@ import { buildSurface } from '../../services/api/src/main';
 import { tenantAccessResolver, tenantEntitlementResolver } from '../../services/api/src/access';
 import { ROLE_CATALOGUE } from '../../services/api/src/roles';
 import { STREAM } from '../../services/api/src/adapters';
-import { hostedSeedClient, hostedSeedRefusals } from '../../db/seed/pilot/hosted';
+import { hostedSeedClient, hostedSeedRefusals, publishPilotPack } from '../../db/seed/pilot/hosted';
 import {
   applyPilotFoundation, applyPilotCatalogue, applyPilotTradingPartners, applyPilotTransactions,
 } from '../../db/seed/pilot/apply';
 import {
   PILOT_FOUNDATION, PILOT_CATALOGUE, PILOT_TRADING_PARTNERS, PILOT_TRANSACTIONS, PILOT_DEMO_TENANT,
-  PILOT_DEMO_SUPPLIER_LOGIN,
+  PILOT_DEMO_SUPPLIER_LOGIN, PILOT_DEMO_BRANCH,
 } from '../../db/seed/pilot/dataset';
 
 // Constructed, never a literal, so the secret scanner does not trip on obviously-fake test material.
@@ -102,6 +102,35 @@ describe('hosted pilot seed — over a real socket', () => {
     const report = await applyPilotFoundation(wrong, PILOT_FOUNDATION);
     expect(report.ok).toBe(false);
     expect(report.steps.some((s) => s.status === 401)).toBe(true);
+  });
+});
+
+describe('demo price list for the demo store box (ADR-0016)', () => {
+  it('after the seed, publishing the demo branch pack lands through the real route and carries the demo products', async () => {
+    const { store, baseUrl } = await liveApi();
+    const client = hostedSeedClient({ baseUrl, idp: IDP, store, operator: 'test-operator', tenantId: PILOT_DEMO_TENANT });
+    await applyPilotFoundation(client, PILOT_FOUNDATION, { throwOnError: true });
+    await applyPilotCatalogue(client, PILOT_CATALOGUE, OWNER, { throwOnError: true });
+
+    const res = await publishPilotPack(client, OWNER, PILOT_DEMO_BRANCH, '2026-09-28');
+    expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
+
+    // What the demo store box pulls: the signed pack, with the seeded products in it.
+    const pack = await client.request({ method: 'GET', path: '/v1/catalogue/pack', userId: 'pilot-store-edge', tenantId: PILOT_DEMO_TENANT });
+    expect(pack.status).toBe(200);
+    expect(JSON.stringify(pack.body)).toContain('prod-soap');
+
+    // Same day, same store: the idempotency key makes a second run the same publish, not a new one.
+    const again = await publishPilotPack(client, OWNER, PILOT_DEMO_BRANCH, '2026-09-28');
+    expect([200, 201]).toContain(again.status);
+  }, 60_000);
+
+  it('the store box machine login cannot publish prices (it may only read the pack)', async () => {
+    const { store, baseUrl } = await liveApi();
+    const client = hostedSeedClient({ baseUrl, idp: IDP, store, operator: 'test-operator', tenantId: PILOT_DEMO_TENANT });
+    await applyPilotFoundation(client, PILOT_FOUNDATION, { throwOnError: true });
+    const res = await publishPilotPack(client, 'pilot-store-edge', PILOT_DEMO_BRANCH, '2026-09-28');
+    expect(res.status).toBe(403);
   });
 });
 

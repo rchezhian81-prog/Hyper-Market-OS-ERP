@@ -69,6 +69,20 @@ export function hostedSeedRefusals(config: {
 
 const defaultSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Publish the signed catalogue pack for the demo branch (ADR-0016) — the price list the demo store box's
+ * tills price scans from. This COMMITS the approved prices to the lanes, so a PERSON runs it (hard rule
+ * #5): `pnpm run demo:publish-pack -- --operator "<name>"`. It goes through the real route
+ * (`POST /v1/catalogue/pack`, `catalogue.pack.publish`, signed with the pack key) as the demo owner. It is
+ * NOT the bulk / sensitive-category product publish, which stays disabled.
+ */
+export async function publishPilotPack(client: SeedClient, actorUserId: string, storeId: string, day: string): Promise<SeedResponse> {
+  return client.request({
+    method: 'POST', path: '/v1/catalogue/pack', userId: actorUserId, tenantId: PILOT_DEMO_TENANT,
+    body: { storeId }, idempotencyKey: `demo-pack-${storeId}-${day}`,
+  });
+}
+
 /** A `SeedClient` that drives the LIVE API over HTTP. Refuses to construct for a non-demo tenant. */
 export function hostedSeedClient(config: HostedSeedConfig): SeedClient {
   const refusals = hostedSeedRefusals(config);
