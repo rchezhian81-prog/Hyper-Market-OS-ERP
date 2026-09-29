@@ -433,11 +433,39 @@ accounts.
   hand-recorded sale left alone, settlement marking, the GROSS mapping honoured, entitlement off → nothing).
   **No rung change** (M27 stays PARTIALLY WIRED: the till panel still speaks to a test backend — its
   offline-first hop through the store box to these routes + a browser e2e is the second-pass item).
+- **Stage C, family M35 (ops/backup/DR), slice O — done (29 Sep 2026): OBSERVED operational health — the cloud
+  reads its own signals instead of being told them (M35-FR-03 / FR-04 / FR-01, API-11).** Before:
+  `POST /v1/platform/operational-health` judged health from evidence the CALLER supplied — the engine was
+  real, the telemetry was not. Now `services/platform/src/observed-health.ts`: `GET
+  /v1/platform/operational-health/observed` folds the cloud's own ledgers into the health engine's signal
+  shape (`observeSignals`) — the newest sale any lane has synced (data freshness, with its age), the
+  connector queues' depth and dead letters (every connector ever mapped or written to, via a new
+  `ConnectorSeen` index the delivery + mapping adapters append once), the latest catalogue pack's age, each
+  enabled integration adapter judged from its heartbeats (`adapterHealth`), the database (this very read),
+  and the newest GOOD backup — and judges them with the SAME `checkHealth`, previewing what the rules would
+  raise; it names what the cloud cannot see (the lane's disk stays `unknown`, never `ok`) and says where
+  every signal came from. `GET`/`PUT /v1/platform/alert-rules` store the tenant's alert rules (who owns which
+  component, at what status, how soon they must acknowledge, who it escalates to) + thresholds +
+  backup max age, versioned, latest in force (`platform.alert.manage`). `POST
+  /v1/platform/operational-health/observed/raise` raises owned alerts FROM WHAT WAS OBSERVED into the same
+  durable alert-lifecycle store the manual raise feeds — so ack + escalation work on them unchanged; with no
+  rules → 409 and nothing raised (an alert without a named owner is noise, §32). `POST
+  /v1/platform/backups/:backupId/taken` (new permission `platform.backup.record`: owner, store manager, platform
+  admin) records each backup as a fact — it COUNTS only when completed, encrypted AND off-site (FR-01); a
+  failed or unprotected one is kept, shown, and does not move the clock; a reused id refused. Proven:
+  `tests/unit/observed-health-routes.test.ts` (12), `tests/integration/observed-health.test.ts` (3 — through the
+  real API: a fresh sale, a published pack, a connector with a dead letter, an adapter's heartbeats, a
+  disabled adapter not judged, a recorded backup → the right components; with rules, a 3-hour sync gap +
+  a dead letter + no backup raise three owned alerts onto the board, the owner acknowledges one through the
+  manual lifecycle, a re-run opens nothing new, cold restart; a cashier refused; a bad / unencrypted /
+  reused backup record). **No rung change** (M35 stays PARTIALLY WIRED: lane-side signal collection —
+  the store box reporting its disk/outbox into these signals — and end-to-end backup/DR orchestration
+  remain live-infrastructure items).
 - **Stage C — remaining, in order:**
   then family by family through the 57 remaining PARTIALLY_WIRED items (D01-FR-06 content authoring,
   D02-FR-06 display funding, D07 coupons/referrals, M21 compensation, M23 close second source, …). OA-12 was
   already answered and closed on 23 Sep — nothing to un-park.
-- **Next:** M23 slice D PR → merge → M27 slice T PR → merge → M35 → M36 → M01, one family per slice (then a second pass: M19 exception screen + e2e, M22 portal screen + e2e, M23 day-book screen + e2e, M27 till panel → store box → cloud tags + e2e, …); Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet).
+- **Next:** M23 slice D PR → merge → M27 slice T PR → merge → M35 slice O PR → merge → M36 → M01, one family per slice (then a second pass: M19 exception screen + e2e, M22 portal screen + e2e, M23 day-book screen + e2e, M27 till panel → store box → cloud tags + e2e, …); Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet).
 
 ---
 
