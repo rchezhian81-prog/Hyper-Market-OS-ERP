@@ -56,6 +56,7 @@ development, including my own test fixtures.
 | Messaging provider tokens | WhatsApp/SMS/email | Platform secret store | Platform admin | Annually |
 | Tally / GST portal credentials | finance adapters | Platform secret store, finance scope | Finance + platform admin | Per portal policy |
 | CI tokens | GitHub Actions | Repository secrets, least privilege (`contents: read`) | Platform admin | Annually |
+| Deployment key + pinned host key (`DEPLOY_SSH_KEY`, `DEPLOY_HOST_KEY`, `DEPLOY_HOST`) | the `release` job → the box's `release.sh` (forced command, one command only) | GitHub **environment** secrets (`demo`; a real-data box is its own environment with required reviewers). The private key exists nowhere else once installed | Platform admin / second custodian | On staff change, on suspicion, and whenever the box is rebuilt (`docs/runbooks/automatic-deployment.md`) |
 | Staff credentials | sign-in | **The identity provider — never this codebase.** `packages/identity` holds no password field, no hash, no token | Security admin | Policy-driven |
 
 ### The day a secret leaks

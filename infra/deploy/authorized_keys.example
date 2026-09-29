@@ -1,0 +1,5 @@
+# ~deploy/.ssh/authorized_keys on the box — ONE line per key. The pipeline's key is pinned to the release
+# script: whoever holds it can deploy a merged commit and nothing else — no shell, no port forwarding, no
+# other command. Replace the placeholder with the PUBLIC half of the key pair whose PRIVATE half is the
+# GitHub environment secret DEPLOY_SSH_KEY (docs/runbooks/automatic-deployment.md). Never the private key.
+command="/opt/sre/app/infra/deploy/release.sh",restrict,no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty ssh-ed25519 REPLACE_WITH_THE_PUBLIC_KEY sre-retail-os-pipeline

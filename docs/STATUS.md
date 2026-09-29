@@ -825,7 +825,44 @@ accounts.
   product added: password-only refused with the product named and v1 kept; fresh MFA publishes v2 carrying
   `{ minimumAge: 21 }`; changing the age is sensitive again; an unrelated re-price is routine). Docs: FEATURE-SAFETY
   (boundary closed), ADR-0013 residual closed, traceability (new row + M12-FR-04 + M03-FR-03).
-- **Next:** key-based server login runbook (human step, ON HOLD by owner). Stage E register truth is otherwise complete except GAP-DATA-06 (erasure vs the append-only ledger) and the residuals named in the registers (GAP-SEC-04b, GAP-SEC-05b, GAP-DATA-02c). Then Stage F (automatic VPS deployment). Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
+- **Stage F, slice 1 — done (29 Sep 2026): a merged release deploys itself to the demo box, and a broken one
+  puts the previous release back (§19/§20 · AID-08 · hard rule #8 · P-08 · ADR-0017).** The pipeline gains a
+  `release` job (`.github/workflows/ci.yml`) that runs only for a push to `main`, only after the three
+  verification jobs passed on that exact commit, in the `demo` GitHub environment, queued never cancelled. It
+  connects to the box over SSH with an environment-secret key and a PINNED host key (no first-use trust) and
+  asks for exactly `$GITHUB_SHA`. On the box the key is a **forced command** that can run one thing —
+  `infra/deploy/release.sh` — which refuses anything but a 40-hex commit that is on `origin/main` (exit 65,
+  nothing touched), remembers the live commit, checks the new one out and re-runs itself from that checkout,
+  installs dependencies, builds the shells (with the box's `SRE_BUILD_ENV`, `PILOT_DEMO_BANNER=1` on the demo),
+  `docker compose … up -d --build` (migrations first, idempotent), waits for `/readyz` and runs
+  `standup:check`; if that fails it rebuilds and brings up the PREVIOUS commit and exits 70 (pipeline red, shop
+  on the release that worked), 71 if even that fails; one deployment at a time (file lock, exit 75); every
+  attempt appended to the box's release log (when, sha, replaced, result, who merged, which run). It reads no
+  secret, never runs `down -v`, never traces. With no secrets on the `demo` environment the job says so and
+  deploys nothing — a copy of the repository cannot deploy anywhere by accident. Settings live in
+  `/opt/sre/deploy.conf` (`infra/deploy/deploy.conf.example`, no secrets); the forced-command line is
+  `infra/deploy/authorized_keys.example`. Tests: `tests/integration/the-release-script-deploys-and-rolls-back.test.ts`
+  (6 — the REAL script runs in a sandbox with a bare origin, the box's clone and stand-ins for pnpm / docker /
+  curl: garbage and a non-main commit refused with nothing touched; a good deploy with every call and the log
+  line; a never-READY release rolled back with the container logs shown; the forced command and a foreign verb
+  refused; two deployments at once; a failed rollback says so; the secrets file is never printed),
+  `tests/guardrails/merged-releases-deploy-themselves.test.ts` (7 — the job's gating, pinning and clean-up; the
+  script's refusals, rollback and no-trace; the forced-command example; the runbook names every secret and holds
+  no address). Docs: `docs/runbooks/automatic-deployment.md` (plain-English: what happens on a merge, what you
+  see, the one-time human steps on the box / your computer / GitHub, rollback limits, the red-log table, the
+  required-reviewers rule before any real-data box), ADR-0017 (+ index; 0016 reserved for the server branch's
+  demo-only ADR), infra README, workflows README (was stale), secrets table, deployment checklist,
+  infrastructure design §4, traceability.
+  **Human steps (owner or second custodian, once):** create the `deploy` user on the box, install the public key
+  as the forced command, put the five `DEPLOY_*` secrets on the `demo` environment — steps 1–9 of the runbook.
+  Until then the job is a visible no-op. **Owner decision (not blocking):** a real-data box must be its own
+  GitHub environment with *required reviewers* before it gets any deploy secret; the runbook says so.
+- **Next (Stage F):** slice 2 — the one-origin reverse proxy (customer app, `/auth/*`, `/v1/*` on one origin, TLS
+  in front) as a compose service with tests; slice 3 — the external-login auth backend (OTP begin / verify,
+  session revoke, first-sign-in customer registration) as a deployment component shared by the customer app,
+  the B2B portal and the supplier portal (see the M20 slice 2 bullet). Stage E leftovers unchanged: key-based
+  server login runbook (human step, ON HOLD by owner); GAP-DATA-06 (erasure vs the append-only ledger) and the
+  residuals GAP-SEC-04b, GAP-SEC-05b, GAP-DATA-02c. Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
 
 ---
 

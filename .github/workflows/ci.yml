@@ -227,3 +227,61 @@ jobs:
       - name: Tear down
         if: always()
         run: cd infra/compose && docker compose down -v && rm -f .env
+
+  release:
+    name: Deploy the merged release to the demo box (rolls back if it does not come up)
+    # Stage F: a commit that reached main did so through a pull request whose checks were green (branch
+    # protection, hard rule #8) — that IS the approval (AID-08). The three jobs above must pass on THIS
+    # commit first; then the box is told to deploy exactly this SHA. The SSH key can run one command on the
+    # box — infra/deploy/release.sh — and nothing else (a forced command); the script refuses any commit
+    # not on origin/main, and puts the previous release back if the new one does not come up READY.
+    # Deploys never cancel each other: they queue (a half-applied release is worse than a late one).
+    # When the 'demo' environment carries no deploy secrets, the job says so and deploys nothing — a
+    # fork or a fresh clone cannot deploy anywhere by accident. docs/runbooks/automatic-deployment.md.
+    needs: [verify, integration, deploy]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: demo
+    concurrency:
+      group: deploy-demo
+      cancel-in-progress: false
+    steps:
+      - name: Is a demo box configured?
+        id: box
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+        run: |
+          if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_SSH_KEY" ] || [ -z "$DEPLOY_HOST_KEY" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No demo box is configured (DEPLOY_HOST / DEPLOY_SSH_KEY / DEPLOY_HOST_KEY are not set on the 'demo' environment). Nothing was deployed — see docs/runbooks/automatic-deployment.md."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy this exact commit over SSH (the key can only run the release script)
+        if: steps.box.outputs.configured == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+        run: |
+          umask 077
+          mkdir -p "$HOME/.ssh"
+          # The private key is written to a file the ssh client reads and nowhere else; the host key is
+          # PINNED from the secret (no first-use trust — a wrong box is refused, not asked about).
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/deploy_key"
+          printf '%s\n' "$DEPLOY_HOST_KEY" > "$HOME/.ssh/deploy_known_hosts"
+          ssh -i "$HOME/.ssh/deploy_key" \
+              -o IdentitiesOnly=yes -o BatchMode=yes \
+              -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/deploy_known_hosts" \
+              -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER:-deploy}@$DEPLOY_HOST" \
+              release "$GITHUB_SHA" "$GITHUB_ACTOR" "$GITHUB_RUN_ID"
+          echo "Deployed $GITHUB_SHA to the demo box (merged by $GITHUB_ACTOR)." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean up the key material
+        if: always()
+        run: rm -f "$HOME/.ssh/deploy_key" "$HOME/.ssh/deploy_known_hosts"
