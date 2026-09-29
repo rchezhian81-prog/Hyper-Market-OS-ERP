@@ -28,7 +28,9 @@ real end-to-end assertion.
 - **Live payroll bank-file release.** Maker≠checker is enforced on the pay-run store
   (`POST /v1/hr/payroll/pay-run/:id/append`), and the bank-file route is **build-only** (needs a LOCKED run;
   transmits nothing — no bank connector on the surface). So no real payment can leave the surface. The
-  **step-up re-auth** on release is a **web-erp session control, not an API control** (see the gap below).
+  **step-up re-auth** on release is now an **API control as well as the web-erp session control** (Stage E
+  slice 1, 29 Sep 2026): approve / lock / reverse and the bank file each need a fresh (≤300s) MFA-backed
+  re-authentication from the SIGNED token, or are refused 403 `reauthentication_required` with nothing appended.
 - **"Delete my data" production execution.** The erasure execution route is **wired and executable**, gated
   by RBAC (`privacy.erasure.approve` / `privacy.erasure.execute`) + a two-person rule + subject verification
   + a prevent-restore guard (covered by `tests/integration/erasure-execution.test.ts`), **and now by API-tier
@@ -47,11 +49,28 @@ real end-to-end assertion.
   and an **irreversible erasure** (`POST /v1/privacy/data-requests/:id/erasure-execution`), both requiring a
   fresh (≤300s) MFA-backed re-auth. Proven by `tests/integration/step-up-reauth.test.ts` (direct-call
   bypass, missing/stale/weak evidence all → 403) and `tests/unit/step-up.test.ts` (the pure rule).
-- **Remaining (tracked follow-on, not a pilot blocker):** extending the same declaration to the other named
-  re-auth actions — payroll approve/lock/**bank-file release** and settlement release (action-level within
-  `pay-run/:id/append`, `docs/design/screens/payroll.md`), and **bulk/sensitive-category product publish**
-  (`ADR-0013`). These remain protected in the meantime by RBAC + maker-checker + audit (+ the web-erp session
-  re-auth), and — being off/build-only in the pilot — transmit nothing live regardless.
+- **Extended (Stage E slice 1, 29 Sep 2026) to the remaining named re-auth actions — the GAP-SEC-06 follow-on
+  is CLOSED:**
+  - **Payroll approve / lock / reverse** — ACTION-level inside `POST /v1/hr/payroll/pay-run/:id/append`
+    (`requireStepUp` over the SIGNED token's evidence the pipeline places on the request context; draft, submit
+    and reject stay ordinary), checked BEFORE the stored state is read or anything is written; maker≠checker still
+    applies after it. **Bank-file** — route-level `reauth` on `POST /v1/hr/payroll/bank-file`.
+  - **Bulk / sensitive-category product publish** — ACTION-level inside `POST /v1/catalogue/pack`
+    (`services/catalogue/src/publish-step-up.ts`): BULK when the products added + changed + removed against the
+    previous pack reach the owner's threshold (`catalogue.bulk_publish_threshold`, a store-setup setting, default
+    50, validated 1..1,000,000); SENSITIVE when a product carrying the pack contract's `regulatedFlags` is added or
+    changed. A routine publish below the line is not asked; the refusal says exactly why this one was.
+  - Proven by `tests/integration/step-up-payroll-and-publish.test.ts` (7 — the REAL pipeline: password-only and
+    no-evidence and stale sessions refused with nothing appended / published; fresh MFA passes; reject stays
+    ordinary; step-up runs before maker≠checker; raw-token bypass refused for both payroll and publish; the owner's
+    threshold honoured through store setup), `tests/unit/service-catalogue-step-up.test.ts` (7 — the route on the
+    real kernel with a snapshot double, including the regulated leg), `tests/unit/publish-step-up.test.ts` (10 — the
+    pure rule), `tests/unit/step-up.test.ts` (+4 `requireStepUp`), `tests/unit/service-kernel.test.ts` (+2 — the
+    evidence reaches the handler from the token, never the body).
+  - **Honest boundary:** the cloud's product master (`ProductRecord`) does not yet carry a restriction into the pack
+    (`toMaster` sets no `regulatedFlags`), so on today's real chain the SENSITIVE leg fires only once that mapping
+    lands (the same gap keeps the till's cloud-built-pack age prompt, M12-FR-04, from firing) — a named follow-on.
+    The BULK leg is live on the real chain now. As before, both actions remain build-only / synthetic in the pilot.
 
 ## What the pilot must still do (operational, not code)
 
@@ -64,6 +83,7 @@ real end-to-end assertion.
 
 **Integration tested** — the default-safe controls are asserted end-to-end against the real surface for a
 fresh tenant. Re-verify on the stood-up pilot environment (⛔ EX-01 / OA-5). **GAP-SEC-06 (API-tier step-up
-re-auth) is substantially closed:** the mechanism is implemented and enforced on the privilege-grant and
-erasure-execution routes; the remaining named re-auth actions (payroll release, bulk product publish) are a
-tracked follow-on.
+re-auth) is CLOSED:** the mechanism is implemented and enforced on the privilege-grant and erasure-execution
+routes AND on payroll approve / lock / reverse, the bank file, and bulk / sensitive-category product publish
+(Stage E slice 1). Whether the pilot posture for payroll release and bulk publish moves from "not exercised" to
+"exercised under UAT" is the owner's written call (`docs/STATUS.md`).

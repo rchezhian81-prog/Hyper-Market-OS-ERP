@@ -7,6 +7,14 @@
 // caller can assert in the request body.
 //
 // Pure and deterministic: no I/O, no DOM, the clock is passed in. The pipeline supplies `nowMs`.
+//
+// Two ways a route uses it. A route that is sensitive on EVERY call declares `reauth` and the pipeline checks
+// before the handler runs (a privilege grant, an erasure). A route whose sensitivity depends on the request —
+// a payroll step that is an APPROVAL rather than a draft, a catalogue publish that is BULK rather than one
+// line — calls `requireStepUp` from inside the handler, over the evidence the pipeline placed on the request
+// context from the SIGNED token. Either way the caller asserts nothing; the token does.
+
+import { reauthenticationRequired } from './errors';
 
 /**
  * What a route demands of a recent re-authentication.
@@ -81,4 +89,23 @@ export function evaluateStepUp(
   }
 
   return { ok: true };
+}
+
+/**
+ * Handler-level step-up (Stage E slice 1 · SEC-03 · §28): refuse unless the request context's SIGNED
+ * re-auth evidence satisfies the requirement as of `nowMs`. Throws the same `reauthentication_required`
+ * refusal the pipeline throws for a route-level `reauth`, so a caller cannot tell — and need not care —
+ * which tier refused. `because` names what made THIS call sensitive ("This payroll step is an approval.",
+ * "This publish changes 312 products.") so the refusal is honest rather than a blanket 403 (P-08).
+ *
+ * The evidence is `ctx.reauth`, which only the pipeline writes; a context with none is "no re-auth at all".
+ */
+export function requireStepUp(
+  ctx: { readonly reauth?: ReauthEvidence },
+  requirement: ReauthRequirement,
+  nowMs: number,
+  because?: string,
+): void {
+  const decision = evaluateStepUp(requirement, ctx.reauth ?? {}, nowMs);
+  if (!decision.ok) throw reauthenticationRequired(decision.shortfall!, requirement.withinSeconds, because);
 }

@@ -106,3 +106,20 @@ describe('answering setup items', () => {
     expect(setupStatus(s, 'acme').items.find((i) => i.key === 'picking.zone_order')?.state).toBe('answered');
   });
 });
+
+describe('the bulk-publish threshold is an owner setting with a visible default (ADR-0013 point 4, Stage E slice 1)', () => {
+  it('is in the setup catalogue, on a default of 50, and refuses a value that is not a whole product count of at least 1', () => {
+    const found = item('catalogue.bulk_publish_threshold');
+    expect(found.setting).toBe(SETTINGS.CATALOGUE_BULK_PUBLISH_THRESHOLD);
+    expect(found.required).toBe(false);
+    expect(SETTINGS.CATALOGUE_BULK_PUBLISH_THRESHOLD.defaultValue).toBe(50);
+    expect(found.validate?.(0)).toContain('at least 1');
+    expect(found.validate?.(2.5)).toContain('whole number');
+    expect(found.validate?.('50')).not.toBeNull();
+    expect(found.validate?.(200)).toBeNull();
+    const s = newSettings();
+    applyAnswer(s, 'acme', found, 200, 'owner', AT);
+    expect(s.get('acme', SETTINGS.CATALOGUE_BULK_PUBLISH_THRESHOLD)).toBe(200);
+    expect(() => applyAnswer(s, 'acme', found, 0, 'owner', AT)).toThrow(InvalidSetupAnswerError);
+  });
+});

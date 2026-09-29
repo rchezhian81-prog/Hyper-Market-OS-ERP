@@ -24,7 +24,7 @@ import { SqlSnapshotStore, type SnapshotStore } from '../../../packages/persiste
 import { SqlConfigVersionStore } from '../../../packages/persistence/src/config-store';
 import { SqlNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
 import { pgClient, pgPoolClient } from '../../../packages/persistence/src/pg-client';
-import { DurableTenantSettings } from '../../../packages/tenant/src/index';
+import { DurableTenantSettings, SETTINGS } from '../../../packages/tenant/src/index';
 import {
   buildRouter, loadConfig, startHttpServer, CLOUD_API_CONFIG, SqlIdempotencyStore, SqlAuditSink,
   structuredLogger, combineObservers, RequestMetrics, TokenBucketRateLimiter, BackoffAuthThrottle,
@@ -328,11 +328,16 @@ export function buildSurface(deps: {
     // Joiner/mover/leaver access-lifecycle decision (M02-FR-04) — a mover replaces scope, a leaver's owned
     // items must be reassigned first. A pure decision (it decides, the caller applies) — no store needed.
     ...accessLifecycleRoutes({ now }),
-    ...catalogueRoutes(store === undefined ? {
-      signer, currentPack: empty(undefined), storePack: () => {},
-      buildSnapshot: (tenantId) => ({ tenantId, version: 1, builtAt: now(), products: [], barcodes: [] }),
-      approvalsSince: empty([]), now,
-    } : catalogueAdapter({ store, signer, now })),
+    ...catalogueRoutes({
+      ...(store === undefined ? {
+        signer, currentPack: empty(undefined), storePack: () => {},
+        buildSnapshot: (tenantId) => ({ tenantId, version: 1, builtAt: now(), products: [], barcodes: [] }),
+        approvalsSince: empty([]), now,
+      } : catalogueAdapter({ store, signer, now })),
+      // The owner's bulk-publish threshold (ADR-0013 point 4, Stage E slice 1) — read from the durable tenant
+      // settings at request time, so a bulk or regulated-product publish asks for a fresh second-factor sign-in.
+      bulkPublishThreshold: (tenantId) => settings.value(tenantId, SETTINGS.CATALOGUE_BULK_PUBLISH_THRESHOLD),
+    }),
     // Unit sale price on the label (B3, Legal Metrology) — stateless, folds no ledger, so no deps/stub.
     ...labellingRoutes(),
     // Master-data commit guards (B2 dual-MRP) — stateless product-master validation.

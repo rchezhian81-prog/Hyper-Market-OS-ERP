@@ -85,6 +85,10 @@ The whole flow is large; it is built in security-first increments on the proven 
   bank-file generation, bulk payslip download and export all require a FRESH re-auth (`reauthAgeSeconds` port
   + `reauthFreshWithinSeconds` window); the MFA step is a step (`window.payrollReauth`), never a browser
   dialog; offline still beats a fresh re-auth. All inc1 controls kept.
+  **Server-enforced too (Stage E slice 1, 29 Sep 2026):** approve, lock and reverse (action-level in
+  `POST /v1/hr/payroll/pay-run/:id/append`) and the bank file (route-level) are refused 403
+  `reauthentication_required` by the API unless the SIGNED token carries a fresh (≤300s) MFA re-auth — the screen's
+  prompt is no longer the only control (`tests/integration/step-up-payroll-and-publish.test.ts`).
 - **inc3 — DONE (14 Aug).** Statutory-deduction report (PF/ESI/PT/TDS, employee + employer shares, from the
   run totals, marked CONFIRM-WITH-CA). Full-and-final **settlement** for a leaver on the tested
   `computeSettlement` — signed net where a **negative net is EXPECTED** (recoverable from the employee) and is

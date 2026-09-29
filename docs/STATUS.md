@@ -703,7 +703,33 @@ accounts.
   `sold` movement at the box's store with no reason and on-hand falls there; a sale rung with no cloud and re-queued
   on restart is stamped the same; a box with no store pack still falls back to the lane and says it assumed).
   Honest boundary: the demo box must be given a store pack that names its `storeId` for the demo to show it.
-- **Next:** Stage E — production security: GAP-SEC-02/03/04/05, GAP-DATA-01/02, API-tier step-up for payroll release + bulk / sensitive-category publish, key-based server login. Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
+- **Stage E, slice 1 — done (29 Sep 2026): the server itself now asks "prove it is really you" for payroll
+  release and bulk / sensitive product publish (SEC-03 · §28 · ADR-0013 point 4 · GAP-SEC-06 follow-on CLOSED).**
+  Before: those actions were guarded by the web-erp screen's re-auth prompt plus RBAC + maker≠checker; a direct
+  API call could skip the prompt. Now the kernel places the SIGNED token's re-auth evidence on the request context
+  (`RequestContext.reauth`, written by the pipeline, never the caller) and `requireStepUp(ctx, requirement, now,
+  because)` refuses 403 `reauthentication_required` — naming WHY this call was sensitive — unless the sign-in is a
+  fresh (≤300s) MFA one. Wired: pay-run **approve / lock / reverse** (action-level in `POST /v1/hr/payroll/pay-run/
+  :id/append`, before the stored state is read; draft / submit / reject stay ordinary), the **bank file** (route-level
+  `reauth`), and **catalogue publish** when it is BULK (products added + changed + removed at or above the owner's
+  `catalogue.bulk_publish_threshold`, a new store-setup setting, default 50, validated 1..1,000,000) or SENSITIVE (a
+  product carrying `regulatedFlags` added or changed) — `services/catalogue/src/publish-step-up.ts`; a routine
+  publish is not asked. Tests: `tests/integration/step-up-payroll-and-publish.test.ts` (7, the REAL pipeline and
+  the real master-data chain incl. the owner setting), `tests/unit/service-catalogue-step-up.test.ts` (7, the route
+  on the real kernel with a snapshot double incl. the regulated leg), `tests/unit/publish-step-up.test.ts` (10),
+  `tests/unit/step-up.test.ts` (+4), `tests/unit/service-kernel.test.ts` (+2), `tests/unit/tenant-setup.test.ts`
+  (+1). Docs: FEATURE-SAFETY, GAP register (GAP-SEC-06 CLOSED), threat model, PILOT-FEATURE-MATRIX,
+  OWNER-GAP-SUMMARY, ADR-0013 implementation note, payroll screen doc, traceability.
+  **Honest boundaries:** (1) the cloud's product master carries no restriction field into the pack (`toMaster` sets
+  no `regulatedFlags`), so the SENSITIVE leg fires on the real chain only once that mapping lands — the same gap
+  keeps the till's age prompt from firing on a cloud-built pack (M12-FR-04); named follow-on **E1b**. (2) Tokens
+  from the pilot stand-in issuer carry no `auth_time`/`amr` by default, so in the pilot these actions — like
+  privilege grants and erasure — need the production IdP + MFA (OA-4) or a stand-in that records them.
+  **Owner decision (not blocking):** the pilot hold on payroll release + bulk publish was conditional on this
+  control existing and being tested — that condition is met. Options: (a) keep them not exercised in the pilot
+  (current, zero risk); (b) exercise them under UAT against synthetic data once the IdP records `auth_time`/`amr`.
+  Also to confirm: the default bulk threshold of **50 products**; raise or lower it in store setup any time.
+- **Next:** Stage E slice 2 — register truth for GAP-SEC-02/03/04 + GAP-DATA-01 (already substantially closed in code; the registers are stale) with evidence tests; then GAP-SEC-05 (token max-TTL + `jti` revocation denylist), GAP-DATA-02 (tenants table + FK + RLS, real-PG tests), E1b (product-master restriction → pack `regulatedFlags`), key-based server login runbook (human step, ON HOLD by owner). Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
 
 ---
 
@@ -792,7 +818,8 @@ servers stay separate.
   consolidated provider-question message** and the approval ask.
 - **Payroll approve/lock/bank-file release** and **bulk/sensitive-category product publish** recorded as
   **open GAP-SEC-06 follow-ups, kept DISABLED** until API-tier step-up is implemented **and tested** for them
-  (`PILOT-FEATURE-MATRIX.md`). Step-up already enforced on privilege-grant + erasure-execution.
+  (`PILOT-FEATURE-MATRIX.md`). Step-up already enforced on privilege-grant + erasure-execution. **→ Condition met
+  29 Sep 2026 (Stage E slice 1): implemented and tested; the pilot posture is now the owner's written call.**
 - **Next:** on approval + secure access, deploy synthetic data on the box, verify HTTPS + auth, run
   host-specific restart/restore/rollback, hand over the demo URL + staff UAT walkthrough — reported
   **separately** from the temporary-machine results.

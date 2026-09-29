@@ -58,6 +58,8 @@ const validateBp: SetupValidator = (v) =>
   isIntIn(v, 0, 10_000) ? null : 'Give a level in basis points (0–10000; 5000 = half).';
 const validateBool: SetupValidator = (v) =>
   typeof v === 'boolean' ? null : 'Choose on or off.';
+const validateProductCount: SetupValidator = (v) =>
+  isIntIn(v, 1, 1_000_000) ? null : 'Give a whole number of products (at least 1).';
 const validateStringList: SetupValidator = (v) =>
   isStringArray(v) ? null : 'Give a list of names (an empty list means none).';
 const validatePaperFormat: SetupValidator = (v) =>
@@ -153,6 +155,13 @@ export const SETUP_CATALOGUE: readonly SetupItem[] = [
     required: false,
     question: 'How empty must a facing be before it is worth a refill trip?',
     validate: validateBp,
+  },
+  {
+    setting: SETTINGS.CATALOGUE_BULK_PUBLISH_THRESHOLD,
+    group: 'check_default',
+    required: false,
+    question: 'How many products may one catalogue publish add, change or remove before it counts as a bulk publish and asks the publisher to sign in again with a second factor?',
+    validate: validateProductCount,
   },
 ];
 

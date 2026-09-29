@@ -10,6 +10,7 @@
 // confidential, so both routes are gated on the owner-held `payroll.statutory.read` permission.
 
 import type { Route } from '../../kernel/src/index';
+import { PAYROLL_RELEASE_STEP_UP } from './pay-run-store';
 import { apiError } from '../../kernel/src/index';
 import {
   resolveStatutoryParams, computeStatutoryDeductions, professionalTaxTamilNadu,
@@ -178,6 +179,11 @@ export function payrollRoutes(): readonly Route[] {
       // valueDate?, paymentType? }. The events are folded to confirm the run is locked before the file builds.
       api: 'API-09', method: 'POST', path: '/v1/hr/payroll/bank-file',
       permission: 'payroll.statutory.read', idempotent: true,
+      // Building the salary bank file is the RELEASE moment of payroll (§28, SEC-03): it needs a RECENT,
+      // MFA-backed re-authentication from the SIGNED token, enforced at the API boundary so a direct call
+      // cannot skip the web-erp prompt (Stage E slice 1 — GAP-SEC-06 follow-on closed). The file still
+      // transmits nothing: there is no bank connector on this surface.
+      reauth: PAYROLL_RELEASE_STEP_UP,
       handler: async (ctx) => {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         if (typeof b['payRunId'] !== 'string' || !Array.isArray(b['events']) || !Array.isArray(b['lines'])) {

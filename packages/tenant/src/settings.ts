@@ -42,6 +42,18 @@ export const SETTINGS = {
     defaultValue: 0,
   } as TenantSetting<number>,
   /**
+   * How many products one catalogue publish may add, change or remove before it counts as a BULK publish
+   * and needs a fresh, second-factor sign-in (ADR-0013 point 4; Stage E slice 1). A setting, not a number in
+   * the code: a shop that re-prices 40 lines every morning and one that changes 400 have different ideas of
+   * "bulk", and the owner — not this codebase — draws that line. The default is deliberately low so the
+   * first big load and every mass re-price ask for the extra step; the owner may raise it in store setup.
+   */
+  CATALOGUE_BULK_PUBLISH_THRESHOLD: {
+    key: 'catalogue.bulk_publish_threshold',
+    label: 'Products changed in one publish before it counts as bulk (needs a fresh second-factor sign-in)',
+    defaultValue: 50,
+  } as TenantSetting<number>,
+  /**
    * The age the till asks about on a flagged item (OB-03: SRE is 18). It is a
    * setting because the number differs by state and by country — a tenant
    * elsewhere changes this, not our code.

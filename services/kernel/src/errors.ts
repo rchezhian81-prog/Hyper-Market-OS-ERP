@@ -108,13 +108,15 @@ export const forbidden = (permission: string): ApiError => apiError(403, {
  * `insufficient_user_authentication`; we keep the session and use 403 with a distinct code so the
  * client re-challenges for the action without discarding an otherwise-valid login.)
  */
-export const reauthenticationRequired = (shortfall: string, withinSeconds: number): ApiError => apiError(403, {
+export const reauthenticationRequired = (shortfall: string, withinSeconds: number, because?: string): ApiError => apiError(403, {
   code: 'reauthentication_required',
-  whatHappened: shortfall === 'reauth_factor_insufficient'
+  // `because` names what made THIS call sensitive when the route is not sensitive on every call (a bulk
+  // publish, a payroll approval) — so the person learns why the extra step is being asked of them (P-08).
+  whatHappened: (because === undefined || because.trim() === '' ? '' : `${because.trim()} `) + (shortfall === 'reauth_factor_insufficient'
     ? 'This action needs a stronger recent sign-in (multi-factor), which this session does not carry.'
     : shortfall === 'reauth_expired'
       ? 'The recent re-authentication for this action has gone stale, so it must be done again.'
-      : 'This action needs a recent re-authentication, and this session carries none.',
+      : 'This action needs a recent re-authentication, and this session carries none.'),
   wasItSaved: 'not_saved',
   nextSafeAction: `Re-authenticate (sign in again, completing any second factor) within the last ${withinSeconds} second(s), then retry. Nothing was changed.`,
 });

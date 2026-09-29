@@ -12,6 +12,7 @@ import {
   SETUP_CATALOGUE, assembleSetupStatus, setupItemStatus, validateSetupAnswer, SetupVersionConflictError,
   type SetupItem, type SetupStatus,
 } from './setup';
+import type { TenantSetting } from './settings';
 
 export class DurableTenantSettings {
   constructor(
@@ -26,6 +27,17 @@ export class DurableTenantSettings {
    */
   get configVersions(): ConfigVersionStore {
     return this.store;
+  }
+
+  /**
+   * ONE setting's value in force for a tenant — the tenant's durable answer, else the setting's default. For a
+   * service that needs a single number at request time (the catalogue's bulk-publish threshold) without folding
+   * the whole setup status. Reads the same append-only store the answers land in, so a change is in force on
+   * the next request and a rollback is honoured.
+   */
+  async value<T>(tenantId: string, setting: TenantSetting<T>): Promise<T> {
+    const record = await this.store.current(tenantId, setting.key);
+    return record === undefined ? setting.defaultValue : (record.value as T);
   }
 
   /** The tenant's setup status, read from the durable store — defaults where a key is unset. */
