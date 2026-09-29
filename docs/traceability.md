@@ -329,7 +329,7 @@ per-item evidence and any external blocker live in the ledger. Names are from `d
 | MG-02 | Preservation | INTEGRATION TESTED |
 | MG-03 | Mapping | INTEGRATION TESTED |
 | MG-04 | Cleaning | E2E VERIFIED |
-| MG-05 | Trial loads | INTEGRATION TESTED (the ACTUAL load — extract → routes → empty real tenant — now exists: `planLoad` / `executeLoad`, B1a) |
+| MG-05 | Trial loads | INTEGRATION TESTED |
 | MG-06 | Reconciliation | E2E VERIFIED |
 | MG-07 | History | INTEGRATION TESTED |
 | MG-08 | Opening state | INTEGRATION TESTED |

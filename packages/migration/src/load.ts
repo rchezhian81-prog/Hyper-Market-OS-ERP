@@ -426,7 +426,7 @@ export function planLoad(bundle: ExtractBundle, req: LoadRequest): LoadPlan {
 
 // ── Execution over an injected client ────────────────────────────────────────────────────────────────
 
-/** The one call a load needs. `tests/support/api-harness.ts` satisfies it; the operator's script wraps HTTP. */
+/** The one call a load needs. The integration test harness satisfies it in-process; the operator's script wraps HTTP. */
 export interface LoadClient {
   request(input: {
     readonly method: 'POST';
