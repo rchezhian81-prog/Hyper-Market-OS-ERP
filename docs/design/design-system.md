@@ -30,6 +30,17 @@
 - **Numbers & money:** money always shows currency and fixed precision (§29.1); quantities show UOM; totals are the largest text on a tender screen.
 - **Iconography:** paired with text labels (never icon-only for critical actions).
 
+### 3.1 Implemented: the one foundation file (Stage G slice 1)
+`packages/ui/web/sre-foundation.css` is the palette, type stack, touch target and fixtures above, as one stylesheet
+every screen imports (`<link rel="stylesheet" href="./sre-foundation.css" />` before the page's own `<style>`), with
+a tracked byte-identical copy in each `apps/<app>/web/` (`pnpm ui:sync`) because each screen is served and precached
+from its own folder. Both token dialects the screens grew up with resolve to one value (`--ok`=`--good`,
+`--degraded`=`--warn`, `--error`=`--danger`); red is three tokens because no single red is both readable text on a
+dark panel and a surface under white text (`--error` signal · `--danger-text` words · `--danger-surface` button); a
+page's own `:root` may declare **only** `--tap` (≥ 48px). Every text pair is proven AA in
+`tests/unit/ui-foundation.test.ts`; `tests/guardrails/every-screen-shares-the-foundation.test.ts` keeps every page on
+the one file. Components (§4) ship namespaced as `.sre-*` and the screens move onto them slice by slice (G2–G5).
+
 ## 4. Core components (implemented later in `packages/ui`)
 | Component | Rules |
 | --- | --- |

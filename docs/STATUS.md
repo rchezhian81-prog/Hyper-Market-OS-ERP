@@ -904,10 +904,36 @@ accounts.
   (slice 1) and the stack fronts itself with TLS on one origin (slice 2). Stage E leftovers unchanged: key-based
   server login runbook (human step, ON HOLD by owner); GAP-DATA-06 and the residuals GAP-SEC-04b, GAP-SEC-05b,
   GAP-DATA-02c.
-- **Next — Stage G (UI/UX finish across the 8 apps, consistent · modern · bilingual EN/TA):** built to the Stage 3
+- **Stage G slice 1 — MERGED-PENDING: one visual foundation every screen imports (design system §3 / §3.1, QG-02,
+  NFR-07/08, P-07).** Before: 56 pages each carried their own palette, type stack and fixtures — two token dialects
+  (`--ok/--degraded/--error/--idle` on 33 pages, `--good/--warn/--danger` on 15), four light-palette pages, `--tap`
+  anywhere from 48 to 64px, a `font:` shorthand on every page resetting the family (so a Tamil face was present on
+  one screen and absent on the next), and 45 of 46 ERP pages without the sync badge. Now
+  `packages/ui/web/sre-foundation.css` is the ONE source (tokens with both dialects resolving to one value, the
+  Tamil-capable system font stack, `--tap` 48px, the fixtures every screen carries — header, sync badge, language
+  toggle, sample / cached / nobody strips — focus ring, reduced-motion and more-contrast, Tamil line-height, and
+  namespaced `.sre-*` components for G2–G5 to adopt); nine tracked byte-identical copies `apps/<app>/web/` are
+  written by `pnpm ui:sync` (`scripts/sync-ui-foundation.mjs`, also run by every `scripts/build-app.mjs` build);
+  all 56 pages link it before their own `<style>`, their `:root` declares ONLY `--tap`, the four light pages
+  (company report, erasure console, customer sign-in, till concession tag) join the one palette, every `font:`
+  uses `var(--font)`, and red WORDS moved to `--danger-text` — the finding: no single red is both readable text on
+  a dark panel and a surface under white text (#ef4444 is 3.9:1 and 3.8:1, both short of AA, and every screen used
+  it for both), so red is three tokens each proven for its one job (`--error` signal · `--danger-text` words ·
+  `--danger-surface` button). Every service worker precaches the file (cache versions bumped so installed lanes
+  refresh) and the store box serves `.css` as `text/css` (a standards-mode browser refuses anything else). Proven:
+  `tests/unit/ui-foundation.test.ts` (8 — every text pair AA through `packages/a11y`, the four dots and the focus
+  ring ≥ 3:1, the aliases, the Tamil face, no download, only namespaced components beyond the fixtures) +
+  `tests/guardrails/every-screen-shares-the-foundation.test.ts` (12 — link-first on every page, byte-identical
+  copies and the sync script's own `--check`, precache in every SHELL, `:root` only `--tap` ≥ 48, no literal font
+  stack, no signal-red words, `text/css`) + `tests/integration/the-screens-are-fed.test.ts` (+1 — over the real
+  screen socket, every screen's copy answers 200 `text/css`). **Honest scope:** this is the foundation, not the finish — each screen
+  still carries its own layout and component CSS (rows, tiles, sheets) and adopts `.sre-*` in G2–G5; red BUTTON
+  surfaces (`background: var(--danger)`, 40 places) are unchanged until each screen's slice, because the same
+  token also colours dots and borders where the darker red would fall below 3:1; the 45 ERP pages without a sync
+  badge get one in G5.
+- **Next — Stage G slice 2 onward (UI/UX finish across the 8 apps, consistent · modern · bilingual EN/TA):** built to the Stage 3
   design system (`docs/design/design-system.md`, §27/§27.1, QG-02, NFR-07/08, P-07) and the screen specs in
-  `docs/design/screens/`, in slices: G1 one shared visual foundation (tokens, type, states, sync badge, language
-  toggle) every shell imports instead of seven inline copies; G2 the till and manager screens to the spec's
+  `docs/design/screens/`, in slices: G1 one shared visual foundation — DONE above; G2 the till and manager screens to the spec's
   ≤3-interaction and arm's-length rules; G3 the customer app to WCAG 2.2 AA on the key journeys; G4 the picker /
   driver / warehouse handhelds for a low-spec phone; G5 the ERP's 46 pages made one product (navigation, states,
   bilingual completeness guardrail on every page); plus the three items already parked for Stage G — the exchange

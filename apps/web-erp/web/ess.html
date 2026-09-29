@@ -13,17 +13,9 @@
       reads (GET /v1/hr/workforce/my-roster, GET /v1/hr/payroll/my-payslip); offline the shell keeps what it was
       last told and says so. Read-only — an employee looks; every status carries an icon and a word, not a bare colour.
     -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
     <style>
-      :root { --bg:#0f172a; --panel:#1e293b; --ink:#f8fafc; --muted:#94a3b8; --ok:#22c55e; --degraded:#f59e0b; --error:#ef4444; --idle:#64748b; --info:#38bdf8; --line:#334155; }
-      * { box-sizing: border-box; }
-      body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; min-height:100dvh; display:flex; flex-direction:column; }
-      header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; background:var(--panel); flex-wrap:wrap; }
-      .who { font-weight:600; } .who small { display:block; color:var(--muted); font-weight:400; font-size:14px; }
-      .lang { background:var(--line); color:var(--ink); min-height:40px; padding:0 14px; font-size:15px; border:0; border-radius:10px; }
-      .sample,.stale,.nobody { margin:0; padding:10px 16px; font-size:15px; font-weight:600; }
-      .sample { background:var(--degraded); color:#451a03; } .stale { background:#1e3a5f; color:#dbeafe; border-bottom:2px solid var(--info); font-weight:400; }
-      .nobody { background:#3f2d12; color:#fde68a; border-bottom:2px solid var(--degraded); }
-      .sample[hidden],.stale[hidden],.nobody[hidden] { display:none; }
+      body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 var(--font); min-height:100dvh; display:flex; flex-direction:column; }
       main { flex:1; padding:16px; display:grid; gap:16px; align-content:start; max-width:760px; width:100%; }
       h2 { margin:0 0 4px; font-size:20px; } p.lead { margin:0 0 4px; color:var(--muted); font-size:15px; }
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }

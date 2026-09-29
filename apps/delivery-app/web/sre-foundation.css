@@ -1,0 +1,175 @@
+/*
+  SRE Retail OS — the ONE visual foundation every screen imports (Stage G slice 1).
+
+  Source of truth: packages/ui/web/sre-foundation.css. Every apps/<app>/web/sre-foundation.css is a byte-identical
+  copy written by `node scripts/sync-ui-foundation.mjs` (which every `scripts/build-app.mjs` build also runs) and
+  pinned by tests/guardrails/every-screen-shares-the-foundation.test.ts. Edit THIS file; never a copy.
+
+  What it holds (docs/design/design-system.md §1 hard rules, §3 foundations, §4 components; QG-02; NFR-07/08; P-07):
+    • one palette with ONE meaning per colour everywhere — green ok · amber degraded/pending · red error/destructive ·
+      grey idle — and colour is never the only signal (a word and an icon ride with it);
+    • one type stack that renders Tamil and Latin cleanly, from the system, with the line-height Tamil glyphs need;
+    • touch targets of at least 48px (a screen may raise `--tap` in its own :root — gloves, glare, a doorstep);
+    • the fixtures every screen carries: the sync badge, the language toggle, the sample / cached / nobody strips;
+    • the namespaced `sre-*` components the screens move onto slice by slice (tiles, rows, chips, sheets, keypads).
+  What it is NOT: a framework, a download, a build step. Static CSS a lane serves from its own cache (P-01).
+
+  Both token dialects the screens grew up with resolve here to the same value, so `var(--good)` and `var(--ok)`
+  cannot drift apart again: --ok/--good/--accent · --degraded/--warn · --error/--danger · --idle.
+
+  Contrast (WCAG 2.2 AA, proven pair by pair in tests/unit/ui-foundation.test.ts with packages/a11y): no single red
+  can be BOTH readable text on a dark panel AND a surface under white text, so red is three tokens —
+  --error/--danger  #ef4444  the signal colour: dots, borders, icons (non-text, ≥ 3:1)
+  --danger-text     #fca5a5  red WORDS on a dark surface (7.7:1 on a panel)
+  --danger-surface  #b91c1c  a red BUTTON or banner under white words (6.5:1)
+*/
+
+:root {
+  /* Surfaces */
+  --bg: #0f172a;
+  --panel: #1e293b;
+  --panel-2: #0b1220;
+  --line: #334155;
+  --line-strong: #475569;
+
+  /* Text */
+  --ink: #f8fafc;
+  --muted: #94a3b8;
+  --on-accent: #052e16;
+  --on-warn: #451a03;
+  --on-danger: #ffffff;
+  --on-info: #0f172a;
+
+  /* Tones — one meaning everywhere; both dialects */
+  --ok: #22c55e;
+  --good: var(--ok);
+  --accent: var(--ok);
+  --accent-ink: var(--on-accent);
+  --degraded: #f59e0b;
+  --warn: var(--degraded);
+  --error: #ef4444;
+  --danger: var(--error);
+  --danger-text: #fca5a5;
+  --danger-surface: #b91c1c;
+  --idle: #64748b;
+  --info: #38bdf8;
+  --info-surface: #1e3a5f;
+  --on-info-surface: #dbeafe;
+  --nobody-surface: #3f2d12;
+  --on-nobody-surface: #fde68a;
+  --focus: #93c5fd;
+
+  /* Type — system faces only (nothing to download on a shop line); the Tamil-capable faces are named so a Tamil
+     screen never falls back to boxes on Windows or Android. */
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Tamil", "Nirmala UI", "Latha", sans-serif;
+  --mono: ui-monospace, Menlo, Consolas, monospace;
+  --text: 16px;
+  --leading: 1.5;
+
+  /* Size and shape */
+  --tap: 48px;
+  --radius: 12px;
+  --radius-lg: 16px;
+  --gap: 12px;
+  --pad: 16px;
+}
+
+/* ── Base ─────────────────────────────────────────────────────────────────────────────────────────── */
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: var(--text)/var(--leading) var(--font); }
+/* Tamil glyphs sit taller than Latin ones; give the lines room or the ascenders clip. */
+html[lang="ta"] body, [lang="ta"] { line-height: 1.65; }
+[hidden] { display: none; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+.tabular, .money, .qty, .amount, .total, .n { font-variant-numeric: tabular-nums; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* A keyboard or screen-reader user should not tab through the chrome on every screen. */
+.skip { position: absolute; left: -9999px; top: 0; background: var(--ink); color: var(--bg); padding: 12px 16px; border-radius: 0 0 8px 0; z-index: 50; }
+.skip:focus { left: 0; }
+
+/* ── The fixtures every screen carries (design system §1 rules 4 and 6, §7) ───────────────────────── */
+header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; background:var(--panel); flex-wrap:wrap; }
+.who { font-weight:600; }
+.who small { display:block; color:var(--muted); font-weight:400; font-size:14px; }
+/* The sync badge: connection state + unsent count + freshness. The dot is decoration; the words beside it are the badge. */
+.sync { display:flex; align-items:center; gap:8px; font-size:14px; }
+.dot { width:12px; height:12px; border-radius:50%; background:var(--ok); flex:none; }
+.dot.offline, .dot.off, .dot.unknown, .dot.degraded { background: var(--degraded); }
+.dot.error { background: var(--error); }
+.dot.idle { background: var(--idle); }
+/* The per-user English / Tamil toggle. */
+.lang { background:var(--line); color:var(--ink); min-height:40px; padding:0 14px; font-size:15px; border:0; border-radius:10px; }
+/* The strips: sample data · served from cache (and WHEN) · nobody signed in. None fades; none is colour alone. */
+.sample,.stale,.nobody { margin:0; padding:10px 16px; font-size:15px; font-weight:600; }
+.sample { background:var(--degraded); color:var(--on-warn); }
+.stale { background:var(--info-surface); color:var(--on-info-surface); border-bottom:2px solid var(--info); font-weight:400; }
+.nobody { background:var(--nobody-surface); color:var(--on-nobody-surface); border-bottom:2px solid var(--degraded); }
+.sample[hidden],.stale[hidden],.nobody[hidden] { display:none; }
+
+/* ── Namespaced components — screens adopt these slice by slice (G2–G5); nothing here targets a bare tag ── */
+.sre-btn { min-height: var(--tap); border: 0; border-radius: var(--radius); background: var(--line); color: var(--ink); font-size: 17px; font-weight: 600; padding: 0 16px; }
+.sre-btn-primary { background: var(--accent); color: var(--on-accent); font-size: 20px; }
+.sre-btn-danger { background: var(--danger-surface); color: var(--on-danger); }
+.sre-btn-quiet { background: transparent; color: var(--muted); }
+.sre-btn:disabled { opacity: .55; }
+.sre-btn[aria-pressed="true"] { outline: 3px solid var(--accent); }
+
+.sre-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--gap); }
+.sre-tile { background: var(--panel); border-radius: var(--radius-lg); padding: var(--pad); min-height: 120px; display: grid; align-content: start; gap: 4px; border-left: 6px solid var(--line); }
+.sre-tile[data-tone="degraded"] { border-left-color: var(--degraded); }
+.sre-tile[data-tone="error"] { border-left-color: var(--error); }
+.sre-tile .n { font-size: 44px; font-weight: 700; }
+.sre-tile .n.unknown { font-size: 24px; color: var(--degraded); }
+.sre-tile .label, .sre-tile .note { color: var(--muted); font-size: 15px; }
+
+.sre-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.sre-row { background: var(--panel); border-radius: 14px; padding: 14px var(--pad); display: grid; gap: 10px; border-left: 6px solid var(--idle); }
+.sre-row[data-tone="ok"] { border-left-color: var(--ok); }
+.sre-row[data-tone="degraded"], .sre-row[data-tone="pending"] { border-left-color: var(--degraded); }
+.sre-row[data-tone="error"] { border-left-color: var(--error); }
+.sre-row .what { font-size: 17px; font-weight: 600; }
+.sre-row .meta { color: var(--muted); font-size: 14px; }
+.sre-row .value { font-size: 22px; font-weight: 700; }
+
+/* The seven universal screen states as a chip: word + icon + tone (packages/ui states.ts, packages/a11y signals). */
+.sre-chip { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; padding: 4px 12px; border-radius: 999px; background: var(--panel-2); border-left: 4px solid var(--idle); }
+.sre-chip .icon { font-size: 18px; width: 1.4em; text-align: center; }
+.sre-chip[data-tone="ok"] { border-left-color: var(--ok); }
+.sre-chip[data-tone="degraded"], .sre-chip[data-tone="pending"] { border-left-color: var(--degraded); }
+.sre-chip[data-tone="error"] { border-left-color: var(--error); color: var(--danger-text); }
+.sre-chip[data-tone="idle"] { border-left-color: var(--idle); color: var(--muted); }
+
+.sre-field { display: grid; gap: 6px; }
+.sre-field > label { color: var(--muted); font-size: 15px; }
+.sre-input { min-height: var(--tap); background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius); padding: 0 14px; font-size: 17px; }
+.sre-input::placeholder { color: var(--idle); }
+.sre-hint { color: var(--muted); font-size: 15px; min-height: 22px; }
+.sre-hint[data-tone="error"] { color: var(--danger-text); font-weight: 600; }
+
+/* The on-screen sheet (never a browser prompt) and its keypad. */
+.sre-sheet { position: fixed; inset: 0; background: rgba(2, 6, 23, .82); display: grid; place-items: center; z-index: 20; padding: var(--pad); }
+.sre-sheet-inner { width: min(560px, 100%); background: var(--panel); padding: 20px; border-radius: 20px; display: grid; gap: 14px; max-height: 90dvh; overflow-y: auto; }
+.sre-entry { font-size: 44px; font-weight: 700; text-align: right; padding: 10px 16px; background: var(--panel-2); border-radius: var(--radius); min-height: 68px; font-variant-numeric: tabular-nums; }
+.sre-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.sre-keypad .sre-btn { font-size: 22px; }
+
+/* The banner that must not be missed: full width, top, stays until acknowledged (design system §1 rule 5). */
+.sre-banner { position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 20px; background: var(--danger-surface); color: var(--on-danger); display: grid; gap: 10px; }
+.sre-banner strong { font-size: 24px; }
+.sre-banner p { margin: 0; font-size: 18px; line-height: 1.45; }
+.sre-banner .sre-btn { background: #7f1d1d; color: #fef2f2; }
+.sre-banner[data-tone="ok"] { background: var(--accent); color: var(--on-accent); }
+.sre-banner[data-tone="ok"] .sre-btn { background: var(--on-accent); color: #ecfdf5; }
+
+/* ── What the browser tells us about the person ──────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+@media (prefers-contrast: more) {
+  :root { --line: #64748b; --line-strong: #94a3b8; --muted: #cbd5e1; }
+  :focus-visible { outline-width: 4px; }
+}

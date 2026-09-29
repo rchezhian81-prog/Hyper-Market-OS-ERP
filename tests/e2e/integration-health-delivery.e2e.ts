@@ -74,7 +74,7 @@ async function startShellAndCloud(rec: Recorder): Promise<{ base: string; stop: 
       const file = path === '/' || path === '/integration-health' ? 'integration-health.html' : path.replace(/^\//, '');
       try {
         const buf = await readFile(join(WEB_DIR, file));
-        const type = file.endsWith('.html') ? 'text/html' : file.endsWith('.js') ? 'text/javascript' : file.endsWith('.webmanifest') ? 'application/manifest+json' : 'application/octet-stream';
+        const type = file.endsWith('.html') ? 'text/html' : file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.webmanifest') ? 'application/manifest+json' : 'application/octet-stream';
         let body = buf.toString('utf8');
         if (file.endsWith('.html')) {
           const inject = `<script>window.integrationHealthData = ${JSON.stringify(rec.integrationHealthData).replace(/</g, '\\u003c')};</script>`;

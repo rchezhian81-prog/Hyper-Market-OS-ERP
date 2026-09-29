@@ -16,8 +16,14 @@ import { build, context } from 'esbuild';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { syncFoundation, FOUNDATION_FILE } from './sync-ui-foundation.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+// Every build refreshes the shared stylesheet copies first, so a screen is never built against a stale look
+// (packages/ui/web/sre-foundation.css is the source; apps/<app>/web/sre-foundation.css are its tracked copies).
+const refreshed = syncFoundation();
+if (refreshed.length > 0) console.log(`${FOUNDATION_FILE} refreshed in: ${refreshed.map((a) => `apps/${a}/web`).join(', ')}`);
 
 const app = process.argv[2];
 if (!app || app.startsWith('--')) {

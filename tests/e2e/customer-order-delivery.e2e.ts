@@ -125,7 +125,7 @@ async function startStore(h: ApiHarness, rec: Recorder): Promise<{ base: string;
       const file = path === '/' || path === '/index.html' ? 'index.html' : path.replace(/^\//, '');
       try {
         const buf = await readFile(join(WEB_DIR, file));
-        const type = file.endsWith('.html') ? 'text/html' : file.endsWith('.js') ? 'text/javascript' : file.endsWith('.webmanifest') ? 'application/manifest+json' : 'application/octet-stream';
+        const type = file.endsWith('.html') ? 'text/html' : file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.webmanifest') ? 'application/manifest+json' : 'application/octet-stream';
         let text = buf.toString('utf8');
         if (file === 'index.html') {
           text = text.replace(DATA_MARKER, `<script>window.shopData = ${JSON.stringify(shopData()).replace(/</g, '\\u003c')};</script>`);
