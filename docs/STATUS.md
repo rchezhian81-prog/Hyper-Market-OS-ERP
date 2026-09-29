@@ -461,11 +461,31 @@ accounts.
   reused backup record). **No rung change** (M35 stays PARTIALLY WIRED: lane-side signal collection —
   the store box reporting its disk/outbox into these signals — and end-to-end backup/DR orchestration
   remain live-infrastructure items).
+- **Stage C, family M36 (platform/partners), slice M — done (29 Sep 2026): the versioned API surface as a
+  generated MANIFEST, kept equal to the running kernel (M36-FR-04, P-06, API-11).** Before: the API surface a
+  partner builds against was documented by hand (`docs/api/catalogue.md`) — a description that could drift
+  from the routes the kernel actually serves; FR-04's "docs" half was a packaging promise. Now
+  `services/platform/src/api-manifest.ts`: `buildApiManifest` folds the LIVE route table into a manifest —
+  every endpoint grouped by API domain (API-01…API-13, the catalogue's own map), its major version in the
+  path, the permission it demands, the optional feature it belongs to (M36-FR-01) and whether a write
+  declares idempotency (a partner must send the key) — and names convention violations instead of hiding
+  them (an unversioned path, a write without idempotency: none on the surface). `GET
+  /v1/platform/api-manifest` (`platform.partner.read`, `?api=` to filter) serves it, read at request time so
+  it includes everything registered — itself included. `renderApiSurface` writes it as
+  `docs/api/surface.md` (deterministic, no timestamp), and a new guardrail
+  `tests/guardrails/the-api-surface-is-documented.test.ts` fails the gate whenever the document is behind the
+  running surface (regenerate with `UPDATE_API_SURFACE=1 …`), so the documented API can no longer disagree
+  with the served one. Proven: `tests/unit/api-manifest.test.ts` (5), `tests/integration/api-manifest.test.ts`
+  (2 — through the real API: 300+ endpoints, every path versioned, every write idempotent, no violations, the
+  day-book and concession-tag routes with their permission/feature, the manifest listing itself, the domain
+  filter, an unknown domain refused, cashier and owner refused — it is the platform operator's read). **No
+  rung change** (M36 stays PARTIALLY WIRED: the connector SDK package, the hosted docs site / partner portal
+  and live sandbox provisioning remain delivery steps; the paid-plan tier is answered by OA-12).
 - **Stage C — remaining, in order:**
   then family by family through the 57 remaining PARTIALLY_WIRED items (D01-FR-06 content authoring,
   D02-FR-06 display funding, D07 coupons/referrals, M21 compensation, M23 close second source, …). OA-12 was
   already answered and closed on 23 Sep — nothing to un-park.
-- **Next:** M23 slice D PR → merge → M27 slice T PR → merge → M35 slice O PR → merge → M36 → M01, one family per slice (then a second pass: M19 exception screen + e2e, M22 portal screen + e2e, M23 day-book screen + e2e, M27 till panel → store box → cloud tags + e2e, …); Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet).
+- **Next:** M23 slice D PR → merge → M27 slice T PR → merge → M35 slice O PR → merge → M36 slice M PR → merge → M01, one family per slice (then a second pass: M19 exception screen + e2e, M22 portal screen + e2e, M23 day-book screen + e2e, M27 till panel → store box → cloud tags + e2e, …); Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet).
 
 ---
 
