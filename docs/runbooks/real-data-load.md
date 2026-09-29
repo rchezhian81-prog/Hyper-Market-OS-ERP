@@ -123,7 +123,7 @@ Run the cleaning check on the dataset (`POST /v1/migration/cleaning/exceptions`,
 response as `exceptions.json`. For every exception marked `blocking`, the **owner** decides in writing
 (`merge` / `correct` / `exclude` / `migrate_as_is`, with a reason) and the decision is written onto that
 exception as its `resolution` (`{ "action", "decidedBy", "decidedAt", "reason" }`). One undecided
-blocking exception and the load refuses. No file at all and the load refuses — cleaning is not optional.
+blocking exception and the load refuses. No file at all and the load refuses — cleaning is not optional. **Since 29 Sep 2026 (Stage C3a) the same exceptions can also be RECORDED on the cloud** (`POST /v1/migration/exceptions` with the report's `exceptions` list) and each decided there by a named manager or owner (`POST /v1/migration/exceptions/<id>/resolution`) or from the migration screen at the store box — the register, what is still outstanding and any refused decision read back from `GET /v1/migration/exceptions`. The load command still reads `exceptions.json`; keep the file and the register saying the same thing until the command reads the register (C3c).
 
 ## Step 5 — dry run
 

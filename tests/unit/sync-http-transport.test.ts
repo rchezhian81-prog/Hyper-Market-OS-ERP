@@ -186,6 +186,29 @@ describe('a drained offline return reaches the cloud record-and-flag route', () 
 // An offline opening/closing checklist or daily-task completion reconciles on sync (M25-FR-02, §31). The id is a
 // plain payload field matching the path param, so a template fills it — the same door the online write goes
 // through, recording the box-relayed signer under the store token.
+// The migration screen's decisions (MG-04 / MG-06, §31 — Stage C3a). Until now these two event types had NO
+// route and every decision made on the night dead-lettered; each now reaches its own synced decision route,
+// the id filled from the payload the screen queues (exceptionId / totalId).
+describe('a drained migration-screen decision reaches its synced decision route', () => {
+  const decision = (type: string, payload: Record<string, unknown>): DomainEvent => makeEvent({
+    id: `${type}-1`, type, occurredAt: '2026-10-10T21:00:00.000Z', idempotencyKey: `t1:${type}:x`, source: 'migration-screen', payload,
+  });
+  it('routes an exception resolution to its synced route, filling the exception id', async () => {
+    const { fn, calls } = fakeFetch(202);
+    await transportOn(fn).send(decision('MigrationExceptionResolved', { tenantId: 't1', cutoverId: 'cut-1', exceptionId: 'EX-1', action: 'correct', decidedBy: 'u-mgr', reason: 'counted' }));
+    expect(calls[0]?.url).toBe('https://api.example.test/v1/migration/exceptions/EX-1/resolution/synced');
+  });
+  it('routes a control-total signature to its synced route, filling the total id', async () => {
+    const { fn, calls } = fakeFetch(202);
+    await transportOn(fn).send(decision('MigrationTotalSigned', { tenantId: 't1', cutoverId: 'cut-1', totalId: 'CT-1', signedBy: 'u-owner', signerRole: 'owner', statement: 'checked' }));
+    expect(calls[0]?.url).toBe('https://api.example.test/v1/migration/control-totals/CT-1/signature/synced');
+  });
+  it('still rejects a decision with no subject id — dead-lettered by name, never posted to a generic URL', async () => {
+    const r = await transportOn(fakeFetch(202).fn).send(decision('MigrationTotalSigned', { signedBy: 'u-owner', statement: 'checked' }));
+    expect(r.status).toBe('rejected');
+  });
+});
+
 describe('a drained offline checklist/task completion reaches its synced route', () => {
   const checklist = (payload: Record<string, unknown>): DomainEvent => makeEvent({
     id: 'cl-1', type: 'ChecklistCompleted', occurredAt: '2026-09-14T21:00:00.000Z',

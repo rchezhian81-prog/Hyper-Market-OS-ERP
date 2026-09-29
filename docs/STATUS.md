@@ -180,11 +180,34 @@ accounts.
   reversal is recorded as the EX-03 external gate, not as missing maturity). Summary now 19 E2E · 4
   INTEGRATION TESTED · 4 WIRED · 9 PARTIALLY WIRED. An exchange SCREEN (desk + till) is a Stage G item; an
   offline exchange at the till is a return + a sale, each already durable-first.
-- **Stage C — remaining, in order:** C3 wire the migration screen to the B2/B3 routes;
+- **Stage C, slice 3a — done (29 Sep 2026): the migration screen's decisions now LAND on the cloud (MG-04 /
+  MG-06).** Until now the cloud never kept a cleaning pass's exceptions or the control totals — the routes
+  judged what was in the request and stored nothing — and the decisions a named person made on the
+  migration screen at the store box (resolve an exception, sign a total) were queued and then
+  **dead-lettered**, because the sync agent had nowhere to send them. Now
+  (`services/migration/src/decisions.ts`): exceptions and control totals are **recorded once** on the
+  cloud (`POST /v1/migration/exceptions`, `POST /v1/migration/control-totals` — the independence check
+  still refuses a total that compares a figure with itself); a manager resolves an exception at the desk
+  and the owner or the CA signs a total, under the engine's own rules (not the person who ran the load;
+  finance and tax only by the CA; never an open total; the first decision stands); the screen's queued
+  decisions are routed to synced decision routes that **re-check the decider's own authority from their
+  grants** (a name relayed by the box is not authority) and re-run the engine — a decision the cloud
+  cannot accept is **recorded as refused, visibly**, and acknowledged so the box stops retrying (never
+  dropped, never silently applied). Reads show the register, what is outstanding, QG-07, and every refused
+  decision. Roles: `migration.exception.record/resolve`, `migration.controltotal.record` (owner, store
+  manager); `migration.decision.sync` (the box's sync identity). Proven: route 9 + real API 4 + the
+  REAL screen session → outbox → sync agent → cloud (2: an owner's decisions applied and QG-07 turns true;
+  a cashier's recorded as refused with nothing applied) + transport 3. No rung change (MG-04/MG-06 already
+  E2E). Follow-ons: the screen still READS from the store pack, which the cloud does not fill (C3b); the
+  load command still reads `exceptions.json` rather than the cloud register (C3c).
+- **Stage C — remaining, in order:** C3b feed the migration screen from the cloud (exceptions, totals,
+  refused decisions, parallel days/differences from B3, verification progress from B2 — a live read the
+  edge serves to the screen, like the other operator screens); C3c the load command reads the cloud
+  exception register;
   then family by family through the 57 remaining PARTIALLY_WIRED items (D01-FR-06 content authoring,
   D02-FR-06 display funding, D07 coupons/referrals, M21 compensation, M23 close second source, …). OA-12 was
   already answered and closed on 23 Sep — nothing to un-park.
-- **Next:** C2b PR → merge → **C3** (migration screen ↔ B2/B3 routes) → the remaining PARTIALLY_WIRED families.
+- **Next:** C3a PR → merge → **C3b** (feed the migration screen from the cloud) → C3c → the remaining PARTIALLY_WIRED families.
 
 ---
 

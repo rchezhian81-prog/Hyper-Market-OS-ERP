@@ -42,12 +42,16 @@ import {
 } from '../../../packages/migration/src/history';
 import { witnessRoutes, applicableSignatures, findingsDigest, type ExtractionRun, type RecordedFinding, type StoredSignature } from './witness';
 import { parallelRunRoutes, ledgerCutoverEvidence, type ParallelRunPolicy, type RecordedParallelDay, type RecordedRollback } from './parallel-run';
+import { decisionRoutes, type RefusedDecision } from './decisions';
+import type { ExceptionResolution, MigrationException } from '../../../packages/migration/src/cleaning';
+import type { TotalSignature } from '../../../packages/migration/src/reconcile';
 import type { ParallelDifference } from '../../../packages/migration/src/cutover';
 
 export type { ParallelRunPolicy, RecordedParallelDay, RecordedRollback, ParallelRunView } from './parallel-run';
 import { assertSafeTarget, namedPeople } from './guards';
 
 export type { ExtractionRun, RecordedFinding, StoredSignature } from './witness';
+export type { RefusedDecision } from './decisions';
 
 const EXCLUSION_SCOPES: readonly string[] = ['documents_before', 'entity_kind', 'named_records', 'inactive_records'];
 
@@ -248,6 +252,23 @@ export interface MigrationDeps {
   readonly recordParallelDay?: (tenantId: string, day: RecordedParallelDay) => Promise<void> | void;
   readonly recordParallelDifference?: (tenantId: string, difference: ParallelDifference) => Promise<void> | void;
   readonly recordRollback?: (tenantId: string, rollback: RecordedRollback) => Promise<void> | void;
+  /**
+   * MG-04 / MG-06 — the decisions the migration screen makes, KEPT (C3a): the exceptions a cleaning pass
+   * raised (latest state per id — a resolution applied over the first record; never pruned), the control
+   * totals recorded (a signature applied over the first record), every relayed decision the cloud refused
+   * (visible, hard rule #10), and whether a person named at the store box genuinely holds a permission
+   * (read from grants — a name relayed by the box is not authority, §28). Optional so existing stubs
+   * compile; a route whose store is absent refuses 503 rather than pretending.
+   */
+  readonly exceptions?: (tenantId: string) => Promise<readonly MigrationException[]> | readonly MigrationException[];
+  readonly recordException?: (tenantId: string, exception: MigrationException) => Promise<void> | void;
+  readonly recordExceptionResolution?: (tenantId: string, exceptionId: string, resolution: ExceptionResolution) => Promise<void> | void;
+  readonly controlTotals?: (tenantId: string) => Promise<readonly ControlTotal[]> | readonly ControlTotal[];
+  readonly recordControlTotal?: (tenantId: string, total: ControlTotal) => Promise<void> | void;
+  readonly recordTotalSignature?: (tenantId: string, totalId: string, signature: TotalSignature) => Promise<void> | void;
+  readonly refusedDecisions?: (tenantId: string) => Promise<readonly RefusedDecision[]> | readonly RefusedDecision[];
+  readonly recordRefusedDecision?: (tenantId: string, decision: RefusedDecision) => Promise<void> | void;
+  readonly holdsPermission?: (tenantId: string, userId: string, permission: string) => Promise<boolean> | boolean;
   readonly now: () => string;
 }
 
@@ -1003,5 +1024,6 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
     },
     ...witnessRoutes(deps),
     ...parallelRunRoutes(deps),
+    ...decisionRoutes(deps),
   ];
 }
