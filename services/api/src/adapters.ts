@@ -57,7 +57,8 @@ import type { SoldLine } from '../../../packages/demand/src/sales-history';
 import type { OutboundLotRecord } from '../../../packages/quality/src/index';
 import { attributeSalesFifo, nearExpiryStock, type BatchReceipt, type HistoricalSaleLine, type ReceiptWithExpiry, type SaleForNetOnHand, type ExpiryActionItem } from '../../../packages/fefo/src/index';
 import type { NearExpiryDeps } from '../../inventory/src/near-expiry';
-import type { ReturnsDeps, ReturnRecord, RecordedRefund, OriginalSale, RecordedReturn } from '../../pos/src/returns';
+import type { ReturnsDeps, ReturnRecord, RecordedRefund, OriginalSale, RecordedReturn, StoreCreditIssue } from '../../pos/src/returns';
+import type { ExchangeDeps } from '../../pos/src/exchanges';
 import type { NoReceiptReturnsDeps } from '../../pos/src/no-receipt-returns';
 import type { CashDeps, RecordedCashMovement } from '../../pos/src/cash';
 import type { StoredCashMovement } from '../../../packages/cash/src/index';
@@ -1884,6 +1885,131 @@ async function storeOfPack(store: EventStore, tenantId: string, packVersion: num
   return pack?.snapshot.scope?.storeId;
 }
 
+/** The batch a banked SALE appends (M08-FR-01, FND-01): the sale, its receipt-number index and one `sold`
+ *  movement per line — shared by `posAdapter.bankSale` and the exchange's atomic commit, so both bank a sale
+ *  identically. Each entry carries its own idempotency key; a resent sale dedups the whole set. */
+function saleBatchEvents(tenantId: string, sale: IncomingSale, movements: readonly Movement[]): Parameters<EventStore['appendBatch']>[1] {
+  return [
+    {
+      stream: STREAM.sales,
+      event: makeEvent({
+        id: `sale-${sale.saleId}`,
+        type: 'SaleCommitted',
+        occurredAt: sale.committedAt,
+        // The sale's own id. A till resending the same sale collapses to one, whatever
+        // Idempotency-Key the transport happened to use.
+        idempotencyKey: `sale-${tenantId}-${sale.saleId}`,
+        source: 'api/pos',
+        payload: sale,
+      }),
+    },
+    {
+      // The receipt-number index, appended second and deliberately allowed to lose.
+      //
+      // If two sales carry one receipt number the second append dedupes and this entry keeps
+      // pointing at the FIRST sale — which is exactly right, because the exception it raises reads
+      // "receipt R-101 already belongs to sale S-7", and S-7 is the one that had it. The index
+      // records who holds the number, not who asked for it last. Batching does not change this:
+      // the two events have distinct keys, so a receipt already taken still dedups on its own.
+      stream: STREAM.sales,
+      event: makeEvent({
+        id: `receipt-${sale.receiptNumber}`,
+        type: 'ReceiptNumberIssued',
+        occurredAt: sale.committedAt,
+        idempotencyKey: `receipt-${tenantId}-${sale.receiptNumber}`,
+        source: 'api/pos',
+        payload: { receiptNumber: sale.receiptNumber, saleId: sale.saleId },
+      }),
+    },
+    // One outbound `sold` movement per line, in the SAME format the inventory adapter uses
+    // (`mv-<movementId>`), so availability folds them exactly as any other movement and a resent
+    // sale dedups each on its own key.
+    ...movements.map((m) => ({
+      stream: STREAM.inventory,
+      event: makeEvent({
+        id: `mv-${m.movementId}`,
+        type: 'InventoryMoved',
+        occurredAt: m.occurredAt,
+        idempotencyKey: `mv-${tenantId}-${m.movementId}`,
+        source: 'api/pos',
+        payload: m,
+      }),
+    })),
+  ];
+}
+
+/** The batch a recorded RETURN appends (M13, FND-01): the bill's register entry, the tenant-wide reporting
+ *  projection, any store credit (instrument + movement) and one `returned` movement per resold line — shared by
+ *  `returnsAdapter.recordReturn` and the exchange's atomic commit. */
+function returnBatchEvents(
+  tenantId: string, saleId: string, record: ReturnRecord, storeCredit: StoreCreditIssue | undefined, stockMovements: readonly Movement[],
+): Parameters<EventStore['appendBatch']>[1] {
+  return [
+    {
+      stream: forSaleReturns(saleId),
+      event: makeEvent({
+        id: `return-${record.returnId}`,
+        type: 'ReturnRecorded',
+        occurredAt: record.processedAt,
+        idempotencyKey: `return-${tenantId}-${record.returnId}`,
+        source: 'api/pos',
+        payload: record,
+      }),
+    },
+    {
+      // The tenant-wide returns projection — a READ MODEL for reporting (returns-netting), keyed
+      // on the return id so a retry collapses.
+      stream: STREAM.returns,
+      event: makeEvent({
+        id: `return-proj-${record.returnId}`,
+        type: 'ReturnRecorded',
+        occurredAt: record.processedAt,
+        idempotencyKey: `return-proj-${tenantId}-${record.returnId}`,
+        source: 'api/pos',
+        payload: record,
+      }),
+    },
+    // A fresh store-credit instrument (when one was opened) on the shared index, so it can be found
+    // and pooled by owner.
+    ...(storeCredit?.instrument === undefined ? [] : [{
+      stream: STORED_VALUE_INDEX,
+      event: makeEvent({
+        id: `sv-issue-${storeCredit.instrument.instrumentId}`,
+        type: 'StoredValueIssued',
+        occurredAt: storeCredit.instrument.issuedAt,
+        idempotencyKey: `sv-issue-${tenantId}-${storeCredit.instrument.instrumentId}`,
+        source: 'api/pos',
+        payload: storeCredit.instrument,
+      }),
+    }]),
+    // The refund_to_credit movement on the instrument's own stream, where the balance folds.
+    ...(storeCredit === undefined ? [] : [{
+      stream: forInstrument(storeCredit.movement.instrumentId),
+      event: makeEvent({
+        id: `sv-mv-${storeCredit.movement.movementId}`,
+        type: 'StoredValueMovement',
+        occurredAt: storeCredit.movement.at,
+        idempotencyKey: `sv-mv-${tenantId}-${storeCredit.movement.movementId}`,
+        source: 'api/pos',
+        payload: storeCredit.movement,
+      }),
+    }]),
+    // One inbound `returned` movement per resold line, in the inventory adapter's own format
+    // (`mv-<movementId>`), so availability and valuation fold it as any other movement.
+    ...stockMovements.map((m) => ({
+      stream: STREAM.inventory,
+      event: makeEvent({
+        id: `mv-${m.movementId}`,
+        type: 'InventoryMoved',
+        occurredAt: m.occurredAt,
+        idempotencyKey: `mv-${tenantId}-${m.movementId}`,
+        source: 'api/pos',
+        payload: m,
+      }),
+    })),
+  ];
+}
+
 export function posAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -1940,53 +2066,7 @@ export function posAdapter(input: {
       // them must never leave a banked sale with no receipt index, nor an index pointing at a sale
       // that did not commit. Both carry their own idempotency key, so a till resending the sale
       // dedups the whole batch.
-      await input.store.appendBatch(tenantId, [
-        {
-          stream: STREAM.sales,
-          event: makeEvent({
-            id: `sale-${sale.saleId}`,
-            type: 'SaleCommitted',
-            occurredAt: sale.committedAt,
-            // The sale's own id. A till resending the same sale collapses to one, whatever
-            // Idempotency-Key the transport happened to use.
-            idempotencyKey: `sale-${tenantId}-${sale.saleId}`,
-            source: 'api/pos',
-            payload: sale,
-          }),
-        },
-        {
-          // The receipt-number index, appended second and deliberately allowed to lose.
-          //
-          // If two sales carry one receipt number the second append dedupes and this entry keeps
-          // pointing at the FIRST sale — which is exactly right, because the exception it raises reads
-          // "receipt R-101 already belongs to sale S-7", and S-7 is the one that had it. The index
-          // records who holds the number, not who asked for it last. Batching does not change this:
-          // the two events have distinct keys, so a receipt already taken still dedups on its own.
-          stream: STREAM.sales,
-          event: makeEvent({
-            id: `receipt-${sale.receiptNumber}`,
-            type: 'ReceiptNumberIssued',
-            occurredAt: sale.committedAt,
-            idempotencyKey: `receipt-${tenantId}-${sale.receiptNumber}`,
-            source: 'api/pos',
-            payload: { receiptNumber: sale.receiptNumber, saleId: sale.saleId },
-          }),
-        },
-        // One outbound `sold` movement per line, in the SAME format the inventory adapter uses
-        // (`mv-<movementId>`), so availability folds them exactly as any other movement and a resent
-        // sale dedups each on its own key.
-        ...movements.map((m) => ({
-          stream: STREAM.inventory,
-          event: makeEvent({
-            id: `mv-${m.movementId}`,
-            type: 'InventoryMoved',
-            occurredAt: m.occurredAt,
-            idempotencyKey: `mv-${tenantId}-${m.movementId}`,
-            source: 'api/pos',
-            payload: m,
-          }),
-        })),
-      ]);
+      await input.store.appendBatch(tenantId, saleBatchEvents(tenantId, sale, movements));
     },
 
     recordExceptions: async (tenantId, exceptions) => {
@@ -2290,7 +2370,7 @@ export function returnsAdapter(input: {
         tradingDay: s.tradingDay,
         committedAt: s.committedAt,
         totalMinor: s.totalMinor,
-        lines: s.lines.map((l) => ({ productId: l.productId, uom: l.uom, quantityMinor: l.quantityMinor })),
+        lines: s.lines.map((l) => ({ productId: l.productId, uom: l.uom, quantityMinor: l.quantityMinor, lineTotalMinor: l.lineTotalMinor })),
         tenders: s.tenders.map((t) => ({ kind: t.kind, amountMinor: t.amountMinor })),
       } satisfies OriginalSale;
     },
@@ -2331,70 +2411,7 @@ export function returnsAdapter(input: {
       const stockMovements = originalSale === undefined
         ? []
         : returnStockMovements(record, resolveSaleStockLocation(originalSale, await storeOfPack(input.store, tenantId, originalSale.packVersion)));
-      await input.store.appendBatch(tenantId, [
-        {
-          stream: forSaleReturns(saleId),
-          event: makeEvent({
-            id: `return-${record.returnId}`,
-            type: 'ReturnRecorded',
-            occurredAt: record.processedAt,
-            idempotencyKey: `return-${tenantId}-${record.returnId}`,
-            source: 'api/pos',
-            payload: record,
-          }),
-        },
-        {
-          // The tenant-wide returns projection — a READ MODEL for reporting (returns-netting), keyed
-          // on the return id so a retry collapses.
-          stream: STREAM.returns,
-          event: makeEvent({
-            id: `return-proj-${record.returnId}`,
-            type: 'ReturnRecorded',
-            occurredAt: record.processedAt,
-            idempotencyKey: `return-proj-${tenantId}-${record.returnId}`,
-            source: 'api/pos',
-            payload: record,
-          }),
-        },
-        // A fresh store-credit instrument (when one was opened) on the shared index, so it can be found
-        // and pooled by owner.
-        ...(storeCredit?.instrument === undefined ? [] : [{
-          stream: STORED_VALUE_INDEX,
-          event: makeEvent({
-            id: `sv-issue-${storeCredit.instrument.instrumentId}`,
-            type: 'StoredValueIssued',
-            occurredAt: storeCredit.instrument.issuedAt,
-            idempotencyKey: `sv-issue-${tenantId}-${storeCredit.instrument.instrumentId}`,
-            source: 'api/pos',
-            payload: storeCredit.instrument,
-          }),
-        }]),
-        // The refund_to_credit movement on the instrument's own stream, where the balance folds.
-        ...(storeCredit === undefined ? [] : [{
-          stream: forInstrument(storeCredit.movement.instrumentId),
-          event: makeEvent({
-            id: `sv-mv-${storeCredit.movement.movementId}`,
-            type: 'StoredValueMovement',
-            occurredAt: storeCredit.movement.at,
-            idempotencyKey: `sv-mv-${tenantId}-${storeCredit.movement.movementId}`,
-            source: 'api/pos',
-            payload: storeCredit.movement,
-          }),
-        }]),
-        // One inbound `returned` movement per resold line, in the inventory adapter's own format
-        // (`mv-<movementId>`), so availability and valuation fold it as any other movement.
-        ...stockMovements.map((m) => ({
-          stream: STREAM.inventory,
-          event: makeEvent({
-            id: `mv-${m.movementId}`,
-            type: 'InventoryMoved',
-            occurredAt: m.occurredAt,
-            idempotencyKey: `mv-${tenantId}-${m.movementId}`,
-            source: 'api/pos',
-            payload: m,
-          }),
-        })),
-      ]);
+      await input.store.appendBatch(tenantId, returnBatchEvents(tenantId, saleId, record, storeCredit, stockMovements));
     },
 
     // The tenant's refund approval threshold (M13-FR-03) — tenant-wide config, append-only (latest wins).
@@ -2588,6 +2605,48 @@ export function noReceiptReturnsAdapter(input: {
       const byId = new Map<string, ReturnRecord>();
       for (const r of all) byId.set(r.returnId, r);
       return [...byId.values()];
+    },
+  };
+}
+
+/**
+ * Exchanges (M13-FR-03, CH-01 half 2): the return half reads the bill's register through `returnsAdapter`,
+ * the replacement half banks through the same batch builder `posAdapter.bankSale` uses, and `recordExchange`
+ * appends BOTH in one atomic batch — the credit against the bill, its projection and `returned` movements, the
+ * replacement sale with its receipt index and `sold` movements, and any store credit for the balance — so the
+ * money, the register, the shelf and the report agree or nothing lands. Each event keeps its own idempotency
+ * key, so a retried exchange appends once.
+ */
+export function exchangesAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): Omit<ExchangeDeps, 'recordAudit'> {
+  const returns = returnsAdapter(input);
+  const pos = posAdapter(input);
+  const bankedSale = async (tenantId: string, saleId: string): Promise<IncomingSale | undefined> => {
+    const held = await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${saleId}`);
+    return held === undefined ? undefined : (held.event.payload as IncomingSale);
+  };
+  return {
+    now: input.now,
+    originalSale: returns.originalSale, priorReturns: returns.priorReturns, priorRefunds: returns.priorRefunds,
+    refundThreshold: returns.refundThreshold, returnWindow: returns.returnWindow, storeCreditCap: returns.storeCreditCap,
+    canApproveRefund: returns.canApproveRefund,
+    catalogue: pos.catalogue, currentPackVersion: pos.currentPackVersion, saleHoldingReceipt: pos.saleHoldingReceipt,
+    isBanked: pos.isBanked, recordExceptions: pos.recordExceptions,
+    bankedSale,
+    recordExchange: async (tenantId, originalSaleId, record, replacement, storeCredit) => {
+      // Returned units go back to the location the ORIGINAL sale drew from (the same rule as a plain return);
+      // the replacement leaves from the location it declares (the route defaults it to the original's).
+      const original = await bankedSale(tenantId, originalSaleId);
+      const returnedMovements = original === undefined
+        ? []
+        : returnStockMovements(record, resolveSaleStockLocation(original, await storeOfPack(input.store, tenantId, original.packVersion)));
+      const soldMovements = saleStockMovements(replacement, resolveSaleStockLocation(replacement, await storeOfPack(input.store, tenantId, replacement.packVersion)));
+      await input.store.appendBatch(tenantId, [
+        ...returnBatchEvents(tenantId, originalSaleId, record, storeCredit, returnedMovements),
+        ...saleBatchEvents(tenantId, replacement, soldMovements),
+      ]);
     },
   };
 }

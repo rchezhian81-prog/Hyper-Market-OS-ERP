@@ -48,6 +48,10 @@ export interface SoldLine {
   readonly productId: string;
   readonly uom: string;
   readonly quantityMinor: number;
+  /** What the bill charged for this line in total (minor units), where the record carries it — an
+   *  exchange credits returned goods at THIS price, never today's (M13-FR-03). Absent on a record that
+   *  never carried money per line (the value then pro-rates the bill total by quantity). */
+  readonly lineTotalMinor?: number;
 }
 
 /** An original bill, as this box recorded it. */

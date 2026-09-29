@@ -45,6 +45,23 @@ export interface RecordedRefund {
   readonly refundMinor: number;
 }
 
+/** How an EXCHANGE settled (M13-FR-03) — carried on the return record that credits the goods coming back,
+ *  so the bill's register sees the credit and the report can tell an exchange from a refund. */
+export interface ExchangeSettlement {
+  readonly exchangeId: string;
+  /** The replacement sale banked in the same batch — a real sale, returnable in its own right. */
+  readonly replacementSaleId: string;
+  readonly replacementTotalMinor: number;
+  /** The part of the returned value applied against the replacement (the `exchange_credit` tender). */
+  readonly appliedMinor: number;
+  readonly balance: 'even' | 'refund' | 'top_up';
+  /** The magnitude of the balance (0 when even). */
+  readonly balanceMinor: number;
+  /** How the balance moved: the refund tender when the shop paid, the tenders collected when the customer did. */
+  readonly balanceTender?: string;
+  readonly topUpTenders?: readonly { readonly kind: string; readonly amountMinor: number }[];
+}
+
 /** The return as it is persisted — enough to re-derive both the register and the refund history. */
 export interface ReturnRecord {
   readonly returnId: string;
@@ -58,6 +75,10 @@ export interface ReturnRecord {
   /** Where the resold units went back onto the shelf, for a no-receipt return (there is no original sale to
    *  take the location from). Stated by the desk or the lane; absent means the return re-entered no stock. */
   readonly locationId?: string;
+  /** Present only when this return is the returning half of an EXCHANGE (M13-FR-03): `refundMinor` is then
+   *  the value credited against the bill (the goods coming back at their original price) and `refundTender`
+   *  is `exchange`; the money that actually changed hands is in here. */
+  readonly exchange?: ExchangeSettlement;
   readonly processedBy: string;
   readonly processedAt: string;
   readonly reasonCode: string;

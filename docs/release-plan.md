@@ -64,7 +64,7 @@ These are the roadmap's own releases (§15), not ours. The project is currently 
 | **R2 Store Core** | Product → POS → finance/Tally → owner control; **one store trades end-to-end** | **In progress — this is the pilot target (see §4)** |
 | **R3 Data cutover** | Migrate your existing data, reconcile, opening balances, parallel run, rollback, archive | Migration controls MG-01…12 mostly built/integration-tested; needs your real data + the retention numbers |
 | **R4 Customer commerce** | Mobile & web apps, CRM, loyalty, catalogue, cart, payment, privacy, service | Foundations exist; a larger later phase (payroll and the online store are parked here per your decisions) |
-| **R5 Fulfilment** | Online orders, picking/packing, routing, delivery, proof, settlement | Foundations exist; later. **Exchanges/no-receipt returns are parked here** (change CH-01) |
+| **R5 Fulfilment** | Online orders, picking/packing, routing, delivery, proof, settlement | Foundations exist; later. **Exchanges/no-receipt returns were parked here (CH-01) — BUILT 29 Sep 2026 (Stage C2a/C2b), CH-01 closed** |
 | **R6 Enterprise operations** | Fresh, B2B, supplier portal, workforce, facilities, concessions, sustainability, advanced BI | Foundations exist; later. **The persisted planogram/shelf-map store is parked here** (change CH-02) |
 | **R7 Governed AI** | The 10 AI agents with evaluation, authority limits, privacy, kill-switch | Several agents wired/verified; the governance gates are the work |
 | **R8 Scale & innovation** | Multi-branch, SaaS readiness (selling this system to other shops), self-checkout, ESL, RFID, IoT | Later. **The paid-plan/subscription billing is parked here** (OA-12) |
@@ -88,7 +88,7 @@ M14 cash office · M15 loss prevention · M30 import/export · M32 integrations 
 |---|---|---|
 | **M01** | Organisation / config / number series | **Real, small gap.** The org hierarchy is now wired; what remains is document templates and org-scoped report roll-ups. Finish to WIRED. |
 | **M04** | Merchandising / planogram | **Mostly deferred, not a pilot blocker.** All four engines are wired and shelf-compliance works today; only the *persisted* planogram store is parked to R6 by your decision (CH-02). |
-| **M13** | Returns / service | **Mostly deferred, not a pilot blocker.** Returns, refunds (with the cross-lane/offline guards) and store credit are built and tested; only *exchanges* and *no-receipt* returns are parked to R5 by your decision (CH-01). |
+| **M13** | Returns / service | **Built and integration-tested (29 Sep 2026).** Returns, refunds (with the cross-lane/offline guards), store credit, controlled no-receipt returns and exchanges are all live on the cloud and tested; CH-01 (the earlier deferral of exchanges/no-receipt returns) is closed. The live card/UPI reversal still needs the payment provider (EX-03). |
 | **M23** | Finance / GST | **Externally blocked, not a build gap.** Month-close totals and the GST safety checks are integration-tested; **live filing to the government portal** needs production credentials + a CA sign-off (§6). A pilot can trade without live filing. |
 | **M35** | Ops / backup / DR | **Real, small gap.** Backup-and-restore is proven; a few operational-health/verifier legs remain. |
 
