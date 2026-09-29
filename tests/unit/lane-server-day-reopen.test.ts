@@ -20,6 +20,7 @@ const stubNode = (): EdgeNode => ({
   commit: async (id) => ({ committed: true, saleId: id } as never),
   commitReturn: async (id) => ({ committed: true, returnId: id } as never),
   commitCompletion: async (_kind, id) => ({ committed: true, completionId: id } as never),
+  commitConcessionTag: async (id) => ({ committed: true, saleId: id, laneMessage: 'saved' } as never),
   lookupSale: async () => undefined,
   takePack: () => ({ accepted: true, staffMessage: '' }),
 });

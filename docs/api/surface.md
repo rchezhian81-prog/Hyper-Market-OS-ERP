@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 744 | 451 | 451 | 58 | 245 |
+| 13 | 745 | 452 | 452 | 59 | 246 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -471,6 +471,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/concession/contracts/:contractId/tags/:tagId/adjust` | `concession.tag.record` | `dept.concession` | yes |
 | POST | `/v1/concession/contracts/:contractId/tags/:tagId/reverse` | `concession.tag.record` | `dept.concession` | yes |
 | POST | `/v1/concession/stock-access` | `concession.charge.read` | `dept.concession` | yes |
+| POST | `/v1/concession/tags/synced` | `concession.tag.sync` | `dept.concession` | yes |
 | POST | `/v1/concession/valuation` | `concession.charge.read` | `dept.concession` | yes |
 | POST | `/v1/finance/credit-notes` | `finance.creditnote.issue` | core | yes |
 | GET | `/v1/finance/credit-notes/reconciliation` | `finance.creditnote.issue` | core | — |

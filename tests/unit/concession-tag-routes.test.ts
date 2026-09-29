@@ -24,6 +24,7 @@ function stub(contract: ConcessionContract | undefined = CONTRACT) {
     tags: () => latestTagVersions(versions),
     appendTag: (_t, tag) => { versions.push(tag); },
     rolesOf: (_t, u) => ROLES[u] ?? [],
+    contractsFor: () => [],
   };
   return { deps, versions, routes: concessionTagRoutes(deps) };
 }
@@ -56,9 +57,10 @@ interface CorrectBody { corrected: boolean; correction: ConcessionTag; original:
 interface ReadBody { tags: ConcessionTag[]; totals: { tags: number; netMinor: number; commissionMinor: number } }
 
 describe('shape and permissions (API-09, behind dept.concession)', () => {
-  it('five routes: read the stream, mark settlement, capture, reverse, adjust', () => {
+  it('six routes: the box\'s synced capture, read the stream, mark settlement, capture, reverse, adjust', () => {
     const { routes } = stub();
     expect(routes.map((r) => [r.method, r.path, r.permission, r.entitlement])).toEqual([
+      ['POST', '/v1/concession/tags/synced', 'concession.tag.sync', 'dept.concession'],
       ['GET', TAGS, 'concession.tag.record', 'dept.concession'],
       ['POST', '/v1/concession/contracts/:contractId/tag-settlement', 'concession.contract.manage', 'dept.concession'],
       ['POST', TAG, 'concession.tag.record', 'dept.concession'],

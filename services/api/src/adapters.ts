@@ -1218,6 +1218,8 @@ const forPriceList = (productId: string): string => streamName(STREAM.pricing, '
 const forConcession = (contractId: string): string => streamName(STREAM.concession, contractId);
 /** The till's docket tags for a contract — every version appended, the standing one folded (M27-FR-03). */
 const forConcessionTags = (contractId: string): string => streamName(STREAM.concession, 'tags', contractId);
+/** Every contract ever defined, by partner — so a synced docket line that names only the partner finds its contract. */
+const CONCESSION_CONTRACT_INDEX = streamName(STREAM.concession, 'contracts', 'index');
 async function latestConcessionTags(store: EventStore, tenantId: string, contractId: string): Promise<readonly ConcessionTag[]> {
   return latestTagVersions(await allOf<ConcessionTag>(store, tenantId, forConcessionTags(contractId), 'ConcessionTagRecorded'));
 }
@@ -2931,6 +2933,15 @@ export function concessionAdapter(input: {
         idempotencyKey: `concession-contract-${tenantId}-${contract.contractId}-${contract.basis}-${contract.fixedRentMinor ?? 0}-${contract.revenueShareBps ?? 0}-${contract.depositMinor}-${contract.active}-${contract.insuranceUntil ?? 'none'}-${contract.licenceUntil ?? 'none'}-${contract.approvedBy ?? 'unapproved'}`,
         source: 'api/finance',
         payload: contract,
+      }));
+      // Index it once by partner (M27-FR-03 hop): a tag relayed from the till names the partner, not the contract.
+      await input.store.append(tenantId, CONCESSION_CONTRACT_INDEX, makeEvent({
+        id: `concession-contract-index-${contract.contractId}`,
+        type: 'ConcessionContractIndexed',
+        occurredAt: input.now(),
+        idempotencyKey: `concession-contract-index-${tenantId}-${contract.contractId}`,
+        source: 'api/finance',
+        payload: { contractId: contract.contractId, concessionaireId: contract.concessionaireId, branchId: contract.branchId },
       }));
     },
 
@@ -8659,6 +8670,16 @@ export function concessionTagsAdapter(input: { readonly store: EventStore; reado
     contract: async (tenantId, contractId) =>
       latest<ConcessionContract>(input.store, tenantId, forConcession(contractId), 'ConcessionContractSet'),
     tags: (tenantId, contractId) => latestConcessionTags(input.store, tenantId, contractId),
+    contractsFor: async (tenantId, concessionaireId) => {
+      const indexed = await allOf<{ readonly contractId: string; readonly concessionaireId: string }>(input.store, tenantId, CONCESSION_CONTRACT_INDEX, 'ConcessionContractIndexed');
+      const ids = [...new Set(indexed.filter((c) => c.concessionaireId === concessionaireId).map((c) => c.contractId))];
+      const contracts: ConcessionContract[] = [];
+      for (const contractId of ids) {
+        const c = await latest<ConcessionContract>(input.store, tenantId, forConcession(contractId), 'ConcessionContractSet');
+        if (c !== undefined) contracts.push(c);
+      }
+      return contracts;
+    },
     appendTag: async (tenantId, tag) => {
       const version = tag.history.length;
       await input.store.append(tenantId, forConcessionTags(tag.contractId), makeEvent({

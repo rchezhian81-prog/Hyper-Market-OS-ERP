@@ -715,7 +715,7 @@ export function buildSurface(deps: {
     // Concession docket tags (M27-FR-03): the till's line-by-line attribution lands here, append-only, and
     // reaches the period charge + settlement through the concession adapter's `sales`.
     ...concessionTagRoutes(store === undefined ? {
-      contract: empty(undefined), tags: empty([]), appendTag: () => {}, rolesOf: empty([]), now,
+      contract: empty(undefined), tags: empty([]), appendTag: () => {}, rolesOf: empty([]), contractsFor: empty([]), now,
     } : concessionTagsAdapter({ store, now })),
     ...scrapRoutes(store === undefined ? {
       scrapSales: empty([]), recordScrapSale: () => {}, recordPosted: () => {}, now,

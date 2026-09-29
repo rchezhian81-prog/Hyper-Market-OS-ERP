@@ -23,6 +23,7 @@ import {
   type ConcessionTag, type ConcessionActorRole, type CaptureInput, type CommissionSchemeSnapshot, type SettlementStatus,
 } from '../../../packages/concession/src/index';
 import type { ConcessionDeps } from './concession';
+import type { ConcessionContract } from '../../../packages/concession/src/index';
 
 export interface ConcessionTagDeps {
   readonly contract: ConcessionDeps['contract'];
@@ -30,6 +31,9 @@ export interface ConcessionTagDeps {
   readonly tags: (tenantId: string, contractId: string) => Promise<readonly ConcessionTag[]> | readonly ConcessionTag[];
   readonly appendTag: (tenantId: string, tag: ConcessionTag) => Promise<void> | void;
   readonly rolesOf: (tenantId: string, userId: string) => Promise<readonly string[]> | readonly string[];
+  /** Every contract ever defined for a partner (latest terms of each) — how a SYNCED tag that names only the
+   *  partner finds the contract it belongs to. */
+  readonly contractsFor: (tenantId: string, concessionaireId: string) => Promise<readonly ConcessionContract[]> | readonly ConcessionContract[];
   readonly now: () => string;
 }
 
@@ -61,6 +65,14 @@ const usedTagId = (tagId: string, contractId: string) => apiError(409, {
 });
 
 export function concessionTagRoutes(deps: ConcessionTagDeps): readonly Route[] {
+  const ACTOR_ROLES: readonly ConcessionActorRole[] = ['cashier', 'supervisor', 'store_manager'];
+  const isActorRole = (v: unknown): v is ConcessionActorRole => typeof v === 'string' && (ACTOR_ROLES as readonly string[]).includes(v);
+  /** The partner's ONE contract in force on a day — none or several is a question for a person, never a guess. */
+  const contractInForce = async (tenantId: string, concessionaireId: string, day: string): Promise<{ readonly contract?: ConcessionContract; readonly candidates: number }> => {
+    const all = await deps.contractsFor(tenantId, concessionaireId);
+    const live = all.filter((c) => c.active && c.startsOn <= day && day <= c.endsOn);
+    return { ...(live.length === 1 ? { contract: live[0] } : {}), candidates: live.length };
+  };
   const load = async (tenantId: string, contractId: string) => {
     const contract = await deps.contract(tenantId, contractId);
     if (contract === undefined) throw notFound(`concession contract ${contractId}`);
@@ -69,6 +81,96 @@ export function concessionTagRoutes(deps: ConcessionTagDeps): readonly Route[] {
   const role = async (tenantId: string, userId: string): Promise<ConcessionActorRole> => actorRoleOf(await deps.rolesOf(tenantId, userId));
 
   return [
+    {
+      // The till's docket line, relayed by the STORE BOX (M27-FR-03 · §31 · Item 3). A cashier records a
+      // concession line offline; the box writes it durably, queues it, and the sync agent relays it here under
+      // the store token — the SAME engine and stream the online record route uses. Two things differ from that
+      // route, both because the till is offline when it records: (1) the till names the PARTNER (and may name the
+      // contract); the contract in force on the day is resolved HERE, so the scheme snapshot is the cloud's, never
+      // the till's; (2) who recorded it is the RELAYED cashier and their role (as the synced return relays
+      // `processedBy`), recorded as such — the box's identity is the courier, not the author. Refusals a person
+      // must look at (no contract in force, an ambiguous one) are 422 → the box dead-letters them by name; a tag
+      // id already on the record is 409 → the box counts it delivered (hard rule #6: nothing is dropped).
+      api: 'API-09', method: 'POST', path: '/v1/concession/tags/synced',
+      permission: 'concession.tag.sync', entitlement: 'dept.concession', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const kind = (b['kind'] ?? 'sale') as CaptureInput['kind'];
+        const need = ['tagId', 'saleId', 'lineId', 'productId', 'concessionaireId', 'counterId', 'tillId', 'shiftId', 'source', 'capturedBy'] as const;
+        if (!KINDS.includes(kind) || need.some((k) => !isStr(b[k])) || !isActorRole(b['byRole']) || !isInt(b['qty']) || (b['qty'] as number) <= 0
+          || !isInt(b['grossMinor']) || !isInt(b['discountMinor']) || !isInt(b['taxMinor'])
+          || (b['contractId'] !== undefined && !isStr(b['contractId']))
+          || (b['correctsTagId'] !== undefined && !isStr(b['correctsTagId'])) || (b['at'] !== undefined && !isIso(b['at']))) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_synced_concession_tag',
+            whatHappened: 'A relayed docket line needs its tag id, the sale and line ids, the product, the partner, the counter, till and shift, a whole '
+              + 'positive qty, whole gross/discount/tax in paise, the approved source, who captured it and their role (cashier, supervisor, store_manager); '
+              + 'optionally the contract, a kind, the tag it corrects and an ISO time.',
+            wasItSaved: 'not_saved', nextSafeAction: 'Keep it in the box\'s outbox and raise it — a line the till recorded must not be dropped.',
+          });
+        }
+        const key = ctx.idempotencyKey ?? (isStr(b['idempotencyKey']) ? b['idempotencyKey'] : undefined);
+        if (key === undefined) {
+          throw apiError(400, {
+            code: 'tag_needs_an_idempotency_key',
+            whatHappened: 'A relayed docket line is recorded once: the box must send its idempotency key so a resend never charges twice.',
+            wasItSaved: 'not_saved', nextSafeAction: 'Send the Idempotency-Key header and try again.',
+          });
+        }
+        const at = isIso(b['at']) ? b['at'] : deps.now();
+        const tagId = b['tagId'] as string;
+        const concessionaireId = b['concessionaireId'] as string;
+        // The contract: named by the till, or the partner's one contract in force on the day.
+        let contract: ConcessionContract | undefined;
+        if (isStr(b['contractId'])) {
+          contract = await deps.contract(ctx.tenantId, b['contractId']);
+          if (contract === undefined) throw notFound(`concession contract ${b['contractId']}`);
+          if (contract.concessionaireId !== concessionaireId) {
+            throw apiError(422, {
+              code: 'contract_is_not_this_partners',
+              whatHappened: `${contract.contractId} belongs to ${contract.concessionaireId}, not to ${concessionaireId} as the till said.`,
+              wasItSaved: 'not_saved', nextSafeAction: 'A person checks the counter\'s contract; the line is kept in the box\'s dead letters.',
+            });
+          }
+        } else {
+          const found = await contractInForce(ctx.tenantId, concessionaireId, at.slice(0, 10));
+          if (found.contract === undefined) {
+            throw apiError(422, {
+              code: found.candidates === 0 ? 'no_contract_in_force_for_partner' : 'contract_ambiguous_for_partner',
+              whatHappened: found.candidates === 0
+                ? `${concessionaireId} has no active concession contract covering ${at.slice(0, 10)}, so this line has no contract to sit on.`
+                : `${concessionaireId} has ${found.candidates} contracts in force on ${at.slice(0, 10)}; the till must name which.`,
+              wasItSaved: 'not_saved', nextSafeAction: 'A person decides: define or activate the contract, or name it from the till. The line is kept in the box\'s dead letters.',
+            });
+          }
+          contract = found.contract;
+        }
+        const tags = await deps.tags(ctx.tenantId, contract.contractId);
+        if (tags.some((t) => t.tagId === tagId)) throw usedTagId(tagId, contract.contractId);
+        const scheme: CommissionSchemeSnapshot = {
+          contractId: contract.contractId, basis: contract.basis, commissionOn: contract.commissionOn ?? 'net',
+          ...(contract.revenueShareBps === undefined ? {} : { revenueShareBps: contract.revenueShareBps }),
+        };
+        const input: CaptureInput = {
+          tenantId: ctx.tenantId, tagId, kind,
+          saleId: b['saleId'] as string, lineId: b['lineId'] as string,
+          concessionaireId: contract.concessionaireId, counterId: b['counterId'] as string, branchId: contract.branchId,
+          tillId: b['tillId'] as string, shiftId: b['shiftId'] as string, productId: b['productId'] as string,
+          qty: b['qty'] as number, grossMinor: b['grossMinor'] as number, discountMinor: b['discountMinor'] as number, taxMinor: b['taxMinor'] as number,
+          // The RELAYED cashier and role — the box is the courier, never the author (§28 re-checked on correction).
+          scheme, capturedBy: b['capturedBy'] as string, byRole: b['byRole'], source: b['source'] as string,
+          idempotencyKey: key, at,
+          ...(isStr(b['correctsTagId']) ? { correctsTagId: b['correctsTagId'] } : {}),
+        };
+        const result = captureConcessionTagIdempotent(input, tags);
+        if (!result.captured || result.tag === undefined) {
+          return { status: 200, body: { captured: false, refusal: result.refusal, existing: result.existing, synced: true } };
+        }
+        await deps.appendTag(ctx.tenantId, result.tag);
+        const trading = mayConcessionTrade({ contract, today: at.slice(0, 10) });
+        return { status: 201, body: { captured: true, tag: result.tag, trading, contractId: contract.contractId, synced: true } };
+      },
+    },
     {
       api: 'API-09', method: 'GET', path: '/v1/concession/contracts/:contractId/tags',
       permission: 'concession.tag.record', entitlement: 'dept.concession',

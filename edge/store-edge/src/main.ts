@@ -60,6 +60,7 @@ import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/eve
 import { closeDay as decideDayClose, reopenDay as decideReopenDay } from '../../../packages/day-close/src/day-close';
 import { toCloudSale } from './cloud-sale';
 import { toCloudReturn } from './cloud-return';
+import { toCloudConcessionTag } from './cloud-concession-tag';
 import { toCloudChecklist, toCloudTaskCompletion, checklistIdOf, taskIdOf } from './cloud-completion';
 import { makeTradingDayRule, tradingDate, type TradingDayRule } from '../../../packages/calendar/src/trading-day';
 import { readFile } from 'node:fs/promises';
@@ -69,6 +70,8 @@ const RETURNS_CURSOR = 'sync-cursor-returns';
 
 /** The completions pipeline's own cursor file (M25-FR-02), so the third log advances independently too. */
 const COMPLETIONS_CURSOR = 'sync-cursor-completions';
+/** The concession-tag pipeline's own cursor file (M27-FR-03), so the fifth log advances independently too. */
+const CONCESSION_TAGS_CURSOR = 'sync-cursor-concession-tags';
 
 /** The store/day-close pipeline's own cursor file (M14-FR-04), so the fourth log advances independently. */
 const DAYCLOSE_CURSOR = 'sync-cursor-day-close';
@@ -164,6 +167,11 @@ export interface EdgeProcess {
    */
   readonly completionsLog: OpenFileLog;
   /**
+   * The CONCESSION TAG's own durable log — a separate file again (M27-FR-03). A partner-counter line the till
+   * recorded is durable before it is called recorded, and kept out of the other logs for the same reason.
+   */
+  readonly concessionTagsLog: OpenFileLog;
+  /**
    * The DAY-CLOSE's own durable log — a separate file from the other three (M14-FR-04). A trading day
    * the box locked is durable before it is called done, and kept out of the other logs so each
    * pipeline's restart re-queue only ever reads its own kind of record.
@@ -179,6 +187,8 @@ export interface EdgeProcess {
   readonly returnsOutbox: SyncOutbox;
   /** The completion pipeline's own outbox — drained by `completionsAgent`, cursored separately again. */
   readonly completionsOutbox: SyncOutbox;
+  /** The concession-tag pipeline's own outbox — drained by `concessionTagsAgent`, cursored separately again. */
+  readonly concessionTagsOutbox: SyncOutbox;
   /** The day-close pipeline's own outbox — drained by `dayCloseAgent`, cursored separately again. */
   readonly dayCloseOutbox: SyncOutbox;
   /** What a lane talks to: price a scan, commit a sale, commit a refund, take a new pack. */
@@ -189,6 +199,8 @@ export interface EdgeProcess {
   readonly returnsAgent: SyncAgent | null;
   /** The completion pipeline's own sync agent (same transport, own outbox). Null when no cloud. */
   readonly completionsAgent: SyncAgent | null;
+  /** The concession-tag pipeline's own sync agent (same transport, own outbox). Null when no cloud. */
+  readonly concessionTagsAgent: SyncAgent | null;
   /** The day-close pipeline's own sync agent (same transport, own outbox). Null when no cloud. */
   readonly dayCloseAgent: SyncAgent | null;
   /**
@@ -310,6 +322,20 @@ export async function startEdge(
     dataDir: settings['EDGE_DATA_DIR']!,
     capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
     fileName: 'dead-letters-completions',
+  });
+
+  // The CONCESSION TAG's own durable log and its own failed-sync store (M27-FR-03) — a partner-counter line
+  // the till recorded with the cable out is durable before it is called recorded, and kept out of every other
+  // log so no restart re-queue ever reads one kind as another (hard rule #1).
+  const concessionTagsLog = await openFileLog({
+    dataDir: settings['EDGE_DATA_DIR']!,
+    capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
+    fileName: 'concession-tags.log',
+  });
+  const concessionTagsDeadLetterLog = await openFileLog({
+    dataDir: settings['EDGE_DATA_DIR']!,
+    capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
+    fileName: 'dead-letters-concession-tags',
   });
 
   // The DAY-CLOSE's own durable log and its own failed-sync store (M14-FR-04) — a trading day the box
@@ -451,14 +477,36 @@ export async function startEdge(
     eventFor: dayCloseEventFrom,
   });
 
+  // The CONCESSION TAG pipeline (M27-FR-03) — the same machine over a fifth file. `eventFor` re-mints exactly
+  // the event `commitConcessionTag` queued (same id, type, key and payload), so a line that had not reached the
+  // cloud when the box stopped goes when it starts again and dedupes there against one that may already have
+  // gone (§31.1). Never shares a file with the others.
+  const concessionTagsPipeline = new SyncPipeline({
+    dataDir: settings['EDGE_DATA_DIR']!, log: concessionTagsLog, deadLetterLog: concessionTagsDeadLetterLog,
+    cursorFile: CONCESSION_TAGS_CURSOR, noun: 'partner-counter line', say,
+    eventFor: (record, index) => {
+      let parsed: unknown;
+      try { parsed = JSON.parse(record) as unknown; } catch { return undefined; }
+      const cloud = toCloudConcessionTag(parsed);
+      const tagId = cloud.tagId !== '' ? cloud.tagId : `record-${index}`;
+      return makeEvent({
+        id: `edge-concession-tag-${tagId}`, type: 'ConcessionTagCaptured', occurredAt: new Date().toISOString(),
+        idempotencyKey: `edge-concession-tag-${tenantId}-${tagId}`, source: 'edge/lane',
+        payload: cloud,
+      });
+    },
+  });
+
   const salesRestore = await salesPipeline.restore();
   const returnsRestore = await returnsPipeline.restore();
   const completionsRestore = await completionsPipeline.restore();
   const dayCloseRestore = await dayClosePipeline.restore();
+  const concessionTagsRestore = await concessionTagsPipeline.restore();
   const outbox = salesPipeline.outbox;
   const returnsOutbox = returnsPipeline.outbox;
   const completionsOutbox = completionsPipeline.outbox;
   const dayCloseOutbox = dayClosePipeline.outbox;
+  const concessionTagsOutbox = concessionTagsPipeline.outbox;
 
   if (salesRestore.resendCount > 0) say(`${salesRestore.resendCount} sale(s) from before are still to send.`);
   if (salesRestore.restoredDeadLetters > 0) {
@@ -484,6 +532,13 @@ export async function startEdge(
   if (dayCloseRestore.resendCount > 0) say(`${dayCloseRestore.resendCount} day close(s) from before are still to send.`);
   if (dayCloseRestore.restoredDeadLetters > 0) {
     say(`  ${dayCloseRestore.restoredDeadLetters} day close(s) the cloud refused earlier are still waiting for a person — kept, with their history.`);
+  }
+  if (concessionTagsRestore.brokenCount > 0) {
+    say(`  ${concessionTagsRestore.brokenCount} partner-counter line record(s) could not be read whole — kept, not repaired. Raise this.`);
+  }
+  if (concessionTagsRestore.resendCount > 0) say(`${concessionTagsRestore.resendCount} partner-counter line(s) from before are still to send.`);
+  if (concessionTagsRestore.restoredDeadLetters > 0) {
+    say(`  ${concessionTagsRestore.restoredDeadLetters} partner-counter line(s) the cloud refused earlier are still waiting for a person — kept, with their history.`);
   }
 
   // The refund operation-identity guard (RR-F03), rebuilt from the durable returns log so the rule
@@ -559,6 +614,9 @@ export async function startEdge(
     // The completion's mirror of that seam, on its own log and its own outbox (M25-FR-02).
     completionsLog,
     completionsOutbox,
+    // The concession tag's mirror of that seam, on its own log and its own outbox (M27-FR-03).
+    concessionTagsLog,
+    concessionTagsOutbox,
     // The refund's operation-identity guard, rebuilt from the durable log above (RR-F03).
     returnsIdempotency,
     // The refund's entitlement from trusted local sale + return history (RR-F04).
@@ -699,7 +757,7 @@ export async function startEdge(
     // LIVE unsent across ALL pipelines — not the manager screen's `unsentItems`, which counts only the
     // sales outbox. A day must not lock while any refund or completion is still unsent (hard rule #10).
     const unsentSyncItems = outbox.pending().length + returnsOutbox.pending().length
-      + completionsOutbox.pending().length + dayCloseOutbox.pending().length;
+      + completionsOutbox.pending().length + dayCloseOutbox.pending().length + concessionTagsOutbox.pending().length;
     // The exception register EXACTLY as the manager screen computes it (so the box and the screen agree).
     // ABSENT (no loss-prevention rules → nobody is watching) is a hard block, never treated as zero.
     const openExceptions = managerPayload(input)['openExceptions'];
@@ -807,8 +865,8 @@ export async function startEdge(
     // Supported, and said plainly. The lanes sell; the queue grows; nobody is told a lie about it.
     say('no cloud is configured, so nothing will be synced. The shop can still trade — that is the point.');
     return {
-      log, returnsLog, completionsLog, dayCloseLog, outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, node, lane, screens,
-      agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, refreshPack: null, refreshMigrationFeed: null, syncOnce: null,
+      log, returnsLog, completionsLog, dayCloseLog, concessionTagsLog, outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox, node, lane, screens,
+      agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, refreshPack: null, refreshMigrationFeed: null, syncOnce: null,
       // The day still locks with no cloud — that is the point of P-01. It queues durably and goes up when
       // a cloud is configured and reachable; nothing is told a lie in the meantime. Reopen is the same.
       closeDay,
@@ -824,6 +882,8 @@ export async function startEdge(
         await returnsDeadLetterLog.close();
         await completionsDeadLetterLog.close();
         await dayCloseDeadLetterLog.close();
+        await concessionTagsLog.close();
+        await concessionTagsDeadLetterLog.close();
       },
     };
   }
@@ -848,6 +908,12 @@ export async function startEdge(
   // reason each of the others has its own: a day close that cannot get through never holds a sale, a
   // refund or a completion, and none of the four can ever be re-queued as another.
   const dayCloseAgent = new SyncAgent(dayCloseOutbox, httpTransport({
+    baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch,
+  }));
+  // The concession-tag pipeline's own agent (M27-FR-03) — same transport, its own outbox, for the same reason
+  // each of the others has its own: a partner-counter line that cannot get through never holds a sale, a
+  // refund, a completion or a day close, and none of the five can ever be re-queued as another.
+  const concessionTagsAgent = new SyncAgent(concessionTagsOutbox, httpTransport({
     baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch,
   }));
 
@@ -941,6 +1007,10 @@ export async function startEdge(
     await dayClosePipeline.persistNewDeadLetters(at);
     await dayClosePipeline.advanceCursor();
   };
+  const settleConcessionTags = async (at: string): Promise<void> => {
+    await concessionTagsPipeline.persistNewDeadLetters(at);
+    await concessionTagsPipeline.advanceCursor();
+  };
 
   /**
    * One drain of both queues, each settled straight after: sales drain, sales settle (persist any
@@ -966,10 +1036,14 @@ export async function startEdge(
     // the sale path — its own drain, its own cursor.
     const dayCloseResult = await dayCloseAgent.drain({ at, ...(opts?.limit === undefined ? {} : { limit: opts.limit }) });
     await settleDayClose(at);
+    // The concession-tag queue drains last, on the same loop and just as far from the sale path — its own
+    // drain, its own cursor.
+    const concessionTagsResult = await concessionTagsAgent.drain({ at, ...(opts?.limit === undefined ? {} : { limit: opts.limit }) });
+    await settleConcessionTags(at);
     return {
-      sent: result.acknowledged + returnsResult.acknowledged + completionsResult.acknowledged + dayCloseResult.acknowledged,
-      dead: result.deadLettered + returnsResult.deadLettered + completionsResult.deadLettered + dayCloseResult.deadLettered,
-      remaining: result.remaining + returnsResult.remaining + completionsResult.remaining + dayCloseResult.remaining,
+      sent: result.acknowledged + returnsResult.acknowledged + completionsResult.acknowledged + dayCloseResult.acknowledged + concessionTagsResult.acknowledged,
+      dead: result.deadLettered + returnsResult.deadLettered + completionsResult.deadLettered + dayCloseResult.deadLettered + concessionTagsResult.deadLettered,
+      remaining: result.remaining + returnsResult.remaining + completionsResult.remaining + dayCloseResult.remaining + concessionTagsResult.remaining,
     };
   };
 
@@ -1013,10 +1087,12 @@ export async function startEdge(
     returnsLog,
     completionsLog,
     dayCloseLog,
+    concessionTagsLog,
     outbox,
     returnsOutbox,
     completionsOutbox,
     dayCloseOutbox,
+    concessionTagsOutbox,
     node,
     lane,
     screens,
@@ -1024,6 +1100,7 @@ export async function startEdge(
     returnsAgent,
     completionsAgent,
     dayCloseAgent,
+    concessionTagsAgent,
     closeDay,
     reopenDay,
     refreshPack,
@@ -1052,10 +1129,15 @@ export async function startEdge(
         await dayCloseAgent.drain({ at, limit: 20 });
         await settleDayClose(at);
       } catch { /* still queued, and the day-close cursor stays where it is */ }
+      try {
+        await concessionTagsAgent.drain({ at, limit: 20 });
+        await settleConcessionTags(at);
+      } catch { /* still queued, and the concession-tags cursor stays where it is */ }
       const badge = agent.health();
       const returnsBadge = returnsAgent.health();
       const completionsBadge = completionsAgent.health();
       const dayCloseBadge = dayCloseAgent.health();
+      const concessionTagsBadge = concessionTagsAgent.health();
       if (badge.unsentCount > 0) {
         say(`stopping with ${badge.unsentCount} sale(s) still to send. They are on the disk and will go when this starts again.`);
       }
@@ -1068,6 +1150,9 @@ export async function startEdge(
       if (dayCloseBadge.unsentCount > 0) {
         say(`stopping with ${dayCloseBadge.unsentCount} day close(s) still to send. They are on the disk and will go when this starts again.`);
       }
+      if (concessionTagsBadge.unsentCount > 0) {
+        say(`stopping with ${concessionTagsBadge.unsentCount} partner-counter line(s) still to send. They are on the disk and will go when this starts again.`);
+      }
       if (lane !== null) await lane.stop();
       if (screens !== null) await screens.stop();
       await log.close();
@@ -1078,6 +1163,8 @@ export async function startEdge(
       await returnsDeadLetterLog.close();
       await completionsDeadLetterLog.close();
       await dayCloseDeadLetterLog.close();
+      await concessionTagsLog.close();
+      await concessionTagsDeadLetterLog.close();
     },
   };
 }

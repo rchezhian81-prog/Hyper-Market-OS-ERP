@@ -47,6 +47,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'supplier.portal.manage', 'supplier.portal.submit', 'supplier.portal.review',
       'inventory.movement.append', 'inventory.availability.read', 'inventory.writeoff.threshold.set',
       'production.recipe.manage', 'production.plan.commit', 'production.release', 'production.read',
+      'concession.tag.sync',
       'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.return.threshold.set', 'pos.return.window.set', 'pos.storecredit.cap.set', 'pos.return.noreceipt.cap.set', 'pos.restricted.check',
       'cash.movement.record', 'cash.till.read', 'till.shift.close', 'till.shift.read', 'till.overshort.review',
       'till.dayclose.sync', 'till.dayclose.read', 'till.dayclose.approve',
@@ -200,6 +201,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // register the box's own screen shows; it grants no decision (those stay with the decider's own grants).
       'migration.screen.read',
       'pos.sale.sync', 'pos.return.sync', 'migration.decision.sync', 'pos.sale.read', 'pos.return.record', 'pos.restricted.check',
+      // M27-FR-03 hop: the box relays the till's concession docket lines to the synced route under this identity.
+      'concession.tag.sync',
       'cash.movement.record', 'cash.till.read', 'till.shift.close', 'till.shift.read',
       'customer.consent.read', 'loyalty.points.read', 'loyalty.points.write',
       'loyalty.value.issue', 'loyalty.value.redeem', 'loyalty.value.read',

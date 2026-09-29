@@ -54,13 +54,14 @@
 
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { returnIdOf } from './cloud-return';
+import { concessionTagIdOf } from './cloud-concession-tag';
 import type { EdgeNode } from './index';
 
 /** The one address this may listen on. Named so the test can assert on it. */
 export const LANE_HOST = '127.0.0.1';
 
 /** The write routes this socket serves — a sale, and a refund. Both loopback-only, both POST. */
-const LANE_ROUTES = ['/lane/sales', '/lane/returns'] as const;
+const LANE_ROUTES = ['/lane/sales', '/lane/returns', '/lane/concession-tags'] as const;
 
 /**
  * The one READ route: look up a bill this lane rang, for the refund screen (M13-FR-01). A GET, so it
@@ -395,7 +396,9 @@ export function startLaneServer(input: {
       return;
     }
     const isReturn = route === '/lane/returns';
-    const noun = isReturn ? 'refund' : 'sale';
+    // A concession docket line (M27-FR-03): the till's partner-counter line, durable here first, then queued.
+    const isTag = route === '/lane/concession-tags';
+    const noun = isTag ? 'partner-counter line' : isReturn ? 'refund' : 'sale';
 
     // Server-side authorization, BEFORE the body is read or anything is written (RR-F01). A foreign
     // Origin or a non-JSON content type is refused here — CORS headers and the loopback bind are not
@@ -436,9 +439,11 @@ export function startLaneServer(input: {
           send(res, 400, refusal(noun), cors);
           return;
         }
-        const id = isReturn
-          ? returnIdOf(parsed)
-          : ((parsed as { id?: string } | null)?.id);
+        const id = isTag
+          ? concessionTagIdOf(parsed)
+          : isReturn
+            ? returnIdOf(parsed)
+            : ((parsed as { id?: string } | null)?.id);
         if (typeof id !== 'string' || id === '') {
           send(res, 400, refusal(noun), cors);
           return;
@@ -448,9 +453,11 @@ export function startLaneServer(input: {
           // The whole of this server. `commit`/`commitReturn` writes to the disk, waits for the
           // fsync, and only then queues for the cloud — the order is the rule and it lives in the
           // edge, not here.
-          const outcome = isReturn
-            ? await input.node.commitReturn(id, JSON.stringify(parsed))
-            : await input.node.commit(id, JSON.stringify(parsed));
+          const outcome = isTag
+            ? await input.node.commitConcessionTag(id, JSON.stringify(parsed))
+            : isReturn
+              ? await input.node.commitReturn(id, JSON.stringify(parsed))
+              : await input.node.commit(id, JSON.stringify(parsed));
           // 200 on a refusal too: the *request* was understood, and the answer is in the body. A
           // 5xx here would make a refused sale look like a broken lane, and the cashier needs to
           // know which it is — one means use another lane, the other means try again.
