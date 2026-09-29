@@ -43,6 +43,7 @@ const SCREENS = [
   { name: 'the data quality inbox', dir: 'web-erp', view: 'data-quality.js', page: 'data-quality.html', bundle: 'web-erp.bundle.js' },
   { name: 'the operations inbox', dir: 'web-erp', view: 'operations.js', page: 'operations.html', bundle: 'web-erp.bundle.js' },
   { name: 'the investigations inbox', dir: 'web-erp', view: 'loss-prevention.js', page: 'loss-prevention.html', bundle: 'web-erp.bundle.js' },
+  { name: 'the delivery exceptions inbox', dir: 'web-erp', view: 'substitution-exceptions.js', page: 'substitution-exceptions.html', bundle: 'web-erp.bundle.js' },
   { name: 'the over/short sign-off', dir: 'web-erp', view: 'cash-office.js', page: 'cash-office.html', bundle: 'web-erp.bundle.js' },
   { name: 'the risk acceptance', dir: 'web-erp', view: 'risk-acceptance.js', page: 'risk-acceptance.html', bundle: 'web-erp.bundle.js' },
   { name: 'the day reopen', dir: 'web-erp', view: 'day-reopen.js', page: 'day-reopen.html', bundle: 'web-erp.bundle.js' },

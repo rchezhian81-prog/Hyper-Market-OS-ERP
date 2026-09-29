@@ -49,14 +49,14 @@ import {
   basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
-import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackReturnGovernancePolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackStoredValuePolicy, PackIntegrationHealthPolicy, PackGoodsReceiptPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy, PackRosteringPolicy, PackChecklistPolicy, PackProductionPolicy, PackFacilitiesPolicy } from './store-pack';
+import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackSubstitutionExceptionPolicy, PackReturnGovernancePolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackStoredValuePolicy, PackIntegrationHealthPolicy, PackGoodsReceiptPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy, PackRosteringPolicy, PackChecklistPolicy, PackProductionPolicy, PackFacilitiesPolicy } from './store-pack';
 import { DEFAULT_WRITE_OFF_THRESHOLD_MINOR } from '../../../packages/waste/src/waste';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'write-off-capture', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'return-governance', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'stored-value', 'integration-health', 'goods-receipt', 'data-io', 'workforce', 'ess', 'rostering', 'checklist', 'production', 'facilities', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
+  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'write-off-capture', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'substitution-exceptions', 'return-governance', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'stored-value', 'integration-health', 'goods-receipt', 'data-io', 'workforce', 'ess', 'rostering', 'checklist', 'production', 'facilities', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1416,6 +1416,25 @@ export function lossPreventionPayload(input: ScreenInput): Record<string, unknow
 }
 
 /**
+ * The delivery-substitution exception inbox payload (M19-FR-01 · Item 2 · P-03 · §28).
+ *
+ * `null` when the box has not been told who is on the screen. **The exceptions themselves are NOT in this
+ * payload**: they are read live from the cloud (`GET /v1/orders/substitution-exceptions`); the shell fetches it
+ * when online and shows a sample stand-in until then. This carries only the member's CURRENT context — who is
+ * looking and what they hold now — re-read every render; the cloud routes re-check the authority (and whether the
+ * caller staffs the queue), so this only shapes the UI.
+ */
+export function substitutionExceptionsPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.substitutionExceptionPolicy.known) return null;
+  const policy: PackSubstitutionExceptionPolicy = input.pack.substitutionExceptionPolicy.value;
+
+  const payload: Record<string, unknown> = { permissions: policy.permissions };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+
+  return payload;
+}
+
+/**
  * The refund-exceptions review payload (M13-FR-01/03 · M17 · P-03 · P-08).
  *
  * `null` when the box has not been told who is on the screen. **The flagged refunds themselves are NOT in this
@@ -1822,6 +1841,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   'data-quality': 'dataQualityInboxData',
   operations: 'operationsInboxData',
   'loss-prevention': 'lossPreventionInboxData',
+  'substitution-exceptions': 'substitutionExceptionInboxData',
   'return-governance': 'returnGovernanceData',
   'cash-office': 'cashOfficeData',
   'risk-acceptance': 'riskAcceptanceData',
@@ -1869,6 +1889,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   'data-quality': dataQualityPayload,
   operations: operationsPayload,
   'loss-prevention': lossPreventionPayload,
+  'substitution-exceptions': substitutionExceptionsPayload,
   'return-governance': returnGovernancePayload,
   'cash-office': cashOfficePayload,
   'risk-acceptance': riskAcceptancePayload,
