@@ -41,6 +41,10 @@ import {
   type HistoryExclusion, type ExclusionScope, type LegacyArchive,
 } from '../../../packages/migration/src/history';
 import { witnessRoutes, applicableSignatures, findingsDigest, type ExtractionRun, type RecordedFinding, type StoredSignature } from './witness';
+import { parallelRunRoutes, ledgerCutoverEvidence, type ParallelRunPolicy, type RecordedParallelDay, type RecordedRollback } from './parallel-run';
+import type { ParallelDifference } from '../../../packages/migration/src/cutover';
+
+export type { ParallelRunPolicy, RecordedParallelDay, RecordedRollback, ParallelRunView } from './parallel-run';
 import { assertSafeTarget, namedPeople } from './guards';
 
 export type { ExtractionRun, RecordedFinding, StoredSignature } from './witness';
@@ -231,6 +235,19 @@ export interface MigrationDeps {
   readonly recordExtractionRun?: (tenantId: string, run: ExtractionRun) => Promise<void> | void;
   readonly recordFinding?: (tenantId: string, finding: RecordedFinding) => Promise<void> | void;
   readonly recordSignature?: (tenantId: string, signature: StoredSignature) => Promise<void> | void;
+  /**
+   * MG-10 — the parallel run the server KEEPS (B3): the owner's written policy (newest applies), each compared
+   * day (latest per business date), each difference (latest state per id), and every performed rollback.
+   * Optional so existing stubs compile; a route whose store is absent refuses 503 rather than pretending.
+   */
+  readonly parallelPolicy?: (tenantId: string) => Promise<ParallelRunPolicy | undefined> | ParallelRunPolicy | undefined;
+  readonly parallelDays?: (tenantId: string) => Promise<readonly RecordedParallelDay[]> | readonly RecordedParallelDay[];
+  readonly parallelDifferences?: (tenantId: string) => Promise<readonly ParallelDifference[]> | readonly ParallelDifference[];
+  readonly rollbacks?: (tenantId: string) => Promise<readonly RecordedRollback[]> | readonly RecordedRollback[];
+  readonly recordParallelPolicy?: (tenantId: string, policy: ParallelRunPolicy) => Promise<void> | void;
+  readonly recordParallelDay?: (tenantId: string, day: RecordedParallelDay) => Promise<void> | void;
+  readonly recordParallelDifference?: (tenantId: string, difference: ParallelDifference) => Promise<void> | void;
+  readonly recordRollback?: (tenantId: string, rollback: RecordedRollback) => Promise<void> | void;
   readonly now: () => string;
 }
 
@@ -750,7 +767,10 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
           ...(ownerGoBy === undefined ? {} : { ownerGoBy: ownerGoBy as string }),
           ...(team === undefined ? {} : { namedTeam: team as readonly TeamMember[] }),
         };
-        const derived = buildCutoverChecklist({ cutoverId, tenantId: ctx.tenantId, evidence });
+        // The parallel-run position and the performed rollback come from the LEDGER when the caller does not
+        // supply them (B3) — two checks that used to rest on typed-in fields now rest on recorded facts. A
+        // caller's explicit part still wins, so the earlier evidence-by-hand path keeps working.
+        const derived = buildCutoverChecklist({ cutoverId, tenantId: ctx.tenantId, evidence: { ...(await ledgerCutoverEvidence(deps, ctx.tenantId)), ...evidence } });
         const decision = decideCutover(derived.checklist);
         return { status: 200, body: { decision, checks: derived.checks, notKnown: derived.notKnown, detail: derived.detail } };
       },
@@ -982,5 +1002,6 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
       },
     },
     ...witnessRoutes(deps),
+    ...parallelRunRoutes(deps),
   ];
 }
