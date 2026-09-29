@@ -63,3 +63,48 @@ export function saleStockMovements(sale: IncomingSale, location: SaleStockLocati
   });
   return out;
 }
+
+/** The part of a recorded return these rules need — structural, so the returns service keeps its own type. */
+export interface ReturnForStock {
+  readonly returnId: string;
+  readonly processedAt: string;
+  readonly processedBy: string;
+  readonly lines: readonly {
+    readonly productId: string;
+    readonly uom: string;
+    readonly quantityMinor: number;
+    readonly disposition: string;
+    readonly batchId?: string | null;
+  }[];
+}
+
+/**
+ * One inbound `returned` movement per RESOLD line of a return (M08-FR-01 names "return" among the
+ * movements). Only `resell` puts goods back on the shelf: `quarantine`, `damaged` and `scrap` are held or
+ * written off through their own governed paths (M08-FR-02 states, M10 quality hold, M28 write-off) and never
+ * re-enter sellable on-hand here. Keyed on the return and the line, so a lane retrying an unconfirmed refund
+ * appends the movements once. The location is the one the original sale drew from — the same rule, so what
+ * left a shelf comes back to that shelf.
+ */
+export function returnStockMovements(ret: ReturnForStock, location: SaleStockLocation): readonly Movement[] {
+  const out: Movement[] = [];
+  ret.lines.forEach((line, i) => {
+    if (line.disposition !== 'resell') return;
+    if (!Number.isInteger(line.quantityMinor) || line.quantityMinor <= 0) return;
+    out.push({
+      movementId: `return-${ret.returnId}-${i}`,
+      productId: line.productId,
+      locationId: location.locationId,
+      kind: 'returned',
+      quantityMinor: line.quantityMinor,
+      uom: line.uom,
+      occurredAt: ret.processedAt,
+      enteredBy: ret.processedBy,
+      ...(typeof line.batchId === 'string' && line.batchId !== '' ? { batchId: line.batchId } : {}),
+      ...(location.basis === 'assumed_from_lane'
+        ? { reason: `stock location assumed from the original sale's lane (${location.locationId}): the sale declared none and its pack names no store` }
+        : {}),
+    });
+  });
+  return out;
+}
