@@ -1,0 +1,65 @@
+// A sale is a stock movement (M08-FR-01): "a movement (receive/**sell**/transfer/adjust/return) appends an
+// event with qty, sign, location, batch, reason, source id". Until this file existed a banked sale was a
+// `SaleCommitted` on the sales stream and nothing else — on-hand, valuation and COGS never learned it had
+// happened (hosted-demo finding H-13). These two pure functions turn a banked sale into the `sold` movements
+// the inventory ledger folds, and are exercised by `tests/unit/sale-stock.test.ts` and
+// `tests/integration/sale-reduces-stock.test.ts`.
+//
+// Nothing here can refuse a sale (hard rule #1): a line that cannot become a movement is skipped and the
+// sale still banks; a location that cannot be derived is taken from the lane and SAID SO on the movement
+// (P-08) — the shelf that has gone negative at a lane is then a visible exception, never a silent one.
+
+import type { Movement } from '../../inventory/src/index';
+import type { IncomingSale } from './sale-intake';
+
+/** Where the sale's stock leaves from, and how that was decided — stated, never inferred later. */
+export interface SaleStockLocation {
+  readonly locationId: string;
+  readonly basis: 'declared_by_lane' | 'store_of_pack' | 'assumed_from_lane';
+}
+
+/**
+ * The location a sale draws stock from, in order of authority:
+ *   1. the lane declared it (`sale.locationId`) — the lane knows where it stands;
+ *   2. the store the sale's catalogue pack was published for — the sale was priced from that store;
+ *   3. the lane itself — a stated assumption, so a single-site store with neither of the above still
+ *      records the movement, and the negative on-hand it produces at the lane is a visible exception.
+ */
+export function resolveSaleStockLocation(sale: IncomingSale, packStoreId: string | undefined): SaleStockLocation {
+  if (typeof sale.locationId === 'string' && sale.locationId.trim() !== '') {
+    return { locationId: sale.locationId, basis: 'declared_by_lane' };
+  }
+  if (typeof packStoreId === 'string' && packStoreId.trim() !== '') {
+    return { locationId: packStoreId, basis: 'store_of_pack' };
+  }
+  return { locationId: sale.laneId, basis: 'assumed_from_lane' };
+}
+
+/**
+ * One `sold` movement per sale line, keyed on the sale and the line's position so a resent sale
+ * collapses to the same movements (idempotent, M08-FR-01 acceptance: "replaying the same movement five
+ * times yields one balance change"). The quantity is a magnitude; `kind` carries the direction. A line
+ * whose quantity is not a positive whole number cannot be a movement and is skipped — the sale is still
+ * a sale, and the intake's own findings say what was odd about it.
+ */
+export function saleStockMovements(sale: IncomingSale, location: SaleStockLocation): readonly Movement[] {
+  const out: Movement[] = [];
+  sale.lines.forEach((line, i) => {
+    if (!Number.isInteger(line.quantityMinor) || line.quantityMinor <= 0) return;
+    out.push({
+      movementId: `sale-${sale.saleId}-${i}`,
+      productId: line.productId,
+      locationId: location.locationId,
+      kind: 'sold',
+      quantityMinor: line.quantityMinor,
+      uom: line.uom,
+      occurredAt: sale.committedAt,
+      enteredBy: sale.cashierId,
+      ...(typeof line.batchId === 'string' && line.batchId !== '' ? { batchId: line.batchId } : {}),
+      ...(location.basis === 'assumed_from_lane'
+        ? { reason: `stock location assumed from lane ${sale.laneId}: the sale declared none and its pack names no store` }
+        : {}),
+    });
+  });
+  return out;
+}

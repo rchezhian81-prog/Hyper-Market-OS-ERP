@@ -64,8 +64,10 @@ describe('near-expiry stock read (M10-FR-01 · ADR-0015)', () => {
     // Sell 30 of that batch (a banked sale is accepted with 202 — it happened, there may be work attached).
     expect((await sell(h, 'u-owner', 'S-1', 'milk-1l', 'B-NE', 30, 's1')).status).toBe(202);
 
-    // Availability BEFORE the read — to prove the read itself writes nothing.
+    // Availability BEFORE the read — to prove the read itself writes nothing. And the sale has ALREADY
+    // reduced on-hand (100 received − 30 sold): a banked sale is a stock movement (M08-FR-01, H-13).
     const before = await onHand(h, 'u-mgr', 'milk-1l');
+    expect(before).toBe(70);
 
     // As of 2026-09-14 the batch is 4 days from expiry → markdown, on the 70 still on hand (100 − 30 sold).
     const body = (await nearExpiry(h, 'u-mgr', { withinDays: '7', asOf: '2026-09-14' })).body as NEBody;

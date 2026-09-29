@@ -46,6 +46,7 @@ import type { GstRatePeriod } from '../../../packages/finance/src/rate';
 import type { ProductRecord, BarcodeAssignment, MergeRequest, MergeLink, PackHierarchy, DataQualityFinding, SuggestionDisposition } from '../../../packages/product/src/index';
 import { BarcodeRegistry, assessProductDataQuality, buildDataQualityWorklist } from '../../../packages/product/src/index';
 import type { IncomingSale, IncomingTender, SaleException, PosDeps } from '../../pos/src/index';
+import { resolveSaleStockLocation, saleStockMovements } from '../../pos/src/sale-stock';
 import type { LotTraceDeps } from '../../inventory/src/lot-trace';
 import type { RecallDeps } from '../../inventory/src/recall';
 import { RecallRegistry, type RecallRecord } from '../../../packages/traceability/src/index';
@@ -1870,6 +1871,18 @@ export function posAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
 }): PosDeps {
+  /**
+   * The store the lane's pack was published for — the pack at the sale's own `packVersion` (one index
+   * hit on the version-scoped publish key), else the current one. `undefined` when no pack carries a
+   * scope (packs published before the scope was recorded), and the sale then falls back to its lane.
+   */
+  const packStoreFor = async (tenantId: string, packVersion: number): Promise<string | undefined> => {
+    const byVersion = await input.store.findByIdempotencyKey(tenantId, `catalogue-${tenantId}-v${packVersion}`);
+    const pack = byVersion === undefined
+      ? await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished')
+      : (byVersion.event.payload as SignedPack);
+    return pack?.snapshot.scope?.storeId;
+  };
   return {
     now: input.now,
 
@@ -1911,6 +1924,13 @@ export function posAdapter(input: {
     },
 
     bankSale: async (tenantId, sale) => {
+      // A sale IS a stock movement (M08-FR-01: "a movement (receive/sell/…) appends an event"). Its `sold`
+      // movements are resolved here — to the location the lane declared, else the store its pack was
+      // published for, else the lane itself (stated on the movement, never silent) — and appended in the
+      // SAME batch as the sale, so on-hand, valuation, COGS and near-expiry all fold the sale from the one
+      // ledger. Before this, a banked sale never reduced on-hand (hosted-demo finding H-13).
+      const packStoreId = await packStoreFor(tenantId, sale.packVersion);
+      const movements = saleStockMovements(sale, resolveSaleStockLocation(sale, packStoreId));
       // The sale and its receipt-number index are ONE atomic batch (audit FND-01): a crash between
       // them must never leave a banked sale with no receipt index, nor an index pointing at a sale
       // that did not commit. Both carry their own idempotency key, so a till resending the sale
@@ -1947,6 +1967,20 @@ export function posAdapter(input: {
             payload: { receiptNumber: sale.receiptNumber, saleId: sale.saleId },
           }),
         },
+        // One outbound `sold` movement per line, in the SAME format the inventory adapter uses
+        // (`mv-<movementId>`), so availability folds them exactly as any other movement and a resent
+        // sale dedups each on its own key.
+        ...movements.map((m) => ({
+          stream: STREAM.inventory,
+          event: makeEvent({
+            id: `mv-${m.movementId}`,
+            type: 'InventoryMoved',
+            occurredAt: m.occurredAt,
+            idempotencyKey: `mv-${tenantId}-${m.movementId}`,
+            source: 'api/pos',
+            payload: m,
+          }),
+        })),
       ]);
     },
 
@@ -2185,21 +2219,20 @@ export function nearExpiryAdapter(input: { readonly store: EventStore; readonly 
         .map((m) => ({ batchId: m.batchId as string, qty: m.quantityMinor }));
       // Sales only matter for products we actually received a batch of (those are the batch-tracked ones).
       const receivedProducts = new Set(receipts.map((r) => r.productId));
-      const sales = await allOf<IncomingSale>(input.store, tenantId, STREAM.sales, 'SaleCommitted');
-      const saleLines: SaleForNetOnHand[] = [];
-      for (const sale of sales) {
-        for (const line of sale.lines ?? []) {
-          if (!receivedProducts.has(line.productId)) continue;
-          saleLines.push({
-            saleId: sale.saleId,
-            soldDate: sale.tradingDay,
-            qty: line.quantityMinor,
-            batchTracked: true,
-            productId: line.productId,
-            ...(typeof line.batchId === 'string' && line.batchId !== '' ? { capturedBatchId: line.batchId } : {}),
-          });
-        }
-      }
+      // What has SOLD comes from the same ledger: every banked sale appends its `sold` movements (M08-FR-01,
+      // `services/pos/src/sale-stock.ts`), so netting reads them here rather than the sales stream — one
+      // source of truth for on-hand, and no double count against availability. A captured batch rides on
+      // the movement; an uncaptured one is estimated FIFO-by-receipt exactly as before (ADR-0006).
+      const saleLines: SaleForNetOnHand[] = moves
+        .filter((m) => m.kind === 'sold' && receivedProducts.has(m.productId))
+        .map((m) => ({
+          saleId: m.movementId,
+          soldDate: m.occurredAt.slice(0, 10),
+          qty: m.quantityMinor,
+          batchTracked: true,
+          productId: m.productId,
+          ...(typeof m.batchId === 'string' && m.batchId !== '' ? { capturedBatchId: m.batchId } : {}),
+        }));
       return nearExpiryStock({ receipts, sales: saleLines, wastage, asOf: opts.asOf, nearExpiryDays: opts.nearExpiryDays });
     },
   };

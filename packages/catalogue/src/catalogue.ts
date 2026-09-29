@@ -88,9 +88,23 @@ export function parseGs1Date(yymmdd: string): string | undefined {
   return iso;
 }
 
+/** Where a snapshot is for — drives price precedence (M05-FR-01) and names the store a lane sells from. */
+export interface SnapshotScope {
+  readonly tenantId: string;
+  readonly storeId: string;
+  readonly zoneId?: string;
+  readonly channel?: string;
+}
+
 /** A versioned catalogue snapshot the lane holds locally (§31). */
 export interface CatalogueSnapshot {
   readonly tenantId: string;
+  /**
+   * The store (and zone/channel) this pack was assembled for. Optional: packs published before it was
+   * recorded carry none. A sale priced from this pack draws its stock from `scope.storeId` when the
+   * lane did not declare a location (M08-FR-01, `services/pos/src/sale-stock.ts`).
+   */
+  readonly scope?: SnapshotScope;
   /** Monotonic snapshot version — what the lane can show as "catalogue vN". */
   readonly version: number;
   /** ISO-8601 UTC build time — drives the staleness indicator (P-08). */
