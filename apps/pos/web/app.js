@@ -42,6 +42,8 @@ const WORDS = {
     cancel: 'Cancel', ok: 'OK', quantity: 'Quantity', cashReceived: 'Cash received',
     changeDue: 'Change due', online: 'Online', offline: 'Offline', unsent: 'Unsent',
     // The badge's states, from the BOX (design system §1 rule 4): connection · unsent · last contact.
+    // One-tap values on a panel (pos-cashier.md: quantity ≤3 taps, cash ≤3 taps — tap line → qty → confirm).
+    exact: 'Exact',
     checkingBox: 'Checking the store box…',
     boxNotAnswering: 'the store box is not answering — sales cannot be saved on this lane',
     noCloud: 'Selling offline — head office cannot be reached',
@@ -104,6 +106,7 @@ const WORDS = {
     tender: 'பணம் பெறு', cancel: 'ரத்து', ok: 'சரி', quantity: 'எண்ணிக்கை',
     cashReceived: 'பெற்ற பணம்', changeDue: 'மீதம் தர வேண்டியது', online: 'இணைப்பில்',
     offline: 'இணைப்பு இல்லை', unsent: 'அனுப்பப்படாதவை', reasonForVoid: 'நீக்கக் காரணம்',
+    exact: 'சரியான தொகை',
     checkingBox: 'கடைப் பெட்டியைச் சரிபார்க்கிறது…',
     boxNotAnswering: 'கடைப் பெட்டி பதிலளிக்கவில்லை — இந்த வரிசையில் விற்பனைகளைச் சேமிக்க முடியாது',
     noCloud: 'ஆஃப்லைனில் விற்பனை — தலைமை அலுவலகத்தை அடைய முடியவில்லை',
@@ -259,13 +262,25 @@ let chosen = null;
  * Resolves with the answer, or `null` if cancelled. `mode` is `'number'` (keypad) or `'choice'`
  * (preset buttons) — the two shapes every question at a till actually takes.
  */
-function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS }) {
+function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [] }) {
   el('sheet-title').textContent = title;
   el('entry-hint').textContent = hint;
   el('entry').textContent = initial;
   el('entry').hidden = mode !== 'number';
   el('keypad').hidden = mode !== 'number';
   el('reasons').hidden = mode !== 'choice';
+  // The quick row (pos-cashier.md interaction budget): the values a cashier reaches for most, each ONE tap that
+  // answers the question outright — a quantity of 3, the ₹500 note the customer is holding. The keypad below
+  // stays for everything else, and a TYPED value still ends in OK: the quick tap is the confirm, because the
+  // value on the button is the value taken; a typed one is not confirmed until the cashier has seen it.
+  el('quick').hidden = mode !== 'number' || quick.length === 0;
+  el('quick').replaceChildren(...(mode === 'number' ? quick : []).map((option) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = option.label;
+    button.addEventListener('click', () => { closeSheet(String(option.value)); });
+    return button;
+  }));
   el('sheet-cancel').textContent = t('cancel');
   el('sheet-ok').textContent = t('ok');
   onEntryChange = onChange;
@@ -511,7 +526,11 @@ window.posBadge = { refresh: refreshBadge, state: () => box };
 
 el('qty').addEventListener('click', async () => {
   if (!selectedLineId) { tell(t('read'), t('tapLineFirst')); return; }
-  const answer = await ask({ title: t('quantity'), mode: 'number', initial: '1' });
+  // Tap the line, tap Qty, tap the number: three (pos-cashier.md). The keypad + OK remain for larger quantities.
+  const answer = await ask({
+    title: t('quantity'), mode: 'number', initial: '1',
+    quick: ['2', '3', '4', '5', '6'].map((n) => ({ label: n, value: n })),
+  });
   if (answer === null) return;
   const qty = Number(answer);
   if (!Number.isInteger(qty) || qty <= 0) return;
@@ -536,6 +555,17 @@ el('hold').addEventListener('click', () => {
   render();
 });
 
+/**
+ * The one-tap cash amounts for a bill (pos-cashier.md: Tender → Cash → confirm ≤ 3): the exact amount, then the
+ * notes a customer actually hands over that cover it — ₹100, ₹200, ₹500, ₹2000 — never one below the bill. Change
+ * due is worked out by the same `onChange` arithmetic the keypad uses, from the model's payable; nothing here prices.
+ */
+function quickCash(payableMinor) {
+  const rupees = payableMinor / 100;
+  const notes = [100, 200, 500, 2000].filter((note) => note > rupees && note - rupees < 2000).slice(0, 3);
+  return [{ label: `${t('exact')} ${inr(payableMinor)}`, value: String(rupees) }, ...notes.map((note) => ({ label: inr(note * 100), value: String(note) }))];
+}
+
 el('tender').addEventListener('click', async () => {
   const payable = session.payableMinor();
   if (payable <= 0) { tell(t('read'), t('scanFirst')); return; }
@@ -556,6 +586,7 @@ el('tender').addEventListener('click', async () => {
     onChange: (rupees) => (changeFor(rupees) < 0
       ? `${t('notEnough')} ${inr(-changeFor(rupees))}`
       : `${t('changeDue')}: ${inr(changeFor(rupees))}`),
+    quick: quickCash(payable),
   });
   if (received === null) return;
   const change = changeFor(Number(received));
