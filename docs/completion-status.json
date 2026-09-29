@@ -494,7 +494,7 @@
     {
       "id": "MG-05",
       "label": "INTEGRATION_TESTED",
-      "evidence": "INTEGRATION_TESTED: trial-load on API-12, proven through the real pipeline in tests/integration/migration-pipeline.test.ts. B1a (29 Sep 2026): the ACTUAL load exists — planLoad/executeLoad (packages/migration/src/load.ts) drive a checked extract into an empty, non-demo tenant through the real routes as a named operator, proven in tests/integration/migration-load.test.ts (6) + tests/unit/migration-load.test.ts (24); the operator script, tenant bootstrap and runbook are B1b."
+      "evidence": "INTEGRATION_TESTED: trial-load on API-12, proven through the real pipeline in tests/integration/migration-pipeline.test.ts. B1a (29 Sep 2026): the ACTUAL load exists — planLoad/executeLoad (packages/migration/src/load.ts) drive a checked extract into an empty, non-demo tenant through the real routes as a named operator, proven in tests/integration/migration-load.test.ts (6) + tests/unit/migration-load.test.ts (24); B1b (29 Sep 2026): the operator command exists — `pnpm run migration:load` (scripts/migration-load.ts over packages/migration/src/load-command.ts: seal, completeness, cleaning, mapping, target, plan, load) and `pnpm run tenant:bootstrap` (scripts/bootstrap-tenant.ts, seedInitialAdmins) — proven as a real subprocess over a real HTTP hop in tests/integration/the-load-command-runs.test.ts (9) plus tests/unit/migration-load-command.test.ts (14), tenant-bootstrap.test.ts (14), operator-token.test.ts (2); runbook docs/runbooks/real-data-load.md. Rung unchanged: a real load is a human act after the owner's written Option 2 GO."
     },
     {
       "id": "MG-06",
