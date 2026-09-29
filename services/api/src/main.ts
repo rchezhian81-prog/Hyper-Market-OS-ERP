@@ -157,6 +157,7 @@ import { financeRoutes } from '../../finance/src/index';
 import { dayBookRoutes } from '../../finance/src/day-book';
 import { concessionTagRoutes } from '../../finance/src/concession-tags';
 import { observedHealthRoutes } from '../../platform/src/observed-health';
+import { apiManifestRoutes } from '../../platform/src/api-manifest';
 import { creditNoteRoutes } from '../../finance/src/credit-notes';
 import { taxRoutes } from '../../finance/src/tax';
 import { retentionRoutes } from '../../finance/src/retention';
@@ -309,7 +310,7 @@ export function buildSurface(deps: {
   // store → no durable trail, so a producer simply records nothing (its recordAudit is left unset).
   const auditTrail = store === undefined ? undefined : auditTrailAdapter({ store });
 
-  return [
+  const surface: Route[] = [
     ...identityRoutes(store === undefined ? {
       roles: empty([]), permissionsOf: empty([]), recordGrant: () => {},
       branches: empty([]), allocateNumber: () => Promise.resolve(1), now,
@@ -1072,6 +1073,10 @@ export function buildSurface(deps: {
       serviceCases: (t) => serviceCaseAdapter({ store, now }).serviceCases(t),
     })),
   ];
+  // The versioned API surface as a manifest (M36-FR-04, P-06): reads THIS table at request time, so it lists
+  // every endpoint registered — itself included — and `docs/api/surface.md` is generated from the same fold.
+  surface.push(...apiManifestRoutes({ routes: () => surface, now }));
+  return surface;
 }
 
 export async function main(env: Readonly<Record<string, string | undefined>> = process.env): Promise<void> {
