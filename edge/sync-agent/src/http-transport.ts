@@ -136,6 +136,13 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   // so a template fills it (an empty/absent id yields no path → dead-lettered by name, hard rule #6).
   StoreDayClosed: '/v1/pos/day-close/:dayCloseId/synced',
   StoreDayReopened: '/v1/pos/day-close/:dayCloseId/reopen/synced',
+  // The migration screen's decisions (MG-04 / MG-06, §31 — Stage C3a). Made at the store box on the night,
+  // committed to its outbox, relayed HERE under the store token to the dedicated synced routes, which
+  // re-check the DECIDER's own authority (never the relay's) and re-run the engine; a decision the cloud
+  // cannot accept is recorded as REFUSED and acknowledged, never silently applied and never dropped. The
+  // ids are plain payload fields matching the path params.
+  MigrationExceptionResolved: '/v1/migration/exceptions/:exceptionId/resolution/synced',
+  MigrationTotalSigned: '/v1/migration/control-totals/:totalId/signature/synced',
 };
 
 /** Fill `:name` segments from the payload, or run a resolver, so a route can address a thing. */

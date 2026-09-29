@@ -108,6 +108,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'migration.verification.read', 'migration.exception.accept',
       'migration.extraction.record', 'migration.evidence.record', 'migration.verification.sign',
       'migration.parallel.record', 'migration.parallel.read',
+      'migration.exception.record', 'migration.exception.resolve', 'migration.controltotal.record', 'migration.decision.sync',
       'ai.agent.run', 'ai.proposal.read', 'ai.suggestion.dismiss', 'ai.budget.read', 'ai.budget.set', 'ai.agent.enable', 'ai.killswitch.set',
     ],
   },
@@ -169,6 +170,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // The migration operator PROPOSES a history exclusion (MG-07); only the OWNER approves it, and
       // never one they proposed themselves — so the proposer must be a role other than the owner.
       'migration.parallel.record', 'migration.parallel.read', 'migration.exclusion.propose',
+      // The manager works the night's exception list and records the totals the operator produced (MG-04 /
+      // MG-06); signing a total stays the owner's and the CA's. The box's relayed decisions come in under
+      // `migration.decision.sync`, which re-checks the decider's OWN authority.
+      'migration.cleaning.read', 'migration.reconciliation.read',
+      'migration.exception.record', 'migration.exception.resolve', 'migration.controltotal.record', 'migration.decision.sync',
     ],
   },
   {
@@ -177,7 +183,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     // The narrowest role in the product, and the one most people hold (P-07).
     permissions: [
       'identity.self.read', 'payroll.ess.self', 'catalogue.pack.read',
-      'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.return.record', 'pos.restricted.check',
+      'pos.sale.sync', 'pos.return.sync', 'migration.decision.sync', 'pos.sale.read', 'pos.return.record', 'pos.restricted.check',
       'cash.movement.record', 'cash.till.read', 'till.shift.close', 'till.shift.read',
       'customer.consent.read', 'loyalty.points.read', 'loyalty.points.write',
       'loyalty.value.issue', 'loyalty.value.redeem', 'loyalty.value.read',

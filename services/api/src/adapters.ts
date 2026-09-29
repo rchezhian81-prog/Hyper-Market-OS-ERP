@@ -60,6 +60,9 @@ import type { NearExpiryDeps } from '../../inventory/src/near-expiry';
 import type { ReturnsDeps, ReturnRecord, RecordedRefund, OriginalSale, RecordedReturn, StoreCreditIssue } from '../../pos/src/returns';
 import type { ExchangeDeps } from '../../pos/src/exchanges';
 import type { NoReceiptReturnsDeps } from '../../pos/src/no-receipt-returns';
+import type { RefusedDecision } from '../../migration/src/decisions';
+import type { ExceptionResolution, MigrationException } from '../../../packages/migration/src/cleaning';
+import type { ControlTotal, TotalSignature } from '../../../packages/migration/src/reconcile';
 import type { CashDeps, RecordedCashMovement } from '../../pos/src/cash';
 import type { StoredCashMovement } from '../../../packages/cash/src/index';
 import type { ShiftDeps, ClosedShiftRecord, OverShortReview } from '../../pos/src/shift';
@@ -7759,6 +7762,70 @@ export function migrationAdapter(input: {
      */
     rolesOf: async (tenantId, userId) =>
       (await grants(tenantId)).filter((g) => g.userId === userId).map((g) => g.roleId),
+
+    // MG-04 / MG-06 — the decisions the migration screen makes, KEPT (C3a). An exception is its first record
+    // with its first resolution applied (a second resolution never lands — the route refuses it, and the fold
+    // keeps the first regardless); a total is its first record with its first signature applied. Refused relayed
+    // decisions are all kept. Every writer is keyed on the subject so a re-delivered decision appends once.
+    exceptions: async (tenantId) => {
+      const recorded = await allOf<MigrationException>(input.store, tenantId, STREAM.migration, 'MigrationExceptionRecorded');
+      const resolutions = await allOf<{ readonly exceptionId: string; readonly resolution: ExceptionResolution }>(input.store, tenantId, STREAM.migration, 'MigrationExceptionResolved');
+      const byId = new Map<string, MigrationException>();
+      for (const e of recorded) if (!byId.has(e.exceptionId)) byId.set(e.exceptionId, e);
+      for (const r of resolutions) {
+        const e = byId.get(r.exceptionId);
+        if (e !== undefined && e.resolution === undefined) byId.set(r.exceptionId, { ...e, resolution: r.resolution });
+      }
+      return [...byId.values()];
+    },
+    recordException: async (tenantId, exception) => {
+      await input.store.append(tenantId, STREAM.migration, makeEvent({
+        id: `mig-exception-${exception.exceptionId}`, type: 'MigrationExceptionRecorded', occurredAt: input.now(),
+        idempotencyKey: `mig-exception-${tenantId}-${exception.exceptionId}`, source: 'api/migration', payload: exception,
+      }));
+    },
+    recordExceptionResolution: async (tenantId, exceptionId, resolution) => {
+      await input.store.append(tenantId, STREAM.migration, makeEvent({
+        id: `mig-exception-resolved-${exceptionId}`, type: 'MigrationExceptionResolved', occurredAt: resolution.decidedAt,
+        idempotencyKey: `mig-exception-resolved-${tenantId}-${exceptionId}`, source: 'api/migration', payload: { exceptionId, resolution },
+      }));
+    },
+    controlTotals: async (tenantId) => {
+      const recorded = await allOf<ControlTotal>(input.store, tenantId, STREAM.migration, 'MigrationControlTotalRecorded');
+      const signatures = await allOf<{ readonly totalId: string; readonly signature: TotalSignature }>(input.store, tenantId, STREAM.migration, 'MigrationTotalSigned');
+      const byId = new Map<string, ControlTotal>();
+      for (const t of recorded) if (!byId.has(t.totalId)) byId.set(t.totalId, t);
+      for (const sg of signatures) {
+        const t = byId.get(sg.totalId);
+        if (t !== undefined && t.signature === undefined) byId.set(sg.totalId, { ...t, signature: sg.signature });
+      }
+      return [...byId.values()];
+    },
+    recordControlTotal: async (tenantId, total) => {
+      await input.store.append(tenantId, STREAM.migration, makeEvent({
+        id: `mig-total-${total.totalId}`, type: 'MigrationControlTotalRecorded', occurredAt: input.now(),
+        idempotencyKey: `mig-total-${tenantId}-${total.totalId}`, source: 'api/migration', payload: total,
+      }));
+    },
+    recordTotalSignature: async (tenantId, totalId, signature) => {
+      await input.store.append(tenantId, STREAM.migration, makeEvent({
+        id: `mig-total-signed-${totalId}`, type: 'MigrationTotalSigned', occurredAt: signature.signedAt,
+        idempotencyKey: `mig-total-signed-${tenantId}-${totalId}`, source: 'api/migration', payload: { totalId, signature },
+      }));
+    },
+    refusedDecisions: (tenantId) => allOf<RefusedDecision>(input.store, tenantId, STREAM.migration, 'MigrationDecisionRefused'),
+    recordRefusedDecision: async (tenantId, decision) => {
+      await input.store.append(tenantId, STREAM.migration, makeEvent({
+        id: `mig-refused-${decision.decisionId}`, type: 'MigrationDecisionRefused', occurredAt: decision.relayedAt,
+        idempotencyKey: `mig-refused-${tenantId}-${decision.decisionId}`, source: 'api/migration', payload: decision,
+      }));
+    },
+    // Whether a person named at the store box genuinely holds a permission — from their grants and the role
+    // catalogue, never from what the relay says about them (the same read canApproveRefund does).
+    holdsPermission: async (tenantId, userId, permission) => {
+      const roleIds = new Set((await grants(tenantId)).filter((g) => g.userId === userId).map((g) => g.roleId));
+      return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes(permission));
+    },
   };
 }
 
