@@ -72,6 +72,7 @@ export type CopyKey =
   | 'reasonLabel' | 'whenLabel' | 'flagsLabel'
   | 'flagGivenWithoutApproval' | 'flagApprovedByProcessor' | 'flagApproverLacksAuthority'
   | 'flagOverReturnedGoods' | 'flagRefundExceedsPaid' | 'flagStoreCreditOverCap' | 'flagStoreCreditNoCustomer'
+  | 'flagNoReceiptOverCap'
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted'
   | 'nobodyNamed' | 'staleShell' | 'sampleData';
 
@@ -94,6 +95,7 @@ export const RETURN_GOVERNANCE_COPY: BilingualCopy<CopyKey> = {
     flagRefundExceedsPaid: 'More refunded than the bill was paid',
     flagStoreCreditOverCap: 'Store credit above your cap (or no cap set)',
     flagStoreCreditNoCustomer: 'Store credit with no customer to credit',
+    flagNoReceiptOverCap: 'No-receipt return above your cap (or no cap set)',
     scrReady: 'Showing the refund exceptions', scrEmpty: 'No refund exceptions — every refund followed the rules.',
     stateNotPermitted: 'You do not have permission to see the refund exceptions.',
     nobodyNamed: 'This store computer has not been told who is using this screen.',
@@ -117,6 +119,7 @@ export const RETURN_GOVERNANCE_COPY: BilingualCopy<CopyKey> = {
     flagRefundExceedsPaid: 'பில் பெற்றதைவிட அதிகம் திருப்பப்பட்டது',
     flagStoreCreditOverCap: 'உங்கள் வரம்பை மீறிய கடைக்கடன் (அல்லது வரம்பு இல்லை)',
     flagStoreCreditNoCustomer: 'கடன் வழங்க வாடிக்கையாளர் இல்லை',
+    flagNoReceiptOverCap: 'உங்கள் வரம்பை மீறிய ரசீது இல்லாத திருப்பம் (அல்லது வரம்பு இல்லை)',
     scrReady: 'திருப்பிப்பண விதிமீறல்களைக் காட்டுகிறது', scrEmpty: 'திருப்பிப்பண விதிமீறல்கள் இல்லை — ஒவ்வொரு திருப்பிப்பணமும் விதிகளைப் பின்பற்றியது.',
     stateNotPermitted: 'திருப்பிப்பண விதிமீறல்களைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
@@ -136,6 +139,7 @@ const FLAG_COPY: Readonly<Record<RefundGovernanceFinding, CopyKey>> = {
   refund_exceeds_paid: 'flagRefundExceedsPaid',
   store_credit_over_cap: 'flagStoreCreditOverCap',
   store_credit_no_customer: 'flagStoreCreditNoCustomer',
+  no_receipt_over_cap: 'flagNoReceiptOverCap',
 };
 
 // ── the presented shapes the view renders ────────────────────────────────────────────────────────────────

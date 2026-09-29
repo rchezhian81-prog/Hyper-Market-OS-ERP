@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  assessReturn, refundGovernanceFindings, crossLaneRefundFindings, type ReturnRequest,
+  assessReturn, refundGovernanceFindings, noReceiptGovernanceFindings, crossLaneRefundFindings, type ReturnRequest,
   type OriginalSale, type RecordedReturn,
 } from '../../packages/returns/src/index';
 
@@ -97,6 +97,30 @@ describe('refundGovernanceFindings (M13-FR-01, §28 on sync)', () => {
   });
   it('a material refund approved by a genuinely-authorised, different person has no findings', () => {
     expect(f({ approvedBy: 'u-mgr', approverHoldsAuthority: true })).toEqual([]);
+  });
+});
+
+describe('noReceiptGovernanceFindings (M13-FR-01: a no-receipt return ALWAYS needs an approver and sits within the cap)', () => {
+  const f = (over: Partial<Parameters<typeof noReceiptGovernanceFindings>[0]> = {}) => noReceiptGovernanceFindings({
+    refundMinor: 5000, capMinor: 100000, processedBy: 'u-lane', approvedBy: 'u-mgr', approverHoldsAuthority: true, ...over,
+  });
+
+  it('a clean no-receipt return (genuine approver, within the cap) has no findings', () => {
+    expect(f()).toEqual([]);
+    expect(f({ refundMinor: 100000 })).toEqual([]); // at the cap is within it
+  });
+  it('needs an approver whatever the amount — there is no threshold below which it is immaterial', () => {
+    expect(f({ approvedBy: undefined, refundMinor: 1 })).toEqual(['given_without_approval']);
+    expect(f({ approvedBy: undefined, refundMinor: 0 })).toEqual(['given_without_approval']);
+    expect(f({ approvedBy: 'u-lane' })).toEqual(['approved_by_the_processor']);
+    expect(f({ approvedBy: 'u-other', approverHoldsAuthority: false })).toEqual(['approver_lacks_authority']);
+  });
+  it('flags a refund over the cap, and ANY refund when the owner has set no cap (the path was off)', () => {
+    expect(f({ refundMinor: 100001 })).toEqual(['no_receipt_over_cap']);
+    expect(f({ capMinor: undefined })).toEqual(['no_receipt_over_cap']);
+  });
+  it('an unapproved return over the cap carries both findings, approval first', () => {
+    expect(f({ approvedBy: undefined, capMinor: undefined })).toEqual(['given_without_approval', 'no_receipt_over_cap']);
   });
 });
 

@@ -58,6 +58,7 @@ import type { OutboundLotRecord } from '../../../packages/quality/src/index';
 import { attributeSalesFifo, nearExpiryStock, type BatchReceipt, type HistoricalSaleLine, type ReceiptWithExpiry, type SaleForNetOnHand, type ExpiryActionItem } from '../../../packages/fefo/src/index';
 import type { NearExpiryDeps } from '../../inventory/src/near-expiry';
 import type { ReturnsDeps, ReturnRecord, RecordedRefund, OriginalSale, RecordedReturn } from '../../pos/src/returns';
+import type { NoReceiptReturnsDeps } from '../../pos/src/no-receipt-returns';
 import type { CashDeps, RecordedCashMovement } from '../../pos/src/cash';
 import type { StoredCashMovement } from '../../../packages/cash/src/index';
 import type { ShiftDeps, ClosedShiftRecord, OverShortReview } from '../../pos/src/shift';
@@ -2471,6 +2472,126 @@ export function returnsAdapter(input: {
   };
 }
 
+/** The no-receipt register — its own stream, never a bill's (a no-receipt return counts against no sale). */
+const NO_RECEIPT_RETURNS = streamName(STREAM.returns, 'no-receipt');
+
+/**
+ * Controlled no-receipt returns (M13-FR-01, CH-01 un-parked) — the cap the owner sets, the catalogue check,
+ * the register + tenant-wide projection, and the report. Shares the §28 authority read and the store-credit
+ * cap with `returnsAdapter` so there is ONE reading of each policy. `recordNoReceiptReturn` mirrors
+ * `recordReturn`'s atomic batch: register entry + reporting projection + store credit + `returned` movements,
+ * each on its own idempotency key, so a retried refund lands once and the money, the report and the shelf agree.
+ */
+export function noReceiptReturnsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): Omit<NoReceiptReturnsDeps, 'recordAudit'> {
+  const shared = returnsAdapter(input);
+  return {
+    now: input.now,
+    canApproveRefund: shared.canApproveRefund,
+    storeCreditCap: shared.storeCreditCap,
+
+    // The owner's no-receipt cap — tenant-wide config, append-only (latest wins). Undefined until set, so the
+    // no-receipt path stays unavailable until the owner decides (fail-safe, never a guessed default).
+    noReceiptCap: async (tenantId) => {
+      const all = await allOf<{ capMinor: number }>(input.store, tenantId, streamName(STREAM.returns, 'no-receipt-cap'), 'NoReceiptCapSet');
+      const last = all[all.length - 1];
+      return last === undefined ? undefined : last.capMinor;
+    },
+    recordNoReceiptCap: async (tenantId, capMinor, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, streamName(STREAM.returns, 'no-receipt-cap'), makeEvent({
+        id: `no-receipt-cap-${d}`,
+        type: 'NoReceiptCapSet',
+        occurredAt: input.now(),
+        idempotencyKey: `no-receipt-cap-${tenantId}-${d}`,
+        source: 'api/pos',
+        payload: { capMinor },
+      }));
+    },
+
+    // "Identify the item": the product must have been published to this tenant's catalogue (the same fold the
+    // product master reads — the last publish of an id wins, and any publish means the shop sells it).
+    knownProduct: async (tenantId, productId) => {
+      const events = await input.store.readStream(tenantId, streamName(STREAM.catalogue, 'products'), { type: 'ProductPublished' });
+      return events.some((e) => payloadOf<{ productId: string }>(e).productId === productId);
+    },
+
+    recordNoReceiptReturn: async (tenantId, record, storeCredit, location) => {
+      const stockMovements = location === undefined ? [] : returnStockMovements(record, location);
+      await input.store.appendBatch(tenantId, [
+        {
+          stream: NO_RECEIPT_RETURNS,
+          event: makeEvent({
+            id: `return-${record.returnId}`,
+            type: 'ReturnRecorded',
+            occurredAt: record.processedAt,
+            idempotencyKey: `return-${tenantId}-${record.returnId}`,
+            source: 'api/pos',
+            payload: record,
+          }),
+        },
+        {
+          // The tenant-wide returns projection (reporting + the governance-exceptions fold), keyed on the return id.
+          stream: STREAM.returns,
+          event: makeEvent({
+            id: `return-proj-${record.returnId}`,
+            type: 'ReturnRecorded',
+            occurredAt: record.processedAt,
+            idempotencyKey: `return-proj-${tenantId}-${record.returnId}`,
+            source: 'api/pos',
+            payload: record,
+          }),
+        },
+        ...(storeCredit?.instrument === undefined ? [] : [{
+          stream: STORED_VALUE_INDEX,
+          event: makeEvent({
+            id: `sv-issue-${storeCredit.instrument.instrumentId}`,
+            type: 'StoredValueIssued',
+            occurredAt: storeCredit.instrument.issuedAt,
+            idempotencyKey: `sv-issue-${tenantId}-${storeCredit.instrument.instrumentId}`,
+            source: 'api/pos',
+            payload: storeCredit.instrument,
+          }),
+        }]),
+        ...(storeCredit === undefined ? [] : [{
+          stream: forInstrument(storeCredit.movement.instrumentId),
+          event: makeEvent({
+            id: `sv-mv-${storeCredit.movement.movementId}`,
+            type: 'StoredValueMovement',
+            occurredAt: storeCredit.movement.at,
+            idempotencyKey: `sv-mv-${tenantId}-${storeCredit.movement.movementId}`,
+            source: 'api/pos',
+            payload: storeCredit.movement,
+          }),
+        }]),
+        // One inbound `returned` movement per resold line at the named location (M08-FR-01) — the same
+        // format the inventory adapter writes, so availability and valuation fold it as any other movement.
+        ...stockMovements.map((m) => ({
+          stream: STREAM.inventory,
+          event: makeEvent({
+            id: `mv-${m.movementId}`,
+            type: 'InventoryMoved',
+            occurredAt: m.occurredAt,
+            idempotencyKey: `mv-${tenantId}-${m.movementId}`,
+            source: 'api/pos',
+            payload: m,
+          }),
+        })),
+      ]);
+    },
+
+    // The no-receipt register, one record per return id (latest wins on a re-sync).
+    noReceiptReturns: async (tenantId) => {
+      const all = await allOf<ReturnRecord>(input.store, tenantId, NO_RECEIPT_RETURNS, 'ReturnRecorded');
+      const byId = new Map<string, ReturnRecord>();
+      for (const r of all) byId.set(r.returnId, r);
+      return [...byId.values()];
+    },
+  };
+}
+
 export function cashAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -4708,11 +4829,14 @@ export function inventoryAdapter(input: {
       const returnedNetByProduct = new Map<string, number>();
       const returnedCogsByProduct = new Map<string, number>();
       for (const e of returns) {
-        const ret = payloadOf<{ readonly originalSaleId: string; readonly refundMinor: number; readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly disposition: string }[] }>(e);
-        const saleEvent = await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${ret.originalSaleId}`);
+        const ret = payloadOf<{ readonly originalSaleId: string | null; readonly refundMinor: number; readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly disposition: string }[] }>(e);
+        // A no-receipt return (originalSaleId null, M13-FR-01) has no bill to price its lines from: its refund
+        // is still a real reduction of net sales, so it is allocated across its lines by quantity (the only
+        // weight it has) rather than dropped — P-08, never a silent zero.
+        const saleEvent = ret.originalSaleId === null ? undefined : await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${ret.originalSaleId}`);
         const saleLines = saleEvent === undefined ? [] : (saleEvent.event.payload as { readonly lines: readonly { readonly productId: string; readonly unitPriceMinor: number }[] }).lines;
         const priceByProduct = new Map(saleLines.map((l) => [l.productId, l.unitPriceMinor]));
-        const lineGross = ret.lines.map((l) => (priceByProduct.get(l.productId) ?? 0) * l.quantityMinor);
+        const lineGross = ret.lines.map((l) => (priceByProduct.get(l.productId) ?? (ret.originalSaleId === null ? 1 : 0)) * l.quantityMinor);
         const totalGross = lineGross.reduce((s, g) => s + g, 0);
         let allocated = 0;
         ret.lines.forEach((l, i) => {

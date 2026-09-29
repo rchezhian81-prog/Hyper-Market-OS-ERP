@@ -31,8 +31,15 @@ export interface CloudReturnLine {
 /** The synced-return payload: exactly the fields `POST /v1/sales/:saleId/returns/synced` reads. */
 export interface CloudReturn {
   readonly returnId: string;
-  /** The bill this return is against; null ONLY for a no-receipt return (no synced endpoint yet). */
+  /** The bill this return is against; null ONLY for a no-receipt return (M13-FR-01), which the transport
+   *  routes to its own synced endpoint by the `noReceipt` flag below. */
   readonly originalSaleId: string | null;
+  /** Set (true) only on a controlled no-receipt return — the transport's routing key for one, and what the
+   *  cloud's no-receipt route records. Absent (never false) on a receipted return. */
+  readonly noReceipt?: true;
+  /** The lane the return was taken at — where a resold no-receipt unit goes back on the shelf when the lane
+   *  named no location (the cloud states the assumption on the movement, P-08). */
+  readonly laneId?: string;
   readonly number: string;
   readonly processedBy: string;
   /** The second person who approved a material refund at the lane (§28); absent when none was needed. */
@@ -60,15 +67,17 @@ function toCloudLine(l: unknown): CloudReturnLine {
 /**
  * Translate the edge's return record into the cloud synced-return contract. Pure; the record is
  * untrusted JSON off the disk, so every field is read defensively. `originalSaleId` is preserved as
- * `null` for a no-receipt return — the transport has NO synced endpoint for one and dead-letters it by
- * name (hard rule #6), so squashing null to an empty string here would misroute it. `approvedBy` is
- * carried only when present, so the cloud can tell "no approver" from "this approver" (§28).
+ * `null` for a no-receipt return and `noReceipt: true` is carried with it — the transport routes on the
+ * flag to the cloud's own no-receipt route (M13-FR-01), so squashing null to an empty string or dropping
+ * the flag here would misroute it (a flagless, bill-less record is dead-lettered by name, hard rule #6).
+ * `approvedBy` is carried only when present, so the cloud can tell "no approver" from "this approver" (§28).
  */
 export function toCloudReturn(record: unknown): CloudReturn {
   const r = (record !== null && typeof record === 'object' ? record : {}) as Rec;
   const originalSaleId = str(r['originalSaleId']);
   const approvedBy = str(r['approvedBy']);
   const customerRef = str(r['customerRef']);
+  const laneId = str(r['laneId']);
   const lines: readonly CloudReturnLine[] = Array.isArray(r['lines'])
     ? (r['lines'] as unknown[]).map(toCloudLine)
     : [];
@@ -76,6 +85,9 @@ export function toCloudReturn(record: unknown): CloudReturn {
     returnId: str(r['returnId']) ?? str(r['id']) ?? '',
     // Preserve a genuine null (no-receipt); only an absent/empty value falls back to null.
     originalSaleId: originalSaleId ?? null,
+    // The no-receipt flag is the routing key — carried only when the engine set it true (M13-FR-01).
+    ...(r['noReceipt'] === true ? { noReceipt: true as const } : {}),
+    ...(laneId === undefined ? {} : { laneId }),
     number: str(r['number']) ?? '',
     processedBy: str(r['processedBy']) ?? '',
     ...(approvedBy === undefined ? {} : { approvedBy }),

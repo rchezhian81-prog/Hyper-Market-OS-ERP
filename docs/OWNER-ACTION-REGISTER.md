@@ -32,7 +32,7 @@ customer-personal-data DPDP clock (anonymise 24 months after last activity) is a
 data-rights engine, noted for a later increment. (2) **Store-credit cap — ANSWERED** ("set the limit manually by
 owner"): confirmed — no hard-coded default; the cap stays **fail-safe unset** (store-credit refunds unavailable
 until the owner sets it) and is owner-set at runtime via `POST /v1/pos/store-credit-cap` (owner-only). An
-owner-facing screen to set it is a possible small follow-on. (3) **Paid-plan tiers (OA-12) — ANSWERED and CLOSED.**
+owner-facing screen to set it is a possible small follow-on. **(2b) No-receipt cap — same pattern (29 Sep 2026, Stage C2a):** no-receipt returns are UNAVAILABLE until the owner sets a per-shop cap via `POST /v1/pos/no-receipt-cap` (owner-only); the owner decides the number before the pilot takes its first no-receipt return — nothing is defaulted. (3) **Paid-plan tiers (OA-12) — ANSWERED and CLOSED.**
 The owner ratified the existing three-tier STRUCTURE (Starter / Standard / Growth and what each grants — option A)
 and set the prices himself: **Starter ₹10,000, Standard ₹13,000, Growth ₹15,000**, all at or under the ₹15,000
 RBI e-mandate no-OTP ceiling (he chose "all auto-debit, no monthly OTP" over "keep my higher prices with an OTP

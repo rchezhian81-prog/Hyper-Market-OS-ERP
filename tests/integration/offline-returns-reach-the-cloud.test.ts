@@ -153,21 +153,34 @@ describe('offline returns reach the cloud and reconcile on sync (M13-FR-01, §31
     expect(exc.exceptions[0]).toMatchObject({ returnId: 'RT1', processedBy: 'u-lanecash', approvedBy: 'u-nobody', governanceFlags: ['approver_lacks_authority'] });
   });
 
-  it('keeps a no-receipt return for a person — there is no synced endpoint yet, so it is never posted hopefully (hard rule #6)', async () => {
+  it('delivers a controlled NO-RECEIPT return to its own cloud route — reconciled, and its breach a visible exception (M13-FR-01, CH-01 un-parked)', async () => {
     const s = await scene();
-    // A no-receipt return has no original bill: originalSaleId is null, so the route resolver yields
-    // no path. It must be dead-lettered by name, not posted to some generic ingest.
+    // The lane took a no-receipt return within ITS cap (₹1,000) with a genuine approver. The cloud has no
+    // no-receipt cap set yet (the owner never switched the path on), so the return is recorded — the money
+    // moved — and flagged over-cap for a person, never dead-lettered and never counted against any bill.
     const outbox = s.commitOffline({ originalSaleId: null, noReceipt: true, noReceiptCapMinor: 100000 });
 
     const result = await s.drain(outbox);
-    expect(result.acknowledged).toBe(0);
-    expect(result.deadLettered).toBe(1);
+    expect(result.acknowledged).toBe(1);
+    expect(result.deadLettered).toBe(0);
 
-    const dead = outbox.deadLetters();
-    expect(dead).toHaveLength(1);
-    expect(dead[0]?.reason).toContain('no cloud endpoint');
-    // Nothing reconciled — the register is untouched.
+    const exc = (await exceptions(s.h, 'u-owner')).body as Exc;
+    expect(exc.count).toBe(1);
+    expect(exc.exceptions[0]).toMatchObject({ returnId: 'RT1', processedBy: 'u-lanecash', approvedBy: 'u-mgr', governanceFlags: ['no_receipt_over_cap'] });
+    // Against NO bill: S1's own refundable money is untouched.
     expect(((await returnable(s.h, 'u-owner')).body as { refundableMinor: number }).refundableMinor).toBe(15000);
+    // And it is on the no-receipt report, marked as such.
+    const rep = (await s.h.request({ method: 'GET', path: '/v1/pos/no-receipt-returns', userId: 'u-owner', tenantId: A })).body as { count: number; returns: { originalSaleId: string | null; noReceipt?: boolean }[] };
+    expect(rep.count).toBe(1);
+    expect(rep.returns[0]).toMatchObject({ originalSaleId: null, noReceipt: true });
+  });
+
+  it('a no-receipt return within the owner\'s cloud cap, approved by a genuine approver, reconciles clean', async () => {
+    const s = await scene();
+    expect((await s.h.request({ method: 'POST', path: '/v1/pos/no-receipt-cap', userId: 'u-owner', tenantId: A, idempotencyKey: 'cap-1', body: { capMinor: 100000 } })).status).toBe(200);
+    const outbox = s.commitOffline({ originalSaleId: null, noReceipt: true, noReceiptCapMinor: 100000 });
+    expect((await s.drain(outbox)).acknowledged).toBe(1);
+    expect(((await exceptions(s.h, 'u-owner')).body as Exc).count).toBe(0);
   });
 
   it('waits out an outage, then reconciles once the line returns (§31)', async () => {

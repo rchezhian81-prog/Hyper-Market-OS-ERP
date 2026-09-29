@@ -145,12 +145,30 @@ accounts.
   `planogram.publish` (owner, store manager). CH-02 marked Applied. **M04 re-rated PARTIALLY_WIRED → WIRED**
   (unit 7 + real-pipeline 3); not INTEGRATION_TESTED as a module because replenishment tasks are still
   computed, not persisted/completed, and the merchandising screen reads its plan from the store pack.
-- **Stage C — remaining, in order:** C2 un-park CH-01 (cloud routes for controlled no-receipt returns and
-  exchanges — the returns engine already models both); C3 wire the migration screen to the B2/B3 routes;
+- **Stage C, slice 2a — done (29 Sep 2026): CH-01 half 1 un-parked — controlled NO-RECEIPT returns on the
+  cloud (M13-FR-01).** Until now a return with no bill could be taken at the till offline but had nowhere to
+  go on the cloud (it dead-lettered for a person) and no desk could take one online. Now
+  (`services/pos/src/no-receipt-returns.ts`): the owner sets a **no-receipt cap** (`GET/POST
+  /v1/pos/no-receipt-cap`, owner-only; until it is set the path is simply unavailable — fail-safe, never a
+  guessed default); the desk takes one with `POST /v1/returns/no-receipt`, refused before any money moves
+  when there is no cap, the refund is over the cap, the item is not in the catalogue, there is no
+  supervisor approval (ALWAYS needed — there is no bill to bound it), the cashier approves themselves, the
+  approver does not genuinely hold refund authority, or a resold unit names no stock location to go back to
+  (there is no bill to take the shelf from); the lane's offline no-receipt return now reaches `POST
+  /v1/returns/no-receipt/synced` and reconciles — recorded because the money moved, with any breach (no
+  approver, over the cap or no cap set) shown as a visible exception on the same refund-exceptions screen
+  (new finding `no_receipt_over_cap`, English + Tamil); `GET /v1/pos/no-receipt-returns` is the report —
+  who gave, who approved, what it cost, how many flagged (a loss surface, manager/owner/accountant). The
+  record sits on its own register, never against a bill; a resold unit re-enters on-hand at the named
+  location. Proven: unit 19 + real-pipeline 5 + engine 4 + the offline-sync proof. **No rung change yet**
+  (M13 waits for exchanges); CH-01 status → un-parking in progress.
+- **Stage C — remaining, in order:** C2b un-park CH-01 half 2 (exchanges: a return + a replacement sale in
+  one atomic commit, even exchange = zero refund, the difference refunded or collected under the same
+  thresholds); C3 wire the migration screen to the B2/B3 routes;
   then family by family through the 57 remaining PARTIALLY_WIRED items (D01-FR-06 content authoring,
   D02-FR-06 display funding, D07 coupons/referrals, M21 compensation, M23 close second source, …). OA-12 was
   already answered and closed on 23 Sep — nothing to un-park.
-- **Next:** C1 PR → merge → **C2** (CH-01).
+- **Next:** C2a PR → merge → **C2b** (exchanges) → C3.
 
 ---
 
