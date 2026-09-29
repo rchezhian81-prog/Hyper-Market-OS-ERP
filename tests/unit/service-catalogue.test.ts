@@ -279,7 +279,9 @@ describe('the service on the kernel, end to end', () => {
     return {
       opts: {
         router: built.router!,
-        authenticate: () => ({ tenantId: 't-sre', userId: user, branchId: 'b-main' }),
+        // A fresh, MFA-backed sign-in: a publish that changes many products is a BULK publish and the API-tier
+        // step-up (Stage E slice 1) runs before the pack's own refusals — these tests are about those refusals.
+        authenticate: () => ({ tenantId: 't-sre', userId: user, branchId: 'b-main', authTime: Math.floor(Date.now() / 1000) - 5, amr: ['pwd', 'mfa'] }),
         access: ACCESS, idempotency: new MemoryIdempotencyStore(), newTraceId: () => 'trace-1',
       },
       held: () => stored,

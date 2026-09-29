@@ -464,6 +464,12 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
       }
     }
 
+    // The SIGNED token's re-auth evidence travels to the handler for ACTION-level step-up (a payroll
+    // approval, a bulk publish) — the same evidence the route-level check above reads, never the body.
+    const reauth = principal.authTime === undefined && principal.amr === undefined ? undefined : {
+      ...(principal.authTime === undefined ? {} : { authTime: principal.authTime }),
+      ...(principal.amr === undefined ? {} : { amr: principal.amr }),
+    };
     const result = await route.handler({
       tenantId: principal.tenantId,
       userId: principal.userId,
@@ -473,6 +479,7 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
       body: request.body,
       ...(write && key !== undefined ? { idempotencyKey: key } : {}),
       traceId,
+      ...(reauth === undefined ? {} : { reauth }),
     });
 
     const response = sealed(result.status, result.body, principal.tenantId, traceId, false);

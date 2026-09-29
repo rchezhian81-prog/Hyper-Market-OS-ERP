@@ -422,3 +422,22 @@ describe('every write is on the record', () => {
     expect((denied.body as { error: { traceId: string } }).error.traceId).toBe('trace-1');
   });
 });
+
+describe('the SIGNED token’s re-auth evidence reaches the handler for action-level step-up (Stage E slice 1)', () => {
+  const seen: unknown[] = [];
+  const spy: Route = route({ handler: (ctx) => { seen.push(ctx.reauth); return { status: 200, body: {} }; } });
+
+  it('a principal with auth_time + amr → ctx.reauth carries exactly those, from the token, not the request', async () => {
+    seen.length = 0;
+    const k = kernel([spy], { authenticate: () => ({ ...PRINCIPAL, authTime: 1_700_000_000, amr: ['pwd', 'mfa'] }) });
+    expect((await handle(k, req({ body: { reauth: { authTime: 1, amr: ['forged'] } } }))).status).toBe(200);
+    expect(seen).toEqual([{ authTime: 1_700_000_000, amr: ['pwd', 'mfa'] }]);
+  });
+
+  it('a principal with NO evidence → ctx.reauth is absent (so requireStepUp refuses), never an empty default', async () => {
+    seen.length = 0;
+    const k = kernel([spy]);
+    expect((await handle(k, req())).status).toBe(200);
+    expect(seen).toEqual([undefined]);
+  });
+});

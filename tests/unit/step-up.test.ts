@@ -4,8 +4,8 @@
 // non-positive window (a control that could never be satisfied fails at startup, not at 9pm Friday).
 
 import { describe, it, expect } from 'vitest';
-import { evaluateStepUp, type ReauthRequirement } from '../../services/kernel/src/step-up';
-import { buildRouter, type Route } from '../../services/kernel/src/index';
+import { evaluateStepUp, requireStepUp, type ReauthRequirement } from '../../services/kernel/src/step-up';
+import { ApiError, buildRouter, type Route } from '../../services/kernel/src/index';
 
 const NOW_SEC = 1_700_000_000;
 const NOW_MS = NOW_SEC * 1000;
@@ -73,5 +73,38 @@ describe('router registration — a step-up window must be positive', () => {
   it('accepts a route with a positive step-up window', () => {
     const ok = buildRouter([{ ...base, reauth: { withinSeconds: 300, amr: ['mfa'] } }]);
     expect(ok.ok).toBe(true);
+  });
+});
+
+describe('requireStepUp — the handler-level check over the request context (Stage E slice 1)', () => {
+  const ok = { reauth: { authTime: NOW_SEC - 10, amr: ['pwd', 'mfa'] } };
+
+  it('passes silently for a fresh, MFA-backed sign-in carried on the context', () => {
+    expect(() => requireStepUp(ok, MFA, NOW_MS)).not.toThrow();
+  });
+
+  it('throws the same 403 reauthentication_required refusal the pipeline throws, and says WHY this call was sensitive', () => {
+    let caught: unknown;
+    try { requireStepUp({ reauth: { authTime: NOW_SEC - 10, amr: ['pwd'] } }, MFA, NOW_MS, 'This publish changes 312 products.'); } catch (e) { caught = e; }
+    expect(caught).toBeInstanceOf(ApiError);
+    const err = caught as ApiError;
+    expect(err.status).toBe(403);
+    expect(err.body.code).toBe('reauthentication_required');
+    expect(err.body.whatHappened).toContain('This publish changes 312 products.');
+    expect(err.body.whatHappened).toContain('stronger recent sign-in');
+    expect(err.body.wasItSaved).toBe('not_saved');
+  });
+
+  it('treats a context with NO re-auth evidence as no re-auth at all — refused, not defaulted', () => {
+    let caught: unknown;
+    try { requireStepUp({}, MFA, NOW_MS); } catch (e) { caught = e; }
+    expect((caught as ApiError).body.code).toBe('reauthentication_required');
+    expect((caught as ApiError).body.whatHappened).toContain('carries none');
+  });
+
+  it('refuses a stale re-auth with its own reason', () => {
+    let caught: unknown;
+    try { requireStepUp({ reauth: { authTime: NOW_SEC - 100_000, amr: ['pwd', 'mfa'] } }, MFA, NOW_MS); } catch (e) { caught = e; }
+    expect((caught as ApiError).body.whatHappened).toContain('gone stale');
   });
 });

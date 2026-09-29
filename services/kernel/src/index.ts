@@ -11,7 +11,7 @@ export {
 } from './errors';
 
 export {
-  evaluateStepUp,
+  evaluateStepUp, requireStepUp,
   type ReauthRequirement, type ReauthEvidence, type ReauthShortfall, type ReauthDecision,
 } from './step-up';
 

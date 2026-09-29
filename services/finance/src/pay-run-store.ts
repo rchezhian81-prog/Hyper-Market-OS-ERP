@@ -13,9 +13,15 @@
 //
 // Confidential — owner-gated on `payroll.statutory.read`. Nothing here commits a payment; a live pay run
 // still needs CA/HR/legal GO.
+//
+// **Step-up (Stage E slice 1 · SEC-03 · §28 · GAP-SEC-06 follow-on closed).** The RELEASE steps — approve, lock,
+// reverse — are the ones that move money or undo a run, so they need a RECENT, MFA-backed re-authentication
+// from the SIGNED token, checked here at the API boundary (`requireStepUp`) rather than only in the web-erp
+// session, so a direct API call cannot skip the prompt. Draft, submit and reject are preparation and stay
+// ordinary. The bank-file route in `payroll.ts` declares the same requirement route-level.
 
-import type { Route } from '../../kernel/src/index';
-import { apiError, notFound } from '../../kernel/src/index';
+import type { ReauthRequirement, Route } from '../../kernel/src/index';
+import { apiError, notFound, requireStepUp } from '../../kernel/src/index';
 import {
   evaluatePayRunTransition,
   type PayRunAggregate, type PayRunEvent, type PayRunAction,
@@ -30,6 +36,13 @@ export interface PayRunStoreDeps {
 
 // 'draft' bootstraps a run; the rest are the engine's transition actions.
 const ACTIONS: readonly (PayRunAction | 'draft')[] = ['draft', 'submit', 'approve', 'reject', 'lock', 'reverse'];
+
+/** The pay-run steps that RELEASE money or undo a released run — each needs a fresh MFA re-auth (§28). */
+export const PAY_RUN_RELEASE_ACTIONS: readonly PayRunAction[] = ['approve', 'lock', 'reverse'];
+
+/** What a payroll release demands of the sign-in: a re-authentication within 5 minutes, with a second factor —
+ *  the same bar as a privilege grant or an erasure (`services/identity`, `services/customer`). */
+export const PAYROLL_RELEASE_STEP_UP: ReauthRequirement = { withinSeconds: 300, amr: ['mfa'] };
 
 export function payRunStoreRoutes(deps: PayRunStoreDeps): readonly Route[] {
   return [
@@ -71,6 +84,12 @@ export function payRunStoreRoutes(deps: PayRunStoreDeps): readonly Route[] {
         // Every other action must be a legal transition from the STORED state.
         if (typeof b['actor'] !== 'string') {
           throw apiError(400, { code: 'pay_run_append_needs_actor', whatHappened: 'A pay-run step needs actor (who is taking it) — the approver must differ from the submitter (§28).', wasItSaved: 'not_saved', nextSafeAction: 'Send the actor.' });
+        }
+        // A RELEASE step (approve / lock / reverse) needs a fresh, MFA-backed re-authentication from the SIGNED
+        // token — refused 403 `reauthentication_required` BEFORE the stored state is read or anything is
+        // written. Maker ≠ checker below still applies on top (SEC-03, §28).
+        if (PAY_RUN_RELEASE_ACTIONS.includes(action as PayRunAction)) {
+          requireStepUp(ctx, PAYROLL_RELEASE_STEP_UP, Date.parse(deps.now()), `A pay-run '${String(action)}' releases or undoes pay.`);
         }
         const current = await deps.load(ctx.tenantId, payRunId);
         const decision = evaluatePayRunTransition({

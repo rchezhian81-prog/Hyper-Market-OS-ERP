@@ -6,7 +6,8 @@
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Route } from '../../kernel/src/index';
-import { notFound } from '../../kernel/src/index';
+import { notFound, requireStepUp } from '../../kernel/src/index';
+import { publishStepUpNeeded, PUBLISH_STEP_UP } from './publish-step-up';
 import type { CatalogueSnapshot } from '../../../packages/catalogue/src/catalogue';
 import {
   publishPack, packFreshness, canonicalise,
@@ -18,6 +19,10 @@ export {
   type PackSigner, type SignedPack, type PriceApproval, type PublishRefusal,
   type PublishResult, type PackRejection, type AcceptResult,
 } from './pack';
+export {
+  publishStepUpNeeded, PUBLISH_STEP_UP, DEFAULT_BULK_PUBLISH_THRESHOLD,
+  type PublishStepUpDecision, type PublishSensitivity,
+} from './publish-step-up';
 
 /**
  * HMAC-SHA256 signing.
@@ -57,6 +62,13 @@ export interface CatalogueDeps {
   ) => Promise<CatalogueSnapshot> | CatalogueSnapshot;
   readonly approvalsSince: (tenantId: string, version: number) => Promise<readonly PriceApproval[]> | readonly PriceApproval[];
   readonly now: () => string;
+  /**
+   * The tenant's bulk-publish threshold (the owner setting `catalogue.bulk_publish_threshold`): how many
+   * products one publish may add, change or remove before it needs a fresh second-factor sign-in (ADR-0013
+   * point 4). Absent, or resolving to nothing → the setting's default. Read at request time so a change is in
+   * force on the next publish.
+   */
+  readonly bulkPublishThreshold?: (tenantId: string) => Promise<number | undefined> | number | undefined;
 }
 
 /**
@@ -100,6 +112,18 @@ export function catalogueRoutes(deps: CatalogueDeps): readonly Route[] {
           ...(typeof body.asOf === 'string' ? { asOf: body.asOf } : {}),
         });
         const approvals = await deps.approvalsSince(ctx.tenantId, previous?.snapshot.version ?? 0);
+
+        // STEP-UP (ADR-0013 point 4 · SEC-03 · §28 · Stage E slice 1): a BULK publish (at or above the owner's
+        // threshold of products added / changed / removed) or a SENSITIVE one (a regulated product added or
+        // changed) needs a RECENT, MFA-backed re-authentication from the SIGNED token — checked here, at the
+        // API boundary, before anything is signed or stored, so a direct call cannot skip the web-erp prompt.
+        // A routine publish (a few ordinary lines) is not asked. The refusal says exactly why this one was.
+        const stepUp = publishStepUpNeeded({
+          ...(previous === undefined ? {} : { previous: previous.snapshot }),
+          next: snapshot,
+          bulkThreshold: await deps.bulkPublishThreshold?.(ctx.tenantId),
+        });
+        if (stepUp.needed) requireStepUp(ctx, PUBLISH_STEP_UP, Date.parse(deps.now()), stepUp.because);
 
         const result = publishPack({
           snapshot,

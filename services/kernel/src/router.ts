@@ -10,7 +10,7 @@
 // difference shows up exactly on the endpoint nobody wrote a test for.
 
 import type { Permission } from '../../../packages/rbac/src/rbac';
-import type { ReauthRequirement } from './step-up';
+import type { ReauthEvidence, ReauthRequirement } from './step-up';
 
 export type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
@@ -35,6 +35,14 @@ export interface RequestContext {
   /** Present on writes; the kernel has already checked it. */
   readonly idempotencyKey?: string;
   readonly traceId: string;
+  /**
+   * The SIGNED token's re-authentication evidence (`auth_time` / `amr`), placed here by the pipeline and never
+   * by the caller. A handler whose sensitivity depends on the REQUEST — a payroll step that is an approval
+   * rather than a draft, a catalogue publish that is bulk rather than one line — checks it with
+   * `requireStepUp` (SEC-03 / §28); a route that is sensitive on every call declares `reauth` instead.
+   * Absent when the token carries no such evidence, which `requireStepUp` refuses.
+   */
+  readonly reauth?: ReauthEvidence;
 }
 
 export interface HandlerResult {
