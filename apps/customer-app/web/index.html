@@ -73,7 +73,7 @@
       .say.done { border-left: 5px solid var(--good); }
 
       label { display: block; font-size: 15px; color: var(--muted); margin-bottom: 6px; }
-      input[type='search'], input[type='text'] {
+      input[type='search'], input[type='text'], input[type='tel'] {
         width: 100%; min-height: var(--tap); background: #0b1220; color: var(--ink);
         border: 1px solid var(--line); border-radius: 10px; padding: 0 14px; font-size: 17px;
       }
@@ -188,6 +188,34 @@
         <h2 id="slot-title">When would you like it?</h2>
         <div class="rows" id="slots"></div>
         <button id="locate" class="wide" type="button">Use my location</button>
+
+        <!--
+          Sign in, right where it is needed and not before: browsing and filling the basket are for
+          anyone (M20-FR-01, guest by design); ORDERING is for a signed-in customer, because the shop
+          must know whose order it is. A thin client (M02 / M20 / M22): no password, no key, no
+          minting — the auth backend sends a one-time code and hands back a short-lived session token
+          that the shop model holds in memory for the tab's life (hard rule #4).
+        -->
+        <h2 id="signin-title">Sign in to order</h2>
+        <div class="say" id="signin" role="group" aria-labelledby="signin-title">
+          <p class="lead" id="signin-lead">We will send a one-time code to your phone. The shop never sees a password.</p>
+          <div id="si-step-phone">
+            <label for="si-phone" id="si-phone-label">Mobile number</label>
+            <input id="si-phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+91 90000 00000" />
+            <button id="si-send" class="wide" type="button">Send code</button>
+          </div>
+          <div id="si-step-code" hidden>
+            <label for="si-code" id="si-code-label">Enter the code</label>
+            <input id="si-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" />
+            <button id="si-verify" class="wide" type="button">Verify and sign in</button>
+          </div>
+          <div id="si-step-in" hidden>
+            <p class="note" id="si-who">—</p>
+            <button id="si-out" type="button">Sign out</button>
+          </div>
+          <p class="note" id="si-status" role="status" aria-live="polite"></p>
+        </div>
+
         <button id="pay" class="primary wide" type="button">Pay and place the order</button>
       </section>
 
@@ -195,6 +223,8 @@
       <section id="view-order" hidden>
         <h1 id="order-title">My order</h1>
         <p class="say" id="order-say">—</p>
+        <!-- Shown only while a basket is prepared and NOT sent: one tap re-sends the SAME order. -->
+        <button id="send-now" class="primary wide" type="button" hidden>Send my order now</button>
       </section>
 
       <!--

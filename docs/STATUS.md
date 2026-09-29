@@ -287,11 +287,47 @@ accounts.
   answer instead of the browser's online flag; the portal sign-in's auth backend is an identity-provider
   component of the deployment (the API verifies and never mints, hard rule #4), test-mode until the OIDC
   provider is chosen.
+- **Stage C, family M20 (customer app), slice 2 — done (29 Sep 2026): the app's REAL hop to the shop
+  (M20-FR-03, §31 customer row, hard rules #3 #4).** Until now the customer app never spoke to the cloud: its
+  "reached the shop" flag was the browser's online flag — a guess about the network, not a fact about the
+  order. Now (`apps/customer-app/src/shop-transport.ts`, `apps/customer-app/src/browser-entry.ts`,
+  `apps/customer-app/web/app.js`): **Pay and place** runs the session's own checks first (reviewed, resolved,
+  current prices, slot chosen, no card number — none of these ever reaches the network), then POSTs the
+  basket to `POST /v1/storefront/orders/:orderId` with the customer's session token and an idempotency key
+  that IS the order, and what the shop answered is what the customer is told: it has the order (the screen
+  says confirmed **because the shop said so**), it refused it (in the shop's own words), the sign-in has
+  ended (sign in again, basket kept), it could not answer (nothing confirmed, same order id kept for the
+  retry so a saved order cannot double), or the request never reached it — **prepared, not sent**, nothing
+  charged, and the SAME order goes once by itself when the connection returns or by one tap ("Send my order
+  now"). A second tap of Pay on a sent basket sends nothing. **Sign-in moved into the shop page**, right where
+  ordering needs it (browsing stays guest, M20-FR-01): a thin OTP client — no password, no key, no minting —
+  hands the short-lived token straight to the shop model, which holds it in memory only (hard rule #4);
+  sign-out forgets it. The store box now names the **store that fulfils the app's orders** in the customer
+  screen's data (the store of the pack — the same basis the till's own stock movements use, so a customer's
+  reservation and a till sale draw on one stock figure, P-02); with no store named the app refuses to send
+  rather than guess. Proven: transport 10 (`tests/unit/shop-transport.test.ts`), the hop against a scripted
+  shop 13 (`tests/unit/customer-app-places-through-the-shop.test.ts`), the same `bootShop` + transport driven
+  into the REAL API kernel 5 (`tests/integration/the-app-orders-through-the-cloud.test.ts`: the cloud holds
+  the order for the signed-in customer with the payment and real stock reserved, a lost request is sent once
+  when it gets through, replay is one order, 401 → signed out with the basket kept, no role / no entitlement
+  → the shop's words), and **a real browser** 2 (`tests/e2e/customer-order-delivery.e2e.ts`: search → basket
+  → check → slot → device location → sign in by one-time code → pay → CONFIRMED because the shop has it, one
+  authenticated POST, stock reserved, a second tap places nothing; and with the connection cut at the moment
+  of paying: NOT SENT, nothing charged, no request, then the same order goes once by itself when the
+  connection returns). Honesty guardrail updated: the view holds no `reachedTheShop` flag at all, re-sends
+  by `retry()` only, mints no order id, and keeps the token nowhere but the model. **No module rung change**
+  (M20 stays PARTIALLY WIRED on FR-04's erasure execution; FR-03 is now browser-verified end to end).
+  **What remains for a real store (deployment, not code in this repo):** the auth backend — OTP begin/verify,
+  session revoke on sign-out, and the customer's registration (the `customer` role granted on the first
+  verified sign-in) — is an identity-provider component of the deployment, played in the e2e by a stand-in
+  running the production OTP engines and the local test IdP; and the store's reverse proxy must serve the
+  customer app, `/auth/*` and `/v1/*` on ONE origin (the app is relative by design, so the token goes only
+  to the host that served the page). Both are Stage F items.
 - **Stage C — remaining, in order:**
   then family by family through the 57 remaining PARTIALLY_WIRED items (D01-FR-06 content authoring,
   D02-FR-06 display funding, D07 coupons/referrals, M21 compensation, M23 close second source, …). OA-12 was
   already answered and closed on 23 Sep — nothing to un-park.
-- **Next:** M20 slice 1 PR → merge → M20 slice 2 (the app's real transport to `/v1/storefront/orders`) → M19 → M22 → M23 → M27 → M35 → M36 → M01, one family per slice.
+- **Next:** M20 slice 2 PR → merge → M19 → M22 → M23 → M27 → M35 → M36 → M01, one family per slice; Stage F must add the customer-app auth backend + one-origin proxy (see the M20 slice 2 bullet).
 
 ---
 

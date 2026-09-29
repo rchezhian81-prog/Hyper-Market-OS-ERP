@@ -118,16 +118,34 @@ describe('nothing is said to be deleted that has not been deleted', () => {
 });
 
 describe('prepared is not placed — the inverse of the till', () => {
-  it('never decides for itself that the order arrived', () => {
-    // `reachedTheShop` is the transport's answer. A view that set it to `true` unconditionally
-    // would tell somebody their order was placed when it never left the phone.
-    expect(code(APP)).toMatch(/reachedTheShop: isOnline\(\)/);
-    expect(code(APP)).not.toMatch(/reachedTheShop: true/);
+  it('never decides for itself that the order arrived — the shop\'s answer is the only thing that places it', () => {
+    // Since M20 slice 2 the view does not even hold a `reachedTheShop` flag: it calls `shop.place`
+    // and the session reports what the SHOP answered. A view that set the flag itself — from the
+    // browser's online flag, or to `true` — would tell somebody their order was placed when it
+    // never left the phone.
+    expect(code(APP)).not.toMatch(/reachedTheShop/);
+    expect(code(APP)).toMatch(/await shop\.place\(/);
+    expect(code(APP)).not.toMatch(/shop\.send\(/);
+  });
+
+  it('re-sends a prepared basket when the connection returns, and by one tap — the SAME order, never a second', () => {
+    expect(code(APP)).toMatch(/shop\.retry\(\)/);
+    expect(code(APP)).toMatch(/addEventListener\('online', \(\) => \{ void sendPrepared\(\); \}\)/);
+    expect(HTML).toMatch(/id="send-now"/);
+    // No order id is minted in the view any more — the session owns it, so a retry cannot invent a new one.
+    expect(code(APP)).not.toMatch(/ORD-\$\{/);
+  });
+
+  it('hands the session token straight to the shop model and keeps it nowhere else (hard rule #4)', () => {
+    expect(code(APP)).toMatch(/shop\.signedIn\(out\.token\)/);
+    expect(code(APP)).not.toMatch(/localStorage|sessionStorage|document\.cookie/);
+    expect(code(APP)).not.toMatch(/token[^\n]*(setItem|cookie|location\.(href|search|hash))/);
+    expect(HTML).not.toMatch(/type="password"/i);
   });
 
   it('shows the model’s words for a basket that was not sent', () => {
     expect(code(APP)).toMatch(/stage === 'waiting_for_signal'/);
-    expect(code(APP)).toMatch(/result\.state\.tellTheCustomer/);
+    expect(code(APP)).toMatch(/outcome\.state\.tellTheCustomer/);
   });
 
   it('holds no sentence of its own claiming an order was placed', () => {

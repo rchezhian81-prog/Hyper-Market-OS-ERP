@@ -53,6 +53,14 @@ const WORDS = {
     needLocation: 'Please share your location first, so we can check we deliver to you.',
     nothingToOrder: 'There is nothing in your basket to order.',
     orderTitle: 'My order', noOrderYet: 'You have not placed an order yet.',
+    signInTitle: 'Sign in to order', signInLead: 'We will send a one-time code to your phone. The shop never sees a password.',
+    mobileNumber: 'Mobile number', sendCode: 'Send code', enterCode: 'Enter the code', verifyAndSignIn: 'Verify and sign in',
+    signOut: 'Sign out', signedInAs: 'Signed in as', signedIn: 'Signed in.', signedOutNow: 'Signed out.',
+    enterNumberFirst: 'Please enter your mobile number.', sendingCode: 'Sending a code to your phone…',
+    codeSent: 'We sent a code to your phone. Enter it below.', codeNotSent: 'We could not send a code. Please check the number and try again.',
+    codeNotAccepted: 'That code was not accepted. Please try again.',
+    needSignIn: 'Please sign in first, so the shop knows whose order this is. Your basket is kept.',
+    sendingOrder: 'Sending your order to the shop…', sendNow: 'Send my order now', shopSaidNo: 'The shop did not accept the order',
     privacyTitle: 'My information',
     privacyLead: 'You decide what we may do with your information. You can change any of this at any time, in one tap.',
     on: 'ON', off: 'OFF', requiredPurpose: 'We have to do this to deliver the order you placed — it is not marketing, and you cannot be sent anything else with it.',
@@ -104,6 +112,14 @@ const WORDS = {
     priceChanged: 'நீங்கள் யோசித்துக் கொண்டிருந்தபோது விலை மாறியது. பணம் செலுத்தும் முன் கூடையை மீண்டும் சரிபார்க்கவும்.',
     unavailableNow: 'இன்று கிடைக்கவில்லை', shortNow: 'எங்களிடம் உள்ளது',
     subtotal: 'கூடை மொத்தம்', deliveryExtra: 'டெலிவரிக் கட்டணம் கடைசியில் கணக்கிடப்படும்.',
+    signInTitle: 'ஆர்டர் செய்ய உள்நுழைக', signInLead: 'உங்கள் தொலைபேசிக்கு ஒரு முறை குறியீடு அனுப்புவோம். கடைக்கு உங்கள் கடவுச்சொல் தெரியாது.',
+    mobileNumber: 'கைபேசி எண்', sendCode: 'குறியீடு அனுப்பு', enterCode: 'குறியீட்டை உள்ளிடவும்', verifyAndSignIn: 'சரிபார்த்து உள்நுழைக',
+    signOut: 'வெளியேறு', signedInAs: 'உள்நுழைந்தவர்', signedIn: 'உள்நுழைந்தீர்கள்.', signedOutNow: 'வெளியேறினீர்கள்.',
+    enterNumberFirst: 'உங்கள் கைபேசி எண்ணை உள்ளிடுங்கள்.', sendingCode: 'உங்கள் தொலைபேசிக்கு குறியீடு அனுப்பப்படுகிறது…',
+    codeSent: 'உங்கள் தொலைபேசிக்கு குறியீடு அனுப்பினோம். கீழே உள்ளிடுங்கள்.', codeNotSent: 'குறியீடு அனுப்ப முடியவில்லை. எண்ணைச் சரிபார்த்து மீண்டும் முயலுங்கள்.',
+    codeNotAccepted: 'அந்தக் குறியீடு ஏற்கப்படவில்லை. மீண்டும் முயலுங்கள்.',
+    needSignIn: 'முதலில் உள்நுழையுங்கள் — இது யாருடைய ஆர்டர் என்று கடைக்குத் தெரிய வேண்டும். உங்கள் கூடை அப்படியே உள்ளது.',
+    sendingOrder: 'உங்கள் ஆர்டர் கடைக்கு அனுப்பப்படுகிறது…', sendNow: 'என் ஆர்டரை இப்போது அனுப்பு', shopSaidNo: 'கடை ஆர்டரை ஏற்கவில்லை',
   },
 };
 let lang = 'en';
@@ -138,6 +154,7 @@ function sampleShop() {
     { productId: 'p3', name: 'Coconut oil 1L', priceMinor: 320_00, unitPriceMinor: 320_00 },
   ];
   let lines = [];
+  let sampleSignedIn = false;
   let consent = [
     { purpose: 'order_updates', channel: 'sms', granted: true, required: true, tapsToGrant: 1, tapsToWithdraw: 1 },
     { purpose: 'marketing', channel: 'sms', granted: false, required: false, tapsToGrant: 1, tapsToWithdraw: 1 },
@@ -163,6 +180,11 @@ function sampleShop() {
     slots: () => [{ slotId: 'today-evening', capacity: 5, booked: 0 }],
     chooseSlot: () => ({ ok: true, state: { stage: 'slot_booked', lines, slotId: 'today-evening', tellTheCustomer: 'Sample slot booked.' } }),
     send: () => ({ ok: true, state: { stage: 'waiting_for_signal', lines, tellTheCustomer: 'This is a sample shop, so nothing was sent.' } }),
+    place: () => Promise.resolve({ ok: true, shopHasIt: false, orderId: 'SAMPLE', detail: 'sample', state: { stage: 'waiting_for_signal', lines, tellTheCustomer: 'This is a sample shop, so nothing was sent.' } }),
+    retry: () => Promise.resolve(null),
+    signedIn: () => { sampleSignedIn = true; },
+    signOut: () => { sampleSignedIn = false; },
+    isSignedIn: () => sampleSignedIn,
     statusLine: () => null,
     consent: () => consent,
     setConsent: (purpose, channel, granted) => {
@@ -358,6 +380,7 @@ function renderBasket() {
     }));
   }
 
+  paintSignIn();
   el('slots').replaceChildren(...shop.slots().map((slot) => {
     const row = document.createElement('div');
     row.className = 'row';
@@ -419,46 +442,142 @@ el('accept').addEventListener('click', () => {
   render();
 });
 
+// ── Sign in — a thin client (M02 / M20 / M22) ─────────────────────────────
+//
+// No password, no signing key, no token-minting code in this page. The auth backend sends a
+// one-time code to the customer's phone; on a verified code it hands back a short-lived session
+// token, which goes STRAIGHT to the shop model (`shop.signedIn`) and is held there, in memory, for
+// the tab's life — never in storage, never in a cookie this script sets (hard rule #4). This file
+// keeps only the session id, to ask the backend to revoke the session on sign-out.
+let challengeId = null;
+let sessionId = null;
+let signedInPhone = null;
+
+async function post(path, body) {
+  const res = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  return res.json();
+}
+function sayStatus(key, tone = '') {
+  el('si-status').textContent = key === '' ? '' : t(key);
+  el('si-status').className = 'note' + (tone === 'bad' ? ' bad' : '');
+}
+function paintSignIn() {
+  const signed = shop.isSignedIn();
+  el('si-step-phone').hidden = signed || challengeId !== null;
+  el('si-step-code').hidden = signed || challengeId === null;
+  el('si-step-in').hidden = !signed;
+  el('si-who').textContent = signed ? `${t('signedInAs')} ${signedInPhone ?? ''}` : '';
+  el('signin-title').textContent = t('signInTitle');
+  el('signin-lead').textContent = t('signInLead');
+  el('si-phone-label').textContent = t('mobileNumber');
+  el('si-send').textContent = t('sendCode');
+  el('si-code-label').textContent = t('enterCode');
+  el('si-verify').textContent = t('verifyAndSignIn');
+  el('si-out').textContent = t('signOut');
+}
+el('si-send').addEventListener('click', async () => {
+  const phoneNumber = el('si-phone').value.trim();
+  if (phoneNumber === '') { sayStatus('enterNumberFirst', 'bad'); return; }
+  sayStatus('sendingCode');
+  try {
+    const out = await post('/auth/otp/begin', { phoneNumber });
+    if (out && out.ok) {
+      challengeId = out.challengeId;
+      signedInPhone = phoneNumber;
+      paintSignIn();
+      el('si-code').focus();
+      sayStatus('codeSent');
+      return;
+    }
+  } catch { /* fall through — the backend could not be reached */ }
+  sayStatus('codeNotSent', 'bad');
+});
+el('si-verify').addEventListener('click', async () => {
+  const code = el('si-code').value.trim();
+  try {
+    const out = await post('/auth/otp/verify', { challengeId, code });
+    if (out && out.ok) {
+      shop.signedIn(out.token); // the token's only destination
+      sessionId = out.sessionId;
+      challengeId = null;
+      el('si-code').value = '';
+      paintSignIn();
+      sayStatus('signedIn');
+      return;
+    }
+  } catch { /* fall through */ }
+  sayStatus('codeNotAccepted', 'bad');
+});
+el('si-out').addEventListener('click', async () => {
+  // Forgetting the token here is the easy half; the backend revoking the session is what protects
+  // a replayed token (proved in the login e2e). Either way this page holds nothing afterwards.
+  shop.signOut();
+  const ending = sessionId;
+  sessionId = null;
+  signedInPhone = null;
+  paintSignIn();
+  sayStatus('signedOutNow');
+  if (ending !== null) { try { await post('/auth/signout', { sessionId: ending }); } catch { /* nothing to hold on to either way */ } }
+});
+
 /**
- * Pay and send.
+ * Pay and place — THROUGH THE SHOP.
  *
- * **The screen never decides whether the order got there.** `reachedTheShop` is whether the
- * connection is actually up; the model turns that into either a placed order or a basket that is
- * explicitly *not sent*. There is no branch in this file that says "order placed" on its own
- * authority, which is the whole point.
+ * **The screen never decides whether the order got there.** `shop.place` runs the session's own
+ * checks, sends the basket to the shop with the session token, and reports what the shop answered:
+ * it has the order, it refused it (in its own words), the sign-in has ended, it could not answer,
+ * or the request never reached it — in which case the basket is *prepared, not sent* and goes on
+ * the next tap or when the connection returns. There is no branch in this file that says "order
+ * placed" on its own authority, which is the whole point.
  */
-el('pay').addEventListener('click', () => {
+function showOutcome(outcome) {
+  if (!outcome.ok) {
+    const why = outcome.refusedBecause === 'not_reviewed' ? t('checkFirst')
+      : outcome.refusedBecause === 'no_slot_booked' ? t('chooseTime')
+        : outcome.refusedBecause === 'review_is_out_of_date' ? t('priceChanged')
+          : outcome.refusedBecause === 'not_signed_in' ? t('needSignIn')
+            : outcome.tellTheCustomer; // the session's or the shop's own sentence, never a cheerier one
+    if (outcome.refusedBecause === 'signed_out') { sessionId = null; paintSignIn(); }
+    tell(outcome.refusedBecause === 'the_shop_refused' ? t('shopSaidNo') : t('payAndPlace'), why, 'bad');
+    render();
+    return;
+  }
+  // The model's own words. "Prepared, not sent" is not a kind of placed, and rewording it here
+  // would put a second, untested version of the most consequential sentence in the app.
+  const prepared = !outcome.shopHasIt && outcome.state.stage === 'waiting_for_signal';
+  tell(prepared ? t('notSentYet') : t('myOrder'), outcome.state.tellTheCustomer, prepared ? 'bad' : 'good');
+  show('order');
+}
+el('pay').addEventListener('click', async () => {
   const state = shop.state();
   if (state.lines.length === 0) { tell(t('yourBasket'), t('nothingToOrder'), 'bad'); return; }
   // Delivery needs to know where the customer is. Ask for it before paying rather than letting the
   // distance check refuse from {0,0} with a puzzling "9,000 km away" — a clear ask, not a riddle.
   if (!shop.hasLocation()) { tell(t('payAndPlace'), t('needLocation'), 'bad'); return; }
-
-  const result = shop.send({
-    orderId: `ORD-${Date.now().toString(36).toUpperCase()}`,
-    // A provider token, supplied by the payment provider's own sheet. A card number here is
-    // refused by the model outright rather than redacted (hard rule #3).
-    providerRef: window.shopPaymentRef ?? 'tok_pending',
-    result: 'authorised',
-    reachedTheShop: isOnline(),
-  });
-
-  if (!result.ok) {
-    const why = result.refusedBecause === 'not_reviewed' ? t('checkFirst')
-      : result.refusedBecause === 'no_slot_booked' ? t('chooseTime')
-        : result.refusedBecause === 'review_is_out_of_date' ? t('priceChanged')
-          : result.state.tellTheCustomer;
-    tell(t('payAndPlace'), why, 'bad');
-    render();
-    return;
+  if (!shop.isSignedIn()) { tell(t('signInTitle'), t('needSignIn'), 'bad'); el('si-phone').focus(); return; }
+  el('pay').disabled = true;
+  el('pay').textContent = t('sendingOrder');
+  try {
+    const outcome = await shop.place({
+      // A provider token, supplied by the payment provider's own sheet. A card number here is
+      // refused by the model outright rather than redacted (hard rule #3).
+      providerRef: window.shopPaymentRef ?? 'tok_pending',
+      result: 'authorised',
+    });
+    showOutcome(outcome);
+  } finally {
+    el('pay').disabled = false;
+    el('pay').textContent = t('payAndPlace');
   }
-
-  // The model's own words. "Prepared, not sent" is not a kind of placed, and rewording it here
-  // would put a second, untested version of the most consequential sentence in the app.
-  const prepared = result.state.stage === 'waiting_for_signal';
-  tell(prepared ? t('notSentYet') : t('myOrder'), result.state.tellTheCustomer, prepared ? 'bad' : 'good');
-  show('order');
 });
+
+/** A prepared basket goes when the connection returns, or on one tap — the SAME order, never a second. */
+async function sendPrepared() {
+  const outcome = await shop.retry();
+  if (outcome !== null) showOutcome(outcome);
+}
+el('send-now').addEventListener('click', () => { void sendPrepared(); });
+window.addEventListener('online', () => { void sendPrepared(); });
 
 function renderOrder() {
   const line = shop.statusLine();
@@ -467,6 +586,8 @@ function renderOrder() {
     ? state.tellTheCustomer
     : t('noOrderYet'));
   el('order-say').className = 'say' + (state.stage === 'waiting_for_signal' ? ' stop' : line ? ' done' : '');
+  el('send-now').hidden = state.stage !== 'waiting_for_signal';
+  el('send-now').textContent = t('sendNow');
 }
 
 // ── The privacy centre ──────────────────────────────────────────────────────
@@ -567,6 +688,7 @@ function paintChrome() {
   el('slot-title').textContent = t('whenWouldYouLike');
   el('locate').textContent = t('useMyLocation');
   el('pay').textContent = t('payAndPlace');
+  paintSignIn();
   el('order-title').textContent = t('orderTitle');
   el('privacy-title').textContent = t('privacyTitle');
   el('privacy-lead').textContent = t('privacyLead');
