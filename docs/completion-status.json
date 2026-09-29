@@ -494,7 +494,7 @@
     {
       "id": "MG-05",
       "label": "INTEGRATION_TESTED",
-      "evidence": "INTEGRATION_TESTED: trial-load on API-12, proven through the real pipeline in tests/integration/migration-pipeline.test.ts"
+      "evidence": "INTEGRATION_TESTED: trial-load on API-12, proven through the real pipeline in tests/integration/migration-pipeline.test.ts. B1a (29 Sep 2026): the ACTUAL load exists — planLoad/executeLoad (packages/migration/src/load.ts) drive a checked extract into an empty, non-demo tenant through the real routes as a named operator, proven in tests/integration/migration-load.test.ts (6) + tests/unit/migration-load.test.ts (24); the operator script, tenant bootstrap and runbook are B1b."
     },
     {
       "id": "MG-06",

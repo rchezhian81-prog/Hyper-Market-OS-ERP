@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Owner program — "complete every module, deploy, then pilot" — Stage A: H-13 closed (29 September 2026)
+## Owner program — "complete every module, deploy, then pilot" — Stage A closed, B1a done (29 September 2026)
 
 **Owner direction (28 Sep 2026, in writing):** act as architect + developer; build every roadmap module to
 finished (no invented requirements — anything beyond the roadmap becomes a change proposal for a written
@@ -45,7 +45,24 @@ accounts.
   falling; (c) sales banked before this change carry no movements — a human-run, idempotent replay
   (append-only compensation) is a B-track item; (d) `scope` is not part of the signed pack bytes
   (`canonicalise` signs tenant / version / builtAt / products / barcodes) — informational, server-side only.
-- **Next:** A2 gate → PR → merge → **B1** (real-data bulk loader + second-tenant procedure).
+- **B1a — done (29 Sep 2026): the real-data load engine (MG-05 actual load).** Until now "trial load" was a
+  timing projection and the only path into the system was one record at a time (STEP-1 plan §4 item 1).
+  `packages/migration/src/load.ts`: `validateBundle` names EVERY row the routes would refuse (duplicate SKU
+  / barcode, unmapped HSN, price above MRP, and the product engine's own food / label safety rules via
+  `validateProduct`); `planLoad` refuses on eight named grounds (production target, demo tenant by id, tenant
+  ≠ target, no operator, target not empty, extract not sealed, blocking exceptions open, malformed rows) and
+  otherwise emits the ORDERED route calls — tax classes → products (full category list each) → barcodes →
+  prices → suppliers (no grants, no logins) → customers (consent recorded as NOT given with evidence; opening
+  points) → ONE opening goods receipt through the real receiving gate (batch-tracked only where batch AND
+  expiry exist; a dropped batch is a stated warning) — every key `<loadId>-…`; `executeLoad` runs a plan over
+  an injected client as the named operator and reports each line (a route's refusal is a failed line, the
+  rest continue). `load-csv.ts` maps the six CSV files (rupees→paise, percent→bps, kg/litre→g/ml, barcode kind
+  by length, "none" allergens = declared none, loose column names). Proven: unit (24) + integration (6: full
+  load reads back as products / barcodes / tax rate / GRN / on-hand 40 & 200 / valuation at cost / points /
+  consent; re-run doubles nothing; below-cost price = one failed line; cashier 403s; demo tenant refused before
+  any call; second tenant isolated). No rung change (MG-05 stays INTEGRATION_TESTED; ledger note updated).
+- **Next:** B1a PR → merge → **B1b** (operator command `scripts/migration-load.mts` over the six CSVs with the
+  MG-02/MG-04 re-checks, `MIGRATION_TARGET_KIND` guard and dry run; second-tenant bootstrap; runbook) → B2.
 
 ---
 
