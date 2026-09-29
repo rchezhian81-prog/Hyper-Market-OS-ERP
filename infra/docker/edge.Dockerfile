@@ -26,6 +26,9 @@ COPY packages ./packages
 COPY services ./services
 COPY edge ./edge
 COPY scripts ./scripts
+# The app shells, so this container can serve screens to the public proxy (ADR-0018). The built bundles
+# (`apps/*/web/*.bundle.js`) are produced on the box by infra/deploy/release.sh before `compose up --build`.
+COPY apps ./apps
 
 # The container runs a BUNDLED artifact, not the raw TypeScript tree. This codebase uses
 # extensionless ESM imports, which current Node's ESM resolver will not resolve from source — so

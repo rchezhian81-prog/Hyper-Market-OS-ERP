@@ -72,13 +72,20 @@ openssl rand -base64 48  # -> IDP_SIGNING_KEY   (the pilot/test IdP signing key)
 # Confirm the safe posture is pinned (already in the template): NODE_ENV=production, MIGRATION_TARGET_KIND=rehearsal.
 ```
 
-## 5. HTTPS in front (TLS terminated before web/api)
-- **If you set a domain (recommended):** run a small **Caddy** reverse proxy — it fetches a free Let's Encrypt
-  certificate automatically and proxies `443 → web (8080)` and the API path `→ api (8081)`. (Caddyfile:
-  `demo.yourdomain { reverse_proxy /v1/* localhost:8081; reverse_proxy localhost:8080 }`.)
-- **If IP-only:** generate a self-signed certificate and terminate TLS with the repo's nginx TLS block
-  (`infra/compose`) — the browser shows a one-time warning, acceptable for a synthetic demo.
-- The DB stays bound to localhost; only 443 is exposed (UFW from step 1).
+## 5. HTTPS in front — built in (ADR-0018)
+- The compose stack now brings up its own **`proxy`** service (Caddy): the ONE public origin on 443, TLS
+  terminated there, plain http redirected. Nothing to install by hand.
+- **If you set a domain (recommended):** in `.env.pilot` set `SRE_PUBLIC_HOST=demo.yourdomain` and
+  `SRE_TLS=<the email address certificate notices should go to>` — a free Let's Encrypt certificate is fetched
+  automatically (the domain must point at this box and 80/443 must be open).
+- **If IP-only:** set `SRE_PUBLIC_HOST=localhost, 127.0.0.1, <the box's public IP>` — the proxy makes the
+  certificates itself; the browser shows a one-time warning, acceptable for a synthetic demo, never for real
+  customers. Keep the first two names: the pipeline's and the stand-up checks use them. (Blank names only this
+  machine, which is fine for the checks and useless for anyone outside the box.)
+- What is public: `/customer/*` (the customer app), `/v1/*` (the API, which authenticates every route itself)
+  and `/auth/*` (customer sign-in — a 503 by name until the sign-in service is deployed). **Staff screens are
+  NOT on the public origin** (404 by name) until a sign-in gate exists in front of them.
+- The DB, `web` and `api` stay bound to localhost; only 443 and 80 are exposed (UFW from step 1).
 
 ## 6. Bring the stack up + validate
 ```bash

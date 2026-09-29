@@ -29,6 +29,7 @@ CLAUDE.md (Technology baseline, roadmap §19) requires: **"Any substitution requ
 | [0015](./0015-persist-batch-expiry-on-the-cloud-ledger.md) | Persist batch expiry on the cloud stock ledger, cloud-only (unblocks A03 near-expiry markdown; ADR-0006 offline path unchanged) | Accepted (owner-directed, 14 Sep 2026) |
 | 0016 | _(reserved — the demo-only sign-in ADR written on the hosted demo box's unmerged server branch; not in this repository yet)_ | — |
 | [0017](./0017-automatic-deployment-of-merged-releases.md) | Automatic deployment of merged releases to the single box — push over a forced-command SSH key, proven rollback, environments carry the trust (Stage F) | Accepted (owner program directive, 29 Sep 2026) |
+| [0018](./0018-one-public-origin.md) | One public https origin: the customer app, the API and sign-in on one address; staff screens off it until a sign-in gate exists (Stage F) | Accepted (owner program directive, 29 Sep 2026) |
 
 Further de-facto and proposed decisions (transaction boundaries, Postgres RLS, SHA-256 audit chain,
 observability exporters, OpenAPI, DSR API, hosting/IaC/CD) are catalogued as recommendations in

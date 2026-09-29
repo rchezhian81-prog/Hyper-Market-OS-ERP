@@ -199,6 +199,12 @@ export const STORE_EDGE_CONFIG: readonly Spec[] = [
    * one nobody uses.
    */
   { key: 'EDGE_SCREEN_PORT', numeric: true, optional: true },
+  /**
+   * The address the screens bind to. Absent = loopback, the shop-PC default. A container on a private
+   * compose network with the public proxy in front names it explicitly (ADR-0018); the boot log then says
+   * out loud that the screens are reachable beyond loopback, and no host port is ever published for them.
+   */
+  { key: 'EDGE_SCREEN_HOST', optional: true },
   /** Where `apps/` lives on this box, so the screens can be served from disk. */
   { key: 'EDGE_APPS_DIR', optional: true },
   /**

@@ -30,7 +30,12 @@ import { readFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
 import { GLOBAL_FOR, SCREENS, payloadFor, catalogueFreshness, posReceiptTemplate, type ScreenInput, type ScreenName } from './screen-data';
 
-/** The one address this may listen on. Named so a test can assert on it. */
+/**
+ * The address this listens on unless told otherwise — loopback, so on a shop PC nothing on the shop network
+ * can read the day's takings. Named so a test can assert on it. The ONE reason to widen it is a container
+ * on a private compose network with the public reverse proxy in front (ADR-0018): `EDGE_SCREEN_HOST` names
+ * the address explicitly, the boot log says so out loud, and no host port is ever published for it.
+ */
 export const SCREEN_HOST = '127.0.0.1';
 
 /** The marker each shell carries where its payload belongs. */
@@ -101,6 +106,8 @@ export const APP_SHELL: Readonly<Record<ScreenName, AppShell>> = Object.freeze({
 
 export interface ScreenServer {
   readonly port: number;
+  /** The address the socket is bound to (`SCREEN_HOST` unless a deployment named another). */
+  readonly host: string;
   stop(): Promise<void>;
 }
 
@@ -234,6 +241,8 @@ export function safeFile(file: string): string | null {
 
 export function startScreenServer(input: {
   readonly port: number;
+  /** The address to bind — `SCREEN_HOST` (loopback) unless a deployment names another (see `SCREEN_HOST`). */
+  readonly host?: string;
   /** Where `apps/` lives on this box. */
   readonly appsDir: string;
   /** Called per request, so every screen reload gets the CURRENT day rather than boot-time state. */
@@ -317,12 +326,13 @@ export function startScreenServer(input: {
 
   return new Promise((resolve, reject) => {
     server.on('error', reject);
-    // Loopback only. Not `0.0.0.0`, not the LAN address — see the note at the top of this file.
-    server.listen(input.port, SCREEN_HOST, () => {
+    // Loopback unless a deployment names another address explicitly — see the note on SCREEN_HOST.
+    server.listen(input.port, input.host ?? SCREEN_HOST, () => {
       const address = server.address();
       const port = typeof address === 'object' && address !== null ? address.port : input.port;
       resolve({
         port,
+        host: input.host ?? SCREEN_HOST,
         // Stop accepting, then drop the connections still open (see the lane server's stop for why).
         stop: () => new Promise((done) => { server.close(() => { done(); }); server.closeAllConnections(); }),
       });

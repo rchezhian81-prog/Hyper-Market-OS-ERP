@@ -41,6 +41,7 @@ to boot / optional. **Set for pilot**: the safe pilot value or "generate".
 | `EDGE_LANE_PORT` | — | optional | — | loopback port the till screen posts sales to | set on a till box |
 | `EDGE_SCREEN_PORT` | — | optional | — | loopback port the screens are served from | set on a screen box |
 | `EDGE_APPS_DIR` | — | optional | — | where `apps/` lives, to serve screens from disk | as installed |
+| `EDGE_SCREEN_HOST` | — | optional | default `127.0.0.1` | the address the screens bind to; a container behind the public proxy names `0.0.0.0` on the private compose network, no host port published, and the boot log says so (ADR-0018) | compose sets it; a shop PC leaves it unset |
 | `EDGE_PACK_FILE` | — | optional | — | the last pack the cloud sent (never defaults — absent ≠ empty) | after first pack |
 | `CLOUD_API_URL` | — | optional | — | **absent = sell-and-queue offline-first**; set to drain to the cloud | set once sync is wanted |
 | `CLOUD_API_TOKEN` | 🔒 | optional | — | store token for cloud drain (minted for a provisioned store login) | mint at set-up |
@@ -52,6 +53,13 @@ to boot / optional. **Set for pilot**: the safe pilot value or "generate".
 `infra/compose/db-init`, same password; a superuser bypasses row-level security and the API refuses to start on one),
 `POSTGRES_PASSWORD` 🔒 (generate URL-safe: `openssl rand -hex 24`), `POSTGRES_PORT` (`5432`), `WEB_PORT` (`8080`),
 `API_PORT` (`8081`). `DATABASE_URL` is composed from `APP_DB_USER` + password + db and left blank in the template on purpose.
+
+The public front (ADR-0018, `infra/compose/Caddyfile`): `SRE_PUBLIC_HOST` (a domain = automatic Let's Encrypt; the box's public IP = the proxy's own certificate for
+that address, demo only; blank = `localhost, 127.0.0.1`, this machine only), `SRE_TLS` (`internal`,
+or the email address for certificate notices when a domain is set), `SRE_DEFAULT_SNI` (`localhost` — the certificate a
+bare-IP client with no server name is given), `SRE_AUTH_ROUTE` (`auth-not-deployed` →
+`/auth/*` answers 503 by name; `auth-upstream` once the sign-in service exists), `SRE_AUTH_UPSTREAM`
+(`auth:8082`), `HTTPS_PORT` (`443`), `HTTP_PORT` (`80`). None is a secret.
 
 ## Rules
 

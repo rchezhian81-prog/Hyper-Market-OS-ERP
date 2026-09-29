@@ -45,6 +45,8 @@ repository settings. Nothing below is typed into this repository.
    token the stand-up used). Test: `sudo -u deploy git -C /opt/sre/app fetch origin main`.
 3. Settings, no secrets: `sudo -u deploy cp /opt/sre/app/infra/deploy/deploy.conf.example /opt/sre/deploy.conf`
    and edit only what differs on your box. Keep `SRE_BUILD_ENV="PILOT_DEMO_BANNER=1"` on the demo box.
+   The stack's public front (ADR-0018) reads `SRE_PUBLIC_HOST` / `SRE_TLS` from `infra/compose/.env.pilot`: set the
+   box's domain there for a real certificate, or its public IP address for the proxy's own certificate (demo only).
 
 **On your own computer:**
 

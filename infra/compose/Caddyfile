@@ -1,0 +1,88 @@
+# infra/compose/Caddyfile — the ONE public origin (ADR-0018, Stage F slice 2).
+#
+# Everything a customer's browser needs is on one https address, so the customer app — relative by design —
+# sends its short-lived token only to the host that served the page:
+#   /v1/*, /livez, /readyz  → the cloud API          (the client address is OVERWRITTEN from the connection,
+#                                                      so nobody can spoof the per-IP rate limit with a header)
+#   /auth/*                 → customer sign-in        (503 by name until the sign-in service is deployed)
+#   /customer/*             → the customer app        (served by the edge's screen server, private network only)
+#   /                       → /customer/
+#   anything else           → 404 by name. Staff screens (till, owner, manager, …) are NOT on the public origin:
+#                             they stay on the store box until a sign-in gate exists in front of them.
+#
+# TLS: SRE_PUBLIC_HOST names the address(es) the site answers to. A domain → a free certificate is fetched
+# automatically (SRE_TLS = the email for certificate notices). Otherwise the proxy makes certificates itself
+# (`internal`) for exactly the names listed — the default `localhost, 127.0.0.1`, plus the box's public IP when
+# an IP-only demo adds it (`localhost, 127.0.0.1, <ip>`; keep the first two, the checks use them); browsers warn
+# once — a synthetic demo, never real customers. (A bare `:443` would name nothing, and the internal issuer would
+# have nothing to issue for — the handshake fails.) Plain http redirects to https. No secret lives here; every
+# value arrives from the environment.
+
+{
+	admin off
+	# A client that connects by bare IP sends no server name; inside a container Caddy then looks the
+	# connection's LOCAL address up — the container's own IP, which has no certificate — and the handshake
+	# fails. This names the certificate to serve such clients: `localhost` by default, always part of the
+	# default site address below. (Proven by the front's first CI runs.)
+	default_sni {$SRE_DEFAULT_SNI}
+}
+
+# Customer sign-in is not deployed yet: say so, by name, rather than 502 into nothing.
+(auth-not-deployed) {
+	handle /auth/* {
+		header Content-Type application/json
+		respond `{"error":{"code":"sign_in_not_deployed","whatHappened":"Customer sign-in is not deployed on this server yet.","wasItSaved":"not_saved","nextSafeAction":"Browse as a guest. Ordering needs sign-in, which arrives with the sign-in service."}}` 503
+	}
+}
+
+# Customer sign-in is deployed at SRE_AUTH_UPSTREAM (Stage F slice 3): set SRE_AUTH_ROUTE=auth-upstream.
+(auth-upstream) {
+	handle /auth/* {
+		reverse_proxy {$SRE_AUTH_UPSTREAM} {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+}
+
+:80 {
+	redir https://{host}{uri} permanent
+}
+
+{$SRE_PUBLIC_HOST} {
+	tls {$SRE_TLS}
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		-Server
+	}
+
+	@api path /v1/* /livez /readyz
+	handle @api {
+		reverse_proxy api:8081 {
+			# The API keys its per-IP rate limit and sign-in lockout on the leftmost X-Forwarded-For entry.
+			# Overwrite it from the connection so a caller's own header cannot stand in for their address.
+			# (Caddy logs this line as "unnecessary" because, with no trusted proxies configured, it already
+			# replaces the header for every client. It stays: the guarantee is then visible here and pinned.)
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	import {$SRE_AUTH_ROUTE}
+
+	@customer path /customer /customer/*
+	handle @customer {
+		reverse_proxy edge:8091
+	}
+
+	handle / {
+		redir /customer/ 302
+	}
+
+	handle {
+		header Content-Type application/json
+		respond `{"error":{"code":"not_on_the_public_origin","whatHappened":"This address is not served on the public origin. Staff screens live on the store box and are not reachable from the internet.","wasItSaved":"not_saved","nextSafeAction":"Open the customer app at /customer/. Staff use the store box."}}` 404
+	}
+}

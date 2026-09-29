@@ -197,6 +197,9 @@ jobs:
             echo "PACK_SIGNING_KEY=$(openssl rand -base64 48)"
             echo "IDP_SIGNING_KEY=$(openssl rand -base64 48)"
             echo "IDP_ISSUER=https://idp.ci.invalid/"
+            # The edge refuses the placeholder tenant id from .env.example (by design); give it a real one so
+            # the edge container comes up and the proxy's /customer/ route below has something to serve.
+            echo "EDGE_TENANT_ID=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
           } >> .env
           PW=$(grep '^POSTGRES_PASSWORD=' .env | tail -1 | cut -d= -f2-)
           # Assembled with printf so the literal scheme://user:password@host shape never appears
@@ -213,6 +216,31 @@ jobs:
           echo "::error::the stack never became ready"
           docker compose logs --no-color | tail -100
           exit 1
+
+      - name: The public origin answers over HTTPS — and only for what is public (ADR-0018)
+        # One address for a customer's browser: the API, the customer app and sign-in — and nothing
+        # else. Staff screens are refused by name. The proxy's own certificate is used here (no
+        # domain in CI), so curl is told not to verify it; the ROUTING is what this proves.
+        run: |
+          cd infra/compose
+          fail() { echo "::error::$1"; docker compose logs --no-color proxy edge | tail -80; exit 1; }
+          for i in $(seq 1 30); do curl -fskS https://127.0.0.1:443/readyz >/dev/null 2>&1 && break; sleep 1; done
+          curl -fskS https://127.0.0.1/readyz | grep -q '"ready":true' || fail "the API's readiness did not come through the proxy"
+          code=$(curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1/v1/catalogue/pack)
+          test "$code" = "401" || fail "/v1 through the proxy should reach the API and be refused without a token (got $code)"
+          curl -sk https://127.0.0.1/customer/ | grep -q 'customer-app.bundle.js' || fail "the customer app is not served on the public origin"
+          code=$(curl -sk -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{}' https://127.0.0.1/auth/otp/begin)
+          test "$code" = "503" || fail "/auth should answer 503 while sign-in is not deployed (got $code)"
+          curl -sk -X POST https://127.0.0.1/auth/otp/begin | grep -q 'sign_in_not_deployed' || fail "the /auth refusal did not say why"
+          for p in /owner/ /pos/ /manager/ /buying/ /admin.html; do
+            code=$(curl -sk -o /dev/null -w '%{http_code}' "https://127.0.0.1$p")
+            test "$code" = "404" || fail "$p is a staff screen and must not be on the public origin (got $code)"
+          done
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:80/customer/)
+          case "$code" in 301|302|307|308) ;; *) fail "plain http should redirect to https (got $code)";; esac
+          curl -skI https://127.0.0.1/customer/ | grep -qi '^strict-transport-security' || fail "no HSTS header"
+          if curl -skI https://127.0.0.1/customer/ | grep -qi '^server:'; then fail "the Server header is exposed"; fi
+          echo "public origin: API, customer app and sign-in refusal on one https address; staff screens refused"
 
       - name: It drains rather than being killed
         run: |

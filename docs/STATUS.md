@@ -857,12 +857,44 @@ accounts.
   as the forced command, put the five `DEPLOY_*` secrets on the `demo` environment — steps 1–9 of the runbook.
   Until then the job is a visible no-op. **Owner decision (not blocking):** a real-data box must be its own
   GitHub environment with *required reviewers* before it gets any deploy secret; the runbook says so.
-- **Next (Stage F):** slice 2 — the one-origin reverse proxy (customer app, `/auth/*`, `/v1/*` on one origin, TLS
-  in front) as a compose service with tests; slice 3 — the external-login auth backend (OTP begin / verify,
-  session revoke, first-sign-in customer registration) as a deployment component shared by the customer app,
-  the B2B portal and the supplier portal (see the M20 slice 2 bullet). Stage E leftovers unchanged: key-based
-  server login runbook (human step, ON HOLD by owner); GAP-DATA-06 (erasure vs the append-only ledger) and the
-  residuals GAP-SEC-04b, GAP-SEC-05b, GAP-DATA-02c. Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
+- **Stage F, slice 2 — done (29 Sep 2026): ONE public https origin — the customer app, the API and sign-in on
+  one address; staff screens off it (ADR-0018 · M20 slice-2 follow-on · P-04 · hard rule #4 · P-08).** The compose
+  stack gains a `proxy` service (Caddy, `infra/compose/Caddyfile`): TLS terminated there — a domain in
+  `SRE_PUBLIC_HOST` gets a free certificate automatically (`SRE_TLS` = the notice email), the box's public IP = the proxy's own
+  certificate for that address (demo only), blank = localhost only — plain http redirected, HSTS / nosniff / DENY frames /
+  no-referrer / no `Server` header, admin endpoint off. Routes: `/v1/*`, `/livez`, `/readyz` → `api` with
+  `X-Forwarded-For` OVERWRITTEN from the connection (the kernel keys its per-IP rate limit and sign-in lockout
+  on that header, so a caller cannot spoof it); `/auth/*` → 503 `sign_in_not_deployed` by name (snippet
+  `auth-not-deployed`; `SRE_AUTH_ROUTE=auth-upstream` forwards to `SRE_AUTH_UPSTREAM` once slice 3 lands);
+  `/customer/*` → the edge's screen server (the customer app WITH the published catalogue and slots, the same
+  pack the till trades on); `/` → `/customer/`; **everything else 404 by name** — till, owner, manager and the
+  other staff screens stay on the store box until a sign-in gate exists in front of them. To serve that one
+  screen the edge may now bind its screens beyond loopback ONLY when told: new optional `EDGE_SCREEN_HOST`
+  (default `127.0.0.1`, guardrail still pins it), compose sets `0.0.0.0` on the private network with NO host
+  port, the boot line says in words that the screens are reachable beyond loopback, and the edge image carries
+  `apps/`. `web`, `api`, `db` bound to loopback; only the proxy publishes 443/80. The CI `deploy` job now proves
+  it over TLS on every run: readiness through the proxy, `/v1` reaching the API and refused without a token, the
+  customer app served, `/auth` 503 by name, five staff paths 404, http → https, HSTS present, no `Server` header
+  (and the edge container now boots in CI with a real tenant id). Tests:
+  `tests/integration/the-edge-screens-bind-where-told.test.ts` (3 — the REAL edge: loopback by default with the
+  customer app served, the explicit widening with the plain-spoken boot line, an explicit loopback raises no
+  alarm), `tests/guardrails/the-public-origin-is-one-and-guarded.test.ts` (9 — the Caddyfile's routing table and
+  posture, compose's one public front and loopback binds, the edge's private-only screens, the env templates,
+  the CI proof), `tests/guardrails/the-box-never-invents-an-answer.test.ts` (updated: loopback default pinned,
+  widening only by explicit setting). Docs: ADR-0018 (+ index), SAFE-PILOT-ENVIRONMENT (HTTPS built in),
+  DEMO-PILOT-STANDUP-RUNBOOK §5, ENV-VAR-INVENTORY, infra README, automatic-deployment runbook, traceability.
+  **Honest boundary:** customer ORDERING still needs sign-in — `/auth/*` is a 503 by name until slice 3; staff
+  screens are deliberately not public. **Owner decision (not blocking):** the demo's public address — a domain
+  (recommended, real certificate) or the box's IP (browser warning) — set in `.env.pilot` by the custodian.
+  (The front's first CI run failed the TLS handshake on a bare `:443` site address — the internal issuer had no name
+  to issue for; fixed by naming the hosts, recorded in ADR-0018.)
+- **Next (Stage F):** slice 3 — the customer sign-in service (`/auth/otp/begin`, `/auth/otp/verify`,
+  `/auth/action`, `/auth/signout`; session revoke on sign-out; the `customer` role granted on the first verified
+  sign-in) as a deployment component running the production OTP engines behind the proxy, test-mode until the
+  OTP/SMS provider is chosen (no live provider — standing constraint), shared by the customer app, the B2B portal
+  and the supplier portal. Then a staff sign-in gate before any staff screen joins the public origin. Stage E
+  leftovers unchanged: key-based server login runbook (human step, ON HOLD by owner); GAP-DATA-06 and the
+  residuals GAP-SEC-04b, GAP-SEC-05b, GAP-DATA-02c.
 
 ---
 
