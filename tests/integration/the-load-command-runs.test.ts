@@ -45,7 +45,10 @@ let api: string;
 // block the server the subprocess is trying to reach and the two would wait on each other forever.
 const run = (bundle: string, args: readonly string[]): Promise<{ code: number; out: string }> =>
   new Promise((resolve) => {
-    execFile(process.execPath, [join(ROOT, 'scripts', 'dist', bundle), ...args], { encoding: 'utf8', cwd: ROOT }, (err, stdout, stderr) => {
+    // The child never inherits a database address: the CI job that runs these suites exports one for its
+    // PostgreSQL service, and a tool that picked it up would write a tenant into a ledger this test never named.
+    const { DATABASE_URL: _dropped, ...childEnv } = process.env;
+    execFile(process.execPath, [join(ROOT, 'scripts', 'dist', bundle), ...args], { encoding: 'utf8', cwd: ROOT, env: childEnv }, (err, stdout, stderr) => {
       const code = err === null ? 0 : (err as { code?: number | string }).code;
       resolve({ code: typeof code === 'number' ? code : -1, out: `${stdout}${stderr}` });
     });

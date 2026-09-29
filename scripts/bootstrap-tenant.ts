@@ -59,9 +59,12 @@ async function main(): Promise<void> {
   for (const a of plan.admins) out(`  • ${a.userId} as ${a.roleId}`);
   if (dryRun) { out('DRY RUN — nothing was written.'); process.exit(0); }
 
-  const databaseUrl = env['DATABASE_URL'] ?? process.env['DATABASE_URL'];
+  // The env FILE is the box. Deliberately no fall-back to the process environment: a database address
+  // inherited from a shell nobody named is exactly how a tenant ends up seeded into the wrong ledger
+  // (it happened once, in CI, to the test that expected "no database").
+  const databaseUrl = env['DATABASE_URL'];
   if (databaseUrl === undefined || databaseUrl === '') {
-    out('DATABASE_URL is not in the env file (or the environment) — cannot reach the ledger. Nothing was written.');
+    out(`DATABASE_URL is not in the env file (${envFile}) — cannot reach the ledger. Nothing was written. (The process environment is deliberately NOT consulted.)`);
     process.exit(2);
   }
   const db = new Pool({ connectionString: databaseUrl, max: 2 });
