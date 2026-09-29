@@ -106,19 +106,52 @@ describe('runLoadCommand — the stages', () => {
     expect(out).toMatchObject({ exitCode: 1, stage: 'completeness' });
     expect(out.lines.join('\n')).toContain('customers.csv is short');
   });
-  it('no cleaning report → refused; an undecided blocking exception → refused (MG-04)', async () => {
+  it('no cleaning report → refused; an undecided blocking exception → refused; a decision recorded on the CLOUD → proceeds (MG-04, C3c)', async () => {
     const { h, input } = base();
     await h.seedOwner(REAL, OPERATOR);
+    const BLOCKING = { exceptionId: 'EXC-00001', tenantId: REAL, kind: 'unmapped_tax_code', severity: 'blocking', confidence: 'certain', legacyIds: ['P-RICE'], evidence: 'hsn 1006 has no rate' };
+    // Neither a file nor a recorded pass: refused, and the line names both places it looked.
     const none = await runLoadCommand({ ...input, exceptions: undefined });
     expect(none).toMatchObject({ exitCode: 1, stage: 'cleaning' });
-    const open = await runLoadCommand({ ...input, exceptions: [{ exceptionId: 'EXC-00001', tenantId: REAL, kind: 'unmapped_tax_code', severity: 'blocking', confidence: 'certain', legacyIds: ['P-RICE'], evidence: 'tax code 1006X has no mapping' }] });
+    expect(none.lines.join('\n')).toContain('no cleaning pass recorded on the cloud');
+    // An undecided blocking exception in the file: refused at the plan, as before.
+    const open = await runLoadCommand({ ...input, exceptions: [BLOCKING] });
     expect(open).toMatchObject({ exitCode: 1, stage: 'plan' });
     expect(open.lines.join('\n')).toContain('blocking_exceptions_open');
-    const decided = await runLoadCommand({ ...input, exceptions: [{ exceptionId: 'EXC-00001', tenantId: REAL, kind: 'unmapped_tax_code', severity: 'blocking', confidence: 'certain', legacyIds: ['P-RICE'], evidence: 'x', resolution: { action: 'correct', decidedBy: 'u-chezhian', decidedAt: '2026-09-30T10:00:00.000Z', reason: 'mapped to 1006 in writing' } }] });
-    expect(decided).toMatchObject({ exitCode: 0, stage: 'load' });
+    // A decision written into the FILE ONLY is not a decision: carried undecided, named, and the load refuses.
+    const decidedInFile = { ...BLOCKING, resolution: { action: 'correct', decidedBy: OPERATOR, decidedAt: '2026-10-01T09:00:00.000Z', reason: 'rate confirmed 5%' } };
+    const fileOnly = await runLoadCommand({ ...input, exceptions: [decidedInFile], dryRun: true });
+    expect(fileOnly).toMatchObject({ exitCode: 1, stage: 'plan' });
+    expect(fileOnly.lines.join('\n')).toContain('EXC-00001 (blocking) is decided in exceptions.json only');
+    expect(fileOnly.lines.join('\n')).toContain('POST /v1/migration/exceptions/EXC-00001/resolution');
+    // Recorded and decided on the cloud by a named person: proceeds — with no file in the folder at all.
+    expect((await h.request({ method: 'POST', path: '/v1/migration/exceptions', userId: OPERATOR, tenantId: REAL, idempotencyKey: 'x1', body: { exceptions: [BLOCKING] } })).status).toBe(201);
+    const stillOpen = await runLoadCommand({ ...input, exceptions: undefined, dryRun: true });
+    expect(stillOpen.lines.join('\n')).toContain('1 exception(s) from the cloud register, 1 blocking still undecided');
+    expect(stillOpen).toMatchObject({ exitCode: 1, stage: 'plan' });
+    expect((await h.request({ method: 'POST', path: '/v1/migration/exceptions/EXC-00001/resolution', userId: OPERATOR, tenantId: REAL, idempotencyKey: 'r1', body: { action: 'correct', reason: 'rate confirmed 5%' } })).status).toBe(200);
+    const decided = await runLoadCommand({ ...input, exceptions: undefined, dryRun: true });
+    expect(decided.lines.join('\n')).toContain('1 exception(s) from the cloud register, 0 blocking still undecided');
+    expect(decided).toMatchObject({ exitCode: 0, stage: 'dry_run' });
+    // The file may still be there as the pass's own report; the register's decision is what counts.
+    const both = await runLoadCommand({ ...input, exceptions: [BLOCKING], dryRun: true });
+    expect(both.lines.join('\n')).toContain('from the cloud register and exceptions.json, 0 blocking still undecided');
+    expect(both).toMatchObject({ exitCode: 0, stage: 'dry_run' });
+  });
+  it('the cloud register is read as the operator: no right to read it → refused; a dry run with no API judges the file alone and says so', async () => {
+    const { h, input } = base();
+    await h.seedOwner(REAL, OPERATOR);
+    await h.provisionRole(REAL, 'u-ca', 'chartered_accountant'); // may sign totals; may NOT read the cleaning register
+    const refused = await runLoadCommand({ ...input, manifest: manifest(FILES, { operator: 'u-ca' }), dryRun: true });
+    expect(refused).toMatchObject({ exitCode: 1, stage: 'cleaning' });
+    expect(refused.lines.join('\n')).toContain('cannot read tenant ' + REAL + '\'s exception register (HTTP 403)');
+    const offline = await runLoadCommand({ ...input, client: undefined, dryRun: true });
+    expect(offline.lines.join('\n')).toContain('from exceptions.json — NOT checked against the cloud register (no API)');
+    expect(offline).toMatchObject({ exitCode: 0, stage: 'dry_run' });
   });
   it('an unreadable row is refused at mapping, by file and line', async () => {
-    const { input } = base();
+    const { h, input } = base();
+    await h.seedOwner(REAL, OPERATOR); // the cleaning stage reads the cloud register as the operator first (C3c)
     const bad = { ...FILES, 'products.csv': `${FILES['products.csv']}\nP-X,,each,home,3402,10,9,,,,,active` };
     const out = await runLoadCommand({ ...input, files: bad, manifest: manifest(bad) });
     expect(out).toMatchObject({ exitCode: 1, stage: 'mapping' });
@@ -127,8 +160,11 @@ describe('runLoadCommand — the stages', () => {
   it('an operator the target does not recognise is refused before anything is planned', async () => {
     const { input } = base(); // nobody seeded → the operator holds no role in the tenant
     const out = await runLoadCommand(input);
-    expect(out).toMatchObject({ exitCode: 1, stage: 'target' });
+    // The first thing the command asks the cloud as the operator is the exception register (C3c), so an
+    // operator the tenant does not know is turned away there — still before anything is planned or sent.
+    expect(out).toMatchObject({ exitCode: 1, stage: 'cleaning' });
     expect(out.lines.join('\n')).toMatch(/cannot read tenant/);
+    expect(out.plan).toBeUndefined();
   });
   it('re-running the same load into its own half-loaded target resumes and doubles nothing; a target holding someone else\'s product is refused', async () => {
     const { h, input } = base();

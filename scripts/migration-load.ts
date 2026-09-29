@@ -5,8 +5,9 @@
 //                              [--env-file infra/compose/.env] [--demo-tenant <uuid>[,<uuid>]]
 //
 // The folder holds up to six CSV files (products.csv is required), `manifest.json` (who / where / the seal
-// of every file, from the seal route) and `exceptions.json` (the cleaning report with every blocking
-// exception decided in writing). Everything that can refuse lives in `packages/migration/src/load-command.ts`
+// of every file, from the seal route) and, when there is no API to ask, `exceptions.json` (the cleaning
+// report). With an API the cleaning DECISIONS are read from the cloud's register (Stage C3c) — a decision
+// that exists only in a file is not one. Everything that can refuse lives in `packages/migration/src/load-command.ts`
 // and is tested there; this file only reads the folder, mints the operator's token from the box's `.env`,
 // speaks HTTP, prints, and exits: 0 done, 1 refused / not everything landed, 2 could not read.
 //
@@ -24,7 +25,8 @@ function usage(): never {
   out('Usage: pnpm run migration:load -- --dir <folder> [--api URL] [--dry-run] [--out report.json] [--env-file PATH] [--demo-tenant ID[,ID]]');
   out();
   out('  --dir         Folder with products.csv (+ categories/tax-rates/suppliers/customers/opening-stock .csv),');
-  out('                manifest.json and exceptions.json.');
+  out('                manifest.json and, for a dry run without --api, exceptions.json. With an API the');
+  out('                cleaning decisions are read from the cloud register (GET /v1/migration/exceptions).');
   out('  --api         The cloud API, e.g. http://127.0.0.1:8081. Default: http://127.0.0.1:<API_PORT or 8081>.');
   out('  --dry-run     Check everything and print the plan; send nothing.');
   out('  --out         Write the outcome (plan / report / lines) as JSON here — evidence for the sign-off.');

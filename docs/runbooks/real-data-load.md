@@ -44,8 +44,9 @@ what take the days.
    quantity and packer — the same rules the product screen enforces.
 
 4. **`manifest.json`** in the same folder — who, where, and the seal of every file (step 3).
-5. **`exceptions.json`** in the same folder — the cleaning report with every blocking exception decided
-   in writing (step 4).
+5. **`exceptions.json`** in the same folder — the cleaning report (step 4). Needed only for a dry run with no
+   `--api`; with an API the load reads the cleaning **decisions** from the cloud's register, and a decision that
+   exists only in this file does not count (Stage C3c).
 
 ---
 
@@ -123,7 +124,7 @@ Run the cleaning check on the dataset (`POST /v1/migration/cleaning/exceptions`,
 response as `exceptions.json`. For every exception marked `blocking`, the **owner** decides in writing
 (`merge` / `correct` / `exclude` / `migrate_as_is`, with a reason) and the decision is written onto that
 exception as its `resolution` (`{ "action", "decidedBy", "decidedAt", "reason" }`). One undecided
-blocking exception and the load refuses. No file at all and the load refuses — cleaning is not optional. **Since 29 Sep 2026 (Stage C3a) the same exceptions can also be RECORDED on the cloud** (`POST /v1/migration/exceptions` with the report's `exceptions` list) and each decided there by a named manager or owner (`POST /v1/migration/exceptions/<id>/resolution`) or from the migration screen at the store box — the register, what is still outstanding and any refused decision read back from `GET /v1/migration/exceptions`. **Since 29 Sep 2026 (Stage C3b) the migration screen at the store box shows this register from the cloud** — it pulls `GET /v1/migration/screen` on its sync loop (exceptions with the decisions folded in, totals, parallel-run terms and days, refused decisions) and keeps the last copy across a reboot, saying how old it is; nothing needs copying to the box. The load command still reads `exceptions.json`; keep the file and the register saying the same thing until the command reads the register (C3c).
+blocking exception and the load refuses. No file at all and the load refuses — cleaning is not optional. **Since 29 Sep 2026 (Stage C3a) the same exceptions can also be RECORDED on the cloud** (`POST /v1/migration/exceptions` with the report's `exceptions` list) and each decided there by a named manager or owner (`POST /v1/migration/exceptions/<id>/resolution`) or from the migration screen at the store box — the register, what is still outstanding and any refused decision read back from `GET /v1/migration/exceptions`. **Since 29 Sep 2026 (Stage C3b) the migration screen at the store box shows this register from the cloud** — it pulls `GET /v1/migration/screen` on its sync loop (exceptions with the decisions folded in, totals, parallel-run terms and days, refused decisions) and keeps the last copy across a reboot, saying how old it is; nothing needs copying to the box. **Since 29 Sep 2026 (Stage C3c) the load command reads the cloud's register** (`GET /v1/migration/exceptions`) as the operator whenever it has an API: an exception the register knows is judged as the register has it; a decision written only into `exceptions.json` is **not** a decision — the command names it, counts it as undecided, and refuses if it is blocking, until a named person records it on the cloud. The file stays the cleaning pass's own report (and is all a no-API dry run has — the outcome then says the cloud was not consulted). With an API and a recorded register, the folder needs no `exceptions.json` at all.
 
 ## Step 5 — dry run
 
@@ -180,7 +181,9 @@ and valuation; the catalogue for products. Nothing is signed until the figures a
 | `REFUSED (demo_tenant)` | the manifest names the demo tenant | Use the real tenant from step 1. |
 | `SEAL BROKEN — <file>` | the file changed after it was sealed | Find out why; re-export and re-seal. |
 | `<file> is short` | fewer rows than you read off the screen | The export was cut (a page, a filter). Re-export the whole thing. |
-| `exceptions.json is missing` / `blocking_exceptions_open` | cleaning not done, or a blocking exception undecided | Step 4. |
+| `exceptions.json is missing` / `no cleaning pass recorded on the cloud` / `blocking_exceptions_open` | cleaning not done, or a blocking exception undecided | Step 4. |
+| `… is decided in exceptions.json only — not on the cloud` | a decision was typed into the file and never recorded | Record it: `POST /v1/migration/exceptions/<id>/resolution` (the owner or a manager), then run again. |
+| `cannot read the cloud's exception register (HTTP 403)` | the operator's role does not read the cleaning register | Run as the owner or a store manager (step 2). |
 | `row(s) could not be read` | each named by file and line | Fix the file once, re-seal, re-run. |
 | `cannot read tenant … (HTTP 403)` | the operator has no role in this tenant | Step 1 / step 2. |
 | `target_not_empty` | the tenant holds products this extract does not name | Rehearse on a fresh tenant, or run the delta (MG-09). |
