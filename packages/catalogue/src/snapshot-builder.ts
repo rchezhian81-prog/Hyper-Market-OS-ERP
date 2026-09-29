@@ -44,13 +44,9 @@ export interface MasterProduct {
 /** Tax classes (HSN/GST) keyed by id, in basis points. */
 export type TaxClassRates = Readonly<Record<string, number>>;
 
-/** Where this snapshot is for — drives price precedence (M05-FR-01). */
-export interface SnapshotScope {
-  readonly tenantId: string;
-  readonly storeId: string;
-  readonly zoneId?: string;
-  readonly channel?: string;
-}
+/** Where this snapshot is for — drives price precedence (M05-FR-01). Declared with the snapshot it scopes. */
+export type { SnapshotScope } from './catalogue';
+import type { SnapshotScope } from './catalogue';
 
 export interface BuildSnapshotInput {
   readonly scope: SnapshotScope;
@@ -145,6 +141,8 @@ export function buildCatalogueSnapshot(input: BuildSnapshotInput): BuildSnapshot
       tenantId: input.scope.tenantId,
       version: input.version,
       builtAt: input.asOf,
+      // The store this pack is for rides on the snapshot, so a sale priced from it knows where its stock lives.
+      scope: input.scope,
       products,
       barcodes,
       embeddedRules: input.embeddedRules,

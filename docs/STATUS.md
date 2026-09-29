@@ -5,6 +5,42 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Owner program — "complete every module, deploy, then pilot" — Stage A: H-13 closed (29 September 2026)
+
+**Owner direction (28 Sep 2026, in writing):** act as architect + developer; build every roadmap module to
+finished (no invented requirements — anything beyond the roadmap becomes a change proposal for a written
+yes); ship each slice branch → tests → gate → PR → CI green → **merged**, autonomously; do not wait for real
+data; deploy to the purchased VPS; then a real-time pilot in the store **alongside** the existing ERP.
+Program stages recorded (this file + the session task list): **A** stock truth (H-13) · **B** real-data
+machinery (bulk loader, second-tenant procedure, signed opening-figures report, witness routes, MG-10) ·
+**C** every partially-wired item up the ladder + un-park CH-01 / CH-02 / OA-12 · **D** one-PC till +
+in-store setup (KL-08 / H-11) · **E** production security (GAP-SEC-02..05, GAP-DATA-01/02, step-up for
+payroll release + bulk publish, key-based server login) · **F** automatic VPS deployment · **G** UI/UX finish.
+Human-only steps stay human: loading real data (written Option 2 GO), releasing prices to tills, outside
+accounts.
+
+- **Stage A — H-13 closed: a banked sale is a stock movement (M08-FR-01).** `POST /v1/sales` now appends one
+  `sold` movement per line in the SAME atomic batch as the sale (`services/pos/src/sale-stock.ts` +
+  `posAdapter.bankSale`), keyed on the sale so a resent sale is one sale and one set of movements; on-hand,
+  valuation, COGS / turns / GMROI and near-expiry all fold the sale from the one ledger (near-expiry nets
+  `sold` movements instead of re-reading the sales stream — no double count; the ADR-0006 FIFO estimate is
+  preserved). Location: the lane's declared `locationId` (new optional field on the till contract) → the
+  store the sale's pack was published for (`CatalogueSnapshot.scope`, now recorded by the snapshot builder)
+  → the lane itself, stated on the movement (`reason`) so the negative shelf it produces is a visible
+  exception (P-08), never a refusal (hard rule #1). Proven: `tests/unit/sale-stock.test.ts` (7),
+  `tests/integration/sale-reduces-stock.test.ts` (5); the near-expiry test now locks on-hand to 70 after a
+  30-unit sale. No module rung change (M08 already E2E_VERIFIED); traceability + ledger note updated.
+- **Follow-ons (recorded, not done):** (a) **A2** — a resell RETURN should append the compensating
+  `returned` movement (the performance read already nets return COGS, so the wire must not double count);
+  (b) the store-edge should stamp `locationId` from its `storeId` on every sale (Stage D), and the pilot
+  seed / pack publish must scope the pack to the receiving location so the hosted demo visibly shows stock
+  falling; (c) sales banked before this change carry no movements — a human-run, idempotent replay
+  (append-only compensation) is a B-track item; (d) `scope` is not part of the signed pack bytes
+  (`canonicalise` signs tenant / version / builtAt / products / barcodes) — informational, server-side only.
+- **Next:** gate green → PR → merge → A2 (returns) → B1 (bulk loader).
+
+---
+
 ## Option 1 (hosted) — demo stood up on VM3; owner gap summary + Step-1 real-data plan (28 September 2026)
 
 **Hosted stand-up executed on the box** (MilesWeb VM3, Mumbai, Ubuntu 22.04) by the on-server Claude Code session,

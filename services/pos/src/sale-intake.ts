@@ -58,6 +58,13 @@ export interface IncomingSale {
   readonly saleId: string;
   readonly receiptNumber: string;
   readonly laneId: string;
+  /**
+   * The stock location this lane sells from — the store's own location id in a single-site store
+   * (M08-FR-01: a sale is a stock movement, and a movement names its location). Optional so no
+   * existing till is refused (hard rule #1); when absent the cloud resolves it from the store the
+   * sale's catalogue pack was published for, and only then from the lane (`sale-stock.ts`).
+   */
+  readonly locationId?: string;
   readonly cashierId: string;
   readonly tradingDay: string;
   readonly committedAt: string;
