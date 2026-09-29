@@ -109,6 +109,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'migration.extraction.record', 'migration.evidence.record', 'migration.verification.sign',
       'migration.parallel.record', 'migration.parallel.read',
       'migration.exception.record', 'migration.exception.resolve', 'migration.controltotal.record', 'migration.decision.sync',
+      'migration.screen.read',
       'ai.agent.run', 'ai.proposal.read', 'ai.suggestion.dismiss', 'ai.budget.read', 'ai.budget.set', 'ai.agent.enable', 'ai.killswitch.set',
     ],
   },
@@ -175,6 +176,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // `migration.decision.sync`, which re-checks the decider's OWN authority.
       'migration.cleaning.read', 'migration.reconciliation.read',
       'migration.exception.record', 'migration.exception.resolve', 'migration.controltotal.record', 'migration.decision.sync',
+      'migration.screen.read',
     ],
   },
   {
@@ -183,6 +185,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     // The narrowest role in the product, and the one most people hold (P-07).
     permissions: [
       'identity.self.read', 'payroll.ess.self', 'catalogue.pack.read',
+      // The store box's sync identity holds this role. It pulls the catalogue pack under `catalogue.pack.read`
+      // and, since Stage C3b, the migration screen's feed under `migration.screen.read` — a READ of the
+      // register the box's own screen shows; it grants no decision (those stay with the decider's own grants).
+      'migration.screen.read',
       'pos.sale.sync', 'pos.return.sync', 'migration.decision.sync', 'pos.sale.read', 'pos.return.record', 'pos.restricted.check',
       'cash.movement.record', 'cash.till.read', 'till.shift.close', 'till.shift.read',
       'customer.consent.read', 'loyalty.points.read', 'loyalty.points.write',

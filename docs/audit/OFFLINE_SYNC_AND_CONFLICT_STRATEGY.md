@@ -40,7 +40,10 @@ flowchart LR
 ```
 
 **Legend:** the red `EDGE_PACK_FILE` is the biggest gap — nothing in the codebase *fetches or polls* it; how it
-lands on the box is out of scope of the code. The dead-letter queue is real and visible but has **no operator
+lands on the box is out of scope of the code. *(Update, 29 Sep 2026: two of its sections are now pulled from the
+cloud on the sync loop — the signed catalogue pack since SYNC-01 inc 2 (`pullPack`) and the migration register since
+Stage C3b (`pullMigrationFeed` → `GET /v1/migration/screen`, laid over the pack's migration sections). The remaining
+sections — approvals, checklist, wave, deliveries, … — are still read once at boot.)* The dead-letter queue is real and visible but has **no operator
 resolution screen**.
 
 ## Capability status (verified, with evidence)
@@ -56,7 +59,7 @@ resolution screen**.
 | Service workers: registered, network-first, versioned cache, bilingual stale strip | **Implemented (static-analysis only)** | guardrail `every-screen-opens-without-a-network.test.ts:55-205` (admits it cannot prove a live dead-router boot) |
 | Sync observability (unsent/dead-letter/last-success; POS badge; manager surface) | **Production-verified** | `agent.ts:84-91`, `durability.ts:196-228`, `screen-data.ts:169-227` |
 | Max offline duration bounded by disk, safe-stop (refuse sale) not data-loss when full | **Implemented** | `durability.ts:50-174` |
-| **Inbound sync (cloud→edge packs: price/catalogue/recall/approvals)** | **Documented-only / Missing** | edge reads `EDGE_PACK_FILE` once at boot `main.ts:190-204`; nothing polls/fetches; `offline-sync.md:30-31,46` not implemented |
+| **Inbound sync (cloud→edge packs: price/catalogue/recall/approvals)** | **Partly closed** | catalogue pack pulled on the sync loop (SYNC-01 inc 2, `edge/sync-agent/src/pack-puller.ts`); migration register pulled on the same loop since 29 Sep 2026 (Stage C3b, `edge/sync-agent/src/migration-feed.ts` → `GET /v1/migration/screen`); the remaining `EDGE_PACK_FILE` sections (approvals, checklist, wave, deliveries, …) are still read once at boot — nothing on the cloud produces them yet |
 | **Offline document numbering (reserved ranges) wired to POS** | **Implemented-but-not-wired** | engine `packages/numbering/src/numbering.ts:57-100` unit-tested; till mints `R-${timestamp}` `apps/pos/web/app.js:450`; allocator absent in `bootPos` |
 | **Structured two-sided conflict object + role-routed resolution UI** | **Partially / Documented-only** | conflicts collapse to dead-letter string `agent.ts:136-142`; no `conflict.ts`; `offline-sync.md:46-53` unimplemented |
 | Operator "work the dead-letter queue" UI (retry/resolve) | **Missing** | dead-letters exposed as data `outbox.ts:101-104`, no interactive screen |

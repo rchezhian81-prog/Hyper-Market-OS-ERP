@@ -140,7 +140,9 @@ pnpm run token:store --tenant <your tenant id> --user store-edge --ttl-hours 720
 It reads the identity settings from your `.env`, prints a token **once** (it is a secret — put it
 straight into `CLOUD_API_TOKEN`, never a file or a chat), and it is valid for 30 days. **The account
 it names (`store-edge`) must hold the sync permission** (`pos.sale.sync`) — provision that login with
-a sync-capable role as part of setting up the store's logins (go-live checklist UAT-05). A minted
+a sync-capable role as part of setting up the store's logins (go-live checklist UAT-05). The same login
+pulls the catalogue pack (`catalogue.pack.read`) and, since Stage C3b, the migration screen's register
+(`migration.screen.read`); the cashier role carries all three, and none of them grants a decision. A minted
 token that the real cloud API accepts and banks a sale with is proven in
 `tests/integration/store-token.test.ts`.
 

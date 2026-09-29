@@ -334,6 +334,7 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
     cutoverId: 'cut-1', requiredCleanDays: 3, loadOperator: 'u-eng', userId: 'u-owner',
     openAssessments: 0,
   }),
+  migrationFeed: notKnown('this box has never pulled the cloud register'),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([{ purpose: 'marketing', channel: 'sms' }]),
   warehouse: known({
@@ -780,7 +781,7 @@ describe('a box that has been told nothing tells every screen so', () => {
       migrationSources: notKnown('never'), migrationExceptions: notKnown('never'),
       migrationTotals: notKnown('never'), parallelDays: notKnown('never'),
       parallelDifferences: notKnown('never'), historyExclusions: notKnown('never'),
-      legacyArchive: notKnown('never'), migrationPolicy: notKnown('never'),
+      legacyArchive: notKnown('never'), migrationPolicy: notKnown('never'), migrationFeed: notKnown('never'),
       lossPreventionRules: notKnown('never'), consentPurposes: notKnown('never'),
       warehouse: notKnown('never'),
     },

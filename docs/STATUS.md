@@ -200,14 +200,37 @@ accounts.
   a cashier's recorded as refused with nothing applied) + transport 3. No rung change (MG-04/MG-06 already
   E2E). Follow-ons: the screen still READS from the store pack, which the cloud does not fill (C3b); the
   load command still reads `exceptions.json` rather than the cloud register (C3c).
-- **Stage C — remaining, in order:** C3b feed the migration screen from the cloud (exceptions, totals,
-  refused decisions, parallel days/differences from B3, verification progress from B2 — a live read the
-  edge serves to the screen, like the other operator screens); C3c the load command reads the cloud
-  exception register;
+- **Stage C, slice 3b — done (29 Sep 2026): the migration screen at the store box now READS the cloud's
+  register (MG-04 / MG-06 / MG-10).** Until now every migration section the screen showed came from the
+  store pack file — read once at boot, and never produced by anything on the cloud (the migration
+  sections were only ever set by tests). So a person at the box on the night would have seen what
+  somebody typed into a file, with none of the decisions the desk had since taken. Now: one cloud read
+  (`GET /v1/migration/screen`, `services/migration/src/screen.ts`, permission `migration.screen.read`)
+  assembles everything the screen reads from the ledger — exceptions with the desk's resolutions folded
+  in, totals with signatures, the owner's parallel-run terms (the one place a cutover has an id and a
+  clean-day count on the cloud), the reconciled days and differences, the latest PERFORMED rollback, who
+  ran the load, where the twelve-domain verification stands, every refused decision. **It invents
+  nothing**: a section with no record is ABSENT (never an empty list that would read as "clean" or
+  "reconciled"). The box pulls it on the same loop as the catalogue pack (`edge/sync-agent/src/migration-feed.ts`
+  — this shop's only, never an older one, quiet when re-confirmed, offline keeps what is held and says
+  how old it is), lays it over the pack's migration sections (`withMigrationFeed`: a section the cloud did
+  not send stays exactly as the file had it; the cloud owns the cutover's terms and the ledger facts, the
+  box keeps who is on its screen), persists it (`migration-feed.json`, atomic) and restores it at boot so a
+  reboot with the cable out still shows the register with the cloud's clock on it (P-01 / P-08). The
+  screen payload gains `cloudRegister` {generatedAt, receivedAt, ageHours}, `refusedDecisions` and
+  `verification`. Roles: `migration.screen.read` — owner, store manager, and the box's sync identity
+  (cashier role, beside `catalogue.pack.read`; a read, no decision). Proven: route 8 + pull/merge 14 +
+  real API 4 + the REAL edge process against a stand-in cloud 4 (served screen shows the register and its
+  age; survives reboot offline; file terms replaced by the owner's, `userId` kept; other shop's / garbled /
+  403 kept out; the loop wiring). No rung change. Follow-ons: the screen's HTML does not yet DRAW
+  `cloudRegister`/`refusedDecisions`/`verification` (payload only — a Stage G item); the box's migration
+  screen opens once the owner's parallel-run terms exist on the cloud or the pack file names a cutover
+  (there is no cutover id on the cloud before the terms); the load command still reads `exceptions.json` (C3c).
+- **Stage C — remaining, in order:** C3c the load command reads the cloud exception register;
   then family by family through the 57 remaining PARTIALLY_WIRED items (D01-FR-06 content authoring,
   D02-FR-06 display funding, D07 coupons/referrals, M21 compensation, M23 close second source, …). OA-12 was
   already answered and closed on 23 Sep — nothing to un-park.
-- **Next:** C3a PR → merge → **C3b** (feed the migration screen from the cloud) → C3c → the remaining PARTIALLY_WIRED families.
+- **Next:** C3b PR → merge → **C3c** (the load command reads the cloud exception register) → the remaining PARTIALLY_WIRED families.
 
 ---
 

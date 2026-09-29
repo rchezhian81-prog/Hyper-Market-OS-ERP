@@ -28,6 +28,8 @@
 // reports a 100% margin, which is a lie that reads as very good news.
 
 /** A section of the pack: what the cloud said, or why this box does not know. */
+import type { MigrationFeed } from '../../sync-agent/src/migration-feed';
+
 export type Register<T> =
   | { readonly known: true; readonly value: T }
   | { readonly known: false; readonly why: string };
@@ -744,6 +746,24 @@ export interface PackMigrationPolicy {
   readonly userId?: string;
 }
 
+/**
+ * The cloud's migration register as this box last pulled it (Stage C3b) — when the cloud assembled it, when
+ * the box received it, and the two registers the screen reads that have no section of their own.
+ *
+ * Absent means the box has never heard from the cloud about the migration: every migration section it holds
+ * came from the store pack file, and the screen must say so rather than imply it is looking at the register.
+ */
+export interface PackMigrationFeed {
+  /** The cloud's clock when the register was assembled — the screen's "as of" (P-08). */
+  readonly generatedAt: string;
+  /** The box's clock when it took the register. */
+  readonly receivedAt: string;
+  /** Relayed decisions the cloud could not accept (hard rule #10) — visible for a person to work. */
+  readonly refusedDecisions?: readonly unknown[];
+  /** Where the twelve-domain verification report stands (MG-05 / QG-07). */
+  readonly verification?: Readonly<Record<string, unknown>>;
+}
+
 export interface PackMerchandisingPolicy {
   readonly refillAtBp: number;
   readonly countStaleAfterMinutes: number;
@@ -1137,6 +1157,8 @@ export interface StorePack {
   readonly historyExclusions: Register<readonly unknown[]>;
   readonly legacyArchive: Register<unknown>;
   readonly migrationPolicy: Register<PackMigrationPolicy>;
+  /** The cloud's migration register as last pulled (C3b). Absent: the box has only ever read its pack file. */
+  readonly migrationFeed: Register<PackMigrationFeed>;
   /** Loss-prevention thresholds — data, so a store tunes its own without code (M15-FR-01). */
   readonly lossPreventionRules: Register<readonly unknown[]>;
   /** The purposes this tenant asks a customer's consent for (M16 / PRV). */
@@ -1259,6 +1281,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     historyExclusions: notKnown(why),
     legacyArchive: notKnown(why),
     migrationPolicy: notKnown(why),
+    migrationFeed: notKnown(why),
     lossPreventionRules: notKnown(why),
     consentPurposes: notKnown(why),
     warehouse: notKnown(why),
@@ -1386,8 +1409,63 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     historyExclusions: section<readonly unknown[]>('historyExclusions'),
     legacyArchive: section<unknown>('legacyArchive'),
     migrationPolicy: section<PackMigrationPolicy>('migrationPolicy'),
+    migrationFeed: section<PackMigrationFeed>('migrationFeed'),
     lossPreventionRules: section<readonly unknown[]>('lossPreventionRules'),
     consentPurposes: section<readonly { purpose: string; channel: string; required?: boolean }[]>('consentPurposes'),
     warehouse: section<PackWarehouse>('warehouse'),
+  };
+}
+
+/**
+ * Lay the cloud's migration register over the pack's migration sections (Stage C3b).
+ *
+ * The rule is the same one `readPack` holds, applied to a second source: **a section the cloud did not send
+ * is left exactly as it was** — known from the pack file, or not known — never filled in. "No exceptions in
+ * the feed" means no cleaning pass has been recorded on the cloud, and the cutover gate must keep reading
+ * that as an unanswered question, not as clean data.
+ *
+ * Two kinds of fact meet in `migrationPolicy`, and each keeps its owner:
+ *   • the CLOUD owns the cutover's identity and terms (the id, the clean days required — from the owner's
+ *     written parallel-run terms, MG-10), who ran the load (§28, a ledger fact) and when a rollback was
+ *     performed. When the feed carries them they replace what the file said.
+ *   • the BOX owns who is on its screen (`userId` — box-local configuration) and the facts the cloud does not
+ *     record today (`cutoverAccepted`, `deltaAppliedAt`, `namedTeam`, `ownerGoBy`, `openAssessments`). The feed
+ *     never overwrites them.
+ * Without cutover terms on the cloud and without a policy in the pack, there is still no policy: the screen
+ * then says the box has not been told about a cutover, which is true, and shows nothing it cannot vouch for.
+ */
+export function withMigrationFeed(pack: StorePack, feed: MigrationFeed, receivedAt: string): StorePack {
+  const held = pack.migrationPolicy.known ? pack.migrationPolicy.value : undefined;
+  const cloudFacts = {
+    ...(feed.loadOperator === undefined ? {} : { loadOperator: feed.loadOperator }),
+    ...(feed.rollbackDemonstratedAt === undefined ? {} : { rollbackDemonstratedAt: feed.rollbackDemonstratedAt }),
+  };
+  let migrationPolicy: Register<PackMigrationPolicy> = pack.migrationPolicy;
+  if (feed.policy !== undefined) {
+    migrationPolicy = known<PackMigrationPolicy>({
+      ...(held === undefined ? {} : held),
+      cutoverId: feed.policy.cutoverId,
+      requiredCleanDays: feed.policy.requiredCleanDays,
+      ...cloudFacts,
+    });
+  } else if (held !== undefined) {
+    migrationPolicy = known<PackMigrationPolicy>({ ...held, ...cloudFacts });
+  }
+  const carried = <T>(section: readonly T[] | undefined, was: Register<readonly T[]>): Register<readonly T[]> =>
+    section === undefined ? was : known(section);
+  return {
+    ...pack,
+    migrationPolicy,
+    migrationExceptions: carried(feed.exceptions, pack.migrationExceptions),
+    migrationTotals: carried(feed.totals, pack.migrationTotals),
+    parallelDays: carried(feed.parallelDays, pack.parallelDays),
+    parallelDifferences: carried(feed.parallelDifferences, pack.parallelDifferences),
+    historyExclusions: carried(feed.exclusions, pack.historyExclusions),
+    migrationFeed: known<PackMigrationFeed>({
+      generatedAt: feed.generatedAt,
+      receivedAt,
+      ...(feed.refusedDecisions === undefined ? {} : { refusedDecisions: feed.refusedDecisions }),
+      ...(feed.verification === undefined ? {} : { verification: feed.verification }),
+    }),
   };
 }
