@@ -315,7 +315,8 @@ export function startScreenServer(input: {
       const port = typeof address === 'object' && address !== null ? address.port : input.port;
       resolve({
         port,
-        stop: () => new Promise((done) => { server.close(() => { done(); }); }),
+        // Stop accepting, then drop the connections still open (see the lane server's stop for why).
+        stop: () => new Promise((done) => { server.close(() => { done(); }); server.closeAllConnections(); }),
       });
     });
   });

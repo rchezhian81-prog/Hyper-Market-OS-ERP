@@ -468,7 +468,10 @@ export function startLaneServer(input: {
       const address = server.address();
       resolve({
         port: typeof address === 'object' && address !== null ? address.port : input.port,
-        stop: () => new Promise<void>((done) => { server.close(() => { done(); }); }),
+        // Stop accepting, then drop the connections still open. A browser keeps its sockets alive after the
+        // page is done with them, and `close()` alone waits for those to go idle — on a busy tab that can be
+        // longer than anyone waiting for the box to stop will accept (the e2e hook timed out on exactly this).
+        stop: () => new Promise<void>((done) => { server.close(() => { done(); }); server.closeAllConnections(); }),
       });
     });
   });
