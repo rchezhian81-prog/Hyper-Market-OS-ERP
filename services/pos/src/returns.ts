@@ -49,7 +49,15 @@ export interface RecordedRefund {
 export interface ReturnRecord {
   readonly returnId: string;
   readonly number: string;
-  readonly originalSaleId: string;
+  /** The bill this return is against. `null` ONLY for a controlled no-receipt return (M13-FR-01), which is
+   *  against no bill by definition — it is recorded on its own register (`no-receipt-returns.ts`), never on a
+   *  sale's, and every reader that keys on the bill treats null as "no bill", not as a bill called "null". */
+  readonly originalSaleId: string | null;
+  /** Set (true) only on a controlled no-receipt return — the report and the exceptions screen say so. */
+  readonly noReceipt?: true;
+  /** Where the resold units went back onto the shelf, for a no-receipt return (there is no original sale to
+   *  take the location from). Stated by the desk or the lane; absent means the return re-entered no stock. */
+  readonly locationId?: string;
   readonly processedBy: string;
   readonly processedAt: string;
   readonly reasonCode: string;

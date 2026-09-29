@@ -76,8 +76,10 @@ export function gstPortalActionRoute(payload: Record<string, unknown>): string |
 /**
  * Where an offline RETURN goes when it reconciles on sync (M13-FR-01). The path carries the bill it is
  * against, and the payload key is `originalSaleId` (not `saleId`), so a `:saleId` template cannot express
- * it — hence a resolver. A **no-receipt** return has `originalSaleId: null` and there is no synced endpoint
- * for it, so it has NO route and is dead-lettered by name (hard rule #6), never posted in hope.
+ * it — hence a resolver. A **no-receipt** return has `originalSaleId: null` and `noReceipt: true`, and goes to
+ * its OWN record-and-flag route `POST /v1/returns/no-receipt/synced` (M13-FR-01, CH-01 un-parked) — the cloud
+ * re-checks the owner's cap and the approver there. A record with neither a bill nor the flag is dead-lettered
+ * by name (hard rule #6), never posted in hope.
  *
  * Unlike the governance commands below, this IS routed: its target is the dedicated record-and-flag route
  * `POST /v1/sales/:saleId/returns/synced`, which trusts the lane-relayed operator identity (as the synced
@@ -85,6 +87,11 @@ export function gstPortalActionRoute(payload: Record<string, unknown>): string |
  * visible exception, never a silent apply-as-the-wrong-actor. So relaying it under the store token is safe.
  */
 export function returnAcceptedRoute(payload: Record<string, unknown>): string | undefined {
+  // A controlled no-receipt return (M13-FR-01) is against NO bill — `commitReturn` stamps `noReceipt: true`
+  // and `originalSaleId: null`. It has its own synced route (record-and-flag: the cloud re-checks the cap and
+  // the approver), so it is relayed there, never squeezed into a bill's path. A record with NO bill and NO
+  // no-receipt flag is ambiguous and stays dead-lettered by name for a person (hard rule #6).
+  if (payload['noReceipt'] === true) return '/v1/returns/no-receipt/synced';
   const originalSaleId = payload['originalSaleId'];
   if (typeof originalSaleId !== 'string' || originalSaleId === '') return undefined;
   return `/v1/sales/${encodeURIComponent(originalSaleId)}/returns/synced`;

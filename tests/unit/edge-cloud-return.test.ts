@@ -34,9 +34,16 @@ describe('toCloudReturn — the lane refund record → the cloud synced-return c
     expect(r.lines).toEqual([{ productId: 'P1', uom: 'each', quantityMinor: 1, disposition: 'resell' }]);
   });
 
-  it('PRESERVES a no-receipt return\'s null originalSaleId — the transport must see null, not ""', () => {
+  it('PRESERVES a no-receipt return\'s null originalSaleId AND its noReceipt flag — the transport routes on the flag (M13-FR-01)', () => {
     const noReceipt = toCloudReturn({ ...RETURN_RECORD, originalSaleId: null, noReceipt: true });
     expect(noReceipt.originalSaleId).toBeNull();
+    expect(noReceipt.noReceipt).toBe(true);
+    expect(noReceipt.laneId).toBe('lane-1'); // where a resold unit goes back when the lane named no location
+  });
+
+  it('never carries a false or missing noReceipt flag — a receipted return has no flag at all', () => {
+    expect('noReceipt' in toCloudReturn(RETURN_RECORD)).toBe(false);
+    expect('noReceipt' in toCloudReturn({ ...RETURN_RECORD, noReceipt: 'yes' })).toBe(false);
   });
 
   it('carries approvedBy only when present, so "no approver" and "this approver" stay distinct (§28)', () => {

@@ -56,5 +56,6 @@ owner GO + external gate to enable.
 - **Feature flags / entitlements** default-off per tenant (`checkEntitlement`, M36-FR-01).
 - **Kill switches** — the AI gateway and connector delivery can be halted without a redeploy.
 - **Maker-checker** on refunds, price changes, privilege grants, erasure execution, cash sign-off.
+- **Fail-safe caps** — store-credit refunds and no-receipt returns are unavailable until the owner sets their caps (`POST /v1/pos/store-credit-cap`, `POST /v1/pos/no-receipt-cap`); a no-receipt return always needs a supervisor.
 - **RBAC default-deny** at the router; **tenant isolation** on every read/write.
 - The production-only paths above additionally require an explicit owner GO (see `PILOT-GATES` in Phase 7).

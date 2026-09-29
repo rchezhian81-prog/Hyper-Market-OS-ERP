@@ -162,10 +162,19 @@ describe('a drained offline return reaches the cloud record-and-flag route', () 
     expect((calls[0]?.init.headers as Record<string, string>)['idempotency-key']).toBe('return:RT1');
   });
 
-  it('REJECTS a no-receipt return (originalSaleId null) — there is no synced endpoint, so it is kept for a person', async () => {
-    // A no-receipt return has no bill to reconcile against. It must dead-letter by name (hard rule #6),
+  it('routes a controlled no-receipt return (noReceipt: true, originalSaleId null) to ITS OWN synced endpoint (M13-FR-01)', async () => {
+    // A no-receipt return has no bill, so it is never squeezed into a bill's path: the cloud's no-receipt
+    // record-and-flag route re-checks the owner's cap and the approver.
+    const { fn, calls } = fakeFetch(202);
+    const noReceipt = await transportOn(fn).send(ret({ returnId: 'RN', originalSaleId: null, noReceipt: true, processedBy: 'u-lanecash' }));
+    expect(noReceipt.status).toBe('accepted');
+    expect(calls[0]?.url).toBe('https://api.example.test/v1/returns/no-receipt/synced');
+  });
+
+  it('REJECTS a return with no bill and no no-receipt flag — ambiguous, so it is kept for a person (hard rule #6)', async () => {
+    // Neither a receipted return (no bill) nor a declared no-receipt one: it must dead-letter by name,
     // never post to a wrong or generic URL.
-    const nullSale = await transportOn(fakeFetch(202).fn).send(ret({ returnId: 'RN', originalSaleId: null, noReceipt: true, processedBy: 'u-lanecash' }));
+    const nullSale = await transportOn(fakeFetch(202).fn).send(ret({ returnId: 'RN1', originalSaleId: null, processedBy: 'u-lanecash' }));
     expect(nullSale.status).toBe('rejected');
     const missing = await transportOn(fakeFetch(202).fn).send(ret({ returnId: 'RN2', processedBy: 'u-lanecash' }));
     expect(missing.status).toBe('rejected');

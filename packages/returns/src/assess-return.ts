@@ -118,7 +118,10 @@ export type RefundGovernanceFinding =
   // was handed to the customer at the lane, so on sync the cloud ISSUES it (record-and-flag) and surfaces
   // these as visible exceptions rather than refusing.
   | 'store_credit_over_cap'       // the credit issued offline exceeded the tenant's issuance cap (or none set)
-  | 'store_credit_no_customer';   // a store-credit refund arrived with no customer to issue the credit to
+  | 'store_credit_no_customer'    // a store-credit refund arrived with no customer to issue the credit to
+  // A controlled no-receipt return (M13-FR-01) taken at the lane above the tenant's no-receipt cap — or with
+  // no cap set at all (a lane that took one when the owner had switched the path off). Record-and-flag on sync.
+  | 'no_receipt_over_cap';
 
 /**
  * The §28 findings on an already-given (synced) refund, in order of precedence. Pure: the caller supplies
@@ -139,6 +142,32 @@ export function refundGovernanceFindings(input: {
   if (approvedBy === input.processedBy) return ['approved_by_the_processor'];
   if (!input.approverHoldsAuthority) return ['approver_lacks_authority'];
   return [];
+}
+
+/**
+ * The findings on a CONTROLLED NO-RECEIPT return that already happened at the lane and is reconciling on
+ * sync (M13-FR-01: "no-receipt returns require supervisor approval and are capped"). Two rules the receipted
+ * findings do not have: a no-receipt return ALWAYS needs a §28 approver — there is no threshold below which
+ * it is immaterial, because there is no bill to bound it — and it must sit within the tenant's no-receipt
+ * cap, which the owner sets (no cap set = the path is switched off, so a return taken anyway is a breach).
+ * Pure: the caller supplies whether the approver genuinely holds the authority (a role read the cloud does).
+ * Both findings can stand at once (an unapproved return that is also over the cap), in this order.
+ */
+export function noReceiptGovernanceFindings(input: {
+  readonly refundMinor: number;
+  /** The tenant's no-receipt cap in minor units; `undefined` when the owner has not set one (path off). */
+  readonly capMinor: number | undefined;
+  readonly processedBy: string;
+  readonly approvedBy?: string;
+  readonly approverHoldsAuthority: boolean;
+}): readonly RefundGovernanceFinding[] {
+  const findings: RefundGovernanceFinding[] = [];
+  const approvedBy = input.approvedBy?.trim() ?? '';
+  if (approvedBy === '') findings.push('given_without_approval');
+  else if (approvedBy === input.processedBy) findings.push('approved_by_the_processor');
+  else if (!input.approverHoldsAuthority) findings.push('approver_lacks_authority');
+  if (input.capMinor === undefined || input.refundMinor > input.capMinor) findings.push('no_receipt_over_cap');
+  return findings;
 }
 
 /**
