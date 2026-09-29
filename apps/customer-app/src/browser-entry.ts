@@ -12,7 +12,11 @@
 // the world, and they find out when nothing arrives.
 //
 // So `reachedTheShop` is the transport's honest answer, never the app's guess, and it is the only
-// thing that turns a prepared basket into a sent one.
+// thing that turns a prepared basket into a sent one. Since M20 slice 2 that transport is REAL:
+// `place()` POSTs the reviewed basket to the shop's `/v1/storefront/orders/:orderId` with the
+// customer's session token (`shop-transport.ts`), and what the shop answered — has it, refused it,
+// session ended, could not answer, never reached — is what the customer is told. The token lives in
+// this closure for the tab's life and appears nowhere else (hard rule #4: the app mints nothing).
 //
 // ── What is cached and what is not (§31 customer row) ───────────────────────
 //
@@ -42,6 +46,7 @@ import {
   RIGHTS_OFFERED,
   type ConsentPurposeSpec,
 } from './privacy-centre';
+import { httpShopTransport, readShopAnswer, type ShopTransport, type ShopPaymentResult } from './shop-transport';
 
 /** Everything the app was given about this shop and this customer. */
 export interface ShopData {
@@ -56,6 +61,8 @@ export interface ShopData {
   readonly storeLocation?: { readonly lat: number; readonly lon: number };
   readonly deliveryLocation?: { readonly lat: number; readonly lon: number };
   readonly deliveryFeeMinor?: number;
+  /** The store (stock location) that fulfils this app's orders — told by the box, never guessed here. */
+  readonly locationId?: string;
   /** The purposes this tenant asks consent for. Choose-able, never hard-coded. */
   readonly consentPurposes?: readonly ConsentPurposeSpec[];
   readonly consent?: ConsentState;
@@ -65,6 +72,43 @@ export interface ShopData {
 
 /** A source of the customer's current position — the browser's geolocation, or a fake in a test. */
 export type GeoProvider = () => Promise<{ readonly lat: number; readonly lon: number }>;
+
+/** Why `place()` did not hand the order to the shop — the session's own reasons, plus the shop's. */
+export type PlaceRefusal =
+  | NonNullable<ReturnType<typeof send>['refusedBecause']>
+  | 'order_refused'
+  | 'already_sent'
+  | 'not_signed_in'
+  | 'no_store_named'
+  | 'no_road_to_the_shop'
+  | 'signed_out'
+  | 'the_shop_refused'
+  | 'the_shop_could_not_answer';
+
+export type PlaceOutcome =
+  | {
+    readonly ok: true;
+    readonly state: SessionState;
+    /** `true` — the shop HAS the order. `false` — prepared, not sent; nothing charged. */
+    readonly shopHasIt: boolean;
+    readonly orderId: string;
+    readonly detail: string;
+  }
+  | {
+    readonly ok: false;
+    readonly state: SessionState;
+    readonly refusedBecause: PlaceRefusal;
+    /** What the customer is told — the session's or the shop's own sentence, never a cheerier one. */
+    readonly tellTheCustomer: string;
+    readonly detail: string;
+  };
+
+/** Order ids must be unique across every phone: a clash would read as a probe of someone else's order. */
+const randomOrderId = (): string => {
+  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  const id = c?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `ORD-${id.replace(/-/g, '').slice(0, 20).toUpperCase()}`;
+};
 
 export interface LocationCaptureResult {
   readonly ok: boolean;
@@ -162,6 +206,20 @@ export interface Shop {
     readonly result: 'authorised' | 'declined' | 'unknown';
     readonly reachedTheShop: boolean;
   }): ReturnType<typeof send>;
+  /**
+   * Place the order THROUGH THE SHOP (M20-FR-03). Runs the session's own checks first (reviewed,
+   * resolved, current prices, slot, no card number — none of these ever reaches the network), then
+   * POSTs the basket with the session token and turns the shop's answer into the truth the customer
+   * sees. A request that never reached the shop leaves the basket *prepared, not sent*; `retry()`
+   * sends the same order (same id, same idempotency key) so it can never become two.
+   */
+  place(input: { readonly providerRef: string; readonly result: ShopPaymentResult }): Promise<PlaceOutcome>;
+  /** Re-send a prepared basket. `null` when nothing is waiting to go. */
+  retry(): Promise<PlaceOutcome | null>;
+  /** Hold the customer's session token, in memory only. */
+  signedIn(token: string): void;
+  signOut(): void;
+  isSignedIn(): boolean;
   /** What the order screen says afterwards. `payment_pending` reads as waiting, never as done. */
   statusLine(): string | null;
   /** The consent switches — one row, one toggle, same cost in both directions. */
@@ -182,11 +240,18 @@ export function bootShop(
   data: ShopData | undefined,
   basket: BasketStore,
   nextId: () => string,
+  transport?: ShopTransport,
+  newOrderId: () => string = randomOrderId,
 ): Shop | null {
   const products = data?.products;
   if (products === undefined || products.length === 0) return null;
 
   let state = basket.read() ?? newSession();
+  // The session token — in memory for the tab's life, never written anywhere (hard rule #4).
+  let token: string | undefined;
+  // A basket the shop has not yet acknowledged: the order id and payment answer it must go out
+  // with again, so a retry is the SAME order and can never become two.
+  let prepared: { readonly orderId: string; readonly providerRef: string; readonly result: ShopPaymentResult; readonly review: SessionState['review'] } | undefined;
   const purposes = data?.consentPurposes ?? [];
   let consent: ConsentState = data?.consent ?? { grants: [] };
   // The customer's OWN delivery location. Undefined until captured from the device — never guessed,
@@ -259,31 +324,20 @@ export function bootShop(
     },
 
     send: (input) => {
-      const result = send(state, {
-        orderId: input.orderId,
-        customerRef: data?.customerRef ?? 'guest',
-        deliveryFeeMinor: data?.deliveryFeeMinor ?? 0,
-        currentPackVersion: data?.packVersion ?? 0,
-        // 10 km is the D08 default and it lives in the package, not here. An empty policy takes
-        // the package's own defaults rather than a second copy of them drifting in this file.
-        policy: data?.policy ?? {},
-        storeLocation: data?.storeLocation ?? { lat: 0, lon: 0 },
-        // The customer's captured location. Unset → {0,0}, which is out of every real radius, so an
-        // un-located delivery is refused rather than measured from nowhere (the UI gates on
-        // `hasLocation()` before offering delivery, so this is the belt-and-braces refusal).
-        deliveryLocation: deliveryLocation ?? { lat: 0, lon: 0 },
-        // A provider token. The session refuses a card number outright rather than redacting it,
-        // because redacting means it was held first (hard rule #3).
-        // A declined or unanswered payment carries a REASON, not a reference — there is nothing
-        // to reference. Keeping the shapes apart is what stops "unknown" being read as a token.
-        payment: input.result === 'authorised'
-          ? { result: 'authorised', providerRef: input.providerRef }
-          : { result: input.result, reason: input.providerRef },
-        reachedTheShop: input.reachedTheShop,
-      });
+      const result = send(state, sendInput(input.orderId, input.providerRef, input.result, input.reachedTheShop));
       keep(result.state);
       return result;
     },
+
+    place: (input) => placeThroughTheShop(input.providerRef, input.result),
+
+    retry: () => (prepared === undefined || state.stage !== 'waiting_for_signal'
+      ? Promise.resolve(null)
+      : placeThroughTheShop(prepared.providerRef, prepared.result)),
+
+    signedIn: (t) => { token = t; },
+    signOut: () => { token = undefined; },
+    isSignedIn: () => token !== undefined,
 
     statusLine: () => (state.order === undefined ? null : orderStatusLine(state.order)),
 
@@ -306,6 +360,99 @@ export function bootShop(
       slaDays: data?.privacySlaDays ?? 30,
     }),
   };
+
+  /** The session's `send` input for one attempt — the same figures whether it is a dry run or the real thing. */
+  function sendInput(orderId: string, providerRef: string, result: ShopPaymentResult, reachedTheShop: boolean): Parameters<typeof send>[1] {
+    return {
+        orderId,
+        customerRef: data?.customerRef ?? 'guest',
+        deliveryFeeMinor: data?.deliveryFeeMinor ?? 0,
+        currentPackVersion: data?.packVersion ?? 0,
+        // 10 km is the D08 default and it lives in the package, not here. An empty policy takes
+        // the package's own defaults rather than a second copy of them drifting in this file.
+        policy: data?.policy ?? {},
+        storeLocation: data?.storeLocation ?? { lat: 0, lon: 0 },
+        // The customer's captured location. Unset → {0,0}, which is out of every real radius, so an
+        // un-located delivery is refused rather than measured from nowhere (the UI gates on
+        // `hasLocation()` before offering delivery, so this is the belt-and-braces refusal).
+        deliveryLocation: deliveryLocation ?? { lat: 0, lon: 0 },
+        // A provider token. The session refuses a card number outright rather than redacting it,
+        // because redacting means it was held first (hard rule #3).
+        // A declined or unanswered payment carries a REASON, not a reference — there is nothing
+        // to reference. Keeping the shapes apart is what stops "unknown" being read as a token.
+        payment: result === 'authorised'
+          ? { result: 'authorised', providerRef }
+          : { result, reason: providerRef },
+        reachedTheShop,
+    };
+  }
+
+  async function placeThroughTheShop(providerRef: string, result: ShopPaymentResult): Promise<PlaceOutcome> {
+    // An order the shop already has is not sent again by tapping Pay twice: the customer changes the
+    // basket (which starts a new review) to order again. The idempotent retry path is `retry()`.
+    if (state.stage === 'sent') {
+      return { ok: false, state, refusedBecause: 'already_sent', tellTheCustomer: state.tellTheCustomer, detail: 'this basket was already sent and the shop has it — change the basket to start a new order' };
+    }
+    // The same order id as the last attempt for THIS reviewed basket; a fresh one otherwise.
+    const orderId = prepared !== undefined && prepared.review === state.review ? prepared.orderId : newOrderId();
+
+    // 1. The session's own checks, offline and first: not reviewed, problems unresolved, prices
+    //    moved, no slot, a card number. None of these ever reaches the network, and each keeps the
+    //    session's own sentence (a stale review is sent back to look, as `send` already does).
+    const dry = send(state, sendInput(orderId, providerRef, result, true));
+    if (!dry.ok) {
+      keep(dry.state);
+      const refusedBecause: PlaceRefusal = dry.refusedBecause ?? 'order_refused';
+      return { ok: false, state, refusedBecause, tellTheCustomer: dry.state.order?.tellTheCustomer ?? dry.state.tellTheCustomer, detail: dry.detail };
+    }
+    const refuse = (refusedBecause: PlaceRefusal, tellTheCustomer: string, detail: string): PlaceOutcome =>
+      ({ ok: false, state, refusedBecause, tellTheCustomer, detail });
+    if (token === undefined) {
+      return refuse('not_signed_in', 'Please sign in first, so the shop knows whose order this is. Your basket is kept.', 'no session token — the shop would not know who is ordering');
+    }
+    const locationId = data?.locationId;
+    if (locationId === undefined) {
+      return refuse('no_store_named', 'This app has not been told which store fulfils orders, so it cannot send one. Nothing has been charged.', 'ShopData.locationId is missing — the box did not name the fulfilling store');
+    }
+    if (transport === undefined) {
+      return refuse('no_road_to_the_shop', 'This app has no connection to the shop set up, so it cannot send an order. Nothing has been charged.', 'no transport was given to bootShop');
+    }
+
+    // 2. The real thing. The amount is the session's own payable (items + fee) — the shop records
+    //    it as the checkout's answer and invents nothing.
+    const payable = dry.state.order?.payableMinor ?? 0;
+    const answer = await transport.placeOrder({
+      orderId, token, locationId,
+      lines: state.lines.map((l) => ({ productId: l.productId, quantityMinor: l.quantityMinor })),
+      payment: { providerRef, amountMinor: payable, result },
+    });
+
+    if (!answer.reached) {
+      // Nothing the shop acted on left the phone. Prepared, not sent — the model's own words.
+      const waiting = send(state, sendInput(orderId, providerRef, result, false));
+      keep(waiting.state);
+      prepared = { orderId, providerRef, result, review: state.review };
+      return { ok: true, state, shopHasIt: false, orderId, detail: answer.detail };
+    }
+
+    const verdict = readShopAnswer(answer);
+    switch (verdict.kind) {
+      case 'placed':
+        keep(dry.state);
+        prepared = undefined;
+        return { ok: true, state, shopHasIt: true, orderId, detail: verdict.alreadyPlaced ? 'the shop already held this order — nothing was placed twice' : 'the shop has the order' };
+      case 'signed_out':
+        token = undefined;
+        prepared = { orderId, providerRef, result, review: state.review };
+        return refuse('signed_out', 'Your sign-in has ended. Please sign in again — your basket is kept and nothing has been charged.', 'the shop answered 401');
+      case 'shop_could_not_answer':
+        prepared = { orderId, providerRef, result, review: state.review };
+        return refuse('the_shop_could_not_answer', 'The shop could not take your order just now. Nothing is confirmed and nothing has been charged — please try again in a moment.', `the shop answered ${verdict.status}`);
+      case 'refused':
+        prepared = undefined;
+        return refuse('the_shop_refused', verdict.whatHappened, `the shop refused: ${verdict.code}`);
+    }
+  }
 }
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
@@ -328,6 +475,10 @@ if (browserWindow !== undefined) {
     browserWindow.shopStorageProblem = why;
   });
   let counter = 0;
-  const shop = bootShop(browserWindow.shopData, basket, () => `DSR-${(counter += 1)}`);
+  const nav = (globalThis as { navigator?: { onLine?: boolean } }).navigator;
+  const transport = typeof globalThis.fetch === 'function'
+    ? httpShopTransport({ fetch: globalThis.fetch.bind(globalThis), isOnline: () => nav?.onLine !== false })
+    : undefined;
+  const shop = bootShop(browserWindow.shopData, basket, () => `DSR-${(counter += 1)}`, transport);
   if (shop !== null) browserWindow.shop = shop;
 }

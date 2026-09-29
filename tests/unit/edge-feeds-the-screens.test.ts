@@ -543,6 +543,12 @@ describe('each screen gets what it needs, and nothing when the box has nothing',
     expect(customerPayload(input())).toMatchObject({ packVersion: 7 });
   });
 
+  it('names the store that fulfils the app\'s orders — the store of the pack, the same basis as the till\'s stock movements (M20 slice 2)', () => {
+    expect(customerPayload(input())).toMatchObject({ locationId: 'store-1' });
+    // No pack policy → no store named. The app then refuses to send rather than guessing one.
+    expect(customerPayload(input({ pack: fullPack({ policies: notKnown('x') }) }))!['locationId']).toBeUndefined();
+  });
+
   it('feeds the customer app the store location + radius so the 10 km check works, not {0,0}-refuse-everyone', () => {
     const payload = customerPayload(input())!;
     // The routing policy's store location and radius are the SAME ones dispatch uses (§6.2).

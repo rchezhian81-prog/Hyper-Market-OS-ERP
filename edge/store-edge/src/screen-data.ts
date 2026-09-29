@@ -632,7 +632,11 @@ export function customerPayload(input: ScreenInput): Record<string, unknown> | n
   const slots = generated !== undefined ? generated
     : input.pack.slots.known ? input.pack.slots.value : undefined;
   return {
-    ...(policies === undefined ? {} : { tenantId: policies.storeId, privacySlaDays: policies.privacySlaDays }),
+    // The store that fulfils the app's orders is the store of the pack — the same basis the till's
+    // own stock movements use (`store_of_pack`) — so a customer's reservation and the till's sale
+    // draw on ONE stock figure (P-02). Without a pack policy the app is told no store, and refuses
+    // to send an order rather than guess one.
+    ...(policies === undefined ? {} : { tenantId: policies.storeId, locationId: policies.storeId, privacySlaDays: policies.privacySlaDays }),
     packVersion: input.pack.version,
     products: input.pack.products.value.map((p) => ({
       productId: p.productId,
