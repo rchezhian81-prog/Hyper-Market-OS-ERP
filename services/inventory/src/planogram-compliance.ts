@@ -21,33 +21,21 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  planogramCompliance, latestCounts, ShelfMap, ShelfMappingError,
-  type ShelfLocation, type ShelfAssignment, type Planogram, type ShelfState, type ShelfCount,
+  planogramCompliance, latestCounts, ShelfMap,
+  type Planogram, type ShelfState, type ShelfCount,
 } from '../../../packages/merchandising/src/index';
 
-const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
-const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
-const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v);
-const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
-const ZONES = ['ambient', 'chilled', 'frozen', 'secure'] as const;
-
-interface RawLoc { readonly locationId: string; readonly aisle: number; readonly rack: number; readonly bay: number; readonly shelf: number; readonly position: number; readonly zone?: string; readonly label?: string }
-const isLoc = (v: unknown): v is RawLoc =>
-  isObj(v) && isStr(v['locationId'])
-  && isNum(v['aisle']) && isNum(v['rack']) && isNum(v['bay']) && isNum(v['shelf']) && isNum(v['position'])
-  && (v['zone'] === undefined || (typeof v['zone'] === 'string' && (ZONES as readonly string[]).includes(v['zone'])))
-  && (v['label'] === undefined || typeof v['label'] === 'string');
-
-interface RawAssign { readonly productId: string; readonly locationId: string; readonly capacityMinor: number; readonly primary: boolean }
-const isAssign = (v: unknown): v is RawAssign =>
-  isObj(v) && isStr(v['productId']) && isStr(v['locationId']) && isNum(v['capacityMinor']) && typeof v['primary'] === 'boolean';
-
-const isBackstock = (v: unknown): v is Record<string, number> =>
-  isObj(v) && Object.values(v).every((n) => isInt(n) && (n as number) >= 0);
+import {
+  isStr, isObj, isInt, isLoc, isAssign, isBackstock, toLocations, toAssignments, shelfMapFor, noShelfMap, noPlanogram, inForcePlanogram, latestPlanograms,
+  type RawLoc, type RawAssign, type StoredShelfMap, type StoredPlanogram,
+} from './planograms';
 
 export interface PlanogramComplianceDeps {
   /** Every shelf count recorded in a store — the observations the plan is judged against. */
   readonly counts: (tenantId: string, storeId: string) => Promise<readonly ShelfCount[]> | readonly ShelfCount[];
+  /** The STORED shelf map and planograms (un-parks CH-02). Optional: without them only the plan-in-body path works. */
+  readonly shelfMap?: (tenantId: string, storeId: string) => Promise<StoredShelfMap | undefined> | StoredShelfMap | undefined;
+  readonly planograms?: (tenantId: string, storeId: string) => Promise<readonly StoredPlanogram[]> | readonly StoredPlanogram[];
   readonly now: () => string;
 }
 
@@ -62,51 +50,70 @@ export function planogramComplianceRoutes(deps: PlanogramComplianceDeps): readon
       permission: 'planogram.compliance.read', idempotent: true,
       handler: async (ctx) => {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        const p = b['planogram'];
-        const locs = b['locations'];
         const backstock = b['backstock'] ?? {};
-        if (!isObj(p) || !isStr(p['planogramId']) || !isStr(p['storeId']) || !isInt(p['version'])
-          || !isStr(p['effectiveFrom']) || !isStr(p['createdBy'])
-          || !Array.isArray(p['assignments']) || !p['assignments'].every(isAssign)
-          || !Array.isArray(locs) || !locs.every(isLoc)
-          || !isBackstock(backstock) || !isStr(b['assignedRole'])) {
+        if (!isBackstock(backstock) || !isStr(b['assignedRole'])) {
           throw apiError(400, {
             code: 'not_readable_as_a_compliance_request',
-            whatHappened: 'A compliance run needs { planogram:{ planogramId, storeId, version, effectiveFrom, createdBy, assignments[] }, locations[], backstock{}, assignedRole }.',
+            whatHappened: 'A compliance run needs backstock{} and assignedRole, plus EITHER the plan in the body ({ planogram, locations }) OR a storeId whose published shelf map and planogram the store keeps.',
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Send the plan, the shelf map and the stockroom figures. The counts come from what the store has recorded.',
+            nextSafeAction: 'Send the stockroom figures and the role; then either the plan and shelf map, or just the store. The counts come from what the store has recorded.',
           });
         }
         const refillAtBp = isInt(b['refillAtBp']) && (b['refillAtBp'] as number) >= 0 && (b['refillAtBp'] as number) <= 10_000 ? b['refillAtBp'] as number : undefined;
         const staleAfterMinutes = isInt(b['staleAfterMinutes']) && (b['staleAfterMinutes'] as number) > 0 ? b['staleAfterMinutes'] as number : 240;
-        const storeId = p['storeId'] as string;
 
-        // Stamp the store onto every location and assignment so the caller sends it once; the map
-        // filters to this store, so a stray cross-store row is dropped rather than trusted.
-        const locations: readonly ShelfLocation[] = (locs as RawLoc[]).map((l) => ({
-          storeId, locationId: l.locationId, aisle: l.aisle, rack: l.rack, bay: l.bay, shelf: l.shelf,
-          position: l.position, ...(l.zone !== undefined ? { zone: l.zone as ShelfLocation['zone'] } : {}), ...(l.label !== undefined ? { label: l.label } : {}),
-        }));
-        const assignments: readonly ShelfAssignment[] = (p['assignments'] as RawAssign[]).map((a) => ({
-          storeId, productId: a.productId, locationId: a.locationId, capacityMinor: a.capacityMinor, primary: a.primary,
-        }));
-
-        // The map validates the plan as a whole — an assignment to a shelf the store has not mapped, a
-        // facing with no capacity, or two primary homes for one product is a self-inconsistent plan,
-        // not a shortage. That is a 422 (nothing was saved either way).
+        let planogram: Planogram;
         let map: ShelfMap;
-        try {
-          map = new ShelfMap(storeId, locations, assignments);
-        } catch (err) {
-          if (err instanceof ShelfMappingError) {
-            throw apiError(422, {
-              code: 'the_plan_is_inconsistent',
-              whatHappened: err.message,
+        let storeId: string;
+        let source: 'request_body' | 'stored';
+        const p = b['planogram'];
+        if (p !== undefined || b['locations'] !== undefined) {
+          // The plan-in-body path (as before CH-02 was un-parked): the caller supplies plan AND shelf map.
+          const locs = b['locations'];
+          if (!isObj(p) || !isStr(p['planogramId']) || !isStr(p['storeId']) || !isInt(p['version'])
+            || !isStr(p['effectiveFrom']) || !isStr(p['createdBy'])
+            || !Array.isArray(p['assignments']) || !p['assignments'].every(isAssign)
+            || !Array.isArray(locs) || !locs.every(isLoc)) {
+            throw apiError(400, {
+              code: 'not_readable_as_a_compliance_request',
+              whatHappened: 'A compliance run with the plan in the body needs { planogram:{ planogramId, storeId, version, effectiveFrom, createdBy, assignments[] }, locations[] }.',
               wasItSaved: 'not_saved',
-              nextSafeAction: 'Fix the shelf map or the planogram so every facing has a real shelf and one home, then run again.',
+              nextSafeAction: 'Send the plan and the shelf map together, or omit both and name the store whose published plan should be used.',
             });
           }
-          throw err;
+          storeId = p['storeId'] as string;
+          const assignments = toAssignments(storeId, p['assignments'] as RawAssign[]);
+          // The map validates the plan as a whole — an assignment to a shelf the store has not mapped, a
+          // facing with no capacity, or two primary homes for one product is a self-inconsistent plan,
+          // not a shortage. That is a 422 (nothing was saved either way).
+          map = shelfMapFor({ storeId, version: 0, locations: toLocations(storeId, locs as RawLoc[]), publishedBy: '', publishedAt: '' }, assignments);
+          planogram = {
+            planogramId: p['planogramId'] as string, storeId, version: p['version'] as number,
+            effectiveFrom: p['effectiveFrom'] as string, assignments, createdBy: p['createdBy'] as string,
+          };
+          source = 'request_body';
+        } else {
+          // The STORED path (CH-02 un-parked): the plan in force — or the named plan's newest version — laid on
+          // the store's published shelf map. A store with neither is told so, never handed an empty plan.
+          if (!isStr(b['storeId'])) {
+            throw apiError(400, {
+              code: 'not_readable_as_a_compliance_request',
+              whatHappened: 'Without a plan in the body, a compliance run needs the storeId whose published planogram and shelf map to use (and optionally planogramId).',
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Name the store, or send the plan and shelf map in the body.',
+            });
+          }
+          storeId = b['storeId'] as string;
+          const stored = deps.shelfMap === undefined ? undefined : await deps.shelfMap(ctx.tenantId, storeId);
+          if (stored === undefined) noShelfMap(storeId);
+          const all = deps.planograms === undefined ? [] : await deps.planograms(ctx.tenantId, storeId);
+          const chosen = isStr(b['planogramId'])
+            ? latestPlanograms(all).find((x) => x.planogramId === b['planogramId'])
+            : inForcePlanogram(all, deps.now());
+          if (chosen === undefined) noPlanogram(storeId);
+          map = shelfMapFor(stored!, chosen!.assignments);
+          planogram = chosen!;
+          source = 'stored';
         }
 
         const asOf = deps.now();
@@ -117,17 +124,12 @@ export function planogramComplianceRoutes(deps: PlanogramComplianceDeps): readon
           productId: c.productId, locationId: c.locationId, onShelfMinor: c.countedMinor, observedAt: c.at,
         }));
 
-        const planogram: Planogram = {
-          planogramId: p['planogramId'] as string, storeId, version: p['version'] as number,
-          effectiveFrom: p['effectiveFrom'] as string, assignments, createdBy: p['createdBy'] as string,
-        };
-
         const result = planogramCompliance({
           planogram, map, shelfState, backstock: backstock as Record<string, number>,
           assignedRole: b['assignedRole'] as string, ...(refillAtBp !== undefined ? { refillAtBp } : {}),
           asOf, staleAfterMinutes,
         });
-        return { status: 200, body: { ...result, storeId, asOf, staleAfterMinutes } };
+        return { status: 200, body: { ...result, storeId, asOf, staleAfterMinutes, planogramId: planogram.planogramId, planogramVersion: planogram.version, planSource: source } };
       },
     },
   ];

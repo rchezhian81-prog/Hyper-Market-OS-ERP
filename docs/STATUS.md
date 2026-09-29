@@ -131,8 +131,26 @@ accounts.
 - **Stage B is complete.** B1 (load + tenant), B2 (signed page + six witnesses), B3 (parallel run). What
   remains human: the owner's written GOs (Option 2 load; parallel run), the daily reconciler's NAME, the
   outside evidence, and the CA.
-- **Next:** B3 PR → merge → **Stage C** (drive every PARTIALLY_WIRED item up the ladder, family by family;
-  wire the migration screen to the B2/B3 routes; un-park CH-01 / CH-02 / OA-12).
+- **Stage C, slice 1 — done (29 Sep 2026): CH-02 un-parked — the shelf map and planograms the store KEEPS.**
+  The compliance route used to need the whole plan and shelf map in every request (the durable store was
+  owner-deferred to R6 as CH-02). Now (`services/inventory/src/planograms.ts`): `PUT/GET
+  /v1/merchandising/stores/:storeId/shelf-map` publishes the store's shelf map as versions; `PUT
+  /v1/merchandising/stores/:storeId/planograms/:planogramId` publishes a plan as the next version of that
+  plan id, validated against the STORED map by the same engine (an assignment to an unmapped shelf, two
+  primary homes, no capacity → 422, nothing stored; no map → 409); `GET …/planograms` shows the plan in
+  force (newest version of the latest plan whose date has arrived), every plan's newest version and which
+  plans predate the current shelf map; `GET …/planograms/:planogramId` is the version history. The compliance
+  run now judges the stored plan in force (or a named plan) when no plan is sent, and says which plan and
+  version it judged (`planSource: stored | request_body`); the plan-in-body path is unchanged. Roles:
+  `planogram.publish` (owner, store manager). CH-02 marked Applied. **M04 re-rated PARTIALLY_WIRED → WIRED**
+  (unit 7 + real-pipeline 3); not INTEGRATION_TESTED as a module because replenishment tasks are still
+  computed, not persisted/completed, and the merchandising screen reads its plan from the store pack.
+- **Stage C — remaining, in order:** C2 un-park CH-01 (cloud routes for controlled no-receipt returns and
+  exchanges — the returns engine already models both); C3 wire the migration screen to the B2/B3 routes;
+  then family by family through the 57 remaining PARTIALLY_WIRED items (D01-FR-06 content authoring,
+  D02-FR-06 display funding, D07 coupons/referrals, M21 compensation, M23 close second source, …). OA-12 was
+  already answered and closed on 23 Sep — nothing to un-park.
+- **Next:** C1 PR → merge → **C2** (CH-01).
 
 ---
 

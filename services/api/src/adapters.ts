@@ -129,6 +129,7 @@ import type { SecretsDeps, SecretRef } from '../../platform/src/secrets';
 import type { OrgStructureDeps, OrgNode, GstRegistration } from '../../platform/src/org-structure';
 import type { DrReadinessDeps, DrDrillRecord } from '../../platform/src/dr-readiness';
 import type { ShelfCountDeps, ShelfCount } from '../../inventory/src/shelf-count';
+import type { PlanogramStoreDeps, StoredShelfMap, StoredPlanogram } from '../../inventory/src/planograms';
 import { projectFleet, type DeviceRegistryDeps, type DeviceRegistryEvent } from '../../platform/src/device-registry';
 import { projectVersionPolicy, type VersionPolicyDeps, type VersionPolicyEvent } from '../../platform/src/version-policy';
 import type { PartnerDeps, PartnerCredential, Certification, SandboxTenant } from '../../platform/src/partners';
@@ -3485,6 +3486,36 @@ export function orgStructureAdapter(input: {
  * previous one stays (it is the record that explains a variance); the engine folds latest-per-facing for
  * the reads. Idempotent on the count id so a re-synced observation is one row, not two.
  */
+const forMerchandising = (storeId: string): string => streamName(STREAM.inventory, 'merchandising', storeId);
+
+/** The shelf map and planograms a store keeps (M04-FR-02/03, un-parks CH-02): versioned, append-only, per store. */
+export function planogramStoreAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): PlanogramStoreDeps {
+  return {
+    now: input.now,
+    shelfMap: async (tenantId, storeId) => {
+      const all = await allOf<StoredShelfMap>(input.store, tenantId, forMerchandising(storeId), 'ShelfMapPublished');
+      return all.reduce<StoredShelfMap | undefined>((best, m) => (best === undefined || m.version > best.version ? m : best), undefined);
+    },
+    planograms: (tenantId, storeId) => allOf<StoredPlanogram>(input.store, tenantId, forMerchandising(storeId), 'PlanogramPublished'),
+    recordShelfMap: async (tenantId, map) => {
+      await input.store.append(tenantId, forMerchandising(map.storeId), makeEvent({
+        id: `shelf-map-${map.storeId}-v${map.version}`, type: 'ShelfMapPublished', occurredAt: map.publishedAt,
+        // Keyed on the version: a retry of the same publish collapses; the next publish is the next version.
+        idempotencyKey: `shelf-map-${tenantId}-${map.storeId}-v${map.version}`, source: 'api/inventory', payload: map,
+      }));
+    },
+    recordPlanogram: async (tenantId, planogram) => {
+      await input.store.append(tenantId, forMerchandising(planogram.storeId), makeEvent({
+        id: `planogram-${planogram.storeId}-${planogram.planogramId}-v${planogram.version}`, type: 'PlanogramPublished', occurredAt: planogram.publishedAt,
+        idempotencyKey: `planogram-${tenantId}-${planogram.storeId}-${planogram.planogramId}-v${planogram.version}`, source: 'api/inventory', payload: planogram,
+      }));
+    },
+  };
+}
+
 export function shelfCountAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;

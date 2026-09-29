@@ -96,6 +96,7 @@ import { goodsReceiptRoutes } from '../../inventory/src/goods-receipt';
 import { asnRoutes } from '../../inventory/src/asn';
 import { shelfCountRoutes } from '../../inventory/src/shelf-count';
 import { planogramComplianceRoutes } from '../../inventory/src/planogram-compliance';
+import { planogramRoutes } from '../../inventory/src/planograms';
 import { spacePerformanceRoutes } from '../../inventory/src/space-performance';
 import { assortmentRoutes } from '../../inventory/src/assortment';
 import { warehouseRoutes } from '../../inventory/src/warehouse';
@@ -191,8 +192,7 @@ import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, dataExportAdapter, financeAdapter, settlementAdapter,
   customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter,
-  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter,
-} from './adapters';
+  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
 import { SandboxRecurringBillingProvider, type Plan as BillingPlan } from '../../../packages/platform/src/index';
@@ -421,7 +421,12 @@ export function buildSurface(deps: {
     // reading the same shelf-count stream the producer above writes.
     ...planogramComplianceRoutes(store === undefined
       ? { counts: empty([]), now }
-      : { counts: shelfCountAdapter({ store, now }).counts, now }),
+      : { counts: shelfCountAdapter({ store, now }).counts, ...planogramStoreAdapter({ store, now }), now }),
+    // The shelf map and planograms the store KEEPS (M04-FR-02/03, un-parks CH-02): versioned, validated against
+    // the stored map by the same engine, and read by the compliance run above when no plan is sent.
+    ...planogramRoutes(store === undefined
+      ? { shelfMap: empty(undefined), planograms: empty([]), recordShelfMap: () => {}, recordPlanogram: () => {}, now }
+      : planogramStoreAdapter({ store, now })),
     // Space productivity + supplier display-contract governance (M04-FR-04) — margin-per-sq-ft ranking
     // and the expired-still-occupying / unapproved / funding-not-received exceptions on display deals.
     ...spacePerformanceRoutes(store === undefined
