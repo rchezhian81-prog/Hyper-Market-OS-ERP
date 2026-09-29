@@ -103,6 +103,8 @@ export async function seedInitialAdmins(
   const existing = await store.readStream(tenantId, STREAM.identity, { type: 'RoleGranted' });
   if (existing.length > 0) return { outcome: 'already_bootstrapped', granted: 0 };
   if (admins.length === 0) return { outcome: 'seeded', granted: 0 };
+  // The tenant exists from this moment (db/migrations/0013): registered by the operator who laid the admins down.
+  await store.registerTenant(tenantId, `operator:${laidDownBy}`);
 
   const entries = admins.map((admin, i) => {
     const assignment: RoleAssignment = { userId: admin.userId, roleId: admin.roleId, branchScope: 'all' };
@@ -148,6 +150,8 @@ export async function seedGenesisOwner(
   const existing = await store.readStream(tenantId, STREAM.identity, { type: 'RoleGranted' });
   if (existing.length > 0) return 'already_bootstrapped';
 
+  // The tenant exists from this moment (db/migrations/0013): registered by the system at genesis.
+  await store.registerTenant(tenantId, 'system:genesis');
   const assignment: RoleAssignment = { userId: ownerUserId, roleId: ownerRoleId, branchScope: 'all' };
   await store.append(tenantId, STREAM.identity, makeEvent({
     id: `grant-genesis-${tenantId}`,

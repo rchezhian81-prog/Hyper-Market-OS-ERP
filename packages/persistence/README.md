@@ -80,6 +80,10 @@ agent drains into.
    must see the whole database (backup, restore verification, migrate) open their connection with the
    explicit platform scope `options: '-c app.tenant_id=*'` / `PGOPTIONS='-c app.tenant_id=*'` and
    `pg_dump --enable-row-security`. The API never uses the platform scope.
+5. **A tenant must be registered before it holds rows (migration 0013).** `EventStore.registerTenant(tenantId,
+   registeredBy)` is called at genesis (`seedGenesisOwner`), by the bootstrap tool (`seedInitialAdmins`) and by
+   the test harness; every uuid-keyed tenant table references `tenants`, so a write for an unregistered tenant
+   is refused by the database and surfaces as `TenantNotRegisteredError` (403 `tenant_not_registered` at the API).
 
 Tested in `tests/unit/persistence-event-store.test.ts`. Part of the repository layout in
 `CLAUDE.md`.

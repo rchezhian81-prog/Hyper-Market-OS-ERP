@@ -441,3 +441,19 @@ describe('the SIGNED token’s re-auth evidence reaches the handler for action-l
     expect(seen).toEqual([undefined]);
   });
 });
+
+describe('a write for a tenant nobody provisioned is a 403, not a 500 (migration 0013 · GAP-DATA-02)', () => {
+  it('maps TenantNotRegisteredError from the store to 403 tenant_not_registered with the three-part error', async () => {
+    const boom: Route = route({
+      method: 'POST', permission: 'pos.sale.create', idempotent: true,
+      handler: () => { const e = new Error('tenant "t-sre" is not registered'); e.name = 'TenantNotRegisteredError'; throw e; },
+    });
+    const k = kernel([boom]);
+    const res = await handle(k, req({ method: 'POST', headers: { authorization: 'Bearer good', 'idempotency-key': 'k-1' }, body: {} }));
+    expect(res.status).toBe(403);
+    const err = (res.body as { error: { code: string; wasItSaved: string; nextSafeAction: string } }).error;
+    expect(err.code).toBe('tenant_not_registered');
+    expect(err.wasItSaved).toBe('not_saved');
+    expect(err.nextSafeAction).toContain('provision');
+  });
+});

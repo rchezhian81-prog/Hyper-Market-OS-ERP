@@ -267,6 +267,8 @@ describe.skipIf(!DATABASE_URL)('the migration set applies, re-applies and holds 
     // and prove the append landed, then show the guard refuses editing and deleting that REAL row.
     const TENANT = '00000000-0000-4000-8000-000000000001';
     const ID = 'migration-guard-probe';
+    // The probe tenant exists before its row (db/migrations/0013) — registered in the platform scope.
+    await client.query("INSERT INTO tenants (tenant_id, registered_by) VALUES ($1, 'tests/migration') ON CONFLICT (tenant_id) DO NOTHING", [TENANT]);
     await client.query(
       `INSERT INTO event_ledger (id, tenant_id, stream, type, occurred_at, idempotency_key, source, payload)
        VALUES ($1, $2, 'migration-guard', 'ProbeAppended', now(), $3, 'tests/migration', '{}'::jsonb)

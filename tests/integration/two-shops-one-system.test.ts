@@ -98,6 +98,8 @@ describe.skipIf(!DATABASE_URL)('Stage 18 — two shops, one system (real Postgre
         .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })),
     );
     store = new SqlEventStore(sql);
+    await store.registerTenant(SRE, 'tests'); // both shops exist before their first row (db/migrations/0013)
+    await store.registerTenant(KUMAR, 'tests');
   });
 
   afterAll(async () => {

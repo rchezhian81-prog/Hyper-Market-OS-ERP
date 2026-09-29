@@ -39,6 +39,7 @@ const AT = '2026-08-07T10:00:00.000Z';
 
 /** Provision a role directly into the ledger, the way tenant provisioning seeds the initial admins. */
 async function appendGrant(store: EventStore, tenant: string, userId: string, roleId: string): Promise<void> {
+  await store.registerTenant(tenant, 'test/provision'); // the tenant exists before its first grant (db/migrations/0013)
   await store.append(tenant, STREAM.identity, makeEvent({
     id: `grant-${roleId}-${userId}`, type: 'RoleGranted', occurredAt: AT,
     idempotencyKey: `grant-${tenant}-${roleId}-${userId}`, source: 'test/provision',
@@ -52,6 +53,7 @@ async function appendGrant(store: EventStore, tenant: string, userId: string, ro
 /** Turn an optional/paid feature on for a tenant — the same `TenantEntitlementSet` event the platform
  *  entitlements API writes, so a route tagged with that feature (M36-FR-01) becomes reachable for it. */
 async function appendEntitlement(store: EventStore, tenant: string, feature: string, enabled: boolean): Promise<void> {
+  await store.registerTenant(tenant, 'test/provision');
   await store.append(tenant, STREAM.platform, makeEvent({
     id: `entitlement-${feature}-${enabled}`, type: 'TenantEntitlementSet', occurredAt: AT,
     idempotencyKey: `entitlement-${tenant}-${feature}-${AT}`, source: 'test/provision',

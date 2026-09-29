@@ -76,6 +76,7 @@ describe.skipIf(!DATABASE_URL)('OB-06 — we get it out ourselves (real PostgreS
         .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })),
     );
     store = new SqlEventStore(sql);
+    await store.registerTenant(TENANT, 'tests'); // the tenant exists before its first row (db/migrations/0013)
   });
 
   afterAll(async () => {

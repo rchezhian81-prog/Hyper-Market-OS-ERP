@@ -495,7 +495,14 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
     await writeAudit(response.status);
     return finish(response);
   } catch (e) {
-    const failure = e instanceof ApiError ? asResponse(e, traceId) : asResponse(apiError(500, {
+    const failure = e instanceof ApiError ? asResponse(e, traceId)
+      : (e as Error | undefined)?.name === 'TenantNotRegisteredError' ? asResponse(apiError(403, {
+        code: 'tenant_not_registered',
+        whatHappened: 'This sign-in names a tenant that has not been provisioned on this system, so nothing can be recorded for it.',
+        wasItSaved: 'not_saved',
+        nextSafeAction: 'Ask the platform operator to provision the tenant (tenant:bootstrap) or check the identity provider’s tenant claim. Nothing was changed.',
+      }), traceId)
+      : asResponse(apiError(500, {
       code: 'unhandled',
       whatHappened: 'The request failed in a way this service did not expect.',
       // An unexpected throw is the case where "did it save?" is genuinely unknown, and saying

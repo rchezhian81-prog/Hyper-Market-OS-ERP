@@ -34,6 +34,8 @@ describe.skipIf(!DATABASE_URL)('an idempotency key outlives the process (real Po
     const dir = 'db/migrations';
     await runMigrations(pgClient(client), readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
       .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));
+    // The tenant exists before its first idempotency key (db/migrations/0013) — registered in the platform scope.
+    await client.query("INSERT INTO tenants (tenant_id, registered_by) VALUES ($1, 'tests') ON CONFLICT (tenant_id) DO NOTHING", [TENANT]);
   });
 
   afterAll(async () => { await client.end(); });

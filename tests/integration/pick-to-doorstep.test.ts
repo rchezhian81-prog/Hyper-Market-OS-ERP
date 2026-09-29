@@ -66,6 +66,7 @@ describe.skipIf(!DATABASE_URL)('Stage 15 — pick to doorstep (real PostgreSQL)'
         .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })),
     );
     store = new SqlEventStore(sql);
+    await store.registerTenant(TENANT, 'tests'); // the tenant exists before its first row (db/migrations/0013)
     reservationLedger = new Ledger(new InMemoryLedgerStore());
     outbox = new SyncOutbox();
   });
