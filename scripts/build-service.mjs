@@ -17,8 +17,10 @@
 // from `node_modules` at run time rather than inlined. The output is one plain `.js` file with the
 // types stripped and every extension resolved.
 //
-// Usage:  node scripts/build-service.mjs <api|edge>
+// Usage:  node scripts/build-service.mjs <api|edge|tools>
 // Output: <service>/dist/start.js  (git-ignored — `dist/` is in .gitignore)
+//         `tools` bundles the operator commands (scripts/migration-load.ts, scripts/bootstrap-tenant.ts)
+//         into scripts/dist/ — they import the workspace TypeScript the same way the services do.
 
 import { build } from 'esbuild';
 import { existsSync } from 'node:fs';
@@ -33,10 +35,33 @@ const SERVICES = {
   edge: { entry: 'edge/store-edge/src/start.ts', outfile: 'edge/store-edge/dist/start.js' },
 };
 
+/** Operator commands a person runs on the box; bundled together, each to its own file. */
+const TOOLS = {
+  entries: ['scripts/migration-load.ts', 'scripts/bootstrap-tenant.ts'],
+  outdir: 'scripts/dist',
+};
+
 const name = process.argv[2];
+if (name === 'tools') {
+  await build({
+    entryPoints: TOOLS.entries.map((e) => join(ROOT, e)),
+    outdir: join(ROOT, TOOLS.outdir),
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    target: ['node22'],
+    packages: 'external',
+    sourcemap: true,
+    legalComments: 'none',
+    logLevel: 'info',
+  });
+  console.log(`tools bundle written to ${TOOLS.outdir}/`);
+  process.exit(0);
+}
+
 const service = name === undefined ? undefined : SERVICES[name];
 if (service === undefined) {
-  console.error(`Usage: node scripts/build-service.mjs <${Object.keys(SERVICES).join('|')}>`);
+  console.error(`Usage: node scripts/build-service.mjs <${Object.keys(SERVICES).join('|')}|tools>`);
   process.exit(1);
 }
 

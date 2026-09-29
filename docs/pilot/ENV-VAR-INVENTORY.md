@@ -27,6 +27,7 @@ to boot / optional. **Set for pilot**: the safe pilot value or "generate".
 | `MIGRATION_TARGET_KIND` | — | optional | — | `rehearsal`/`staging`/`local`/`production` (default `rehearsal`) | which environment the migration service may load into — **`production` is how a trial load reaches live data (hard rule #7)** | `rehearsal` (pilot); NEVER `production` in pilot |
 | `BOOTSTRAP_OWNER_TENANT_ID` | — | optional | — | — | the tenant seeded with a genesis owner at boot (OA-6) | pilot tenant id |
 | `BOOTSTRAP_OWNER_USER_ID` | — | optional | — | — | the user who becomes that tenant's first owner (idempotent, never re-widened) | pilot owner's test-IdP subject |
+| `DEMO_TENANT_IDS` | — | optional | — | comma-separated tenant UUIDs | tenants the operator tools (`migration:load`, `tenant:bootstrap`) must REFUSE as demo (pilot gate G4) — set to the demo tenant's id on the hosted-demo box; the seed's `pilot-demo` label is always refused | demo tenant id (demo box); unset elsewhere |
 
 ## Store edge (`STORE_EDGE_CONFIG`)
 

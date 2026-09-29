@@ -74,6 +74,64 @@ export function tenantEntitlementResolver(
 
 export type GenesisOutcome = 'seeded' | 'already_bootstrapped';
 
+/** One member of a brand-new tenant's initial admin set. */
+export interface InitialAdmin {
+  readonly userId: string;
+  readonly roleId: string;
+}
+
+export type InitialAdminsOutcome =
+  | { readonly outcome: 'seeded'; readonly granted: number }
+  | { readonly outcome: 'already_bootstrapped'; readonly granted: 0 };
+
+/**
+ * Lay down a brand-new tenant's INITIAL ADMIN SET in one atomic append — the owner first, then the
+ * other named people (a chartered accountant, a second owner who can approve the first owner's
+ * grants…). The same once-only guard as `seedGenesisOwner`: if the tenant holds ANY grant this does
+ * nothing, so it can establish the first people once and never widen anyone afterwards. Every event
+ * is a normal `RoleGranted` with genesis provenance, plus the name of the operator who ran the
+ * bootstrap, so an access review a year later sees exactly what it was (OA-6; §28 maker-checker
+ * applies to every grant after these).
+ */
+export async function seedInitialAdmins(
+  store: EventStore,
+  tenantId: string,
+  admins: readonly InitialAdmin[],
+  laidDownBy: string,
+  at: string,
+): Promise<InitialAdminsOutcome> {
+  const existing = await store.readStream(tenantId, STREAM.identity, { type: 'RoleGranted' });
+  if (existing.length > 0) return { outcome: 'already_bootstrapped', granted: 0 };
+  if (admins.length === 0) return { outcome: 'seeded', granted: 0 };
+
+  const entries = admins.map((admin, i) => {
+    const assignment: RoleAssignment = { userId: admin.userId, roleId: admin.roleId, branchScope: 'all' };
+    // The first admin (the owner) is recorded under the SAME id and key `seedGenesisOwner` uses, so a
+    // tenant bootstrapped either way looks the same to every reader and neither path can double-seed.
+    const suffix = i === 0 ? '' : `-${admin.roleId}-${admin.userId}`;
+    return {
+      stream: STREAM.identity,
+      event: makeEvent({
+        id: `grant-genesis-${tenantId}${suffix}`,
+        type: 'RoleGranted',
+        occurredAt: at,
+        idempotencyKey: `grant-${tenantId}-genesis${suffix}`,
+        source: 'system/genesis',
+        payload: {
+          ...assignment,
+          request: {
+            grantId: i === 0 ? 'genesis' : `genesis${suffix}`, userId: admin.userId, roleId: admin.roleId, branchScope: 'all',
+            requestedBy: 'system:genesis', approvedBy: 'system:genesis', requestedAt: at,
+          },
+          provenance: { kind: 'initial_admin_set', laidDownBy },
+        },
+      }),
+    };
+  });
+  await store.appendBatch(tenantId, entries);
+  return { outcome: 'seeded', granted: entries.length };
+}
+
 /**
  * Record the genesis owner for a tenant — the first authority, from which every other grant is
  * later made under maker-checker. Refuses if the tenant already has ANY grant, so it establishes

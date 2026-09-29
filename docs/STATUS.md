@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Owner program — "complete every module, deploy, then pilot" — Stage A closed, B1a done (29 September 2026)
+## Owner program — "complete every module, deploy, then pilot" — Stages A and B1 closed (29 September 2026)
 
 **Owner direction (28 Sep 2026, in writing):** act as architect + developer; build every roadmap module to
 finished (no invented requirements — anything beyond the roadmap becomes a change proposal for a written
@@ -61,8 +61,34 @@ accounts.
   load reads back as products / barcodes / tax rate / GRN / on-hand 40 & 200 / valuation at cost / points /
   consent; re-run doubles nothing; below-cost price = one failed line; cashier 403s; demo tenant refused before
   any call; second tenant isolated). No rung change (MG-05 stays INTEGRATION_TESTED; ledger note updated).
-- **Next:** B1a PR → merge → **B1b** (operator command `scripts/migration-load.mts` over the six CSVs with the
-  MG-02/MG-04 re-checks, `MIGRATION_TARGET_KIND` guard and dry run; second-tenant bootstrap; runbook) → B2.
+- **B1b — done (29 Sep 2026): the operator's command and the second-tenant bootstrap.** Stage B1 is
+  complete. `pnpm run migration:load -- --dir <folder> [--api URL] [--dry-run] [--out file]`
+  (`scripts/migration-load.ts` → `packages/migration/src/load-command.ts`) reads the six CSVs,
+  `manifest.json` and `exceptions.json`, then runs the runbook's order with a named refusal at each stage:
+  every file's seal re-verified (MG-02) → the screen row count honoured (a short file is refused) →
+  cleaning report present with no blocking exception undecided (MG-04) → every unreadable row named →
+  target: `MIGRATION_TARGET_KIND` obeyed (production refused), demo tenants refused (`pilot-demo`,
+  `DEMO_TENANT_IDS`, `--demo-tenant`), the operator must hold a role in the tenant, and the tenant must
+  hold nothing this extract does not name (so a re-run of the same load resumes and doubles nothing) →
+  plan → dry run or load, exit 0 / 1 / 2, an evidence JSON with no token in it. The token is minted per
+  call, short-lived, from the box's `IDP_*` settings, in scripts/ only (hard rule #4; pinned
+  byte-for-byte to `issue-store-token.mjs` by test). `pnpm run tenant:bootstrap -- --tenant <uuid>
+  --owner <login> --admin <login>:chartered_accountant --operator <name>` lays down a NEW real tenant's
+  initial admin set once, atomically (`seedInitialAdmins`, genesis provenance naming the operator),
+  refusing a production box, a non-UUID id, the demo tenant, an unknown role, a duplicate, and any
+  tenant that already holds a grant. Both commands are esbuild bundles (`scripts/build-service.mjs
+  tools` → `scripts/dist/`), the same way the services ship, because Node cannot follow the repo's
+  extensionless imports. Runbook: `docs/runbooks/real-data-load.md` (7 steps + a "when it says no"
+  table). Proven: unit 14 + 14 + 2, and the REAL bundle as a subprocess over a REAL HTTP hop into the
+  API (9). New optional env `DEMO_TENANT_IDS` (inventory row added). No rung change: a real load is a
+  human act after the written Option 2 GO.
+- **Stage B1 follow-ons (recorded, not done):** (a) `exceptions.json` decisions are written by hand onto
+  the cleaning report — a `resolveException` route would record them with a signature; (b) supplier
+  name / GSTIN have no home on the partner route (only grants / documents / logins) — a supplier master
+  is a Stage C item; (c) the load carries master data + opening stock only: sales history (B7) stays
+  deferrable, and a batch without an expiry loads unbatched (said, not silent).
+- **Next:** B1b PR → merge → **B2** (signed verification report end-to-end + routes for the six witness
+  checks).
 
 ---
 

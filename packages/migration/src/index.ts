@@ -160,3 +160,14 @@ export {
   bundleFromFiles, moneyToMinor, percentToBps, quantityToMinor, inferBarcodeKind,
   type CsvRows, type ExtractFiles, type MappedBundle,
 } from './load-csv';
+
+export {
+  runLoadCommand, readManifest, readExceptions, EXTRACT_FILES,
+  type ExtractFileName, type LoadManifest, type CommandClient, type LoadCommandInput, type CommandStage, type LoadCommandOutcome,
+} from './load-command';
+
+export {
+  planTenantBootstrap, isTenantUuid,
+  type InitialAdminRequest, type TenantBootstrapRequest, type BootstrapRefusal, type TenantBootstrapPlan,
+  type TenantBootstrapPlanOk, type TenantBootstrapRefused,
+} from './tenant-bootstrap';
