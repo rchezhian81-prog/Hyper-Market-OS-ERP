@@ -314,4 +314,17 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'supplier.portal.self',
     ],
   },
+  {
+    id: 'b2b_customer',
+    name: 'Business customer (portal login)',
+    // M22-FR-04 / §35 — the THIRD role held by a party outside the business: a business customer (a caterer, a
+    // canteen) logging into the portal to see its own account, invoices, statement and documents. As narrow as
+    // the supplier's: `b2b.portal.self` is a READ of the caller's own rows, scoped server-side from the stored
+    // login binding a member of staff made (the routes never trust a customer id in the request). None of the
+    // `b2b.*` staff codes — a customer cannot set its own credit limit, record an invoice or issue a document.
+    permissions: [
+      'identity.self.read',
+      'b2b.portal.self',
+    ],
+  },
 ];

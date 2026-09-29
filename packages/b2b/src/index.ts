@@ -9,3 +9,4 @@ export * from './credit';
 export * from './commission';
 export * from './documents';
 export * from './collections';
+export * from './portal-access';

@@ -200,6 +200,8 @@ import type { PromotionDeps, LaunchRecord } from '../../pricing/src/promotions';
 import type { PromotionCatalogueDeps } from '../../pricing/src/promotion-catalogue';
 import type { Promotion } from '../../../packages/promotions/src/promotions';
 import { expired } from '../../orders/src/index';
+import type { B2BPortalDeps, B2BLoginBinding } from '../../finance/src/b2b-portal';
+import type { B2BPortalRefusal } from '../../../packages/b2b/src/portal-access';
 import type { ExceptionOwnershipDeps } from '../../orders/src/exception-ownership';
 import type { OwnedException } from '../../../packages/orders/src/substitution-exception-ownership';
 import type { PaymentRefundDeps } from '../../orders/src/payments';
@@ -1165,6 +1167,10 @@ const PORTAL_AUDIT_STREAM = streamName(STREAM.purchase, 'portal-audit');
 // read resolves its partner id from the session, never the request. Latest binding wins (a login moved to
 // a different partner re-points); the stream folds one user, not the shop.
 const forPortalLogin = (userId: string): string => streamName(STREAM.purchase, 'portal-login', userId);
+// M22-FR-04: the B2B customer portal — a login's binding (latest wins), a customer's login index, and the refusal register.
+const forB2BPortalLogin = (userId: string): string => streamName(STREAM.b2b, 'portal-login', userId);
+const forB2BPortalLogins = (customerId: string): string => streamName(STREAM.b2b, 'portal-logins', customerId);
+const forB2BPortalRefusals = streamName(STREAM.b2b, 'portal-refusals');
 // Purchase orders and supplier holds live on their own shared streams so a fold can list every PO
 // (and answer the open commitment) and read a supplier's latest block state (M06-FR-01/02/04).
 const PURCHASE_ORDERS_STREAM = streamName(STREAM.purchase, 'orders');
@@ -5590,6 +5596,52 @@ export function purchaseAdapter(input: {
       );
       return { count: issued.length, valueMinor };
     },
+  };
+}
+
+/**
+ * The B2B customer portal's own state (M22-FR-04, §35): which customer a login is bound to, the logins a
+ * customer has, and the register of refused cross-customer reads. The account, invoices and documents the
+ * portal shows are NOT here — they are projected by the credit, collections and documents adapters the staff
+ * surfaces use, so a customer sees the very figures the shop sees.
+ */
+export function b2bPortalAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): B2BPortalDeps {
+  return {
+    // Latest binding wins: a login moved to another customer re-points, and the old customer's list drops it.
+    customerForUser: async (tenantId, userId) =>
+      latest<B2BLoginBinding>(input.store, tenantId, forB2BPortalLogin(userId), 'B2BLoginBound'),
+    recordLoginBinding: async (tenantId, binding) => {
+      const event = (id: string, key: string) => makeEvent({
+        id, type: 'B2BLoginBound', occurredAt: binding.at,
+        idempotencyKey: key, source: 'api/finance', payload: binding,
+      });
+      // Keyed on (user, customer, grants) so re-sending the same binding collapses, while a change of grants
+      // or of customer is a new, latest-wins fact.
+      const digest = `${binding.userId}-${binding.customerId}-${[...binding.grants].sort().join('.')}`;
+      await input.store.append(tenantId, forB2BPortalLogin(binding.userId), event(`b2b-login-${digest}`, `b2b-login-${tenantId}-${digest}`));
+      await input.store.append(tenantId, forB2BPortalLogins(binding.customerId), event(`b2b-login-idx-${digest}`, `b2b-login-idx-${tenantId}-${digest}`));
+    },
+    // Every login ever bound to this customer, kept only while its LATEST binding still points here.
+    loginsFor: async (tenantId, customerId) => {
+      const ever = await allOf<B2BLoginBinding>(input.store, tenantId, forB2BPortalLogins(customerId), 'B2BLoginBound');
+      const users = [...new Set(ever.map((b) => b.userId))];
+      const current = await Promise.all(users.map((u) => latest<B2BLoginBinding>(input.store, tenantId, forB2BPortalLogin(u), 'B2BLoginBound')));
+      return current.filter((b): b is B2BLoginBinding => b !== undefined && b.customerId === customerId);
+    },
+    recordAccessRefusal: async (tenantId, r) => {
+      // Keyed on the FOREIGN customer asked for, so repeated distinct probes each count (a pattern) while an
+      // identical retry collapses to one entry.
+      await input.store.append(tenantId, forB2BPortalRefusals, makeEvent({
+        id: `b2b-portal-refusal-${r.customerId}-${r.userId}-${r.action}-${r.requestedCustomerId}`,
+        type: 'B2BPortalAccessRefused', occurredAt: r.at,
+        idempotencyKey: `b2b-portal-refusal-${tenantId}-${r.customerId}-${r.userId}-${r.action}-${r.requestedCustomerId}`,
+        source: 'api/finance', payload: r,
+      }));
+    },
+    accessRefusals: async (tenantId) => allOf<B2BPortalRefusal>(input.store, tenantId, forB2BPortalRefusals, 'B2BPortalAccessRefused'),
   };
 }
 

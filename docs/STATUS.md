@@ -351,11 +351,35 @@ accounts.
   browser e2e, and the M31 notification enqueue for the SLA-breach alert (a live alert provider is external).
   **Owner to confirm (a one-line table change if not):** that the service desk is staffed by the cashier role
   and the finance queue by the accountant.
+- **Stage C, family M22 (B2B), slice P — done (29 Sep 2026): the B2B customer PORTAL on the cloud (M22-FR-04,
+  §35, P-04, hard rules #4 #6) — the one M22 gap the ledger had left.** A business customer (a caterer, a canteen)
+  now holds the third external key in the product, shaped exactly like the supplier's (M24) and the storefront
+  customer's (M20): a `b2b_customer` role with one permission, `b2b.portal.self`, and `/me` routes
+  (`services/finance/src/b2b-portal.ts`) that resolve WHO the login is from a binding a member of staff made
+  (`POST /v1/b2b-portal/customers/:customerId/logins/:userId` with the login's grants — `view_statement`,
+  `view_invoices`, …, the same `B2BGrant` vocabulary `scopeToCustomer` has always enforced; latest binding per
+  login wins, so a re-pointed login drops off the old customer's list). The customer reads ITS OWN account
+  (credit terms + what it owes, or "no credit terms set" — never a made-up zero), invoices (each with what is
+  settled and still open, disputes shown as such), statement (the ageing of its own invoices from their DUE
+  dates as at a date; no invoices said plainly, never a zero-balance statement), and documents (its quotations,
+  orders, proformas, challans, tax invoices; one in full) — all PROJECTED by the very adapters the staff surfaces
+  use, so the customer sees the figures the shop sees. A request naming another customer (`?customerId=`) is
+  refused 403 `not_your_data` AND recorded; a pattern of them is surfaced to staff (`GET /v1/b2b-portal/probing`,
+  `findB2BProbing` in `packages/b2b/src/portal-access.ts`); a missing grant is a permission answer (403
+  `no_grant`), never an empty list; a login bound to nobody is 403 `not_a_b2b_login`; another customer's
+  document is a plain 404 (a "not yours" would confirm it exists). Read-only for the customer — nothing here
+  writes money. Behind the `b2b` entitlement. Proven on the real API
+  (`tests/integration/b2b-portal.test.ts`, 6 + the probing engine 1): own-only reads with the staff surfaces'
+  figures, cross-customer asks refused and recorded then named as probing, grant refusals not counted as
+  probes, staff bind/review/re-point with a cold-restart check, a customer cannot bind or read probing, no
+  terms + no invoices said plainly, entitlement off → nothing. **No rung change** (M22 stays PARTIALLY WIRED
+  on the ledger; the portal SCREEN + browser e2e and the OTP/OIDC auth backend for external logins are the
+  remaining pieces — the latter a Stage F deployment component shared with the customer app).
 - **Stage C — remaining, in order:**
   then family by family through the 57 remaining PARTIALLY_WIRED items (D01-FR-06 content authoring,
   D02-FR-06 display funding, D07 coupons/referrals, M21 compensation, M23 close second source, …). OA-12 was
   already answered and closed on 23 Sep — nothing to un-park.
-- **Next:** M19 slice C PR → merge → M22 → M23 → M27 → M35 → M36 → M01, one family per slice (then a second pass: M19 exception screen + e2e, …); Stage F must add the customer-app auth backend + one-origin proxy (see the M20 slice 2 bullet).
+- **Next:** M22 slice P PR → merge → M23 → M27 → M35 → M36 → M01, one family per slice (then a second pass: M19 exception screen + e2e, M22 portal screen + e2e, …); Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet).
 
 ---
 
