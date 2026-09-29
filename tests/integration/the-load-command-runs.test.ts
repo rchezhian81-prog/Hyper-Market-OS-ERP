@@ -47,7 +47,8 @@ const run = (bundle: string, args: readonly string[]): Promise<{ code: number; o
   new Promise((resolve) => {
     // The child never inherits a database address: the CI job that runs these suites exports one for its
     // PostgreSQL service, and a tool that picked it up would write a tenant into a ledger this test never named.
-    const { DATABASE_URL: _dropped, ...childEnv } = process.env;
+    const childEnv: NodeJS.ProcessEnv = { ...process.env };
+    delete childEnv['DATABASE_URL'];
     execFile(process.execPath, [join(ROOT, 'scripts', 'dist', bundle), ...args], { encoding: 'utf8', cwd: ROOT, env: childEnv }, (err, stdout, stderr) => {
       const code = err === null ? 0 : (err as { code?: number | string }).code;
       resolve({ code: typeof code === 'number' ? code : -1, out: `${stdout}${stderr}` });
