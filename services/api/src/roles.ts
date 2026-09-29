@@ -33,7 +33,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     id: OWNER_ROLE_ID,
     name: 'Owner',
     permissions: [
-      'identity.self.read', 'identity.role.read', 'identity.role.grant', 'org.branch.read',
+      'identity.self.read', 'identity.role.read', 'identity.role.grant', 'identity.session.revoke', 'org.branch.read',
       'documents.number.allocate',
       'catalogue.pack.read', 'catalogue.pack.publish',
       'catalogue.merge.propose', 'catalogue.merge.approve',

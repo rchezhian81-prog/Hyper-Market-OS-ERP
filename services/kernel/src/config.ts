@@ -158,6 +158,11 @@ export const CLOUD_API_CONFIG: readonly Spec[] = [
   { key: 'IDP_SIGNING_KEY', secret: true, minLength: 32 },
   { key: 'IDP_ISSUER' },
   { key: 'IDP_AUDIENCE' },
+  // The longest any token may be valid for, in seconds (GAP-SEC-05). A token whose `exp − iat` exceeds this is
+  // refused whatever the issuer wrote, so a leaked token can never outlive the ceiling. Default 31 days — long
+  // enough for the store box's 30-day sync token, and the owner may tighten it (a human sign-in from a real IdP
+  // is minutes to hours anyway). Never widened silently: it is a setting, read at boot.
+  { key: 'IDP_MAX_TOKEN_LIFETIME_SECONDS', numeric: true, fallback: '2678400' },
   { key: 'PORT', numeric: true, fallback: '8081' },
   { key: 'NODE_ENV', oneOf: ['development', 'test', 'production'], fallback: 'production' },
   { key: 'MIGRATION_TARGET_KIND', oneOf: ['rehearsal', 'staging', 'local', 'production'], fallback: 'rehearsal' },

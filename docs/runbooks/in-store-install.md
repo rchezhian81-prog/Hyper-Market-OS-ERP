@@ -121,7 +121,10 @@ pnpm run token:store --tenant <your tenant id> --user store-edge --ttl-hours 720
 ```
 
 It reads the identity settings from `infra/compose/.env`, prints a token **once** (it is a secret —
-put it straight into the file below, never a chat or a message), and it is valid for 30 days. **The
+put it straight into the file below, never a chat or a message), and it is valid for 30 days. The token
+carries its own id and issue time; **if the PC or the token is ever lost, the owner revokes it at once**
+(`POST /v1/identity/token-revocations` with the token's id, or the `store-edge` user with no id) and it
+stops working on the next request — no need to wait 30 days or rotate the signing key. **The
 account it names (`store-edge`) must hold the sync permissions** — provision that login with the
 cashier role as part of setting up the store's logins (go-live checklist UAT-05): it carries the
 sale / refund sync, the catalogue-pack read, the migration register read, the concession docket

@@ -52,11 +52,15 @@ export type TokenRefusal =
   | 'issuer_not_ours'
   | 'audience_not_ours'
   | 'no_subject'
-  | 'no_tenant';
+  | 'no_tenant'
+  | 'no_issued_at'
+  | 'lifetime_too_long';
 
 export interface TokenVerdict {
   readonly ok: boolean;
   readonly principal?: Principal;
+  /** The token's own id and issue time (`jti`, `iat`), for the revocation check — read only after verification. */
+  readonly claims?: { readonly jti?: string; readonly iat?: number };
   readonly refusedBecause?: TokenRefusal;
   /** For the audit log and the operator. It never contains any part of the token. */
   readonly detail: string;
@@ -77,6 +81,14 @@ export interface TokenPolicy {
    * outlives its own expiry, so this is seconds rather than minutes.
    */
   readonly leewaySeconds?: number;
+  /**
+   * The LONGEST a token may be valid for, in seconds (`exp − iat`), whatever the issuer wrote (GAP-SEC-05).
+   * A leaked token is live until it expires, so the ceiling bounds the damage a leak can do: an issuer that
+   * mints a one-year token — by mistake or by compromise — gets every such token refused here. When set, a
+   * token must carry `iat` (a token that cannot say when it was issued cannot show it is inside the ceiling).
+   * Absent → no ceiling, `exp` alone decides.
+   */
+  readonly maxLifetimeSeconds?: number;
 }
 
 const decode = (part: string): unknown => {
@@ -165,6 +177,19 @@ export function verifyToken(token: string, policy: TokenPolicy, nowMs: number): 
     return { ok: false, refusedBecause: 'not_yet_valid', detail: 'the token is not valid yet' };
   }
 
+  // The lifetime ceiling (GAP-SEC-05): however long the issuer said, a token may not be valid for longer than the
+  // policy allows. `iat` is required for this — a token with no issue time cannot show it is inside the ceiling.
+  const iatClaim = payload['iat'];
+  const iat = typeof iatClaim === 'number' ? iatClaim : undefined;
+  if (policy.maxLifetimeSeconds !== undefined) {
+    if (iat === undefined) {
+      return { ok: false, refusedBecause: 'no_issued_at', detail: 'the token carries no iat, so it cannot show it is within the lifetime ceiling' };
+    }
+    if (payload['exp'] - iat > policy.maxLifetimeSeconds) {
+      return { ok: false, refusedBecause: 'lifetime_too_long', detail: `the token was issued to live ${payload['exp'] - iat}s and the ceiling here is ${policy.maxLifetimeSeconds}s. A token that outlives the ceiling is a leak that outlives the ceiling` };
+    }
+  }
+
   if (payload['iss'] !== policy.issuer) {
     return {
       ok: false, refusedBecause: 'issuer_not_ours',
@@ -203,8 +228,12 @@ export function verifyToken(token: string, policy: TokenPolicy, nowMs: number): 
     ? amrClaim.filter((m): m is string => typeof m === 'string')
     : undefined;
 
+  const jtiClaim = payload['jti'];
+  const jti = typeof jtiClaim === 'string' && jtiClaim.trim() !== '' ? jtiClaim : undefined;
+
   return {
     ok: true,
+    claims: { ...(jti === undefined ? {} : { jti }), ...(iat === undefined ? {} : { iat }) },
     principal: {
       tenantId,
       userId,

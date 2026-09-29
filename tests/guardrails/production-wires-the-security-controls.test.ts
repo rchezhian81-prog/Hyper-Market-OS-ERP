@@ -17,7 +17,8 @@ const CONTROLS: readonly { readonly name: string; readonly pattern: RegExp; read
   { name: 'per-IP + per-tenant rate limit', pattern: /\brateLimit:\s*new TokenBucketRateLimiter\(/, gap: 'GAP-SEC-04' },
   { name: 'auth-attempt lockout', pattern: /\bauthThrottle:\s*new BackoffAuthThrottle\(/, gap: 'GAP-SEC-04' },
   { name: 'SHA-256-chained audit sink', pattern: /\baudit:\s*new SqlAuditSink\(/, gap: 'GAP-SEC-03' },
-  { name: 'pinned token verifier', pattern: /\bauthenticate:\s*tokenAuthenticator\(/, gap: 'SEC-03' },
+  { name: 'pinned token verifier (revocation-aware since GAP-SEC-05)', pattern: /\bauthenticate:\s*revocationAwareAuthenticator\(/, gap: 'SEC-03 / GAP-SEC-05' },
+  { name: 'token lifetime ceiling from configuration', pattern: /maxLifetimeSeconds:\s*Number\(settings\['IDP_MAX_TOKEN_LIFETIME_SECONDS'\]\)/, gap: 'GAP-SEC-05' },
   { name: 'transactional event store (atomic appendBatch)', pattern: /new SqlEventStore\(pgPoolClient\(/, gap: 'GAP-DATA-01' },
 ];
 

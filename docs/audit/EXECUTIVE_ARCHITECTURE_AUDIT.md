@@ -57,7 +57,7 @@ In short: **a superb core, an unbuilt operational half.** The path to a 10/10 pr
 5. **Tenant isolation is application-level only** — no RLS, no `tenants` FK (GAP-DATA-02).
 6. ~~**DPDP data-subject rights & erasure not wired**~~ — the data-subject lifecycle and two-person erasure execution ARE on the API (GAP-SEC-02 **CLOSED**, corrected 29 Sep 2026; legal confirmation pending); erasure vs the append-only store
    (GAP-DATA-06) remains structurally open.
-7. ~~**Audit hash-chain non-cryptographic & unwired**; no rate limiting~~ — both **CLOSED** (FND-02 / FND-03; corrected 29 Sep 2026); **no token revocation** remains (GAP-SEC-05).
+7. ~~**Audit hash-chain non-cryptographic & unwired**; no rate limiting~~ — both **CLOSED** (FND-02 / FND-03; corrected 29 Sep 2026); ~~**no token revocation** remains (GAP-SEC-05)~~ **CLOSED** (lifetime ceiling + revocation list, 29 Sep 2026).
 8. **No inbound sync & offline numbering unwired** — prices/recalls arrive by manual file drop; receipt numbers
    can collide across offline lanes (GAP-SYNC-01/02).
 9. **Observability computes health but delivers it nowhere**; no hosting/IaC/CD/automated rollback; TLS/secret-

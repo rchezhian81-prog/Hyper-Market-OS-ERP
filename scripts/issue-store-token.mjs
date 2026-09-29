@@ -21,7 +21,7 @@
 //   • Never write the token to a file. It is a credential; it goes to the operator's screen once,
 //     with a warning, and into the edge's `CLOUD_API_TOKEN` by hand.
 
-import { createHmac } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -38,7 +38,7 @@ const b64url = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
  * Mint a store-edge token. `policy` is the same `{ secret, issuer, audience }` the API's
  * `tokenAuthenticator` verifies against, so a token from here is one the cloud accepts. `nowMs` is
  * injected so the test is deterministic. The shape mirrors the identity provider's exactly:
- * HS256 over `{ sub, tenant_id, iss, aud, exp }`.
+ * HS256 over `{ sub, tenant_id, iss, aud, iat, jti, exp }`.
  */
 export function buildStoreToken(claims, policy, nowMs) {
   const nowSec = Math.floor(nowMs / 1000);
@@ -48,6 +48,10 @@ export function buildStoreToken(claims, policy, nowMs) {
     tenant_id: claims.tenantId,
     iss: policy.issuer,
     aud: policy.audience,
+    // When it was issued and an id for it (GAP-SEC-05): the API bounds `exp − iat` by its lifetime ceiling and
+    // an owner can revoke THIS token by its id if the box or the token is ever lost.
+    iat: nowSec,
+    jti: claims.jti ?? randomUUID(),
     exp: nowSec + claims.ttlSeconds,
   });
   const signature = createHmac('sha256', policy.secret).update(`${header}.${payload}`).digest('base64url');

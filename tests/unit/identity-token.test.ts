@@ -215,3 +215,37 @@ describe('API-01 — it verifies, and cannot issue', () => {
     expect(source).toContain('It verifies. It never issues, and it never stores a credential');
   });
 });
+
+describe('API-01 — a token cannot outlive the ceiling (GAP-SEC-05)', () => {
+  const CAPPED: TokenPolicy = { ...POLICY, maxLifetimeSeconds: 3600 };
+
+  it('accepts a token whose exp − iat is within the ceiling, and exposes jti + iat for the revocation check', () => {
+    const v = verifyToken(mint({ iat: secs(NOW) - 60, exp: secs(NOW) + 3000, jti: 'j-1' }), CAPPED, NOW);
+    expect(v.ok).toBe(true);
+    expect(v.claims).toEqual({ jti: 'j-1', iat: secs(NOW) - 60 });
+  });
+
+  it('REFUSES a token issued to live longer than the ceiling, however far from expiry it is now', () => {
+    // Minted "now" for 30 days against a one-hour ceiling: unexpired, correctly signed, and still refused —
+    // the ceiling bounds what a leak can be worth, not just when it ends.
+    const v = verifyToken(mint({ iat: secs(NOW), exp: secs(NOW) + 30 * 86_400 }), CAPPED, NOW);
+    expect(v.ok).toBe(false);
+    expect(v.refusedBecause).toBe('lifetime_too_long');
+    expect(v.detail).toContain('ceiling');
+  });
+
+  it('REFUSES a token with no iat when a ceiling is set — it cannot show it is inside it', () => {
+    const v = verifyToken(mint({ exp: secs(NOW) + 60 }), CAPPED, NOW);
+    expect(v.ok).toBe(false);
+    expect(v.refusedBecause).toBe('no_issued_at');
+  });
+
+  it('with NO ceiling configured, iat is optional and exp alone decides (unchanged behaviour)', () => {
+    expect(verifyToken(mint({ exp: secs(NOW) + 30 * 86_400 }), POLICY, NOW).ok).toBe(true);
+  });
+
+  it('the module still exports exactly the verifier and the authenticator — nothing that issues', async () => {
+    const module = await import('../../services/identity/src/token');
+    expect(Object.keys(module).sort()).toEqual(['tokenAuthenticator', 'verifyToken']);
+  });
+});
