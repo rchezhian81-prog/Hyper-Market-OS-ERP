@@ -26,6 +26,7 @@
 // the caller persists the append-only tag stream.
 
 import type { ConcessionChargeBasis } from './concession';
+import type { ConcessionSale } from './concession';
 
 /** What a captured tag IS: a sale line, a return, a cancellation, or a supervisor's correction of one. */
 export type ConcessionTagKind = 'sale' | 'return' | 'cancellation' | 'reversal' | 'adjustment';
@@ -391,4 +392,42 @@ export function concessionTagTotals(input: {
     commissionMinor,
     detail: `${window.length} tag(s): ${grossMinor} gross, ${netMinor} net, ${commissionMinor} commission (reversals and returns netted)`,
   };
+}
+
+/**
+ * The tags as the settlement engines read them (M27-FR-03: "a concession sale attributes to the
+ * concessionaire and reconciles at settlement"). Each tag becomes one `ConcessionSale` row: the money is
+ * the line's NET (what the customer actually paid after till discounts — the base the period charge has
+ * always summed), reversals/returns carry their negative money and name what they correct, and every
+ * row was tendered at the store's till (the tags come from our lanes). A sale the desk has ALREADY recorded
+ * by hand for the same sale id is left to that record, so a receipt is never counted twice.
+ */
+export function tagsAsConcessionSales(
+  tags: readonly ConcessionTag[],
+  options: { readonly excludeSaleIds?: ReadonlySet<string> } = {},
+): readonly ConcessionSale[] {
+  const excluded = options.excludeSaleIds ?? new Set<string>();
+  return tags
+    .filter((t) => !excluded.has(t.saleId))
+    .map((t) => ({
+      saleId: `${t.saleId}#${t.lineId}#${t.tagId}`,
+      contractId: t.contractId,
+      concessionaireId: t.concessionaireId,
+      branchId: t.branchId,
+      at: t.at,
+      grossMinor: t.netMinor,
+      taxMinor: t.taxMinor,
+      tenderedTo: 'store_till' as const,
+      ...(t.correctsTagId === undefined ? {} : { refundOf: t.correctsTagId }),
+    }));
+}
+
+/** The one version of each tag that stands: the longest history wins (every correction appends, never rewrites). */
+export function latestTagVersions(versions: readonly ConcessionTag[]): readonly ConcessionTag[] {
+  const byId = new Map<string, ConcessionTag>();
+  for (const v of versions) {
+    const seen = byId.get(v.tagId);
+    if (seen === undefined || v.history.length >= seen.history.length) byId.set(v.tagId, v);
+  }
+  return [...byId.values()].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.tagId.localeCompare(b.tagId)));
 }

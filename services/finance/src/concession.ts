@@ -82,7 +82,8 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
           || !Number.isInteger(b['depositMinor']) || (b['depositMinor'] as number) < 0
           || (b['insuranceUntil'] !== undefined && !isDate(b['insuranceUntil']))
           || (b['licenceUntil'] !== undefined && !isDate(b['licenceUntil']))
-          || (b['approvedBy'] !== undefined && typeof b['approvedBy'] !== 'string')) {
+          || (b['approvedBy'] !== undefined && typeof b['approvedBy'] !== 'string')
+          || (b['commissionOn'] !== undefined && b['commissionOn'] !== 'gross' && b['commissionOn'] !== 'net')) {
           throw apiError(400, {
             code: 'not_readable_as_a_contract',
             whatHappened: 'A concession contract needs a concessionaire, name, branch, start/end dates, a basis (fixed_rent, revenue_share or higher_of_both) and a non-negative deposit; insuranceUntil/licenceUntil (if given) are YYYY-MM-DD.',
@@ -103,6 +104,7 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
           ...(isDate(b['insuranceUntil']) ? { insuranceUntil: b['insuranceUntil'] as string } : {}),
           ...(isDate(b['licenceUntil']) ? { licenceUntil: b['licenceUntil'] as string } : {}),
           ...(isStr(b['approvedBy']) ? { approvedBy: b['approvedBy'] as string } : {}),
+          ...(b['commissionOn'] === 'gross' || b['commissionOn'] === 'net' ? { commissionOn: b['commissionOn'] } : {}),
         };
         await deps.recordContract(ctx.tenantId, contract);
         return { status: 201, body: { contractId, concessionaireId: contract.concessionaireId, basis: contract.basis } };

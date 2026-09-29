@@ -406,11 +406,38 @@ accounts.
   (M23 stays PARTIALLY WIRED — the Tally drain and the close's genuine second control-total source remain
   external / data-blocked). **Owner / CA action, not a build item:** the suggested chart-of-accounts mapping is
   a proposal — the CA confirms it or replaces it with the shop's own (AVR-09) before the first live posting.
+- **Stage C, family M27 (concession), slice T — done (29 Sep 2026): the till's concession docket tags LAND on
+  the cloud and REACH settlement (M27-FR-03, API-09; owner decision Item 3).** Before: Item 3 built the tagging
+  engine and a thin till panel, proven against a Node test backend — nothing on the cloud kept a tag, and the
+  period charge / settlement could not see the counter's lines. Now `services/finance/src/concession-tags.ts`:
+  `POST /v1/concession/contracts/:contractId/tags/:tagId` captures a docket line (cashier and up — new
+  permission `concession.tag.record`; behind `dept.concession`) under the commission scheme AS IT STOOD,
+  snapshotted from the contract (new optional `commissionOn` on the contract: `net` by default — what the
+  customer paid after till discounts, the base the period charge has always summed — or `gross`), idempotent
+  on the till's key (a resend returns the original, never a second charge; a reused tag id is refused), with
+  the FR-04 trading gate returned as a VISIBLE flag on a sale that already happened, never a hidden one.
+  `…/tags/:tagId/reverse` and `…/adjust` are a supervisor's act: the engine decides by the caller's role
+  (`actorRoleOf` — owner/store manager may, a cashier may not) and a cashier's attempt is refused 403 AND
+  written onto the line's history BEFORE the answer (P-08, §28); every correction is a NEW tag naming the
+  original (hard rule #2), nothing rewritten, "current" is the longest history. `GET …/tags?from&to` reads
+  the stream with `concessionTagTotals`; `POST …/tag-settlement` marks a window forward only (pending →
+  included_in_charge → settled; `concession.contract.manage`). **Attribution reaches the money:** the
+  concession adapter's `sales` now folds the tags as concession sales tendered at the store till
+  (`tagsAsConcessionSales` in `packages/concession/src/concession-tagging.ts` — net money, reversals negative
+  and naming the original; a sale the desk recorded by hand for the same sale id keeps its record, never
+  counted twice), so `GET …/charge` and `…/settlement` see the counter without anyone re-keying it.
+  `concessionTagsAdapter` (`services/api/src/adapters.ts`) appends every version on the contract's tag stream.
+  Proven: `tests/unit/concession-tag-routes.test.ts` (13), `tests/integration/concession-tags-reach-settlement.test.ts`
+  (4 — through the real API: capture once + the kernel's replay, the charge and the settlement read the tags,
+  a cold restart, the cashier refused-and-recorded vs the manager's reversal backing the money out, a
+  hand-recorded sale left alone, settlement marking, the GROSS mapping honoured, entitlement off → nothing).
+  **No rung change** (M27 stays PARTIALLY WIRED: the till panel still speaks to a test backend — its
+  offline-first hop through the store box to these routes + a browser e2e is the second-pass item).
 - **Stage C — remaining, in order:**
   then family by family through the 57 remaining PARTIALLY_WIRED items (D01-FR-06 content authoring,
   D02-FR-06 display funding, D07 coupons/referrals, M21 compensation, M23 close second source, …). OA-12 was
   already answered and closed on 23 Sep — nothing to un-park.
-- **Next:** M23 slice D PR → merge → M27 → M35 → M36 → M01, one family per slice (then a second pass: M19 exception screen + e2e, M22 portal screen + e2e, M23 day-book screen + e2e, …); Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet).
+- **Next:** M23 slice D PR → merge → M27 slice T PR → merge → M35 → M36 → M01, one family per slice (then a second pass: M19 exception screen + e2e, M22 portal screen + e2e, M23 day-book screen + e2e, M27 till panel → store box → cloud tags + e2e, …); Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet).
 
 ---
 

@@ -42,6 +42,12 @@ export interface ConcessionContract {
   /** Share of gross sales in basis points, e.g. 1_500 = 15%. */
   readonly revenueShareBps?: number;
   /** Refundable security deposit held. A LIABILITY, never income. */
+  /**
+   * What a revenue share is taken on at the till, per tagged line (M27-FR-03): `net` — what the customer
+   * actually paid after till discounts, which is also what the period charge has always summed — or
+   * `gross`, the shelf price before discounts. Absent means `net`.
+   */
+  readonly commissionOn?: 'gross' | 'net';
   readonly depositMinor: number;
   /** Utilities recharged, in minor units per month, or metered. */
   readonly utilitiesMinor?: number;
