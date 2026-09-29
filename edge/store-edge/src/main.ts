@@ -41,9 +41,14 @@ import {
   httpMigrationFeedSource, pullMigrationFeed,
   type MigrationFeedPullOutcome, type MigrationFeedPullStatus, type MigrationFeedReceiver,
 } from '../../../edge/sync-agent/src/migration-feed';
+import {
+  httpPublishedTemplatesSource, pullPublishedTemplates,
+  type PublishedTemplatesPullOutcome, type PublishedTemplatesPullStatus, type PublishedTemplatesReceiver,
+} from '../../../edge/sync-agent/src/published-templates';
 import { openFileLog, readLog, type OpenFileLog } from './file-log';
 import { readSignedPack, writeSignedPack } from './signed-pack-file';
 import { readHeldMigrationFeed, writeHeldMigrationFeed, type HeldMigrationFeed } from './migration-feed-file';
+import { readHeldPublishedTemplates, writeHeldPublishedTemplates, type HeldPublishedTemplates } from './published-templates-file';
 import { SyncPipeline } from './sync-pipeline';
 import { canonicalHash, IdempotencyGuard } from './idempotency';
 import { ReturnEntitlement, type EntitlementLine } from './entitlement';
@@ -53,7 +58,7 @@ import { createEdgeNode, type EdgeNode } from './index';
 import { startLaneServer, LANE_HOST, type LaneServer, type LaneDayCloseHandler, type LaneDayReopenHandler } from './lane-server';
 import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-server';
 import { readSales } from './read-model';
-import { emptyPack, readPack, withMigrationFeed, type StorePack } from './store-pack';
+import { emptyPack, readPack, withMigrationFeed, withPublishedTemplates, type StorePack } from './store-pack';
 import { managerPayload, type ScreenInput } from './screen-data';
 import { hmacSigner } from '../../../services/catalogue/src/index';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
@@ -244,6 +249,12 @@ export interface EdgeProcess {
    * `refreshPack`; exposed for the same reason.
    */
   readonly refreshMigrationFeed: (() => Promise<MigrationFeedPullOutcome>) | null;
+  /**
+   * Pull the cloud's PUBLISHED document templates now (M01-FR-02 · §31) and lay them into the lane's pack, so
+   * the till prints the receipt header and footer head office put in force — under their version — with the
+   * cable out. Null when no cloud is configured. Rides the same loop as `refreshPack`; exposed for the same reason.
+   */
+  readonly refreshPublishedTemplates: (() => Promise<PublishedTemplatesPullOutcome>) | null;
   /**
    * Run exactly one drain-and-settle of both queues (sales then refunds), returning what moved.
    * Null when no cloud is configured — there is nothing to drain to. The poll loop calls the same
@@ -692,6 +703,16 @@ export async function startEdge(
     say(`migration register as of ${heldFeed.feed.generatedAt} restored from disk — the last one this box pulled.`);
   }
 
+  // The document templates in force as this box last pulled them (M01-FR-02), restored from disk and laid into the
+  // pack — so a reboot with the cable out still prints the receipt header head office published, under its
+  // version (P-01, P-08). Nothing restored means the till prints with its defaults and stamps no version.
+  let heldTemplates: HeldPublishedTemplates | undefined = await readHeldPublishedTemplates(settings['EDGE_DATA_DIR']!, tenantId);
+  if (heldTemplates !== undefined) {
+    pack = withPublishedTemplates(pack, heldTemplates.feed, heldTemplates.receivedAt);
+    const receipt = heldTemplates.feed.templates.find((t) => t.kind === 'receipt');
+    say(`document templates as of ${heldTemplates.feed.generatedAt} restored from disk${receipt === undefined ? ' — nothing published for receipts' : ` — receipts print with template v${receipt.version}`}.`);
+  }
+
   // The screens socket. Built from the CURRENT state on every request, so a screen reloaded at
   // four o'clock shows four o'clock's exceptions rather than the ones this process saw at boot.
   const snapshot = (): ScreenInput => {
@@ -866,7 +887,7 @@ export async function startEdge(
     say('no cloud is configured, so nothing will be synced. The shop can still trade — that is the point.');
     return {
       log, returnsLog, completionsLog, dayCloseLog, concessionTagsLog, outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox, node, lane, screens,
-      agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, refreshPack: null, refreshMigrationFeed: null, syncOnce: null,
+      agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, refreshPack: null, refreshMigrationFeed: null, refreshPublishedTemplates: null, syncOnce: null,
       // The day still locks with no cloud — that is the point of P-01. It queues durably and goes up when
       // a cloud is configured and reachable; nothing is told a lie in the meantime. Reopen is the same.
       closeDay,
@@ -977,6 +998,37 @@ export async function startEdge(
     return outcome;
   };
 
+  // The published document templates ride the same loop (M01-FR-02): fetched, taken only if this shop's and not
+  // older than what is held, laid into the lane's pack, persisted so a reboot keeps them. A kind the cloud no
+  // longer lists as published leaves the pack — the lane must not keep printing wording nobody has in force.
+  const templatesSource = httpPublishedTemplatesSource({ baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch });
+  const templatesReceiver: PublishedTemplatesReceiver = {
+    tenantId,
+    heldTemplates: () => heldTemplates?.feed,
+    takeTemplates: (feed, receivedAt) => {
+      heldTemplates = { feed, receivedAt };
+      pack = withPublishedTemplates(pack, feed, receivedAt);
+    },
+  };
+  let lastTemplatesStatus: PublishedTemplatesPullStatus | undefined;
+
+  const refreshPublishedTemplates = async (): Promise<PublishedTemplatesPullOutcome> => {
+    const outcome = await pullPublishedTemplates({ source: templatesSource, receiver: templatesReceiver, now: new Date().toISOString() });
+    if (outcome.status === 'updated') {
+      // Live in memory already; the disk copy is what a reboot restores. A failed write is said, not fatal.
+      try {
+        if (heldTemplates !== undefined) await writeHeldPublishedTemplates(settings['EDGE_DATA_DIR']!, heldTemplates);
+      } catch (e) {
+        say(`the document templates could not be saved to disk (${e instanceof Error ? e.message : String(e)}). They are live now and will be pulled again next time.`);
+      }
+      say(outcome.staffMessage);
+    } else if (outcome.status !== 'unchanged' && outcome.status !== lastTemplatesStatus) {
+      say(outcome.staffMessage);
+    }
+    lastTemplatesStatus = outcome.status;
+    return outcome;
+  };
+
   let stopping = false;
   let quietPasses = 0;
   let timer: NodeJS.Timeout | undefined;
@@ -1077,6 +1129,12 @@ export async function startEdge(
     } catch (e) {
       say(`migration register refresh failed: ${e instanceof Error ? e.message : String(e)}. The screen keeps the register this box holds.`);
     }
+    // The published templates ride the same loop too (M01-FR-02) — the lanes keep what this box holds on a failure.
+    try {
+      await refreshPublishedTemplates();
+    } catch (e) {
+      say(`document template refresh failed: ${e instanceof Error ? e.message : String(e)}. The lanes keep the templates this box holds.`);
+    }
     if (!stopping) timer = setTimeout(() => { void pass(); }, nextInterval(quietPasses));
   };
 
@@ -1105,6 +1163,7 @@ export async function startEdge(
     reopenDay,
     refreshPack,
     refreshMigrationFeed,
+    refreshPublishedTemplates,
     syncOnce: () => drainAndSettle(),
     stop: async () => {
       stopping = true;

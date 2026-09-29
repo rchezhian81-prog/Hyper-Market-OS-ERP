@@ -29,6 +29,7 @@
 
 /** A section of the pack: what the cloud said, or why this box does not know. */
 import type { MigrationFeed } from '../../sync-agent/src/migration-feed';
+import type { PublishedTemplatesFeed, PublishedTemplate } from '../../sync-agent/src/published-templates';
 
 export type Register<T> =
   | { readonly known: true; readonly value: T }
@@ -533,6 +534,16 @@ export interface PackDayBookPolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the document-templates screen and what they may do (M01-FR-02). The register is read live from the
+ *  cloud (`GET /v1/org/document-templates`), not the pack; this is only who the box was told is looking, so the
+ *  shell can gate on `platform.setup.read` before the live read (and offer `platform.setup.write` acts). */
+export interface PackDocumentTemplatePolicy {
+  readonly userId?: string;
+  /** The permission codes this user holds — `platform.setup.read` to see the templates, `platform.setup.write` to
+   *  draft / approve / publish. Never defaulted. The cloud routes re-check both (and §28), so this only shapes the UI. */
+  readonly permissions: readonly string[];
+}
+
 /** Who is on the refund-exceptions review screen and what they may do (M13-FR-01/03 · M17). The flagged refunds
  *  are read live from the cloud (`GET /v1/pos/return-governance-exceptions`), not the pack; this is only who the
  *  box was told is looking, so the shell can gate on `lp.case.read` before the live read. Read-only screen. */
@@ -783,6 +794,23 @@ export interface PackMigrationFeed {
   readonly refusedDecisions?: readonly unknown[];
   /** Where the twelve-domain verification report stands (MG-05 / QG-07). */
   readonly verification?: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * The document templates IN FORCE, as this box last pulled them from the cloud (M01-FR-02 · §31).
+ *
+ * The lanes print with these — the receipt header (store name, GSTIN) and footer head office published, under
+ * the version they were published as, so a bill printed with the cable out still says whose it is and can be
+ * reprinted as it was. Absent means no published template has ever reached this box: the lanes print with the
+ * pack defaults and the version stamp is simply absent — never a blank header, never an invented one (P-08).
+ */
+export interface PackDocumentTemplates {
+  /** The cloud's clock when the set was assembled — "as of" (P-08). */
+  readonly generatedAt: string;
+  /** The box's clock when it took the set. */
+  readonly receivedAt: string;
+  /** One version in force per kind that has one. */
+  readonly templates: readonly PublishedTemplate[];
 }
 
 export interface PackMerchandisingPolicy {
@@ -1095,6 +1123,8 @@ export interface StorePack {
   readonly substitutionExceptionPolicy: Register<PackSubstitutionExceptionPolicy>;
   /** Who is on the day-book screen and what they may do there (M23-FR-01). */
   readonly dayBookPolicy: Register<PackDayBookPolicy>;
+  /** Who is on the document-templates screen and what they may do there (M01-FR-02). */
+  readonly documentTemplatePolicy: Register<PackDocumentTemplatePolicy>;
   /** Who is on the refund-exceptions review screen and what they may do there (M13-FR-01/03 · M17). */
   readonly returnGovernancePolicy: Register<PackReturnGovernancePolicy>;
   /** Who is on the cash-office over/short sign-off screen and what they may do there (M14-FR-02). */
@@ -1184,6 +1214,8 @@ export interface StorePack {
   readonly migrationPolicy: Register<PackMigrationPolicy>;
   /** The cloud's migration register as last pulled (C3b). Absent: the box has only ever read its pack file. */
   readonly migrationFeed: Register<PackMigrationFeed>;
+  /** The document templates in force as last pulled from the cloud (M01-FR-02). Absent: the lanes print with the pack defaults. */
+  readonly documentTemplates: Register<PackDocumentTemplates>;
   /** Loss-prevention thresholds — data, so a store tunes its own without code (M15-FR-01). */
   readonly lossPreventionRules: Register<readonly unknown[]>;
   /** The purposes this tenant asks a customer's consent for (M16 / PRV). */
@@ -1271,6 +1303,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     lossPreventionPolicy: notKnown(why),
     substitutionExceptionPolicy: notKnown(why),
     dayBookPolicy: notKnown(why),
+    documentTemplatePolicy: notKnown(why),
     returnGovernancePolicy: notKnown(why),
     cashOfficePolicy: notKnown(why),
     riskAcceptancePolicy: notKnown(why),
@@ -1309,6 +1342,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     legacyArchive: notKnown(why),
     migrationPolicy: notKnown(why),
     migrationFeed: notKnown(why),
+    documentTemplates: notKnown(why),
     lossPreventionRules: notKnown(why),
     consentPurposes: notKnown(why),
     warehouse: notKnown(why),
@@ -1401,6 +1435,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     lossPreventionPolicy: section<PackLossPreventionPolicy>('lossPreventionPolicy'),
     substitutionExceptionPolicy: section<PackSubstitutionExceptionPolicy>('substitutionExceptionPolicy'),
     dayBookPolicy: section<PackDayBookPolicy>('dayBookPolicy'),
+    documentTemplatePolicy: section<PackDocumentTemplatePolicy>('documentTemplatePolicy'),
     returnGovernancePolicy: section<PackReturnGovernancePolicy>('returnGovernancePolicy'),
     cashOfficePolicy: section<PackCashOfficePolicy>('cashOfficePolicy'),
     riskAcceptancePolicy: section<PackRiskAcceptancePolicy>('riskAcceptancePolicy'),
@@ -1439,6 +1474,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     legacyArchive: section<unknown>('legacyArchive'),
     migrationPolicy: section<PackMigrationPolicy>('migrationPolicy'),
     migrationFeed: section<PackMigrationFeed>('migrationFeed'),
+    documentTemplates: section<PackDocumentTemplates>('documentTemplates'),
     lossPreventionRules: section<readonly unknown[]>('lossPreventionRules'),
     consentPurposes: section<readonly { purpose: string; channel: string; required?: boolean }[]>('consentPurposes'),
     warehouse: section<PackWarehouse>('warehouse'),
@@ -1495,6 +1531,24 @@ export function withMigrationFeed(pack: StorePack, feed: MigrationFeed, received
       receivedAt,
       ...(feed.refusedDecisions === undefined ? {} : { refusedDecisions: feed.refusedDecisions }),
       ...(feed.verification === undefined ? {} : { verification: feed.verification }),
+    }),
+  };
+}
+
+/**
+ * The cloud's published templates laid into the pack (M01-FR-02 · §31).
+ *
+ * The whole set is replaced by what the cloud says is in force — a kind the cloud no longer lists as published
+ * is no longer in force, and the lane must not keep printing it. The box's own facts (who is on the template
+ * screen) are untouched; this section is wording the lanes print, nothing about people.
+ */
+export function withPublishedTemplates(pack: StorePack, feed: PublishedTemplatesFeed, receivedAt: string): StorePack {
+  return {
+    ...pack,
+    documentTemplates: known<PackDocumentTemplates>({
+      generatedAt: feed.generatedAt,
+      receivedAt,
+      templates: feed.templates.map((t) => ({ kind: t.kind, version: t.version, content: t.content, publishedAt: t.publishedAt })),
     }),
   };
 }

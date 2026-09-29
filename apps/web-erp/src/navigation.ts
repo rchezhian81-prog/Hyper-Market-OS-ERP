@@ -94,6 +94,11 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
 
   { id: 'users', label: 'Users & roles', path: '/admin/users', requires: 'admin.users.manage', group: 'Administration' },
   { id: 'store-setup', label: 'Store setup', path: '/admin/setup', requires: 'platform.setup.read', group: 'Administration' },
+  // Document templates — the wording on every bill / invoice / PO / GRN / statement, versioned: drafted by one
+  // person, approved by another, published; the previous version kept (M01-FR-02, §28). Gated on the SAME
+  // permission the register route checks (`platform.setup.read`), so the menu never offers a screen the server
+  // would refuse; the writes need `platform.setup.write` and the screen withholds them without it.
+  { id: 'document-templates', label: 'Document templates', path: '/document-templates', requires: 'platform.setup.read', group: 'Administration' },
   { id: 'settings', label: 'Settings', path: '/admin/settings', requires: 'admin.settings.manage', group: 'Administration' },
   { id: 'audit', label: 'Audit log', path: '/admin/audit', requires: 'audit.view', group: 'Administration' },
   // Operations — the A06 incident inbox (a stuck sync queue, a growing dead-letter pile, an unwell

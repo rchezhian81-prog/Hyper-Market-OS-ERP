@@ -84,6 +84,27 @@ export function documentTemplateRoutes(deps: DocumentTemplateDeps): readonly Rou
 
   return [
     {
+      // The STORE BOX's read (M01-FR-02 · §31): the version IN FORCE of every kind, and nothing else — no
+      // drafts, no notes, no names. The box pulls this on its sync loop (edge/sync-agent `pullPublishedTemplates`)
+      // and lays it into the lane's pack, so a receipt printed with the cable out carries the header and footer
+      // head office published, under the version it was printed under. Narrower than `platform.setup.read` so
+      // the box's identity (the cashier role) can hold it without seeing the setup surface. Registered BEFORE
+      // `/:kind` so "published" is never read as a document kind.
+      api: 'API-01', method: 'GET', path: '/v1/org/document-templates/published',
+      permission: 'org.template.pull',
+      handler: async (ctx) => {
+        const versions = await standing(ctx.tenantId);
+        const templates = DOCUMENT_KINDS.flatMap((kind) => {
+          const current = currentTemplate(versions, kind);
+          return current === undefined ? [] : [{
+            kind, version: current.version, content: current.content,
+            publishedAt: current.publishedAt ?? current.authoredAt,
+          }];
+        });
+        return { status: 200, body: { tenantId: ctx.tenantId, generatedAt: deps.now(), templates } };
+      },
+    },
+    {
       api: 'API-01', method: 'GET', path: '/v1/org/document-templates',
       permission: 'platform.setup.read',
       handler: async (ctx) => {

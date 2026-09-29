@@ -626,7 +626,48 @@ accounts.
   browser- and edge-verified; the ledger's only stated hold is closed. Held below INTEGRATION_TESTED until the
   honest-hardening review (durability + tenant isolation across the M27 surfaces). Physical-till verification
   stays a pilot item.
-- **Next:** M27 slice U PR → merge; then M01 template screen + e2e (+ the edge reading the published receipt template into the lane's pack); then Stage D. Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
+- **Stage C, second pass, family M01 (org/config), slice E — done (29 Sep 2026): the DOCUMENT-TEMPLATE screen,
+  browser-verified, and the store box reading the PUBLISHED receipt template into the lane's pack (M01-FR-02,
+  §28, §31) — and M01 re-rated PARTIALLY_WIRED → WIRED.** Before: slice D put versioned templates on the cloud
+  (draft → a second person approves → publish; the previous version superseded and KEPT) but no screen bound to
+  those routes, and the till printed with whatever header its pack file carried — a template published at head
+  office never reached a lane; the ledger said "the template screen + e2e and the edge reading the published
+  receipt template into the lane pack remain". Now, TWO halves. **The screen** (`apps/web-erp/src/
+  document-templates-session.ts`, `apps/web-erp/web/document-templates.html` / `.js`, browser-entry ports + act
+  port, `documentTemplatePolicy` in the pack, the `document-templates` screen served by the box, Administration
+  menu entry on `platform.setup.read`): the register — every kind's version in force, NOTHING in force a WARNING
+  (documents print with defaults, P-08); one kind's versions newest-first, each state a word and an icon; the
+  three writes in the setup person's own name with an idempotency key — DRAFT (validated HERE with the engine's
+  own `validateTemplateContent` before any POST: a malformed GSTIN or a missing store name never leaves the
+  screen), APPROVE (offered only on a draft to a person who is NOT its author — the maker sees the §28 sentence;
+  the cloud refuses the maker regardless), PUBLISH (only an approved version). **The box reads what is in
+  force:** a NEW box-facing route `GET /v1/org/document-templates/published` (`services/platform/src/
+  document-templates.ts`; permission `org.template.pull` held by the cashier role = the box's identity and the
+  owner — never the platform administrator, whose authority stays platform-only — content and version only, no drafts, no notes, no names); `edge/sync-agent/src/
+  published-templates.ts` (defensive reader, HTTP source, `pullPublishedTemplates` — this shop's, not older,
+  updated / unchanged / kept / offline, the token never in a reason); `withPublishedTemplates` lays the set into
+  the pack's `documentTemplates` section (REPLACED by what is in force — a kind no longer published leaves the
+  pack); `edge/store-edge/src/published-templates-file.ts` persists it atomically and a reboot restores it
+  (another shop's or a torn file ignored); `edge/store-edge/src/main.ts` pulls on the same loop as the catalogue
+  and the migration register (`refreshPublishedTemplates`); the served till page gets its own global
+  `window.posReceiptTemplate` (`posReceiptTemplate`, injected for the till alone) — header, footer, language,
+  paper, the VERSION to stamp on every bill, the age by the CLOUD's clock; `bootPos` exposes `receiptTemplate()`.
+  Absent = the till prints with its defaults and stamps no version, never an invented one. Tests: `tests/unit/
+  published-templates-pull.test.ts` (10), `tests/unit/document-templates-session.test.ts` (11),
+  `tests/guardrails/the-document-templates-screen-is-usable.test.ts` (9), `tests/integration/
+  the-published-receipt-template-reaches-the-till-through-the-edge.test.ts` (4 — the REAL edge over the real
+  cloud: the box pulls v1 under its own identity and the SERVED till page carries it; a reboot with the cable out
+  restores it from disk and says so; v2 published at head office supersedes v1 on the box, then re-confirmed
+  quietly; the box's identity may read what is in force and is refused the setup register), `tests/e2e/
+  document-template-publish-delivery.e2e.ts` (4 — headless Chromium against a stub cloud: the owner drafts v1
+  under their session with an idempotency key, the kind re-read, NO approve for the maker; a platform admin
+  approves then publishes, the register re-reads "v1 in force"; a read-only manager sends nothing; a malformed
+  GSTIN refused on the page before any POST). `docs/api/surface.md` regenerated (+1 route). **Re-rate M01
+  PARTIALLY_WIRED → WIRED:** every M01 FR is wired on the live API and integration-tested; the ledger's two stated
+  holds are closed. Held below INTEGRATION_TESTED until the honest-hardening review. Honest boundary: the till
+  HOLDS the template in force; rendering the printed bill through `packages/receipt` with it and the version
+  stamp is M12's receipt-printing work, not claimed here.
+- **Next:** M01 slice E PR → merge; Stage C second pass complete for every family with a stated screen/hop hold — then Stage D (the one-PC till installer and in-store setup). Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
 
 ---
 
