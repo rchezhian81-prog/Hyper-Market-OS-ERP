@@ -129,6 +129,11 @@ import {
   type ActionResult as SubExceptionActionResult,
 } from './substitution-exception-inbox-session';
 import {
+  createDayBookSession,
+  type DayBookSession, type DayBookPorts, type DayBookReadData, type DayBookPostPort, type DayBookPostBody,
+  type PostResult as DayBookPostResult,
+} from './day-book-session';
+import {
   createReturnGovernanceSession,
   type ReturnGovernancePorts, type ReturnGovernanceSession, type ReturnGovernanceData as ReturnGovernanceExceptions,
 } from './return-governance-session';
@@ -1233,6 +1238,99 @@ export async function fetchSubExceptionWorklist(): Promise<SubExceptionWorklistD
     });
     if (res.status >= 400) return null;
     return (await res.json()) as SubExceptionWorklistData;
+  } catch {
+    return null;
+  }
+}
+
+// ── Day book (M23-FR-01) — the accountant's posting screen ─────────────────────────────────────────────────
+
+/** What the box tells the day-book screen: who is looking and what they may do. The day itself is a LIVE cloud
+ *  read (`GET /v1/finance/day-book/:tradingDay`) the shell fetches for the chosen day; offline the screen shows
+ *  its clearly-marked sample stand-in. */
+export interface DayBookScreenData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+}
+
+const DAY_BOOK_READ_PERMISSION = 'finance.period.read';
+const DAY_BOOK_POST_PERMISSION = 'finance.journal.post';
+const NOOP_DAY_BOOK_POST_PORT: DayBookPostPort = { post: async () => ({ result: 'lost_link' }) };
+
+export function dayBookPortsFromData(
+  data: DayBookScreenData | undefined,
+  current: DayBookReadData | null,
+  postPort: DayBookPostPort = NOOP_DAY_BOOK_POST_PORT,
+): DayBookPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    dayBook: () => current,
+    // Default-deny: an absent permission list can read/post nothing (the server would refuse it anyway).
+    mayRead: () => held.has(DAY_BOOK_READ_PERMISSION),
+    mayPost: () => held.has(DAY_BOOK_POST_PERMISSION),
+    postPort: () => postPort,
+  };
+}
+
+/** Build the day-book session, or `null` when the box carried no payload for it (shell shows the sample). */
+export function bootDayBook(
+  data: DayBookScreenData | undefined,
+  current: DayBookReadData | null = null,
+  postPort?: DayBookPostPort,
+): DayBookSession | null {
+  if (data === undefined) return null;
+  return createDayBookSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    dayBookPortsFromData(data, current, postPort),
+  );
+}
+
+/** The authenticated POST of the accountant's posting — the accountant's OWN session cookie
+ *  (`credentials: 'same-origin'`), never a service token, with an idempotency key (a day posted twice is one
+ *  posting on the server too). 201 = journals appended; 200 = nothing new; 409 `posting_map_not_defined` is told
+ *  as such; any other refusal is a refusal; a network/timeout is a retryable lost link, never "the server said no". */
+function openDayBookPostPort(): DayBookPostPort {
+  return {
+    post: async ({ tradingDay }): Promise<DayBookPostResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return { result: 'lost_link' };
+      const key = globalThis.crypto?.randomUUID?.() ?? `day-book-post-${tradingDay}-${Date.now()}`;
+      try {
+        const res = await fetchFn(`/v1/finance/day-book/${encodeURIComponent(tradingDay)}/post`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({}),
+        });
+        if (res.status === 201 || res.status === 200) {
+          const body = (await res.json()) as DayBookPostBody;
+          return { result: res.status === 201 ? 'posted' : 'nothing_new', body };
+        }
+        if (res.status === 409) {
+          try {
+            const code = String(((await res.json()) as { error?: { code?: string } }).error?.code ?? '');
+            if (code === 'posting_map_not_defined') return { result: 'no_posting_map' };
+          } catch { /* an unreadable refusal is still a refusal */ }
+        }
+        return { result: 'refused' };
+      } catch {
+        return { result: 'lost_link' };
+      }
+    },
+  };
+}
+
+/** Read one trading day's day book (a GET — read-only). Returns null offline/refused so the shell keeps whatever it
+ *  was showing and its stale strip says the page is what the box last told it. */
+export async function fetchDayBook(tradingDay: string): Promise<DayBookReadData | null> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return null;
+  try {
+    const res = await fetchFn(`/v1/finance/day-book/${encodeURIComponent(tradingDay)}`, {
+      method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin',
+    });
+    if (res.status >= 400) return null;
+    return (await res.json()) as DayBookReadData;
   } catch {
     return null;
   }
@@ -3274,6 +3372,13 @@ interface ManagerWindow {
     refresh(): Promise<SubExceptionWorklistData | null>;
     present(worklist: SubExceptionWorklistData): SubExceptionInboxSession;
   };
+  dayBookData?: DayBookScreenData;
+  dayBookSession?: DayBookSession;
+  /** The shell reads a trading day through this and re-presents it — a GET read, never a write. */
+  dayBook?: {
+    refresh(tradingDay: string): Promise<DayBookReadData | null>;
+    present(data: DayBookReadData): DayBookSession;
+  };
   rosteringData?: RosteringScreenData;
   rosteringSession?: RosteringSession;
   /** The shell reads the live roster worklist through this and re-presents it — GET reads, never a write. */
@@ -4185,6 +4290,23 @@ if (browserWindow !== undefined) {
       present: (worklist) => createSubExceptionInboxSession(
         { userId: subExceptionData?.userId === undefined ? null : subExceptionData.userId },
         subExceptionPortsFromData(subExceptionData, worklist, subExceptionPort),
+      ),
+    };
+  }
+  // The day book (M23-FR-01): boots from the box's policy (who + what they hold), then the shell reads the chosen
+  // trading day with a live GET (read-only). Offline it shows its sample stand-in and says so. The one write is the
+  // accountant's POSTING of the day, in their own name, only on an explicit click; the server needs a posting map and
+  // is idempotent on the day.
+  const dayBookData = browserWindow.dayBookData;
+  const dayBookPostPort = openDayBookPostPort();
+  const dayBookSession = bootDayBook(dayBookData, null, dayBookPostPort);
+  if (dayBookSession !== null) {
+    browserWindow.dayBookSession = dayBookSession;
+    browserWindow.dayBook = {
+      refresh: fetchDayBook,
+      present: (data) => createDayBookSession(
+        { userId: dayBookData?.userId === undefined ? null : dayBookData.userId },
+        dayBookPortsFromData(dayBookData, data, dayBookPostPort),
       ),
     };
   }

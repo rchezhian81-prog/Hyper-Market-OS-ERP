@@ -523,6 +523,16 @@ export interface PackSubstitutionExceptionPolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the day-book screen and what they may do (M23-FR-01). The day is read live from the cloud
+ *  (`GET /v1/finance/day-book/:tradingDay`), not the pack; this is only who the box was told is looking, so the
+ *  shell can gate on `finance.period.read` before the live read (and offer `finance.journal.post`). */
+export interface PackDayBookPolicy {
+  readonly userId?: string;
+  /** The permission codes this user holds — `finance.period.read` to see the day book, `finance.journal.post` to
+   *  post a day. Never defaulted. The cloud routes re-check both, so this only shapes the UI. */
+  readonly permissions: readonly string[];
+}
+
 /** Who is on the refund-exceptions review screen and what they may do (M13-FR-01/03 · M17). The flagged refunds
  *  are read live from the cloud (`GET /v1/pos/return-governance-exceptions`), not the pack; this is only who the
  *  box was told is looking, so the shell can gate on `lp.case.read` before the live read. Read-only screen. */
@@ -1083,6 +1093,8 @@ export interface StorePack {
   readonly lossPreventionPolicy: Register<PackLossPreventionPolicy>;
   /** Who is on the delivery-substitution exception inbox and what they may do there (M19-FR-01). */
   readonly substitutionExceptionPolicy: Register<PackSubstitutionExceptionPolicy>;
+  /** Who is on the day-book screen and what they may do there (M23-FR-01). */
+  readonly dayBookPolicy: Register<PackDayBookPolicy>;
   /** Who is on the refund-exceptions review screen and what they may do there (M13-FR-01/03 · M17). */
   readonly returnGovernancePolicy: Register<PackReturnGovernancePolicy>;
   /** Who is on the cash-office over/short sign-off screen and what they may do there (M14-FR-02). */
@@ -1258,6 +1270,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     operationsInboxPolicy: notKnown(why),
     lossPreventionPolicy: notKnown(why),
     substitutionExceptionPolicy: notKnown(why),
+    dayBookPolicy: notKnown(why),
     returnGovernancePolicy: notKnown(why),
     cashOfficePolicy: notKnown(why),
     riskAcceptancePolicy: notKnown(why),
@@ -1387,6 +1400,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     operationsInboxPolicy: section<PackOperationsInboxPolicy>('operationsInboxPolicy'),
     lossPreventionPolicy: section<PackLossPreventionPolicy>('lossPreventionPolicy'),
     substitutionExceptionPolicy: section<PackSubstitutionExceptionPolicy>('substitutionExceptionPolicy'),
+    dayBookPolicy: section<PackDayBookPolicy>('dayBookPolicy'),
     returnGovernancePolicy: section<PackReturnGovernancePolicy>('returnGovernancePolicy'),
     cashOfficePolicy: section<PackCashOfficePolicy>('cashOfficePolicy'),
     riskAcceptancePolicy: section<PackRiskAcceptancePolicy>('riskAcceptancePolicy'),
