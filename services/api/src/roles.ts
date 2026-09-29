@@ -272,6 +272,21 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     ],
   },
   {
+    id: 'customer',
+    name: 'Customer (storefront login)',
+    // M20 / §35 — the second role held by a party OUTSIDE the business: a customer signed into the storefront
+    // app. As narrow as the supplier's: it may PLACE an order for itself (which reserves stock and records the
+    // checkout's payment answer — the same engines the desk uses, hard rule #3 enforced at the door) and READ
+    // its own orders, scoped server-side from what the order records about who placed it — never from an id in
+    // the request. No `order.*` desk codes, no `pos.*`, no `cash.*`: a customer cannot move another customer's
+    // order, confirm or pick anything, or see the shop's registers. A request for another customer's order is
+    // refused AND recorded (hard rule #6).
+    permissions: [
+      'identity.self.read',
+      'storefront.order.place', 'storefront.order.read',
+    ],
+  },
+  {
     id: 'supplier',
     name: 'Supplier (portal login)',
     // M24-FR-01 / §35 — the ONE role held by a party OUTSIDE the business: a supplier logging into the

@@ -42,3 +42,4 @@ export * from './substitution-exceptions';
 export * from './substitution-messages';
 export * from './substitution-exception-ownership';
 export * from './payment-refunds';
+export * from './storefront-scope';

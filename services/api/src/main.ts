@@ -186,6 +186,7 @@ import { restrictedSalesRoutes } from '../../pos/src/restricted-sales';
 import { selfCheckoutRoutes } from '../../pos/src/self-checkout';
 import { ordersRoutes, type OrdersDeps } from '../../orders/src/index';
 import { paymentRefundRoutes, type PaymentRefundDeps } from '../../orders/src/payments';
+import { storefrontRoutes, type StorefrontDeps } from '../../orders/src/storefront';
 import { testModeRefundProcessor } from '../../../packages/orders/src/payment-refunds';
 import { serviceabilityRoutes } from '../../orders/src/serviceability';
 import { fulfilmentRoutes } from '../../fulfilment/src/index';
@@ -279,7 +280,7 @@ export function buildSurface(deps: {
   // The orders surface and its money surface (M18-FR-04 / M20-FR-03) share ONE deps object, so the lifecycle
   // reads the same recorded payment the refund routes do. The refund processor is the test-mode one until the
   // payment provider (EX-03) is in hand — deterministic on the token, never a real bank.
-  const ordersDeps: OrdersDeps & PaymentRefundDeps = store === undefined ? {
+  const ordersDeps: OrdersDeps & PaymentRefundDeps & StorefrontDeps = store === undefined ? {
     onHand: empty(new Map()), outstanding: empty([]), holdReservations: () => {},
     holdMinutes: HOLD_MINUTES, now,
     recordPlaced: () => {}, orderState: empty(undefined), orderReservations: empty([]),
@@ -290,6 +291,7 @@ export function buildSurface(deps: {
     orderRefunds: empty([]), refundOutcomes: empty([]), recordRefund: () => {}, recordRefundOutcome: () => {},
     allPayments: empty([]), allPaymentResolutions: empty([]), allRefunds: empty([]), allRefundOutcomes: empty([]),
     refundThreshold: empty(undefined), holdsPermission: empty(false), refundProcessor: testModeRefundProcessor(),
+    placedOrder: empty(undefined), ordersForCustomer: empty([]), recordAccessRefusal: () => {}, accessRefusals: empty([]),
   } : ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES, refundProcessor: testModeRefundProcessor() });
 
   const probes = deps.probes ?? (async () => []);
@@ -598,6 +600,9 @@ export function buildSurface(deps: {
     // The order's payment and refunds (M18-FR-04 / M20-FR-03): the checkout's answer recorded once, refunds against
     // the order's own token, pending when the bank has not said, on a worklist until it does.
     ...paymentRefundRoutes(ordersDeps),
+    // The storefront's own surface (M20): a signed-in customer places and pays for an order that reserves stock in the
+    // same breath, and reads back its own orders only — gated by the customer_app entitlement.
+    ...storefrontRoutes(ordersDeps),
     // Serviceability configuration (M18-FR-01 / D08) — the per-tenant, effective-dated delivery radius/fee/
     // threshold/minimum. Resolve NEVER 404s: the D08 default (10 km) applies until the owner sets real radii.
     ...serviceabilityRoutes(store === undefined

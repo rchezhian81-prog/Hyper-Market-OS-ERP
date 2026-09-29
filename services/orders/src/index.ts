@@ -140,6 +140,8 @@ export interface PlacedOrder {
   readonly lines: readonly OrderLine[];
   readonly state: OrderState;
   readonly placedAt: string;
+  /** Who placed it through the storefront (M20) — the authenticated subject, never a body field. Absent on a desk order. */
+  readonly customerRef?: string;
 }
 
 /** One lifecycle step, recorded append-only so the order's history is auditable end-to-end. */
