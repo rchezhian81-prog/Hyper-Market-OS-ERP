@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
+import { Tally } from './lib/tally';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 
 /**
@@ -61,15 +62,6 @@ interface Doc {
   readonly document: {
     querySelector(selector: string): { hidden: boolean; textContent: string | null; children: { length: number } } | null;
   };
-}
-
-/** Counts every interaction a person makes — a tap, or one scan — so a spec row can be asserted against it. */
-class Tally {
-  count = 0;
-  constructor(private readonly page: Page) {}
-  async tap(selector: string): Promise<void> { this.count += 1; await this.page.click(selector); }
-  async scan(code: string): Promise<void> { this.count += 1; await this.page.keyboard.type(code); await this.page.keyboard.press('Enter'); }
-  reset(): number { const n = this.count; this.count = 0; return n; }
 }
 
 describe.skipIf(!HAVE_BROWSER)('the spec\'s interaction budget, counted on the served screens', () => {

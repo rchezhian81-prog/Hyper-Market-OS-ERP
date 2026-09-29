@@ -28,24 +28,21 @@
       }
       header {
         display: flex; align-items: center; justify-content: space-between;
-        gap: 10px; padding: 12px 14px; background: var(--panel);
+        gap: 10px; padding: 8px 14px; background: var(--panel);
       }
-      .route { font-weight: 600; }
+      /* The page's one heading: the route. Styled as the header line it is, not as a headline. */
+      h1.route { margin: 0; font-size: 17px; font-weight: 600; }
       .route small { display: block; color: var(--muted); font-weight: 400; font-size: 13px; }
+      /* The sync badge (design system §1 rule 4): the dot is decoration, the two lines of words are the badge —
+         this phone's unsent count, then the store computer's state and last contact. */
+      .sync-words { display: grid; line-height: 1.25; text-align: right; }
+      .sync-words small { color: var(--muted); font-size: 13px; }
       .dot.waiting { background: var(--warn); }
-      .lang { background: transparent; border: 0; color: var(--muted); min-height: 40px; font-size: 14px; }
 
-      .sample { background: var(--warn); color: #451a03; padding: 8px 14px; font-weight: 600; font-size: 15px; margin: 0; }
-      .sample[hidden] { display: none; }
-      .storage { background: var(--danger); color: #fff; padding: 8px 14px; font-size: 15px; margin: 0; }
+      .storage { background: var(--danger-surface); color: var(--on-danger); padding: 8px 14px; font-size: 15px; margin: 0; }
       .storage[hidden] { display: none; }
-      /* Served from this device's cache because the store box could not be reached. It says WHEN,
-         because a page from this morning shown as this minute's is the fault this product exists
-         to refuse (P-08). */
-      .stale { background: #1e3a5f; color: #dbeafe; padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info, #38bdf8); }
-      .stale[hidden] { display: none; }
-      /* A stop the contribution rule flagged. Surfaced, never buried (D09). */
-      .flagged { background: #78350f; color: #fff7ed; padding: 8px 14px; font-size: 15px; margin: 0; }
+      /* A stop the contribution rule flagged. Surfaced, never buried (D09) — an amber strip, a warning that is not an error. */
+      .flagged { background: var(--warn-surface); color: var(--on-warn-surface); padding: 8px 14px; font-size: 15px; margin: 0; }
       .flagged[hidden] { display: none; }
 
       main { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 14px; }
@@ -56,7 +53,7 @@
         border: 0; border-left: 6px solid var(--line); border-radius: 14px;
         padding: 12px 14px; margin-bottom: 10px; min-height: var(--tap); display: grid; gap: 3px;
       }
-      .stop[aria-selected='true'] { outline: 3px solid #93c5fd; }
+      .stop[aria-selected='true'] { outline: 3px solid var(--focus); }
       .stop.delivered { border-left-color: var(--good); }
       .stop.failed { border-left-color: var(--danger); }
       .stop.returned_to_origin { border-left-color: var(--info); }
@@ -76,9 +73,10 @@
         min-height: var(--tap); border-radius: 14px; border: 0; font-size: 18px; font-weight: 600;
         background: var(--line); color: var(--ink);
       }
-      button.primary { background: var(--good); color: #052e16; font-size: 20px; }
-      button.danger { background: var(--danger); color: #fff; }
-      button:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+      button.primary { background: var(--good); color: var(--on-accent); font-size: 20px; }
+      /* The readable red — white on the signal red is 3.8:1, short of the 4.5:1 these words need. */
+      button.danger { background: var(--danger-surface); color: var(--on-danger); }
+      button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .wide { grid-column: 1 / -1; }
 
       /* ── Panels ─────────────────────────────────────────────────────────── */
@@ -94,7 +92,7 @@
       .sheet h2 { margin: 0; font-size: 20px; }
       .entry {
         font-size: 42px; font-weight: 700; text-align: right; padding: 8px 16px;
-        background: #0b1220; border-radius: 12px; min-height: 64px;
+        background: var(--panel-2); border-radius: 12px; min-height: 64px;
       }
       .hint { color: var(--muted); font-size: 15px; min-height: 22px; }
       .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
@@ -102,34 +100,35 @@
       .choices { display: grid; gap: 8px; }
       .choices button { text-align: left; padding: 0 16px; font-size: 17px; }
       .sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-      .sheet-actions .primary, .keypad .primary { background: var(--good); color: #052e16; }
+      .sheet-actions .primary, .keypad .primary { background: var(--good); color: var(--on-accent); }
 
       /* Counting the bag: one row per note, a big count in the middle. */
       .denoms { display: grid; gap: 8px; max-height: 46dvh; overflow-y: auto; }
       .denom { display: grid; grid-template-columns: 5rem 1fr 3.5rem 1fr; align-items: center; gap: 8px; }
       .denom span { font-size: 20px; font-weight: 600; }
       .denom .n { text-align: center; font-size: 24px; font-variant-numeric: tabular-nums; }
-      .denom button { min-height: 52px; font-size: 26px; border: 0; border-radius: 12px; background: var(--line); color: var(--ink); }
+      /* The same target as every other button: a thumb counting notes at the end of a shift is not more accurate. */
+      .denom button { min-height: var(--tap); font-size: 26px; border: 0; border-radius: 12px; background: var(--line); color: var(--ink); }
 
       /* The banner. No timer, never colour alone. */
       .banner {
         position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 18px 14px;
-        background: var(--danger); color: #fff; display: grid; gap: 10px;
+        background: var(--danger-surface); color: var(--on-danger); display: grid; gap: 10px;
       }
       .banner[hidden] { display: none; }
-      .banner.good { background: var(--good); color: #052e16; }
+      .banner.good { background: var(--good); color: var(--on-accent); }
       .banner strong { font-size: 21px; }
       .banner p { margin: 0; font-size: 17px; }
-      .banner button { background: #7f1d1d; color: #fff; }
-      .banner.good button { background: #052e16; color: #ecfdf5; }
+      .banner button { background: var(--panel-2); color: var(--ink); }
+      .banner.good button { background: var(--on-accent); color: var(--ink); }
     </style>
   </head>
   <body>
     <header>
-      <span class="route" id="route">—<small id="progress">—</small></span>
+      <h1 class="route" id="route">—<small id="progress">—</small></h1>
       <span class="sync">
-        <span class="dot" id="queue-dot" title="Waiting to sync"></span>
-        <span id="queue-text">—</span>
+        <span class="dot" id="queue-dot" title="Sync"></span>
+        <span class="sync-words"><span id="queue-text">—</span><small id="box-text">—</small></span>
         <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
       </span>
     </header>

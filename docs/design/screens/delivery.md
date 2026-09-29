@@ -32,3 +32,10 @@ All handle the §27.1 states.
 - COD reconciles at end of shift against the orders delivered.
 - A failed delivery records a reason and routes to reattempt/RTO.
 - A contribution-stop condition is visible, not buried.
+
+## Measured (Stage G slice 4)
+Counted in a real browser at a phone's size (`tests/e2e/the-handhelds-meet-the-spec.e2e.ts`), from the stop the
+driver is at (the first unfinished stop is selected on their behalf and outlined): capture proof **2** (Delivered →
+Photo or Signed) · record COD collected **2** (Cash or UPI → OK on the amount the order says, or type the actual
+amount) · mark failed with reason **3** (Could not deliver → the reason → try again / back to the store).
+**Listed exception:** proof by the customer's OTP costs one tap per digit plus OK — the digits are the customer's.

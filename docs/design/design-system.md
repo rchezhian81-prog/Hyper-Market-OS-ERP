@@ -36,7 +36,8 @@ every screen imports (`<link rel="stylesheet" href="./sre-foundation.css" />` be
 a tracked byte-identical copy in each `apps/<app>/web/` (`pnpm ui:sync`) because each screen is served and precached
 from its own folder. Both token dialects the screens grew up with resolve to one value (`--ok`=`--good`,
 `--degraded`=`--warn`, `--error`=`--danger`); red is three tokens because no single red is both readable text on a
-dark panel and a surface under white text (`--error` signal · `--danger-text` words · `--danger-surface` button); a
+dark panel and a surface under white text (`--error` signal · `--danger-text` words · `--danger-surface` button);
+amber has a strip pair too (`--warn-surface` / `--on-warn-surface`, a warning that is not an error); a
 page's own `:root` may declare **only** `--tap` (≥ 48px). Every text pair is proven AA in
 `tests/unit/ui-foundation.test.ts`; `tests/guardrails/every-screen-shares-the-foundation.test.ts` keeps every page on
 the one file. Components (§4) ship namespaced as `.sre-*` and the screens move onto them slice by slice (G2–G5).
@@ -64,9 +65,12 @@ the one file. Components (§4) ship namespaced as `.sre-*` and the screens move 
 `tests/e2e/lib/a11y-audit.ts` audits the RENDERED page in real Chromium — contrast of every visible word against
 the surface it actually sits on (1.4.3, with `packages/a11y`), non-text contrast (1.4.11), target size at this
 product's 44px bar (2.5.8), an accessible name on every control (4.1.2), a label on every input (3.3.2), the page
-language including after the EN/TA toggle (3.1.1), exactly one visible h1 (2.4.6). Every screen slice runs it on
-every view a person reaches and keeps a tripwire that proves it bites. It cannot see focus visibility under a real
-keyboard (the static guardrails hold `:focus-visible`), announcement order, or the meaning of the words.
+language including after the EN/TA toggle (3.1.1), exactly one visible h1 (2.4.6), and no horizontal scroll at the
+viewport under test (1.4.10). An inactive control (`disabled` / `aria-disabled`) is exempt from contrast and target
+size, as WCAG exempts it, but still needs a name; `opacity` is composited, so dimmed words are measured as seen.
+Every screen slice runs it on every view a person reaches and keeps a tripwire that proves it bites. It cannot see
+focus visibility under a real keyboard (the static guardrails hold `:focus-visible`), announcement order, the meaning
+of the words, or that text under a modal overlay is covered. Budgets are counted with `tests/e2e/lib/tally.ts`.
 
 ## 6. Localization (NFR-08)
 - English and Tamil first; per-user switch; Unicode throughout; locale-aware number, currency, date formats; a translation framework so strings are never hard-coded in screens.

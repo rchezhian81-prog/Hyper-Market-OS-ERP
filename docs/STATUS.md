@@ -1003,12 +1003,64 @@ accounts.
   `:focus-visible` in place), screen-reader announcement order, or the meaning of the words; the pay step past the
   sign-in group needs the auth backend and is exercised by `tests/e2e/customer-order-delivery.e2e.ts`, not audited here; the
   audit helper is reusable and G4 / G5 run it on the handhelds and the ERP pages.
+- **Stage G slice 4 — the picker, driver and warehouse handhelds for a low-spec phone, AUDITED and COUNTED on the
+  rendered page (picker-packer.md, delivery.md, inventory-warehouse.md, design system §1 rules 1 · 4 · 6 · 7 · 8, §5,
+  §9).** The same in-browser audit as G3, at a cheap Android handheld's size (360×640, touch) and at the handhelds'
+  own 56px target bar, on every view a worker reaches — list · scan panel · keypad · choice list · the blind cash
+  count · a red banner · a green one · the list again in Tamil — **zero findings** on all three
+  (`tests/e2e/the-handhelds-meet-the-spec.e2e.ts`, 8). Two honesties added to `tests/e2e/lib/a11y-audit.ts`: an
+  INACTIVE control (`disabled` / `aria-disabled`) is exempt from contrast and target size as WCAG 1.4.3 / 2.5.8
+  exempt it (the warehouse's greyed "Put away" is not a target) but still needs a name; and **opacity is composited**
+  — words dimmed to 45% are measured at 45% — plus **1.4.10 Reflow** (no horizontal scroll at the phone's width); a
+  tripwire proves all three bite. **The spec's budgets, counted** with one shared `tests/e2e/lib/tally.ts` (lifted out
+  of the till and customer tests): picker **pick a line 3** (scan bin → scan item → confirm) · **record a
+  substitution 3** · **flag a quality fail 2**; driver **capture proof 2** · **record COD 2** · **mark failed with
+  reason 3**; warehouse **put away a line 3**. Before this the picker's pick was **4** (a tap on the line before the
+  three steps), a substitution **5** and a quality fail **4** (walk back to the list, cancel the scan, then the
+  footer button), the driver's failed stop **4** (a tap to say "this one" first). Fixed to the spec's own wording:
+  **a bin label scanned from the list IS step 1** — the scan chooses the line (`startLine(line, code)`), a tap on
+  the line remains for a bin with no readable label (listed exception: 4); **Substitute and Problem sit on the item
+  panel**, because the shelf is where a shortage is found; a **green banner yields to the next scan** while a red
+  one must be read (rule 5); the **driver's buttons act on the stop the driver is at** — the first unfinished stop,
+  selected on their behalf and outlined, a stop they tap instead holds until finished (`currentStop()`). **Rule 4
+  on the handhelds:** the badge now says three things in words — this device's unsent count, the store computer's
+  state (`GET /lane/sync-status` at the address the page was served from — never a guessed one; served with none,
+  it says "not connected to a store computer"), and head office's last contact; proven reachable / online with a
+  clock time / not answering / not connected, in English and Tamil. **Found by the audit, not by eye, and fixed:**
+  (1) the language toggle was 40px on all three; (2) the storage-fault strip, the red banner and the driver's
+  "Could not deliver" were white on the signal red (3.8:1) — now `--danger-surface`; (3) the driver's note-counting
+  buttons were 52px on a 60px phone; (4) **a scanner's Enter also pressed the focused button** — after "Receive a
+  delivery" the warehouse panel silently asked for the next scan after every received item, and the picker's flow
+  could run twice — `event.preventDefault()` on a scanner's Enter in both scanner shells (this is the one fault the
+  old e2es could not see: they checked the outbox, never that the panel had closed); (5) three shells had no h1 and
+  a dozen literal colours — now one h1 each and every colour a token, incl. the new `--warn-surface` /
+  `--on-warn-surface` pair (the flagged-stop strip; `--nobody-surface` aliases it) proven AA in
+  `ui-foundation.test.ts`. `the-handheld-screens-are-usable` now covers the WAREHOUSE shell too (Tamil for every word,
+  no prompt/alert, non-fading banner, ≥56px, sample/storage/unsent honesty) and holds every fix above (+29).
+  **Findings recorded, not fixed here:** (a) `inventory-warehouse.md` budgets **pick a line · start a count · record
+  an adjustment** name flows the warehouse handheld does not have — counts are the ERP `counts` review screen over
+  `packages/counts`, adjustments the M08-FR-03 approval path, a replenishment pick has no handheld surface; a
+  handheld count/pick/adjustment is functional scope (M09), not UI finish — **owner decision below**; (b) the three
+  handheld device outboxes (`sre.picker/driver/warehouse.outbox.*`) are never DRAINED by anything in the browser or
+  on the box — the badge's "waiting to sync" is truthful and will stay so until a drain exists (Stage C / sync);
+  (c) the OTP proof costs as many taps as the OTP has digits plus OK — listed as the delivery budget's one
+  exception (the OTP is the customer's, not the driver's); (d) the audit still cannot see focus visibility,
+  announcement order or meaning, and does not see text under a modal overlay as covered.
+- **Owner decision needed (does not block Stage G): the warehouse handheld's three missing flows.**
+  `inventory-warehouse.md` budgets **pick a line · start a count · record an adjustment with reason** on the
+  handheld; today the handheld receives and puts away only — the blind count is reconciled on the ERP `counts`
+  review screen and an adjustment goes through the M08-FR-03 approval on the ERP. Options, with consequences:
+  **(1)** build the three on the handheld as an M09 functional slice after Stage G — a scanner-first pick from a
+  bin, a blind count entry with the expected quantity never shown, an adjustment with a reason code queued for the
+  approval; about three slices, then the three budget rows are counted like the rest. **(2)** keep counts and
+  adjustments on the ERP screens for the pilot and record the three rows in the spec as "on the ERP, not the
+  handheld", with a named target release. **(3)** wait for the pilot's findings before deciding. Until a written
+  answer the rows stay recorded as not yet on the handheld; nothing is dropped.
 - **Next — Stage G slice 2 onward (UI/UX finish across the 8 apps, consistent · modern · bilingual EN/TA):** built to the Stage 3
   design system (`docs/design/design-system.md`, §27/§27.1, QG-02, NFR-07/08, P-07) and the screen specs in
   `docs/design/screens/`, in slices: G1 one shared visual foundation — DONE above; G2 the till and manager screens to the spec's
   ≤3-interaction and arm's-length rules — 2a the honest badge and 2b the measured interaction budgets both DONE
-  above; G3 the customer app to WCAG 2.2 AA — DONE above; **G4 next**; G3 the customer app to WCAG 2.2 AA on the key journeys; G4 the picker /
-  driver / warehouse handhelds for a low-spec phone; G5 the ERP's 46 pages made one product (navigation, states,
+  above; G3 the customer app to WCAG 2.2 AA — DONE above; G4 the handhelds — DONE above; **G5 next**: the ERP's 46 pages made one product (navigation, states,
   bilingual completeness guardrail on every page); plus the three items already parked for Stage G — the exchange
   screen (desk + till), the desk refund screen, and the migration screen drawing `cloudRegister` /
   `refusedDecisions` / `verification`. Every slice: guardrail + browser e2e, no invented requirement.

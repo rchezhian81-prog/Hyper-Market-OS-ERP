@@ -29,3 +29,10 @@ Adjustment · Expiry · Quarantine · Recall · Wastage. All handle §27.1 state
 - Every stock move is a scan and completes offline, appending exactly one ledger event on sync.
 - The counter can't see the expected number; a variance produces a valued, approved adjustment.
 - The expiry list matches the shelf; a recalled/quarantined item can't be picked or sold.
+
+## Measured (Stage G slice 4)
+Counted in a real browser at a handheld's size (`tests/e2e/the-handhelds-meet-the-spec.e2e.ts`): put away a line **3**
+(tap the item → Put away → scan the bin). **Not yet on the handheld, recorded rather than dropped:** pick a line ·
+start a count · record an adjustment with reason — the blind count is reconciled on the ERP `counts` review screen
+over `packages/counts` and the adjustment through the M08-FR-03 approval path; a replenishment pick has no handheld
+surface. Giving the handheld those flows is M09 functional scope and awaits the owner's written call (docs/STATUS.md).

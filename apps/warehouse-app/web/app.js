@@ -18,8 +18,9 @@
 // **3. No `prompt`, `confirm` or `alert`, and the result banner does not fade** — the same decisions
 // the till, the manager and the picker screens hold.
 //
-// Nothing here calls the network. Every scan is local and queues to the device (§31), and the tested
-// session is what queued it — this file only shows the result.
+// No scan touches the network. Every scan is local and queues to the device (§31), and the tested session
+// is what queued it — this file only shows the result. The one call it makes is a read of the store
+// computer's sync status, for the badge (design system §1 rule 4).
 
 const el = (id) => document.getElementById(id);
 
@@ -32,6 +33,10 @@ const el = (id) => document.getElementById(id);
 
 const WORDS = {
   en: {
+    noBoxLink: 'not connected to a store computer', checkingBox: 'checking the store computer…',
+    boxNotAnswering: 'store computer not answering', boxOnline: 'store computer online',
+    noCloud: 'store computer cannot reach head office', cloudNotSetUp: 'no head office link set up',
+    cloudUnknown: 'head office not checked yet', lastContact: 'last contact',
     staleShell: 'No connection to the store computer. This is the work this handheld was last given, at',
     goodsIn: 'Waiting to be put away', noWork: 'No warehouse work has been given to this handheld yet.',
     noWorkBody: 'Nothing is wrong. When work is assigned to you it will appear here on its own.',
@@ -62,6 +67,10 @@ const WORDS = {
     invalid_command: 'That scan could not be used',
   },
   ta: {
+    noBoxLink: 'கடை கணினியுடன் இணைக்கப்படவில்லை', checkingBox: 'கடை கணினியைச் சரிபார்க்கிறது…',
+    boxNotAnswering: 'கடை கணினி பதிலளிக்கவில்லை', boxOnline: 'கடை கணினி இணைப்பில்',
+    noCloud: 'கடை கணினி தலைமை அலுவலகத்தை அடைய முடியவில்லை', cloudNotSetUp: 'தலைமை அலுவலக இணைப்பு அமைக்கப்படவில்லை',
+    cloudUnknown: 'தலைமை அலுவலகம் இன்னும் சரிபார்க்கப்படவில்லை', lastContact: 'கடைசித் தொடர்பு',
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்த கருவிக்குக் கடைசியாகக் கொடுக்கப்பட்ட வேலை இதுதான்:',
     goodsIn: 'அடுக்க வைக்கக் காத்திருப்பவை', noWork: 'இந்த கருவிக்கு இதுவரை கிடங்கு வேலை தரப்படவில்லை.',
     noWorkBody: 'எந்தப் பிரச்சனையும் இல்லை. உங்களுக்கு வேலை ஒதுக்கப்பட்டால் அது தானாகவே இங்கே தோன்றும்.',
@@ -96,6 +105,7 @@ const t = (key) => WORDS[lang][key] ?? WORDS.en[key] ?? key;
 
 const real = window.warehouseSession;
 const data = window.warehouseData;
+const outbox = window.warehouseOutbox ?? null;
 const grnId = (data && data.grnId) || 'GRN';
 
 let selected = null; // the goods-in item chosen to put away
@@ -156,10 +166,7 @@ function render() {
   el('put-away').disabled = selected === null;
   el('step').firstChild.textContent = selected === null ? t('stepSelect') : t('stepScanBin');
 
-  const box = window.warehouseOutbox;
-  const waiting = box && typeof box.unsentCount === 'function' ? box.unsentCount() : 0;
-  el('queue-text').textContent = waiting > 0 ? `${waiting} ${t('waiting')}` : t('allSent');
-  el('queue-dot').className = 'dot' + (waiting > 0 ? ' waiting' : '');
+  paintBadge();
 
   const host = el('goods-in');
   host.textContent = '';
@@ -229,6 +236,10 @@ window.addEventListener('keydown', (event) => {
     const code = scanBuffer;
     scanBuffer = '';
     if (code.length < 3) return; // a person pressing Enter, not a scanner
+    // A scanner's Enter is never a person's. Left to the browser it also PRESSES whatever button has focus —
+    // the "Receive a delivery" the worker just tapped — and the panel silently asks for the next scan, so
+    // every received item looked like it wanted scanning again. Found by the browser audit, not by eye.
+    event.preventDefault();
     if (scanResolve !== null) {
       el('scan').hidden = true;
       const resolve = scanResolve;
@@ -239,6 +250,64 @@ window.addEventListener('keydown', (event) => {
   }
   if (/^[0-9A-Za-z-]$/.test(event.key)) scanBuffer += event.key;
 });
+
+// ── The sync badge — connection · unsent · freshness (design system §1 rule 4 · P-08) ────────────
+//
+// Two lines of words beside one dot. The first is THIS DEVICE's unsent count: the scans queued here
+// and not yet drained. The second is the STORE COMPUTER's own account of itself — reachable or not,
+// and when head office last answered it — asked at the address the page was served from. A handheld
+// on the shop wifi never guesses an address: with no store computer named, the badge says so rather
+// than inventing one, and a page opened from the device's cache says it is not connected.
+let box = { asked: false, reachable: false, status: null };
+const laneBase = () => (typeof window.laneWriteBase === 'string' ? window.laneWriteBase : null);
+
+/** The device's clock face for a store-computer time — the person reading it is standing in the shop. */
+function clock(iso) {
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function paintBadge() {
+  const dot = el('queue-dot');
+  const unsent = outbox === null ? 0 : outbox.unsentCount();
+  dot.classList.remove('waiting', 'error', 'idle', 'degraded');
+  // Words as well as a dot — one man in twelve cannot tell the two colours apart.
+  el('queue-text').textContent = unsent === 0 ? t('allSent') : `${unsent} ${t('waiting')}`;
+  let words;
+  if (laneBase() === null) { dot.classList.add('idle'); words = t('noBoxLink'); }
+  else if (!box.asked) { dot.classList.add('idle'); words = t('checkingBox'); }
+  else if (!box.reachable) { dot.classList.add('error'); words = t('boxNotAnswering'); }
+  else {
+    const s = box.status;
+    const when = s.lastContactAt ? ` · ${t('lastContact')} ${clock(s.lastContactAt)}` : '';
+    if (s.cloud === 'online') words = `${t('boxOnline')}${when}`;
+    else {
+      dot.classList.add(s.cloud === 'unknown' || s.cloud === 'starting' ? 'idle' : 'degraded');
+      words = `${s.cloud === 'offline' ? t('noCloud') : s.cloud === 'not_configured' ? t('cloudNotSetUp') : t('cloudUnknown')}${when}`;
+    }
+  }
+  // Work waiting on this device shows as waiting unless the store computer itself is down — that is worse.
+  if (unsent > 0 && !dot.classList.contains('error')) { dot.classList.remove('idle', 'degraded'); dot.classList.add('waiting'); }
+  el('box-text').textContent = words;
+}
+
+async function refreshBadge() {
+  const base = laneBase();
+  if (base === null) { paintBadge(); return; }
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 3000);
+  try {
+    const res = await fetch(`${base}/lane/sync-status`, { cache: 'no-store', signal: ctl.signal });
+    box = res.ok ? { asked: true, reachable: true, status: await res.json() } : { asked: true, reachable: false, status: null };
+  } catch {
+    box = { asked: true, reachable: false, status: null };
+  } finally {
+    clearTimeout(timer);
+  }
+  paintBadge();
+}
+window.warehouseBadge = { refresh: refreshBadge, state: () => box };
+void refreshBadge();
+setInterval(() => { void refreshBadge(); }, 10_000);
 
 // ── Boot ────────────────────────────────────────────────────────────────────
 el('who').firstChild.textContent = (data && data.workerId) || '—';

@@ -21,7 +21,8 @@
 // **4. No `prompt`, `confirm` or `alert`, and the banner does not fade** — the same two decisions
 // the till and the manager's screen hold.
 //
-// Nothing here calls the network. Every scan is local and queues to the device (§31 picking row).
+// No scan touches the network. Every scan is local and queues to the device (§31 picking row); the one
+// call this file makes is a read of the store computer's sync status, for the badge (design system §1 rule 4).
 
 const el = (id) => document.getElementById(id);
 
@@ -32,6 +33,10 @@ const inr = (minor) =>
 
 const WORDS = {
   en: {
+    noBoxLink: 'not connected to a store computer', checkingBox: 'checking the store computer…',
+    boxNotAnswering: 'store computer not answering', boxOnline: 'store computer online',
+    noCloud: 'store computer cannot reach head office', cloudNotSetUp: 'no head office link set up',
+    cloudUnknown: 'head office not checked yet', lastContact: 'last contact',
     staleShell: 'No connection to the store computer. This is the work this handheld was last given, at',
     myWave: 'My wave', done: 'done', waiting: 'waiting to sync', allSent: 'everything sent',
     noShelfAddress: 'no shelf address — look for it', walkedIn: 'Walked in',
@@ -39,7 +44,7 @@ const WORDS = {
     stepBin: 'Step 1 of 3 — walk to the bin and scan it',
     stepItem: 'Step 2 of 3 — scan the item in your hand',
     stepQty: 'Step 3 of 3 — say how many you are taking',
-    stepPickALine: 'Tap a line to start', stepAllDone: 'Every line is resolved — pack the crate',
+    stepPickALine: 'Scan the bin you are at, or tap a line, to start', stepAllDone: 'Every line is resolved — pack the crate',
     waitingForScan: 'Waiting for a scan…', pointAndPull: 'Point the scanner and pull the trigger.',
     cancel: 'Cancel', ok: 'OK', substitute: 'Substitute', problem: 'Problem', packCrate: 'Pack the crate',
     howMany: 'How many are you taking?', howManyGrams: 'How many grams?',
@@ -68,6 +73,10 @@ const WORDS = {
     substituteFirst: 'Mark the item unavailable first, then record the swap.',
   },
   ta: {
+    noBoxLink: 'கடை கணினியுடன் இணைக்கப்படவில்லை', checkingBox: 'கடை கணினியைச் சரிபார்க்கிறது…',
+    boxNotAnswering: 'கடை கணினி பதிலளிக்கவில்லை', boxOnline: 'கடை கணினி இணைப்பில்',
+    noCloud: 'கடை கணினி தலைமை அலுவலகத்தை அடைய முடியவில்லை', cloudNotSetUp: 'தலைமை அலுவலக இணைப்பு அமைக்கப்படவில்லை',
+    cloudUnknown: 'தலைமை அலுவலகம் இன்னும் சரிபார்க்கப்படவில்லை', lastContact: 'கடைசித் தொடர்பு',
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்த ஹேண்ட்ஹெல்டுக்குக் கடைசியாகக் கொடுக்கப்பட்ட வேலை இதுதான்:',
     myWave: 'என் வேலை', done: 'முடிந்தது', waiting: 'அனுப்பக் காத்திருக்கிறது', allSent: 'அனைத்தும் அனுப்பப்பட்டன',
     noShelfAddress: 'அலமாரி முகவரி இல்லை — தேடிப் பாருங்கள்', walkedIn: 'நடக்கும் வரிசை',
@@ -75,7 +84,7 @@ const WORDS = {
     stepBin: 'படி 1 / 3 — இடத்திற்குச் சென்று ஸ்கேன் செய்யவும்',
     stepItem: 'படி 2 / 3 — கையில் உள்ள பொருளை ஸ்கேன் செய்யவும்',
     stepQty: 'படி 3 / 3 — எத்தனை எடுக்கிறீர்கள் என்று சொல்லவும்',
-    stepPickALine: 'தொடங்க ஒரு வரியைத் தொடவும்', stepAllDone: 'எல்லா வரிகளும் முடிந்தன — கிரேட்டை பேக் செய்யவும்',
+    stepPickALine: 'நீங்கள் இருக்கும் இடத்தை ஸ்கேன் செய்யவும், அல்லது தொடங்க ஒரு வரியைத் தொடவும்', stepAllDone: 'எல்லா வரிகளும் முடிந்தன — கிரேட்டை பேக் செய்யவும்',
     waitingForScan: 'ஸ்கேனுக்காகக் காத்திருக்கிறது…', pointAndPull: 'ஸ்கேனரை நோக்கி டிரிக்கரை அழுத்தவும்.',
     cancel: 'ரத்து', ok: 'சரி', substitute: 'மாற்று', problem: 'பிரச்சனை', packCrate: 'கிரேட்டை பேக் செய்',
     howMany: 'எத்தனை எடுக்கிறீர்கள்?', howManyGrams: 'எத்தனை கிராம்?',
@@ -251,20 +260,37 @@ el('sheet-ok').addEventListener('click', () => { closeSheet(el('entry').textCont
 // busy afternoon.
 
 let scanResolve = null;
+/** Answers a scan can have besides a code: the picker chose an alternative offered on the panel. */
+const SUBSTITUTE = Symbol('substitute');
+const PROBLEM = Symbol('problem');
 
-function awaitScan(title, hint) {
+/**
+ * `offer` puts Substitute and Problem on the panel. It is true at the ITEM step only, because the shelf
+ * is where a shortage is found: record a substitution = Substitute → scan the swap → scan the customer's
+ * reference (3); flag a quality fail = Problem → the reason (2). That is the spec's budget, met from the
+ * place the picker is standing rather than after a walk back to the list (picker-packer.md).
+ */
+function awaitScan(title, hint, offer = false) {
   el('scan-title').textContent = title;
   el('scan-awaiting').textContent = t('waitingForScan');
   el('scan-hint').textContent = hint;
   el('scan-cancel').textContent = t('cancel');
+  el('scan-substitute').textContent = t('substitute');
+  el('scan-problem').textContent = t('problem');
+  el('scan-substitute').hidden = !offer;
+  el('scan-problem').hidden = !offer;
   el('scan').hidden = false;
   return new Promise((resolve) => { scanResolve = resolve; });
 }
-el('scan-cancel').addEventListener('click', () => {
+function settleScan(answer) {
   el('scan').hidden = true;
-  scanResolve?.(null);
+  const resolve = scanResolve;
   scanResolve = null;
-});
+  if (resolve) resolve(answer);
+}
+el('scan-cancel').addEventListener('click', () => { settleScan(null); });
+el('scan-substitute').addEventListener('click', () => { settleScan(SUBSTITUTE); });
+el('scan-problem').addEventListener('click', () => { settleScan(PROBLEM); });
 
 // ── Rendering ───────────────────────────────────────────────────────────────
 
@@ -299,11 +325,7 @@ function renderStep() {
 }
 
 function renderQueue() {
-  if (outbox === null) { el('queue-text').textContent = ''; return; }
-  const unsent = outbox.unsentCount();
-  el('queue-dot').classList.toggle('waiting', unsent > 0);
-  // Words as well as a dot — one man in twelve cannot tell the two colours apart.
-  el('queue-text').textContent = unsent === 0 ? t('allSent') : `${unsent} ${t('waiting')}`;
+  paintBadge();
 }
 
 function render() {
@@ -364,18 +386,23 @@ function render() {
  * refused there, not here. This function's job is only to ask for each scan in turn and to turn
  * the model's refusal into a sentence a picker can act on in an aisle.
  */
-async function startLine(line) {
+async function startLine(line, binCode = null) {
   step = 'bin';
   render();
   if (line.state !== 'pending') { step = 'idle'; tell(t('read'), t('alreadyDone')); return; }
 
-  const binCode = await awaitScan(`${t('scanTheBin')} — ${line.bin}`, t('pointAndPull'));
-  if (binCode === null) { step = 'idle'; render(); return; }
-  session.scanBin(binCode);
+  // Step 1 — the bin. Scanned straight from the list (the scan itself chose this line, so pick a line is
+  // scan bin → scan item → confirm = 3, the spec's row exactly), or asked for here after a tap on the line.
+  const scannedBin = binCode ?? await awaitScan(`${t('scanTheBin')} — ${line.bin}`, t('pointAndPull'));
+  if (scannedBin === null) { step = 'idle'; render(); return; }
+  session.scanBin(scannedBin);
 
   step = 'item';
   render();
-  const itemCode = await awaitScan(`${t('scanTheItem')} — ${line.description}`, t('pointAndPull'));
+  // Step 2 — the item, with the two honest alternatives on the panel (see awaitScan).
+  const itemCode = await awaitScan(`${t('scanTheItem')} — ${line.description}`, t('pointAndPull'), true);
+  if (itemCode === SUBSTITUTE) { step = 'idle'; render(); await substituteLine(line); return; }
+  if (itemCode === PROBLEM) { step = 'idle'; render(); await reportProblem(line); return; }
   if (itemCode === null) { step = 'idle'; render(); return; }
 
   step = 'qty';
@@ -418,6 +445,10 @@ async function startLine(line) {
 el('substitute').addEventListener('click', async () => {
   const line = selected();
   if (line === null) { tell(t('read'), t('tapLineFirst')); return; }
+  await substituteLine(line);
+});
+
+async function substituteLine(line) {
   if (line.state === 'picked' || line.state === 'substituted') { tell(t('read'), t('alreadyDone')); return; }
 
   const substituteCode = await awaitScan(t('scanSubstitute'), t('pointAndPull'));
@@ -440,13 +471,16 @@ el('substitute').addEventListener('click', async () => {
           : String(e && e.message ? e.message : e));
   }
   render();
-});
+}
 
 /** Something is wrong with the item. A chosen reason, never typed — it is reported on later. */
 el('problem').addEventListener('click', async () => {
   const line = selected();
   if (line === null) { tell(t('read'), t('tapLineFirst')); return; }
+  await reportProblem(line);
+});
 
+async function reportProblem(line) {
   const code = await ask({
     title: t('whatIsWrong'),
     mode: 'choice',
@@ -469,7 +503,7 @@ el('problem').addEventListener('click', async () => {
     tell(t('read'), String(e && e.message ? e.message : e));
   }
   render();
-});
+}
 
 /**
  * Pack the crate.
@@ -527,17 +561,84 @@ window.addEventListener('keydown', (event) => {
     const code = scanBuffer;
     scanBuffer = '';
     if (code.length < 3) return; // a person pressing Enter, not a scanner
-    if (scanResolve !== null) {
-      el('scan').hidden = true;
-      const resolve = scanResolve;
-      scanResolve = null;
-      resolve(code);
-    }
+    // A scanner's Enter is never a person's: left to the browser it also PRESSES whatever button has focus
+    // (the line the picker just tapped, the Substitute they just chose) and the flow runs twice.
+    event.preventDefault();
+    if (scanResolve !== null) { settleScan(code); return; }
+    // No panel is waiting for a scan and none is asking a question: a bin label scanned from the list IS
+    // step 1. The scan chooses the line — the spec's "scan bin → scan item → confirm" starts at the bin,
+    // not at a tap (picker-packer.md). An unknown code, or one that is no pending line's bin, does nothing.
+    if (sheetResolve !== null) return;
+    // A green banner (a pick that went through) yields to the next scan — a scan is a deliberate act, and
+    // making the picker tap "read" after every good pick would spend a tap on the ten-times-a-day path.
+    // A red one (a refusal) does not yield: it must be read before the next thing happens (rule 5).
+    const banner = el('banner');
+    if (!banner.hidden) { if (!banner.classList.contains('good')) return; banner.hidden = true; }
+    const line = session.work().find((l) => l.state === 'pending' && (l.bin === code || l.shelf === code));
+    if (line !== undefined) { selectedLineId = line.lineId; void startLine(line, code); }
     return;
   }
   // Codes here are alphanumeric: a bin is "A-01" and a seal reference is not all digits.
   if (/^[0-9A-Za-z-]$/.test(event.key)) scanBuffer += event.key;
 });
+
+// ── The sync badge — connection · unsent · freshness (design system §1 rule 4 · P-08) ────────────
+//
+// Two lines of words beside one dot. The first is THIS DEVICE's unsent count: the scans queued here
+// and not yet drained. The second is the STORE COMPUTER's own account of itself — reachable or not,
+// and when head office last answered it — asked at the address the page was served from. A handheld
+// on the shop wifi never guesses an address: with no store computer named, the badge says so rather
+// than inventing one, and a page opened from the device's cache says it is not connected.
+let box = { asked: false, reachable: false, status: null };
+const laneBase = () => (typeof window.laneWriteBase === 'string' ? window.laneWriteBase : null);
+
+/** The device's clock face for a store-computer time — the person reading it is standing in the shop. */
+function clock(iso) {
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function paintBadge() {
+  const dot = el('queue-dot');
+  const unsent = outbox === null ? 0 : outbox.unsentCount();
+  dot.classList.remove('waiting', 'error', 'idle', 'degraded');
+  // Words as well as a dot — one man in twelve cannot tell the two colours apart.
+  el('queue-text').textContent = unsent === 0 ? t('allSent') : `${unsent} ${t('waiting')}`;
+  let words;
+  if (laneBase() === null) { dot.classList.add('idle'); words = t('noBoxLink'); }
+  else if (!box.asked) { dot.classList.add('idle'); words = t('checkingBox'); }
+  else if (!box.reachable) { dot.classList.add('error'); words = t('boxNotAnswering'); }
+  else {
+    const s = box.status;
+    const when = s.lastContactAt ? ` · ${t('lastContact')} ${clock(s.lastContactAt)}` : '';
+    if (s.cloud === 'online') words = `${t('boxOnline')}${when}`;
+    else {
+      dot.classList.add(s.cloud === 'unknown' || s.cloud === 'starting' ? 'idle' : 'degraded');
+      words = `${s.cloud === 'offline' ? t('noCloud') : s.cloud === 'not_configured' ? t('cloudNotSetUp') : t('cloudUnknown')}${when}`;
+    }
+  }
+  // Work waiting on this device shows as waiting unless the store computer itself is down — that is worse.
+  if (unsent > 0 && !dot.classList.contains('error')) { dot.classList.remove('idle', 'degraded'); dot.classList.add('waiting'); }
+  el('box-text').textContent = words;
+}
+
+async function refreshBadge() {
+  const base = laneBase();
+  if (base === null) { paintBadge(); return; }
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 3000);
+  try {
+    const res = await fetch(`${base}/lane/sync-status`, { cache: 'no-store', signal: ctl.signal });
+    box = res.ok ? { asked: true, reachable: true, status: await res.json() } : { asked: true, reachable: false, status: null };
+  } catch {
+    box = { asked: true, reachable: false, status: null };
+  } finally {
+    clearTimeout(timer);
+  }
+  paintBadge();
+}
+window.pickerBadge = { refresh: refreshBadge, state: () => box };
+void refreshBadge();
+setInterval(() => { void refreshBadge(); }, 10_000);
 
 // ── Boot ────────────────────────────────────────────────────────────────────
 

@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { auditPage } from './lib/a11y-audit';
+import { Tally } from './lib/tally';
 
 /**
  * **The customer app meets WCAG 2.2 AA on the key journeys — audited on the rendered page, and its three frequent
@@ -69,14 +70,6 @@ async function serve(): Promise<{ base: string; stop: () => Promise<void> }> {
       resolve({ base: `http://127.0.0.1:${port}`, stop: () => new Promise((done) => { server.close(() => { done(); }); }) });
     });
   });
-}
-
-class Tally {
-  count = 0;
-  constructor(private readonly page: Page) {}
-  async tap(selector: string): Promise<void> { this.count += 1; await this.page.click(selector); }
-  async type(selector: string, text: string): Promise<void> { this.count += 1; await this.page.fill(selector, text); }
-  reset(): number { const n = this.count; this.count = 0; return n; }
 }
 
 describe.skipIf(!HAVE_BROWSER)('the customer app, audited on the rendered page', () => {
