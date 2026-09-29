@@ -1061,7 +1061,20 @@ accounts.
   `docs/design/screens/`, in slices: G1 one shared visual foundation — DONE above; G2 the till and manager screens to the spec's
   ≤3-interaction and arm's-length rules — 2a the honest badge and 2b the measured interaction budgets both DONE
   above; G3 the customer app to WCAG 2.2 AA — DONE above; G4 the handhelds — DONE above; **G5 next**: the ERP's 46 pages made one product (navigation, states,
-  bilingual completeness guardrail on every page); plus the three items already parked for Stage G — the exchange
+  bilingual completeness guardrail on every page). **G5 scoped (29 Sep, measured on main):** 46 pages, 47 page
+  scripts, one SW shell; a sync badge on **1** page (the manager's), none on 45; the language toggle on 44 (two
+  labels in use: "EN / த" on 13, "தமிழ்" on 31; missing on company-report and erasure-console); stale/sample strips
+  on 42, the nobody strip on 33; an h1 on 2; **zero links between any two ERP pages**; the permission-derived
+  navigation catalogue (`apps/web-erp/src/navigation.ts`, 39 paths, `navigationFor` / `canOpen` / `landingPath`)
+  is pure and **rendered by nothing**, and its paths disagree with the box's 41 served routes (11 nav paths have
+  no route; 17 routes are not in the nav); every page duplicates `paintStale`, the SW registration and the toggle
+  wiring; the box knows the viewer only per screen payload (`userId` on some pack sections), so a menu from the
+  viewer's grants needs the box to learn them first. Sub-slices: **5a** one shared ERP chrome (`sre-chrome.js` in
+  the SW shell: badge · stale strip · one toggle · one h1; the missing fixtures added; all 46 pages audited in
+  real Chromium at 1280 and 360; bilingual-completeness guardrail on every page) · **5b** navigation rendered from
+  `navigationFor` on every page, nav paths reconciled with the box's routes (each dangling item given its route or
+  removed with a written reason), grants reaching the box scoped first · **5c** the two G2b findings (₹NaN on an
+  unknown UOM; the served manager ignoring the pack's branch and identity); plus the three items already parked for Stage G — the exchange
   screen (desk + till), the desk refund screen, and the migration screen drawing `cloudRegister` /
   `refusedDecisions` / `verification`. Every slice: guardrail + browser e2e, no invented requirement.
 
