@@ -162,13 +162,29 @@ accounts.
   record sits on its own register, never against a bill; a resold unit re-enters on-hand at the named
   location. Proven: unit 19 + real-pipeline 5 + engine 4 + the offline-sync proof. **No rung change yet**
   (M13 waits for exchanges); CH-01 status → un-parking in progress.
-- **Stage C — remaining, in order:** C2b un-park CH-01 half 2 (exchanges: a return + a replacement sale in
-  one atomic commit, even exchange = zero refund, the difference refunded or collected under the same
-  thresholds); C3 wire the migration screen to the B2/B3 routes;
+- **Stage C, slice 2b — done (29 Sep 2026): CH-01 half 2 un-parked — EXCHANGES on the cloud (M13-FR-03).
+  CH-01 is now closed: nothing of returns/exchanges is deferred.** `POST /v1/sales/:saleId/exchanges`
+  (`services/pos/src/exchanges.ts`): the goods coming back are credited at the price the bill actually
+  charged (never today's) against the bill's own register — the same unit cannot come back twice and the
+  bill can never be credited past what it was paid; the replacement is a REAL sale, banked exactly as a
+  till sale is (receipt number, stock leaves the shelf, catalogue findings recorded and shown), paid out of
+  the returned value plus any top-up, and returnable later in its own right; the difference follows the
+  refund's own rules — an even exchange moves no money and needs no approver, a dearer replacement needs
+  tenders that add to exactly the difference (a card number in a tender reference is refused), a cheaper
+  one refunds the balance with a tender, a supervisor at or above the owner's threshold, and the
+  store-credit rules; the owner's return window and supervisor override apply as they do to a return. Both
+  halves land in ONE atomic batch or not at all (`exchangesAdapter.recordExchange`, over batch builders now
+  shared with the sale and return paths). Proven: engine 10 + route 13 + real-pipeline 3 (shelf, register,
+  replacement returnable, idempotent; approver/top-up/register-across-exchanges; RBAC + 404). **M13 and
+  M21 re-rated PARTIALLY_WIRED → INTEGRATION_TESTED** (every FR live + integration-tested; the live card/UPI
+  reversal is recorded as the EX-03 external gate, not as missing maturity). Summary now 19 E2E · 4
+  INTEGRATION TESTED · 4 WIRED · 9 PARTIALLY WIRED. An exchange SCREEN (desk + till) is a Stage G item; an
+  offline exchange at the till is a return + a sale, each already durable-first.
+- **Stage C — remaining, in order:** C3 wire the migration screen to the B2/B3 routes;
   then family by family through the 57 remaining PARTIALLY_WIRED items (D01-FR-06 content authoring,
   D02-FR-06 display funding, D07 coupons/referrals, M21 compensation, M23 close second source, …). OA-12 was
   already answered and closed on 23 Sep — nothing to un-park.
-- **Next:** C2a PR → merge → **C2b** (exchanges) → C3.
+- **Next:** C2b PR → merge → **C3** (migration screen ↔ B2/B3 routes) → the remaining PARTIALLY_WIRED families.
 
 ---
 
