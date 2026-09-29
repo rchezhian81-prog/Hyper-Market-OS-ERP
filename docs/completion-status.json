@@ -518,8 +518,8 @@
     },
     {
       "id": "MG-10",
-      "label": "NOT_STARTED",
-      "evidence": "parallel run is a pilot activity; not built"
+      "label": "INTEGRATION_TESTED",
+      "evidence": "INTEGRATION_TESTED (29 Sep 2026, Stage B3): the parallel run is kept by the server — PUT /v1/migration/parallel-run/policy (owner: named daily reconciler, requiredCleanDays, maxParallelDays, startedOn), POST /v1/migration/parallel-run/days/:date (named reconciler or owner; engine judges each area), POST /v1/migration/parallel-run/differences/:id/own (refuses 'the new system is probably right'), GET /v1/migration/parallel-run (+ /sheet, printable), POST /v1/migration/cutover/rollback; the cutover decision reads the position and the rollback from the ledger (services/migration/src/parallel-run.ts, services/api/src/adapters.ts). Proven through the real authenticated pipeline in tests/integration/parallel-run-through-the-api.test.ts (4) + tests/unit/migration-parallel-run-route.test.ts (12). Not E2E: the migration screen still shows parallel days from its own feed and does not yet post to these routes (Stage C); a real run is a pilot activity after the owner's GO."
     },
     {
       "id": "MG-11",

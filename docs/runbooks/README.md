@@ -29,7 +29,8 @@ hands off to the next; you do not need to know which of the other runbooks exist
 **Real data (only after the owner's written "Option 2 GO"):** `real-data-load.md` — creating a second,
 real tenant beside the demo (`pnpm run tenant:bootstrap`) and loading the sealed, cleaned extract into it
 through the real routes (`pnpm run migration:load`), with every refusal explained. Pairs with
-`legacy-self-extraction.md` (getting the files out and checked) and `../pilot/STEP-1-REAL-DATA-PLAN.md`.
+`legacy-self-extraction.md` (getting the files out and checked), `../cutover/parallel-run.md` (the parallel run the server
+keeps: policy, daily sheet, differences, rollback) and `../pilot/STEP-1-REAL-DATA-PLAN.md`.
 
 `cutover-weekend.md` and `environments-and-secrets.md` come later, at full go-live — not for the
 pilot. The master source of truth for the human sign-offs is `../registers/uat-calendar.md`.

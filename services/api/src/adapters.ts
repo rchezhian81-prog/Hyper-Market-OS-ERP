@@ -217,7 +217,8 @@ import type { ReportingDeps, Figure } from '../../reporting/src/index';
 import type { ConsolidationDeps } from '../../reporting/src/consolidation-route';
 import { salesSummary, ingestContribution } from '../../../packages/reporting/src/index';
 import type { Producer, SaleFact, BranchContribution, BranchMembership } from '../../../packages/reporting/src/index';
-import type { MigrationDeps } from '../../migration/src/index';
+import type { MigrationDeps, ParallelRunPolicy, RecordedParallelDay, RecordedRollback } from '../../migration/src/index';
+import type { ParallelDifference } from '../../../packages/migration/src/cutover';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import type { DomainFinding, Acceptance } from '../../../packages/migration/src/verification-report';
 import type { Signature } from '../../../packages/migration/src/verification-report';
@@ -7407,6 +7408,49 @@ export function migrationAdapter(input: {
     },
     acceptances: (tenantId) => allOf<Acceptance>(input.store, tenantId, STREAM.migration, 'MigrationExceptionAccepted'),
     signatures: (tenantId) => allOf<Signature>(input.store, tenantId, STREAM.migration, 'MigrationReportSigned'),
+
+    // MG-10 — the parallel run the server keeps (B3). Newest policy applies; a day compared twice is the later
+    // state; a difference's state is its latest event (raised, then owned / resolved); rollbacks are all kept.
+    parallelPolicy: async (tenantId) => latest<ParallelRunPolicy>(input.store, tenantId, STREAM.migration, 'ParallelRunPolicySet'),
+    parallelDays: async (tenantId) => {
+      const all = await allOf<RecordedParallelDay>(input.store, tenantId, STREAM.migration, 'ParallelDayCompared');
+      const byDate = new Map<string, RecordedParallelDay>();
+      for (const d of all) byDate.set(d.businessDate, d);
+      return [...byDate.values()];
+    },
+    parallelDifferences: async (tenantId) => {
+      const all = await allOf<ParallelDifference>(input.store, tenantId, STREAM.migration, 'ParallelDifferenceRecorded');
+      const byId = new Map<string, ParallelDifference>();
+      for (const d of all) byId.set(d.differenceId, d);
+      return [...byId.values()];
+    },
+    rollbacks: (tenantId) => allOf<RecordedRollback>(input.store, tenantId, STREAM.migration, 'RollbackPerformed'),
+    recordParallelPolicy: async (tenantId, policy) => {
+      await input.store.append(tenantId, STREAM.migration, makeEvent({
+        id: `parallel-policy-${policy.cutoverId}-${policy.setAt}`, type: 'ParallelRunPolicySet', occurredAt: policy.setAt,
+        idempotencyKey: `parallel-policy-${tenantId}-${policy.cutoverId}-${policy.setAt}`, source: 'api/migration', payload: policy,
+      }));
+    },
+    recordParallelDay: async (tenantId, day) => {
+      await input.store.append(tenantId, STREAM.migration, makeEvent({
+        id: `parallel-day-${day.businessDate}-${day.recordedAt}`, type: 'ParallelDayCompared', occurredAt: day.recordedAt,
+        idempotencyKey: `parallel-day-${tenantId}-${day.businessDate}-${day.recordedAt}`, source: 'api/migration', payload: day,
+      }));
+    },
+    recordParallelDifference: async (tenantId, difference) => {
+      // Id + state: raised, then owned, then resolved are three facts on one difference; a retry of one collapses.
+      const state = `${difference.status}-${difference.ownerUserId ?? ''}-${difference.explanation ?? ''}`;
+      await input.store.append(tenantId, STREAM.migration, makeEvent({
+        id: `parallel-diff-${difference.differenceId}-${difference.status}`, type: 'ParallelDifferenceRecorded', occurredAt: input.now(),
+        idempotencyKey: `parallel-diff-${tenantId}-${difference.differenceId}-${state}`, source: 'api/migration', payload: difference,
+      }));
+    },
+    recordRollback: async (tenantId, rollback) => {
+      await input.store.append(tenantId, STREAM.migration, makeEvent({
+        id: `rollback-${rollback.cutoverId}-${rollback.decidedAt}`, type: 'RollbackPerformed', occurredAt: rollback.decidedAt,
+        idempotencyKey: `rollback-${tenantId}-${rollback.cutoverId}-${rollback.decidedAt}`, source: 'api/migration', payload: rollback,
+      }));
+    },
 
     recordExtractionRun: async (tenantId, run) => {
       await input.store.append(tenantId, STREAM.migration, makeEvent({

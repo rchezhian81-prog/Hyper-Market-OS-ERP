@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Owner program — "complete every module, deploy, then pilot" — Stages A, B1 and B2 closed (29 September 2026)
+## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 
 **Owner direction (28 Sep 2026, in writing):** act as architect + developer; build every roadmap module to
 finished (no invented requirements — anything beyond the roadmap becomes a change proposal for a written
@@ -109,8 +109,30 @@ accounts.
 - **B2 follow-ons (recorded, not done):** a screen for the witnesses and the page (Stage C / G); the
   `payment_settlement` witness (provider file) shares the bank engine and has no separate route; QG-07 stays
   PARTIALLY_WIRED until real signed totals exist.
-- **Next:** B2 PR → merge → **B3** (MG-10 parallel run: routes, persistence, daily reconciliation sheet,
-  rollback route).
+- **B3 — done (29 Sep 2026): MG-10, the parallel run the server keeps.** Until now the comparison engine
+  existed and a screen could display parallel days, but nothing on the server recorded a day, a difference,
+  who reconciles or how long the run may last (MG-10 NOT STARTED; R-05 open). `services/migration/src/
+  parallel-run.ts`: `PUT /v1/migration/parallel-run/policy` (owner: the ONE named daily reconciler,
+  requiredCleanDays, maxParallelDays, startedOn — nothing is compared until it exists); `POST
+  /v1/migration/parallel-run/days/:businessDate` (the named reconciler or the owner records both systems'
+  figures per area; the engine decides what is a difference; anyone else refused by name; a day before the
+  start refused; every open difference appended with an id); `POST …/differences/:id/own` (a name, then a
+  real explanation and which side was wrong; "the new system is probably right" refused — hard rule #10;
+  a second resolution refused); `GET /v1/migration/parallel-run` (position, elapsed days, **overdue**
+  reported on every read, never hidden) and `/sheet` (the printable daily reconciliation sheet with a line
+  to sign); `POST /v1/migration/cutover/rollback` (performed and recorded). The cutover decision now reads
+  the parallel position and the latest performed rollback FROM THE LEDGER when the caller supplies none
+  (absent still never passes). Adapter: four event types, folds newest policy / latest day / latest
+  difference state. Roles: `migration.parallel.record` (owner, store manager), `migration.parallel.read`
+  (+ CA). Docs: `docs/cutover/parallel-run.md` (the operational plan; what stays the owner's), R-05
+  control note, Step-1 plan §4 item 6 / §7.2 item 5. **MG-10 re-rated NOT_STARTED → INTEGRATION_TESTED**
+  (unit 12 + real-pipeline 4). Not E2E: the migration screen still displays parallel days from its own
+  feed and does not post to these routes — Stage C.
+- **Stage B is complete.** B1 (load + tenant), B2 (signed page + six witnesses), B3 (parallel run). What
+  remains human: the owner's written GOs (Option 2 load; parallel run), the daily reconciler's NAME, the
+  outside evidence, and the CA.
+- **Next:** B3 PR → merge → **Stage C** (drive every PARTIALLY_WIRED item up the ladder, family by family;
+  wire the migration screen to the B2/B3 routes; un-park CH-01 / CH-02 / OA-12).
 
 ---
 

@@ -107,6 +107,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'migration.retirement.assess',
       'migration.verification.read', 'migration.exception.accept',
       'migration.extraction.record', 'migration.evidence.record', 'migration.verification.sign',
+      'migration.parallel.record', 'migration.parallel.read',
       'ai.agent.run', 'ai.proposal.read', 'ai.suggestion.dismiss', 'ai.budget.read', 'ai.budget.set', 'ai.agent.enable', 'ai.killswitch.set',
     ],
   },
@@ -167,7 +168,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'finance.gstr.generate', 'finance.gstr.read',
       // The migration operator PROPOSES a history exclusion (MG-07); only the OWNER approves it, and
       // never one they proposed themselves — so the proposer must be a role other than the owner.
-      'migration.exclusion.propose',
+      'migration.parallel.record', 'migration.parallel.read', 'migration.exclusion.propose',
     ],
   },
   {
@@ -253,6 +254,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'migration.verification.read',
       'migration.controltotal.sign',
       'migration.verification.sign',
+      'migration.parallel.read',
     ],
   },
   {
