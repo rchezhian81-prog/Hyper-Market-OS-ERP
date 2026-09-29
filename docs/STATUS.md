@@ -241,11 +241,34 @@ accounts.
   CA refused 403; no-API dry run says so) + the subprocess suite unchanged. No rung change (MG-04/MG-05
   evidence extended). With this, **C3 is closed**: the migration screen's decisions land on the cloud (C3a),
   the screen reads the cloud (C3b), and the load judges by the cloud (C3c).
+- **Stage C, family M18 (orders), slice 1 — done (29 Sep 2026): the order carries its payment, and refunds go
+  back to it (M18-FR-04 / M20-FR-03).** Until now the cloud's order knew nothing about its money: the storefront
+  took the payment answer in the customer's browser, and a cancellation or a cheaper substitute left a "refund
+  due" with nowhere to go. Now (`packages/orders/src/payment-refunds.ts`, `services/orders/src/payments.ts`):
+  the checkout's answer is **recorded once** against the order (`POST /v1/orders/:orderId/payment` — authorised /
+  declined / unknown; a card-shaped reference is refused unrecorded, hard rule #3); an **unknown** answer leaves
+  the order payment-pending and the lifecycle **refuses to confirm or pick it** until the bank's word is recorded
+  (`…/payment/resolution`, §31 — nothing is picked against a payment that may not exist); a refund
+  (`POST /v1/orders/:orderId/refunds`) goes to the **order's own token**, never one in the request, for an amount
+  the ledger can vouch for (paid − refunded − pending; a substitution refund never more than the recorded
+  substitutions owe), approved per policy (§28: a second person with `order.refund.approve`, above the SAME
+  threshold the till's returns use); the processor's answer is recorded as it came — refunded → issued, declined →
+  refused (refundable untouched), **unknown → PENDING**, held out of the refundable amount and on a worklist
+  (`GET /v1/orders/refunds/pending`) until its statement line is recorded (`…/refunds/:refundId/outcome`; the first
+  outcome stands) — never reported as done. The processor is a port; the only implementation is **test-mode**
+  (deterministic on the token) until the payment provider (EX-03) is in hand. Roles: `order.payment.record`,
+  `order.refund.issue`, `order.refund.approve` — owner and store manager. Proven: engine 13 + routes 5 + real API 6
+  (`tests/unit/order-payment-refunds.test.ts`, `tests/unit/order-payment-refund-routes.test.ts`,
+  `tests/integration/order-payments-and-refunds.test.ts`) + the existing order suites green. **M18-FR-04 → WIRED**
+  (integration-tested); the module stays PARTIALLY_WIRED because FR-03 (routing a live order across
+  locations) is still a foundation behind the owner's location/capacity data. Follow-ons: the customer app's
+  checkout does not yet CALL the payment route (the cloud half exists; the app→cloud hop is the M20 piece); a
+  refund screen for the desk is a Stage G item.
 - **Stage C — remaining, in order:**
   then family by family through the 57 remaining PARTIALLY_WIRED items (D01-FR-06 content authoring,
   D02-FR-06 display funding, D07 coupons/referrals, M21 compensation, M23 close second source, …). OA-12 was
   already answered and closed on 23 Sep — nothing to un-park.
-- **Next:** C3c PR → merge → the remaining PARTIALLY_WIRED families, one family per slice (M01, M18, M19, M20, M22, M23, M27, M35, M36; D01-FR-06, D02-FR-06, D07 …).
+- **Next:** M18 slice 1 PR → merge → M20 (the customer app's checkout calls the cloud payment route) → M19 → M22 → M23 → M27 → M35 → M36 → M01, one family per slice.
 
 ---
 

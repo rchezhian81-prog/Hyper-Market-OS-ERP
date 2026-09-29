@@ -200,6 +200,8 @@ import type { PromotionDeps, LaunchRecord } from '../../pricing/src/promotions';
 import type { PromotionCatalogueDeps } from '../../pricing/src/promotion-catalogue';
 import type { Promotion } from '../../../packages/promotions/src/promotions';
 import { expired } from '../../orders/src/index';
+import type { PaymentRefundDeps } from '../../orders/src/payments';
+import { testModeRefundProcessor, type OrderPayment, type OrderPaymentResolution, type OrderRefund, type OrderRefundOutcome, type RefundProcessor } from '../../../packages/orders/src/payment-refunds';
 import type {
   Reservation, OrdersDeps, PlacedOrder, OrderTransition, OrderStateView, StoredSubstitution, StoredBackorder,
 } from '../../orders/src/index';
@@ -1139,6 +1141,10 @@ const forOrder = (orderId: string): string => streamName(STREAM.orders, orderId)
  *  The per-order `forOrder` stream stays the book of record; this is a read model, exactly as the
  *  returns/e-invoice indexes keep a tenant-wide projection beside the per-aggregate stream. */
 const forSubstitutionIndex = streamName(STREAM.orders, 'substitutions');
+// Tenant-wide indexes for the money worklist (M18-FR-04): every payment and every refund, so "what is waiting on a bank"
+// folds without walking every order — the same shape as the substitution index above.
+const forPaymentIndex = streamName(STREAM.orders, 'payments');
+const forRefundIndex = streamName(STREAM.orders, 'refunds');
 const forInvoice = (invoiceId: string): string => streamName(STREAM.purchase, 'invoice', invoiceId);
 /** Each supplier partner's portal config and submissions fold one stream — one partner, not the shop. */
 const forPortalPartner = (partnerId: string): string => streamName(STREAM.purchase, 'partner', partnerId);
@@ -6421,7 +6427,9 @@ export function ordersAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
   readonly holdMinutes: number;
-}): OrdersDeps {
+  /** Where a refund's money moves (M18-FR-04). Absent means the test-mode processor — the only one that exists until EX-03. */
+  readonly refundProcessor?: RefundProcessor;
+}): OrdersDeps & PaymentRefundDeps {
   return {
     now: input.now,
     holdMinutes: input.holdMinutes,
@@ -6580,6 +6588,61 @@ export function ordersAdapter(input: {
     /** The backorders recorded against an order — a fold of its `OrderBackordered` events. */
     orderBackorders: async (tenantId, orderId) =>
       allOf<StoredBackorder>(input.store, tenantId, forOrder(orderId), 'OrderBackordered'),
+
+    // ── Payment and refunds (M18-FR-04 / M20-FR-03) — append-only on the order's stream, indexed tenant-wide ──
+    orderPayment: async (tenantId, orderId) => latest<OrderPayment>(input.store, tenantId, forOrder(orderId), 'OrderPaymentRecorded'),
+    paymentResolution: async (tenantId, orderId) => latest<OrderPaymentResolution>(input.store, tenantId, forOrder(orderId), 'OrderPaymentResolved'),
+    recordPayment: async (tenantId, p) => {
+      for (const [stream, tag] of [[forOrder(p.orderId), ''], [forPaymentIndex, 'idx-']] as const) {
+        await input.store.append(tenantId, stream, makeEvent({
+          id: `ord-pay-${tag}${p.orderId}`, type: 'OrderPaymentRecorded', occurredAt: p.recordedAt,
+          idempotencyKey: `ord-pay-${tag}${tenantId}-${p.orderId}`, source: 'api/orders', payload: p,
+        }));
+      }
+    },
+    recordPaymentResolution: async (tenantId, r) => {
+      for (const [stream, tag] of [[forOrder(r.orderId), ''], [forPaymentIndex, 'idx-']] as const) {
+        await input.store.append(tenantId, stream, makeEvent({
+          id: `ord-pay-res-${tag}${r.orderId}`, type: 'OrderPaymentResolved', occurredAt: r.resolvedAt,
+          idempotencyKey: `ord-pay-res-${tag}${tenantId}-${r.orderId}`, source: 'api/orders', payload: r,
+        }));
+      }
+    },
+    orderRefunds: async (tenantId, orderId) => allOf<OrderRefund>(input.store, tenantId, forOrder(orderId), 'OrderRefundIssued'),
+    refundOutcomes: async (tenantId, orderId) => allOf<OrderRefundOutcome>(input.store, tenantId, forOrder(orderId), 'OrderRefundResolved'),
+    recordRefund: async (tenantId, r) => {
+      for (const [stream, tag] of [[forOrder(r.orderId), ''], [forRefundIndex, 'idx-']] as const) {
+        await input.store.append(tenantId, stream, makeEvent({
+          id: `ord-rf-${tag}${r.orderId}-${r.refundId}`, type: 'OrderRefundIssued', occurredAt: r.at,
+          idempotencyKey: `ord-rf-${tag}${tenantId}-${r.orderId}-${r.refundId}`, source: 'api/orders', payload: r,
+        }));
+      }
+    },
+    recordRefundOutcome: async (tenantId, o) => {
+      for (const [stream, tag] of [[forOrder(o.orderId), ''], [forRefundIndex, 'idx-']] as const) {
+        await input.store.append(tenantId, stream, makeEvent({
+          id: `ord-rf-res-${tag}${o.orderId}-${o.refundId}`, type: 'OrderRefundResolved', occurredAt: o.at,
+          idempotencyKey: `ord-rf-res-${tag}${tenantId}-${o.orderId}-${o.refundId}`, source: 'api/orders', payload: o,
+        }));
+      }
+    },
+    allPayments: async (tenantId) => allOf<OrderPayment>(input.store, tenantId, forPaymentIndex, 'OrderPaymentRecorded'),
+    allPaymentResolutions: async (tenantId) => allOf<OrderPaymentResolution>(input.store, tenantId, forPaymentIndex, 'OrderPaymentResolved'),
+    allRefunds: async (tenantId) => allOf<OrderRefund>(input.store, tenantId, forRefundIndex, 'OrderRefundIssued'),
+    allRefundOutcomes: async (tenantId) => allOf<OrderRefundOutcome>(input.store, tenantId, forRefundIndex, 'OrderRefundResolved'),
+    // The SAME refund-approval threshold the till's returns use (M13-FR-03) — one policy for money going back.
+    refundThreshold: async (tenantId) => {
+      const all = await allOf<{ thresholdMinor: number }>(input.store, tenantId, streamName(STREAM.returns, 'refund-threshold'), 'RefundThresholdSet');
+      const last = all[all.length - 1];
+      return last === undefined ? undefined : last.thresholdMinor;
+    },
+    // Whether the named approver genuinely holds the permission — from their grants and the role catalogue, never the body.
+    holdsPermission: async (tenantId, userId, permission) => {
+      const grants = await allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+      const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
+      return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes(permission));
+    },
+    refundProcessor: input.refundProcessor ?? testModeRefundProcessor(),
   };
 }
 

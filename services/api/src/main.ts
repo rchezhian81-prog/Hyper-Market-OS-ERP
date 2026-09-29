@@ -184,7 +184,9 @@ import { suspendedBillsRoutes } from '../../pos/src/suspended-bills';
 import { quotationsRoutes } from '../../pos/src/quotations';
 import { restrictedSalesRoutes } from '../../pos/src/restricted-sales';
 import { selfCheckoutRoutes } from '../../pos/src/self-checkout';
-import { ordersRoutes } from '../../orders/src/index';
+import { ordersRoutes, type OrdersDeps } from '../../orders/src/index';
+import { paymentRefundRoutes, type PaymentRefundDeps } from '../../orders/src/payments';
+import { testModeRefundProcessor } from '../../../packages/orders/src/payment-refunds';
 import { serviceabilityRoutes } from '../../orders/src/serviceability';
 import { fulfilmentRoutes } from '../../fulfilment/src/index';
 import { dispatchRoutes } from '../../fulfilment/src/dispatch';
@@ -273,6 +275,22 @@ export function buildSurface(deps: {
   const whHasher = webhookHasher(deps.signingKey);
   const empty = <T>(v: T) => () => v;
   const store = deps.store;
+
+  // The orders surface and its money surface (M18-FR-04 / M20-FR-03) share ONE deps object, so the lifecycle
+  // reads the same recorded payment the refund routes do. The refund processor is the test-mode one until the
+  // payment provider (EX-03) is in hand — deterministic on the token, never a real bank.
+  const ordersDeps: OrdersDeps & PaymentRefundDeps = store === undefined ? {
+    onHand: empty(new Map()), outstanding: empty([]), holdReservations: () => {},
+    holdMinutes: HOLD_MINUTES, now,
+    recordPlaced: () => {}, orderState: empty(undefined), orderReservations: empty([]),
+    recordTransition: () => {}, releaseReservations: () => {},
+    recordSubstitution: () => {}, orderSubstitutions: empty([]), allSubstitutions: empty([]),
+    recordBackorder: () => {}, orderBackorders: empty([]),
+    orderPayment: empty(undefined), paymentResolution: empty(undefined), recordPayment: () => {}, recordPaymentResolution: () => {},
+    orderRefunds: empty([]), refundOutcomes: empty([]), recordRefund: () => {}, recordRefundOutcome: () => {},
+    allPayments: empty([]), allPaymentResolutions: empty([]), allRefunds: empty([]), allRefundOutcomes: empty([]),
+    refundThreshold: empty(undefined), holdsPermission: empty(false), refundProcessor: testModeRefundProcessor(),
+  } : ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES, refundProcessor: testModeRefundProcessor() });
 
   const probes = deps.probes ?? (async () => []);
   // One durable settings instance, shared so the config-history / rollback routes operate on the SAME
@@ -576,14 +594,10 @@ export function buildSurface(deps: {
       issue: () => {}, coupon: empty(undefined), redemptions: empty([]), recordRedemption: () => {},
       rewardedReferralIds: empty([]), recordReferralReward: () => {}, now,
     } : couponAdapter({ store, now })),
-    ...ordersRoutes(store === undefined ? {
-      onHand: empty(new Map()), outstanding: empty([]), holdReservations: () => {},
-      holdMinutes: HOLD_MINUTES, now,
-      recordPlaced: () => {}, orderState: empty(undefined), orderReservations: empty([]),
-      recordTransition: () => {}, releaseReservations: () => {},
-      recordSubstitution: () => {}, orderSubstitutions: empty([]), allSubstitutions: empty([]),
-      recordBackorder: () => {}, orderBackorders: empty([]),
-    } : ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES })),
+    ...ordersRoutes(ordersDeps),
+    // The order's payment and refunds (M18-FR-04 / M20-FR-03): the checkout's answer recorded once, refunds against
+    // the order's own token, pending when the bank has not said, on a worklist until it does.
+    ...paymentRefundRoutes(ordersDeps),
     // Serviceability configuration (M18-FR-01 / D08) — the per-tenant, effective-dated delivery radius/fee/
     // threshold/minimum. Resolve NEVER 404s: the D08 default (10 km) applies until the owner sets real radii.
     ...serviceabilityRoutes(store === undefined
