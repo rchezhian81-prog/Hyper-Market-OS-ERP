@@ -66,7 +66,7 @@ describe.skipIf(!DATABASE_URL)('Stage 6 — offline/sync vertical slice (real Po
   let store: SqlEventStore;
 
   beforeAll(async () => {
-    client = new Client({ connectionString: DATABASE_URL });
+    client = new Client({ connectionString: DATABASE_URL, options: '-c app.tenant_id=*' });
     await client.connect();
     const sql = pgClient(client);
     // Load the real migration files, so this suite stands up its own schema on a

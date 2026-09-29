@@ -81,7 +81,7 @@ describe.skipIf(!DATABASE_URL)('Stage 11 — the old shop arrives whole (real Po
   let store: SqlEventStore;
 
   beforeAll(async () => {
-    client = new Client({ connectionString: DATABASE_URL });
+    client = new Client({ connectionString: DATABASE_URL, options: '-c app.tenant_id=*' });
     await client.connect();
     const sql = pgClient(client);
     const dir = 'db/migrations';

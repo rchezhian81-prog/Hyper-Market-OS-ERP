@@ -91,7 +91,7 @@ describe.skipIf(!DATABASE_URL)('the API remembers (real PostgreSQL)', () => {
     req({ method: 'POST', path, body, headers: { authorization: 'Bearer good', 'idempotency-key': key } });
 
   beforeAll(async () => {
-    client = new Client({ connectionString: DATABASE_URL });
+    client = new Client({ connectionString: DATABASE_URL, options: '-c app.tenant_id=*' });
     await client.connect();
     const sql = pgClient(client);
     const dir = 'db/migrations';

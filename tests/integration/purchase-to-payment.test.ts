@@ -82,7 +82,7 @@ describe.skipIf(!DATABASE_URL)('Stage 7 — purchase to payment (real PostgreSQL
   let store: SqlEventStore;
 
   beforeAll(async () => {
-    client = new Client({ connectionString: DATABASE_URL });
+    client = new Client({ connectionString: DATABASE_URL, options: '-c app.tenant_id=*' });
     await client.connect();
     const sql = pgClient(client);
     const dir = 'db/migrations';

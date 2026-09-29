@@ -13,6 +13,7 @@
 
 import type { DomainEvent } from '../../contracts/src/event';
 import type { SqlClient, SqlRow } from './sql-client';
+import { scopedTo } from './sql-client';
 
 /** An event as persisted: the domain event plus its tenant, stream and append seq. */
 export interface PersistedEvent<TType extends string = string, TPayload = unknown> {
@@ -253,9 +254,12 @@ export class SqlEventStore implements EventStore {
     // engine, a fake) falls back to sequential appends: still idempotent, but the atomicity of a
     // multi-event batch then rests on the SQL adapter, as the contract says.
     const run = (client: SqlClient): Promise<AppendResult[]> => this.appendAllWith(client, tenantId, entries);
-    return entries.length > 1 && this.client.transaction
-      ? this.client.transaction(run)
-      : run(this.client);
+    // Row-level security (migration 0012): the statements run on the tenant's scoped view, so the database
+    // itself refuses a row for any other tenant — even if a bug here ever bound the wrong id.
+    const scoped = scopedTo(this.client, tenantId);
+    return entries.length > 1 && scoped.transaction
+      ? scoped.transaction(run)
+      : run(scoped);
   }
 
   /**
@@ -306,7 +310,7 @@ export class SqlEventStore implements EventStore {
     tenantId: string,
     idempotencyKey: string,
   ): Promise<PersistedEvent | undefined> {
-    const rows = await this.client.query(
+    const rows = await scopedTo(this.client, tenantId).query(
       `SELECT ${COLUMNS} FROM event_ledger WHERE tenant_id = $1 AND idempotency_key = $2`,
       [tenantId, idempotencyKey],
     );
@@ -319,7 +323,7 @@ export class SqlEventStore implements EventStore {
     // `event_ledger_stream_idx` is (tenant_id, stream, seq), so `seq > $3` is a range scan from a
     // position rather than a read of the stream with a filter over it; `event_ledger_type_idx` on
     // (tenant_id, type, occurred_at) serves the time window.
-    const rows = await this.client.query(
+    const rows = await scopedTo(this.client, tenantId).query(
       `SELECT ${COLUMNS} FROM event_ledger
        WHERE tenant_id = $1 AND stream = $2
          AND ($3::bigint IS NULL OR seq > $3::bigint)
@@ -338,7 +342,7 @@ export class SqlEventStore implements EventStore {
     // `event_ledger_stream_type_idx` (migration 0006) makes this an index scan of one row rather
     // than a read of the whole stream. Without the index it is still correct and still slow, which
     // is the failure mode worth being explicit about.
-    const rows = await this.client.query(
+    const rows = await scopedTo(this.client, tenantId).query(
       `SELECT ${COLUMNS} FROM event_ledger
        WHERE tenant_id = $1 AND stream = $2 AND type = $3
        ORDER BY seq DESC LIMIT 1`,
@@ -351,7 +355,7 @@ export class SqlEventStore implements EventStore {
     // One tenant's whole ledger, in append order. `WHERE tenant_id = $1` is the isolation
     // boundary — a bug here leaks one retailer's data to another (§35), so the export never
     // widens beyond the single bound parameter.
-    const rows = await this.client.query(
+    const rows = await scopedTo(this.client, tenantId).query(
       `SELECT ${COLUMNS} FROM event_ledger WHERE tenant_id = $1 ORDER BY seq ASC`,
       [tenantId],
     );

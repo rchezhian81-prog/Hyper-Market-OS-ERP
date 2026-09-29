@@ -14,12 +14,13 @@
 
 import type { IdempotencyStore, StoredResult } from './pipeline';
 import type { SqlClient } from '../../../packages/persistence/src/sql-client';
+import { scopedTo } from '../../../packages/persistence/src/sql-client';
 
 export class SqlIdempotencyStore implements IdempotencyStore {
   constructor(private readonly client: SqlClient) {}
 
   async get(tenantId: string, key: string): Promise<StoredResult | undefined> {
-    const rows = await this.client.query(
+    const rows = await scopedTo(this.client, tenantId).query(
       'SELECT request_hash, status, body FROM idempotency_keys WHERE tenant_id = $1 AND key = $2',
       [tenantId, key],
     );
@@ -41,7 +42,7 @@ export class SqlIdempotencyStore implements IdempotencyStore {
    * subsequent retry would be told about a request that never happened.
    */
   async put(tenantId: string, key: string, record: StoredResult): Promise<void> {
-    await this.client.query(
+    await scopedTo(this.client, tenantId).query(
       `INSERT INTO idempotency_keys (tenant_id, key, request_hash, status, body)
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (tenant_id, key) DO NOTHING`,

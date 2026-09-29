@@ -52,7 +52,7 @@ describe.skipIf(!DATABASE_URL)('the number series is gap-free under CONCURRENCY 
   let pool: Pool;
 
   beforeAll(async () => {
-    pool = new Pool({ connectionString: DATABASE_URL, max: 8 });
+    pool = new Pool({ connectionString: DATABASE_URL, max: 8, options: '-c app.tenant_id=*' });
     const dir = 'db/migrations';
     await runMigrations(pgClient(pool), readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
       .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));

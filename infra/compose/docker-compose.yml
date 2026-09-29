@@ -27,10 +27,16 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # The NON-superuser application role db-init creates on first boot (see the volume below).
+      APP_DB_USER: ${APP_DB_USER:-sre_app}
       # Deterministic collation, so ordering is identical on every machine.
       LANG: C.UTF-8
     volumes:
       - db-data:/var/lib/postgresql/data
+      # First-boot role setup: creates the NON-superuser application role the API connects as. PostgreSQL
+      # superusers bypass row-level security (db/migrations/0012), so POSTGRES_USER is for administration
+      # only and the API refuses to start on it. Runs once, when the volume is first initialised.
+      - ./db-init:/docker-entrypoint-initdb.d:ro
     ports:
       # Bound to localhost only — the database is never exposed to the network.
       - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'

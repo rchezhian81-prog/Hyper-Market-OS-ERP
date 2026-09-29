@@ -74,6 +74,12 @@ agent drains into.
 3. Harden the ledger at the database — revoke the app role's mutation privileges on
    `event_ledger` (defence-in-depth on top of the code guardrail
    `tests/guardrails/ledger-append-only`).
+4. **Row-level security is ON from migration 0012** and forced onto the application's own role. The
+   application binds `app.tenant_id` per transaction (`pgPoolClient(pool).forTenant(tenantId)` — every
+   SQL store does this itself); a connection with no scope sees and writes NOTHING. Operator tools that
+   must see the whole database (backup, restore verification, migrate) open their connection with the
+   explicit platform scope `options: '-c app.tenant_id=*'` / `PGOPTIONS='-c app.tenant_id=*'` and
+   `pg_dump --enable-row-security`. The API never uses the platform scope.
 
 Tested in `tests/unit/persistence-event-store.test.ts`. Part of the repository layout in
 `CLAUDE.md`.

@@ -14,6 +14,7 @@
 
 import type { AuditSink } from './pipeline';
 import type { SqlClient } from '../../../packages/persistence/src/sql-client';
+import { scopedTo } from '../../../packages/persistence/src/sql-client';
 import { GENESIS_HASH, auditChainHash, type SealedAuditFields } from './audit-chain';
 
 export class SqlAuditSink implements AuditSink {
@@ -47,10 +48,13 @@ export class SqlAuditSink implements AuditSink {
       // Serialize a tenant's chain when we can (a real transaction), so the read of the previous
       // hash and the insert of the next row are one atomic, non-interleaved step. Without the
       // primitive, fall back to a direct write — correct under the sequential use of a plain client.
-      if (this.client.transaction !== undefined) {
-        await this.client.transaction((tx) => this.appendSealed(tx, sealed, true));
+      // Row-level security (migration 0012): the chain read and the insert run on THIS tenant's scoped view
+      // (an unauthenticated request's row is scoped to the 'unauthenticated' pseudo-tenant).
+      const scoped = scopedTo(this.client, sealed.tenantId);
+      if (scoped.transaction !== undefined) {
+        await scoped.transaction((tx) => this.appendSealed(tx, sealed, true));
       } else {
-        await this.appendSealed(this.client, sealed, false);
+        await this.appendSealed(scoped, sealed, false);
       }
     } catch (e) {
       // **Reported, never rethrown.** This runs *after* the handler, so the effect has already

@@ -766,7 +766,29 @@ accounts.
   API surface regenerated (+2 routes). **Honest residual GAP-SEC-05b (Low):** a revocation recorded on ANOTHER API
   instance lands on this one within the 60s refresh window (single instance: immediate) — a shared store is the
   technology-baseline answer for a multi-instance cloud. **Owner to confirm:** the 31-day ceiling default.
-- **Next:** Stage E slice 4 — GAP-DATA-02: `tenants` table + FK on every tenant-scoped table + PostgreSQL row-level security keyed on a per-transaction `app.tenant_id`, proven on real PostgreSQL (a query for tenant A cannot read tenant B's rows even with the application filter removed); then E1b (product-master restriction → pack `regulatedFlags`), key-based server login runbook (human step, ON HOLD by owner). Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
+- **Stage E, slice 4a — done (29 Sep 2026): the DATABASE now confines every statement to one tenant's rows
+  (GAP-DATA-02, RLS half CLOSED · ADR-0003 · §35 · OB-01 · SEC-12).** Before: isolation was application-level only —
+  every query bound `WHERE tenant_id = $1`, and nothing in the database refused the query that forgot to. Now
+  migration `0012_row_level_security.sql` puts `ENABLE` + `FORCE ROW LEVEL SECURITY` and a tenant policy (`USING` +
+  `WITH CHECK`) on all seven tenant-scoped tables, keyed on a per-TRANSACTION `app.tenant_id`; the persistence port
+  gains `forTenant(scope)` (`packages/persistence/src/sql-client.ts`, `scopedTo`) and `pgPoolClient` implements it
+  (BEGIN → `set_config('app.tenant_id', $1, true)` → statement(s) → COMMIT on one pinned connection); EVERY SQL
+  store (event ledger, outbox, config versions, idempotency keys, number series, audit sink, snapshots) runs its
+  statements on the tenant's view, and `main.ts` puts every store on the pool adapter. Unset scope → nothing visible
+  or writable (fail closed); `'*'` is the operator tools' explicit platform scope — `backup.mjs`
+  (`pg_dump --enable-row-security` + `PGOPTIONS`), `restore.mjs`, `migrate.mjs` set it themselves and the runbook says
+  so; the backup → drop → restore round trip reconciles exactly against the manifest under RLS (verified locally
+  and in CI's QG-08 step). Tests: `tests/migration/row-level-security.test.ts` (7, real PostgreSQL as the table owner — unscoped sees /
+  writes nothing, tenant A's unfiltered read returns only A, an insert for B under A is refused, the platform scope
+  sees all, the SqlEventStore scopes itself incl. the atomic batch, the role is neither superuser nor BYPASSRLS, all seven tables carry the forced policy),
+  `tests/unit/persistence-pg-connector.test.ts` (+4 — the scoped envelope, release on error, transaction scoping);
+  the 30 database-backed suites open their raw connections in the platform scope (`options: '-c app.tenant_id=*'`)
+  so their raw checks still see rows while the stores under test scope themselves. Docs: GAP register / threat
+  model / executive audit, persistence README, backup runbook. **Remaining half (4b, Medium):** a `tenants` table +
+  FK so a tenant nobody provisioned cannot accumulate rows — needs a registration step at genesis / bootstrap.
+  **Honest residual:** each scoped statement is one pinned transaction (four round trips); fine for the pilot box,
+  a per-request pinned connection is the optimisation if it ever shows in p95 (GAP-DATA-02c, Low).
+- **Next:** Stage E slice 4b — `tenants` table + FK + registration at genesis / bootstrap (GAP-DATA-02 second half); then E1b (product-master restriction → pack `regulatedFlags`), key-based server login runbook (human step, ON HOLD by owner). Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
 
 ---
 

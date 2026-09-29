@@ -7,6 +7,7 @@
 
 import type { DomainEvent } from '../../contracts/src/event';
 import type { SqlClient, SqlRow } from './sql-client';
+import { scopedTo } from './sql-client';
 
 export type OutboxState = 'pending' | 'acknowledged' | 'dead_letter';
 
@@ -145,7 +146,7 @@ export class SqlOutboxStore implements OutboxStore {
   constructor(private readonly client: SqlClient) {}
 
   async enqueue(tenantId: string, event: DomainEvent): Promise<OutboxRecord> {
-    const inserted = await this.client.query(
+    const inserted = await scopedTo(this.client, tenantId).query(
       `INSERT INTO sync_outbox (tenant_id, idem_key, event, state, attempts)
        VALUES ($1, $2, $3, $4, 0)
        ON CONFLICT (tenant_id, idem_key) DO NOTHING
@@ -163,7 +164,7 @@ export class SqlOutboxStore implements OutboxStore {
   }
 
   async pending(tenantId: string): Promise<readonly OutboxRecord[]> {
-    const rows = await this.client.query(
+    const rows = await scopedTo(this.client, tenantId).query(
       `SELECT ${COLUMNS} FROM sync_outbox WHERE tenant_id = $1 AND state = $2 ORDER BY created_at ASC`,
       [tenantId, STATE.pending],
     );
@@ -171,7 +172,7 @@ export class SqlOutboxStore implements OutboxStore {
   }
 
   async acknowledge(tenantId: string, key: string): Promise<void> {
-    await this.client.query(
+    await scopedTo(this.client, tenantId).query(
       `UPDATE sync_outbox SET state = $1, updated_at = now()
        WHERE tenant_id = $2 AND idem_key = $3 AND state = $4`,
       [STATE.acknowledged, tenantId, key, STATE.pending],
@@ -184,7 +185,7 @@ export class SqlOutboxStore implements OutboxStore {
     reason: string,
     maxAttempts = 5,
   ): Promise<OutboxRecord | undefined> {
-    const rows = await this.client.query(
+    const rows = await scopedTo(this.client, tenantId).query(
       `UPDATE sync_outbox
        SET attempts = attempts + 1,
            state = CASE WHEN attempts + 1 >= $1 THEN $2 ELSE state END,
@@ -198,7 +199,7 @@ export class SqlOutboxStore implements OutboxStore {
   }
 
   async deadLetter(tenantId: string, key: string, reason: string): Promise<void> {
-    await this.client.query(
+    await scopedTo(this.client, tenantId).query(
       `UPDATE sync_outbox SET state = $1, reason = $2, updated_at = now()
        WHERE tenant_id = $3 AND idem_key = $4`,
       [STATE.deadLetter, reason, tenantId, key],
@@ -206,7 +207,7 @@ export class SqlOutboxStore implements OutboxStore {
   }
 
   async deadLetters(tenantId: string): Promise<readonly OutboxRecord[]> {
-    const rows = await this.client.query(
+    const rows = await scopedTo(this.client, tenantId).query(
       `SELECT ${COLUMNS} FROM sync_outbox WHERE tenant_id = $1 AND state = $2`,
       [tenantId, STATE.deadLetter],
     );
@@ -214,7 +215,7 @@ export class SqlOutboxStore implements OutboxStore {
   }
 
   async find(tenantId: string, key: string): Promise<OutboxRecord | undefined> {
-    const rows = await this.client.query(
+    const rows = await scopedTo(this.client, tenantId).query(
       `SELECT ${COLUMNS} FROM sync_outbox WHERE tenant_id = $1 AND idem_key = $2`,
       [tenantId, key],
     );
