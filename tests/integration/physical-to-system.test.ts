@@ -121,6 +121,7 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
       .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') }));
     await runMigrations(sql, files);
     store = new SqlEventStore(sql);
+    await store.registerTenant(TENANT, 'tests'); // the tenant exists before its first row (db/migrations/0013)
     ledger = new Ledger(new InMemoryLedgerStore());
     outbox = new SyncOutbox();
   });

@@ -98,6 +98,7 @@ describe.skipIf(!DATABASE_URL)('Stage 17 — the AI proposes, people decide (rea
         .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })),
     );
     store = new SqlEventStore(sql);
+    await store.registerTenant(TENANT, 'tests'); // the tenant exists before its first row (db/migrations/0013)
   });
 
   afterAll(async () => {

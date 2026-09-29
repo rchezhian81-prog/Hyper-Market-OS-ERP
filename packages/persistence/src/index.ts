@@ -10,3 +10,4 @@ export * from './projection';
 export * from './snapshot';
 export * from './pg-client';
 export * from './migrations';
+export * from './tenants';

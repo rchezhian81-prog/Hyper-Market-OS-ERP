@@ -14,6 +14,7 @@
 import type { DomainEvent } from '../../contracts/src/event';
 import type { SqlClient, SqlRow } from './sql-client';
 import { scopedTo } from './sql-client';
+import { TenantNotRegisteredError, isTenantFkViolation } from './tenants';
 
 /** An event as persisted: the domain event plus its tenant, stream and append seq. */
 export interface PersistedEvent<TType extends string = string, TPayload = unknown> {
@@ -97,6 +98,12 @@ export interface EventStore {
    * deliberate, governed call, not a hot path, and it removes nothing (hard rule #6).
    */
   exportTenant(tenantId: string): Promise<readonly PersistedEvent[]>;
+  /**
+   * Register a tenant as provisioned (db/migrations/0013), so the database accepts rows for it. Idempotent. Called at
+   * the moments a tenant comes into being — genesis at boot, the bootstrap tool — and recorded with who did it. A
+   * store with no register (memory, the edge) treats this as a no-op: the FK is a cloud-database guarantee.
+   */
+  registerTenant(tenantId: string, registeredBy: string): Promise<void>;
 }
 
 function tenantKey(tenantId: string, idempotencyKey: string): string {
@@ -182,6 +189,8 @@ export class InMemoryEventStore implements EventStore {
         ? tail : tail.filter(matches),
     );
   }
+
+  registerTenant(): Promise<void> { return Promise.resolve(); } // no register in memory — every tenant is welcome here
 
   exportTenant(tenantId: string): Promise<readonly PersistedEvent[]> {
     // The master list is seq-ordered by construction, so a filter over it yields the tenant's
@@ -272,7 +281,9 @@ export class SqlEventStore implements EventStore {
   ): Promise<AppendResult[]> {
     const results: AppendResult[] = [];
     for (const { stream, event } of entries) {
-      const inserted = await client.query(
+      let inserted;
+      try {
+        inserted = await client.query(
         `INSERT INTO event_ledger (id, tenant_id, stream, type, occurred_at, idempotency_key, source, version, payload)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
@@ -289,6 +300,11 @@ export class SqlEventStore implements EventStore {
           JSON.stringify(event.payload),
         ],
       );
+      } catch (err) {
+        // The database refused a row for a tenant nobody provisioned (db/migrations/0013) — say so by name.
+        if (isTenantFkViolation(err)) throw new TenantNotRegisteredError(tenantId);
+        throw err;
+      }
       if (inserted.length > 0) {
         results.push({ record: rowToPersisted(inserted[0]!), deduped: false });
         continue;
@@ -349,6 +365,15 @@ export class SqlEventStore implements EventStore {
       [tenantId, stream, type],
     );
     return rows.length > 0 ? rowToPersisted(rows[0]!) : undefined;
+  }
+
+  async registerTenant(tenantId: string, registeredBy: string): Promise<void> {
+    // Under the tenant's own scope (row-level security, 0012) a tenant may register itself and nobody else;
+    // idempotent, so genesis at every boot is one row.
+    await scopedTo(this.client, tenantId).query(
+      'INSERT INTO tenants (tenant_id, registered_by) VALUES ($1, $2) ON CONFLICT (tenant_id) DO NOTHING',
+      [tenantId, registeredBy],
+    );
   }
 
   async exportTenant(tenantId: string): Promise<readonly PersistedEvent[]> {

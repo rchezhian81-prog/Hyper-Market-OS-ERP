@@ -81,6 +81,7 @@ describe.skipIf(!DATABASE_URL)('Stage 6 — offline/sync vertical slice (real Po
     // refuses DELETE, so the tests scope themselves by tenant instead of truncating —
     // which is itself a small proof that the guard is real.
     store = new SqlEventStore(sql);
+    await store.registerTenant(TENANT, 'tests'); // the tenant exists before its first row (db/migrations/0013)
   });
 
   afterAll(async () => {

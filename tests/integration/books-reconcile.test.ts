@@ -92,6 +92,7 @@ describe.skipIf(!DATABASE_URL)('Stage 10 — the books reconcile (real PostgreSQ
         .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })),
     );
     store = new SqlEventStore(sql);
+    await store.registerTenant(TENANT, 'tests'); // the tenant exists before its first row (db/migrations/0013)
 
     for (const sale of SALES) {
       await store.append(

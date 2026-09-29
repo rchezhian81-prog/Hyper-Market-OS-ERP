@@ -83,6 +83,7 @@ async function shopWithHistory(n: number): Promise<InMemoryEventStore> {
  * "narrowed at the store" from "narrowed afterwards".
  */
 class CountingStore implements EventStore {
+  registerTenant(): Promise<void> { return Promise.resolve(); } // no register here — counts only
   rowsRead = 0;
   constructor(private readonly inner: InMemoryEventStore) {}
   append: EventStore['append'] = (t, s, e) => this.inner.append(t, s, e);

@@ -56,6 +56,7 @@ describe.skipIf(!DATABASE_URL)('the audit trail is actually kept (real PostgreSQ
     await runMigrations(sql, readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
       .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));
 
+    await new SqlEventStore(sql).registerTenant(TENANT, 'tests'); // the tenant exists before its first row (db/migrations/0013)
     const built = buildRouter(buildSurface({
       signingKey: KEY, migrationTargetKind: 'rehearsal', store: new SqlEventStore(sql),
     }));

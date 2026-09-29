@@ -56,6 +56,8 @@ describe.skipIf(!DATABASE_URL)('the number series is gap-free under CONCURRENCY 
     const dir = 'db/migrations';
     await runMigrations(pgClient(pool), readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
       .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));
+    // The tenant exists before its first series row (db/migrations/0013) — registered in the platform scope.
+    await pool.query("INSERT INTO tenants (tenant_id, registered_by) VALUES ($1, 'tests') ON CONFLICT (tenant_id) DO NOTHING", [DBT]);
   });
   afterAll(async () => { await pool.end(); });
 

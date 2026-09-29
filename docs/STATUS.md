@@ -788,7 +788,24 @@ accounts.
   FK so a tenant nobody provisioned cannot accumulate rows — needs a registration step at genesis / bootstrap.
   **Honest residual:** each scoped statement is one pinned transaction (four round trips); fine for the pilot box,
   a per-request pinned connection is the optimisation if it ever shows in p95 (GAP-DATA-02c, Low).
-- **Next:** Stage E slice 4b — `tenants` table + FK + registration at genesis / bootstrap (GAP-DATA-02 second half); then E1b (product-master restriction → pack `regulatedFlags`), key-based server login runbook (human step, ON HOLD by owner). Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
+- **Stage E, slice 4b — done (29 Sep 2026): a tenant nobody provisioned cannot accumulate rows (GAP-DATA-02 CLOSED
+  · ADR-0003 · §35 · M36).** Migration `0013_tenants.sql` adds the `tenants` register (who provisioned it, when;
+  row-level-secured like the rest), back-fills every tenant that already holds rows, and puts a VALIDATED FOREIGN KEY
+  from every uuid-keyed tenant table (`event_ledger`, `sync_outbox`, `config_versions`, `idempotency_keys`,
+  `number_series`) to it. Registration is an explicit act — `EventStore.registerTenant(tenantId, registeredBy)` at
+  genesis (`system:genesis`), by the bootstrap tool (`operator:<name>`), and by the test harness; the in-memory
+  store treats it as a no-op (the FK is a cloud-database guarantee). A write for any other tenant is refused by the
+  database; the store reports `TenantNotRegisteredError` and the kernel answers 403 `tenant_not_registered` with
+  the three-part error — a token minted for a tenant that does not exist cannot create one. Tests:
+  `tests/migration/tenants-register.test.ts` (5, real PostgreSQL — the refusal by name, idempotent registration,
+  the other tables refuse too, validated FKs on the five uuid tables and none on the text-keyed two, the register
+  is row-level-secured — as a NON-superuser role, since a superuser bypasses RLS), `tests/unit/service-kernel.test.ts`
+  (+1 — the 403 mapping); every database-backed suite registers the tenants it writes for. The two suites that
+  create a test role now share `tests/support/db-app-role.ts`, which serialises role/grant DDL behind one advisory
+  lock (PostgreSQL catalogue updates do not queue — two suites granting at once failed with "tuple concurrently
+  updated" on the local cluster). Docs: GAP register / threat model / executive audit (GAP-DATA-02 CLOSED),
+  persistence README, STATUS, traceability.
+- **Next:** E1b (product-master restriction → pack `regulatedFlags`, unblocks the sensitive-publish leg and M12-FR-04 on cloud-built packs); key-based server login runbook (human step, ON HOLD by owner). Stage E register truth is then complete except GAP-DATA-06 (erasure vs the append-only ledger) and the residuals named in the registers. Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
 
 ---
 

@@ -191,6 +191,7 @@ describe.skipIf(!DATABASE_URL)('OB-06 verification gate — every figure has a w
         .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })),
     );
     store = new SqlEventStore(sql);
+    await store.registerTenant(TENANT, 'tests'); // the tenant exists before its first row (db/migrations/0013)
   });
 
   afterAll(async () => { await client.end(); });

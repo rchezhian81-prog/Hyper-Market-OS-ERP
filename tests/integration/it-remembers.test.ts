@@ -98,6 +98,7 @@ describe.skipIf(!DATABASE_URL)('the API remembers (real PostgreSQL)', () => {
     await runMigrations(sql, readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
       .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));
     store = new SqlEventStore(sql);
+    await store.registerTenant(TENANT, 'tests'); // the tenant exists before its first row (db/migrations/0013)
 
     const built = buildRouter(buildSurface({
       signingKey: KEY, migrationTargetKind: 'rehearsal', store,

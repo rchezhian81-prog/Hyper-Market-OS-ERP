@@ -6,6 +6,7 @@ import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { makeEvent } from '../../packages/contracts/src/event';
+import { ensureAppRole, asRole } from '../support/db-app-role';
 
 /**
  * **Tenant isolation is enforced by the DATABASE, not only by the application (GAP-DATA-02 · ADR-0003 · §35 ·
@@ -31,7 +32,6 @@ const RUN = `rls-${Date.now().toString(36)}`;
  * the API (`infra/compose/db-init`); `main.ts` refuses to start on a superuser for exactly this reason.
  */
 const APP_ROLE = 'sre_rls_app';
-const asRole = (url: string, role: string): string => { const u = new URL(url); u.username = role; u.password = ''; return u.toString(); };
 const hex = Date.now().toString(16).slice(-7);
 const A = `a${hex}-aaaa-4aaa-8aaa-aaaaaaaaaaaa`;
 const B = `b${hex}-bbbb-4bbb-8bbb-bbbbbbbbbbbb`;
@@ -57,12 +57,11 @@ describeOrSkip('row-level security isolates tenants in the database itself (migr
     await runMigrations(pgPoolClient(platform), readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
       .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));
     // The application's role: no superuser, no BYPASSRLS, ordinary table privileges — bound by the policies.
-    await platform.query(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${APP_ROLE}') THEN CREATE ROLE ${APP_ROLE} LOGIN NOSUPERUSER NOBYPASSRLS; END IF; END $$;`);
-    await platform.query(`GRANT USAGE ON SCHEMA public TO ${APP_ROLE}`);
-    await platform.query(`GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO ${APP_ROLE}`);
-    await platform.query(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${APP_ROLE}`);
+    await ensureAppRole(platform, APP_ROLE);
     app = new Pool({ connectionString: asRole(DATABASE_URL!, APP_ROLE), max: 4 });
     store = new SqlEventStore(pgPoolClient(app));
+    await store.registerTenant(A, 'tests'); // a tenant may register itself under its own scope (db/migrations/0013)
+    await store.registerTenant(B, 'tests');
     await store.append(A, stream, ev('a1'));
     await store.append(A, stream, ev('a2'));
     await store.append(B, stream, ev('b1'));

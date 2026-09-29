@@ -55,6 +55,7 @@ describeOrSkip('appendBatch is atomic against real PostgreSQL (FND-01)', () => {
       .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));
     // The store gets the TRANSACTIONAL adapter — the same wiring production uses in main.ts.
     store = new SqlEventStore(pgPoolClient(pool));
+    await store.registerTenant(TENANT, 'tests'); // the tenant exists before its first row (db/migrations/0013)
   });
 
   afterAll(async () => { await pool.end(); });

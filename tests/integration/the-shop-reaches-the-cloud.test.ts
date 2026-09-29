@@ -107,6 +107,7 @@ describe.skipIf(!DATABASE_URL)('the shop reaches the cloud (real PostgreSQL)', (
     await runMigrations(sql, readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
       .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));
     store = new SqlEventStore(sql);
+    await store.registerTenant(TENANT, 'tests'); // the shop exists before its first row (db/migrations/0013)
 
     const built = buildRouter(buildSurface({ signingKey: KEY, migrationTargetKind: 'rehearsal', store }));
     expect(built.ok, built.refusals.map((r) => r.detail).join('; ')).toBe(true);
@@ -268,6 +269,7 @@ describe.skipIf(!DATABASE_URL)('a sale RUNG UP at the lane reaches the cloud (re
     await runMigrations(sql, readdirSync(d).filter((f) => f.endsWith('.sql')).sort()
       .map((name) => ({ name, sql: readFileSync(join(d, name), 'utf8') })));
     store = new SqlEventStore(sql);
+    await store.registerTenant(TENANT2, 'tests');
     const built = buildRouter(buildSurface({ signingKey: KEY, migrationTargetKind: 'rehearsal', store }));
     kernel = {
       router: built.router!,
