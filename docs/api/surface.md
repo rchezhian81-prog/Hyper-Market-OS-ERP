@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 739 | 448 | 448 | 58 | 245 |
+| 13 | 744 | 451 | 451 | 58 | 245 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -38,6 +38,11 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/identity/number-series/:docType` | `documents.number.allocate` | core | yes |
 | GET | `/v1/identity/roles` | `identity.role.read` | core | — |
 | GET | `/v1/org/branches` | `org.branch.read` | core | — |
+| GET | `/v1/org/document-templates` | `platform.setup.read` | core | — |
+| GET | `/v1/org/document-templates/:kind` | `platform.setup.read` | core | — |
+| POST | `/v1/org/document-templates/:kind/versions` | `platform.setup.write` | core | yes |
+| POST | `/v1/org/document-templates/:kind/versions/:version/approve` | `platform.setup.write` | core | yes |
+| POST | `/v1/org/document-templates/:kind/versions/:version/publish` | `platform.setup.write` | core | yes |
 | POST | `/v1/org/gst-registrations/:gstin` | `platform.setup.write` | core | yes |
 | GET | `/v1/org/nodes` | `org.branch.read` | core | — |
 | GET | `/v1/org/nodes/:nodeId` | `org.branch.read` | core | — |

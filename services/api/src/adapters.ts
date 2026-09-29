@@ -181,6 +181,7 @@ import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/i
 import type { DayBookDeps, DayBookJournal, DayBookExceptionRecord, StoredPostingMap } from '../../finance/src/day-book';
 import type { ConcessionTagDeps } from '../../finance/src/concession-tags';
 import type { ObservedHealthDeps, ConnectorQueueDepth, BackupRecord, StoredAlertRules } from '../../platform/src/observed-health';
+import type { DocumentTemplateDeps, DocumentTemplateVersion } from '../../platform/src/document-templates';
 import { adapterHealth } from '../../../packages/integration/src/index';
 import type { DayBookSale } from '../../../packages/finance/src/index';
 import type { CreditNoteDeps } from '../../finance/src/credit-notes';
@@ -8738,6 +8739,30 @@ export function observedHealthAdapter(input: { readonly store: EventStore; reado
         idempotencyKey: `alert-rules-${tenantId}-v${rules.version}`,
         source: 'api/platform',
         payload: rules,
+      }));
+    },
+  };
+}
+
+/**
+ * Versioned document templates (M01-FR-02). Every state a version reaches — drafted, approved, published,
+ * superseded — is one appended fact on the org stream; the routes fold the furthest state per version.
+ * A superseded version is never removed: the receipts printed under it name it, and a reprint next year
+ * must look like the original (hard rules #2 and #6).
+ */
+export function documentTemplatesAdapter(input: { readonly store: EventStore; readonly now: () => string }): DocumentTemplateDeps {
+  const stream = streamName(STREAM.org, 'document-templates');
+  return {
+    now: input.now,
+    versions: (tenantId) => allOf<DocumentTemplateVersion>(input.store, tenantId, stream, 'DocumentTemplateVersionRecorded'),
+    record: async (tenantId, version) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `doc-template-${version.kind}-v${version.version}-${version.state}`,
+        type: 'DocumentTemplateVersionRecorded',
+        occurredAt: input.now(),
+        idempotencyKey: `doc-template-${tenantId}-${version.kind}-v${version.version}-${version.state}`,
+        source: 'api/platform',
+        payload: version,
       }));
     },
   };

@@ -161,3 +161,12 @@ describe('printReceipt', () => {
     expect(outcome).toEqual({ status: 'failed', reason: 'printer offline' });
   });
 });
+
+describe('the template version a receipt was printed under (M01-FR-02)', () => {
+  it('is carried on the document and printed as the last line, so a reprint can be rendered under the layout the original had', () => {
+    const versioned = renderText(buildReceipt(input({ templateVersion: 2 })), 42);
+    expect(versioned[versioned.length - 1]!.trim()).toBe('template v2');
+    const plain = renderText(buildReceipt(input()), 42);
+    expect(plain.some((l) => l.includes('template v'))).toBe(false); // a lane on its pack defaults prints nothing extra
+  });
+});

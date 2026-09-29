@@ -62,6 +62,9 @@ export interface BuildReceiptInput {
   /** Per-tenant header/footer (store name, GSTIN, thanks line) — choose-able. */
   readonly header: readonly string[];
   readonly footer: readonly string[];
+  /** The published document-template version the header/footer came from (M01-FR-02), so a reprint is
+   *  rendered under the layout the original had, not today's. Absent when the lane used its pack defaults. */
+  readonly templateVersion?: number;
   /** Set on a reprint; the receipt is then marked and the reason recorded. */
   readonly reprintOf?: { readonly reason: string; readonly by: string; readonly at: string };
 }
@@ -213,6 +216,7 @@ export function renderText(doc: ReceiptDocument, width = 42): string[] {
 
   out.push(rule);
   for (const line of doc.footer) out.push(centre(line, width));
+  if (doc.templateVersion !== undefined) out.push(centre(`template v${doc.templateVersion}`, width));
 
   return out;
 }
