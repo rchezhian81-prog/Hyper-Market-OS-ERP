@@ -28,7 +28,7 @@
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
-import { GLOBAL_FOR, SCREENS, payloadFor, catalogueFreshness, type ScreenInput, type ScreenName } from './screen-data';
+import { GLOBAL_FOR, SCREENS, payloadFor, catalogueFreshness, posReceiptTemplate, type ScreenInput, type ScreenName } from './screen-data';
 
 /** The one address this may listen on. Named so a test can assert on it. */
 export const SCREEN_HOST = '127.0.0.1';
@@ -76,6 +76,7 @@ export const APP_SHELL: Readonly<Record<ScreenName, AppShell>> = Object.freeze({
   'loss-prevention': { dir: 'web-erp', file: 'loss-prevention.html' },
   'substitution-exceptions': { dir: 'web-erp', file: 'substitution-exceptions.html' },
   'day-book': { dir: 'web-erp', file: 'day-book.html' },
+  'document-templates': { dir: 'web-erp', file: 'document-templates.html' },
   'return-governance': { dir: 'web-erp', file: 'return-governance.html' },
   'cash-office': { dir: 'web-erp', file: 'cash-office.html' },
   'risk-acceptance': { dir: 'web-erp', file: 'risk-acceptance.html' },
@@ -296,10 +297,15 @@ export function startScreenServer(input: {
       // (SYNC-01) rides alongside it on every screen, from the same one snapshot.
       const snap = input.snapshot();
       const payload = payloadFor(route.screen, snap);
+      // The till alone also gets the receipt template head office published, when this box has pulled one
+      // (M01-FR-02): its own global beside the catalogue, so a bill printed offline carries the words and the
+      // version. Absent when none has reached this box — the till prints with its defaults and stamps nothing.
+      const receiptTemplate = route.screen === 'pos' ? posReceiptTemplate(snap) : undefined;
       send(res, 200, type, injectPayload(
         body.toString('utf8'), GLOBAL_FOR[route.screen], payload,
         {
           catalogueFreshness: catalogueFreshness(snap),
+          ...(receiptTemplate === undefined ? {} : { posReceiptTemplate: receiptTemplate }),
           // The one write a screen makes back to the box: the manager's day close (M14-FR-04). Only
           // present when this box serves a lane socket to post to; the screen falls back to read-only
           // (a local preview) when it is absent.

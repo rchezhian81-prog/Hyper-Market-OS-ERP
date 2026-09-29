@@ -112,9 +112,10 @@ describe('the routes (API-01)', () => {
   const act = (routes: readonly Route[], op: 'approve' | 'publish', kind: string, version: string, userId: string) =>
     routeFor(routes, 'POST', `${BASE}/:kind/versions/:version/${op}`).handler(ctx({ userId, params: { kind, version } }));
 
-  it('five routes: read all kinds, read one, draft, approve, publish — setup permissions, writes idempotent', () => {
+  it('six routes: the box\'s published read first, then read all kinds, read one, draft, approve, publish — setup permissions, writes idempotent', () => {
     const { routes } = stub();
     expect(routes.map((r) => [r.method, r.path, r.permission, r.idempotent === true])).toEqual([
+      ['GET', `${BASE}/published`, 'org.template.pull', false],
       ['GET', BASE, 'platform.setup.read', false],
       ['GET', `${BASE}/:kind`, 'platform.setup.read', false],
       ['POST', `${BASE}/:kind/versions`, 'platform.setup.write', true],

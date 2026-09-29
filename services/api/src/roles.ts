@@ -73,7 +73,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'shelf.count.record', 'shelf.count.read', 'planogram.compliance.read', 'planogram.publish', 'merchandising.space.read', 'merchandising.display.manage', 'merchandising.range.manage', 'merchandising.range.read', 'approvals.delegation.grant', 'approvals.delegation.read',
       'reporting.dashboard.read', 'reporting.report.read', 'reporting.consolidation.manage',
       'platform.health.read', 'platform.alert.manage', 'platform.device.manage', 'platform.flag.read', 'platform.flag.write',
-      'platform.setup.read', 'platform.setup.write',
+      'platform.setup.read', 'platform.setup.write', 'org.template.pull',
       'platform.support.request', 'platform.support.grant', 'platform.support.read',
       'platform.tenant.export', 'platform.branding.read', 'platform.branding.write',
       'platform.entitlement.read', 'platform.entitlement.manage',
@@ -203,6 +203,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'pos.sale.sync', 'pos.return.sync', 'migration.decision.sync', 'pos.sale.read', 'pos.return.record', 'pos.restricted.check',
       // M27-FR-03 hop: the box relays the till's concession docket lines to the synced route under this identity.
       'concession.tag.sync',
+      // M01-FR-02: the box pulls the PUBLISHED document templates (the receipt header/footer in force) into the
+      // lane's pack under this identity — a read of what head office put in force, never of drafts or names.
+      'org.template.pull',
       'cash.movement.record', 'cash.till.read', 'till.shift.close', 'till.shift.read',
       'customer.consent.read', 'loyalty.points.read', 'loyalty.points.write',
       'loyalty.value.issue', 'loyalty.value.redeem', 'loyalty.value.read',

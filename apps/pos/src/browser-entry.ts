@@ -40,6 +40,26 @@ export interface PosReceiptSeries {
   readonly rangeEnd: number;
 }
 
+/**
+ * The RECEIPT template head office published, as the store box last pulled it (M01-FR-02 · §31). Injected by
+ * the edge beside the catalogue (`window.posReceiptTemplate`) so a bill printed with the cable out carries the
+ * header and footer in force — and the VERSION it was printed under, stamped on the bill, so a reprint next year
+ * is rendered under the layout the original had. Absent when no published template has reached this box: the
+ * lane prints with its defaults and stamps no version, rather than inventing one (P-08).
+ */
+export interface PosReceiptTemplate {
+  readonly version: number;
+  readonly header: readonly string[];
+  readonly footer: readonly string[];
+  readonly language: string;
+  readonly paperFormat?: string;
+  readonly publishedAt: string;
+  /** The cloud's clock on the set, the box's clock when it took it, and how far behind the cloud it is. */
+  readonly generatedAt: string;
+  readonly receivedAt: string;
+  readonly ageHours: number;
+}
+
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
 interface PosWindow {
   posSession?: PosView;
@@ -47,6 +67,8 @@ interface PosWindow {
   posCatalogue?: CatalogueSnapshot;
   /** This lane's reserved receipt-number range, injected by the edge before boot (per lane). */
   posReceiptSeries?: PosReceiptSeries;
+  /** The receipt template in force, injected by the edge before boot when this box has pulled one (M01-FR-02). */
+  posReceiptTemplate?: PosReceiptTemplate;
 }
 
 /** Where this till's edge listens. Loopback only — see ADR-0004 and `edge/store-edge/src/lane-server.ts`. */
@@ -208,6 +230,8 @@ export function bootPos(config?: {
   durableReturn?: DurableWrite;
   /** This lane's reserved receipt-number range (M01-FR-02), provisioned per lane. */
   receipt?: PosReceiptSeries;
+  /** The receipt template in force as the box last pulled it (M01-FR-02); absent = print with defaults, stamp no version. */
+  receiptTemplate?: PosReceiptTemplate;
   /**
    * The refund policy for this tenant (M13, §28) — the approval threshold and no-receipt cap. These
    * are owner-input-pending numbers, so they are GIVEN here (from the signed local config pack in
@@ -228,6 +252,9 @@ export function bootPos(config?: {
   readonly receiptsRemaining: () => number;
   /** Look up a bill this lane rang, for the refund screen — or `null` if it did not ring it. */
   readonly lookupRefund: (receipt: string) => Promise<RefundLookup | null>;
+  /** The receipt template this lane prints with — header, footer and the version to stamp — or `null` when none
+   *  has reached this box (print with defaults, stamp nothing). Read from the box's pack, never fetched at print time. */
+  readonly receiptTemplate: () => PosReceiptTemplate | null;
 } {
   const outbox = new SyncOutbox();
   const session = new PosSession(
@@ -324,7 +351,9 @@ export function bootPos(config?: {
     };
   };
 
-  return Object.assign(view, { till, nextReceipt, receiptsRemaining, lookupRefund });
+  const receiptTemplate = (): PosReceiptTemplate | null => config?.receiptTemplate ?? null;
+
+  return Object.assign(view, { till, nextReceipt, receiptsRemaining, lookupRefund, receiptTemplate });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its
@@ -335,5 +364,6 @@ if (browserWindow !== undefined) {
   browserWindow.posSession = bootPos({
     catalogue: browserWindow.posCatalogue,
     ...(browserWindow.posReceiptSeries === undefined ? {} : { receipt: browserWindow.posReceiptSeries }),
+    ...(browserWindow.posReceiptTemplate === undefined ? {} : { receiptTemplate: browserWindow.posReceiptTemplate }),
   });
 }

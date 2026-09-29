@@ -134,6 +134,11 @@ import {
   type PostResult as DayBookPostResult,
 } from './day-book-session';
 import {
+  createDocumentTemplatesSession,
+  type DocumentTemplatesSession, type DocumentTemplatePorts, type DocumentTemplateActPort, type TemplateRegisterData, type TemplateKindData,
+  type TemplateVersionView, type ActResult as DocumentTemplateActResult,
+} from './document-templates-session';
+import {
   createReturnGovernanceSession,
   type ReturnGovernancePorts, type ReturnGovernanceSession, type ReturnGovernanceData as ReturnGovernanceExceptions,
 } from './return-governance-session';
@@ -1335,6 +1340,108 @@ export async function fetchDayBook(tradingDay: string): Promise<DayBookReadData 
     return null;
   }
 }
+
+// ── Document templates (M01-FR-02) — the setup person's versioned wording screen ──────────────────────────
+
+/** What the box tells the document-templates screen: who is looking and what they may do. The templates are LIVE
+ *  cloud reads (`GET /v1/org/document-templates` and `…/:kind`) the shell fetches; offline the screen shows its
+ *  clearly-marked sample stand-in. */
+export interface DocumentTemplatesScreenData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+}
+
+const DOC_TEMPLATE_READ_PERMISSION = 'platform.setup.read';
+const DOC_TEMPLATE_WRITE_PERMISSION = 'platform.setup.write';
+const NOOP_DOC_TEMPLATE_ACT_PORT: DocumentTemplateActPort = {
+  draft: async () => ({ result: 'lost_link' }), approve: async () => ({ result: 'lost_link' }), publish: async () => ({ result: 'lost_link' }),
+};
+
+export function documentTemplatePortsFromData(
+  data: DocumentTemplatesScreenData | undefined,
+  register: TemplateRegisterData | null,
+  kind: TemplateKindData | null,
+  actPort: DocumentTemplateActPort = NOOP_DOC_TEMPLATE_ACT_PORT,
+): DocumentTemplatePorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    register: () => register,
+    kind: () => kind,
+    // Default-deny: an absent permission list can read/write nothing (the server would refuse it anyway).
+    mayRead: () => held.has(DOC_TEMPLATE_READ_PERMISSION),
+    mayWrite: () => held.has(DOC_TEMPLATE_WRITE_PERMISSION),
+    actPort: () => actPort,
+  };
+}
+
+/** Build the document-templates session, or `null` when the box carried no payload for it (shell shows the sample). */
+export function bootDocumentTemplates(
+  data: DocumentTemplatesScreenData | undefined,
+  register: TemplateRegisterData | null = null,
+  kind: TemplateKindData | null = null,
+  actPort?: DocumentTemplateActPort,
+): DocumentTemplatesSession | null {
+  if (data === undefined) return null;
+  return createDocumentTemplatesSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    documentTemplatePortsFromData(data, register, kind, actPort),
+  );
+}
+
+/** The authenticated POSTs of the setup person's acts — their OWN session cookie (`credentials: 'same-origin'`),
+ *  never a service token, each with an idempotency key (a retried draft is one version on the server too).
+ *  201 = drafted; 200 = approved / published; 400 `template_content_invalid` is told with the cloud's words; 403
+ *  `maker_cannot_approve` is told as the §28 refusal; 409 (`not_a_draft` / `not_approved` / `already_published`)
+ *  is a state conflict by name; any other refusal is a refusal; a network/timeout is a retryable lost link. */
+function openDocumentTemplateActPort(): DocumentTemplateActPort {
+  const base = '/v1/org/document-templates';
+  const post = async (path: string, body: unknown, ok: (v: TemplateVersionView & { supersededVersion?: number }) => DocumentTemplateActResult): Promise<DocumentTemplateActResult> => {
+    const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+    if (fetchFn === undefined) return { result: 'lost_link' };
+    const key = globalThis.crypto?.randomUUID?.() ?? `doc-template-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    try {
+      const res = await fetchFn(path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(body),
+      });
+      if (res.status === 201 || res.status === 200) return ok((await res.json()) as TemplateVersionView & { supersededVersion?: number });
+      let error: { code?: string; whatHappened?: string } = {};
+      try { error = ((await res.json()) as { error?: { code?: string; whatHappened?: string } }).error ?? {}; } catch { /* an unreadable refusal is still a refusal */ }
+      if (res.status === 400 && error.code === 'template_content_invalid') return { result: 'content_invalid', problems: [error.whatHappened ?? 'the template content was refused'] };
+      if (res.status === 403 && error.code === 'maker_cannot_approve') return { result: 'maker_cannot_approve' };
+      if (res.status === 409 && typeof error.code === 'string') return { result: 'state_conflict', code: error.code };
+      return { result: 'refused' };
+    } catch {
+      return { result: 'lost_link' };
+    }
+  };
+  return {
+    draft: ({ kind, content, note }) => post(`${base}/${encodeURIComponent(kind)}/versions`, { content, ...(note === undefined ? {} : { note }) }, (v) => ({ result: 'drafted', version: v })),
+    approve: ({ kind, version }) => post(`${base}/${encodeURIComponent(kind)}/versions/${version}/approve`, {}, (v) => ({ result: 'approved', version: v })),
+    publish: ({ kind, version }) => post(`${base}/${encodeURIComponent(kind)}/versions/${version}/publish`, {}, (v) => ({
+      result: 'published', version: v, ...(v.supersededVersion === undefined ? {} : { supersededVersion: v.supersededVersion }),
+    })),
+  };
+}
+
+async function getJson<T>(path: string): Promise<T | null> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return null;
+  try {
+    const res = await fetchFn(path, { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    if (res.status >= 400) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+/** Read the register (a GET — read-only). Null offline/refused so the shell keeps what it was showing. */
+export const fetchDocumentTemplates = (): Promise<TemplateRegisterData | null> => getJson<TemplateRegisterData>('/v1/org/document-templates');
+/** Read one kind's versions (a GET — read-only). */
+export const fetchDocumentTemplateKind = (kind: string): Promise<TemplateKindData | null> => getJson<TemplateKindData>(`/v1/org/document-templates/${encodeURIComponent(kind)}`);
 
 // ── Manager rostering screen (M25-FR-01) — the "who is on, what is the roster short" desk ──────────────────
 
@@ -3372,6 +3479,14 @@ interface ManagerWindow {
     refresh(): Promise<SubExceptionWorklistData | null>;
     present(worklist: SubExceptionWorklistData): SubExceptionInboxSession;
   };
+  documentTemplatesData?: DocumentTemplatesScreenData;
+  documentTemplatesSession?: DocumentTemplatesSession;
+  /** The shell reads the register and one kind's versions through these and re-presents them — GET reads, never a write. */
+  documentTemplates?: {
+    refresh(): Promise<TemplateRegisterData | null>;
+    refreshKind(kind: string): Promise<TemplateKindData | null>;
+    present(register: TemplateRegisterData | null, kind: TemplateKindData | null): DocumentTemplatesSession;
+  };
   dayBookData?: DayBookScreenData;
   dayBookSession?: DayBookSession;
   /** The shell reads a trading day through this and re-presents it — a GET read, never a write. */
@@ -4307,6 +4422,24 @@ if (browserWindow !== undefined) {
       present: (data) => createDayBookSession(
         { userId: dayBookData?.userId === undefined ? null : dayBookData.userId },
         dayBookPortsFromData(dayBookData, data, dayBookPostPort),
+      ),
+    };
+  }
+  // Document templates (M01-FR-02): boots from the box's policy (who + what they hold), then the shell reads the
+  // register and the chosen kind with live GETs (read-only). Offline it shows its sample stand-in and says so. The
+  // writes — draft, approve, publish — are HUMAN acts in the setup person's own name, only on an explicit click;
+  // the server re-checks the permission and the §28 maker/approver split, and is idempotent on each.
+  const documentTemplatesData = browserWindow.documentTemplatesData;
+  const documentTemplateActPort = openDocumentTemplateActPort();
+  const documentTemplatesSession = bootDocumentTemplates(documentTemplatesData, null, null, documentTemplateActPort);
+  if (documentTemplatesSession !== null) {
+    browserWindow.documentTemplatesSession = documentTemplatesSession;
+    browserWindow.documentTemplates = {
+      refresh: fetchDocumentTemplates,
+      refreshKind: fetchDocumentTemplateKind,
+      present: (register, kind) => createDocumentTemplatesSession(
+        { userId: documentTemplatesData?.userId === undefined ? null : documentTemplatesData.userId },
+        documentTemplatePortsFromData(documentTemplatesData, register, kind, documentTemplateActPort),
       ),
     };
   }

@@ -49,14 +49,14 @@ import {
   basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
-import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackSubstitutionExceptionPolicy, PackDayBookPolicy, PackReturnGovernancePolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackStoredValuePolicy, PackIntegrationHealthPolicy, PackGoodsReceiptPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy, PackRosteringPolicy, PackChecklistPolicy, PackProductionPolicy, PackFacilitiesPolicy } from './store-pack';
+import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackSubstitutionExceptionPolicy, PackDayBookPolicy, PackDocumentTemplatePolicy, PackReturnGovernancePolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackStoredValuePolicy, PackIntegrationHealthPolicy, PackGoodsReceiptPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy, PackRosteringPolicy, PackChecklistPolicy, PackProductionPolicy, PackFacilitiesPolicy } from './store-pack';
 import { DEFAULT_WRITE_OFF_THRESHOLD_MINOR } from '../../../packages/waste/src/waste';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'write-off-capture', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'substitution-exceptions', 'day-book', 'return-governance', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'stored-value', 'integration-health', 'goods-receipt', 'data-io', 'workforce', 'ess', 'rostering', 'checklist', 'production', 'facilities', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
+  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'write-off-capture', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'substitution-exceptions', 'day-book', 'document-templates', 'return-governance', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'stored-value', 'integration-health', 'goods-receipt', 'data-io', 'workforce', 'ess', 'rostering', 'checklist', 'production', 'facilities', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1454,6 +1454,52 @@ export function dayBookPayload(input: ScreenInput): Record<string, unknown> | nu
 }
 
 /**
+ * The document-templates payload (M01-FR-02 · §28).
+ *
+ * `null` when the box has not been told who is on the screen. **The templates themselves are NOT in this
+ * payload**: the register is read live from the cloud (`GET /v1/org/document-templates`); the shell fetches it
+ * when online and shows a sample stand-in until then. This carries only the setup person's CURRENT context — who
+ * is looking and what they hold now — re-read every render; the cloud routes re-check the authority and the §28
+ * maker/approver split, so this only shapes the UI.
+ */
+export function documentTemplatesPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.documentTemplatePolicy.known) return null;
+  const policy: PackDocumentTemplatePolicy = input.pack.documentTemplatePolicy.value;
+
+  const payload: Record<string, unknown> = { permissions: policy.permissions };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+
+  return payload;
+}
+
+/**
+ * The RECEIPT template the till prints with (M01-FR-02 · §31), or undefined when none has reached this box.
+ *
+ * Rides beside the till's catalogue as its own global (`window.posReceiptTemplate`): the header and footer head
+ * office published, the version they were published as (stamped on every bill so a reprint is rendered as the
+ * original), the paper it was written for, and how old the set is by the CLOUD's clock. Absent when the box has
+ * only ever read its pack file, or the cloud has nothing published for receipts — the till then prints with its
+ * defaults and stamps no version, rather than inventing one (P-08).
+ */
+export function posReceiptTemplate(input: ScreenInput): Record<string, unknown> | undefined {
+  if (!input.pack.documentTemplates.known) return undefined;
+  const held = input.pack.documentTemplates.value;
+  const receipt = held.templates.find((t) => t.kind === 'receipt');
+  if (receipt === undefined) return undefined;
+  return {
+    version: receipt.version,
+    header: receipt.content.header,
+    footer: receipt.content.footer,
+    language: receipt.content.language,
+    ...(receipt.content.paperFormat === undefined ? {} : { paperFormat: receipt.content.paperFormat }),
+    publishedAt: receipt.publishedAt,
+    generatedAt: held.generatedAt,
+    receivedAt: held.receivedAt,
+    ageHours: Math.max(0, Math.floor((Date.parse(input.now) - Date.parse(held.generatedAt)) / 3_600_000)),
+  };
+}
+
+/**
  * The refund-exceptions review payload (M13-FR-01/03 · M17 · P-03 · P-08).
  *
  * `null` when the box has not been told who is on the screen. **The flagged refunds themselves are NOT in this
@@ -1862,6 +1908,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   'loss-prevention': 'lossPreventionInboxData',
   'substitution-exceptions': 'substitutionExceptionInboxData',
   'day-book': 'dayBookData',
+  'document-templates': 'documentTemplatesData',
   'return-governance': 'returnGovernanceData',
   'cash-office': 'cashOfficeData',
   'risk-acceptance': 'riskAcceptanceData',
@@ -1911,6 +1958,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   'loss-prevention': lossPreventionPayload,
   'substitution-exceptions': substitutionExceptionsPayload,
   'day-book': dayBookPayload,
+  'document-templates': documentTemplatesPayload,
   'return-governance': returnGovernancePayload,
   'cash-office': cashOfficePayload,
   'risk-acceptance': riskAcceptancePayload,

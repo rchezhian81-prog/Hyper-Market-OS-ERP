@@ -18,6 +18,7 @@ const INTEGRATION_PLUS = new Set<string>(['INTEGRATION TESTED', 'E2E VERIFIED', 
 // A module reaches WIRED+ only with registered, existing evidence. INTEGRATION TESTED+ needs a real
 // integration/e2e test. Adding a module at a high rung without adding its evidence here fails the gate.
 const EVIDENCE: Record<string, string> = {
+  M01: 'tests/integration/the-published-receipt-template-reaches-the-till-through-the-edge.test.ts',
   M02: 'tests/integration/authorization-is-enforced.test.ts',
   M03: 'tests/integration/product-master.test.ts',
   M04: 'tests/integration/planogram-store.test.ts',
