@@ -485,7 +485,33 @@ accounts.
   then family by family through the 57 remaining PARTIALLY_WIRED items (D01-FR-06 content authoring,
   D02-FR-06 display funding, D07 coupons/referrals, M21 compensation, M23 close second source, …). OA-12 was
   already answered and closed on 23 Sep — nothing to un-park.
-- **Next:** M23 slice D PR → merge → M27 slice T PR → merge → M35 slice O PR → merge → M36 slice M PR → merge → M01, one family per slice (then a second pass: M19 exception screen + e2e, M22 portal screen + e2e, M23 day-book screen + e2e, M27 till panel → store box → cloud tags + e2e, …); Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet).
+- **Stage C, family M01 (org/config), slice D — done (29 Sep 2026): versioned DOCUMENT TEMPLATES on the cloud
+  (M01-FR-02, API-01).** Before: the receipt package could render any header/footer, but nothing held the
+  store's templates as VERSIONS — the roadmap's "upload/version document templates (receipt, invoice, PO, GRN,
+  statement) → approve → publish; a template change is versioned, never overwritten; old documents keep their
+  original layout" had no home. Now `packages/org/src/document-templates.ts` (the pure engine — what a
+  template may say and how a version moves) + `services/platform/src/document-templates.ts` (API-01):
+  `POST /v1/org/document-templates/:kind/versions` drafts the next version (content refused at the door when it
+  would be a tax error or a broken bill — no store name on the first line, a GSTIN that is not 15 characters,
+  a line too long for the widest paper, a language other than en/ta/en_ta; every problem named at once);
+  `POST …/:version/approve` is a SECOND person's act (§28 — the maker gets 403 `maker_cannot_approve`; a
+  non-draft 409 `not_a_draft`); `POST …/:version/publish` puts an APPROVED version in force (409
+  `not_approved` / `already_published`) and marks the previously published one `superseded` — kept, never
+  deleted, with `supersededBy`/`supersededAt`; `GET /v1/org/document-templates[/:kind]` reads the version in
+  force and every version with its state and its original content. `platform.setup.write` / `.read`
+  (owner, platform admin); writes idempotent (a retried draft is one version). Adapter
+  `documentTemplatesAdapter`: `DocumentTemplateVersionRecorded` on the org stream, one fact per state a
+  version reaches, folded furthest-state-wins per version — restart-safe. `packages/receipt`'s
+  `BuildReceiptInput` gains `templateVersion?` and prints it as the last line, so a reprint can be rendered
+  under the layout the original had. Tests: `tests/unit/document-templates.test.ts` (8 — validation names
+  every problem; the lifecycle draft → second-person approve → publish → supersede with v1's content intact;
+  the five routes over stub deps), `tests/integration/document-templates.test.ts` (4 — the full lifecycle
+  through the authenticated API with the retry, the maker refused, a second version superseding the first
+  which is KEPT, the all-kinds register, a cold restart, refusals saving nothing, a cashier refused),
+  `tests/unit/receipt.test.ts` (+1). No rung change — M01 stays PARTIALLY WIRED: the template SCREEN + e2e and
+  the edge reading the published receipt template into the lane's pack are the follow-ons; company-wide
+  report roll-ups were delivered by Item 4.
+- **Next:** M36 slice M PR (#614) → merge → M01 slice D PR → merge; then the second pass, one screen per slice: M19 exception screen + e2e, M22 portal screen + e2e, M23 day-book screen + e2e, M27 till panel → store box → cloud tags + e2e, M01 template screen + e2e (+ the edge reading the published receipt template into the lane's pack); then Stage D. Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet).
 
 ---
 
