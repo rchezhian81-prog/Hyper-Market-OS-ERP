@@ -141,6 +141,12 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   // re-check the DECIDER's own authority (never the relay's) and re-run the engine; a decision the cloud
   // cannot accept is recorded as REFUSED and acknowledged, never silently applied and never dropped. The
   // ids are plain payload fields matching the path params.
+  // A concession docket line the till recorded offline (M27-FR-03 · Item 3, §31). The box holds it durably and
+  // relays it to the dedicated SYNCED route under the store token; the cloud resolves the partner's contract in
+  // force, snapshots the scheme there and records the RELAYED cashier as the author. A line with no contract in
+  // force is 422 → dead-lettered here by name for a person (hard rule #6); one already on the record is 409 →
+  // counted delivered.
+  ConcessionTagCaptured: '/v1/concession/tags/synced',
   MigrationExceptionResolved: '/v1/migration/exceptions/:exceptionId/resolution/synced',
   MigrationTotalSigned: '/v1/migration/control-totals/:totalId/signature/synced',
 };

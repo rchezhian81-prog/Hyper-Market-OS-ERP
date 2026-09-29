@@ -590,7 +590,43 @@ accounts.
   post button and sends nothing; a 409 no-posting-map answer is told as such and the day stays unposted). No rung
   change — M23 stays PARTIALLY WIRED (the Tally drain and the close's genuine second control-total source remain
   external; AP/AR and cost/profit centres are foundation-only).
-- **Next:** M22 slice Q PR (#617) → merge → M23 slice E PR → merge; then M27 till panel → store box → cloud tags + e2e, M01 template screen + e2e (+ the edge reading the published receipt template into the lane's pack); then Stage D. Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
+- **Stage C, second pass, family M27 (concession), slice U — done (29 Sep 2026): the till panel's OFFLINE-FIRST
+  hop — till → store box → cloud — for concession docket lines, browser- and edge-verified (M27-FR-03, Item 3,
+  §31) — and M27 re-rated PARTIALLY_WIRED → WIRED.** Before: slice T put the tag routes on the cloud and Item 3
+  built the till panel as a thin client — but the panel posted to a test-only backend; nothing carried a docket
+  line from a till with the cable out to those routes; the ledger said "the till panel's offline-first hop through
+  the store box + a browser e2e remain". Now, the FIFTH write seam beside the sale, the refund, the completion and
+  the day close: the panel (`apps/pos/web/concession-tag.html` / `.js`) posts the line to the box's loopback
+  socket `POST /lane/concession-tags` (`edge/store-edge/src/lane-server.ts`, the same RR-F01 authorisation as a
+  sale, decided before the body is read); `commitConcessionTag` (`edge/store-edge/src/index.ts`) writes it to the
+  box's OWN `concession-tags.log` FIRST, then queues a `ConcessionTagCaptured` event on its own outbox keyed on
+  the till-minted tag id; its own pipeline re-mints the event on restart (`edge/store-edge/src/main.ts`), its own
+  agent relays it (`edge/sync-agent/src/http-transport.ts`) to the NEW cloud route `POST /v1/concession/tags/synced`
+  (`services/finance/src/concession-tags.ts`, permission `concession.tag.sync` — the box's identity and the
+  owner): the till names the PARTNER; the cloud resolves the partner's ONE contract in force on the day (or takes
+  the contract the till named, refusing another partner's), snapshots the commission scheme THERE, and records
+  the RELAYED cashier and role as the author — the box is the courier, never the author (§28 re-checked on any
+  correction); no contract in force, or an ambiguous one, is 422 → dead-lettered by name on the box for a person;
+  a tag id already recorded is 409 → counted delivered (hard rule #6: nothing dropped, nothing guessed). A contract
+  index by partner (`ConcessionContractIndexed`, written when a contract is defined) makes the lookup possible.
+  The panel now collects the real docket fields (till, shift, bill, line, partner, optional contract, counter,
+  product, qty, money, approved source, the cashier's id and role), mints the tag id `till:bill:line`, refuses an
+  incomplete line before any call, and says plainly "saved on the store computer — reaches head office when the
+  connection is up; commission is worked out there from the contract" — it computes no commission and offers no
+  reversal (a supervisor's act at head office). Tests: `tests/unit/lane-server-concession-tags.test.ts` (5),
+  `tests/unit/concession-tag-synced-route.test.ts` (6), `tests/integration/till-concession-tags-reach-the-cloud-
+  through-the-edge.test.ts` (4 — the REAL edge: durable on its own log and queued with the cable out, nothing at
+  the cloud yet; drained on stop, the tag is on the contract with the cashier as author and the commission computed
+  from the contract; no resend after a restart; a partner with no contract in force dead-letters on the box, kept),
+  `tests/e2e/till-concession-tag-through-the-box.e2e.ts` (2 — headless Chromium against the REAL served box with
+  NO cloud: the cashier's line lands on the box's concession-tags log and outbox once, a second line takes the next
+  line id, the page says where it is; an incomplete line is refused on the page). The old panel e2e against a
+  test-only backend is replaced by these. `docs/api/surface.md` regenerated (+1 route). **Re-rate M27
+  PARTIALLY_WIRED → WIRED:** every M27 FR is wired on the live API and integration-tested and the till's hop is
+  browser- and edge-verified; the ledger's only stated hold is closed. Held below INTEGRATION_TESTED until the
+  honest-hardening review (durability + tenant isolation across the M27 surfaces). Physical-till verification
+  stays a pilot item.
+- **Next:** M27 slice U PR → merge; then M01 template screen + e2e (+ the edge reading the published receipt template into the lane's pack); then Stage D. Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
 
 ---
 

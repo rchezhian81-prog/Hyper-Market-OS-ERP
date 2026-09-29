@@ -20,6 +20,7 @@ import { commitLocally, type CommitOutcome, type DurableLog } from './durability
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { toCloudSale } from './cloud-sale';
+import { toCloudConcessionTag } from './cloud-concession-tag';
 import { toCloudReturn } from './cloud-return';
 import { toCloudChecklist, toCloudTaskCompletion } from './cloud-completion';
 import { canonicalHash, type IdempotencyGuard } from './idempotency';
@@ -53,6 +54,14 @@ export interface EdgeNode {
    * fold latest-per-id, and the ledger is append-only regardless (hard rule #6), so a re-delivery
    * settles to one record on its own.
    */
+  /**
+   * Record a concession docket line the till captured (M27-FR-03 · Item 3, §31) — the fourth write seam,
+   * beside `commit`, `commitReturn` and `commitCompletion`, and deliberately separate: its own log and its own
+   * outbox, so a partner-counter line that cannot reach the cloud never holds a sale, and a restart re-queue
+   * never reads one kind as another. Durable on this box before it is called recorded; then queued for the
+   * cloud's synced route, which resolves the partner's contract and records the relayed cashier as author.
+   */
+  readonly commitConcessionTag: (tagId: string, record: string) => Promise<CommitOutcome>;
   readonly commitCompletion: (
     completionKind: 'checklist' | 'task',
     completionId: string,
@@ -107,6 +116,12 @@ export function createEdgeNode(input: {
   readonly completionsLog?: DurableLog;
   /** Where a committed COMPLETION is queued for the cloud — the completion pipeline's own outbox. */
   readonly completionsOutbox?: SyncOutbox;
+  /**
+   * The CONCESSION TAG's own durable log and outbox (M27-FR-03) — configured on every real edge; absent only
+   * in a narrow test. `commitConcessionTag` refuses (durably, before the line is called recorded) when unset.
+   */
+  readonly concessionTagsLog?: DurableLog;
+  readonly concessionTagsOutbox?: SyncOutbox;
   /**
    * Operation-identity guard for refunds (RR-F03). Rebuilt from the durable returns log at boot and
    * consulted before every refund write: an identical retry returns the original outcome with no new
@@ -370,6 +385,40 @@ export function createEdgeNode(input: {
       } finally {
         returnsInFlight.delete(returnId);
       }
+    },
+
+    commitConcessionTag: async (tagId, record) => {
+      // Configured on every real edge; guarded so a mis-wired deployment refuses the line BEFORE it is called
+      // recorded (a partner's commission that never reaches settlement) rather than losing it silently after.
+      if (input.concessionTagsLog === undefined) {
+        return {
+          committed: false,
+          refusedBecause: 'could_not_write_durably',
+          detail: 'this edge has no concession-tags log configured, so a partner-counter line cannot be saved durably',
+          laneMessage: 'This lane cannot record a partner-counter line right now. Keep the docket and tell the manager.',
+        };
+      }
+      // The durable write, then the queue — after the write, never before, the same ordering as the other seams.
+      const outcome = await commitLocally({
+        saleId: tagId, record, log: input.concessionTagsLog,
+        ...(input.reserveBytes === undefined ? {} : { reserveBytes: input.reserveBytes }),
+      });
+      if (outcome.committed && input.concessionTagsOutbox !== undefined) {
+        let body: unknown;
+        try { body = JSON.parse(record) as unknown; } catch { body = record; }
+        input.concessionTagsOutbox.enqueue(makeEvent({
+          id: `edge-concession-tag-${tagId}`,
+          type: 'ConcessionTagCaptured',
+          occurredAt: new Date().toISOString(),
+          // The tag's own id, minted at the till. Every retry carries this same key, so a resend collapses to
+          // one line at the cloud (§31.1) — a partner is never charged twice for one docket line.
+          idempotencyKey: `edge-concession-tag-${input.tenantId}-${tagId}`,
+          source: 'edge/lane',
+          // Translated to the cloud's synced-tag contract before it leaves; the cloud resolves the contract.
+          payload: toCloudConcessionTag(body),
+        }));
+      }
+      return outcome;
     },
 
     commitCompletion: async (completionKind, completionId, record) => {

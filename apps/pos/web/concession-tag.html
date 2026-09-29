@@ -5,13 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>SRE — Concession line</title>
     <!--
-      Till-side concession tagging panel (M27, owner decision). A THIN CLIENT by design: it holds no
-      pricing, no commission logic and no minter. A cashier records a partner-counter line FROM AN
-      APPROVED SOURCE (a docket / app reference); the backend runs the production @sre/concession engine
-      (captureConcessionTagIdempotent / reverseConcessionTag) and returns the tag. Only a supervisor may
-      correct a posted tag, by a reversal — never a silent rewrite (SoD §28, hard rule #2). In production
-      the backend is the cloud POS/concession API; in the browser E2E it is a local Node server running
-      the SAME engine, so no money logic ever enters this page.
+      Till-side concession tagging panel (M27-FR-03, Item 3, §31). A THIN CLIENT by design: it holds no
+      pricing, no commission logic and no minter. A cashier records a partner-counter line FROM AN APPROVED
+      SOURCE (a docket / app reference) and the page hands it to the STORE BOX's loopback write socket
+      (POST /lane/concession-tags) — the same road the till's sales and refunds take: durable on the store
+      computer first, then queued for head office, whose synced route resolves the partner's contract in
+      force, snapshots the commission scheme there and records the cashier named here as the author. So the
+      line is saved with the cable out, and no money logic ever enters this page. A posted line is never
+      rewritten here: a correction is a supervisor's reversal or adjustment at head office (§28, hard rule #2).
     -->
     <style>
       :root {
@@ -77,29 +78,47 @@
         </label>
 
         <div class="grid2">
+          <label for="capturedBy">Your staff id <span lang="ta">/ உங்கள் பணியாளர் எண்</span>
+            <input id="capturedBy" value="" autocomplete="off" />
+          </label>
+          <label for="tillId">Till <span lang="ta">/ பணப்பெட்டி</span>
+            <input id="tillId" value="till-1" />
+          </label>
+          <label for="shiftId">Shift <span lang="ta">/ பணி நேரம்</span>
+            <input id="shiftId" value="" />
+          </label>
+          <label for="saleId">Bill / sale id <span lang="ta">/ பில் எண்</span>
+            <input id="saleId" value="" autocomplete="off" />
+          </label>
+          <label for="lineId">Line (blank = next) <span lang="ta">/ வரி</span>
+            <input id="lineId" value="" autocomplete="off" />
+          </label>
           <label for="concessionaireId">Partner <span lang="ta">/ கூட்டாளர்</span>
-            <input id="concessionaireId" value="jeweller-1" />
+            <input id="concessionaireId" value="" />
+          </label>
+          <label for="contractId">Contract (if known) <span lang="ta">/ ஒப்பந்தம்</span>
+            <input id="contractId" value="" />
           </label>
           <label for="counterId">Counter <span lang="ta">/ கவுண்டர்</span>
-            <input id="counterId" value="counter-gold" />
+            <input id="counterId" value="" />
           </label>
           <label for="productId">Product <span lang="ta">/ பொருள்</span>
-            <input id="productId" value="ring-22k" />
+            <input id="productId" value="" />
           </label>
           <label for="qty">Qty <span lang="ta">/ அளவு</span>
             <input id="qty" type="number" inputmode="numeric" value="1" min="1" />
           </label>
           <label for="grossMinor">Gross (paise) <span lang="ta">/ மொத்தம்</span>
-            <input id="grossMinor" type="number" inputmode="numeric" value="100000" />
+            <input id="grossMinor" type="number" inputmode="numeric" value="0" />
           </label>
           <label for="discountMinor">Discount (paise) <span lang="ta">/ தள்ளுபடி</span>
             <input id="discountMinor" type="number" inputmode="numeric" value="0" />
           </label>
           <label for="taxMinor">Tax (paise) <span lang="ta">/ வரி</span>
-            <input id="taxMinor" type="number" inputmode="numeric" value="3000" />
+            <input id="taxMinor" type="number" inputmode="numeric" value="0" />
           </label>
           <label for="source">Approved source <span lang="ta">/ ஆதாரம்</span>
-            <input id="source" value="docket-8842" />
+            <input id="source" value="" />
           </label>
         </div>
         <button id="record" type="button">Record line</button>
@@ -107,17 +126,17 @@
       </section>
 
       <section>
-        <h2>Tagged lines <span lang="ta">/ பதிவு செய்யப்பட்ட வரிகள்</span></h2>
+        <h2>Lines saved on this store computer <span lang="ta">/ சேமிக்கப்பட்ட வரிகள்</span></h2>
         <table>
           <thead>
-            <tr><th>Tag</th><th>Kind</th><th>Gross</th><th>Net</th><th>Commission</th><th>Reverse</th></tr>
+            <tr><th>Tag</th><th>Product</th><th>Gross</th><th>Net</th><th>State</th></tr>
           </thead>
           <tbody id="rows"></tbody>
           <tfoot>
-            <tr class="totals"><td colspan="2">Totals (net of reversals)</td><td id="t-gross">0</td><td id="t-net">0</td><td id="t-commission">0</td><td></td></tr>
+            <tr class="totals"><td colspan="2">Totals (saved lines)</td><td id="t-gross">0</td><td id="t-net">0</td><td></td></tr>
           </tfoot>
         </table>
-        <p class="foot">A posted line is never rewritten. Only a supervisor may reverse one; the reversal is added on top and the original stays.</p>
+        <p class="foot">Saved lines reach head office when the connection is up; the partner's commission is worked out there from the contract. A saved line is never rewritten here — a supervisor reverses or adjusts it at head office.</p>
       </section>
     </main>
     <script type="module" src="./concession-tag.js"></script>

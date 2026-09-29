@@ -1,10 +1,12 @@
-// Till-side concession tagging — the THIN CLIENT (M27, owner decision).
+// Till-side concession tagging — the THIN CLIENT, bound to the STORE BOX (M27-FR-03, Item 3, §31).
 //
-// It holds no pricing, no commission logic and no minter. It records a partner-counter line by posting
-// the docket fields to the backend, which runs the production @sre/concession engine, and it reflects the
-// append-only tag stream the backend returns. A supervisor may reverse a posted tag; a cashier is refused
-// server-side and told so (SoD §28). In production the backend is the cloud POS/concession API; in the
-// browser E2E it is a local Node server running the same engine.
+// It holds no pricing, no commission logic and no minter. A cashier records a partner-counter docket line and
+// this page hands it to the box's loopback write socket (`POST /lane/concession-tags`), exactly as the till's
+// sales and refunds travel: the box writes it durably to its own log FIRST, then queues it for the cloud, whose
+// synced route resolves the partner's contract in force, snapshots the commission scheme there and records the
+// cashier named here as the author. So the line is saved with the cable out, and commission is never computed
+// on this page — head office computes it from the contract. Corrections (a reversal, an adjustment) are a
+// supervisor's act at head office, never a rewrite here (§28, hard rule #2).
 
 const $ = (id) => document.getElementById(id);
 
@@ -16,112 +18,109 @@ const setStatus = (text, kind = '') => {
   statusEl.className = `status ${kind}`.trim();
 };
 
-async function post(path, body) {
-  const res = await fetch(path, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  return res.json();
+/** Where the box's write socket is: what the shell was told, a `?lane=` port, or the standard lane port. */
+function laneBase() {
+  if (typeof window.laneWriteBase === 'string' && window.laneWriteBase !== '') return window.laneWriteBase.replace(/\/+$/, '');
+  const port = new URLSearchParams(location.search).get('lane');
+  return `http://127.0.0.1:${port && /^\d+$/.test(port) ? port : '8090'}`;
 }
 
-async function getJson(path) {
-  const res = await fetch(path, { headers: { 'accept': 'application/json' } });
-  return res.json();
-}
+const str = (id) => $(id).value.trim();
+const num = (id) => Number($(id).value);
+const today = () => new Date().toISOString().slice(0, 10);
 
-// A stable idempotency key per (sale, line): a resend or double-tap of Record does not double-charge.
-let lineSeq = 0;
+/** The lines this page recorded in this session — what the box accepted, never a claim about the cloud. */
+const recorded = [];
+const lineSeqBySale = new Map();
 
-function num(id) {
-  return Number($(id).value);
-}
-
-function render(stream) {
+function render() {
   rowsEl.textContent = '';
-  for (const t of stream.tags) {
+  let gross = 0; let net = 0;
+  for (const t of recorded) {
     const tr = document.createElement('tr');
     tr.dataset['tagId'] = t.tagId;
-    const cell = (text, cls) => {
-      const td = document.createElement('td');
-      td.textContent = text;
-      if (cls) td.className = cls;
-      return td;
-    };
+    const cell = (text, cls) => { const td = document.createElement('td'); td.textContent = text; if (cls) td.className = cls; return td; };
     tr.appendChild(cell(t.tagId));
-    tr.appendChild(cell(t.kind));
+    tr.appendChild(cell(t.productId));
     tr.appendChild(cell(String(t.grossMinor)));
-    tr.appendChild(cell(String(t.netMinor)));
-    tr.appendChild(cell(String(t.commissionMinor)));
-    const action = document.createElement('td');
-    if (t.kind === 'sale' || t.kind === 'return' || t.kind === 'cancellation') {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'secondary';
-      btn.textContent = 'Reverse';
-      btn.dataset['reverse'] = t.tagId;
-      btn.addEventListener('click', () => reverse(t.tagId));
-      action.appendChild(btn);
-    }
-    tr.appendChild(action);
+    tr.appendChild(cell(String(t.grossMinor - t.discountMinor)));
+    tr.appendChild(cell(t.state, t.state === 'saved' ? 'good' : 'err'));
     rowsEl.appendChild(tr);
+    if (t.state === 'saved') { gross += t.grossMinor; net += t.grossMinor - t.discountMinor; }
   }
-  $('t-gross').textContent = String(stream.totals.grossMinor);
-  $('t-net').textContent = String(stream.totals.netMinor);
-  $('t-commission').textContent = String(stream.totals.commissionMinor);
+  $('t-gross').textContent = String(gross);
+  $('t-net').textContent = String(net);
 }
 
-async function refresh() {
-  const stream = await getJson('/concession/tag/stream');
-  render(stream);
-}
-
-$('record').addEventListener('click', async () => {
-  lineSeq += 1;
-  const idempotencyKey = `till-3:sale-1:line-${lineSeq}`;
-  const out = await post('/concession/tag/capture', {
-    idempotencyKey,
-    saleId: 'sale-1',
-    lineId: `line-${lineSeq}`,
-    concessionaireId: $('concessionaireId').value.trim(),
-    counterId: $('counterId').value.trim(),
-    productId: $('productId').value.trim(),
-    qty: num('qty'),
-    grossMinor: num('grossMinor'),
-    discountMinor: num('discountMinor'),
-    taxMinor: num('taxMinor'),
-    capturedBy: $('role').value === 'supervisor' ? 'sup-ravi' : 'cashier-anita',
+/** The docket line as the box's lane route reads it — and as the cloud's synced route will. */
+function draftLine() {
+  const saleId = str('saleId');
+  const tillId = str('tillId');
+  const seq = (lineSeqBySale.get(saleId) ?? 0) + 1;
+  const lineId = str('lineId') !== '' ? str('lineId') : `line-${seq}`;
+  const contractId = str('contractId');
+  return {
+    tagId: `${tillId}:${saleId}:${lineId}`,
+    kind: 'sale',
+    saleId, lineId, tillId,
+    shiftId: str('shiftId') !== '' ? str('shiftId') : `shift-${today()}`,
+    productId: str('productId'),
+    concessionaireId: str('concessionaireId'),
+    ...(contractId === '' ? {} : { contractId }),
+    counterId: str('counterId'),
+    qty: num('qty'), grossMinor: num('grossMinor'), discountMinor: num('discountMinor'), taxMinor: num('taxMinor'),
+    capturedBy: str('capturedBy'),
     byRole: $('role').value,
-    source: $('source').value.trim(),
-  });
-  if (out && out.captured) {
-    setStatus(`Recorded ${out.tag.tagId} — commission ${out.tag.commissionMinor}.`, 'good');
-  } else if (out && out.refusal === 'duplicate_idempotency_key') {
-    setStatus('Already recorded — nothing charged twice.', 'warn');
-  } else {
-    setStatus('Could not record the line.', 'err');
+    source: str('source'),
+    at: new Date().toISOString(),
+  };
+}
+
+function incomplete(line) {
+  for (const k of ['saleId', 'tillId', 'productId', 'concessionaireId', 'counterId', 'capturedBy', 'source']) {
+    if (typeof line[k] !== 'string' || line[k] === '') return k;
   }
-  await refresh();
+  if (!Number.isInteger(line.qty) || line.qty <= 0) return 'qty';
+  for (const k of ['grossMinor', 'discountMinor', 'taxMinor']) if (!Number.isInteger(line[k])) return k;
+  return undefined;
+}
+
+let inFlight = false;
+$('record').addEventListener('click', async () => {
+  if (inFlight) return;
+  const line = draftLine();
+  const missing = incomplete(line);
+  if (missing !== undefined) {
+    setStatus(`Fill in ${missing} first — nothing was recorded. / முதலில் ${missing} நிரப்புங்கள்.`, 'warn');
+    return;
+  }
+  inFlight = true;
+  $('record').disabled = true;
+  try {
+    // The box's write socket: durable on the store computer before it answers, then queued for head office.
+    const res = await fetch(`${laneBase()}/lane/concession-tags`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(line),
+    });
+    const out = await res.json();
+    if (out && out.committed) {
+      lineSeqBySale.set(line.saleId, (lineSeqBySale.get(line.saleId) ?? 0) + 1);
+      recorded.push({ ...line, state: 'saved' });
+      $('lineId').value = '';
+      setStatus(`Saved ${line.tagId} on the store computer — it reaches head office when the connection is up; commission is worked out there from the contract. / கடைக் கணினியில் சேமிக்கப்பட்டது.`, 'good');
+    } else {
+      recorded.push({ ...line, state: 'refused' });
+      setStatus(out && out.laneMessage ? out.laneMessage : 'The store computer could not record the line. / பதிவு செய்ய முடியவில்லை.', 'err');
+    }
+  } catch {
+    setStatus('No connection to the store computer — nothing was recorded. Keep the docket and try again. / கடைக் கணினியுடன் இணைப்பு இல்லை.', 'err');
+  } finally {
+    inFlight = false;
+    $('record').disabled = false;
+    render();
+  }
 });
 
-async function reverse(tagId) {
-  const role = $('role').value;
-  const out = await post('/concession/tag/reverse', {
-    tagId,
-    by: role === 'supervisor' ? 'sup-ravi' : 'cashier-anita',
-    byRole: role,
-    reasonCode: 'WRONG-COUNTER',
-  });
-  if (out && out.corrected) {
-    setStatus(`Reversed ${tagId} by ${out.correction.tagId}.`, 'good');
-  } else if (out && out.refusal === 'not_permitted_for_role') {
-    setStatus('Only a supervisor may reverse a posted line — the refusal was recorded.', 'err');
-  } else if (out && out.refusal === 'already_corrected_by_reversal') {
-    setStatus('That line was already reversed.', 'warn');
-  } else {
-    setStatus('Could not reverse the line.', 'err');
-  }
-  await refresh();
-}
-
-void refresh();
+$('shiftId').placeholder = `shift-${today()}`;
+render();
