@@ -20,6 +20,7 @@ const INTEGRATION_PLUS = new Set<string>(['INTEGRATION TESTED', 'E2E VERIFIED', 
 const EVIDENCE: Record<string, string> = {
   M02: 'tests/integration/authorization-is-enforced.test.ts',
   M03: 'tests/integration/product-master.test.ts',
+  M04: 'tests/integration/planogram-store.test.ts',
   M05: 'tests/integration/price-list-effective-dating.test.ts',
   M06: 'tests/e2e/buying-po-delivery.e2e.ts',
   M07: 'tests/e2e/goods-receipt-delivery.e2e.ts',
