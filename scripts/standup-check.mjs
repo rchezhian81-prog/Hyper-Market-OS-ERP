@@ -117,6 +117,35 @@ export function interpretSync(cloudUrl) {
   return { ok: true, advisory: true, detail: `the store box is set to sync to the books at ${cloudUrl}` };
 }
 
+/**
+ * The till's save socket (the lane server) answers a bare GET with a 404 that NAMES what it serves. That is
+ * the honest probe: no sale is written, no credential is needed, and a socket that answers anything else —
+ * or nothing — is not the till's. (A 200 here would mean something else is squatting on the port.)
+ */
+export function interpretLaneSocket(ok, status, body) {
+  const names = body !== null && typeof body === 'object' && typeof body.error === 'string' && body.error.includes('the lane socket serves');
+  if (status === 404 && names) return { ok: true, detail: 'the till\'s save socket is answering on this PC\'s loopback' };
+  if (status === 0) {
+    return { ok: false, detail: 'the till\'s save socket did not answer', fix: 'Start the till: run till/start-till.sh (Mac/Linux) or double-click till\\start-till.cmd (Windows) and leave it running.' };
+  }
+  return { ok: false, detail: `something answered ${status} on the till's save port, but not the till`, fix: 'Another program is using the lane port. Stop it, or install the till with a different --lane-port (and tell the screen the same port).' };
+}
+
+/** The served till screen — from the store box on THIS PC (the one-PC arrangement), not the web container. */
+export function interpretTillScreen(ok, status) {
+  if (ok) return { ok: true, detail: 'the Sale screen is being served by the store box on this PC' };
+  return { ok: false, detail: `the till screen did not load (answered ${status || 'nothing'})`, fix: 'Start the till (till/start-till.sh or till\\start-till.cmd) and check EDGE_SCREEN_PORT in till/till.env.' };
+}
+
+/** What the readiness check probes for an installed till, from its settings file. */
+export function tillProbes(tillEnv) {
+  const host = '127.0.0.1';
+  return {
+    lane: `http://${host}:${tillEnv['EDGE_LANE_PORT'] ?? '8090'}/`,
+    screen: `http://${host}:${tillEnv['EDGE_SCREEN_PORT'] ?? '8091'}/pos/`,
+  };
+}
+
 /** Roll individual results up into an overall verdict. Advisory items never fail the gate. */
 export function rollup(results) {
   const failed = results.filter((r) => r.ok === false);
@@ -165,7 +194,14 @@ async function probe(url) {
 
 async function main() {
   const envFile = process.env['STANDUP_ENV_FILE'] ?? join(REPO, 'infra', 'compose', '.env');
+  const tillEnvFile = process.env['TILL_ENV_FILE'] ?? join(REPO, 'till', 'till.env');
   const results = [];
+
+  // 0 — An installed one-PC till (Stage D): its own settings file, written by `pnpm run till:install`. When it
+  // is present the till checks below run against the store box on THIS PC; the cloud checks still run when
+  // the compose settings are present too (the cloud may be on this PC or on the server).
+  let tillEnv;
+  try { tillEnv = parseEnv(await readFile(tillEnvFile, 'utf8')); } catch { tillEnv = undefined; }
 
   // 1 — Settings filled in.
   let env = {};
@@ -180,10 +216,32 @@ async function main() {
           fix: 'Open infra/compose/.env and replace each placeholder with a real value (see infra/compose/.env.example).',
         });
   } catch {
-    results.push({
-      name: 'Settings', ok: false, detail: `no settings file at ${envFile}`,
-      fix: 'From infra/compose, run: cp .env.example .env — then fill it in (see docs/runbooks/pilot-deployment.md).',
-    });
+    if (tillEnv === undefined) {
+      results.push({
+        name: 'Settings', ok: false, detail: `no settings file at ${envFile} and no installed till at ${tillEnvFile}`,
+        fix: 'Install the till (pnpm run till:install -- --tenant <id>), or from infra/compose run: cp .env.example .env — then fill it in (see docs/runbooks/in-store-install.md).',
+      });
+    } else {
+      results.push({ name: 'Settings', ok: true, advisory: true, detail: `no cloud settings on this PC (${envFile}) — the till's own settings are at ${tillEnvFile}; the books run elsewhere or not yet` });
+    }
+  }
+
+  if (tillEnv !== undefined) {
+    // The one-PC till: its save socket and its served screen, on this PC\'s loopback.
+    const urls = tillProbes(tillEnv);
+    const lane = await probe(urls.lane);
+    results.push({ name: 'Till — save socket', ...interpretLaneSocket(lane.ok, lane.status, lane.body) });
+    const screen = await probe(urls.screen);
+    results.push({ name: 'Till — screen served by the store box', ...interpretTillScreen(screen.ok, screen.status) });
+    results.push({ name: 'Till — sync setting', ...interpretSync(tillEnv['CLOUD_API_URL']) });
+  }
+
+  if (Object.keys(env).length === 0) {
+    // No cloud settings on this PC: the cloud checks below would only say "not up" about a machine that was
+    // never meant to run them. The till checks above are the whole answer for a till-only PC.
+    console.log(renderReport(results));
+    process.exitCode = rollup(results).ready ? 0 : 1;
+    return;
   }
 
   const host = '127.0.0.1';

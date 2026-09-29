@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 // @ts-expect-error — plain .mjs script module, imported for its pure helpers (no types file needed).
-import { parseEnv, findUnsetSettings, interpretProbe, interpretSync, rollup, renderReport, PLACEHOLDER } from '../../scripts/standup-check.mjs';
+import { parseEnv, findUnsetSettings, interpretProbe, interpretSync, rollup, renderReport, PLACEHOLDER, tillProbes, interpretLaneSocket, interpretTillScreen } from '../../scripts/standup-check.mjs';
 
 /**
  * The stand-up readiness check is what a non-programmer pilot lead runs to get a plain-English
@@ -84,5 +84,30 @@ describe('standup-check — verdict', () => {
     const red = renderReport([{ name: 'Cloud API', ok: false, detail: 'no answer', fix: 'bring it up' }]);
     expect(red).toMatch(/RED/);
     expect(red).toMatch(/Fix: bring it up/);
+  });
+});
+
+describe('standup-check — the installed one-PC till (Stage D, KL-08)', () => {
+  it('probes the save socket and the served screen on the ports the till\'s settings name', () => {
+    expect(tillProbes({ EDGE_LANE_PORT: '8090', EDGE_SCREEN_PORT: '8091' })).toEqual({ lane: 'http://127.0.0.1:8090/', screen: 'http://127.0.0.1:8091/pos/' });
+    expect(tillProbes({})).toEqual({ lane: 'http://127.0.0.1:8090/', screen: 'http://127.0.0.1:8091/pos/' });
+  });
+
+  it('reads the socket\'s honest 404 (it names what it serves) as answering; no answer says to start the till; a stranger on the port is named', () => {
+    expect(interpretLaneSocket(false, 404, { error: 'the lane socket serves: POST /lane/sales, …' }).ok).toBe(true);
+    const down = interpretLaneSocket(false, 0, null);
+    expect(down.ok).toBe(false);
+    expect(down.fix).toMatch(/start-till/);
+    const squatter = interpretLaneSocket(true, 200, { hello: 'world' });
+    expect(squatter.ok).toBe(false);
+    expect(squatter.fix).toMatch(/lane port/);
+  });
+
+  it('the served screen is judged from the store box on this PC, with the start script as the fix', () => {
+    expect(interpretTillScreen(true, 200).ok).toBe(true);
+    const r = interpretTillScreen(false, 0);
+    expect(r.ok).toBe(false);
+    expect(r.fix).toMatch(/start-till/);
+    expect(r.fix).toMatch(/EDGE_SCREEN_PORT/);
   });
 });
