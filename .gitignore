@@ -65,3 +65,7 @@ Thumbs.db
 # App build artifacts (produced by `pnpm build:pos`; the shell falls back without them)
 apps/*/web/*.bundle.js
 apps/*/web/*.bundle.js.map
+
+# The installed one-PC till (pnpm run till:install): its settings hold the signing key and, later, a token;
+# its data folder is the till's disk. Never committed (hard rule #4).
+till/

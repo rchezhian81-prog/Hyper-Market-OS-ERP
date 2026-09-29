@@ -667,7 +667,27 @@ accounts.
   holds are closed. Held below INTEGRATION_TESTED until the honest-hardening review. Honest boundary: the till
   HOLDS the template in force; rendering the printed bill through `packages/receipt` with it and the version
   stamp is M12's receipt-printing work, not claimed here.
-- **Next:** M01 slice E PR → merge; Stage C second pass complete for every family with a stated screen/hop hold — then Stage D (the one-PC till installer and in-store setup). Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
+- **Stage D, slice 1 — done (29 Sep 2026): the one-PC till installs with ONE command and starts with one click
+  (KL-08 CLOSED; H-11 — the screens are served by the in-store computer).** Before: the in-store install runbook
+  was seven manual steps — copy a settings file, fill it in, build three bundles, type a twelve-line environment
+  command — every one a place a technician mis-types a port or forgets a key. Now `pnpm run till:install --
+  --tenant <id>` (`scripts/install-till.mjs`): checks the machine (Node 22+); PLANS the settings — the tenant and
+  the pack signing key COPIED from the cloud's settings file (`infra/compose/.env`) so the till trades on the packs
+  the cloud signs, GENERATED only for an offline-only till (`--generate-key`) and said so; a cloud token NEVER
+  copied (a person issues one and pastes it, hard rule #4); every problem named at once and nothing written until
+  all are fixed — writes `till/till.env` private to the owner, `till/edge-data/`, `start-till.sh` / `start-till.cmd`
+  / a systemd unit; builds the till screen, the office screens and the edge; never prints the key; never rewrites
+  an existing settings file unless `--force` (an install never rotates the key that signed the packs a till holds).
+  `pnpm run standup:check` now reads `till/till.env` and checks the till's save socket (the lane server's honest
+  404 that names what it serves) and the served till screen on THIS PC; a till-only PC is judged on the till alone.
+  Runbook rewritten to the one-command flow (`docs/runbooks/in-store-install.md`); KL-08 closed in
+  `docs/pilot/KNOWN-LIMITATIONS.md`; the owner gap summary item (2) updated. Tests: `tests/unit/install-till.test.ts`
+  (9), `tests/integration/the-installed-till-starts.test.ts` (4 — the command run for real into a folder, then the
+  edge STARTED from the file it wrote: the till page served and the save socket answering on loopback; a second run
+  keeps the key; the key copied from the cloud's settings and the token never; nothing to sign with → refused 78),
+  `tests/unit/standup-check.test.ts` (+3). Honest boundaries: the physical hardware (EX-09 / KL-10) and a Windows
+  service wrapper remain; the installer packages the software, it does not buy or attach devices.
+- **Next:** Stage D slice 2 — the store edge stamps `locationId` from its pack's `storeId` on every sale it queues (follow-on (b) of Stage A), so on-hand falls at the RIGHT location on the hosted demo; then Stage E (production security). Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
 
 ---
 

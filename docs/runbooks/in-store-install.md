@@ -2,115 +2,89 @@
 
 **Who this is for:** a technician setting up the pilot lane's computer — someone comfortable
 following commands, not necessarily a programmer.
-**What it does:** turns one back-office PC into a **working till** for the pilot: the database, the
-cloud services, the owner screen, and the till screen that actually takes a sale — all on one
-machine.
-**How long:** about 30 minutes, most of it waiting for downloads and builds.
+**What it does:** turns one back-office PC into a **working till**: the till screen that takes a
+sale and saves it on this PC's own disk, the office screens, and — when you are ready — the sync to
+the books. One command installs it; one script starts it.
+**How long:** about 10 minutes, most of it waiting for the build.
 
 > **Why one PC.** For a single-lane pilot this is the simplest safe layout (see the pilot plan). The
-> "cloud" is this same machine for now; you move it to a separate box when you go wider.
+> "cloud" can be this same machine, the purchased server, or nothing at all to begin with — the till
+> sells and queues either way (P-01).
 
-> **Why the till runs OUTSIDE the containers.** The till screen saves each sale to a small service on
-> **this machine's own loopback** (`127.0.0.1`) — a deliberate security control: nothing on the shop
-> network can write a sale (ADR-0004). A browser can only reach that service if it runs on the
-> machine itself, not inside a container whose loopback is private. So the database and cloud API run
-> in containers, and the **till's edge runs as a plain program on the PC**. This exact arrangement is
-> proven end to end in a real browser (`tests/e2e/the-served-till-takes-a-sale.e2e.ts`).
+> **Why the till runs as a plain program, not in a container.** The till screen saves each sale to a
+> small service on **this machine's own loopback** (`127.0.0.1`) — a deliberate security control:
+> nothing on the shop network can write a sale (ADR-0004). A browser can only reach that service if
+> it runs on the machine itself, not inside a container whose loopback is private. So the **till's
+> edge runs as a program on the PC**; the database and cloud API run in containers, here or on the
+> server. This exact arrangement is proven end to end in a real browser
+> (`tests/e2e/the-served-till-takes-a-sale.e2e.ts`), and the installer's own test starts a till from
+> the very settings file it writes (`tests/integration/the-installed-till-starts.test.ts`).
 
 ---
 
 ## What you need
 
 1. A PC with **8 GB RAM** and a few GB free — a normal office PC.
-2. **Docker Desktop** (Windows/Mac) or **Docker Engine** (Linux), installed and running.
-3. **Node.js 22** and **pnpm** installed.
-4. A copy of this repository on that machine.
+2. **Node.js 22** (LTS) and **pnpm** installed. (Docker is needed only if the cloud runs on this PC —
+   Step 3.)
+3. A copy of this repository on that machine, with `pnpm install` run once.
 
 ---
 
-## Step 1 — Settings
+## Step 1 — Install the till (one command)
 
-From the repository folder, set up the configuration (this is the same file the container stand-up
-uses — see `pilot-deployment.md` Step 1 for the detail):
-
-```
-cd infra/compose
-cp .env.example .env
-```
-
-Open `.env` and fill in every placeholder: a database password, `DATABASE_URL`, `PACK_SIGNING_KEY`,
-the three `IDP_*` values, and `EDGE_TENANT_ID`. Generate each secret with `openssl rand` as the file
-explains. **Nothing starts until they are all real values** — that is deliberate.
-
-## Step 2 — Start the database and cloud services (containers)
-
-Start just the database, the schema migration, and the cloud API — not the container edge or web
-server (the till edge runs on the host instead, next):
+From the repository folder:
 
 ```
-docker compose up -d db migrate api
+pnpm run till:install -- --tenant <your tenant id>
 ```
 
-Give it a minute on first run. Check the cloud API answered:
+**If the cloud runs on this PC** and you have already filled `infra/compose/.env` (see
+`pilot-deployment.md`), leave `--tenant` out — the installer reads the tenant id and the pack signing
+key from that file, so the till trades on the packs your cloud signs.
 
-```
-curl http://127.0.0.1:8081/readyz
-```
+**If there is no cloud yet** (an offline-only till to start with), add `--generate-key`. The installer
+says plainly that the key was generated and that the cloud must be given the same key before this
+till can take a cloud pack.
 
-You want `"ready": true`.
+What the command does, and says as it goes:
 
-## Step 3 — Build the till and the edge
+- checks the machine (Node 22 or newer);
+- writes `till/till.env` — this till's settings, readable by a person, **kept on this PC only** (it
+  holds the signing key; it is git-ignored, and the installer never prints the key);
+- creates `till/edge-data/` — where every sale, refund and queue lives on disk;
+- builds the till screen, the office screens and the store edge;
+- writes `till/start-till.sh` (Mac/Linux), `till/start-till.cmd` (Windows) and an optional
+  `till/sre-till.service` (Linux start-at-login);
+- prints the next steps.
 
-From the repository root:
+Re-running it is safe: it rebuilds, and **keeps** a settings file that already exists (an install
+never rotates the key that signed the packs this till holds). Pass `--force` to rewrite the file on
+purpose. Every problem is named at once — a missing tenant, no key to sign with, a bad port — and
+nothing is written until they are all fixed.
 
-```
-cd ..\..            # back to the repository root (use ../.. on Mac/Linux)
-pnpm install
-pnpm build:pos      # the till screen
-pnpm build:edge     # the store edge (the till's own save-service)
-```
+## Step 2 — Start the till
 
-## Step 4 — Start the till's edge (on the PC, not in a container)
+- **Windows:** double-click `till\start-till.cmd`.
+- **Mac/Linux:** run `till/start-till.sh`.
 
-This one program serves the till screen **and** owns the save-socket, both on this machine's
-loopback. Set its settings and run it. On **Mac/Linux**:
+The window prints `lane socket on 127.0.0.1:8090` and `screens on 127.0.0.1:8091`. **Leave it
+running** — it is the till. (Linux: to start it at login without a window, copy
+`till/sre-till.service` to `~/.config/systemd/user/` and run
+`systemctl --user enable --now sre-till`.)
 
-```
-EDGE_DATA_DIR=./edge-data \
-EDGE_TENANT_ID=<the same tenant id you put in .env> \
-PACK_SIGNING_KEY=<the same signing key you put in .env> \
-EDGE_CAPACITY_BYTES=10737418240 \
-EDGE_LANE_PORT=8090 \
-EDGE_SCREEN_PORT=8091 \
-EDGE_APPS_DIR=apps \
-node edge/store-edge/dist/start.js
-```
-
-On **Windows (PowerShell)**, set each with `$env:EDGE_LANE_PORT="8090"` (and so on) before
-`node edge/store-edge/dist/start.js`.
-
-- **`EDGE_LANE_PORT=8090` must stay 8090** — it is the port the till screen posts sales to.
-- Leave `CLOUD_API_URL` / `CLOUD_API_TOKEN` **unset for now**. The till then runs **offline-first**:
-  it sells, saves every sale to disk, and queues them, telling you plainly nothing is syncing yet.
-  That is a safe state to start a pilot in. (Turning sync on is Step 7.)
-
-The program prints `lane socket on 127.0.0.1:8090` and `screens on 127.0.0.1:8091`. Leave it running.
-
-## Step 5 — Open the till
-
-In a browser on this PC:
+Then, in a browser **on this PC**:
 
 - **Till:** http://127.0.0.1:8091/pos/
 
 The Sale screen opens. Scanning is keyboard-driven, exactly as a real hand scanner behaves.
 
-## Step 6 — Prove it before the pilot
+## Step 3 — Prove it before the pilot
 
 Two checks, both worth doing in front of staff:
 
 1. **A sale saves.** Ring an item, take cash, complete the sale. It completes and the receipt number
-   appears — the sale is now durably on this PC's disk. (This is the exact path the automated browser
-   test proves; here you are seeing it on the real machine.)
+   appears — the sale is now durably on this PC's disk.
 2. **It keeps selling with no internet.** Disconnect the network and ring another sale. It still
    completes and the **unsent counter** goes up — nothing is lost. That is the whole promise.
 
@@ -120,49 +94,65 @@ Then run the readiness gate for a plain-English GREEN/RED on the pieces:
 pnpm run standup:check
 ```
 
-## Step 7 — Turn on sync to the books (when you're ready)
+It reads `till/till.env`, checks the till's save socket and the served till screen are answering on
+this PC, and says whether the till is syncing to the books or (safely) selling-and-queuing only. When
+`infra/compose/.env` is also present it checks the cloud pieces on this PC as before.
 
-So far the till sells and queues; to also send those sales up to the books and the owner dashboard on
-this same PC, stop the edge (Ctrl-C), then start it again (Step 4) with two more settings:
+## Step 4 — The cloud (containers) — if it runs on this PC
+
+If the books live on this same PC rather than the purchased server, stand them up once
+(`pilot-deployment.md` Steps 1–3): fill `infra/compose/.env`, then
 
 ```
-CLOUD_API_URL=http://127.0.0.1:8081 \
-CLOUD_API_TOKEN=<a store token — see below> \
+cd infra/compose
+docker compose up -d db migrate api
 ```
 
-**The store token** is a login token this store's edge uses to send its sales to the cloud API. Issue
-one with:
+and check `curl http://127.0.0.1:8081/readyz` says `"ready": true`. If you did this BEFORE Step 1,
+the installer already copied the tenant id and the signing key from that file.
+
+## Step 5 — Turn on sync to the books (when you're ready)
+
+So far the till sells and queues. To also send those sales up to the books and the owner dashboard,
+issue a **store token** and give the till two settings.
 
 ```
 pnpm run token:store --tenant <your tenant id> --user store-edge --ttl-hours 720
 ```
 
-It reads the identity settings from your `.env`, prints a token **once** (it is a secret — put it
-straight into `CLOUD_API_TOKEN`, never a file or a chat), and it is valid for 30 days. **The account
-it names (`store-edge`) must hold the sync permission** (`pos.sale.sync`) — provision that login with
-a sync-capable role as part of setting up the store's logins (go-live checklist UAT-05). The same login
-pulls the catalogue pack (`catalogue.pack.read`) and, since Stage C3b, the migration screen's register
-(`migration.screen.read`); the cashier role carries all three, and none of them grants a decision. A minted
-token that the real cloud API accepts and banks a sale with is proven in
-`tests/integration/store-token.test.ts`.
+It reads the identity settings from `infra/compose/.env`, prints a token **once** (it is a secret —
+put it straight into the file below, never a chat or a message), and it is valid for 30 days. **The
+account it names (`store-edge`) must hold the sync permissions** — provision that login with the
+cashier role as part of setting up the store's logins (go-live checklist UAT-05): it carries the
+sale / refund sync, the catalogue-pack read, the migration register read, the concession docket
+relay and the published-template read, and none of them grants a decision.
 
-> **Pilot stand-in.** This tool is the pilot's stand-in for a proper identity provider — the same
-> job that provider's admin console does at go-live. Choosing the production identity provider is a
-> later decision (ADR OA-4); when it lands, tokens come from it and this script is retired.
+Open `till/till.env` and fill in:
 
-Until a token is issued and the account is provisioned, run offline-first (Step 4) — the shop still
-trades and loses nothing; the sales wait in the queue.
+```
+CLOUD_API_URL=http://127.0.0.1:8081        (or the server's address)
+CLOUD_API_TOKEN=<the token you were shown>
+```
+
+Stop the till (Ctrl-C, or close the window) and start it again (Step 2). It now drains its queue to
+the books whenever there is a line, and keeps selling when there is not.
+
+> **Pilot stand-in.** The token tool is the pilot's stand-in for a proper identity provider — the
+> same job that provider's admin console does at go-live. Choosing the production identity provider
+> is a later decision (ADR OA-4); when it lands, tokens come from it and this script is retired.
 
 ---
 
 ## Stopping and starting
 
-- **The containers:** `docker compose stop` / `docker compose start` (keeps all data).
-- **The till edge:** Ctrl-C in its window to stop; re-run the Step 4 command to start.
+- **The till:** Ctrl-C in its window (or close it) to stop; run the start script again to start.
+  Nothing is lost by stopping — a sale not yet sent stays in the queue on disk.
+- **The containers (if on this PC):** `docker compose stop` / `docker compose start` (keeps all data).
 
 ## Backing up
 
-Even in a pilot, take a backup before anything you care about — see `backup-and-recovery.md`.
+Even in a pilot, take a backup before anything you care about — `till/edge-data/` is the till's
+disk; see `backup-and-recovery.md`.
 
 ---
 
@@ -170,16 +160,16 @@ Even in a pilot, take a backup before anything you care about — see `backup-an
 
 Being straight about the boundaries:
 
-- **The production identity provider** — the store token (Step 7) is issued by a **pilot stand-in**
+- **The production identity provider** — the store token (Step 5) is issued by a **pilot stand-in**
   tool; the real credential source is the identity-provider decision (ADR OA-4), still open.
-- **Provisioning the `store-edge` login** with the sync permission — a store-setup step (UAT-05); the
+- **Provisioning the `store-edge` login** with the cashier role — a store-setup step (UAT-05); the
   token only works once that account holds it.
 - **Your real products and prices** — loading them is a data step (the catalogue), on the go-live
-  checklist.
+  checklist. Until a pack is published and pulled, the till has no price list and says so.
 - **A receipt printer** — receipt building is built and tested; attaching a physical printer is a
-  device step.
-- **A separate back-office box** — a one-lane pilot runs everything on this PC; a wider rollout moves
-  the database and cloud services to their own machine (no rewrite — the same pieces move).
+  device step (EX-09).
+- **A Windows service** — on Windows the till runs in a window you leave open (or a Task Scheduler
+  entry you create for `start-till.cmd`); the Linux start-at-login unit is provided.
 
 **Related:** `pilot-deployment.md` (the all-container quick stand-up) · `store-go-live-checklist.md`
 (the in-store human sign-offs) · `pilot-run-sheet.md` (the day-by-day plan) · `backup-and-recovery.md`.
