@@ -14,12 +14,17 @@ const POLICY = TEST_IDP.policy();
 
 describe('the operator token', () => {
   it('is byte-identical to the store-token script\'s and verifies against the API\'s policy', () => {
-    const claims = { sub: 'u-chezhian', tenantId: 'ab000000-0000-4000-8000-000000000042', ttlSeconds: 600 };
+    // A fixed `jti` so the two minters can be compared byte for byte (left to themselves, each mints a fresh one).
+    const claims = { sub: 'u-chezhian', tenantId: 'ab000000-0000-4000-8000-000000000042', ttlSeconds: 600, jti: 'op-token-1' };
     const mine = buildOperatorToken(claims, POLICY, NOW);
     expect(mine).toBe(buildStoreToken(claims, POLICY, NOW));
     const v = verifyToken(mine, POLICY, NOW + 1000);
     expect(v.ok).toBe(true);
-    expect(v).toMatchObject({ principal: { userId: 'u-chezhian', tenantId: claims.tenantId } });
+    expect(v).toMatchObject({ principal: { userId: 'u-chezhian', tenantId: claims.tenantId }, claims: { jti: 'op-token-1', iat: Math.floor(NOW / 1000) } });
+    // Left to themselves, both mint a fresh id per token (GAP-SEC-05: revocable one at a time) and stay within a ceiling.
+    const noJti = { sub: claims.sub, tenantId: claims.tenantId, ttlSeconds: claims.ttlSeconds };
+    expect(buildOperatorToken(noJti, POLICY, NOW)).not.toBe(buildOperatorToken(noJti, POLICY, NOW));
+    expect(verifyToken(buildStoreToken(noJti, POLICY, NOW), { ...POLICY, maxLifetimeSeconds: 600 }, NOW).ok).toBe(true);
     const wrongKey = { ...POLICY, secret: ['a', 'different', 'signing', 'key'].join('-').padEnd(40, 'x') };
     expect(verifyToken(mine, wrongKey, NOW).ok).toBe(false);
     expect(verifyToken(mine, POLICY, NOW + 2 * 3_600_000).ok).toBe(false); // long after the ten minutes (and any skew allowance)

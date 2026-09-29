@@ -16,6 +16,7 @@ import { apiError } from '../../kernel/src/index';
 import type { Permission, Role, RoleAssignment } from '../../../packages/rbac/src/rbac';
 import { formatNumber, type NumberFormat } from '../../../packages/numbering/src/numbering';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import { REVOCATION_REASONS, type TokenRevocation, type RevocationReason } from './revocation';
 
 /**
  * Document number formats per type (M01-FR-02) — configuration, not tenant data: what an invoice
@@ -121,8 +122,25 @@ export interface IdentityDeps {
   readonly branches: (tenantId: string) => Promise<readonly { id: string; name: string }[]> | readonly { id: string; name: string }[];
   /** Allocate the next gap-free sequence number for a tenant's document type (M01-FR-02). */
   readonly allocateNumber: (tenantId: string, docType: string) => Promise<number>;
+  /**
+   * Token revocation (GAP-SEC-05 · SEC-11): record a revocation so the authenticator refuses the token(s) from
+   * now on, and list what has been revoked. Optional — a bare deps stub may omit it, and the two routes then
+   * refuse honestly (503) rather than pretend a revocation took effect.
+   */
+  readonly revocations?: {
+    readonly revoke: (tenantId: string, revocation: TokenRevocation) => Promise<void> | void;
+    readonly list: (tenantId: string) => Promise<readonly TokenRevocation[]> | readonly TokenRevocation[];
+  };
   readonly now: () => string;
 }
+
+const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+const noRevocationStore = () => apiError(503, {
+  code: 'revocation_store_unavailable',
+  whatHappened: 'This deployment has no revocation store wired, so a token cannot be revoked here.',
+  wasItSaved: 'not_saved',
+  nextSafeAction: 'Wire the identity ledger (production always does). Nothing was revoked.',
+});
 
 export function identityRoutes(deps: IdentityDeps): readonly Route[] {
   return [
@@ -193,6 +211,65 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
       // Allocate the next gap-free document number for a type (M01-FR-02). Idempotent: a retry under
       // the same key returns the SAME number (the kernel replays the stored response), so a dropped
       // connection never burns a number or hands out two. Gap-free/uniqueness is the store's job.
+      // Revoke a token NOW, ahead of its expiry (GAP-SEC-05 · SEC-11): ONE token by its `jti`, or EVERY token of a
+      // user issued at or before a moment (`userId` + optional `issuedBefore`, default now) — the stolen-token,
+      // laptop-left-open, leaver and rotated-credential cases. Append-only (hard rule #2/#6): a revocation is a fact
+      // that is added, never edited away. The acting user is the caller, never client-supplied.
+      api: 'API-01', method: 'POST', path: '/v1/identity/token-revocations',
+      permission: 'identity.session.revoke', idempotent: true,
+      handler: async (ctx) => {
+        if (deps.revocations === undefined) throw noRevocationStore();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const hasJti = isStr(b['jti']); const hasUser = isStr(b['userId']);
+        if (hasJti === hasUser) {
+          throw apiError(400, {
+            code: 'revocation_needs_one_target',
+            whatHappened: 'A revocation names exactly ONE target: a token id (jti) or a user (userId).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { jti, reason } to cut off one token, or { userId, reason, issuedBefore? } to cut off every token that user was issued up to a moment. Nothing was revoked.',
+          });
+        }
+        if (!REVOCATION_REASONS.includes(b['reason'] as RevocationReason)) {
+          throw apiError(400, {
+            code: 'revocation_needs_reason',
+            whatHappened: `A revocation needs a reason, one of: ${REVOCATION_REASONS.join(', ')}.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the reason. Nothing was revoked.',
+          });
+        }
+        const nowIso = deps.now();
+        let issuedBefore: number | undefined;
+        if (hasUser) {
+          const raw = b['issuedBefore'];
+          const ms = raw === undefined ? Date.parse(nowIso) : (typeof raw === 'string' ? Date.parse(raw) : Number.NaN);
+          if (!Number.isFinite(ms)) {
+            throw apiError(400, { code: 'revocation_issued_before_unreadable', whatHappened: 'issuedBefore must be an ISO-8601 moment (or omitted for now).', wasItSaved: 'not_saved', nextSafeAction: 'Send issuedBefore as an ISO-8601 timestamp, or leave it out. Nothing was revoked.' });
+          }
+          issuedBefore = Math.floor(ms / 1000);
+        }
+        const revocation: TokenRevocation = {
+          id: `rev-${hasJti ? `jti-${b['jti'] as string}` : `user-${b['userId'] as string}-${issuedBefore}`}`,
+          tenantId: ctx.tenantId,
+          ...(hasJti ? { jti: b['jti'] as string } : {}),
+          ...(hasUser ? { userId: b['userId'] as string, issuedBefore: issuedBefore! } : {}),
+          reason: b['reason'] as RevocationReason,
+          revokedBy: ctx.userId,
+          revokedAt: nowIso,
+        };
+        await deps.revocations.revoke(ctx.tenantId, revocation);
+        return { status: 201, body: { revocation } };
+      },
+    },
+    {
+      // What this tenant has revoked — the auditor's read (who cut whom off, when, why).
+      api: 'API-01', method: 'GET', path: '/v1/identity/token-revocations',
+      permission: 'identity.session.revoke',
+      handler: async (ctx) => {
+        if (deps.revocations === undefined) throw noRevocationStore();
+        return { status: 200, body: { revocations: await deps.revocations.list(ctx.tenantId) } };
+      },
+    },
+    {
       api: 'API-01', method: 'POST', path: '/v1/identity/number-series/:docType',
       permission: 'documents.number.allocate', idempotent: true,
       handler: async (ctx) => {

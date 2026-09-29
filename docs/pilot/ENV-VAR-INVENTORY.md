@@ -22,6 +22,7 @@ to boot / optional. **Set for pilot**: the safe pilot value or "generate".
 | `IDP_SIGNING_KEY` | 🔒 | required | 32 | — | shared secret whose tokens the API believes (HS256) — **pilot uses the local/test IdP key**; a real production IdP is deferred (OA-4 / EX-03) | test-IdP key (pilot) |
 | `IDP_ISSUER` | — | required | — | — | the `iss` claim a token must carry | pilot/test issuer URL |
 | `IDP_AUDIENCE` | — | required | — | `sre-retail-os-api` | the `aud` claim a token must contain | as template |
+| `IDP_MAX_TOKEN_LIFETIME_SECONDS` | — | optional | — | default `2678400` (31 days) | the LONGEST any token may be valid for (`exp − iat`); a longer one is refused whatever the IdP wrote (GAP-SEC-05). 31 days fits the store box's 30-day sync token; tighten for a shorter leak window | leave default (pilot) |
 | `PORT` | — | optional | — | default `8081` | API listen port | default |
 | `NODE_ENV` | — | optional | — | `development`/`test`/**`production`** | runtime mode | `production` (hardened behaviour) even in pilot |
 | `MIGRATION_TARGET_KIND` | — | optional | — | `rehearsal`/`staging`/`local`/`production` (default `rehearsal`) | which environment the migration service may load into — **`production` is how a trial load reaches live data (hard rule #7)** | `rehearsal` (pilot); NEVER `production` in pilot |

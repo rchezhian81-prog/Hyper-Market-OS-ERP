@@ -125,7 +125,8 @@ import { connectorRoutes } from '../../platform/src/connectors';
 import { connectorDeliveryRoutes } from '../../platform/src/connector-delivery';
 import { secretsRoutes } from '../../platform/src/secrets';
 import { orgStructureRoutes } from '../../platform/src/org-structure';
-import { identityRoutes, tokenAuthenticator } from '../../identity/src/index';
+import { identityRoutes } from '../../identity/src/index';
+import { revocationAwareAuthenticator, TokenRevocationList } from '../../identity/src/revocation';
 import { delegationRoutes } from '../../identity/src/delegation';
 import { emergencyAccessRoutes } from '../../identity/src/emergency-access';
 import { accessLifecycleRoutes } from '../../identity/src/access-lifecycle';
@@ -204,7 +205,8 @@ import { aiRoutes } from '../../ai/src/index';
 import {
   dayBookAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, dataExportAdapter, financeAdapter, settlementAdapter,
   customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter,
-  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter } from './adapters';
+  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter,
+} from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
 import { SandboxRecurringBillingProvider, type Plan as BillingPlan } from '../../../packages/platform/src/index';
@@ -270,6 +272,11 @@ export function buildSurface(deps: {
   readonly store?: EventStore;
   /** Durable per-tenant settings (a SqlConfigVersionStore-backed store in production). */
   readonly settings?: DurableTenantSettings;
+  /**
+   * The token revocation list (GAP-SEC-05) — the SAME instance the authenticator consults, so a revocation
+   * recorded through the identity routes bites on the next request. Omitted, the routes refuse (503) honestly.
+   */
+  readonly revocations?: TokenRevocationList;
   /** Durable gap-free number series (a SqlNumberSeriesStore-backed store in production). */
   readonly numberSeries?: NumberSeriesStore;
   /**
@@ -312,10 +319,14 @@ export function buildSurface(deps: {
   const auditTrail = store === undefined ? undefined : auditTrailAdapter({ store });
 
   const surface: Route[] = [
-    ...identityRoutes(store === undefined ? {
-      roles: empty([]), permissionsOf: empty([]), recordGrant: () => {},
-      branches: empty([]), allocateNumber: () => Promise.resolve(1), now,
-    } : { ...identityAdapter({ store, now, roleCatalogue: ROLE_CATALOGUE, numberSeries: deps.numberSeries }), recordAudit: auditTrail?.recordAudit }),
+    ...identityRoutes({
+      ...(store === undefined ? {
+        roles: empty([]), permissionsOf: empty([]), recordGrant: () => {},
+        branches: empty([]), allocateNumber: () => Promise.resolve(1), now,
+      } : { ...identityAdapter({ store, now, roleCatalogue: ROLE_CATALOGUE, numberSeries: deps.numberSeries }), recordAudit: auditTrail?.recordAudit }),
+      // Token revocation (GAP-SEC-05): the routes record into the SAME list the authenticator reads.
+      ...(deps.revocations === undefined ? {} : { revocations: deps.revocations }),
+    }),
     // Approval delegation (M02-FR-03) — the honest alternative to the shared login: lend authority
     // time-boxed, capped, unchained, and never used to approve the granter's own request.
     ...delegationRoutes(store === undefined
@@ -1140,10 +1151,15 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
     try { await db.query('SELECT 1'); return true; } catch { return false; }
   };
 
+  // Token revocations (GAP-SEC-05): one list, backed by the identity ledger, shared by the revoke routes and the
+  // authenticator so a revocation bites on the next request here and within the refresh window elsewhere.
+  const revocations = new TokenRevocationList(tokenRevocationAdapter({ store }));
+
   const built = buildRouter(buildSurface({
     signingKey: settings['PACK_SIGNING_KEY']!,
     migrationTargetKind: settings['MIGRATION_TARGET_KIND'] as TargetKind,
     store,
+    revocations,
     // Durable, append-only per-tenant settings: setup answers land in config_versions and survive a
     // restart, the same table and rules the in-memory path uses in tests.
     settings: new DurableTenantSettings(new SqlConfigVersionStore(pgClient(db))),
@@ -1183,12 +1199,17 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
     // believed goes to the operator's log — never back to the caller, who is told "unauthenticated"
     // and no more. "The signature did not verify" and "that token expired" are different sentences,
     // and the difference is free information for whoever is trying tokens.
-    authenticate: tokenAuthenticator(
+    // …and, since GAP-SEC-05, a token is ALSO refused when it outlives the configured ceiling
+    // (`IDP_MAX_TOKEN_LIFETIME_SECONDS`) or the tenant has revoked it — by id, or every token of a user issued
+    // before a moment. The revocation list is the one the identity routes write to.
+    authenticate: revocationAwareAuthenticator(
       {
         secret: settings['IDP_SIGNING_KEY']!,
         issuer: settings['IDP_ISSUER']!,
         audience: settings['IDP_AUDIENCE']!,
+        maxLifetimeSeconds: Number(settings['IDP_MAX_TOKEN_LIFETIME_SECONDS']),
       },
+      revocations,
       (reason) => { process.stderr.write(`auth refused: ${reason}\n`); },
     ),
     // Real, per-tenant authorization. Was `new AccessControl([], [])` — a global, empty table that

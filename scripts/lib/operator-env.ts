@@ -8,7 +8,7 @@
 // person with the signing key already holds the power to mint; this only saves them the arithmetic.
 // The token goes to the API over the wire and nowhere else — never printed, never written to a file.
 
-import { createHmac } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 
 /** `KEY=value` lines; blanks and `#` comments ignored; first `=` splits. */
 export function parseEnvText(text: string): Readonly<Record<string, string>> {
@@ -33,6 +33,8 @@ export interface OperatorClaims {
   readonly sub: string;
   readonly tenantId: string;
   readonly ttlSeconds: number;
+  /** The token id (`jti`); a fresh UUID when not given. Lets the owner revoke THIS token (GAP-SEC-05). */
+  readonly jti?: string;
 }
 
 const b64url = (o: unknown): string => Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -41,7 +43,9 @@ const b64url = (o: unknown): string => Buffer.from(JSON.stringify(o)).toString('
 export function buildOperatorToken(claims: OperatorClaims, policy: TokenPolicy, nowMs: number): string {
   const nowSec = Math.floor(nowMs / 1000);
   const header = b64url({ alg: 'HS256', typ: 'JWT' });
-  const payload = b64url({ sub: claims.sub, tenant_id: claims.tenantId, iss: policy.issuer, aud: policy.audience, exp: nowSec + claims.ttlSeconds });
+  // `iat` + `jti` as a real IdP mints them (GAP-SEC-05): the API bounds `exp − iat` by its lifetime ceiling, and a
+  // token can be revoked by its id. Key order matters — the bytes must equal `buildStoreToken`'s.
+  const payload = b64url({ sub: claims.sub, tenant_id: claims.tenantId, iss: policy.issuer, aud: policy.audience, iat: nowSec, jti: claims.jti ?? randomUUID(), exp: nowSec + claims.ttlSeconds });
   const signature = createHmac('sha256', policy.secret).update(`${header}.${payload}`).digest('base64url');
   return `${header}.${payload}.${signature}`;
 }

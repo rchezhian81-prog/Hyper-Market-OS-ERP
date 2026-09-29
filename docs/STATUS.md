@@ -743,7 +743,30 @@ accounts.
   good token, and lift after the cooldown), `tests/guardrails/production-wires-the-security-controls.test.ts` (7 —
   `main.ts` wires the limiter, the lockout, the SHA-256 audit sink, the pinned verifier and the transactional store,
   with tripwires). Nothing else changed in code.
-- **Next:** Stage E slice 3 — GAP-SEC-05: token lifetime cap (`iat`/`exp` bound per audience) + `jti` revocation denylist checked after verification, with a revoke route and real-PG persistence; then slice 4 GAP-DATA-02 (tenants table + FK + RLS with per-transaction `app.tenant_id`, real-PG tests), E1b (product-master restriction → pack `regulatedFlags`), key-based server login runbook (human step, ON HOLD by owner). Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
+- **Stage E, slice 3 — done (29 Sep 2026): a token can be cut off before it expires, and no token can outlive the
+  ceiling (GAP-SEC-05 CLOSED · SEC-03 · SEC-11 · OB-01).** Before: a verified token was good until its `exp`, full
+  stop — a stolen token, a laptop left signed in or a leaver's session could not be ended early, and an issuer could
+  mint a token for a year. Now (1) a **lifetime ceiling**: `TokenPolicy.maxLifetimeSeconds`, read from
+  `IDP_MAX_TOKEN_LIFETIME_SECONDS` (default 31 days — fits the store box's 30-day sync token; the owner may
+  tighten it), refuses any token whose `exp − iat` exceeds it and any token with no `iat` under a ceiling; (2)
+  **revocation ahead of expiry**: `POST /v1/identity/token-revocations` (owner, `identity.session.revoke`) cuts off
+  ONE token by its `jti` or EVERY token of a user issued up to a moment (`userId` + `issuedBefore`, default now — the
+  leaver / sign-out-everywhere / rotated-credential case); each revocation is an append-only `TokenRevoked` fact on
+  the identity ledger (`tokenRevocationAdapter`), and the authenticator (`revocationAwareAuthenticator`,
+  `services/identity/src/revocation.ts`) consults the tenant's list on every request AFTER signature + claims; a token
+  with no `iat` under a user-wide revocation is refused (fail closed); `GET /v1/identity/token-revocations` is the
+  auditor's read. The test IdP and the store-token tool now mint `iat` + `jti` as a real IdP does. Tests:
+  `tests/integration/token-revocation.test.ts` (7 — by id, by user with older/newer/no-iat tokens, default cut-off
+  now, other tenant untouched, survives a restart, idempotent, validation + permission),
+  `tests/unit/identity-token-revocation.test.ts` (6 — the pure decision, the cache-over-store refresh, the
+  authenticator), `tests/unit/identity-token.test.ts` (+5 — the ceiling; the module still exports only the
+  verifier and the authenticator, hard rule #4), the composition guardrail now pins the revocation-aware
+  authenticator and the configured ceiling. Docs: GAP register / threat model / executive audit (GAP-SEC-05 CLOSED),
+  ENV-VAR-INVENTORY + `.env.example` (the new optional setting), in-store runbook (revoke a lost box's token),
+  API surface regenerated (+2 routes). **Honest residual GAP-SEC-05b (Low):** a revocation recorded on ANOTHER API
+  instance lands on this one within the 60s refresh window (single instance: immediate) — a shared store is the
+  technology-baseline answer for a multi-instance cloud. **Owner to confirm:** the 31-day ceiling default.
+- **Next:** Stage E slice 4 — GAP-DATA-02: `tenants` table + FK on every tenant-scoped table + PostgreSQL row-level security keyed on a per-transaction `app.tenant_id`, proven on real PostgreSQL (a query for tenant A cannot read tenant B's rows even with the application filter removed); then E1b (product-master restriction → pack `regulatedFlags`), key-based server login runbook (human step, ON HOLD by owner). Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
 
 ---
 

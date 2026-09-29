@@ -16,6 +16,10 @@ import type {
 } from '../../packages/identity/src/index';
 
 export interface IdpClaims {
+  /** The token id (`jti`). Default: a fresh one per token; `null` omits it (a token nobody can revoke by id). */
+  readonly jti?: string | null;
+  /** `null` omits `iat` (a token that cannot show when it was issued — refused under a lifetime ceiling). */
+  readonly iat?: null;
   readonly sub: string;
   readonly tenantId: string;
   readonly branchId?: string;
@@ -74,6 +78,10 @@ export class LocalIdp {
       ...(amr === undefined ? {} : { amr: [...amr] }),
       iss: this.config.issuer,
       aud: this.config.audience,
+      // As a real IdP does: WHEN it was issued and an id for it, so the API can bound a token's lifetime and
+      // revoke one token (GAP-SEC-05). `null` omits either, for the negatives.
+      ...(claims.iat === null ? {} : { iat: nowSec }),
+      ...(claims.jti === null ? {} : { jti: claims.jti ?? `jti-${nowSec}-${Math.random().toString(36).slice(2, 10)}` }),
       exp: nowSec + (claims.ttlSeconds ?? 3600),
     });
     const signature = createHmac('sha256', this.config.secret)

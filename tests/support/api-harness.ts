@@ -11,7 +11,8 @@
 import { InMemoryEventStore, type EventStore } from '../../packages/persistence/src/event-store';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { buildRouter, handle, MemoryIdempotencyStore, type HttpRequest, type HttpResponse, type RequestObservation } from '../../services/kernel/src/index';
-import { tokenAuthenticator } from '../../services/identity/src/index';
+import { revocationAwareAuthenticator, TokenRevocationList } from '../../services/identity/src/revocation';
+import { tokenRevocationAdapter } from '../../services/api/src/adapters';
 import { buildSurface } from '../../services/api/src/main';
 import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } from '../../services/api/src/access';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from '../../services/api/src/roles';
@@ -96,12 +97,15 @@ export function apiHarness(opts: {
 } = {}): ApiHarness {
   const store = opts.store ?? new InMemoryEventStore();
   const idempotency = opts.idempotency ?? new MemoryIdempotencyStore();
-  const built = buildRouter(buildSurface({ signingKey: PACK_KEY, migrationTargetKind: opts.migrationTargetKind ?? 'rehearsal', store }));
+  // Token revocations (GAP-SEC-05): ONE list, backed by the same store as everything else, shared by the identity
+  // routes (which record) and the authenticator (which refuses) — exactly as `main.ts` composes it.
+  const revocations = new TokenRevocationList(tokenRevocationAdapter({ store }));
+  const built = buildRouter(buildSurface({ signingKey: PACK_KEY, migrationTargetKind: opts.migrationTargetKind ?? 'rehearsal', store, revocations }));
   if (!built.ok) throw new Error(`surface malformed: ${built.refusals.map((r) => r.detail).join('; ')}`);
 
   const kernel: Kernel = {
     router: built.router!,
-    authenticate: tokenAuthenticator(TEST_IDP.policy()),
+    authenticate: revocationAwareAuthenticator(TEST_IDP.policy(), revocations),
     access: tenantAccessResolver(store, ROLE_CATALOGUE),
     entitlements: tenantEntitlementResolver(store),
     idempotency,

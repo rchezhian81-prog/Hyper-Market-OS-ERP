@@ -49,7 +49,7 @@ flowchart TB
 
 | Threat | Control in place (evidence) | Status | Gap |
 |---|---|---|---|
-| **Spoofing** (forged token, alg-confusion) | Verifier pins HS256, verifies signature before claims, timing-safe compare, `exp/iss/aud` required (`services/identity/src/token.ts:106-190`) | Implemented | No **token revocation/denylist**; leaked token valid to `exp` (`token.ts:31-32`) — GAP-SEC-05 |
+| **Spoofing** (forged token, alg-confusion) | Verifier pins HS256, verifies signature before claims, timing-safe compare, `exp/iss/aud` required (`services/identity/src/token.ts:106-190`) | Implemented (strong) | ~~No token revocation/denylist~~ **CLOSED (29 Sep 2026)** — lifetime ceiling (`IDP_MAX_TOKEN_LIFETIME_SECONDS`, default 31 days) + append-only revocation list by `jti` or by user-issued-before, consulted on every request (`services/identity/src/revocation.ts`; `tests/integration/token-revocation.test.ts`). Residual GAP-SEC-05b: cross-instance propagation ≤60s |
 | **Tampering** (edit ledger/audit) | DB triggers refuse UPDATE/DELETE on `event_ledger`/`config_versions`/`audit_log` (`0004`,`0008`); code guardrail `ledger-append-only` | Implemented (strong) | ~~Hash-chain not crypto / not wired~~ **CLOSED (FND-02; corrected 29 Sep 2026)** — every `audit_log` row is SHA-256-sealed onto its predecessor per tenant (`services/kernel/src/audit-chain.ts`, migration `0010`, `SqlAuditSink` in `main.ts`), `verifyAuditChain` names the breaking row; proven on real PostgreSQL (`tests/integration/the-trail-is-kept.test.ts`). `packages/audit`'s FNV-1a stays the dependency-free EDGE default only |
 | **Repudiation** | Audit on every write and refusal (`pipeline.ts:274-290,386-388`); `SqlAuditSink` wired (`main.ts:411`) | Implemented (strong) | ~~audit_log has no hash-chain columns~~ **CLOSED** — `prev_hash` / `hash` columns + a per-tenant chain-uniqueness index (migration `0010`); the table is append-only AND tamper-evident |
 | **Information disclosure** (cross-tenant, PAN, error leakage) | `scanOutbound` 500s on foreign tenantId or card-shaped body (`pipeline.ts:144-180`); flat `unauthenticated`; three-part error, no stack (`errors.ts`) | Implemented (strong) | Isolation is **application-level only — no Postgres RLS, no `tenants` FK** (defense rests on the one backstop) — GAP-DATA-02 |
@@ -91,7 +91,10 @@ the system (RESEARCH §9). Status: **Implemented, not production-verified** (no 
 4. ~~**No rate limiting / DoS control / auth-attempt lockout.**~~ **CLOSED (29 Sep 2026)** — per-IP + per-tenant token bucket
    and auth-attempt lockout, wired and proven on a real socket; residual: process-local limits (GAP-SEC-04b, Low).
    *(GAP-SEC-04)*
-5. **No token revocation / short-TTL strategy** — dependent on the (unchosen) IdP. *(GAP-SEC-05)*
+5. ~~**No token revocation / short-TTL strategy**~~ **CLOSED (29 Sep 2026)** — a lifetime ceiling the API enforces whatever the IdP
+   wrote, and revocation by token id or by user ahead of expiry, append-only and checked on every request; works with
+   ANY IdP that stamps `iat` (and `jti` for per-token cuts). Residual: cross-instance propagation ≤60s (GAP-SEC-05b).
+   *(GAP-SEC-05)*
 6. **API-tier step-up re-auth — CLOSED (29 Sep 2026).** Recent MFA/re-auth is enforced at the API tier
    (`services/kernel/src/step-up.ts`, from the SIGNED token's `auth_time`/`amr`) on the privilege-grant and
    erasure-execution routes, and — Stage E slice 1 — on payroll approve / lock / reverse, the salary bank file and

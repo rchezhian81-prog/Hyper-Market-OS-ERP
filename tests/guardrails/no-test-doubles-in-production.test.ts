@@ -75,7 +75,9 @@ describe('every port the cloud API depends on is actually supplied', () => {
   });
 
   it('supplies a real authenticator, not one that lets everybody in', () => {
-    expect(main).toMatch(/authenticate:\s*tokenAuthenticator/);
+    // The pinned verifier — since GAP-SEC-05 wrapped as `revocationAwareAuthenticator` (verify, THEN refuse a
+    // revoked or over-long token); either name is the real thing, a stub is not.
+    expect(main).toMatch(/authenticate:\s*(?:tokenAuthenticator|revocationAwareAuthenticator)\(/);
     // The shape it used to have: default-deny, but nobody could use the system.
     expect(main).not.toMatch(/authenticate:\s*\(\)\s*(?::\s*[\w |]+)?=>\s*undefined/);
   });

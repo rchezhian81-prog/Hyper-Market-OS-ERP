@@ -225,6 +225,7 @@ import { assignedOrderIds, type DispatchPlan } from '../../../packages/fulfilmen
 import { replayNotificationQueue, type NotificationQueueDeps, type NotificationQueueEvent } from '../../customer/src/notification-queue';
 import type { FulfilmentPackingDeps, PackResult, Manifest } from '../../fulfilment/src/packing';
 import type { IdentityDeps } from '../../identity/src/index';
+import type { TokenRevocation, TokenRevocationStore } from '../../identity/src/revocation';
 import type { Role, RoleAssignment } from '../../../packages/rbac/src/rbac';
 import type { DependencyProbe, FeatureFlagChange, PlatformDeps, ExportedEvent } from '../../platform/src/index';
 import { inMemorySettings } from '../../platform/src/index';
@@ -6975,6 +6976,26 @@ export function fulfilmentPackingAdapter(input: {
 // ─────────────────────────────────────────────────────────────────────────────
 //  The last five: identity, platform, reporting, migration, AI
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Token revocations, durably (GAP-SEC-05): each is one append-only `TokenRevoked` fact on the tenant's identity
+ * stream — never edited, never removed (hard rule #2/#6) — folded back into the list the authenticator consults.
+ */
+export function tokenRevocationAdapter(input: { readonly store: EventStore }): TokenRevocationStore {
+  return {
+    load: (tenantId) => allOf<TokenRevocation>(input.store, tenantId, STREAM.identity, 'TokenRevoked'),
+    record: async (tenantId, revocation) => {
+      await input.store.append(tenantId, STREAM.identity, makeEvent({
+        id: `token-revocation-${revocation.id}`,
+        type: 'TokenRevoked',
+        occurredAt: revocation.revokedAt,
+        idempotencyKey: `token-revocation-${tenantId}-${revocation.id}`,
+        source: 'api/identity',
+        payload: revocation,
+      }));
+    },
+  };
+}
 
 export function identityAdapter(input: {
   readonly store: EventStore;
