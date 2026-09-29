@@ -144,3 +144,19 @@ export {
   type BalanceFinding, type BalanceCheck, type TierChange, type VerificationRefusal,
   type LoyaltyVerification,
 } from './loyalty-verification';
+
+// MG-05 — the ACTUAL load (B1): a checked, cleaned extract into a named, empty, non-demo tenant through
+// the same routes a person uses, planned as an ordered list of idempotent calls and executed by a
+// named human. Before this, "trial load" was a timing projection and there was no bulk path in.
+export {
+  planLoad, executeLoad, validateBundle,
+  type ExtractBundle, type ExtractCategory, type ExtractTaxRate, type ExtractProduct, type ExtractSupplier,
+  type ExtractCustomer, type ExtractStockRow, type BarcodeKind, type LoadRequest, type LoadRefusal,
+  type LoadGroup, type LoadStep, type LoadPlan, type LoadPlanOk, type LoadPlanRefused, type LoadClient,
+  type LoadStepOutcome, type LoadReport,
+} from './load';
+
+export {
+  bundleFromFiles, moneyToMinor, percentToBps, quantityToMinor, inferBarcodeKind,
+  type CsvRows, type ExtractFiles, type MappedBundle,
+} from './load-csv';
