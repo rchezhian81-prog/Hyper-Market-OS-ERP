@@ -53,6 +53,7 @@
 // refund is durable on the disk before the lane calls it done, then queued for the cloud (M13-FR-01).
 
 import { createServer, type Server, type ServerResponse } from 'node:http';
+import type { LaneSyncStatus } from './sync-status';
 import { returnIdOf } from './cloud-return';
 import { concessionTagIdOf } from './cloud-concession-tag';
 import type { EdgeNode } from './index';
@@ -88,6 +89,12 @@ const LANE_DAY_CLOSE_ROUTE = '/lane/day-close';
  * day-close log. Its body is `{ dayCloseId, reopenedBy, reason, approvedBy }`.
  */
 const LANE_DAY_REOPEN_ROUTE = '/lane/day-reopen';
+/**
+ * The STATUS read route (Stage G slice 2 · design system §1 rule 4). The box's own account of its link to head
+ * office — cloud reachability, everything still unsent across its queues, dead letters, when something last got
+ * through — so the sync badge on the till and the manager screens shows a fact instead of a constant.
+ */
+export const LANE_SYNC_STATUS_ROUTE = '/lane/sync-status';
 
 /** What the box does when the manager asks to close the day — the authoritative `EdgeProcess.closeDay`. */
 export type LaneDayCloseHandler = (
@@ -210,6 +217,11 @@ export function startLaneServer(input: {
    * `{ dayCloseId, reopenedBy, reason, approvedBy }`; the box makes the authoritative decision.
    */
   readonly reopenDay?: LaneDayReopenHandler;
+  /**
+   * The box's sync status for the screens' badges (GET /lane/sync-status). Absent on a lane that does not report
+   * one, in which case the route answers 404 and the screen says it could not ask.
+   */
+  readonly syncStatus?: () => LaneSyncStatus;
 }): Promise<LaneServer> {
   const maxBytes = input.maxBytes ?? 256 * 1024;
 
@@ -256,6 +268,23 @@ export function startLaneServer(input: {
           send(res, 200, { found: false, detail: e instanceof Error ? e.message : String(e) }, cors);
         }
       })();
+      return;
+    }
+
+    // The STATUS read route: GET /lane/sync-status — the box's own account of its link to head office, for the
+    // sync badge on the till and the manager screens (design system §1 rule 4). Counts and times only, never a
+    // record; still refused to a foreign origin, because how far behind a shop is is the shop's business.
+    if (req.method === 'GET' && pathname === LANE_SYNC_STATUS_ROUTE) {
+      if (typeof req.headers.origin === 'string' && req.headers.origin !== '' && !isLoopbackOrigin(req.headers.origin)) {
+        send(res, 403, { error: 'this request did not come from this till' }, cors);
+        return;
+      }
+      if (input.syncStatus === undefined) {
+        send(res, 404, { error: 'this lane does not report its sync status' }, cors);
+        return;
+      }
+      // Never cached: a badge showing this morning's "online" is the fault the badge exists to prevent (P-08).
+      send(res, 200, input.syncStatus(), { ...cors, 'cache-control': 'no-store' });
       return;
     }
 
@@ -384,14 +413,14 @@ export function startLaneServer(input: {
 
     // The browser's preflight for the cross-origin POST from the till's or manager's screen. Answered
     // only for a loopback origin; anything else gets no allow header and the browser refuses the POST.
-    if (req.method === 'OPTIONS' && (route !== undefined || pathname === LANE_DAY_CLOSE_ROUTE || pathname === LANE_DAY_REOPEN_ROUTE)) {
+    if (req.method === 'OPTIONS' && (route !== undefined || pathname === LANE_DAY_CLOSE_ROUTE || pathname === LANE_DAY_REOPEN_ROUTE || pathname === LANE_SYNC_STATUS_ROUTE)) {
       res.writeHead(isLoopbackOrigin(req.headers.origin) ? 204 : 403, { 'content-length': '0', ...cors });
       res.end();
       return;
     }
 
     if (req.method !== 'POST' || route === undefined) {
-      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `POST ${LANE_DAY_CLOSE_ROUTE}`, `POST ${LANE_DAY_REOPEN_ROUTE}`, `GET ${LANE_LOOKUP_ROUTE}?receipt=…`].join(', ');
+      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `POST ${LANE_DAY_CLOSE_ROUTE}`, `POST ${LANE_DAY_REOPEN_ROUTE}`, `GET ${LANE_LOOKUP_ROUTE}?receipt=…`, `GET ${LANE_SYNC_STATUS_ROUTE}`].join(', ');
       send(res, 404, { error: `the lane socket serves: ${serves}` }, cors);
       return;
     }

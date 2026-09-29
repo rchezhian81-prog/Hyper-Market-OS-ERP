@@ -43,6 +43,9 @@ const WORDS = {
     staleShell: 'No connection to the store computer. This page is what it was last told — do not close the day on it. Last told at',
     manager: 'Store manager', tradingDay: 'Trading day', connected: 'Connected',
     notConnected: 'Not connected to the store', today: 'Today', approvals: 'Approvals',
+    // The badge's states from the BOX (design system §1 rule 4): connection · last contact.
+    boxNotAnswering: 'Store box not answering', noCloud: 'Head office cannot be reached — working from the box',
+    cloudNotSetUp: 'No head office link on this box', cloudUnknown: 'Head office not checked yet', lastContact: 'last contact',
     receive: 'Receive', count: 'Count', closeDay: 'Close the day',
     tapAFigure: 'Tap a figure to go to it.', waiting: 'waiting', youCanClear: 'you can clear',
     exceptionsLabel: 'Exceptions open', unsentLabel: 'Not yet sent to cloud', tasksLabel: 'Tasks today',
@@ -77,6 +80,8 @@ const WORDS = {
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது — இதை வைத்து நாளை மூட வேண்டாம். கடைசியாகச் சொல்லப்பட்டது:',
     manager: 'கடை மேலாளர்', tradingDay: 'வியாபார நாள்', connected: 'இணைப்பில்',
     notConnected: 'கடையுடன் இணைப்பு இல்லை', today: 'இன்று', approvals: 'ஒப்புதல்கள்',
+    boxNotAnswering: 'கடைப் பெட்டி பதிலளிக்கவில்லை', noCloud: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — பெட்டியிலிருந்து வேலை',
+    cloudNotSetUp: 'இந்தப் பெட்டியில் தலைமை அலுவலக இணைப்பு இல்லை', cloudUnknown: 'தலைமை அலுவலகம் இன்னும் சரிபார்க்கப்படவில்லை', lastContact: 'கடைசித் தொடர்பு',
     receive: 'பொருள் பெறு', count: 'எண்ணிக்கை', closeDay: 'நாளை முடி',
     tapAFigure: 'ஒரு எண்ணைத் தொட்டால் அந்தத் திரைக்குச் செல்லும்.', waiting: 'காத்திருக்கிறது',
     youCanClear: 'நீங்கள் முடிக்கக்கூடியவை', exceptionsLabel: 'திறந்த விதிவிலக்குகள்',
@@ -423,10 +428,68 @@ function renderHome() {
   );
 
   // The link to the store is the same fact as "could I read the registers", so the badge says it.
-  const blind = [floor.approvalsWaiting, floor.exceptions, floor.unsent].some((f) => !f.known);
-  el('conn-dot').classList.toggle('unknown', blind);
-  el('conn-text').textContent = blind ? t('notConnected') : t('connected');
+  blind = [floor.approvalsWaiting, floor.exceptions, floor.unsent].some((f) => !f.known);
+  paintBadge();
 }
+
+// ── The sync badge: the box's own account of its link to head office ────────
+//
+// Design system §1 rule 4: every screen shows connection state and last-sync freshness. The registers being
+// readable says the screen can see the BOX; whether the box can see HEAD OFFICE is the box's to say, and it
+// says it on GET /lane/sync-status (the same socket the day close posts to). Asked every ten seconds when a
+// box told this screen where it is; a page opened straight from a file has no box to ask and keeps the
+// register-based words. Words as well as a colour, always.
+let blind = false;
+let box = { asked: false, reachable: false, status: null };
+
+function clock(iso) {
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function paintBadge() {
+  const dot = el('conn-dot');
+  dot.classList.remove('unknown', 'degraded', 'error', 'idle');
+  if (blind) {
+    dot.classList.add('unknown');
+    el('conn-text').textContent = t('notConnected');
+    return;
+  }
+  if (!box.asked) {
+    el('conn-text').textContent = t('connected');
+    return;
+  }
+  if (!box.reachable) {
+    dot.classList.add('error');
+    el('conn-text').textContent = t('boxNotAnswering');
+    return;
+  }
+  const s = box.status;
+  const when = s.lastContactAt ? ` · ${t('lastContact')} ${clock(s.lastContactAt)}` : '';
+  if (s.cloud === 'online') {
+    el('conn-text').textContent = `${t('connected')}${when}`;
+    return;
+  }
+  dot.classList.add(s.cloud === 'unknown' || s.cloud === 'starting' ? 'idle' : 'degraded');
+  el('conn-text').textContent = `${s.cloud === 'offline' ? t('noCloud') : s.cloud === 'not_configured' ? t('cloudNotSetUp') : t('cloudUnknown')}${when}`;
+}
+
+async function refreshBadge() {
+  if (typeof window.laneWriteBase !== 'string') return; // no box told this screen where it is
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 3000);
+  try {
+    const res = await fetch(`${window.laneWriteBase}/lane/sync-status`, { cache: 'no-store', signal: ctl.signal });
+    box = res.ok ? { asked: true, reachable: true, status: await res.json() } : { asked: true, reachable: false, status: null };
+  } catch {
+    box = { asked: true, reachable: false, status: null };
+  } finally {
+    clearTimeout(timer);
+  }
+  paintBadge();
+}
+void refreshBadge();
+setInterval(() => { void refreshBadge(); }, 10_000);
+window.managerBadge = { refresh: refreshBadge, state: () => box };
 
 // ── The approval inbox ──────────────────────────────────────────────────────
 

@@ -29,24 +29,15 @@
       }
       .who { font-weight: 600; letter-spacing: .02em; }
       .day { color: var(--muted); font-size: 14px; display: block; font-weight: 400; }
-      .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
-      .dot.unknown { background: var(--warn); }
-      .lang { background: transparent; color: var(--muted); min-height: 40px; font-size: 14px; border: 0; }
-      /* Sample-data warning. Only ever shown when the tested model is NOT loaded. */
-      .sample { background: var(--warn); color: #451a03; padding: 8px 16px; font-weight: 600; font-size: 15px; }
-      .sample[hidden] { display: none; }
-      /* Served from this device's cache because the store box could not be reached. It says WHEN,
-         because a page from this morning shown as this minute's is the fault this product exists
-         to refuse (P-08). */
-      .stale { background: #1e3a5f; color: #dbeafe; padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info, #38bdf8); }
-      .stale[hidden] { display: none; }
+      /* The badge, the language toggle and the sample / cached strips are the foundation's (sre-foundation.css). */
+      .sync { font-size: 15px; }
 
       nav { display: flex; gap: 8px; padding: 8px 16px; background: var(--panel); overflow-x: auto; }
       nav button {
         min-height: var(--tap); padding: 0 18px; border: 0; border-radius: 12px;
         background: var(--line); color: var(--ink); font-size: 17px; font-weight: 600; white-space: nowrap;
       }
-      nav button[aria-current='page'] { background: var(--ink); color: #0f172a; }
+      nav button[aria-current='page'] { background: var(--ink); color: var(--bg); }
 
       main { flex: 1; padding: 16px; display: grid; gap: 16px; align-content: start; }
       section[hidden] { display: none; }
@@ -85,9 +76,9 @@
         min-height: var(--tap); border-radius: 12px; border: 0; font-size: 17px; font-weight: 600;
         background: var(--line); color: var(--ink);
       }
-      button.primary { background: var(--accent); color: #052e16; font-size: 20px; }
-      button.danger { background: var(--danger); color: #fff; }
-      button:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+      button.primary { background: var(--accent); color: var(--on-accent); font-size: 20px; }
+      /* A red BUTTON is the darker red under white words (6.5:1); the signal red is for edges and dots. */
+      button.danger { background: var(--danger-surface); color: var(--on-danger); }
       .wide { width: 100%; }
 
       /* ── The close screen ──────────────────────────────────────────────── */
@@ -105,7 +96,7 @@
       .field { display: grid; gap: 6px; margin-bottom: 12px; }
       .field label { color: var(--muted); font-size: 15px; }
       .field input, .field select {
-        min-height: var(--tap); background: #0b1220; color: var(--ink);
+        min-height: var(--tap); background: var(--panel-2); color: var(--ink);
         border: 1px solid var(--line); border-radius: 12px; padding: 0 14px; font-size: 18px;
       }
       .lines { display: grid; gap: 8px; margin: 12px 0; }
@@ -129,7 +120,7 @@
       .sheet h2 { margin: 0; font-size: 21px; }
       .entry {
         font-size: 40px; font-weight: 700; text-align: right; padding: 10px 16px;
-        background: #0b1220; border-radius: 12px; min-height: 64px;
+        background: var(--panel-2); border-radius: 12px; min-height: 64px;
       }
       .hint { color: var(--muted); font-size: 15px; min-height: 22px; }
       .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
@@ -140,19 +131,19 @@
       .choices { display: grid; gap: 10px; }
       .choices button { font-size: 17px; text-align: left; padding: 0 16px; }
       .sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-      .sheet-actions .primary, .keypad .primary { background: var(--accent); color: #052e16; }
+      .sheet-actions .primary, .keypad .primary { background: var(--accent); color: var(--on-accent); }
 
       /* The banner does NOT auto-dismiss, for the same reason it does not at the till. */
       .banner {
         position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 20px;
-        background: var(--danger); color: #fff; display: grid; gap: 10px;
+        background: var(--danger-surface); color: var(--on-danger); display: grid; gap: 10px;
       }
       .banner[hidden] { display: none; }
-      .banner.good { background: var(--accent); color: #052e16; }
+      .banner.good { background: var(--accent); color: var(--on-accent); }
       .banner strong { font-size: 22px; }
       .banner p { margin: 0; font-size: 17px; line-height: 1.45; }
-      .banner button { background: #7f1d1d; color: #fff; }
-      .banner.good button { background: #052e16; color: #ecfdf5; }
+      .banner button { background: #7f1d1d; color: var(--on-danger); }
+      .banner.good button { background: var(--on-accent); color: #ecfdf5; }
     </style>
   </head>
   <body>

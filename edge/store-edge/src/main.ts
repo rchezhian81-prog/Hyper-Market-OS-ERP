@@ -56,6 +56,7 @@ import { buildReceiptLookup } from './receipt-lookup';
 import { returnIdOf } from './cloud-return';
 import { createEdgeNode, type EdgeNode } from './index';
 import { startLaneServer, LANE_HOST, type LaneServer, type LaneDayCloseHandler, type LaneDayReopenHandler } from './lane-server';
+import { laneSyncStatus, type LaneSyncStatus, type QueueHealth } from './sync-status';
 import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-server';
 import { readSales } from './read-model';
 import { emptyPack, readPack, withMigrationFeed, withPublishedTemplates, type StorePack } from './store-pack';
@@ -262,6 +263,13 @@ export interface EdgeProcess {
    * operator tool can force a sync now rather than waiting for the next interval.
    */
   readonly syncOnce: (() => Promise<{ sent: number; dead: number; remaining: number }>) | null;
+  /**
+   * The box's own account of its link to head office (Stage G slice 2 · design system §1 rule 4): cloud
+   * reachability, everything unsent across every queue, dead letters, when something last got through. Served
+   * read-only on the lane socket as `GET /lane/sync-status`, so the till's and the manager's sync badges show a
+   * fact the box knows instead of a constant the shell assumed. Always present — a box with no cloud says so.
+   */
+  readonly syncStatus: () => LaneSyncStatus;
   /**
    * Where the six screens are served from, or null when `EDGE_SCREEN_PORT` is unset.
    *
@@ -688,10 +696,21 @@ export async function startEdge(
   // sale/refund money path above, and a POST that somehow arrives before then gets an honest "starting up".
   const dayCloseRelay: { current?: LaneDayCloseHandler } = {};
   const dayReopenRelay: { current?: LaneDayReopenHandler } = {};
+  // The box's own account of its link to head office, for the sync badge on every served screen (design system
+  // §1 rule 4). Late-bound like the day close: the agents that know when something last got through are created
+  // further down, so the socket is wired now and the answer is filled in once they exist — until then it says
+  // "starting", never a guess.
+  const queuesNow = (): QueueHealth[] => [outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox]
+    .map((q) => ({ unsentCount: q.unsentCount(), deadLetterCount: q.deadLetters().length, lastSuccessAt: null }));
+  const syncStatusRelay: { current?: () => LaneSyncStatus } = {};
+  const syncStatus = (): LaneSyncStatus => syncStatusRelay.current?.()
+    ?? laneSyncStatus({ configured: 'starting', queues: queuesNow(), lastPackStatus: undefined, lastContactAt: null, now: new Date().toISOString() });
+
   const lanePort = settings['EDGE_LANE_PORT'];
   const lane = lanePort === undefined ? null : await startLaneServer({
     node,
     port: Number(lanePort),
+    syncStatus,
     closeDay: (req) => {
       const fn = dayCloseRelay.current;
       return fn !== undefined ? fn(req) : Promise.resolve({ closed: false as const, reason: 'the box is still starting up — try the day close again in a moment' });
@@ -899,8 +918,10 @@ export async function startEdge(
   if (cloudUrl === undefined || cloudToken === undefined) {
     // Supported, and said plainly. The lanes sell; the queue grows; nobody is told a lie about it.
     say('no cloud is configured, so nothing will be synced. The shop can still trade — that is the point.');
+    // The badge on every screen says exactly that, from the box's own mouth (design system §1 rule 4).
+    syncStatusRelay.current = () => laneSyncStatus({ configured: false, queues: queuesNow(), lastPackStatus: undefined, lastContactAt: null, now: new Date().toISOString() });
     return {
-      log, returnsLog, completionsLog, dayCloseLog, concessionTagsLog, outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox, node, lane, screens,
+      log, returnsLog, completionsLog, dayCloseLog, concessionTagsLog, outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox, node, lane, screens, syncStatus,
       agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, refreshPack: null, refreshMigrationFeed: null, refreshPublishedTemplates: null, syncOnce: null,
       // The day still locks with no cloud — that is the point of P-01. It queues durably and goes up when
       // a cloud is configured and reachable; nothing is told a lie in the meantime. Reopen is the same.
@@ -957,6 +978,16 @@ export async function startEdge(
   // verified pack is adopted and persisted atomically so it survives a reboot.
   const packSource = httpPackSource({ baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch });
   let lastPackStatus: PackPullStatus | undefined;
+  /** When head office last answered a catalogue pull — the box's record of contact beyond what the drains send. */
+  let lastContactAt: string | null = null;
+  // The agents exist now, so the badge's answer is the real one: every queue's health, the last pull's verdict.
+  syncStatusRelay.current = () => laneSyncStatus({
+    configured: true,
+    queues: [agent, returnsAgent, completionsAgent, dayCloseAgent, concessionTagsAgent].map((a) => a.health()),
+    lastPackStatus,
+    lastContactAt,
+    now: new Date().toISOString(),
+  });
 
   const refreshPack = async (): Promise<PackPullOutcome> => {
     const outcome = await pullPack({ source: packSource, receiver: node, now: new Date().toISOString() });
@@ -975,6 +1006,8 @@ export async function startEdge(
       say(outcome.staffMessage);
     }
     lastPackStatus = outcome.status;
+    // Anything but `offline` means head office answered — that is contact, whether or not a pack moved.
+    if (outcome.status !== 'offline') lastContactAt = new Date().toISOString();
     return outcome;
   };
 
@@ -1179,6 +1212,7 @@ export async function startEdge(
     refreshMigrationFeed,
     refreshPublishedTemplates,
     syncOnce: () => drainAndSettle(),
+    syncStatus,
     stop: async () => {
       stopping = true;
       if (timer !== undefined) clearTimeout(timer);
