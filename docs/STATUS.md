@@ -539,7 +539,35 @@ accounts.
   refused client-side). No module rung change — M19 stays PARTIALLY WIRED: remaining are the M31 notification
   enqueue for the SLA-breach alert (a live alert provider is external) and the owner's confirmation of the queue
   staffing table (service desk = cashier, finance queue = accountant).
-- **Next:** M01 slice D PR (#615) → merge → M19 slice E PR → merge; then, one screen per slice: M22 portal screen + e2e, M23 day-book screen + e2e, M27 till panel → store box → cloud tags + e2e, M01 template screen + e2e (+ the edge reading the published receipt template into the lane's pack); then Stage D. Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet).
+- **Stage C, second pass, family M22 (B2B), slice Q — done (29 Sep 2026): the B2B customer PORTAL SCREEN,
+  browser-verified, as its own cloud-served app (M22-FR-04, API-09, §35, P-08) — and M22 re-rated
+  PARTIALLY_WIRED → WIRED.** Before: slice P put the portal routes on the cloud (a `b2b_customer` login reads
+  its OWN account, invoices, statement and documents) with no screen bound to them. Now `apps/b2b-app`, on the
+  supplier-portal pattern (a party outside the business → served from the cloud web tier, never a store box):
+  `src/b2b-portal-session.ts` (the tested, DOM-free session model, one bilingual EN/TA copy object),
+  `src/browser-entry.ts` (default-deny ports from the injected login `window.b2bData`; the four feeds read
+  together over same-origin GETs; a 403 `no_grant` is carried as a REFUSAL, a network failure as `unavailable`),
+  `web/index.html` + `app.js` (+ `sw.js`, `manifest.webmanifest`). The screen shows the credit account (limit /
+  owed / available; exhausted credit = attention; "no terms" a plain fact), the invoices earliest-due first
+  (settled = ok · disputed = with a person, not a reminder · overdue = error · open), the statement aged into
+  the five due-date buckets with the disputed amount shown separately (overdue = attention, over 90 days =
+  error), and the documents issued (kind, number, amount, valid-until, derived-from). **A missing grant is a
+  permission answer, never a zero (P-08):** a login without `view_statement` is told its login cannot see the
+  account and the statement — while invoices and documents still show. Read-only: no write verb anywhere.
+  Tests: `tests/unit/b2b-portal-session.test.ts` (11), `tests/guardrails/the-b2b-portal-screen-is-usable.test.ts`
+  (11 — bilingual + tripwire; word + icon on every state; a refused statement is NOT a zero; non-B2B login
+  refused; the view defers to the session, no write verb, no dialogs, aria; the shell's bundle, marker, labels
+  and skip link), `tests/e2e/b2b-portal-delivery.e2e.ts` (3, headless Chromium against a stub cloud: every
+  grant → account figures, the overdue invoice marked, the statement buckets, the documents, all GETs;
+  `view_invoices` only → "cannot see" notes for the account and statement, never ₹0.00, invoices and documents
+  still shown; no `b2b.portal.self` → refused, no data). **Re-rate M22 PARTIALLY_WIRED → WIRED:** every M22 FR
+  (credit, the document chain, commission, collections / ageing / dunning, the portal) is wired on the live API
+  and integration-tested, and the portal screen is browser-verified; the ledger's stated remaining gap ("the
+  portal needs external auth") is closed on the module side — the external-login provider (OTP/OIDC) is a
+  Stage F deployment component shared with the customer app, not an M22 gap. Held below INTEGRATION_TESTED
+  until the honest-hardening review (durability + tenant-isolation tests across the M22 surfaces, as M02/M03
+  had).
+- **Next:** M19 slice E PR (#616) → merge → M22 slice Q PR → merge; then, one screen per slice: M23 day-book screen + e2e, M27 till panel → store box → cloud tags + e2e, M01 template screen + e2e (+ the edge reading the published receipt template into the lane's pack); then Stage D. Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
 
 ---
 

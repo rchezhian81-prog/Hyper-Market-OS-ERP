@@ -1,0 +1,12 @@
+{
+  "name": "SRE Hyper Market — Business customer portal",
+  "short_name": "SRE Business",
+  "description": "See your credit account, invoices, statement and documents — your own account with SRE.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": []
+}
