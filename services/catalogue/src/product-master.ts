@@ -72,6 +72,19 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
             nextSafeAction: 'Send { product: {...}, categories: [...] } with the product id in the URL.',
           });
         }
+        // A minimum age the till cannot read is not a restriction. Refuse it HERE rather than publish a product that
+        // VALIDATES as age-restricted yet reaches the lane unflagged (E1b · M03-FR-03 → M12-FR-04, P-08): the pack
+        // carries `safety.minimumAge` as `regulatedFlags.minimumAge`, and only a positive whole number of years travels.
+        const safety = b['product']['safety'];
+        const minimumAge = isObj(safety) ? safety['minimumAge'] : undefined;
+        if (minimumAge !== undefined && !(typeof minimumAge === 'number' && Number.isInteger(minimumAge) && minimumAge > 0)) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_product',
+            whatHappened: `The minimum age to buy this product must be a whole number of years (for example 18 or 21); it arrived as ${JSON.stringify(minimumAge)}, and a till cannot prompt on an age it cannot read.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send safety.minimumAge as a whole number of years, or leave it out for a product that is not age-restricted. Nothing was saved.',
+          });
+        }
         const record = readProduct(productId, ctx.tenantId, b['product']);
         // The per-product compliance gate — the SAME tested rule the screen ran, re-run here because a
         // central boundary trusts no client verdict (ADR-0013 control 9): mandatory fields, category, HSN/tax

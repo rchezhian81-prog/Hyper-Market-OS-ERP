@@ -77,7 +77,8 @@ what the publish would change against the previously published pack (`services/c
 **bulk** = products added + changed + removed at or above the tenant's `catalogue.bulk_publish_threshold` (an
 owner setting in store setup, default 50); **sensitive** = a product carrying the pack contract's `regulatedFlags`
 added or changed. Either needs a fresh (≤300s) MFA-backed re-authentication from the SIGNED token
-(`requireStepUp`), else 403 `reauthentication_required` with nothing signed or stored. Known residual: the product
-master does not yet carry a restriction into the pack, so the sensitive leg fires on the real chain once that
-mapping lands (named follow-on). Evidence: `tests/unit/service-catalogue-step-up.test.ts`,
+(`requireStepUp`), else 403 `reauthentication_required` with nothing signed or stored. The product master's
+`safety.minimumAge` travels into the pack as `regulatedFlags.minimumAge` (E1b, `regulatedFlagsFor` in
+`services/catalogue/src/catalogue-preview.ts`), so the sensitive leg fires on the real chain — proven in
+`tests/integration/step-up-payroll-and-publish.test.ts`. Evidence: `tests/unit/service-catalogue-step-up.test.ts`,
 `tests/integration/step-up-payroll-and-publish.test.ts`.

@@ -722,7 +722,7 @@ accounts.
   OWNER-GAP-SUMMARY, ADR-0013 implementation note, payroll screen doc, traceability.
   **Honest boundaries:** (1) the cloud's product master carries no restriction field into the pack (`toMaster` sets
   no `regulatedFlags`), so the SENSITIVE leg fires on the real chain only once that mapping lands — the same gap
-  keeps the till's age prompt from firing on a cloud-built pack (M12-FR-04); named follow-on **E1b**. (2) Tokens
+  keeps the till's age prompt from firing on a cloud-built pack (M12-FR-04); named follow-on **E1b** — **closed 29 Sep 2026, see the E1b bullet below**. (2) Tokens
   from the pilot stand-in issuer carry no `auth_time`/`amr` by default, so in the pilot these actions — like
   privilege grants and erasure — need the production IdP + MFA (OA-4) or a stand-in that records them.
   **Owner decision (not blocking):** the pilot hold on payroll release + bulk publish was conditional on this
@@ -805,7 +805,27 @@ accounts.
   lock (PostgreSQL catalogue updates do not queue — two suites granting at once failed with "tuple concurrently
   updated" on the local cluster). Docs: GAP register / threat model / executive audit (GAP-DATA-02 CLOSED),
   persistence README, STATUS, traceability.
-- **Next:** E1b (product-master restriction → pack `regulatedFlags`, unblocks the sensitive-publish leg and M12-FR-04 on cloud-built packs); key-based server login runbook (human step, ON HOLD by owner). Stage E register truth is then complete except GAP-DATA-06 (erasure vs the append-only ledger) and the residuals named in the registers. Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
+- **Stage E, slice E1b — done (29 Sep 2026): the product master's restriction reaches the pack (M03-FR-03 → M12-FR-04
+  · closes the slice-1 honest boundary).** The product engine already made a product in an age-restricted category
+  declare `safety.minimumAge` before it may publish; the cloud fold (`toMaster` in
+  `services/catalogue/src/catalogue-preview.ts`, via the new `regulatedFlagsFor`) now carries that declaration into the
+  pack contract's `regulatedFlags: { minimumAge }` — the ONE field the till's age gate (`requiresAgeCheck`) and the
+  publish step-up's SENSITIVE leg both read. Only a positive whole number of years travels; the authoring route
+  (`POST /v1/catalogue/products/:id/publish`) refuses a minimum age the till could not read (text, zero, a fraction)
+  as 400 `not_readable_as_a_product`, so a product never publishes as "age-restricted" and reaches the lane unflagged
+  (P-08). Consequences on the real chain: (a) a till fed a cloud-built pack now prompts for age on an age-restricted
+  line (M12-FR-04) — the one-PC till's local pack already did (`edge/store-edge/src/screen-data.ts`); (b) publishing
+  a pack that adds or changes an age-restricted product now needs the fresh-MFA step-up even when it is one line
+  (the SENSITIVE leg, GAP-SEC-06 follow-on). Other controlled-sale controls (KYC, PAN, serial capture, blocked
+  categories) remain category policy the lane resolves by category — not invented as per-product flags. Tests:
+  `tests/unit/catalogue-preview.test.ts` (3, the pure rule), `tests/integration/catalogue-pack-preview.test.ts` (+1 —
+  the preview carries `{ minimumAge: 21 }` on the restricted product and no flag on salt),
+  `tests/integration/product-master.test.ts` (+1 — missing age 422; text / zero / fraction / negative 400, nothing
+  landed; a whole number publishes), `tests/integration/step-up-payroll-and-publish.test.ts` (+1 — ONE age-restricted
+  product added: password-only refused with the product named and v1 kept; fresh MFA publishes v2 carrying
+  `{ minimumAge: 21 }`; changing the age is sensitive again; an unrelated re-price is routine). Docs: FEATURE-SAFETY
+  (boundary closed), ADR-0013 residual closed, traceability (new row + M12-FR-04 + M03-FR-03).
+- **Next:** key-based server login runbook (human step, ON HOLD by owner). Stage E register truth is otherwise complete except GAP-DATA-06 (erasure vs the append-only ledger) and the residuals named in the registers (GAP-SEC-04b, GAP-SEC-05b, GAP-DATA-02c). Then Stage F (automatic VPS deployment). Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
 
 ---
 
