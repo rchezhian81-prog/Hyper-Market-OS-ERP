@@ -56,7 +56,7 @@ function stub() {
   };
   return { l, routes: storefrontRoutes(deps) };
 }
-const ctx = (over: Partial<RequestContext>): RequestContext =>
+const ctx = (over: Partial<RequestContext> = {}): RequestContext =>
   ({ tenantId: T, userId: 'cust-1', branchId: null, params: { orderId: 'o1' }, query: {}, body: undefined, traceId: 't', ...over });
 const routeFor = (routes: readonly Route[], method: string, path: string): Route => {
   const r = routes.find((x) => x.method === method && x.path === path);
