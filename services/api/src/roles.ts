@@ -106,6 +106,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'migration.exclusion.propose', 'migration.exclusion.approve',
       'migration.retirement.assess',
       'migration.verification.read', 'migration.exception.accept',
+      'migration.extraction.record', 'migration.evidence.record', 'migration.verification.sign',
       'ai.agent.run', 'ai.proposal.read', 'ai.suggestion.dismiss', 'ai.budget.read', 'ai.budget.set', 'ai.agent.enable', 'ai.killswitch.set',
     ],
   },
@@ -251,6 +252,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'migration.reconciliation.read',
       'migration.verification.read',
       'migration.controltotal.sign',
+      'migration.verification.sign',
     ],
   },
   {

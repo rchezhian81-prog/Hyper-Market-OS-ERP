@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Owner program — "complete every module, deploy, then pilot" — Stages A and B1 closed (29 September 2026)
+## Owner program — "complete every module, deploy, then pilot" — Stages A, B1 and B2 closed (29 September 2026)
 
 **Owner direction (28 Sep 2026, in writing):** act as architect + developer; build every roadmap module to
 finished (no invented requirements — anything beyond the roadmap becomes a change proposal for a written
@@ -87,8 +87,30 @@ accounts.
   name / GSTIN have no home on the partner route (only grants / documents / logins) — a supplier master
   is a Stage C item; (c) the load carries master data + opening stock only: sales history (B7) stays
   deferrable, and a batch without an expiry loads unbatched (said, not silent).
-- **Next:** B1b PR → merge → **B2** (signed verification report end-to-end + routes for the six witness
-  checks).
+- **B2 — done (29 Sep 2026): the signed verification page, end to end.** The page `GET
+  /v1/migration/verification` read three things nothing could write — who ran the extraction, what each
+  outside witness found, who signed. Now (`services/migration/src/witness.ts`): `POST
+  /v1/migration/extraction-runs/:runId` records the extraction operator (named on the page; may neither plan
+  the count nor sign); six routes `POST /v1/migration/witness/{count,suppliers,bank,tax,books,loyalty}` feed
+  the OB-06 engines with TRANSCRIBED outside evidence (count sheet, supplier statements, bank statement +
+  merchant terms, filed GSTR-1/3B with ARNs, the CA's signed accounts, the customers' own answers) and record
+  one `MigrationFindingRaised` per covered domain — verdict DERIVED by the engine (proved / with differences /
+  not proved), the engine's own "what it cannot prove" carried onto the page; evidence the engine finds
+  inadmissible (count planned by the extractor, commission derived from the difference, return with no ARN,
+  unsigned accounts, balance shown to the customer) is refused 422 and records NOTHING; `GET
+  /v1/migration/verification/progress` never refuses and lists covered / missing domains; `POST
+  /v1/migration/verification/signatures` signs as the role the ledger says (owner / chartered accountant),
+  bound to a digest of the findings on the page — new evidence afterwards leaves the signature in the ledger
+  (hard rule #6) but no longer covering the page. Adapter: three writers + latest-finding-per-domain fold.
+  Roles: `migration.extraction.record` / `migration.evidence.record` (owner), `migration.verification.sign`
+  (owner + CA). Proven: unit (15) + through the real API with the OB-06 gate fixtures (5: twelve domains from
+  six routes, figures tie, owner + CA sign, recount un-signs, RBAC, inadmissible records nothing). Runbook
+  step 7 and Step-1 plan §4 item 5 / §7.2 items 3–4 updated. No rung change (MG-06 stays E2E_VERIFIED).
+- **B2 follow-ons (recorded, not done):** a screen for the witnesses and the page (Stage C / G); the
+  `payment_settlement` witness (provider file) shares the bank engine and has no separate route; QG-07 stays
+  PARTIALLY_WIRED until real signed totals exist.
+- **Next:** B2 PR → merge → **B3** (MG-10 parallel run: routes, persistence, daily reconciliation sheet,
+  rollback route).
 
 ---
 
