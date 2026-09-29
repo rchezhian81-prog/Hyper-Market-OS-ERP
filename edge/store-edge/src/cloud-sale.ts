@@ -52,7 +52,7 @@ function toCloudTender(t: unknown): IncomingTender {
  * against. Pure; the record is untrusted JSON off the disk, so every field is read defensively and a
  * missing one becomes an empty/zero the cloud will surface as an exception rather than a silent guess.
  */
-export function toCloudSale(record: unknown, packVersion: number): IncomingSale {
+export function toCloudSale(record: unknown, packVersion: number, storeId?: string): IncomingSale {
   const r = (record !== null && typeof record === 'object' ? record : {}) as Rec;
   const lines: readonly IncomingSaleLine[] = Array.isArray(r['lines'])
     ? (r['lines'] as IncomingSaleLine[])
@@ -74,5 +74,12 @@ export function toCloudSale(record: unknown, packVersion: number): IncomingSale 
     packVersion: int(r['packVersion']) ?? packVersion,
     lines,
     tenders,
+    // WHERE the stock leaves from (M08-FR-01 — Stage A follow-on (b), Stage D slice 2). The disk record does not
+    // carry it either; the edge stamps the store its own store pack names, so the cloud draws stock from THIS shop
+    // rather than falling back to the pack's scope or the lane. A record that declares one keeps its own; a box
+    // that knows no store stamps nothing, and the cloud's fallback (which says it assumed) stands.
+    ...(locationOf(r, storeId) === undefined ? {} : { locationId: locationOf(r, storeId) }),
   };
 }
+
+const locationOf = (r: Rec, storeId: string | undefined): string | undefined => str(r['locationId']) ?? str(storeId);
