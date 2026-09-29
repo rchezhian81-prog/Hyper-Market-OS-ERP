@@ -103,7 +103,7 @@ describe('the witness routes derive verdicts and record findings', () => {
     const res = await routeFor(routes, 'POST', '/v1/migration/witness/count').handler(ctx({ body: countBody() }));
     expect(res.status).toBe(201);
     expect(rec.findings.map((f) => f.domain).sort()).toEqual(['barcodes', 'batches', 'prices', 'products', 'stock']);
-    expect(rec.findings.every((f) => f.verdict === 'proved' && f.provedBy[0] === 'physical_count' && f.whatItCannotProve.length > 20 && f.evidenceRef === 'sheet-1' && f.recordedBy === 'u-owner')).toBe(true);
+    expect(rec.findings.every((f) => f.verdict === 'proved' && f.provedBy?.[0] === 'physical_count' && f.whatItCannotProve.length > 20 && f.evidenceRef === 'sheet-1' && f.recordedBy === 'u-owner')).toBe(true);
     expect(rec.findings.find((f) => f.domain === 'stock')!.figureMinor).toBe(STOCK.reduce((t, l) => t + l.extractedValueMinor, 0));
   });
   it('count: a plan chosen by the extractor is inadmissible — 422 and NOTHING recorded', async () => {
