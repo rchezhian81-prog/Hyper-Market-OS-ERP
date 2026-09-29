@@ -30,6 +30,7 @@ import {
   type SubstitutionSettlementKind,
 } from '../../../packages/orders/src/substitution-money';
 import { substitutionExceptions, type SubstitutionRecordView } from '../../../packages/orders/src/substitution-exceptions';
+import { paymentPosition, type OrderPayment, type OrderPaymentResolution } from '../../../packages/orders/src/payment-refunds';
 
 export interface Reservation {
   readonly reservationId: string;
@@ -261,6 +262,11 @@ export interface OrdersDeps {
   // Backorder (M18-FR-02): record the un-promised remainder of an order, append-only, and read it back.
   readonly recordBackorder: (tenantId: string, bo: StoredBackorder) => Promise<void> | void;
   readonly orderBackorders: (tenantId: string, orderId: string) => Promise<readonly StoredBackorder[]> | readonly StoredBackorder[];
+  // Payment (M20-FR-03 → M18-FR-04): the checkout's answer as recorded on the order. Read here so the lifecycle
+  // refuses to confirm or pick an order whose payment the bank has not confirmed (§31). Optional: a composition
+  // without the payment surface keeps the lifecycle it had.
+  readonly orderPayment?: (tenantId: string, orderId: string) => Promise<OrderPayment | undefined> | OrderPayment | undefined;
+  readonly paymentResolution?: (tenantId: string, orderId: string) => Promise<OrderPaymentResolution | undefined> | OrderPaymentResolution | undefined;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -459,6 +465,26 @@ export function ordersRoutes(deps: OrdersDeps): readonly Route[] {
             wasItSaved: 'not_saved',
             nextSafeAction: 'Nothing was changed. The order is where it was.',
           });
+        }
+        // §31 — nothing is confirmed or picked against a payment the bank has not confirmed, or has declined.
+        // An order with no online payment recorded (pay at store, cash on delivery) is not held by this.
+        if ((body.event === 'confirm' || body.event === 'pick') && deps.orderPayment !== undefined) {
+          const pay = paymentPosition(
+            await deps.orderPayment(ctx.tenantId, orderId),
+            deps.paymentResolution === undefined ? undefined : await deps.paymentResolution(ctx.tenantId, orderId),
+          );
+          if (pay.state === 'pending' || pay.state === 'declined') {
+            throw apiError(409, {
+              code: pay.state === 'pending' ? 'payment_pending' : 'payment_declined',
+              whatHappened: pay.state === 'pending'
+                ? `Order "${orderId}" is waiting for the bank to confirm its payment. It is not confirmed and will not be picked until the bank says (§31).`
+                : `Order "${orderId}"'s payment was declined; it cannot be confirmed or picked.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: pay.state === 'pending'
+                ? 'Record what the bank said with POST /v1/orders/:orderId/payment/resolution and try again — or cancel the order.'
+                : 'Cancel the order so its stock is released. Nothing has been charged.',
+            });
+          }
         }
         const to = transitionOrder(current.state, body.event);
         const at = deps.now();
