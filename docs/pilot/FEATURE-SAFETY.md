@@ -67,10 +67,14 @@ real end-to-end assertion.
     real kernel with a snapshot double, including the regulated leg), `tests/unit/publish-step-up.test.ts` (10 — the
     pure rule), `tests/unit/step-up.test.ts` (+4 `requireStepUp`), `tests/unit/service-kernel.test.ts` (+2 — the
     evidence reaches the handler from the token, never the body).
-  - **Honest boundary:** the cloud's product master (`ProductRecord`) does not yet carry a restriction into the pack
-    (`toMaster` sets no `regulatedFlags`), so on today's real chain the SENSITIVE leg fires only once that mapping
-    lands (the same gap keeps the till's cloud-built-pack age prompt, M12-FR-04, from firing) — a named follow-on.
-    The BULK leg is live on the real chain now. As before, both actions remain build-only / synthetic in the pilot.
+  - **Both legs are live on the real chain (E1b, 29 Sep 2026).** The product master's `safety.minimumAge` — which the
+    product engine makes an age-restricted category's product declare before it may publish — travels into the pack
+    as `regulatedFlags: { minimumAge }` (`regulatedFlagsFor` in `services/catalogue/src/catalogue-preview.ts`), the one
+    field the till's age gate (`requiresAgeCheck`, M12-FR-04) and the SENSITIVE leg both read; a minimum age the till
+    could not read (text, zero, a fraction) is refused 400 at authoring rather than published unflagged. Proven end to
+    end in `tests/integration/step-up-payroll-and-publish.test.ts` (one age-restricted product added: password-only
+    refused with the product named and nothing published; fresh MFA publishes a pack carrying `{ minimumAge }`) and
+    `tests/integration/catalogue-pack-preview.test.ts`. As before, both actions remain build-only / synthetic in the pilot.
 
 ## What the pilot must still do (operational, not code)
 

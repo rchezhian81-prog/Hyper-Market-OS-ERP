@@ -41,8 +41,24 @@ const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !==
 const statusOf = (lifecycle: ProductRecord['lifecycle']): ProductStatus =>
   lifecycle === 'new' ? 'active' : lifecycle;
 
+/**
+ * The restriction a product master carries into the pack (E1b · M03-FR-03 → M12-FR-04). The product engine makes a
+ * product in an age-restricted category declare `safety.minimumAge` before it may publish; THIS is where that
+ * declaration becomes the pack contract's `regulatedFlags` — `{ minimumAge }`, the one field the lane's age gate reads
+ * (`Catalogue.scan(...).requiresAgeCheck`) and the field the publish step-up treats as SENSITIVE. Only a positive whole
+ * number of years is a restriction: absent → no flag; zero or malformed → no flag here, and the authoring route refuses
+ * it, so a product never publishes as "age-restricted" and reaches the lane unflagged (P-08). Other controlled-sale
+ * controls (KYC, PAN, serial capture, a blocked category) are category policy the lane resolves by category, not
+ * per-product flags — they are not invented here.
+ */
+export function regulatedFlagsFor(r: Pick<ProductRecord, 'safety'>): Readonly<Record<string, unknown>> | undefined {
+  const age = r.safety?.minimumAge;
+  return typeof age === 'number' && Number.isInteger(age) && age > 0 ? { minimumAge: age } : undefined;
+}
+
 function toMaster(r: ProductRecord, asOf: string): MasterProduct {
   const mrp = mrpOn(r, asOf); // the MRP in force on the build date (a future MRP does not apply early)
+  const regulatedFlags = regulatedFlagsFor(r);
   return {
     productId: r.productId,
     sku: r.sku,
@@ -52,6 +68,7 @@ function toMaster(r: ProductRecord, asOf: string): MasterProduct {
     status: statusOf(r.lifecycle),
     ...(mrp !== undefined ? { mrpMinor: mrp.minor } : {}),
     ...(r.recallBlocked !== undefined ? { recallBlock: r.recallBlocked } : {}),
+    ...(regulatedFlags !== undefined ? { regulatedFlags } : {}),
   };
 }
 

@@ -50,6 +50,29 @@ describe('product master authoring (M03-FR-01/03)', () => {
     expect((await get(h, 'u-owner', 'p-bread')).status).toBe(404);
   });
 
+  it('an age-restricted category needs a minimum age (422); a minimum age the till cannot read — text, zero, a fraction — is refused as unreadable (400), never published unflagged (E1b · M12-FR-04)', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    const LIQUOR = { categoryId: 'liquor', name: 'Liquor', parentId: null, regulated: ['age_restricted'] };
+    const beer = (safety?: unknown) =>
+      ({ sku: 'SKU-BEER', name: 'Beer 650ml', baseUom: 'each', primaryCategoryId: 'liquor', taxClass: '22030000', lifecycle: 'draft', ...(safety === undefined ? {} : { safety }) });
+
+    const missing = await publish(h, 'u-owner', 'p-beer', beer(), [LIQUOR], 'k-beer-missing');
+    expect(missing.status).toBe(422);
+    expect(codeOf(missing)).toBe('product_not_publishable');
+
+    for (const bad of ['21', 0, 18.5, -1]) {
+      const res = await publish(h, 'u-owner', 'p-beer', beer({ minimumAge: bad }), [LIQUOR], `k-beer-${String(bad)}`);
+      expect(res.status, `minimumAge ${JSON.stringify(bad)}`).toBe(400);
+      expect(codeOf(res)).toBe('not_readable_as_a_product');
+    }
+    expect((await list(h, 'u-owner')).body).toMatchObject({ count: 0 }); // none of those landed
+
+    const ok = await publish(h, 'u-owner', 'p-beer', beer({ minimumAge: 21 }), [LIQUOR], 'k-beer-ok');
+    expect(ok.status).toBe(201);
+    expect((await get(h, 'u-owner', 'p-beer')).body).toMatchObject({ product: { safety: { minimumAge: 21 } } });
+  });
+
   it('refuses a product whose category is not in the hierarchy supplied', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
