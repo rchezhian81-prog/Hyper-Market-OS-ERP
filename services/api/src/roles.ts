@@ -58,6 +58,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'customer.campaign.send', 'customer.campaign.read',
       'order.promise', 'order.reservation.read', 'order.read', 'order.lifecycle.manage', 'order.backorder.manage',
       'order.payment.record', 'order.refund.issue', 'order.refund.approve',
+      // M19-FR-01 / Item 2: work any substitution-exception queue and manage them (reassign, escalation sweep).
+      'order.exception.work', 'order.exception.manage',
       'delivery.attempt.record', 'delivery.run.read', 'delivery.dispatch.manage',
       'delivery.serviceability.manage', 'delivery.serviceability.read',
       'fulfilment.pack.record', 'fulfilment.pack.read',
@@ -146,6 +148,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'customer.campaign.send', 'customer.campaign.read',
       'order.promise', 'order.reservation.read', 'order.read', 'order.lifecycle.manage', 'order.backorder.manage',
       'order.payment.record', 'order.refund.issue', 'order.refund.approve',
+      // M19-FR-01 / Item 2: work any substitution-exception queue and manage them (reassign, escalation sweep).
+      'order.exception.work', 'order.exception.manage',
       'delivery.attempt.record', 'delivery.run.read', 'delivery.dispatch.manage',
       'delivery.serviceability.manage', 'delivery.serviceability.read',
       'fulfilment.pack.record', 'fulfilment.pack.read',
@@ -196,6 +200,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'customer.consent.read', 'loyalty.points.read', 'loyalty.points.write',
       'loyalty.value.issue', 'loyalty.value.redeem', 'loyalty.value.read',
       'loyalty.coupon.redeem', 'loyalty.coupon.read',
+      // M19-FR-01 / Item 2: the service desk works the customer-service exception queue (a short-picked line —
+      // the customer got less than they ordered). Which queues a role staffs is decided in
+      // services/orders/src/exception-ownership.ts; this only opens the door, and never to reassign or sweep.
+      'order.exception.work',
     ],
   },
   {
@@ -240,6 +248,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'identity.self.read', 'payroll.ess.self',
       'finance.journal.post', 'finance.period.read', 'finance.period.sign', 'finance.creditnote.issue',
       'settlement.batch.import', 'settlement.review.read', 'settlement.investigation.manage',
+      // M19-FR-01 / Item 2: the finance / payment-reconciliation exception queue (which queues a role staffs is
+      // decided in services/orders/src/exception-ownership.ts; this permission only opens the door).
+      'order.exception.work',
       'lp.case.read',
       // The §28 authority to approve a store day-close REOPEN (M14-FR-04) — finance oversight signs off
       // reopening a locked trading day; the store manager who reopens must be a different person.

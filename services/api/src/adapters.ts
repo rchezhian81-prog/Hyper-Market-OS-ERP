@@ -200,6 +200,8 @@ import type { PromotionDeps, LaunchRecord } from '../../pricing/src/promotions';
 import type { PromotionCatalogueDeps } from '../../pricing/src/promotion-catalogue';
 import type { Promotion } from '../../../packages/promotions/src/promotions';
 import { expired } from '../../orders/src/index';
+import type { ExceptionOwnershipDeps } from '../../orders/src/exception-ownership';
+import type { OwnedException } from '../../../packages/orders/src/substitution-exception-ownership';
 import type { PaymentRefundDeps } from '../../orders/src/payments';
 import type { StorefrontDeps } from '../../orders/src/storefront';
 import type { StorefrontAccessRefusal } from '../../../packages/orders/src/storefront-scope';
@@ -1151,6 +1153,8 @@ const forRefundIndex = streamName(STREAM.orders, 'refunds');
 // read or place against another customer's order (hard rule #6).
 const forCustomerOrders = (customerRef: string): string => streamName(STREAM.orders, 'customer', customerRef);
 const forStorefrontRefusals = streamName(STREAM.orders, 'access-refusals');
+// M19-FR-01 / Item 2: the kept ownership state of substitution exceptions — latest per exception id.
+const forExceptionOwnership = streamName(STREAM.orders, 'substitution-exception-ownership');
 const forInvoice = (invoiceId: string): string => streamName(STREAM.purchase, 'invoice', invoiceId);
 /** Each supplier partner's portal config and submissions fold one stream — one partner, not the shop. */
 const forPortalPartner = (partnerId: string): string => streamName(STREAM.purchase, 'partner', partnerId);
@@ -6435,7 +6439,7 @@ export function ordersAdapter(input: {
   readonly holdMinutes: number;
   /** Where a refund's money moves (M18-FR-04). Absent means the test-mode processor — the only one that exists until EX-03. */
   readonly refundProcessor?: RefundProcessor;
-}): OrdersDeps & PaymentRefundDeps & StorefrontDeps {
+}): OrdersDeps & PaymentRefundDeps & StorefrontDeps & ExceptionOwnershipDeps {
   return {
     now: input.now,
     holdMinutes: input.holdMinutes,
@@ -6588,6 +6592,34 @@ export function ordersAdapter(input: {
      *  exception worklist (M19-FR-01) is answered shop-wide without reading each order's stream. */
     allSubstitutions: async (tenantId) =>
       allOf<StoredSubstitution>(input.store, tenantId, forSubstitutionIndex, 'LineSubstituted'),
+
+    /** The kept ownership state of every exception a person has acted on — latest per exception id
+     *  (M19-FR-01 / Item 2). Each human move appends the whole item with its history; the fold keeps the
+     *  last, so a claim, release, escalation or resolution is never an edit (hard rule #2). */
+    ownedExceptions: async (tenantId) => {
+      const all = await allOf<OwnedException>(input.store, tenantId, forExceptionOwnership, 'SubstitutionExceptionOwned');
+      const latest = new Map<string, OwnedException>();
+      for (const o of all) latest.set(o.exceptionId, o);
+      return [...latest.values()];
+    },
+    /** Keep an owned exception after a move. Keyed on the item's history length, so a replayed move lands once. */
+    recordOwnedException: async (tenantId, owned) => {
+      await input.store.append(tenantId, forExceptionOwnership, makeEvent({
+        id: `sub-exc-${owned.exceptionId}-${owned.history.length}`,
+        type: 'SubstitutionExceptionOwned',
+        occurredAt: owned.history[owned.history.length - 1]?.at ?? input.now(),
+        idempotencyKey: `sub-exc-${tenantId}-${owned.exceptionId}-${owned.history.length}`,
+        source: 'api/orders',
+        payload: owned,
+      }));
+    },
+    /** The catalogue roles the caller holds here, from the append-only grant history — which exception
+     *  queues they staff is decided from this, never from what the request says about itself. */
+    rolesOf: async (tenantId, userId) =>
+      (await input.store.readStream(tenantId, STREAM.identity, { type: 'RoleGranted' }))
+        .map((e) => payloadOf<{ userId: string; roleId: string }>(e))
+        .filter((g) => g.userId === userId)
+        .map((g) => g.roleId),
 
     /** Record a backorder against an order, append-only (M18-FR-02). Idempotent on the order id — the
      *  shortfall is recorded once, so a replay is one fact, never a second backorder. */

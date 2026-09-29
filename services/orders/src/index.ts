@@ -29,7 +29,6 @@ import {
   type TenderMode,
   type SubstitutionSettlementKind,
 } from '../../../packages/orders/src/substitution-money';
-import { substitutionExceptions, type SubstitutionRecordView } from '../../../packages/orders/src/substitution-exceptions';
 import { paymentPosition, type OrderPayment, type OrderPaymentResolution } from '../../../packages/orders/src/payment-refunds';
 
 export interface Reservation {
@@ -381,32 +380,8 @@ export function ordersRoutes(deps: OrdersDeps): readonly Route[] {
         };
       },
     },
-    // The tenant-wide substitution EXCEPTION worklist (M19-FR-01, P-08) — every swap that owes the
-    // customer money back, needs a COD/collect adjustment, was charged above the cap under approval, or
-    // was refused by policy and left short, worst (most money at stake) first. It reads the tenant-wide
-    // index and runs the tested `substitutionExceptions` engine — it prices nothing itself; the amounts
-    // are already on the recorded decisions. A same-price swap that owes nothing never appears. Gated
-    // `order.read` (a management view of order money-at-risk — owner/manager, not the cashier), the same
-    // gate as the backorder exception read. Registered BEFORE `/v1/orders/:orderId` so the literal path
-    // is never captured as an order id.
-    {
-      api: 'API-07', method: 'GET', path: '/v1/orders/substitution-exceptions',
-      permission: 'order.read',
-      handler: async (ctx) => {
-        const subs = await deps.allSubstitutions(ctx.tenantId);
-        const views: readonly SubstitutionRecordView[] = subs.map((s) => ({
-          orderId: s.orderId,
-          lineId: s.lineId,
-          outcome: s.outcome,
-          refundMinor: s.refundMinor,
-          ...(s.eligibility !== undefined ? { eligibility: s.eligibility } : {}),
-          ...(s.settlementKind !== undefined ? { settlementKind: s.settlementKind } : {}),
-          ...(s.settlementMinor !== undefined ? { settlementMinor: s.settlementMinor } : {}),
-          ...(s.aboveCap !== undefined ? { aboveCap: s.aboveCap } : {}),
-        }));
-        return { status: 200, body: substitutionExceptions(views) };
-      },
-    },
+    // The tenant-wide substitution EXCEPTION worklist (M19-FR-01) lives in `exception-ownership.ts` since M19
+    // slice C — with ownership, SLA and history — and is registered BEFORE these routes in the surface.
     // Read one order's lifecycle end-to-end (M18-FR-01). Registered AFTER the literal
     // `/v1/orders/reservations` and `/v1/orders/substitution-exceptions` above, so that address is
     // never captured as an order id.
