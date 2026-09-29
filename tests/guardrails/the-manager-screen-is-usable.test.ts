@@ -236,6 +236,29 @@ describe('what the shop must be told, it is told', () => {
   });
 });
 
+describe('the sync badge is the box\'s fact when a box serves the screen (Stage G slice 2 · design system §1 rule 4)', () => {
+  it('asks the box on GET /lane/sync-status when the box named its socket, and keeps the register words when none did', () => {
+    expect(code(APP)).toContain('/lane/sync-status');
+    expect(code(APP)).toMatch(/typeof window\.laneWriteBase !== 'string'\) return/);
+    expect(code(APP)).toMatch(/lastContact/);
+  });
+
+  it('has words — in both languages — for box not answering, no head office, no link set up, not checked yet', () => {
+    const en = APP.slice(APP.indexOf('  en: {'), APP.indexOf('  ta: {'));
+    const ta = APP.slice(APP.indexOf('  ta: {'));
+    for (const key of ['boxNotAnswering', 'noCloud', 'cloudNotSetUp', 'cloudUnknown', 'lastContact']) {
+      expect(code(APP), `${key} is not used`).toContain(`t('${key}')`);
+      expect(en, `no English for ${key}`).toMatch(new RegExp(`\\b${key}:`));
+      expect(ta, `no Tamil for ${key}`).toMatch(new RegExp(`\\b${key}:`));
+    }
+  });
+
+  it('paints a red BUTTON with the readable red surface, never the signal red under white', () => {
+    expect(HTML).toMatch(/button\.danger \{[^}]*var\(--danger-surface\)/);
+    expect(HTML).not.toMatch(/background: var\(--danger\); color: #fff/);
+  });
+});
+
 describe('it can be read and reached', () => {
   it('states a touch target of at least 48px', () => {
     const tap = /--tap:\s*(\d+)px/.exec(HTML);

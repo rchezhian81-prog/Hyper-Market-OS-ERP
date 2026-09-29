@@ -904,7 +904,7 @@ accounts.
   (slice 1) and the stack fronts itself with TLS on one origin (slice 2). Stage E leftovers unchanged: key-based
   server login runbook (human step, ON HOLD by owner); GAP-DATA-06 and the residuals GAP-SEC-04b, GAP-SEC-05b,
   GAP-DATA-02c.
-- **Stage G slice 1 — MERGED-PENDING: one visual foundation every screen imports (design system §3 / §3.1, QG-02,
+- **Stage G slice 1 — MERGED (#632, 29 Sep 2026): one visual foundation every screen imports (design system §3 / §3.1, QG-02,
   NFR-07/08, P-07).** Before: 56 pages each carried their own palette, type stack and fixtures — two token dialects
   (`--ok/--degraded/--error/--idle` on 33 pages, `--good/--warn/--danger` on 15), four light-palette pages, `--tap`
   anywhere from 48 to 64px, a `font:` shorthand on every page resetting the family (so a Tamil face was present on
@@ -931,10 +931,38 @@ accounts.
   surfaces (`background: var(--danger)`, 40 places) are unchanged until each screen's slice, because the same
   token also colours dots and borders where the darker red would fall below 3:1; the 45 ERP pages without a sync
   badge get one in G5.
+- **Stage G slice 2a — the sync badge tells the truth, from the box (design system §1 rule 4, pos-cashier.md
+  "sync-state badge: online/offline + unsent count + last-sync time", store-manager.md, P-01, P-08).** Finding: the
+  till's badge said "Online · Unsent: 0" from a state nothing ever set — `PosSession.setConnection` had no caller
+  and the count was the browser's throwaway outbox, not the box's; the manager's badge only knew whether the
+  registers were readable. Now the box computes its own account (`edge/store-edge/src/sync-status.ts`, pure:
+  cloud `starting` · `not_configured` · `unknown` · `online` · `offline`, unsent summed over all five queues,
+  dead letters, last successful send across queues, last contact from any answered pull) and serves it read-only
+  on the lane socket as `GET /lane/sync-status` (loopback-origin rule as every lane route, `cache-control:
+  no-store`); `startEdge` exposes the same as `edge.syncStatus()`, late-bound like the day close so a box that is
+  still starting says "starting", never a guess. The till polls it every 10 s and after every sale, and paints
+  FOUR honest states in words as well as colour, EN/TA: checking · **Offline — the store box is not answering
+  (sales cannot be saved on this lane)** · online + last contact time · selling offline / no head office link / not
+  checked yet; the unsent count and its tap-to-explain text are the BOX's number. The manager's badge does the
+  same when a box named its socket (`window.laneWriteBase`) and keeps the register words when a page is opened
+  from a file. Also on both screens: the language toggle and the unsent count are real 48px targets (36px and
+  40px before), badge text 16px on the till, red buttons and banners on `--danger-surface`, every literal colour a
+  token. Proven: `tests/unit/lane-sync-status.test.ts` (9 — the five states, sums and latest-times),
+  `tests/integration/the-lane-tells-its-sync-status.test.ts` (4, real edge — standalone box says not configured
+  and counts a sale saved on the lane; foreign origin 403 / preflight 204 / listed on the 404; with a real
+  in-memory cloud: unknown before a pass → online after a drained day close and a pull → offline with the last
+  contact KEPT when the line is cut), `tests/e2e/the-till-badge-tells-the-truth.e2e.ts` (1, real Chromium on the
+  served one-PC till: no head office link → said, never "Online"; a rung sale → Unsent: 1 from the box's outbox;
+  the box gone → "Offline — the store box is not answering"), the till and manager usability guardrails (+4 and
+  +3). **Honest scope:** the badge's *reconnecting* state is set on the tested session but not yet worded apart
+  from "checking" — the box answers or it does not; peripheral health (scanner / printer / scale) is hardware
+  (EX-09) and is not on the badge; the per-lane view the manager spec calls "lane health" is, on a one-lane
+  store box, this badge plus the unsent tile — a multi-lane view waits for a multi-lane store.
 - **Next — Stage G slice 2 onward (UI/UX finish across the 8 apps, consistent · modern · bilingual EN/TA):** built to the Stage 3
   design system (`docs/design/design-system.md`, §27/§27.1, QG-02, NFR-07/08, P-07) and the screen specs in
   `docs/design/screens/`, in slices: G1 one shared visual foundation — DONE above; G2 the till and manager screens to the spec's
-  ≤3-interaction and arm's-length rules; G3 the customer app to WCAG 2.2 AA on the key journeys; G4 the picker /
+  ≤3-interaction and arm's-length rules — 2a the honest badge DONE above, 2b next: the interaction budgets measured in a
+  browser (quick quantities, quick cash amounts, a "next approval" primary action on the manager's home); G3 the customer app to WCAG 2.2 AA on the key journeys; G4 the picker /
   driver / warehouse handhelds for a low-spec phone; G5 the ERP's 46 pages made one product (navigation, states,
   bilingual completeness guardrail on every page); plus the three items already parked for Stage G — the exchange
   screen (desk + till), the desk refund screen, and the migration screen drawing `cloudRegister` /

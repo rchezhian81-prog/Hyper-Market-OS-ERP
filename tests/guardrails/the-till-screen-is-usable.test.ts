@@ -62,6 +62,37 @@ describe('the message that must not be missed, is not missed', () => {
   });
 });
 
+describe('the sync badge is the box\'s fact, not the shell\'s assumption (Stage G slice 2 · design system §1 rule 4)', () => {
+  it('asks the box on GET /lane/sync-status — connection, unsent count and last contact all come from there', () => {
+    expect(code(APP)).toContain('/lane/sync-status');
+    expect(code(APP)).toMatch(/refreshBadge/);
+    expect(code(APP)).toMatch(/lastContact/);
+    // The unsent count the cashier taps is the BOX's — the sale was saved there, and there is where it waits.
+    expect(code(APP)).toMatch(/box\.status\.unsent/);
+  });
+
+  it('has words — in both languages — for every state: checking, box not answering, no head office, no link set up, not checked yet', () => {
+    for (const key of ['checkingBox', 'boxNotAnswering', 'noCloud', 'cloudNotSetUp', 'cloudUnknown', 'lastContact', 'unsentHeld']) {
+      expect(APP, `${key} is not used`).toContain(`t('${key}')`.replace(`t('unsentHeld')`, `t('unsentHeld')`));
+    }
+    const en = APP.slice(APP.indexOf('  en: {'), APP.indexOf('  ta: {'));
+    const ta = APP.slice(APP.indexOf('  ta: {'));
+    for (const key of ['checkingBox', 'boxNotAnswering', 'noCloud', 'cloudNotSetUp', 'cloudUnknown', 'lastContact', 'unsentHeld']) {
+      expect(en, `no English for ${key}`).toMatch(new RegExp(`\\b${key}:`));
+      expect(ta, `no Tamil for ${key}`).toMatch(new RegExp(`\\b${key}:`));
+    }
+  });
+
+  it('asks again after every sale, because the unsent count just changed', () => {
+    expect(code(APP)).toMatch(/session\.newSale\(\);\s*void refreshBadge\(\);/);
+  });
+
+  it('keeps every badge control at the touch-target size — nothing on the header is 36px any more', () => {
+    expect(HTML).not.toMatch(/min-height:\s*3\dpx/);
+    expect(HTML).toMatch(/\.unsent \{[^}]*min-height: var\(--tap\)/);
+  });
+});
+
 describe('it can be read and reached', () => {
   it('states a touch target of at least 48px', () => {
     const tap = /--tap:\s*(\d+)px/.exec(HTML);

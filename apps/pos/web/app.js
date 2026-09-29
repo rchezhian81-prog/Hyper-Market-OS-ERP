@@ -41,6 +41,14 @@ const WORDS = {
     scanToBegin: 'Scan an item to begin.', qty: 'Qty', void: 'Void', tender: 'Tender',
     cancel: 'Cancel', ok: 'OK', quantity: 'Quantity', cashReceived: 'Cash received',
     changeDue: 'Change due', online: 'Online', offline: 'Offline', unsent: 'Unsent',
+    // The badge's states, from the BOX (design system §1 rule 4): connection · unsent · last contact.
+    checkingBox: 'Checking the store box…',
+    boxNotAnswering: 'the store box is not answering — sales cannot be saved on this lane',
+    noCloud: 'Selling offline — head office cannot be reached',
+    cloudNotSetUp: 'No head office link on this box',
+    cloudUnknown: 'Head office not checked yet',
+    lastContact: 'last contact',
+    unsentHeld: 'sale(s) are saved on this box and waiting to be sent. Nothing is lost — they go as soon as head office can be reached.',
     reasonForVoid: 'Reason for void', tapLineFirst: 'Tap a line first.',
     scanFirst: 'Scan an item first.', read: 'Please read this',
     notEnough: 'Not enough — the customer still owes',
@@ -96,6 +104,13 @@ const WORDS = {
     tender: 'பணம் பெறு', cancel: 'ரத்து', ok: 'சரி', quantity: 'எண்ணிக்கை',
     cashReceived: 'பெற்ற பணம்', changeDue: 'மீதம் தர வேண்டியது', online: 'இணைப்பில்',
     offline: 'இணைப்பு இல்லை', unsent: 'அனுப்பப்படாதவை', reasonForVoid: 'நீக்கக் காரணம்',
+    checkingBox: 'கடைப் பெட்டியைச் சரிபார்க்கிறது…',
+    boxNotAnswering: 'கடைப் பெட்டி பதிலளிக்கவில்லை — இந்த வரிசையில் விற்பனைகளைச் சேமிக்க முடியாது',
+    noCloud: 'ஆஃப்லைனில் விற்பனை — தலைமை அலுவலகத்தை அடைய முடியவில்லை',
+    cloudNotSetUp: 'இந்தப் பெட்டியில் தலைமை அலுவலக இணைப்பு இல்லை',
+    cloudUnknown: 'தலைமை அலுவலகம் இன்னும் சரிபார்க்கப்படவில்லை',
+    lastContact: 'கடைசித் தொடர்பு',
+    unsentHeld: 'விற்பனை(கள்) இந்தப் பெட்டியில் சேமிக்கப்பட்டு அனுப்பக் காத்திருக்கின்றன. எதுவும் இழக்கப்படவில்லை — தலைமை அலுவலகத்தை அடைந்தவுடன் அவை செல்லும்.',
     tapLineFirst: 'முதலில் ஒரு வரியைத் தொடவும்.', scanFirst: 'முதலில் ஒரு பொருளை ஸ்கேன் செய்யவும்.',
     read: 'இதைப் படிக்கவும்', notEnough: 'போதவில்லை — வாடிக்கையாளர் இன்னும் தர வேண்டியது',
     receiptsUsedUp: 'இந்த பணப்பெட்டியின் ரசீது எண்கள் முடிந்துவிட்டன. பணம் வாங்க வேண்டாம் — புதிய எண் வரம்பை ஏற்ற மேலாளரிடம் சொல்லவும்.',
@@ -414,14 +429,83 @@ function render() {
   el('empty').textContent = suspended ? t('onHold') : t('scanToBegin');
   el('total').textContent = inr(session.payableMinor());
 
-  const badge = session.syncBadge();
-  const offline = badge.connection !== 'online';
-  el('conn-dot').classList.toggle('offline', offline);
+  paintBadge();
+}
+
+// ── The sync badge: what the BOX knows, never what the shell assumes ────────
+//
+// Design system §1 rule 4: every screen shows connection state, the unsent count and last-sync freshness.
+// The shell cannot know any of that on its own — it used to show "Online · Unsent: 0" from a state nothing
+// ever set. The box can: it owns the outbox, drains it and pulls the catalogue, and it answers
+// GET /lane/sync-status on the same socket the sale is saved through. So the badge asks the box every ten
+// seconds and after every sale, and there are FOUR honest states, each with words as well as a colour
+// (one man in twelve cannot tell the colours apart):
+//   · the box has not been asked yet          — "Checking the store box…"
+//   · the box does not answer                 — OFFLINE: a sale posted now will be refused, so say so first
+//   · the box answers, head office reachable  — online, with when head office last answered
+//   · the box answers, head office not        — selling offline (or no link set up): the queue holds (P-01)
+// Read at each poll, not once: the box names its socket in the served page, and a box that vanishes must be noticed.
+const laneBase = () => (typeof window.laneWriteBase === 'string' ? window.laneWriteBase : 'http://127.0.0.1:8090');
+let box = { asked: false, reachable: false, status: null };
+
+/** The local clock face for a box time — the person reading it is standing in the shop. */
+function clock(iso) {
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+/** The connection state the tested session records, from the box's answer (the contracts' vocabulary). */
+function connectionFor(b) {
+  if (!b.asked) return 'reconnecting';
+  if (!b.reachable) return 'offline';
+  return b.status && b.status.cloud === 'online' ? 'online' : 'degraded';
+}
+
+function paintBadge() {
+  const dot = el('conn-dot');
+  dot.classList.remove('offline', 'degraded', 'error', 'idle');
+  let words;
+  if (!box.asked) {
+    dot.classList.add('idle');
+    words = t('checkingBox');
+  } else if (!box.reachable) {
+    dot.classList.add('error');
+    words = `${t('offline')} — ${t('boxNotAnswering')}`;
+  } else {
+    const s = box.status;
+    const when = s.lastContactAt ? ` · ${t('lastContact')} ${clock(s.lastContactAt)}` : '';
+    if (s.cloud === 'online') {
+      words = `${t('online')}${when}`;
+    } else {
+      dot.classList.add(s.cloud === 'unknown' || s.cloud === 'starting' ? 'idle' : 'degraded');
+      words = `${s.cloud === 'offline' ? t('noCloud') : s.cloud === 'not_configured' ? t('cloudNotSetUp') : t('cloudUnknown')}${when}`;
+    }
+  }
   // Words as well as a dot. A colour-only badge is invisible to one man in twelve, and this badge
   // is how a cashier knows whether the shop is behind.
-  el('conn-text').textContent = offline ? t('offline') : t('online');
-  el('unsent').textContent = `${t('unsent')}: ${badge.unsentCount}`;
+  el('conn-text').textContent = words;
+  // The unsent count is the BOX's — the sale was saved there, and there is where it waits.
+  const unsent = box.reachable && box.status ? box.status.unsent : session.syncBadge().unsentCount;
+  el('unsent').textContent = `${t('unsent')}: ${unsent}`;
 }
+
+async function refreshBadge() {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 3000);
+  try {
+    const res = await fetch(`${laneBase()}/lane/sync-status`, { cache: 'no-store', signal: ctl.signal });
+    box = res.ok ? { asked: true, reachable: true, status: await res.json() } : { asked: true, reachable: false, status: null };
+  } catch {
+    box = { asked: true, reachable: false, status: null };
+  } finally {
+    clearTimeout(timer);
+  }
+  if (typeof session.setConnection === 'function') session.setConnection(connectionFor(box));
+  paintBadge();
+}
+void refreshBadge();
+setInterval(() => { void refreshBadge(); }, 10_000);
+// The badge's own handle, so a test (or a person at the console) can ask the box again without waiting.
+window.posBadge = { refresh: refreshBadge, state: () => box };
 
 // ── Cashier intents ─────────────────────────────────────────────────────────
 
@@ -492,6 +576,7 @@ el('tender').addEventListener('click', async () => {
     const receipt = await session.tenderCash(`S-${receiptNumber}`, receiptNumber, new Date().toISOString());
     tell(`${t('changeDue')}: ${inr(change)}`, receipt);
     session.newSale();
+    void refreshBadge();
     selectedLineId = null;
     render();
   } catch (e) {
@@ -541,6 +626,7 @@ async function takeCardOrUpi(kind, payable) {
     });
     tell(`${t('approved')} — ${kind === 'card' ? t('card') : t('upi')}`, receipt);
     session.newSale();
+    void refreshBadge();
     selectedLineId = null;
     render();
   } catch (e) {
@@ -779,10 +865,8 @@ el('lang').addEventListener('click', () => {
 });
 
 el('unsent').addEventListener('click', () => {
-  const badge = session.syncBadge();
-  tell(`${t('unsent')}: ${badge.unsentCount}`, badge.unsentCount === 0
-    ? t('allSent')
-    : `${badge.unsentCount} sale(s) are saved on this lane and waiting to be sent. Nothing is lost — they go as soon as there is a connection.`);
+  const unsent = box.reachable && box.status ? box.status.unsent : session.syncBadge().unsentCount;
+  tell(`${t('unsent')}: ${unsent}`, unsent === 0 ? t('allSent') : `${unsent} ${t('unsentHeld')}`);
 });
 
 // ── The scanner ─────────────────────────────────────────────────────────────
