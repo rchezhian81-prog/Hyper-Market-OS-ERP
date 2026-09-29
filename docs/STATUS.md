@@ -567,7 +567,30 @@ accounts.
   Stage F deployment component shared with the customer app, not an M22 gap. Held below INTEGRATION_TESTED
   until the honest-hardening review (durability + tenant-isolation tests across the M22 surfaces, as M02/M03
   had).
-- **Next:** M19 slice E PR (#616) → merge → M22 slice Q PR → merge; then, one screen per slice: M23 day-book screen + e2e, M27 till panel → store box → cloud tags + e2e, M01 template screen + e2e (+ the edge reading the published receipt template into the lane's pack); then Stage D. Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
+- **Stage C, second pass, family M23 (finance), slice E — done (29 Sep 2026): the DAY-BOOK screen, browser-verified
+  (M23-FR-01, API-09).** Before: slice D put operational posting on the cloud (the posting map, `POST /v1/finance/
+  day-book/:tradingDay/post`, `GET …/day-book/:tradingDay`) with no screen bound to it — an accountant had nowhere
+  to post a day or see what could not be posted; the ledger said "a day-book SCREEN + browser e2e" remained. Now, on
+  the M15/risk-acceptance pattern: `apps/web-erp/src/day-book-session.ts` (the tested, DOM-free session model, one
+  bilingual EN/TA copy object) + `apps/web-erp/web/day-book.html` / `.js` served by the store box as `/day-book` —
+  the accountant picks a trading day (default yesterday), reads it live, and sees the JOURNALS posted for it (sales,
+  returns, takings and refunds per tender — kind, amount, receipts covered, period; a day from a closed month posted
+  late into the next open period marked as attention), the ACCOUNTS they move (debit / credit / balance) and the
+  EXCEPTIONS with their state (open = an ERROR, money the accounts have not taken; resolved = ok, kept on the
+  record); the one write, **Post this day to the accounts**, runs ONLY on an explicit click in the accountant's own
+  name through `browser-entry.ts`'s post port (idempotency key, same-origin session; 201 posted / 200 nothing new /
+  409 `posting_map_not_defined` told as "define the posting map first" / lost link ≠ refusal), refused locally
+  without `finance.journal.post` or a valid date, and re-reads the day afterwards so what is shown is the cloud's.
+  **An unposted day never looks booked** (P-08): the cloud has no dry-run, so it reads "nothing posted for this day
+  yet" with no totals. Box wiring: `PackDayBookPolicy`, `dayBookPayload`, screen-server route, offline precache,
+  menu entry gated on `finance.period.read` (Finance group). Tests: `tests/unit/erp-day-book-session.test.ts` (5),
+  `tests/guardrails/the-day-book-screen-is-usable.test.ts` (10), `tests/e2e/day-book-post-delivery.e2e.ts` (3,
+  headless Chromium against a stub cloud: the day reads unposted → the click POSTs with an idempotency key → the
+  re-read shows two journals, four accounts and the open exception as an error; a read-only store manager has no
+  post button and sends nothing; a 409 no-posting-map answer is told as such and the day stays unposted). No rung
+  change — M23 stays PARTIALLY WIRED (the Tally drain and the close's genuine second control-total source remain
+  external; AP/AR and cost/profit centres are foundation-only).
+- **Next:** M22 slice Q PR (#617) → merge → M23 slice E PR → merge; then M27 till panel → store box → cloud tags + e2e, M01 template screen + e2e (+ the edge reading the published receipt template into the lane's pack); then Stage D. Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
 
 ---
 

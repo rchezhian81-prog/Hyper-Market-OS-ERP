@@ -69,6 +69,11 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'cash', label: 'Cash & day close', path: '/cash', requires: 'cash.view', group: 'Trading' },
 
   { id: 'finance', label: 'Finance', path: '/finance', requires: 'finance.view', group: 'Finance' },
+  // Day book — the M23 posting screen: one trading day's sales, returns, takings and refunds posted as balanced
+  // journals through the posting map; open exceptions are money the accounts have not taken. Gated on the SAME
+  // permission the day-book read route checks (`finance.period.read`), so the menu never offers a screen the server
+  // would refuse (M23-FR-01).
+  { id: 'day-book', label: 'Day book', path: '/day-book', requires: 'finance.period.read', group: 'Finance' },
   { id: 'reconciliation', label: 'Reconciliation', path: '/reconciliation', requires: 'reconciliation.view', group: 'Finance' },
   // GST e-invoice / e-way-bill reconciliation — gated on the SAME permission the queue route checks
   // (`finance.einvoice.read`), so the menu can never offer a screen the server would refuse (item 3 inc2).
