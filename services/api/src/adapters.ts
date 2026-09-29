@@ -201,6 +201,8 @@ import type { PromotionCatalogueDeps } from '../../pricing/src/promotion-catalog
 import type { Promotion } from '../../../packages/promotions/src/promotions';
 import { expired } from '../../orders/src/index';
 import type { PaymentRefundDeps } from '../../orders/src/payments';
+import type { StorefrontDeps } from '../../orders/src/storefront';
+import type { StorefrontAccessRefusal } from '../../../packages/orders/src/storefront-scope';
 import { testModeRefundProcessor, type OrderPayment, type OrderPaymentResolution, type OrderRefund, type OrderRefundOutcome, type RefundProcessor } from '../../../packages/orders/src/payment-refunds';
 import type {
   Reservation, OrdersDeps, PlacedOrder, OrderTransition, OrderStateView, StoredSubstitution, StoredBackorder,
@@ -1145,6 +1147,10 @@ const forSubstitutionIndex = streamName(STREAM.orders, 'substitutions');
 // folds without walking every order — the same shape as the substitution index above.
 const forPaymentIndex = streamName(STREAM.orders, 'payments');
 const forRefundIndex = streamName(STREAM.orders, 'refunds');
+// The storefront (M20): one index per customer of the orders they placed, and the register of refused attempts to
+// read or place against another customer's order (hard rule #6).
+const forCustomerOrders = (customerRef: string): string => streamName(STREAM.orders, 'customer', customerRef);
+const forStorefrontRefusals = streamName(STREAM.orders, 'access-refusals');
 const forInvoice = (invoiceId: string): string => streamName(STREAM.purchase, 'invoice', invoiceId);
 /** Each supplier partner's portal config and submissions fold one stream — one partner, not the shop. */
 const forPortalPartner = (partnerId: string): string => streamName(STREAM.purchase, 'partner', partnerId);
@@ -6429,7 +6435,7 @@ export function ordersAdapter(input: {
   readonly holdMinutes: number;
   /** Where a refund's money moves (M18-FR-04). Absent means the test-mode processor — the only one that exists until EX-03. */
   readonly refundProcessor?: RefundProcessor;
-}): OrdersDeps & PaymentRefundDeps {
+}): OrdersDeps & PaymentRefundDeps & StorefrontDeps {
   return {
     now: input.now,
     holdMinutes: input.holdMinutes,
@@ -6485,6 +6491,17 @@ export function ordersAdapter(input: {
         source: 'api/orders',
         payload: order,
       }));
+      // A storefront order is also indexed under its customer, so "my orders" folds without walking every order.
+      if (order.customerRef !== undefined) {
+        await input.store.append(tenantId, forCustomerOrders(order.customerRef), makeEvent({
+          id: `ord-placed-cust-${order.orderId}`,
+          type: 'OrderPlaced',
+          occurredAt: order.placedAt,
+          idempotencyKey: `ord-placed-cust-${tenantId}-${order.customerRef}-${order.orderId}`,
+          source: 'api/orders',
+          payload: order,
+        }));
+      }
     },
 
     /** Current lifecycle state — the placed record plus the last transition; a fold, never a field. */
@@ -6643,6 +6660,21 @@ export function ordersAdapter(input: {
       return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes(permission));
     },
     refundProcessor: input.refundProcessor ?? testModeRefundProcessor(),
+
+    // ── Storefront (M20): who placed it, my orders, and the refusal register ──
+    placedOrder: async (tenantId, orderId) => latest<PlacedOrder>(input.store, tenantId, forOrder(orderId), 'OrderPlaced'),
+    ordersForCustomer: async (tenantId, customerRef) => allOf<PlacedOrder>(input.store, tenantId, forCustomerOrders(customerRef), 'OrderPlaced'),
+    recordAccessRefusal: async (tenantId, r: StorefrontAccessRefusal) => {
+      await input.store.append(tenantId, forStorefrontRefusals, makeEvent({
+        id: `sf-refused-${r.customerRef}-${r.orderId}-${r.action}-${r.at}`,
+        type: 'StorefrontAccessRefused',
+        occurredAt: r.at,
+        idempotencyKey: `sf-refused-${tenantId}-${r.customerRef}-${r.orderId}-${r.action}-${r.at}`,
+        source: 'api/orders',
+        payload: r,
+      }));
+    },
+    accessRefusals: async (tenantId) => allOf<StorefrontAccessRefusal>(input.store, tenantId, forStorefrontRefusals, 'StorefrontAccessRefused'),
   };
 }
 

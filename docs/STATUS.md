@@ -264,11 +264,34 @@ accounts.
   locations) is still a foundation behind the owner's location/capacity data. Follow-ons: the customer app's
   checkout does not yet CALL the payment route (the cloud half exists; the app→cloud hop is the M20 piece); a
   refund screen for the desk is a Stage G item.
+- **Stage C, family M20 (customer app), slice 1 — done (29 Sep 2026): the cloud half of the customer's
+  hop — a customer-scoped storefront surface (M20-FR-02/FR-03, §35).** The customer app has always computed
+  its order in the browser and never told the cloud; the cloud had no customer principal at all. Now
+  (`packages/orders/src/storefront-scope.ts`, `services/orders/src/storefront.ts`): a **`customer` role** —
+  the second party outside the business, as narrow as the supplier's (`storefront.order.place`,
+  `storefront.order.read`; no desk `order.*`, no `pos.*`, no `cash.*`); `POST /v1/storefront/orders/:orderId`
+  places an order **for the signed-in customer** (who placed it is the authenticated subject, never a body
+  field), reserves stock in the same breath with the same `promise` engine the desk uses, and records the
+  checkout's payment answer in the same call (card-shaped reference refused unrecorded; an unknown answer
+  leaves it payment-pending and the desk cannot confirm it, §31); `GET /v1/storefront/orders[/:orderId]`
+  reads **only the caller's own** orders — another customer's order, or a desk order with no customer, is
+  refused **and recorded** on a register staff read (`GET /v1/storefront/access-refusals`, with "probing" =
+  refused on more than one distinct order, hard rule #6); a customer cannot reach the desk's order routes and
+  staff cannot place as a customer; the whole family is behind the `customer_app` entitlement (M36-FR-01).
+  Proven: engine + routes 8 (`tests/unit/storefront-scope.test.ts`) + real API 4
+  (`tests/integration/storefront-orders.test.ts`: reserves real stock, a second customer promised only what
+  is left, retry reserves nothing twice, own-only reads, refusals registered and probing named, pending
+  payment blocks the desk, card refused, least privilege both ways, no entitlement → nothing). **No rung
+  change** (the app does not yet call it). Follow-ons (M20 slice 2): the customer app's real transport —
+  the checkout POSTs here with the customer's session token and `reachedTheShop` becomes the cloud's
+  answer instead of the browser's online flag; the portal sign-in's auth backend is an identity-provider
+  component of the deployment (the API verifies and never mints, hard rule #4), test-mode until the OIDC
+  provider is chosen.
 - **Stage C — remaining, in order:**
   then family by family through the 57 remaining PARTIALLY_WIRED items (D01-FR-06 content authoring,
   D02-FR-06 display funding, D07 coupons/referrals, M21 compensation, M23 close second source, …). OA-12 was
   already answered and closed on 23 Sep — nothing to un-park.
-- **Next:** M18 slice 1 PR → merge → M20 (the customer app's checkout calls the cloud payment route) → M19 → M22 → M23 → M27 → M35 → M36 → M01, one family per slice.
+- **Next:** M20 slice 1 PR → merge → M20 slice 2 (the app's real transport to `/v1/storefront/orders`) → M19 → M22 → M23 → M27 → M35 → M36 → M01, one family per slice.
 
 ---
 
