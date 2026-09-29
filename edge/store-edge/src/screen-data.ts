@@ -1775,6 +1775,20 @@ export function migrationPayload(input: ScreenInput): Record<string, unknown> | 
   if (input.pack.historyExclusions.known) payload['exclusions'] = input.pack.historyExclusions.value;
   if (input.pack.legacyArchive.known) payload['archive'] = input.pack.legacyArchive.value;
 
+  // The cloud's register, when this box has pulled it (C3b): how old it is — from the CLOUD's clock, never
+  // this box's boot — plus the two registers with no section of their own. Absent when the box has only ever
+  // read its pack file, and the screen must say so rather than imply it is looking at the register (P-08).
+  if (input.pack.migrationFeed.known) {
+    const feed = input.pack.migrationFeed.value;
+    payload['cloudRegister'] = {
+      generatedAt: feed.generatedAt,
+      receivedAt: feed.receivedAt,
+      ageHours: Math.max(0, Math.floor((Date.parse(input.now) - Date.parse(feed.generatedAt)) / 3_600_000)),
+    };
+    if (feed.refusedDecisions !== undefined) payload['refusedDecisions'] = feed.refusedDecisions;
+    if (feed.verification !== undefined) payload['verification'] = feed.verification;
+  }
+
   return payload;
 }
 

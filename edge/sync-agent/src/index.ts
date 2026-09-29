@@ -8,3 +8,4 @@ export * from './agent';
 export * from './http-transport';
 export * from './pack-source';
 export * from './pack-puller';
+export * from './migration-feed';

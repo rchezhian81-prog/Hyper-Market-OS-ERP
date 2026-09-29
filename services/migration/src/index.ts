@@ -43,6 +43,7 @@ import {
 import { witnessRoutes, applicableSignatures, findingsDigest, type ExtractionRun, type RecordedFinding, type StoredSignature } from './witness';
 import { parallelRunRoutes, ledgerCutoverEvidence, type ParallelRunPolicy, type RecordedParallelDay, type RecordedRollback } from './parallel-run';
 import { decisionRoutes, type RefusedDecision } from './decisions';
+import { screenRoutes } from './screen';
 import type { ExceptionResolution, MigrationException } from '../../../packages/migration/src/cleaning';
 import type { TotalSignature } from '../../../packages/migration/src/reconcile';
 import type { ParallelDifference } from '../../../packages/migration/src/cutover';
@@ -52,6 +53,7 @@ import { assertSafeTarget, namedPeople } from './guards';
 
 export type { ExtractionRun, RecordedFinding, StoredSignature } from './witness';
 export type { RefusedDecision } from './decisions';
+export type { MigrationScreenFeed, MigrationScreenPolicy, MigrationScreenVerification } from './screen';
 
 const EXCLUSION_SCOPES: readonly string[] = ['documents_before', 'entity_kind', 'named_records', 'inactive_records'];
 
@@ -1025,5 +1027,6 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
     ...witnessRoutes(deps),
     ...parallelRunRoutes(deps),
     ...decisionRoutes(deps),
+    ...screenRoutes(deps),
   ];
 }

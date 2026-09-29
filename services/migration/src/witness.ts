@@ -145,7 +145,7 @@ async function recordFindings(
   return out;
 }
 
-const ALL_DOMAINS: readonly DataDomain[] = ['products', 'barcodes', 'prices', 'stock', 'batches', 'suppliers', 'purchases', 'customers', 'loyalty', 'sales', 'tax', 'ledgers'];
+export const ALL_DOMAINS: readonly DataDomain[] = ['products', 'barcodes', 'prices', 'stock', 'batches', 'suppliers', 'purchases', 'customers', 'loyalty', 'sales', 'tax', 'ledgers'];
 
 // ── The routes ────────────────────────────────────────────────────────────────────────────────────────
 

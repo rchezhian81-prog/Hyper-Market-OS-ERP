@@ -37,8 +37,13 @@ import { SyncAgent } from '../../../edge/sync-agent/src/agent';
 import { httpTransport } from '../../../edge/sync-agent/src/http-transport';
 import { httpPackSource } from '../../../edge/sync-agent/src/pack-source';
 import { pullPack, type PackPullOutcome, type PackPullStatus } from '../../../edge/sync-agent/src/pack-puller';
+import {
+  httpMigrationFeedSource, pullMigrationFeed,
+  type MigrationFeedPullOutcome, type MigrationFeedPullStatus, type MigrationFeedReceiver,
+} from '../../../edge/sync-agent/src/migration-feed';
 import { openFileLog, readLog, type OpenFileLog } from './file-log';
 import { readSignedPack, writeSignedPack } from './signed-pack-file';
+import { readHeldMigrationFeed, writeHeldMigrationFeed, type HeldMigrationFeed } from './migration-feed-file';
 import { SyncPipeline } from './sync-pipeline';
 import { canonicalHash, IdempotencyGuard } from './idempotency';
 import { ReturnEntitlement, type EntitlementLine } from './entitlement';
@@ -48,7 +53,7 @@ import { createEdgeNode, type EdgeNode } from './index';
 import { startLaneServer, LANE_HOST, type LaneServer, type LaneDayCloseHandler, type LaneDayReopenHandler } from './lane-server';
 import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-server';
 import { readSales } from './read-model';
-import { emptyPack, readPack, type StorePack } from './store-pack';
+import { emptyPack, readPack, withMigrationFeed, type StorePack } from './store-pack';
 import { managerPayload, type ScreenInput } from './screen-data';
 import { hmacSigner } from '../../../services/catalogue/src/index';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
@@ -220,6 +225,13 @@ export interface EdgeProcess {
    * (the same way `agent.drain` is), rather than waiting on the timer.
    */
   readonly refreshPack: (() => Promise<PackPullOutcome>) | null;
+  /**
+   * Pull the cloud's migration register now (Stage C3b) and lay it over the store pack's migration sections
+   * so the migration screen shows the register — exceptions, totals, days, differences — with the desk's
+   * decisions folded in, and says how old it is. Null when no cloud is configured. Rides the same loop as
+   * `refreshPack`; exposed for the same reason.
+   */
+  readonly refreshMigrationFeed: (() => Promise<MigrationFeedPullOutcome>) | null;
   /**
    * Run exactly one drain-and-settle of both queues (sales then refunds), returning what moved.
    * Null when no cloud is configured — there is nothing to drain to. The poll loop calls the same
@@ -613,6 +625,15 @@ export async function startEdge(
     say('no store pack is configured, so the screens will be told this box knows nothing yet.');
   }
 
+  // The cloud's migration register as this box last pulled it (C3b), restored from disk and laid over the
+  // pack's migration sections — so a reboot with the cable out still shows the register as it stood, with
+  // the cloud's own clock on it (P-01, P-08). Nothing restored means the screen says so.
+  let heldFeed: HeldMigrationFeed | undefined = await readHeldMigrationFeed(settings['EDGE_DATA_DIR']!, tenantId);
+  if (heldFeed !== undefined) {
+    pack = withMigrationFeed(pack, heldFeed.feed, heldFeed.receivedAt);
+    say(`migration register as of ${heldFeed.feed.generatedAt} restored from disk — the last one this box pulled.`);
+  }
+
   // The screens socket. Built from the CURRENT state on every request, so a screen reloaded at
   // four o'clock shows four o'clock's exceptions rather than the ones this process saw at boot.
   const snapshot = (): ScreenInput => {
@@ -787,7 +808,7 @@ export async function startEdge(
     say('no cloud is configured, so nothing will be synced. The shop can still trade — that is the point.');
     return {
       log, returnsLog, completionsLog, dayCloseLog, outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, node, lane, screens,
-      agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, refreshPack: null, syncOnce: null,
+      agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, refreshPack: null, refreshMigrationFeed: null, syncOnce: null,
       // The day still locks with no cloud — that is the point of P-01. It queues durably and goes up when
       // a cloud is configured and reachable; nothing is told a lie in the meantime. Reopen is the same.
       closeDay,
@@ -853,6 +874,40 @@ export async function startEdge(
       say(outcome.staffMessage);
     }
     lastPackStatus = outcome.status;
+    return outcome;
+  };
+
+  // The migration screen's inbound mirror (C3b), on the same loop as the catalogue pull and shaped like it:
+  // the cloud's register is fetched, taken only if it is this shop's and not older than what is held, laid
+  // over the pack's migration sections, and persisted so a reboot keeps it. A section the cloud did not send
+  // stays exactly as it was — never filled in (the cutover gate reads absence as an unanswered question).
+  const feedSource = httpMigrationFeedSource({ baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch });
+  const feedReceiver: MigrationFeedReceiver = {
+    tenantId,
+    heldFeed: () => heldFeed?.feed,
+    takeFeed: (feed, receivedAt) => {
+      heldFeed = { feed, receivedAt };
+      pack = withMigrationFeed(pack, feed, receivedAt);
+    },
+  };
+  let lastFeedStatus: MigrationFeedPullStatus | undefined;
+
+  const refreshMigrationFeed = async (): Promise<MigrationFeedPullOutcome> => {
+    const outcome = await pullMigrationFeed({ source: feedSource, receiver: feedReceiver, now: new Date().toISOString() });
+    if (outcome.status === 'updated') {
+      // Live in memory already; the disk copy is what a reboot restores. A failed write is said, not fatal.
+      try {
+        if (heldFeed !== undefined) await writeHeldMigrationFeed(settings['EDGE_DATA_DIR']!, heldFeed);
+      } catch (e) {
+        say(`the migration register could not be saved to disk (${e instanceof Error ? e.message : String(e)}). It is live now and will be pulled again next time.`);
+      }
+      say(outcome.staffMessage);
+    } else if (outcome.status !== 'unchanged' && outcome.status !== lastFeedStatus) {
+      // A CHANGE of state is worth a line — going offline, another shop's register. A quiet re-confirmation
+      // every pass is not (P-03 / P-08: the lines that matter must not be buried).
+      say(outcome.staffMessage);
+    }
+    lastFeedStatus = outcome.status;
     return outcome;
   };
 
@@ -942,6 +997,12 @@ export async function startEdge(
     } catch (e) {
       say(`catalogue refresh failed: ${e instanceof Error ? e.message : String(e)}. Still on the last pack this box trusted.`);
     }
+    // The migration register rides the same loop, after the catalogue, for the same reasons (C3b).
+    try {
+      await refreshMigrationFeed();
+    } catch (e) {
+      say(`migration register refresh failed: ${e instanceof Error ? e.message : String(e)}. The screen keeps the register this box holds.`);
+    }
     if (!stopping) timer = setTimeout(() => { void pass(); }, nextInterval(quietPasses));
   };
 
@@ -966,6 +1027,7 @@ export async function startEdge(
     closeDay,
     reopenDay,
     refreshPack,
+    refreshMigrationFeed,
     syncOnce: () => drainAndSettle(),
     stop: async () => {
       stopping = true;

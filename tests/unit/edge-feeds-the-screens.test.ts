@@ -282,6 +282,7 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
     cutoverId: 'cut-1', requiredCleanDays: 3, loadOperator: 'u-eng', userId: 'u-owner',
     openAssessments: 0,
   }),
+  migrationFeed: notKnown('this box has never pulled the cloud register'),
   lossPreventionRules: known([{ kind: 'refund', maxCount: 2 }]),
   consentPurposes: known([]),
   warehouse: notKnown('no warehouse work sent'),
