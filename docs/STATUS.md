@@ -375,11 +375,42 @@ accounts.
   terms + no invoices said plainly, entitlement off → nothing. **No rung change** (M22 stays PARTIALLY WIRED
   on the ledger; the portal SCREEN + browser e2e and the OTP/OIDC auth backend for external logins are the
   remaining pieces — the latter a Stage F deployment component shared with the customer app).
+- **Stage C, family M23 (finance), slice D — done (29 Sep 2026): the DAY BOOK — operational events post
+  journals (M23-FR-01, API-09).** Before: the mapping-driven posting engine (`packages/finance/src/posting.ts`)
+  was foundation-only — nothing read the tills' sales or the desk's returns into it, so the roadmap's "every
+  operational event maps to a journal or an exception" was true of a function, not of the shop. Now
+  `packages/finance/src/day-book.ts` (pure) reads a TRADING day's synced sales and processed returns, pulls the
+  GST out of the MRP-inclusive line totals (`extractInclusiveGst`; the rate frozen on the line wins over the
+  catalogue's), sums the day per posting KIND (`sale`, `sale_return`, `tender:<kind>`, `refund:<kind>` — a
+  clearing-account pattern, so a day whose tenders cover its sales leaves `sales_clearing` at zero and one that
+  does not shows the difference as a balance in the accounts, P-08), and hands each kind to `postJournal`; every
+  receipt ends up in a voucher's source list or in a NAMED exception (no GST rate anywhere; a receipt that does
+  not add up; a receipt-less multi-rate return nothing can weight; a tender kind the mapping does not name).
+  Routes (`services/finance/src/day-book.ts`): `GET`/`PUT /v1/finance/posting-map` — the accountant's mapping
+  (AVR-09), versioned and latest-wins, shape-checked; a SUGGESTED retail map is offered and never applied by
+  itself (P-05); new permission `finance.posting.configure` for owner + accountant. `POST
+  /v1/finance/day-book/:tradingDay/post` (under `finance.journal.post`): no mapping → 409 and nothing posted;
+  otherwise one balanced voucher per kind appended through the same `appendJournal` + period gate the manual
+  journal route uses, by the caller (so the poster cannot sign that month's close, §28), into the day's own
+  period — or, when that month is CLOSED, into the next open period carrying its real trading date and saying
+  so (hard rule #2 / QG-07); re-runs post only what no voucher covers yet, PER KIND, so a receipt whose sale
+  voucher posted while its tender kind was unmapped posts exactly that leg once the map names it. `GET
+  /v1/finance/day-book/:tradingDay`: the vouchers, the day's account balances, and the exceptions with their
+  state — a RULE exception is `resolved` only by a voucher of its own kind, a RECEIPT exception by any voucher
+  covering the receipt; exceptions are append-only facts, never deleted (hard rule #6). Proven:
+  `tests/unit/finance-day-book.test.ts` (18), `tests/unit/finance-day-book-routes.test.ts` (12),
+  `tests/integration/day-book-posts-the-day.test.ts` (4 — through the real API: the accountant defines the
+  mapping, a day of sales + a return posts as balanced vouchers the period fold sees, read back after a cold
+  restart, a re-run posts nothing twice, a late receipt posts a supplement, an unrateable product is an OPEN
+  exception until a new pack knows it, a closed month takes nothing, a cashier is refused). **No rung change**
+  (M23 stays PARTIALLY WIRED — the Tally drain and the close's genuine second control-total source remain
+  external / data-blocked). **Owner / CA action, not a build item:** the suggested chart-of-accounts mapping is
+  a proposal — the CA confirms it or replaces it with the shop's own (AVR-09) before the first live posting.
 - **Stage C — remaining, in order:**
   then family by family through the 57 remaining PARTIALLY_WIRED items (D01-FR-06 content authoring,
   D02-FR-06 display funding, D07 coupons/referrals, M21 compensation, M23 close second source, …). OA-12 was
   already answered and closed on 23 Sep — nothing to un-park.
-- **Next:** M22 slice P PR → merge → M23 → M27 → M35 → M36 → M01, one family per slice (then a second pass: M19 exception screen + e2e, M22 portal screen + e2e, …); Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet).
+- **Next:** M23 slice D PR → merge → M27 → M35 → M36 → M01, one family per slice (then a second pass: M19 exception screen + e2e, M22 portal screen + e2e, M23 day-book screen + e2e, …); Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet).
 
 ---
 

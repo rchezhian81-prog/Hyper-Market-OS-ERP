@@ -14,6 +14,7 @@
 // it — money owed to a customer that no credit-note report can see.
 
 export * from './posting';
+export * from './day-book';
 export * from './credit-notes';
 export * from './inclusive-tax';
 export * from './discount';

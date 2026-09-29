@@ -154,6 +154,7 @@ import { dataImportRoutes } from '../../purchase/src/data-import';
 import { dataExportRoutes, buildExportDomains } from '../../purchase/src/data-export';
 import { AccessControl } from '../../../packages/rbac/src/rbac';
 import { financeRoutes } from '../../finance/src/index';
+import { dayBookRoutes } from '../../finance/src/day-book';
 import { creditNoteRoutes } from '../../finance/src/credit-notes';
 import { taxRoutes } from '../../finance/src/tax';
 import { retentionRoutes } from '../../finance/src/retention';
@@ -197,7 +198,7 @@ import { fulfilmentPackingRoutes } from '../../fulfilment/src/packing';
 import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
-  catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, dataExportAdapter, financeAdapter, settlementAdapter,
+  dayBookAdapter, catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, dataExportAdapter, financeAdapter, settlementAdapter,
   customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
@@ -633,6 +634,14 @@ export function buildSurface(deps: {
       appendJournal: () => {}, controlTotals: empty([]), postersIn: empty([]),
       markClosed: () => {}, markReopened: () => {}, canSignPeriod: () => Promise.resolve(false), now,
     } : financeAdapter({ store, now })),
+    // The day book (M23-FR-01): a trading day's synced sales + returns → balanced journals through the accountant's
+    // mapping; unmapped kinds and unsplittable receipts are visible exceptions, never silently unposted (P-08).
+    ...dayBookRoutes(store === undefined ? {
+      periodStates: empty(new Map()), nextOpenPeriod: empty(now().slice(0, 7)), appendJournal: () => {}, now,
+      postingMap: empty(undefined), definePostingMap: () => {}, salesOn: empty([]), returnsOn: empty([]),
+      originalSales: empty(new Map()), taxRates: empty(new Map()), dayBookJournals: empty([]),
+      recordException: () => {}, exceptionsOn: empty([]),
+    } : dayBookAdapter({ store, now })),
     // Period-close evidence pack + control-total validation (M23-FR-04 / QG-07) — reconcile both sides of
     // every total (the ledger vs an independent second source the caller supplies) and produce the CA's
     // signable pack; a non-reconciling pack is still produced but marked not signable. Stateless reads.
