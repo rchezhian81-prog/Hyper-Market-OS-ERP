@@ -981,11 +981,33 @@ accounts.
   `store-1`, no approval limit) — the pack's `policies.branchId` / manager identity are not passed through, so a
   request routed to another branch id shows as "outside your branch scope" on every served manager; both go to the
   G5 ERP slice (or a small fix slice) — neither is silently dropped.
+- **Stage G slice 3 — the customer app to WCAG 2.2 AA on the key journeys, AUDITED on the rendered page
+  (customer-app.md, NFR-07, design system §1 rules 1 · 6 · 7 · 8 and §5).** The spec sets a public-facing bar
+  (WCAG 2.2 AA, EN/TA, large targets, screen-reader labelled) and an interaction budget (reorder ≤ 3 · add a
+  searched item ≤ 2 · reach checkout ≤ 2); until now the static guardrail held the SOURCE to the rules a file can
+  show, and nothing held the RENDERED page to the ones only a browser can. Now `tests/e2e/lib/a11y-audit.ts` is an
+  in-house, dependency-free audit that runs inside real Chromium and does its maths with `packages/a11y` (the same
+  checker the foundation's palette is proven with): 1.4.3 contrast of every visible word against the surface it
+  actually sits on (4.5:1; 3:1 for large text), 1.4.11 non-text contrast of switches and the sync dot, 2.5.8
+  target size at this product's own 44px bar, 4.1.2 an accessible name on every control, 3.3.2 a label on every
+  input, 3.1.1 the page language — checked AGAIN after the Tamil toggle — and 2.4.6 exactly one visible h1.
+  `tests/e2e/the-customer-app-meets-wcag-aa.e2e.ts` (3, real Chromium at a low-spec phone's viewport 360×740):
+  every view a customer reaches passes with ZERO findings — shop, search results, basket with the sign-in group,
+  order, privacy, and privacy + shop again in Tamil with `html[lang="ta"]`; a **tripwire** injects faint words, a
+  tiny unnamed control and an unlabelled input and requires the audit to report 1.4.3 / 2.5.8 / 4.1.2 / 3.3.2 (so a
+  clean pass cannot be an audit that reads nothing); and the three budget rows are counted with the same `Tally`
+  as the till: reorder 1 · add a searched item 2 · reach checkout 2. Fixed on the way: the language toggle was
+  40px (now the foundation's 48), the problem notice was white on the signal red (3.8:1 — now `--danger-surface`),
+  the OFF consent switch's edge was `--line` on its panel (1.4:1 — now `--muted`, 5.7:1), and the last literal
+  colours moved to tokens; `the-customer-app-is-honest` guardrail (+3) holds all three. **Honest scope:** the audit cannot see focus visibility under a real keyboard (the static guardrail keeps
+  `:focus-visible` in place), screen-reader announcement order, or the meaning of the words; the pay step past the
+  sign-in group needs the auth backend and is exercised by `tests/e2e/customer-order-delivery.e2e.ts`, not audited here; the
+  audit helper is reusable and G4 / G5 run it on the handhelds and the ERP pages.
 - **Next — Stage G slice 2 onward (UI/UX finish across the 8 apps, consistent · modern · bilingual EN/TA):** built to the Stage 3
   design system (`docs/design/design-system.md`, §27/§27.1, QG-02, NFR-07/08, P-07) and the screen specs in
   `docs/design/screens/`, in slices: G1 one shared visual foundation — DONE above; G2 the till and manager screens to the spec's
   ≤3-interaction and arm's-length rules — 2a the honest badge and 2b the measured interaction budgets both DONE
-  above; **G3 next**; G3 the customer app to WCAG 2.2 AA on the key journeys; G4 the picker /
+  above; G3 the customer app to WCAG 2.2 AA — DONE above; **G4 next**; G3 the customer app to WCAG 2.2 AA on the key journeys; G4 the picker /
   driver / warehouse handhelds for a low-spec phone; G5 the ERP's 46 pages made one product (navigation, states,
   bilingual completeness guardrail on every page); plus the three items already parked for Stage G — the exchange
   screen (desk + till), the desk refund screen, and the migration screen drawing `cloudRegister` /
