@@ -159,7 +159,7 @@ import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTen
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project, EFFECT_ON_HAND } from '../../inventory/src/index';
 import type { Movement, Availability, InventoryDeps, StockOwnership } from '../../inventory/src/index';
-import { splitStoreValuation, type OwnedStockValue } from '../../../packages/concession/src/index';
+import { splitStoreValuation, type OwnedStockValue, tagsAsConcessionSales, latestTagVersions, type ConcessionTag } from '../../../packages/concession/src/index';
 import type { GoodsReceiptDeps, GrnRecord } from '../../inventory/src/goods-receipt';
 import { weightedAverageValuation, type ValuationMovement } from '../../../packages/stock/src/valuation';
 import { agedStockLots, type DatedMovement } from '../../../packages/stock/src/ageing-source';
@@ -179,6 +179,7 @@ import { projectHolds, type LegalHoldsDeps, type LegalHoldEvent } from '../../fi
 import { computeOpenCommitment, type ReceiptFact, type SupplierContract, type RebateScheme, type RebateAccrual, type Requisition, type Quote } from '../../../packages/purchasing/src/index';
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
 import type { DayBookDeps, DayBookJournal, DayBookExceptionRecord, StoredPostingMap } from '../../finance/src/day-book';
+import type { ConcessionTagDeps } from '../../finance/src/concession-tags';
 import type { DayBookSale } from '../../../packages/finance/src/index';
 import type { CreditNoteDeps } from '../../finance/src/credit-notes';
 import type { CreditNote, ProductTaxEntry } from '../../../packages/finance/src/index';
@@ -1212,6 +1213,11 @@ const forB2BDocuments = (customerId: string): string => streamName(STREAM.b2b, '
 const forPriceList = (productId: string): string => streamName(STREAM.pricing, 'list', productId);
 /** Each concession contract's terms and sales fold one stream — one counter, not the shop. */
 const forConcession = (contractId: string): string => streamName(STREAM.concession, contractId);
+/** The till's docket tags for a contract — every version appended, the standing one folded (M27-FR-03). */
+const forConcessionTags = (contractId: string): string => streamName(STREAM.concession, 'tags', contractId);
+async function latestConcessionTags(store: EventStore, tenantId: string, contractId: string): Promise<readonly ConcessionTag[]> {
+  return latestTagVersions(await allOf<ConcessionTag>(store, tenantId, forConcessionTags(contractId), 'ConcessionTagRecorded'));
+}
 // A concessionaire's deposit movements — the deposit position is projected from these (a liability).
 const forConcessionaire = (concessionaireId: string): string => streamName(STREAM.concession, 'deposit', concessionaireId);
 /** Each packaging item's registration and movements fold one stream — one item, not every crate. */
@@ -2888,8 +2894,13 @@ export function concessionAdapter(input: {
     contract: async (tenantId, contractId) =>
       latest<ConcessionContract>(input.store, tenantId, forConcession(contractId), 'ConcessionContractSet'),
 
-    sales: async (tenantId, contractId) =>
-      allOf<ConcessionSale>(input.store, tenantId, forConcession(contractId), 'ConcessionSaleRecorded'),
+    // Manual records + the till's docket tags (M27-FR-03) — a sale the desk recorded by hand keeps its
+    // record; the tags fill in every other receipt, so settlement sees the counter without re-keying.
+    sales: async (tenantId, contractId) => {
+      const manual = await allOf<ConcessionSale>(input.store, tenantId, forConcession(contractId), 'ConcessionSaleRecorded');
+      const tags = await latestConcessionTags(input.store, tenantId, contractId);
+      return [...manual, ...tagsAsConcessionSales(tags, { excludeSaleIds: new Set(manual.map((x) => x.saleId)) })];
+    },
 
     recordContract: async (tenantId, contract) => {
       await input.store.append(tenantId, forConcession(contract.contractId), makeEvent({
@@ -8616,5 +8627,33 @@ export function dayBookAdapter(input: { readonly store: EventStore; readonly now
     exceptionsOn: async (tenantId, day) =>
       (await allOf<DayBookExceptionRecord>(input.store, tenantId, STREAM.finance, 'DayBookExceptionRaised'))
         .filter((e) => e.tradingDay === day),
+  };
+}
+
+// ── Concession docket tags (M27-FR-03) ────────────────────────────────────────────────────────
+// Every capture and every correction is an appended version of the tag on the contract's tag stream;
+// "current" is the longest history. The contract read is the concession adapter's own.
+export function concessionTagsAdapter(input: { readonly store: EventStore; readonly now: () => string }): ConcessionTagDeps {
+  return {
+    now: input.now,
+    contract: async (tenantId, contractId) =>
+      latest<ConcessionContract>(input.store, tenantId, forConcession(contractId), 'ConcessionContractSet'),
+    tags: (tenantId, contractId) => latestConcessionTags(input.store, tenantId, contractId),
+    appendTag: async (tenantId, tag) => {
+      const version = tag.history.length;
+      await input.store.append(tenantId, forConcessionTags(tag.contractId), makeEvent({
+        id: `concession-tag-${tag.tagId}-v${version}`,
+        type: 'ConcessionTagRecorded',
+        occurredAt: tag.history[version - 1]?.at ?? tag.at,
+        idempotencyKey: `concession-tag-${tenantId}-${tag.tagId}-v${version}`,
+        source: 'api/finance',
+        payload: tag,
+      }));
+    },
+    rolesOf: async (tenantId, userId) =>
+      (await input.store.readStream(tenantId, STREAM.identity, { type: 'RoleGranted' }))
+        .map((e) => payloadOf<{ userId: string; roleId: string }>(e))
+        .filter((g) => g.userId === userId)
+        .map((g) => g.roleId),
   };
 }

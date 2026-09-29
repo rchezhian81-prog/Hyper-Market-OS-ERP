@@ -67,7 +67,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'settlement.batch.import', 'settlement.review.read', 'settlement.investigation.manage',
       'b2b.account.manage', 'b2b.account.read', 'b2b.receivable.record', 'b2b.credit.check',
       'b2b.commission.record', 'b2b.commission.read', 'b2b.document.issue', 'b2b.document.read',
-      'concession.contract.manage', 'concession.sale.record', 'concession.charge.read',
+      'concession.contract.manage', 'concession.sale.record', 'concession.charge.read', 'concession.tag.record',
       'scrap.sale.record', 'scrap.review.read', 'waste.view', 'count.view',
       'shelf.count.record', 'shelf.count.read', 'planogram.compliance.read', 'planogram.publish', 'merchandising.space.read', 'merchandising.display.manage', 'merchandising.range.manage', 'merchandising.range.read', 'approvals.delegation.grant', 'approvals.delegation.read',
       'reporting.dashboard.read', 'reporting.report.read', 'reporting.consolidation.manage',
@@ -122,6 +122,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     // Everything needed to run the shop, and **nothing that closes a month or grants a role**.
     // Separation of duties is not a policy document; it is which codes are absent from this list.
     permissions: [
+      // M27-FR-03 / Item 3: record a concession docket line at the till; corrections are the engine's SoD call.
+      'concession.tag.record',
       'identity.self.read', 'org.branch.read', 'payroll.ess.self',
       'catalogue.pack.read',
       'catalogue.merge.propose',
@@ -190,6 +192,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     name: 'Cashier',
     // The narrowest role in the product, and the one most people hold (P-07).
     permissions: [
+      // M27-FR-03 / Item 3: record a concession docket line at the till; corrections are the engine's SoD call.
+      'concession.tag.record',
       'identity.self.read', 'payroll.ess.self', 'catalogue.pack.read',
       // The store box's sync identity holds this role. It pulls the catalogue pack under `catalogue.pack.read`
       // and, since Stage C3b, the migration screen's feed under `migration.screen.read` — a READ of the
@@ -257,7 +261,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'till.dayclose.read', 'till.dayclose.approve',
       'b2b.account.manage', 'b2b.account.read', 'b2b.receivable.record', 'b2b.credit.check',
       'b2b.commission.record', 'b2b.commission.read', 'b2b.document.read',
-      'concession.contract.manage', 'concession.sale.record', 'concession.charge.read',
+      'concession.contract.manage', 'concession.sale.record', 'concession.charge.read', 'concession.tag.record',
       'scrap.sale.record', 'scrap.review.read',
       'purchase.invoice.match', 'purchase.commitment.read', 'purchase.import.read',
       'export.read', 'audit.retention.read',
