@@ -71,6 +71,9 @@
         background: var(--panel-2); border-radius: 12px; min-height: 68px;
       }
       .hint { color: var(--muted); font-size: 15px; min-height: 22px; }
+      .quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px; }
+      .quick button { min-height: var(--tap); font-size: 20px; border: 0; border-radius: 12px; background: var(--line-strong); color: var(--ink); font-weight: 700; }
+      .quick[hidden] { display: none; }
       .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
       .keypad button, .reasons button, .sheet-actions button, .refusal button {
         min-height: var(--tap); font-size: 22px; border: 0; border-radius: 12px;
@@ -153,6 +156,8 @@
         <h2 id="sheet-title">—</h2>
         <div class="entry" id="entry">0</div>
         <div class="hint" id="entry-hint"></div>
+        <!-- One-tap answers (pos-cashier.md interaction budget): 2–6 for a quantity, the note in hand for cash. -->
+        <div class="quick" id="quick" hidden></div>
         <div class="keypad" id="keypad"></div>
         <div class="reasons" id="reasons" hidden></div>
         <div class="sheet-actions">

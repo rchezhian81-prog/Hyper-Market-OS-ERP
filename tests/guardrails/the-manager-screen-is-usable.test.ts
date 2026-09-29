@@ -259,6 +259,28 @@ describe('the sync badge is the box\'s fact when a box serves the screen (Stage 
   });
 });
 
+describe('the home screen has ONE primary action, and a decision is three taps from it (Stage G slice 2b · design system §1 rules 1 and 3 · store-manager.md)', () => {
+  it('offers "clear the next approval" as the primary action — only when there is one this manager may clear', () => {
+    expect(HTML).toMatch(/<button id="next-approval" type="button" class="primary wide" hidden>/);
+    expect(code(APP)).toMatch(/next\.hidden = !\(clearable\.known && clearable\.count > 0\)/);
+  });
+
+  it('the action lands on the first decision this manager can take, so the next tap IS the decision', () => {
+    const handler = code(APP).slice(code(APP).indexOf("el('next-approval').addEventListener"), code(APP).indexOf('// ── The approval inbox'));
+    expect(handler).toContain("show('approvals')");
+    expect(handler).toMatch(/querySelector\('\.row-actions button'\)/);
+    expect(handler).toMatch(/\.focus\(\)/);
+  });
+
+  it('is worded in both languages', () => {
+    const en = APP.slice(APP.indexOf('  en: {'), APP.indexOf('  ta: {'));
+    const ta = APP.slice(APP.indexOf('  ta: {'));
+    expect(en).toMatch(/\bnextApproval:/);
+    expect(ta).toMatch(/\bnextApproval:/);
+    expect(code(APP)).toContain("t('nextApproval')");
+  });
+});
+
 describe('it can be read and reached', () => {
   it('states a touch target of at least 48px', () => {
     const tap = /--tap:\s*(\d+)px/.exec(HTML);

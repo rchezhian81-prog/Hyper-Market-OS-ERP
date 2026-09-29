@@ -93,6 +93,30 @@ describe('the sync badge is the box\'s fact, not the shell\'s assumption (Stage 
   });
 });
 
+describe('the frequent actions fit the spec\'s budget by construction (Stage G slice 2b · design system §1 rule 1 · pos-cashier.md)', () => {
+  it('the panel offers ONE-TAP quick values that answer the question outright; a typed value still needs OK', () => {
+    expect(code(APP)).toMatch(/function ask\(\{[^}]*quick = \[\]/);
+    expect(code(APP)).toMatch(/closeSheet\(String\(option\.value\)\)/);
+    expect(HTML).toContain('id="quick"');
+  });
+
+  it('change quantity is line → Qty → the number: the quantity panel carries 2–6 as one tap each', () => {
+    const qty = code(APP).slice(code(APP).indexOf("el('qty').addEventListener"), code(APP).indexOf("el('void').addEventListener"));
+    expect(qty).toMatch(/quick: \['2', '3', '4', '5', '6'\]/);
+  });
+
+  it('take cash is Tender → Cash → the note in hand: exact amount plus the covering notes, never one below the bill', () => {
+    expect(code(APP)).toMatch(/quick: quickCash\(payable\)/);
+    const helper = code(APP).slice(code(APP).indexOf('function quickCash'), code(APP).indexOf("el('tender').addEventListener"));
+    expect(helper).toMatch(/\[100, 200, 500, 2000\]\.filter\(\(note\) => note > rupees/);
+    expect(helper).toContain("t('exact')");
+    const en = APP.slice(APP.indexOf('  en: {'), APP.indexOf('  ta: {'));
+    const ta = APP.slice(APP.indexOf('  ta: {'));
+    expect(en).toMatch(/\bexact:/);
+    expect(ta).toMatch(/\bexact:/);
+  });
+});
+
 describe('it can be read and reached', () => {
   it('states a touch target of at least 48px', () => {
     const tap = /--tap:\s*(\d+)px/.exec(HTML);

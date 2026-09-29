@@ -958,11 +958,34 @@ accounts.
   from "checking" — the box answers or it does not; peripheral health (scanner / printer / scale) is hardware
   (EX-09) and is not on the badge; the per-lane view the manager spec calls "lane health" is, on a one-lane
   store box, this badge plus the unsent tile — a multi-lane view waits for a multi-lane store.
+- **Stage G slice 2b — the spec's interaction budget, MEASURED in a real browser (design system §1 rule 1 and rule 3,
+  QG-02, pos-cashier.md interaction table, store-manager.md budgets).** The design system's first hard rule (≤ 3
+  interactions for anything done more than ten times a day) had never been counted. Counted on the served screens
+  (one edge process serving the page and owning the lane socket, as a shop PC does), each tap or scan tallied per
+  spec row: **till** — scan an item 1 · change quantity 3 (was 4: tap line → Qty → keypad digit → OK; the quantity
+  panel now carries 2–6 as ONE-TAP values that answer outright, the keypad + OK staying for anything larger) · go to
+  tender 1 · take cash 3 (was 5–7: Tender → Cash → digits → OK; the cash panel now offers the exact amount and the
+  covering notes ₹100 / ₹200 / ₹500 / ₹2000 — never one below the bill — and the ₹500 tap is the confirm, change
+  computed by the same `onChange` arithmetic from the model's payable) · suspend 1 · recall 1, and the sale lands on
+  the BOX (`edge.outbox.unsentCount() === 1`); **manager** — the home screen now has its ONE primary action
+  (store-manager.md: "clear the next approval or exception"): `#next-approval`, shown only when there is a request
+  this manager may clear, landing on the first decision so the next tap IS the decision — home → next approval →
+  Approve → reason = 3, "Decided" recorded; start the day close = 2. EN/TA words for the new controls. Proven:
+  `tests/e2e/the-till-and-manager-meet-the-interaction-budget.e2e.ts` (2, real Chromium, a `Tally` counting every
+  interaction against each row's budget), the till and manager usability guardrails (+3 and +3: quick values in
+  `ask()`, the quantity presets, `quickCash` never below the bill, the exact word EN/TA; the primary action hidden
+  unless clearable, focus on the first decision, EN/TA). **Findings recorded, not fixed here:** (1) a store-pack
+  product with an unknown unit of measure (`"each"` where the engine knows `ea`) reaches the till and prices as
+  `₹NaN` on the line with total ₹0.00 — the box should exclude it like a missing tax rate, and the till should refuse
+  the line by name (P-08); (2) the served manager boots with bootManager's defaults (user `manager`, branch scope
+  `store-1`, no approval limit) — the pack's `policies.branchId` / manager identity are not passed through, so a
+  request routed to another branch id shows as "outside your branch scope" on every served manager; both go to the
+  G5 ERP slice (or a small fix slice) — neither is silently dropped.
 - **Next — Stage G slice 2 onward (UI/UX finish across the 8 apps, consistent · modern · bilingual EN/TA):** built to the Stage 3
   design system (`docs/design/design-system.md`, §27/§27.1, QG-02, NFR-07/08, P-07) and the screen specs in
   `docs/design/screens/`, in slices: G1 one shared visual foundation — DONE above; G2 the till and manager screens to the spec's
-  ≤3-interaction and arm's-length rules — 2a the honest badge DONE above, 2b next: the interaction budgets measured in a
-  browser (quick quantities, quick cash amounts, a "next approval" primary action on the manager's home); G3 the customer app to WCAG 2.2 AA on the key journeys; G4 the picker /
+  ≤3-interaction and arm's-length rules — 2a the honest badge and 2b the measured interaction budgets both DONE
+  above; **G3 next**; G3 the customer app to WCAG 2.2 AA on the key journeys; G4 the picker /
   driver / warehouse handhelds for a low-spec phone; G5 the ERP's 46 pages made one product (navigation, states,
   bilingual completeness guardrail on every page); plus the three items already parked for Stage G — the exchange
   screen (desk + till), the desk refund screen, and the migration screen drawing `cloudRegister` /

@@ -44,6 +44,8 @@ const WORDS = {
     manager: 'Store manager', tradingDay: 'Trading day', connected: 'Connected',
     notConnected: 'Not connected to the store', today: 'Today', approvals: 'Approvals',
     // The badge's states from the BOX (design system §1 rule 4): connection · last contact.
+    // The home screen's ONE primary action (store-manager.md: clear the next approval or exception; ≤3 taps).
+    nextApproval: 'Clear the next approval',
     boxNotAnswering: 'Store box not answering', noCloud: 'Head office cannot be reached — working from the box',
     cloudNotSetUp: 'No head office link on this box', cloudUnknown: 'Head office not checked yet', lastContact: 'last contact',
     receive: 'Receive', count: 'Count', closeDay: 'Close the day',
@@ -80,6 +82,7 @@ const WORDS = {
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது — இதை வைத்து நாளை மூட வேண்டாம். கடைசியாகச் சொல்லப்பட்டது:',
     manager: 'கடை மேலாளர்', tradingDay: 'வியாபார நாள்', connected: 'இணைப்பில்',
     notConnected: 'கடையுடன் இணைப்பு இல்லை', today: 'இன்று', approvals: 'ஒப்புதல்கள்',
+    nextApproval: 'அடுத்த ஒப்புதலை முடிக்க',
     boxNotAnswering: 'கடைப் பெட்டி பதிலளிக்கவில்லை', noCloud: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — பெட்டியிலிருந்து வேலை',
     cloudNotSetUp: 'இந்தப் பெட்டியில் தலைமை அலுவலக இணைப்பு இல்லை', cloudUnknown: 'தலைமை அலுவலகம் இன்னும் சரிபார்க்கப்படவில்லை', lastContact: 'கடைசித் தொடர்பு',
     receive: 'பொருள் பெறு', count: 'எண்ணிக்கை', closeDay: 'நாளை முடி',
@@ -426,6 +429,12 @@ function renderHome() {
     tile({ figure: floor.unsent, label: t('unsentLabel'), goTo: 'close', attentionWhen: (n) => n > 0 }),
     tile({ figure: floor.tasks, label: t('tasksLabel') }),
   );
+  // The one primary action on the home screen (store-manager.md: "clear the next approval or exception"). Shown
+  // only when there IS one this manager may clear — a primary button that leads nowhere teaches people to ignore
+  // primary buttons. From here a decision is three taps: this, Approve (or Reject), the reason.
+  const next = el('next-approval');
+  next.hidden = !(clearable.known && clearable.count > 0);
+  next.textContent = `${t('nextApproval')} (${clearable.known ? clearable.count : 0})`;
 
   // The link to the store is the same fact as "could I read the registers", so the badge says it.
   blind = [floor.approvalsWaiting, floor.exceptions, floor.unsent].some((f) => !f.known);
@@ -490,6 +499,13 @@ async function refreshBadge() {
 void refreshBadge();
 setInterval(() => { void refreshBadge(); }, 10_000);
 window.managerBadge = { refresh: refreshBadge, state: () => box };
+
+el('next-approval').addEventListener('click', () => {
+  show('approvals');
+  // Land on the first decision this manager can take, so the next tap IS the decision.
+  const first = el('approval-rows').querySelector('.row-actions button');
+  if (first) first.focus();
+});
 
 // ── The approval inbox ──────────────────────────────────────────────────────
 
