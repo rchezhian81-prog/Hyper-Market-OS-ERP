@@ -888,13 +888,31 @@ accounts.
   (recommended, real certificate) or the box's IP (browser warning) — set in `.env.pilot` by the custodian.
   (The front's first CI run failed the TLS handshake on a bare `:443` site address — the internal issuer had no name
   to issue for; fixed by naming the hosts, recorded in ADR-0018.)
-- **Next (Stage F):** slice 3 — the customer sign-in service (`/auth/otp/begin`, `/auth/otp/verify`,
-  `/auth/action`, `/auth/signout`; session revoke on sign-out; the `customer` role granted on the first verified
-  sign-in) as a deployment component running the production OTP engines behind the proxy, test-mode until the
-  OTP/SMS provider is chosen (no live provider — standing constraint), shared by the customer app, the B2B portal
-  and the supplier portal. Then a staff sign-in gate before any staff screen joins the public origin. Stage E
-  leftovers unchanged: key-based server login runbook (human step, ON HOLD by owner); GAP-DATA-06 and the
-  residuals GAP-SEC-04b, GAP-SEC-05b, GAP-DATA-02c.
+- **Stage F — CLOSED for this program (29 Sep 2026): slices 1 and 2 delivered; slices 3 and 4 are deferred by
+  the owner's own decisions, not by missing work.** What was planned as slice 3 — a customer sign-in service
+  behind `/auth/*` — would MINT customer session tokens; this repository's identity architecture rules that
+  production code never mints (`packages/identity/src/oidc-port.ts`, the `no-test-idp-in-production` guardrail,
+  hard rule #4), so the sign-in backend is an identity-PROVIDER component, and **OA-4 is answered: keep test
+  mode for the pilot; choose the payment and identity providers before production.** **OA-13 is answered: guest
+  browsing; accounts can be added later.** With both answered, building a first-party token-minting sign-in
+  service now would invent a requirement the owner has deferred, and a live SMS channel for one-time codes is a
+  provider the standing constraint forbids. Slice 4 — a staff sign-in gate so staff screens may join the public
+  origin — is the same OA-4 identity choice. Both are recorded as **OA-15** (owner action register + decisions
+  summary) with the trigger that re-opens them and the options; **KL-15** records the pilot posture: on the public
+  origin the customer app browses as a guest, `/auth/*` answers 503 by name, staff screens are 404 by name and
+  live on the store box. Nothing else in Stage F is outstanding: merged releases deploy themselves with rollback
+  (slice 1) and the stack fronts itself with TLS on one origin (slice 2). Stage E leftovers unchanged: key-based
+  server login runbook (human step, ON HOLD by owner); GAP-DATA-06 and the residuals GAP-SEC-04b, GAP-SEC-05b,
+  GAP-DATA-02c.
+- **Next — Stage G (UI/UX finish across the 8 apps, consistent · modern · bilingual EN/TA):** built to the Stage 3
+  design system (`docs/design/design-system.md`, §27/§27.1, QG-02, NFR-07/08, P-07) and the screen specs in
+  `docs/design/screens/`, in slices: G1 one shared visual foundation (tokens, type, states, sync badge, language
+  toggle) every shell imports instead of seven inline copies; G2 the till and manager screens to the spec's
+  ≤3-interaction and arm's-length rules; G3 the customer app to WCAG 2.2 AA on the key journeys; G4 the picker /
+  driver / warehouse handhelds for a low-spec phone; G5 the ERP's 46 pages made one product (navigation, states,
+  bilingual completeness guardrail on every page); plus the three items already parked for Stage G — the exchange
+  screen (desk + till), the desk refund screen, and the migration screen drawing `cloudRegister` /
+  `refusedDecisions` / `verification`. Every slice: guardrail + browser e2e, no invented requirement.
 
 ---
 
