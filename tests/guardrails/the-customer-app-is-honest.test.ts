@@ -189,6 +189,20 @@ describe('it is usable by a stranger on a slow phone (WCAG 2.2 AA, NFR-07)', () 
     expect(HTML).not.toMatch(/outline:\s*(?:none|0)\s*;/);
   });
 
+  it('keeps the language toggle and every control at the touch-target size — no 40px override survives (Stage G slice 3)', () => {
+    expect(HTML).not.toMatch(/min-height:\s*40px/);
+  });
+
+  it('paints a problem notice on the readable red surface, never the signal red under white (Stage G slice 3)', () => {
+    expect(HTML).toMatch(/\.notice\.problem \{[^}]*var\(--danger-surface\)/);
+    expect(HTML).not.toMatch(/color: #fff/);
+  });
+
+  it('draws the edge of an OFF consent switch in a colour a person can see against the panel (1.4.11, Stage G slice 3)', () => {
+    // --line on --panel is 1.4:1 — a switch whose boundary nobody can see is a colour-and-position control again.
+    expect(HTML).toMatch(/\.switch \{[^}]*border: 2px solid var\(--muted\)/);
+  });
+
   it('declares a touch target of at least 44px', () => {
     const tap = /--tap:\s*(\d+)px/.exec(HTML);
     expect(tap, 'the shell must declare a minimum touch target').not.toBeNull();

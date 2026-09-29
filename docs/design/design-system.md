@@ -60,6 +60,14 @@ the one file. Components (§4) ship namespaced as `.sre-*` and the screens move 
 - Contrast ≥ 4.5:1 for text; focus indicators visible; no action requires fine motor precision.
 - Screen-reader labels on all controls; error messages announced.
 
+### 5.1 How it is checked (Stage G slice 3)
+`tests/e2e/lib/a11y-audit.ts` audits the RENDERED page in real Chromium — contrast of every visible word against
+the surface it actually sits on (1.4.3, with `packages/a11y`), non-text contrast (1.4.11), target size at this
+product's 44px bar (2.5.8), an accessible name on every control (4.1.2), a label on every input (3.3.2), the page
+language including after the EN/TA toggle (3.1.1), exactly one visible h1 (2.4.6). Every screen slice runs it on
+every view a person reaches and keeps a tripwire that proves it bites. It cannot see focus visibility under a real
+keyboard (the static guardrails hold `:focus-visible`), announcement order, or the meaning of the words.
+
 ## 6. Localization (NFR-08)
 - English and Tamil first; per-user switch; Unicode throughout; locale-aware number, currency, date formats; a translation framework so strings are never hard-coded in screens.
 

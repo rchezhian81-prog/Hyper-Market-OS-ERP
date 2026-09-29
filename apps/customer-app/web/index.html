@@ -25,35 +25,26 @@
         padding-bottom: 40px;
       }
       /* Skip link — a keyboard and screen-reader user should not tab through the nav every time. */
-      .skip {
-        position: absolute; left: -9999px; top: 0; background: var(--ink); color: #0f172a;
-        padding: 12px 16px; border-radius: 0 0 8px 0; z-index: 50;
-      }
-      .skip:focus { left: 0; }
 
       header { padding: 14px 16px; background: var(--panel); }
       .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
       .shopname { font-size: 18px; font-weight: 700; }
-      .lang { background: transparent; border: 1px solid var(--line); color: var(--ink); font-size: 14px; min-height: 40px; border-radius: 8px; padding: 0 12px; }
 
       /* Connection. Ordering needs it, so it is stated in words and never only in colour. */
       .conn { margin-top: 8px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
-      .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--good); flex: none; }
-      .dot.off { background: var(--warn); }
       #conn-text.off { color: var(--warn); font-weight: 600; }
 
       .notice { padding: 10px 16px; margin: 0; font-size: 15px; }
       .notice.sample { background: var(--warn); color: #451a03; font-weight: 600; }
-      .notice.problem { background: var(--danger); color: #fff; }
+      .notice.problem { background: var(--danger-surface); color: var(--on-danger); }
       .notice[hidden] { display: none; }
-      .notice.stale { background: #1e3a5f; color: #dbeafe; }
 
       nav { display: flex; gap: 8px; padding: 8px 16px; background: var(--panel); overflow-x: auto; }
       nav button {
         min-height: var(--tap); padding: 0 16px; border: 0; border-radius: 10px;
         background: var(--line); color: var(--ink); font-size: 16px; font-weight: 600; white-space: nowrap;
       }
-      nav button[aria-current='page'] { background: var(--ink); color: #0f172a; }
+      nav button[aria-current='page'] { background: var(--ink); color: var(--bg); }
 
       main { padding: 16px; display: grid; gap: 16px; }
       section[hidden] { display: none; }
@@ -69,7 +60,7 @@
 
       label { display: block; font-size: 15px; color: var(--muted); margin-bottom: 6px; }
       input[type='search'], input[type='text'], input[type='tel'] {
-        width: 100%; min-height: var(--tap); background: #0b1220; color: var(--ink);
+        width: 100%; min-height: var(--tap); background: var(--panel-2); color: var(--ink);
         border: 1px solid var(--line); border-radius: 10px; padding: 0 14px; font-size: 17px;
       }
 
@@ -90,7 +81,7 @@
         min-height: var(--tap); border-radius: 10px; border: 0; font-size: 16px; font-weight: 600;
         background: var(--line); color: var(--ink);
       }
-      button.primary { background: var(--good); color: #052e16; font-size: 18px; }
+      button.primary { background: var(--good); color: var(--on-accent); font-size: 18px; }
       button:disabled { opacity: .5; }
       /* Visible focus everywhere — WCAG 2.2 AA, and the one thing frameworks remove first. */
       button:focus-visible, input:focus-visible, a:focus-visible, [role='switch']:focus-visible {
@@ -105,10 +96,10 @@
       .consent-row .why { grid-column: 1 / -1; font-size: 14px; color: var(--muted); }
       /* One switch. Same control on the way in and on the way out — DPDP s.6(6). */
       .switch {
-        min-width: 84px; min-height: var(--tap); border-radius: 24px; border: 2px solid var(--line);
-        background: #0b1220; color: var(--ink); font-size: 15px; font-weight: 700;
+        min-width: 84px; min-height: var(--tap); border-radius: 24px; border: 2px solid var(--muted);
+        background: var(--panel-2); color: var(--ink); font-size: 15px; font-weight: 700;
       }
-      .switch[aria-checked='true'] { background: var(--good); color: #052e16; border-color: var(--good); }
+      .switch[aria-checked='true'] { background: var(--good); color: var(--on-accent); border-color: var(--good); }
       .rights { display: grid; gap: 10px; }
       .rights button { text-align: left; padding: 12px 14px; min-height: var(--tap); }
       .rights .caveat { display: block; font-size: 14px; font-weight: 400; color: var(--warn); margin-top: 4px; }
