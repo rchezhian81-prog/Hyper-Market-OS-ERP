@@ -13,7 +13,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  assertNonProduction, runTrialLoad, applyDelta,
+  runTrialLoad, applyDelta,
   type LoadTarget, type DeltaChange,
 } from '../../../packages/migration/src/trial';
 import {
@@ -40,6 +40,10 @@ import {
   proposeExclusion, approveExclusion, exclusionPosition, assessRetirement,
   type HistoryExclusion, type ExclusionScope, type LegacyArchive,
 } from '../../../packages/migration/src/history';
+import { witnessRoutes, applicableSignatures, findingsDigest, type ExtractionRun, type RecordedFinding, type StoredSignature } from './witness';
+import { assertSafeTarget, namedPeople } from './guards';
+
+export type { ExtractionRun, RecordedFinding, StoredSignature } from './witness';
 
 const EXCLUSION_SCOPES: readonly string[] = ['documents_before', 'entity_kind', 'named_records', 'inactive_records'];
 
@@ -219,52 +223,15 @@ export interface MigrationDeps {
   readonly exclusions: (tenantId: string) => Promise<readonly HistoryExclusion[]> | readonly HistoryExclusion[];
   /** Persist an exclusion — the proposal, then the owner's written decision. Append-only. */
   readonly recordExclusion: (tenantId: string, exclusion: HistoryExclusion) => Promise<void> | void;
+  /**
+   * The three writers the signed page never had (B2). Who ran the extraction, what each outside witness
+   * found, and who signed — each an append-only fact. Optional so existing stubs compile; a route whose
+   * writer is absent refuses 503 rather than pretending to have recorded anything (P-08).
+   */
+  readonly recordExtractionRun?: (tenantId: string, run: ExtractionRun) => Promise<void> | void;
+  readonly recordFinding?: (tenantId: string, finding: RecordedFinding) => Promise<void> | void;
+  readonly recordSignature?: (tenantId: string, signature: StoredSignature) => Promise<void> | void;
   readonly now: () => string;
-}
-
-/**
- * Refuse the whole surface if the configured target is production.
- *
- * Called at the top of every handler rather than once at startup: a target can be re-pointed by
- * configuration between requests, and the check is worth nothing if it only ran at boot.
- */
-async function assertSafeTarget(deps: MigrationDeps, tenantId: string): Promise<void> {
-  const assertion = assertNonProduction(await deps.target(tenantId));
-  if (!assertion.permitted) {
-    throw apiError(403, {
-      code: 'target_is_production',
-      whatHappened: `The migration target is ${assertion.detail}. Nothing in this service will run against production (hard rule #7).`,
-      wasItSaved: 'not_saved',
-      nextSafeAction: 'Point the migration at the rehearsal environment. Nothing was read or written.',
-    });
-  }
-}
-
-/**
- * The two people the signed page names, or a refusal.
- *
- * Both were placeholders in the composition root — `'u-owner'` and `'u-operator'`. A page that
- * names a person who does not exist is worse than a page that will not render: it is signed.
- */
-async function namedPeople(
-  deps: MigrationDeps, tenantId: string,
-): Promise<{ ownerId: string; extractionOperator: string }> {
-  const ownerId = await deps.ownerId(tenantId);
-  const extractionOperator = await deps.extractionOperator(tenantId);
-  const missing = [
-    ownerId === undefined ? 'who the owner is' : undefined,
-    extractionOperator === undefined ? 'who ran the extraction' : undefined,
-  ].filter((m): m is string => m !== undefined);
-
-  if (missing.length > 0) {
-    throw apiError(409, {
-      code: 'the_page_would_name_nobody',
-      whatHappened: `This report is signed, and it does not yet know ${missing.join(' or ')}.`,
-      wasItSaved: 'not_saved',
-      nextSafeAction: 'No report was produced. Record those people first — a signed page naming a placeholder is a fabricated record, and the rule that whoever ran the extraction cannot choose which lines get counted only means something if the page says who that was.',
-    });
-  }
-  return { ownerId: ownerId!, extractionOperator: extractionOperator! };
 }
 
 export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
@@ -833,9 +800,12 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
           code: built.refusedBecause!, whatHappened: built.detail,
           wasItSaved: 'not_saved', nextSafeAction: 'No report was produced.',
         });
+        // A signature belongs to the figures that were on the page when it was given. One over an earlier
+        // set of findings is kept (hard rule #6) but never shown as covering THIS page.
+        const applicable = applicableSignatures(await deps.signatures(ctx.tenantId), findingsDigest(built.report!.findings));
         return {
           status: 200,
-          body: { markdown: renderVerificationReport(built.report!, await deps.signatures(ctx.tenantId)) },
+          body: { markdown: renderVerificationReport(built.report!, applicable), signatures: applicable.length },
         };
       },
     },
@@ -1011,5 +981,6 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
         return { status: 200, body: assessment };
       },
     },
+    ...witnessRoutes(deps),
   ];
 }

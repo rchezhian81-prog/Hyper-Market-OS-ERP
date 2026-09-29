@@ -154,6 +154,22 @@ and value per department, customer count and points total. On the screens: Stock
 and valuation; the catalogue for products. Nothing is signed until the figures agree
 (docs/pilot/STEP-1-REAL-DATA-PLAN.md, steps 7–8).
 
+**Every figure has a witness (the signed page).** With the same token the load used, the owner:
+
+1. records who ran the extraction — `POST /v1/migration/extraction-runs/<runId>` `{ "operatorId": "<login>" }`
+   (this person can then neither plan the count nor sign);
+2. feeds each outside witness, transcribed from the document, to its route — `POST /v1/migration/witness/count`
+   (the blind count sheet), `/suppliers` (their statements), `/bank` (the statement + your merchant terms),
+   `/tax` (GSTR-1 and GSTR-3B with their acknowledgement numbers), `/books` (the CA's signed accounts),
+   `/loyalty` (the customers' own answers). Each needs an `evidenceRef` naming the document. Evidence the check
+   itself refuses — a count planned by the extractor, a commission "worked out from the difference", a return
+   with no acknowledgement number, unsigned accounts — is refused and records **nothing**;
+3. watches `GET /v1/migration/verification/progress` until all twelve domains have a finding;
+4. reads `GET /v1/migration/verification/page` and, when it is ready, signs it —
+   `POST /v1/migration/verification/signatures` `{ "statement": "<what you checked, in your own words>" }` — and
+   the chartered accountant signs the same page. A signature belongs to the figures that were on the page;
+   new evidence afterwards makes the page unsigned again (the old signature stays in the ledger).
+
 ---
 
 ## When it says no

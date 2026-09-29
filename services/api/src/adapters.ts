@@ -7397,9 +7397,41 @@ export function migrationAdapter(input: {
       kind: input.targetKind, label: input.targetKind,
     }),
 
-    findings: (tenantId) => allOf<DomainFinding>(input.store, tenantId, STREAM.migration, 'MigrationFindingRaised'),
+    // One row per domain: the LATEST finding for each. A witness re-run appends a new fact; the page shows
+    // the newest, and the history stays in the ledger (hard rule #6).
+    findings: async (tenantId) => {
+      const all = await allOf<DomainFinding>(input.store, tenantId, STREAM.migration, 'MigrationFindingRaised');
+      const byDomain = new Map<string, DomainFinding>();
+      for (const f of all) byDomain.set(f.domain, f);
+      return [...byDomain.values()];
+    },
     acceptances: (tenantId) => allOf<Acceptance>(input.store, tenantId, STREAM.migration, 'MigrationExceptionAccepted'),
     signatures: (tenantId) => allOf<Signature>(input.store, tenantId, STREAM.migration, 'MigrationReportSigned'),
+
+    recordExtractionRun: async (tenantId, run) => {
+      await input.store.append(tenantId, STREAM.migration, makeEvent({
+        id: `extraction-run-${run.runId}`, type: 'ExtractionRun', occurredAt: run.startedAt,
+        idempotencyKey: `extraction-run-${tenantId}-${run.runId}`, source: 'api/migration', payload: run,
+      }));
+    },
+    recordFinding: async (tenantId, finding) => {
+      await input.store.append(tenantId, STREAM.migration, makeEvent({
+        // Domain + the outside document it rests on: the same evidence re-sent is one finding; new
+        // evidence for the same domain is a new, later finding.
+        id: `finding-${finding.domain}-${finding.evidenceRef}`, type: 'MigrationFindingRaised', occurredAt: finding.recordedAt,
+        idempotencyKey: `finding-${tenantId}-${finding.domain}-${finding.evidenceRef}`, source: 'api/migration', payload: finding,
+      }));
+    },
+    recordSignature: async (tenantId, signature) => {
+      await input.store.append(tenantId, STREAM.migration, makeEvent({
+        // One signature per person per role per PAGE (the findings digest): signing the same page twice
+        // collapses; signing a later page is a new fact.
+        id: `signature-${signature.reportId}-${signature.findingsDigest}-${signature.role}-${signature.signedBy}`,
+        type: 'MigrationReportSigned', occurredAt: signature.signedOn,
+        idempotencyKey: `signature-${tenantId}-${signature.reportId}-${signature.findingsDigest}-${signature.role}-${signature.signedBy}`,
+        source: 'api/migration', payload: signature,
+      }));
+    },
 
     // Every exclusion, latest state per id — the proposal, then the owner's written decision. A
     // history exclusion goes proposed → approved/rejected; the fold keeps the newest per id (MG-07).

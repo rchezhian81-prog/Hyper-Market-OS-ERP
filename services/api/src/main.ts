@@ -942,7 +942,8 @@ export function buildSurface(deps: {
       findings: empty([]), acceptances: empty([]), signatures: empty([]),
       recordAcceptance: () => {}, ownerId: empty(undefined),
       extractionOperator: empty(undefined), rolesOf: empty([]),
-      exclusions: empty([]), recordExclusion: () => {}, now,
+      exclusions: empty([]), recordExclusion: () => {},
+      recordExtractionRun: () => {}, recordFinding: () => {}, recordSignature: () => {}, now,
     } : migrationAdapter({
       store, now, targetKind: deps.migrationTargetKind, ownerRoleId: OWNER_ROLE_ID,
     })),
