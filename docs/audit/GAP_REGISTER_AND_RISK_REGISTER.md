@@ -49,16 +49,16 @@ This gap between "97% built" and "25% wired / 0% verified" is the entire story o
 | ID | Gap | Severity | Evidence |
 |---|---|---|---|
 | GAP-ARCH-01 | 6/7 services are thin re-implementations, not the tested engines; 35/77 packages test-only | High | `traceability.md:135-139` |
-| GAP-DATA-01 | No transaction boundaries — multi-event commands not atomic | High | grep 0 BEGIN/COMMIT in `packages/persistence` |
+| GAP-DATA-01 | ~~No transaction boundaries — multi-event commands not atomic~~ **CLOSED (audit FND-01; register corrected 29 Sep 2026)** — `SqlEventStore.appendBatch` runs a multi-event batch inside ONE PostgreSQL transaction through `pgPoolClient` (the transactional adapter `main.ts` wires); a batch whose second event fails rolls the first back. The banked sale + receipt index + `sold` movements, and the return + `returned` movements, are each one batch | ~~High~~ Closed | `packages/persistence/src/event-store.ts` (`appendBatch`), `packages/persistence/src/pg-client.ts`; `tests/integration/appends-are-atomic.test.ts` (real PostgreSQL) |
 | GAP-DATA-02 | No Postgres RLS; no `tenants` table/FK; isolation app-level only | High | `db/migrations/*` (0 FK/RLS) |
 | GAP-DATA-03 | No optimistic-concurrency / stream-version on append | Medium | `event-store.ts` (seq is global IDENTITY) |
 | GAP-DATA-04 | Money stored as JSON number in jsonb payload (JS safe-int bound) | Medium | `0001:29`, `backup.mjs:82` |
 | GAP-DATA-05 | No snapshots — full-fold reads unbounded as volume grows | Medium | `event-store.ts` (no snapshot method) |
 | GAP-DATA-06 | Erasure/anonymization against append-only store structurally unaddressed | High (DPDP) | `data-rights.ts:31` |
 | GAP-DATA-09 | ~~Production shares one `pg.Client` (not a pool) across all stores — SPOF + bottleneck~~ **RESOLVED (STAB-01)** — now a `pg.Pool(max:10)`, verified booting against real PostgreSQL | ~~High~~ Closed | `services/api/src/main.ts` |
-| GAP-SEC-02 | DSR access/export/erasure not on the API surface | High (DPDP) | no route/permission; `data-rights.ts` |
-| GAP-SEC-03 | Audit hash-chain non-crypto (FNV-1a) & not wired to `audit_log`; SHA-256 injection unverified | High | `audit-trail.ts:105-124` |
-| GAP-SEC-04 | No rate limiting / DoS control / auth-attempt lockout | High | `services/kernel` (only AI-budget 429) |
+| GAP-SEC-02 | ~~DSR access/export/erasure not on the API surface~~ **CLOSED (register corrected 29 Sep 2026)** — the data-subject lifecycle is on API-06: raise / verify / fulfil / erasure-plan / overdue / read (`services/customer/src/data-rights.ts`, `privacy.request.manage`), and erasure EXECUTION under a two-person control + API-tier step-up with a PII register, tombstone and processor notices (`services/customer/src/erasure-execution.ts`, `privacy.erasure.approve` / `privacy.erasure.execute`). DEVELOPMENT-APPROVED, LEGAL CONFIRMATION REQUIRED (owner decision Item 5) | ~~High (DPDP)~~ Closed (legal confirmation pending) | `tests/integration/data-rights.test.ts`, `tests/integration/erasure-execution.test.ts`, `tests/integration/step-up-reauth.test.ts` |
+| GAP-SEC-03 | ~~Audit hash-chain non-crypto (FNV-1a) & not wired to `audit_log`; SHA-256 injection unverified~~ **CLOSED (audit FND-02; register corrected 29 Sep 2026)** — every `audit_log` row is sealed onto its predecessor with SHA-256 per tenant (`services/kernel/src/audit-chain.ts`, migration `0010_audit_log_hash_chain.sql`, `SqlAuditSink`), `verifyAuditChain` names the exact row where a chain breaks; proven on real PostgreSQL. Residual, by design: `packages/audit`'s dependency-free default hasher is FNV-1a for the offline edge package; the cloud trail is SHA-256 | ~~High~~ Closed | `tests/unit/audit-chain.test.ts`, `tests/integration/the-trail-is-kept.test.ts` (real PostgreSQL) |
+| GAP-SEC-04 | ~~No rate limiting / DoS control / auth-attempt lockout~~ **CLOSED (audit FND-03; register corrected 29 Sep 2026)** — per-IP and per-tenant token-bucket rate limit (429 `rate_limited` + `Retry-After`) BEFORE the token is read, and a back-off auth-attempt lockout per address (429 `too_many_sign_in_attempts`), wired in `main.ts` (`TokenBucketRateLimiter` 240 burst / 20 per second; `BackoffAuthThrottle` 5 failures, 5s→900s); the composition root is guarded so neither can be silently dropped | ~~High~~ Closed | `services/kernel/src/rate-limit.ts`, `services/kernel/src/pipeline.ts`; `tests/unit/rate-limit.test.ts`, `tests/unit/service-kernel.test.ts`, `tests/integration/the-real-server-rate-limits.test.ts` (a real socket), `tests/guardrails/production-wires-the-security-controls.test.ts` |
 | GAP-SEC-05 | No token revocation / short-TTL strategy | Medium | `token.ts:31-32` |
 | GAP-SEC-06 | ~~Recent re-auth / step-up for sensitive actions enforced in web-erp, not API tier~~ **CLOSED (29 Sep 2026)** — API-tier step-up mechanism (`services/kernel/src/step-up.ts`, pipeline check on the SIGNED token's `auth_time`/`amr`) enforced on privilege-grant + erasure-execution (fresh MFA ≤300s), and — Stage E slice 1 — ACTION-level (`requireStepUp` over `RequestContext.reauth`) on payroll approve / lock / reverse, route-level on the bank file, and action-level on bulk / sensitive-category catalogue publish (owner threshold `catalogue.bulk_publish_threshold`, default 50). Direct-call bypass refused 403 on every one. Residual: the product master carries no restriction into the pack yet, so the "sensitive" leg fires on the real chain only once that mapping lands (named follow-on) | ~~Medium~~ Closed | `services/kernel/src/step-up.ts`; `services/finance/src/pay-run-store.ts`; `services/catalogue/src/publish-step-up.ts`; `tests/integration/step-up-payroll-and-publish.test.ts`; `tests/unit/service-catalogue-step-up.test.ts` |
 | GAP-SYNC-01 | No live inbound sync (pack arrives as locally-placed file) | High | `main.ts:190-204` |
@@ -75,18 +75,18 @@ This gap between "97% built" and "25% wired / 0% verified" is the entire story o
 | GAP-INT-01 | Every integration test-mode; none against a real vendor; no vendor contract tests | High | `packages/integration` (injected transport) |
 
 ## Top-10 lists
-**Top 10 launch blockers:** (1) no deployed environment/hosting (GAP-OPS-01); (2) TLS + secret store (GAP-OPS-03);
-(3) observability delivery (GAP-OPS-02); (4) rate limiting/DoS (GAP-SEC-04); (5) DSR API + erasure for DPDP
-(GAP-SEC-02/DATA-06); (6) audit crypto hash-chain (GAP-SEC-03); (7) offline numbering wired (GAP-SYNC-02);
+**Top 10 launch blockers (as written Aug 2026; struck items closed since — see the rows):** (1) no deployed environment/hosting (GAP-OPS-01); (2) TLS + secret store (GAP-OPS-03);
+(3) observability delivery (GAP-OPS-02); (4) ~~rate limiting/DoS (GAP-SEC-04)~~ closed; (5) ~~DSR API~~ closed / erasure vs the append-only store for DPDP
+(GAP-DATA-06) open; (6) ~~audit crypto hash-chain (GAP-SEC-03)~~ closed; (7) offline numbering wired (GAP-SYNC-02);
 (8) inbound sync (GAP-SYNC-01); (9) real payment/IdP providers (OA-4); (10) independent pentest QG-06.
 
-**Top 10 architecture risks:** thin-service drift (GAP-ARCH-01); no transactions (GAP-DATA-01); single pg.Client
-(GAP-DATA-09); no RLS (GAP-DATA-02); money-in-jsonb (GAP-DATA-04); no snapshots (GAP-DATA-05); single API/DB/box
+**Top 10 architecture risks (as written Aug 2026; struck items closed since):** thin-service drift (GAP-ARCH-01); ~~no transactions (GAP-DATA-01)~~ closed; ~~single pg.Client
+(GAP-DATA-09)~~ closed; no RLS (GAP-DATA-02); money-in-jsonb (GAP-DATA-04); no snapshots (GAP-DATA-05); single API/DB/box
 SPOFs; no optimistic concurrency (GAP-DATA-03); no automated rollback / forward-only migrations (GAP-OPS-01);
 no HA/replication.
 
-**Top 10 data/security risks:** DSR-not-wired; erasure vs append-only; hash-chain not crypto; no RLS; no rate
-limiting; no token revocation; support-expiry not at API; TLS/secret-store absent; backup encryption unexercised;
+**Top 10 data/security risks (as written Aug 2026; struck items closed since):** ~~DSR-not-wired~~ closed; erasure vs append-only (GAP-DATA-06); ~~hash-chain not crypto~~ closed; no RLS (GAP-DATA-02); ~~no rate
+limiting~~ closed; no token revocation (GAP-SEC-05); support-expiry not at API; TLS/secret-store absent; backup encryption unexercised;
 AI never run against a real model.
 
 **Top 10 autonomy opportunities (wire, don't build):** reorder-PO drafting (A02+replenishment); owner

@@ -100,7 +100,6 @@ describe('demo UAT — role-access matrix (authentication + role restrictions)',
       expect(Array.isArray(perms) && perms.length > 0, `${role.persona} has permissions`).toBe(true);
       summary.push(`  auth OK   ${role.persona} (${role.userId}) — ${perms.length} permission(s)`);
     }
-    // eslint-disable-next-line no-console
     console.log(['', 'Demo UAT — authentication', ...summary].join('\n'));
   });
 
@@ -115,7 +114,6 @@ describe('demo UAT — role-access matrix (authentication + role restrictions)',
       expect(res.status, `${role.persona} must be refused ${role.deny.path} (${role.why})`).toBe(403);
       summary.push(`  403 DENY  ${role.persona} → ${role.deny.path}`);
     }
-    // eslint-disable-next-line no-console
     console.log(['', 'Demo UAT — role restrictions (all 403)', ...summary].join('\n'));
   });
 

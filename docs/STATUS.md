@@ -729,7 +729,21 @@ accounts.
   control existing and being tested — that condition is met. Options: (a) keep them not exercised in the pilot
   (current, zero risk); (b) exercise them under UAT against synthetic data once the IdP records `auth_time`/`amr`.
   Also to confirm: the default bulk threshold of **50 products**; raise or lower it in store setup any time.
-- **Next:** Stage E slice 2 — register truth for GAP-SEC-02/03/04 + GAP-DATA-01 (already substantially closed in code; the registers are stale) with evidence tests; then GAP-SEC-05 (token max-TTL + `jti` revocation denylist), GAP-DATA-02 (tenants table + FK + RLS, real-PG tests), E1b (product-master restriction → pack `regulatedFlags`), key-based server login runbook (human step, ON HOLD by owner). Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
+- **Stage E, slice 2 — done (29 Sep 2026): the registers now tell the truth about four security gaps that the code
+  had already closed, and two new tests keep them closed.** The August audit registers (`GAP_REGISTER_AND_RISK_REGISTER`,
+  `SECURITY_PRIVACY_THREAT_MODEL`, `EXECUTIVE_ARCHITECTURE_AUDIT`) still listed GAP-SEC-02 (data-subject routes),
+  GAP-SEC-03 (crypto audit chain), GAP-SEC-04 (rate limiting / lockout) and GAP-DATA-01 (atomic appends) as OPEN,
+  although each had been built and proven since (FND-01/02/03; Item 5). Re-checked, not rebuilt (per the owner gap
+  summary's instruction): every row now records CLOSED with the evidence file that proves it, the three "Top 10" lists
+  strike the closed items, and two honest residuals are named — GAP-SEC-04b (limits are per API process; a multi-instance
+  deployment needs a shared limiter) and GAP-DATA-06 (erasure against the append-only ledger, still open). New
+  evidence: `tests/integration/the-real-server-rate-limits.test.ts` (2 — the production surface on a REAL socket: a
+  flood from one address is 429 `rate_limited` with `Retry-After` and recovers as the bucket refills, another address
+  is untouched; repeated bad tokens lock sign-in from that address with 429 `too_many_sign_in_attempts`, even for a
+  good token, and lift after the cooldown), `tests/guardrails/production-wires-the-security-controls.test.ts` (7 —
+  `main.ts` wires the limiter, the lockout, the SHA-256 audit sink, the pinned verifier and the transactional store,
+  with tripwires). Nothing else changed in code.
+- **Next:** Stage E slice 3 — GAP-SEC-05: token lifetime cap (`iat`/`exp` bound per audience) + `jti` revocation denylist checked after verification, with a revoke route and real-PG persistence; then slice 4 GAP-DATA-02 (tenants table + FK + RLS with per-transaction `app.tenant_id`, real-PG tests), E1b (product-master restriction → pack `regulatedFlags`), key-based server login runbook (human step, ON HOLD by owner). Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
 
 ---
 
