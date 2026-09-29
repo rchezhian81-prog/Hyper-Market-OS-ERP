@@ -40,9 +40,10 @@ accounts.
   passes unchanged.
 - **Follow-ons (recorded, not done):** (a) near-expiry's batch view does not yet re-add a returned batch —
   the engine takes receipts / sales / wastage only (small follow-on for batch-tracked resell returns);
-  (b) the store-edge should stamp `locationId` from its `storeId` on every sale (Stage D), and the pilot
-  seed / pack publish must scope the pack to the receiving location so the hosted demo visibly shows stock
-  falling; (c) sales banked before this change carry no movements — a human-run, idempotent replay
+  (b) ~~the store-edge should stamp `locationId` from its `storeId` on every sale (Stage D)~~ **DONE — Stage D
+  slice 2, 29 Sep 2026** (the box stamps its store pack's `policies.storeId` on every sale it queues, live and on
+  restart; the demo box needs its store pack to name its `storeId`); the pilot seed / pack publish scoping the
+  pack to the receiving location is now optional for stock to fall at the right shop; (c) sales banked before this change carry no movements — a human-run, idempotent replay
   (append-only compensation) is a B-track item; (d) `scope` is not part of the signed pack bytes
   (`canonicalise` signs tenant / version / builtAt / products / barcodes) — informational, server-side only.
 - **B1a — done (29 Sep 2026): the real-data load engine (MG-05 actual load).** Until now "trial load" was a
@@ -687,7 +688,22 @@ accounts.
   keeps the key; the key copied from the cloud's settings and the token never; nothing to sign with → refused 78),
   `tests/unit/standup-check.test.ts` (+3). Honest boundaries: the physical hardware (EX-09 / KL-10) and a Windows
   service wrapper remain; the installer packages the software, it does not buy or attach devices.
-- **Next:** Stage D slice 2 — the store edge stamps `locationId` from its pack's `storeId` on every sale it queues (follow-on (b) of Stage A), so on-hand falls at the RIGHT location on the hosted demo; then Stage E (production security). Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
+- **Stage D, slice 2 — done (29 Sep 2026): a sale rung on the box leaves stock from THIS store — the edge stamps
+  the sale's `locationId` from its store pack (M08-FR-01; Stage A follow-on (b)).** Before: the till's disk record
+  named no location, so the cloud fell back — to the store its catalogue pack was published for, or, on a pack
+  with no scope, to the LANE, with a reason on the movement saying it was assumed; on the hosted demo that is why a
+  till sale did not visibly move on-hand at the shop (the movement landed against "lane-1"). Now the box knows
+  which store it is (`policies.storeId` in its store pack, loaded BEFORE the pipelines restore) and
+  `toCloudSale(record, packVersion, storeId)` stamps it on every sale that leaves — rung live
+  (`createEdgeNode({ storeId })`, read live so a later pack replaces it) and re-queued after a restart (the sales
+  pipeline's `eventFor`). The cloud then draws stock `declared_by_lane` with no assumption to explain. A record
+  that declares its own location keeps it; a box with no store pack stamps nothing and the cloud's fallback stands
+  and still says so (P-08). Tests: `tests/unit/edge-cloud-sale.test.ts` (+1), `tests/integration/
+  the-edge-stamps-the-sale-location.test.ts` (3 — the REAL edge over the real cloud: a sale rung live lands as a
+  `sold` movement at the box's store with no reason and on-hand falls there; a sale rung with no cloud and re-queued
+  on restart is stamped the same; a box with no store pack still falls back to the lane and says it assumed).
+  Honest boundary: the demo box must be given a store pack that names its `storeId` for the demo to show it.
+- **Next:** Stage E — production security: GAP-SEC-02/03/04/05, GAP-DATA-01/02, API-tier step-up for payroll release + bulk / sensitive-category publish, key-based server login. Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet) — the B2B portal and the supplier portal bind to it too.
 
 ---
 

@@ -402,6 +402,38 @@ export async function startEdge(
   }
 
   /**
+   * What the cloud last told this box.
+   *
+   * It starts as `emptyPack()` — every section saying it does not know — and that is the honest
+   * state of a freshly installed box. **Not one section defaults to empty**, because an empty
+   * approvals list and an unheard-of approvals list mean opposite things, and the manager's day
+   * close is built to refuse the second.
+   */
+  let pack: StorePack = emptyPack();
+  const packPath = settings['EDGE_PACK_FILE'];
+  if (packPath !== undefined) {
+    try {
+      const raw = await readFile(packPath, 'utf8');
+      pack = readPack(JSON.parse(raw) as unknown, new Date().toISOString());
+      say(`store pack version ${pack.version} loaded from ${packPath}`);
+    } catch (e) {
+      // Said out loud and then carried on with a pack that knows nothing — which is exactly what
+      // this box has. A box that refused to start would take the lanes down over a report.
+      say(`the store pack at ${packPath} could not be read (${e instanceof Error ? e.message : String(e)}).`);
+      say('  This box will tell every screen it has not been told anything, which is true.');
+    }
+  } else {
+    say('no store pack is configured, so the screens will be told this box knows nothing yet.');
+  }
+
+  // Which store this box IS, as its store pack names it — stamped on every sale that leaves here as the stock
+  // location (M08-FR-01, Stage D slice 2), for a sale rung live and for one re-queued below on restart. Read live:
+  // a later pull may replace the pack. A box with no pack knows no store and stamps nothing (the cloud then says
+  // it assumed the lane — P-08 — rather than this box guessing).
+  const storeIdOfThisBox = (): string | undefined =>
+    (pack.policies.known && typeof pack.policies.value.storeId === 'string' && pack.policies.value.storeId !== '' ? pack.policies.value.storeId : undefined);
+
+  /**
    * Rebuild each queue from its durable log and its durable dead-letter store.
    *
    * The log is the system of record and the queue is a view of it, so a restart reconstructs the
@@ -428,7 +460,7 @@ export async function startEdge(
       return makeEvent({
         id: `edge-sale-${saleId}`, type: 'SaleCommitted', occurredAt: new Date().toISOString(),
         idempotencyKey: `edge-${tenantId}-${saleId}`, source: 'edge/lane',
-        payload: toCloudSale(parsed, restoredPackVersion),
+        payload: toCloudSale(parsed, restoredPackVersion, storeIdOfThisBox()),
       });
     },
   });
@@ -643,6 +675,8 @@ export async function startEdge(
       return buildReceiptLookup(sales, returns)(receiptOrId);
     },
     ...(restoredPack === undefined ? {} : { initialPack: restoredPack }),
+    // Which store this box is — stamped on every sale it queues as the stock location (M08-FR-01, Stage D slice 2).
+    storeId: storeIdOfThisBox,
   });
 
   // The lane socket. Absent `EDGE_LANE_PORT`, this edge has no screen attached and does the
@@ -669,30 +703,6 @@ export async function startEdge(
   });
   if (lane !== null) say(`lane socket on ${LANE_HOST}:${lane.port} — loopback only, nothing on the shop network can reach it`);
 
-  /**
-   * What the cloud last told this box.
-   *
-   * It starts as `emptyPack()` — every section saying it does not know — and that is the honest
-   * state of a freshly installed box. **Not one section defaults to empty**, because an empty
-   * approvals list and an unheard-of approvals list mean opposite things, and the manager's day
-   * close is built to refuse the second.
-   */
-  let pack: StorePack = emptyPack();
-  const packPath = settings['EDGE_PACK_FILE'];
-  if (packPath !== undefined) {
-    try {
-      const raw = await readFile(packPath, 'utf8');
-      pack = readPack(JSON.parse(raw) as unknown, new Date().toISOString());
-      say(`store pack version ${pack.version} loaded from ${packPath}`);
-    } catch (e) {
-      // Said out loud and then carried on with a pack that knows nothing — which is exactly what
-      // this box has. A box that refused to start would take the lanes down over a report.
-      say(`the store pack at ${packPath} could not be read (${e instanceof Error ? e.message : String(e)}).`);
-      say('  This box will tell every screen it has not been told anything, which is true.');
-    }
-  } else {
-    say('no store pack is configured, so the screens will be told this box knows nothing yet.');
-  }
 
   // The cloud's migration register as this box last pulled it (C3b), restored from disk and laid over the
   // pack's migration sections — so a reboot with the cable out still shows the register as it stood, with

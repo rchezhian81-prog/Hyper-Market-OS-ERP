@@ -69,6 +69,13 @@ describe('toCloudSale — the lane record → the cloud contract', () => {
     expect('amountMinor' in (sale.tenders[1] as object)).toBe(false);
   });
 
+  it('stamps the box\'s store as the stock location when the record names none; a declared one wins; no store → nothing stamped', () => {
+    expect(toCloudSale(LANE_RECORD, 7, 'store-tirunelveli').locationId).toBe('store-tirunelveli');
+    expect(toCloudSale({ ...LANE_RECORD, locationId: 'L-declared' }, 7, 'store-tirunelveli').locationId).toBe('L-declared');
+    expect('locationId' in toCloudSale(LANE_RECORD, 7)).toBe(false);
+    expect('locationId' in toCloudSale(LANE_RECORD, 7, '')).toBe(false);
+  });
+
   it('does not throw on unreadable junk off the disk — it degrades to a sale the cloud will flag', () => {
     const sale = toCloudSale('not an object', 2);
     expect(sale.saleId).toBe('');

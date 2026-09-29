@@ -155,6 +155,13 @@ export function createEdgeNode(input: {
    * on a standalone/demo edge, where `lookupSale` then resolves `undefined`.
    */
   readonly lookupSale?: (receiptOrId: string) => Promise<SaleLookupResult | undefined>;
+  /**
+   * The store this box belongs to, as its store pack names it (`policies.storeId`) — read LIVE, because the pack
+   * file is loaded after the node is built and can be replaced by a later pull. Stamped as the sale's
+   * `locationId` on the way to the cloud so stock leaves THIS shop (M08-FR-01, Stage D slice 2); absent, the
+   * cloud falls back to the pack's scope or the lane, and says so on the movement (P-08). Never invented here.
+   */
+  readonly storeId?: () => string | undefined;
 }): EdgeNode {
   let held = input.initialPack;
   // Work committing right now, keyed by its id, so a concurrent second call with the same id awaits
@@ -186,7 +193,7 @@ export function createEdgeNode(input: {
             // Translated to the cloud's sale contract before it leaves — the disk record speaks
             // `id`/`total`, `/v1/sales` speaks `saleId`/`totalMinor`/`packVersion`. The pack this edge
             // holds is the one the lane priced this sale from, so it stamps the version (see cloud-sale.ts).
-            payload: toCloudSale(JSON.parse(record) as unknown, held?.snapshot.version ?? 0),
+            payload: toCloudSale(JSON.parse(record) as unknown, held?.snapshot.version ?? 0, input.storeId?.()),
           }));
         }
         // Teach the refund-entitlement guard what this sale sold, so a refund taken later in the SAME
