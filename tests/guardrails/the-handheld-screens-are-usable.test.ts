@@ -2,9 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 /**
- * **The two screens used away from a desk, guarded.**
+ * **The three screens used away from a desk, guarded.**
  *
- * A handheld in a cold aisle and a phone at a doorstep are the hardest places this product runs:
+ * A handheld in a cold aisle, a phone at a doorstep and a scanner up the racking are the hardest places this
+ * product runs:
  * one hand, gloves, sunlight, no signal, and somebody waiting. Every decision below is easy to undo
  * in a hurry and invisible in review — a text box "just for the barcode", a tick box labelled
  * *customer confirmed*, a card option on the payment list because the form generator produced one.
@@ -18,6 +19,8 @@ const PICKER = readFileSync('apps/picker-app/web/app.js', 'utf8');
 const PICKER_HTML = readFileSync('apps/picker-app/web/index.html', 'utf8');
 const DRIVER = readFileSync('apps/delivery-app/web/app.js', 'utf8');
 const DRIVER_HTML = readFileSync('apps/delivery-app/web/index.html', 'utf8');
+const WAREHOUSE = readFileSync('apps/warehouse-app/web/app.js', 'utf8');
+const WAREHOUSE_HTML = readFileSync('apps/warehouse-app/web/index.html', 'utf8');
 const ROUTE_MODEL = readFileSync('apps/delivery-app/src/route-session.ts', 'utf8');
 const PICK_MODEL = readFileSync('apps/picker-app/src/pick-session.ts', 'utf8');
 
@@ -26,13 +29,15 @@ const code = (source: string): string => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
 
+/** `banner` names the function that shows the non-fading banner in each shell. */
 const SHELLS = [
-  { name: 'picker', app: PICKER, html: PICKER_HTML },
-  { name: 'driver', app: DRIVER, html: DRIVER_HTML },
+  { name: 'picker', app: PICKER, html: PICKER_HTML, banner: 'function tell' },
+  { name: 'driver', app: DRIVER, html: DRIVER_HTML, banner: 'function tell' },
+  { name: 'warehouse', app: WAREHOUSE, html: WAREHOUSE_HTML, banner: 'function feltResult' },
 ] as const;
 
 describe('what both shells must hold, held by both', () => {
-  for (const { name, app, html } of SHELLS) {
+  for (const { name, app, html, banner: bannerFn } of SHELLS) {
     describe(name, () => {
       it('uses no prompt, confirm or alert', () => {
         const found = [...code(app).matchAll(/\b(?:window\.)?(prompt|confirm|alert)\s*\(/g)].map((m) => m[1]);
@@ -44,7 +49,9 @@ describe('what both shells must hold, held by both', () => {
         // is a message that was missed.
         expect(html).toContain('id="banner"');
         expect(html).toContain('role="alert"');
-        const banner = code(app).slice(code(app).indexOf('function tell'), code(app).indexOf("el('banner-ok')"));
+        const from = code(app).indexOf(bannerFn);
+        expect(from, `${bannerFn} is missing`).toBeGreaterThan(-1);
+        const banner = code(app).slice(from, code(app).indexOf("el('banner-ok')", from));
         expect(banner).not.toMatch(/setTimeout|setInterval/);
       });
 
@@ -92,8 +99,100 @@ describe('what both shells must hold, held by both', () => {
         // The view converts and displays. A second copy of a rule here is one nobody tests.
         expect(code(app)).not.toMatch(/unitPrice\s*\*|taxBps|\*\s*1\.\d|marginMinor/);
       });
+
+      // ── Stage G slice 4: what the browser audit found and fixed, held so it cannot come back ──
+
+      it('keeps the language toggle at the shell’s own touch target — no 40px override survives', () => {
+        expect(html).not.toMatch(/min-height:\s*40px/);
+        expect(html).not.toMatch(/\.lang\s*\{/);
+      });
+
+      it('writes words on the readable red, never white on the signal red (3.8:1)', () => {
+        expect(html).not.toMatch(/color:\s*#fff\b/i);
+        expect(html).toMatch(/\.storage \{[^}]*var\(--danger-surface\)/);
+        expect(html).toMatch(/\.banner \{[^}]*var\(--danger-surface\)/);
+      });
+
+      it('names its colours from the foundation’s tokens, not literals', () => {
+        const style = html.slice(html.indexOf('<style>'), html.indexOf('</style>')).replace(/\/\*[\s\S]*?\*\//g, '');
+        const literals = [...style.matchAll(/#[0-9a-f]{3,8}\b/gi)].map((m) => m[0]);
+        expect(literals, 'literal colours in the page stylesheet').toEqual([]);
+      });
+
+      it('has exactly one h1 — the header line that says whose work this is (2.4.6)', () => {
+        expect((html.match(/<h1\b/g) ?? []).length).toBe(1);
+        expect(html).toMatch(/<h1 class="(wave|route|who)"/);
+      });
+
+      it('carries the sync badge: this device’s unsent count AND the store computer’s state, in words (rule 4)', () => {
+        expect(html).toContain('id="box-text"');
+        for (const key of ['noBoxLink', 'checkingBox', 'boxNotAnswering', 'boxOnline', 'noCloud', 'cloudNotSetUp', 'cloudUnknown', 'lastContact']) {
+          expect(code(app), `${key} is not shown`).toContain(`t('${key}')`);
+        }
+        // Never a guessed address: with no store computer named, it says so.
+        expect(code(app)).toMatch(/typeof window\.laneWriteBase === 'string' \? window\.laneWriteBase : null/);
+        expect(code(app)).not.toMatch(/127\.0\.0\.1|localhost/);
+        // Read-only, bounded, and never able to stall the screen.
+        expect(code(app)).toMatch(/fetch\(`\$\{base\}\/lane\/sync-status`, \{ cache: 'no-store', signal: ctl\.signal \}\)/);
+        expect(code(app)).toMatch(/setTimeout\(\(\) => ctl\.abort\(\), 3000\)/);
+      });
     });
   }
+});
+
+describe('a scanner’s Enter is never a person’s Enter', () => {
+  it('is swallowed before the browser can press the focused button — the flow must not run twice', () => {
+    // Found by the browser audit: after "Receive a delivery" the scanner's Enter also clicked the button the
+    // worker had just tapped, and the panel silently asked for the next scan after every received item.
+    for (const [name, app] of [['picker', PICKER], ['warehouse', WAREHOUSE]] as const) {
+      const handler = code(app).slice(code(app).indexOf("window.addEventListener('keydown'"));
+      const enter = handler.slice(handler.indexOf("if (event.key === 'Enter')"), handler.indexOf('return;\n  }'));
+      expect(enter, `${name}: the scanner's Enter must be preventDefault-ed`).toContain('event.preventDefault()');
+    }
+  });
+});
+
+describe('the picker’s three steps start at the bin, as the spec says (picker-packer.md)', () => {
+  it('a bin label scanned from the list IS step 1 — the scan chooses the line', () => {
+    // "pick a line (≤3: scan bin → scan item → confirm)" begins with a scan, not a tap. Counted in the browser
+    // by the-handhelds-meet-the-spec.e2e.ts: 3.
+    const handler = code(PICKER).slice(code(PICKER).indexOf("window.addEventListener('keydown'"));
+    expect(handler).toMatch(/l\.state === 'pending' && \(l\.bin === code \|\| l\.shelf === code\)/);
+    expect(handler).toMatch(/void startLine\(line, code\)/);
+    expect(code(PICKER)).toMatch(/async function startLine\(line, binCode = null\)/);
+  });
+
+  it('offers Substitute and Problem on the item panel — the shelf is where a shortage is found', () => {
+    // record a substitution = Substitute → scan the swap → scan the customer's reference (3);
+    // flag a quality fail = Problem → the reason (2). Both counted in the browser.
+    expect(PICKER_HTML).toContain('id="scan-substitute"');
+    expect(PICKER_HTML).toContain('id="scan-problem"');
+    const start = code(PICKER).slice(code(PICKER).indexOf('async function startLine'));
+    expect(start).toMatch(/awaitScan\(`\$\{t\('scanTheItem'\)\} — \$\{line\.description\}`, t\('pointAndPull'\), true\)/);
+    expect(start).toContain('if (itemCode === SUBSTITUTE)');
+    expect(start).toContain('if (itemCode === PROBLEM)');
+    // Not on the bin panel: nothing has been found short before the picker reaches the shelf.
+    expect(start).toMatch(/awaitScan\(`\$\{t\('scanTheBin'\)\} — \$\{line\.bin\}`, t\('pointAndPull'\)\)/);
+  });
+
+  it('a green banner yields to the next scan; a red one must be read first (rule 5)', () => {
+    const handler = code(PICKER).slice(code(PICKER).indexOf("window.addEventListener('keydown'"));
+    expect(handler).toMatch(/if \(!banner\.classList\.contains\('good'\)\) return; banner\.hidden = true;/);
+  });
+});
+
+describe('the driver’s buttons act on the stop the driver is at (delivery.md)', () => {
+  it('selects the first unfinished stop on the driver’s behalf, and keeps a stop they chose until it is finished', () => {
+    // capture proof ≤3 · record COD ≤3 · mark failed with reason ≤3 are counted from the doorstep, so a tap to
+    // say "this one" on every stop would spend a third of the budget on the obvious.
+    expect(code(DRIVER)).toMatch(/const TERMINAL = new Set\(\['delivered', 'partially_delivered', 'returned_to_origin', 'failed'\]\)/);
+    expect(code(DRIVER)).toMatch(/function currentStop\(\)/);
+    expect(code(DRIVER)).toMatch(/if \(chosen === null \|\| TERMINAL\.has\(chosen\.state\)\) selectedStopId = currentStop\(\)\?\.stopId \?\? null;/);
+  });
+
+  it('counts notes with buttons at the phone’s full touch target', () => {
+    expect(DRIVER_HTML).toMatch(/\.denom button \{[^}]*min-height: var\(--tap\)/);
+  });
 });
 
 describe('every pick is a scan, and the screen makes that structural', () => {

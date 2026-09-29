@@ -29,3 +29,10 @@ Dispatch manifest. All handle the §27.1 states.
 - A substitution cannot commit without the customer-approval rule.
 - Weighed final price and cold-chain evidence are captured.
 - The dispatch manifest matches exactly what was packed.
+
+## Measured (Stage G slice 4)
+Counted in a real browser at a handheld's size (`tests/e2e/the-handhelds-meet-the-spec.e2e.ts`): pick a line **3**
+(the bin label scanned from the list is step 1 — the scan chooses the line — then the item, then one tap on the
+asked-for quantity) · record a substitution **3** (Substitute on the item panel → scan the swap → scan the customer's
+reference) · flag a quality fail **2** (Problem on the item panel → the reason). **Listed exception:** a bin whose
+label cannot be read is started by a tap on the line, then the three steps — **4**.

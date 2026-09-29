@@ -20,7 +20,8 @@
 //
 // **5. No `prompt`, `confirm` or `alert`, and the banner does not fade.**
 //
-// Nothing here calls the network. Every stop is local and queues to the device (§31 delivery row).
+// No stop touches the network. Every stop is local and queues to the device (§31 delivery row); the one
+// call this file makes is a read of the store computer's sync status, for the badge (design system §1 rule 4).
 
 const el = (id) => document.getElementById(id);
 
@@ -31,6 +32,10 @@ const inr = (minor) =>
 
 const WORDS = {
   en: {
+    noBoxLink: 'not connected to a store computer', checkingBox: 'checking the store computer…',
+    boxNotAnswering: 'store computer not answering', boxOnline: 'store computer online',
+    noCloud: 'store computer cannot reach head office', cloudNotSetUp: 'no head office link set up',
+    cloudUnknown: 'head office not checked yet', lastContact: 'last contact',
     staleShell: 'No signal. This is the route this phone was last given, at',
     myRoute: 'My route', stopsDone: 'stops done', waiting: 'waiting to sync', allSent: 'everything sent',
     cashCarrying: 'Cash you are carrying', collect: 'Collect', prepaid: 'Already paid',
@@ -64,6 +69,10 @@ const WORDS = {
     deliveredState: 'Delivered',
   },
   ta: {
+    noBoxLink: 'கடை கணினியுடன் இணைக்கப்படவில்லை', checkingBox: 'கடை கணினியைச் சரிபார்க்கிறது…',
+    boxNotAnswering: 'கடை கணினி பதிலளிக்கவில்லை', boxOnline: 'கடை கணினி இணைப்பில்',
+    noCloud: 'கடை கணினி தலைமை அலுவலகத்தை அடைய முடியவில்லை', cloudNotSetUp: 'தலைமை அலுவலக இணைப்பு அமைக்கப்படவில்லை',
+    cloudUnknown: 'தலைமை அலுவலகம் இன்னும் சரிபார்க்கப்படவில்லை', lastContact: 'கடைசித் தொடர்பு',
     staleShell: 'சிக்னல் இல்லை. இந்த ஃபோனுக்குக் கடைசியாகக் கொடுக்கப்பட்ட வழி இதுதான்:',
     myRoute: 'என் வழி', stopsDone: 'நிறுத்தங்கள் முடிந்தன', waiting: 'அனுப்பக் காத்திருக்கிறது', allSent: 'அனைத்தும் அனுப்பப்பட்டன',
     cashCarrying: 'நீங்கள் வைத்திருக்கும் பணம்', collect: 'வாங்க வேண்டியது', prepaid: 'ஏற்கனவே செலுத்தப்பட்டது',
@@ -313,16 +322,31 @@ el('count-ok').addEventListener('click', () => { el('count').hidden = true; coun
 
 const selected = () => session.route().find((s) => s.stopId === selectedStopId) ?? null;
 
+/** A stop nothing more happens at on this route. A failed stop routed to try again is NOT one — it comes round. */
+const TERMINAL = new Set(['delivered', 'partially_delivered', 'returned_to_origin', 'failed']);
+
+/**
+ * The stop the driver is at: the first on the route that is not finished.
+ *
+ * Selected on the driver's behalf, so the stop they are standing at is the one the buttons act on without a
+ * tap first — the spec's rows (capture proof ≤ 3 · record COD ≤ 3 · mark failed with reason ≤ 3) are counted
+ * from the doorstep, and a tap to say "this one" on every stop would spend a third of the budget on the
+ * obvious (delivery.md). A driver who is somewhere else on the route taps that stop instead, and the choice
+ * holds until that stop is finished. The selected stop is outlined, and every outcome names its area.
+ */
+function currentStop() {
+  return session.route().find((s) => !TERMINAL.has(s.state)) ?? null;
+}
+
 function renderQueue() {
-  if (outbox === null) { el('queue-text').textContent = ''; return; }
-  const unsent = outbox.unsentCount();
-  el('queue-dot').classList.toggle('waiting', unsent > 0);
-  el('queue-text').textContent = unsent === 0 ? t('allSent') : `${unsent} ${t('waiting')}`;
+  paintBadge();
 }
 
 function render() {
   const stops = session.route();
   const progress = session.progress();
+  const chosen = selected();
+  if (chosen === null || TERMINAL.has(chosen.state)) selectedStopId = currentStop()?.stopId ?? null;
   el('route').firstChild.textContent = `${t('myRoute')} · ${session.routeId ?? ''} `;
   el('progress').textContent = `${progress.delivered}/${progress.total} ${t('stopsDone')}`;
 
@@ -584,6 +608,64 @@ el('lang').addEventListener('click', () => {
   el('empty').textContent = `${t('noRoute')} ${t('noRouteBody')}`;
   render();
 });
+
+// ── The sync badge — connection · unsent · freshness (design system §1 rule 4 · P-08) ────────────
+//
+// Two lines of words beside one dot. The first is THIS DEVICE's unsent count: the scans queued here
+// and not yet drained. The second is the STORE COMPUTER's own account of itself — reachable or not,
+// and when head office last answered it — asked at the address the page was served from. A handheld
+// on the shop wifi never guesses an address: with no store computer named, the badge says so rather
+// than inventing one, and a page opened from the device's cache says it is not connected.
+let box = { asked: false, reachable: false, status: null };
+const laneBase = () => (typeof window.laneWriteBase === 'string' ? window.laneWriteBase : null);
+
+/** The device's clock face for a store-computer time — the person reading it is standing in the shop. */
+function clock(iso) {
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function paintBadge() {
+  const dot = el('queue-dot');
+  const unsent = outbox === null ? 0 : outbox.unsentCount();
+  dot.classList.remove('waiting', 'error', 'idle', 'degraded');
+  // Words as well as a dot — one man in twelve cannot tell the two colours apart.
+  el('queue-text').textContent = unsent === 0 ? t('allSent') : `${unsent} ${t('waiting')}`;
+  let words;
+  if (laneBase() === null) { dot.classList.add('idle'); words = t('noBoxLink'); }
+  else if (!box.asked) { dot.classList.add('idle'); words = t('checkingBox'); }
+  else if (!box.reachable) { dot.classList.add('error'); words = t('boxNotAnswering'); }
+  else {
+    const s = box.status;
+    const when = s.lastContactAt ? ` · ${t('lastContact')} ${clock(s.lastContactAt)}` : '';
+    if (s.cloud === 'online') words = `${t('boxOnline')}${when}`;
+    else {
+      dot.classList.add(s.cloud === 'unknown' || s.cloud === 'starting' ? 'idle' : 'degraded');
+      words = `${s.cloud === 'offline' ? t('noCloud') : s.cloud === 'not_configured' ? t('cloudNotSetUp') : t('cloudUnknown')}${when}`;
+    }
+  }
+  // Work waiting on this device shows as waiting unless the store computer itself is down — that is worse.
+  if (unsent > 0 && !dot.classList.contains('error')) { dot.classList.remove('idle', 'degraded'); dot.classList.add('waiting'); }
+  el('box-text').textContent = words;
+}
+
+async function refreshBadge() {
+  const base = laneBase();
+  if (base === null) { paintBadge(); return; }
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 3000);
+  try {
+    const res = await fetch(`${base}/lane/sync-status`, { cache: 'no-store', signal: ctl.signal });
+    box = res.ok ? { asked: true, reachable: true, status: await res.json() } : { asked: true, reachable: false, status: null };
+  } catch {
+    box = { asked: true, reachable: false, status: null };
+  } finally {
+    clearTimeout(timer);
+  }
+  paintBadge();
+}
+window.driverBadge = { refresh: refreshBadge, state: () => box };
+void refreshBadge();
+setInterval(() => { void refreshBadge(); }, 10_000);
 
 // ── Boot ────────────────────────────────────────────────────────────────────
 

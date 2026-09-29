@@ -40,6 +40,7 @@ describe('the tokens the stylesheet declares', () => {
     expect(T['--warn']).toBe(T['--degraded']);
     expect(T['--danger']).toBe(T['--error']);
     expect(T['--accent-ink']).toBe(T['--on-accent']);
+    expect(T['--nobody-surface']).toBe(T['--warn-surface']);
   });
 
   it('names a Tamil-capable face in the one font stack, and never a download', () => {
@@ -69,6 +70,7 @@ describe('every text pair a screen renders meets WCAG 2.2 AA', () => {
     { name: 'the SAMPLE DATA strip', foreground: T['--on-warn']!, background: T['--degraded']! },
     { name: 'the served-from-cache strip', foreground: T['--on-info-surface']!, background: T['--info-surface']! },
     { name: 'the nobody-signed-in strip', foreground: T['--on-nobody-surface']!, background: T['--nobody-surface']! },
+    { name: 'an amber strip (a flagged stop, a warning that is not an error)', foreground: T['--on-warn-surface']!, background: T['--warn-surface']! },
     { name: 'red words on a panel', foreground: T['--danger-text']!, background: T['--panel']! },
     { name: 'red words on the page', foreground: T['--danger-text']!, background: T['--bg']! },
     { name: 'a red button or banner', foreground: T['--on-danger']!, background: T['--danger-surface']! },

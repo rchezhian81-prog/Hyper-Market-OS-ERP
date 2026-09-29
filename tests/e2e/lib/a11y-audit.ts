@@ -17,6 +17,12 @@ import { contrastRatio } from '../../../packages/a11y/src/contrast';
  *   3.3.2  Labels or instructions  every text input is labelled, not just placeholdered
  *   3.1.1  Language of page        `<html lang>` is set — and matches the words on the screen after a toggle
  *   2.4.6  Headings                 exactly one visible h1 per view
+ *   1.4.10 Reflow                    no horizontal scrolling at the viewport the test chose (a low-spec phone)
+ *
+ * Two honesties added for the handhelds (Stage G slice 4). An INACTIVE control — `disabled`, or `aria-disabled` —
+ * is exempt from contrast and target size, as WCAG 1.4.3 and 2.5.8 exempt it; it still needs a name, because a
+ * screen reader still announces it. And `opacity` is composited: words dimmed to 45% are measured at 45%, not at
+ * the colour the stylesheet names — before this, a faded label could pass on paper and fail in the aisle.
  *
  * What it cannot see, and says so rather than pretends: focus visibility under a real keyboard (the static
  * guardrails hold `:focus-visible` in place), screen-reader announcement order, and the meaning of the words.
@@ -28,7 +34,7 @@ export interface A11yFinding {
   readonly detail: string;
 }
 
-interface TextSample { selector: string; fg: string; bg: string; px: number; bold: boolean; text: string }
+interface TextSample { selector: string; fg: string; bg: string; px: number; bold: boolean; text: string; alpha: number }
 interface RawReport {
   texts: TextSample[];
   nonText: { selector: string; fg: string; bg: string }[];
@@ -37,6 +43,7 @@ interface RawReport {
   unlabelled: string[];
   lang: string;
   h1: number;
+  reflow: { scrollWidth: number; clientWidth: number };
 }
 
 /**
@@ -66,6 +73,14 @@ const COLLECT_SOURCE = String.raw`(() => {
     return el.tagName.toLowerCase() + id + cls + (text ? ' "' + text + '"' : '');
   };
   const isTransparent = (c) => c === 'transparent' || /^rgba\((?:\d+,\s*){3}0\)$/.test(c);
+  // WCAG exempts an inactive component from contrast and target size — a greyed-out button is not a target.
+  const inactive = (el) => el.closest('[disabled], [aria-disabled="true"]') !== null;
+  // Effective opacity: every ancestor's opacity multiplies. A word at 45% is measured at 45%.
+  const alphaOf = (el) => {
+    let a = 1;
+    for (let node = el; node; node = node.parentElement) { const o = parseFloat(cs(node).opacity); if (!Number.isNaN(o)) a *= o; }
+    return a;
+  };
   const backgroundOf = (el) => {
     let node = el;
     while (node) {
@@ -84,14 +99,14 @@ const COLLECT_SOURCE = String.raw`(() => {
     const el = n.parentElement;
     if (!text || !el || seen.has(el)) continue;
     if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'TITLE'].includes(el.tagName)) continue;
-    if (!visible(el)) continue;
+    if (!visible(el) || inactive(el)) continue;
     seen.add(el);
     const s = cs(el);
-    texts.push({ selector: describe(el), fg: s.color, bg: backgroundOf(el), px: parseFloat(s.fontSize), bold: parseInt(s.fontWeight, 10) >= 700, text: text.slice(0, 40) });
+    texts.push({ selector: describe(el), fg: s.color, bg: backgroundOf(el), px: parseFloat(s.fontSize), bold: parseInt(s.fontWeight, 10) >= 700, text: text.slice(0, 40), alpha: alphaOf(el) });
   }
 
   const controls = [...d.querySelectorAll('button, a[href], input, select, textarea, [role="button"], [role="switch"]')].filter(visible);
-  const targets = controls.map((el) => { const r = el.getBoundingClientRect(); return { selector: describe(el), w: r.width, h: r.height }; });
+  const targets = controls.filter((el) => !inactive(el)).map((el) => { const r = el.getBoundingClientRect(); return { selector: describe(el), w: r.width, h: r.height }; });
   const nameOf = (el) => {
     const aria = el.getAttribute('aria-label') || '';
     const by = el.getAttribute('aria-labelledby');
@@ -104,13 +119,14 @@ const COLLECT_SOURCE = String.raw`(() => {
   const unlabelled = [...d.querySelectorAll('input:not([type="hidden"]), select, textarea')].filter(visible)
     .filter((el) => !(el.id && d.querySelector('label[for="' + el.id + '"]')) && !el.getAttribute('aria-label') && !el.getAttribute('aria-labelledby'))
     .map(describe);
-  const nonText = [...d.querySelectorAll('[role="switch"], .dot')].filter(visible).map((el) => {
+  const nonText = [...d.querySelectorAll('[role="switch"], .dot')].filter(visible).filter((el) => !inactive(el)).map((el) => {
     const s = cs(el);
     const fg = s.borderStyle !== 'none' && parseFloat(s.borderWidth) > 0 && !isTransparent(s.borderColor) ? s.borderColor : s.backgroundColor;
     return { selector: describe(el), fg, bg: backgroundOf(el.parentElement || el) };
   });
   const h1 = [...d.querySelectorAll('h1')].filter(visible).length;
-  return { texts, nonText, targets, unnamed, unlabelled, lang: d.documentElement.getAttribute('lang') || '', h1 };
+  const reflow = { scrollWidth: d.documentElement.scrollWidth, clientWidth: d.documentElement.clientWidth };
+  return { texts, nonText, targets, unnamed, unlabelled, lang: d.documentElement.getAttribute('lang') || '', h1, reflow };
 })()`;
 
 /** `rgb(a, b, c)` / `rgba(a, b, c, 1)` → `#rrggbb`; a translucent colour is composited over the background. */
@@ -126,6 +142,14 @@ function toHex(css: string, over?: string): string | undefined {
   return `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
 }
 
+/** Words at `alpha` opacity over `bg` are seen as this colour. */
+function dim(fgHex: string, bgHex: string, alpha: number): string {
+  if (alpha >= 1) return fgHex;
+  const c = (h: string, i: number) => parseInt(h.slice(i, i + 2), 16);
+  const mix = (i: number) => Math.round(c(fgHex, i) * alpha + c(bgHex, i) * (1 - alpha)).toString(16).padStart(2, '0');
+  return `#${mix(1)}${mix(3)}${mix(5)}`;
+}
+
 export async function auditPage(page: Page, options: { readonly minTarget?: number; readonly expectLang?: string; readonly ignore?: readonly RegExp[] } = {}): Promise<A11yFinding[]> {
   const minTarget = options.minTarget ?? 44;
   const raw = (await page.evaluate(COLLECT_SOURCE)) as RawReport;
@@ -133,12 +157,14 @@ export async function auditPage(page: Page, options: { readonly minTarget?: numb
   const ignored = (sel: string): boolean => (options.ignore ?? []).some((re) => re.test(sel));
 
   for (const t of raw.texts) {
-    const fg = toHex(t.fg, t.bg); const bg = toHex(t.bg);
-    if (!fg || !bg) { findings.push({ rule: '1.4.3', selector: t.selector, detail: `colour not readable: ${t.fg} on ${t.bg}` }); continue; }
+    const named = toHex(t.fg, t.bg); const bg = toHex(t.bg);
+    if (!named || !bg) { findings.push({ rule: '1.4.3', selector: t.selector, detail: `colour not readable: ${t.fg} on ${t.bg}` }); continue; }
+    const fg = dim(named, bg, t.alpha);
     const ratio = contrastRatio(fg, bg);
     const large = t.px >= 24 || (t.px >= 18.66 && t.bold);
     const need = large ? 300 : 450;
-    if (ratio === undefined || ratio < need) findings.push({ rule: '1.4.3', selector: t.selector, detail: `${fg} on ${bg} = ${((ratio ?? 0) / 100).toFixed(2)}:1 (${t.px}px${t.bold ? ' bold' : ''}, needs ${need / 100}:1) "${t.text}"` });
+    const faded = t.alpha < 1 ? ` at ${Math.round(t.alpha * 100)}% opacity` : '';
+    if (ratio === undefined || ratio < need) findings.push({ rule: '1.4.3', selector: t.selector, detail: `${fg}${faded} on ${bg} = ${((ratio ?? 0) / 100).toFixed(2)}:1 (${t.px}px${t.bold ? ' bold' : ''}, needs ${need / 100}:1) "${t.text}"` });
   }
   for (const n of raw.nonText) {
     const fg = toHex(n.fg, n.bg); const bg = toHex(n.bg);
@@ -153,6 +179,7 @@ export async function auditPage(page: Page, options: { readonly minTarget?: numb
   if (raw.lang === '') findings.push({ rule: '3.1.1', selector: 'html', detail: 'no lang attribute' });
   if (options.expectLang && raw.lang !== options.expectLang) findings.push({ rule: '3.1.1', selector: 'html', detail: `lang is "${raw.lang}", the words on screen are "${options.expectLang}"` });
   if (raw.h1 !== 1) findings.push({ rule: '2.4.6', selector: 'h1', detail: `${raw.h1} visible h1 elements, expected exactly 1` });
+  if (raw.reflow.scrollWidth > raw.reflow.clientWidth + 1) findings.push({ rule: '1.4.10', selector: 'html', detail: `the page is ${raw.reflow.scrollWidth}px wide in a ${raw.reflow.clientWidth}px viewport — horizontal scrolling` });
 
   return findings.filter((f) => !ignored(f.selector));
 }

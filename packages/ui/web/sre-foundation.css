@@ -55,8 +55,10 @@
   --info: #38bdf8;
   --info-surface: #1e3a5f;
   --on-info-surface: #dbeafe;
-  --nobody-surface: #3f2d12;
-  --on-nobody-surface: #fde68a;
+  --warn-surface: #3f2d12;
+  --on-warn-surface: #fde68a;
+  --nobody-surface: var(--warn-surface);
+  --on-nobody-surface: var(--on-warn-surface);
   --focus: #93c5fd;
 
   /* Type — system faces only (nothing to download on a shop line); the Tamil-capable faces are named so a Tamil
