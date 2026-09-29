@@ -747,8 +747,10 @@ export async function startEdge(
   };
 
   const screenPort = settings['EDGE_SCREEN_PORT'];
+  const screenHost = settings['EDGE_SCREEN_HOST'];
   const screens = screenPort === undefined ? null : await startScreenServer({
     port: Number(screenPort),
+    ...(screenHost === undefined ? {} : { host: screenHost }),
     appsDir: settings['EDGE_APPS_DIR'] ?? 'apps',
     snapshot,
     // The manager's day close (M14-FR-04) posts to this box's lane socket — tell the screen where it is.
@@ -756,7 +758,9 @@ export async function startEdge(
     ...(lane === null ? {} : { laneWriteBase: `http://${LANE_HOST}:${lane.port}` }),
   });
   if (screens !== null) {
-    say(`screens on ${SCREEN_HOST}:${screens.port} — loopback only, so nothing on the shop network can read the day's takings`);
+    say(screens.host === SCREEN_HOST || screens.host === 'localhost'
+      ? `screens on ${screens.host}:${screens.port} — loopback only, so nothing on the shop network can read the day's takings`
+      : `screens on ${screens.host}:${screens.port} — NOT loopback: anything that can reach this address can read the day's takings. Only right inside a private container network with the public proxy in front of it and no host port published (ADR-0018).`);
   }
 
   // Close and LOCK the store's trading day, on the box where the live facts live (M14-FR-04, P-01).

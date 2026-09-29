@@ -99,12 +99,15 @@ describe('the box never invents a figure it cannot work out', () => {
 });
 
 describe('the screens socket is loopback, and reads only', () => {
-  it('binds to 127.0.0.1 and nothing else', () => {
+  it('binds to 127.0.0.1 unless a deployment names another address explicitly — and never widens by itself', () => {
     // The bind address is the entire security control, and this socket carries the day's takings,
-    // the exception register and the price list. On the shop network, any phone could read them.
+    // the exception register and the price list. On the shop network, any phone could read them. The
+    // default is loopback; the only way off it is an explicit `EDGE_SCREEN_HOST` (a container on a private
+    // compose network behind the public proxy, ADR-0018), which the boot log then says out loud.
     expect(code(SCREEN_SERVER)).toMatch(/SCREEN_HOST = '127\.0\.0\.1'/);
-    expect(code(SCREEN_SERVER)).toMatch(/server\.listen\(input\.port, SCREEN_HOST/);
+    expect(code(SCREEN_SERVER)).toMatch(/server\.listen\(input\.port, input\.host \?\? SCREEN_HOST/);
     expect(code(SCREEN_SERVER)).not.toMatch(/0\.0\.0\.0|::/);
+    expect(code(EDGE_MAIN)).toMatch(/NOT loopback: anything that can reach this address can read the day's takings/);
   });
 
   it('serves GET and refuses every other method', () => {

@@ -154,6 +154,13 @@ services:
       # Optional, and read by the sync loop only. Absent means "sell, queue, sync later".
       CLOUD_API_URL: ${CLOUD_API_URL:-}
       CLOUD_API_TOKEN: ${CLOUD_API_TOKEN:-}
+      # The screens, for the public proxy (ADR-0018). Served on the container's PRIVATE compose address — not
+      # loopback, which is why the edge's boot log says so out loud — and never published to the host: only
+      # the `proxy` service reaches them, and it forwards ONE screen (`/customer/*`). The staff screens stay off
+      # the public origin until a sign-in gate exists in front of them.
+      EDGE_SCREEN_PORT: '8091'
+      EDGE_SCREEN_HOST: '0.0.0.0'
+      EDGE_APPS_DIR: apps
     volumes:
       # The one thing this container must be able to write is the one thing it must
       # never lose, so it is a named volume rather than the container's own layer.
@@ -182,8 +189,51 @@ services:
       - ../../apps/owner-app/web:/usr/share/nginx/html/owner:ro
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
-      - '${WEB_PORT:-8080}:80'
+      # Loopback only: the public front is the `proxy` service below; this stays for the stand-up check.
+      - '127.0.0.1:${WEB_PORT:-8080}:80'
+
+  # ---------------------------------------------------------------------------
+  # The ONE public origin (ADR-0018): TLS terminated here, and everything a customer's browser
+  # needs on one address — the customer app (`/customer/*`, served by the edge's screen server),
+  # the API (`/v1/*`, `/livez`, `/readyz`) and customer sign-in (`/auth/*`). Staff screens are
+  # NOT on it: a 404 by name, until a sign-in gate exists in front of them.
+  #
+  # A domain in SRE_PUBLIC_HOST gets a free certificate automatically (SRE_TLS = the email for
+  # certificate notices); the box's public IP, or blank (= localhost only), gets a certificate the
+  # proxy makes itself for exactly those names (browsers warn once — a synthetic demo, never real
+  # customers). HTTP redirects to
+  # HTTPS. The client address the API rate-limits on is OVERWRITTEN here from the connection, so a
+  # caller cannot spoof it with a header. See infra/compose/Caddyfile.
+  # ---------------------------------------------------------------------------
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+      - edge
+    environment:
+      # The names the certificate is made for: a domain, the box's public IP, or (blank) only this machine.
+      SRE_PUBLIC_HOST: '${SRE_PUBLIC_HOST:-localhost, 127.0.0.1}'
+      SRE_TLS: ${SRE_TLS:-internal}
+      # The certificate served to a client that sends no server name (a bare-IP connection). Always a name in
+      # SRE_PUBLIC_HOST — `localhost` by default.
+      SRE_DEFAULT_SNI: ${SRE_DEFAULT_SNI:-localhost}
+      # Customer sign-in: `auth-not-deployed` answers /auth/* with a 503 that says so (until the sign-in
+      # service is deployed); `auth-upstream` forwards to SRE_AUTH_UPSTREAM.
+      SRE_AUTH_ROUTE: ${SRE_AUTH_ROUTE:-auth-not-deployed}
+      SRE_AUTH_UPSTREAM: ${SRE_AUTH_UPSTREAM:-auth:8082}
+    ports:
+      - '${HTTPS_PORT:-443}:443'
+      - '${HTTP_PORT:-80}:80'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    security_opt:
+      - no-new-privileges:true
 
 volumes:
   db-data:
   edge-data:
+  caddy-data:
+  caddy-config:

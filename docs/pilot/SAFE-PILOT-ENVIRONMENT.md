@@ -27,7 +27,7 @@ docker compose -p sre-pilot \
 | **Pilot-only users** | genesis owner via `BOOTSTRAP_OWNER_*`; provision the rest | `roles.ts`, OA-6 |
 | **Test / local IdP** | `IDP_*` point at the test IdP; production IdP deferred (OA-4) | KL-01 |
 | Synthetic/approved **pilot data** | Phase 4 seed dataset, demo-marked | Phase 4 |
-| **HTTPS** | terminate TLS in front of `web`/`api` (reverse proxy or nginx TLS block); never plain HTTP | operator step |
+| **HTTPS** | built in: the `proxy` service (Caddy) is the ONE public origin — TLS terminated there (a domain in `SRE_PUBLIC_HOST` gets a free certificate; the box's public IP = the proxy's own certificate, demo only; blank = localhost only), http redirects to https, `web`/`api`/`db` bound to loopback; only `/customer/*`, `/v1/*` and `/auth/*` are public, staff screens 404 by name | ADR-0018, `infra/compose/Caddyfile`, CI `deploy` job |
 | **Secure cookies / sessions** | tokens are Bearer (no ambient cookie auth); any session cookie set `Secure` + `HttpOnly` + `SameSite` behind TLS | pipeline auth |
 | **RBAC + tenant isolation** | default-deny at the router; every route declares a permission; per-tenant streams | `tests/integration/access-durability.test.ts`, `authorization-is-enforced` |
 | **Audit logging** | request-level audit log + tamper-evident hash chain | `pnpm run verify:audit`, migration 0010 |

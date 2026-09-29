@@ -28,6 +28,15 @@ idempotent**, so it is safe to run on every deploy.
 `../docs/runbooks/pilot-deployment.md` — including how to **prove the offline promise** by
 pulling the network cable mid-sale.
 
+## The public front — one https origin (Stage F slice 2, ADR-0018, built)
+
+The `proxy` service (Caddy) in `compose/` is the ONE public address: TLS terminated there (a domain in
+`SRE_PUBLIC_HOST` gets a free certificate automatically; the box's public IP = the proxy's own certificate, demo only; blank = localhost only), plain
+http redirected, `/v1/*` and the health endpoints to the API (client address overwritten so the per-IP limits
+cannot be spoofed), `/customer/*` to the edge's screen server on the private network, `/auth/*` to customer
+sign-in (503 by name until it is deployed). Staff screens are not on it — 404 by name — until a sign-in gate
+exists. `web`, `api` and `db` are bound to loopback. `compose/Caddyfile`; proven over TLS by the CI `deploy` job.
+
 ## `deploy/` — automatic deployment of merged releases (Stage F, built)
 
 `release.sh` runs ON the box and deploys exactly one merged commit of `main` — refusing anything else — waits
