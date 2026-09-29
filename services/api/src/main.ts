@@ -156,6 +156,7 @@ import { AccessControl } from '../../../packages/rbac/src/rbac';
 import { financeRoutes } from '../../finance/src/index';
 import { dayBookRoutes } from '../../finance/src/day-book';
 import { concessionTagRoutes } from '../../finance/src/concession-tags';
+import { observedHealthRoutes } from '../../platform/src/observed-health';
 import { creditNoteRoutes } from '../../finance/src/credit-notes';
 import { taxRoutes } from '../../finance/src/tax';
 import { retentionRoutes } from '../../finance/src/retention';
@@ -199,7 +200,7 @@ import { fulfilmentPackingRoutes } from '../../fulfilment/src/packing';
 import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
-  dayBookAdapter, concessionTagsAdapter, catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, dataExportAdapter, financeAdapter, settlementAdapter,
+  dayBookAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, dataExportAdapter, financeAdapter, settlementAdapter,
   customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
@@ -952,6 +953,13 @@ export function buildSurface(deps: {
     ...alertLifecycleRoutes(store === undefined
       ? { alerts: () => [], recordAlertEvent: () => {}, now }
       : alertLifecycleAdapter({ store, now })),
+    // OBSERVED operational health (M35-FR-03/04/01): the cloud reads its own ledgers as the health signals,
+    // judges them with the same engine, and raises owned alerts from what it saw into the same lifecycle store.
+    ...observedHealthRoutes(store === undefined ? {
+      now, alerts: empty([]), recordAlertEvent: () => {}, lastSaleSyncedAt: empty(undefined), catalogueBuiltAt: empty(undefined),
+      connectorQueues: empty([]), integrationHealth: empty({}), backups: empty([]), recordBackup: () => {},
+      alertRules: empty(undefined), defineAlertRules: () => {},
+    } : observedHealthAdapter({ store, now })),
     // Device & app-version control (M33-FR-02/04 / A-10) — evaluate whether a device may trade / must
     // upgrade / was killed / is unregistered (a kill never interrupts a sale), and the fleet-at-a-glance;
     // both refuse a policy that would brick the fleet before deciding. Stateless; the durable registry

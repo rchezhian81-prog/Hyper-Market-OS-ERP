@@ -92,7 +92,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'owner.alert.read', 'owner.kpi.read', 'owner.brief.manage',
       'refund.exception.read',
       'notification.send.check',
-      'backup.verify.read', 'backup.drill.record',
+      'backup.verify.read', 'backup.drill.record', 'platform.backup.record',
       'branch.transition.evaluate',
       'document.template.manage', 'document.template.read', 'document.issue', 'document.retention.dispose',
       'pos.suspend.write', 'pos.suspend.read',
@@ -169,7 +169,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'owner.alert.read', 'owner.kpi.read', 'owner.brief.manage',
       'refund.exception.read',
       'notification.send.check',
-      'backup.verify.read', 'backup.drill.record',
+      'backup.verify.read', 'backup.drill.record', 'platform.backup.record',
       'branch.transition.evaluate',
       'document.template.manage', 'document.template.read', 'document.issue', 'document.retention.dispose',
       'pos.suspend.write', 'pos.suspend.read',
@@ -227,6 +227,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     // the same default-deny kernel as every other role (proved in
     // tests/security/the-platform-admin-cannot-post-a-business-transaction.test.ts).
     permissions: [
+      // M35-FR-01: the operator (or the backup script under the operator's credential) records each backup as a fact.
+      'platform.backup.record',
       'identity.self.read',
       'platform.health.read',
       'platform.alert.manage',

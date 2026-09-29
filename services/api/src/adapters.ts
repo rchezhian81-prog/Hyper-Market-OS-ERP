@@ -180,6 +180,8 @@ import { computeOpenCommitment, type ReceiptFact, type SupplierContract, type Re
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
 import type { DayBookDeps, DayBookJournal, DayBookExceptionRecord, StoredPostingMap } from '../../finance/src/day-book';
 import type { ConcessionTagDeps } from '../../finance/src/concession-tags';
+import type { ObservedHealthDeps, ConnectorQueueDepth, BackupRecord, StoredAlertRules } from '../../platform/src/observed-health';
+import { adapterHealth } from '../../../packages/integration/src/index';
 import type { DayBookSale } from '../../../packages/finance/src/index';
 import type { CreditNoteDeps } from '../../finance/src/credit-notes';
 import type { CreditNote, ProductTaxEntry } from '../../../packages/finance/src/index';
@@ -1228,6 +1230,21 @@ const forWebhook = (provider: string): string => streamName(STREAM.integration, 
 const forConnectorMapping = (connectorId: string, version: string): string => streamName(STREAM.integration, 'mapping', connectorId, version);
 /** Each connector's delivery queue folds its own stream — the enqueue/deliver/fail log for that connector. */
 const forConnectorDelivery = (connectorId: string): string => streamName(STREAM.integration, 'delivery', connectorId);
+/**
+ * A tenant-wide index of the connectors ever mapped or written to (M35-FR-03): connector queues live on
+ * per-connector streams, which nothing can enumerate, so the first mapping or delivery on a connector also
+ * appends one `ConnectorSeen` fact here — idempotent on the connector id, so it lands once.
+ */
+async function indexConnector(store: EventStore, tenantId: string, connectorId: string, at: string): Promise<void> {
+  await store.append(tenantId, STREAM.integration, makeEvent({
+    id: `conn-seen-${connectorId}`,
+    type: 'ConnectorSeen',
+    occurredAt: at,
+    idempotencyKey: `conn-seen-${tenantId}-${connectorId}`,
+    source: 'api/platform',
+    payload: { connectorId, firstSeenAt: at },
+  }));
+}
 // Managed secret references (M32-FR-03) live on one shared stream — the latest state per secret id.
 const SECRETS_STREAM = streamName(STREAM.integration, 'secrets');
 // The domain-level audit trail (M34-FR-01) — one tenant-wide append-only chain of sealed records.
@@ -3504,6 +3521,7 @@ export function connectorAdapter(input: {
       latest<Mapping>(input.store, tenantId, forConnectorMapping(connectorId, version), 'ConnectorMappingSet'),
 
     recordMapping: async (tenantId, mapping) => {
+      await indexConnector(input.store, tenantId, mapping.connectorId, input.now());
       await input.store.append(tenantId, forConnectorMapping(mapping.connectorId, mapping.version), makeEvent({
         id: `conn-map-${mapping.connectorId}-${mapping.version}`,
         type: 'ConnectorMappingSet',
@@ -3535,6 +3553,7 @@ export function connectorDeliveryAdapter(input: {
         .map((m) => ({ ...m, tenantId })),
     record: async (tenantId, connectorId, event, key) => {
       const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await indexConnector(input.store, tenantId, connectorId, event.at);
       await input.store.append(tenantId, forConnectorDelivery(connectorId), makeEvent({
         id: `conn-dq-${event.change}-${event.id}-${d}`,
         type: 'ConnectorDelivery',
@@ -8655,5 +8674,71 @@ export function concessionTagsAdapter(input: { readonly store: EventStore; reado
         .map((e) => payloadOf<{ userId: string; roleId: string }>(e))
         .filter((g) => g.userId === userId)
         .map((g) => g.roleId),
+  };
+}
+
+// ── Observed operational health (M35-FR-03 / FR-04 / FR-01) ───────────────────────────────────
+// The cloud's own ledgers as health signals: the newest synced sale, the connector queues, the latest
+// pack, the adapters' heartbeats, the recorded backups; the alert rules and the raised alerts are facts
+// on the platform stream (the alerts through the same lifecycle adapter the manual raise uses).
+const BACKUPS_STREAM = streamName(STREAM.platform, 'backups');
+const ALERT_RULES_STREAM = streamName(STREAM.platform, 'alert-rules');
+export function observedHealthAdapter(input: { readonly store: EventStore; readonly now: () => string }): ObservedHealthDeps {
+  const lifecycle = alertLifecycleAdapter(input);
+  return {
+    now: input.now,
+    alerts: lifecycle.alerts,
+    recordAlertEvent: lifecycle.recordAlertEvent,
+    lastSaleSyncedAt: async (tenantId) => (await input.store.latestOfType(tenantId, STREAM.sales, 'SaleCommitted'))?.event.occurredAt,
+    catalogueBuiltAt: async (tenantId) =>
+      (await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished'))?.snapshot.builtAt,
+    connectorQueues: async (tenantId) => {
+      const seen = await allOf<{ readonly connectorId: string }>(input.store, tenantId, STREAM.integration, 'ConnectorSeen');
+      const ids = [...new Set(seen.map((c) => c.connectorId))].sort();
+      const out: ConnectorQueueDepth[] = [];
+      for (const connectorId of ids) {
+        const queue = replayConnectorQueue(await allOf<ConnectorDeliveryEvent>(input.store, tenantId, forConnectorDelivery(connectorId), 'ConnectorDelivery'));
+        out.push({
+          connectorId,
+          queued: queue.filter((m) => m.state === 'queued' || m.state === 'in_flight').length,
+          deadLettered: queue.filter((m) => m.state === 'dead_lettered').length,
+        });
+      }
+      return out;
+    },
+    integrationHealth: async (tenantId, at) => {
+      const configs = new Map<string, AdapterConfig>();
+      for (const c of await allOf<AdapterConfig>(input.store, tenantId, STREAM.integration, 'IntegrationAdapterRegistered')) configs.set(c.adapterId, c);
+      const heartbeats = await allOf<AdapterHeartbeat>(input.store, tenantId, STREAM.integration, 'IntegrationHeartbeat');
+      const out: Record<string, boolean> = {};
+      for (const config of configs.values()) {
+        const health = adapterHealth({ config, heartbeats, at });
+        if (health.state === 'disabled') continue;
+        out[config.adapterId] = health.state === 'healthy';
+      }
+      return out;
+    },
+    backups: (tenantId) => allOf<BackupRecord>(input.store, tenantId, BACKUPS_STREAM, 'BackupTaken'),
+    recordBackup: async (tenantId, record) => {
+      await input.store.append(tenantId, BACKUPS_STREAM, makeEvent({
+        id: `backup-${record.backupId}`,
+        type: 'BackupTaken',
+        occurredAt: record.at,
+        idempotencyKey: `backup-${tenantId}-${record.backupId}`,
+        source: 'api/platform',
+        payload: record,
+      }));
+    },
+    alertRules: (tenantId) => latest<StoredAlertRules>(input.store, tenantId, ALERT_RULES_STREAM, 'AlertRulesDefined'),
+    defineAlertRules: async (tenantId, rules) => {
+      await input.store.append(tenantId, ALERT_RULES_STREAM, makeEvent({
+        id: `alert-rules-v${rules.version}`,
+        type: 'AlertRulesDefined',
+        occurredAt: rules.definedAt,
+        idempotencyKey: `alert-rules-${tenantId}-v${rules.version}`,
+        source: 'api/platform',
+        payload: rules,
+      }));
+    },
   };
 }
