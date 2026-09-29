@@ -166,8 +166,10 @@ describe('stock productivity — turns and GMROI over a period (M08-FR-04, API-0
     expect(body.returns).toEqual({ minor: 12500, currency: 'INR' });
     expect(body.cogs.minor).toBe(30000);
     expect(body.grossMargin).toEqual({ minor: 7500, currency: 'INR' });
-    // GMROI = 7,500 / 30,000 = 0.25×.
-    expect(body.gmroi).toMatchObject({ kind: 'ratio', bp: 2500 });
+    // The 10 resold units are BACK IN STOCK (the return appended its `returned` movement, M08-FR-01), so closing
+    // value is 70,000 and average inventory (0 + 70,000) / 2 = 35,000. GMROI = 7,500 / 35,000 = 0.21×.
+    expect(body.averageInventory.minor).toBe(35000);
+    expect(body.gmroi).toMatchObject({ kind: 'ratio', bp: 2143 });
     expect(body.byProduct[0]).toMatchObject({ productId: 'P1', returns: { minor: 12500 }, grossMargin: { minor: 7500 } });
   });
 

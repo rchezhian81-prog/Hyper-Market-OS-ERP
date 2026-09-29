@@ -30,14 +30,22 @@ accounts.
   exception (P-08), never a refusal (hard rule #1). Proven: `tests/unit/sale-stock.test.ts` (7),
   `tests/integration/sale-reduces-stock.test.ts` (5); the near-expiry test now locks on-hand to 70 after a
   30-unit sale. No module rung change (M08 already E2E_VERIFIED); traceability + ledger note updated.
-- **Follow-ons (recorded, not done):** (a) **A2** — a resell RETURN should append the compensating
-  `returned` movement (the performance read already nets return COGS, so the wire must not double count);
+- **A2 — done (29 Sep 2026): a resold return puts stock back.** `returnsAdapter.recordReturn` (front door
+  and synced) appends one `returned` movement per **resell** line in the return's own atomic batch, at the
+  location the original sale drew from (same rule), keyed `return-<returnId>-<i>` so a retried refund
+  appends once; quarantine / damaged / scrap never re-enter sellable on-hand (M08-FR-02 / M10 / M28).
+  Valuation re-enters at the running average; the performance read keeps netting resold COGS (no double
+  count) and average inventory now honestly includes the returned goods (perf test 4 recomputed: GMROI
+  0.25× → 0.21×). Proven: unit (9), `sale-reduces-stock` (7); every returns / refund / store-credit suite
+  passes unchanged.
+- **Follow-ons (recorded, not done):** (a) near-expiry's batch view does not yet re-add a returned batch —
+  the engine takes receipts / sales / wastage only (small follow-on for batch-tracked resell returns);
   (b) the store-edge should stamp `locationId` from its `storeId` on every sale (Stage D), and the pilot
   seed / pack publish must scope the pack to the receiving location so the hosted demo visibly shows stock
   falling; (c) sales banked before this change carry no movements — a human-run, idempotent replay
   (append-only compensation) is a B-track item; (d) `scope` is not part of the signed pack bytes
   (`canonicalise` signs tenant / version / builtAt / products / barcodes) — informational, server-side only.
-- **Next:** gate green → PR → merge → A2 (returns) → B1 (bulk loader).
+- **Next:** A2 gate → PR → merge → **B1** (real-data bulk loader + second-tenant procedure).
 
 ---
 

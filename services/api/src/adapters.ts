@@ -46,7 +46,7 @@ import type { GstRatePeriod } from '../../../packages/finance/src/rate';
 import type { ProductRecord, BarcodeAssignment, MergeRequest, MergeLink, PackHierarchy, DataQualityFinding, SuggestionDisposition } from '../../../packages/product/src/index';
 import { BarcodeRegistry, assessProductDataQuality, buildDataQualityWorklist } from '../../../packages/product/src/index';
 import type { IncomingSale, IncomingTender, SaleException, PosDeps } from '../../pos/src/index';
-import { resolveSaleStockLocation, saleStockMovements } from '../../pos/src/sale-stock';
+import { resolveSaleStockLocation, returnStockMovements, saleStockMovements } from '../../pos/src/sale-stock';
 import type { LotTraceDeps } from '../../inventory/src/lot-trace';
 import type { RecallDeps } from '../../inventory/src/recall';
 import { RecallRegistry, type RecallRecord } from '../../../packages/traceability/src/index';
@@ -1867,22 +1867,24 @@ export function cataloguePreviewAdapter(input: {
   };
 }
 
+/**
+ * The store a lane's pack was published for — the pack at the sale's own `packVersion` (one index hit on
+ * the version-scoped publish key), else the current one. `undefined` when no pack carries a scope (packs
+ * published before the scope was recorded); the sale — and any return against it — then falls back to the
+ * lane (`services/pos/src/sale-stock.ts`).
+ */
+async function storeOfPack(store: EventStore, tenantId: string, packVersion: number): Promise<string | undefined> {
+  const byVersion = await store.findByIdempotencyKey(tenantId, `catalogue-${tenantId}-v${packVersion}`);
+  const pack = byVersion === undefined
+    ? await latest<SignedPack>(store, tenantId, STREAM.catalogue, 'CataloguePublished')
+    : (byVersion.event.payload as SignedPack);
+  return pack?.snapshot.scope?.storeId;
+}
+
 export function posAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
 }): PosDeps {
-  /**
-   * The store the lane's pack was published for — the pack at the sale's own `packVersion` (one index
-   * hit on the version-scoped publish key), else the current one. `undefined` when no pack carries a
-   * scope (packs published before the scope was recorded), and the sale then falls back to its lane.
-   */
-  const packStoreFor = async (tenantId: string, packVersion: number): Promise<string | undefined> => {
-    const byVersion = await input.store.findByIdempotencyKey(tenantId, `catalogue-${tenantId}-v${packVersion}`);
-    const pack = byVersion === undefined
-      ? await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished')
-      : (byVersion.event.payload as SignedPack);
-    return pack?.snapshot.scope?.storeId;
-  };
   return {
     now: input.now,
 
@@ -1929,7 +1931,7 @@ export function posAdapter(input: {
       // published for, else the lane itself (stated on the movement, never silent) — and appended in the
       // SAME batch as the sale, so on-hand, valuation, COGS and near-expiry all fold the sale from the one
       // ledger. Before this, a banked sale never reduced on-hand (hosted-demo finding H-13).
-      const packStoreId = await packStoreFor(tenantId, sale.packVersion);
+      const packStoreId = await storeOfPack(input.store, tenantId, sale.packVersion);
       const movements = saleStockMovements(sale, resolveSaleStockLocation(sale, packStoreId));
       // The sale and its receipt-number index are ONE atomic batch (audit FND-01): a crash between
       // them must never leave a banked sale with no receipt index, nor an index pointing at a sale
@@ -2314,6 +2316,18 @@ export function returnsAdapter(input: {
       // and the credit land together or not at all, each with its own idempotency key so a lane retry
       // issues the credit once. Same event shapes the stored-value adapter writes, so the balance
       // projection, household pooling and liability reconciliation read it identically.
+      //
+      // A RESOLD return is a stock movement (M08-FR-01 names "return"): its `returned` movements re-enter
+      // sellable on-hand at the location the original sale drew from — the same rule as the sale (declared
+      // → the store of its pack → its lane) — in this SAME batch, so the shelf and the money agree.
+      // Quarantined, damaged and scrapped lines never re-enter here (M08-FR-02 / M10 / M28). Without the
+      // original sale on this ledger there is no location to name and no movement is guessed (P-08): the
+      // return still records, and the desk's own finding says the sale was never seen.
+      const original = await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${saleId}`);
+      const originalSale = original === undefined ? undefined : (original.event.payload as IncomingSale);
+      const stockMovements = originalSale === undefined
+        ? []
+        : returnStockMovements(record, resolveSaleStockLocation(originalSale, await storeOfPack(input.store, tenantId, originalSale.packVersion)));
       await input.store.appendBatch(tenantId, [
         {
           stream: forSaleReturns(saleId),
@@ -2364,6 +2378,19 @@ export function returnsAdapter(input: {
             payload: storeCredit.movement,
           }),
         }]),
+        // One inbound `returned` movement per resold line, in the inventory adapter's own format
+        // (`mv-<movementId>`), so availability and valuation fold it as any other movement.
+        ...stockMovements.map((m) => ({
+          stream: STREAM.inventory,
+          event: makeEvent({
+            id: `mv-${m.movementId}`,
+            type: 'InventoryMoved',
+            occurredAt: m.occurredAt,
+            idempotencyKey: `mv-${tenantId}-${m.movementId}`,
+            source: 'api/pos',
+            payload: m,
+          }),
+        })),
       ]);
     },
 

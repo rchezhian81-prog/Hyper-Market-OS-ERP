@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveSaleStockLocation, saleStockMovements } from '../../services/pos/src/sale-stock';
+import { resolveSaleStockLocation, returnStockMovements, saleStockMovements } from '../../services/pos/src/sale-stock';
 import type { IncomingSale } from '../../services/pos/src/sale-intake';
 
 // A sale is a stock movement (M08-FR-01). These are the pure rules that turn a banked sale into the
@@ -64,5 +64,31 @@ describe('the sold movements a banked sale appends', () => {
       ],
     };
     expect(saleStockMovements(odd, { locationId: 'store-1', basis: 'store_of_pack' }).map((m) => m.productId)).toEqual(['OK']);
+  });
+});
+
+describe('the returned movements a recorded return appends (A2)', () => {
+  const ret = {
+    returnId: 'RET-9', processedAt: '2026-09-29T11:00:00Z', processedBy: 'u-desk',
+    lines: [
+      { productId: 'RICE', uom: 'each', quantityMinor: 1, disposition: 'resell' },
+      { productId: 'MILK', uom: 'each', quantityMinor: 2, disposition: 'damaged', batchId: 'B-7' },
+      { productId: 'MILK', uom: 'each', quantityMinor: 3, disposition: 'resell', batchId: 'B-7' },
+      { productId: 'TEA', uom: 'each', quantityMinor: 1, disposition: 'quarantine' },
+      { productId: 'JAM', uom: 'each', quantityMinor: 1, disposition: 'scrap' },
+      { productId: 'SALT', uom: 'each', quantityMinor: 0, disposition: 'resell', batchId: null },
+    ],
+  };
+
+  it('re-enters ONLY resold lines, carrying the batch, at the location the sale drew from', () => {
+    expect(returnStockMovements(ret, { locationId: 'store-1', basis: 'store_of_pack' })).toEqual([
+      { movementId: 'return-RET-9-0', productId: 'RICE', locationId: 'store-1', kind: 'returned', quantityMinor: 1, uom: 'each', occurredAt: '2026-09-29T11:00:00Z', enteredBy: 'u-desk' },
+      { movementId: 'return-RET-9-2', productId: 'MILK', locationId: 'store-1', kind: 'returned', quantityMinor: 3, uom: 'each', occurredAt: '2026-09-29T11:00:00Z', enteredBy: 'u-desk', batchId: 'B-7' },
+    ]);
+  });
+
+  it('states an assumed location on the movement (P-08)', () => {
+    const [m] = returnStockMovements(ret, { locationId: 'lane-3', basis: 'assumed_from_lane' });
+    expect(m?.reason).toContain("assumed from the original sale's lane (lane-3)");
   });
 });

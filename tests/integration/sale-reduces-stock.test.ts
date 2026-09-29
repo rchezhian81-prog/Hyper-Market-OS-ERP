@@ -152,3 +152,53 @@ describe('a banked sale reduces on-hand stock (M08-FR-01, H-13)', () => {
     expect((await availability(h, A, 'TEA')).find((r) => r.locationId === 'L1')).toMatchObject({ onHandMinor: 9 });
   });
 });
+
+/** A return against a banked sale, through the real desk route (u-mgr approves; u-owner processes). */
+const returnAgainst = (h: ApiHarness, tenantId: string, saleId: string, returnId: string, qty: number, disposition: string, key: string) =>
+  h.request({
+    method: 'POST', path: `/v1/sales/${saleId}/returns`, userId: 'u-owner', tenantId, idempotencyKey: key,
+    body: {
+      returnId, number: returnId, reasonCode: 'changed_mind', refundMinor: qty * 2500, refundTender: 'cash', approvedBy: 'u-mgr',
+      processedAt: '2026-09-29T11:00:00.000Z',
+      lines: [{ productId: 'MILK', quantityMinor: qty, uom: 'each', disposition }],
+    },
+  });
+
+const returnedMovementsOf = async (h: ApiHarness, tenantId: string, returnId: string) =>
+  (await h.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' }))
+    .map((e) => e.event.payload as { movementId: string; kind: string; locationId: string })
+    .filter((m) => m.movementId.startsWith(`return-${returnId}-`));
+
+describe('a resold return puts stock back (M08-FR-01 "return", A2)', () => {
+  it('a RESELL return re-enters on-hand at the location the sale drew from, valued at the running average; a DAMAGED one does not', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-mgr', 'store_manager');
+    await receive(h, A, 'r1', 'MILK', 100, 1000);
+    await sell(h, A, 'S1', 'MILK', 30, 'k-s1', { locationId: 'L1' });
+    expect((await availability(h, A, 'MILK')).find((r) => r.locationId === 'L1')).toMatchObject({ onHandMinor: 70 });
+
+    expect((await returnAgainst(h, A, 'S1', 'RET-1', 10, 'resell', 'k-ret1')).status).toBe(201);
+    expect((await availability(h, A, 'MILK')).find((r) => r.locationId === 'L1')).toMatchObject({ onHandMinor: 80, movements: 3 });
+    // Back on the shelf at ₹10.00 WAC: value 80,000; the 30 issued stay in COGS (the performance read nets resold returns itself).
+    expect((await valuation(h, A, 'MILK')).find((r) => r.locationId === 'L1')).toMatchObject({ onHandMinor: 80, value: { minor: 80_000 }, cogs: { minor: 30_000 } });
+    expect(await returnedMovementsOf(h, A, 'RET-1')).toEqual([expect.objectContaining({ movementId: 'return-RET-1-0', kind: 'returned', locationId: 'L1' })]);
+
+    // Damaged goods do not re-enter sellable stock — they go to the governed hold / write-off paths.
+    expect((await returnAgainst(h, A, 'S1', 'RET-2', 5, 'damaged', 'k-ret2')).status).toBe(201);
+    expect((await availability(h, A, 'MILK')).find((r) => r.locationId === 'L1')).toMatchObject({ onHandMinor: 80 });
+    expect(await returnedMovementsOf(h, A, 'RET-2')).toEqual([]);
+  });
+
+  it('a lane retrying an unconfirmed refund appends the movement once', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-mgr', 'store_manager');
+    await receive(h, A, 'r1', 'MILK', 100, 1000);
+    await sell(h, A, 'S1', 'MILK', 30, 'k-s1', { locationId: 'L1' });
+    await returnAgainst(h, A, 'S1', 'RET-1', 10, 'resell', 'k-ret1');
+    await returnAgainst(h, A, 'S1', 'RET-1', 10, 'resell', 'k-ret1-retry');
+    expect((await availability(h, A, 'MILK')).find((r) => r.locationId === 'L1')).toMatchObject({ onHandMinor: 80 });
+    expect(await returnedMovementsOf(h, A, 'RET-1')).toHaveLength(1);
+  });
+});
