@@ -323,11 +323,39 @@ accounts.
   running the production OTP engines and the local test IdP; and the store's reverse proxy must serve the
   customer app, `/auth/*` and `/v1/*` on ONE origin (the app is relative by design, so the token goes only
   to the host that served the page). Both are Stage F items.
+- **Stage C, family M19 (fulfilment & delivery), slice C — done (29 Sep 2026): delivery-substitution exception
+  OWNERSHIP on the cloud (M19-FR-01 / D09, the owner's Item 2 decision, P-08, §28, hard rules #2 #6).** Item 2
+  built the pure engine — whose job each exception is, by when, and what happens when nobody works it — and
+  left it unwired. Now (`services/orders/src/exception-ownership.ts`): the shop-wide worklist
+  (`GET /v1/orders/substitution-exceptions`) carries **ownership** — each exception's role queue (finance /
+  payment-reconciliation for money, the customer-service desk for a short-picked line, the fulfilment
+  supervisor otherwise), its state, who holds it, its SLA (age, due, breached) and its full audit history; an
+  exception nobody has touched is routed on the fly from the swap it came from (a read writes nothing), and
+  the moment a person acts it is **kept** — append-only, latest per exception, restart-safe. The human moves:
+  `…/:exceptionId/claim`, `/release` (back to the queue — a shift end or a lost login loses nothing),
+  `/reassign` (management, with a reason), `/resolve` (records the outcome under the resolver's name; twice is
+  409); `…/queue/:owner` is one queue worst-first; `…/escalate` is the sweep that moves every breached,
+  unresolved exception to the next owner and **names** what is stuck at the terminal owner rather than
+  dropping it. **Who may work which queue is decided from the caller's grants, never from the request**:
+  management staffs every queue, the accountant the finance queue, the service desk (cashier) the
+  customer-service queue — one table (`QUEUES_STAFFED_BY`) the owner can change; a caller from the wrong queue
+  is refused 422 `not_your_queue`. Two permissions: `order.exception.work` (owner, store manager, accountant,
+  CA, cashier) and `order.exception.manage` (owner, store manager — reassign + sweep). No money moves here:
+  resolving records that a person dealt with it; the refund itself is issued on the refund surface. Proven:
+  route-level 10 (`tests/unit/substitution-exception-ownership-routes.test.ts` — routing on the fly, kept
+  state re-attaches, who staffs what, the moves, the sweep across three clocks incl. duty-manager-terminal, a
+  resolved item never swept) + real API 6 (`tests/integration/substitution-exception-ownership.test.ts` —
+  worklist with ownership, moves kept and re-attached after a **cold restart**, queue rights from grants,
+  resolve, management-only reassign/sweep, a customer sees none of it); the pre-existing worklist suite (5)
+  unchanged and green. **No rung change.** Remaining for this family: the supervisor/desk exception screen +
+  browser e2e, and the M31 notification enqueue for the SLA-breach alert (a live alert provider is external).
+  **Owner to confirm (a one-line table change if not):** that the service desk is staffed by the cashier role
+  and the finance queue by the accountant.
 - **Stage C — remaining, in order:**
   then family by family through the 57 remaining PARTIALLY_WIRED items (D01-FR-06 content authoring,
   D02-FR-06 display funding, D07 coupons/referrals, M21 compensation, M23 close second source, …). OA-12 was
   already answered and closed on 23 Sep — nothing to un-park.
-- **Next:** M20 slice 2 PR → merge → M19 → M22 → M23 → M27 → M35 → M36 → M01, one family per slice; Stage F must add the customer-app auth backend + one-origin proxy (see the M20 slice 2 bullet).
+- **Next:** M19 slice C PR → merge → M22 → M23 → M27 → M35 → M36 → M01, one family per slice (then a second pass: M19 exception screen + e2e, …); Stage F must add the customer-app auth backend + one-origin proxy (see the M20 slice 2 bullet).
 
 ---
 

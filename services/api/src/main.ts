@@ -187,6 +187,7 @@ import { selfCheckoutRoutes } from '../../pos/src/self-checkout';
 import { ordersRoutes, type OrdersDeps } from '../../orders/src/index';
 import { paymentRefundRoutes, type PaymentRefundDeps } from '../../orders/src/payments';
 import { storefrontRoutes, type StorefrontDeps } from '../../orders/src/storefront';
+import { exceptionOwnershipRoutes, type ExceptionOwnershipDeps } from '../../orders/src/exception-ownership';
 import { testModeRefundProcessor } from '../../../packages/orders/src/payment-refunds';
 import { serviceabilityRoutes } from '../../orders/src/serviceability';
 import { fulfilmentRoutes } from '../../fulfilment/src/index';
@@ -280,7 +281,7 @@ export function buildSurface(deps: {
   // The orders surface and its money surface (M18-FR-04 / M20-FR-03) share ONE deps object, so the lifecycle
   // reads the same recorded payment the refund routes do. The refund processor is the test-mode one until the
   // payment provider (EX-03) is in hand — deterministic on the token, never a real bank.
-  const ordersDeps: OrdersDeps & PaymentRefundDeps & StorefrontDeps = store === undefined ? {
+  const ordersDeps: OrdersDeps & PaymentRefundDeps & StorefrontDeps & ExceptionOwnershipDeps = store === undefined ? {
     onHand: empty(new Map()), outstanding: empty([]), holdReservations: () => {},
     holdMinutes: HOLD_MINUTES, now,
     recordPlaced: () => {}, orderState: empty(undefined), orderReservations: empty([]),
@@ -292,6 +293,7 @@ export function buildSurface(deps: {
     allPayments: empty([]), allPaymentResolutions: empty([]), allRefunds: empty([]), allRefundOutcomes: empty([]),
     refundThreshold: empty(undefined), holdsPermission: empty(false), refundProcessor: testModeRefundProcessor(),
     placedOrder: empty(undefined), ordersForCustomer: empty([]), recordAccessRefusal: () => {}, accessRefusals: empty([]),
+    ownedExceptions: empty([]), recordOwnedException: () => {}, rolesOf: empty([]),
   } : ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES, refundProcessor: testModeRefundProcessor() });
 
   const probes = deps.probes ?? (async () => []);
@@ -596,6 +598,9 @@ export function buildSurface(deps: {
       issue: () => {}, coupon: empty(undefined), redemptions: empty([]), recordRedemption: () => {},
       rewardedReferralIds: empty([]), recordReferralReward: () => {}, now,
     } : couponAdapter({ store, now })),
+    // M19-FR-01 / Item 2 — the substitution exception worklist WITH ownership. Registered BEFORE the orders
+    // routes so its literal `/v1/orders/substitution-exceptions…` paths are never captured as an order id.
+    ...exceptionOwnershipRoutes(ordersDeps),
     ...ordersRoutes(ordersDeps),
     // The order's payment and refunds (M18-FR-04 / M20-FR-03): the checkout's answer recorded once, refunds against
     // the order's own token, pending when the bank has not said, on a worklist until it does.
