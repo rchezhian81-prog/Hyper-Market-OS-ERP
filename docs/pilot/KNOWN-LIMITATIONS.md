@@ -19,6 +19,7 @@ baseline does and does not do — none is trading-blocking for a test-mode pilot
 | KL-12 | **Delivery needs store map coordinates** to switch on | slot engine built + tested; delivery fail-safe OFF until lat/long given | OA-11 (owner provides coordinates) |
 | KL-13 | **2 moderate dependency advisories** (below the `--audit-level=high` CI gate) | no high/critical vulnerabilities; audit gate passes | monitor; upgrade when a non-breaking fix ships |
 | KL-14 | **Independent penetration test not yet done** | internal threat model, guardrails and security tests in place | EX-13 pen test (⏳ started) before customer launch |
+| KL-15 | **The public https origin serves the customer app as a GUEST; customer sign-in (`/auth/*`) answers 503 by name; staff screens are 404 by name and live on the store box** (ADR-0018) | customers browse; placing an online order needs sign-in and so is not possible on the public origin yet; staff use the store box's loopback screens | OA-15 / OA-4 (identity + SMS providers chosen; accounts wanted per OA-13) → sign-in service and staff gate; until then by design |
 
 ## Not limitations (deliberate design)
 
