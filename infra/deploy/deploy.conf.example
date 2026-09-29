@@ -1,0 +1,24 @@
+# /opt/sre/deploy.conf — settings for infra/deploy/release.sh on THIS box. No secret belongs here: the
+# secrets stay in infra/compose/.env.pilot (git-ignored), and this file only says which files to use.
+# Every value below is the default; delete a line to keep the default. Copy to /opt/sre/deploy.conf.
+
+# Where the application checkout lives (a git clone of the repository, owned by the deploy user).
+SRE_APP_DIR=/opt/sre/app
+# Only commits on this branch may deploy (a merged pull request with green checks lands here).
+SRE_RELEASE_BRANCH=main
+# The compose project name, files (relative to infra/compose) and env file — the demo runbook's values.
+SRE_COMPOSE_PROJECT=sre-pilot
+SRE_COMPOSE_FILES="docker-compose.yml docker-compose.pilot.yml"
+SRE_ENV_FILE=.env.pilot
+# Which app shells to rebuild on each release (folder names under apps/).
+SRE_BUILD_SHELLS="pos owner-app web-erp picker-app delivery-app customer-app warehouse-app"
+# Build-time flags. PILOT_DEMO_BANNER=1 bakes the "DEMO / PILOT — NOT PRODUCTION" banner into every shell;
+# leave it EMPTY only on a box that holds real data under a written GO.
+SRE_BUILD_ENV="PILOT_DEMO_BANNER=1"
+# Where the API answers on this box, how long to wait for READY, and how often to ask.
+SRE_API_URL=http://127.0.0.1:8081
+SRE_READY_TIMEOUT=180
+SRE_READY_POLL=2
+# The append-only record of every deployment attempt, and the lock that keeps deployments one at a time.
+SRE_RELEASE_LOG=/opt/sre/releases.log
+SRE_DEPLOY_LOCK=/opt/sre/deploy.lock

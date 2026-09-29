@@ -55,6 +55,10 @@ secrets isolated per environment in a vault (hard rule #4).
 - **CD:** build immutable containers → IaC provisions/updates infra → deploy to staging →
   **approved, signed** release to production with staged rollout and **proven rollback**
   (AID-08). No auto-deploy of unapproved changes.
+- **Built (Stage F slice 1, ADR-0017):** the `release` job deploys each merged `main` commit — the approved
+  change — to the demo box over a forced-command SSH key and rolls back automatically if it does not come up;
+  a real-data box is a separate GitHub environment with required reviewers, so nothing reaches it without a
+  named person's approval. `infra/deploy/release.sh`, `docs/runbooks/automatic-deployment.md`.
 
 ## 5. Portability & ownership (P-06 / OD-09)
 - Everything containerised; infra defined as **code** (IaC) in `infra/`; managed

@@ -28,6 +28,14 @@ idempotent**, so it is safe to run on every deploy.
 `../docs/runbooks/pilot-deployment.md` — including how to **prove the offline promise** by
 pulling the network cable mid-sale.
 
+## `deploy/` — automatic deployment of merged releases (Stage F, built)
+
+`release.sh` runs ON the box and deploys exactly one merged commit of `main` — refusing anything else — waits
+for READY and the stand-up check, and puts the previous release back if the new one does not come up. The
+pipeline's `release` job (`.github/workflows/ci.yml`) calls it over a forced-command SSH key after every merge
+whose checks are green. Decision: `../docs/adr/0017-automatic-deployment-of-merged-releases.md`; the one-time
+human steps: `../docs/runbooks/automatic-deployment.md`.
+
 > The cloud IaC modules (network, managed database, compute, storage, secrets) and the
 > dev/test/staging/prod environment definitions land once the vendor is chosen — reviewed
 > manually (AID-07), deployed only through the signed pipeline (AID-08).

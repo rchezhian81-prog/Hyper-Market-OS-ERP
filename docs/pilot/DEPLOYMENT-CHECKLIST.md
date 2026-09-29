@@ -42,7 +42,7 @@ production.** Each ☐ must be ticked with evidence before the store-floor pilot
 
 ## E. Deploy
 
-- [ ] `docker compose up -d`; `migrate` exits 0; `db`, `api`, `web` healthy.
+- [ ] `docker compose up -d`; `migrate` exits 0; `db`, `api`, `web` healthy — or, once the `demo` environment holds its deploy secrets, the pipeline's `release` job does this on every merge and rolls back on failure (`docs/runbooks/automatic-deployment.md`).
 - [ ] Smoke: `/readyz` = ready; a scripted authenticated request through the real pipeline succeeds.
 - [ ] Offline promise demonstrated (pull the cable mid-sale; unsent counter rises; nothing lost).
 
