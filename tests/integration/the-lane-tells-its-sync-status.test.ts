@@ -5,8 +5,10 @@ import { join } from 'node:path';
 import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
 import type { HttpRequest } from '../../services/kernel/src/index';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
-import { LANE_SYNC_STATUS_ROUTE } from '../../edge/store-edge/src/lane-server';
 import type { LaneSyncStatus } from '../../edge/store-edge/src/sync-status';
+
+/** The literal path — the edge exports no name for it on purpose (hard rule #1, tests/unit/store-edge.test.ts). */
+const LANE_SYNC_STATUS_ROUTE = '/lane/sync-status';
 
 /**
  * **The lane socket tells the screens what the box knows about its link to head office (Stage G slice 2 · design

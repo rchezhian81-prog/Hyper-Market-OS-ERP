@@ -93,8 +93,10 @@ const LANE_DAY_REOPEN_ROUTE = '/lane/day-reopen';
  * The STATUS read route (Stage G slice 2 · design system §1 rule 4). The box's own account of its link to head
  * office — cloud reachability, everything still unsent across its queues, dead letters, when something last got
  * through — so the sync badge on the till and the manager screens shows a fact instead of a constant.
+ * Not exported: the edge's public surface offers the lane nothing whose name suggests a network path (hard rule #1 —
+ * tests/unit/store-edge.test.ts); the screens and the tests use the literal path.
  */
-export const LANE_SYNC_STATUS_ROUTE = '/lane/sync-status';
+const LANE_SYNC_STATUS_ROUTE = '/lane/sync-status';
 
 /** What the box does when the manager asks to close the day — the authoritative `EdgeProcess.closeDay`. */
 export type LaneDayCloseHandler = (
