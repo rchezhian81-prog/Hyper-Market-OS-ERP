@@ -511,7 +511,35 @@ accounts.
   `tests/unit/receipt.test.ts` (+1). No rung change — M01 stays PARTIALLY WIRED: the template SCREEN + e2e and
   the edge reading the published receipt template into the lane's pack are the follow-ons; company-wide
   report roll-ups were delivered by Item 4.
-- **Next:** M36 slice M PR (#614) → merge → M01 slice D PR → merge; then the second pass, one screen per slice: M19 exception screen + e2e, M22 portal screen + e2e, M23 day-book screen + e2e, M27 till panel → store box → cloud tags + e2e, M01 template screen + e2e (+ the edge reading the published receipt template into the lane's pack); then Stage D. Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet).
+- **Stage C, second pass, family M19 (fulfilment), slice E — done (29 Sep 2026): the delivery-substitution
+  EXCEPTION INBOX screen, browser-verified (M19-FR-01, Item 2, API-07).** Before: slice C put exception
+  OWNERSHIP on the cloud (queue, holder, SLA, claim / release / reassign / resolve as routes) but no screen bound to
+  it — a supervisor, the service desk or the finance queue had no place to see or work an exception; the ledger
+  said "the exception screen + e2e remain". Now, on the M15 inbox pattern: `apps/web-erp/src/
+  substitution-exception-inbox-session.ts` (the tested, DOM-free session model, one bilingual EN/TA copy object)
+  + `apps/web-erp/web/substitution-exceptions.html` / `.js` (the thin view) served by the store box as
+  `/substitution-exceptions` — every UNRESOLVED exception worst-first with its kind (refund due / adjustment to
+  collect / above-cap charge / short pick), the money, the queue that owns it, who holds it, its age and whether
+  its SLA is breached (breached = an ERROR tone with a word and an icon, never colour alone); a per-queue count
+  strip; **Claim** on an open row; and a "work what you hold" form — **Resolve** with a reason code + the words
+  that are the record, or **Release** back to the queue. Every act is a HUMAN write in the member's own name
+  through `browser-entry.ts`'s act port (POST `…/:exceptionId/claim|release|resolve`, same-origin session,
+  idempotency key), runs ONLY on an explicit click, and is refused locally before any POST without
+  `order.exception.work`, on a row not in the right state, or (resolve) without a reason code and the words;
+  after each act the worklist is re-READ from the cloud, so "held by you" and "gone" are the cloud's truth. The
+  server still decides queue rights and that a picker never approves (§28). Box wiring: `PackSubstitutionExceptionPolicy`
+  (who is looking + permissions; the exceptions are a live GET), `substitutionExceptionsPayload`, screen-server
+  route, offline shell precache, menu entry gated on `order.read`. Tests: `tests/unit/erp-substitution-exception-
+  inbox-session.test.ts` (7), `tests/guardrails/the-substitution-exception-inbox-screen-is-usable.test.ts` (9 —
+  bilingual complete + tripwire; breached = error, open = attention with word + icon; no offer / refusals without
+  the permission or a record; the view defers to the session, no browser dialogs, acts only after a click, POST
+  the only verb, aria on statuses), `tests/e2e/substitution-exception-claim-resolve.e2e.ts` (3, headless
+  Chromium against a stub cloud: claim POSTs and the row becomes "held by you" after the re-read, resolve POSTs
+  {reasonCode, detail} and the row drops off; a read-only user sends nothing; a resolve with no reason code is
+  refused client-side). No module rung change — M19 stays PARTIALLY WIRED: remaining are the M31 notification
+  enqueue for the SLA-breach alert (a live alert provider is external) and the owner's confirmation of the queue
+  staffing table (service desk = cashier, finance queue = accountant).
+- **Next:** M01 slice D PR (#615) → merge → M19 slice E PR → merge; then, one screen per slice: M22 portal screen + e2e, M23 day-book screen + e2e, M27 till panel → store box → cloud tags + e2e, M01 template screen + e2e (+ the edge reading the published receipt template into the lane's pack); then Stage D. Stage F must add the external-login auth backend + one-origin proxy (see the M20 slice 2 bullet).
 
 ---
 

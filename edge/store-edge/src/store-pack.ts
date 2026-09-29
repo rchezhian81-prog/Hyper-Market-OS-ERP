@@ -512,6 +512,17 @@ export interface PackLossPreventionPolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the delivery-substitution exception inbox and what they may do (M19-FR-01 · Item 2). The exceptions
+ *  are read live from the cloud (`GET /v1/orders/substitution-exceptions`), not the pack; this is only who the box
+ *  was told is looking, so the shell can gate on `order.read` before the live read (and offer
+ *  `order.exception.work`). */
+export interface PackSubstitutionExceptionPolicy {
+  readonly userId?: string;
+  /** The permission codes this user holds — `order.read` to see the worklist, `order.exception.work` to claim /
+   *  release / resolve. Never defaulted. The cloud routes re-check both, so this only shapes the UI. */
+  readonly permissions: readonly string[];
+}
+
 /** Who is on the refund-exceptions review screen and what they may do (M13-FR-01/03 · M17). The flagged refunds
  *  are read live from the cloud (`GET /v1/pos/return-governance-exceptions`), not the pack; this is only who the
  *  box was told is looking, so the shell can gate on `lp.case.read` before the live read. Read-only screen. */
@@ -1070,6 +1081,8 @@ export interface StorePack {
   readonly operationsInboxPolicy: Register<PackOperationsInboxPolicy>;
   /** Who is on the loss-prevention investigations screen and what they may do there (M15-FR-04). */
   readonly lossPreventionPolicy: Register<PackLossPreventionPolicy>;
+  /** Who is on the delivery-substitution exception inbox and what they may do there (M19-FR-01). */
+  readonly substitutionExceptionPolicy: Register<PackSubstitutionExceptionPolicy>;
   /** Who is on the refund-exceptions review screen and what they may do there (M13-FR-01/03 · M17). */
   readonly returnGovernancePolicy: Register<PackReturnGovernancePolicy>;
   /** Who is on the cash-office over/short sign-off screen and what they may do there (M14-FR-02). */
@@ -1244,6 +1257,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     dataQualityPolicy: notKnown(why),
     operationsInboxPolicy: notKnown(why),
     lossPreventionPolicy: notKnown(why),
+    substitutionExceptionPolicy: notKnown(why),
     returnGovernancePolicy: notKnown(why),
     cashOfficePolicy: notKnown(why),
     riskAcceptancePolicy: notKnown(why),
@@ -1372,6 +1386,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     dataQualityPolicy: section<PackDataQualityPolicy>('dataQualityPolicy'),
     operationsInboxPolicy: section<PackOperationsInboxPolicy>('operationsInboxPolicy'),
     lossPreventionPolicy: section<PackLossPreventionPolicy>('lossPreventionPolicy'),
+    substitutionExceptionPolicy: section<PackSubstitutionExceptionPolicy>('substitutionExceptionPolicy'),
     returnGovernancePolicy: section<PackReturnGovernancePolicy>('returnGovernancePolicy'),
     cashOfficePolicy: section<PackCashOfficePolicy>('cashOfficePolicy'),
     riskAcceptancePolicy: section<PackRiskAcceptancePolicy>('riskAcceptancePolicy'),

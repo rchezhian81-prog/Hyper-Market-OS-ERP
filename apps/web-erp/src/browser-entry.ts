@@ -124,6 +124,11 @@ import {
   type LpInboxPorts, type LpInboxSession, type LpWorklistData, type LpCloseCasePort, type CloseResult,
 } from './loss-prevention-inbox-session';
 import {
+  createSubExceptionInboxSession,
+  type SubExceptionInboxSession, type SubExceptionInboxPorts, type SubExceptionWorklistData, type SubExceptionActionPort,
+  type ActionResult as SubExceptionActionResult,
+} from './substitution-exception-inbox-session';
+import {
   createReturnGovernanceSession,
   type ReturnGovernancePorts, type ReturnGovernanceSession, type ReturnGovernanceData as ReturnGovernanceExceptions,
 } from './return-governance-session';
@@ -1139,6 +1144,95 @@ export async function fetchLpWorklist(): Promise<LpWorklistData | null> {
     });
     if (res.status >= 400) return null;
     return (await res.json()) as LpWorklistData;
+  } catch {
+    return null;
+  }
+}
+
+// ── Delivery-substitution exception inbox (M19-FR-01 · Item 2) — the queue member's work screen ────────────
+
+/** What the box tells the delivery-exceptions inbox screen: who is looking, what they may do, and (optionally) the
+ *  worklist it last carried. The exceptions are a LIVE cloud read (`GET /v1/orders/substitution-exceptions`)
+ *  refreshed by the shell when online; offline the screen shows its clearly-marked sample stand-in. */
+export interface SubstitutionExceptionInboxData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+  readonly worklist?: SubExceptionWorklistData;
+}
+
+const SUB_EXC_READ_PERMISSION = 'order.read';
+const SUB_EXC_WORK_PERMISSION = 'order.exception.work';
+const EMPTY_SUB_EXC_WORKLIST: SubExceptionWorklistData = Object.freeze({
+  exceptions: [], count: 0, atRiskMinor: 0, open: { count: 0, atRiskMinor: 0, breached: 0 },
+  queues: { fulfilment_supervisor: 0, customer_service_desk: 0, finance_recon_queue: 0, duty_manager: 0 },
+});
+const NOOP_SUB_EXC_ACTION_PORT: SubExceptionActionPort = { post: async () => 'lost_link' };
+
+export function subExceptionPortsFromData(
+  data: SubstitutionExceptionInboxData | undefined,
+  worklist?: SubExceptionWorklistData,
+  actionPort: SubExceptionActionPort = NOOP_SUB_EXC_ACTION_PORT,
+): SubExceptionInboxPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    worklist: () => worklist ?? data?.worklist ?? EMPTY_SUB_EXC_WORKLIST,
+    // Default-deny: an absent permission list can read/work nothing (the server would refuse it anyway).
+    mayRead: () => held.has(SUB_EXC_READ_PERMISSION),
+    mayWork: () => held.has(SUB_EXC_WORK_PERMISSION),
+    actionPort: () => actionPort,
+  };
+}
+
+/** Build the delivery-exceptions inbox, or `null` when the box carried no payload for it (shell shows the sample). */
+export function bootSubExceptionInbox(
+  data: SubstitutionExceptionInboxData | undefined,
+  worklist?: SubExceptionWorklistData,
+  actionPort?: SubExceptionActionPort,
+): SubExceptionInboxSession | null {
+  if (data === undefined) return null;
+  return createSubExceptionInboxSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    subExceptionPortsFromData(data, worklist, actionPort),
+  );
+}
+
+/** The authenticated POST of a queue member's act (claim / release / resolve) — the member's OWN session cookie
+ *  (`credentials: 'same-origin'`), never a service token. A network/timeout is a retryable lost link, not a
+ *  refusal, so a dropped connection never reads as "the server said no". The exceptionId rides in the URL
+ *  (colon-joined, so it is one segment — encoded); the server appends the act to the exception's history in the
+ *  caller's own name and re-checks that the caller staffs the queue (§28: a picker never approves). */
+function openSubExceptionActionPort(): SubExceptionActionPort {
+  return {
+    post: async ({ action, exceptionId, body }): Promise<SubExceptionActionResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return 'lost_link';
+      const key = globalThis.crypto?.randomUUID?.() ?? `sub-exc-${action}-${exceptionId}-${Date.now()}`;
+      try {
+        const res = await fetchFn(`/v1/orders/substitution-exceptions/${encodeURIComponent(exceptionId)}/${action}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify(body ?? {}),
+        });
+        return res.status >= 200 && res.status < 300 ? 'done' : 'refused';
+      } catch {
+        return 'lost_link';
+      }
+    },
+  };
+}
+
+/** Read the live exceptions worklist (a GET — read-only). Returns null offline/refused so the shell keeps whatever
+ *  it was showing and its stale strip says the page is what the box last told it. */
+export async function fetchSubExceptionWorklist(): Promise<SubExceptionWorklistData | null> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return null;
+  try {
+    const res = await fetchFn('/v1/orders/substitution-exceptions', {
+      method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin',
+    });
+    if (res.status >= 400) return null;
+    return (await res.json()) as SubExceptionWorklistData;
   } catch {
     return null;
   }
@@ -3173,6 +3267,13 @@ interface ManagerWindow {
     refresh(): Promise<LpWorklistData | null>;
     present(worklist: LpWorklistData): LpInboxSession;
   };
+  substitutionExceptionInboxData?: SubstitutionExceptionInboxData;
+  substitutionExceptionInboxSession?: SubExceptionInboxSession;
+  /** The shell reads the live exceptions worklist through this and re-presents it — a GET read, never a write. */
+  substitutionExceptionInbox?: {
+    refresh(): Promise<SubExceptionWorklistData | null>;
+    present(worklist: SubExceptionWorklistData): SubExceptionInboxSession;
+  };
   rosteringData?: RosteringScreenData;
   rosteringSession?: RosteringSession;
   /** The shell reads the live roster worklist through this and re-presents it — GET reads, never a write. */
@@ -4067,6 +4168,23 @@ if (browserWindow !== undefined) {
       present: (worklist) => createLpInboxSession(
         { userId: lossPreventionData?.userId === undefined ? null : lossPreventionData.userId },
         lpInboxPortsFromData(lossPreventionData, worklist, lpClosePort),
+      ),
+    };
+  }
+  // The delivery-substitution exception inbox (M19-FR-01): boots from the box's policy (who + what they hold), then
+  // the shell refreshes the exceptions with a live GET (read-only). Offline it shows its sample stand-in and says so.
+  // The writes are HUMAN acts — claim / release / resolve in the member's own name — never on load, only on an
+  // explicit click; the server re-checks queue rights and that a picker never approves (§28).
+  const subExceptionData = browserWindow.substitutionExceptionInboxData;
+  const subExceptionPort = openSubExceptionActionPort();
+  const subExceptionInbox = bootSubExceptionInbox(subExceptionData, undefined, subExceptionPort);
+  if (subExceptionInbox !== null) {
+    browserWindow.substitutionExceptionInboxSession = subExceptionInbox;
+    browserWindow.substitutionExceptionInbox = {
+      refresh: fetchSubExceptionWorklist,
+      present: (worklist) => createSubExceptionInboxSession(
+        { userId: subExceptionData?.userId === undefined ? null : subExceptionData.userId },
+        subExceptionPortsFromData(subExceptionData, worklist, subExceptionPort),
       ),
     };
   }

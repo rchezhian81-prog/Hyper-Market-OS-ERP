@@ -99,6 +99,11 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // open case with the money at stake). Gated on the SAME permission the worklist route checks (`lp.case.read`),
   // so the menu never offers a screen the server would refuse (M15-FR-04).
   { id: 'loss-prevention', label: 'Investigations', path: '/loss-prevention', requires: 'lp.case.read', group: 'Administration' },
+  // Delivery exceptions — the M19 substitution-exception inbox (a swap that left a refund due, an adjustment to
+  // collect, a charge above the cap, a short-picked line — each owned by a queue with an SLA clock). Gated on the
+  // SAME permission the worklist route checks (`order.read`), so the menu never offers a screen the server would
+  // refuse (M19-FR-01 · Item 2).
+  { id: 'substitution-exceptions', label: 'Delivery exceptions', path: '/substitution-exceptions', requires: 'order.read', group: 'Trading' },
   // Refund exceptions — the M13/M17 governance surface: refunds that reconciled with a rule broken (store credit
   // over the owner's cap, a credit with no customer, a §28 approval breach, more sent back than the bill sold or
   // was paid). Gated on the SAME permission the exceptions route checks (`lp.case.read`), so the menu never offers
