@@ -66,6 +66,7 @@ import { b2bCreditRoutes } from '../../finance/src/b2b-credit';
 import { b2bCollectionsRoutes } from '../../finance/src/b2b-collections';
 import { b2bCommissionRoutes } from '../../finance/src/b2b-commission';
 import { b2bDocumentsRoutes } from '../../finance/src/b2b-documents';
+import { b2bPortalRoutes } from '../../finance/src/b2b-portal';
 import { concessionRoutes } from '../../finance/src/concession';
 import { scrapRoutes } from '../../finance/src/scrap';
 import { refundExceptionsRoutes } from '../../finance/src/refund-exceptions';
@@ -198,7 +199,7 @@ import { aiRoutes } from '../../ai/src/index';
 import {
   catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, dataExportAdapter, financeAdapter, settlementAdapter,
   customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter,
-  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter } from './adapters';
+  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
 import { SandboxRecurringBillingProvider, type Plan as BillingPlan } from '../../../packages/platform/src/index';
@@ -679,6 +680,20 @@ export function buildSurface(deps: {
       document: empty(undefined), documents: empty([]), convertedQuotationIds: empty([]), recordDocument: () => {},
       allocateNumber: () => Promise.resolve(1), creditAllowed: empty(false), now,
     } : b2bDocumentsAdapter({ store, now, numberSeries: deps.numberSeries })),
+    // M22-FR-04 — the B2B customer portal: a business customer reads ITS OWN account, invoices, statement and
+    // documents, projected from the very adapters the staff surfaces use; who the login is comes from a stored
+    // binding, never the request; a cross-customer ask is refused AND recorded.
+    ...b2bPortalRoutes(store === undefined ? {
+      customerForUser: empty(undefined), recordLoginBinding: () => {}, loginsFor: empty([]), recordAccessRefusal: () => {}, accessRefusals: empty([]),
+      invoices: empty([]), account: empty(undefined), outstandingMinor: empty(0), documents: empty([]), now,
+    } : {
+      ...b2bPortalAdapter({ store, now }),
+      invoices: b2bCollectionsAdapter({ store, now }).invoices,
+      account: b2bCreditAdapter({ store, now }).account,
+      outstandingMinor: b2bCreditAdapter({ store, now }).outstandingMinor,
+      documents: b2bDocumentsAdapter({ store, now, numberSeries: deps.numberSeries }).documents,
+      now,
+    }),
     ...concessionRoutes(store === undefined ? {
       contract: empty(undefined), sales: empty([]), recordContract: () => {}, recordSale: () => {},
       depositMovements: empty([]), recordDepositMovement: () => {},
