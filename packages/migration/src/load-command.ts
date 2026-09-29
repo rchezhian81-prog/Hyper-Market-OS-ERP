@@ -52,7 +52,11 @@ export interface LoadCommandInput {
   readonly manifest: unknown;
   /** The raw text of each file present in the folder. */
   readonly files: Readonly<Partial<Record<ExtractFileName, string>>>;
-  /** `exceptions.json`, parsed — the cleaning report (MG-04) with the decisions written onto its exceptions. */
+  /**
+   * `exceptions.json`, parsed — the cleaning report (MG-04). Optional once the cloud holds the register
+   * (Stage C3c): with an API the command reads `GET /v1/migration/exceptions` and a decision counts only
+   * if it is THERE; the file is then the cleaning pass's own report, checked against the register.
+   */
   readonly exceptions: unknown;
   /** `MIGRATION_TARGET_KIND` as the box has it; unset means the API's default, rehearsal. */
   readonly targetKind: string | undefined;
@@ -115,6 +119,43 @@ export function readExceptions(raw: unknown): { readonly exceptions?: readonly M
     if (!isObj(e) || !isStr(e['exceptionId']) || !isStr(e['severity']) || !isStr(e['kind'])) return { problem: 'exceptions.json: an entry is missing exceptionId, kind or severity' };
   }
   return { exceptions: list as MigrationException[] };
+}
+
+/**
+ * The cleaning evidence the load judges, from the folder's report and the cloud's register (Stage C3c).
+ *
+ * **A decision is a decision only on the cloud.** The register (`GET /v1/migration/exceptions`, MG-04) is
+ * where a named person's resolution is kept, never pruned, and re-checked for authority (C3a). A file can be
+ * edited by anyone with the folder, so a resolution that exists only in the file is not taken as decided: the
+ * exception is carried UNDECIDED and named, so the operator records the decision where it is kept — or the
+ * load refuses on it as blocking. An exception the register knows and the file does not is carried too: the
+ * register knows more than the folder, never less. Without a register (a dry run with no API) the file is all
+ * there is, and the outcome says the cloud was not consulted.
+ */
+export function mergeCleaningEvidence(input: {
+  readonly file: readonly MigrationException[] | undefined;
+  readonly register: readonly MigrationException[] | undefined;
+}): {
+  readonly exceptions: readonly MigrationException[];
+  /** Exceptions whose only resolution was in the file — carried undecided, and to be recorded on the cloud. */
+  readonly fileOnlyDecisions: readonly MigrationException[];
+  readonly source: 'file_only' | 'register_only' | 'file_and_register';
+} {
+  if (input.register === undefined) return { exceptions: input.file ?? [], fileOnlyDecisions: [], source: 'file_only' };
+  const byId = new Map<string, MigrationException>();
+  for (const e of input.register) byId.set(e.exceptionId, e);
+  const fileOnlyDecisions: MigrationException[] = [];
+  for (const e of input.file ?? []) {
+    const known = byId.get(e.exceptionId);
+    if (known === undefined) {
+      // Not on the cloud at all: carried as the file has it, minus any decision the file alone asserts.
+      if (e.resolution !== undefined) { fileOnlyDecisions.push(e); byId.set(e.exceptionId, Object.fromEntries(Object.entries(e).filter(([k]) => k !== 'resolution')) as unknown as MigrationException); }
+      else byId.set(e.exceptionId, e);
+    } else if (known.resolution === undefined && e.resolution !== undefined) {
+      fileOnlyDecisions.push(e); // the register's undecided entry stands
+    }
+  }
+  return { exceptions: [...byId.values()], fileOnlyDecisions, source: input.file === undefined ? 'register_only' : 'file_and_register' };
 }
 
 function csvRows(text: string): CsvRows {
@@ -191,17 +232,51 @@ export async function runLoadCommand(input: LoadCommandInput): Promise<LoadComma
   }
 
   // ── cleaning (MG-04) ──────────────────────────────────────────────────────────────────────────
-  if (input.exceptions === undefined) {
-    say('REFUSED — exceptions.json is missing: the cleaning step (MG-04) was not run, or its report was not put in the folder. Run the cleaning check, decide every blocking exception in writing, and put the report here.');
+  // Two sources, one rule (Stage C3c): the cloud's register is where decisions are kept; the folder's
+  // report is the cleaning pass's own output. With an API the register is read and a decision counts only
+  // if it is there. Without one (a dry run) the file is all there is, and the outcome says so.
+  let fileExceptions: readonly MigrationException[] | undefined;
+  if (input.exceptions !== undefined) {
+    const read = readExceptions(input.exceptions);
+    if (read.exceptions === undefined) {
+      say(`Could not read exceptions.json: ${read.problem}`);
+      return done(2, 'cleaning');
+    }
+    fileExceptions = read.exceptions;
+  }
+  let registerExceptions: readonly MigrationException[] | undefined;
+  if (input.client !== undefined) {
+    const reg = await input.client.request({ method: 'GET', path: '/v1/migration/exceptions', userId: manifest.operator, tenantId: manifest.tenantId });
+    if (reg.status === 401 || reg.status === 403) {
+      say(`REFUSED — ${manifest.operator} cannot read tenant ${manifest.tenantId}'s exception register (HTTP ${reg.status}): the token or the role is wrong. The operator must hold a role in this tenant that reads the cleaning register (the owner or a store manager). A load whose decisions cannot be checked is not one to run.`);
+      return done(1, 'cleaning');
+    }
+    if (reg.status !== 200) {
+      say(`Could not read the cloud's exception register (HTTP ${reg.status} on GET /v1/migration/exceptions).`);
+      return done(2, 'cleaning');
+    }
+    const read = readExceptions(reg.body);
+    if (read.exceptions === undefined) {
+      say(`Could not read the cloud's exception register: ${read.problem}`);
+      return done(2, 'cleaning');
+    }
+    registerExceptions = read.exceptions;
+  }
+  if (fileExceptions === undefined && (registerExceptions === undefined || registerExceptions.length === 0)) {
+    say(registerExceptions === undefined
+      ? 'REFUSED — exceptions.json is missing: the cleaning step (MG-04) was not run, or its report was not put in the folder. Run the cleaning check, decide every blocking exception in writing, and save the report as exceptions.json.'
+      : 'REFUSED — no cleaning report in the folder (exceptions.json) and no cleaning pass recorded on the cloud (GET /v1/migration/exceptions is empty): the cleaning step (MG-04) was not run. Run the cleaning check, record its exceptions on the cloud (POST /v1/migration/exceptions), and decide every blocking one there.');
     return done(1, 'cleaning');
   }
-  const exceptions = readExceptions(input.exceptions);
-  if (exceptions.exceptions === undefined) {
-    say(`Could not read exceptions.json: ${exceptions.problem}`);
-    return done(2, 'cleaning');
+  const merged = mergeCleaningEvidence({ file: fileExceptions, register: registerExceptions });
+  const outstanding = outstandingExceptions(merged.exceptions);
+  const source = merged.source === 'file_only'
+    ? 'from exceptions.json — NOT checked against the cloud register (no API)'
+    : merged.source === 'register_only' ? 'from the cloud register' : 'from the cloud register and exceptions.json';
+  say(`Cleaning report: ${merged.exceptions.length} exception(s) ${source}, ${outstanding.blockingUnresolved.length} blocking still undecided.`);
+  for (const e of merged.fileOnlyDecisions) {
+    say(`  ! ${e.exceptionId} (${e.severity}) is decided in exceptions.json only — not on the cloud, where a decision is kept. It counts as UNDECIDED until a named person records it: POST /v1/migration/exceptions/${e.exceptionId}/resolution.`);
   }
-  const outstanding = outstandingExceptions(exceptions.exceptions);
-  say(`Cleaning report: ${exceptions.exceptions.length} exception(s), ${outstanding.blockingUnresolved.length} blocking still undecided.`);
 
   // ── mapping (every unreadable row named) ──────────────────────────────────────────────────────
   const files: ExtractFiles = {

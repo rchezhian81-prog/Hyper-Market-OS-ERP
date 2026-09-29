@@ -226,11 +226,26 @@ accounts.
   `cloudRegister`/`refusedDecisions`/`verification` (payload only — a Stage G item); the box's migration
   screen opens once the owner's parallel-run terms exist on the cloud or the pack file names a cutover
   (there is no cutover id on the cloud before the terms); the load command still reads `exceptions.json` (C3c).
-- **Stage C — remaining, in order:** C3c the load command reads the cloud exception register;
+- **Stage C, slice 3c — done (29 Sep 2026): the load command reads the cloud's exception register (MG-04 /
+  MG-05).** Until now the operator's load judged cleaning from `exceptions.json` alone — a file anyone with
+  the folder could edit, including its "decisions". Now (`packages/migration/src/load-command.ts`,
+  `mergeCleaningEvidence`): whenever the command has an API it reads `GET /v1/migration/exceptions` as the
+  operator, and **a decision counts only if it is on the cloud** — an exception the register knows is judged
+  as the register has it; a decision typed only into the file is named, counted as undecided, and the load
+  refuses on it if it is blocking, telling the operator where to record it; an exception the register
+  knows and the file does not is carried too. With a recorded register the folder needs no file at all;
+  with no API (a dry run) the file is all there is and the outcome says the cloud was not consulted; an
+  operator whose role cannot read the register is refused (never a silent fall-back to the file); a
+  register that cannot be reached is exit 2. Proven: `tests/unit/migration-load-command.test.ts` (the
+  file-only decision refused → recorded on the cloud → proceeds with no file; register-only; file + register;
+  CA refused 403; no-API dry run says so) + the subprocess suite unchanged. No rung change (MG-04/MG-05
+  evidence extended). With this, **C3 is closed**: the migration screen's decisions land on the cloud (C3a),
+  the screen reads the cloud (C3b), and the load judges by the cloud (C3c).
+- **Stage C — remaining, in order:**
   then family by family through the 57 remaining PARTIALLY_WIRED items (D01-FR-06 content authoring,
   D02-FR-06 display funding, D07 coupons/referrals, M21 compensation, M23 close second source, …). OA-12 was
   already answered and closed on 23 Sep — nothing to un-park.
-- **Next:** C3b PR → merge → **C3c** (the load command reads the cloud exception register) → the remaining PARTIALLY_WIRED families.
+- **Next:** C3c PR → merge → the remaining PARTIALLY_WIRED families, one family per slice (M01, M18, M19, M20, M22, M23, M27, M35, M36; D01-FR-06, D02-FR-06, D07 …).
 
 ---
 
