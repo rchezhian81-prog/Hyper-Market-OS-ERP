@@ -63,7 +63,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'delivery.attempt.record', 'delivery.run.read', 'delivery.dispatch.manage',
       'delivery.serviceability.manage', 'delivery.serviceability.read',
       'fulfilment.pack.record', 'fulfilment.pack.read',
-      'finance.journal.post', 'finance.period.close', 'finance.period.read', 'finance.period.sign', 'finance.creditnote.issue',
+      'finance.journal.post', 'finance.posting.configure', 'finance.period.close', 'finance.period.read', 'finance.period.sign', 'finance.creditnote.issue',
       'settlement.batch.import', 'settlement.review.read', 'settlement.investigation.manage',
       'b2b.account.manage', 'b2b.account.read', 'b2b.receivable.record', 'b2b.credit.check',
       'b2b.commission.record', 'b2b.commission.read', 'b2b.document.issue', 'b2b.document.read',
@@ -246,7 +246,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     // finance service and this list is what makes it reachable rather than theoretical.
     permissions: [
       'identity.self.read', 'payroll.ess.self',
-      'finance.journal.post', 'finance.period.read', 'finance.period.sign', 'finance.creditnote.issue',
+      'finance.journal.post', 'finance.posting.configure', 'finance.period.read', 'finance.period.sign', 'finance.creditnote.issue',
       'settlement.batch.import', 'settlement.review.read', 'settlement.investigation.manage',
       // M19-FR-01 / Item 2: the finance / payment-reconciliation exception queue (which queues a role staffs is
       // decided in services/orders/src/exception-ownership.ts; this permission only opens the door).

@@ -178,6 +178,8 @@ import { recommendOperationsRunbooks, type OperationsFinding } from '../../../pa
 import { projectHolds, type LegalHoldsDeps, type LegalHoldEvent } from '../../finance/src/legal-holds';
 import { computeOpenCommitment, type ReceiptFact, type SupplierContract, type RebateScheme, type RebateAccrual, type Requisition, type Quote } from '../../../packages/purchasing/src/index';
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
+import type { DayBookDeps, DayBookJournal, DayBookExceptionRecord, StoredPostingMap } from '../../finance/src/day-book';
+import type { DayBookSale } from '../../../packages/finance/src/index';
 import type { CreditNoteDeps } from '../../finance/src/credit-notes';
 import type { CreditNote, ProductTaxEntry } from '../../../packages/finance/src/index';
 import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
@@ -8544,5 +8546,75 @@ export function aiAdapter(input: {
         payload: disposition,
       }));
     },
+  };
+}
+
+// ── The day book (M23-FR-01) ───────────────────────────────────────────────────────────────────
+// Reads the operational ledger (sales by TRADING day, returns by the day they were processed) and the
+// catalogue's rates; appends day-book journals through the same `appendJournal` the manual route uses, so
+// the period fold, the posters list and the close gate see them as journals like any other. The mapping
+// and the exceptions are append-only facts on the finance stream — latest mapping wins; an exception is
+// never deleted (hard rule #6), it is `resolved` when a later posting covers its sources.
+export function dayBookAdapter(input: { readonly store: EventStore; readonly now: () => string }): DayBookDeps {
+  const fin = financeAdapter(input);
+  // A trading day can run past midnight; read a generous clock window and filter on the day itself.
+  const window = (day: string): { readonly from: string; readonly to: string } => {
+    const start = Date.parse(`${day}T00:00:00.000Z`);
+    return { from: new Date(start - 24 * 3_600_000).toISOString(), to: new Date(start + 2 * 24 * 3_600_000).toISOString() };
+  };
+  return {
+    periodStates: fin.periodStates,
+    nextOpenPeriod: fin.nextOpenPeriod,
+    appendJournal: fin.appendJournal,
+    now: input.now,
+    postingMap: (tenantId) => latest<StoredPostingMap>(input.store, tenantId, STREAM.finance, 'PostingMapDefined'),
+    definePostingMap: async (tenantId, map) => {
+      await input.store.append(tenantId, STREAM.finance, makeEvent({
+        id: `posting-map-${map.version}`,
+        type: 'PostingMapDefined',
+        occurredAt: map.definedAt,
+        idempotencyKey: `posting-map-${tenantId}-v${map.version}`,
+        source: 'api/finance',
+        payload: map,
+      }));
+    },
+    salesOn: async (tenantId, day) => {
+      const { from, to } = window(day);
+      const events = await input.store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from, to });
+      return events.map((e) => payloadOf<IncomingSale>(e)).filter((s) => s.tradingDay === day);
+    },
+    returnsOn: async (tenantId, day) => {
+      const { from, to } = window(day);
+      const events = await input.store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded', from, to });
+      return events.map((e) => payloadOf<ReturnRecord>(e)).filter((r) => r.processedAt.slice(0, 10) === day);
+    },
+    originalSales: async (tenantId, saleIds) => {
+      const out = new Map<string, DayBookSale>();
+      for (const saleId of saleIds) {
+        const held = await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${saleId}`);
+        if (held !== undefined) out.set(saleId, held.event.payload as IncomingSale);
+      }
+      return out;
+    },
+    taxRates: async (tenantId) => {
+      const pack = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
+      return new Map((pack?.snapshot.products ?? []).map((p) => [p.productId, p.taxBps] as const));
+    },
+    dayBookJournals: async (tenantId, day) =>
+      (await allOf<JournalEntry | DayBookJournal>(input.store, tenantId, STREAM.finance, 'JournalPosted'))
+        .filter((j): j is DayBookJournal => 'dayBook' in j && j.dayBook.tradingDay === day),
+    recordException: async (tenantId, e) => {
+      await input.store.append(tenantId, STREAM.finance, makeEvent({
+        id: `daybook-exc-${e.exceptionId}`,
+        type: 'DayBookExceptionRaised',
+        occurredAt: e.raisedAt,
+        idempotencyKey: `daybook-exc-${tenantId}-${e.exceptionId}`,
+        source: 'api/finance',
+        payload: e,
+      }));
+    },
+    exceptionsOn: async (tenantId, day) =>
+      (await allOf<DayBookExceptionRecord>(input.store, tenantId, STREAM.finance, 'DayBookExceptionRaised'))
+        .filter((e) => e.tradingDay === day),
   };
 }
