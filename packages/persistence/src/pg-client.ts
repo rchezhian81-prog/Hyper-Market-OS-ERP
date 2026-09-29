@@ -54,8 +54,10 @@ const unwrap = async <R extends SqlRow>(
 /**
  * Adapt a node-postgres `Pool`/`PoolClient`/`Client` to the `SqlClient` port. Query-only: it has no
  * transaction primitive, so `EventStore.appendBatch` over it falls back to best-effort sequential
- * writes. Use this for reads and single appends; use `pgPoolClient` where atomic multi-event appends
- * matter (the money path).
+ * writes, and NO tenant-scoped view — a statement runs under whatever scope the CONNECTION carries
+ * (a single `Client` opened with `options: '-c app.tenant_id=…'`, as the operator tools and the
+ * database tests do). Under row-level security an unscoped connection sees and writes nothing (fail
+ * closed). The application composes `pgPoolClient`, which scopes every statement per transaction.
  */
 export function pgClient(pool: PgQueryable): SqlClient {
   return { query: (sql, params) => unwrap(pool, sql, params) };
@@ -70,6 +72,10 @@ export function pgClient(pool: PgQueryable): SqlClient {
 export function pgPoolClient(pool: PgPool): SqlClient {
   return {
     query: (sql, params) => unwrap(pool, sql, params),
+    // Row-level security (migration 0012): every statement through the returned view runs inside a pinned
+    // transaction that first sets `app.tenant_id` for THAT transaction only (`set_config(..., true)`), so a
+    // pooled connection carries no scope from one request into the next.
+    forTenant: (tenantScope) => tenantScopedPool(pool, tenantScope),
     async transaction<T>(fn: (tx: SqlClient) => Promise<T>): Promise<T> {
       // One pinned connection for the whole transaction, so the callback's reads see its own
       // uncommitted writes (see the SqlClient.transaction contract). BEGIN → run → COMMIT, and any
@@ -90,5 +96,37 @@ export function pgPoolClient(pool: PgPool): SqlClient {
         conn.release();
       }
     },
+  };
+}
+
+/** The SQL that binds the transaction to one tenant's rows (migration 0012). Transaction-local: gone at COMMIT. */
+const SET_TENANT_SCOPE = "SELECT set_config('app.tenant_id', $1, true)";
+
+/**
+ * One tenant's view of a pool: each `query` is BEGIN → scope → statement → COMMIT on ONE pinned connection,
+ * and `transaction` sets the scope right after BEGIN so every statement in the callback is bound. The
+ * connection is released in every path, so a scope never leaks to the next borrower.
+ */
+function tenantScopedPool(pool: PgPool, tenantScope: string): SqlClient {
+  const inScope = async <T>(fn: (conn: PgPoolClient) => Promise<T>): Promise<T> => {
+    const conn = await pool.connect();
+    try {
+      await conn.query('BEGIN');
+      await conn.query(SET_TENANT_SCOPE, [tenantScope]);
+      const out = await fn(conn);
+      await conn.query('COMMIT');
+      return out;
+    } catch (err) {
+      try { await conn.query('ROLLBACK'); } catch { /* connection unusable — released below */ }
+      throw err;
+    } finally {
+      conn.release();
+    }
+  };
+  return {
+    query: (sql, params) => inScope((conn) => unwrap(conn, sql, params)),
+    transaction: <T>(fn: (tx: SqlClient) => Promise<T>) =>
+      inScope((conn) => fn({ query: (sql, params) => unwrap(conn, sql, params) })),
+    forTenant: (scope) => tenantScopedPool(pool, scope),
   };
 }

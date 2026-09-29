@@ -6,6 +6,7 @@
 // `SqlClient` port; testable without a live database.
 
 import type { SqlClient, SqlRow } from './sql-client';
+import { scopedTo } from './sql-client';
 
 export interface ConfigVersionRecord {
   readonly tenantId: string;
@@ -110,7 +111,7 @@ export class SqlConfigVersionStore implements ConfigVersionStore {
   constructor(private readonly client: SqlClient) {}
 
   async set(tenantId: string, key: string, value: unknown, author: string, reason: string, effectiveAt: string): Promise<ConfigVersionRecord> {
-    const rows = await this.client.query(
+    const rows = await scopedTo(this.client, tenantId).query(
       `INSERT INTO config_versions (${COLUMNS})
        SELECT $1, $2, COALESCE(MAX(version), 0) + 1, $3, $4, $5, $6, NULL
        FROM config_versions WHERE tenant_id = $1 AND config_key = $2
@@ -121,7 +122,7 @@ export class SqlConfigVersionStore implements ConfigVersionStore {
   }
 
   async current(tenantId: string, key: string): Promise<ConfigVersionRecord | undefined> {
-    const rows = await this.client.query(
+    const rows = await scopedTo(this.client, tenantId).query(
       `SELECT ${COLUMNS} FROM config_versions WHERE tenant_id = $1 AND config_key = $2 ORDER BY version DESC LIMIT 1`,
       [tenantId, key],
     );
@@ -129,7 +130,7 @@ export class SqlConfigVersionStore implements ConfigVersionStore {
   }
 
   async history(tenantId: string, key: string): Promise<readonly ConfigVersionRecord[]> {
-    const rows = await this.client.query(
+    const rows = await scopedTo(this.client, tenantId).query(
       `SELECT ${COLUMNS} FROM config_versions WHERE tenant_id = $1 AND config_key = $2 ORDER BY version ASC`,
       [tenantId, key],
     );
@@ -137,14 +138,14 @@ export class SqlConfigVersionStore implements ConfigVersionStore {
   }
 
   async rollback(tenantId: string, key: string, toVersion: number, author: string, reason: string, effectiveAt: string): Promise<ConfigVersionRecord> {
-    const target = await this.client.query(
+    const target = await scopedTo(this.client, tenantId).query(
       `SELECT value FROM config_versions WHERE tenant_id = $1 AND config_key = $2 AND version = $3`,
       [tenantId, key, toVersion],
     );
     if (target.length === 0) {
       throw new ConfigVersionNotFoundError(key, toVersion);
     }
-    const rows = await this.client.query(
+    const rows = await scopedTo(this.client, tenantId).query(
       `INSERT INTO config_versions (${COLUMNS})
        SELECT $1, $2, COALESCE(MAX(version), 0) + 1, $3, $4, $5, $6, $7
        FROM config_versions WHERE tenant_id = $1 AND config_key = $2

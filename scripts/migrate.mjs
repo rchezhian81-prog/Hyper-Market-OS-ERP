@@ -57,7 +57,9 @@ async function main() {
   // Load node-postgres at runtime so the rest of the repo never depends on it.
   const pg = await import('pg');
   const { Pool } = pg.default ?? pg;
-  const pool = new Pool({ connectionString: url });
+  // The platform scope (migration 0012, row-level security): a migration that backfills or verifies rows must see
+  // every tenant's. DDL needs no scope; setting it here keeps the tool honest about what it is.
+  const pool = new Pool({ connectionString: url, options: '-c app.tenant_id=*' });
 
   try {
     const migrations = loadMigrations();

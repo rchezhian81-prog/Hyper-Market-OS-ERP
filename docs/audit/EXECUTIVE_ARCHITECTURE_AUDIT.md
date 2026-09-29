@@ -54,7 +54,7 @@ In short: **a superb core, an unbuilt operational half.** The path to a 10/10 pr
    run only in tests (GAP-ARCH-01).
 3. ~~**No transaction boundaries** — multi-event commands are not atomic (GAP-DATA-01).~~ **CLOSED** — `appendBatch` is one PostgreSQL transaction (FND-01; corrected 29 Sep 2026).
 4. **Single shared `pg.Client`** (not a pool) across all stores — SPOF + bottleneck (GAP-DATA-09).
-5. **Tenant isolation is application-level only** — no RLS, no `tenants` FK (GAP-DATA-02).
+5. ~~**Tenant isolation is application-level only** — no RLS~~ **RLS added (29 Sep 2026; forced onto the app role, per-transaction scope from the signed token)**; the `tenants` FK half remains (GAP-DATA-02).
 6. ~~**DPDP data-subject rights & erasure not wired**~~ — the data-subject lifecycle and two-person erasure execution ARE on the API (GAP-SEC-02 **CLOSED**, corrected 29 Sep 2026; legal confirmation pending); erasure vs the append-only store
    (GAP-DATA-06) remains structurally open.
 7. ~~**Audit hash-chain non-cryptographic & unwired**; no rate limiting~~ — both **CLOSED** (FND-02 / FND-03; corrected 29 Sep 2026); ~~**no token revocation** remains (GAP-SEC-05)~~ **CLOSED** (lifetime ceiling + revocation list, 29 Sep 2026).

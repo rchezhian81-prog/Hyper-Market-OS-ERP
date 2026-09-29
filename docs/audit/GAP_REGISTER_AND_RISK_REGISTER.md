@@ -50,7 +50,7 @@ This gap between "97% built" and "25% wired / 0% verified" is the entire story o
 |---|---|---|---|
 | GAP-ARCH-01 | 6/7 services are thin re-implementations, not the tested engines; 35/77 packages test-only | High | `traceability.md:135-139` |
 | GAP-DATA-01 | ~~No transaction boundaries — multi-event commands not atomic~~ **CLOSED (audit FND-01; register corrected 29 Sep 2026)** — `SqlEventStore.appendBatch` runs a multi-event batch inside ONE PostgreSQL transaction through `pgPoolClient` (the transactional adapter `main.ts` wires); a batch whose second event fails rolls the first back. The banked sale + receipt index + `sold` movements, and the return + `returned` movements, are each one batch | ~~High~~ Closed | `packages/persistence/src/event-store.ts` (`appendBatch`), `packages/persistence/src/pg-client.ts`; `tests/integration/appends-are-atomic.test.ts` (real PostgreSQL) |
-| GAP-DATA-02 | No Postgres RLS; no `tenants` table/FK; isolation app-level only | High | `db/migrations/*` (0 FK/RLS) |
+| GAP-DATA-02 | ~~No Postgres RLS; no `tenants` table/FK; isolation app-level only~~ **RLS CLOSED (29 Sep 2026, Stage E slice 4a)** — migration `0012_row_level_security.sql` puts `ENABLE` + `FORCE ROW LEVEL SECURITY` and a tenant policy (`USING` + `WITH CHECK`) on every tenant-scoped table (`event_ledger`, `sync_outbox`, `config_versions`, `idempotency_keys`, `number_series`, `audit_log`, `projection_snapshot`), keyed on a per-TRANSACTION `app.tenant_id` the application binds from the SIGNED token (`pgPoolClient(...).forTenant`, every SQL store); unset → nothing visible or writable (fail closed); `'*'` is the operator tools' explicit platform scope (backup / restore / migrate). Proven on real PostgreSQL as the table owner. **Remaining half (4b, Medium):** a `tenants` table + FK so a tenant nobody provisioned cannot accumulate rows | ~~High~~ Medium (FK half open) | `db/migrations/0012_row_level_security.sql`, `packages/persistence/src/pg-client.ts`, `packages/persistence/src/sql-client.ts`; `tests/migration/row-level-security.test.ts` (real PostgreSQL) |
 | GAP-DATA-03 | No optimistic-concurrency / stream-version on append | Medium | `event-store.ts` (seq is global IDENTITY) |
 | GAP-DATA-04 | Money stored as JSON number in jsonb payload (JS safe-int bound) | Medium | `0001:29`, `backup.mjs:82` |
 | GAP-DATA-05 | No snapshots — full-fold reads unbounded as volume grows | Medium | `event-store.ts` (no snapshot method) |
@@ -81,11 +81,11 @@ This gap between "97% built" and "25% wired / 0% verified" is the entire story o
 (8) inbound sync (GAP-SYNC-01); (9) real payment/IdP providers (OA-4); (10) independent pentest QG-06.
 
 **Top 10 architecture risks (as written Aug 2026; struck items closed since):** thin-service drift (GAP-ARCH-01); ~~no transactions (GAP-DATA-01)~~ closed; ~~single pg.Client
-(GAP-DATA-09)~~ closed; no RLS (GAP-DATA-02); money-in-jsonb (GAP-DATA-04); no snapshots (GAP-DATA-05); single API/DB/box
+(GAP-DATA-09)~~ closed; ~~no RLS~~ RLS closed, `tenants` FK open (GAP-DATA-02); money-in-jsonb (GAP-DATA-04); no snapshots (GAP-DATA-05); single API/DB/box
 SPOFs; no optimistic concurrency (GAP-DATA-03); no automated rollback / forward-only migrations (GAP-OPS-01);
 no HA/replication.
 
-**Top 10 data/security risks (as written Aug 2026; struck items closed since):** ~~DSR-not-wired~~ closed; erasure vs append-only (GAP-DATA-06); ~~hash-chain not crypto~~ closed; no RLS (GAP-DATA-02); ~~no rate
+**Top 10 data/security risks (as written Aug 2026; struck items closed since):** ~~DSR-not-wired~~ closed; erasure vs append-only (GAP-DATA-06); ~~hash-chain not crypto~~ closed; ~~no RLS~~ RLS closed / FK open (GAP-DATA-02); ~~no rate
 limiting~~ closed; ~~no token revocation (GAP-SEC-05)~~ closed; support-expiry not at API; TLS/secret-store absent; backup encryption unexercised;
 AI never run against a real model.
 

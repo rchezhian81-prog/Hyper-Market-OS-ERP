@@ -10,6 +10,11 @@
 // destructive act and is never the default.
 
 import { execFileSync } from 'node:child_process';
+
+// Row-level security (migration 0012): restoring and re-counting is the PLATFORM's view — every tenant — under the
+// explicit operator scope `app.tenant_id=*`, so the copied rows pass the policies and the control totals see them.
+// Declared first: every psql/pg_restore call below runs under it, including the "is the target empty?" check.
+const PLATFORM_SCOPE = { ...process.env, PGOPTIONS: '-c app.tenant_id=*' };
 import { createHash } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
 
@@ -52,6 +57,7 @@ if (existing > 0 && !force) {
 // 3. Restore.
 console.log(`  restoring into the target database`);
 execFileSync('pg_restore', ['--dbname', target, '--no-owner', '--no-privileges', artefact], {
+  env: PLATFORM_SCOPE,
   stdio: 'inherit',
 });
 
@@ -90,7 +96,7 @@ function argValue(flag) {
 
 function psql(connection, sql) {
   return execFileSync('psql', [connection, '-t', '-A', '-F', '\t', '-c', sql], {
-    encoding: 'utf8',
+    encoding: 'utf8', env: PLATFORM_SCOPE,
   }).trim();
 }
 

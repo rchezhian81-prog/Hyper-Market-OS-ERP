@@ -5,6 +5,7 @@
 // Depends only on the `SqlClient` port; the in-memory store is the behavioural contract.
 
 import type { SqlClient, SqlRow } from './sql-client';
+import { scopedTo } from './sql-client';
 
 export interface NumberSeriesStore {
   /** Allocate the next sequence number for a tenant's document type (gap-free, unique, >= 1). */
@@ -48,7 +49,7 @@ export class SqlNumberSeriesStore implements NumberSeriesStore {
   constructor(private readonly client: SqlClient) {}
 
   async allocate(tenantId: string, docType: string): Promise<number> {
-    const rows = await this.client.query<SqlRow>(
+    const rows = await scopedTo(this.client, tenantId).query<SqlRow>(
       `INSERT INTO number_series (tenant_id, doc_type, next_seq)
        VALUES ($1, $2, 2)
        ON CONFLICT (tenant_id, doc_type)
@@ -60,7 +61,7 @@ export class SqlNumberSeriesStore implements NumberSeriesStore {
   }
 
   async peek(tenantId: string, docType: string): Promise<number> {
-    const rows = await this.client.query<SqlRow>(
+    const rows = await scopedTo(this.client, tenantId).query<SqlRow>(
       `SELECT next_seq FROM number_series WHERE tenant_id = $1 AND doc_type = $2`,
       [tenantId, docType],
     );

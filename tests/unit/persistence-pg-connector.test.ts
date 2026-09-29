@@ -161,3 +161,42 @@ describe('runMigrations', () => {
     expect(outcome.skipped).toEqual(['0001_a.sql', '0002_b.sql']);
   });
 });
+
+describe('pgPoolClient.forTenant — every statement runs under ONE tenant\'s scope, on one pinned connection (migration 0012)', () => {
+  it('a scoped query is BEGIN → set_config(app.tenant_id, local) → the statement → COMMIT, then the connection is released', async () => {
+    const conn = new FakeConn([[], [{ n: 7 }]]); // set_config's row, then the statement's
+    const client = pgPoolClient(new FakePool(conn));
+    const rows = await client.forTenant!('t-a').query('SELECT count(*) AS n FROM event_ledger');
+    expect(rows).toEqual([{ n: 7 }]);
+    expect(conn.log).toEqual([
+      'BEGIN',
+      "SELECT set_config('app.tenant_id', $1, true)",
+      'SELECT count(*) AS n FROM event_ledger',
+      'COMMIT',
+    ]);
+    expect(conn.released).toBe(true);
+  });
+
+  it('a scoped transaction sets the scope right after BEGIN, so every statement in the callback is bound', async () => {
+    const conn = new FakeConn([[], [], []]);
+    const client = pgPoolClient(new FakePool(conn));
+    await client.forTenant!('t-b').transaction!(async (tx) => {
+      await tx.query('INSERT INTO t VALUES (1)');
+      await tx.query('INSERT INTO t VALUES (2)');
+    });
+    expect(conn.log).toEqual(['BEGIN', "SELECT set_config('app.tenant_id', $1, true)", 'INSERT INTO t VALUES (1)', 'INSERT INTO t VALUES (2)', 'COMMIT']);
+  });
+
+  it('a failing scoped statement rolls back, rethrows and STILL releases — a scope never leaks to the next borrower', async () => {
+    const conn = new FakeConn();
+    const boom = { query: (text: string) => { conn.log.push(text); return text.startsWith('SELECT bad') ? Promise.reject(new Error('bad')) : Promise.resolve({ rows: [] }); }, release: () => { conn.released = true; } } as PgPoolClient;
+    const client = pgPoolClient(new FakePool(boom as unknown as FakeConn));
+    await expect(client.forTenant!('t-c').query('SELECT bad')).rejects.toThrow('bad');
+    expect(conn.log).toEqual(['BEGIN', "SELECT set_config('app.tenant_id', $1, true)", 'SELECT bad', 'ROLLBACK']);
+    expect(conn.released).toBe(true);
+  });
+
+  it('the plain pgClient offers NO scoped view — the caller\'s connection must carry the scope', () => {
+    expect(pgClient({ query: () => Promise.resolve({ rows: [] }) }).forTenant).toBeUndefined();
+  });
+});

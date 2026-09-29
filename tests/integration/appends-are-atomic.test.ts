@@ -49,7 +49,7 @@ describeOrSkip('appendBatch is atomic against real PostgreSQL (FND-01)', () => {
   const stream = `${RUN}/sales`;
 
   beforeAll(async () => {
-    pool = new Pool({ connectionString: DATABASE_URL, max: 4 });
+    pool = new Pool({ connectionString: DATABASE_URL, max: 4, options: '-c app.tenant_id=*' });
     const dir = 'db/migrations';
     await runMigrations(pgPoolClient(pool), readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
       .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));

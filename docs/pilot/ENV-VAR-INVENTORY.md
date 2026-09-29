@@ -47,9 +47,11 @@ to boot / optional. **Set for pilot**: the safe pilot value or "generate".
 
 ## Compose infrastructure (`infra/compose/.env.example`)
 
-`POSTGRES_DB` (`sre_retail_os`), `POSTGRES_USER` (`sre_app`), `POSTGRES_PASSWORD` 🔒 (generate URL-safe:
-`openssl rand -hex 24`), `POSTGRES_PORT` (`5432`), `WEB_PORT` (`8080`), `API_PORT` (`8081`). `DATABASE_URL`
-is composed from the four Postgres values and left blank in the template on purpose.
+`POSTGRES_DB` (`sre_retail_os`), `POSTGRES_USER` (`sre_admin` — the superuser, administration only),
+`APP_DB_USER` (`sre_app` — the NON-superuser role the API connects as; created on first boot by
+`infra/compose/db-init`, same password; a superuser bypasses row-level security and the API refuses to start on one),
+`POSTGRES_PASSWORD` 🔒 (generate URL-safe: `openssl rand -hex 24`), `POSTGRES_PORT` (`5432`), `WEB_PORT` (`8080`),
+`API_PORT` (`8081`). `DATABASE_URL` is composed from `APP_DB_USER` + password + db and left blank in the template on purpose.
 
 ## Rules
 

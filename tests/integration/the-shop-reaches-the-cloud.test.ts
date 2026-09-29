@@ -100,7 +100,7 @@ describe.skipIf(!DATABASE_URL)('the shop reaches the cloud (real PostgreSQL)', (
   const agentFor = (box: SyncOutbox) => new SyncAgent(box, transport());
 
   beforeAll(async () => {
-    client = new Client({ connectionString: DATABASE_URL });
+    client = new Client({ connectionString: DATABASE_URL, options: '-c app.tenant_id=*' });
     await client.connect();
     const sql = pgClient(client);
     const dir = 'db/migrations';
@@ -261,7 +261,7 @@ describe.skipIf(!DATABASE_URL)('a sale RUNG UP at the lane reaches the cloud (re
   }) as unknown as typeof globalThis.fetch;
 
   beforeAll(async () => {
-    client = new Client({ connectionString: DATABASE_URL });
+    client = new Client({ connectionString: DATABASE_URL, options: '-c app.tenant_id=*' });
     await client.connect();
     const sql = pgClient(client);
     const d = 'db/migrations';

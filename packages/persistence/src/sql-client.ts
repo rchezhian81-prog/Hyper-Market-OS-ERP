@@ -31,4 +31,22 @@ export interface SqlClient {
    * it is present.
    */
   transaction?<T>(fn: (tx: SqlClient) => Promise<T>): Promise<T>;
+
+  /**
+   * A view of this client whose every statement runs under ONE tenant's scope — the database's row-level
+   * security (migration 0012, GAP-DATA-02) then shows and accepts only that tenant's rows, whatever the SQL
+   * says. The scope is `app.tenant_id`, set per TRANSACTION from the SIGNED token's tenant and nothing else;
+   * `PLATFORM_TENANT_SCOPE` ('*') is the operator tools' whole-database view, never the API's.
+   *
+   * OPTIONAL: an embedded engine or a fake may not offer it. A store calls `client.forTenant?.(tenantId) ??
+   * client` — where the view is absent the statement runs as before, and a database with RLS then refuses an
+   * unscoped statement (fail closed) rather than leaking.
+   */
+  forTenant?(tenantScope: string): SqlClient;
 }
+
+/** The operator tools' whole-database scope for row-level security. The API never sets it. */
+export const PLATFORM_TENANT_SCOPE = '*';
+
+/** The client to run a tenant's statements on: its scoped view where the port offers one, else itself. */
+export const scopedTo = (client: SqlClient, tenantScope: string): SqlClient => client.forTenant?.(tenantScope) ?? client;

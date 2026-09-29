@@ -1,5 +1,11 @@
 # Backup and recovery runbook
 
+> **Row-level security (since migration 0012).** The database confines every connection to one tenant's rows
+> unless the connection carries the explicit platform scope. `scripts/backup.mjs` and `scripts/restore.mjs`
+> set it themselves (`PGOPTIONS='-c app.tenant_id=*'`, and `pg_dump --enable-row-security`). If you ever run
+> `pg_dump`, `pg_restore` or `psql` by hand against the live database, set the same `PGOPTIONS` first — or the
+> dump is refused / the counts come back as zero, which is the database doing its job, not data loss.
+
 **M35-FR-01/02 · QG-08.** Written to be followed at 9pm by someone who is not a
 programmer. If any step here does not work exactly as written, that is a defect in this
 runbook — report it, do not improvise.

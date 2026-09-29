@@ -13,6 +13,7 @@
 
 import type { EventStore } from './event-store';
 import type { SqlClient } from './sql-client';
+import { scopedTo } from './sql-client';
 import { runProjection, type Projection, type ProjectionResult } from './projection';
 
 /** A persisted fold: a projection's state at a watermark, for one tenant / stream / projection. */
@@ -71,10 +72,10 @@ export class InMemorySnapshotStore implements SnapshotStore {
  * one constraint this store adds over the in-memory one. `save` UPSERTs (the newest fold wins).
  */
 export class SqlSnapshotStore implements SnapshotStore {
-  constructor(private readonly client: Pick<SqlClient, 'query'>) {}
+  constructor(private readonly client: Pick<SqlClient, 'query' | 'forTenant'>) {}
 
   async load<S>(tenantId: string, stream: string, projection: string): Promise<Snapshot<S> | undefined> {
-    const rows = await this.client.query<{ data: Snapshot<S> }>(
+    const rows = await scopedTo(this.client, tenantId).query<{ data: Snapshot<S> }>(
       'SELECT data FROM projection_snapshot WHERE tenant_id = $1 AND stream = $2 AND projection = $3',
       [tenantId, stream, projection],
     );
@@ -83,7 +84,7 @@ export class SqlSnapshotStore implements SnapshotStore {
   }
 
   async save<S>(snapshot: Snapshot<S>): Promise<void> {
-    await this.client.query(
+    await scopedTo(this.client, snapshot.tenantId).query(
       `INSERT INTO projection_snapshot (tenant_id, stream, projection, data)
        VALUES ($1, $2, $3, $4::jsonb)
        ON CONFLICT (tenant_id, stream, projection)

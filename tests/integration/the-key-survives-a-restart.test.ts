@@ -29,7 +29,7 @@ describe.skipIf(!DATABASE_URL)('an idempotency key outlives the process (real Po
   let client: Client;
 
   beforeAll(async () => {
-    client = new Client({ connectionString: DATABASE_URL });
+    client = new Client({ connectionString: DATABASE_URL, options: '-c app.tenant_id=*' });
     await client.connect();
     const dir = 'db/migrations';
     await runMigrations(pgClient(client), readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()

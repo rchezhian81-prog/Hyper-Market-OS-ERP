@@ -25,7 +25,11 @@ const artefact = join(outDir, `${backupId}.dump`);
 
 console.log(`  taking  ${artefact}`);
 // Custom format: compressed, and restorable table-by-table if a recovery needs it.
-execFileSync('pg_dump', ['--format=custom', '--file', artefact, url], { stdio: 'inherit' });
+// Row-level security (migration 0012): a backup is the PLATFORM's view — every tenant — so the dump runs under the
+// explicit operator scope `app.tenant_id=*` and asks pg_dump to honour row security rather than refuse RLS tables.
+// The API never sets this scope; a named person running this tool does.
+const PLATFORM_SCOPE = { ...process.env, PGOPTIONS: '-c app.tenant_id=*' };
+execFileSync('pg_dump', ['--format=custom', '--enable-row-security', '--file', artefact, url], { stdio: 'inherit', env: PLATFORM_SCOPE });
 
 const controlTotals = readControlTotals(url);
 const bytes = readFileSync(artefact);
@@ -62,7 +66,7 @@ function argValue(flag) {
 /** Read the numbers a restore will have to reproduce exactly. */
 function readControlTotals(connection) {
   const q = (sql) =>
-    execFileSync('psql', [connection, '-t', '-A', '-F', '\t', '-c', sql], { encoding: 'utf8' }).trim();
+    execFileSync('psql', [connection, '-t', '-A', '-F', '\t', '-c', sql], { encoding: 'utf8', env: PLATFORM_SCOPE }).trim();
 
   const rowCounts = {};
   const tables = q(

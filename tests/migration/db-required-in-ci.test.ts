@@ -36,7 +36,7 @@ describe('the required database suites are not allowed to silently skip', () => 
     // Set is not enough: it must ANSWER. A URL pointing at nothing would let the skipIf blocks run
     // and fail one-by-one with connection errors, or (worse, on a misconfiguration) skip — so prove
     // the connection here, once, plainly.
-    const client = new Client({ connectionString: url });
+    const client = new Client({ connectionString: url, options: '-c app.tenant_id=*' });
     await client.connect();
     try {
       const res = await client.query<{ ok: number }>('SELECT 1 AS ok');

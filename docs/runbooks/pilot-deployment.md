@@ -180,12 +180,35 @@ That removes the database volume. Do **not** run it on anything real — it is i
 
 ---
 
-## Backing up the database
+## Row-level security — one thing to know, and one step for an EXISTING database
 
-Even in a pilot, take a backup before anything you care about:
+Since migration 0012 the database itself keeps each tenant's rows apart: every connection sees only the
+tenant it is scoped to, and a **superuser bypasses that entirely** — so the API connects as a plain
+application role (`APP_DB_USER`, `sre_app`), never as the administrator (`POSTGRES_USER`). A fresh install
+creates that role for you on first boot (`infra/compose/db-init/01-app-role.sh`). **The API refuses to start
+on a superuser** and says so.
+
+If your database was created BEFORE this (the hosted stand-up was), create the role once by hand, as the
+administrator, with the same password as in `.env`, then point `DATABASE_URL` at `sre_app` and restart:
 
 ```
-docker compose exec db pg_dump -U sre_app sre_retail_os > backup-$(date +%F).sql
+docker compose exec db psql -U sre_admin -d sre_retail_os -c "CREATE ROLE sre_app LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD '<the POSTGRES_PASSWORD from .env>';"
+docker compose exec db psql -U sre_admin -d sre_retail_os -c "GRANT CONNECT, TEMPORARY ON DATABASE sre_retail_os TO sre_app; GRANT ALL ON SCHEMA public TO sre_app;"
+docker compose exec db psql -U sre_admin -d sre_retail_os -c "REASSIGN OWNED BY sre_admin TO sre_app;"
+```
+
+(An existing database whose administrator was named `sre_app` keeps that superuser as the administrator; create the
+application role under another name, e.g. `sre_app_rls`, and use that in `DATABASE_URL`.) Type the password into the
+terminal only — never into a file that could be committed.
+
+## Backing up the database
+
+Even in a pilot, take a backup before anything you care about. Prefer the tool that also writes the control totals
+(`node scripts/backup.mjs`, see `backup-and-recovery.md`). By hand, as the administrator, the dump must carry the
+platform scope or row-level security hides every row from it:
+
+```
+docker compose exec -e PGOPTIONS='-c app.tenant_id=*' db pg_dump --enable-row-security -U sre_admin sre_retail_os > backup-$(date +%F).sql
 ```
 
 Keep a copy **off the machine** (M35 requires an immutable off-site copy, and a restore that

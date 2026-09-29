@@ -23,7 +23,7 @@ import { SqlEventStore } from '../../../packages/persistence/src/event-store';
 import { SqlSnapshotStore, type SnapshotStore } from '../../../packages/persistence/src/snapshot';
 import { SqlConfigVersionStore } from '../../../packages/persistence/src/config-store';
 import { SqlNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
-import { pgClient, pgPoolClient } from '../../../packages/persistence/src/pg-client';
+import { pgPoolClient } from '../../../packages/persistence/src/pg-client';
 import { DurableTenantSettings, SETTINGS } from '../../../packages/tenant/src/index';
 import {
   buildRouter, loadConfig, startHttpServer, CLOUD_API_CONFIG, SqlIdempotencyStore, SqlAuditSink,
@@ -1124,10 +1124,30 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
   // Fail fast at boot if the database is unreachable — the same eager check the single client made,
   // now issued through the pool (which connects lazily otherwise).
   await db.query('SELECT 1');
+
+  // Row-level security (db/migrations/0012, GAP-DATA-02) binds every role EXCEPT a superuser or one with
+  // BYPASSRLS — PostgreSQL steps those around every policy. An API connected as one would run with tenant
+  // isolation silently switched off, so it does not run at all: refused at boot, by name, with the fix
+  // (P-08, hard rule #7's cousin). The deployment creates the application role (infra/compose/db-init).
+  const role = await db.query<{ rolname: string; rolsuper: boolean; rolbypassrls: boolean }>(
+    'SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user',
+  );
+  const r = role.rows[0];
+  if (r === undefined || r.rolsuper || r.rolbypassrls) {
+    process.stderr.write(`\nthe API is connected to the database as "${r?.rolname ?? 'unknown'}", a ${r?.rolsuper ? 'SUPERUSER' : 'BYPASSRLS'} role, and will not start:\n`
+      + '  • a superuser (or BYPASSRLS) role bypasses the row-level security that keeps one tenant\'s rows from another (db/migrations/0012);\n'
+      + '  • connect as the application role instead — on a fresh compose install it is created for you (infra/compose/db-init/01-app-role.sh);\n'
+      + '  • on an existing database, create it once by hand as the administrator (docs/runbooks/pilot-deployment.md, "Row-level security"), then point DATABASE_URL at it.\n\n');
+    await db.end();
+    process.exitCode = 78;
+    return;
+  }
   // The event store gets the TRANSACTIONAL adapter (`pgPoolClient`), so a money-critical command
   // that writes more than one event — a banked sale plus its receipt index, a return plus its
   // reporting projection — commits all of them or none, even across a crash (audit FND-01). The
-  // other stores stay on the plain query adapter; they do single writes and need no transaction.
+  // Since migration 0012 (row-level security, GAP-DATA-02) EVERY store takes the pool adapter: it is the one
+  // that can pin a connection and bind `app.tenant_id` to the transaction, so the database itself confines each
+  // statement to the signed token's tenant. The plain query adapter would run unscoped and see nothing.
   const store = new SqlEventStore(pgPoolClient(db));
 
   // 2b — Genesis owner (optional bootstrap). Because granting a role itself needs a role
@@ -1162,11 +1182,11 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
     revocations,
     // Durable, append-only per-tenant settings: setup answers land in config_versions and survive a
     // restart, the same table and rules the in-memory path uses in tests.
-    settings: new DurableTenantSettings(new SqlConfigVersionStore(pgClient(db))),
-    numberSeries: new SqlNumberSeriesStore(pgClient(db)),
+    settings: new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))),
+    numberSeries: new SqlNumberSeriesStore(pgPoolClient(db)),
     // Durable projection snapshots (CORE-03): bounded reads resume from the last persisted fold
     // across a restart, rather than re-folding the whole ledger on a cold start.
-    snapshots: new SqlSnapshotStore(pgClient(db)),
+    snapshots: new SqlSnapshotStore(pgPoolClient(db)),
     probes: async () => [{
       name: 'postgres',
       criticality: 'shop_cannot_trade_without_it',
@@ -1228,7 +1248,7 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
     // Durable and shared. In memory it emptied on every restart and was never shared between
     // instances, so the guard that refuses a different request under a used key was quietly not
     // there — which is not a crash, and would never have shown up in a test.
-    idempotency: new SqlIdempotencyStore(pgClient(db)),
+    idempotency: new SqlIdempotencyStore(pgPoolClient(db)),
 
     // The audit trail. Optional in the kernel's type and NOT optional in a deployment: the port
     // existed, nothing supplied it, and `writeAudit` returned immediately on every request — so

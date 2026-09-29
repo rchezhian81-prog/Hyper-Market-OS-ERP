@@ -50,7 +50,7 @@ describe.skipIf(!DATABASE_URL)('the audit trail is actually kept (real PostgreSQ
   )).rows;
 
   beforeAll(async () => {
-    pool = new Pool({ connectionString: DATABASE_URL });
+    pool = new Pool({ connectionString: DATABASE_URL, options: '-c app.tenant_id=*' });
     const sql = pgClient(pool);
     const dir = 'db/migrations';
     await runMigrations(sql, readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
