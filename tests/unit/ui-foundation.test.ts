@@ -49,8 +49,11 @@ describe('the tokens the stylesheet declares', () => {
     expect(CSS).not.toMatch(/@import|@font-face|url\(/);
   });
 
-  it('declares the 48px minimum touch target the usability guardrails read', () => {
+  it('declares the 48px minimum touch target the usability guardrails read — and the fixtures honour it', () => {
     expect(T['--tap']).toBe('48px');
+    // The language toggle is a button a person taps on every screen; the 40px the pages grew up with was a
+    // pre-existing breach of the ≥ 44px rule, and a foundation must not codify one.
+    expect(/\.lang \{[^}]*min-height:\s*var\(--tap\)/.test(CSS)).toBe(true);
   });
 });
 
