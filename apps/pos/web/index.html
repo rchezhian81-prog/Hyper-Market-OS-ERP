@@ -14,16 +14,12 @@
       network. Accessibility: large targets and high contrast for arm's-length use
       under glare; the language toggle is per cashier.
     -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
     <style>
-      :root {
-        --bg: #0f172a; --panel: #1e293b; --ink: #f8fafc; --muted: #94a3b8;
-        --accent: #22c55e; --warn: #f59e0b; --danger: #ef4444;
-        --tap: 56px; /* minimum touch target */
-      }
-      * { box-sizing: border-box; }
+      :root { --tap: 56px; }
       body {
         margin: 0; background: var(--bg); color: var(--ink);
-        font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        font: 16px/1.4 var(--font);
         /* Flex, not a fixed row template: the strips above `main` come and go, and a
            template counted in rows shifts the layout every time one is hidden. */
         height: 100dvh; display: flex; flex-direction: column;
@@ -34,7 +30,6 @@
       }
       .lane { font-weight: 600; letter-spacing: .02em; }
       /* Permanent sync badge (§27.1 / P-08) — connection + unsent count. */
-      .sync { display: flex; align-items: center; gap: 8px; font-size: 14px; }
       .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
       .dot.offline { background: var(--warn); }
       .unsent {

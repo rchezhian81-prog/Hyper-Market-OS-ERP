@@ -114,6 +114,9 @@ export interface ScreenServer {
 const TYPES: Readonly<Record<string, string>> = Object.freeze({
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  // The one shared stylesheet every screen links (Stage G slice 1). A browser in standards mode refuses a
+  // stylesheet served as anything but text/css, so the type is named here rather than sniffed.
+  '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.map': 'application/json; charset=utf-8',

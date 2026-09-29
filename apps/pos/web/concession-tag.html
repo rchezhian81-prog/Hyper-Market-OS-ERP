@@ -14,28 +14,11 @@
       line is saved with the cable out, and no money logic ever enters this page. A posted line is never
       rewritten here: a correction is a supervisor's reversal or adjustment at head office (§28, hard rule #2).
     -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
     <style>
-      :root {
-        --bg: #f7f7f9; --panel: #ffffff; --ink: #14161a; --muted: #5b6270;
-        --line: #d9dce3; --accent: #1f6f4a; --accent-ink: #ffffff;
-        --good: #1f6f4a; --warn: #8a5a00; --danger: #a12622;
-      }
-      :root:not([data-theme='light']) {
-        @media (prefers-color-scheme: dark) {
-          --bg: #12141a; --panel: #1b1e27; --ink: #eef0f4; --muted: #a3abba;
-          --line: #313746; --accent: #43c78a; --accent-ink: #06251a;
-          --good: #43c78a; --warn: #e0a53a; --danger: #f0857f;
-        }
-      }
-      :root[data-theme='dark'] {
-        --bg: #12141a; --panel: #1b1e27; --ink: #eef0f4; --muted: #a3abba;
-        --line: #313746; --accent: #43c78a; --accent-ink: #06251a;
-        --good: #43c78a; --warn: #e0a53a; --danger: #f0857f;
-      }
-      * { box-sizing: border-box; }
       body {
         margin: 0; background: var(--bg); color: var(--ink);
-        font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        font: 16px/1.5 var(--font);
         min-height: 100dvh; padding: 16px; display: grid; place-items: start center;
       }
       main { width: min(640px, 100%); display: grid; gap: 16px; }
@@ -54,9 +37,8 @@
         background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px;
       }
       button.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
-      button:focus-visible { outline: 3px solid #7fb8ff; outline-offset: 2px; }
       .status { font-size: 14px; min-height: 20px; }
-      .status.good { color: var(--good); } .status.warn { color: var(--warn); } .status.err { color: var(--danger); }
+      .status.good { color: var(--good); } .status.warn { color: var(--warn); } .status.err { color: var(--danger-text); }
       table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 14px; }
       th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); }
       th:first-child, td:first-child { text-align: left; }

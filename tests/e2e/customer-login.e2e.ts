@@ -147,7 +147,7 @@ async function startBackend(): Promise<AuthBackend> {
       const file = path === '/' || path === '/login' ? 'login.html' : path.replace(/^\//, '');
       try {
         const buf = await readFile(join(WEB_DIR, file));
-        const type = file.endsWith('.html') ? 'text/html' : file.endsWith('.js') ? 'text/javascript' : 'application/octet-stream';
+        const type = file.endsWith('.html') ? 'text/html' : file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'application/octet-stream';
         res.writeHead(200, { 'content-type': `${type}; charset=utf-8`, 'cache-control': 'no-store' });
         res.end(buf);
       } catch {

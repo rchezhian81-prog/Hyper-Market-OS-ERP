@@ -32,6 +32,7 @@
     "build:delivery": "node scripts/build-app.mjs delivery-app",
     "build:customer": "node scripts/build-app.mjs customer-app",
     "build:warehouse": "node scripts/build-app.mjs warehouse-app",
+    "ui:sync": "node scripts/sync-ui-foundation.mjs",
     "build:api": "node scripts/build-service.mjs api",
     "build:edge": "node scripts/build-service.mjs edge",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run secret-scan && pnpm run test && pnpm run test:perf && pnpm run test:e2e",

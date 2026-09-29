@@ -16,26 +16,15 @@
       printed on the pack and the shop's own margin floor. A screen that only says
       "rejected" after the fact teaches people to guess.
     -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
     <style>
-      :root {
-        --bg: #0f172a; --panel: #1e293b; --ink: #f8fafc; --muted: #94a3b8;
-        --good: #22c55e; --warn: #f59e0b; --danger: #ef4444; --info: #38bdf8;
-        --line: #334155;
-        --tap: 48px;
-      }
-      * { box-sizing: border-box; }
+      :root { --tap: 48px; }
       body {
         margin: 0; background: var(--bg); color: var(--ink);
-        font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        font: 16px/1.5 var(--font);
         /* Flex, not a fixed row template: the strips above `main` come and go. */
         min-height: 100dvh; display: flex; flex-direction: column;
       }
-      header {
-        display: flex; align-items: center; justify-content: space-between;
-        gap: 12px; padding: 12px 16px; background: var(--panel); flex-wrap: wrap;
-      }
-      .who { font-weight: 600; }
-      .who small { display: block; color: var(--muted); font-weight: 400; font-size: 14px; }
       .lang { background: transparent; color: var(--muted); min-height: 40px; font-size: 14px; border: 0; }
 
       .sample { background: var(--warn); color: #451a03; padding: 8px 16px; font-weight: 600; font-size: 15px; margin: 0; }

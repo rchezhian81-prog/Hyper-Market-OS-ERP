@@ -7,10 +7,10 @@
 // change only on a deploy, so those stay cache-first and load instantly. A missing script is never answered with
 // a page (that would boot the sample stand-in for a reason nobody can see).
 
-const CACHE = 'sre-b2b-shell-v1';
+const CACHE = 'sre-b2b-shell-v2';
 
 /** Committed files. A missing one is a packaging fault and should fail the install loudly. */
-const SHELL = ['./app.js', './manifest.webmanifest'];
+const SHELL = ['./sre-foundation.css', './app.js', './manifest.webmanifest'];
 
 /** Build artefacts. Added tolerantly: `addAll` is all-or-nothing and a missing build must not stop the rest of
  *  the shell being cached. Without the bundle the portal opens into its SAMPLE stand-in — which says so. */

@@ -446,6 +446,16 @@ describe('every screen is served, and served its own data', () => {
     expect(response.headers.get('content-type')).toMatch(/javascript/);
   });
 
+  it('serves the one shared stylesheet as text/css — a standards-mode browser refuses to apply anything else (Stage G slice 1)', async () => {
+    const base = await serve(snapshotOf());
+    for (const screen of ['pos', 'manager', 'customer', 'picker', 'driver', 'warehouse']) {
+      const response = await fetch(`${base}/${screen}/sre-foundation.css`);
+      expect(response.status, `${screen} has no foundation copy`).toBe(200);
+      expect(response.headers.get('content-type')).toBe('text/css; charset=utf-8');
+      expect(await response.text()).toContain('--danger-text: #fca5a5');
+    }
+  });
+
   it('refuses anything that is not a screen, and anything that climbs out', async () => {
     const base = await serve(snapshotOf());
     expect((await fetch(`${base}/payroll`)).status).toBe(404);

@@ -18,16 +18,12 @@
 
       Framework-free and static, so it opens with the shop's wifi down.
     -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
     <style>
-      :root {
-        --bg: #0f172a; --panel: #1e293b; --ink: #f8fafc; --muted: #94a3b8;
-        --good: #22c55e; --warn: #f59e0b; --danger: #ef4444; --line: #334155;
-        --tap: 64px; /* bigger than the till: gloves, cold hands, glare */
-      }
-      * { box-sizing: border-box; }
+      :root { --tap: 64px; }
       body {
         margin: 0; background: var(--bg); color: var(--ink);
-        font: 17px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        font: 17px/1.45 var(--font);
         /* Flex, not a fixed row template: the strips above `main` come and go, and a
            template counted in rows shifts the layout every time one is hidden. */
         height: 100dvh; display: flex; flex-direction: column;
@@ -38,8 +34,6 @@
       }
       .wave { font-weight: 600; }
       .wave small { display: block; color: var(--muted); font-weight: 400; font-size: 13px; }
-      .sync { display: flex; align-items: center; gap: 8px; font-size: 14px; }
-      .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--good); flex: none; }
       .dot.waiting { background: var(--warn); }
       .lang { background: transparent; border: 0; color: var(--muted); min-height: 40px; font-size: 14px; }
 

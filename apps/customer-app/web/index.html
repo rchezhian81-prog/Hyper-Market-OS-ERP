@@ -16,17 +16,12 @@
       stylesheet — because a first-time shopper on a slow connection is exactly who this
       has to work for.
     -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
     <style>
-      :root {
-        --bg: #0f172a; --panel: #1e293b; --ink: #f8fafc; --muted: #a3b1c6;
-        --good: #22c55e; --warn: #f59e0b; --danger: #ef4444; --info: #7dd3fc;
-        --line: #334155;
-        --tap: 48px;
-      }
-      * { box-sizing: border-box; }
+      :root { --tap: 48px; }
       body {
         margin: 0; background: var(--bg); color: var(--ink);
-        font: 17px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        font: 17px/1.55 var(--font);
         padding-bottom: 40px;
       }
       /* Skip link — a keyboard and screen-reader user should not tab through the nav every time. */
