@@ -350,6 +350,8 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
     barcodes: [{ barcode: '8901', productId: 'p1', level: 'unit' }],
     ordered: [{ productId: 'p1', quantityMinor: 10, unitCostMinor: 100_00, currency: 'INR' }],
     grnId: 'GRN-1',
+    contents: { 'B-1|p1|': 30 },
+    pickLines: [{ lineId: 'pl-1', orderRef: 'ORD-5', productId: 'p1', batchId: null, binId: 'B-1', quantityMinor: 4, uom: 'ea' }],
   }),
   ...over,
 });
@@ -681,7 +683,21 @@ describe('the other five screens boot on what the box served them', () => {
     expect(session.goodsIn()).toHaveLength(1); // the goods-in the pack carried
     const put = session.putAway({ commandId: 'm1', scannedProductId: 'p1', scannedBinId: 'B-1', quantityMinor: 10, uom: 'ea', at: NOW });
     expect(put.result.accepted).toBe(true);
-    expect(session.binContents()['B-1|p1|']).toBe(10);
+    expect(session.binContents()['B-1|p1|']).toBe(40); // 30 the pack said were there, plus the 10 put away
+  });
+
+  it('the warehouse handheld picks an order line the cloud assigned, from the bin the pick list names, over the socket (W1)', async () => {
+    // The served payload carries the pick list and the bin contents the box knows; the real offline session
+    // decides the pick against them and queues ONE movement for the cloud's idempotent ledger.
+    const base = await serve(snapshotOf());
+    const outbox = new DeviceOutbox(noDeviceStore());
+    const session = bootWarehouse((await payloadFromScreen(base, 'warehouse'))! as unknown as WarehouseAssignment, outbox, () => NOW)!;
+    expect(session.pickLines()).toEqual([{ lineId: 'pl-1', orderRef: 'ORD-5', productId: 'p1', batchId: null, binId: 'B-1', quantityMinor: 4, uom: 'ea', pickedMinor: 0, remainingMinor: 4 }]);
+    expect(session.checkPick({ lineId: 'pl-1', scannedBinId: 'B-9' })).toMatchObject({ ok: false, signal: { code: 'wrong_bin' } });
+    const pick = session.pick({ commandId: 'pk-1', lineId: 'pl-1', scannedBinId: 'B-1', scannedItem: '8901', at: NOW });
+    expect(pick.signal.code).toBe('picked');
+    expect(session.binContents()['B-1|p1|']).toBe(26);
+    expect(outbox.pending().map((i) => [i.event.type, i.event.idempotencyKey, (i.event.payload as { command: { kind: string } }).command.kind])).toEqual([['WarehouseMovementApplied', 'wh-move:pk-1', 'pick']]);
   });
 
   it('the warehouse supervisor opens the oversight the box served — occupancy, stock and exceptions', async () => {

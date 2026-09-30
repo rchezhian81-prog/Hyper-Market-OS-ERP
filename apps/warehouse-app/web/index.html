@@ -3,16 +3,18 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>SRE Warehouse — Receiving & put-away</title>
+    <title>SRE Warehouse — Receiving, put-away & picking</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <meta name="theme-color" content="#0f172a" />
     <!--
       Warehouse handheld (M09 / OA-9). Runs on a cheap Android device held in one hand,
       often with a glove on, in a cold store or up the racking.
 
-      The layout is scanner-first: the goods-in worklist is the biggest thing on screen,
-      and every action is a scan. Targets are 64px — a mis-tap up a ladder is a wrong bin
-      or a wrong SKU, and the worker cannot see the screen well through freezer glare.
+      The layout is scanner-first: the pick list and the goods-in worklist are the biggest
+      things on screen, and every action is a scan. A bin label scanned from the list starts
+      the pick of the line that names it (scan bin → scan item → confirm: 3). Targets are
+      64px — a mis-tap up a ladder is a wrong bin or a wrong SKU, and the worker cannot see
+      the screen well through freezer glare.
       Every scan gives a felt result (colour, sound, buzz), because "rejected" must not
       be missed by someone in ear defenders.
 
@@ -54,6 +56,9 @@
       }
       .item[aria-selected='true'] { outline: 3px solid var(--focus); }
       .item.recalled { border-left-color: var(--danger); }
+      /* A pick line: the bin is the biggest thing, because the bin is where the worker must walk to. */
+      .item.pick { border-left-color: var(--accent); }
+      .item .where { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
       .item .what { font-size: 20px; font-weight: 700; }
       .item .qty { color: var(--muted); font-size: 15px; font-variant-numeric: tabular-nums; }
       .item .flag { font-size: 14px; font-weight: 600; color: var(--warn); }
@@ -85,6 +90,12 @@
         font-size: 20px; font-weight: 600; border: 2px dashed var(--line);
       }
       .sheet-actions { display: grid; grid-template-columns: 1fr; gap: 10px; }
+      .sheet-actions.two { grid-template-columns: 1fr 1fr; }
+      /* The confirm step of a pick: the number about to be committed, unmissable, then one tap. */
+      .big-qty {
+        background: var(--panel-2); border-radius: 12px; padding: 18px 16px; text-align: center;
+        font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums;
+      }
 
       /* The scan-result banner. No timer, never colour alone — a rejected scan carries a word. */
       .banner {
@@ -116,6 +127,8 @@
     <p class="stale" id="stale" hidden role="status"></p>
 
     <main>
+      <h2 class="section" id="pick-heading" hidden>—</h2>
+      <div id="pick-lines"></div>
       <h2 class="section" id="goods-in-heading">—</h2>
       <div id="goods-in"></div>
       <p class="empty" id="empty" hidden>—</p>
@@ -126,6 +139,8 @@
       <div class="actions">
         <button id="receive" type="button">Receive a delivery</button>
         <button id="put-away" class="primary" type="button" disabled>Put away — scan the bin</button>
+        <!-- Shown only when the handheld holds pick work. Scanning a line's bin from the list starts the pick without it. -->
+        <button id="pick" class="primary wide" type="button" disabled hidden>Pick — scan the bin</button>
       </div>
     </footer>
 
@@ -141,6 +156,22 @@
         <div class="hint" id="scan-hint"></div>
         <div class="sheet-actions">
           <button id="scan-cancel" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      The third step of a pick: the quantity about to leave the bin, shown before it is committed.
+      One tap confirms; nothing is typed. The number is the model's (what remains on the line).
+    -->
+    <div class="sheet" id="confirm" hidden role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <div class="sheet-inner">
+        <h2 id="confirm-title">—</h2>
+        <div class="big-qty" id="confirm-qty">—</div>
+        <div class="hint" id="confirm-hint"></div>
+        <div class="sheet-actions two">
+          <button id="confirm-cancel" type="button">Cancel</button>
+          <button id="confirm-ok" class="primary" type="button">Confirm</button>
         </div>
       </div>
     </div>

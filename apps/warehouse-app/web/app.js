@@ -5,8 +5,10 @@
 //
 // ── What this file exists to hold ───────────────────────────────────────────
 //
-// **1. A scan is a scan.** Receiving and put-away are scanner-first, and the only way that stays true
-// is if the screen offers **no way to type a code**. There is no product/bin input box anywhere. A
+// **1. A scan is a scan.** Receiving, put-away and picking are scanner-first, and the only way that
+// stays true is if the screen offers **no way to type a code**. A bin label scanned while nothing is
+// asking for a scan is step 1 of a pick: it chooses the line that names that bin (the same rule as the
+// picker handheld), then the item is scanned, then the quantity is confirmed — three, as the spec counts. There is no product/bin input box anywhere. A
 // retail scanner is a keyboard that types fast and presses Enter, so codes are collected globally and
 // flushed on Enter — the same as the till and the picker, and for the same reason: an input that can
 // lose focus is how a barcode lands in the wrong field.
@@ -49,6 +51,12 @@ const WORDS = {
     stepSelect: 'Tap an item to put away, or receive a delivery',
     stepScanBin: 'Scan the bin to put it in',
     recalledFlag: 'RECALLED — holding bin only', expiredFlag: 'EXPIRED — holding bin only',
+    // picking an order line: scan the bin → scan the item → confirm
+    toPick: 'To pick', pick: 'Pick — scan the bin', scanPickBin: 'Scan the bin shown', scanItem: 'Scan the item',
+    confirmPick: 'Confirm the pick', confirm: 'Confirm', fromBin: 'from bin',
+    stepPick: 'Scan a bin on the pick list to start picking, or tap an item',
+    stepPickScanBin: 'Pick — scan the bin shown on the line',
+    stepScanItem: 'Now scan the item', stepConfirm: 'Check the quantity, then confirm',
     // scan feedback, keyed by the session's outcome codes
     received: 'Received', unknown_barcode: 'Unknown barcode — set aside for someone to sort out',
     over_delivery_needs_approval: 'More than ordered — a second person must approve it',
@@ -65,6 +73,10 @@ const WORDS = {
     recalled_into_pickable: 'Recalled stock cannot go in a pickable bin — use a holding bin',
     expired_into_pickable: 'Expired stock cannot go in a pickable bin — use a holding bin',
     invalid_command: 'That scan could not be used',
+    picked: 'Picked', wrong_bin: 'That is not the bin for this line — walk to the bin shown and scan it',
+    wrong_item: 'That is not the item on this line — check the label and scan again',
+    not_on_pick_list: 'That line is not on this pick list',
+    line_done: 'This line is already picked — nothing left to take',
   },
   ta: {
     noBoxLink: 'கடை கணினியுடன் இணைக்கப்படவில்லை', checkingBox: 'கடை கணினியைச் சரிபார்க்கிறது…',
@@ -83,6 +95,12 @@ const WORDS = {
     stepSelect: 'அடுக்க ஒரு பொருளைத் தொடவும், அல்லது வரவு பெறவும்',
     stepScanBin: 'வைக்கும் இடத்தை ஸ்கேன் செய்யவும்',
     recalledFlag: 'திரும்பப் பெறப்பட்டது — சேமிப்பு இடம் மட்டும்', expiredFlag: 'காலாவதி — சேமிப்பு இடம் மட்டும்',
+    toPick: 'எடுக்க வேண்டியவை', pick: 'எடு — இடத்தை ஸ்கேன் செய்', scanPickBin: 'காட்டப்பட்ட இடத்தை ஸ்கேன் செய்யவும்',
+    scanItem: 'பொருளை ஸ்கேன் செய்யவும்',
+    confirmPick: 'எடுத்ததை உறுதிப்படுத்தவும்', confirm: 'உறுதிப்படுத்து', fromBin: 'இடத்திலிருந்து',
+    stepPick: 'எடுக்கத் தொடங்க பட்டியலில் உள்ள இடத்தை ஸ்கேன் செய்யவும், அல்லது ஒரு பொருளைத் தொடவும்',
+    stepPickScanBin: 'எடு — வரியில் காட்டப்பட்ட இடத்தை ஸ்கேன் செய்யவும்',
+    stepScanItem: 'இப்போது பொருளை ஸ்கேன் செய்யவும்', stepConfirm: 'அளவைச் சரிபார்த்து உறுதிப்படுத்தவும்',
     received: 'பெறப்பட்டது', unknown_barcode: 'தெரியாத பார்கோடு — சரிபார்க்க ஒதுக்கி வைக்கப்பட்டது',
     over_delivery_needs_approval: 'ஆர்டரை விட அதிகம் — இரண்டாவது நபர் ஒப்புதல் அளிக்க வேண்டும்',
     dsd_needs_approval: 'கொள்முதல் ஆர்டர் இல்லை — இரண்டாவது நபர் ஒப்புதல் அளிக்க வேண்டும்',
@@ -98,6 +116,10 @@ const WORDS = {
     recalled_into_pickable: 'திரும்பப் பெற்ற பொருளை எடுக்கும் இடத்தில் வைக்க முடியாது — சேமிப்பு இடத்தைப் பயன்படுத்தவும்',
     expired_into_pickable: 'காலாவதிப் பொருளை எடுக்கும் இடத்தில் வைக்க முடியாது — சேமிப்பு இடத்தைப் பயன்படுத்தவும்',
     invalid_command: 'அந்த ஸ்கேனைப் பயன்படுத்த முடியவில்லை',
+    picked: 'எடுக்கப்பட்டது', wrong_bin: 'இது இந்த வரியின் இடம் அல்ல — காட்டப்பட்ட இடத்திற்குச் சென்று ஸ்கேன் செய்யவும்',
+    wrong_item: 'இது இந்த வரியின் பொருள் அல்ல — லேபிளைச் சரிபார்த்து மீண்டும் ஸ்கேன் செய்யவும்',
+    not_on_pick_list: 'அந்த வரி இந்த எடுப்புப் பட்டியலில் இல்லை',
+    line_done: 'இந்த வரி ஏற்கனவே எடுக்கப்பட்டது — எடுக்க எதுவும் இல்லை',
   },
 };
 let lang = 'en';
@@ -109,6 +131,8 @@ const outbox = window.warehouseOutbox ?? null;
 const grnId = (data && data.grnId) || 'GRN';
 
 let selected = null; // the goods-in item chosen to put away
+let selectedPick = null; // the pick-list line (by id) chosen by a tap; a bin scan from the list needs no tap
+let pickStep = null; // where a pick in progress is: 'bin' | 'item' | 'confirm' | null
 
 // ── The scan panel ──────────────────────────────────────────────────────────
 // A promise that resolves with the next scanned code, or null if cancelled. No text box exists.
@@ -123,6 +147,27 @@ el('scan-cancel').addEventListener('click', () => {
   el('scan').hidden = true;
   if (scanResolve !== null) { const r = scanResolve; scanResolve = null; r(null); }
 });
+
+// ── The confirm step of a pick ──────────────────────────────────────────────
+// The quantity about to leave the bin is the MODEL's (what remains on the line), shown big, then one tap.
+// Nothing is typed: a pick of fewer than the line wants is a short pick, and that is the supervisor's
+// call on the ERP, not a number a worker adjusts up a ladder.
+let confirmResolve = null;
+function awaitConfirm(line) {
+  el('confirm-title').textContent = `${t('confirmPick')} — ${line.orderRef}`;
+  el('confirm-qty').textContent = `${line.remainingMinor} ${t('units')} · ${line.uom}`;
+  el('confirm-hint').textContent = `${line.productId}${line.batchId ? ` · ${line.batchId}` : ''} · ${t('fromBin')} ${line.binId}`;
+  el('confirm-cancel').textContent = t('cancel');
+  el('confirm-ok').textContent = t('confirm');
+  el('confirm').hidden = false;
+  return new Promise((resolve) => { confirmResolve = resolve; });
+}
+function settleConfirm(answer) {
+  el('confirm').hidden = true;
+  if (confirmResolve !== null) { const r = confirmResolve; confirmResolve = null; r(answer); }
+}
+el('confirm-ok').addEventListener('click', () => settleConfirm(true));
+el('confirm-cancel').addEventListener('click', () => settleConfirm(false));
 
 // ── Felt scan feedback: colour + word + sound + buzz (OA-9) ──────────────────
 function feltResult(signal) {
@@ -160,18 +205,59 @@ const nextId = (prefix) => `${prefix}-${Date.now()}-${seq++}`;
 
 // ── Render ────────────────────────────────────────────────────────────────
 function render() {
+  const lines = real && typeof real.pickLines === 'function' ? real.pickLines() : [];
+  const items = real && typeof real.goodsIn === 'function' ? real.goodsIn() : [];
+
   el('goods-in-heading').textContent = t('goodsIn');
   el('receive').textContent = t('receive');
   el('put-away').textContent = t('putAway');
   el('put-away').disabled = selected === null;
-  el('step').firstChild.textContent = selected === null ? t('stepSelect') : t('stepScanBin');
+  el('pick-heading').textContent = t('toPick');
+  el('pick').textContent = t('pick');
+  // The Pick button exists only while there is pick work; a bin scanned from the list needs it not at all.
+  el('pick').hidden = lines.length === 0;
+  if (!lines.some((l) => l.lineId === selectedPick)) selectedPick = null;
+  el('pick').disabled = selectedPick === null;
+  // The footer always says which step comes next — nobody should work out where they are in a sequence.
+  el('step').firstChild.textContent =
+    pickStep === 'bin' ? t('stepPickScanBin')
+      : pickStep === 'item' ? t('stepScanItem')
+        : pickStep === 'confirm' ? t('stepConfirm')
+          : selectedPick !== null ? t('stepPickScanBin')
+            : selected !== null ? t('stepScanBin')
+              : lines.length > 0 ? t('stepPick')
+                : t('stepSelect');
 
   paintBadge();
 
+  // The pick list: the bin is the biggest thing on the row, because the bin is where the worker walks to.
+  const pickHost = el('pick-lines');
+  pickHost.textContent = '';
+  el('pick-heading').hidden = lines.length === 0;
+  for (const line of lines) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'item pick';
+    row.setAttribute('aria-selected', String(selectedPick === line.lineId));
+    const where = document.createElement('div');
+    where.className = 'where';
+    where.textContent = line.binId;
+    const what = document.createElement('div');
+    what.className = 'what';
+    what.textContent = `${line.orderRef} · ${line.productId}${line.batchId ? ` · ${line.batchId}` : ''}`;
+    const qty = document.createElement('div');
+    qty.className = 'qty';
+    qty.textContent = `${line.remainingMinor} ${t('units')} · ${line.uom}`;
+    row.append(where, what, qty);
+    row.addEventListener('click', () => { selectedPick = line.lineId; selected = null; render(); });
+    pickHost.append(row);
+  }
+
   const host = el('goods-in');
   host.textContent = '';
-  const items = real && typeof real.goodsIn === 'function' ? real.goodsIn() : [];
-  if (items.length === 0) {
+  // With pick work but nothing to put away, the goods-in heading would sit over nothing.
+  el('goods-in-heading').hidden = items.length === 0 && lines.length > 0;
+  if (items.length === 0 && lines.length === 0) {
     el('empty').hidden = false;
     el('empty').textContent = `${t('noWork')} ${t('noWorkBody')}`;
     return;
@@ -190,7 +276,7 @@ function render() {
     qty.textContent = `${item.quantityMinor} ${t('units')} · ${item.uom}`;
     row.append(what, qty);
     if (item.recalled) { const f = document.createElement('div'); f.className = 'flag'; f.textContent = t('recalledFlag'); row.append(f); }
-    row.addEventListener('click', () => { selected = index; render(); });
+    row.addEventListener('click', () => { selected = index; selectedPick = null; render(); });
     host.append(row);
   });
 }
@@ -219,6 +305,40 @@ el('put-away').addEventListener('click', async () => {
   render();
 });
 
+/**
+ * Pick one line: scan the bin the line names → scan the item → confirm the quantity (inventory-warehouse.md,
+ * ≤3). `binCode` is set when the bin was scanned from the list — that scan WAS step 1, so the panel opens
+ * straight on the item. The model checks each scan as it happens (`checkPick`), so a wrong bin is refused at
+ * the racking and a wrong item at the shelf — never after the worker has confirmed. The model commits.
+ */
+async function startPick(line, binCode = null) {
+  if (real === undefined) return;
+  pickStep = 'bin'; render();
+  const bin = binCode ?? await awaitScan(`${t('scanPickBin')} — ${line.binId}`);
+  if (bin === null) { pickStep = null; render(); return; }
+  const atBin = real.checkPick({ lineId: line.lineId, scannedBinId: bin });
+  if (!atBin.ok) { pickStep = null; feltResult(atBin.signal); render(); return; }
+  pickStep = 'item'; render();
+  const item = await awaitScan(`${t('scanItem')} — ${line.productId}`);
+  if (item === null) { pickStep = null; render(); return; }
+  const withItem = real.checkPick({ lineId: line.lineId, scannedBinId: bin, scannedItem: item });
+  if (!withItem.ok) { pickStep = null; feltResult(withItem.signal); render(); return; }
+  pickStep = 'confirm'; render();
+  const confirmed = await awaitConfirm(withItem.line);
+  pickStep = null;
+  if (!confirmed) { render(); return; }
+  const out = real.pick({ commandId: nextId('pick'), lineId: line.lineId, scannedBinId: bin, scannedItem: item, at: new Date().toISOString() });
+  feltResult(out.signal);
+  selectedPick = null;
+  render();
+}
+
+el('pick').addEventListener('click', () => {
+  if (selectedPick === null || real === undefined) return;
+  const line = real.pickLines().find((l) => l.lineId === selectedPick);
+  if (line !== undefined) void startPick(line);
+});
+
 // ── Language ────────────────────────────────────────────────────────────────
 el('lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ta' : 'en';
@@ -245,6 +365,13 @@ window.addEventListener('keydown', (event) => {
       const resolve = scanResolve;
       scanResolve = null;
       resolve(code);
+      return;
+    }
+    // Nothing was asking for a scan. A bin label that a pick-list line names IS step 1 of that pick — the scan
+    // chooses the line, as on the picker handheld, and the panel opens straight on the item.
+    if (pickStep === null && confirmResolve === null && real !== undefined && typeof real.pickLines === 'function') {
+      const line = real.pickLines().find((l) => l.binId === code);
+      if (line !== undefined) void startPick(line, code);
     }
     return;
   }
