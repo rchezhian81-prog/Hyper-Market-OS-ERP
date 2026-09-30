@@ -54,7 +54,6 @@ async function seeded(): Promise<ApiHarness> {
     body: {
       warehouseId: 'S1', receivedOnDate: '2026-09-01', currency: 'INR',
       lines: [{ lineId: 'L1', productId: 'P1', orderedMinor: 100, countedMinor: 100, uom: 'EA', unitCost: { minor: 2500, currency: 'INR' }, condition: 'good' }],
-      rules: [{ productId: 'P1', batchTracked: false }], policy: { excessToleranceBp: 0, shortageToleranceBp: 0, nearExpiryDays: 30 },
     },
   });
   expect(seed.status).toBe(201);

@@ -297,7 +297,11 @@ export async function applyPilotTradingPartners(
     );
   }
 
-  // 3. Goods receipts — the real receiving gate turns each delivery into sellable stock.
+  // 3. The tenant's receiving tolerances — the owner's call, read by every receipt (F03, SP-4 (ii)).
+  await post('receiving tolerance policy', '/v1/inventory/receipt-policy', { ...data.receiptPolicy }, 'seed-receipt-policy');
+
+  // 4. Goods receipts — the real receiving gate turns each delivery into sellable stock. The body carries the counted
+  //    lines only: what is batch-tracked comes from the product master, the tolerances from the policy just set.
   for (const grn of data.goodsReceipts) {
     await post(
       `goods receipt ${grn.grnId}`,
@@ -306,8 +310,6 @@ export async function applyPilotTradingPartners(
         warehouseId: grn.warehouseId,
         receivedOnDate: grn.receivedOnDate,
         currency: grn.currency,
-        rules: grn.rules,
-        policy: grn.policy,
         lines: grn.lines.map((l) => ({
           lineId: l.lineId, productId: l.productId, orderedMinor: l.orderedMinor, countedMinor: l.countedMinor,
           uom: l.uom, unitCost: { minor: l.unitCostMinor, currency: grn.currency }, condition: l.condition,
@@ -319,7 +321,7 @@ export async function applyPilotTradingPartners(
     );
   }
 
-  // 4. Customers — a consent record (with evidence) and, where given, a points movement.
+  // 5. Customers — a consent record (with evidence) and, where given, a points movement.
   for (const customer of data.customers) {
     await post(
       `customer consent ${customer.customerId}`,

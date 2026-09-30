@@ -14,7 +14,8 @@
 //   • damaged or QC-failed stock counted as good — it goes to QUARANTINE, which
 //     is deliberately not available to sell (M08 status / M07-FR-03);
 //   • an excess beyond tolerance accepted without an approval above the
-//     receiver's authority (§28).
+//     receiver's authority (§28) — the excess is HELD: counted, in the building,
+//     on the receipt, but not sellable until a second person approves it (F03).
 //
 // Everything is capturable offline (§31); approvals that need a second person
 // resolve on sync — the receipt itself is never blocked on the network.
@@ -117,16 +118,24 @@ export class IncompleteCaptureError extends Error {
 export interface CheckedLine {
   readonly lineId: string;
   readonly productId: string;
-  /** Quantity that becomes available to sell. */
+  /** Quantity that becomes available to sell NOW. */
   readonly sellableMinor: number;
   /** Quantity held back — present, counted, but not sellable. */
   readonly quarantinedMinor: number;
   /** Quantity refused outright (returned to the supplier / claimed). */
   readonly rejectedMinor: number;
+  /**
+   * The over-tolerance EXCESS (F03): more arrived than was ordered, beyond what the tenant accepts unasked. It is
+   * counted and on the receipt, but it is NOT sellable until a second person approves accepting it (§28) — then it is
+   * released as its own inbound movement. Zero on a quarantined or rejected line (the whole line is already held).
+   */
+  readonly heldMinor: number;
   readonly disposition: ReceiptDisposition;
   readonly uom: string;
   readonly batchId: string | null;
   readonly expiry: string | null;
+  /** What the delivered unit cost — carried so a later release of the held excess is valued at what it cost. */
+  readonly unitCost: Money;
 }
 
 export interface CapturedReceipt {
@@ -208,6 +217,7 @@ export function captureReceipt(input: {
     };
 
     // --- quantity against the order -------------------------------------------
+    let held = 0;
     const delta = line.countedMinor - line.orderedMinor;
     if (delta < 0) {
       const shortBp = line.orderedMinor === 0 ? BP : Math.round((-delta * BP) / line.orderedMinor);
@@ -227,13 +237,15 @@ export function captureReceipt(input: {
         delta,
         overTolerance,
         overTolerance
-          ? `${delta} ${line.uom} more than ordered — beyond tolerance, needs approval before it is accepted`
+          ? `${delta} ${line.uom} more than ordered — beyond tolerance, held: not sellable until a second person approves accepting it`
           : `${delta} ${line.uom} more than ordered — within tolerance`,
       );
+      // Beyond tolerance the WHOLE excess over the order is held (F03): the ordered quantity sells, the rest waits.
+      if (overTolerance) held = delta;
     }
 
     // --- condition, QC and expiry ---------------------------------------------
-    let sellable = line.countedMinor;
+    let sellable = line.countedMinor - held;
     let quarantined = 0;
     let rejected = 0;
 
@@ -242,18 +254,22 @@ export function captureReceipt(input: {
     if (expired) {
       rejected = line.countedMinor;
       sellable = 0;
+      held = 0;
       raise('expired', line.countedMinor, true, `expired on ${expiry} — refused, never received as sellable`);
     } else if (line.condition === 'damaged') {
       quarantined = line.countedMinor;
       sellable = 0;
+      held = 0;
       raise('damaged', line.countedMinor, true, 'received damaged — quarantined, not available to sell');
     } else if (line.qc === 'failed') {
       quarantined = line.countedMinor;
       sellable = 0;
+      held = 0;
       raise('qc_failed', line.countedMinor, true, 'failed quality check — quarantined pending disposition');
     } else if (line.condition === 'temperature_breach') {
       quarantined = line.countedMinor;
       sellable = 0;
+      held = 0;
       raise('temperature_breach', line.countedMinor, true, 'cold chain broken in transit — quarantined');
     } else if (
       rule.coldChain === true &&
@@ -263,6 +279,7 @@ export function captureReceipt(input: {
     ) {
       quarantined = line.countedMinor;
       sellable = 0;
+      held = 0;
       raise(
         'temperature_breach',
         line.countedMinor,
@@ -295,10 +312,12 @@ export function captureReceipt(input: {
       sellableMinor: sellable,
       quarantinedMinor: quarantined,
       rejectedMinor: rejected,
+      heldMinor: held,
       disposition: rejected > 0 ? 'rejected' : quarantined > 0 ? 'quarantine' : 'sellable',
       uom: line.uom,
       batchId: line.batchId ?? null,
       expiry,
+      unitCost: line.unitCost,
     });
   }
 
@@ -314,7 +333,12 @@ export function captureReceipt(input: {
   };
 }
 
-/** Quantity that actually becomes available to sell — quarantine never counts. */
+/** Quantity that actually becomes available to sell NOW — quarantine never counts, and neither does a held excess. */
 export function availableFromReceipt(receipt: CapturedReceipt): number {
   return receipt.lines.reduce((sum, l) => sum + l.sellableMinor, 0);
+}
+
+/** Quantity HELD as over-tolerance excess (F03) — in the building, on the receipt, waiting for a second person. */
+export function heldFromReceipt(receipt: CapturedReceipt): number {
+  return receipt.lines.reduce((sum, l) => sum + l.heldMinor, 0);
 }

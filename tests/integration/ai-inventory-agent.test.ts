@@ -11,7 +11,6 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const INR = 'INR';
-const POLICY = { excessToleranceBp: 500, shortageToleranceBp: 200, nearExpiryDays: 7 };
 const cost = (minor: number) => ({ minor, currency: INR });
 
 // The API's clock is the real wall-clock, and the A03 run reads near-expiry as-of that day. Seed expiries
@@ -21,10 +20,12 @@ const dayOffset = (n: number): string => { const d = new Date(); d.setUTCDate(d.
 
 const put = (h: ApiHarness, path: string, body: unknown, key: string) =>
   h.request({ method: 'PUT', path, userId: 'u-owner', tenantId: A, idempotencyKey: key, body });
-const receive = (h: ApiHarness, grnId: string, lines: unknown[], rules: unknown[], key: string, receivedOnDate: string) =>
+// Since SP-4 (ii) the product rules and tolerances are head office's own (F03); the `_rules` the scenario names are
+// what the product master WOULD say — kept for the reader, never sent.
+const receive = (h: ApiHarness, grnId: string, lines: unknown[], _rules: unknown[], key: string, receivedOnDate: string) =>
   h.request({
     method: 'POST', path: `/v1/inventory/goods-receipt/${grnId}`, userId: 'u-owner', tenantId: A, idempotencyKey: key,
-    body: { warehouseId: 'wh1', receivedOnDate, currency: INR, lines, rules, policy: POLICY },
+    body: { warehouseId: 'wh1', receivedOnDate, currency: INR, lines },
   });
 const grnLine = (extra: Record<string, unknown> = {}) =>
   ({ lineId: 'L1', productId: 'milk-1l', orderedMinor: 100, countedMinor: 100, uom: 'each', unitCost: cost(5000), condition: 'good', ...extra });

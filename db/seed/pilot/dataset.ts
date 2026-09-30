@@ -256,7 +256,8 @@ export const PILOT_CATALOGUE: PilotCatalogue = {
 
 // ── Slice 4c: suppliers + stock (batches/expiry) + warehouse bins + customers ──
 // Trading partners and on-hand stock, all in the demo tenant. Stock is created through the real
-// goods-receipt gate (batch-tracked food needs a batch + a FUTURE expiry, condition 'good' → sellable).
+// goods-receipt gate (batch-tracked food needs a batch + a FUTURE expiry, condition 'good' → sellable); the
+// tolerances are the tenant's own policy, set first (F03).
 
 /** Supplier portal grant — matches the catalogue in services/purchase supplier-portal. */
 export type SeedPortalGrant =
@@ -299,8 +300,13 @@ export interface SeedGoodsReceipt {
   readonly receivedOnDate: string;
   readonly currency: string;
   readonly lines: readonly SeedReceiptLine[];
-  readonly rules: readonly { readonly productId: string; readonly batchTracked: boolean }[];
-  readonly policy: { readonly excessToleranceBp: number; readonly shortageToleranceBp: number; readonly nearExpiryDays: number };
+}
+
+/** The tenant's receiving tolerances — set once by the owner; every receipt is measured against them (F03). */
+export interface SeedReceiptPolicy {
+  readonly excessToleranceBp: number;
+  readonly shortageToleranceBp: number;
+  readonly nearExpiryDays: number;
 }
 
 export interface SeedCustomer {
@@ -313,6 +319,7 @@ export interface PilotTradingPartners {
   readonly tenantId: string;
   readonly suppliers: readonly SeedSupplier[];
   readonly bins: readonly SeedBin[];
+  readonly receiptPolicy: SeedReceiptPolicy;
   readonly goodsReceipts: readonly SeedGoodsReceipt[];
   readonly customers: readonly SeedCustomer[];
 }
@@ -335,17 +342,13 @@ export const PILOT_TRADING_PARTNERS: PilotTradingPartners = {
     { binId: 'bin-demo-a1', storeId: WAREHOUSE_ID, capacityMinor: 1_000_000, pickable: true, zone: 'ambient' },
     { binId: 'bin-demo-c1', storeId: WAREHOUSE_ID, capacityMinor: 500_000, pickable: true, zone: 'chilled' },
   ],
+  // 5% either way, 30 days near-expiry — the owner's tolerances, set through the real policy route (never on a receipt).
+  receiptPolicy: { excessToleranceBp: 500, shortageToleranceBp: 500, nearExpiryDays: 30 },
   goodsReceipts: [
     {
+      // What is batch-tracked is the product master's word (rice, biscuit and oil are; soap and brush are not) — the
+      // receipt carries the counted lines only, with batch + expiry where the item is tracked.
       grnId: 'grn-demo-001', warehouseId: WAREHOUSE_ID, receivedOnDate: RECEIVED_ON, currency: INR,
-      policy: { excessToleranceBp: 500, shortageToleranceBp: 500, nearExpiryDays: 30 },
-      rules: [
-        { productId: 'prod-soap', batchTracked: false },
-        { productId: 'prod-brush', batchTracked: false },
-        { productId: 'prod-rice', batchTracked: true },
-        { productId: 'prod-biscuit', batchTracked: true },
-        { productId: 'prod-oil', batchTracked: true },
-      ],
       lines: [
         { lineId: 'l1', productId: 'prod-soap', orderedMinor: 100_000, countedMinor: 100_000, uom: 'each', unitCostMinor: 2000, condition: 'good' },
         { lineId: 'l2', productId: 'prod-brush', orderedMinor: 60_000, countedMinor: 60_000, uom: 'each', unitCostMinor: 1500, condition: 'good' },
