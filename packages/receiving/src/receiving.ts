@@ -24,6 +24,10 @@ export interface CommitReceiptInput {
   readonly receivedBy: string;
   readonly receivedAt: string; // ISO-8601 UTC
   readonly lines: readonly ReceiptLineInput[];
+  /** Which store's screen booked it in (SP-2b) — carried to head office; absent means not stated. */
+  readonly storeId?: string;
+  /** Which surface booked it in, e.g. `manager-screen` (SP-2b). */
+  readonly source?: string;
 }
 
 export interface CommittedReceipt {
@@ -82,11 +86,20 @@ export function commitReceipt(
       occurredAt: input.receivedAt,
       idempotencyKey: `grn:${input.id}`,
       source: input.warehouseId,
+      // The WHOLE receipt travels (SP-2b): head office re-runs the receiving rules over these lines and re-verifies the
+      // receiver — a thin `lineCount` gave it nothing to receive. Superset of the old shape, so nothing reading
+      // `grnId` / `number` / `poId` / `lineCount` changes.
       payload: {
         grnId: input.id,
         number: input.number,
         poId: input.poId,
         lineCount: input.lines.length,
+        warehouseId: input.warehouseId,
+        receivedBy: input.receivedBy,
+        receivedAt: input.receivedAt,
+        lines: input.lines.map((l) => ({ productId: l.productId, quantityMinor: l.quantityMinor, uom: l.uom, batchId: l.batchId ?? null })),
+        storeId: input.storeId ?? null,
+        source: input.source ?? 'receiving',
       },
     }),
   );

@@ -200,16 +200,19 @@
         <p class="lead" id="approvals-lead">Biggest first.</p>
         <div class="rows" id="approval-rows"></div>
         <p class="empty" id="approvals-empty" hidden>Nothing is waiting.</p>
-        <!-- Decisions this screen took, from its DURABLE device queue, each with where it has got to (SP-2a). -->
-        <h3 id="decisions-title" hidden>Decided on this screen</h3>
-        <p class="lead" id="decisions-lead" hidden>Where each decision has got to.</p>
-        <div class="rows" id="decision-rows"></div>
+        <!--
+          Everything this screen saved — decisions, deliveries, counts — from its DURABLE device queue, each with
+          where it has got to (SP-2a/2b). A count row shows what was counted, never what was expected.
+        -->
+        <h3 id="saved-title" hidden>Saved on this screen</h3>
+        <p class="lead" id="saved-lead" hidden>Where each item has got to.</p>
+        <div class="rows" id="saved-rows"></div>
       </section>
 
       <!-- Receiving: goods in. A delivery with no purchase order is SAID to be unmatched. -->
       <section id="view-receive" hidden>
         <h2 id="receive-title">Receive a delivery</h2>
-        <p class="lead" id="receive-lead">Stock goes up as soon as this is saved, with or without a connection.</p>
+        <p class="lead" id="receive-lead">Saved on this screen with or without a connection; the store computer sends it to head office.</p>
         <div class="field">
           <label for="grn-number" id="grn-number-label">Delivery note number</label>
           <input id="grn-number" type="text" autocomplete="off" />

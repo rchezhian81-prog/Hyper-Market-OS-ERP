@@ -39,6 +39,12 @@ export interface GrnRecord {
   readonly captured: CapturedReceipt;
   /** Total quantity that became available to sell (quarantine/rejected excluded). */
   readonly availableMinor: number;
+  /** SP-2b — what head office's re-verification found about a RELAYED receipt (absent on a direct capture). */
+  readonly governanceFlags?: readonly string[];
+  /** SP-2b — the identity that relayed it (the store box), the surface, and the store, when relayed. */
+  readonly relayedBy?: string;
+  readonly source?: string;
+  readonly storeId?: string | null;
 }
 
 export interface GoodsReceiptDeps {

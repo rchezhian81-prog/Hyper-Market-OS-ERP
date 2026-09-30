@@ -26,13 +26,14 @@
 //
 // ── The third: the blind count, again ──────────────────────────────────────────
 //
-// `reconcileCount` derives the expected on-hand from the ledger itself, so a counter never supplies
-// it. This session keeps that structural on the manager's side too: **there is no method here that
-// returns an expected quantity.** There is nothing to call and nothing for a later change to render
-// early. The variance exists only in what comes back from a count that was already entered — the
-// same control the till uses for the drawer, and worth being structural in both places.
+// A count entered here is CAPTURED blind and RECONCILED at head office (SP-2b · F11 · F07). This session
+// keeps that structural on the manager's side: **there is no method here that returns an expected
+// quantity, and nothing here computes a variance, a value or a threshold.** There is nothing to call
+// and nothing for a later change to render early. What the counter saw travels the durable device
+// queue to the store computer and on to head office, which owns the expected figure, the unit value
+// and the approval threshold — the same control the till uses for the drawer, made structural.
 
-import { money, type CurrencyCode, type Money } from '../../../packages/contracts/src/money';
+import type { CurrencyCode } from '../../../packages/contracts/src/money';
 import { tradingDate, type TradingDayRule } from '../../../packages/calendar/src/trading-day';
 import type {
   ApprovalRequest,
@@ -47,7 +48,6 @@ import {
   type ReceiptLineInput,
 } from '../../../packages/receiving/src/receiving';
 import { isValidReasonFor } from '../../../packages/approvals/src/reasons';
-import { reconcileCount, type CountReconciliation } from '../../../packages/counts/src/counts';
 import { closeDay, type DayCloseResult } from '../../../packages/day-close/src/day-close';
 import type { Ledger } from '../../../packages/ledger/src/ledger';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
@@ -81,19 +81,6 @@ export type ApprovalRegister =
   | { readonly known: true; readonly requests: readonly ApprovalRequest[] }
   | { readonly known: false; readonly why: string };
 
-/**
- * What one smallest unit of a product is worth, or why that is not known.
- *
- * This one is not politeness, it is a control with teeth. A count variance is valued to decide
- * whether it needs a second person's approval (§28). A screen that did not know the cost and
- * defaulted to zero would value every difference at ₹0, put every difference below the threshold,
- * and commit a shrinkage adjustment of any size with nobody's approval at all. Not knowing must
- * therefore refuse the count, not price it at nothing.
- */
-export type ValueRegister =
-  | { readonly known: true; readonly valuePerUnitMinor: number }
-  | { readonly known: false; readonly why: string };
-
 /** A figure for the home screen that is allowed to say it does not know. */
 export type Tally =
   | { readonly known: true; readonly count: number }
@@ -109,8 +96,6 @@ export interface ManagerPorts {
   unsentItems(tradingDay: string): Register;
   /** Opening/closing checklists and staff tasks for the day (D11-FR-01 / M25). */
   tasks(tradingDay: string): Register;
-  /** What one smallest unit of a product is worth — used to value a count variance exactly. */
-  productValue(productId: string): ValueRegister;
   /**
    * Ask the STORE COMPUTER to close and lock the trading day (M14-FR-04).
    *
@@ -153,7 +138,6 @@ export function disconnectedPorts(why: string): ManagerPorts {
     openExceptions: () => notKnown(why),
     unsentItems: () => notKnown(why),
     tasks: () => notKnown(why),
-    productValue: () => notKnown(why),
   };
 }
 
@@ -345,6 +329,45 @@ export interface QueuedDecision {
   readonly reason?: string;
 }
 
+/** The event type a blind count travels under (SP-2b): device queue → store computer → head office reconciles it. */
+export const STOCK_COUNTED = 'StockCounted';
+/** One identity for one count at every hop; a re-count is a NEW count id. */
+export function countKeyFor(countId: string): string {
+  return `count-${countId}`;
+}
+/** What head office receives for a count: only what the counter saw — never an expected quantity, value or threshold. */
+export interface StockCountedPayload {
+  readonly countId: string;
+  readonly productId: string;
+  readonly locationId: string;
+  readonly uom: string;
+  readonly countedMinor: number;
+  readonly reasonCode: string;
+  readonly counterId: string;
+  readonly at: string;
+  readonly storeId: string;
+  readonly source: 'manager-screen';
+}
+
+/** The kinds of work this screen saves on its device — a value, so the screen must have words for each. */
+export const SAVED_WORK_KINDS = Object.freeze(['decision', 'receipt', 'count'] as const);
+export type SavedWorkKind = (typeof SAVED_WORK_KINDS)[number];
+
+/** One piece of work this screen saved, whatever its kind, and where it has got to. */
+export interface SavedWork {
+  readonly kind: SavedWorkKind;
+  /** The request id, GRN id or count id. */
+  readonly id: string;
+  /** The line a person reads: subject · ref for a decision, the delivery note number for a receipt, product @ place for a count. */
+  readonly what: string;
+  /** The second line: approved/rejected, "N lines", or the counted quantity. */
+  readonly detail: string;
+  readonly at: string;
+  readonly state: DeviceItemState;
+  readonly attempts: number;
+  readonly reason?: string;
+}
+
 // ── The session ─────────────────────────────────────────────────────────────
 
 export interface ManagerConfig {
@@ -364,8 +387,6 @@ export interface ManagerConfig {
   readonly currency: CurrencyCode;
   /** Where received goods land. Per-tenant. */
   readonly warehouseId: string;
-  /** Variance value at/above which a stock count needs a separate approver (§28). Per-tenant. */
-  readonly countApprovalThresholdMinor: number;
 }
 
 export interface ReceiveInput {
@@ -398,20 +419,20 @@ export interface CountInput {
   readonly countedMinor: number;
   readonly reasonCode: string;
   readonly at: string;
-  /** A decision by someone OTHER than this manager, needed when the variance is material (§28). */
-  readonly approval?: DecidedRequest;
 }
 
 /**
- * A count either reconciled, or was refused before anything was written.
+ * A blind count is CAPTURED here and RECONCILED at head office (SP-2b · F11 · M09-FR-04).
  *
- * The refusal is the interesting half. `value_not_known` means the screen could not find out what
- * the item is worth — and rather than value the difference at nothing (which would put it below
- * every approval threshold there is), nothing is committed and the manager is told why.
+ * Before SP-2b this screen reconciled the count itself, against an in-memory ledger that was empty after a reload —
+ * so every count after a reload invented a variance. Now the screen records only what the counter saw and queues it;
+ * head office computes the expected quantity, values the difference at its own cost and applies the tenant's
+ * threshold (never a figure from this screen — F07). The variance therefore never appears here at all, which is the
+ * blind-count control made structural: there is nothing on this path that could show it first.
  */
 export type CountAttempt =
-  | { readonly counted: true; readonly result: CountReconciliation }
-  | { readonly counted: false; readonly refusal: 'value_not_known' | 'nobody_named'; readonly why: string };
+  | { readonly counted: true; readonly queued: true; readonly countId: string }
+  | { readonly counted: false; readonly refusal: 'nobody_named' | 'already_counted'; readonly why: string };
 
 export interface CloseInput {
   readonly dayCloseId: string;
@@ -468,13 +489,15 @@ export interface ManagerSession {
    * out of `approvalQueue()` until head office's register catches up.
    */
   decisions(): readonly QueuedDecision[];
-  /** The queue keys of decisions the store computer has taken, to ask it where they have got to. */
-  handedDecisionKeys(): readonly string[];
+  /** Everything this screen saved — decisions, receipts, counts — newest first, with where each has got to (SP-2b). */
+  savedWork(): readonly SavedWork[];
+  /** The queue keys of work the store computer has taken (any kind), to ask it where they have got to. */
+  handedKeys(): readonly string[];
   /** Fold in the store computer's word on items it took (posted · still pending · refused), from a status query. */
   noteBoxStatus(statuses: readonly BoxItemStatus[]): void;
-  /** Book a delivery in. Stock rises locally; a GoodsReceived event queues for sync (M07). */
+  /** Book a delivery in. Stock rises locally; the WHOLE receipt queues for head office on the durable device queue (M07). */
   receive(input: ReceiveInput): ReceivedGoods;
-  /** Reconcile a blind count against the ledger (M09-FR-04). Nothing here reveals the expected. */
+  /** Capture a blind count and queue it for head office to reconcile (M09-FR-04). Nothing here reveals — or computes — the expected. */
   countStock(input: CountInput): CountAttempt;
   /** Everything standing between this store and a closed day — enumerated, never just counted. */
   blockersForClose(closedAtLocal: string): readonly Blocker[];
@@ -522,8 +545,6 @@ export function createManagerSession(
   stockLedger: Ledger,
   outbox: SyncOutbox,
 ): ManagerSession {
-  const inr = (minor: number): Money => money(minor, config.currency);
-
   // The store computer's word on each decision it has taken, keyed by the decision's queue key. Filled by
   // `noteBoxStatus` from a status query; empty until the box has been asked (then "handed to the store
   // computer" is all this screen claims — never "posted" on its own say-so, P-08).
@@ -695,8 +716,30 @@ export function createManagerSession(
       })
       .reverse(),
 
-    handedDecisionKeys: () => outbox.all()
-      .filter((item) => item.event.type === APPROVAL_DECIDED && item.state === 'acknowledged')
+    savedWork: () => outbox.all()
+      .flatMap((item): SavedWork[] => {
+        const box = boxWord.get(item.key);
+        const common = { state: deviceItemState(item, box), attempts: item.attempts, at: item.event.occurredAt } as const;
+        const reason = deviceItemReason(item, box);
+        const withReason = reason === undefined ? {} : { reason };
+        if (item.event.type === APPROVAL_DECIDED) {
+          const p = item.event.payload as ApprovalDecidedPayload;
+          return [{ kind: 'decision', id: p.id, what: `${p.subjectType} · ${p.subjectRef}`, detail: p.status, ...common, ...withReason }];
+        }
+        if (item.event.type === 'GoodsReceived') {
+          const p = item.event.payload as { grnId: string; number: string; lineCount: number; poId: string | null };
+          return [{ kind: 'receipt', id: p.grnId, what: p.number, detail: `${p.lineCount} ${p.poId === null ? '· no purchase order' : `· ${p.poId}`}`, ...common, ...withReason }];
+        }
+        if (item.event.type === STOCK_COUNTED) {
+          const p = item.event.payload as StockCountedPayload;
+          return [{ kind: 'count', id: p.countId, what: `${p.productId} @ ${p.locationId}`, detail: `${p.countedMinor} ${p.uom}`, ...common, ...withReason }];
+        }
+        return [];
+      })
+      .reverse(),
+
+    handedKeys: () => outbox.all()
+      .filter((item) => item.state === 'acknowledged')
       .map((item) => item.key),
 
     noteBoxStatus: (statuses) => {
@@ -715,6 +758,9 @@ export function createManagerSession(
           receivedBy: config.manager.userId,
           receivedAt: input.receivedAt,
           lines: input.lines,
+          // Where and on what it was booked in (SP-2b) — head office re-verifies the receiver and re-runs the rules.
+          storeId: config.storeId,
+          source: 'manager-screen',
         },
         stockLedger,
         outbox,
@@ -723,37 +769,31 @@ export function createManagerSession(
       };
     },
 
-    // The manager is the counter here, so a material variance needs somebody else's approval — the
-    // adjustment engine enforces that and this session does not get to soften it.
+    // The manager is the counter here. What is captured is ONLY what they saw; head office computes the expected
+    // quantity, values the difference at its own cost, applies the tenant's threshold and holds a material variance
+    // for a separate approver (§28) — none of which this screen can do honestly after a reload (F11), and none of
+    // which it should be able to see first (the blind-count control, structural). Queued BEFORE it is called counted.
     countStock: (input) => {
       if (config.manager === null) {
         return { counted: false, refusal: 'nobody_named', why: 'nobody is named on this screen, so no count can be attributed' };
       }
-      // Asked BEFORE anything is committed. An unknown cost is not zero: valued at nothing, a
-      // shrinkage of any size sits below the approval threshold and posts with nobody's approval.
-      const value = ports.productValue(input.productId);
-      if (!value.known) return { counted: false, refusal: 'value_not_known', why: value.why };
-
-      return {
-        counted: true,
-        result: reconcileCount(
-          {
-            id: input.countId,
-            productId: input.productId,
-            locationId: input.locationId,
-            uom: input.uom,
-            countedMinor: input.countedMinor,
-            counterId: config.manager.userId,
-            at: input.at,
-            reasonCode: input.reasonCode,
-            valuePerUnit: inr(value.valuePerUnitMinor),
-            thresholdMinor: config.countApprovalThresholdMinor,
-            ...(input.approval === undefined ? {} : { approval: input.approval }),
-          },
-          stockLedger,
-          outbox,
-        ),
+      if (outbox.find(countKeyFor(input.countId)) !== undefined) {
+        return { counted: false, refusal: 'already_counted', why: `count ${input.countId} is already saved on this screen — a re-count is a new count` };
+      }
+      const payload: StockCountedPayload = {
+        countId: input.countId, productId: input.productId, locationId: input.locationId, uom: input.uom,
+        countedMinor: input.countedMinor, reasonCode: input.reasonCode, counterId: config.manager.userId, at: input.at,
+        storeId: config.storeId, source: 'manager-screen',
       };
+      outbox.enqueue(makeEvent({
+        id: countKeyFor(input.countId),
+        type: STOCK_COUNTED,
+        occurredAt: input.at,
+        idempotencyKey: countKeyFor(input.countId),
+        source: 'web-erp/manager',
+        payload,
+      }));
+      return { counted: true, queued: true, countId: input.countId };
     },
 
     blockersForClose,

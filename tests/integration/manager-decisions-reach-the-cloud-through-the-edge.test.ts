@@ -190,15 +190,16 @@ describe('the manager\'s decision: device → box (durable) → head office (onc
 
   it('refuses — per item, with the reason, touching no disk — a type this box does not relay for the source, and a malformed item', async () => {
     const edge = await boxWithoutCloud();
-    const goods = makeEvent({ id: 'g1', type: 'GoodsReceived', occurredAt: AT, idempotencyKey: 'g1', source: 'web-erp/manager', payload: { grnId: 'g1' } });
+    // A sale never rides the device route (the till has its own path) — the allow-list refuses it by type.
+    const sale = makeEvent({ id: 's1', type: 'SaleCommitted', occurredAt: AT, idempotencyKey: 's1', source: 'web-erp/manager', payload: { saleId: 's1' } });
     const fromPicker = decisionEvent('a7');
     const { acks } = await postBatch(edge, [
-      { key: 'g1', event: goods },
+      { key: 's1', event: sale },
       { key: 'nope', event: { type: 'ApprovalDecided' } },
       { key: fromPicker.idempotencyKey, event: fromPicker },
     ], 'picker');
     expect(acks.map((a) => a.status)).toEqual(['refused', 'refused', 'refused']);
-    expect(acks[0]?.reason).toMatch(/GoodsReceived is not a record this box relays for picker/);
+    expect(acks[0]?.reason).toMatch(/SaleCommitted is not a record this box relays for picker/);
     expect(acks[1]?.reason).toMatch(/has no id/);
     expect(acks[2]?.reason).toMatch(/ApprovalDecided is not a record this box relays for picker/);
     expect(await recordsOn(edge)).toEqual([]);

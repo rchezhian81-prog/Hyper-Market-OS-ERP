@@ -52,4 +52,27 @@ Incidents · Staff tasks · Close · Exceptions. All handle the §27.1 states.
 - Measured in a real browser against a real box (`tests/e2e/manager-decisions-survive-reload.e2e.ts`): decide (3 taps,
   unchanged) → with the store computer within a moment → reload → still decided, not offered again; with the box's socket
   gone → saved here, trying again, survives a reload, never shown as sent or refused.
-- Still open: receipts and counts are saved on the device and counted as unsent but do not yet reach head office (SP-2b).
+- (Closed by SP-2b below.) Receipts and counts were saved on the device and counted as unsent but did not yet reach head office.
+
+## Measured (SP-2b, 30 September 2026 — audit finding F11, second half)
+- A delivery booked in on this screen travels the SAME path as a decision: saved on this device first, handed to the store
+  computer, sent to head office as a full goods receipt. Head office re-checks it — who booked it in (from their own
+  grants), the item's batch rule (from the published catalogue), what it cost (its own valuation), what was ordered (the
+  purchase order) — and records anything it could not verify as a flag on the receipt, never as a silent zero. A tracked
+  item with no batch is refused there and shows on this screen as *Refused*, with the reason.
+- A count entered here is CAPTURED BLIND and RECONCILED AT HEAD OFFICE. This screen no longer works out the expected
+  quantity, the difference, its value or whether it needs approval — and cannot, structurally: the model has no product
+  value or threshold in it. The banner says "Count recorded" and where the count is; head office computes the expected
+  figure against its own ledger, values the difference at its own cost, applies the store's count policy, corrects a
+  small difference at once and HOLDS a large or unvalued one for a separate person. Before SP-2b a count after a reload
+  was reconciled against an empty in-memory ledger and invented a variance; there is no longer any figure on this path
+  to be wrong.
+- "Saved on this screen" (renamed from "Decided on this screen") lists decisions, deliveries and counts alike, each with
+  its kind (Decision · Delivery · Count, EN/TA) and one of the five states; a count row shows what was counted, never
+  what was expected.
+- Measured in a real browser against a real box (`tests/e2e/manager-decisions-survive-reload.e2e.ts`): book a delivery in
+  (no purchase order — said) → with the store computer; count 94 on the keypad → "Count recorded", no expected figure
+  anywhere → with the store computer; the box's log holds the whole receipt and only the counted figure → reload → both
+  still listed, nothing held on the screen.
+- Still open: a held material count variance is approved-then-applied in SP-4; the counts review screen does not yet
+  list relayed counts (SP-9); the handhelds join the same path in SP-3.

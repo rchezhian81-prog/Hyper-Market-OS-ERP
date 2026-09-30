@@ -40,6 +40,10 @@ export const DEVICE_OUTBOX_STATUS_PATH = '/lane/outbox/status';
  */
 export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surfaces: readonly string[] }>> = Object.freeze({
   ApprovalDecided: { surfaces: ['manager'] },
+  // SP-2b: a delivery booked in and a blind count captured on the manager's screen. The warehouse handheld joins
+  // `StockCounted` in W2 (SP-3), once the LAN device route exists.
+  GoodsReceived: { surfaces: ['manager'] },
+  StockCounted: { surfaces: ['manager'] },
 });
 
 export function isRelayable(type: string, source: string): boolean {

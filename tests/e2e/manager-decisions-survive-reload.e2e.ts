@@ -25,8 +25,13 @@ import { readLog } from '../../edge/store-edge/src/file-log';
  *   • with the box's socket gone, a decision stays "saved on this screen … trying again", survives a reload, and is
  *     never shown as sent or refused (a link failure is not a refusal).
  *
- * No cloud is configured: the box holds the decision durably and will carry it up when one is (P-01). Head office
- * delivery from the box is proven by `tests/integration/manager-decisions-reach-the-cloud-through-the-edge.test.ts`.
+ * SP-2b adds the two records F11 said were lost: a DELIVERY booked in and a blind COUNT entered on the served screen
+ * travel the same queue — saved on this screen → with the store computer (on its fsync'd log, the whole receipt and
+ * only what the counter saw) — and are still listed after a reload; the count banner names no expected figure.
+ *
+ * No cloud is configured: the box holds the work durably and will carry it up when one is (P-01). Head office delivery
+ * from the box is proven by `tests/integration/manager-decisions-reach-the-cloud-through-the-edge.test.ts` and
+ * `tests/integration/manager-receipts-and-counts-reach-the-cloud-through-the-edge.test.ts`.
  * The browser binary is the environment's pre-installed Chromium; where none is present the suite SKIPS.
  */
 
@@ -46,12 +51,16 @@ const PACK_JSON = JSON.stringify({
 
 interface ManagerWindow {
   readonly laneWriteBase?: string;
-  readonly managerSession?: { decisions(): { requestId: string; state: string }[]; floor(): { heldHere: number } };
+  readonly managerSession?: {
+    decisions(): { requestId: string; state: string }[];
+    savedWork(): { kind: string; id: string; what: string; detail: string; state: string }[];
+    floor(): { heldHere: number };
+  };
   readonly managerRelay?: unknown;
   readonly document: { querySelector(selector: string): { hidden: boolean; textContent: string | null; getAttribute(n: string): string | null } | null; querySelectorAll(selector: string): { length: number } };
 }
 
-describe.skipIf(!HAVE_BROWSER)('the manager\'s decision survives a reload and reaches the store computer (SP-2a · F11)', () => {
+describe.skipIf(!HAVE_BROWSER)('the manager\'s decision, delivery and count survive a reload and reach the store computer (SP-2a/2b · F11)', () => {
   let browser: Browser;
   const dirs: string[] = [];
   const stops: (() => Promise<void>)[] = [];
@@ -122,8 +131,8 @@ describe.skipIf(!HAVE_BROWSER)('the manager\'s decision survives a reload and re
     // device-events log and in its queue for head office. This is what F11 said existed nowhere.
     await page.waitForFunction(() => (globalThis as unknown as ManagerWindow).managerSession!.decisions()[0]?.state === 'handed_to_box', undefined, { timeout: 10_000 });
     await page.click('#banner-ok');
-    await page.waitForSelector('#decision-rows .row.decision[data-state="handed_to_box"]');
-    expect(await page.textContent('#decision-rows .row.decision .pill')).toContain('With the store computer');
+    await page.waitForSelector('#saved-rows .row.saved[data-state="handed_to_box"]');
+    expect(await page.textContent('#saved-rows .row.saved .pill')).toContain('With the store computer');
     expect(edge.deviceEventsOutbox.pending().map((i) => [i.event.type, i.key])).toEqual([['ApprovalDecided', 'approval-decision-a1']]);
     const records = (await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok).map((r) => JSON.parse(r.ok ? r.record : '{}') as { type: string; payload: { id: string; status: string; decidedBy: string } });
     expect(records).toHaveLength(1);
@@ -139,7 +148,7 @@ describe.skipIf(!HAVE_BROWSER)('the manager\'s decision survives a reload and re
     await page.click('#tab-approvals');
     await page.waitForSelector('#approvals-empty:not([hidden])');
     expect(await page.evaluate(() => (globalThis as unknown as ManagerWindow).document.querySelectorAll('#approval-rows .row').length)).toBe(0);
-    await page.waitForSelector('#decision-rows .row.decision[data-request-id="a1"]');
+    await page.waitForSelector('#saved-rows .row.saved[data-kind="decision"][data-id="a1"]');
     expect(await stateOf(page, 'a1')).toBe('handed_to_box');
     expect(await page.evaluate(() => (globalThis as unknown as ManagerWindow).managerSession!.floor().heldHere)).toBe(0);
     // Still exactly one record on the box: the reload re-sent nothing new (the device had already acknowledged it).
@@ -156,8 +165,8 @@ describe.skipIf(!HAVE_BROWSER)('the manager\'s decision survives a reload and re
     expect(await page.textContent('#banner-text')).toContain('Saved on this screen');
     await page.waitForFunction(() => (globalThis as unknown as ManagerWindow).managerSession!.decisions()[0]?.state === 'retrying', undefined, { timeout: 10_000 });
     await page.click('#banner-ok');
-    await page.waitForSelector('#decision-rows .row.decision[data-state="retrying"]');
-    expect(await page.textContent('#decision-rows .row.decision .pill')).toContain('trying again');
+    await page.waitForSelector('#saved-rows .row.saved[data-state="retrying"]');
+    expect(await page.textContent('#saved-rows .row.saved .pill')).toContain('trying again');
     expect(edge.deviceEventsOutbox.all()).toHaveLength(0);
 
     await page.reload({ waitUntil: 'load' });
@@ -166,11 +175,71 @@ describe.skipIf(!HAVE_BROWSER)('the manager\'s decision survives a reload and re
     expect(await page.locator('#next-approval').getAttribute('hidden')).not.toBeNull();
     expect(await page.evaluate(() => (globalThis as unknown as ManagerWindow).managerSession!.floor().heldHere)).toBe(1);
     await page.click('#tab-approvals');
-    await page.waitForSelector('#decision-rows .row.decision[data-request-id="a1"]');
+    await page.waitForSelector('#saved-rows .row.saved[data-kind="decision"][data-id="a1"]');
     expect(['saved_here', 'retrying']).toContain(await stateOf(page, 'a1'));
     // The home tile counts it as not yet sent, and says how many are only on this screen.
     await page.click('#tab-home');
     await page.waitForSelector('#tiles .tile');
     expect(await page.textContent('#tiles')).toContain('saved on this screen');
+  });
+
+  it('a delivery booked in and a blind count entered on the served screen → saved here → with the store computer (whole receipt; only what was counted) → reload → both still listed (SP-2b)', async () => {
+    const { edge, base } = await box();
+    const page = await openManager(base);
+
+    // RECEIVE: delivery note, no purchase order (said, not filed quietly), one line of ten.
+    await page.click('#tab-receive');
+    await page.fill('#grn-number', 'DN-7781');
+    await page.fill('#grn-product', 'P1');
+    await page.fill('#grn-qty', '10');
+    await page.click('#add-line');
+    await page.click('#save-receipt');
+    await page.waitForFunction(() => !((globalThis as unknown as ManagerWindow).document.querySelector('#banner') as { hidden: boolean }).hidden);
+    expect(await page.textContent('#banner-title')).toBe('Delivery saved');
+    expect(await page.textContent('#banner-text')).toContain('no purchase order');
+    expect(await page.textContent('#banner-text')).toMatch(/Saved on this screen|With the store computer/);
+    await page.click('#banner-ok');
+    await page.waitForFunction(() => (globalThis as unknown as ManagerWindow).managerSession!.savedWork().find((w) => w.kind === 'receipt')?.state === 'handed_to_box', undefined, { timeout: 10_000 });
+
+    // COUNT: product and place, then the blind quantity on the keypad (9, 4), then the reason. No expected figure anywhere.
+    await page.click('#tab-count');
+    expect(await page.textContent('#view-count')).not.toMatch(/expected|system says|should be|on hand/i);
+    await page.fill('#count-product', 'P1');
+    await page.fill('#count-location', 'A-3');
+    await page.click('#enter-count');
+    await page.waitForSelector('#sheet:not([hidden]) #keypad button');
+    await page.click('#keypad button:has-text("9")');
+    await page.click('#keypad button:has-text("4")');
+    await page.click('#sheet-ok');
+    await page.waitForSelector('#choices button');
+    await page.click('#choices button:first-child');
+    await page.waitForFunction(() => !((globalThis as unknown as ManagerWindow).document.querySelector('#banner') as { hidden: boolean }).hidden);
+    expect(await page.textContent('#banner-title')).toBe('Count recorded');
+    const countText = await page.textContent('#banner-text');
+    expect(countText).toContain('Head office works out the difference');
+    // No expected figure, no direction, no amount: nothing on this screen knows any of them (the count stays blind).
+    expect(countText).not.toMatch(/expected|more than the system|fewer than the system|₹|\d/i);
+    await page.click('#banner-ok');
+    await page.waitForFunction(() => (globalThis as unknown as ManagerWindow).managerSession!.savedWork().find((w) => w.kind === 'count')?.state === 'handed_to_box', undefined, { timeout: 10_000 });
+
+    // The BOX has both, on its fsync'd log and queued for head office: the whole receipt, and only what was counted.
+    expect(edge.deviceEventsOutbox.pending().map((i) => i.event.type)).toEqual(['GoodsReceived', 'StockCounted']);
+    const records = (await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok).map((r) => JSON.parse(r.ok ? r.record : '{}') as { type: string; payload: Record<string, unknown> });
+    expect(records).toHaveLength(2);
+    expect(records[0]?.payload).toMatchObject({ number: 'DN-7781', poId: null, receivedBy: 'u-mgr', storeId: 'store-1', source: 'manager-screen', lines: [{ productId: 'P1', quantityMinor: 10, uom: 'ea' }] });
+    expect(records[1]?.payload).toMatchObject({ productId: 'P1', locationId: 'A-3', countedMinor: 94, counterId: 'u-mgr', storeId: 'store-1', source: 'manager-screen' });
+    expect(Object.keys(records[1]!.payload).join(' ')).not.toMatch(/expected|variance|value|threshold/i);
+
+    // RELOAD: both are still listed with their state, nothing is held here, and the box was sent nothing new.
+    await page.reload({ waitUntil: 'load' });
+    await ready(page);
+    await page.waitForSelector('#tiles .tile');
+    await page.click('#tab-approvals');
+    await page.waitForSelector('#saved-rows .row.saved[data-kind="receipt"][data-state="handed_to_box"]');
+    await page.waitForSelector('#saved-rows .row.saved[data-kind="count"][data-state="handed_to_box"]');
+    expect(await page.textContent('#saved-rows .row.saved[data-kind="count"] .what')).toContain('94 ea');
+    expect(await page.textContent('#saved-rows .row.saved[data-kind="receipt"] .what')).toContain('DN-7781');
+    expect(await page.evaluate(() => (globalThis as unknown as ManagerWindow).managerSession!.floor().heldHere)).toBe(0);
+    expect(edge.deviceEventsOutbox.all()).toHaveLength(2);
   });
 });

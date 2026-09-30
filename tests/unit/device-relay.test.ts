@@ -28,8 +28,9 @@ const decided = (id: string) => makeEvent({
   id: `approval-decision-${id}`, type: 'ApprovalDecided', occurredAt: AT, idempotencyKey: `approval-decision-${id}`,
   source: 'web-erp/manager', payload: { id, status: 'approved' },
 });
+// A type nobody reviewed for the device route: a sale never travels this way (the till has its own path).
 const other = (id: string) => makeEvent({
-  id: `x-${id}`, type: 'GoodsReceived', occurredAt: AT, idempotencyKey: `x-${id}`, source: 'web-erp/manager', payload: { grnId: id },
+  id: `x-${id}`, type: 'SaleCommitted', occurredAt: AT, idempotencyKey: `x-${id}`, source: 'web-erp/manager', payload: { saleId: id },
 });
 
 type Call = { url: string; init: { method: string; headers: Record<string, string>; body?: string } };
@@ -79,7 +80,13 @@ describe('the contract reads strictly and refuses with a reason', () => {
     expect(RELAYABLE_DEVICE_EVENTS['ApprovalDecided']?.surfaces).toEqual(['manager']);
     expect(isRelayable('ApprovalDecided', 'manager')).toBe(true);
     expect(isRelayable('ApprovalDecided', 'picker')).toBe(false);
-    expect(isRelayable('GoodsReceived', 'manager')).toBe(false);
+    // SP-2b: the manager's receipts and blind counts ride the same route; a sale never does.
+    expect(RELAYABLE_DEVICE_EVENTS['GoodsReceived']?.surfaces).toEqual(['manager']);
+    expect(RELAYABLE_DEVICE_EVENTS['StockCounted']?.surfaces).toEqual(['manager']);
+    expect(isRelayable('GoodsReceived', 'manager')).toBe(true);
+    expect(isRelayable('StockCounted', 'manager')).toBe(true);
+    expect(isRelayable('StockCounted', 'warehouse')).toBe(false); // W2 adds the handheld in SP-3
+    expect(isRelayable('SaleCommitted', 'manager')).toBe(false);
     const outbox = new SyncOutbox();
     outbox.enqueue(decided('a1'));
     outbox.enqueue(other('g1'));

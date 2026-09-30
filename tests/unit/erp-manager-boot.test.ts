@@ -76,32 +76,31 @@ describe('a key the payload did not carry is not an empty list', () => {
   });
 });
 
-describe('a product the screen was never told about has no price of zero', () => {
-  it('refuses to value a count for an unknown product', () => {
-    const session = boot({ openExceptions: [], unsentItems: [] });
+describe('a count on the booted screen is captured blind and queued for head office — the screen values nothing (SP-2b)', () => {
+  it('queues the count the store\'s named manager entered, with no value or threshold from this screen, and lists it as saved here', () => {
+    // Before SP-2b this screen refused a count it could not value, and valued the ones it could from the pack's
+    // product list — a client-supplied valuation (F07) over an in-memory ledger (F11). Now it captures only.
+    const outbox = new SyncOutbox();
+    const session = bootManager({
+      storeId: 'store-1', branchId: 'b1', tradingDay: '2026-08-04', tradingDayCutoff: '02:00',
+      managerId: 'u-mgr', approvalLimitMinor: 500_000, warehouseId: 'wh-1', outbox,
+      data: { openExceptions: [], unsentItems: [] },
+    });
     const attempt = session.countStock({
-      countId: 'c-1', productId: 'p-unknown', locationId: 'aisle-1', uom: 'ea',
+      countId: 'c-1', productId: 'p-unknown-to-this-screen', locationId: 'aisle-1', uom: 'ea',
       countedMinor: 3, reasonCode: 'shrinkage', at: AT,
     });
-    expect(attempt.counted).toBe(false);
-    if (attempt.counted) return;
-    expect(attempt.refusal).toBe('value_not_known');
-    expect(attempt.why).toMatch(/p-unknown/);
+    expect(attempt).toEqual({ counted: true, queued: true, countId: 'c-1' });
+    expect(outbox.all().map((i) => [i.event.type, i.key, i.state])).toEqual([['StockCounted', 'count-c-1', 'pending']]);
+    expect(outbox.all()[0]?.event.payload).toMatchObject({ counterId: 'u-mgr', storeId: 'store-1', source: 'manager-screen', countedMinor: 3 });
+    expect(session.savedWork()).toMatchObject([{ kind: 'count', id: 'c-1', state: 'saved_here' }]);
+    expect(session.floor().unsent).toEqual({ known: true, count: 1 });
   });
 
-  it('values a count for a product the store did describe', () => {
-    const session = boot({ products: [{ id: 'p-1', valuePerUnitMinor: 4_000 }] });
-    session.receive({
-      grnId: 'grn-1', number: 'GRN-1', poId: 'po-1', receivedAt: AT,
-      lines: [{ productId: 'p-1', quantityMinor: 10, uom: 'ea' }],
-    });
-    const attempt = session.countStock({
-      countId: 'c-2', productId: 'p-1', locationId: 'aisle-1', uom: 'ea',
-      countedMinor: 10, reasonCode: 'ok', at: AT,
-    });
-    expect(attempt.counted).toBe(true);
-    if (!attempt.counted) return;
-    expect(attempt.result.reconciled).toBe(true);
+  it('refuses a count when the store named nobody, rather than attribute it to a stand-in', () => {
+    const session = bootManager({ storeId: 'store-1', branchId: 'b1', tradingDay: '2026-08-04', tradingDayCutoff: '02:00', warehouseId: 'wh-1', outbox: new SyncOutbox(), data: { openExceptions: [], unsentItems: [] } });
+    expect(session.countStock({ countId: 'c-2', productId: 'p-1', locationId: 'aisle-1', uom: 'ea', countedMinor: 10, reasonCode: 'ok', at: AT }))
+      .toMatchObject({ counted: false, refusal: 'nobody_named' });
   });
 });
 
@@ -208,7 +207,7 @@ describe('the day close reaches the store computer only when the box injected it
 describe('the served manager is the person the store NAMED — never a stand-in (Stage G slice 5c · §28 · hard rule #4)', () => {
   const served: ManagerData = {
     userId: 'u-meena', approvalLimitMinor: 250_000, storeId: 'store-7', branchId: 'b7',
-    tradingDay: '2026-09-29', tradingDayCutoff: '02:00', countApprovalThresholdMinor: 50_000, warehouseId: 'wh-7',
+    tradingDay: '2026-09-29', tradingDayCutoff: '02:00', warehouseId: 'wh-7',
     approvals: [
       requestApproval({ id: 'a1', subjectType: 'refund', subjectRef: 'r1', requestedBy: 'u-cashier', branchId: 'b7', value: money(100_000, 'INR') }),
       requestApproval({ id: 'a2', subjectType: 'refund', subjectRef: 'r2', requestedBy: 'u-cashier', branchId: 'store-1', value: money(100_000, 'INR') }),

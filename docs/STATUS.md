@@ -86,12 +86,35 @@ device, human UAT and production verification separate; approved deferrals stay 
   them by allow-list rather than fake it), and the count still reconciles against an empty in-memory ledger after a
   reload → SP-2b. The manager screen's unsent TILE counts the box's sales outbox + this screen's held work; the sync
   BADGE and the box's day-close gate count all six box pipelines.
-- **Current-work pointer:** last verified = SP-2a (this PR); next = **SP-2b** (receipts and counts on the same mechanism:
-  `GoodsReceived` enriched → `POST /v1/inventory/goods-receipt/:grnId/synced` posting `received` movements and
-  re-verifying `receivedBy`; the manager count captured BLIND on the device as `StockCounted` and reconciled on the
-  cloud with server-side expected and the cloud's unit value → the F07 caller-supplied value leaves the manager path;
-  invert the count half of observation case 3; then SP-3 handhelds on `/lane/outbox` via the LAN device route);
-  genuine blockers: none for SP-2b..SP-9; external gates unchanged (providers, hardware, real data, pilot GO).
+- **SP-2b — F11 FIXED for the manager screen: the receipt and the blind count travel the SAME mechanism as the decision
+  (M07-FR-01 · M09-FR-04 · §28 · §31 · F07 leaves the manager path).** `GoodsReceived` now carries the whole receipt;
+  `RELAYABLE_DEVICE_EVENTS` += `GoodsReceived`, `StockCounted`; `EVENT_ROUTES` → `POST /v1/inventory/goods-receipt/:grnId/synced`
+  (`inventory.receipt.sync`: same `captureReceipt` + atomic GRN/`received` commit as the direct route; receiver = the
+  relayed `receivedBy` re-verified from grants, relay named; batch rule from the catalogue, cost from the cloud's
+  valuation, ordered qty from the PO, tolerance from the absent tenant policy — each unknown a FLAG, never a silent zero;
+  tracked line without batch 422 → visible dead-letter; same GRN 200, stock once; audit `receipt.record`) and
+  `POST /v1/inventory/counts/:countId/synced` (`inventory.count.sync`: EXPECTED computed at head office, never sent; VALUE
+  the cloud's; THRESHOLD from `POST`/`GET /v1/inventory/count-policy` — default ₹1 000 flagged; immaterial → corrected via
+  `reconcileCount`; material or unvalued → recorded `pendingApproval`, correction NOT applied (§28; apply → SP-4); audit
+  `count.record`). Manager screen: `countStock()` is a BLIND CAPTURE (`StockCounted`, key `count-<countId>`, only what
+  was counted; `already_counted`); the `productValue` port and `countApprovalThresholdMinor` are GONE from the screen;
+  one "Saved on this screen" list (decision · delivery · count, `KIND_WORDS` EN/TA guarded) with the five state words;
+  receive/count banners say where the work is. Evidence: `goods-receipt-synced-route.test.ts` 6,
+  `counts-synced-route.test.ts` 8, `manager-receipts-and-counts-reach-the-cloud-through-the-edge.test.ts` 5 (real box +
+  real kernel: cloud GRN naming receiver + relay, stock once, duplicate before/after restart; count expected computed at
+  head office, lost reply → one record; 422 receipt → dead-letter survives restart; cut line; no-cloud hold),
+  `manager-decisions-survive-reload.e2e.ts` +1 (real Chromium + real box: delivery + count → with the store computer →
+  reload → both listed; no expected figure on the screen), unit/guardrail suites rewritten, observation `sync.test.ts`
+  case 3 count half INVERTED — every F11 desk case is a regression. `docs/api/surface.md` +4 routes. **Still open,
+  honestly:** handheld queues have no sender (SP-3); a held material count variance has no approve-then-apply (SP-4); the
+  counts review screen is pack-fed and does not list relayed counts (SP-9); count corrections are not in ordinary
+  availability (F06 → SP-5b).
+- **Current-work pointer:** last verified = SP-2b (this PR); next = **SP-3** (handhelds on `/lane/outbox` via the LAN
+  device credential from the pack's `devices` register — never a shared login; picker, driver and warehouse queues drain
+  to the box on the shared `drainToBox`; W2 blind count on the handheld reusing `StockCounted` → the synced counts route
+  (add `warehouse` to the allow-list); W3 adjustment request with supervisor approval before posting; accurate pending /
+  failed / conflict / synchronised badge on all three handhelds); genuine blockers: none for SP-3..SP-9; external gates
+  unchanged (providers, hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 
