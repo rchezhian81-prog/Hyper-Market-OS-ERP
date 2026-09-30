@@ -107,9 +107,9 @@ import { syncedWarehouseRoutes, receivingScanRoutes } from '../../inventory/src/
 import { transfersRoutes } from '../../inventory/src/warehouse-transfers';
 import { replenishmentRoutes } from '../../inventory/src/replenishment';
 import { salesHistoryRoutes } from '../../inventory/src/sales-history';
-import { countsRoutes } from '../../inventory/src/counts';
+import { countsRoutes, decideCount } from '../../inventory/src/counts';
 import { syncedCountsRoutes } from '../../inventory/src/counts-synced';
-import { adjustmentRequestRoutes } from '../../inventory/src/adjustment-requests';
+import { adjustmentRequestRoutes, decideAdjustmentRequest } from '../../inventory/src/adjustment-requests';
 import { syncedGoodsReceiptRoutes } from '../../inventory/src/goods-receipt-synced';
 import { productionRoutes } from '../../inventory/src/production';
 import { weighedCostingRoutes } from '../../inventory/src/weighed-costing';
@@ -132,7 +132,7 @@ import { orgStructureRoutes } from '../../platform/src/org-structure';
 import { identityRoutes } from '../../identity/src/index';
 import { revocationAwareAuthenticator, TokenRevocationList } from '../../identity/src/revocation';
 import { delegationRoutes } from '../../identity/src/delegation';
-import { approvalDecisionRoutes } from '../../identity/src/approval-decisions';
+import { approvalDecisionRoutes, type ApprovalDecisionRecord, type AppliedDecision } from '../../identity/src/approval-decisions';
 import { emergencyAccessRoutes } from '../../identity/src/emergency-access';
 import { accessLifecycleRoutes } from '../../identity/src/access-lifecycle';
 import { platformRoutes, inMemorySettings, emptyExportBundle } from '../../platform/src/index';
@@ -322,6 +322,37 @@ export function buildSurface(deps: {
   // credential lifecycle) seal into it; the stored read routes search / reconstruct / verify it. No
   // store → no durable trail, so a producer simply records nothing (its recordAudit is left unset).
   const auditTrail = store === undefined ? undefined : auditTrailAdapter({ store });
+  // SP-4: one deps object per count / adjustment surface, so the direct routes, the relayed routes and the manager's
+  // relayed APPROVAL DECISION all act on the same records through the same decide steps.
+  const countsDeps = store === undefined ? {
+    onHand: empty(0), reconciliations: empty([]), countExists: empty(false), recordReconciliation: () => {}, reconciliation: empty(undefined), recordDecision: () => {},
+    unitValueMinor: empty(undefined), countPolicy: empty(undefined), binExpected: empty(undefined), now,
+  } : { ...countsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit };
+  const syncedCountsDeps = store === undefined ? {
+    ...countsDeps, permissionsOfUser: empty(undefined), recordCountPolicy: () => {},
+  } : { ...syncedCountsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit };
+  const adjustmentDeps = store === undefined ? {
+    permissionsOfUser: empty(undefined), unitValueMinor: empty(undefined), request: empty(undefined), requests: empty([]),
+    recordRequest: () => {}, recordDecision: () => {}, appendMovement: () => {}, now,
+  } : { ...adjustmentRequestAdapter({ store, now }), recordAudit: auditTrail?.recordAudit };
+  // Approve-then-apply (SP-4): a CLEAN decision relayed from the manager's screen reaches its subject — a held blind count
+  // or a pending adjustment request — through that subject's own decide step (the same code the direct routes run).
+  const applyDecision = async (tenantId: string, record: ApprovalDecisionRecord): Promise<AppliedDecision> => {
+    const base = { subjectType: record.subjectType, subjectRef: record.subjectRef };
+    if (record.subjectType === 'stock_count') {
+      const out = await decideCount(countsDeps, { tenantId, countId: record.subjectRef, decidedBy: record.decidedBy, decision: record.status, reason: record.reason, branchId: record.branchId, via: 'relayed' });
+      return out.ok
+        ? { ...base, applied: true, detail: out.alreadyDecided ? `count ${record.subjectRef} was already ${out.record.decision}` : `count ${record.subjectRef} ${out.record.decision}${out.record.adjusted ? ' — correction applied' : ''}` }
+        : { ...base, applied: false, refusedBecause: out.refusedBecause, detail: out.detail };
+    }
+    if (record.subjectType === 'stock_adjustment') {
+      const out = await decideAdjustmentRequest(adjustmentDeps, { tenantId, requestId: record.subjectRef, decidedBy: record.decidedBy, decision: record.status, reason: record.reason, branchId: record.branchId, via: 'relayed' });
+      return out.ok
+        ? { ...base, applied: true, detail: out.alreadyDecided ? `request ${record.subjectRef} was already ${out.record.status}` : `request ${record.subjectRef} ${out.record.status}${out.record.movementId === null ? '' : ` — movement ${out.record.movementId}`}` }
+        : { ...base, applied: false, refusedBecause: out.refusedBecause, detail: out.detail };
+    }
+    return { ...base, applied: false, refusedBecause: 'no_handler', detail: `recorded; a ${record.subjectType} decision is not applied by head office yet` };
+  };
 
   const surface: Route[] = [
     ...identityRoutes({
@@ -342,7 +373,7 @@ export function buildSurface(deps: {
     // decided on the screen, re-verifying the decider's own authority and record-and-flagging a breach.
     ...approvalDecisionRoutes(store === undefined
       ? { decision: empty(undefined), decisions: empty([]), recordDecision: () => {}, permissionsOfUser: empty(undefined), now }
-      : { ...approvalDecisionAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+      : { ...approvalDecisionAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, applyDecision }),
     ...emergencyAccessRoutes(store === undefined
       ? { grant: empty(undefined), grants: empty([]), recordGrant: () => {}, now }
       : emergencyAccessAdapter({ store, now })),
@@ -515,23 +546,16 @@ export function buildSurface(deps: {
       permissionsOfUser: empty(undefined), appendMovement: () => {}, isKnown: empty(false), scanExists: empty(false), recordScan: () => {}, scansOf: empty([]), now,
     } : { ...receivingScanAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     ...transfersRoutes(store === undefined ? {
-      transfer: empty(undefined), recordProposed: () => {}, recordDispatched: () => {}, recordReceived: () => {}, now,
+      transfer: empty(undefined), availableAt: empty([]), recordProposed: () => {}, recordDispatched: () => {}, recordReceived: () => {}, now,
     } : transfersAdapter({ store, now })),
     ...replenishmentRoutes(store === undefined ? { now } : { now, soldLines: salesHistoryAdapter({ store, now }).soldLines }),
     ...salesHistoryRoutes(store === undefined ? { soldLines: empty([]), now } : salesHistoryAdapter({ store, now })),
-    ...countsRoutes(store === undefined ? {
-      onHand: empty(0), reconciliations: empty([]), countExists: empty(false), recordReconciliation: () => {}, now,
-    } : countsAdapter({ store, now })),
-    // Blind counts RELAYED from a store device (SP-2b · F11 · M09-FR-04): expected, value and threshold are the cloud's.
-    ...syncedCountsRoutes(store === undefined ? {
-      onHand: empty(0), reconciliations: empty([]), countExists: empty(false), recordReconciliation: () => {}, now,
-      permissionsOfUser: empty(undefined), unitValueMinor: empty(undefined), countPolicy: empty(undefined), recordCountPolicy: () => {}, binExpected: empty(undefined),
-    } : { ...syncedCountsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+    // Blind counts (M09-FR-04): the direct route and the RELAYED route (SP-2b · F11) share one reconcile — expected, value
+    // and threshold are head office's on both (SP-4 · F07); a held variance is decided by a separate person.
+    ...countsRoutes(countsDeps),
+    ...syncedCountsRoutes(syncedCountsDeps),
     // Adjustment REQUESTS relayed from the warehouse handheld, approved by a separate person before posting (SP-3b · W3 · M08-FR-03).
-    ...adjustmentRequestRoutes(store === undefined ? {
-      permissionsOfUser: empty(undefined), unitValueMinor: empty(undefined), request: empty(undefined), requests: empty([]),
-      recordRequest: () => {}, recordDecision: () => {}, appendMovement: () => {}, now,
-    } : { ...adjustmentRequestAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+    ...adjustmentRequestRoutes(adjustmentDeps),
     ...writeOffRoutes(store === undefined ? {
       writeOffExists: empty(false), writeOffs: empty([]), recordWriteOff: () => {},
       writeOffThreshold: () => undefined, recordWriteOffThreshold: () => {}, canApproveWriteOff: () => Promise.resolve(false),

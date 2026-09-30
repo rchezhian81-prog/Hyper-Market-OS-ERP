@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 761 | 462 | 462 | 59 | 256 |
+| 13 | 762 | 463 | 463 | 59 | 256 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -171,6 +171,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/inventory/count-policy` | `inventory.count.policy.set` | core | yes |
 | GET | `/v1/inventory/counts` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/counts/:countId` | `inventory.movement.append` | core | yes |
+| POST | `/v1/inventory/counts/:countId/decide` | `inventory.adjustment.approve` | core | yes |
 | POST | `/v1/inventory/counts/:countId/synced` | `inventory.count.sync` | core | yes |
 | GET | `/v1/inventory/demand-forecast` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/dock-slots/book` | `inventory.movement.append` | core | yes |

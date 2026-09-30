@@ -25,6 +25,14 @@
 // One request, one decision. The same decision arriving again (a retry after a lost reply, from any hop) is 200 and
 // recorded once. A DIFFERENT decision for a request already decided is 422 and nothing is saved — the box's sync
 // agent dead-letters it by name so a person compares the two (F12's repair is what makes that visible).
+//
+// ── Approve-then-apply (SP-4) ──────────────────────────────────────────────
+//
+// Recording a decision is not applying it. A CLEAN decision (no §28 flag) on a subject head office holds — a held
+// blind count, a pending adjustment request — is handed to `applyDecision`, which the composition root wires to that
+// subject's own decide step (the same code the direct decide routes run). A FLAGGED decision is recorded and NOT
+// applied: the subject stays waiting for a person, and the response says so by name. A subject type nobody applies is
+// recorded only, and says so. Never a silent apply, never a silent drop (hard rule #10).
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
@@ -37,8 +45,9 @@ export const SUBJECT_AUTHORITY: Readonly<Record<string, string>> = Object.freeze
   refund: 'pos.return.approve',
   price_change: 'price.change.approve',
   purchase_order: 'purchase.order.approve',
-  stock_adjustment: 'inventory.movement.append',
-  stock_count: 'inventory.movement.append',
+  // SP-4: deciding a stock correction is the supervisor's authority (SP-3b's permission), not the mover's.
+  stock_adjustment: 'inventory.adjustment.approve',
+  stock_count: 'inventory.adjustment.approve',
   day_close_reopen: 'till.dayclose.approve',
   day_reopen: 'till.dayclose.approve',
   write_off: 'inventory.writeoff.threshold.set',
@@ -62,7 +71,22 @@ export interface ApprovalDecisionRecord extends DecidedRequest {
   readonly governanceFlags: readonly DecisionFlag[];
 }
 
+/** What applying a recorded decision to its subject came to (SP-4). */
+export interface AppliedDecision {
+  readonly applied: boolean;
+  readonly subjectType: string;
+  readonly subjectRef: string;
+  /** Why it was not applied: a §28 flag, no handler for the subject, or the subject's own refusal (by its code). */
+  readonly refusedBecause?: 'decision_flagged' | 'no_handler' | string;
+  readonly detail: string;
+}
+
 export interface ApprovalDecisionDeps {
+  /**
+   * SP-4: apply a CLEAN recorded decision to its subject (a held count, a pending adjustment request). Optional — a
+   * deployment without it records only. Never called for a flagged decision.
+   */
+  readonly applyDecision?: (tenantId: string, record: ApprovalDecisionRecord) => Promise<AppliedDecision> | AppliedDecision;
   /** The decision on file for a request, if any (folded latest per request id). */
   readonly decision: (tenantId: string, requestId: string) => Promise<ApprovalDecisionRecord | undefined> | ApprovalDecisionRecord | undefined;
   /** Every decision on file for the tenant, in record order. */
@@ -133,8 +157,13 @@ export function approvalDecisionRoutes(deps: ApprovalDecisionDeps): readonly Rou
         const existing = await deps.decision(ctx.tenantId, requestId);
         if (existing !== undefined) {
           if (existing.status === d.status && existing.decidedBy === d.decidedBy) {
-            // The same decision again — a retry after a lost reply, from whichever hop. One record (§31.1).
-            return { status: 200, body: { requestId, recorded: true, alreadyRecorded: true, status: existing.status, decidedBy: existing.decidedBy, flags: existing.governanceFlags } };
+            // The same decision again — a retry after a lost reply, from whichever hop. One record (§31.1). Applying
+            // it again is safe by construction (the subject's decide step is idempotent), so a reply lost after the
+            // record but before the apply still ends applied.
+            const again = existing.governanceFlags.length === 0 && deps.applyDecision !== undefined
+              ? await deps.applyDecision(ctx.tenantId, existing)
+              : undefined;
+            return { status: 200, body: { requestId, recorded: true, alreadyRecorded: true, status: existing.status, decidedBy: existing.decidedBy, flags: existing.governanceFlags, ...(again === undefined ? {} : { applied: again.applied, appliedDetail: again.detail }) } };
           }
           // A DIFFERENT decision for a request already decided. Two cannot both stand; nothing is saved, and the
           // refusal is a permanent one the box dead-letters for a person to compare (hard rule #10).
@@ -161,6 +190,12 @@ export function approvalDecisionRoutes(deps: ApprovalDecisionDeps): readonly Rou
           ...d, relayedBy: ctx.userId, recordedAt: deps.now(), governanceFlags: flags,
         };
         await deps.recordDecision(ctx.tenantId, record);
+        // Approve-then-apply (SP-4): a clean decision reaches its subject; a flagged one is recorded and waits for a person.
+        const applied: AppliedDecision = flags.length > 0
+          ? { applied: false, subjectType: d.subjectType, subjectRef: d.subjectRef, refusedBecause: 'decision_flagged', detail: `recorded, not applied — ${flags.join(', ')}; the subject waits for a person` }
+          : deps.applyDecision === undefined
+            ? { applied: false, subjectType: d.subjectType, subjectRef: d.subjectRef, refusedBecause: 'no_handler', detail: 'recorded; nothing here applies this subject type' }
+            : await deps.applyDecision(ctx.tenantId, record);
         // Sealed into the audit trail attributed to the person who DECIDED (the relayed actor), with the carrier
         // named beside them — the "who approved this, from where" record an auditor comes looking for (§28, #5).
         await deps.recordAudit?.(ctx.tenantId, {
@@ -170,11 +205,12 @@ export function approvalDecisionRoutes(deps: ApprovalDecisionDeps): readonly Rou
           after: {
             status: d.status, subjectType: d.subjectType, subjectRef: d.subjectRef, requestedBy: d.requestedBy,
             relayedBy: ctx.userId, source: d.source, storeId: d.storeId ?? '', flags: flags.join(','),
+            applied: String(applied.applied), appliedDetail: applied.detail,
           },
           reason: d.reason, approvalId: requestId, correlationId: requestId,
         });
-        // 202, not 201: the decision was made at the store and this records that it happened.
-        return { status: 202, body: { requestId, recorded: true, status: d.status, decidedBy: d.decidedBy, flags } };
+        // 202, not 201: the decision was made at the store and this records that it happened — and whether it was applied.
+        return { status: 202, body: { requestId, recorded: true, status: d.status, decidedBy: d.decidedBy, flags, applied: applied.applied, appliedDetail: applied.detail, ...(applied.refusedBecause === undefined ? {} : { notAppliedBecause: applied.refusedBecause }) } };
       },
     },
     {
