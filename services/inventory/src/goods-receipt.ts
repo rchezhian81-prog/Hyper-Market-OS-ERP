@@ -21,7 +21,17 @@
 //     stock re-averages at what it cost (M08-FR-04). The GRN record and its movements are one ATOMIC append
 //     (FND-01);
 //   • it is idempotent on the GRN id — a re-scan or a re-sync collapses to one effect (§31.1), so a delivery
-//     is never double-counted.
+//     is never double-counted;
+//   • SP-6 (audit finding F01): a receipt against an ISSUED purchase order FOLDS INTO THE ORDER in the same atomic
+//     append as the GRN and its stock — the received quantity per product (what came into our custody: sellable and
+//     quarantined; never the held excess until a second person accepts it, never what was refused at the dock) posts
+//     to the PO's own stream, so the open commitment (ordered − received − cancelled, M06-FR-04) falls the moment the
+//     goods do. Until this slice that fold was a separate call nobody made, and a partial delivery left the whole
+//     order outstanding. The ORDERED quantity is the order's, never the body's (a disagreement is said, F07); a
+//     receipt against a proposed or unknown order, or with no order, is recorded and flagged, and folds into nothing;
+//   • SP-6 (M07-FR-03): quarantined and refused stock gets a DISPOSITION — accept (released to stock, once) / return
+//     (back to the supplier) / claim (kept, value claimed) — by a second person who is not the receiver, one per line,
+//     recorded with its value for the supplier account (SP-7). A receipt with undisposed stock waits on the review list.
 //
 // The rule is the tested `captureReceipt`/`availableFromReceipt`/`heldFromReceipt` in `@sre/receiving` (the
 // `services-run-on-their-tested-engine` guardrail); this file is the persistence + HTTP skin. Receiving is
@@ -45,7 +55,7 @@ export const DEFAULT_RECEIPT_POLICY: ReceiptPolicy = Object.freeze({ excessToler
 /** What head office could not verify about a receipt — said on the record, never silent (P-08). */
 export const RECEIPT_FLAGS = Object.freeze([
   'receiver_unknown', 'receiver_lacks_authority', 'product_rules_unverified', 'cost_unknown',
-  'no_purchase_order', 'order_unknown', 'default_policy',
+  'no_purchase_order', 'order_unknown', 'order_not_issued', 'ordered_quantity_disagrees', 'product_not_on_order', 'default_policy',
 ] as const);
 export type ReceiptFlag = (typeof RECEIPT_FLAGS)[number];
 
@@ -83,6 +93,14 @@ export interface GrnRecord {
   readonly heldMinor: number;
   /** F03 — set once a second person has decided the held excess; absent while it waits (or when nothing is held). */
   readonly excessDecision?: ExcessDecision;
+  /**
+   * SP-6 (F01) — what this receipt FOLDED into its purchase order, atomically with the GRN: the received quantity per
+   * product under `receiptId` (the GRN id). `null` when it folded into nothing (no order, an unknown order, an order not
+   * yet issued — the flags say which). Absent on records from before SP-6.
+   */
+  readonly poReceipt?: { readonly receiptId: string; readonly receivedByProduct: Readonly<Record<string, number>> } | null;
+  /** SP-6 (M07-FR-03) — the disposition a second person gave each quarantined / refused line; absent while none has one. */
+  readonly dispositions?: readonly LineDisposition[];
   /** What head office's own records could not confirm about this receipt (a `ReceiptFlag` each). */
   readonly governanceFlags?: readonly string[];
   /** SP-2b — the identity that relayed it (the store box), the surface, and the store, when relayed. */
@@ -91,21 +109,68 @@ export interface GrnRecord {
   readonly storeId?: string | null;
 }
 
+/** The three things a second person may do with quarantined or refused stock (M07-FR-03). */
+export const LINE_DISPOSITIONS = Object.freeze(['accept', 'return', 'claim'] as const);
+export type LineDispositionKind = (typeof LINE_DISPOSITIONS)[number];
+
+/** A second person's disposition of one line's quarantined / refused stock (SP-6 · M07-FR-03 · §28), recorded once. */
+export interface LineDisposition {
+  readonly lineId: string;
+  readonly productId: string;
+  /** The quarantined + refused quantity the disposition covers. */
+  readonly quantityMinor: number;
+  readonly disposition: LineDispositionKind;
+  readonly decidedBy: string;
+  readonly decidedAt: string;
+  readonly reason: string;
+  /** What the disposed stock is worth at the delivered cost — the figure the supplier claim / return carries (SP-7). */
+  readonly valueMinor: number;
+  readonly currency: string;
+  /** The inbound movement an `accept` released — empty for return / claim. */
+  readonly movementIds: readonly string[];
+  readonly via: 'direct' | 'relayed';
+}
+
+/** What a receipt posts against its purchase order (SP-6 · F01): the received quantity per product, keyed on the receipt. */
+export interface PoReceiptPosting {
+  readonly poId: string;
+  readonly receiptId: string;
+  readonly receivedByProduct: Readonly<Record<string, number>>;
+  readonly by: string;
+  readonly at: string;
+}
+
+/** The purchase order as head office holds it, for a receipt to be measured against and folded into (SP-6). */
+export interface PurchaseOrderForReceipt {
+  readonly status: 'proposed' | 'issued';
+  readonly orderedByProduct: Readonly<Record<string, number>>;
+}
+
 export interface GoodsReceiptDeps {
   /** The GRN with this id, or undefined — for the idempotency (never-double-count) check. */
   readonly grn: (tenantId: string, grnId: string) => Promise<GrnRecord | undefined> | GrnRecord | undefined;
   /** Every GRN — the receiving / discrepancy review surface. */
   readonly all: (tenantId: string) => Promise<readonly GrnRecord[]> | readonly GrnRecord[];
-  /** Record the GRN and its inbound movements as ONE atomic append (FND-01). */
-  readonly commit: (tenantId: string, record: GrnRecord, movements: readonly Movement[], key: string) => Promise<void> | void;
+  /**
+   * Record the GRN and its inbound movements as ONE atomic append (FND-01) — and, when `poReceipt` is given (SP-6 · F01),
+   * the receipt's posting against the purchase order in the SAME append, idempotent on the receipt id.
+   */
+  readonly commit: (tenantId: string, record: GrnRecord, movements: readonly Movement[], key: string, poReceipt?: PoReceiptPosting) => Promise<void> | void;
+  /** SP-6 (F01): the purchase order head office holds — its status and ordered quantity per product — or `undefined`. */
+  readonly purchaseOrder: (tenantId: string, poId: string) => Promise<PurchaseOrderForReceipt | undefined> | PurchaseOrderForReceipt | undefined;
+  /** SP-6 (M07-FR-03): record a line disposition and, for an accept, the released movement as ONE atomic append. */
+  readonly commitDisposition: (tenantId: string, record: GrnRecord, movements: readonly Movement[], key: string) => Promise<void> | void;
   readonly now: () => string;
   /** F03 — the product's receiving rules from the PRODUCT MASTER; `undefined` when the product is not on it. */
   readonly productRule: (tenantId: string, productId: string) => Promise<ProductReceiptRules | undefined> | ProductReceiptRules | undefined;
   /** F03 — the tenant's receiving tolerance policy, or `undefined` when none has been set (the default applies, flagged). */
   readonly receiptPolicy: (tenantId: string) => Promise<StoredReceiptPolicy | undefined> | StoredReceiptPolicy | undefined;
   readonly recordReceiptPolicy: (tenantId: string, policy: StoredReceiptPolicy) => Promise<void> | void;
-  /** F03 — record the excess decision and, on approval, the released movements as ONE atomic append (FND-01). */
-  readonly commitExcessDecision: (tenantId: string, record: GrnRecord, movements: readonly Movement[], key: string) => Promise<void> | void;
+  /**
+   * F03 — record the excess decision and, on approval, the released movements as ONE atomic append (FND-01) — with the
+   * accepted excess posted against the purchase order in the same append when the receipt folded into one (SP-6).
+   */
+  readonly commitExcessDecision: (tenantId: string, record: GrnRecord, movements: readonly Movement[], key: string, poReceipt?: PoReceiptPosting) => Promise<void> | void;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 }
 
@@ -141,6 +206,78 @@ export async function policyInForce(
 ): Promise<{ readonly policy: ReceiptPolicy; readonly defaulted: boolean }> {
   const set = await deps.receiptPolicy(tenantId);
   return set === undefined ? { policy: DEFAULT_RECEIPT_POLICY, defaulted: true } : { policy: set, defaulted: false };
+}
+
+/** What the order says, and whether this receipt may fold into it (SP-6 · F01). */
+export interface OrderForReceipt {
+  readonly poId: string | null;
+  /** Ordered quantity per product — `undefined` when there is no order to measure against. */
+  readonly ordered: Readonly<Record<string, number>> | undefined;
+  /** True only for an ISSUED order head office holds: the one kind of order a receipt folds into. */
+  readonly folds: boolean;
+}
+
+/**
+ * The purchase order behind a receipt, from head office's own register — never the body (F07). No order, an unknown
+ * order and an order not yet issued are each SAID as a flag and fold into nothing; the delivery is still received.
+ */
+export async function orderForReceipt(
+  deps: Pick<GoodsReceiptDeps, 'purchaseOrder'>, tenantId: string, poId: string | null, flags: ReceiptFlag[],
+): Promise<OrderForReceipt> {
+  if (poId === null) { flags.push('no_purchase_order'); return { poId, ordered: undefined, folds: false }; }
+  const po = await deps.purchaseOrder(tenantId, poId);
+  if (po === undefined) { flags.push('order_unknown'); return { poId, ordered: undefined, folds: false }; }
+  if (po.status !== 'issued') { flags.push('order_not_issued'); return { poId, ordered: po.orderedByProduct, folds: false }; }
+  return { poId, ordered: po.orderedByProduct, folds: true };
+}
+
+/**
+ * The ORDERED quantity on each line is the order's, not the sender's (SP-6 · F07): a product on one line takes the order's
+ * figure outright; a product split across lines (batches) keeps the sender's split and is flagged when the split does not
+ * add up to the order; a product the order never named is received as-is (ordered = counted) and flagged. With no order
+ * the lines are returned untouched.
+ */
+export function alignToOrder(lines: readonly CapturedLine[], ordered: Readonly<Record<string, number>> | undefined, flags: ReceiptFlag[]): readonly CapturedLine[] {
+  if (ordered === undefined) return lines;
+  const byProduct = new Map<string, CapturedLine[]>();
+  for (const l of lines) byProduct.set(l.productId, [...(byProduct.get(l.productId) ?? []), l]);
+  const say = (flag: ReceiptFlag): void => { if (!flags.includes(flag)) flags.push(flag); };
+  const aligned = new Map<CapturedLine, CapturedLine>();
+  for (const [productId, group] of byProduct) {
+    const onOrder = ordered[productId];
+    if (onOrder === undefined) {
+      say('product_not_on_order');
+      for (const l of group) aligned.set(l, { ...l, orderedMinor: l.countedMinor });
+      continue;
+    }
+    const claimed = group.reduce((n, l) => n + l.orderedMinor, 0);
+    if (claimed !== onOrder) say('ordered_quantity_disagrees');
+    if (group.length === 1) aligned.set(group[0]!, { ...group[0]!, orderedMinor: onOrder });
+    else for (const l of group) aligned.set(l, l);
+  }
+  return lines.map((l) => aligned.get(l) ?? l);
+}
+
+/**
+ * What a receipt posts as RECEIVED against its order (SP-6 · F01): per product, what came into our custody — sellable
+ * stock and quarantined stock (present, pending disposition). NOT the held excess (accepted only when a second person
+ * releases it, posted then) and NOT what was refused at the dock (it never came in). Empty when nothing did.
+ */
+export function receivedAgainstOrder(captured: CapturedReceipt): Readonly<Record<string, number>> {
+  const out: Record<string, number> = {};
+  for (const l of captured.lines) {
+    const qty = l.sellableMinor + l.quarantinedMinor;
+    if (qty > 0) out[l.productId] = (out[l.productId] ?? 0) + qty;
+  }
+  return out;
+}
+
+/** The posting a receipt makes against its order, or `undefined` when it folds into nothing or received nothing. */
+export function poPostingFor(order: OrderForReceipt, grnId: string, captured: CapturedReceipt, by: string, at: string): PoReceiptPosting | undefined {
+  if (!order.folds || order.poId === null) return undefined;
+  const receivedByProduct = receivedAgainstOrder(captured);
+  if (Object.keys(receivedByProduct).length === 0) return undefined;
+  return { poId: order.poId, receiptId: grnId, receivedByProduct, by, at };
 }
 
 /**
@@ -181,10 +318,14 @@ export function inboundMovements(input: {
     });
 }
 
-/** Which receipts still wait for a person: a held excess with no decision, or a non-excess discrepancy needing approval (SP-6 disposition). */
+/** The quarantined + refused quantity on a line — what a disposition covers (SP-6 · M07-FR-03). */
+export const undisposedOn = (l: CheckedLine): number => l.quarantinedMinor + l.rejectedMinor;
+/** Lines holding quarantined / refused stock that no second person has yet disposed of. */
+export const linesAwaitingDisposition = (g: GrnRecord): readonly CheckedLine[] =>
+  g.captured.lines.filter((l) => undisposedOn(l) > 0 && !(g.dispositions ?? []).some((d) => d.lineId === l.lineId));
+/** Which receipts still wait for a person: a held excess with no decision, or quarantined / refused stock with no disposition. */
 export const awaitsDecision = (g: GrnRecord): boolean =>
-  (g.heldMinor > 0 && g.excessDecision === undefined)
-  || g.captured.discrepancies.some((d) => d.requiresApproval && d.kind !== 'excess');
+  (g.heldMinor > 0 && g.excessDecision === undefined) || linesAwaitingDisposition(g).length > 0;
 
 export type ExcessDecisionOutcome =
   | { readonly ok: true; readonly record: GrnRecord; readonly alreadyDecided: boolean }
@@ -226,7 +367,15 @@ export async function decideReceiptExcess(deps: GoodsReceiptDeps, input: {
       releasedMinor, movementIds: movements.map((m) => m.movementId), via: input.via,
     },
   };
-  await deps.commitExcessDecision(input.tenantId, decided, movements, `${rec.grnId}:excess`);
+  // SP-6 (F01): an ACCEPTED excess is now received against the order too — the over-receipt shows as a negative open
+  // quantity on the PO (a signal, never hidden) — in the same append, when the receipt folded into an order at all.
+  let poReceipt: PoReceiptPosting | undefined;
+  if (releasedMinor > 0 && rec.poId !== null && (rec.poReceipt ?? null) !== null) {
+    const receivedByProduct: Record<string, number> = {};
+    for (const m of movements) receivedByProduct[m.productId] = (receivedByProduct[m.productId] ?? 0) + m.quantityMinor;
+    poReceipt = { poId: rec.poId, receiptId: `${rec.grnId}:excess`, receivedByProduct, by: input.decidedBy, at: decidedAt };
+  }
+  await deps.commitExcessDecision(input.tenantId, decided, movements, `${rec.grnId}:excess`, poReceipt);
   await deps.recordAudit?.(input.tenantId, {
     actorId: input.decidedBy, action: input.decision === 'approved' ? 'receipt.excess.approve' : 'receipt.excess.reject',
     objectType: 'goods_receipt', objectId: rec.grnId,
@@ -239,6 +388,66 @@ export async function decideReceiptExcess(deps: GoodsReceiptDeps, input: {
     reason: input.reason, correlationId: rec.grnId,
   });
   return { ok: true, record: decided, alreadyDecided: false };
+}
+
+export type LineDispositionOutcome =
+  | { readonly ok: true; readonly record: GrnRecord; readonly disposition: LineDisposition; readonly alreadyDecided: boolean }
+  | { readonly ok: false; readonly refusedBecause: 'receipt_unknown' | 'line_unknown' | 'nothing_to_dispose' | 'self_approval' | 'line_already_disposed' | 'cannot_accept_refused_stock'; readonly detail: string };
+
+/**
+ * Dispose of one line's quarantined / refused stock (SP-6 · M07-FR-03 · §28): a second person — never the receiver —
+ * ACCEPTS it (released to stock as its own inbound movement, once; refused stock can never be accepted: it was expired at
+ * the dock), RETURNS it to the supplier, or keeps it and CLAIMS its value. One disposition per line, valued at the
+ * delivered cost so the supplier account (SP-7) has a figure to work from; the same again is a no-op, a different one is
+ * refused. The disposition and any released movement are one atomic append.
+ */
+export async function decideLineDisposition(deps: GoodsReceiptDeps, input: {
+  readonly tenantId: string; readonly grnId: string; readonly lineId: string; readonly decidedBy: string;
+  readonly disposition: LineDispositionKind; readonly reason: string; readonly branchId: string | null; readonly via: 'direct' | 'relayed';
+}): Promise<LineDispositionOutcome> {
+  const rec = await deps.grn(input.tenantId, input.grnId);
+  if (rec === undefined) return { ok: false, refusedBecause: 'receipt_unknown', detail: `No goods receipt ${input.grnId} is on file here.` };
+  const line = rec.captured.lines.find((l) => l.lineId === input.lineId);
+  if (line === undefined) return { ok: false, refusedBecause: 'line_unknown', detail: `Receipt ${input.grnId} has no line ${input.lineId}.` };
+  const quantity = undisposedOn(line);
+  if (quantity <= 0) return { ok: false, refusedBecause: 'nothing_to_dispose', detail: `Line ${input.lineId} of ${input.grnId} holds no quarantined or refused stock — there is nothing to dispose of.` };
+  if (rec.receivedBy === input.decidedBy) return { ok: false, refusedBecause: 'self_approval', detail: `${input.decidedBy} received this delivery and cannot dispose of its stock (§28 separation of duties).` };
+  const prior = (rec.dispositions ?? []).find((d) => d.lineId === input.lineId);
+  if (prior !== undefined) {
+    if (prior.disposition === input.disposition) return { ok: true, record: rec, disposition: prior, alreadyDecided: true };
+    return { ok: false, refusedBecause: 'line_already_disposed', detail: `Line ${input.lineId} of ${input.grnId} was already disposed as "${prior.disposition}" by ${prior.decidedBy} at ${prior.decidedAt}; a different disposition now would be a second truth.` };
+  }
+  if (input.disposition === 'accept' && line.rejectedMinor > 0) {
+    return { ok: false, refusedBecause: 'cannot_accept_refused_stock', detail: `Line ${input.lineId} was refused at the dock (expired) — expired stock is never sellable, whoever asks (M07-FR-02 / M10). Return it or claim it.` };
+  }
+  const decidedAt = deps.now();
+  const movements: Movement[] = input.disposition === 'accept'
+    ? inboundMovements({
+      grnId: rec.grnId, locationId: rec.warehouseId, lines: [line], quantityOf: (l) => l.quarantinedMinor, suffix: ':accepted',
+      occurredAt: decidedAt, enteredBy: rec.receivedBy, approvedBy: input.decidedBy,
+      unitCostMinorOf: (l) => (l.unitCost.minor > 0 ? l.unitCost.minor : undefined),
+    })
+    : [];
+  const disposition: LineDisposition = {
+    lineId: line.lineId, productId: line.productId, quantityMinor: quantity, disposition: input.disposition,
+    decidedBy: input.decidedBy, decidedAt, reason: input.reason,
+    valueMinor: line.unitCost.minor * quantity, currency: line.unitCost.currency,
+    movementIds: movements.map((m) => m.movementId), via: input.via,
+  };
+  const released = movements.reduce((n, m) => n + m.quantityMinor, 0);
+  const decided: GrnRecord = { ...rec, availableMinor: rec.availableMinor + released, dispositions: [...(rec.dispositions ?? []), disposition] };
+  await deps.commitDisposition(input.tenantId, decided, movements, `${rec.grnId}:${line.lineId}:disposition`);
+  await deps.recordAudit?.(input.tenantId, {
+    actorId: input.decidedBy, action: `receipt.disposition.${input.disposition}`, objectType: 'goods_receipt', objectId: rec.grnId,
+    at: decidedAt, origin: { tenantId: input.tenantId, branchId: input.branchId },
+    before: { lineId: line.lineId, quarantinedMinor: String(line.quarantinedMinor), rejectedMinor: String(line.rejectedMinor) },
+    after: {
+      disposition: input.disposition, receivedBy: rec.receivedBy, quantityMinor: String(quantity), valueMinor: String(disposition.valueMinor),
+      releasedMinor: String(released), movementIds: movements.map((m) => m.movementId).join(','), via: input.via,
+    },
+    reason: input.reason, correlationId: rec.grnId,
+  });
+  return { ok: true, record: decided, disposition, alreadyDecided: false };
 }
 
 export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
@@ -276,9 +485,13 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
         if (existing !== undefined) {
           return { status: 200, body: { grn: existing, alreadyReceived: true, flags: existing.governanceFlags ?? [] } };
         }
-        // The product master's rules and the tenant's policy — never the body (F03). Unknown is SAID, then the safe fallback.
         const flags: ReceiptFlag[] = [];
-        const master = await rulesFromMaster(deps, ctx.tenantId, (lines as CapturedLine[]).map((l) => l.productId));
+        // The ORDER — head office's own, never the body (SP-6 · F01/F07): the ordered quantity on each line is the order's,
+        // and only an ISSUED order is folded into. No / unknown / unissued order is said and the delivery still comes in.
+        const order = await orderForReceipt(deps, ctx.tenantId, isStr(b['poId']) ? b['poId'] : null, flags);
+        const aligned = alignToOrder(lines as CapturedLine[], order.ordered, flags);
+        // The product master's rules and the tenant's policy — never the body (F03). Unknown is SAID, then the safe fallback.
+        const master = await rulesFromMaster(deps, ctx.tenantId, aligned.map((l) => l.productId));
         if (master.unverified) flags.push('product_rules_unverified');
         const inForce = await policyInForce(deps, ctx.tenantId);
         if (inForce.defaulted) flags.push('default_policy');
@@ -288,7 +501,7 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
         try {
           captured = captureReceipt({
             receiptId: grnId,
-            lines: lines as CapturedLine[],
+            lines: aligned,
             rules: master.rules,
             policy: inForce.policy,
             receivedOnDate: b['receivedOnDate'] as string,
@@ -307,10 +520,12 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
           throw err;
         }
         const receivedAt = deps.now();
+        // SP-6 (F01): what this receipt posts against its order — in the SAME append as the GRN and its stock.
+        const poReceipt = poPostingFor(order, grnId, captured, ctx.userId, receivedAt);
         const record: GrnRecord = {
           grnId,
           number: isStr(b['number']) ? b['number'] : grnId,
-          poId: isStr(b['poId']) ? b['poId'] : null,
+          poId: order.poId,
           warehouseId: b['warehouseId'],
           receivedBy: ctx.userId, // server-attributed — the receiver the kernel authenticated
           receivedAt,
@@ -318,14 +533,15 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
           availableMinor: availableFromReceipt(captured),
           heldMinor: heldFromReceipt(captured),
           governanceFlags: flags,
+          poReceipt: poReceipt === undefined ? null : { receiptId: poReceipt.receiptId, receivedByProduct: poReceipt.receivedByProduct },
         };
         // Only the SELLABLE quantity becomes availability; quarantine / rejected / held are on the GRN but not on-hand.
         const movements = inboundMovements({
           grnId, locationId: record.warehouseId, lines: captured.lines, quantityOf: (l) => l.sellableMinor,
           occurredAt: receivedAt, enteredBy: ctx.userId, unitCostMinorOf: (l) => l.unitCost.minor,
         });
-        await deps.commit(ctx.tenantId, record, movements, ctx.idempotencyKey ?? grnId);
-        return { status: 201, body: { grn: record, flags } };
+        await deps.commit(ctx.tenantId, record, movements, ctx.idempotencyKey ?? grnId, poReceipt);
+        return { status: 201, body: { grn: record, flags, poReceipt: record.poReceipt } };
       },
     },
     {
@@ -371,6 +587,49 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
       },
     },
     {
+      // SP-6 (M07-FR-03 · §28): dispose of one line's quarantined / refused stock — accept (released to stock, once) /
+      // return (to the supplier) / claim (kept, value claimed) — by a second person. Body: { disposition, reason }.
+      api: 'API-04', method: 'POST', path: '/v1/inventory/goods-receipt/:grnId/lines/:lineId/disposition',
+      permission: 'inventory.adjustment.approve', idempotent: true,
+      handler: async (ctx) => {
+        const grnId = (ctx.params['grnId'] ?? '').trim();
+        const lineId = (ctx.params['lineId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const disposition = b['disposition'];
+        if (grnId === '' || lineId === '' || !(LINE_DISPOSITIONS as readonly unknown[]).includes(disposition) || !isStr(b['reason'])) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_disposition',
+            whatHappened: `Disposing of a line needs the grnId and lineId in the path, a disposition of ${LINE_DISPOSITIONS.join(' / ')}, and a reason.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { disposition, reason }. Nothing was changed.',
+          });
+        }
+        const out = await decideLineDisposition(deps, {
+          tenantId: ctx.tenantId, grnId, lineId, decidedBy: ctx.userId, disposition: disposition as LineDispositionKind,
+          reason: b['reason'].trim(), branchId: ctx.branchId ?? null, via: 'direct',
+        });
+        if (!out.ok) {
+          const status = out.refusedBecause === 'receipt_unknown' || out.refusedBecause === 'line_unknown' ? 404
+            : out.refusedBecause === 'line_already_disposed' || out.refusedBecause === 'nothing_to_dispose' ? 409 : 422;
+          throw apiError(status, {
+            code: out.refusedBecause, whatHappened: out.detail, wasItSaved: 'not_saved',
+            nextSafeAction: out.refusedBecause === 'self_approval' ? 'A different person with approval authority must dispose of it. Nothing was changed.'
+              : out.refusedBecause === 'cannot_accept_refused_stock' ? 'Choose return or claim. Nothing was changed.'
+                : out.refusedBecause === 'line_already_disposed' ? 'The earlier disposition stands. Nothing was changed.'
+                  : 'Nothing was changed.',
+          });
+        }
+        return {
+          status: 200,
+          body: {
+            grnId, lineId, disposition: out.disposition.disposition, quantityMinor: out.disposition.quantityMinor, valueMinor: out.disposition.valueMinor,
+            movementIds: out.disposition.movementIds, decidedBy: out.disposition.decidedBy, decidedAt: out.disposition.decidedAt,
+            availableMinor: out.record.availableMinor, awaitsDecision: awaitsDecision(out.record), alreadyDecided: out.alreadyDecided,
+          },
+        };
+      },
+    },
+    {
       // Read one GRN — the receipt and its checked outcome. 404 when the GRN id is unknown.
       api: 'API-04', method: 'GET', path: '/v1/inventory/goods-receipt/:grnId',
       permission: 'inventory.availability.read',
@@ -378,7 +637,7 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
         const grnId = (ctx.params['grnId'] ?? '').trim();
         const record = await deps.grn(ctx.tenantId, grnId);
         if (record === undefined) throw notFound(`goods receipt ${grnId}`);
-        return { status: 200, body: { grn: record, awaitsDecision: awaitsDecision(record) } };
+        return { status: 200, body: { grn: record, awaitsDecision: awaitsDecision(record), awaitingDisposition: linesAwaitingDisposition(record).map((l) => l.lineId) } };
       },
     },
     {
@@ -394,6 +653,7 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
           body: {
             receipts: ordered, count: ordered.length, needingApprovalCount: waiting.length,
             heldExcessCount: all.filter((g) => g.heldMinor > 0 && g.excessDecision === undefined).length,
+            awaitingDispositionCount: all.filter((g) => linesAwaitingDisposition(g).length > 0).length,
           },
         };
       },

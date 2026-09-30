@@ -121,10 +121,12 @@ async function cloud(): Promise<{
       lines: [{ lineId: 'L1', productId: 'p1', orderedMinor: 100, countedMinor: 100, uom: 'ea', unitCost: { minor: 5000, currency: 'INR' }, condition: 'good' }],
     },
   })).status).toBe(201);
+  // The order the manager's delivery is booked in against — ISSUED by a second person, so the receipt folds into it (SP-6 · F01).
   expect((await h.request({
-    method: 'POST', path: '/v1/purchase/orders/po-1', userId: 'u-owner', tenantId: A, idempotencyKey: 'k-po-1',
+    method: 'POST', path: '/v1/purchase/orders/po-1', userId: 'u-mgr', tenantId: A, idempotencyKey: 'k-po-1',
     body: { supplierId: 'sup-1', lines: [{ productId: 'p1', orderedQty: 10, unitCost: { minor: 5000, currency: 'INR' } }] },
   })).status).toBe(201);
+  expect((await h.request({ method: 'POST', path: '/v1/purchase/orders/po-1/approval', userId: 'u-owner', tenantId: A, idempotencyKey: 'k-po-1-ok', body: { reason: 'within budget' } })).status).toBe(200);
   const dir = await tempDir('sre-mgr-receipts-cloud-');
   const packFile = join(dir, 'store-pack.json');
   await writeFile(packFile, PACK_JSON, 'utf8');
@@ -187,8 +189,11 @@ describe('the manager\'s delivery and count: device → box (durable) → head o
     expect(pass.dead).toBe(0);
     const grn = await grnAt(c.h, 'g1');
     expect(grn.status).toBe(200);
-    expect((grn.body as { grn: Record<string, unknown> }).grn).toMatchObject({ grnId: 'g1', receivedBy: 'u-mgr', relayedBy: 'u-box', source: 'manager-screen', storeId: 'store-1', availableMinor: 10, governanceFlags: ['default_policy'] });
+    expect((grn.body as { grn: Record<string, unknown> }).grn).toMatchObject({ grnId: 'g1', receivedBy: 'u-mgr', relayedBy: 'u-box', source: 'manager-screen', storeId: 'store-1', availableMinor: 10, governanceFlags: ['default_policy'], poReceipt: { receiptId: 'g1', receivedByProduct: { p1: 10 } } });
     expect(await onHandAt(c.h, 'p1')).toBe(110);
+    // SP-6 (F01): the delivery booked in at the store closed the order at head office in the same pass — 10 ordered, 10 received.
+    const po = await c.h.request({ method: 'GET', path: '/v1/purchase/orders/po-1', userId: 'u-owner', tenantId: A });
+    expect(po.body).toMatchObject({ order: { receivedByProduct: { p1: 10 } }, openCommitment: { totalOpenValue: { minor: 0 }, fullyReceived: true } });
     expect((await statusOf(first, ['grn:g1']))[0]?.state).toBe('posted');
 
     // The device retries (a lost ack on the LAN): duplicate now…

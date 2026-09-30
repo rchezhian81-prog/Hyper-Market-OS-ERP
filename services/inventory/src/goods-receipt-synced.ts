@@ -26,7 +26,7 @@ import {
   type CapturedLine, type CapturedReceipt,
 } from '../../../packages/receiving/src/index';
 import {
-  DEFAULT_RECEIPT_POLICY, RECEIPT_FLAGS, rulesFromMaster, policyInForce, inboundMovements,
+  DEFAULT_RECEIPT_POLICY, RECEIPT_FLAGS, rulesFromMaster, policyInForce, inboundMovements, orderForReceipt, alignToOrder, poPostingFor,
   type GoodsReceiptDeps, type GrnRecord, type ReceiptFlag,
 } from './goods-receipt';
 
@@ -39,8 +39,6 @@ export interface SyncedGoodsReceiptDeps extends GoodsReceiptDeps {
   readonly permissionsOfUser: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
   /** The cloud's own unit cost for the product (weighted average of what it cost to buy); `undefined` when never costed. */
   readonly unitCostMinor: (tenantId: string, productId: string) => Promise<number | undefined> | number | undefined;
-  /** Ordered quantity per product on a purchase order; `undefined` when the PO is unknown to head office. */
-  readonly orderedByProduct: (tenantId: string, poId: string) => Promise<Readonly<Record<string, number>> | undefined> | Readonly<Record<string, number>> | undefined;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -112,14 +110,10 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
         if (permissions === undefined) flags.push('receiver_unknown');
         else if (!permissions.includes('inventory.movement.append')) flags.push('receiver_lacks_authority');
 
-        // What was ORDERED — from the purchase order head office holds, never the body. No order → the delivery is
-        // received as-is (ordered = counted) and the record says there is no order behind it (the buyer chases it).
-        let ordered: Readonly<Record<string, number>> | undefined;
-        if (r.poId === null) flags.push('no_purchase_order');
-        else {
-          ordered = await deps.orderedByProduct(ctx.tenantId, r.poId);
-          if (ordered === undefined) flags.push('order_unknown');
-        }
+        // What was ORDERED — from the purchase order head office holds, never the body (SP-6 · F01). No order → the delivery
+        // is received as-is (ordered = counted) and the record says there is no order behind it (the buyer chases it); an
+        // unknown or not-yet-issued order is said too, and the receipt folds into nothing.
+        const order = await orderForReceipt(deps, ctx.tenantId, r.poId, flags);
 
         // The product master's rules, the tenant's policy and the cloud's own cost — never the body (F03/F07). Unknown
         // is SAID, then the safe fallback: untracked, the default policy, unvalued (the valuation reports the units as
@@ -136,17 +130,18 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
         const inForce = await policyInForce(deps, ctx.tenantId);
         if (inForce.defaulted) flags.push('default_policy');
 
-        const captureLines: CapturedLine[] = r.lines.map((l, i) => ({
+        const captureLines: readonly CapturedLine[] = alignToOrder(r.lines.map((l, i): CapturedLine => ({
           lineId: `${grnId}:${i + 1}`,
           productId: l.productId,
-          orderedMinor: ordered?.[l.productId] ?? l.quantityMinor,
+          // The manager's screen names no ordered figure: the order's stands in (alignToOrder), else counted (as-is).
+          orderedMinor: l.quantityMinor,
           countedMinor: l.quantityMinor,
           uom: l.uom,
           batchId: l.batchId,
           unitCost: { minor: costByProduct.get(l.productId) ?? 0, currency: 'INR' },
-          // The manager's screen books goods in as delivered; damage and QC are the dock's capture (handheld / SP-6).
+          // The manager's screen books goods in as delivered; damage and QC are the dock's capture (handheld / SP-6b).
           condition: 'good',
-        }));
+        })), order.ordered, flags);
 
         // The FR-02/03 gate — the SAME tested rule the handheld and the direct route run. A tracked item with no batch
         // cannot be received (you cannot recall what you cannot identify, M10): 422 → the box dead-letters it for a
@@ -169,19 +164,22 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
           throw err;
         }
 
+        // SP-6 (F01): the relayed receipt folds into its order exactly as the direct one does — in the same append.
+        const poReceipt = poPostingFor(order, grnId, captured, r.receivedBy, r.receivedAt);
         const record: GrnRecord = {
           grnId, number: r.number, poId: r.poId, warehouseId: r.warehouseId,
           receivedBy: r.receivedBy, // the RELAYED receiver — the person who booked it in at the store
           receivedAt: r.receivedAt,
           captured, availableMinor: availableFromReceipt(captured), heldMinor: heldFromReceipt(captured),
           governanceFlags: flags, relayedBy: ctx.userId, source: r.source, storeId: r.storeId,
+          poReceipt: poReceipt === undefined ? null : { receiptId: poReceipt.receiptId, receivedByProduct: poReceipt.receivedByProduct },
         };
         // Only the SELLABLE quantity becomes availability; quarantine / rejected / held excess are on the GRN but not on-hand.
         const movements = inboundMovements({
           grnId, locationId: record.warehouseId, lines: captured.lines, quantityOf: (l) => l.sellableMinor,
           occurredAt: r.receivedAt, enteredBy: r.receivedBy, unitCostMinorOf: (l) => costByProduct.get(l.productId),
         });
-        await deps.commit(ctx.tenantId, record, movements, ctx.idempotencyKey ?? grnId);
+        await deps.commit(ctx.tenantId, record, movements, ctx.idempotencyKey ?? grnId, poReceipt);
         await deps.recordAudit?.(ctx.tenantId, {
           actorId: r.receivedBy, action: 'receipt.record', objectType: 'goods_receipt', objectId: grnId,
           at: deps.now(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
@@ -194,7 +192,7 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
           correlationId: grnId,
         });
         // 202, not 201: the goods were booked in at the store and this records that it happened.
-        return { status: 202, body: { grn: record, flags } };
+        return { status: 202, body: { grn: record, flags, poReceipt: record.poReceipt } };
       },
     },
   ];

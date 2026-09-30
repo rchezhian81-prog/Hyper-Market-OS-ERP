@@ -12,6 +12,10 @@ import { makeEvent } from '../../packages/contracts/src/event';
 // Since SP-4 (ii) the product's tracking rule comes from the PUBLISHED CATALOGUE and the tolerances from the
 // tenant's receipt policy — a body naming either is refused (F03). Gated inventory.movement.append (Receiver/QC);
 // reads inventory.availability.read.
+// Since SP-6 (audit finding F01) a receipt against an ISSUED purchase order FOLDS INTO THE ORDER in the same atomic append
+// as the GRN and its stock: the received quantity per product posts to the PO, so the open commitment falls with the
+// goods; the ordered quantity is the order's, never the body's; a receipt with no / an unknown / an unissued order is
+// received and flagged, and folds into nothing.
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const INR = 'INR';
@@ -87,14 +91,14 @@ describe('goods receipt / GRN capture (M07-FR-01/02/03)', () => {
     // With both → received, and nothing was left unverified.
     const ok = await receive(h, 'u-mgr', 'grn-2', body([line({ productId: 'p2', batchId: 'B1', expiry: '2027-01-01' })]), 'k3');
     expect(ok.status).toBe(201);
-    expect(grnOf(ok).governanceFlags).toEqual([]);
+    expect(grnOf(ok).governanceFlags).toEqual(['no_purchase_order']); // nothing unverified about the goods; only that no order is behind them (SP-6)
   });
 
   it('a product the master does not know is received — goods in the building are never refused for paperwork — and the record SAYS the rule was unverified', async () => {
     const h = await cast();
     const res = await receive(h, 'u-mgr', 'grn-unknown', body([line({ productId: 'p-not-on-master' })]), 'k1');
     expect(res.status).toBe(201);
-    expect(grnOf(res).governanceFlags).toEqual(['product_rules_unverified']);
+    expect(grnOf(res).governanceFlags).toEqual(['no_purchase_order', 'product_rules_unverified']);
     expect(await onHand(h, 'u-mgr', 'p-not-on-master')).toBe(100);
   });
 
@@ -163,5 +167,104 @@ describe('goods receipt / GRN capture (M07-FR-01/02/03)', () => {
     const restarted = apiHarness({ store: h.store });
     expect((await readGrn(restarted, 'u-owner', 'grn-10')).status).toBe(200);
     expect(await onHand(restarted, 'u-owner', 'p1')).toBe(100);
+  });
+
+  // ── SP-6 · F01: the receipt folds into the order ──────────────────────────────────────────────────────────────────────
+
+  /** An ISSUED order: the manager proposes, the owner (a second person) approves. */
+  const issuedOrder = async (h: ApiHarness, poId: string, lines: { productId: string; orderedQty: number; unitCostMinor: number }[]): Promise<void> => {
+    expect((await h.request({ method: 'POST', path: `/v1/purchase/orders/${poId}`, userId: 'u-mgr', tenantId: A, idempotencyKey: `po-${poId}`,
+      body: { supplierId: 'sup-1', lines: lines.map((l) => ({ productId: l.productId, orderedQty: l.orderedQty, unitCost: cost(l.unitCostMinor) })) } })).status).toBe(201);
+    expect((await h.request({ method: 'POST', path: `/v1/purchase/orders/${poId}/approval`, userId: 'u-owner', tenantId: A, idempotencyKey: `po-${poId}-ok`, body: { reason: 'within budget' } })).status).toBe(200);
+  };
+  const orderOf = async (h: ApiHarness, poId: string) =>
+    (await h.request({ method: 'GET', path: `/v1/purchase/orders/${poId}`, userId: 'u-owner', tenantId: A })).body as { order: { receivedByProduct: Record<string, number> }; openCommitment: { totalOpenValue: { minor: number }; fullyReceived: boolean; lines: { productId: string; openQty: number }[] } | null };
+
+  it('folds into its ISSUED order in the same append as the stock: the remainder falls with the goods, once, and the second delivery closes it (F01)', async () => {
+    const h = await cast();
+    await issuedOrder(h, 'po-f1', [{ productId: 'p1', orderedQty: 100, unitCostMinor: 5000 }, { productId: 'p3', orderedQty: 20, unitCostMinor: 200 }]);
+    expect((await orderOf(h, 'po-f1')).openCommitment).toMatchObject({ totalOpenValue: { minor: 504_000 }, fullyReceived: false });
+
+    const first = await receive(h, 'u-mgr', 'grn-f1', { ...body([line({ countedMinor: 60 })]), poId: 'po-f1' }, 'k1');
+    expect(first.status).toBe(201);
+    expect((first.body as { poReceipt: unknown }).poReceipt).toEqual({ receiptId: 'grn-f1', receivedByProduct: { p1: 60 } });
+    expect(grnOf(first).governanceFlags).toEqual([]); // an issued order, a known product, the tenant's policy: nothing to say
+    expect(await onHand(h, 'u-mgr', 'p1')).toBe(60);
+    // The order fell by exactly the delivery — 40 of p1 and all 20 of p3 still open — with no separate call.
+    let po = await orderOf(h, 'po-f1');
+    expect(po.order.receivedByProduct).toEqual({ p1: 60 });
+    expect(po.openCommitment).toMatchObject({ totalOpenValue: { minor: 40 * 5000 + 20 * 200 }, fullyReceived: false });
+    expect(po.openCommitment?.lines).toEqual([expect.objectContaining({ productId: 'p1', openQty: 40 }), expect.objectContaining({ productId: 'p3', openQty: 20 })]);
+
+    // A re-receipt of the same GRN — same key or a new one — folds nothing twice.
+    await receive(h, 'u-mgr', 'grn-f1', { ...body([line({ countedMinor: 60 })]), poId: 'po-f1' }, 'k1');
+    expect((await receive(h, 'u-mgr', 'grn-f1', { ...body([line({ countedMinor: 60 })]), poId: 'po-f1' }, 'k1-again')).body).toMatchObject({ alreadyReceived: true });
+    expect((await orderOf(h, 'po-f1')).order.receivedByProduct).toEqual({ p1: 60 });
+
+    // The rest arrives: the order is fully received.
+    await receive(h, 'u-mgr', 'grn-f2', { ...body([line({ lineId: 'L1', countedMinor: 40 }), line({ lineId: 'L2', productId: 'p3', orderedMinor: 20, countedMinor: 20, unitCost: cost(200) })]), poId: 'po-f1' }, 'k2');
+    po = await orderOf(h, 'po-f1');
+    expect(po.order.receivedByProduct).toEqual({ p1: 100, p3: 20 });
+    expect(po.openCommitment).toMatchObject({ totalOpenValue: { minor: 0 }, fullyReceived: true });
+    // …and both GRNs and the folded order rebuild the same way after a restart.
+    const restarted = apiHarness({ store: h.store });
+    expect((await orderOf(restarted, 'po-f1')).openCommitment).toMatchObject({ totalOpenValue: { minor: 0 }, fullyReceived: true });
+    expect(await onHand(restarted, 'u-owner', 'p1')).toBe(100);
+  });
+
+  it('the ORDERED quantity is the order\'s, never the sender\'s: a body claiming 60 ordered when the order says 100 is measured against 100 and flagged (F07)', async () => {
+    const h = await cast();
+    await issuedOrder(h, 'po-f2', [{ productId: 'p1', orderedQty: 100, unitCostMinor: 5000 }]);
+    // The sender says "60 ordered, 60 counted" — a clean delivery by its own account. The order says 100.
+    const res = await receive(h, 'u-mgr', 'grn-f3', { ...body([line({ orderedMinor: 60, countedMinor: 60 })]), poId: 'po-f2' }, 'k1');
+    expect(res.status).toBe(201);
+    expect(grnOf(res).governanceFlags).toEqual(['ordered_quantity_disagrees']);
+    expect(grnOf(res).captured?.discrepancies?.map((d) => d.kind)).toEqual(['short']); // 60 against the order's 100
+    expect((await orderOf(h, 'po-f2')).openCommitment).toMatchObject({ totalOpenValue: { minor: 40 * 5000 } });
+    // A product the order never named is received as-is and said.
+    const extra = await receive(h, 'u-mgr', 'grn-f4', { ...body([line({ productId: 'p3', unitCost: cost(200) })]), poId: 'po-f2' }, 'k2');
+    expect(grnOf(extra).governanceFlags).toEqual(['product_not_on_order']);
+    expect(grnOf(extra).captured?.discrepancies).toEqual([]);
+    expect((await orderOf(h, 'po-f2')).order.receivedByProduct).toEqual({ p1: 60, p3: 100 }); // visible over-receipt of what nobody ordered
+  });
+
+  it('what counts as RECEIVED against the order: quarantined stock yes (it is in the building), a held excess only when a second person accepts it, refused stock never', async () => {
+    const h = await cast();
+    await issuedOrder(h, 'po-f3', [{ productId: 'p1', orderedQty: 100, unitCostMinor: 5000 }, { productId: 'p3', orderedQty: 100, unitCostMinor: 200 }]);
+    // Damaged p1: quarantined, not on hand — but the supplier delivered it, so the order shows it received.
+    await receive(h, 'u-mgr', 'grn-q', { ...body([line({ condition: 'damaged' })]), poId: 'po-f3' }, 'k1');
+    expect(await onHand(h, 'u-mgr', 'p1')).toBe(0);
+    expect((await orderOf(h, 'po-f3')).order.receivedByProduct).toEqual({ p1: 100 });
+    // p3: 110 against 100 at 5% → 100 received, 10 HELD. The held 10 are not received against the order yet.
+    await receive(h, 'u-mgr', 'grn-x', { ...body([line({ productId: 'p3', countedMinor: 110, unitCost: cost(200) })]), poId: 'po-f3' }, 'k2');
+    expect((await orderOf(h, 'po-f3')).order.receivedByProduct).toEqual({ p1: 100, p3: 100 });
+    expect((await orderOf(h, 'po-f3')).openCommitment).toMatchObject({ totalOpenValue: { minor: 0 }, fullyReceived: true });
+    // A second person accepts the excess: the 10 reach stock AND the order, which now shows the over-receipt as a signal.
+    expect((await h.request({ method: 'POST', path: '/v1/inventory/goods-receipt/grn-x/excess/decide', userId: 'u-owner', tenantId: A, idempotencyKey: 'k3', body: { decision: 'approved', reason: 'supplier confirmed the extra 10 are free' } })).status).toBe(200);
+    const po = await orderOf(h, 'po-f3');
+    expect(po.order.receivedByProduct).toEqual({ p1: 100, p3: 110 });
+    expect(po.openCommitment?.lines.find((l) => l.productId === 'p3')?.openQty).toBe(-10);
+    expect(await onHand(h, 'u-mgr', 'p3')).toBe(110);
+    // Expired p3 on a further GRN is refused at the dock: never on hand, never received against the order.
+    await receive(h, 'u-mgr', 'grn-e', { ...body([line({ productId: 'p3', expiry: '2026-08-01', unitCost: cost(200) })]), poId: 'po-f3' }, 'k4');
+    expect((await orderOf(h, 'po-f3')).order.receivedByProduct).toEqual({ p1: 100, p3: 110 });
+    expect(await onHand(h, 'u-mgr', 'p3')).toBe(110);
+  });
+
+  it('a receipt against a PROPOSED order, an UNKNOWN order, or no order at all is received and SAID — and folds into nothing', async () => {
+    const h = await cast();
+    expect((await h.request({ method: 'POST', path: '/v1/purchase/orders/po-draft', userId: 'u-mgr', tenantId: A, idempotencyKey: 'po-draft',
+      body: { supplierId: 'sup-1', lines: [{ productId: 'p1', orderedQty: 100, unitCost: cost(5000) }] } })).status).toBe(201);
+    const draft = await receive(h, 'u-mgr', 'grn-d', { ...body([line()]), poId: 'po-draft' }, 'k1');
+    expect(draft.status).toBe(201);
+    expect(grnOf(draft).governanceFlags).toEqual(['order_not_issued']);
+    expect((draft.body as { poReceipt: unknown }).poReceipt).toBeNull();
+    expect((await orderOf(h, 'po-draft')).order.receivedByProduct).toEqual({});
+    expect(await onHand(h, 'u-mgr', 'p1')).toBe(100); // the goods are in the building either way
+    const ghost = await receive(h, 'u-mgr', 'grn-g', { ...body([line()]), poId: 'po-nobody-raised' }, 'k2');
+    expect(grnOf(ghost).governanceFlags).toEqual(['order_unknown']);
+    const none = await receive(h, 'u-mgr', 'grn-n', body([line()]), 'k3');
+    expect(grnOf(none).governanceFlags).toEqual(['no_purchase_order']);
+    expect((none.body as { poReceipt: unknown }).poReceipt).toBeNull();
   });
 });

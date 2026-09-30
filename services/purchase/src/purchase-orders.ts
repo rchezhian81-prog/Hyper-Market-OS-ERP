@@ -348,6 +348,9 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
     {
       // Post received quantity against an issued PO (M06-FR-04) — reconciles the open commitment to what
       // actually arrived, in the PO's ordering units. Body: { receiptId, receivedByProduct }. Accumulates.
+      // SP-6 (F01): a goods receipt now posts this ITSELF, atomically with the GRN (`receiptId` = the GRN id), so this
+      // route is the MANUAL reconciliation for a receipt recorded outside the GRN path (an opening position, a
+      // migration). A caller reconciling a GRN by hand must use the GRN id as `receiptId` so the two collapse to one.
       api: 'API-03', method: 'POST', path: '/v1/purchase/orders/:poId/receipts',
       permission: 'purchase.order.receive', idempotent: true,
       handler: async (ctx) => {

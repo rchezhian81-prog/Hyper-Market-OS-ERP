@@ -165,7 +165,7 @@ import { attachEvidence, type Investigation } from '../../../packages/settlement
 import { project, EFFECT_ON_HAND } from '../../inventory/src/index';
 import type { Movement, Availability, InventoryDeps, StockOwnership, InTransitStock, TransferShortfall } from '../../inventory/src/index';
 import { splitStoreValuation, type OwnedStockValue, tagsAsConcessionSales, latestTagVersions, type ConcessionTag } from '../../../packages/concession/src/index';
-import type { GoodsReceiptDeps, GrnRecord, StoredReceiptPolicy } from '../../inventory/src/goods-receipt';
+import type { GoodsReceiptDeps, GrnRecord, StoredReceiptPolicy, PoReceiptPosting } from '../../inventory/src/goods-receipt';
 import { weightedAverageValuation, type ValuationMovement } from '../../../packages/stock/src/valuation';
 import { agedStockLots, type DatedMovement } from '../../../packages/stock/src/ageing-source';
 import type { MatchResult, BankChangeRequest, PurchaseDeps } from '../../purchase/src/index';
@@ -3947,13 +3947,6 @@ export function syncedGoodsReceiptAdapter(input: {
     ...goodsReceiptAdapter(input),
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
     unitCostMinor: (tenantId, productId) => unitCostHeldFor(input.store, tenantId, productId),
-    orderedByProduct: async (tenantId, poId) => {
-      const po = (await foldPurchaseOrders(input.store, tenantId)).get(poId);
-      if (po === undefined) return undefined;
-      const ordered: Record<string, number> = {};
-      for (const line of po.lines) ordered[line.productId] = (ordered[line.productId] ?? 0) + line.orderedQty;
-      return ordered;
-    },
   };
 }
 
@@ -5155,18 +5148,47 @@ export function goodsReceiptAdapter(input: {
   readonly now: () => string;
 }): Omit<GoodsReceiptDeps, 'recordAudit'> {
   const grnStream = streamName(STREAM.purchase, 'grn');
-  // Two event types, one register: the receipt as recorded, then (SP-4 (ii)) its excess decision, latest per GRN id.
+  // Three event types, one register: the receipt as recorded, then (SP-4 (ii)) its excess decision, then (SP-6) each line
+  // disposition — the fold takes them in append order, so the latest state of a GRN id wins.
   const fold = async (tenantId: string): Promise<readonly GrnRecord[]> => {
     const byId = new Map<string, GrnRecord>();
-    for (const g of await allOf<GrnRecord>(input.store, tenantId, grnStream, 'GoodsReceived')) byId.set(g.grnId, g);
-    for (const d of await allOf<GrnRecord>(input.store, tenantId, grnStream, 'GoodsReceiptExcessDecided')) byId.set(d.grnId, d);
+    for (const e of await input.store.readStream(tenantId, grnStream)) {
+      if (e.event.type === 'GoodsReceived' || e.event.type === 'GoodsReceiptExcessDecided' || e.event.type === 'GoodsReceiptLineDisposed') {
+        const g = payloadOf<GrnRecord>(e);
+        byId.set(g.grnId, g);
+      }
+    }
     return [...byId.values()];
   };
+  /**
+   * SP-6 (F01): a receipt's posting against its purchase order, in the purchase-order adapter's OWN event shape and key
+   * (`po-<tenant>-<poId>-received-<receiptId>`), so `foldPurchaseOrders` nets it exactly as a manually posted receipt and a
+   * retry of the same receipt collapses. Appended in the SAME batch as the GRN — the order and the stock change together.
+   */
+  const poReceiptEvent = (tenantId: string, p: PoReceiptPosting) => ({
+    stream: PURCHASE_ORDERS_STREAM,
+    event: makeEvent({
+      id: `po-${p.poId}-received-${p.receiptId}`,
+      type: 'PurchaseOrderReceiptPosted',
+      occurredAt: p.at,
+      idempotencyKey: `po-${tenantId}-${p.poId}-received-${p.receiptId}`,
+      source: 'api/inventory',
+      payload: { poId: p.poId, receiptId: p.receiptId, receivedByProduct: p.receivedByProduct, by: p.by, at: p.at, grnId: p.receiptId.split(':')[0] },
+    }),
+  });
   return {
     now: input.now,
     grn: async (tenantId, grnId) => (await fold(tenantId)).find((g) => g.grnId === grnId),
     all: fold,
-    commit: async (tenantId, record, movements, key) => {
+    // SP-6 (F01): the purchase order as head office holds it — status and ordered quantity per product.
+    purchaseOrder: async (tenantId, poId) => {
+      const po = (await foldPurchaseOrders(input.store, tenantId)).get(poId);
+      if (po === undefined) return undefined;
+      const orderedByProduct: Record<string, number> = {};
+      for (const line of po.lines) orderedByProduct[line.productId] = (orderedByProduct[line.productId] ?? 0) + line.orderedQty;
+      return { status: po.status, orderedByProduct };
+    },
+    commit: async (tenantId, record, movements, key, poReceipt) => {
       await input.store.appendBatch(tenantId, [
         {
           stream: grnStream,
@@ -5175,6 +5197,24 @@ export function goodsReceiptAdapter(input: {
             type: 'GoodsReceived',
             occurredAt: input.now(),
             idempotencyKey: `grn-${tenantId}-${record.grnId}`,
+            source: 'api/inventory',
+            payload: record,
+          }),
+        },
+        ...movements.map((m) => movementEvent(tenantId, m)),
+        ...(poReceipt === undefined ? [] : [poReceiptEvent(tenantId, poReceipt)]),
+      ]);
+    },
+    // SP-6 (M07-FR-03): the disposition and the movement an accept releases — one append; one disposition per line.
+    commitDisposition: async (tenantId, record, movements, key) => {
+      await input.store.appendBatch(tenantId, [
+        {
+          stream: grnStream,
+          event: makeEvent({
+            id: `grn-disposition-${key}`,
+            type: 'GoodsReceiptLineDisposed',
+            occurredAt: input.now(),
+            idempotencyKey: `grn-disposition-${tenantId}-${key}`,
             source: 'api/inventory',
             payload: record,
           }),
@@ -5201,7 +5241,7 @@ export function goodsReceiptAdapter(input: {
     },
     // The decision and the movements it releases are ONE append (FND-01): the excess never reaches stock twice, and never
     // reaches it without the decision that allowed it.
-    commitExcessDecision: async (tenantId, record, movements, key) => {
+    commitExcessDecision: async (tenantId, record, movements, key, poReceipt) => {
       await input.store.appendBatch(tenantId, [
         {
           stream: grnStream,
@@ -5216,6 +5256,8 @@ export function goodsReceiptAdapter(input: {
           }),
         },
         ...movements.map((m) => movementEvent(tenantId, m)),
+        // SP-6 (F01): an accepted excess is received against the order too — in the same append.
+        ...(poReceipt === undefined ? [] : [poReceiptEvent(tenantId, poReceipt)]),
       ]);
     },
   };

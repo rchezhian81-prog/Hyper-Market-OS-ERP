@@ -82,14 +82,18 @@ async function seeded(): Promise<ApiHarness> {
     },
   });
   expect(seed.status).toBe(201);
-  // What the buyer ORDERED — the figure the route compares the delivery against, never the body's.
+  // What the buyer ORDERED — the figure the route compares the delivery against, never the body's — ISSUED by a second
+  // person (the manager proposes, the owner approves), so the receipt folds into it (SP-6 · F01).
   const po = await h.request({
-    method: 'POST', path: '/v1/purchase/orders/po-1', userId: 'u-owner', tenantId: A, idempotencyKey: 'k-po-1',
+    method: 'POST', path: '/v1/purchase/orders/po-1', userId: 'u-mgr', tenantId: A, idempotencyKey: 'k-po-1',
     body: { supplierId: 'sup-1', lines: [{ productId: 'p1', orderedQty: 100, unitCost: { minor: 5000, currency: 'INR' } }] },
   });
   expect(po.status).toBe(201);
+  expect((await h.request({ method: 'POST', path: '/v1/purchase/orders/po-1/approval', userId: 'u-owner', tenantId: A, idempotencyKey: 'k-po-1-ok', body: { reason: 'within budget' } })).status).toBe(200);
   return h;
 }
+const orderOf = async (h: ApiHarness, poId: string) =>
+  (await h.request({ method: 'GET', path: `/v1/purchase/orders/${poId}`, userId: 'u-owner', tenantId: A })).body as { order: { receivedByProduct: Record<string, number> }; openCommitment: { totalOpenValue: { minor: number }; fullyReceived: boolean } | null };
 
 describe('a receipt relayed from the store becomes a cloud GRN, with the receiver re-verified and the rules head office\'s own', () => {
   it('records a clean delivery against its order: GRN + received movements in one append, receiver and relay named, stock and value up, and it reads back', async () => {
@@ -114,6 +118,12 @@ describe('a receipt relayed from the store becomes a cloud GRN, with the receive
     const read = await readGrn(h, 'g1');
     expect(read.status).toBe(200);
     expect((read.body as GrnBody).grn).toMatchObject({ grnId: 'g1', receivedBy: 'u-mgr', relayedBy: 'u-box', governanceFlags: ['default_policy'] });
+
+    // SP-6 (F01): the relayed receipt folded into the order in the same append — 100 ordered, 100 received, nothing open.
+    expect((res.body as { poReceipt: unknown }).poReceipt).toEqual({ receiptId: 'g1', receivedByProduct: { p1: 100 } });
+    const po = await orderOf(h, 'po-1');
+    expect(po.order.receivedByProduct).toEqual({ p1: 100 });
+    expect(po.openCommitment).toMatchObject({ totalOpenValue: { minor: 0 }, fullyReceived: true });
   });
 
   it('measures the delivery against the ORDER head office holds — a short delivery is a valued discrepancy on the record, not a silent acceptance', async () => {
@@ -124,6 +134,10 @@ describe('a receipt relayed from the store becomes a cloud GRN, with the receive
     expect(body.grn.availableMinor).toBe(90);
     expect(body.grn.captured.discrepancies.map((d) => d.kind)).toContain('short');
     expect(await onHand(h, 'p1')).toBe(130);
+    // …and the order shows the 10 still outstanding (SP-6 · F01).
+    const po = await orderOf(h, 'po-1');
+    expect(po.order.receivedByProduct).toEqual({ p1: 90 });
+    expect(po.openCommitment).toMatchObject({ totalOpenValue: { minor: 50_000 }, fullyReceived: false });
   });
 
   it('flags — never rejects — what it could not verify: no order, an unknown order, an unknown product, an unknown or unauthorised receiver', async () => {
@@ -137,6 +151,13 @@ describe('a receipt relayed from the store becomes a cloud GRN, with the receive
     expect((badOrder.body as GrnBody).flags).toEqual(['order_unknown', 'default_policy']);
     // Ordered is unknown, so the delivery is received as-is — no invented shortage against an order nobody holds.
     expect((badOrder.body as GrnBody).grn.captured.discrepancies).toEqual([]);
+    expect((badOrder.body as { poReceipt: unknown }).poReceipt).toBeNull(); // and it folds into nothing (SP-6)
+    // An order that is only PROPOSED is not a commitment yet: said, and folded into nothing.
+    await h.request({ method: 'POST', path: '/v1/purchase/orders/po-draft', userId: 'u-mgr', tenantId: A, idempotencyKey: 'k-po-draft',
+      body: { supplierId: 'sup-1', lines: [{ productId: 'p1', orderedQty: 100, unitCost: { minor: 5000, currency: 'INR' } }] } });
+    const draft = await relay(h, receipt({ grnId: 'g3b', poId: 'po-draft' }), 'k-g3b');
+    expect((draft.body as GrnBody).flags).toEqual(['order_not_issued', 'default_policy']);
+    expect((await orderOf(h, 'po-draft')).order.receivedByProduct).toEqual({});
 
     // A product not on the published master: received untracked and UNVALUED (said), never refused at the back door.
     const unknownProduct = await relay(h, receipt({ grnId: 'g4', poId: null, lines: [{ productId: 'p-new', quantityMinor: 5, uom: 'ea', batchId: null }] }), 'k-g4');
