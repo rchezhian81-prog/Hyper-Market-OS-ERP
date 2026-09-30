@@ -36,6 +36,10 @@
         min-width: var(--tap); min-height: var(--tap); padding: 6px 12px; border-radius: 8px;
         background: var(--line); color: var(--ink); border: 0; font-size: 16px;
       }
+      .signin {
+        min-width: var(--tap); min-height: var(--tap); padding: 6px 12px; border-radius: 8px;
+        background: var(--line); color: var(--ink); border: 0; font-size: 16px;
+      }
       main { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 16px; }
       table { width: 100%; border-collapse: collapse; }
       th { text-align: left; color: var(--muted); font-size: 13px; font-weight: 500; padding: 8px 4px; }
@@ -106,8 +110,11 @@
   </head>
   <body>
     <header>
-      <span class="lane" id="lane">Lane 1 · Cashier</span>
+      <!-- Who and where (SP-4b · F09): the lane this box IS and the cashier who signed in — painted by app.js from the
+           session, never a stand-in name. The button signs a cashier in with their staff code, or out. -->
+      <span class="lane" id="lane">—</span>
       <span class="sync">
+        <button class="signin" id="signin" type="button">Sign in</button>
         <span class="dot" id="conn-dot" title="Connection"></span>
         <span id="conn-text">Online</span>
         <!-- Tapping the unsent count lists queued sales (spec). -->

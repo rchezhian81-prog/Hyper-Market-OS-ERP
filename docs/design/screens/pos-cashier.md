@@ -11,6 +11,21 @@ Login/device · Opening till · **Sale (home)** · Product search · Customer ·
 Promotion · Tender · Suspended bills · Return/exchange · Cash movements ·
 Close · Offline/sync health. Each handles the §27.1 universal states.
 
+## Login / who is on the till (SP-4b · F09 · §28 · hard rule #4)
+- The header always names **which lane** this till is and **who is signed in** — or says "Nobody signed in". Neither is
+  ever a stand-in: the lane is the store computer's own setting (`EDGE_LANE_ID`), the cashier is the person who signed in.
+- **Sign in** (top right): scan your badge or key your staff code, then OK — one panel, the same scan-or-key control the
+  refund approval uses. **Sign out** is the same button. A reload of this browser session keeps the sign-in; closing the
+  browser does not (a till left open overnight starts with nobody).
+- With **nobody signed in**, or **no lane set**, Tender, refunds, cash movements and Close are refused in words — the
+  money is never taken first.
+- Every sale, refund, cash movement and close names the signed-in cashier, the lane and the **trading day worked out at
+  that moment** from the shop's cut-off (M01-FR-02) — so a till left open past the cut-off moves to the new day by itself.
+- Head office re-verifies the cashier a sale names against their grants; an unknown or unauthorised name is a finding on
+  the manager's exception register, never a refusal of a sale that happened.
+- **Pending (GAP-POS-LOGIN-01):** the staff code *identifies*; it does not *authenticate*. A credential-checked till login
+  (PIN / badge verified against the store computer, offline-capable) is the remaining piece of the Login screen.
+
 ## The Sale screen (home) — the one that matters most
 - **Layout:** big running **total** (largest element), scrolling line list, large number pad, one dominant **Tender** primary action, permanent **sync-state badge** (online/offline + unsent count) top corner.
 - **Primary action:** Tender. Everything else is secondary.
@@ -23,6 +38,7 @@ Close · Offline/sync health. Each handles the §27.1 universal states.
   | Go to tender | 1 (Tender) |
   | Take cash payment | ≤ 3 (Tender → Cash → confirm) |
   | Suspend / recall | ≤ 3 |
+  | Sign in for the shift (once a shift, not per sale) | 2 (Sign in → badge scan) |
 - **Exceptions to ≤3 (justified):** first-time customer capture and age-verification prompts add a step **by design** (legal/consent) — listed here explicitly, not hidden behind "where feasible".
 
 ## Offline & state behaviour (§31 / hard rule #1)
@@ -54,3 +70,12 @@ Migration · AI control.
 - A product whose unit of measure the till cannot price never reaches the lane: the store computer keeps it off the
   till's catalogue and names it (`excludedProducts`), and the catalogue engine refuses the scan by name should one
   arrive another way. A line is never ₹NaN.
+
+## Measured (SP-4b)
+- The served till boots with the box's lane and cut-off and **no cashier**; a sale is refused until somebody signs in, then
+  names the real cashier, lane and day (`tests/audit-observations/pos.test.ts` case 1, inverted from the F09 observation;
+  `tests/e2e/the-served-till-takes-a-sale.e2e.ts` in real Chromium, including a reload that keeps the sign-in).
+- Signing in costs two acts (Sign in → badge scan), counted on the served screen
+  (`tests/e2e/the-till-and-manager-meet-the-interaction-budget.e2e.ts`). That browser test also found that a scanner's
+  closing Enter, landing on the still-focused Sign in button, re-clicked it and signed the cashier straight back out; every
+  scan-or-key prompt now drops the opener's focus first (`askScanOrKey` in `apps/pos/web/app.js`).

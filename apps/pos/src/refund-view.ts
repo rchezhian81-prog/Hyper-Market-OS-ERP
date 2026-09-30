@@ -243,6 +243,11 @@ function mapError(e: unknown): RefundScreenOutcome {
   if (e instanceof MissingOriginalSaleError) return { kind: 'invalid', laneMessage: MSG.noOriginal };
   if (e instanceof InvalidReturnQuantityError) return { kind: 'invalid', laneMessage: MSG.badQuantity };
 
+  // Nobody signed in, or no lane on this till (SP-4b · F09) — refused before anything was written, in the till's words.
+  if (e instanceof Error && typeof (e as { laneMessage?: unknown }).laneMessage === 'string') {
+    return { kind: 'refused', laneMessage: (e as unknown as { laneMessage: string }).laneMessage };
+  }
+
   // Unknown — do not pay out. A refusal is the safe reading of anything we did not expect.
   return { kind: 'refused', laneMessage: 'This refund could not be completed. Do not hand over cash — tell the manager.' };
 }

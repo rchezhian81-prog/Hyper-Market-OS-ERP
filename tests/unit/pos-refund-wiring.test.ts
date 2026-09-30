@@ -28,6 +28,7 @@ const boot = (over: {
   durableReturn?: DurableWrite;
   approvalThresholdMinor?: number;
 } = {}) => bootPos({
+  laneId: 'lane-1',
   cashierId: 'u-meena',
   laneLookup: over.laneLookup ?? (async () => LOOKUP),
   durableReturn: over.durableReturn ?? okReturn,

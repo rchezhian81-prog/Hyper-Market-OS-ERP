@@ -1514,6 +1514,24 @@ export function documentTemplatesPayload(input: ScreenInput): Record<string, unk
  * only ever read its pack file, or the cloud has nothing published for receipts — the till then prints with its
  * defaults and stamps no version, rather than inventing one (P-08).
  */
+/**
+ * Who this till IS, for the served POS shell (SP-4b · F09): the lane the box was told it is (`EDGE_LANE_ID`) and the
+ * shop's trading-day cut-off, so the till dates each sale at the moment it is taken — never a placeholder lane or a
+ * 1970 day. The CASHIER is deliberately absent: the person at the till signs in with their staff code, and a name
+ * carried in a pack for whoever happens to be at the till would be a shared identity (hard rule #4). Absent lane and
+ * unknown cut-off are SAID (`null` / `tradingDayCutoffKnown: false`), never defaulted silently.
+ */
+export function posLanePayload(input: ScreenInput, laneId: string | undefined): Record<string, unknown> {
+  const policies = input.pack.policies.known ? input.pack.policies.value : undefined;
+  return {
+    laneId: laneId ?? null,
+    tradingDayCutoff: policies?.tradingDayCutoff ?? '00:00',
+    tradingDayCutoffKnown: policies !== undefined,
+    tradingDay: input.tradingDay,
+    storeId: policies?.storeId ?? null,
+  };
+}
+
 export function posReceiptTemplate(input: ScreenInput): Record<string, unknown> | undefined {
   if (!input.pack.documentTemplates.known) return undefined;
   const held = input.pack.documentTemplates.value;

@@ -153,7 +153,7 @@ describe.skipIf(!DATABASE_URL)('the API remembers (real PostgreSQL)', () => {
   // ─── 2. A sale, banked and remembered ───────────────────────────────────────
 
   const sale = {
-    saleId: `${RUN}-S1`, receiptNumber: `${RUN}-R1`, laneId: 'lane-1', cashierId: 'u-meena',
+    saleId: `${RUN}-S1`, receiptNumber: `${RUN}-R1`, laneId: 'lane-1', cashierId: 'u-lanecash',
     tradingDay: COMMITTED.slice(0, 10), committedAt: COMMITTED, totalMinor: 64_000, currency: 'INR',
     packVersion: 1,
     lines: [{ productId: `${RUN}-P1`, quantityMinor: 1, uom: 'each', unitPriceMinor: 64_000, lineTotalMinor: 64_000 }],
@@ -161,6 +161,12 @@ describe.skipIf(!DATABASE_URL)('the API remembers (real PostgreSQL)', () => {
   };
 
   it('banks a sale and finds it afterwards', async () => {
+    // The cashier the sale names is a person head office KNOWS (SP-4b · F09): a name with no grant is a finding.
+    await identityAdapter({ store, now: () => NOW, roleCatalogue: ROLE_CATALOGUE }).recordGrant(
+      TENANT,
+      { userId: 'u-lanecash', roleId: 'cashier', branchScope: 'all' },
+      { grantId: `${RUN}-G0`, userId: 'u-lanecash', roleId: 'cashier', branchScope: 'all', requestedBy: 'u-manager', approvedBy: 'u-owner', requestedAt: NOW },
+    );
     const res = await handle(kernel, post('/v1/sales', sale, `k-${RUN}-1`));
     expect(res.status).toBe(202);
     expect((res.body as { banked: boolean; exceptions: unknown[] }).banked).toBe(true);

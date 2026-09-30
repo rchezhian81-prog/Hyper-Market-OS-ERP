@@ -15,7 +15,8 @@ import { parseEnv } from '../../scripts/standup-check.mjs';
  */
 
 const KEY = 'k'.repeat(64);
-const flags = (over: Record<string, unknown> = {}) => ({ ...parseArgs([]), ...over });
+// Every plan names its lane (SP-4b · F09) unless a case is about leaving it out.
+const flags = (over: Record<string, unknown> = {}) => ({ ...parseArgs([]), lane: 'lane-1', ...over });
 const plan = (over: Record<string, unknown> = {}) => planTillSettings({ flags: flags(), installDir: '/shop/till', appsDir: '/repo/apps', ...over });
 
 describe('install-till — the machine', () => {
@@ -29,8 +30,8 @@ describe('install-till — the machine', () => {
   });
 
   it('parses the flags and names anything it does not know', () => {
-    const f = parseArgs(['--tenant', 't-sre', '--dir', '/x', '--generate-key', '--skip-build', '--lane-port', '9000', '--bogus']);
-    expect(f).toMatchObject({ tenant: 't-sre', dir: '/x', generateKey: true, skipBuild: true, lanePort: '9000', screenPort: '8091', force: false, unknown: ['--bogus'] });
+    const f = parseArgs(['--tenant', 't-sre', '--lane', 'lane-2', '--dir', '/x', '--generate-key', '--skip-build', '--lane-port', '9000', '--bogus']);
+    expect(f).toMatchObject({ tenant: 't-sre', lane: 'lane-2', dir: '/x', generateKey: true, skipBuild: true, lanePort: '9000', screenPort: '8091', force: false, unknown: ['--bogus'] });
   });
 });
 
@@ -47,6 +48,9 @@ describe('install-till — the settings plan', () => {
     expect(bad.ok).toBe(false);
     expect(bad.problems.join(' ')).toMatch(/no tenant id/);
     expect(bad.problems.join(' ')).toMatch(/no pack signing key/);
+    // No lane named and none from an earlier install → said, with the others (SP-4b · F09).
+    expect(plan({ flags: flags({ tenant: 't-sre', generateKey: true, lane: undefined }) }).problems.join(' ')).toMatch(/no lane id/);
+    expect(plan({ flags: flags({ tenant: 't-sre', generateKey: true, lane: undefined }), existing: { EDGE_LANE_ID: 'lane-3' } }).settings.EDGE_LANE_ID).toBe('lane-3');
     const offline = plan({ flags: flags({ tenant: 't-sre', generateKey: true }), generatedKey: 'g'.repeat(64) });
     expect(offline.ok).toBe(true);
     expect(offline.settings.PACK_SIGNING_KEY).toBe('g'.repeat(64));
