@@ -16,8 +16,14 @@
 //     the quantity is reported as UNVALUED rather than folded in at zero — a zero cost would drag the
 //     average down and quietly understate every margin after it (P-08: an absent number is not zero).
 //   • An issue leaves at the current average: cogs += round(value × qty / onHand); value -= that.
-//   • Any other increase (a return, a positive count/adjustment, a transfer in) re-enters at the
-//     current average — it carries no new purchase cost, so it must not change the average.
+//   • A TRANSFER OUT (SP-5, F05) also leaves at the current average — but the value has not been SOLD, it
+//     has gone to another of the shop's own locations, so it is booked as `transferredOut`, never as
+//     cost of goods sold. COGS that rose every time the warehouse fed the floor would halve the margin.
+//   • A TRANSFER IN that carries the SENDER's average as its cost re-averages at the destination like a
+//     receipt does (`isPurchaseReceipt` with a unit cost): the value follows the stock. One without a
+//     cost (the sender's stock was unvalued) re-enters at the destination's average, or is unvalued.
+//   • Any other increase (a return, a positive count/adjustment) re-enters at the current average — it
+//     carries no new purchase cost, so it must not change the average.
 //
 // Exact integer minor units throughout; the average is derived (value ÷ quantity), never rounded and
 // stored, so it cannot drift. Order matters and is the caller's: movements are folded as given.
@@ -35,10 +41,18 @@ export interface ValuationMovement {
   readonly effect: ValuationEffect;
   /** Always positive; `effect` carries the direction. */
   readonly quantityMinor: number;
-  /** True only for a purchase receipt that re-averages; a return/transfer-in re-enters at the average. */
+  /**
+   * True for an entry that carries its OWN cost basis and re-averages: a purchase receipt, or a transfer-in valued
+   * at the sending location's average (SP-5). A return or a positive count re-enters at the current average.
+   */
   readonly isPurchaseReceipt: boolean;
-  /** Unit cost for a purchase receipt, in minor units. Absent ⇒ the receipt's quantity is unvalued. */
+  /** Unit cost for a cost-carrying entry, in minor units. Absent ⇒ the entry's quantity is unvalued. */
   readonly unitCostMinor?: number;
+  /**
+   * True for a transfer OUT to another of the shop's own locations (SP-5, F05): the issue leaves at the average like
+   * any other, but its value is booked as `transferredOut`, not as cost of goods sold — nothing was sold.
+   */
+  readonly isTransferOut?: boolean;
 }
 
 export interface ProductValuation {
@@ -50,8 +64,10 @@ export interface ProductValuation {
   readonly value: Money;
   /** Weighted-average cost per unit, or `not_known` when nothing valued is on hand. */
   readonly unitCostMinor: number | 'not_known';
-  /** Cumulative cost of goods issued (sold/wasted/transferred out) at the average — feeds margin. */
+  /** Cumulative cost of goods issued (sold / wasted / written off) at the average — feeds margin. NOT transfers. */
   readonly cogs: Money;
+  /** Cumulative value that left this location for ANOTHER of the shop's locations, at the average (SP-5). Not a cost. */
+  readonly transferredOut: Money;
   /** On-hand quantity received WITHOUT a cost, so it is NOT in `value` — surfaced, never hidden. */
   readonly unvaluedMinor: number;
 }
@@ -63,6 +79,7 @@ interface Acc {
   valuedQty: number; // quantity that has a cost basis
   valueMinor: number; // value of valuedQty at WAC
   cogsMinor: number;
+  transferredOutMinor: number;
   unvaluedMinor: number;
 }
 
@@ -94,7 +111,7 @@ export function weightedAverageValuation(
   for (const m of movements) {
     const key = keyOf(m);
     const acc = byKey.get(key)
-      ?? { productId: m.productId, locationId: m.locationId, qty: 0, valuedQty: 0, valueMinor: 0, cogsMinor: 0, unvaluedMinor: 0 };
+      ?? { productId: m.productId, locationId: m.locationId, qty: 0, valuedQty: 0, valueMinor: 0, cogsMinor: 0, transferredOutMinor: 0, unvaluedMinor: 0 };
 
     if (m.effect === 1) {
       if (m.isPurchaseReceipt && m.unitCostMinor !== undefined) {
@@ -119,7 +136,8 @@ export function weightedAverageValuation(
       // An issue draws from valued and unvalued stock in proportion; the valued part leaves at WAC.
       const drawValued = acc.qty > 0 ? Math.min(acc.valuedQty, share(acc.valuedQty, m.quantityMinor, acc.qty)) : 0;
       const issueValue = share(acc.valueMinor, drawValued, acc.valuedQty);
-      acc.cogsMinor += issueValue;
+      // Sold or written off → cost of goods sold. Sent to another of our own locations → value moved, not spent.
+      if (m.isTransferOut === true) acc.transferredOutMinor += issueValue; else acc.cogsMinor += issueValue;
       acc.valueMinor -= issueValue;
       acc.valuedQty -= drawValued;
       acc.unvaluedMinor = Math.max(0, acc.unvaluedMinor - (m.quantityMinor - drawValued));
@@ -139,6 +157,7 @@ export function weightedAverageValuation(
       value: { minor: a.valueMinor, currency },
       unitCostMinor: a.valuedQty > 0 ? share(a.valueMinor, 1, a.valuedQty) : 'not_known',
       cogs: { minor: a.cogsMinor, currency },
+      transferredOut: { minor: a.transferredOutMinor, currency },
       unvaluedMinor: a.unvaluedMinor,
     }));
 }

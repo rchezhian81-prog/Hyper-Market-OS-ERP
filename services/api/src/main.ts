@@ -556,7 +556,8 @@ export function buildSurface(deps: {
       permissionsOfUser: empty(undefined), appendMovement: () => {}, isKnown: empty(false), scanExists: empty(false), recordScan: () => {}, scansOf: empty([]), now,
     } : { ...receivingScanAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     ...transfersRoutes(store === undefined ? {
-      transfer: empty(undefined), availableAt: empty([]), recordProposed: () => {}, recordDispatched: () => {}, recordReceived: () => {}, now,
+      transfer: empty(undefined), availableAt: empty([]), recordProposed: () => {}, recordDispatched: () => {}, recordReceived: () => {},
+      unitCostAt: empty(undefined), knownLocation: empty(true), now,
     } : transfersAdapter({ store, now })),
     ...replenishmentRoutes(store === undefined ? { now } : { now, soldLines: salesHistoryAdapter({ store, now }).soldLines }),
     ...salesHistoryRoutes(store === undefined ? { soldLines: empty([]), now } : salesHistoryAdapter({ store, now })),

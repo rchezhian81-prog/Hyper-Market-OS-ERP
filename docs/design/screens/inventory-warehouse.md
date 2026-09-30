@@ -96,3 +96,23 @@ miscount · found · theft suspected · other, in English and Tamil, guardrail-b
 (SP-4); pending requests reach the manager's screen only with the pack (SP-9); the picker and driver handhelds — SP-3c;
 TLS on the shop-network leg — Stage E; physical-device verification and staff UAT — PENDING.
 
+## Measured (SP-5 / SP-5b — one stock truth for transfers and counts, owner's Option 2 directive of 30 September 2026)
+Nothing on the handheld or the ERP screens changed shape in this slice; what changed is what the figures on them MEAN.
+Until now a received transfer left availability and valuation at the source with no destination row, and an approved
+count corrected only the counts view — every stock figure a screen showed (stock health, valuation, ageing, the next
+blind count's expected number, the pack's `availableMinor`) was wrong by every transfer and every count. Now
+(`tests/audit-observations/warehouse.test.ts` cases 1 and 3, `tests/integration/warehouse-transfers.test.ts`,
+`tests/integration/warehouse-counts.test.ts`, `tests/integration/bin-counts-synced-route.test.ts`):
+**a transfer** takes the stock off the source's on-hand at DISPATCH (it is on the van — the availability read lists it
+under `inTransit` at the destination, where it is visible and deliberately not sellable), puts what ARRIVED on-hand at
+the destination at receipt with the value that left the source (head office's own average there, never the proposer's
+figure), and lists what did not arrive on the exceptions read with its value until a person owns it; a second transfer
+cannot draw stock the first already took; a transfer to a place head office has no record of is refused by name.
+**A count correction** — the handheld's bin count or the manager's store count, immaterial at once or material once a
+separate person approves it — is ONE movement on the same ledger as a sale, entered by the counter and approved by the
+decider (or, under the tenant's own threshold, by nobody, and the movement says so). A bin count corrects the bin's
+occupancy AND the store's on-hand: one count, one correction, every reader. Nothing is layered twice; corrections
+recorded before this slice, which posted no movement, still layer exactly as they did.
+**Still recorded, not dropped:** no screen drives dispatch / receive — the floor-indent chain (SP-8) will; the counts
+review screen and the stock-health screen do not yet show posted corrections or in-transit stock (SP-9); the picker and
+driver handhelds — SP-3c; TLS on the shop-network leg — Stage E; physical-device verification and staff UAT — PENDING.

@@ -248,7 +248,47 @@ export interface InventoryDeps {
    * meaningful rather than inventing a margin (P-08).
    */
   readonly performance: (tenantId: string, opts: { readonly from: string; readonly to: string }) => Promise<StockPerformanceInputs> | StockPerformanceInputs;
+  /**
+   * SP-5 (F05 · M08-FR-02): stock IN TRANSIT to a destination — dispatched, not yet received. Read from the transfer
+   * aggregates (the authoritative record of what is on the van), never folded into on-hand: visible at the destination,
+   * deliberately not sellable there until received. Optional so a bare deps stub may omit it.
+   */
+  readonly inTransit?: (tenantId: string, productId?: string) => Promise<readonly InTransitStock[]> | readonly InTransitStock[];
+  /**
+   * SP-5 (F05 · M09-FR-03): what left a location and never arrived at the other — the receipt shortfalls the transfer
+   * engine values and raises as exceptions. Surfaced on the exceptions read beside negative stock (P-08, #10).
+   */
+  readonly transferShortfalls?: (tenantId: string) => Promise<readonly TransferShortfall[]> | readonly TransferShortfall[];
   readonly now: () => string;
+}
+
+/** Stock on the van (SP-5 · M08-FR-02): dispatched from `fromLocationId`, held in transit AT `locationId`, not sellable. */
+export interface InTransitStock {
+  readonly transferId: string;
+  readonly productId: string;
+  readonly batchId: string | null;
+  /** The DESTINATION — where the stock is owned while it travels. */
+  readonly locationId: string;
+  readonly fromLocationId: string;
+  readonly quantityMinor: number;
+  readonly uom: string;
+  readonly dispatchedAt: string;
+}
+
+/** A valued receipt shortfall (SP-5 · M09-FR-03): what was dispatched and did not arrive — an exception with an owner. */
+export interface TransferShortfall {
+  readonly transferId: string;
+  readonly productId: string;
+  readonly batchId: string | null;
+  readonly fromLocationId: string;
+  readonly locationId: string;
+  readonly dispatchedMinor: number;
+  readonly receivedMinor: number;
+  /** Negative: the units missing. */
+  readonly differenceMinor: number;
+  readonly value: Money;
+  readonly receivedAt: string;
+  readonly detail: string;
 }
 
 /** One row of period inputs for turns/GMROI — for the whole store, or for one product. */
@@ -325,7 +365,9 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
       handler: async (ctx) => {
         const productId = ctx.query['productId'];
         const rows = await deps.availability(ctx.tenantId, productId);
-        return { status: 200, body: { rows, asAt: deps.now() } };
+        // SP-5 (F05): what is on the van is visible at its destination — beside on-hand, never inside it (M08-FR-02).
+        const inTransit = deps.inTransit === undefined ? [] : await deps.inTransit(ctx.tenantId, productId);
+        return { status: 200, body: { rows, inTransit, asAt: deps.now() } };
       },
     },
     {
@@ -333,7 +375,10 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
       permission: 'inventory.availability.read',
       handler: async (ctx) => {
         const rows = await deps.availability(ctx.tenantId);
-        return { status: 200, body: { negative: negativeStock(rows), asAt: deps.now() } };
+        // SP-5 (F05): a transfer shortfall is stock that left one place and never reached the other — an exception with a
+        // value and an owner, listed here beside negative stock so nobody has to know to look for it (P-08).
+        const transferShortfalls = deps.transferShortfalls === undefined ? [] : await deps.transferShortfalls(ctx.tenantId);
+        return { status: 200, body: { negative: negativeStock(rows), transferShortfalls, asAt: deps.now() } };
       },
     },
     {

@@ -25,7 +25,7 @@ interface CountBody {
   valueMinor: number; adjusted: boolean; pendingApproval: boolean; flags: string[];
 }
 interface PositionBody {
-  systemOnHandMinor: number; countCorrectionMinor: number; correctedOnHandMinor: number;
+  systemOnHandMinor: number; countCorrectionMinor: number; postedCorrectionMinor: number; correctedOnHandMinor: number;
   counts: { countId: string; adjusted: boolean; requiredApproval: boolean; pendingApproval?: boolean; counterId: string; relayedBy?: string; governanceFlags?: string[] }[];
 }
 
@@ -41,6 +41,10 @@ const relay = (h: ApiHarness, body: Record<string, unknown>, key: string, opts: 
   });
 const position = async (h: ApiHarness, productId = 'P1', locationId = 'S1'): Promise<PositionBody> =>
   (await h.request({ method: 'GET', path: '/v1/inventory/counts', userId: 'u-owner', tenantId: A, query: { productId, locationId } })).body as PositionBody;
+/** Ordinary availability at S1 — the figure every other reader sees (SP-5b, F06). */
+const onHand = async (h: ApiHarness): Promise<number> =>
+  ((await h.request({ method: 'GET', path: '/v1/inventory/availability', userId: 'u-owner', tenantId: A, query: { productId: 'P1' } })).body as { rows: { locationId: string; onHandMinor: number }[] })
+    .rows.filter((r) => r.locationId === 'S1').reduce((s, r) => s + r.onHandMinor, 0);
 
 /** The cast, and 100 of P1 at S1 received at ₹25.00 a unit — the cloud's own expected quantity and unit value. */
 async function seeded(): Promise<ApiHarness> {
@@ -72,13 +76,15 @@ describe('a blind count relayed from the store is reconciled at head office, on 
     expect(pos.counts[0]).toMatchObject({ countId: 'c1', counterId: 'u-mgr', relayedBy: 'u-box', adjusted: false, requiredApproval: false, pendingApproval: false, governanceFlags: ['default_threshold'] });
   });
 
-  it('an IMMATERIAL variance corrects at once, valued at the cloud\'s cost — the correction layers on the position', async () => {
+  it('an IMMATERIAL variance corrects at once, valued at the cloud\'s cost — the correction is an M08 movement every reader folds (F06)', async () => {
     const h = await seeded();
     // Counted 98 of 100 → −2 × ₹25.00 = ₹50.00 (5 000 minor), under the ₹1 000 default threshold.
     const res = await relay(h, blind('c2', 98), 'k-c2');
     expect(res.status).toBe(202);
-    expect(res.body as CountBody).toMatchObject({ expectedMinor: 100, varianceMinor: -2, valueMinor: 5_000, adjusted: true, pendingApproval: false });
-    expect(await position(h)).toMatchObject({ systemOnHandMinor: 100, countCorrectionMinor: -2, correctedOnHandMinor: 98 });
+    expect(res.body as CountBody).toMatchObject({ expectedMinor: 100, varianceMinor: -2, valueMinor: 5_000, adjusted: true, pendingApproval: false, movementId: 'count:c2' });
+    // SP-5b: on the ledger, not layered — the position reads 98 from M08 itself.
+    expect(await position(h)).toMatchObject({ systemOnHandMinor: 98, countCorrectionMinor: 0, postedCorrectionMinor: -2, correctedOnHandMinor: 98 });
+    expect(await onHand(h)).toBe(98);
     // The next count is measured against the CORRECTED position (100 − 2), not the raw ledger.
     const next = await relay(h, blind('c3', 98), 'k-c3');
     expect(res.status).toBe(202);
@@ -155,7 +161,8 @@ describe('a blind count relayed from the store is reconciled at head office, on 
     const rekeyed = await relay(h, blind('c10', 98), 'k-c10-again');
     expect(rekeyed.status).toBe(200);
     expect(rekeyed.body as CountBody).toMatchObject({ countId: 'c10', recorded: true, alreadyRecorded: true, adjusted: true, pendingApproval: false });
-    expect(await position(h)).toMatchObject({ countCorrectionMinor: -2, correctedOnHandMinor: 98 }); // applied once
+    expect(await position(h)).toMatchObject({ systemOnHandMinor: 98, postedCorrectionMinor: -2, correctedOnHandMinor: 98 }); // applied once
+    expect(await onHand(h)).toBe(98);
     expect((await position(h)).counts).toHaveLength(1);
   });
 

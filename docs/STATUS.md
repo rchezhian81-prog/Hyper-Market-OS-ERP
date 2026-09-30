@@ -28,7 +28,7 @@ device, human UAT and production verification separate; approved deferrals stay 
   the screen; cloud GRN with quarantine rules + review screen; handheld receive/put-away/pick queued durably on the
   device; promotions, prices, expiry/recall, write-offs, cash-office sign-off from their screens. Not proven / defective:
   handheld and manager queues reach nobody (F11); a rejected sync conflict is swallowed (F12); approver, stock and value
-  can be typed (F03, F07); transfers and count corrections do not change ordinary stock (F05, F06); a receipt does not
+  can be typed (F03, F07); transfers and count corrections do not change ordinary stock (F05, F06 — fixed in SP-5/5b); a receipt does not
   reduce the order (F01); invoice not joined or posted as a liability (F02, F04); no floor-indent chain (F08); the till
   names a placeholder cashier and day (F09) and cannot close its shift (F10).
 - **Delivery order (one focused PR at a time, gate + CI before merge):** SP-1 transport conflict classification (F12) →
@@ -252,10 +252,50 @@ device, human UAT and production verification separate; approved deferrals stay 
   `index.html`. API surface +2. **Still open, honestly:**
   loan / safe drop / float return have no till button (the box and cloud accept them); the cash office reads relayed
   flags on the over/short list and `GET /v1/tills/:tillId/cash`, not yet on a screen; no physical device or UAT.
-- **Current-work pointer:** last verified = SP-4c (this PR); next = **SP-5 / SP-5b** [W04, W05, F05, F06] (one stock
-  truth — transfers and count corrections post to the inventory projection; observation `warehouse.test.ts` cases
-  inverted); then SP-6 (F01), SP-7 (F02/F04), SP-8/8b (F08), SP-9/9b; **SP-3c** (picker + driver) after the core-store
-  chain; genuine blockers: none; external gates unchanged (providers, hardware, real data, pilot GO).
+- **SP-5 / SP-5b — one stock truth: transfers and count corrections post to the inventory projection (F05, F06 ·
+  M08-FR-01/02/03/04 · M09-FR-03/04 · hard rules #2 #10).** Until this PR the transfer engine's movements rode the
+  transfer events as EVIDENCE and never reached the M08 ledger — a received transfer left availability and valuation at
+  the source with no destination row (F05) — and an applied count correction lived only on the counts register, layered
+  on M08 for the count view alone, so availability, valuation, ageing, the pack and the next count's expected figure all
+  read the old number (F06). Now (i) `POST …/transfers/:id/dispatch` posts ONE `transferred_out` per line at the SOURCE
+  (`dispatchPostings`) — on-hand falls where the stock left, the quantity is IN TRANSIT and the availability read lists
+  it under `inTransit` at the destination (visible, not sellable, M08-FR-02); the value that leaves is head office's own
+  weighted average at the source, recorded on the aggregate (`Transfer.lineCostsMinor`, from `unitCostAt`), never the
+  proposer's figure; (ii) `POST …/receive` posts ONE `transferred_in` per line at the DESTINATION for what ARRIVED
+  (`receivePostings`) carrying that cost, so the value that left is the value that arrives; a SHORTFALL posts nothing
+  on-hand anywhere — it is the engine's valued exception, listed on `GET /v1/inventory/exceptions` (`transferShortfalls`)
+  until a person owns it; (iii) each step's transfer event and its M08 movements commit in ONE `appendBatch`, idempotent
+  on the engine's own movement ids, so a retry cannot post twice and a crash cannot leave a transfer in transit whose
+  stock is still on the shelf; (iv) the valuation fold books a transfer out as `transferredOut`, never COGS
+  (`isTransferOut`) — turns / GMROI no longer rise because the warehouse fed the floor — and re-averages a cost-carrying
+  transfer-in like a receipt; uncosted stock arrives unvalued, said (P-08); (v) the over-draw is refused against the
+  STORED position, which now falls at dispatch, so a second transfer cannot draw the same stock; (vi) both ends must be
+  places head office knows — an org node, a bin's location or a location that has held stock — `unknown_location`
+  otherwise. (vii) An APPLIED count correction is ONE compensating M08 movement `count:<countId>` (`adjusted` found /
+  `wasted` missing — `countCorrection` on `services/inventory/src/counts.ts`), appended ATOMICALLY with the count record
+  (`countBatch`), entered by the counter and approved by the separate decider (or by the tenant's threshold policy, and
+  the reason says so); a BIN count corrects the bin's occupancy on the warehouse projection AND the store's on-hand on
+  M08 (one count, one correction, every reader); direct, relayed (manager screen, warehouse handheld) and the manager's
+  relayed approval decision all reach the same path; the count view reports `postedCorrectionMinor` and layers ONLY
+  pre-SP-5b corrections that posted no movement (`movementId` absent) — nothing already recorded is re-read differently,
+  nothing is counted twice, the next count's expected figure is the ledger's. Evidence: observation `warehouse.test.ts`
+  cases 1 and 3 INVERTED (all four cases are regressions now); `warehouse-transfers.test.ts` rewritten (8: off the
+  source at dispatch / in transit at the destination / a second transfer refused against the fallen position / receipt
+  on-hand + shortfall listed / value conserved across both ends with period COGS 0 / uncosted arrives unvalued /
+  `unknown_location` with a bin or an org node making a place / tenant isolation); `warehouse-counts.test.ts` (the
+  movement on the ledger with both people and the reason; availability + valuation read it; one movement per count
+  whatever is retried; a rejection posts nothing); `counts-synced-route.test.ts`, `bin-counts-synced-route.test.ts`
+  (bin 30 → 28 AND store 100 → 98 from one count; a held count moves neither); `warehouse-durability.test.ts` (the posted
+  transfer and count movements survive a restart); `inventory-postings.test.ts` (7, new); `stock-valuation.test.ts`
+  (+2). API surface unchanged (new fields only: `inTransit`, `transferShortfalls`, `posted`, `lineCostsMinor`,
+  `movementId`, `postedCorrectionMinor`, `transferredOut`). **Still open, honestly:** no screen drives dispatch / receive
+  (the floor-indent chain, SP-8); the supervisor's propose-transfer outbox is drained by nothing (SP-8); the counts
+  review and stock-health screens do not yet show posted corrections or in-transit stock (SP-9); no physical device or
+  UAT.
+- **Current-work pointer:** last verified = SP-5 / SP-5b (this PR); next = **SP-6** [W06, F01] (a GRN folds into the PO
+  remainder atomically; disposition — accept / return / claim — write path; observation `procurement.test.ts` case 1
+  inverted); then SP-7 (F02/F04), SP-8/8b (F08), SP-9/9b; **SP-3c** (picker + driver) after the core-store chain;
+  genuine blockers: none; external gates unchanged (providers, hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 

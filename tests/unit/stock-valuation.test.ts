@@ -63,6 +63,31 @@ describe('weighted-average stock valuation (M08-FR-04, owner policy)', () => {
     expect(rows.find((r) => r.locationId === 'L2')!.unitCostMinor).toBe(2000);
   });
 
+  it('a transfer OUT leaves at the average as value MOVED, not cost of goods sold (SP-5, F05)', () => {
+    // 100 @ ₹10 at the warehouse; 30 go to the floor. The warehouse is down ₹300 of stock, but nothing was sold.
+    const v = only([recv(100, 1000), issue(30, { isTransferOut: true })]);
+    expect(v.onHandMinor).toBe(70);
+    expect(v.value.minor).toBe(70_000);
+    expect(v.transferredOut.minor).toBe(30_000);
+    expect(v.cogs.minor).toBe(0);
+    expect(v.unitCostMinor).toBe(1000);
+  });
+
+  it('a transfer IN that carries the sender\'s cost re-averages at the destination — the value follows the stock (SP-5, F05)', () => {
+    // The floor held 10 @ ₹8; 30 arrive from the warehouse at the warehouse's ₹10 → 40 worth ₹380, average ₹9.50.
+    const floor = only([recv(10, 800, { locationId: 'FLOOR' }), recv(30, 1000, { locationId: 'FLOOR' })]);
+    expect(floor.onHandMinor).toBe(40);
+    expect(floor.value.minor).toBe(38_000);
+    expect(floor.unitCostMinor).toBe(950);
+    // An empty destination values the arrivals at exactly what left: no "no basis" unvalued gap.
+    const empty = only([recv(30, 1000, { locationId: 'FLOOR' })]);
+    expect(empty).toMatchObject({ onHandMinor: 30, value: { minor: 30_000, currency: 'INR' }, unitCostMinor: 1000, unvaluedMinor: 0 });
+    // Across both ends the shop's stock value is conserved: ₹1000 − ₹300 moved + ₹300 arrived.
+    const both = weightedAverageValuation([recv(100, 1000), issue(30, { isTransferOut: true }), recv(30, 1000, { locationId: 'FLOOR' })], 'INR');
+    expect(both.reduce((s, r) => s + r.value.minor, 0)).toBe(100_000);
+    expect(both.reduce((s, r) => s + r.cogs.minor, 0)).toBe(0);
+  });
+
   it('is deterministic and exact under an awkward average (integer minor units)', () => {
     // 3 @ ₹10 then 1 @ ₹11 → 4 on hand worth ₹41, average ₹10.25 = 1025 minor. Sell 1 → COGS 1025.
     const v = only([recv(3, 1000), recv(1, 1100), issue(1)]);

@@ -9,6 +9,10 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 // commits a reason-coded COMPENSATING adjustment (append-only, #2); a MATERIAL variance is HELD — recorded,
 // valued, visible — until a SEPARATE person decides it, and the counter can never decide their own (§28).
 // Idempotent on the count id; authorized; per-tenant isolated.
+//
+// SP-5b (audit finding F06): an applied correction is now ONE compensating M08 movement (`count:<countId>`, `adjusted` for
+// stock found / `wasted` for stock missing) appended atomically with the count record — so ordinary availability and
+// valuation read the corrected figure, the count view no longer layers it a second time, and a retry cannot post it twice.
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -35,14 +39,20 @@ const readCount = (h: ApiHarness, t: string, u: string, productId: string, locat
 
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
 interface CountBody { expectedMinor: number; countedMinor: number; varianceMinor: number; valueMinor: number; reconciled: boolean; adjusted: boolean; requiredApproval: boolean; pendingApproval: boolean; flags: string[] }
-interface PositionBody { systemOnHandMinor: number; countCorrectionMinor: number; correctedOnHandMinor: number; pending: number; counts: { countId: string; adjusted: boolean; pendingApproval?: boolean; decision?: string; approvedBy: string | null }[] }
+interface PositionBody { systemOnHandMinor: number; countCorrectionMinor: number; postedCorrectionMinor: number; correctedOnHandMinor: number; pending: number; counts: { countId: string; adjusted: boolean; pendingApproval?: boolean; decision?: string; approvedBy: string | null; movementId?: string | null }[] }
+const onHandAt = async (h: ApiHarness, t: string, productId: string, locationId: string): Promise<number> =>
+  ((await h.request({ method: 'GET', path: '/v1/inventory/availability', userId: 'u-owner', tenantId: t, query: { productId } })).body as { rows: { locationId: string; onHandMinor: number }[] })
+    .rows.filter((r) => r.locationId === locationId).reduce((s, r) => s + r.onHandMinor, 0);
+const valueAt = async (h: ApiHarness, t: string, productId: string): Promise<number> =>
+  ((await h.request({ method: 'GET', path: '/v1/inventory/valuation', userId: 'u-owner', tenantId: t, query: { productId } })).body as { totalValueMinor: number }).totalValueMinor;
+const ledger = async (h: ApiHarness, t: string) => (await h.store.readStream(t, 'inventory', { type: 'InventoryMoved' })).map((e) => e.event.payload as Record<string, unknown>);
 
 // A count line: what the counter saw, and why they counted — NEVER the expected quantity, the value, the threshold or
 // an approver, all of which are head office's (SP-4).
 const line = (countedMinor: number, extra: Record<string, unknown> = {}) =>
   ({ productId: 'P1', locationId: 'S1', uom: 'EA', countedMinor, reasonCode: 'cycle_count', ...extra });
 
-describe('cycle counts: blind reconciliation, cloud-valued variance, a material one held for a separate person, layered on M08 (M09-FR-04)', () => {
+describe('cycle counts: blind reconciliation, cloud-valued variance, a material one held for a separate person, the correction posted to M08 (M09-FR-04)', () => {
   it('reconciles a blind count that matches the ledger with no adjustment', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
@@ -53,11 +63,13 @@ describe('cycle counts: blind reconciliation, cloud-valued variance, a material 
     expect(res.body as CountBody).toMatchObject({ expectedMinor: 100, countedMinor: 100, varianceMinor: 0, reconciled: true, adjusted: false, requiredApproval: false, pendingApproval: false, flags: ['default_threshold'] });
 
     const pos = (await readCount(h, A, 'u-owner', 'P1', 'S1')).body as PositionBody;
-    expect(pos).toMatchObject({ systemOnHandMinor: 100, countCorrectionMinor: 0, correctedOnHandMinor: 100, pending: 0 });
+    expect(pos).toMatchObject({ systemOnHandMinor: 100, countCorrectionMinor: 0, postedCorrectionMinor: 0, correctedOnHandMinor: 100, pending: 0 });
     expect(pos.counts).toHaveLength(1);
+    expect(pos.counts[0]).toMatchObject({ countId: 'c1', movementId: null });
+    expect((await ledger(h, A)).map((m) => m['movementId'])).toEqual(['mv-P1-S1']); // a match posts nothing
   });
 
-  it('commits a valued compensating adjustment for an immaterial variance and layers it on M08 — valued at the cloud\'s cost', async () => {
+  it('commits a valued compensating adjustment for an immaterial variance as ONE M08 movement every reader folds — valued at the cloud\'s cost (F06)', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     await seedOnHand(h, A, 'u-owner', 'P1', 'S1', 100);
@@ -65,11 +77,22 @@ describe('cycle counts: blind reconciliation, cloud-valued variance, a material 
     // Counted 98 vs expected 100 → variance -2 × ₹1.00 = ₹2.00 (200 minor), below the ₹1000 default threshold.
     const res = await count(h, A, 'u-owner', 'c2', line(98));
     expect(res.status).toBe(201);
-    expect(res.body as CountBody).toMatchObject({ expectedMinor: 100, countedMinor: 98, varianceMinor: -2, valueMinor: 200, reconciled: false, adjusted: true, requiredApproval: false, pendingApproval: false });
+    expect(res.body as CountBody).toMatchObject({ expectedMinor: 100, countedMinor: 98, varianceMinor: -2, valueMinor: 200, reconciled: false, adjusted: true, requiredApproval: false, pendingApproval: false, movementId: 'count:c2' });
 
-    // M08 is untouched; the count correction is layered on top of it (corrected on-hand = 98).
+    // SP-5b: the correction IS on M08 — availability and valuation read 98 / ₹98.00 — and the count view does not layer
+    // it a second time (system 98, posted −2, layered 0, corrected 98).
+    expect(await onHandAt(h, A, 'P1', 'S1')).toBe(98);
+    expect(await valueAt(h, A, 'P1')).toBe(9_800);
     const pos = (await readCount(h, A, 'u-owner', 'P1', 'S1')).body as PositionBody;
-    expect(pos).toMatchObject({ systemOnHandMinor: 100, countCorrectionMinor: -2, correctedOnHandMinor: 98 });
+    expect(pos).toMatchObject({ systemOnHandMinor: 98, countCorrectionMinor: 0, postedCorrectionMinor: -2, correctedOnHandMinor: 98 });
+    // The movement names the count, the counter and the policy that let it post without a second person (M08-FR-01/03).
+    expect((await ledger(h, A)).find((m) => m['movementId'] === 'count:c2')).toMatchObject({
+      kind: 'wasted', quantityMinor: 2, productId: 'P1', locationId: 'S1', uom: 'EA', enteredBy: 'u-owner',
+      reason: 'count c2 (cycle_count): counted 98, expected 100; immaterial under the tenant\'s count-approval threshold — no second approver required',
+    });
+    // The next count is measured against the corrected ledger, so a second 98 matches and posts nothing more.
+    expect((await count(h, A, 'u-owner', 'c2b', line(98))).body as CountBody).toMatchObject({ expectedMinor: 98, varianceMinor: 0, adjusted: false, movementId: null });
+    expect((await ledger(h, A)).filter((m) => String(m['movementId']).startsWith('count:'))).toHaveLength(1);
   });
 
   it('HOLDS a material variance — recorded, valued, not applied — until a separate person decides it; the counter cannot (§28); one decision per count', async () => {
@@ -82,23 +105,29 @@ describe('cycle counts: blind reconciliation, cloud-valued variance, a material 
 
     const held = await count(h, A, 'u-owner', 'c3', line(50));
     expect(held.status).toBe(201);
-    expect(held.body as CountBody).toMatchObject({ varianceMinor: -50, valueMinor: 5_000, adjusted: false, requiredApproval: true, pendingApproval: true, flags: [] });
+    expect(held.body as CountBody).toMatchObject({ varianceMinor: -50, valueMinor: 5_000, adjusted: false, requiredApproval: true, pendingApproval: true, movementId: null, flags: [] });
     expect((await readCount(h, A, 'u-owner', 'P1', 'S1')).body as PositionBody).toMatchObject({ correctedOnHandMinor: 100, pending: 1 });
+    expect(await onHandAt(h, A, 'P1', 'S1')).toBe(100); // held: nothing has moved
 
     // The counter cannot decide their own variance.
     const self = await decide(h, A, 'u-owner', 'c3', 'approved');
     expect(self.status).toBe(422);
     expect(codeOf(self)).toBe('self_approval');
-    // A separate person approves: the correction layers on now — and only now.
+    expect(await onHandAt(h, A, 'P1', 'S1')).toBe(100);
+    // A separate person approves: the correction posts to the ledger now — and only now (F06).
     const ok = await decide(h, A, 'u-boss', 'c3', 'approved');
     expect(ok.status).toBe(200);
-    expect(ok.body).toMatchObject({ decision: 'approved', adjusted: true, approvedBy: 'u-boss', alreadyDecided: false });
+    expect(ok.body).toMatchObject({ decision: 'approved', adjusted: true, approvedBy: 'u-boss', movementId: 'count:c3', alreadyDecided: false });
     const pos = (await readCount(h, A, 'u-owner', 'P1', 'S1')).body as PositionBody;
-    expect(pos).toMatchObject({ systemOnHandMinor: 100, countCorrectionMinor: -50, correctedOnHandMinor: 50, pending: 0 });
-    expect(pos.counts[0]).toMatchObject({ countId: 'c3', adjusted: true, pendingApproval: false, decision: 'approved', approvedBy: 'u-boss' });
+    expect(pos).toMatchObject({ systemOnHandMinor: 50, countCorrectionMinor: 0, postedCorrectionMinor: -50, correctedOnHandMinor: 50, pending: 0 });
+    expect(pos.counts[0]).toMatchObject({ countId: 'c3', adjusted: true, pendingApproval: false, decision: 'approved', approvedBy: 'u-boss', movementId: 'count:c3' });
+    expect(await onHandAt(h, A, 'P1', 'S1')).toBe(50);
+    expect(await valueAt(h, A, 'P1')).toBe(5_000);
+    expect((await ledger(h, A)).find((m) => m['movementId'] === 'count:c3')).toMatchObject({ kind: 'wasted', quantityMinor: 50, enteredBy: 'u-owner', approvedBy: 'u-boss', reason: expect.stringContaining('approved by u-boss') });
     // The same decision again is a no-op; a contradicting one is refused; a count that was never held cannot be decided.
     expect((await decide(h, A, 'u-boss', 'c3', 'approved', 'cd-c3-again')).body).toMatchObject({ alreadyDecided: true });
     expect(codeOf(await decide(h, A, 'u-boss', 'c3', 'rejected'))).toBe('count_already_decided');
+    expect(await onHandAt(h, A, 'P1', 'S1')).toBe(50); // posted once, whatever is retried
     await count(h, A, 'u-owner', 'c3b', line(50)); // matches the corrected 50 → nothing to decide
     expect(codeOf(await decide(h, A, 'u-boss', 'c3b', 'approved'))).toBe('count_not_pending');
     expect(codeOf(await decide(h, A, 'u-boss', 'c-ghost', 'approved'))).toBe('count_unknown');
@@ -106,8 +135,10 @@ describe('cycle counts: blind reconciliation, cloud-valued variance, a material 
     // A REJECTED variance stands recorded and applies nothing.
     const held2 = await count(h, A, 'u-owner', 'c4', line(0));
     expect(held2.body as CountBody).toMatchObject({ varianceMinor: -50, pendingApproval: true });
-    expect((await decide(h, A, 'u-boss', 'c4', 'rejected', undefined, 'shelf was restocked mid-count')).body).toMatchObject({ decision: 'rejected', adjusted: false });
+    expect((await decide(h, A, 'u-boss', 'c4', 'rejected', undefined, 'shelf was restocked mid-count')).body).toMatchObject({ decision: 'rejected', adjusted: false, movementId: null });
     expect((await readCount(h, A, 'u-owner', 'P1', 'S1')).body as PositionBody).toMatchObject({ correctedOnHandMinor: 50, pending: 0 });
+    expect(await onHandAt(h, A, 'P1', 'S1')).toBe(50);
+    expect((await ledger(h, A)).filter((m) => String(m['movementId']).startsWith('count:'))).toHaveLength(1);
   });
 
   it('refuses a body that still carries a value, a threshold or an approver — by name, moving nothing (F07)', async () => {

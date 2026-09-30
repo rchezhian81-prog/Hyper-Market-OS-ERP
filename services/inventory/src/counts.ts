@@ -7,10 +7,17 @@
 // and is never an input. Append-only (hard rule #2); idempotent on the count id.
 //
 // The rules are the pure `reconcileCount` (→ `commitAdjustment`) engines in `packages/counts` /
-// `packages/adjustment`, run over an in-memory `Ledger` hydrated with the expected position. Because the
-// M08 movement model (a kind + a positive quantity) cannot express a signed count correction, this
-// module keeps its OWN append-only count-correction ledger LAYERED on M08 — expected = M08 on-hand + the
-// sum of prior count corrections — so repeated counts converge even as real movements happen between them.
+// `packages/adjustment`, run over an in-memory `Ledger` hydrated with the expected position.
+//
+// SP-5b (audit finding F06): until this slice a count correction lived ONLY on this module's own count-correction
+// register, LAYERED on M08 — the count view showed the corrected figure while ordinary availability, valuation, ageing
+// and reorder all still read the old one. Now an applied correction is ONE compensating M08 movement (`adjusted` for
+// stock found, `wasted` for stock missing — the kind carries the sign, the quantity is positive), appended ATOMICALLY
+// with the count record under the movement id `count:<countId>`, so every reader of stock reads it and a retry cannot
+// post it twice. A BIN-level count (SP-3b) posts the same M08 movement at the store location AND one bin movement on the
+// warehouse projection, so the bin's occupancy corrects too. A correction that posted to M08 is never layered again
+// (`movementId` set on the record); records from before this slice, which carry no movement id, still layer — nothing
+// already recorded is re-read differently (hard rule #2).
 //
 // SP-4 (audit finding F07): until this slice the DIRECT route took the unit value, the approval threshold and the
 // approver's name FROM THE BODY — a counter could price a variance at nothing, set the threshold to one, or name
@@ -28,6 +35,8 @@ import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { CurrencyCode } from '../../../packages/contracts/src/money';
+import type { StockMovement } from '../../../packages/stock/src/position';
+import type { Movement } from './index';
 
 /** The count-approval threshold applied when the tenant has set none — and the record says so (`default_threshold`). */
 export const DEFAULT_COUNT_APPROVAL_THRESHOLD_MINOR = 100_000;
@@ -80,6 +89,52 @@ export interface StoredReconciliation {
   readonly decision?: 'approved' | 'rejected';
   readonly decidedAt?: string;
   readonly decisionReason?: string;
+  /** SP-5b — the unit the count was made in; the correction movement carries it. Absent on records from before SP-5b. */
+  readonly uom?: string;
+  /**
+   * SP-5b (F06) — the M08 movement the correction POSTED (`count:<countId>`), set when the correction was applied. A
+   * record with it is on the ledger every reader folds and is never layered again; one without it (pre-SP-5b, or a
+   * count that matched / was held / was rejected) posted nothing.
+   */
+  readonly movementId?: string | null;
+}
+
+/** The M08 movement id a count's correction posts under — one per count, so a retry is the same movement (§31.1). */
+export const countMovementId = (countId: string): string => `count:${countId}`;
+
+/** What an applied count correction writes beside its record (SP-5b): the M08 movement, and the bin movement for a bin count. */
+export interface CountCorrection {
+  readonly movement: Movement;
+  /** For a BIN-level count: the movement on the warehouse projection that corrects the bin's occupancy. */
+  readonly bin?: { readonly commandId: string; readonly movement: StockMovement };
+}
+
+/**
+ * The compensating correction a reconciliation posts to the ledgers (SP-5b · F06 · M08-FR-03), or `undefined` when it
+ * posted nothing (matched, held, rejected, or a pre-SP-5b record with no unit). Found stock is `adjusted` (+), missing
+ * stock is `wasted` (−) — the same kinds the adjustment-request path posts — entered by the counter, approved by the
+ * separate person who decided it, or by nobody when the tenant's own threshold made it immaterial (the reason says so).
+ */
+export function countCorrection(rec: StoredReconciliation): CountCorrection | undefined {
+  if (!rec.adjusted || rec.varianceMinor === 0 || rec.uom === undefined || (rec.movementId ?? null) === null) return undefined;
+  const at = rec.decidedAt ?? rec.at;
+  const approved = rec.approvedBy === null ? 'immaterial under the tenant\'s count-approval threshold — no second approver required' : `approved by ${rec.approvedBy}`;
+  const movement: Movement = {
+    movementId: rec.movementId as string, productId: rec.productId, locationId: rec.locationId,
+    kind: rec.varianceMinor > 0 ? 'adjusted' : 'wasted', quantityMinor: Math.abs(rec.varianceMinor), uom: rec.uom,
+    occurredAt: at, enteredBy: rec.counterId,
+    reason: `count ${rec.countId} (${rec.reasonCode})${rec.binId === null || rec.binId === undefined ? '' : ` bin ${rec.binId}`}: counted ${rec.countedMinor}, expected ${rec.expectedMinor}; ${approved}`,
+    ...(rec.approvedBy === null ? {} : { approvedBy: rec.approvedBy }),
+  };
+  const binId = rec.binId ?? null;
+  if (binId === null) return { movement };
+  // The bin's occupancy corrects by the same quantity: into the bin for stock found, out of it for stock missing.
+  const bin: StockMovement = {
+    movementId: movement.movementId, productId: rec.productId, locationId: binId, batchId: null,
+    from: rec.varianceMinor > 0 ? null : 'on_hand', to: rec.varianceMinor > 0 ? 'on_hand' : null,
+    quantityMinor: Math.abs(rec.varianceMinor), uom: rec.uom, at, reason: movement.reason,
+  };
+  return { movement, bin: { commandId: movement.movementId, movement: bin } };
 }
 
 export interface CountsDeps {
@@ -89,10 +144,17 @@ export interface CountsDeps {
   readonly reconciliations: (tenantId: string, productId: string, locationId: string) => Promise<readonly StoredReconciliation[]> | readonly StoredReconciliation[];
   /** Whether a count id has already been reconciled (idempotency — a count id is used once). */
   readonly countExists: (tenantId: string, countId: string) => Promise<boolean> | boolean;
+  /**
+   * Record the reconciliation — and, when `rec.movementId` is set (SP-5b), append `countCorrection(rec)` to the M08
+   * ledger (and the bin's projection for a bin count) in the SAME atomic write, idempotent on the movement id.
+   */
   readonly recordReconciliation: (tenantId: string, rec: StoredReconciliation) => Promise<void> | void;
   /** SP-4: the count by id, whatever position it is for — the decide step needs it (latest state). */
   readonly reconciliation: (tenantId: string, countId: string) => Promise<StoredReconciliation | undefined> | StoredReconciliation | undefined;
-  /** SP-4: append the decided state of a held count (a second event, never an edit — hard rule #2). */
+  /**
+   * SP-4: append the decided state of a held count (a second event, never an edit — hard rule #2) — with its
+   * `countCorrection(rec)` in the same atomic write when the approval set `rec.movementId` (SP-5b).
+   */
   readonly recordDecision: (tenantId: string, rec: StoredReconciliation) => Promise<void> | void;
   /** SP-4 (F07): the cloud's own unit value for the product (weighted-average cost); `undefined` when never costed. */
   readonly unitValueMinor: (tenantId: string, productId: string) => Promise<number | undefined> | number | undefined;
@@ -110,9 +172,15 @@ export interface CountsDeps {
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isNonNegInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0;
 
-/** The corrections already layered on M08 for a position — only counts that were actually ADJUSTED count. */
+/**
+ * The corrections still LAYERED on M08 for a position: counts that were ADJUSTED but posted no M08 movement (records
+ * from before SP-5b). A correction that posted (`movementId` set) is already in the M08 figure and is never added twice.
+ */
 export const priorCorrections = (recs: readonly StoredReconciliation[]): number =>
-  recs.filter((r) => r.adjusted).reduce((s, r) => s + r.varianceMinor, 0);
+  recs.filter((r) => r.adjusted && (r.movementId ?? null) === null).reduce((s, r) => s + r.varianceMinor, 0);
+/** SP-5b: the corrections that POSTED to the ledger for a position — stated on the count view so a reader can see them. */
+export const postedCorrections = (recs: readonly StoredReconciliation[]): number =>
+  recs.filter((r) => r.adjusted && (r.movementId ?? null) !== null).reduce((s, r) => s + r.varianceMinor, 0);
 /** The STORE-level reconciliations only: a bin count's correction (SP-3b) layers on that bin, never on the store position. */
 export const storeLevel = (recs: readonly StoredReconciliation[]): readonly StoredReconciliation[] =>
   recs.filter((r) => (r.binId ?? null) === null);
@@ -170,7 +238,7 @@ export async function reconcileBlindCount(deps: CountsDeps, tenantId: string, c:
   const at = deps.now();
   const relayed = c.relayed === undefined ? {} : { relayedBy: c.relayed.relayedBy, source: c.relayed.source, storeId: c.relayed.storeId };
   const common = {
-    countId: c.countId, productId: c.productId, locationId: c.locationId, binId: c.binId,
+    countId: c.countId, productId: c.productId, locationId: c.locationId, binId: c.binId, uom: c.uom,
     countedMinor: c.countedMinor, currency: 'INR' as const, reasonCode: c.reasonCode,
     counterId: c.counterId, approvedBy: null, at, governanceFlags: flags, ...relayed,
   };
@@ -178,7 +246,7 @@ export async function reconcileBlindCount(deps: CountsDeps, tenantId: string, c:
     // Recorded, valued, visible — and NOT applied. The correction waits for a separate person (§28); the review
     // screen lists it first. The count happened; this records it honestly, never refuses it into the void (#10).
     if (!Number.isInteger(c.countedMinor) || c.countedMinor < 0) throw new InvalidCountError(c.countId);
-    return { ...common, expectedMinor: expected, varianceMinor, valueMinor, reconciled: false, adjusted: false, requiredApproval: true, pendingApproval: true };
+    return { ...common, expectedMinor: expected, varianceMinor, valueMinor, reconciled: false, adjusted: false, requiredApproval: true, pendingApproval: true, movementId: null };
   }
   // Immaterial (or no variance): the same tested engine as ever, over a ledger hydrated with the expected position,
   // corrects at once. Threshold above the value by construction, so it never throws for approval.
@@ -194,7 +262,8 @@ export async function reconcileBlindCount(deps: CountsDeps, tenantId: string, c:
     countedMinor: c.countedMinor, counterId: c.counterId, at, reasonCode: c.reasonCode,
     valuePerUnit: { minor: unitValue ?? 0, currency: 'INR' }, thresholdMinor: valueMinor + 1,
   }, ledger, new SyncOutbox());
-  return { ...common, expectedMinor: result.expectedMinor, varianceMinor: result.varianceMinor, valueMinor: result.varianceValue.minor, reconciled: result.reconciled, adjusted: result.adjusted, requiredApproval: false, pendingApproval: false };
+  // SP-5b (F06): an applied correction is an M08 movement — `recordReconciliation` appends it with the record.
+  return { ...common, expectedMinor: result.expectedMinor, varianceMinor: result.varianceMinor, valueMinor: result.varianceValue.minor, reconciled: result.reconciled, adjusted: result.adjusted, requiredApproval: false, pendingApproval: false, movementId: result.adjusted ? countMovementId(c.countId) : null };
 }
 
 /** What deciding a held count came to — for the direct route and for the manager's relayed decision alike. */
@@ -223,18 +292,23 @@ export async function decideCount(deps: CountsDeps, input: {
   if (rec.counterId === input.decidedBy) return { ok: false, refusedBecause: 'self_approval', detail: `${input.decidedBy} counted this and cannot decide it (§28 separation of duties).`, record: rec };
 
   const decidedAt = deps.now();
+  // SP-5b (F06): an APPROVED correction posts to the M08 ledger (and the bin, for a bin count) with the decided record —
+  // one movement, keyed on the count, appended by `recordDecision` in the same write. A pre-SP-5b record with no unit
+  // cannot be turned into a movement and stays layered, as it always was.
+  const posts = input.decision === 'approved' && rec.varianceMinor !== 0 && rec.uom !== undefined;
   const decided: StoredReconciliation = {
     ...rec,
     adjusted: input.decision === 'approved', pendingApproval: false,
     approvedBy: input.decision === 'approved' ? input.decidedBy : null,
     decision: input.decision, decidedAt, decisionReason: input.reason,
+    movementId: posts ? countMovementId(rec.countId) : null,
   };
   await deps.recordDecision(input.tenantId, decided);
   await deps.recordAudit?.(input.tenantId, {
     actorId: input.decidedBy, action: input.decision === 'approved' ? 'count.approve' : 'count.reject', objectType: 'stock_count', objectId: input.countId,
     at: decidedAt, origin: { tenantId: input.tenantId, branchId: input.branchId },
     before: { status: 'pending_approval' },
-    after: { status: input.decision, counterId: rec.counterId, varianceMinor: String(rec.varianceMinor), valueMinor: String(rec.valueMinor), binId: rec.binId ?? '', via: input.via },
+    after: { status: input.decision, counterId: rec.counterId, varianceMinor: String(rec.varianceMinor), valueMinor: String(rec.valueMinor), binId: rec.binId ?? '', movementId: decided.movementId ?? '', via: input.via },
     reason: input.reason, correlationId: input.countId,
   });
   return { ok: true, record: decided, alreadyDecided: false };
@@ -300,7 +374,7 @@ export function countsRoutes(deps: CountsDeps): readonly Route[] {
         });
         return {
           status: 201,
-          body: { countId, expectedMinor: rec.expectedMinor, countedMinor: rec.countedMinor, varianceMinor: rec.varianceMinor, valueMinor: rec.valueMinor, reconciled: rec.reconciled, adjusted: rec.adjusted, requiredApproval: rec.requiredApproval, pendingApproval: rec.pendingApproval ?? false, flags: rec.governanceFlags ?? [] },
+          body: { countId, expectedMinor: rec.expectedMinor, countedMinor: rec.countedMinor, varianceMinor: rec.varianceMinor, valueMinor: rec.valueMinor, reconciled: rec.reconciled, adjusted: rec.adjusted, requiredApproval: rec.requiredApproval, pendingApproval: rec.pendingApproval ?? false, movementId: rec.movementId ?? null, flags: rec.governanceFlags ?? [] },
         };
       },
     },
@@ -323,12 +397,13 @@ export function countsRoutes(deps: CountsDeps): readonly Route[] {
         if (!out.ok) {
           throw apiError(refusalStatus[out.refusedBecause], { code: out.refusedBecause, whatHappened: out.detail, wasItSaved: 'not_saved', nextSafeAction: out.refusedBecause === 'self_approval' ? 'A different person with approval authority must decide it. Nothing was changed.' : 'Nothing was changed.' });
         }
-        return { status: 200, body: { countId, decision: out.record.decision, adjusted: out.record.adjusted, approvedBy: out.record.approvedBy, decidedAt: out.record.decidedAt, alreadyDecided: out.alreadyDecided } };
+        return { status: 200, body: { countId, decision: out.record.decision, adjusted: out.record.adjusted, approvedBy: out.record.approvedBy, decidedAt: out.record.decidedAt, movementId: out.record.movementId ?? null, alreadyDecided: out.alreadyDecided } };
       },
     },
     {
-      // The corrected position and count history for a product at a location — the M08 base plus the
-      // count corrections layered on it.
+      // The corrected position and count history for a product at a location. Since SP-5b (F06) an applied correction
+      // is IN the M08 figure (`postedCorrectionMinor` states how much of it came from counts); only pre-SP-5b
+      // corrections, which posted no movement, are still layered on top (`countCorrectionMinor`).
       api: 'API-04', method: 'GET', path: '/v1/inventory/counts',
       permission: 'inventory.availability.read',
       handler: async (ctx) => {
@@ -344,11 +419,13 @@ export function countsRoutes(deps: CountsDeps): readonly Route[] {
         }
         const recs = await deps.reconciliations(ctx.tenantId, productId, locationId);
         const systemOnHandMinor = await deps.onHand(ctx.tenantId, productId, locationId);
-        // Bin counts (SP-3b) are LISTED here with their bin, but their corrections belong to the bin, not the store position.
+        // Bin counts (SP-3b) are LISTED here with their bin; a bin count's posted correction is at the location on M08 like any
+        // other (the bin sits inside the location), while a pre-SP-5b bin correction layered only on the bin, never here.
         const countCorrectionMinor = priorCorrections(storeLevel(recs));
+        const postedCorrectionMinor = postedCorrections(recs);
         return {
           status: 200,
-          body: { productId, locationId, systemOnHandMinor, countCorrectionMinor, correctedOnHandMinor: systemOnHandMinor + countCorrectionMinor, counts: recs, pending: recs.filter((r) => r.pendingApproval === true).length, asAt: deps.now() },
+          body: { productId, locationId, systemOnHandMinor, countCorrectionMinor, postedCorrectionMinor, correctedOnHandMinor: systemOnHandMinor + countCorrectionMinor, counts: recs, pending: recs.filter((r) => r.pendingApproval === true).length, asAt: deps.now() },
         };
       },
     },

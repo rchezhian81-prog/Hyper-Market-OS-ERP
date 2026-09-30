@@ -20,7 +20,7 @@
 //     column somebody remembers to filter on (OB-01).
 
 import { createHash } from 'node:crypto';
-import { makeEvent } from '../../../packages/contracts/src/event';
+import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
 import type { Money, CurrencyCode } from '../../../packages/contracts/src/money';
 import type { EventStore, PersistedEvent } from '../../../packages/persistence/src/event-store';
 import {
@@ -84,8 +84,8 @@ import type { Bin, BinContents } from '../../../packages/warehouse/src/movements
 import { binKey } from '../../../packages/warehouse/src/movements';
 import type { StockMovement } from '../../../packages/stock/src/position';
 import type { TransfersDeps } from '../../inventory/src/warehouse-transfers';
-import type { Transfer } from '../../../packages/warehouse/src/transfers';
-import type { CountsDeps, StoredReconciliation, CountPolicy } from '../../inventory/src/counts';
+import type { Transfer, TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
+import { countCorrection, type CountsDeps, type StoredReconciliation, type CountPolicy } from '../../inventory/src/counts';
 import type { WriteOffDeps, StoredWriteOff } from '../../inventory/src/write-off';
 import type { ProductionDeps, StoredRun, StoredRelease } from '../../inventory/src/production';
 import type { WeighedCostingDeps, StoredWeighedRun } from '../../inventory/src/weighed-costing';
@@ -163,7 +163,7 @@ import { AuditTrail, InMemoryAuditStore, type AuditEntry, type AuditRecord } fro
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project, EFFECT_ON_HAND } from '../../inventory/src/index';
-import type { Movement, Availability, InventoryDeps, StockOwnership } from '../../inventory/src/index';
+import type { Movement, Availability, InventoryDeps, StockOwnership, InTransitStock, TransferShortfall } from '../../inventory/src/index';
 import { splitStoreValuation, type OwnedStockValue, tagsAsConcessionSales, latestTagVersions, type ConcessionTag } from '../../../packages/concession/src/index';
 import type { GoodsReceiptDeps, GrnRecord, StoredReceiptPolicy } from '../../inventory/src/goods-receipt';
 import { weightedAverageValuation, type ValuationMovement } from '../../../packages/stock/src/valuation';
@@ -2994,7 +2994,7 @@ export function concessionAdapter(input: {
           ms.map((m): ValuationMovement => ({
             productId: m.productId, locationId: m.locationId,
             effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-            isPurchaseReceipt: m.kind === 'received',
+            isPurchaseReceipt: carriesCost(m), isTransferOut: m.kind === 'transferred_out',
             ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
           })),
           'INR',
@@ -3896,6 +3896,13 @@ async function permissionsHeldBy(store: EventStore, tenantId: string, userId: st
 }
 
 /**
+ * Does this M08 movement carry its OWN cost basis into the valuation (SP-5 · F05)? A purchase receipt does; so does a
+ * `transferred_in` that arrived with the sending location's unit cost recorded at dispatch — the value that left the
+ * source is the value that enters the destination. Every valuation reader maps through this ONE rule.
+ */
+const carriesCost = (m: Movement): boolean => m.kind === 'received' || (m.kind === 'transferred_in' && m.unitCostMinor !== undefined);
+
+/**
  * The cloud's own unit cost for a product (SP-2b · F07): the weighted average of what it cost to buy, folded from the
  * `received` movements that carried a cost, across locations; failing that, the production cost register; failing
  * that `undefined` — said, never a silent zero.
@@ -3908,7 +3915,7 @@ async function unitCostHeldFor(store: EventStore, tenantId: string, productId: s
   const rows = weightedAverageValuation(
     moves.map((m): ValuationMovement => ({
       productId: m.productId, locationId: m.locationId, effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-      isPurchaseReceipt: m.kind === 'received',
+      isPurchaseReceipt: carriesCost(m), isTransferOut: m.kind === 'transferred_out',
       ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
     })),
     'INR',
@@ -4518,11 +4525,44 @@ export function transfersAdapter(input: {
   const inv = inventoryAdapter({ store: input.store, now: input.now });
   const recalls = recallAdapter({ store: input.store, now: input.now });
   const holds = qualityHoldAdapter({ store: input.store, now: input.now });
+  const org = orgStructureAdapter({ store: input.store, now: input.now });
+  const wh = warehouseAdapter({ store: input.store, now: input.now });
+
+  /** SP-5 (F05): the transfer event plus its M08 postings, ONE atomic write; every entry idempotent on its own key. */
+  const transferBatch = (tenantId: string, event: DomainEvent, posted: readonly Movement[]): Parameters<EventStore['appendBatch']>[1] => [
+    { stream: transfersStream, event },
+    ...posted.map((m) => ({
+      stream: STREAM.inventory,
+      event: makeEvent({
+        id: `mv-${m.movementId}`,
+        type: 'InventoryMoved',
+        occurredAt: m.occurredAt,
+        // The inventory adapter's own key format, so `isKnown` and every fold see it as any other movement.
+        idempotencyKey: `mv-${tenantId}-${m.movementId}`,
+        source: 'api/inventory',
+        payload: m,
+      }),
+    })),
+  ];
 
   return {
     now: input.now,
 
     transfer: async (tenantId, transferId) => (await foldTransfers(tenantId)).get(transferId),
+
+    // SP-5 (F05): the sending location's own weighted-average unit cost for the product — `not_known` (unvalued) → undefined.
+    unitCostAt: async (tenantId, locationId, productId) => {
+      const here = (await inv.valuation(tenantId, productId)).find((r) => r.locationId === locationId);
+      return here === undefined || here.unitCostMinor === 'not_known' ? undefined : here.unitCostMinor;
+    },
+
+    // SP-5: a place head office has ANY record of — an org node (branch / warehouse / department, not closed), a bin's
+    // store or location, or a location that has ever held stock on the M08 ledger.
+    knownLocation: async (tenantId, locationId) => {
+      if ((await org.nodes(tenantId)).some((n) => n.nodeId === locationId && n.status !== 'closed')) return true;
+      if ((await wh.bins(tenantId)).some((b) => b.storeId === locationId || b.locationId === locationId)) return true;
+      return (await inv.availability(tenantId)).some((r) => r.locationId === locationId);
+    },
 
     // SP-4 (F07): what head office itself holds at the source for each line — the M08 on-hand for the product there,
     // the line's batch marked recalled from the recall register or quarantined from the quality-hold register. The
@@ -4552,28 +4592,41 @@ export function transfersAdapter(input: {
       }));
     },
 
-    recordDispatched: async (tenantId, transfer, movements) => {
-      await input.store.append(tenantId, transfersStream, makeEvent({
+    // SP-5 (F05): the dispatched aggregate and its `transferred_out` movements at the source commit together, or not at all.
+    recordDispatched: async (tenantId, transfer, movements, posted) => {
+      await input.store.appendBatch(tenantId, transferBatch(tenantId, makeEvent({
         id: `transfer-dispatched-${transfer.transferId}`,
         type: 'TransferDispatched',
         occurredAt: transfer.dispatchedAt ?? input.now(),
         idempotencyKey: `transfer-dispatched-${tenantId}-${transfer.transferId}`,
         source: 'api/inventory',
-        payload: { transfer, movements },
-      }));
+        payload: { transfer, movements, posted: posted.map((m) => m.movementId) },
+      }), posted));
     },
 
-    recordReceived: async (tenantId, transfer, movements, discrepancies) => {
-      await input.store.append(tenantId, transfersStream, makeEvent({
+    // SP-5 (F05): the received aggregate and its `transferred_in` movements at the destination, atomically.
+    recordReceived: async (tenantId, transfer, movements, discrepancies, posted) => {
+      await input.store.appendBatch(tenantId, transferBatch(tenantId, makeEvent({
         id: `transfer-received-${transfer.transferId}`,
         type: 'TransferReceived',
         occurredAt: transfer.receivedAt ?? input.now(),
         idempotencyKey: `transfer-received-${tenantId}-${transfer.transferId}`,
         source: 'api/inventory',
-        payload: { transfer, movements, discrepancies },
-      }));
+        payload: { transfer, movements, discrepancies, posted: posted.map((m) => m.movementId) },
+      }), posted));
     },
   };
+}
+
+/** The transfer aggregates (latest state each) — shared by the transfers adapter and the inventory reads (SP-5). */
+async function foldTransferAggregates(store: EventStore, tenantId: string): Promise<readonly Transfer[]> {
+  const events = await store.readStream(tenantId, streamName(STREAM.warehouse, 'transfers'));
+  const byId = new Map<string, Transfer>();
+  for (const e of events) {
+    const t = (e.event.payload as { transfer?: Transfer }).transfer;
+    if (t !== undefined) byId.set(t.transferId, t);
+  }
+  return [...byId.values()];
 }
 
 /** The tenant's count-approval policy — one per tenant, latest wins, on its own inventory stream (SP-2b). */
@@ -4616,9 +4669,10 @@ export function countsAdapter(input: {
 
     reconciliation: async (tenantId, countId) => (await foldReconciliations(tenantId)).find((r) => r.countId === countId),
 
-    // SP-4: the decided state of a held count — a second event; the fold takes the latest (append-only, #2).
+    // SP-4: the decided state of a held count — a second event; the fold takes the latest (append-only, #2). SP-5b: an
+    // APPROVED correction's M08 movement (and bin movement) commit in the same write.
     recordDecision: async (tenantId, rec) => {
-      await input.store.append(tenantId, countsStream, makeEvent({
+      await input.store.appendBatch(tenantId, countBatch(tenantId, makeEvent({
         id: `count-decided-${rec.countId}`,
         type: 'CountDecided',
         occurredAt: rec.decidedAt ?? input.now(),
@@ -4626,7 +4680,7 @@ export function countsAdapter(input: {
         idempotencyKey: `count-decided-${tenantId}-${rec.countId}`,
         source: 'api/inventory',
         payload: rec,
-      }));
+      }), rec));
     },
 
     // The authoritative M08 on-hand for this product at this location (0 if the position is unknown).
@@ -4642,8 +4696,9 @@ export function countsAdapter(input: {
     countExists: async (tenantId, countId) =>
       (await foldReconciliations(tenantId)).some((r) => r.countId === countId),
 
+    // SP-5b (F06): the record and — when the count corrected at once — its M08 movement (and bin movement) in ONE write.
     recordReconciliation: async (tenantId, rec) => {
-      await input.store.append(tenantId, countsStream, makeEvent({
+      await input.store.appendBatch(tenantId, countBatch(tenantId, makeEvent({
         id: `count-${rec.countId}`,
         type: 'CountReconciled',
         occurredAt: rec.at,
@@ -4652,9 +4707,37 @@ export function countsAdapter(input: {
         idempotencyKey: `count-${tenantId}-${rec.countId}`,
         source: 'api/inventory',
         payload: rec,
-      }));
+      }), rec));
     },
   };
+
+  /**
+   * The count event plus the correction it posts (SP-5b · F06): the M08 movement in the inventory adapter's own format
+   * (`mv-<id>`) so every fold reads it as any other movement, and for a bin count the warehouse movement in ITS format
+   * (`wh-move-<commandId>`) so the bin's occupancy corrects — all idempotent on the count's movement id, all one write.
+   */
+  function countBatch(tenantId: string, event: DomainEvent, rec: StoredReconciliation): Parameters<EventStore['appendBatch']>[1] {
+    const correction = countCorrection(rec);
+    if (correction === undefined) return [{ stream: countsStream, event }];
+    return [
+      { stream: countsStream, event },
+      {
+        stream: STREAM.inventory,
+        event: makeEvent({
+          id: `mv-${correction.movement.movementId}`, type: 'InventoryMoved', occurredAt: correction.movement.occurredAt,
+          idempotencyKey: `mv-${tenantId}-${correction.movement.movementId}`, source: 'api/inventory', payload: correction.movement,
+        }),
+      },
+      ...(correction.bin === undefined ? [] : [{
+        stream: streamName(STREAM.warehouse, 'movements'),
+        event: makeEvent({
+          id: `wh-move-${correction.bin.commandId}`, type: 'WarehouseMovementRecorded', occurredAt: correction.bin.movement.at,
+          idempotencyKey: `wh-move-${tenantId}-${correction.bin.commandId}`, source: 'api/inventory',
+          payload: { commandId: correction.bin.commandId, movements: [correction.bin.movement] },
+        }),
+      }]),
+    ];
+  }
 }
 
 export function writeOffAdapter(input: {
@@ -5189,6 +5272,38 @@ export function inventoryAdapter(input: {
       return productId === undefined ? rows : rows.filter((r) => r.productId === productId);
     },
 
+    // SP-5 (F05 · M08-FR-02): what is on the van — every line of every transfer still in transit, held AT the destination,
+    // read from the transfer aggregates (the authoritative record of the van) and never folded into on-hand.
+    inTransit: async (tenantId, productId) =>
+      (await foldTransferAggregates(input.store, tenantId))
+        .filter((t) => t.state === 'in_transit')
+        .flatMap((t) => t.lines
+          .filter((l) => productId === undefined || l.productId === productId)
+          .map((l): InTransitStock => ({
+            transferId: t.transferId, productId: l.productId, batchId: l.batchId, locationId: t.toLocationId, fromLocationId: t.fromLocationId,
+            quantityMinor: l.quantityMinor, uom: l.uom, dispatchedAt: t.dispatchedAt ?? '',
+          })))
+        .sort((a, b) => (a.productId < b.productId ? -1 : a.productId > b.productId ? 1 : a.transferId < b.transferId ? -1 : 1)),
+
+    // SP-5 (F05 · M09-FR-03): every valued receipt shortfall — stock that left and never arrived — from the received
+    // transfers' own discrepancy records. Listed beside negative stock until a person owns it (P-08, #10).
+    transferShortfalls: async (tenantId) => {
+      const received = await input.store.readStream(tenantId, streamName(STREAM.warehouse, 'transfers'), { type: 'TransferReceived' });
+      const out: TransferShortfall[] = [];
+      for (const e of received) {
+        const p = payloadOf<{ transfer: Transfer; discrepancies?: readonly TransferDiscrepancy[] }>(e);
+        for (const d of p.discrepancies ?? []) {
+          if (d.differenceMinor >= 0) continue;
+          out.push({
+            transferId: p.transfer.transferId, productId: d.productId, batchId: d.batchId, fromLocationId: p.transfer.fromLocationId, locationId: p.transfer.toLocationId,
+            dispatchedMinor: d.dispatchedMinor, receivedMinor: d.receivedMinor, differenceMinor: d.differenceMinor, value: d.value,
+            receivedAt: p.transfer.receivedAt ?? e.event.occurredAt, detail: d.detail,
+          });
+        }
+      }
+      return out;
+    },
+
     /**
      * Stock valued at weighted-average cost (M08-FR-04, owner policy). Folds the WHOLE movement
      * history in occurrence order — the average depends on the sequence of receipts, so unlike
@@ -5205,7 +5320,7 @@ export function inventoryAdapter(input: {
         movements.map((m): ValuationMovement => ({
           productId: m.productId, locationId: m.locationId,
           effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-          isPurchaseReceipt: m.kind === 'received',
+          isPurchaseReceipt: carriesCost(m), isTransferOut: m.kind === 'transferred_out',
           ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
         })),
         'INR',
@@ -5229,7 +5344,7 @@ export function inventoryAdapter(input: {
         movements.map((m): DatedMovement => ({
           productId: m.productId, locationId: m.locationId,
           effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-          isPurchaseReceipt: m.kind === 'received',
+          isPurchaseReceipt: carriesCost(m), isTransferOut: m.kind === 'transferred_out',
           occurredAt: m.occurredAt, batchId: m.batchId ?? null,
           ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
         })),
@@ -5258,7 +5373,7 @@ export function inventoryAdapter(input: {
             .map((m): ValuationMovement => ({
               productId: m.productId, locationId: m.locationId,
               effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-              isPurchaseReceipt: m.kind === 'received',
+              isPurchaseReceipt: carriesCost(m), isTransferOut: m.kind === 'transferred_out',
               ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
             })),
           'INR',
