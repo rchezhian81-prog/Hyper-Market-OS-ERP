@@ -481,11 +481,41 @@ device, human UAT and production verification separate; approved deferrals stay 
   (only a hold refuses one — the roadmap's stated acceptance); compliance documents are recorded but not checked at the PO;
   input GST on purchase invoices is not captured; the bank statement that clears `bank_clearing` is externally gated; no
   physical device or UAT.
-- **Current-work pointer:** last verified = SP-7c (this PR); next = **SP-7d** [W07 close-out, screen] (the Suppliers screen
-  served by the box at `/suppliers`: the list with state, verified bank, balance and reasons; propose / approve from the
-  screen where the reader holds the right; session model + guardrail + browser e2e; `served: unbuilt` → `box`); then
-  SP-8/8b (F08), SP-9/9b; **SP-3c** (picker + driver) after the core-store chain; genuine blockers: none; external gates
-  unchanged (providers, hardware, real data, pilot GO).
+- **SP-7d — the supplier has one face on the screen (M06-FR-01 · M23-FR-01 · M15-FR-03 · §28 · P-02 · P-03 · P-07 ·
+  P-08).** The Suppliers screen is BUILT and SERVED by the box at `/suppliers` (the 47th ERP page; `served: unbuilt` → box in
+  the menu catalogue). (i) A DOM-free, bilingual session model (`apps/web-erp/src/suppliers-session.ts`) orders every
+  supplier the registers name needing-a-person FIRST — a hold as an error, then the most owed — with every reason in words
+  (`no_master_record`, `awaiting_approval`, `blocked`, `possible_duplicate`, `duplicate_bank_account`,
+  `no_verified_bank_account`, `unmatched_invoices`, `blocked_invoices`, `withheld`, `pending_returns`, `over_invoiced`), the
+  verified bank account or its absence, and the ONE balance the SP-7b account says — read live from
+  `GET /v1/purchase/suppliers`, never typed, never recomputed (P-02). (ii) PROPOSE (`purchase.supplier.manage`) — code, name,
+  GSTIN, contact, payment terms — and APPROVE with a written reason (`purchase.supplier.approve`) are offered ONLY to a named
+  reader who holds the right and whose page can reach head office; an empty form is refused before anything is sent; the
+  proposer of a supplier is never offered its approval and a self-approval is refused on the screen with nothing sent
+  (§28) — the cloud refuses it again; the approval posts `{ reason }` only (the approver is the session, never a body
+  field) under a fresh idempotency key; a look-alike the cloud names is SAID on the success line, never hidden. (iii) The
+  box: `PackSuppliersPolicy` (`suppliersPolicy` register), `suppliersPayload`, `APP_SHELL.suppliers`, `sw.js` shell;
+  `browser-entry.ts` `fetchSuppliers` / `openSupplierApprovePort` / `openSupplierProposePort` / `bootSuppliers`; the
+  list row now carries `proposedBy` so the screen can refuse before the wire. (iv) The service list row gained
+  `proposedBy` (additive). Evidence: `tests/e2e/suppliers-delivery.e2e.ts` (5, headless Chromium vs a same-origin stub
+  cloud: needing-a-person first + ₹ + reasons + only the other person's proposal approvable; approve POSTs `{ reason }` to
+  `/v1/purchase/suppliers/s-2/approval` keyed, then the list is re-read and the supplier no longer waits; a
+  self-approval refused on the screen with nothing sent and a cloud 422 shown verbatim; a purchase user proposes
+  `SUP-9` with the fields and the look-alike said; no permission → not-permitted, no controls),
+  `tests/guardrails/the-suppliers-screen-is-usable.test.ts` (13), `tests/unit/erp-suppliers-session.test.ts` (10),
+  `tests/unit/erp-navigation-catalogue.test.ts` (unbuilt list now `reconciliation`, `settings`), the chrome / offline /
+  foundation guardrails at 47 pages, `tests/integration/the-screens-are-fed.test.ts` (the real box serves it). M06 stays
+  E2E_VERIFIED (already there via the buyer's write-paths) — no rung change; M06-FR-01 is now E2E_VERIFIED in the
+  core-store matrix. **Still open, honestly:** the screen does not record a payment, dispose quarantined stock or issue a
+  debit note (SP-9 review screens); an unapproved (not blocked) supplier can still be issued a PO; compliance documents
+  are recorded, not checked at the PO; the browser leg runs against a stub cloud (the connected leg on real services +
+  real PostgreSQL is SP-9); physical device + UAT PENDING.
+- **Current-work pointer:** last verified = SP-7d (this PR) — W07 CLOSED on the cloud and the screen; next = **SP-8**
+  [W08, F08] (floor indent → approval → allocation → scan issue → in transit → independent floor receipt → shelf
+  availability → sale: the shared durable queue for the floor's indent and receipt, the back-store issue as a stock
+  movement, the floor receipt independent of the issue, the shelf availability the till reads), then SP-8b, SP-9/9b;
+  **SP-3c** (picker + driver) after the core-store chain; genuine blockers: none; external gates unchanged (providers,
+  hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 

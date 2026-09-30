@@ -3,7 +3,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * **The ERP's forty-six pages are one product (Stage G slice 5a · design system §1 rules 4 · 6 · 7, §5, §7).**
+ * **The ERP's forty-seven pages are one product (Stage G slice 5a · design system §1 rules 4 · 6 · 7, §5, §7; the
+ * forty-seventh, Suppliers, arrived at SP-7d).**
  *
  * Before this slice one page in forty-six had a sync badge, the language toggle carried two different labels,
  * every page drew its own "served from cache" strip, and forty-four had no heading. Now `sre-chrome.js` is the one
@@ -21,8 +22,8 @@ const styleOf = (html: string): string => html.slice(html.indexOf('<style>'), ht
 const code = (source: string): string => source.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
 
 describe('every page carries the one chrome', () => {
-  it('finds the forty-six pages', () => {
-    expect(PAGES.length).toBe(46);
+  it('finds the forty-seven pages', () => {
+    expect(PAGES.length).toBe(47);
   });
 
   it('loads sre-chrome.js AFTER its own script, so the page\'s words come first and the chrome finishes the frame', () => {
