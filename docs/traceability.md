@@ -243,6 +243,33 @@ PRODUCTION-verified. _These counts are derived from the ladder rungs above and c
 isolation, idempotency, persistence, audit, offline/sync, contracts, integration + E2E tests, UI
 states, and English/Tamil at every increment.
 
+## Store audit findings F01–F12 (independent store-workflow audit, 30 September 2026, commit 8f4f6c5)
+
+The owner commissioned an independent audit of the core store chain (handover package *Hyper-Market-Store-E2E-Handover*,
+pinned to `8f4f6c5a62cffda0bae838cc7fde1196cf8135e3` = current `main`). Its twelve reproduced findings are registered
+HERE, against the requirements they belong to, so the canonical record carries them; the dated owner view is
+`docs/audit/STORE-E2E-STATUS-MATRIX-2026-09-30.md`. The audit's observation tests are committed under
+`tests/audit-observations/` **as defect reproductions — a pass confirms the defect**; the slice that fixes a finding
+inverts its assertion into the intended-behaviour regression (never restores the bug to keep a test green). No module
+rung or score changes with this registration: a rung records what the evidence shows, and every finding below is a
+missing JOIN or a missing GUARD, not a missing engine. **Status legend:** OPEN (reproduced at the commit named) ·
+FIXED (PR named, regression inverted).
+
+| # | Finding | Requirements | Reproduction | Fix slice (STATUS SP-*) | Status |
+|---|---|---|---|---|---|
+| F01 | A committed partial GRN changes stock but leaves the approved PO fully outstanding — the receipt fold into the PO commitment is a separate call nobody makes | M06-FR-04, M07-FR-01 | `tests/audit-observations/procurement.test.ts` | SP-6 | OPEN at 8f4f6c5 |
+| F02 | The buyer screen's plain boot reports "Invoice saved" while saving nothing; an immediate match finds no invoice; a duplicate capture succeeds | M07-FR-04, M30 | procurement.test.ts | SP-7 | OPEN at 8f4f6c5 |
+| F03 | An over-tolerance excess is flagged `requiresApproval` yet fully sellable at once; tracking rules and tolerance policy are trusted from the request body | M07-FR-02, M07-FR-03 | procurement.test.ts | SP-4 | OPEN at 8f4f6c5 |
+| F04 | The three-way match compares a caller-typed snapshot, not a stored PO+GRN+invoice join; no payable / supplier-statement / journal closure | M07-FR-04, M23 | source review + `tests/integration/purchase-capture-match.test.ts` (passes without a PO or GRN) | SP-7 | OPEN at 8f4f6c5 |
+| F05 | A received transfer leaves availability and valuation at the source; no destination row — transfer movements are nested in warehouse events, not posted to the inventory projection | M08-FR-01, M09-FR-03 | `tests/audit-observations/warehouse.test.ts` | SP-5 | OPEN at 8f4f6c5 |
+| F06 | An approved count corrects only the count view; ordinary availability, valuation and reorder still read the old figure | M08-FR-03, M09-FR-04 | warehouse.test.ts | SP-5b | OPEN at 8f4f6c5 |
+| F07 | `approvedBy`, `available` stock and `valuePerUnitMinor` are caller claims: a never-provisioned approver dispatches a transfer and approves a material count; fictitious stock permits an over-draw; zero cost bypasses approval | M02-FR-03, M08-FR-03, M09-FR-03 | warehouse.test.ts | SP-4 | OPEN at 8f4f6c5 |
+| F08 | Shelf-count save only mutates page data; refill tasks are calculated, never persisted as a request → approval → issue → transit → receipt chain — no connected floor-indent workflow | M04-FR-03, M09-FR-02, M09-FR-03 | source review (`apps/web-erp/web/merchandising.js`) | SP-8 | OPEN at 8f4f6c5 |
+| F09 | The served till writes cashier `cashier`, lane `lane-1`, trading day `1970-01-01` on every sale — the page boot passes no identity | M12-FR-02, M02 | `tests/audit-observations/pos.test.ts` | SP-4b | OPEN at 8f4f6c5 |
+| F10 | The till's Close button sends shift id, time and counted cash but not the four money fields the session requires — throws before it can close; float/pickup/shift have no durable device→box→cloud path | M14-FR-01, M14-FR-02 | pos.test.ts | SP-4c | OPEN at 8f4f6c5 |
+| F11 | A manager's approval returns success with no register, ledger or outbox effect; a manager receipt is lost on reload; unsent shows 0; the handheld queues have no sender | M02-FR-03, M07-FR-01, M09-FR-01 | `tests/audit-observations/sync.test.ts` | SP-2 (desk), SP-3 (handhelds) | OPEN at 8f4f6c5 |
+| F12 | The sync transport classifies every 409 as accepted, so a kernel `idempotency_key_reused` / `wasItSaved: not_saved` conflict is acknowledged as delivered | M31, QG-04, §31.1, hard rule #10 | sync.test.ts | SP-1 | OPEN at 8f4f6c5 |
+
 ## Restored extension requirement rows (Phase 0 — previously untraced)
 
 The audit found five defined extension requirements with **no traceability row** — a silent-drop that
