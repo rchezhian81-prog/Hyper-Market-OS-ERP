@@ -5,6 +5,48 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Store operations first — requirement audit, then E2E completion (30 September 2026)
+
+**Owner direction (30 Sep 2026, in writing): Option 2.** Fix the manager queue BEFORE W2, on the shared synchronisation
+infrastructure; before the next increment report exactly which requirements are complete and which are not; the
+immediate priority is the complete store-management workflow (purchasing, supplier receiving, inventory, back store,
+floor indents, back-store issue, floor receiving, shelf replenishment, sales, returns, reconciliation). The owner also
+supplied an independent store-workflow audit (handover package, pinned to `8f4f6c5` = current `main`): 12 reproduced
+findings, 13 dependency-ordered work packages, 57 acceptance scenarios, a 604-record source inventory. Preserve the
+104-item denominator and scoring; "EVIDENCE MISSING" means not shown, never not built; keep automated E2E, physical
+device, human UAT and production verification separate; approved deferrals stay explicit; no scope added or removed.
+
+- **SP-0 — status matrix published (this PR).** `docs/audit/STORE-E2E-STATUS-MATRIX-2026-09-30.md`: the module summary
+  and the core-store requirement matrix (screen/backend, persistence & sync, permissions & approvals, E2E evidence
+  tied to a commit, maturity, exact gap, next action) for masters, purchasing, receiving, supplier accounting,
+  inventory, sales floor, POS and management; the four verification classes (automated E2E · physical device PENDING ·
+  human UAT 0 · production 0); the 12 findings all re-reproduced at `8f4f6c5` (`tests/audit-observations/`, 12/12 —
+  a pass CONFIRMS a defect; each fix inverts its test) and registered in `docs/traceability.md` ("Store audit findings
+  F01–F12"); the delivery order SP-1 … SP-10. No rung or score changed: every finding is a missing join or guard, not a
+  missing engine. **Honest headline:** the store-management workflow is NOT complete. Proven: offline sale → disk → box
+  → cloud (real PG) with stock falling; refund the same way; day close through the box; PO raise + invoice capture from
+  the screen; cloud GRN with quarantine rules + review screen; handheld receive/put-away/pick queued durably on the
+  device; promotions, prices, expiry/recall, write-offs, cash-office sign-off from their screens. Not proven / defective:
+  handheld and manager queues reach nobody (F11); a rejected sync conflict is swallowed (F12); approver, stock and value
+  can be typed (F03, F07); transfers and count corrections do not change ordinary stock (F05, F06); a receipt does not
+  reduce the order (F01); invoice not joined or posted as a liability (F02, F04); no floor-indent chain (F08); the till
+  names a placeholder cashier and day (F09) and cannot close its shift (F10).
+- **Delivery order (one focused PR at a time, gate + CI before merge):** SP-1 transport conflict classification (F12) →
+  SP-2 shared durable queue + one sync mechanism for the manager screen (approval decision, receipt, count recorded
+  locally before "saved", `POST /lane/outbox` on the box with fsync'd per-source log and per-item acks, relay to cloud
+  `/synced` routes that re-verify the actor, states saved-locally / pending-sync / posted / conflict, lost-reply
+  recovery) → SP-3 handhelds on the same route with a device credential + W2 blind count + W3 adjustment request +
+  accurate badge states → SP-4 trusted approvals/policies (F03, F07), SP-4b real cashier/lane/day (F09), SP-4c till
+  close + cash (F10) → SP-5/5b one stock truth for transfers and counts (F05, F06) → SP-6 GRN↔PO commitment +
+  disposition (F01) → SP-7 invoice → payable + supplier master + claims (F02, F04) → SP-8 floor indent through
+  independent receipt (F08) → SP-9 connected E2E suite on real services + real PostgreSQL → SP-10 physical device +
+  staff UAT (separate gates, PENDING until performed). The W2/W3/S1/S2 program of 30 Sep is folded into SP-3 in this
+  order by the owner's Option 2; nothing is dropped.
+- **Current-work pointer:** last verified = SP-0 (this PR); next = **SP-1** (`edge/sync-agent/src/http-transport.ts`
+  `classify` + body-aware conflict detection; invert `tests/audit-observations/sync.test.ts` case 1 into the regression;
+  prove restart retains the conflict via the durable dead-letter store); genuine blockers: none for SP-1..SP-9;
+  external gates unchanged (providers, hardware, real data, pilot GO).
+
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 
 **Owner direction (28 Sep 2026, in writing):** act as architect + developer; build every roadmap module to

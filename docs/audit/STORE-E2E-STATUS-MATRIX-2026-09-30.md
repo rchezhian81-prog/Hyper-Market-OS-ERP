@@ -1,0 +1,197 @@
+# Core store operations — requirement status matrix (30 September 2026)
+
+**Baseline:** `main` = `8f4f6c5a62cffda0bae838cc7fde1196cf8135e3` (PR #641, W1 merged). The independent store audit
+(handover package *Hyper-Market-Store-E2E-Handover.zip*, 30 Sep 2026) was pinned to this same commit, so nothing has
+drifted between the audit and this matrix. **All 12 audit observation tests reproduce at this commit** (re-run here:
+`tests/audit-observations/*.test.ts`, 12/12 passing — a pass CONFIRMS a defect).
+
+**What this document is.** A dated, owner-requested VIEW of the canonical record for the store-management chain. It
+adds no requirement, drops none, and changes no maturity rung or score. `docs/traceability.md` stays the canonical
+per-requirement evidence record (its new section "Store audit findings F01–F12" carries the findings); the 104-item
+denominator and the fixed maturity weights (`docs/COMPLETION-MODEL.md`) are untouched. Where completion cannot be
+demonstrated the cell says **EVIDENCE MISSING** — which means *not shown*, never *not built*.
+
+**Four kinds of verification, kept apart** (a tick in one is never a tick in the next):
+
+| Class | State at 8f4f6c5 |
+|---|---|
+| Automated software E2E (real Chromium, served screens, real store-box code, real API; real PostgreSQL where stated) | 50 browser files / 169 tests + 836 files / 8855 unit·guardrail·integration in the local gate; CI: 8,581 default + 2,053 real-PG. **Not** a connected purchase→sale→close trace (see §5). |
+| Physical-device verification (scanners, printers, handhelds, till hardware) | **PENDING — none performed.** |
+| Human / staff UAT (witnessed, real roles, synthetic data) | **0 items.** Walkthrough prepared (`docs/pilot/DEMO-PILOT-UAT-WALKTHROUGH.md`), not executed by staff. |
+| Production verification (live providers, real data, go-live) | **0 items.** Not authorised (owner's standing constraints). |
+
+## 1. Module summary (ladder rungs as recorded; completion model unchanged)
+
+`node scripts/completion-report.mjs` at 8f4f6c5: **57.9 %** weighted technical completion over 104 items
+(26 E2E_VERIFIED · 14 INTEGRATION_TESTED · 11 WIRED · 52 PARTIALLY_WIRED · 1 ENGINE_ONLY · 0 UAT · 0 PRODUCTION).
+Module-level rungs for the store chain, with the honest reading the audit forced:
+
+| Module | Rung (RTM) | What the rung actually proves | What it does NOT prove (audit) |
+|---|---|---|---|
+| M01 Org / locations | WIRED | company→GST→branch→warehouse→department on API-01; templates + trading day | locations are not validated where stock moves (transfer/count accept any string location) |
+| M02 Identity / RBAC / approvals | INTEGRATION_TESTED | per-tenant RBAC on every route; delegation FR-03 | a manager's approval decision is not persisted anywhere (F11); routes accept a caller-typed `approvedBy` (F07) |
+| M03 Catalogue | INTEGRATION_TESTED | product master, barcodes, pack/UOM, tax schedule, publish gate, restart-safe | no category store; barcode-coverage report not built |
+| M04 Shelf / planogram | WIRED | shelf map + planograms persisted per store; shelf-count producer; compliance → refill tasks | tasks are calculated, never persisted as a request→issue→receipt chain (F08); merchandising screen has no browser e2e |
+| M05 Pricing / promotions | E2E_VERIFIED | price change + promotion launch reach head office from the screen | price-label printing has no proven screen path |
+| M06 Procurement | E2E_VERIFIED | PO raise + invoice capture from the buyer's screen; approval by a second person on the cloud | GRN never reduces the PO remainder (F01); invoice "saved" without a cloud save on the plain boot (F02); supplier master screen unbuilt |
+| M07 Receiving | E2E_VERIFIED | cloud GRN atomic with stock; ERP review screen; handheld GRN capture (device-local) | unapproved excess becomes sellable, policy trusted from the request (F03); handheld queue drains to nothing (S1); disposition approval write path missing |
+| M08 Stock | E2E_VERIFIED | append-only ledger; sale and resold-return post stock; valuation/ageing/turns; stock-health screen | transfers and count corrections do not reach ordinary availability/valuation (F05, F06) |
+| M09 Warehouse | E2E_VERIFIED | bins, movements, put-away, pick (W1), transfers, counts on the cloud; supervisor + handheld screens | approver/available/value are caller claims (F07); no sender for the device queues (S1); W2/W3 pending; cloud produces no handheld assignment |
+| M10 Expiry / recall | E2E_VERIFIED | expiry list, FEFO, recall lifecycle, recall block on the till | quality-hold register → till block propagation to verify (audit source note) |
+| M12 POS | E2E_VERIFIED | offline sale on disk + sync to real PG; refund; receipt template | served till writes cashier "cashier", lane "lane-1", day 1970-01-01 (F09); exchange / no-receipt till UI incomplete |
+| M13 Returns | INTEGRATION_TESTED (externally blocked: EX-03 live reversal) | refund guards, eligibility, store credit, exchanges backend | till exchange UI; live card/UPI reversal (external) |
+| M14 Cash / day close | E2E_VERIFIED | cash movements, shift close, settlement review on the cloud; day close via the box; reopen screen | till close button throws (F10); float/pickup/shift close have no durable device→box→cloud path |
+| M15 Loss prevention | E2E_VERIFIED | rules, signals, cases, investigation screen | — (not in the audit's reproduced set) |
+| M23 Finance (payables) | PARTIALLY_WIRED (externally blocked: GST/e-invoice live) | day book posts sales/returns; credit notes | AP / supplier liability posting foundation-only (F04) |
+
+## 2. Core-store requirement matrix
+
+Columns: **Req & workflow** · **Screen / backend implemented** · **Persistence & sync** · **Permissions & approvals** ·
+**E2E evidence (commit)** · **Maturity** · **Exact remaining gap** · **Next corrective action** (task id in §4).
+"Real PG" = the test runs against PostgreSQL; "stub box" = the browser test injects the screen data a store box would
+serve; "real box" = the test starts the store-edge screen server.
+
+### 2.1 Masters — suppliers, products, barcodes, UOM/pack, batches, expiry, prices, tax, locations, roles
+
+| Req & workflow | Screen / backend | Persistence & sync | Permissions & approvals | E2E evidence (commit) | Maturity | Exact remaining gap | Next action |
+|---|---|---|---|---|---|---|---|
+| M01-FR-01 locations (store / back store / floor / bins) | `services/platform/src/org-structure.ts` (API-01); bins `POST /v1/warehouse/bins/:binId`; shelf map `PUT /v1/merchandising/stores/:storeId/shelf-map` | event-sourced, real-PG durability tests | `org.*`, `inventory.movement.append`, `planogram.publish` | integration only; **EVIDENCE MISSING** for one governed hierarchy consumed by stock, transfers and reports (INV-COV-01) | WIRED | transfers/counts/movements accept any `locationId` string — a typo creates a location | SP-5 (validate location ids against the org/shelf map at the stock boundary) |
+| M03-FR-01 product master | Products screen `/products/` (product-publish) · `POST /v1/catalogue/products/:id/publish` | event-sourced; restart-rebuild test `product-master-durability` (real PG) | `catalogue.pack.publish` / `.read`; compliance gate | `product-publish-delivery.e2e.ts` @760d693 (stub box) | INTEGRATION_TESTED (M03) | categories supplied per request, no category store | later (not core-chain blocking) |
+| M03-FR-02 barcodes, UOM, pack/case conversion, weighed | barcode register + pack hierarchy routes; till scan engine | event-sourced, restart-safe | `catalogue.pack.publish` | `pack-hierarchy.test.ts` (8), `barcode-register.test.ts`; till scan e2e @c9b40b3 (real disk + real PG) | INTEGRATION_TESTED | barcode-coverage report not built; case→unit conversion at GRN proven in engine tests only | SP-6 (receiving) covers the GRN boundary |
+| M03-FR-03 tax / MRP / batch flags | tax-class rate schedule routes; `regulatedFlags` to the pack (E1b) | event-sourced | `catalogue.pack.publish` | integration `tax-class-rates.test.ts`; till age prompt e2e budget @ee83816 | INTEGRATION_TESTED | inclusive-tax lane totals vs the separate GST engine: **EVIDENCE MISSING** (audit source note) | SP-9 (connected trace reconciles tax) |
+| M05-FR-01/02 prices, MRP, margin floor | Catalogue screen price change · `POST /v1/prices/changes`, price-list entries | event-sourced | `price.change.propose` / `.approve` §28 | `catalogue-price-change-delivery.e2e.ts` @760d693 (stub box) | E2E_VERIFIED | original price/pack VERSION across restart on the lane: **EVIDENCE MISSING** | SP-9 |
+| M06-FR-01 supplier onboarding, bank change | bank-details verification route `POST /v1/purchase/suppliers/:id/bank-details`, block-status route | event-sourced | maker≠approver on bank change | integration `bank-controls`; **Suppliers screen `served: unbuilt`** | WIRED (routes) / screen NOT BUILT | no supplier master screen; KYC documents engine-only | SP-7 (after payables join) |
+| M02 roles / users | Admin screen `/admin/?tab=people`; ROLE_CATALOGUE; per-route enforcement | real-PG durability (A2) | `identity.role.read/manage` | `fleet-change-delivery.e2e.ts` @760d693; integration access tests | INTEGRATION_TESTED | branch-scoped reads and support access: **EVIDENCE MISSING** at the boundary (audit source note) | SP-4 (trusted approvals) adds branch/tenant denial regressions |
+
+### 2.2 Purchasing — need, requisition, approval, quotation, PO, amendments, outstanding
+
+| Req & workflow | Screen / backend | Persistence & sync | Permissions & approvals | E2E evidence (commit) | Maturity | Exact remaining gap | Next action |
+|---|---|---|---|---|---|---|---|
+| M09-FR-02 / D-1 / D-2 / D-3 replenishment need | `POST /v1/replenishment/propose`, `/order-proposal`, sales-history demand read | stateless advisory reads over the sales ledger | `inventory.availability.read`; every proposal `advisoryOnly` (hard rule #5) | integration only; **EVIDENCE MISSING** for a screen path proposal → PO | WIRED | no screen turns a proposal into a requisition | SP-7 |
+| M06-FR-02 requisition → RFQ → quote → PO → approval | Buying screen `/buying/` raises the PO; `POST /v1/purchase/orders/:poId`, `/approval` (second person) | event-sourced; restart-safe; tenant-isolated | proposer cannot approve (§28) | `buying-po-delivery.e2e.ts` @760d693 (PO raise reaches head office, stub box); approval: integration `purchase-orders.test.ts` | E2E_VERIFIED (raise) / approval **screen EVIDENCE MISSING** (no approve control on the buyer page) | approver has no served screen action | SP-7 |
+| M06-FR-04 amendments, cancellations, open commitment | engine `packages/purchasing`; open commitment = ordered − received − cancelled | event-sourced | — | integration; **F01 reproduced**: approve 10, receive 4 → PO still shows 10 outstanding | WIRED, **defective join (F01)** | GRN does not fold into the PO remainder (separate `receipts/:poId` call nobody makes) | SP-6 |
+
+### 2.3 Receiving — physical verification, partial/short/excess/damaged, GRN, quarantine, put-away
+
+| Req & workflow | Screen / backend | Persistence & sync | Permissions & approvals | E2E evidence (commit) | Maturity | Exact remaining gap | Next action |
+|---|---|---|---|---|---|---|---|
+| M07-FR-01 receive against PO/ASN/DSD by scan | Warehouse handheld receive (device) · ERP goods-receipt review `/goods-receipt` · `POST /v1/inventory/goods-receipt/:grnId` (GRN + `received` movements one atomic append) | cloud: durable, idempotent per GRN; **device: `DeviceOutbox` in localStorage, drained by NOTHING** | `inventory.movement.append`; over-delivery needs a second person (engine) | `goods-receipt-delivery.e2e.ts` @760d693 (review screen, stub box); `warehouse-handheld-delivery.e2e.ts` @760d693 (device-local); integration (7) | E2E_VERIFIED (module) — **connected handheld→cloud NOT proven** | S1: no sender from device to box to cloud | SP-2 / SP-3 |
+| M07-FR-02 count, batch, expiry, MRP, cost at receipt | same route re-runs `captureReceipt` | durable | `422 receipt_line_incomplete` for tracked lines | integration `goods-receipt.test.ts` | WIRED+tested | product tracking rules and tolerance policy are taken **from the request body** (F03) | SP-4 |
+| M07-FR-03 short / excess / damaged / quarantine / discrepancy approval | GRN records disposition; review list surfaces `requiresApproval` first | durable | approval flag only | **F03 reproduced**: 110 against 100 → all 110 sellable while `requiresApproval: true` | WIRED, **defective (F03)** | excess not held pending approval; disposition (accept/return/claim) write path not a route | SP-4 then SP-6 |
+| M09-FR-01 put-away / pick (handheld) | handheld put-away + pick (W1); `POST /v1/warehouse/movements/:commandId` | device queue durable (localStorage); cloud idempotent on commandId; **no drain** | `inventory.movement.append` | `the-handhelds-meet-the-spec.e2e.ts` @8f4f6c5 (put away 3, pick 3, device-local) | E2E_VERIFIED (device) — **sync NOT proven** | S1; cloud produces no `warehouse` assignment (pack-file only) | SP-3 |
+
+### 2.4 Supplier accounting — invoice, matching, exceptions, supplier returns, credits, payables, reconciliation
+
+| Req & workflow | Screen / backend | Persistence & sync | Permissions & approvals | E2E evidence (commit) | Maturity | Exact remaining gap | Next action |
+|---|---|---|---|---|---|---|---|
+| M07-FR-04 invoice capture + three-way match | Buying screen invoice capture; `POST /v1/purchase/invoices/:id/capture`, `/match`, `/reconcile` (landed cost) | cloud durable, idempotent per invoice | capture ≠ approve (§28); cashier 403 | `buying-po-delivery.e2e.ts` @760d693 (capture with a delivery port); **F02 reproduced** on the plain boot (no delivery port: "Invoice saved", nothing saved, duplicate accepted) | WIRED+tested, **defective on the plain boot (F02)** | screen without a box link reports saved; match compares a caller-typed snapshot, not stored PO+GRN (F04) | SP-7 |
+| Supplier returns / claims / debit notes | — | — | — | **EVIDENCE MISSING — no route or engine found** | NOT STARTED (as a connected flow) | requirement anchored under M07-FR-03 (rejected receipt → claim) and M06 | SP-7 |
+| M23 payables / supplier statement / journals | day book posts sales + returns; credit notes (sales side); supplier portal statements (M24) | durable | `finance.*` | `day-book-post-delivery.e2e.ts` @760d693 | PARTIALLY_WIRED | AP posting from a matched invoice foundation-only; supplier liability not reconciled to GRN/invoice (F04) | SP-7 |
+
+### 2.5 Inventory — stock by location and condition, reservations, FEFO, transfers, blind counts, adjustments, expiry, damage, wastage
+
+| Req & workflow | Screen / backend | Persistence & sync | Permissions & approvals | E2E evidence (commit) | Maturity | Exact remaining gap | Next action |
+|---|---|---|---|---|---|---|---|
+| M08-FR-01 append-only movement ledger; sale → stock | `POST /v1/sales` appends `sold`; returns append `returned` (resell) | real PG | store token `pos.sale.sync` | `sale-reduces-stock.test.ts`; till e2e @c9b40b3 / @b959170 (real PG) | E2E_VERIFIED | — | — |
+| M08-FR-02 states (on-hand / available / reserved / quarantine / in-transit) | `GET /v1/inventory/availability`; stock-health screen | durable | `inventory.availability.read` | `stock-health-delivery.e2e.ts` @760d693 | E2E_VERIFIED (read) | **F05 reproduced**: received transfer leaves WH 20, no FLOOR row, valuation unchanged | SP-5 |
+| M08-FR-03 adjustments with reason + approval; negative-stock control | `packages/adjustment`; counts route commits compensating adjustments | count corrections in a **count-only** ledger layer | material variance needs a separate approver | **F06 reproduced**: corrected 15 vs availability 20; **F07**: ghost approver accepted, zero cost bypasses approval | WIRED, **defective (F06, F07)** | one authoritative correction not read by availability/valuation/reorder; approver/value are caller claims; W3 handheld adjustment request pending | SP-4, SP-5b, SP-3 |
+| M08-FR-04 valuation, ageing, turns, GMROI, reconciliation reports | inventory read routes; stock-health screen | folded from the ledger | `inventory.availability.read` | e2e @760d693; integration | E2E_VERIFIED | reads inherit F05/F06 wrong quantities | SP-5 |
+| M09-FR-03 transfers (warehouse → floor), allocation | `POST /v1/warehouse/transfers/:id` → `/dispatch` → `/receive`; supervisor "propose transfer" queues to an outbox drained by nothing | transfer aggregate event-sourced; **movements nested inside warehouse events, not posted to the inventory projection** | dispatch needs `approvedBy` — **a body string, never verified (F07)** | integration `warehouse-transfers.test.ts`; **F05/F07 reproduced**; supervisor screen e2e @760d693 (to outbox only) | WIRED+tested, **defective (F05, F07)** | no screen drives dispatch/receive; in-transit not visible in ordinary stock | SP-4, SP-5 |
+| M09-FR-04 blind count | `POST /v1/inventory/counts/:countId`; ERP counts review screen; manager `countStock` | count ledger; manager: **in-memory ledger + in-memory outbox** (F11) | counter ≠ approver (§28) — **approver a body string (F07)** | integration `warehouse-counts.test.ts`; counts screen **EVIDENCE MISSING** (no browser e2e); W2 handheld pending | WIRED+tested, **defective (F06, F07, F11)** | corrections not in availability; caller-supplied value/threshold; manager count lost on reload | SP-2, SP-4, SP-5b, SP-3 |
+| M10-FR-01/04 expiry, FEFO, recall | expiry/recall screen; routes | event-sourced recall register; recall block on the pack | `quality.recall.*` | `expiry-recall-delivery.e2e.ts` @760d693 | E2E_VERIFIED | quality-hold register → till block propagation: **EVIDENCE MISSING** (verify, not assume) | SP-9 regression |
+| M28 wastage / write-off | write-off capture screen | durable | `inventory.movement.append`; non-own stock refused (M27) | `write-off-capture-delivery.e2e.ts` @760d693 | E2E_VERIFIED | — | — |
+
+### 2.6 Sales floor — indents, replenishment, shelf stock, price labels, promotions, blocked products
+
+| Req & workflow | Screen / backend | Persistence & sync | Permissions & approvals | E2E evidence (commit) | Maturity | Exact remaining gap | Next action |
+|---|---|---|---|---|---|---|---|
+| Floor indent → approval → back-store allocation → scan issue → in transit → floor receipt → shelf availability (anchors: M09-FR-03 allocation/transfer, M04-FR-03 replenishment tasks, M08-FR-02 in-transit, WF-06) | building blocks only: transfer routes; planogram-compliance refill tasks (stateless); supervisor `replenish` task (outbox, no consumer); shelf-count producer | **no linked durable lifecycle (F08)**; requested/issued/received/outstanding not recorded separately | — | **EVIDENCE MISSING — no connected flow exists** | PARTIALLY_WIRED (blocks) | the whole chain the owner named; partial issue/receipt, wrong item, cancellation, floor→back-store return | SP-8 |
+| M04-FR-02/03 shelf stock, shelf count, refill tasks | merchandising screen (`merchandising.js`) count save; `POST /v1/merchandising/shelf-counts/:countId`; compliance route | shelf counts durable (cloud); **screen save only mutates page data** (F08) | `shelf.count.record` | integration `shelf-count.test.ts`; merchandising screen **EVIDENCE MISSING** (no browser e2e) | WIRED | screen → cloud path for the count not proven | SP-8 |
+| Price labels (M03 Legal Metrology fields, M05 price) | label content engine (`product-loose-food-label`, `product-label-height` tests); catalogue.js mentions labels | — | — | **EVIDENCE MISSING** for a print/screen path | ENGINE_ONLY (labels) | no proven label print flow; printer hardware PENDING | SP-10 (hardware gate) |
+| M05-FR-03/04 promotions | catalogue screen promotion launch → head office | durable | proposer ≠ approver with `price.change.approve` | `catalogue-promotion-launch-delivery.e2e.ts` @760d693 | E2E_VERIFIED | — | — |
+| Blocked products with actionable reasons (P-08; M03-FR-03 recall block; G5c unknown unit) | till refuses recalled / unknown-unit products by name; box names excluded products in the till payload | — | — | `pos-view-adapter` + `the-screens-are-fed` (G5c, @ee83816) | WIRED | **no screen lists "products nobody can sell" with the reason** (recorded 30 Sep) | SP-8b |
+
+### 2.7 POS — shift open, scan/weigh, price, tender, receipt, stock deduction, suspended sales, returns/refunds, day close
+
+| Req & workflow | Screen / backend | Persistence & sync | Permissions & approvals | E2E evidence (commit) | Maturity | Exact remaining gap | Next action |
+|---|---|---|---|---|---|---|---|
+| M12-FR-01 scan / weigh / price enquiry | POS app; lane socket `/lane/sales` → disk (fsync) → box pipeline → `POST /v1/sales` | **durable on disk, restart recovery proven (RR-F05/06)**; real PG on the cloud | store token | `the-served-till-takes-a-sale.e2e.ts` @c9b40b3, `till-commits-cross-origin.e2e.ts` @b959170 (real box, real PG) | E2E_VERIFIED | **F09 reproduced**: cashier "cashier", lane "lane-1", trading day 1970-01-01 written on every sale | SP-4b |
+| M12-FR-02 suspend / recall, receipt, quotation | suspended bills durable on the lane; receipt template from the pack; quotations on the cloud | durable | — | integration; suspend/resume **browser EVIDENCE MISSING**; receipt printing hardware PENDING | WIRED | till UI for suspend/resume not browser-proven; peripherals PENDING | SP-9 / SP-10 |
+| M12-FR-03 cash / card / UPI / store credit / split | till offers cash, card, UPI, store credit; pending-tender recovery route | — | no invented approvals (simulated provider) | refund e2e @e4f71b9; **card/UPI/split browser EVIDENCE MISSING**; provider live = external gate | WIRED (simulated) | split tender and lost-reply recovery not browser-proven | SP-9 |
+| M12-FR-04 overrides, age prompts, lane health | lane guards; `regulatedFlags` from the cloud pack (E1b); badge | — | override needs a named second person | till badge e2e @3404fd3; budget e2e @ee83816 | WIRED | — | — |
+| M13-FR-01..03 returns / refunds / exchanges / store credit | till refund panel → `/lane/returns` → disk → cloud `…/returns/synced`; exchanges + no-receipt routes on the cloud; return-governance screen | durable + restart recovery | processor = authenticated caller; thresholds §28 | `the-served-till-takes-a-refund.e2e.ts` @e4f71b9; `return-governance-delivery.e2e.ts` @760d693 | INTEGRATION_TESTED (M13; externally blocked EX-03) | **exchange and no-receipt return have no till UI**; live reversal external | SP-9b |
+| M14-FR-01 float / loan / pickup / safe drop | cloud routes `POST /v1/tills/:tillId/cash-movements` | cloud durable | one custodian per till | integration `till-cash.test.ts`; **till UI EVIDENCE MISSING** — no durable device→box→cloud path (F10 source review) | WIRED (cloud) | till has no float/pickup flow delivered like sales | SP-4c |
+| M14-FR-02 shift close, blind count, over/short | `POST /v1/shifts/:shiftId/close`; till "Close till" button | cloud durable | material variance needs a reason | **F10 reproduced**: the button's input omits four money fields → throws | WIRED, **defective (F10)** | close button cannot close; shift close not delivered to the cloud from the till | SP-4c |
+| M14-FR-04 day close / reopen | manager screen close via the box; edge day-close pipeline; cloud synced routes; reopen screen | durable (edge log + cloud) | manager named by the pack (G5c); reopen re-verified §28 | `manager-day-close-delivery.e2e.ts` @ee83816 (real box), `day-reopen-delivery.e2e.ts` @760d693 | E2E_VERIFIED | previous-day exceptions gating the day being closed: **EVIDENCE MISSING** (audit source note) | SP-9 |
+
+### 2.8 Management — discrepancies, pending indents, in transit, expiry, sales, margins, cash differences, audit, approvals
+
+| Req & workflow | Screen / backend | Persistence & sync | Permissions & approvals | E2E evidence (commit) | Maturity | Exact remaining gap | Next action |
+|---|---|---|---|---|---|---|---|
+| Manager approvals queue (M02-FR-03, §28) | manager screen approvals tab; `submitDecision` engine | **decision recorded NOWHERE** — no register change, no ledger, no outbox (F11); pack `approvals` section is file-loaded, the cloud produces none | maker ≠ checker, authority limit, branch scope (engine) | manager screen e2e @ee83816 (close only); **F11 reproduced** | **defective (F11)** | decision must persist on the device, reach the box, reach a cloud register that re-verifies the decider | **SP-2 (next PR)** |
+| Manager receipts + counts (M07-FR-01, M09-FR-04 on the ERP) | manager screen receive / count | **in-memory ledger + in-memory outbox; lost on reload; unsent shows 0 (F11)** | manager named by the pack | **F11 reproduced** | **defective (F11)** | same durable queue as the handhelds; accurate saved-locally / pending-sync / conflict / posted states | **SP-2** |
+| Purchasing discrepancies | goods-receipt review screen (`requiresApproval` first) | durable | — | e2e @760d693 | E2E_VERIFIED (read) | no disposition write path (M07-FR-03) | SP-6 |
+| Pending indents / stock in transit | — / `GET /v1/warehouse/transfers/:id` | — | — | **EVIDENCE MISSING** (no indent register, no transit screen) | NOT STARTED (screens) | F08 | SP-8 |
+| Expiry, sales, margins, cash/tender differences | expiry-recall, reporting, company-report, cash-office sign-off, settlement review | durable | role-scoped | e2e @760d693 (each) | E2E_VERIFIED (reads) | figures inherit F05/F06/F09 (wrong quantities, placeholder cashier/day) | SP-4b, SP-5 |
+| Audit trail (M34) | durable audit trail; search route | real PG | `audit.read` | integration | WIRED | manager decisions produce no audit record until SP-2 | SP-2 |
+
+### 2.9 Shared persistence and synchronisation (cross-cutting; hard rules #1, #6, #10; §31)
+
+| Component | State at 8f4f6c5 | Gap | Next action |
+|---|---|---|---|
+| Store box pipelines (sales, returns, completions, day close, concession tags) | durable fsync'd logs, cursor, durable dead-letter store; restart recovery proven (RR-F05/06) | — | reuse for the manager/handheld leg |
+| Box → cloud transport (`edge/sync-agent/src/http-transport.ts`) | routes by event type; **every 409 classified `accepted` (F12)** — a kernel `409 idempotency_key_reused` / `wasItSaved: not_saved` (changed body under a reused key) is acknowledged as delivered | conflict swallowed | **SP-1 (first repair PR)** |
+| Device queues (`packages/sync/src/device-outbox.ts`) — picker, driver, warehouse | durable in localStorage, survive restart | **no sender**; states only pending / acknowledged / dead-letter | SP-2 (shared drain) + SP-3 (LAN device auth) |
+| Manager screen queue | `new SyncOutbox()` in memory (F11) | lost on reload | SP-2 |
+| Lane socket (`/lane/*`) | loopback-origin only (RR-F01), JSON only, body validated, fsync before ack | no device-events route; handhelds on wifi cannot reach it | SP-2 adds `/lane/outbox`; SP-3 adds the authenticated LAN device route |
+
+## 3. Audit findings F01–F12 — status at 8f4f6c5 (all reproduced; none fixed yet)
+
+| # | Finding | Requirements | Reproduced by | Fix slice |
+|---|---|---|---|---|
+| F01 | GRN leaves PO remainder unchanged | M06-FR-04, M07-FR-01 | `tests/audit-observations/procurement.test.ts` | SP-6 |
+| F02 | Invoice "saved" banner without a saved invoice (plain boot) | M07-FR-04, M30 | procurement.test.ts | SP-7 |
+| F03 | Unapproved excess sellable; policy from the request | M07-FR-02/03 | procurement.test.ts | SP-4 |
+| F04 | Match lacks stored PO–GRN–invoice join; no payable closure | M07-FR-04, M23 | source (existing `purchase-capture-match.test.ts`) | SP-7 |
+| F05 | Transferred stock never reaches ordinary inventory | M08-FR-01, M09-FR-03 | `tests/audit-observations/warehouse.test.ts` | SP-5 |
+| F06 | Count correction only in the count view | M08-FR-03, M09-FR-04 | warehouse.test.ts | SP-5b |
+| F07 | Approver / available stock / value supplied by the caller | M02-FR-03, M08-FR-03, M09-FR-03 | warehouse.test.ts | SP-4 |
+| F08 | Shelf save and floor workflow stop locally | M04-FR-03, M09-FR-02/03 | source | SP-8 |
+| F09 | Served POS uses placeholder cashier / lane / 1970 day | M12-FR-02, M02 | `tests/audit-observations/pos.test.ts` | SP-4b |
+| F10 | Till close missing required cash fields | M14-FR-01/02 | pos.test.ts | SP-4c |
+| F11 | Manager and handheld commands lack a durable complete journey | M02-FR-03, M07-FR-01, M09-FR-01 | `tests/audit-observations/sync.test.ts` | SP-2, SP-3 |
+| F12 | Sync acknowledges a rejected 409 conflict as delivered | M31, QG-04 | sync.test.ts | SP-1 |
+
+## 4. Delivery order (owner: matrix → shared sync + manager data loss → handheld sync, counts, adjustments → store gaps)
+
+One focused PR at a time; each converts its observation test into the intended-behaviour regression; merge only after the
+full gate and CI. Handover work-queue ids in brackets.
+
+| Slice | Scope | Business invariant it closes | Depends on |
+|---|---|---|---|
+| **SP-0** | This matrix; findings F01–F12 registered in `docs/traceability.md`; observation tests committed under `tests/audit-observations/` (documented as defect reproductions) | one honest current record | — |
+| **SP-1** [W01] | Transport: a kernel `idempotency_key_reused` conflict is `conflict` (dead-lettered with its reason, visible, survives restart); an identical replay (2xx, `idempotent-replay`) and a business "already on record" 409 stay accepted | a changed payload under an old key never advances as success | SP-0 |
+| **SP-2** [W09 part, F11] | Shared durable queue + one sync mechanism for desk screens: manager screen on `DeviceOutbox` (localStorage); approval decision, receipt and count each recorded locally BEFORE the screen says saved; `POST /lane/outbox` on the box (loopback, JSON, fsync'd per-source device-events log, per-item acks accepted / duplicate / refused); box relays via `EVENT_ROUTES` to cloud `/synced` routes that re-verify the actor (`ApprovalDecided`, `GoodsReceived`, `StockCounted`); states saved-locally → pending-sync → posted / conflict-or-rejected shown on the screen; lost-reply recovery proven (box accepted, ack lost, retry = duplicate ack, one effect) | a manager's approval, receipt or count survives reload, restart and loss of connectivity and reaches the backend exactly once | SP-1 |
+| **SP-3** [W09, S1, W2, W3] | Handhelds on the same route with a device credential from the pack's `devices` register (LAN-facing, never a shared login); W2 blind count; W3 adjustment request with supervisor approval before posting; pending / failed / conflict / synchronised badge on picker, driver, warehouse | queued scans survive restart, reach the right backend, are acknowledged, never duplicate a movement | SP-2 |
+| **SP-4** [W03] | Trusted approvals and policies: `approvedBy` must be a persisted, independently authenticated decision; product rules, tolerance, unit value and threshold read from the master/policy, never the body (F03, F07); branch/tenant/wrong-role denial regressions | no spoofed approver, no client valuation, no tolerance bypass | SP-2 |
+| **SP-4b** [W02] | Real cashier, lane and trading day on the served till (F09): pack → box → till, written to disk, cloud, audit and day reports; cut-off and reload tests | every sale names its real operator and day | SP-1 |
+| **SP-4c** [W10 part] | Till close and cash: float / pickup / shift close delivered like sales (F10), restart-safe, reconciled | the till can close and the cash office sees it | SP-4b |
+| **SP-5 / SP-5b** [W04, W05] | Transfers post ONE authoritative location/state/value effect to the inventory projection (F05); count/adjustment corrections read by availability, valuation and reorder (F06); overdraw refused from stored stock; location ids validated | one stock truth for every reader | SP-4 |
+| **SP-6** [W06] | GRN folds into the PO remainder atomically (F01); excess held pending disposition; disposition (accept / return / claim) route | receipt and commitment change once, together | SP-4, SP-5 |
+| **SP-7** [W07] | Invoice saved and read back after restart (F02); match over stored PO + GRN + invoice; supplier liability, statement, journals reconcile (F04); supplier master screen; supplier return / claim | purchase to payable is one joined record | SP-6 |
+| **SP-8 / SP-8b** [W08] | Floor indent → approval → allocation → scan issue → in transit → independent floor receipt → shelf availability, with partial / unavailable / wrong item / cancellation / floor→back-store return; requested / issued / received / outstanding recorded separately; "products nobody can sell" screen | issue and receipt never create stock twice; a dispatch is never a receipt | SP-5, SP-6 |
+| **SP-9 / SP-9b** [W10, W12] | Connected E2E suite: synthetic data, real services, real PostgreSQL, authenticated browser sessions, purchase → receipt → back store → floor → sale → return → close, reconciling quantities, values, tenders and postings; offline/reconnect, reload/restart, duplicate retry, concurrent tills, permission denial, discrepancy resolution; exchange / no-receipt till UI | the whole store loop has evidence | SP-1…SP-8 |
+| **SP-10** | Physical-device verification and staff UAT — **separate gates, PENDING until performed** | — | hardware, owner |
+
+## 5. What is genuinely proven today, in one paragraph
+
+A served till takes a sale offline, writes it to disk, the store box relays it to the cloud on real PostgreSQL, stock
+falls, and a refund follows the same path; a manager closes the day through the box; the buyer raises a purchase order
+and captures an invoice from a screen that reaches head office; goods are received on the cloud with quarantine rules
+and reviewed on a screen; the handhelds receive, put away and pick against served data and queue durably on the device;
+promotions, price changes, expiry/recall, write-offs and the cash-office sign-off each reach head office from their
+screens. **Not yet proven, and therefore the store-management workflow is NOT complete:** the handheld and manager
+queues reach nobody; a rejected sync conflict is swallowed; approvers, stock and values can be typed; transfers and
+count corrections do not change ordinary stock; a receipt does not reduce the order; an invoice is not joined to its
+order and receipt or posted as a liability; the floor indent chain does not exist; the till names a placeholder cashier
+and day and cannot close its shift. No physical device, staff UAT or production verification has been performed.
