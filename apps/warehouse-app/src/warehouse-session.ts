@@ -37,6 +37,7 @@ import {
   type Bin, type BinContents, type MovementCommand, type MovementOutcome, type MovementResult, type PutAwaySuggestion,
 } from '../../../packages/warehouse/src/movements';
 import { isExpired } from '../../../packages/fefo/src/fefo';
+import { isAdjustmentReason, type AdjustmentReasonCode } from '../../../packages/adjustment/src/adjustment';
 import type { StockState } from '../../../packages/stock/src/position';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import {
@@ -62,6 +63,8 @@ export const FEEDBACK_CODES = Object.freeze([
   'recalled_into_pickable', 'expired_into_pickable', 'invalid_command',
   // picking an order line (packages/warehouse `pick` + this session's pick-list checks)
   'picked', 'wrong_bin', 'wrong_item', 'not_on_pick_list', 'line_done',
+  // a blind bin count (W2) and an adjustment request (W3) — SP-3b
+  'counted', 'adjustment_requested', 'not_a_quantity', 'no_reason',
 ] as const);
 export type FeedbackCode = (typeof FEEDBACK_CODES)[number];
 
@@ -192,10 +195,50 @@ export type PickCheck =
 export const RECEIVING_SCANNED = 'ReceivingScanned';
 /** The event a put-away or a pick travels under — the command the handheld applied, for the cloud to re-apply. */
 export const WAREHOUSE_MOVEMENT_APPLIED = 'WarehouseMovementApplied';
+/** The event a BLIND bin count travels under (SP-3b · W2) — the same type and cloud route as the manager's count, plus the bin. */
+export const STOCK_COUNTED = 'StockCounted';
+/** The event an adjustment REQUEST travels under (SP-3b · W3) — recorded pending at head office, posted only when a supervisor approves. */
+export const ADJUSTMENT_REQUESTED = 'AdjustmentRequested';
+/** The reason a routine handheld bin count carries — a cycle count, not a correction (the correction is head office's). */
+export const HANDHELD_COUNT_REASON = 'cycle_count';
 
 /** The kinds of work this handheld hands to the store computer — a value, so the shell must have words for each. */
-export const SENT_WORK_KINDS = Object.freeze(['receipt', 'put_away', 'pick'] as const);
+export const SENT_WORK_KINDS = Object.freeze(['receipt', 'put_away', 'pick', 'count', 'adjustment'] as const);
 export type SentWorkKind = (typeof SENT_WORK_KINDS)[number];
+
+/** One blind count of one product in one bin (W2): what the worker SAW, and nothing the system expects. */
+export interface CountBinInput {
+  readonly countId: string;
+  readonly scannedBinId: string;
+  readonly scannedItem: string;
+  readonly countedMinor: number;
+  readonly at: string;
+}
+export interface CountActionResult {
+  readonly accepted: boolean;
+  readonly countId: string;
+  readonly productId?: string;
+  readonly binId: string;
+  readonly signal: FeedbackSignal;
+}
+
+/** An adjustment REQUEST (W3): a signed correction with a reason, raised here, decided by a supervisor at head office. */
+export interface AdjustmentRequestInput {
+  readonly requestId: string;
+  readonly scannedItem: string;
+  /** Signed: positive = found more, negative = missing / damaged. Never zero. */
+  readonly deltaMinor: number;
+  readonly reasonCode: string;
+  readonly note?: string;
+  readonly binId?: string | null;
+  readonly at: string;
+}
+export interface AdjustmentActionResult {
+  readonly accepted: boolean;
+  readonly requestId: string;
+  readonly productId?: string;
+  readonly signal: FeedbackSignal;
+}
 
 /** One accepted scan on its way to head office, and where it has got to (the five shared state words, SP-2a). */
 export interface SentWork {
@@ -331,6 +374,15 @@ export class WarehouseSession {
           const kind: SentWorkKind = c.kind === 'pick' ? 'pick' : 'put_away';
           const bin = c.kind === 'pick' ? (c.fromBinId ?? '') : (c.toBinId ?? '');
           return [{ kind, id: c.commandId, what: `${c.productId}${c.batchId ? ` · ${c.batchId}` : ''} · ${bin}`, detail: `${c.quantityMinor} ${c.uom}${p.orderRef ? ` · ${p.orderRef}` : ''}`, ...common, ...withReason }];
+        }
+        if (item.event.type === STOCK_COUNTED) {
+          // Only what was counted — never an expected figure, which this handheld does not have (blind, W2).
+          const p = item.event.payload as { countId: string; productId: string; binId: string | null; countedMinor: number; uom: string };
+          return [{ kind: 'count', id: p.countId, what: `${p.productId} · ${p.binId ?? ''}`, detail: `${p.countedMinor} ${p.uom}`, ...common, ...withReason }];
+        }
+        if (item.event.type === ADJUSTMENT_REQUESTED) {
+          const p = item.event.payload as { requestId: string; productId: string; binId: string | null; deltaMinor: number; uom: string; reasonCode: string };
+          return [{ kind: 'adjustment', id: p.requestId, what: `${p.productId}${p.binId ? ` · ${p.binId}` : ''}`, detail: `${p.deltaMinor > 0 ? '+' : ''}${p.deltaMinor} ${p.uom} · ${p.reasonCode}`, ...common, ...withReason }];
         }
         return [];
       })
@@ -504,14 +556,114 @@ export class WarehouseSession {
     return { result, signal: signalFor('accept', 'moved', result.detail) };
   }
 
-  /** The product a scanned item code names: a catalogue barcode, or the product's own code on an internal label. */
+  /**
+   * The product a scanned item code names: a catalogue barcode, or the product's own code on an internal label. A
+   * product this handheld has never been told about (not on the catalogue, the order, the pick list, goods-in or a
+   * bin) is unknown — a count or an adjustment of it would be a record against nothing.
+   */
   private productOfScan(code: string): string | null {
     const scanned = code.trim();
     const byBarcode = this.barcodes.find((b) => b.barcode === scanned);
     if (byBarcode !== undefined) return byBarcode.productId;
-    const isKnownProduct = [...this.picks.values()].some((p) => p.line.productId === scanned)
-      || this.barcodes.some((b) => b.productId === scanned);
-    return isKnownProduct ? scanned : null;
+    return this.knowsProduct(scanned) ? scanned : null;
+  }
+
+  private knowsProduct(productId: string): boolean {
+    return [...this.picks.values()].some((p) => p.line.productId === productId)
+      || this.barcodes.some((b) => b.productId === productId)
+      || (this.ordered ?? []).some((o) => o.productId === productId)
+      || [...this.goods.values()].some((g) => g.productId === productId)
+      || Object.keys(this.contents).some((k) => k.split('|')[1] === productId);
+  }
+
+  /** The unit this handheld knows the product in — from its pick lines or goods-in, else each. */
+  private uomOf(productId: string): string {
+    const line = [...this.picks.values()].find((p) => p.line.productId === productId);
+    if (line !== undefined) return line.line.uom;
+    const goods = [...this.goods.values()].find((g) => g.productId === productId);
+    return goods?.uom ?? 'EA';
+  }
+
+  /** Is this a bin the box told this handheld about? A count of a bin nobody registered is a record against nothing. */
+  knowsBin(binId: string): boolean {
+    return this.bins.some((b) => b.binId === binId.trim());
+  }
+
+  /**
+   * Count one product in one bin, BLIND (W2 · M09-FR-04 · §28): the worker scans the bin, scans the item and enters
+   * what they see. Nothing here compares it to anything — this handheld never shows an expected figure and never
+   * changes its own bin projection on a count; head office reconciles it against ITS bin contents, values the variance
+   * and holds a material one for a separate approver. Refusals: a bin or item this handheld does not know, a quantity
+   * that is not a whole non-negative number, a count id already used (a re-count is a NEW id). Accepted → ONE
+   * `StockCounted` queued, keyed on the count id, so a re-sent count is one record.
+   */
+  countBin(input: CountBinInput): CountActionResult {
+    const binId = input.scannedBinId.trim();
+    const refused = (code: string, detail: string, feedback: ScanFeedback = 'reject', resolutionRequired = false): CountActionResult =>
+      ({ accepted: false, countId: input.countId, binId, signal: signalFor(feedback, code, detail, resolutionRequired) });
+    if (this.appliedCommandIds.includes(input.countId) || this.outbox.find(`count-${input.countId}`) !== undefined) {
+      return refused('duplicate_ignored', 'this count has already been recorded — a re-count is a new count', 'warn');
+    }
+    if (!this.knowsBin(binId)) return refused('unknown_bin', `${binId} is not a bin in this store — set it aside for someone to sort out`, 'reject', true);
+    const productId = this.productOfScan(input.scannedItem);
+    if (productId === null) return refused('unknown_barcode', `"${input.scannedItem.trim()}" is not a barcode this handheld knows`, 'reject', true);
+    if (!Number.isSafeInteger(input.countedMinor) || input.countedMinor < 0) return refused('not_a_quantity', `${String(input.countedMinor)} is not a whole quantity`);
+
+    const uom = this.uomOf(productId);
+    this.appliedCommandIds.push(input.countId);
+    this.outbox.enqueue(makeEvent({
+      id: `count-${input.countId}`,
+      type: STOCK_COUNTED,
+      occurredAt: input.at,
+      // One identity for one count at every hop — the same key the manager's count uses.
+      idempotencyKey: `count-${input.countId}`,
+      source: this.assignment.assignmentId,
+      payload: {
+        countId: input.countId, productId, locationId: this.assignment.storeId, binId, uom,
+        countedMinor: input.countedMinor, reasonCode: HANDHELD_COUNT_REASON, counterId: this.assignment.workerId,
+        at: input.at, storeId: this.assignment.storeId, source: 'warehouse-handheld',
+      },
+    }));
+    const detail = `${input.countedMinor} ${uom} of ${productId} counted in ${binId} — head office will compare it`;
+    return { accepted: true, countId: input.countId, productId, binId, signal: signalFor('accept', 'counted', detail) };
+  }
+
+  /**
+   * Raise an adjustment REQUEST (W3 · M08-FR-03 · §28): a signed correction with a reason from the fixed list. Nothing
+   * posts here and nothing changes on this handheld — the request is recorded pending at head office and a supervisor
+   * who is not this worker approves or rejects it; only an approval appends the compensating movement. Refusals: an
+   * item this handheld does not know, a zero or non-whole quantity, a reason not on the list, a request id already
+   * used. Accepted → ONE `AdjustmentRequested` queued, keyed on the request id.
+   */
+  requestAdjustment(input: AdjustmentRequestInput): AdjustmentActionResult {
+    const refused = (code: string, detail: string, feedback: ScanFeedback = 'reject', resolutionRequired = false): AdjustmentActionResult =>
+      ({ accepted: false, requestId: input.requestId, signal: signalFor(feedback, code, detail, resolutionRequired) });
+    if (this.appliedCommandIds.includes(input.requestId) || this.outbox.find(`adj-req:${input.requestId}`) !== undefined) {
+      return refused('duplicate_ignored', 'this request has already been recorded — nothing changed', 'warn');
+    }
+    const productId = this.productOfScan(input.scannedItem);
+    if (productId === null) return refused('unknown_barcode', `"${input.scannedItem.trim()}" is not a barcode this handheld knows`, 'reject', true);
+    if (!Number.isSafeInteger(input.deltaMinor) || input.deltaMinor === 0) return refused('not_a_quantity', `${String(input.deltaMinor)} is not a whole non-zero quantity`);
+    if (!isAdjustmentReason(input.reasonCode)) return refused('no_reason', 'an adjustment needs a reason from the list — without one it cannot be accounted for later');
+    const reasonCode: AdjustmentReasonCode = input.reasonCode;
+    const binId = input.binId === undefined || input.binId === null || input.binId.trim() === '' ? null : input.binId.trim();
+    const note = input.note === undefined || input.note.trim() === '' ? null : input.note.trim();
+
+    const uom = this.uomOf(productId);
+    this.appliedCommandIds.push(input.requestId);
+    this.outbox.enqueue(makeEvent({
+      id: `adj-req-${input.requestId}`,
+      type: ADJUSTMENT_REQUESTED,
+      occurredAt: input.at,
+      idempotencyKey: `adj-req:${input.requestId}`,
+      source: this.assignment.assignmentId,
+      payload: {
+        requestId: input.requestId, productId, locationId: this.assignment.storeId, binId, deltaMinor: input.deltaMinor, uom,
+        reasonCode, note, requestedBy: this.assignment.workerId, at: input.at, storeId: this.assignment.storeId, source: 'warehouse-handheld',
+      },
+    }));
+    const detail = `${input.deltaMinor > 0 ? '+' : ''}${input.deltaMinor} ${uom} of ${productId} (${reasonCode}) — waits for a supervisor's approval before it posts`;
+    return { accepted: true, requestId: input.requestId, productId, signal: signalFor('accept', 'adjustment_requested', detail) };
   }
 
   /**

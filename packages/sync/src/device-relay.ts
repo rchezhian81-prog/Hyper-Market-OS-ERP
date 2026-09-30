@@ -43,7 +43,10 @@ export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surface
   // SP-2b: a delivery booked in and a blind count captured on the manager's screen. The warehouse handheld joins
   // `StockCounted` in W2 (SP-3), once the LAN device route exists.
   GoodsReceived: { surfaces: ['manager'] },
-  StockCounted: { surfaces: ['manager'] },
+  // SP-3b (W2): the warehouse handheld's bin-level blind count rides the same type and route as the manager's count.
+  StockCounted: { surfaces: ['manager', 'warehouse'] },
+  // SP-3b (W3): an adjustment REQUEST from the handheld — recorded pending a supervisor's approval, never posted by the raiser.
+  AdjustmentRequested: { surfaces: ['warehouse'] },
   // SP-3a: the warehouse handheld's work, over the box's authenticated DEVICE socket (ADR-0019). A receiving scan
   // is its own type (per scan, not a whole GRN like the manager's `GoodsReceived`) so each rides its own cloud route.
   WarehouseMovementApplied: { surfaces: ['warehouse'] },

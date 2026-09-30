@@ -441,4 +441,77 @@ describe.skipIf(!HAVE_BROWSER)('the handhelds on a low-spec phone: audited, and 
     await page.evaluate(`for (const id of ['trip-faint', 'trip-wide', 'trip-dead']) document.getElementById(id).remove()`);
     expect(await audit(page)).toEqual([]);
   });
+
+  it('warehouse budget — start a blind count 2 (tap Count → scan the bin); the count sheet never shows what the bin should hold (W2)', async () => {
+    const page = await open(WAREHOUSE);
+    const taps = new Tally(page);
+    await taps.tap('#count-bin');
+    await page.waitForSelector('#scan:not([hidden])');
+    await taps.scan('BIN-A');
+    await page.waitForFunction('document.getElementById("scan-title").textContent === "Scan an item in BIN-A"');
+    expect(taps.reset(), 'start a count').toBeLessThanOrEqual(2);
+    expect(await page.textContent('#scan-cancel')).toBe('Done counting');
+    expect(await page.textContent('#step')).toContain('Count — scan an item in the bin');
+
+    // The item, then the keypad. The box says BIN-A holds 40 of p-rice — nothing on this sheet says so.
+    await page.keyboard.type('890RICE'); await page.keyboard.press('Enter');
+    await page.waitForSelector('#qty:not([hidden])');
+    expect(await page.textContent('#qty-title')).toBe('How many did you count? — 890RICE');
+    const sheet = (await page.textContent('#qty .sheet-inner')) ?? '';
+    expect(sheet).not.toContain('40');
+    expect(sheet).toContain('The expected number is never shown here');
+    await page.click('#qty-keypad button:has-text("3")');
+    await page.click('#qty-keypad button:has-text("8")');
+    expect(await page.textContent('#qty-entry')).toBe('38');
+    await page.click('#qty-ok');
+    await page.waitForSelector('#banner.good:not([hidden])');
+    expect(await page.textContent('#banner-title')).toBe('Counted');
+    expect(await page.textContent('#banner-text')).not.toMatch(/40|expected|variance/);
+    await page.click('#banner-ok');
+    // Still counting BIN-A — the next item is asked for; "Done counting" ends the bin.
+    await page.waitForSelector('#scan:not([hidden])');
+    await page.click('#scan-cancel');
+    await page.waitForSelector('#scan', { state: 'hidden' });
+
+    expect(await page.evaluate('globalThis.warehouseOutbox.unsentCount()')).toBe(1);
+    const queued = await page.evaluate('globalThis.warehouseOutbox.pending().map((i) => [i.event.type, i.event.payload.binId, i.event.payload.countedMinor, i.event.payload.counterId, "expectedMinor" in i.event.payload])');
+    expect(queued).toEqual([['StockCounted', 'BIN-A', 38, 'u-worker', false]]);
+    expect(await page.textContent('#sent-work .sent[data-kind="count"] .what')).toBe('Counted · p-rice · BIN-A — 38 EA');
+    // The handheld's own bin figure did not move: the correction, if any, is head office's.
+    expect(await page.evaluate('globalThis.warehouseSession.binContents()["BIN-A|p-rice|"]')).toBe(40);
+  });
+
+  it('warehouse budget — record an adjustment with a reason 3 (tap Adjust → scan the item → tap the reason); a REQUEST, nothing posts here (W3)', async () => {
+    const page = await open(WAREHOUSE);
+    const taps = new Tally(page);
+    await taps.tap('#adjust-stock');
+    await page.waitForSelector('#scan:not([hidden])');
+    await taps.scan('890RICE');
+    await page.waitForSelector('#adjust:not([hidden])');
+    expect(await page.textContent('#adjust-hint')).toBe('890RICE');
+    expect(await page.getAttribute('#adjust-minus', 'aria-pressed')).toBe('true'); // missing / damaged is the common finding
+    expect(await page.textContent('#adjust-entry')).toBe('1');
+    await taps.tap('#adjust-reasons button[data-reason="damaged"]');
+    await page.waitForSelector('#banner.good:not([hidden])');
+    expect(taps.reset(), 'record an adjustment with reason').toBeLessThanOrEqual(3);
+    expect(await page.textContent('#banner-title')).toBe('Adjustment requested — waits for a supervisor');
+    await page.click('#banner-ok');
+    const queued = await page.evaluate('globalThis.warehouseOutbox.pending().map((i) => [i.event.type, i.event.payload.deltaMinor, i.event.payload.reasonCode, i.event.payload.requestedBy])');
+    expect(queued).toEqual([['AdjustmentRequested', -1, 'damaged', 'u-worker']]);
+    expect(await page.textContent('#sent-work .sent[data-kind="adjustment"] .what')).toBe('Adjustment requested · p-rice — -1 EA · damaged');
+    expect(await page.evaluate('globalThis.warehouseSession.binContents()["BIN-A|p-rice|"]')).toBe(40);
+
+    // Found more: flip the direction, type a quantity — more interactions, by the worker's choice, still no text box.
+    await page.click('#adjust-stock');
+    await page.keyboard.type('890RICE'); await page.keyboard.press('Enter');
+    await page.waitForSelector('#adjust:not([hidden])');
+    await page.click('#adjust-plus');
+    await page.click('#adjust-keypad button:has-text("C")');
+    await page.click('#adjust-keypad button:has-text("4")');
+    await page.click('#adjust-reasons button[data-reason="found"]');
+    await page.waitForSelector('#banner.good:not([hidden])');
+    const second = await page.evaluate('globalThis.warehouseOutbox.pending().map((i) => [i.event.payload.deltaMinor, i.event.payload.reasonCode])');
+    expect(second).toEqual([[-1, 'damaged'], [4, 'found']]);
+    expect(await page.textContent('#queue-text')).toBe('2 saved here');
+  });
 });

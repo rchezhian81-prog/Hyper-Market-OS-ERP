@@ -54,6 +54,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // box; the owner sets the count-approval threshold policy the cloud reconciles against (never the body, F07).
       'inventory.receipt.sync', 'inventory.count.sync', 'inventory.count.policy.set', 'inventory.count.policy.read',
       'inventory.movement.sync',
+      // SP-3b: adjustment REQUESTS relayed from the warehouse handheld, and the separate person who approves them (§28).
+      'inventory.adjustment.sync', 'inventory.adjustment.approve',
       'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.return.threshold.set', 'pos.return.window.set', 'pos.storecredit.cap.set', 'pos.return.noreceipt.cap.set', 'pos.restricted.check',
       'cash.movement.record', 'cash.till.read', 'till.shift.close', 'till.shift.read', 'till.overshort.review',
       'till.dayclose.sync', 'till.dayclose.read', 'till.dayclose.approve',
@@ -145,6 +147,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'export.read',
       'supplier.portal.manage', 'supplier.portal.submit', 'supplier.portal.review',
       'inventory.movement.append', 'inventory.availability.read',
+      // SP-3b: the store manager is the supervisor who approves (or rejects) a handheld's adjustment request — never the raiser.
+      'inventory.adjustment.approve',
       'production.recipe.manage', 'production.plan.commit', 'production.release', 'production.read',
       'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.restricted.check',
       'cash.movement.record', 'cash.till.read', 'till.shift.close', 'till.shift.read', 'till.overshort.review',
@@ -217,6 +221,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'inventory.receipt.sync', 'inventory.count.sync',
       // SP-3a hop: the box relays the warehouse handheld's put-aways and picks to the synced movement route.
       'inventory.movement.sync',
+      // SP-3b hop: the box relays the handheld's adjustment REQUESTS; the route records them pending — this grants no approval.
+      'inventory.adjustment.sync',
       // M01-FR-02: the box pulls the PUBLISHED document templates (the receipt header/footer in force) into the
       // lane's pack under this identity — a read of what head office put in force, never of drafts or names.
       'org.template.pull',

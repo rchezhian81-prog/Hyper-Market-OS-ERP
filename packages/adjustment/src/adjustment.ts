@@ -11,6 +11,18 @@ import type { DecidedRequest } from '../../approvals/src/approvals';
 import type { Ledger } from '../../ledger/src/ledger';
 import type { SyncOutbox } from '../../sync/src/outbox';
 
+/**
+ * The reasons an adjustment may be raised for (M08-FR-03 — a correction with no reason is a quantity change nobody can
+ * account for). A value, so every screen that offers them must have words for each (EN/TA) and a request naming a
+ * reason outside the list is refused before it is queued.
+ */
+export const ADJUSTMENT_REASON_CODES = Object.freeze([
+  'damaged', 'expired', 'miscount', 'found', 'theft_suspected', 'other',
+] as const);
+export type AdjustmentReasonCode = (typeof ADJUSTMENT_REASON_CODES)[number];
+export const isAdjustmentReason = (v: unknown): v is AdjustmentReasonCode =>
+  typeof v === 'string' && (ADJUSTMENT_REASON_CODES as readonly string[]).includes(v);
+
 export interface CommitAdjustmentInput {
   readonly id: string;
   readonly productId: string;

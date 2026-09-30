@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 758 | 460 | 460 | 59 | 254 |
+| 13 | 761 | 462 | 462 | 59 | 256 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -161,6 +161,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | Method | Path | Permission | Feature | Idempotent |
 |---|---|---|---|---|
+| GET | `/v1/inventory/adjustment-requests` | `inventory.availability.read` | core | — |
+| POST | `/v1/inventory/adjustment-requests/:requestId/decide` | `inventory.adjustment.approve` | core | yes |
+| POST | `/v1/inventory/adjustment-requests/:requestId/synced` | `inventory.adjustment.sync` | core | yes |
 | GET | `/v1/inventory/ageing` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/asn/compare` | `inventory.availability.read` | core | yes |
 | GET | `/v1/inventory/availability` | `inventory.availability.read` | core | — |

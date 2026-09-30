@@ -75,3 +75,24 @@ is proven on the real box against the real kernel (`tests/integration/warehouse-
 **Still recorded, not dropped:** start a count (W2) · record an adjustment with reason (W3) — SP-3b; the picker and driver
 handhelds on the same socket — SP-3c; TLS on the shop-network leg (a staff-only wifi meanwhile) — Stage E;
 physical-device verification PENDING.
+
+## Measured (SP-3b — start a count · record an adjustment with reason, owner's Option 2 directive of 30 September 2026)
+The two remaining handheld flows in the interaction table now exist, on the same device socket and the same durable
+queue as the rest (`tests/e2e/the-handhelds-meet-the-spec.e2e.ts`, real Chromium at a handheld's size):
+**start a count — 2** (tap *Count a bin* → scan the bin); then each item is scan → keypad → OK, and *Done counting*
+ends the bin. The count is BLIND by construction: the sheet says *"Enter what you see. The expected number is never
+shown here."*, the shell has no expected figure to show (the assignment's bin projection is never rendered on the count
+sheet — asserted against the served 40 of p-rice in BIN-A), the queued `StockCounted` carries only the counted figure
+with the bin, and the handheld's own bin figure does not move. Head office compares it against ITS bin contents and
+holds a material or unvalued variance for a separate person (`tests/integration/bin-counts-synced-route.test.ts`).
+**record an adjustment with reason — 3** (tap *Adjust stock* → scan the item → tap the reason; the quantity defaults to
+one and *missing / damaged*, both changeable on the sheet). It is a REQUEST: the banner says it waits for a supervisor,
+the sent list says *Recorded at head office — waiting for a supervisor to approve it* once the box has posted it, and
+nothing moves on the handheld or at head office until a supervisor who is not the raiser approves it — then one
+compensating movement posts (`tests/integration/adjustment-requests.test.ts`,
+`tests/integration/warehouse-handheld-reaches-the-cloud-through-the-edge.test.ts` case 6). Reasons: damaged · expired ·
+miscount · found · theft suspected · other, in English and Tamil, guardrail-bound.
+**Still recorded, not dropped:** the manager's own relayed approval decision does not yet post a held count or request
+(SP-4); pending requests reach the manager's screen only with the pack (SP-9); the picker and driver handhelds — SP-3c;
+TLS on the shop-network leg — Stage E; physical-device verification and staff UAT — PENDING.
+

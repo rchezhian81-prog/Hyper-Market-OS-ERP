@@ -153,6 +153,7 @@ import type { ApprovalDecisionDeps, ApprovalDecisionRecord } from '../../identit
 import type { SyncedGoodsReceiptDeps } from '../../inventory/src/goods-receipt-synced';
 import type { SyncedWarehouseDeps, ReceivingScanDeps, ReceivingScanRecord } from '../../inventory/src/warehouse-synced';
 import type { SyncedCountsDeps, CountPolicy } from '../../inventory/src/counts-synced';
+import type { AdjustmentRequestDeps, AdjustmentRequestRecord } from '../../inventory/src/adjustment-requests';
 import type { ProductReceiptRules } from '../../../packages/receiving/src/index';
 import type { EmergencyAccessDeps, EmergencyGrant } from '../../identity/src/emergency-access';
 import type { Delegation } from '../../../packages/approvals/src/index';
@@ -4004,11 +4005,20 @@ export function syncedCountsAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
 }): Omit<SyncedCountsDeps, 'recordAudit'> {
+  const wh = warehouseAdapter(input);
   return {
     ...countsAdapter(input),
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
     unitValueMinor: (tenantId, productId) => unitCostHeldFor(input.store, tenantId, productId),
     countPolicy: (tenantId) => latest<CountPolicy>(input.store, tenantId, COUNT_POLICY_STREAM, 'CountPolicySet'),
+    // SP-3b (W2): a BIN-level count from the warehouse handheld is reconciled against head office's own bin contents —
+    // the warehouse projection, every batch of the product in that bin. A bin head office never registered is `undefined`.
+    binExpected: async (tenantId, binId, productId) => {
+      const bins = await wh.bins(tenantId);
+      if (!bins.some((b) => b.binId === binId)) return undefined;
+      const prefix = binKey(binId, productId, null); // `bin|product|` — every batch of the product in this bin
+      return Object.entries(await wh.contents(tenantId)).filter(([k]) => k.startsWith(prefix)).reduce((s, [, q]) => s + q, 0);
+    },
     recordCountPolicy: async (tenantId, policy) => {
       await input.store.append(tenantId, COUNT_POLICY_STREAM, makeEvent({
         id: `count-policy-${tenantId}-${policy.setAt}`,
@@ -4020,6 +4030,47 @@ export function syncedCountsAdapter(input: {
         payload: policy,
       }));
     },
+  };
+}
+
+/**
+ * Adjustment REQUESTS relayed from the warehouse handheld and decided by a separate person (SP-3b · W3 · M08-FR-03 · §28).
+ * Two event types on one stream — the request as recorded, and its decided state — folded latest per request id. The
+ * approval's M08 movement goes through the inventory adapter's own append, idempotent on `adj-req:<requestId>`.
+ */
+const ADJUSTMENT_REQUESTS_STREAM = streamName(STREAM.inventory, 'adjustment-requests');
+export function adjustmentRequestAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): Omit<AdjustmentRequestDeps, 'recordAudit'> {
+  const inv = inventoryAdapter(input);
+  const fold = async (tenantId: string): Promise<readonly AdjustmentRequestRecord[]> => {
+    const byId = new Map<string, AdjustmentRequestRecord>();
+    for (const r of await allOf<AdjustmentRequestRecord>(input.store, tenantId, ADJUSTMENT_REQUESTS_STREAM, 'AdjustmentRequestRecorded')) byId.set(r.requestId, r);
+    for (const d of await allOf<AdjustmentRequestRecord>(input.store, tenantId, ADJUSTMENT_REQUESTS_STREAM, 'AdjustmentRequestDecided')) byId.set(d.requestId, d);
+    return [...byId.values()];
+  };
+  return {
+    now: input.now,
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+    unitValueMinor: (tenantId, productId) => unitCostHeldFor(input.store, tenantId, productId),
+    request: async (tenantId, requestId) => (await fold(tenantId)).find((r) => r.requestId === requestId),
+    requests: (tenantId) => fold(tenantId),
+    recordRequest: async (tenantId, record) => {
+      await input.store.append(tenantId, ADJUSTMENT_REQUESTS_STREAM, makeEvent({
+        id: `adj-req-${record.requestId}`, type: 'AdjustmentRequestRecorded', occurredAt: record.recordedAt,
+        // The request's own id: a re-relayed request collapses to one record.
+        idempotencyKey: `adj-req-${tenantId}-${record.requestId}`, source: 'api/inventory', payload: record,
+      }));
+    },
+    recordDecision: async (tenantId, record) => {
+      await input.store.append(tenantId, ADJUSTMENT_REQUESTS_STREAM, makeEvent({
+        id: `adj-req-decided-${record.requestId}`, type: 'AdjustmentRequestDecided', occurredAt: record.decidedAt ?? input.now(),
+        // One decision per request: the route refuses a conflicting second one before it gets here.
+        idempotencyKey: `adj-req-decided-${tenantId}-${record.requestId}`, source: 'api/inventory', payload: record,
+      }));
+    },
+    appendMovement: inv.appendMovement,
   };
 }
 

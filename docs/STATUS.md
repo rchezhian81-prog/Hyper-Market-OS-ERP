@@ -135,12 +135,38 @@ device, human UAT and production verification separate; approved deferrals stay 
   socket but their event types have no cloud routes (SP-3c); W2 blind count and W3 adjustment request on the handheld
   (SP-3b); no TLS on the shop-network leg — a staff-only WPA2/WPA3 wifi is the operator control meanwhile (OA-16), TLS at
   the device socket is a Stage E follow-up; the pack's `devices` register is file-fed until SP-9; no physical device.
-- **Current-work pointer:** last verified = SP-3a (this PR); next = **SP-3b** (W2: bin-level blind count on the warehouse
-  handheld → `StockCounted`-style event for the `warehouse` surface → a cloud route that computes the expected quantity
-  from head office's bin contents, values it, applies an immaterial variance and HOLDS a material one pending a separate
-  approver; W3: adjustment request with a reason → recorded pending approval, never posted by the raiser; EN/TA,
-  scanner-first, ≤2 / ≤3 taps); then **SP-3c** (picker + driver on the device socket with their synced routes); genuine
-  blockers: none for SP-3b..SP-9; external gates unchanged (providers, hardware, real data, pilot GO).
+- **SP-3b — W2 blind bin count and W3 adjustment request on the warehouse handheld, connected end to end
+  (M09-FR-04 · M08-FR-03 · §28 · hard rules #1 #2 #5 #10).** The handheld's two remaining owner-named flows exist and
+  ride the SP-3a device socket and the shared queue. **W2:** tap *Count a bin* → scan the bin (2) → per item scan →
+  keypad → OK; the sheet never shows an expected figure and the handheld's bin projection does not move; the count is
+  the manager's `StockCounted` type (allow-listed for `warehouse`) with `binId`; `POST /v1/inventory/counts/:countId/synced`
+  computes the expected figure from head office's BIN contents across batches (`binExpected` on the synced counts
+  adapter) plus prior corrections of that bin, corrects an immaterial variance, holds a material / unvalued one, and
+  flags + holds a bin it does not have (`bin_unknown`); bin corrections layer on the bin and never on the store-level
+  position (`storeLevel`). **W3:** tap *Adjust stock* → scan the item → tap the reason (3; quantity defaults to one,
+  missing/damaged; reasons `ADJUSTMENT_REASON_CODES` EN/TA) → `AdjustmentRequested` →
+  `POST /v1/inventory/adjustment-requests/:requestId/synced` (permission `inventory.adjustment.sync` on the box identity)
+  records it PENDING, valued at the cloud's cost, requester re-verified; `POST …/decide` (`inventory.adjustment.approve`,
+  store manager + owner) by a person who is NOT the raiser (422 `self_approval`) posts ONE M08 movement (`adjusted` /
+  `wasted`, reason + both people, idempotent on `adj-req:<id>`) or rejects; a conflicting second decision is 409;
+  `GET /v1/inventory/adjustment-requests?status=` lists them. The sent list shows a posted request as *waiting for a
+  supervisor to approve it*. Evidence: `warehouse-handheld-count-and-adjust.test.ts` 6, `bin-counts-synced-route.test.ts` 5,
+  `adjustment-requests.test.ts` 5, `warehouse-handheld-reaches-the-cloud-through-the-edge.test.ts` case 6 (real box +
+  device socket + real kernel: count held with `value_unknown` and the bin unchanged; request pending → raiser refused →
+  owner approves → on-hand moves once → re-approval same → handheld re-send duplicate at the box), spec e2e W2 budget 2
+  + blindness and W3 budget 3 (real Chromium), box e2e count → with the store computer → reload; api surface +3;
+  bilingual guardrail binds the reason words. **Still open, honestly:** the manager's RELAYED `ApprovalDecided` for a
+  `stock_adjustment` / `stock_count` subject does not yet post a held count or request — approve-then-apply for both is
+  SP-4; pending requests and held counts reach the manager's screen only when the pack carries them (SP-9); a bin
+  correction is on the counts register, not on the warehouse projection's occupancy (F06 → SP-5b); picker/driver
+  handhelds (SP-3c) stay behind the core-store slices; no physical device; no TLS on the LAN leg (OA-16).
+- **Current-work pointer:** last verified = SP-3b (this PR); next = **SP-4** [W03, F03, F07] (trusted approvals and
+  policies: approver, available stock, value and tolerance from authoritative records — never the request body — on
+  the direct transfer / count / write-off routes; approve-then-apply for a HELD count and a PENDING adjustment request
+  from the manager's relayed `ApprovalDecided`, the decider re-verified; observation `warehouse.test.ts` F07 case
+  inverted into a regression); then SP-4b (F09), SP-4c (F10), SP-5/5b (F05/F06), SP-6 (F01), SP-7 (F02/F04), SP-8/8b
+  (F08), SP-9/9b; **SP-3c** (picker + driver on the device socket) after the core-store chain; genuine blockers: none;
+  external gates unchanged (providers, hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 

@@ -82,10 +82,12 @@ describe('the contract reads strictly and refuses with a reason', () => {
     expect(isRelayable('ApprovalDecided', 'picker')).toBe(false);
     // SP-2b: the manager's receipts and blind counts ride the same route; a sale never does.
     expect(RELAYABLE_DEVICE_EVENTS['GoodsReceived']?.surfaces).toEqual(['manager']);
-    expect(RELAYABLE_DEVICE_EVENTS['StockCounted']?.surfaces).toEqual(['manager']);
+    expect(RELAYABLE_DEVICE_EVENTS['StockCounted']?.surfaces).toEqual(['manager', 'warehouse']);
+    expect(RELAYABLE_DEVICE_EVENTS['AdjustmentRequested']?.surfaces).toEqual(['warehouse']);
     expect(isRelayable('GoodsReceived', 'manager')).toBe(true);
     expect(isRelayable('StockCounted', 'manager')).toBe(true);
-    expect(isRelayable('StockCounted', 'warehouse')).toBe(false); // W2 adds the handheld in SP-3b
+    expect(isRelayable('StockCounted', 'warehouse')).toBe(true); // W2 (SP-3b): the handheld's bin count rides the same type
+    expect(isRelayable('AdjustmentRequested', 'manager')).toBe(false); // a request is raised at the racking, not at the desk
     expect(isRelayable('SaleCommitted', 'manager')).toBe(false);
     // SP-3a: the warehouse handheld's scans ride the device socket as the `warehouse` surface — and only that surface.
     expect(RELAYABLE_DEVICE_EVENTS['WarehouseMovementApplied']?.surfaces).toEqual(['warehouse']);

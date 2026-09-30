@@ -267,4 +267,54 @@ describe('the warehouse handheld: enrol → device socket → box (durable) → 
     expect(second.syncStatus().unsent).toBe(2);
     expect((await postBatch(second, cookie, [{ key: s.idempotencyKey, event: s }])).acks).toEqual([{ key: 'recv:grn-1:recv-4', status: 'duplicate' }]);
   });
+
+  it('a BLIND bin count and an adjustment REQUEST ride the same socket: head office reconciles the count against ITS bin and holds it, and posts the request ONCE only when a different person approves (SP-3b · W2 · W3 · §28)', async () => {
+    const c = await cloud();
+    const edge = await c.start();
+    const { cookie } = await enrol(edge);
+    // Head office's BIN-A comes to hold 6 of p-good (the put-away synced), and the store 1 of p-rice (the receiving scan).
+    const e = putAway('mv-6');
+    const r = scanned('recv-6');
+    const count = makeEvent({
+      id: 'count-cnt-1', type: 'StockCounted', occurredAt: AT, idempotencyKey: 'count-cnt-1', source: 'A-1',
+      payload: { countId: 'cnt-1', productId: 'p-good', locationId: 'store-1', binId: 'BIN-A', uom: 'EA', countedMinor: 5, reasonCode: 'cycle_count', counterId: 'u-worker', at: AT, storeId: 'store-1', source: 'warehouse-handheld' },
+    });
+    const req = makeEvent({
+      id: 'adj-req-adj-1', type: 'AdjustmentRequested', occurredAt: AT, idempotencyKey: 'adj-req:adj-1', source: 'A-1',
+      payload: { requestId: 'adj-1', productId: 'p-rice', locationId: 'store-1', binId: null, deltaMinor: -1, uom: 'EA', reasonCode: 'damaged', note: 'torn bag', requestedBy: 'u-worker', at: AT, storeId: 'store-1', source: 'warehouse-handheld' },
+    });
+    const batch = await postBatch(edge, cookie, [e, r, count, req].map((ev) => ({ key: ev.idempotencyKey, event: ev })));
+    expect(batch.acks.map((a) => a.status)).toEqual(['accepted', 'accepted', 'accepted', 'accepted']);
+    const pass = await edge.syncOnce!();
+    expect(pass.sent).toBe(4);
+    expect(pass.dead).toBe(0);
+    expect((await statusOf(edge, cookie!, ['count-cnt-1', 'adj-req:adj-1'])).map((i) => i.state)).toEqual(['posted', 'posted']);
+
+    // The COUNT: head office expected 6 (ITS bin, never sent), counted 5 → −1; p-good has no cost at head office, so the
+    // variance cannot be valued → HELD for a person, nothing applied, the bin still 6 (§28, #10).
+    const counts = (await c.h.request({ method: 'GET', path: '/v1/inventory/counts', userId: 'u-owner', tenantId: A, query: { productId: 'p-good', locationId: 'store-1' } })).body as { counts: Record<string, unknown>[] };
+    expect(counts.counts).toHaveLength(1);
+    expect(counts.counts[0]).toMatchObject({ countId: 'cnt-1', binId: 'BIN-A', expectedMinor: 6, countedMinor: 5, varianceMinor: -1, pendingApproval: true, adjusted: false, counterId: 'u-worker', relayedBy: 'u-box' });
+    expect(counts.counts[0]!['governanceFlags']).toContain('value_unknown');
+    expect((await binAt(c.h)).occupancyMinor).toBe(6);
+
+    // The REQUEST: pending, nothing moved; the raiser cannot decide it; the owner approves → ONE wasted movement; again → same.
+    const pending = (await c.h.request({ method: 'GET', path: '/v1/inventory/adjustment-requests', userId: 'u-owner', tenantId: A, query: { status: 'pending' } })).body as { requests: { requestId: string; requestedBy: string; relayedBy: string; status: string }[] };
+    expect(pending.requests).toEqual([expect.objectContaining({ requestId: 'adj-1', requestedBy: 'u-worker', relayedBy: 'u-box', status: 'pending' })]);
+    expect(await onHandAt(c.h, 'p-rice')).toBe(1);
+    const self = await c.h.request({ method: 'POST', path: '/v1/inventory/adjustment-requests/adj-1/decide', userId: 'u-worker', tenantId: A, idempotencyKey: 'd-self', body: { decision: 'approved', reason: 'it was me' } });
+    expect(self.status).toBe(422);
+    expect(await onHandAt(c.h, 'p-rice')).toBe(1);
+    const approve = await c.h.request({ method: 'POST', path: '/v1/inventory/adjustment-requests/adj-1/decide', userId: 'u-owner', tenantId: A, idempotencyKey: 'd-1', body: { decision: 'approved', reason: 'saw the bag' } });
+    expect(approve.status).toBe(200);
+    expect(approve.body).toMatchObject({ status: 'posted', movementId: 'adj-req:adj-1' });
+    expect(await onHandAt(c.h, 'p-rice')).toBe(0);
+    const again = await c.h.request({ method: 'POST', path: '/v1/inventory/adjustment-requests/adj-1/decide', userId: 'u-owner', tenantId: A, idempotencyKey: 'd-1-again', body: { decision: 'approved', reason: 'saw the bag' } });
+    expect(again.body).toMatchObject({ status: 'posted', alreadyDecided: true });
+    expect(await onHandAt(c.h, 'p-rice')).toBe(0);
+    // The handheld re-sending both after a lost reply is duplicate at the box — nothing reaches head office twice.
+    expect((await postBatch(edge, cookie, [count, req].map((ev) => ({ key: ev.idempotencyKey, event: ev })))).acks.map((a) => a.status)).toEqual(['duplicate', 'duplicate']);
+    await edge.syncOnce!();
+    expect(c.posts()).toBe(4);
+  });
 });

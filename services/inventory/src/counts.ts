@@ -49,6 +49,11 @@ export interface StoredReconciliation {
   readonly relayedBy?: string;
   readonly source?: string;
   readonly storeId?: string | null;
+  /**
+   * SP-3b (W2) — the BIN the warehouse handheld counted, when the count was bin-level: the expected figure was head
+   * office's bin contents for that bin, and the correction layers on that bin only. Absent/null on a store-level count.
+   */
+  readonly binId?: string | null;
 }
 
 export interface CountsDeps {
@@ -69,6 +74,9 @@ const isNonNegInt = (v: unknown): v is number => Number.isInteger(v) && (v as nu
 /** The corrections already layered on M08 for a position — only counts that were actually ADJUSTED count. */
 export const priorCorrections = (recs: readonly StoredReconciliation[]): number =>
   recs.filter((r) => r.adjusted).reduce((s, r) => s + r.varianceMinor, 0);
+/** The STORE-level reconciliations only: a bin count's correction (SP-3b) layers on that bin, never on the store position. */
+export const storeLevel = (recs: readonly StoredReconciliation[]): readonly StoredReconciliation[] =>
+  recs.filter((r) => (r.binId ?? null) === null);
 
 export function countsRoutes(deps: CountsDeps): readonly Route[] {
   return [
@@ -102,7 +110,7 @@ export function countsRoutes(deps: CountsDeps): readonly Route[] {
 
         const currency = (b.currency as CurrencyCode) ?? 'INR';
         const at = deps.now();
-        const priorRecs = await deps.reconciliations(ctx.tenantId, b.productId, b.locationId);
+        const priorRecs = storeLevel(await deps.reconciliations(ctx.tenantId, b.productId, b.locationId));
         const expected = (await deps.onHand(ctx.tenantId, b.productId, b.locationId)) + priorCorrections(priorRecs);
 
         // Hydrate a ledger with the expected position so the engine projects it as on-hand (blind).
@@ -166,7 +174,8 @@ export function countsRoutes(deps: CountsDeps): readonly Route[] {
         }
         const recs = await deps.reconciliations(ctx.tenantId, productId, locationId);
         const systemOnHandMinor = await deps.onHand(ctx.tenantId, productId, locationId);
-        const countCorrectionMinor = priorCorrections(recs);
+        // Bin counts (SP-3b) are LISTED here with their bin, but their corrections belong to the bin, not the store position.
+        const countCorrectionMinor = priorCorrections(storeLevel(recs));
         return {
           status: 200,
           body: { productId, locationId, systemOnHandMinor, countCorrectionMinor, correctedOnHandMinor: systemOnHandMinor + countCorrectionMinor, counts: recs, asAt: deps.now() },

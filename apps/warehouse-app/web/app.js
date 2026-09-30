@@ -79,6 +79,19 @@ const WORDS = {
     wrong_item: 'That is not the item on this line — check the label and scan again',
     not_on_pick_list: 'That line is not on this pick list',
     line_done: 'This line is already picked — nothing left to take',
+    // a blind bin count (W2) and an adjustment request (W3) — SP-3b
+    countBin: 'Count a bin', adjustStock: 'Adjust stock',
+    scanCountBin: 'Scan the bin to count', scanCountItem: 'Scan an item in', doneCounting: 'Done counting',
+    howMany: 'How many did you count?', blindHint: 'Enter what you see. The expected number is never shown here.',
+    scanAdjustItem: 'Scan the item to adjust', adjustTitle: 'Adjust stock',
+    missing: 'Missing / damaged (−)', found: 'Found (+)',
+    chooseReason: 'Tap the reason — that records the request for a supervisor to approve',
+    awaitingApproval: 'Recorded at head office — waiting for a supervisor to approve it',
+    stepCountBin: 'Count — scan the bin', stepCountItem: 'Count — scan an item in the bin, or finish',
+    stepCountQty: 'Enter what you counted', stepAdjustItem: 'Adjust — scan the item',
+    stepAdjustReason: 'Set the quantity, then tap the reason',
+    counted: 'Counted', adjustment_requested: 'Adjustment requested — waits for a supervisor',
+    not_a_quantity: 'That is not a whole quantity', no_reason: 'Pick a reason from the list',
   },
   ta: {
     noBoxLink: 'கடை கணினியுடன் இணைக்கப்படவில்லை', checkingBox: 'கடை கணினியைச் சரிபார்க்கிறது…',
@@ -123,6 +136,18 @@ const WORDS = {
     wrong_item: 'இது இந்த வரியின் பொருள் அல்ல — லேபிளைச் சரிபார்த்து மீண்டும் ஸ்கேன் செய்யவும்',
     not_on_pick_list: 'அந்த வரி இந்த எடுப்புப் பட்டியலில் இல்லை',
     line_done: 'இந்த வரி ஏற்கனவே எடுக்கப்பட்டது — எடுக்க எதுவும் இல்லை',
+    countBin: 'இடத்தை எண்ணு', adjustStock: 'சரக்கைத் திருத்து',
+    scanCountBin: 'எண்ண வேண்டிய இடத்தை ஸ்கேன் செய்யவும்', scanCountItem: 'உள்ளே இருக்கும் பொருளை ஸ்கேன் செய்யவும்', doneCounting: 'எண்ணி முடித்தேன்',
+    howMany: 'எத்தனை எண்ணினீர்கள்?', blindHint: 'பார்ப்பதை உள்ளிடவும். எதிர்பார்க்கப்படும் எண் இங்கே காட்டப்படுவதில்லை.',
+    scanAdjustItem: 'திருத்த வேண்டிய பொருளை ஸ்கேன் செய்யவும்', adjustTitle: 'சரக்கைத் திருத்து',
+    missing: 'காணவில்லை / சேதம் (−)', found: 'கிடைத்தது (+)',
+    chooseReason: 'காரணத்தைத் தொடவும் — அது மேற்பார்வையாளர் ஒப்புதலுக்குக் கோரிக்கையைப் பதிவு செய்யும்',
+    awaitingApproval: 'தலைமை அலுவலகத்தில் பதிவாகியது — மேற்பார்வையாளர் ஒப்புதலுக்குக் காத்திருக்கிறது',
+    stepCountBin: 'எண்ணு — இடத்தை ஸ்கேன் செய்யவும்', stepCountItem: 'எண்ணு — இடத்தில் உள்ள பொருளை ஸ்கேன் செய்யவும், அல்லது முடிக்கவும்',
+    stepCountQty: 'எண்ணியதை உள்ளிடவும்', stepAdjustItem: 'திருத்து — பொருளை ஸ்கேன் செய்யவும்',
+    stepAdjustReason: 'அளவை அமைத்து, பின் காரணத்தைத் தொடவும்',
+    counted: 'எண்ணப்பட்டது', adjustment_requested: 'திருத்தக் கோரிக்கை — மேற்பார்வையாளருக்குக் காத்திருக்கிறது',
+    not_a_quantity: 'அது முழு அளவு அல்ல', no_reason: 'பட்டியலில் இருந்து ஒரு காரணத்தைத் தேர்வு செய்யவும்',
   },
 };
 let lang = 'en';
@@ -152,6 +177,17 @@ const KIND_WORDS = {
   receipt: { en: 'Received', ta: 'பெறப்பட்டது' },
   put_away: { en: 'Put away', ta: 'அடுக்கப்பட்டது' },
   pick: { en: 'Picked', ta: 'எடுக்கப்பட்டது' },
+  count: { en: 'Counted', ta: 'எண்ணப்பட்டது' },
+  adjustment: { en: 'Adjustment requested', ta: 'திருத்தக் கோரிக்கை' },
+};
+/** The reasons an adjustment may be raised for (`packages/adjustment` ADJUSTMENT_REASON_CODES) — the buttons on the adjust sheet. */
+const REASON_WORDS = {
+  damaged: { en: 'Damaged', ta: 'சேதமடைந்தது' },
+  expired: { en: 'Expired', ta: 'காலாவதி' },
+  miscount: { en: 'Miscount', ta: 'தவறான எண்ணிக்கை' },
+  found: { en: 'Found', ta: 'கிடைத்தது' },
+  theft_suspected: { en: 'Theft suspected', ta: 'திருட்டு சந்தேகம்' },
+  other: { en: 'Other', ta: 'மற்றவை' },
 };
 const words = (map, key) => (map[key] ? (map[key][lang] ?? map[key].en) : key);
 
@@ -163,6 +199,8 @@ const grnId = (data && data.grnId) || 'GRN';
 let selected = null; // the goods-in item chosen to put away
 let selectedPick = null; // the pick-list line (by id) chosen by a tap; a bin scan from the list needs no tap
 let pickStep = null; // where a pick in progress is: 'bin' | 'item' | 'confirm' | null
+let countStep = null; // where a blind count is: 'bin' | 'item' | 'qty' | null (W2)
+let adjustStep = null; // where an adjustment request is: 'item' | 'reason' | null (W3)
 
 // ── The scan panel ──────────────────────────────────────────────────────────
 // A promise that resolves with the next scanned code, or null if cancelled. No text box exists.
@@ -198,6 +236,80 @@ function settleConfirm(answer) {
 }
 el('confirm-ok').addEventListener('click', () => settleConfirm(true));
 el('confirm-cancel').addEventListener('click', () => settleConfirm(false));
+
+// ── A quantity on a keypad (W2 / W3) ────────────────────────────────────────
+// Buttons, never a text box (the scanner discipline above). '0' is a real count — an empty bin is a finding.
+function buildKeypad(hostId, entryId) {
+  el(hostId).replaceChildren(...['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'].map((key) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = key;
+    button.addEventListener('click', () => {
+      const current = el(entryId).textContent;
+      el(entryId).textContent = key === 'C' ? '0'
+        : key === '⌫' ? (current.length > 1 ? current.slice(0, -1) : '0')
+          : (current === '0' ? key : (current + key).slice(0, 6));
+    });
+    return button;
+  }));
+}
+buildKeypad('qty-keypad', 'qty-entry');
+buildKeypad('adjust-keypad', 'adjust-entry');
+
+// The blind count's quantity: what the worker SAW. The panel carries no expected figure — the model has none to give.
+let qtyResolve = null;
+function awaitQty(title, hint, initial = '0') {
+  el('qty-title').textContent = title;
+  el('qty-hint').textContent = hint;
+  el('qty-entry').textContent = initial;
+  el('qty-cancel').textContent = t('cancel');
+  el('qty-ok').textContent = t('ok');
+  el('qty').hidden = false;
+  return new Promise((resolve) => { qtyResolve = resolve; });
+}
+function settleQty(answer) {
+  el('qty').hidden = true;
+  if (qtyResolve !== null) { const r = qtyResolve; qtyResolve = null; r(answer); }
+}
+el('qty-ok').addEventListener('click', () => settleQty(Number(el('qty-entry').textContent)));
+el('qty-cancel').addEventListener('click', () => settleQty(null));
+
+// The adjustment request: direction (missing by default — the common finding), a quantity (1 by default), then the
+// reason, whose tap IS the confirm: three interactions for one damaged pack, as the spec budgets it.
+let adjustResolve = null;
+let adjustSign = -1;
+function setAdjustSign(sign) {
+  adjustSign = sign;
+  el('adjust-minus').setAttribute('aria-pressed', String(sign < 0));
+  el('adjust-plus').setAttribute('aria-pressed', String(sign > 0));
+}
+function awaitAdjustment(productId) {
+  el('adjust-title').textContent = t('adjustTitle');
+  el('adjust-hint').textContent = productId;
+  el('adjust-minus').textContent = t('missing');
+  el('adjust-plus').textContent = t('found');
+  el('adjust-reason-hint').textContent = t('chooseReason');
+  el('adjust-cancel').textContent = t('cancel');
+  el('adjust-entry').textContent = '1';
+  setAdjustSign(-1);
+  el('adjust-reasons').replaceChildren(...Object.keys(REASON_WORDS).map((code) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.reason = code;
+    button.textContent = words(REASON_WORDS, code);
+    button.addEventListener('click', () => settleAdjustment({ reasonCode: code, deltaMinor: adjustSign * Number(el('adjust-entry').textContent) }));
+    return button;
+  }));
+  el('adjust').hidden = false;
+  return new Promise((resolve) => { adjustResolve = resolve; });
+}
+function settleAdjustment(answer) {
+  el('adjust').hidden = true;
+  if (adjustResolve !== null) { const r = adjustResolve; adjustResolve = null; r(answer); }
+}
+el('adjust-minus').addEventListener('click', () => setAdjustSign(-1));
+el('adjust-plus').addEventListener('click', () => setAdjustSign(1));
+el('adjust-cancel').addEventListener('click', () => settleAdjustment(null));
 
 // ── Felt scan feedback: colour + word + sound + buzz (OA-9) ──────────────────
 function feltResult(signal) {
@@ -244,13 +356,22 @@ function render() {
   el('put-away').disabled = selected === null;
   el('pick-heading').textContent = t('toPick');
   el('pick').textContent = t('pick');
+  el('count-bin').textContent = t('countBin');
+  el('adjust-stock').textContent = t('adjustStock');
+  el('count-bin').disabled = real === undefined;
+  el('adjust-stock').disabled = real === undefined;
   // The Pick button exists only while there is pick work; a bin scanned from the list needs it not at all.
   el('pick').hidden = lines.length === 0;
   if (!lines.some((l) => l.lineId === selectedPick)) selectedPick = null;
   el('pick').disabled = selectedPick === null;
   // The footer always says which step comes next — nobody should work out where they are in a sequence.
   el('step').firstChild.textContent =
-    pickStep === 'bin' ? t('stepPickScanBin')
+    countStep === 'bin' ? t('stepCountBin')
+      : countStep === 'item' ? t('stepCountItem')
+        : countStep === 'qty' ? t('stepCountQty')
+          : adjustStep === 'item' ? t('stepAdjustItem')
+            : adjustStep === 'reason' ? t('stepAdjustReason')
+              : pickStep === 'bin' ? t('stepPickScanBin')
       : pickStep === 'item' ? t('stepScanItem')
         : pickStep === 'confirm' ? t('stepConfirm')
           : selectedPick !== null ? t('stepPickScanBin')
@@ -336,7 +457,8 @@ function renderSent() {
     what.textContent = `${words(KIND_WORDS, w.kind)} · ${w.what} — ${w.detail}`;
     const state = document.createElement('div');
     state.className = `pill ${w.state}`;
-    state.textContent = words(STATE_WORDS, w.state);
+    // A request head office has RECORDED is not yet applied: it waits for a supervisor — say so, never "posted".
+    state.textContent = w.kind === 'adjustment' && w.state === 'posted' ? t('awaitingApproval') : words(STATE_WORDS, w.state);
     row.append(what, state);
     if (w.reason) {
       const why = document.createElement('div');
@@ -427,6 +549,60 @@ el('pick').addEventListener('click', () => {
   if (line !== undefined) void startPick(line);
 });
 
+/**
+ * Count a bin, BLIND (W2 · inventory-warehouse.md "start a count ≤2"): tap Count → scan the bin — that is the start. Then
+ * for each item in the bin: scan it → type what you see → OK, until "Done counting". Nothing on this screen ever shows
+ * what the bin should hold; the model queues only the counted figure and head office compares it (M09-FR-04, §28).
+ */
+async function startCount() {
+  if (real === undefined) return;
+  countStep = 'bin'; render();
+  const bin = await awaitScan(t('scanCountBin'));
+  if (bin === null) { countStep = null; render(); return; }
+  if (!real.knowsBin(bin)) {
+    countStep = null; render();
+    feltResult({ feedback: 'reject', code: 'unknown_bin', detail: `${bin} is not a bin in this store`, sound: 'error', vibrateMs: 300 });
+    return;
+  }
+  for (;;) {
+    countStep = 'item'; render();
+    el('scan-cancel').textContent = t('doneCounting');
+    const item = await awaitScan(`${t('scanCountItem')} ${bin}`);
+    el('scan-cancel').textContent = t('cancel');
+    if (item === null) break;
+    countStep = 'qty'; render();
+    const qty = await awaitQty(`${t('howMany')} — ${item}`, t('blindHint'));
+    if (qty === null) continue;
+    const out = real.countBin({ countId: nextId('count'), scannedBinId: bin, scannedItem: item, countedMinor: qty, at: new Date().toISOString() });
+    feltResult(out.signal);
+    render();
+    if (out.signal.feedback === 'accept') void syncToBox();
+  }
+  countStep = null; render();
+}
+el('count-bin').addEventListener('click', () => { void startCount(); });
+
+/**
+ * Raise an adjustment REQUEST (W3 · "record an adjustment with reason ≤3"): tap Adjust → scan the item → tap the reason
+ * (the quantity defaults to one, missing). It is a request: nothing changes on this handheld, and a supervisor who is
+ * not this worker approves it at head office before anything posts (M08-FR-03, §28).
+ */
+async function startAdjust() {
+  if (real === undefined) return;
+  adjustStep = 'item'; render();
+  const item = await awaitScan(t('scanAdjustItem'));
+  if (item === null) { adjustStep = null; render(); return; }
+  adjustStep = 'reason'; render();
+  const answer = await awaitAdjustment(item);
+  adjustStep = null;
+  if (answer === null) { render(); return; }
+  const out = real.requestAdjustment({ requestId: nextId('adj'), scannedItem: item, deltaMinor: answer.deltaMinor, reasonCode: answer.reasonCode, at: new Date().toISOString() });
+  feltResult(out.signal);
+  render();
+  if (out.signal.feedback === 'accept') void syncToBox();
+}
+el('adjust-stock').addEventListener('click', () => { void startAdjust(); });
+
 // ── Language ────────────────────────────────────────────────────────────────
 el('lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ta' : 'en';
@@ -457,7 +633,7 @@ window.addEventListener('keydown', (event) => {
     }
     // Nothing was asking for a scan. A bin label that a pick-list line names IS step 1 of that pick — the scan
     // chooses the line, as on the picker handheld, and the panel opens straight on the item.
-    if (pickStep === null && confirmResolve === null && real !== undefined && typeof real.pickLines === 'function') {
+    if (pickStep === null && countStep === null && adjustStep === null && confirmResolve === null && real !== undefined && typeof real.pickLines === 'function') {
       const line = real.pickLines().find((l) => l.binId === code);
       if (line !== undefined) void startPick(line, code);
     }

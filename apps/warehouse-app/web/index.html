@@ -101,6 +101,16 @@
       }
       .sheet-actions { display: grid; grid-template-columns: 1fr; gap: 10px; }
       .sheet-actions.two { grid-template-columns: 1fr 1fr; }
+      /* A quantity typed on a keypad (a count, an adjustment): the number is big, the keys are buttons — never a text box. */
+      .entry {
+        background: var(--panel-2); border-radius: 12px; padding: 14px 16px; text-align: center;
+        font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums;
+      }
+      .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .keypad button, .choices button, .direction button { min-height: 56px; font-size: 19px; }
+      .choices { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+      .direction { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .direction button[aria-pressed='true'] { outline: 3px solid var(--focus); background: var(--panel-2); }
       /* The confirm step of a pick: the number about to be committed, unmissable, then one tap. */
       .big-qty {
         background: var(--panel-2); border-radius: 12px; padding: 18px 16px; text-align: center;
@@ -154,6 +164,9 @@
         <button id="put-away" class="primary" type="button" disabled>Put away — scan the bin</button>
         <!-- Shown only when the handheld holds pick work. Scanning a line's bin from the list starts the pick without it. -->
         <button id="pick" class="primary wide" type="button" disabled hidden>Pick — scan the bin</button>
+        <!-- SP-3b: a BLIND bin count (W2) and an adjustment REQUEST with a reason (W3). Neither moves stock on this handheld. -->
+        <button id="count-bin" type="button" disabled>Count a bin</button>
+        <button id="adjust-stock" type="button" disabled>Adjust stock</button>
       </div>
     </footer>
 
@@ -185,6 +198,46 @@
         <div class="sheet-actions two">
           <button id="confirm-cancel" type="button">Cancel</button>
           <button id="confirm-ok" class="primary" type="button">Confirm</button>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      A quantity, typed on a keypad (W2's blind count). Nothing on this panel says what the bin SHOULD hold: the
+      expected figure lives at head office and is never sent to this handheld — the same discipline as the till drawer
+      and the driver's cash count.
+    -->
+    <div class="sheet" id="qty" hidden role="dialog" aria-modal="true" aria-labelledby="qty-title">
+      <div class="sheet-inner">
+        <h2 id="qty-title">—</h2>
+        <div class="hint" id="qty-hint"></div>
+        <div class="entry" id="qty-entry" aria-live="polite">0</div>
+        <div class="keypad" id="qty-keypad"></div>
+        <div class="sheet-actions two">
+          <button id="qty-cancel" type="button">Cancel</button>
+          <button id="qty-ok" class="primary" type="button">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      An adjustment REQUEST (W3): direction, quantity, then the reason — tapping the reason records the request. It is
+      a request: a supervisor who is not this worker approves it at head office before anything posts (§28).
+    -->
+    <div class="sheet" id="adjust" hidden role="dialog" aria-modal="true" aria-labelledby="adjust-title">
+      <div class="sheet-inner">
+        <h2 id="adjust-title">—</h2>
+        <div class="hint" id="adjust-hint"></div>
+        <div class="direction">
+          <button id="adjust-minus" type="button" aria-pressed="true">Missing / damaged (−)</button>
+          <button id="adjust-plus" type="button" aria-pressed="false">Found (+)</button>
+        </div>
+        <div class="entry" id="adjust-entry" aria-live="polite">1</div>
+        <div class="keypad" id="adjust-keypad"></div>
+        <div class="hint" id="adjust-reason-hint"></div>
+        <div class="choices" id="adjust-reasons"></div>
+        <div class="sheet-actions">
+          <button id="adjust-cancel" type="button">Cancel</button>
         </div>
       </div>
     </div>
