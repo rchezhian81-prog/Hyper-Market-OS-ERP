@@ -53,6 +53,12 @@ export interface Transfer {
   readonly approvedBy?: string;
   readonly dispatchedAt?: string;
   readonly receivedAt?: string;
+  /**
+   * SP-5 (F05): head office's OWN unit cost at the SOURCE for each line when it was dispatched — the sending location's
+   * weighted average in minor units, `null` where that stock was unvalued. Set by the dispatching surface, never by the
+   * proposer, so the value that arrives at the destination is the value that left. Index-aligned with `lines`.
+   */
+  readonly lineCostsMinor?: readonly (number | null)[];
 }
 
 export interface TransferApproval {

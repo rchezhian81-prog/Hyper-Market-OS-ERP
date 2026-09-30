@@ -124,7 +124,7 @@ export function syncedCountsRoutes(deps: SyncedCountsDeps): readonly Route[] {
         // travels back only to the BOX (the device sees posted / refused) — the counter still never sees it first.
         return {
           status: 202,
-          body: { countId, recorded: true, binId: c.binId, expectedMinor: rec.expectedMinor, countedMinor: rec.countedMinor, varianceMinor: rec.varianceMinor, valueMinor: rec.valueMinor, adjusted: rec.adjusted, pendingApproval: rec.pendingApproval ?? false, flags },
+          body: { countId, recorded: true, binId: c.binId, expectedMinor: rec.expectedMinor, countedMinor: rec.countedMinor, varianceMinor: rec.varianceMinor, valueMinor: rec.valueMinor, adjusted: rec.adjusted, pendingApproval: rec.pendingApproval ?? false, movementId: rec.movementId ?? null, flags },
         };
       },
     },

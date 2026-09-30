@@ -45,7 +45,7 @@ const readCount = (h: ApiHarness, u: string, productId: string, locationId: stri
   h.request({ method: 'GET', path: '/v1/inventory/counts', userId: u, tenantId: A, query: { productId, locationId } });
 
 interface BinBody { occupancyMinor: number; held: { key: string; quantityMinor: number }[] }
-interface PositionBody { systemOnHandMinor: number; countCorrectionMinor: number; correctedOnHandMinor: number }
+interface PositionBody { systemOnHandMinor: number; countCorrectionMinor: number; postedCorrectionMinor: number; correctedOnHandMinor: number }
 
 describe('warehouse durability: bins, in-transit transfers and count corrections rebuild after a restart (M09)', () => {
   it('replays a bin, a transfer held in-transit and a cycle-count correction to the same truth, and keeps appending', async () => {
@@ -62,7 +62,7 @@ describe('warehouse durability: bins, in-transit transfers and count corrections
     expect((await propose(h, 'u-owner', 't1', { fromLocationId: 'WH', toLocationId: 'S1', lines: [{ productId: 'P1', batchId: null, quantityMinor: 10, uom: 'EA', unitCost: { minor: 5_000, currency: 'INR' } }] })).status).toBe(201);
     expect((await dispatch(h, 'u-boss', 't1', {})).status).toBe(200);
 
-    // FR-04: a blind count 2 short of the ledger commits an immaterial compensating adjustment (layered on M08) —
+    // FR-04: a blind count 2 short of the ledger commits an immaterial compensating adjustment — ONE M08 movement (SP-5b) —
     // valued by head office (₹2.00, under the default ₹1 000 threshold), never by the body.
     await seedOnHand(h, 'u-owner', 'PC', 'LOC1', 100);
     expect((await count(h, 'u-owner', 'c1', { productId: 'PC', locationId: 'LOC1', uom: 'EA', countedMinor: 98, reasonCode: 'cycle_count' })).status).toBe(201);
@@ -80,9 +80,14 @@ describe('warehouse durability: bins, in-transit transfers and count corrections
     expect(t1.status).toBe(200);
     expect((t1.body as { state: string }).state, 'the in-transit transfer did not survive the restart').toBe('in_transit');
 
-    // FR-04 rebuilt — the count correction is still layered on the untouched M08 position.
+    // FR-03 rebuilt (SP-5, F05) — the dispatched 10 are still off the warehouse's on-hand and still on the van.
+    const stock = (await restarted.request({ method: 'GET', path: '/v1/inventory/availability', userId: 'u-owner', tenantId: A, query: { productId: 'P1' } })).body as { rows: { locationId: string; onHandMinor: number }[]; inTransit: { transferId: string; quantityMinor: number }[] };
+    expect(stock.rows, 'the dispatch\'s stock movement did not survive the restart').toEqual([expect.objectContaining({ locationId: 'WH', onHandMinor: 10 })]);
+    expect(stock.inTransit).toEqual([expect.objectContaining({ transferId: 't1', quantityMinor: 10 })]);
+
+    // FR-04 rebuilt (SP-5b, F06) — the count correction is ON the M08 position, posted once, layered on nothing.
     const pos = (await readCount(restarted, 'u-owner', 'PC', 'LOC1')).body as PositionBody;
-    expect(pos, 'the count correction did not survive the restart').toMatchObject({ systemOnHandMinor: 100, countCorrectionMinor: -2, correctedOnHandMinor: 98 });
+    expect(pos, 'the count correction did not survive the restart').toMatchObject({ systemOnHandMinor: 98, countCorrectionMinor: 0, postedCorrectionMinor: -2, correctedOnHandMinor: 98 });
 
     // The rebuilt surface is LIVE, not a read-only replay: a further put-away lands and updates the bin.
     expect((await move(restarted, 'u-owner', 'm2', putAway('B1', 'P1', 20))).status).toBe(201);
