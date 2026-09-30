@@ -73,11 +73,18 @@ export function tillDrawerBalanceMinor(movements: readonly StoredCashMovement[],
 export function assessCashMovement(input: {
   readonly priorMovements: readonly StoredCashMovement[];
   readonly request: CashMovementRequest;
+  /**
+   * Cash the drawer took in TRADE since custody opened (cash sales less cash refunds), when the caller knows it — the
+   * store box does, from its own sale and return logs (SP-4c). A till that has sold all morning holds far more than
+   * its float, and a pickup of the morning's takings must not read as an overdraw. Absent (the cash office's own
+   * chain, the cloud's direct route) the drawer is judged on movements alone, as before.
+   */
+  readonly tradingCashMinor?: number;
 }): CashAssessment {
   const { request } = input;
   const prior = input.priorMovements.filter((m) => m.movementId !== request.movementId);
   const custodian = custodianOf(prior, request.tillId);
-  const balance = tillDrawerBalanceMinor(prior, request.tillId);
+  const balance = tillDrawerBalanceMinor(prior, request.tillId) + (input.tradingCashMinor ?? 0);
   const refuse = (refusedBecause: CashRefusal, detail: string): CashAssessment =>
     ({ ok: false, refusedBecause, detail, deltaMinor: 0, balanceAfterMinor: balance, custodianAfter: custodian });
 

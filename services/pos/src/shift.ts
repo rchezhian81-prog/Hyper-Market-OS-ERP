@@ -6,6 +6,19 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { assessShiftClose, checkDenominationCount, assessOverShortReview, type ShiftCloseInput, type DenominationCount } from '../../../packages/till/src/index';
+import { personFindings } from './cash';
+
+/** What the cloud found when it re-verified a close the store box relayed (SP-4c · §28 · hard rule #10). */
+export type ShiftGovernanceFlag =
+  | 'cashier_unknown' | 'cashier_lacks_authority'
+  /** The relayed expected/variance do not follow from the relayed figures — the box and the cloud disagree; a person looks. */
+  | 'figures_inconsistent'
+  /** The variance is material and the relayed close carries no reason (the box should have refused it). */
+  | 'material_variance_without_reason'
+  /** The store pack named no cash tolerance, so the box applied its default — said, never silent. */
+  | 'default_tolerance'
+  /** The denomination breakdown does not add up to the counted total. */
+  | 'denominations_do_not_sum';
 
 /** A shift close as it is persisted — enough to list over/short and to answer idempotently. */
 export interface ClosedShiftRecord {
@@ -26,6 +39,16 @@ export interface ClosedShiftRecord {
    */
   readonly denominations?: readonly DenominationCount[];
   readonly closedAt: string;
+  /** Set on a close the store box relayed (SP-4c): where it happened, the window it covers, the figures, and what the cloud found. */
+  readonly laneId?: string;
+  readonly openedAt?: string;
+  readonly openingFloatMinor?: number;
+  readonly cashSalesMinor?: number;
+  readonly pickupsMinor?: number;
+  readonly cashRefundsMinor?: number;
+  readonly toleranceMinor?: number;
+  readonly relayed?: true;
+  readonly flags?: readonly ShiftGovernanceFlag[];
 }
 
 /**
@@ -76,6 +99,11 @@ export interface ShiftDeps {
   readonly overShortReviews: (tenantId: string) => Promise<readonly OverShortReview[]> | readonly OverShortReview[];
   readonly recordOverShortReview: (tenantId: string, review: OverShortReview) => Promise<void> | void;
   readonly now: () => string;
+  /**
+   * The permissions a named person holds through their grants; `undefined` when they hold none. The synced route
+   * re-verifies the cashier a relayed close names (SP-4c · §28 · hard rule #4). Absent → no person finding.
+   */
+  readonly permissionsOfUser?: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
 }
 
 const NUMS = ['openingFloatMinor', 'cashSalesMinor', 'pickupsMinor', 'cashRefundsMinor', 'countedCashMinor', 'toleranceMinor'] as const;
@@ -185,6 +213,84 @@ export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
       },
     },
     {
+      // A shift close that ALREADY HAPPENED at the till, relayed by the store box under the store's sync identity
+      // (SP-4c · F10 · M14-FR-02 · §31 · §28). The box worked the figures out from its own logs and decided the close
+      // against the cashier's blind count; the cloud never refuses it (202 always). It RE-VERIFIES the cashier from their
+      // grants, RE-RUNS the same rule over the relayed figures (a disagreement is a flag, never a silent correction), and
+      // records the close with any finding as a visible flag — then, exactly as a direct close does, a material SHORT
+      // opens a loss-prevention investigation (M15-FR-04). Idempotent on the shift id.
+      api: 'API-05', method: 'POST', path: '/v1/shifts/:shiftId/close/synced',
+      permission: 'till.shift.sync', idempotent: true,
+      handler: async (ctx) => {
+        const shiftId = ctx.params['shiftId'] ?? '';
+        const already = await deps.closedShift(ctx.tenantId, shiftId);
+        if (already !== undefined) {
+          return { status: 200, body: { shiftId, recorded: true, alreadyClosed: true, varianceMinor: already.varianceMinor, exceptionRaised: already.exceptionRaised, flags: already.flags ?? [] } };
+        }
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const str = (k: string): string | undefined => (typeof b[k] === 'string' && (b[k] as string).trim() !== '' ? (b[k] as string) : undefined);
+        const tillId = str('tillId'); const cashierId = str('cashierId'); const tradingDay = str('tradingDay'); const closedAt = str('closedAt');
+        const laneId = str('laneId'); const openedAt = str('openedAt'); const reasonCode = str('reasonCode');
+        const RELAYED_NUMS = ['openingFloatMinor', 'cashSalesMinor', 'pickupsMinor', 'cashRefundsMinor', 'countedMinor', 'expectedMinor', 'varianceMinor', 'toleranceMinor'] as const;
+        if (tillId === undefined || cashierId === undefined || tradingDay === undefined || closedAt === undefined || Number.isNaN(Date.parse(closedAt))
+          || !RELAYED_NUMS.every((k) => Number.isInteger(b[k])) || typeof b['exceptionRaised'] !== 'boolean') {
+          throw apiError(400, {
+            code: 'not_readable_as_a_synced_shift_close',
+            whatHappened: 'A relayed shift close needs the till, the cashier, the trading day, the moment, and the whole figures the box decided on (float, cash sales, pickups, refunds, counted, expected, variance, tolerance).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was recorded. The box must send the close as it recorded it.',
+          });
+        }
+        const n = (k: typeof RELAYED_NUMS[number]): number => b[k] as number;
+
+        const flags: string[] = await personFindings(deps, ctx.tenantId, cashierId, 'cashier_unknown', 'cashier_lacks_authority');
+        // The same rule, re-run over the relayed figures. The box's answer must follow from them; a disagreement is said.
+        const recomputed = assessShiftClose({
+          openingFloatMinor: n('openingFloatMinor'), cashSalesMinor: n('cashSalesMinor'), pickupsMinor: n('pickupsMinor'), cashRefundsMinor: n('cashRefundsMinor'),
+          countedCashMinor: n('countedMinor'), toleranceMinor: n('toleranceMinor'), ...(reasonCode === undefined ? {} : { reasonCode }),
+        });
+        if (recomputed.expectedMinor !== n('expectedMinor') || recomputed.varianceMinor !== n('varianceMinor') || recomputed.exceptionRaised !== b['exceptionRaised']) flags.push('figures_inconsistent');
+        if (!recomputed.ok) flags.push('material_variance_without_reason');
+        if (b['toleranceKnown'] === false) flags.push('default_tolerance');
+
+        let denominations: readonly DenominationCount[] | undefined;
+        if (Array.isArray(b['denominations'])) {
+          const parsed = (b['denominations'] as unknown[]).flatMap((d): DenominationCount[] => {
+            const x = (d ?? {}) as Record<string, unknown>;
+            return Number.isInteger(x['denominationMinor']) && Number.isInteger(x['count']) ? [{ denominationMinor: x['denominationMinor'] as number, count: x['count'] as number }] : [];
+          });
+          if (!checkDenominationCount({ denominations: parsed, countedCashMinor: n('countedMinor') }).ok) flags.push('denominations_do_not_sum');
+          denominations = parsed;
+        }
+
+        const record: ClosedShiftRecord = {
+          shiftId, tillId, cashierId, tradingDay,
+          expectedMinor: recomputed.expectedMinor, countedMinor: n('countedMinor'), varianceMinor: recomputed.varianceMinor,
+          currency: typeof b['currency'] === 'string' ? (b['currency'] as string) : 'INR',
+          exceptionRaised: recomputed.exceptionRaised, reasonCode: recomputed.reasonCode,
+          ...(denominations !== undefined ? { denominations } : {}),
+          closedAt,
+          ...(laneId === undefined ? {} : { laneId }), ...(openedAt === undefined ? {} : { openedAt }),
+          openingFloatMinor: n('openingFloatMinor'), cashSalesMinor: n('cashSalesMinor'), pickupsMinor: n('pickupsMinor'), cashRefundsMinor: n('cashRefundsMinor'),
+          toleranceMinor: n('toleranceMinor'), relayed: true,
+          ...(flags.length === 0 ? {} : { flags: flags as ShiftGovernanceFlag[] }),
+        };
+        await deps.recordShiftClose(ctx.tenantId, record);
+
+        let investigation: ShortageInvestigationOutcome | undefined;
+        if (recomputed.exceptionRaised && recomputed.isShort && deps.openInvestigationOnShortage !== undefined) {
+          investigation = await deps.openInvestigationOnShortage(ctx.tenantId, record);
+        }
+        return {
+          status: 202,
+          body: {
+            shiftId, tillId, recorded: true, expectedMinor: recomputed.expectedMinor, varianceMinor: recomputed.varianceMinor,
+            exceptionRaised: recomputed.exceptionRaised, flags, ...(investigation !== undefined ? { investigation } : {}),
+          },
+        };
+      },
+    },
+    {
       api: 'API-05', method: 'GET', path: '/v1/shifts/over-short',
       permission: 'till.shift.read',
       handler: async (ctx) => {
@@ -196,6 +302,8 @@ export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
           return {
             shiftId: r.shiftId, tillId: r.tillId, cashierId: r.cashierId, tradingDay: r.tradingDay,
             varianceMinor: r.varianceMinor, reasonCode: r.reasonCode, denominations: r.denominations ?? null,
+            // A relayed close and what the cloud found when it re-verified it (SP-4c), for the cash office (P-08).
+            laneId: r.laneId ?? null, relayed: r.relayed === true, flags: r.flags ?? [],
             reviewed: review !== undefined,
             reviewedBy: review?.reviewedBy ?? null,
             disposition: review?.disposition ?? null,

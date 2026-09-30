@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { bootPos } from '../../apps/pos/src/browser-entry';
 import { NoOperatorError, NoLaneError } from '../../apps/pos/src/session';
+import { inMemoryTillBox } from '../support/in-memory-till-box';
 
 /**
  * **The till names who rang the sale, on which lane, on which day — or refuses (SP-4b · F09 · §28 · hard rule #4).**
@@ -37,20 +38,28 @@ describe('who, where and which day on every sale', () => {
     expect(JSON.stringify(written[0])).not.toMatch(/1970-01-01|"cashier"|lane-1/);
   });
 
-  it('the till (drawer and close) follows the same person: refused while nobody is signed in, named once somebody is, refused again after sign-out', () => {
-    const view = bootPos({ laneId: 'lane-7', durable });
-    const closing = { shiftId: 'SH-1', closedAt: '2026-09-30T14:00:00.000Z', countedMinor: 50_000, openingFloatMinor: 50_000, cashSalesMinor: 0, pickupsMinor: 0, cashRefundsMinor: 0 };
+  it('the till (drawer and close) follows the same person: refused while nobody is signed in, named once somebody is, refused again after sign-out', async () => {
+    const box = inMemoryTillBox({ laneId: 'lane-7' });
+    const view = bootPos({ laneId: 'lane-7', durable, ...box.ports });
+    // Exactly what a cashier knows — which shift, when, what was counted (SP-4c · F10). The box works the rest out.
+    const closing = { shiftId: 'SH-1', closedAt: '2026-09-30T14:00:00.000Z', countedMinor: 50_000 };
     expect(view.till.operator()).toBeUndefined();
-    expect(() => view.till.close(closing)).toThrow(NoOperatorError);
+    await expect(view.till.close(closing)).rejects.toBeInstanceOf(NoOperatorError);
+    await expect(view.till.moveCash({ kind: 'float_issue', amountMinor: 50_000, at: '2026-09-30T09:00:00.000Z' })).rejects.toBeInstanceOf(NoOperatorError);
     view.signIn('u-meena');
     expect(view.till.operator()).toBe('u-meena');
     expect(view.operator()).toBe('u-meena');
+    // Signed in: the float is recorded on the box in the cashier's name, and the close names them too.
+    expect(await view.till.moveCash({ kind: 'float_issue', amountMinor: 50_000, at: '2026-09-30T09:00:00.000Z' })).toMatchObject({ committed: true, custodian: 'u-meena' });
+    expect(await view.till.close(closing)).toMatchObject({ closed: true, varianceMinor: 0 });
+    expect(box.records.map((r) => (r.kind === 'close' ? r.cashierId : r.custodianId))).toEqual(['u-meena', 'u-meena']);
     view.signOut();
     expect(view.till.operator()).toBeUndefined();
-    expect(() => view.till.close(closing)).toThrow(NoOperatorError);
+    await expect(view.till.close(closing)).rejects.toBeInstanceOf(NoOperatorError);
     // A till with a cashier but no lane refuses the close too — the lane is the box's word, never assumed.
-    const noLane = bootPos({ cashierId: 'u-meena', durable });
-    expect(() => noLane.till.close(closing)).toThrow(NoLaneError);
+    const noLane = bootPos({ cashierId: 'u-meena', durable, ...box.ports });
+    await expect(noLane.till.close(closing)).rejects.toBeInstanceOf(NoLaneError);
+    expect(box.records).toHaveLength(2);
   });
 
   it('a till the box never gave a lane refuses payment even with a cashier signed in', async () => {

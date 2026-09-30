@@ -93,8 +93,8 @@ describe('RR-F03 — the edge enforces refund operation identity', () => {
 
 describe('RR-F03 — the till surfaces the conflict explicitly', () => {
   const tillWith = (durableReturn: DurableReturnWrite) => createTillSession(
-    { tillId: 'till-1', laneId: 'lane-1', cashierId: 'u-meena', tradingDay: '2026-09-11', varianceToleranceMinor: 10_000 },
-    new Ledger(new InMemoryLedgerStore()), new Ledger(new InMemoryLedgerStore()), new SyncOutbox(), durableReturn,
+    { laneId: 'lane-1', cashierId: 'u-meena', tradingDay: '2026-09-11' },
+    new Ledger(new InMemoryLedgerStore()), new SyncOutbox(), { durableReturn },
   );
   const refundInput = (minor: number) => ({
     id: 'R-till', number: 'RET-till', originalSaleId: 'S-1', processedAt: '2026-09-11T10:00:00Z', reasonCode: 'damaged',

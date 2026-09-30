@@ -31,3 +31,15 @@ describe('assessCashMovement keeps a till to one custodian and never overdrawn',
     expect(assessCashMovement({ priorMovements: chain, request: req({ movementId: 'p1', kind: 'pickup', amountMinor: 40 }) })).toMatchObject({ ok: true, balanceAfterMinor: 60 });
   });
 });
+
+describe('the cash the drawer took in TRADE counts towards what it holds (SP-4c · F10)', () => {
+  const held: StoredCashMovement[] = [{ movementId: 'f1', tillId: 'T1', kind: 'float_issue', deltaMinor: 100, custodianId: 'c1' }];
+  it('a pickup of the morning\'s takings is not an overdraw when the caller knows the trade cash; without it, movements alone judge', () => {
+    // Float 100, cash sales 300: a pickup of 350 leaves 50 in the drawer.
+    expect(assessCashMovement({ priorMovements: held, request: req({ movementId: 'p1', kind: 'pickup', amountMinor: 350 }), tradingCashMinor: 300 }))
+      .toMatchObject({ ok: true, balanceAfterMinor: 50 });
+    expect(assessCashMovement({ priorMovements: held, request: req({ movementId: 'p1', kind: 'pickup', amountMinor: 350 }) }).refusedBecause).toBe('insufficient_till_cash');
+    // More refunded than sold: the trade cash is negative and the drawer holds less than the float.
+    expect(assessCashMovement({ priorMovements: held, request: req({ movementId: 'p1', kind: 'pickup', amountMinor: 90 }), tradingCashMinor: -20 }).refusedBecause).toBe('insufficient_till_cash');
+  });
+});

@@ -366,3 +366,10 @@ describe('nothing it says can be pasted into a support thread by mistake', () =>
     expect((calls[0]?.init.headers as Record<string, string>)['authorization']).toBe(`Bearer ${TOKEN}`);
   });
 });
+
+describe('the till\'s cash reaches the synced doors that re-verify it (SP-4c · F10)', () => {
+  it('a CashMovement goes to the till\'s synced cash route and a TillClosed to the shift\'s synced close route — never the direct ones', () => {
+    expect(EVENT_ROUTES['CashMovement']).toBe('/v1/tills/:tillId/cash-movements/synced');
+    expect(EVENT_ROUTES['TillClosed']).toBe('/v1/shifts/:shiftId/close/synced');
+  });
+});

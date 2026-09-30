@@ -63,8 +63,7 @@ import type { NoReceiptReturnsDeps } from '../../pos/src/no-receipt-returns';
 import type { RefusedDecision } from '../../migration/src/decisions';
 import type { ExceptionResolution, MigrationException } from '../../../packages/migration/src/cleaning';
 import type { ControlTotal, TotalSignature } from '../../../packages/migration/src/reconcile';
-import type { CashDeps, RecordedCashMovement } from '../../pos/src/cash';
-import type { StoredCashMovement } from '../../../packages/cash/src/index';
+import type { CashDeps, RecordedCashMovement, TillMovement } from '../../pos/src/cash';
 import type { ShiftDeps, ClosedShiftRecord, OverShortReview } from '../../pos/src/shift';
 import type { DayCloseDeps, DayCloseRecord, DayReopenRecord } from '../../pos/src/day-close';
 import type { B2BCreditDeps, B2BAccount, RecordedReceivable } from '../../finance/src/b2b-credit';
@@ -2724,7 +2723,13 @@ export function cashAdapter(input: {
 
     tillMovements: async (tenantId, tillId) =>
       (await allOf<RecordedCashMovement>(input.store, tenantId, forTillCash(tillId), 'CashMovement'))
-        .map((m): StoredCashMovement => ({ movementId: m.movementId, tillId: m.tillId, kind: m.kind, deltaMinor: m.deltaMinor, custodianId: m.custodianId })),
+        .map((m): TillMovement => ({
+          movementId: m.movementId, tillId: m.tillId, kind: m.kind, deltaMinor: m.deltaMinor, custodianId: m.custodianId,
+          ...(m.laneId === undefined ? {} : { laneId: m.laneId }), ...(m.performedBy === undefined ? {} : { performedBy: m.performedBy }),
+          ...(m.relayed === true ? { relayed: true as const } : {}), ...(m.flags === undefined ? {} : { flags: m.flags }),
+        })),
+    // SP-4c: the custodian / recorder a relayed movement names is re-verified from their grants, never taken on the box's word.
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
 
     recordCashMovement: async (tenantId, tillId, m) => {
       await input.store.append(tenantId, forTillCash(tillId), makeEvent({
@@ -2755,6 +2760,8 @@ export function shiftAdapter(input: {
 
   return {
     now: input.now,
+    // SP-4c: the cashier a relayed close names is re-verified from their grants, never taken on the box's word.
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
 
     closedShift: async (tenantId, shiftId) => (await closes(tenantId)).find((r) => r.shiftId === shiftId),
 

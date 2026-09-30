@@ -222,10 +222,40 @@ device, human UAT and production verification separate; approved deferrals stay 
   opener's focus first (`askScanOrKey`). **Still open, honestly:** the staff code
   identifies but does not authenticate — a credential-checked till login (PIN / badge verified against the store
   computer, offline-capable) is GAP-POS-LOGIN-01; F10 (the Close button's input) is SP-4c; no physical device or UAT.
-- **Current-work pointer:** last verified = SP-4b (this PR); next = **SP-4c** [W10 part, F10] (till close and cash —
-  float, pickup, shift close delivered durably like sales, restart-safe, reconciled; observation `pos.test.ts` F10 case
-  inverted); then SP-5/5b (F05/F06), SP-6 (F01), SP-7 (F02/F04), SP-8/8b (F08), SP-9/9b; **SP-3c** (picker + driver)
-  after the core-store chain; genuine blockers: none; external gates unchanged (providers, hardware, real data, pilot GO).
+- **SP-4c — the till's cash lives on the store box: float, pickup and the blind-count close, durable, restart-safe,
+  re-verified at head office (F10 · W10 part · M14-FR-01 · M14-FR-02 · §28 · §31 · hard rules #1 #2 #10).** The Close
+  button sent shift, moment and count while the session demanded four money figures the cashier does not have, so the
+  till could not close; a float or a pickup lived in the browser's memory and an outbox nothing drained. Now the STORE
+  BOX owns the till's cash: `edge/store-edge/src/till-cash.ts` (pure: fold the log into custody and chain; judge a
+  movement with the SAME guard head office runs — `assessCashMovement`, now told the cash taken in trade; work the
+  shift's figures out from the box's OWN sale, return and cash logs; decide the close with `assessShiftClose`; mint the
+  cloud events identically live and on restart) composed in `main.ts` over a seventh durable log `till-cash.log` with
+  its own dead-letter store, cursor, outbox and agent; three lane routes (`POST /lane/cash-movements`, `POST
+  /lane/shift-close`, `GET /lane/till-cash`) under the RR-F01 authorization; the till session's `moveCash` / `close` /
+  `tillCash` are ports to the box (no cash ledger, no balance ever answered — the blind count is structural); the
+  screen offers Take float / Cash to safe / Close till from what the BOX says is out, asks why from reason chips when the
+  box says the difference is material, and keeps an unacknowledged movement in `sessionStorage` to re-send under the
+  same id (one effect). The cloud gains two record-and-flag synced routes (`POST /v1/tills/:tillId/cash-movements/synced`,
+  `POST /v1/shifts/:shiftId/close/synced`; store-box role `cash.movement.sync` / `till.shift.sync`) that re-verify the
+  custodian / cashier from their grants, re-run the guard on the cloud's chain and the rule over the relayed figures,
+  flag every disagreement and open the M15 investigation on a material short. The pack may name
+  `cashVarianceToleranceMinor`; absent, the box applies ₹100 and says so. Evidence: observation `pos.test.ts` F10 case
+  inverted; `edge-till-cash.test.ts` 18; `lane-server-till-cash.test.ts` 7; `pos-till-session.test.ts` rewritten over
+  the in-memory box (`tests/support/in-memory-till-box.ts`); `assess-cash.test.ts` +1; `sync-http-transport.test.ts` +1;
+  `the-till-closes-through-the-box.test.ts` 7 (real edge + lane socket + `bootPos`: float → sales → pickup → blind
+  count; material short → reason; only the custodian closes; same id twice = one effect; restart; no lane; default
+  tolerance said; box down → "NOT recorded yet"); `till-cash-reaches-the-cloud.test.ts` 9 (synced routes: idempotent,
+  flags, 400/403, tenant isolation, investigation opened; through the real edge with the cable out, then once);
+  `the-served-till-closes.e2e.ts` in real Chromium (float → sale → pickup → reload keeps the shift → blind count
+  balanced → a short second shift needs a reason chip → "call the manager"); that browser test also found the keypad
+  staying on screen above the reason chips and pushing OK off a 720px viewport on every reason sheet — fixed in
+  `index.html`. API surface +2. **Still open, honestly:**
+  loan / safe drop / float return have no till button (the box and cloud accept them); the cash office reads relayed
+  flags on the over/short list and `GET /v1/tills/:tillId/cash`, not yet on a screen; no physical device or UAT.
+- **Current-work pointer:** last verified = SP-4c (this PR); next = **SP-5 / SP-5b** [W04, W05, F05, F06] (one stock
+  truth — transfers and count corrections post to the inventory projection; observation `warehouse.test.ts` cases
+  inverted); then SP-6 (F01), SP-7 (F02/F04), SP-8/8b (F08), SP-9/9b; **SP-3c** (picker + driver) after the core-store
+  chain; genuine blockers: none; external gates unchanged (providers, hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 

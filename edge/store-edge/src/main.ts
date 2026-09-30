@@ -72,6 +72,11 @@ import { toCloudSale } from './cloud-sale';
 import { toCloudReturn } from './cloud-return';
 import { toCloudConcessionTag } from './cloud-concession-tag';
 import { toCloudChecklist, toCloudTaskCompletion, checklistIdOf, taskIdOf } from './cloud-completion';
+import {
+  readTillCashRecord, foldTillCash, decideCashMovement, decideShiftClose, shiftFigures, tillCashEventFactory, TILL_CASH_WORDS,
+  type TillCashRecord, type CashMovementOutcome, type ShiftCloseOutcome, type TillCashStatus, type TillCashRefusal,
+} from './till-cash';
+import type { CashMovementKind } from '../../../packages/cash/src/cash';
 import { makeTradingDayRule, tradingDate, wallClockIn, type TradingDayRule } from '../../../packages/calendar/src/trading-day';
 import { readFile } from 'node:fs/promises';
 
@@ -87,6 +92,8 @@ const CONCESSION_TAGS_CURSOR = 'sync-cursor-concession-tags';
 const DAYCLOSE_CURSOR = 'sync-cursor-day-close';
 /** The device-events pipeline's own cursor file (SP-2a · F11), so the sixth log advances independently too. */
 const DEVICE_EVENTS_CURSOR = 'sync-cursor-device-events';
+/** The till-cash pipeline's own cursor file (SP-4c · F10), so the seventh log advances independently too. */
+const TILL_CASH_CURSOR = 'sync-cursor-till-cash';
 
 /**
  * Mint the cloud event from a day-close log record — used BOTH by the pipeline's restart re-queue and
@@ -197,6 +204,12 @@ export interface EdgeProcess {
    */
   readonly deviceEventsLog: OpenFileLog;
   /**
+   * The TILL's CASH log (SP-4c · F10 · M14-FR-01/02) — every float, loan, pickup, safe drop and shift close on the lane
+   * this box serves, durable here BEFORE the till is told "recorded" (the till itself keeps nothing: a browser tab is
+   * not a place for cash). Its own file, like the other six, and carried to head office by its own agent.
+   */
+  readonly tillCashLog: OpenFileLog;
+  /**
    * The loopback socket the lane's screen posts a sale to, or null when this edge has no lane —
    * the back-office box runs the same process and does the shop-wide work (ADR-0004).
    */
@@ -212,6 +225,8 @@ export interface EdgeProcess {
   readonly dayCloseOutbox: SyncOutbox;
   /** The device-events pipeline's own outbox — drained by `deviceEventsAgent`, cursored separately again (SP-2a). */
   readonly deviceEventsOutbox: SyncOutbox;
+  /** The till-cash pipeline's own outbox — drained by `tillCashAgent`, cursored separately again (SP-4c). */
+  readonly tillCashOutbox: SyncOutbox;
   /** What a lane talks to: price a scan, commit a sale, commit a refund, take a new pack. */
   readonly node: EdgeNode;
   /** Null when no cloud is configured — which is a supported way to run, not a fault. */
@@ -226,6 +241,25 @@ export interface EdgeProcess {
   readonly dayCloseAgent: SyncAgent | null;
   /** The device-events pipeline's own sync agent (same transport, own outbox). Null when no cloud (SP-2a). */
   readonly deviceEventsAgent: SyncAgent | null;
+  /** The till-cash pipeline's own sync agent (same transport, own outbox). Null when no cloud (SP-4c). */
+  readonly tillCashAgent: SyncAgent | null;
+  /**
+   * The till's cash, decided and recorded on the box (SP-4c · F10 · M14-FR-01/02). `recordCashMovement` judges a float,
+   * loan, pickup or safe drop against the lane's own chain with the same guard head office runs, dates it by the shop's
+   * cut-off, writes it durably and queues it; `closeShift` works the shift's figures out from the box's OWN logs (the
+   * float and pickups here, the cash taken on the sale log, the cash refunded on the return log), decides the close
+   * against the cashier's blind count, writes and queues it; `tillCash` says whether a float is out and who holds it —
+   * never a balance. Both writes are idempotent on the till's own id, so a retry after a lost reply is one effect.
+   */
+  readonly recordCashMovement: (req: {
+    readonly movementId: string; readonly movementKind: CashMovementKind; readonly amountMinor: number;
+    readonly at: string; readonly custodianId: string; readonly performedBy: string;
+  }) => Promise<CashMovementOutcome>;
+  readonly closeShift: (req: {
+    readonly shiftId: string; readonly closedAt: string; readonly cashierId: string; readonly countedMinor: number;
+    readonly denominations?: readonly { readonly denominationMinor: number; readonly count: number }[]; readonly reasonCode?: string;
+  }) => Promise<ShiftCloseOutcome>;
+  readonly tillCash: () => Promise<TillCashStatus>;
   /**
    * Close and LOCK the store's trading day on the box (M14-FR-04) — the authoritative close, because
    * the "no unsent items" gate can only be evaluated where the outbox lives. Reads the box's LIVE state
@@ -409,6 +443,21 @@ export async function startEdge(
     dataDir: settings['EDGE_DATA_DIR']!,
     capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
     fileName: 'dead-letters-device-events',
+  });
+
+  // The TILL's CASH log and its failed-sync store (SP-4c · F10 · M14-FR-01/02) — a float, a pickup, a shift close, each
+  // durable here BEFORE the till is told "recorded" (the till keeps none of it: a browser tab dies with a reload, and
+  // that is exactly how a float used to vanish). Its own file, like the other six, so no restart re-queue ever reads
+  // one kind as another.
+  const tillCashLog = await openFileLog({
+    dataDir: settings['EDGE_DATA_DIR']!,
+    capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
+    fileName: 'till-cash.log',
+  });
+  const tillCashDeadLetterLog = await openFileLog({
+    dataDir: settings['EDGE_DATA_DIR']!,
+    capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
+    fileName: 'dead-letters-till-cash',
   });
 
   // Report what was found on the disk, including anything a power cut left half-written. It is
@@ -616,18 +665,31 @@ export async function startEdge(
     },
   });
 
+  // The TILL-CASH pipeline (SP-4c · F10) — the same machine over a seventh file. `eventFor` re-mints exactly the event
+  // the box queued when it recorded the movement or the close (`tillCashEventFactory`: same id, type, key and payload),
+  // so a float or a close that had not reached head office when the box stopped goes when it starts again and dedupes
+  // there against one that may already have gone (§31.1). Never shares a file with the others.
+  const tillCashEvent = tillCashEventFactory(tenantId);
+  const tillCashPipeline = new SyncPipeline({
+    dataDir: settings['EDGE_DATA_DIR']!, log: tillCashLog, deadLetterLog: tillCashDeadLetterLog,
+    cursorFile: TILL_CASH_CURSOR, noun: 'till cash record', say,
+    eventFor: tillCashEvent,
+  });
+
   const salesRestore = await salesPipeline.restore();
   const returnsRestore = await returnsPipeline.restore();
   const completionsRestore = await completionsPipeline.restore();
   const dayCloseRestore = await dayClosePipeline.restore();
   const concessionTagsRestore = await concessionTagsPipeline.restore();
   const deviceEventsRestore = await deviceEventsPipeline.restore();
+  const tillCashRestore = await tillCashPipeline.restore();
   const outbox = salesPipeline.outbox;
   const returnsOutbox = returnsPipeline.outbox;
   const completionsOutbox = completionsPipeline.outbox;
   const dayCloseOutbox = dayClosePipeline.outbox;
   const concessionTagsOutbox = concessionTagsPipeline.outbox;
   const deviceEventsOutbox = deviceEventsPipeline.outbox;
+  const tillCashOutbox = tillCashPipeline.outbox;
 
   // Every device-event key this box has EVER taken, rebuilt from the whole durable log — not from the outbox,
   // which after a restart holds only the unfinished tail. A device that lost the box's reply and retries a key
@@ -741,6 +803,13 @@ export async function startEdge(
   if (deviceEventsRestore.restoredDeadLetters > 0) {
     say(`  ${deviceEventsRestore.restoredDeadLetters} screen record(s) head office refused earlier are still waiting for a person — kept, with their history.`);
   }
+  if (tillCashRestore.brokenCount > 0) {
+    say(`  ${tillCashRestore.brokenCount} till cash record(s) could not be read whole — kept, not repaired. Raise this.`);
+  }
+  if (tillCashRestore.resendCount > 0) say(`${tillCashRestore.resendCount} till cash record(s) from before are still to send.`);
+  if (tillCashRestore.restoredDeadLetters > 0) {
+    say(`  ${tillCashRestore.restoredDeadLetters} till cash record(s) head office refused earlier are still waiting for a person — kept, with their history.`);
+  }
 
   // The refund operation-identity guard (RR-F03), rebuilt from the durable returns log so the rule
   // holds across a restart: every refund already on the disk is remembered by its id and the
@@ -852,17 +921,118 @@ export async function startEdge(
   // §1 rule 4). Late-bound like the day close: the agents that know when something last got through are created
   // further down, so the socket is wired now and the answer is filled in once they exist — until then it says
   // "starting", never a guess.
-  const queuesNow = (): QueueHealth[] => [outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox, deviceEventsOutbox]
+  const queuesNow = (): QueueHealth[] => [outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox, deviceEventsOutbox, tillCashOutbox]
     .map((q) => ({ unsentCount: q.unsentCount(), deadLetterCount: q.deadLetters().length, lastSuccessAt: null }));
   const syncStatusRelay: { current?: () => LaneSyncStatus } = {};
   const syncStatus = (): LaneSyncStatus => syncStatusRelay.current?.()
     ?? laneSyncStatus({ configured: 'starting', queues: queuesNow(), lastPackStatus: undefined, lastContactAt: null, now: new Date().toISOString() });
+
+  // ── The till's cash, on the box (SP-4c · F10 · M14-FR-01 · M14-FR-02) ──────────────────────────────────────────
+  //
+  // The DECISION and the RECORD belong here, not in the till's browser: the box has the disk, survives a reload, and
+  // holds the only honest account of what this lane took (its sale log), gave back (its return log) and moved (this cash
+  // log). The till sends what a cashier knows; the box adds the lane, the day, the sign and — for the close — every
+  // figure but the count. Same durable-write-then-enqueue order as every other seam; its own pipeline carries it up.
+  const tillCashRecords = async (): Promise<TillCashRecord[]> =>
+    (await readLog(tillCashLog.path)).flatMap((r) => {
+      if (!r.ok) return [];
+      let parsed: unknown;
+      try { parsed = JSON.parse(r.record) as unknown; } catch { return []; }
+      const read = readTillCashRecord(parsed);
+      return read === undefined ? [] : [read];
+    });
+  const parsedRecords = async (path: string): Promise<unknown[]> =>
+    (await readLog(path)).flatMap((r) => {
+      if (!r.ok) return [];
+      try { return [JSON.parse(r.record) as unknown]; } catch { return []; }
+    });
+  /** The pack's cash tolerance, when it names one; `undefined` makes the box apply its default AND say so on the close. */
+  const cashToleranceOfPack = (): number | undefined => {
+    const t = pack.policies.known ? pack.policies.value.cashVarianceToleranceMinor : undefined;
+    return typeof t === 'number' && Number.isSafeInteger(t) && t >= 0 ? t : undefined;
+  };
+  const refuseCash = (refusedBecause: TillCashRefusal): CashMovementOutcome => ({ committed: false, refusedBecause, laneMessage: TILL_CASH_WORDS[refusedBecause] });
+  const refuseClose = (refusedBecause: TillCashRefusal, varianceMinor?: number): ShiftCloseOutcome =>
+    ({ closed: false, refusedBecause, laneMessage: TILL_CASH_WORDS[refusedBecause], ...(varianceMinor === undefined ? {} : { varianceMinor }) });
+
+  const recordCashMovement: EdgeProcess['recordCashMovement'] = async (req) => {
+    const laneId = laneIdOfThisBox();
+    if (laneId === undefined) return refuseCash('no_lane');
+    if (Number.isNaN(Date.parse(req.at))) return refuseCash('not_readable');
+    const records = await tillCashRecords();
+    const prior = records.find((r) => r.kind === 'movement' && r.movementId === req.movementId);
+    if (prior !== undefined && prior.kind === 'movement') {
+      // A retry after a lost reply: the box already holds it. The same answer, one effect (§31.1).
+      const now = foldTillCash(records, laneId);
+      return { committed: true, alreadyRecorded: true, movementId: prior.movementId, kind: prior.movementKind, custodian: now.custodian, tradingDay: prior.tradingDay, laneMessage: 'Already recorded.' };
+    }
+    const state = foldTillCash(records, laneId);
+    // The cash the drawer took in trade since the float, so a pickup of the takings is not judged an "overdraw".
+    const trade = shiftFigures({ state, laneId, closedAt: req.at, sales: await parsedRecords(log.path), returns: await parsedRecords(returnsLog.path) });
+    const decision = decideCashMovement({
+      state, request: req, laneId,
+      tradingDay: tradingDate(wallClockIn(req.at), packCutoff(pack)),
+      tradingCashMinor: trade.cashSalesMinor - trade.cashRefundsMinor,
+    });
+    if (!decision.ok) return refuseCash(decision.refusedBecause);
+    // Durable-write-then-enqueue, the same order as every other seam: on the disk before the till hears "recorded".
+    const record = JSON.stringify(decision.record);
+    const outcome = await commitLocally({ saleId: req.movementId, record, log: tillCashLog });
+    if (!outcome.committed) return refuseCash(outcome.refusedBecause === 'no_room_left' ? 'no_room_left' : 'could_not_write_durably');
+    const event = tillCashEvent(record, 0);
+    if (event !== undefined) tillCashOutbox.enqueue(event);
+    return { committed: true, movementId: req.movementId, kind: req.movementKind, custodian: decision.custodianAfter, tradingDay: decision.record.tradingDay, laneMessage: 'Recorded on the store computer.' };
+  };
+
+  const closeShift: EdgeProcess['closeShift'] = async (req) => {
+    const laneId = laneIdOfThisBox();
+    if (laneId === undefined) return refuseClose('no_lane');
+    if (Number.isNaN(Date.parse(req.closedAt))) return refuseClose('not_readable');
+    const records = await tillCashRecords();
+    const prior = records.find((r) => r.kind === 'close' && r.shiftId === req.shiftId);
+    if (prior !== undefined && prior.kind === 'close') {
+      return {
+        closed: true, alreadyClosed: true, shiftId: prior.shiftId, tradingDay: prior.tradingDay, countedMinor: prior.countedMinor,
+        varianceMinor: prior.varianceMinor, exceptionRaised: prior.exceptionRaised, reasonCode: prior.reasonCode, laneMessage: 'This shift was already closed.',
+      };
+    }
+    const state = foldTillCash(records, laneId);
+    const figures = shiftFigures({ state, laneId, closedAt: req.closedAt, sales: await parsedRecords(log.path), returns: await parsedRecords(returnsLog.path) });
+    const decision = decideShiftClose({
+      state, request: req, laneId, figures,
+      tradingDay: tradingDate(wallClockIn(req.closedAt), packCutoff(pack)),
+      toleranceMinor: cashToleranceOfPack(),
+    });
+    if (!decision.ok) return refuseClose(decision.refusedBecause, decision.varianceMinor);
+    const record = JSON.stringify(decision.record);
+    const outcome = await commitLocally({ saleId: req.shiftId, record, log: tillCashLog });
+    if (!outcome.committed) return refuseClose(outcome.refusedBecause === 'no_room_left' ? 'no_room_left' : 'could_not_write_durably');
+    const event = tillCashEvent(record, 0);
+    if (event !== undefined) tillCashOutbox.enqueue(event);
+    const r = decision.record;
+    return {
+      closed: true, shiftId: r.shiftId, tradingDay: r.tradingDay, countedMinor: r.countedMinor, varianceMinor: r.varianceMinor,
+      exceptionRaised: r.exceptionRaised, reasonCode: r.reasonCode,
+      laneMessage: r.exceptionRaised ? 'Closed, with a difference the cash office will review.' : 'Closed.',
+    };
+  };
+
+  const tillCash: EdgeProcess['tillCash'] = async () => {
+    const laneId = laneIdOfThisBox();
+    if (laneId === undefined) return { tillId: null, laneId: null, custodian: null, openedAt: null, shiftOpen: false };
+    const state = foldTillCash(await tillCashRecords(), laneId);
+    return { tillId: laneId, laneId, custodian: state.custodian, openedAt: state.openedAt, shiftOpen: state.custodian !== null };
+  };
 
   const lanePort = settings['EDGE_LANE_PORT'];
   const lane = lanePort === undefined ? null : await startLaneServer({
     node,
     port: Number(lanePort),
     syncStatus,
+    // The till's cash lives on this box (SP-4c · F10): the float, the pickups and the close come in here, durably.
+    recordCashMovement,
+    closeShift,
+    tillCash,
     // The shared device → box leg (SP-2a): the manager screen's decisions arrive here, durably, before anything
     // is told "accepted"; the handhelds join on the same route in SP-3.
     relayDeviceEvents,
@@ -1003,7 +1173,7 @@ export async function startEdge(
     // sales outbox. A day must not lock while any refund or completion is still unsent (hard rule #10).
     const unsentSyncItems = outbox.pending().length + returnsOutbox.pending().length
       + completionsOutbox.pending().length + dayCloseOutbox.pending().length + concessionTagsOutbox.pending().length
-      + deviceEventsOutbox.pending().length;
+      + deviceEventsOutbox.pending().length + tillCashOutbox.pending().length;
     // The exception register EXACTLY as the manager screen computes it (so the box and the screen agree).
     // ABSENT (no loss-prevention rules → nobody is watching) is a hard block, never treated as zero.
     const openExceptions = managerPayload(input)['openExceptions'];
@@ -1113,12 +1283,16 @@ export async function startEdge(
     // The badge on every screen says exactly that, from the box's own mouth (design system §1 rule 4).
     syncStatusRelay.current = () => laneSyncStatus({ configured: false, queues: queuesNow(), lastPackStatus: undefined, lastContactAt: null, now: new Date().toISOString() });
     return {
-      log, returnsLog, completionsLog, dayCloseLog, concessionTagsLog, deviceEventsLog, outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox, deviceEventsOutbox, node, lane, screens, devices, enrolments, syncStatus,
-      agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, deviceEventsAgent: null, refreshPack: null, refreshMigrationFeed: null, refreshPublishedTemplates: null, syncOnce: null,
+      log, returnsLog, completionsLog, dayCloseLog, concessionTagsLog, deviceEventsLog, tillCashLog, outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox, deviceEventsOutbox, tillCashOutbox, node, lane, screens, devices, enrolments, syncStatus,
+      agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, deviceEventsAgent: null, tillCashAgent: null, refreshPack: null, refreshMigrationFeed: null, refreshPublishedTemplates: null, syncOnce: null,
       // The day still locks with no cloud — that is the point of P-01. It queues durably and goes up when
       // a cloud is configured and reachable; nothing is told a lie in the meantime. Reopen is the same.
       closeDay,
       reopenDay,
+      // The till's cash records and closes with no cloud too — the box is the record; head office hears later.
+      recordCashMovement,
+      closeShift,
+      tillCash,
       stop: async () => {
         if (lane !== null) await lane.stop();
         if (screens !== null) await screens.stop();
@@ -1136,6 +1310,8 @@ export async function startEdge(
         await concessionTagsDeadLetterLog.close();
         await deviceEventsLog.close();
         await deviceEventsDeadLetterLog.close();
+        await tillCashLog.close();
+        await tillCashDeadLetterLog.close();
       },
     };
   }
@@ -1173,6 +1349,12 @@ export async function startEdge(
   // re-queued as another. The transport's route table addresses each device event type to its re-verifying synced
   // route; a type with no route is dead-lettered by name (visible on the manager's screen as refused, hard rule #6).
   const deviceEventsAgent = new SyncAgent(deviceEventsOutbox, httpTransport({
+    baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch,
+  }));
+  // The till-cash pipeline's own agent (SP-4c · F10) — same transport, its own outbox, for the same reason each of the
+  // others has its own: a float or a close head office refuses never holds a sale, and none of the seven can ever be
+  // re-queued as another. Routed to the cash and shift SYNCED routes, which re-verify the cashier and record-and-flag.
+  const tillCashAgent = new SyncAgent(tillCashOutbox, httpTransport({
     baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch,
   }));
 
@@ -1317,6 +1499,10 @@ export async function startEdge(
     await deviceEventsPipeline.persistNewDeadLetters(at);
     await deviceEventsPipeline.advanceCursor();
   };
+  const settleTillCash = async (at: string): Promise<void> => {
+    await tillCashPipeline.persistNewDeadLetters(at);
+    await tillCashPipeline.advanceCursor();
+  };
 
   /**
    * One drain of both queues, each settled straight after: sales drain, sales settle (persist any
@@ -1350,10 +1536,14 @@ export async function startEdge(
     // drain, its own cursor.
     const deviceEventsResult = await deviceEventsAgent.drain({ at, ...(opts?.limit === undefined ? {} : { limit: opts.limit }) });
     await settleDeviceEvents(at);
+    // The till-cash queue drains last (SP-4c), on the same loop and just as far from the sale path — its own drain, its
+    // own cursor, so a float or a close head office is slow to take never holds a sale.
+    const tillCashResult = await tillCashAgent.drain({ at, ...(opts?.limit === undefined ? {} : { limit: opts.limit }) });
+    await settleTillCash(at);
     return {
-      sent: result.acknowledged + returnsResult.acknowledged + completionsResult.acknowledged + dayCloseResult.acknowledged + concessionTagsResult.acknowledged + deviceEventsResult.acknowledged,
-      dead: result.deadLettered + returnsResult.deadLettered + completionsResult.deadLettered + dayCloseResult.deadLettered + concessionTagsResult.deadLettered + deviceEventsResult.deadLettered,
-      remaining: result.remaining + returnsResult.remaining + completionsResult.remaining + dayCloseResult.remaining + concessionTagsResult.remaining + deviceEventsResult.remaining,
+      sent: result.acknowledged + returnsResult.acknowledged + completionsResult.acknowledged + dayCloseResult.acknowledged + concessionTagsResult.acknowledged + deviceEventsResult.acknowledged + tillCashResult.acknowledged,
+      dead: result.deadLettered + returnsResult.deadLettered + completionsResult.deadLettered + dayCloseResult.deadLettered + concessionTagsResult.deadLettered + deviceEventsResult.deadLettered + tillCashResult.deadLettered,
+      remaining: result.remaining + returnsResult.remaining + completionsResult.remaining + dayCloseResult.remaining + concessionTagsResult.remaining + deviceEventsResult.remaining + tillCashResult.remaining,
     };
   };
 
@@ -1405,12 +1595,14 @@ export async function startEdge(
     dayCloseLog,
     concessionTagsLog,
     deviceEventsLog,
+    tillCashLog,
     outbox,
     returnsOutbox,
     completionsOutbox,
     dayCloseOutbox,
     concessionTagsOutbox,
     deviceEventsOutbox,
+    tillCashOutbox,
     node,
     lane,
     screens,
@@ -1422,8 +1614,12 @@ export async function startEdge(
     dayCloseAgent,
     concessionTagsAgent,
     deviceEventsAgent,
+    tillCashAgent,
     closeDay,
     reopenDay,
+    recordCashMovement,
+    closeShift,
+    tillCash,
     refreshPack,
     refreshMigrationFeed,
     refreshPublishedTemplates,
@@ -1460,6 +1656,14 @@ export async function startEdge(
         await deviceEventsAgent.drain({ at, limit: 20 });
         await settleDeviceEvents(at);
       } catch { /* still queued, and the device-events cursor stays where it is */ }
+      try {
+        await tillCashAgent.drain({ at, limit: 20 });
+        await settleTillCash(at);
+      } catch { /* still queued, and the till-cash cursor stays where it is */ }
+      const tillCashBadge = tillCashAgent.health();
+      if (tillCashBadge.unsentCount > 0) {
+        say(`stopping with ${tillCashBadge.unsentCount} till cash record(s) still to send. They are on the disk and will go when this starts again.`);
+      }
       const deviceEventsBadge = deviceEventsAgent.health();
       if (deviceEventsBadge.unsentCount > 0) {
         say(`stopping with ${deviceEventsBadge.unsentCount} screen record(s) still to send. They are on the disk and will go when this starts again.`);
@@ -1500,6 +1704,8 @@ export async function startEdge(
       await concessionTagsDeadLetterLog.close();
       await deviceEventsLog.close();
       await deviceEventsDeadLetterLog.close();
+      await tillCashLog.close();
+      await tillCashDeadLetterLog.close();
     },
   };
 }
