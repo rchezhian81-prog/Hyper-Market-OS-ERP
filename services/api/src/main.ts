@@ -340,9 +340,10 @@ export function buildSurface(deps: {
   const goodsReceiptDeps = store === undefined ? {
     grn: empty(undefined), all: empty([]), commit: () => {}, now,
     productRule: empty(undefined), receiptPolicy: empty(undefined), recordReceiptPolicy: () => {}, commitExcessDecision: () => {},
+    purchaseOrder: empty(undefined), commitDisposition: () => {},
   } : { ...goodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit };
   const syncedGoodsReceiptDeps = store === undefined ? {
-    ...goodsReceiptDeps, permissionsOfUser: empty(undefined), unitCostMinor: empty(undefined), orderedByProduct: empty(undefined),
+    ...goodsReceiptDeps, permissionsOfUser: empty(undefined), unitCostMinor: empty(undefined),
   } : { ...syncedGoodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit };
   // Approve-then-apply (SP-4): a CLEAN decision relayed from the manager's screen reaches its subject — a held blind count,
   // a pending adjustment request or a held receipt excess — through that subject's own decide step (the same code the

@@ -10,8 +10,12 @@ import { bootBuying } from '../../apps/web-erp/src/browser-entry';
 // rules or tolerance policy; the tolerances are the tenant's own; an over-tolerance excess is HELD out of the sellable
 // figure and out of stock until a SECOND person approves it.
 //
-// F01 and F02 — still OBSERVED (SP-6 / SP-7): the assertions marked OBSERVED DEFECT below still pass. When those slices
-// land they must be inverted, never restored.
+// F01 — FIXED in SP-6: case 1 is now the REGRESSION. A committed partial GRN folds into its issued purchase order in the
+// same atomic append as the stock, so the order's remainder falls with the delivery (6 open, ₹6.00), and a re-receipt of
+// the same GRN folds nothing twice.
+//
+// F02 — still OBSERVED (SP-7): the assertions marked OBSERVED DEFECT in case 3 still pass. When SP-7 lands they must be
+// inverted, never restored.
 const TENANT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const policy = { excessToleranceBp: 500, shortageToleranceBp: 200, nearExpiryDays: 7 };
 // The counted lines only — since SP-4 (ii) the route refuses a body that carries `rules` or `policy` (F03).
@@ -23,7 +27,7 @@ const receipt = (ordered: number, counted: number) => ({
 const legacyClaims = { rules: [{ productId: 'p-audit', batchTracked: false }], policy };
 
 describe('audit observations: disconnected procurement flow', () => {
-  it('a committed partial GRN changes stock but leaves the approved PO completely outstanding', async () => {
+  it('F01 FIXED: a committed partial GRN changes stock AND folds into the approved PO — the remainder is 6 units / ₹6.00, once, whatever is retried', async () => {
     const h = apiHarness();
     await h.seedOwner(TENANT, 'owner');
     await h.provisionRole(TENANT, 'buyer', 'store_manager');
@@ -35,19 +39,39 @@ describe('audit observations: disconnected procurement flow', () => {
     const issued = await h.request({ method: 'POST', path: '/v1/purchase/orders/PO-AUDIT/approval',
       tenantId: TENANT, userId: 'owner', idempotencyKey: 'po-approve', body: { reason: 'audit fixture' } });
     expect(issued.status).toBe(200);
+    // Before the delivery the whole order is outstanding: 10 units, ₹10.00.
+    expect((await h.request({ method: 'GET', path: '/v1/purchase/orders/PO-AUDIT', tenantId: TENANT, userId: 'owner' })).body)
+      .toMatchObject({ order: { receivedByProduct: {} }, openCommitment: { totalOpenValue: { minor: 1000 } } });
     const grn = await h.request({ method: 'POST', path: '/v1/inventory/goods-receipt/GRN-AUDIT',
       tenantId: TENANT, userId: 'buyer', idempotencyKey: 'grn-receive',
       body: { ...receipt(10, 4), poId: 'PO-AUDIT' } });
     expect(grn.status).toBe(201);
-    expect(grn.body).toMatchObject({ grn: { availableMinor: 4, poId: 'PO-AUDIT' } });
+    // The GRN says what it folded into the order: 4 of p-audit under its own id.
+    expect(grn.body).toMatchObject({ grn: { availableMinor: 4, poId: 'PO-AUDIT', poReceipt: { receiptId: 'GRN-AUDIT', receivedByProduct: { 'p-audit': 4 } } } });
+    expect((grn.body as { flags: string[] }).flags).not.toContain('no_purchase_order');
     const available = await h.request({ method: 'GET', path: '/v1/inventory/availability',
       tenantId: TENANT, userId: 'owner', query: { productId: 'p-audit' } });
     expect(available.body).toMatchObject({ rows: [{ onHandMinor: 4 }] });
+    // REGRESSION (F01, SP-6): the connected remainder is 6 units / 600 minor — received 4 against the order, in the same
+    // append as the stock, with no separate call.
     const po = await h.request({ method: 'GET', path: '/v1/purchase/orders/PO-AUDIT',
       tenantId: TENANT, userId: 'owner' });
-    // OBSERVED DEFECT: correct connected remainder is 6 units / 600 minor, not 10 / 1000.
-    expect(po.body).toMatchObject({ order: { receivedByProduct: {} },
-      openCommitment: { totalOpenValue: { minor: 1000 } } });
+    expect(po.body).toMatchObject({
+      order: { receivedByProduct: { 'p-audit': 4 } },
+      openCommitment: { totalOpenValue: { minor: 600 }, fullyReceived: false, lines: [{ productId: 'p-audit', orderedQty: 10, receivedQty: 4, openQty: 6 }] },
+    });
+    // The same GRN again — same key, or a re-minted key — is one receipt: the order is not folded twice.
+    expect((await h.request({ method: 'POST', path: '/v1/inventory/goods-receipt/GRN-AUDIT', tenantId: TENANT, userId: 'buyer', idempotencyKey: 'grn-receive',
+      body: { ...receipt(10, 4), poId: 'PO-AUDIT' } })).status).toBe(201);
+    expect((await h.request({ method: 'POST', path: '/v1/inventory/goods-receipt/GRN-AUDIT', tenantId: TENANT, userId: 'buyer', idempotencyKey: 'grn-receive-again',
+      body: { ...receipt(10, 4), poId: 'PO-AUDIT' } })).body).toMatchObject({ alreadyReceived: true });
+    expect((await h.request({ method: 'GET', path: '/v1/purchase/orders/PO-AUDIT', tenantId: TENANT, userId: 'owner' })).body)
+      .toMatchObject({ order: { receivedByProduct: { 'p-audit': 4 } }, openCommitment: { totalOpenValue: { minor: 600 } } });
+    // The rest arrives on a second GRN: nothing is left open.
+    expect((await h.request({ method: 'POST', path: '/v1/inventory/goods-receipt/GRN-AUDIT-2', tenantId: TENANT, userId: 'buyer', idempotencyKey: 'grn-receive-2',
+      body: { ...receipt(10, 6), poId: 'PO-AUDIT' } })).status).toBe(201);
+    expect((await h.request({ method: 'GET', path: '/v1/purchase/orders/PO-AUDIT', tenantId: TENANT, userId: 'owner' })).body)
+      .toMatchObject({ order: { receivedByProduct: { 'p-audit': 10 } }, openCommitment: { totalOpenValue: { minor: 0 }, fullyReceived: true } });
   });
 
   it('F03 FIXED: an over-tolerance excess is HELD — not sellable, not in stock — until a second person approves it; the tolerances and rules are head office\'s', async () => {

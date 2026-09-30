@@ -29,7 +29,7 @@ device, human UAT and production verification separate; approved deferrals stay 
   device; promotions, prices, expiry/recall, write-offs, cash-office sign-off from their screens. Not proven / defective:
   handheld and manager queues reach nobody (F11); a rejected sync conflict is swallowed (F12); approver, stock and value
   can be typed (F03, F07); transfers and count corrections do not change ordinary stock (F05, F06 — fixed in SP-5/5b); a receipt does not
-  reduce the order (F01); invoice not joined or posted as a liability (F02, F04); no floor-indent chain (F08); the till
+  reduce the order (F01 — fixed in SP-6); invoice not joined or posted as a liability (F02, F04); no floor-indent chain (F08); the till
   names a placeholder cashier and day (F09) and cannot close its shift (F10).
 - **Delivery order (one focused PR at a time, gate + CI before merge):** SP-1 transport conflict classification (F12) →
   SP-2 shared durable queue + one sync mechanism for the manager screen (approval decision, receipt, count recorded
@@ -292,10 +292,43 @@ device, human UAT and production verification separate; approved deferrals stay 
   (the floor-indent chain, SP-8); the supervisor's propose-transfer outbox is drained by nothing (SP-8); the counts
   review and stock-health screens do not yet show posted corrections or in-transit stock (SP-9); no physical device or
   UAT.
-- **Current-work pointer:** last verified = SP-5 / SP-5b (this PR); next = **SP-6** [W06, F01] (a GRN folds into the PO
-  remainder atomically; disposition — accept / return / claim — write path; observation `procurement.test.ts` case 1
-  inverted); then SP-7 (F02/F04), SP-8/8b (F08), SP-9/9b; **SP-3c** (picker + driver) after the core-store chain;
-  genuine blockers: none; external gates unchanged (providers, hardware, real data, pilot GO).
+- **SP-6 — a goods receipt folds into its purchase order atomically; quarantined and refused stock gets a disposition
+  (F01 · M06-FR-04 · M07-FR-01 · M07-FR-03 · §28 · hard rules #2 #5 #10).** Until this PR the receipt and the order were
+  two records nobody joined: `POST /v1/purchase/orders/:poId/receipts` existed and nothing called it, so a committed
+  partial GRN changed stock and left the approved order fully outstanding (F01). Now (i) a receipt against an ISSUED
+  order posts its received quantity per product to the order in the SAME `appendBatch` as the GRN and its stock
+  (`poReceiptEvent` on `services/api/src/adapters.ts`, keyed on the GRN id, in the purchase-order adapter's own event
+  shape so `computeOpenCommitment` nets it as any receipt and a retried GRN folds once) — received = sellable +
+  quarantined (in our custody), never the held excess until a second person accepts it (then `<grnId>:excess` posts in
+  the excess decision's own append and the over-receipt shows as a negative open quantity), never what was refused at the
+  dock; (ii) the ORDERED quantity a receipt is measured against is the order's, never the sender's (`alignToOrder`; a
+  disagreement and a product the order never named are said — `ordered_quantity_disagrees`, `product_not_on_order`);
+  (iii) a receipt with no order, an unknown order or an order not yet issued is received, flagged (`no_purchase_order` /
+  `order_unknown` / `order_not_issued` — on the DIRECT route too now, as the relayed route always did) and folds into
+  nothing; direct and relayed (manager screen) routes share `orderForReceipt`; (iv) M07-FR-03's disposition write path
+  exists: `POST /v1/inventory/goods-receipt/:grnId/lines/:lineId/disposition` (`inventory.adjustment.approve`, decider ≠
+  receiver, one per line) — ACCEPT releases quarantined stock as `<grnId>:<lineId>:accepted` once, atomically with the
+  `GoodsReceiptLineDisposed` record; RETURN and CLAIM move no stock and record the delivered value the supplier account
+  will work from (SP-7); refused (expired) stock can only be returned or claimed (`cannot_accept_refused_stock`); a receipt
+  with undisposed quarantined / refused stock waits on the review list (`awaitsDecision`, `awaitingDisposition`,
+  `awaitingDispositionCount`). Evidence: observation `procurement.test.ts` case 1 INVERTED (approve 10, receive 4 → 4
+  received, 6 / ₹6.00 open in the same append; the same GRN again folds once; the second GRN closes the order);
+  `goods-receipt.test.ts` (+4: fold + restart; ordered is the order's; quarantined yes / held excess on acceptance /
+  refused never; proposed / unknown / no order); `goods-receipt-synced-route.test.ts` (the relayed receipt folds; a
+  draft order is said and folded into nothing); `manager-receipts-and-counts-reach-the-cloud-through-the-edge.test.ts`
+  (the manager's delivery closes the order through the real box); `goods-receipt-disposition.test.ts` (5, new: accept
+  once + both people on the movement + a second disposition refused; return / claim valued with no stock; refused never
+  accepted; receiver / cashier / clean line / unknown line / unknown receipt / malformed body refused by name; restart);
+  `goods-receipt-order-fold.test.ts` (6, new). API surface +1 (`…/lines/:lineId/disposition`). **Still open, honestly:**
+  the warehouse handheld's receiving SCANS (the SP-3a register) are not yet assembled into a GRN — SP-6b; the return /
+  claim value on the GRN does not yet reach the supplier's account, statement or a debit note (SP-7); the review screen
+  does not yet show the held quantity or offer the excess decision or the disposition (SP-9); a relayed disposition
+  (the approval-decision relay carries approve / reject only) — SP-9; the manual `…/receipts` route remains for receipts
+  outside the GRN path and collapses with the GRN when it uses the GRN id; no physical device or UAT.
+- **Current-work pointer:** last verified = SP-6 (this PR); next = **SP-6b** [W06 remainder] (the handheld's receiving
+  scans assembled into ONE GRN against the order — no second stock posting, folded into the PO like any other); then
+  SP-7 (F02/F04), SP-8/8b (F08), SP-9/9b; **SP-3c** (picker + driver) after the core-store chain; genuine blockers:
+  none; external gates unchanged (providers, hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 
