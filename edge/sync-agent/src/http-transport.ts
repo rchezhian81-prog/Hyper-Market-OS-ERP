@@ -185,6 +185,10 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   // `grnId` / `countId` are plain payload fields matching the path params.
   GoodsReceived: '/v1/inventory/goods-receipt/:grnId/synced',
   StockCounted: '/v1/inventory/counts/:countId/synced',
+  // SP-7a (F02 · F04): a supplier invoice captured on the buyer's screen — the invoice's OWN lines, who captured it and
+  // who checked it. The synced route re-verifies both from their grants and records the invoice; the match joins it to
+  // the stored order and receipts later. `invoiceId` is a plain payload field matching the path param.
+  SupplierInvoiceCaptured: '/v1/purchase/invoices/:invoiceId/synced',
   MigrationExceptionResolved: '/v1/migration/exceptions/:exceptionId/resolution/synced',
   MigrationTotalSigned: '/v1/migration/control-totals/:totalId/signature/synced',
 };

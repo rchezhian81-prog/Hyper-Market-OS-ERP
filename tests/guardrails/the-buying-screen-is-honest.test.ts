@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { CAPTURE_REFUSALS } from '../../apps/web-erp/src/buying-session';
 import { BUYING_GAPS } from '../../apps/web-erp/src/browser-entry';
+import { DEVICE_ITEM_STATES } from '../../packages/sync/src/device-relay';
 
 /**
  * **The screen where the money leaves, guarded.**
@@ -210,5 +211,23 @@ describe('the buyer’s screen keeps the house rules', () => {
   it('keeps money in exact minor units and never a float', () => {
     expect(code(VIEW)).toMatch(/Math\.round\(Number\(/);
     expect(code(MODEL)).not.toMatch(/parseFloat/);
+  });
+});
+
+describe('a saved invoice says where it is, in both languages (SP-7a · F02)', () => {
+  it('has words for the five shared device states the saved-invoice list shows', () => {
+    expectWordsFor(DEVICE_ITEM_STATES, 'STATE_WORDS');
+  });
+
+  it('renders the saved list from the model\'s durable queue, and syncs it to the box after a capture', () => {
+    expect(code(VIEW)).toMatch(/session\.savedInvoices\(\)/);
+    expect(code(VIEW)).toMatch(/window\.buyingRelay/);
+    const capture = code(VIEW).slice(code(VIEW).indexOf("el('capture').addEventListener"));
+    expect(capture.indexOf('renderSavedInvoices()')).toBeGreaterThan(-1);
+  });
+
+  it('the model queues the capture before it says ok — the plain boot no longer "saves" into thin air', () => {
+    expect(code(MODEL)).toMatch(/outbox\.enqueue\(makeEvent\(\{[\s\S]{0,400}type: SUPPLIER_INVOICE_CAPTURED/);
+    expect(code(ENTRY)).toMatch(/openBuyingOutbox\(/);
   });
 });

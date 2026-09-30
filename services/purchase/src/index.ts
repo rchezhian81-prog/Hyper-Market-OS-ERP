@@ -19,6 +19,8 @@ import {
   type OrderedLine, type ReceivedLine, type InvoicedLine, type LandedCharges, type MatchPolicy, type MatchApproval,
 } from '../../../packages/receiving/src/three-way-match';
 import { isCurrencyCode, type Money, type CurrencyCode } from '../../../packages/contracts/src/money';
+import type { AuditEntry } from '../../../packages/audit/src/index';
+import type { StoredPurchaseOrder } from './purchase-orders';
 
 // The rule itself lives in `packages/purchasing` so the buyer's screen can use the SAME one — a
 // browser cannot import this file, which imports the HTTP kernel. Re-exported so every existing
@@ -173,22 +175,186 @@ export function verifyBankChange(r: BankChangeRequest): BankChangeResult {
   return { ok: true, detail: `${r.supplierId} verified on ${r.numberWeAlreadyHeld}, approved by ${r.approvedBy}` };
 }
 
+// ── Supplier invoices (SP-7a · audit findings F02 · F04 · M07-FR-04 · §28) ────────────────────────────────────────
+//
+// Until SP-7a the invoice never existed as a record: the buyer's screen wrote nothing (F02) and `/capture` took a
+// caller-typed snapshot of what was ordered and received beside what was invoiced (F04) — so the "three-way" match
+// compared three figures one person typed in one go. Now the INVOICE is the record — its own lines as the paper says
+// them, who captured it, who checked the capture — and the match joins it to the purchase order head office holds and
+// to the receipts that were folded into that order (SP-6). Nothing about the order or the delivery is taken from a body.
+
+/** One line as the supplier's paper says it. Nothing here is about the order or the delivery. */
+export interface SupplierInvoiceLine {
+  readonly productId: string;
+  readonly quantity: number;
+  readonly unitPriceMinor: number;
+  readonly lineTotalMinor: number;
+}
+
+/** What head office could not verify about a captured invoice — said on the record, never silent (P-08). */
+export const INVOICE_FLAGS = Object.freeze([
+  'capturer_unknown', 'capturer_lacks_authority', 'approver_unknown', 'approver_lacks_authority', 'self_approved', 'no_approval',
+  'no_purchase_order', 'order_unknown', 'order_not_issued', 'supplier_differs_from_order',
+] as const);
+export type InvoiceFlag = (typeof INVOICE_FLAGS)[number];
+
+/** A supplier invoice as head office keeps it — the durable record the match, the payable and the statement read (SP-7). */
+export interface SupplierInvoiceRecord {
+  readonly invoiceId: string;
+  readonly supplierId: string;
+  readonly poId: string | null;
+  readonly lines: readonly SupplierInvoiceLine[];
+  /** What the buyer typed off the bottom of the paper — the lines must add up to it. */
+  readonly declaredTotalMinor: number;
+  readonly totalMinor: number;
+  readonly currency: CurrencyCode;
+  readonly capturedBy: string;
+  readonly capturedAt: string;
+  /** The second person who checked the capture (§28); null when nobody has yet — said as a flag. */
+  readonly approvedBy: string | null;
+  readonly approvedAt: string | null;
+  /** The identity that relayed it (the store box) and the surface / store, when it came through the shared queue. */
+  readonly relayedBy?: string;
+  readonly source: string;
+  readonly storeId?: string | null;
+  readonly governanceFlags: readonly string[];
+}
+
+/** A recorded three-way match: the engine's verdict plus what it was computed FROM (never the body). */
+export interface StoredMatch extends MatchResult {
+  readonly invoiceId: string;
+  readonly poId: string | null;
+  readonly matchedBy: string;
+  readonly matchedAt: string;
+  readonly sources: {
+    readonly invoice: { readonly capturedBy: string; readonly capturedAt: string; readonly totalMinor: number } | null;
+    readonly order: { readonly status: string; readonly supplierId: string; readonly lineCount: number } | null;
+    /** Where the received figures came from: the goods receipts folded into the order (SP-6) — never a typed number. */
+    readonly received: 'goods_receipts_folded_into_the_order' | 'none';
+  };
+  readonly flags: readonly string[];
+}
+
+const isPosInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) > 0;
+const isIso = (v: unknown): v is string => isStr(v) && !Number.isNaN(Date.parse(v));
+
+type LinesRead =
+  | { readonly ok: true; readonly lines: readonly SupplierInvoiceLine[] }
+  | { readonly ok: false; readonly code: 'not_readable' | 'line_does_not_multiply' | 'carries_caller_claims'; readonly detail: string };
+
+/** The invoice's own lines off the wire — and a refusal, by name, of a body that carries the F04 shape (ordered / received figures). */
+export function readInvoiceLines(v: unknown): LinesRead {
+  if (!Array.isArray(v) || v.length === 0) return { ok: false, code: 'not_readable', detail: 'at least one invoice line is needed' };
+  const lines: SupplierInvoiceLine[] = [];
+  for (const [i, raw] of (v as unknown[]).entries()) {
+    if (!isObj(raw)) return { ok: false, code: 'not_readable', detail: `line ${i + 1} is not readable` };
+    if (raw['orderedQty'] !== undefined || raw['receivedQty'] !== undefined || raw['invoicedQty'] !== undefined || raw['orderedUnitMinor'] !== undefined) {
+      return { ok: false, code: 'carries_caller_claims', detail: `line ${i + 1} names what was ordered or received` };
+    }
+    if (!isStr(raw['productId']) || !isPosInt(raw['quantity']) || !isNonNegInt(raw['unitPriceMinor']) || !isNonNegInt(raw['lineTotalMinor'])) {
+      return { ok: false, code: 'not_readable', detail: `line ${i + 1} needs a productId, a whole positive quantity, and whole non-negative unitPriceMinor and lineTotalMinor` };
+    }
+    const product = raw['quantity'] * raw['unitPriceMinor'];
+    if (product !== raw['lineTotalMinor']) {
+      return { ok: false, code: 'line_does_not_multiply', detail: `line ${i + 1}: ${raw['quantity']} × ${raw['unitPriceMinor']} is ${product}, but the line says ${raw['lineTotalMinor']}` };
+    }
+    lines.push({ productId: raw['productId'], quantity: raw['quantity'], unitPriceMinor: raw['unitPriceMinor'], lineTotalMinor: raw['lineTotalMinor'] });
+  }
+  return { ok: true, lines };
+}
+const sumOf = (lines: readonly SupplierInvoiceLine[]): number => lines.reduce((s, l) => s + l.lineTotalMinor, 0);
+
+const refuseLines = (read: Extract<LinesRead, { ok: false }>, relayed: boolean) => apiError(read.code === 'line_does_not_multiply' ? 422 : 400, {
+  code: read.code === 'not_readable' ? 'not_readable_as_a_supplier_invoice' : read.code === 'carries_caller_claims' ? 'invoice_carries_caller_claims' : 'invoice_line_does_not_multiply',
+  whatHappened: read.code === 'carries_caller_claims'
+    ? `${read.detail}. An invoice is captured as the paper says it; what was ordered comes from the purchase order and what arrived from the goods receipts head office holds — never from the sender.`
+    : `${read.detail}.`,
+  wasItSaved: 'not_saved',
+  nextSafeAction: read.code === 'carries_caller_claims'
+    ? 'Send the invoice\'s own lines { productId, quantity, unitPriceMinor, lineTotalMinor } only. Nothing was saved.'
+    : relayed ? 'Do not discard it at the store. Keep it in the queue and raise it — the paper invoice exists.' : 'Check the line against the paper invoice and send it again. Nothing was saved.',
+});
+const refuseTotal = (totalMinor: number, declared: number, relayed: boolean) => apiError(422, {
+  code: 'does_not_add_up_to_the_invoice_total',
+  whatHappened: `The lines add up to ${totalMinor} and the invoice says ${declared}. Either a line is wrong or a line is missing — and both mean paying something other than what was agreed.`,
+  wasItSaved: 'not_saved',
+  nextSafeAction: relayed ? 'Do not discard it at the store. Keep it in the queue and raise it.' : 'Check the lines against the paper and send it again. Nothing was saved.',
+});
+
+/** Who checked the capture — re-verified from THEIR grants, never taken on the sender's word (§28, hard rule #4). */
+async function verifyApprover(deps: Pick<PurchaseDeps, 'permissionsOfUser'>, tenantId: string, approvedBy: string, flags: InvoiceFlag[]): Promise<void> {
+  const permissions = await deps.permissionsOfUser(tenantId, approvedBy);
+  if (permissions === undefined) flags.push('approver_unknown');
+  else if (!permissions.includes('purchase.invoice.match')) flags.push('approver_lacks_authority');
+}
+
+/** The order behind an invoice, from head office's register — never the body; what it could not confirm is SAID. */
+async function orderForInvoice(
+  deps: Pick<PurchaseDeps, 'purchaseOrder'>, tenantId: string, poId: string | null, supplierId: string, flags: InvoiceFlag[],
+): Promise<StoredPurchaseOrder | undefined> {
+  if (poId === null) { flags.push('no_purchase_order'); return undefined; }
+  const po = await deps.purchaseOrder(tenantId, poId);
+  if (po === undefined) { flags.push('order_unknown'); return undefined; }
+  if (po.status !== 'issued') flags.push('order_not_issued');
+  if (po.supplierId !== supplierId) flags.push('supplier_differs_from_order');
+  return po;
+}
+
+/**
+ * The three documents as the ONE shared engine compares them (`threeWayMatch` — the same rule the buyer's screen runs):
+ * what the ORDER says was ordered (quantity and agreed price per product), what the receipts folded into that order say
+ * was RECEIVED (SP-6), and what the INVOICE says — a product missing from a side contributes zero rather than being
+ * skipped, so an invoiced line nobody ordered shows as exactly that. An order not yet issued counts as nothing ordered:
+ * nobody committed to it, so an invoice against it cannot agree with it. Pure.
+ */
+export function matchLinesFrom(order: StoredPurchaseOrder | undefined, invoice: SupplierInvoiceRecord): MatchLine[] {
+  const usable = order !== undefined && order.status === 'issued' ? order : undefined;
+  const ordered = new Map<string, { qty: number; unitMinor: number }>();
+  for (const l of usable?.lines ?? []) {
+    const cur = ordered.get(l.productId);
+    ordered.set(l.productId, { qty: (cur?.qty ?? 0) + l.orderedQty, unitMinor: cur?.unitMinor ?? l.unitCost.minor });
+  }
+  const received = usable?.receivedByProduct ?? {};
+  const invoiced = new Map<string, { qty: number; unitMinor: number }>();
+  for (const l of invoice.lines) {
+    const cur = invoiced.get(l.productId);
+    invoiced.set(l.productId, { qty: (cur?.qty ?? 0) + l.quantity, unitMinor: cur?.unitMinor ?? l.unitPriceMinor });
+  }
+  return [...new Set([...ordered.keys(), ...Object.keys(received), ...invoiced.keys()])].sort().map((productId) => ({
+    productId,
+    orderedQty: ordered.get(productId)?.qty ?? 0,
+    receivedQty: received[productId] ?? 0,
+    invoicedQty: invoiced.get(productId)?.qty ?? 0,
+    orderedUnitMinor: ordered.get(productId)?.unitMinor ?? 0,
+    invoicedUnitMinor: invoiced.get(productId)?.unitMinor ?? 0,
+  }));
+}
+
 export interface PurchaseDeps {
-  readonly matchLines: (tenantId: string, invoiceId: string) => Promise<readonly MatchLine[]> | readonly MatchLine[];
-  /** Record a supplier invoice's captured lines (ordered/received/invoiced per line) for the match. */
-  readonly recordCapture: (tenantId: string, invoiceId: string, lines: readonly MatchLine[]) => Promise<void> | void;
-  readonly recordMatch: (tenantId: string, invoiceId: string, r: MatchResult) => Promise<void> | void;
+  /** The invoice with this id, or undefined — the never-double-count check and the match's source. */
+  readonly invoice: (tenantId: string, invoiceId: string) => Promise<SupplierInvoiceRecord | undefined> | SupplierInvoiceRecord | undefined;
+  /** Every captured invoice — the review surface and, in SP-7b, the supplier's account. */
+  readonly invoices: (tenantId: string) => Promise<readonly SupplierInvoiceRecord[]> | readonly SupplierInvoiceRecord[];
+  /** Record a captured invoice — idempotent on the invoice id, so a retry never doubles what a supplier is owed. */
+  readonly recordInvoice: (tenantId: string, record: SupplierInvoiceRecord) => Promise<void> | void;
+  /** The purchase order head office holds — what was ordered, at what price, and what was received against it (SP-6). */
+  readonly purchaseOrder: (tenantId: string, poId: string) => Promise<StoredPurchaseOrder | undefined> | StoredPurchaseOrder | undefined;
+  /** The permissions a named user holds through their grants; `undefined` for a name head office does not know. */
+  readonly permissionsOfUser: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
+  /** The latest recorded match for an invoice, or undefined when it was never matched. */
+  readonly latestMatch: (tenantId: string, invoiceId: string) => Promise<StoredMatch | undefined> | StoredMatch | undefined;
+  readonly recordMatch: (tenantId: string, invoiceId: string, r: StoredMatch) => Promise<void> | void;
   readonly applyBankChange: (tenantId: string, r: BankChangeRequest) => Promise<void> | void;
   /**
    * What is on order and not yet received.
    *
-   * **`undefined` means not known, and that is not the same answer as zero.** Purchase orders are
-   * not yet recorded by this API, so a projection over an empty stream would return
-   * `{count: 0, valueMinor: 0}` — which an owner reads as "we have nothing on order" and uses to
-   * decide what to buy. Not-known is returned as not-known, the same way loyalty points are.
+   * **`undefined` means not known, and that is not the same answer as zero.** A projection over an empty stream would
+   * return `{count: 0, valueMinor: 0}` — which an owner reads as "we have nothing on order" and uses to decide what to
+   * buy. Not-known is returned as not-known, the same way loyalty points are.
    */
   readonly openCommitments: (tenantId: string) => Promise<Commitments | undefined> | Commitments | undefined;
   readonly now: () => string;
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 }
 
 export interface Commitments {
@@ -199,46 +365,201 @@ export interface Commitments {
 export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
   return [
     {
-      // Capture a supplier invoice's lines against its order and delivery, so the three-way match has
-      // something to compare (D03/M07-FR-04). Without this the match route holds no lines for any
-      // invoice and correctly refuses every one. Idempotent per invoice: re-sending the same capture
-      // collapses rather than doubling the lines.
+      // Capture a supplier invoice AS THE PAPER SAYS IT (SP-7a · F04): { supplierId, poId?, declaredTotalMinor, lines[], approvedBy? }.
+      // Nothing in the body may say what was ordered or received — those come from head office's own order and receipts
+      // at match time. The capturer is the authenticated user; a second person's check is recorded when named (never the
+      // capturer, §28) and its absence is SAID. Idempotent per invoice: the same invoice again is 200 `alreadyCaptured`.
       api: 'API-03', method: 'POST', path: '/v1/purchase/invoices/:invoiceId/capture',
       permission: 'purchase.invoice.capture', idempotent: true,
       handler: async (ctx) => {
-        const invoiceId = ctx.params['invoiceId'] ?? '';
-        const lines = (ctx.body as { lines?: readonly MatchLine[] } | null)?.lines;
-        if (!Array.isArray(lines) || lines.length === 0) {
+        const invoiceId = (ctx.params['invoiceId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (b['ordered'] !== undefined || b['received'] !== undefined) throw refuseLines({ ok: false, code: 'carries_caller_claims', detail: 'the body names what was ordered or received' }, false);
+        const read = readInvoiceLines(b['lines']);
+        if (!read.ok) throw refuseLines(read, false);
+        const poId = b['poId'];
+        const approvedBy = b['approvedBy'];
+        if (invoiceId === '' || !isStr(b['supplierId']) || !isNonNegInt(b['declaredTotalMinor'])
+          || !(poId === undefined || poId === null || isStr(poId)) || !(approvedBy === undefined || approvedBy === null || isStr(approvedBy))) {
           throw apiError(400, {
-            code: 'no_lines_captured',
-            whatHappened: 'A capture must carry at least one invoice line.',
+            code: 'not_readable_as_a_supplier_invoice',
+            whatHappened: 'A supplier invoice needs the invoiceId in the path and { supplierId, declaredTotalMinor, lines[] } in the body (poId and approvedBy optional).',
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Send { "lines": [ … ] }. Nothing was captured.',
+            nextSafeAction: 'Send the invoice as the paper says it. Nothing was saved.',
           });
         }
-        for (const l of lines) {
-          const nums = [l.orderedQty, l.receivedQty, l.invoicedQty, l.orderedUnitMinor, l.invoicedUnitMinor];
-          if (typeof l.productId !== 'string' || l.productId.trim() === '' || !nums.every((n) => Number.isInteger(n) && n >= 0)) {
-            throw apiError(422, {
-              code: 'line_not_readable',
-              whatHappened: 'Every line needs a product and whole, non-negative ordered/received/invoiced quantities and unit prices.',
-              wasItSaved: 'not_saved',
-              nextSafeAction: 'Fix the line and send it again. Nothing was captured.',
-            });
-          }
+        const totalMinor = sumOf(read.lines);
+        if (totalMinor !== b['declaredTotalMinor']) throw refuseTotal(totalMinor, b['declaredTotalMinor'], false);
+        const existing = await deps.invoice(ctx.tenantId, invoiceId);
+        if (existing !== undefined) return { status: 200, body: { invoice: existing, alreadyCaptured: true, flags: existing.governanceFlags } };
+        if (isStr(approvedBy) && approvedBy === ctx.userId) {
+          throw apiError(422, {
+            code: 'self_approval',
+            whatHappened: `${ctx.userId} captured this invoice and cannot also be the person who checked it (§28 separation of duties).`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Name the different person who checked it, or leave approvedBy out — the match and the payment need a second person anyway. Nothing was saved.',
+          });
         }
-        await deps.recordCapture(ctx.tenantId, invoiceId, lines);
-        return { status: 201, body: { invoiceId, lines: lines.length } };
+        const flags: InvoiceFlag[] = [];
+        if (!isStr(approvedBy)) flags.push('no_approval'); else await verifyApprover(deps, ctx.tenantId, approvedBy, flags);
+        await orderForInvoice(deps, ctx.tenantId, isStr(poId) ? poId : null, b['supplierId'], flags);
+        const capturedAt = deps.now();
+        const record: SupplierInvoiceRecord = {
+          invoiceId, supplierId: b['supplierId'], poId: isStr(poId) ? poId : null, lines: read.lines, declaredTotalMinor: b['declaredTotalMinor'], totalMinor, currency: 'INR',
+          capturedBy: ctx.userId, capturedAt, approvedBy: isStr(approvedBy) ? approvedBy : null, approvedAt: isStr(approvedBy) ? capturedAt : null,
+          source: 'head-office', governanceFlags: flags,
+        };
+        await deps.recordInvoice(ctx.tenantId, record);
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: 'invoice.capture', objectType: 'supplier_invoice', objectId: invoiceId,
+          at: capturedAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+          before: null,
+          after: { supplierId: record.supplierId, poId: record.poId ?? '', lines: String(record.lines.length), totalMinor: String(totalMinor), approvedBy: record.approvedBy ?? '', flags: flags.join(',') },
+          correlationId: invoiceId,
+        });
+        return { status: 201, body: { invoice: record, alreadyCaptured: false, flags } };
       },
     },
     {
+      // A supplier invoice captured on the BUYER'S SCREEN and relayed by the store box (SP-7a · F02): the invoice's own
+      // lines, who captured it and who checked it, as the screen queued them. Head office re-verifies BOTH from their
+      // grants and records-and-flags (the paper exists; a breach is said, never silently trusted or silently dropped).
+      // The arithmetic the screen ran is re-run here — a line that does not multiply or lines that do not add up are
+      // 422, which the box dead-letters visibly. Idempotent per invoice.
+      api: 'API-03', method: 'POST', path: '/v1/purchase/invoices/:invoiceId/synced',
+      permission: 'purchase.invoice.sync', idempotent: true,
+      handler: async (ctx) => {
+        const invoiceId = (ctx.params['invoiceId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const read = readInvoiceLines(b['lines']);
+        if (!read.ok) throw refuseLines(read, true);
+        const poId = b['poId'];
+        const approvedBy = b['approvedBy'];
+        if (invoiceId === '' || b['invoiceId'] !== invoiceId || !isStr(b['supplierId']) || !isNonNegInt(b['declaredTotalMinor']) || !isStr(b['capturedBy']) || !isIso(b['capturedAt'])
+          || !(poId === undefined || poId === null || isStr(poId)) || !(approvedBy === undefined || approvedBy === null || isStr(approvedBy))) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_relayed_invoice',
+            whatHappened: 'This payload could not be read as an invoice captured on a store screen — it needs the invoiceId matching the path, supplierId, declaredTotalMinor, lines[], capturedBy and capturedAt (poId, approvedBy, approvedAt, storeId optional).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it — the paper invoice exists.',
+          });
+        }
+        const totalMinor = sumOf(read.lines);
+        if (totalMinor !== b['declaredTotalMinor']) throw refuseTotal(totalMinor, b['declaredTotalMinor'], true);
+        const existing = await deps.invoice(ctx.tenantId, invoiceId);
+        if (existing !== undefined) return { status: 200, body: { invoice: existing, alreadyCaptured: true, flags: existing.governanceFlags } };
+        const flags: InvoiceFlag[] = [];
+        // The CAPTURER — re-verified from their grants, never the relay's word (hard rule #4).
+        const capturerPermissions = await deps.permissionsOfUser(ctx.tenantId, b['capturedBy']);
+        if (capturerPermissions === undefined) flags.push('capturer_unknown');
+        else if (!capturerPermissions.includes('purchase.invoice.capture')) flags.push('capturer_lacks_authority');
+        // The APPROVER — a second person (§28): absent is said, the capturer themselves is said, and their authority checked.
+        if (!isStr(approvedBy)) flags.push('no_approval');
+        else if (approvedBy === b['capturedBy']) flags.push('self_approved');
+        else await verifyApprover(deps, ctx.tenantId, approvedBy, flags);
+        await orderForInvoice(deps, ctx.tenantId, isStr(poId) ? poId : null, b['supplierId'], flags);
+        const record: SupplierInvoiceRecord = {
+          invoiceId, supplierId: b['supplierId'], poId: isStr(poId) ? poId : null, lines: read.lines, declaredTotalMinor: b['declaredTotalMinor'], totalMinor, currency: 'INR',
+          capturedBy: b['capturedBy'], capturedAt: b['capturedAt'],
+          approvedBy: isStr(approvedBy) ? approvedBy : null, approvedAt: isStr(approvedBy) ? (isIso(b['approvedAt']) ? b['approvedAt'] : b['capturedAt']) : null,
+          relayedBy: ctx.userId, source: isStr(b['source']) ? b['source'] : 'buyer-screen', storeId: isStr(b['storeId']) ? b['storeId'] : null,
+          governanceFlags: flags,
+        };
+        await deps.recordInvoice(ctx.tenantId, record);
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: record.capturedBy, action: 'invoice.capture', objectType: 'supplier_invoice', objectId: invoiceId,
+          at: deps.now(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+          before: null,
+          after: { supplierId: record.supplierId, poId: record.poId ?? '', lines: String(record.lines.length), totalMinor: String(totalMinor), approvedBy: record.approvedBy ?? '', relayedBy: ctx.userId, storeId: record.storeId ?? '', flags: flags.join(',') },
+          correlationId: invoiceId,
+        });
+        // 202, not 201: the invoice was captured at the store and this records that it happened.
+        return { status: 202, body: { invoice: record, alreadyCaptured: false, flags } };
+      },
+    },
+    {
+      // The three-way match over what head office HOLDS (SP-7a · F04): the stored invoice, the stored purchase order and
+      // the receipts folded into it (SP-6). Body: { poId? } — only to name the order when the invoice named none. A body
+      // carrying lines or figures is refused by name. An invoice nobody captured is *not checked* (blocked, nothing to
+      // compare) — which is a different answer from *checked and clean*. The verdict is recorded with its sources.
       api: 'API-03', method: 'POST', path: '/v1/purchase/invoices/:invoiceId/match',
       permission: 'purchase.invoice.match', idempotent: true,
       handler: async (ctx) => {
-        const invoiceId = ctx.params['invoiceId'] ?? '';
-        const result = threeWayMatch({ lines: await deps.matchLines(ctx.tenantId, invoiceId) });
-        await deps.recordMatch(ctx.tenantId, invoiceId, result);
-        return { status: 200, body: result };
+        const invoiceId = (ctx.params['invoiceId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (b['lines'] !== undefined || b['ordered'] !== undefined || b['received'] !== undefined || b['invoiced'] !== undefined) {
+          throw refuseLines({ ok: false, code: 'carries_caller_claims', detail: 'the body carries figures to match' }, false);
+        }
+        if (!(b['poId'] === undefined || b['poId'] === null || isStr(b['poId']))) {
+          throw apiError(400, { code: 'not_readable_as_a_match_request', whatHappened: 'A match takes only an optional poId.', wasItSaved: 'not_saved', nextSafeAction: 'Send {} or { poId }. Nothing was changed.' });
+        }
+        const invoice = await deps.invoice(ctx.tenantId, invoiceId);
+        const matchedAt = deps.now();
+        const flags: string[] = [];
+        let poId: string | null = null;
+        let order: StoredPurchaseOrder | undefined;
+        let result: MatchResult;
+        if (invoice === undefined) {
+          flags.push('invoice_unknown');
+          result = threeWayMatch({ lines: [] });
+        } else {
+          poId = isStr(b['poId']) ? b['poId'] : invoice.poId;
+          const orderFlags: InvoiceFlag[] = [];
+          order = await orderForInvoice(deps, ctx.tenantId, poId, invoice.supplierId, orderFlags);
+          flags.push(...orderFlags);
+          result = threeWayMatch({ lines: matchLinesFrom(order, invoice) });
+        }
+        const stored: StoredMatch = {
+          ...result, invoiceId, poId, matchedBy: ctx.userId, matchedAt,
+          sources: {
+            invoice: invoice === undefined ? null : { capturedBy: invoice.capturedBy, capturedAt: invoice.capturedAt, totalMinor: invoice.totalMinor },
+            order: order === undefined ? null : { status: order.status, supplierId: order.supplierId, lineCount: order.lines.length },
+            received: order !== undefined && order.status === 'issued' ? 'goods_receipts_folded_into_the_order' : 'none',
+          },
+          flags,
+        };
+        await deps.recordMatch(ctx.tenantId, invoiceId, stored);
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: 'invoice.match', objectType: 'supplier_invoice', objectId: invoiceId,
+          at: matchedAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+          before: null,
+          after: { poId: poId ?? '', blocked: String(stored.blocked), payableMinor: String(stored.payableMinor), invoicedMinor: String(stored.invoicedMinor), withheldMinor: String(stored.withheldMinor), flags: flags.join(',') },
+          correlationId: invoiceId,
+        });
+        return { status: 200, body: stored };
+      },
+    },
+    {
+      // Read one invoice as head office holds it, with its latest match (or null). 404 when the id is unknown.
+      api: 'API-03', method: 'GET', path: '/v1/purchase/invoices/:invoiceId',
+      permission: 'purchase.commitment.read',
+      handler: async (ctx) => {
+        const invoiceId = (ctx.params['invoiceId'] ?? '').trim();
+        const invoice = await deps.invoice(ctx.tenantId, invoiceId);
+        if (invoice === undefined) {
+          throw apiError(404, { code: 'not_found', whatHappened: `No supplier invoice ${invoiceId} is on file here.`, wasItSaved: 'not_saved', nextSafeAction: 'Check the store has synchronised — the invoice may still be on the store computer.' });
+        }
+        return { status: 200, body: { invoice, match: (await deps.latestMatch(ctx.tenantId, invoiceId)) ?? null } };
+      },
+    },
+    {
+      // Every invoice head office holds, each with its latest match — the ones nobody has matched or that are blocked first
+      // (control by exception, P-03).
+      api: 'API-03', method: 'GET', path: '/v1/purchase/invoices',
+      permission: 'purchase.commitment.read',
+      handler: async (ctx) => {
+        const all = await deps.invoices(ctx.tenantId);
+        const rows = [];
+        for (const invoice of all) rows.push({ invoice, match: (await deps.latestMatch(ctx.tenantId, invoice.invoiceId)) ?? null });
+        const waiting = rows.filter((r) => r.match === null || r.match.blocked);
+        return {
+          status: 200,
+          body: {
+            invoices: [...waiting, ...rows.filter((r) => !waiting.includes(r))], count: rows.length,
+            unmatchedCount: rows.filter((r) => r.match === null).length, blockedCount: rows.filter((r) => r.match !== null && r.match.blocked).length,
+            asAt: deps.now(),
+          },
+        };
       },
     },
     {

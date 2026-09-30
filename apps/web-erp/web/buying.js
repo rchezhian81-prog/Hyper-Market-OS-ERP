@@ -55,7 +55,10 @@ const WORDS = {
     needFile: 'Paste the supplier\'s lines first.',
     whoApproves: 'Who checked this invoice?',
     whoApprovesNote: 'You cannot approve your own capture. Somebody else has to look at it.',
-    saved: 'Invoice saved', savedNote: 'It can now be checked against the order.',
+    saved: 'Invoice saved on this device', savedNote: 'It can be checked against the order now. The store computer will carry it to head office, and the list below says where it has got to.',
+    invoicePo: 'Purchase order number (if you have it)',
+    savedTitle: 'Invoices saved on this screen', savedLead: 'Each is saved on this device first, then with the store computer, then posted at head office.',
+    linesWord: 'lines', noOrderWord: 'no purchase order',
     comparePo: 'Purchase order number', compareInvoice: 'Invoice number', compareThem: 'Compare them',
     matchLead: 'Compare what was ordered, what arrived, and what the supplier has invoiced.',
     item: 'Item', ordered: 'Ordered', received: 'Arrived', invoiced: 'Invoiced', payable: 'May be paid',
@@ -91,7 +94,10 @@ const WORDS = {
     needFile: 'முதலில் சப்ளையரின் வரிகளை ஒட்டவும்.',
     whoApproves: 'இந்த இன்வாய்ஸை யார் சரிபார்த்தார்?',
     whoApprovesNote: 'உங்கள் சொந்த பதிவை நீங்களே ஒப்புதல் அளிக்க முடியாது. வேறு ஒருவர் பார்க்க வேண்டும்.',
-    saved: 'இன்வாய்ஸ் சேமிக்கப்பட்டது', savedNote: 'இதை இப்போது ஆர்டருடன் சரிபார்க்கலாம்.',
+    saved: 'இன்வாய்ஸ் இந்தக் கருவியில் சேமிக்கப்பட்டது', savedNote: 'இப்போது ஆர்டருடன் சரிபார்க்கலாம். கடை கணினி இதை தலைமை அலுவலகத்திற்கு அனுப்பும்; கீழே உள்ள பட்டியல் எங்கே இருக்கிறது என்று சொல்லும்.',
+    invoicePo: 'கொள்முதல் ஆர்டர் எண் (இருந்தால்)',
+    savedTitle: 'இந்தத் திரையில் சேமிக்கப்பட்ட இன்வாய்ஸ்கள்', savedLead: 'ஒவ்வொன்றும் முதலில் இந்தக் கருவியில், பின் கடை கணினியிடம், பின் தலைமை அலுவலகத்தில் பதிவாகும்.',
+    linesWord: 'வரிகள்', noOrderWord: 'கொள்முதல் ஆர்டர் இல்லை',
     comparePo: 'கொள்முதல் ஆர்டர் எண்', compareInvoice: 'இன்வாய்ஸ் எண்', compareThem: 'ஒப்பிடு',
     matchLead: 'ஆர்டர் செய்தது, வந்தது, சப்ளையர் கேட்டது — மூன்றையும் ஒப்பிடவும்.',
     item: 'பொருள்', ordered: 'ஆர்டர்', received: 'வந்தது', invoiced: 'கேட்டது', payable: 'செலுத்தலாம்',
@@ -120,6 +126,18 @@ const REFUSAL_WORDS = {
   approved_by_the_person_who_captured_it: { en: 'You cannot approve your own capture. Somebody else has to look at it.', ta: 'உங்கள் சொந்த பதிவை நீங்களே ஒப்புதல் அளிக்க முடியாது. வேறு ஒருவர் பார்க்க வேண்டும்.' },
   nothing_to_capture: { en: 'There is nothing in this file to save.', ta: 'இந்தக் கோப்பில் சேமிக்க எதுவும் இல்லை.' },
   already_captured: { en: 'This invoice has already been saved. Saving it twice would double what this supplier is owed.', ta: 'இந்த இன்வாய்ஸ் ஏற்கனவே சேமிக்கப்பட்டுள்ளது. இரண்டு முறை சேமித்தால் சப்ளையருக்கு இரட்டிப்பாகும்.' },
+};
+
+/**
+ * Where a saved invoice is — the five states of the shared device → store-computer contract (`packages/sync/device-relay`
+ * DEVICE_ITEM_STATES), the same words the manager screen and the handhelds use (SP-2a · SP-7a).
+ */
+const STATE_WORDS = {
+  saved_here: { en: 'Saved on this device — not yet with the store computer', ta: 'இந்தக் கருவியில் சேமிக்கப்பட்டது — கடை கணினிக்கு இன்னும் செல்லவில்லை' },
+  retrying: { en: 'Saved on this device — the store computer could not be reached, trying again', ta: 'இந்தக் கருவியில் சேமிக்கப்பட்டது — கடை கணினியை அடைய முடியவில்லை, மீண்டும் முயற்சிக்கிறது' },
+  handed_to_box: { en: 'With the store computer — it will send this to head office', ta: 'கடை கணினியிடம் உள்ளது — அது இதை தலைமை அலுவலகத்திற்கு அனுப்பும்' },
+  posted: { en: 'Posted at head office', ta: 'தலைமை அலுவலகத்தில் பதிவாகியது' },
+  refused: { en: 'Refused — a person must look at this', ta: 'மறுக்கப்பட்டது — ஒருவர் இதைப் பார்க்க வேண்டும்' },
 };
 
 const words = (map, key) => (map[key]?.[lang] ?? map[key]?.en ?? String(key).replace(/_/g, ' '));
@@ -390,9 +408,11 @@ el('capture').addEventListener('click', async () => {
   const who = await askApprover(t('whoApproves'), t('whoApprovesNote'), approvers());
   if (who === null) return;
 
+  const poId = el('invoice-po').value.trim();
   const outcome = session.captureInvoice({
     invoiceId,
     supplierId: el('supplier-id').value.trim(),
+    poId: poId === '' ? null : poId,
     preview: lastPreview,
     approval: {
       id: `ap-${invoiceId}`, subjectType: 'supplier_invoice', subjectRef: invoiceId,
@@ -406,9 +426,64 @@ el('capture').addEventListener('click', async () => {
     tell(t('read'), words(REFUSAL_WORDS, outcome.refusal));
     return;
   }
+  // Saved means ON THE DEVICE (SP-7a · F02): the model queued it before it said ok. The list says where it goes next.
   tell(t('saved'), `${outcome.lines.length} × ${inr(outcome.totalMinor)} — ${t('savedNote')}`, true);
   el('capture').hidden = true;
+  renderSavedInvoices();
+  void syncToBox();
 });
+
+/**
+ * Every invoice this screen saved and where each has got to (SP-7a · F02), read from the DURABLE device queue, so the
+ * list is the same after a reload — the proof the invoice was not lost with the tab. Each row carries one of the five
+ * shared state words; a refusal carries its reason, because a person has to act on it.
+ */
+function renderSavedInvoices() {
+  const saved = typeof session.savedInvoices === 'function' ? session.savedInvoices() : [];
+  el('saved-title').hidden = saved.length === 0;
+  el('saved-lead').hidden = saved.length === 0;
+  el('saved-invoices').replaceChildren(...saved.map((w) => {
+    const row = document.createElement('div');
+    row.className = 'saved';
+    row.dataset.state = w.state;
+    row.dataset.id = w.invoiceId;
+    const what = document.createElement('div');
+    what.className = 'what';
+    what.textContent = `${w.invoiceId} · ${w.supplierId} — ${w.lineCount} ${t('linesWord')} · ${inr(w.totalMinor)} · ${w.poId === null ? t('noOrderWord') : w.poId}`;
+    const state = document.createElement('div');
+    state.className = `pill ${w.state}`;
+    state.textContent = words(STATE_WORDS, w.state);
+    row.append(what, state);
+    if (w.reason) {
+      const why = document.createElement('div');
+      why.className = 'why';
+      why.textContent = w.reason;
+      row.append(why);
+    }
+    return row;
+  }));
+}
+
+/**
+ * Hand this screen's saved invoices to the store computer and learn where they have got to (SP-7a). The relay is the
+ * composition root's (`window.buyingRelay`), present only when the box told this screen where its socket is. Called
+ * after every capture and on a slow timer; a box that cannot be reached leaves everything saved here and says so.
+ */
+async function syncToBox() {
+  const relay = window.buyingRelay;
+  if (!relay) return;
+  try {
+    await relay.syncNow();
+  } catch {
+    /* the queue is untouched; the state words say "saved on this device" */
+  }
+  renderSavedInvoices();
+}
+// No timer on this page (the banner never fades, and neither does anything else run on a clock): the queue is handed on
+// after every capture, when the page regains the network or the buyer's attention, and at boot — the store computer
+// carries it from there whenever it is reached.
+for (const moment of ['online', 'focus', 'pageshow']) window.addEventListener(moment, () => { void syncToBox(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) void syncToBox(); });
 
 // ── The three-way match ─────────────────────────────────────────────────────
 
@@ -534,6 +609,9 @@ function paintChrome() {
   el('invoice-lead').textContent = t('invoiceLead');
   el('invoice-id-label').textContent = t('invoiceNumber');
   el('supplier-id-label').textContent = t('supplier');
+  el('invoice-po-label').textContent = t('invoicePo');
+  el('saved-title').textContent = t('savedTitle');
+  el('saved-lead').textContent = t('savedLead');
   el('declared-total-label').textContent = t('printedTotal');
   el('file-text-label').textContent = t('theLines');
   el('preview').textContent = t('checkThis');
@@ -561,6 +639,7 @@ el('lang').addEventListener('click', () => {
   paintChrome();
   if (lastPreview !== null) renderPreview(lastPreview);
   renderPoLines();
+  renderSavedInvoices();
 });
 
 // ── Boot ────────────────────────────────────────────────────────────────────
@@ -568,6 +647,8 @@ el('lang').addEventListener('click', () => {
 el('sample').hidden = real !== undefined;
 paintChrome();
 renderPoLines();
+renderSavedInvoices();
+void syncToBox();
 
 // ── The shell's own honesty about where this page came from ─────────────────
 //

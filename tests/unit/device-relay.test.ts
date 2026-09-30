@@ -78,6 +78,9 @@ describe('the contract reads strictly and refuses with a reason', () => {
 
   it('allow-lists by type AND source — a type nobody reviewed cannot ride the store\'s credential', () => {
     expect(RELAYABLE_DEVICE_EVENTS['ApprovalDecided']?.surfaces).toEqual(['manager']);
+    // SP-7a: a supplier invoice captured on the buyer's screen rides as the ERP surface the box serves — never a handheld's.
+    expect(RELAYABLE_DEVICE_EVENTS['SupplierInvoiceCaptured']?.surfaces).toEqual(['manager']);
+    expect(isRelayable('SupplierInvoiceCaptured', 'warehouse')).toBe(false);
     expect(isRelayable('ApprovalDecided', 'manager')).toBe(true);
     expect(isRelayable('ApprovalDecided', 'picker')).toBe(false);
     // SP-2b: the manager's receipts and blind counts ride the same route; a sale never does.

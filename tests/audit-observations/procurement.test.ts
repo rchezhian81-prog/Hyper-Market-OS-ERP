@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness } from '../support/api-harness';
-import { createBuyingSession } from '../../apps/web-erp/src/buying-session';
+import { createBuyingSession, SUPPLIER_INVOICE_CAPTURED } from '../../apps/web-erp/src/buying-session';
 import { bootBuying } from '../../apps/web-erp/src/browser-entry';
+import { SyncOutbox } from '../../packages/sync/src/outbox';
+import { isRelayable } from '../../packages/sync/src/device-relay';
+import { pathFor } from '../../edge/sync-agent/src/http-transport';
 
 // Audit observations (30 September 2026, pinned at 8f4f6c5) for the procurement flow. Passing an OBSERVED case means the
 // defect was reproduced; these are NOT acceptance tests.
@@ -14,8 +17,9 @@ import { bootBuying } from '../../apps/web-erp/src/browser-entry';
 // same atomic append as the stock, so the order's remainder falls with the delivery (6 open, ₹6.00), and a re-receipt of
 // the same GRN folds nothing twice.
 //
-// F02 — still OBSERVED (SP-7): the assertions marked OBSERVED DEFECT in case 3 still pass. When SP-7 lands they must be
-// inverted, never restored.
+// F02 — FIXED in SP-7a: case 3 is now the REGRESSION. The plain boot writes the capture to a DURABLE device queue before it
+// says ok; the same screen's match finds it at once, a duplicate is refused, a reload over the same queue still knows it,
+// and the queued record is the shared contract the box relays to head office's synced invoice route.
 const TENANT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const policy = { excessToleranceBp: 500, shortageToleranceBp: 200, nearExpiryDays: 7 };
 // The counted lines only — since SP-4 (ii) the route refuses a body that carries `rules` or `policy` (F03).
@@ -110,25 +114,38 @@ describe('audit observations: disconnected procurement flow', () => {
     expect(after.body).toMatchObject({ rows: [{ onHandMinor: 110 }] });
   });
 
-  it('the actual browser boot reports invoice capture success but cannot match the invoice just captured', () => {
-    const s = bootBuying({ buyerId: 'buyer', productIds: ['p-audit'], approvers: ['approver'],
+  it('F02 FIXED: the actual browser boot SAVES the invoice to a durable queue — the match finds it at once, a duplicate is refused, and a reload still knows it', () => {
+    const outbox = new SyncOutbox();
+    const data = { buyerId: 'buyer', storeId: 'store-1', productIds: ['p-audit'], approvers: ['approver'],
       ordered: { 'PO-AUDIT': [{ productId: 'p-audit', qty: 10, unitMinor: 100 }] },
-      received: { 'PO-AUDIT': [{ productId: 'p-audit', qty: 10 }] }, captured: {} })!;
+      received: { 'PO-AUDIT': [{ productId: 'p-audit', qty: 10 }] }, captured: {} };
+    const s = bootBuying(data, undefined, outbox)!;
     const preview = s.previewInvoice({
       text: 'productId,quantity,unitPriceMinor,lineTotalMinor\np-audit,10,100,1000', declaredTotalMinor: 1000,
     });
     expect(preview.readyToApprove).toBe(true);
     const input: Parameters<ReturnType<typeof createBuyingSession>['captureInvoice']>[0] = {
-      invoiceId: 'INV-AUDIT', supplierId: 'supplier-audit', preview,
+      invoiceId: 'INV-AUDIT', supplierId: 'supplier-audit', poId: 'PO-AUDIT', preview,
       approval: { id: 'ap-audit', subjectType: 'supplier_invoice', subjectRef: 'INV-AUDIT',
         requestedBy: 'buyer', branchId: null, value: null, status: 'approved', decidedBy: 'approver',
         reason: 'checked_with_supplier', decidedAt: '2026-09-30T10:00:00Z' },
     };
     expect(s.captureInvoice(input)).toMatchObject({ ok: true, totalMinor: 1000 });
-    // OBSERVED DEFECT: unchanged boot-data register contains no saved invoice, even in this same session.
-    expect(s.match({ poId: 'PO-AUDIT', invoiceId: 'INV-AUDIT' })).toMatchObject({
-      blocked: true, payableMinor: 0, lines: [],
-    });
-    expect(s.captureInvoice(input)).toMatchObject({ ok: true }); // duplicate detection also misses it
+    // REGRESSION (F02, SP-7a): the invoice is on the durable device queue, so this same session's match finds it — and agrees.
+    expect(s.match({ poId: 'PO-AUDIT', invoiceId: 'INV-AUDIT' })).toMatchObject({ blocked: false, payableMinor: 1000, withheldMinor: 0 });
+    expect(s.captureInvoice(input)).toMatchObject({ ok: false, refusal: 'already_captured' });
+    expect(s.savedInvoices()).toEqual([expect.objectContaining({ invoiceId: 'INV-AUDIT', supplierId: 'supplier-audit', poId: 'PO-AUDIT', lineCount: 1, totalMinor: 1000, state: 'saved_here' })]);
+    // The queued record is the shared contract: the invoice's own lines, both people named, relayable for the ERP surface,
+    // routed to head office's synced invoice route — nothing about the order or the delivery rides with it (F04).
+    const item = outbox.find('invoice:INV-AUDIT')!;
+    expect(item.event.type).toBe(SUPPLIER_INVOICE_CAPTURED);
+    expect(item.event.payload).toMatchObject({ invoiceId: 'INV-AUDIT', supplierId: 'supplier-audit', poId: 'PO-AUDIT', declaredTotalMinor: 1000, capturedBy: 'buyer', approvedBy: 'approver', storeId: 'store-1', source: 'buyer-screen', lines: [{ productId: 'p-audit', quantity: 10, unitPriceMinor: 100, lineTotalMinor: 1000 }] });
+    expect(item.event.payload).not.toHaveProperty('ordered');
+    expect(isRelayable(SUPPLIER_INVOICE_CAPTURED, 'manager')).toBe(true);
+    expect(pathFor(item.event)).toBe('/v1/purchase/invoices/INV-AUDIT/synced');
+    // A "reload": a fresh boot over the SAME durable queue still knows the invoice — and still refuses to save it twice.
+    const again = bootBuying(data, undefined, outbox)!;
+    expect(again.match({ poId: 'PO-AUDIT', invoiceId: 'INV-AUDIT' })).toMatchObject({ blocked: false, payableMinor: 1000 });
+    expect(again.captureInvoice(input)).toMatchObject({ ok: false, refusal: 'already_captured' });
   });
 });

@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 770 | 470 | 470 | 59 | 260 |
+| 13 | 773 | 471 | 471 | 59 | 261 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -124,9 +124,12 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/purchase/import-jobs/:jobId` | `purchase.import.record` | core | yes |
 | GET | `/v1/purchase/import-quality` | `purchase.import.read` | core | — |
 | GET | `/v1/purchase/import-quality/:sourceId` | `purchase.import.read` | core | — |
+| GET | `/v1/purchase/invoices` | `purchase.commitment.read` | core | — |
+| GET | `/v1/purchase/invoices/:invoiceId` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/invoices/:invoiceId/capture` | `purchase.invoice.capture` | core | yes |
 | POST | `/v1/purchase/invoices/:invoiceId/match` | `purchase.invoice.match` | core | yes |
 | POST | `/v1/purchase/invoices/:invoiceId/reconcile` | `purchase.invoice.match` | core | yes |
+| POST | `/v1/purchase/invoices/:invoiceId/synced` | `purchase.invoice.sync` | core | yes |
 | GET | `/v1/purchase/orders` | `purchase.commitment.read` | core | — |
 | GET | `/v1/purchase/orders/:poId` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/orders/:poId` | `purchase.order.propose` | core | yes |

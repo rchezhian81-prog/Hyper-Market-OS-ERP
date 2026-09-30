@@ -7,6 +7,10 @@ import {
 } from '../../apps/web-erp/src/buying-session';
 import type { DecidedRequest } from '../../packages/approvals/src/index';
 import { money } from '../../packages/contracts/src/money';
+import { SyncOutbox } from '../../packages/sync/src/outbox';
+import { SUPPLIER_INVOICE_CAPTURED } from '../../apps/web-erp/src/buying-session';
+import { isRelayable } from '../../packages/sync/src/device-relay';
+import { pathFor } from '../../edge/sync-agent/src/http-transport';
 
 /**
  * **The buyer's surface (M06 · M07 · M30 · D03 · §28).**
@@ -50,7 +54,7 @@ function ports(over: Partial<BuyingPorts> = {}): BuyingPorts {
   };
 }
 
-const session = (over: Partial<BuyingPorts> = {}) => createBuyingSession(CONFIG, ports(over));
+const session = (over: Partial<BuyingPorts> = {}, outbox = new SyncOutbox()) => createBuyingSession(CONFIG, ports(over), outbox);
 
 /** A clean two-line invoice: 10 × ₹100 and 5 × ₹50 = ₹1,250.00 */
 const CLEAN_FILE = [
@@ -136,7 +140,7 @@ describe('the buyer sees every problem before anything is written', () => {
   it('writes nothing at all while previewing', () => {
     // The whole point of the flow. Nothing below the preview has run.
     let captured = 0;
-    const s = createBuyingSession(CONFIG, ports({ capturedLines: () => { captured += 1; return []; } }));
+    const s = createBuyingSession(CONFIG, ports({ capturedLines: () => { captured += 1; return []; } }), new SyncOutbox());
     s.previewInvoice({ text: CLEAN_FILE, declaredTotalMinor: CLEAN_TOTAL });
     expect(captured).toBe(0);
   });
@@ -200,7 +204,7 @@ describe('separation of duties, on the way in (§28)', () => {
   it('refuses to capture the same invoice twice', () => {
     // Capturing it twice would double what this supplier is owed.
     const already: InvoiceLine[] = [{ productId: 'p1', quantity: 10, unitPriceMinor: 100_00, lineTotalMinor: 100_000 }];
-    const s = createBuyingSession(CONFIG, ports({ capturedLines: () => already }));
+    const s = createBuyingSession(CONFIG, ports({ capturedLines: () => already }), new SyncOutbox());
     const outcome = s.captureInvoice({
       invoiceId: 'INV-7', supplierId: 's1', preview: cleanPreview(), approval: approvalBy('u-manager', 'INV-7'),
     });
@@ -217,7 +221,7 @@ describe('the three-way match finally has lines to compare', () => {
   ];
 
   it('agrees when the order, the delivery and the invoice agree', () => {
-    const result = createBuyingSession(CONFIG, ports({ capturedLines: () => captured }))
+    const result = createBuyingSession(CONFIG, ports({ capturedLines: () => captured }), new SyncOutbox())
       .match({ poId: 'PO-1', invoiceId: 'INV-1' });
     expect(result.blocked).toBe(false);
     expect(result.payableMinor).toBe(125_000);
@@ -236,7 +240,7 @@ describe('the three-way match finally has lines to compare', () => {
       { productId: 'p1', quantity: 12, unitPriceMinor: 100_00, lineTotalMinor: 120_000 },
       { productId: 'p2', quantity: 5, unitPriceMinor: 50_00, lineTotalMinor: 25_000 },
     ];
-    const result = createBuyingSession(CONFIG, ports({ capturedLines: () => over }))
+    const result = createBuyingSession(CONFIG, ports({ capturedLines: () => over }), new SyncOutbox())
       .match({ poId: 'PO-1', invoiceId: 'INV-1' });
 
     expect(result.blocked).toBe(true);
@@ -250,7 +254,7 @@ describe('the three-way match finally has lines to compare', () => {
       { productId: 'p1', quantity: 10, unitPriceMinor: 120_00, lineTotalMinor: 120_000 },
       { productId: 'p2', quantity: 5, unitPriceMinor: 50_00, lineTotalMinor: 25_000 },
     ];
-    const result = createBuyingSession(CONFIG, ports({ capturedLines: () => dearer }))
+    const result = createBuyingSession(CONFIG, ports({ capturedLines: () => dearer }), new SyncOutbox())
       .match({ poId: 'PO-1', invoiceId: 'INV-1' });
     expect(result.blocked).toBe(true);
     expect(result.payableMinor).toBe(125_000); // at the ordered price, not the invoiced one
@@ -262,7 +266,7 @@ describe('the three-way match finally has lines to compare', () => {
       ...captured,
       { productId: 'p3', quantity: 4, unitPriceMinor: 25_00, lineTotalMinor: 10_000 },
     ];
-    const result = createBuyingSession(CONFIG, ports({ capturedLines: () => ghost }))
+    const result = createBuyingSession(CONFIG, ports({ capturedLines: () => ghost }), new SyncOutbox())
       .match({ poId: 'PO-1', invoiceId: 'INV-1' });
 
     const line = result.lines.find((l) => l.productId === 'p3');
@@ -273,7 +277,7 @@ describe('the three-way match finally has lines to compare', () => {
 
   it('shows a product that was ordered and received but never invoiced', () => {
     const partial: InvoiceLine[] = [captured[0]!];
-    const result = createBuyingSession(CONFIG, ports({ capturedLines: () => partial }))
+    const result = createBuyingSession(CONFIG, ports({ capturedLines: () => partial }), new SyncOutbox())
       .match({ poId: 'PO-1', invoiceId: 'INV-1' });
     expect(result.lines.map((l) => l.productId)).toEqual(['p1', 'p2']);
     expect(result.lines.find((l) => l.productId === 'p2')?.payableMinor).toBe(0);
@@ -411,5 +415,72 @@ describe('raising a purchase order reaches head office (M06-FR-02 · §28)', () 
     const out = await s.proposeToCloud({ poId: 'PO-25', supplierId: 'sup-1', lines: CLEAN_LINES });
     expect(out.proposed).toBe(false);
     if (!out.proposed) expect(out.reason).toContain('not connected to head office');
+  });
+});
+
+describe('the capture is on the DURABLE device queue before the screen says ok (SP-7a · F02)', () => {
+  const cleanPreview = (s: ReturnType<typeof session>) => s.previewInvoice({ text: CLEAN_FILE, declaredTotalMinor: CLEAN_TOTAL });
+
+  it('queues ONE SupplierInvoiceCaptured keyed on the invoice — the invoice\'s own lines, both people, the order it names, no figures about the order or the delivery', () => {
+    const outbox = new SyncOutbox();
+    const s = session({}, outbox);
+    const outcome = s.captureInvoice({ invoiceId: 'INV-8', supplierId: 's1', poId: 'PO-9', preview: cleanPreview(s), approval: approvalBy('u-manager', 'INV-8') });
+    expect(outcome.ok).toBe(true);
+    const item = outbox.find('invoice:INV-8')!;
+    expect(item.event.type).toBe(SUPPLIER_INVOICE_CAPTURED);
+    expect(item.state).toBe('pending');
+    expect(item.event.payload).toEqual({
+      invoiceId: 'INV-8', supplierId: 's1', poId: 'PO-9',
+      lines: [{ productId: 'p1', quantity: 10, unitPriceMinor: 100_00, lineTotalMinor: 100_000 }, { productId: 'p2', quantity: 5, unitPriceMinor: 50_00, lineTotalMinor: 25_000 }],
+      declaredTotalMinor: CLEAN_TOTAL, capturedBy: 'u-buyer', capturedAt: expect.any(String) as string, approvedBy: 'u-manager', approvedAt: AT,
+      storeId: null, source: 'buyer-screen',
+    });
+    expect(isRelayable(SUPPLIER_INVOICE_CAPTURED, 'manager')).toBe(true);
+    expect(isRelayable(SUPPLIER_INVOICE_CAPTURED, 'warehouse')).toBe(false);
+    expect(pathFor(item.event)).toBe('/v1/purchase/invoices/INV-8/synced');
+  });
+
+  it('the same screen\'s match finds the invoice at once, and a second capture is refused — even when the box never told it about the invoice', () => {
+    const outbox = new SyncOutbox();
+    const s = session({ capturedLines: () => [] }, outbox);
+    expect(s.match({ poId: 'PO-1', invoiceId: 'INV-9' }).blocked).toBe(true); // not yet captured: NOT checked
+    s.captureInvoice({ invoiceId: 'INV-9', supplierId: 's1', preview: cleanPreview(s), approval: approvalBy('u-manager', 'INV-9') });
+    expect(s.match({ poId: 'PO-1', invoiceId: 'INV-9' })).toMatchObject({ blocked: false, payableMinor: CLEAN_TOTAL, withheldMinor: 0 });
+    expect(s.captureInvoice({ invoiceId: 'INV-9', supplierId: 's1', preview: cleanPreview(s), approval: approvalBy('u-manager', 'INV-9') }))
+      .toMatchObject({ ok: false, refusal: 'already_captured' });
+    // A reload — a new session over the SAME durable queue — knows it too.
+    const reloaded = session({ capturedLines: () => [] }, outbox);
+    expect(reloaded.match({ poId: 'PO-1', invoiceId: 'INV-9' })).toMatchObject({ blocked: false, payableMinor: CLEAN_TOTAL });
+    expect(reloaded.captureInvoice({ invoiceId: 'INV-9', supplierId: 's1', preview: cleanPreview(reloaded), approval: approvalBy('u-manager', 'INV-9') }))
+      .toMatchObject({ ok: false, refusal: 'already_captured' });
+  });
+
+  it('a refused capture queues nothing', () => {
+    const outbox = new SyncOutbox();
+    const s = session({}, outbox);
+    s.captureInvoice({ invoiceId: 'INV-10', supplierId: 's1', preview: cleanPreview(s) }); // nobody approved
+    s.captureInvoice({ invoiceId: 'INV-11', supplierId: 's1', preview: cleanPreview(s), approval: approvalBy('u-buyer', 'INV-11') }); // self-approved
+    expect(outbox.all()).toEqual([]);
+    expect(s.savedInvoices()).toEqual([]);
+  });
+
+  it('lists every saved invoice newest first with the five shared state words — from the queue and the box\'s word, never the screen\'s own say-so', () => {
+    const outbox = new SyncOutbox();
+    const s = session({}, outbox);
+    s.captureInvoice({ invoiceId: 'INV-12', supplierId: 's1', poId: 'PO-1', preview: cleanPreview(s), approval: approvalBy('u-manager', 'INV-12') });
+    s.captureInvoice({ invoiceId: 'INV-13', supplierId: 's2', preview: cleanPreview(s), approval: approvalBy('u-manager', 'INV-13') });
+    expect(s.savedInvoices().map((w) => [w.invoiceId, w.supplierId, w.poId, w.lineCount, w.totalMinor, w.state])).toEqual([
+      ['INV-13', 's2', null, 2, CLEAN_TOTAL, 'saved_here'],
+      ['INV-12', 's1', 'PO-1', 2, CLEAN_TOTAL, 'saved_here'],
+    ]);
+    outbox.recordFailure('invoice:INV-12');
+    expect(s.savedInvoices().find((w) => w.invoiceId === 'INV-12')).toMatchObject({ state: 'retrying', attempts: 1 });
+    outbox.acknowledge('invoice:INV-12');
+    expect(s.handedKeys()).toEqual(['invoice:INV-12']);
+    expect(s.savedInvoices().find((w) => w.invoiceId === 'INV-12')?.state).toBe('handed_to_box');
+    s.noteBoxStatus([{ key: 'invoice:INV-12', state: 'posted', attempts: 0 }]);
+    expect(s.savedInvoices().find((w) => w.invoiceId === 'INV-12')?.state).toBe('posted');
+    s.noteBoxStatus([{ key: 'invoice:INV-12', state: 'refused', attempts: 2, reason: 'the cloud answered 422 for SupplierInvoiceCaptured (does_not_add_up_to_the_invoice_total)' }]);
+    expect(s.savedInvoices().find((w) => w.invoiceId === 'INV-12')).toMatchObject({ state: 'refused', reason: expect.stringContaining('422') as string });
   });
 });

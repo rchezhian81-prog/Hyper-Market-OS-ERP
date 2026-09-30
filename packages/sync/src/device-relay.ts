@@ -40,6 +40,9 @@ export const DEVICE_OUTBOX_STATUS_PATH = '/lane/outbox/status';
  */
 export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surfaces: readonly string[] }>> = Object.freeze({
   ApprovalDecided: { surfaces: ['manager'] },
+  // SP-7a (F02): a supplier invoice captured on the buyer's screen — the ERP surface the box serves, so it rides as
+  // `manager` like every other screen record. Head office re-verifies the capturer and the approver from their grants.
+  SupplierInvoiceCaptured: { surfaces: ['manager'] },
   // SP-2b: a delivery booked in and a blind count captured on the manager's screen. The warehouse handheld joins
   // `StockCounted` in W2 (SP-3), once the LAN device route exists.
   GoodsReceived: { surfaces: ['manager'] },

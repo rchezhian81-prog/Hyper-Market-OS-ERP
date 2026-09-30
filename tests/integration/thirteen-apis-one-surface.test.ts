@@ -48,7 +48,8 @@ const ALL: readonly Route[] = [
     approvalsSince: () => [], now: () => NOW,
   }),
   ...purchaseRoutes({
-    matchLines: () => [], recordCapture: () => {}, recordMatch: () => {}, applyBankChange: () => {},
+    invoice: () => undefined, invoices: () => [], recordInvoice: () => {}, purchaseOrder: () => undefined, permissionsOfUser: () => undefined,
+    latestMatch: () => undefined, recordMatch: () => {}, applyBankChange: () => {},
     openCommitments: () => ({ count: 0, valueMinor: 0 }), now: () => NOW,
   }),
   ...inventoryRoutes({ availability: () => [], appendMovement: () => {}, isKnown: () => false, valuation: () => [], ageing: () => ({ lots: [], unvaluedMinor: 0 }), performance: () => ({ from: NOW, to: NOW, periodDays: 0, total: { cogs: { minor: 0, currency: 'INR' }, averageInventory: { minor: 0, currency: 'INR' } }, byProduct: [] }), now: () => NOW }),

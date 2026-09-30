@@ -8,7 +8,7 @@ import { STREAM_FOR } from '../../services/api/src/adapters';
 // nothing and two products canonicalised identically — caught there by a guardrail, and worth a
 // test of its own here because of what shares a delivery stream: a driver's cash.
 
-const { forCustomer, forDriverRun, forLocation, forInvoice } = STREAM_FOR;
+const { forCustomer, forDriverRun, forLocation, forSaleReturns, supplierInvoices } = STREAM_FOR;
 
 describe('two different things never compose to one stream', () => {
   it('keeps a driver whose id looks like a date apart from a driver who is not', () => {
@@ -32,7 +32,7 @@ describe('two different things never compose to one stream', () => {
 
   it('keeps the four kinds of stream apart from each other', () => {
     const names = [
-      forCustomer('X'), forDriverRun('X', 'Y'), forLocation('X'), forInvoice('X'),
+      forCustomer('X'), forDriverRun('X', 'Y'), forLocation('X'), forSaleReturns('X'), supplierInvoices,
       forCustomer('X\u001fY'.replace('\u001f', '-')),
     ];
     expect(new Set(names).size).toBe(names.length);
@@ -48,6 +48,7 @@ describe('two different things never compose to one stream', () => {
   it('tripwire — ordinary ids still compose, so the guard is not refusing everything', () => {
     expect(forCustomer('C-001')).toContain('C-001');
     expect(forDriverRun('d-ravi', '2026-08-05')).toContain('d-ravi');
-    expect(forInvoice('INV/2026/0042')).toContain('INV/2026/0042');
+    // SP-7a: supplier invoices live on ONE register per tenant (no per-invoice stream), so nothing composes there.
+    expect(supplierInvoices).toContain('invoices');
   });
 });

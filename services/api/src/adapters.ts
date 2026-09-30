@@ -169,7 +169,7 @@ import { splitStoreValuation, type OwnedStockValue, tagsAsConcessionSales, lates
 import type { GoodsReceiptDeps, GrnRecord, StoredReceiptPolicy, PoReceiptPosting } from '../../inventory/src/goods-receipt';
 import { weightedAverageValuation, type ValuationMovement } from '../../../packages/stock/src/valuation';
 import { agedStockLots, type DatedMovement } from '../../../packages/stock/src/ageing-source';
-import type { MatchResult, BankChangeRequest, PurchaseDeps } from '../../purchase/src/index';
+import type { BankChangeRequest, PurchaseDeps, SupplierInvoiceRecord, StoredMatch } from '../../purchase/src/index';
 import type { PurchaseOrderDeps, StoredPurchaseOrder } from '../../purchase/src/purchase-orders';
 import type { SupplierScorecardDeps } from '../../purchase/src/supplier-scorecard';
 import type { RebateDeps } from '../../purchase/src/rebates';
@@ -1170,7 +1170,8 @@ const forCustomerOrders = (customerRef: string): string => streamName(STREAM.ord
 const forStorefrontRefusals = streamName(STREAM.orders, 'access-refusals');
 // M19-FR-01 / Item 2: the kept ownership state of substitution exceptions — latest per exception id.
 const forExceptionOwnership = streamName(STREAM.orders, 'substitution-exception-ownership');
-const forInvoice = (invoiceId: string): string => streamName(STREAM.purchase, 'invoice', invoiceId);
+/** SP-7a: every captured supplier invoice, on one register — the record the match, the payable and the statement read. */
+const SUPPLIER_INVOICES_STREAM = streamName(STREAM.purchase, 'invoices');
 /** Each supplier partner's portal config and submissions fold one stream — one partner, not the shop. */
 const forPortalPartner = (partnerId: string): string => streamName(STREAM.purchase, 'partner', partnerId);
 // Partner-action audit is TENANT-WIDE (one stream, every partner) so `findProbing` can see a supplier
@@ -1567,7 +1568,7 @@ export function payslipStoreAdapter(input: { readonly store: EventStore; readonl
   };
 }
 
-export const STREAM_FOR = { forCustomer, forDriverRun, forLocation, forInvoice, forSaleReturns } as const;
+export const STREAM_FOR = { forCustomer, forDriverRun, forLocation, forSaleReturns, supplierInvoices: SUPPLIER_INVOICES_STREAM } as const;
 
 export function catalogueAdapter(input: {
   readonly store: EventStore;
@@ -6083,46 +6084,42 @@ export function purchaseAdapter(input: {
   return {
     now: input.now,
 
-    /**
-     * Lines for one invoice, from its capture events.
-     *
-     * `recordCapture` (the `/capture` route) writes `PurchaseInvoiceCaptured` onto this invoice's
-     * stream; an invoice nobody has captured has no lines here, and `threeWayMatch` refuses an
-     * empty line set rather than calling it a match. So the match answers only for invoices whose
-     * ordered/received/invoiced figures a person has actually entered.
-     */
-    matchLines: async (tenantId, invoiceId) => {
-      const captured = await allOf<{ readonly lines: readonly MatchLineOf[] }>(
-        input.store, tenantId, forInvoice(invoiceId), 'PurchaseInvoiceCaptured',
-      );
-      return captured.flatMap((c) => c.lines);
-    },
-
-    // Capture the invoice's lines onto its own per-invoice stream, where `matchLines` reads them.
-    // Idempotent per invoice: the key carries no timestamp, so a re-sent capture collapses rather
-    // than doubling the lines the match would then compare.
-    recordCapture: async (tenantId, invoiceId, lines) => {
-      await input.store.append(tenantId, forInvoice(invoiceId), makeEvent({
-        id: `capture-${invoiceId}`,
-        type: 'PurchaseInvoiceCaptured',
-        occurredAt: input.now(),
-        idempotencyKey: `capture-${tenantId}-${invoiceId}`,
+    // SP-7a (F02 · F04): the supplier invoice is a RECORD on its own register — the invoice's own lines, who captured it,
+    // who checked it — keyed on the invoice id, so a retry (a lost reply, a re-sent screen queue) never doubles what a
+    // supplier is owed. The match reads it here beside the order register and the receipts folded into the order (SP-6);
+    // nothing about the order or the delivery is ever taken from a body again.
+    invoice: async (tenantId, invoiceId) =>
+      (await allOf<SupplierInvoiceRecord>(input.store, tenantId, SUPPLIER_INVOICES_STREAM, 'SupplierInvoiceCaptured')).find((r) => r.invoiceId === invoiceId),
+    invoices: (tenantId) => allOf<SupplierInvoiceRecord>(input.store, tenantId, SUPPLIER_INVOICES_STREAM, 'SupplierInvoiceCaptured'),
+    recordInvoice: async (tenantId, record) => {
+      await input.store.append(tenantId, SUPPLIER_INVOICES_STREAM, makeEvent({
+        id: `invoice-${record.invoiceId}`,
+        type: 'SupplierInvoiceCaptured',
+        occurredAt: record.capturedAt,
+        // One invoice, one record: the key carries no timestamp, so a re-sent capture collapses onto the first.
+        idempotencyKey: `invoice-${tenantId}-${record.invoiceId}`,
         source: 'api/purchase',
-        payload: { invoiceId, lines },
+        payload: record,
       }));
+    },
+    purchaseOrder: async (tenantId, poId) => (await foldPurchaseOrders(input.store, tenantId)).get(poId),
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+    latestMatch: async (tenantId, invoiceId) => {
+      const all = await allOf<StoredMatch>(input.store, tenantId, STREAM.purchase, 'InvoiceMatched');
+      return all.filter((m) => m.invoiceId === invoiceId).at(-1);
     },
 
     recordMatch: async (tenantId, invoiceId, r) => {
       await input.store.append(tenantId, STREAM.purchase, makeEvent({
-        id: `match-${invoiceId}`,
+        id: `match-${invoiceId}-${r.matchedAt}`,
         type: 'InvoiceMatched',
-        occurredAt: input.now(),
-        // Keyed on the *outcome*, not just the invoice. Re-running an unchanged match is the same
-        // event and collapses; a match that now pays a different figure is a different fact and
-        // must be recorded, or the ledger would show the first answer forever.
-        idempotencyKey: `match-${tenantId}-${invoiceId}-${r.payableMinor}-${r.invoicedMinor}`,
+        occurredAt: r.matchedAt,
+        // Keyed on the *outcome*, not just the invoice. Re-running an unchanged match is the same event and collapses;
+        // a match that now pays a different figure is a different fact and must be recorded, or the ledger would show
+        // the first answer forever.
+        idempotencyKey: `match-${tenantId}-${invoiceId}-${r.payableMinor}-${r.invoicedMinor}-${r.poId ?? ''}`,
         source: 'api/purchase',
-        payload: { invoiceId, ...r } satisfies { invoiceId: string } & MatchResult,
+        payload: r,
       }));
     },
 
@@ -6319,16 +6316,6 @@ export function supplierPortalAdapter(input: {
     auditEntries: async (tenantId) =>
       allOf<PartnerAuditEntry>(input.store, tenantId, PORTAL_AUDIT_STREAM, 'PortalActionAudited'),
   };
-}
-
-/** The shape `matchLines` yields; imported structurally to avoid a cycle through the route module. */
-interface MatchLineOf {
-  readonly productId: string;
-  readonly orderedQty: number;
-  readonly receivedQty: number;
-  readonly invoicedQty: number;
-  readonly orderedUnitMinor: number;
-  readonly invoicedUnitMinor: number;
 }
 
 /** `YYYY-MM-DD` plus n days, in UTC — the window the ledger's timestamps are stored in. */
