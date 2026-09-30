@@ -231,7 +231,7 @@ describe('API-03 — nothing to compare is not a match', () => {
 describe('API-03 — what is on order is not known, and not zero', () => {
   const deps = (open: PurchaseDeps['openCommitments']): PurchaseDeps => ({
     invoice: () => undefined, invoices: () => [], recordInvoice: () => {}, purchaseOrder: () => undefined, permissionsOfUser: () => undefined,
-    latestMatch: () => undefined, recordMatch: () => {}, applyBankChange: () => {},
+    latestMatch: () => undefined, recordMatch: () => {}, matchPolicy: () => undefined, recordMatchPolicy: () => {}, applyBankChange: () => {},
     openCommitments: open, now: () => NOW,
   });
   const call = async (d: PurchaseDeps) => {
@@ -363,7 +363,7 @@ describe('all three register cleanly on the kernel', () => {
   it('passes every registration rule', () => {
     const purchase: PurchaseDeps = {
       invoice: () => undefined, invoices: () => [], recordInvoice: () => {}, purchaseOrder: () => undefined, permissionsOfUser: () => undefined,
-      latestMatch: () => undefined, recordMatch: () => {}, applyBankChange: () => {},
+      latestMatch: () => undefined, recordMatch: () => {}, matchPolicy: () => undefined, recordMatchPolicy: () => {}, applyBankChange: () => {},
       openCommitments: () => ({ count: 0, valueMinor: 0 }), now: () => NOW,
     };
     const finance: FinanceDeps = {

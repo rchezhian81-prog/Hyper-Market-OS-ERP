@@ -399,11 +399,57 @@ device, human UAT and production verification separate; approved deferrals stay 
   claim value and the SP-6b rejected excess do not yet reach the supplier's account; no supplier master screen; match
   tolerances are the engine's defaults, not a tenant policy; the buyer's durable queue is not yet browser-verified on a
   box-served page (SP-9's connected run); no physical device or UAT.
-- **Current-work pointer:** last verified = SP-7a (this PR); next = **SP-7b** [W07 remainder] (supplier liability from
-  the matched payable; statement lines and debit notes from the GRN's return / claim dispositions and the rejected
-  excess; journals through the accountant's mapping reconciling to the supplier balance; the supplier master screen; a
-  tenant match-tolerance policy); then SP-8/8b (F08), SP-9/9b; **SP-3c** (picker + driver) after the core-store chain;
-  genuine blockers: none; external gates unchanged (providers, hardware, real data, pilot GO).
+- **SP-7b — the supplier account, the payable and the journal (F04's payable half · M23-FR-01 · M07-FR-03 · M07-FR-04 ·
+  §28 · P-02 · P-08 · QG-07 · hard rules #2 #4 #5).** Until this PR the matched payable reached nothing: no supplier account,
+  no statement, no journal (F04). Now (i) what a supplier is OWED is a PROJECTION over the registers head office already
+  holds (`services/purchase/src/supplier-account.ts`, `foldSupplierAccount`): the invoice (SP-7a), its LATEST three-way
+  match (accrued = the payable, the lowest of three; withheld = in dispute, not owed; an unmatched invoice owed nothing),
+  the order (which supplier a receipt belongs to) and the receipts folded into it (SP-6) — a second person's `return` /
+  `claim` of QUARANTINED stock raises a debit note `DN-<grnId>-<lineId>` for the quarantined quantity at the delivered cost
+  (it was received against the order and so was inside the payable); REFUSED stock was never received, the match already
+  withheld it, so NO debit note — it is listed as never owed rather than counted twice; a REJECTED over-delivery is a
+  supplier return PENDING until recorded. Nothing is stored twice, so a retry cannot double it and a correction upstream
+  shows on the next read. `GET /v1/purchase/suppliers/:supplierId/account`, `GET /v1/purchase/suppliers/accounts` (those
+  needing a person first; receipts that reach no supplier named). (ii) `POST /v1/inventory/goods-receipt/:grnId/excess/returned`
+  (`inventory.movement.append`) records the physical return of a rejected excess once — on a receipt assembled from the
+  handheld's scans (SP-6b) one `returned_to_supplier` movement per held line takes the units off the shelf position the
+  scans put them on; on any other receipt nothing moves (the held units never reached on-hand); refused until a second
+  person has REJECTED the excess (`excess_not_rejected`); new `MovementKind` `returned_to_supplier` (−1), flag
+  `excess_returned_to_supplier`. (iii) The tenant's match tolerances are the OWNER'S: `POST`/`GET /v1/purchase/match-policy`
+  (`purchase.match.policy.set`, owner only; ≤ 100%), applied by `/match` to every invoice and recorded on every verdict as
+  `sources.policy` with `defaulted` said when the engine's defaults applied — never a body's (a body carrying tolerances is
+  still refused by name). Found and fixed on the way: a re-match that changed only `blocked` (the tolerances changed, the
+  figure did not) collapsed onto the earlier verdict as a replay — the `InvoiceMatched` key now carries `blocked`.
+  (iv) Finance: `packages/finance/src/payables.ts` (pure: `planPayablesPostings` — per source the difference between the
+  register and what the ledger holds: an accrual, a REVERSAL by its own journal when a re-match owes less, a debit note
+  once; `postPayables` through the mapping; `reconcilePayables` — the purchase register against the ledger's control
+  account, two derivations named, the unposted listed; `PAYABLES_POSTING_RULES` in the suggested map: `supplier_invoice`
+  Dr `purchases_grni` / Cr `supplier_payable`, its reversal and the debit note the mirror image) and
+  `services/finance/src/payables.ts` (`POST /v1/finance/payables/post` — `finance.journal.post`; no mapping → 409 said;
+  every voucher a `JournalPosted` through the one `appendJournal`, so the period fold and the close gate see it; a closed
+  month → the next open period carrying its real date; exceptions append-only, `resolved` by a later posting of that kind;
+  `GET /v1/finance/payables` — journals, exceptions with state, the reconciliation per supplier). Evidence:
+  `tests/integration/supplier-account.test.ts` (4, real API + real RBAC: unmatched → nothing owed / wholly withheld; matched
+  9000 accrued; return of the damaged 2 → DN 2000 → owed 7000; the refused 5 claimed → never owed, no note; retry doubles
+  nothing; 403 / 404 / tenant B; the 4% price difference blocked under the default and matched under the owner's 5%, both
+  verdicts on record; a rejected excess pending → returned once, no invented movement; no mapping → 409; a mapping without
+  the debit-note kind → accrual posts, the note a VISIBLE exception, the two derivations disagree by exactly the note;
+  the kind named → posts, resolved, agree; re-run posts nothing; the order amended → the re-match owes 8000 → a REVERSAL of
+  1000, agree at 6000; the vouchers on the finance stream), `tests/unit/supplier-account-fold.test.ts` (5),
+  `tests/unit/finance-payables.test.ts` (6), `tests/integration/goods-receipt-assembled.test.ts` (+1: the on-hand rejected
+  excess comes off 24 → 22 as one movement, once), `tests/unit/goods-receipt-assembly.test.ts` (+1). API surface +7. **Still
+  open, honestly (SP-7c):** no supplier MASTER (onboarding record, KYC documents, risk / blocked status, verified bank state)
+  and no Suppliers screen; a debit note carries a deterministic reference, not a statutory document number; the supplier's
+  portal statement (M24) does not read this account; two invoices against one order are each matched against the whole
+  receipt (no cumulative invoiced-to-date check); payments to suppliers are not recorded against the account; input GST on
+  purchase invoices is not captured (M23-FR-02); the payables reconciliation is not yet fed to the period-close control
+  totals (M23-FR-04); no screen shows the account or the journals (SP-9); no physical device or UAT.
+- **Current-work pointer:** last verified = SP-7b (this PR); next = **SP-7c** [W07 close-out] (the supplier master —
+  onboarding record, KYC documents, risk / blocked status, verified bank state (M06-FR-01) — and the Suppliers screen
+  served by the box showing each account; debit-note numbering through the documents series; the portal statement reading
+  the account; a cumulative invoiced-to-date check per order; payment recording against the account); then SP-8/8b (F08),
+  SP-9/9b; **SP-3c** (picker + driver) after the core-store chain; genuine blockers: none; external gates unchanged
+  (providers, hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 

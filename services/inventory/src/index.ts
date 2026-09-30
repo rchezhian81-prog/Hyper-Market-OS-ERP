@@ -48,7 +48,9 @@ const isStockoutRow = (v: unknown, currency: string): v is StockoutInput =>
 
 export type MovementKind =
   | 'received' | 'sold' | 'returned' | 'transferred_in' | 'transferred_out'
-  | 'adjusted' | 'wasted' | 'counted';
+  | 'adjusted' | 'wasted' | 'counted'
+  /** SP-7b: a rejected over-delivery the handheld's scans had put on-hand goes back to the supplier (goods-receipt.ts). */
+  | 'returned_to_supplier';
 
 /**
  * Who owns a lot of stock on the store's shelves (M27-FR-02, M08 ownership field). Absent on a
@@ -61,7 +63,7 @@ export type StockOwnership = 'own' | 'concession' | 'consignment' | 'customer_pr
 /** What each kind does to on-hand. Declared, never inferred from a sign on the quantity. */
 export const EFFECT_ON_HAND: Readonly<Record<MovementKind, 1 | -1>> = {
   received: 1, returned: 1, transferred_in: 1, counted: 1, adjusted: 1,
-  sold: -1, transferred_out: -1, wasted: -1,
+  sold: -1, transferred_out: -1, wasted: -1, returned_to_supplier: -1,
 };
 
 export interface Movement {

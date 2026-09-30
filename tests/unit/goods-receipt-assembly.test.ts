@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { captureReceipt } from '../../packages/receiving/src/index';
 import { linesFromScans, postureOf } from '../../services/inventory/src/goods-receipt-assembled';
-import { decideReceiptExcess, decideLineDisposition, type GoodsReceiptDeps, type GrnRecord, type ReceiptFlag } from '../../services/inventory/src/goods-receipt';
+import { decideReceiptExcess, decideLineDisposition, returnRejectedExcess, type GoodsReceiptDeps, type GrnRecord, type ReceiptFlag } from '../../services/inventory/src/goods-receipt';
 import type { ReceivingScanRecord } from '../../services/inventory/src/warehouse-synced';
 import type { Movement } from '../../services/inventory/src/index';
 
@@ -106,6 +106,7 @@ function depsOver(record: GrnRecord) {
     commit: () => {}, purchaseOrder: () => undefined, productRule: () => undefined, receiptPolicy: () => undefined, recordReceiptPolicy: () => {},
     commitExcessDecision: (_t, rec, movements, _k, poReceipt) => { current = rec; appended.push({ kind: 'excess', movements: [...movements], poReceipt }); },
     commitDisposition: (_t, rec, movements) => { current = rec; appended.push({ kind: 'disposition', movements: [...movements], poReceipt: undefined }); },
+    commitExcessReturn: (_t, rec, movements) => { current = rec; appended.push({ kind: 'excess-return', movements: [...movements], poReceipt: undefined }); },
   };
   return { deps, appended, current: () => current };
 }
@@ -127,6 +128,37 @@ describe('the two decisions on an ASSEMBLED receipt release only what the scans 
     expect(appended).toEqual([{ kind: 'excess', movements: [], poReceipt: undefined }]);
     expect(current()).toMatchObject({ availableMinor: 10, excessDecision: { decision: 'rejected', releasedMinor: 0, movementIds: [] } });
     expect(current().governanceFlags).toEqual(['excess_already_on_hand', 'excess_on_hand_pending_return']);
+  });
+
+  it('SP-7b: a REJECTED excess goes back to the supplier — on an assembled receipt the on-hand units come off as one returned_to_supplier movement per held line, once; undecided or approved is refused; an ordinary receipt moves nothing', async () => {
+    const { deps, appended, current } = depsOver(assembled());
+    // Nothing decided yet → the supplier's goods are not ours to send back.
+    const early = await returnRejectedExcess(deps, { tenantId: 't', grnId: 'g', returnedBy: 'u-worker', reason: 'sent back', branchId: null });
+    expect(early).toMatchObject({ ok: false, refusedBecause: 'excess_not_rejected' });
+    await decideReceiptExcess(deps, { tenantId: 't', grnId: 'g', decidedBy: 'u-boss', decision: 'rejected', reason: 'not ordered, going back', branchId: null, via: 'direct' });
+    const out = await returnRejectedExcess(deps, { tenantId: 't', grnId: 'g', returnedBy: 'u-worker', reason: 'collected by the supplier van', branchId: null });
+    expect(out).toMatchObject({ ok: true, alreadyReturned: false });
+    expect(appended.at(-1)!.kind).toBe('excess-return');
+    expect(appended.at(-1)!.movements.map((m) => [m.movementId, m.kind, m.quantityMinor, m.reason])).toEqual([['g:g:1:returned', 'returned_to_supplier', 2, 'collected by the supplier van']]);
+    expect(current().excessReturn).toMatchObject({ returnedBy: 'u-worker', quantityMinor: 2, valueMinor: 200, movementIds: ['g:g:1:returned'] });
+    expect(current().governanceFlags).toEqual(['excess_already_on_hand', 'excess_returned_to_supplier']);
+    // Once: the same return again appends nothing.
+    const again = await returnRejectedExcess(deps, { tenantId: 't', grnId: 'g', returnedBy: 'u-worker', reason: 'again', branchId: null });
+    expect(again).toMatchObject({ ok: true, alreadyReturned: true });
+    expect(appended.filter((a) => a.kind === 'excess-return')).toHaveLength(1);
+    // An APPROVED excess is not returnable; a receipt captured the ordinary way (held never on-hand) records the return with no movement.
+    const approved = depsOver(assembled());
+    await decideReceiptExcess(approved.deps, { tenantId: 't', grnId: 'g', decidedBy: 'u-boss', decision: 'approved', reason: 'keep it', branchId: null, via: 'direct' });
+    expect(await returnRejectedExcess(approved.deps, { tenantId: 't', grnId: 'g', returnedBy: 'u-worker', reason: 'x', branchId: null })).toMatchObject({ ok: false, refusedBecause: 'excess_not_rejected' });
+    const { assembledFrom, ...ordinary } = assembled();
+    void assembledFrom;
+    const plain = depsOver({ ...ordinary, governanceFlags: [] });
+    await decideReceiptExcess(plain.deps, { tenantId: 't', grnId: 'g', decidedBy: 'u-boss', decision: 'rejected', reason: 'no', branchId: null, via: 'direct' });
+    const plainOut = await returnRejectedExcess(plain.deps, { tenantId: 't', grnId: 'g', returnedBy: 'u-worker', reason: 'van', branchId: null });
+    expect(plainOut).toMatchObject({ ok: true, alreadyReturned: false });
+    expect(plain.appended.at(-1)!.movements).toEqual([]);
+    expect(plain.current().excessReturn).toMatchObject({ quantityMinor: 2, valueMinor: 200, movementIds: [] });
+    expect(plain.current().governanceFlags).toEqual(['excess_returned_to_supplier']);
   });
 
   it('a receipt captured the ordinary way still releases its approved excess as a movement (the SP-4 behaviour is untouched)', async () => {

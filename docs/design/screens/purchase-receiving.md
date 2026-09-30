@@ -67,3 +67,20 @@ matched payable does not reach a supplier account, statement or journal (SP-7b);
 built; the box-served buyer page with its relay is not yet browser-verified (SP-9); physical-device verification and UAT
 PENDING.
 
+## Measured (SP-7b — what the supplier is owed is read, not typed; the rejected excess goes back, owner's Option 2 directive of 30 September 2026)
+No screen changed shape in this slice; what changed is that the delivery, the invoice and the order now add up to ONE figure
+per supplier that head office can read and the accountant can post. **What a supplier is owed** is a projection over the
+records the earlier slices made durable — the invoice as the paper said it, its latest three-way match, the order and the
+receipts folded into it: an invoice nobody has matched is owed nothing and shown wholly withheld; a matched one owes the
+lowest of the three with the rest in dispute; a second person's RETURN or CLAIM of quarantined stock raises a debit note for
+exactly the quantity that was received and paid for, at the delivered cost; refused (expired) stock is listed as never owed,
+because the match already held it back and a debit note would count the same shortfall twice; a rejected over-delivery is a
+return pending until the goods have gone back, recorded once on `POST /v1/inventory/goods-receipt/:grnId/excess/returned`
+— which takes the units off the shelf position only where the handheld's scans had put them there. **The match tolerances
+are the owner's** (`POST`/`GET /v1/purchase/match-policy`), applied to every invoice and named on every verdict; the buyer's
+screen never sends one. Proven through the real API (`tests/integration/supplier-account.test.ts`,
+`tests/integration/goods-receipt-assembled.test.ts`) and in the pure folds (`tests/unit/supplier-account-fold.test.ts`,
+`tests/unit/goods-receipt-assembly.test.ts`). **Still recorded, not dropped:** the supplier workbench (§ above — master
+record, KYC documents, risk status, verified bank state) and a Suppliers screen showing the account are SP-7c; a debit note
+has no statutory number yet; the review screen does not offer the disposition, the excess decision or the return (SP-9);
+physical-device verification and UAT PENDING.

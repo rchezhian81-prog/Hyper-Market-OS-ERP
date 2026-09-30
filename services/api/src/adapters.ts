@@ -169,7 +169,9 @@ import { splitStoreValuation, type OwnedStockValue, tagsAsConcessionSales, lates
 import type { GoodsReceiptDeps, GrnRecord, StoredReceiptPolicy, PoReceiptPosting } from '../../inventory/src/goods-receipt';
 import { weightedAverageValuation, type ValuationMovement } from '../../../packages/stock/src/valuation';
 import { agedStockLots, type DatedMovement } from '../../../packages/stock/src/ageing-source';
-import type { BankChangeRequest, PurchaseDeps, SupplierInvoiceRecord, StoredMatch } from '../../purchase/src/index';
+import type { BankChangeRequest, PurchaseDeps, SupplierInvoiceRecord, StoredMatch, StoredMatchPolicy } from '../../purchase/src/index';
+import { foldAllSupplierAccounts, type SupplierAccountDeps } from '../../purchase/src/supplier-account';
+import type { PayablesDeps, PayablesJournal, PayablesExceptionRecord } from '../../finance/src/payables';
 import type { PurchaseOrderDeps, StoredPurchaseOrder } from '../../purchase/src/purchase-orders';
 import type { SupplierScorecardDeps } from '../../purchase/src/supplier-scorecard';
 import type { RebateDeps } from '../../purchase/src/rebates';
@@ -1172,6 +1174,8 @@ const forStorefrontRefusals = streamName(STREAM.orders, 'access-refusals');
 const forExceptionOwnership = streamName(STREAM.orders, 'substitution-exception-ownership');
 /** SP-7a: every captured supplier invoice, on one register — the record the match, the payable and the statement read. */
 const SUPPLIER_INVOICES_STREAM = streamName(STREAM.purchase, 'invoices');
+// SP-7b: the tenant's three-way-match tolerances — the owner's, latest wins, every version on the ledger.
+const MATCH_POLICY_STREAM = streamName(STREAM.purchase, 'match-policy');
 /** Each supplier partner's portal config and submissions fold one stream — one partner, not the shop. */
 const forPortalPartner = (partnerId: string): string => streamName(STREAM.purchase, 'partner', partnerId);
 // Partner-action audit is TENANT-WIDE (one stream, every partner) so `findProbing` can see a supplier
@@ -5168,7 +5172,7 @@ export function goodsReceiptAdapter(input: {
   const fold = async (tenantId: string): Promise<readonly GrnRecord[]> => {
     const byId = new Map<string, GrnRecord>();
     for (const e of await input.store.readStream(tenantId, grnStream)) {
-      if (e.event.type === 'GoodsReceived' || e.event.type === 'GoodsReceiptExcessDecided' || e.event.type === 'GoodsReceiptLineDisposed') {
+      if (e.event.type === 'GoodsReceived' || e.event.type === 'GoodsReceiptExcessDecided' || e.event.type === 'GoodsReceiptLineDisposed' || e.event.type === 'GoodsReceiptExcessReturned') {
         const g = payloadOf<GrnRecord>(e);
         byId.set(g.grnId, g);
       }
@@ -5230,6 +5234,23 @@ export function goodsReceiptAdapter(input: {
             type: 'GoodsReceiptLineDisposed',
             occurredAt: input.now(),
             idempotencyKey: `grn-disposition-${tenantId}-${key}`,
+            source: 'api/inventory',
+            payload: record,
+          }),
+        },
+        ...movements.map((m) => movementEvent(tenantId, m)),
+      ]);
+    },
+    // SP-7b: the physical return of a rejected excess and the movements that take it off on-hand — one append, once per receipt.
+    commitExcessReturn: async (tenantId, record, movements, key) => {
+      await input.store.appendBatch(tenantId, [
+        {
+          stream: grnStream,
+          event: makeEvent({
+            id: `grn-excess-return-${key}`,
+            type: 'GoodsReceiptExcessReturned',
+            occurredAt: record.excessReturn?.returnedAt ?? input.now(),
+            idempotencyKey: `grn-excess-return-${tenantId}-${record.grnId}`,
             source: 'api/inventory',
             payload: record,
           }),
@@ -6109,15 +6130,28 @@ export function purchaseAdapter(input: {
       return all.filter((m) => m.invoiceId === invoiceId).at(-1);
     },
 
+    // SP-7b: the tenant's match tolerances — set by the owner, applied by /match, said on every verdict. Latest wins.
+    matchPolicy: (tenantId) => latest<StoredMatchPolicy>(input.store, tenantId, MATCH_POLICY_STREAM, 'MatchPolicySet'),
+    recordMatchPolicy: async (tenantId, policy) => {
+      await input.store.append(tenantId, MATCH_POLICY_STREAM, makeEvent({
+        id: `match-policy-${tenantId}-${policy.setAt}`,
+        type: 'MatchPolicySet',
+        occurredAt: policy.setAt,
+        idempotencyKey: `match-policy-${tenantId}-${policy.setAt}-${policy.setBy}`,
+        source: 'api/purchase',
+        payload: policy,
+      }));
+    },
+
     recordMatch: async (tenantId, invoiceId, r) => {
       await input.store.append(tenantId, STREAM.purchase, makeEvent({
         id: `match-${invoiceId}-${r.matchedAt}`,
         type: 'InvoiceMatched',
         occurredAt: r.matchedAt,
         // Keyed on the *outcome*, not just the invoice. Re-running an unchanged match is the same event and collapses;
-        // a match that now pays a different figure is a different fact and must be recorded, or the ledger would show
-        // the first answer forever.
-        idempotencyKey: `match-${tenantId}-${invoiceId}-${r.payableMinor}-${r.invoicedMinor}-${r.poId ?? ''}`,
+        // a match that now pays a different figure — or that is no longer blocked because the tenant's tolerances changed
+        // (SP-7b) — is a different fact and must be recorded, or the ledger would show the first answer forever.
+        idempotencyKey: `match-${tenantId}-${invoiceId}-${r.payableMinor}-${r.invoicedMinor}-${r.poId ?? ''}-${r.blocked ? 'blocked' : 'clear'}`,
         source: 'api/purchase',
         payload: r,
       }));
@@ -6200,6 +6234,66 @@ export function b2bPortalAdapter(input: {
       }));
     },
     accessRefusals: async (tenantId) => allOf<B2BPortalRefusal>(input.store, tenantId, forB2BPortalRefusals, 'B2BPortalAccessRefused'),
+  };
+}
+
+/**
+ * SP-7b — the supplier ACCOUNT's registers: the invoices (SP-7a), the latest match per invoice, the purchase orders (which
+ * supplier a receipt belongs to) and the goods receipts with their dispositions and excess decisions (SP-6 / SP-6b). The
+ * account itself is a projection the purchase service folds from these on every read — nothing is stored twice.
+ */
+export function supplierAccountAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): SupplierAccountDeps {
+  const receipts = goodsReceiptAdapter(input).all;
+  return {
+    now: input.now,
+    invoices: (tenantId) => allOf<SupplierInvoiceRecord>(input.store, tenantId, SUPPLIER_INVOICES_STREAM, 'SupplierInvoiceCaptured'),
+    latestMatches: async (tenantId) => {
+      const byInvoice = new Map<string, StoredMatch>();
+      for (const m of await allOf<StoredMatch>(input.store, tenantId, STREAM.purchase, 'InvoiceMatched')) byInvoice.set(m.invoiceId, m);
+      return byInvoice;
+    },
+    purchaseOrders: async (tenantId) => [...(await foldPurchaseOrders(input.store, tenantId)).values()],
+    receipts,
+  };
+}
+
+/**
+ * SP-7b (M23-FR-01) — payables: the supplier accounts (projected from the purchase registers above) post through the
+ * accountant's mapping via the same `appendJournal` every other voucher uses, so the period fold, the posters list and
+ * the close gate see them as journals like any other. Exceptions are append-only finance-stream facts (hard rule #6).
+ */
+export function payablesAdapter(input: { readonly store: EventStore; readonly now: () => string }): PayablesDeps {
+  const fin = financeAdapter(input);
+  const registers = supplierAccountAdapter(input);
+  return {
+    periodStates: fin.periodStates,
+    nextOpenPeriod: fin.nextOpenPeriod,
+    appendJournal: fin.appendJournal,
+    now: input.now,
+    postingMap: (tenantId) => latest<StoredPostingMap>(input.store, tenantId, STREAM.finance, 'PostingMapDefined'),
+    supplierAccounts: async (tenantId) => {
+      const [invoices, matches, orders, receipts] = await Promise.all([
+        registers.invoices(tenantId), registers.latestMatches(tenantId), registers.purchaseOrders(tenantId), registers.receipts(tenantId),
+      ]);
+      return foldAllSupplierAccounts({ invoices, matchOf: (id) => matches.get(id), orders, receipts, asAt: input.now() }).accounts;
+    },
+    payablesJournals: async (tenantId) =>
+      (await allOf<JournalEntry | PayablesJournal>(input.store, tenantId, STREAM.finance, 'JournalPosted'))
+        .filter((j): j is PayablesJournal => 'payables' in j),
+    recordException: async (tenantId, e) => {
+      await input.store.append(tenantId, STREAM.finance, makeEvent({
+        id: `payables-exc-${e.exceptionId}`,
+        type: 'PayablesExceptionRaised',
+        occurredAt: e.raisedAt,
+        idempotencyKey: `payables-exc-${tenantId}-${e.exceptionId}`,
+        source: 'api/finance',
+        payload: e,
+      }));
+    },
+    exceptions: (tenantId) => allOf<PayablesExceptionRecord>(input.store, tenantId, STREAM.finance, 'PayablesExceptionRaised'),
   };
 }
 

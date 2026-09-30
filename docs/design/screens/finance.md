@@ -37,3 +37,19 @@ Control-total validation. All handle the §27.1 states.
 - A posted balance cannot be overwritten — only a compensating entry is possible.
 - Period close is blocked with a named list when totals do not tie.
 - Tally control totals match on both sides; no screen or export reveals a card number.
+
+## Measured (SP-7b — the supplier account posts through the mapping and reconciles, owner's Option 2 directive of 30 September 2026)
+No finance screen changed shape in this slice; the AP/AR row above gained its first real payable. The supplier account the
+purchase side projects (`docs/design/screens/purchase-receiving.md`, SP-7b) is posted by the accountant on
+`POST /v1/finance/payables/post` through the same ledger mapping the day book uses — a matched invoice credits the supplier
+and debits the goods-received-not-invoiced clearing, a re-match that owes less REVERSES by its own journal (never an edit of
+the first, hard rule #2), a debit note is the mirror image, posted once — and every voucher is a journal like any other, so the
+period fold and the close gate see it. A kind the mapping does not name is a VISIBLE exception until the accountant names
+it; a re-run posts nothing twice. `GET /v1/finance/payables` shows the journals, the exceptions with their state, and the
+**reconciliation**: per supplier, what the purchase register says is owed against what the ledger holds on the control
+account the mapping names — two figures reached two different ways (QG-07), the difference always visible (P-08) and the
+unposted listed, never a silent tie-out. Proven through the real API (`tests/integration/supplier-account.test.ts`) and
+in the pure engine (`tests/unit/finance-payables.test.ts`). **Still recorded, not dropped:** input GST on purchase invoices
+is not captured; supplier payments are not recorded against the account (bank reconciliation is externally gated); the
+payables reconciliation is not yet one of the period-close control totals; no screen shows the account or the journals
+(SP-9); a CA has not reviewed the suggested payables rules (AVR-09).

@@ -191,6 +191,19 @@ describe('the handheld\'s scans become ONE goods receipt against the order — n
     expect((await post(h, '/v1/inventory/goods-receipt/grn-3/excess/decide', 'u-boss', { decision: 'rejected', reason: 'again' }, 'ex-3b')).body).toMatchObject({ alreadyDecided: true });
     expect(codeOf(await post(h, '/v1/inventory/goods-receipt/grn-3/excess/decide', 'u-boss', { decision: 'approved', reason: 'changed my mind' }, 'ex-3c'))).toBe('excess_already_decided');
     expect(await onHandAt(h, 'p-rice')).toBe(24);
+
+    // SP-7b: the rejected two go back to the supplier — ONE returned_to_supplier movement takes them off the shelf position the
+    // scans put them on, once; the approved delivery's excess is not returnable; the same return again appends nothing.
+    expect(codeOf(await post(h, '/v1/inventory/goods-receipt/grn-2/excess/returned', 'u-worker', { reason: 'van' }, 'ret-2'))).toBe('excess_not_rejected');
+    const returned = await post(h, '/v1/inventory/goods-receipt/grn-3/excess/returned', 'u-worker', { reason: 'collected by the supplier van' }, 'ret-3');
+    expect(returned.status).toBe(200);
+    expect(returned.body).toMatchObject({ grnId: 'grn-3', quantityMinor: 2, valueMinor: 200, movementIds: ['grn-3:grn-3:1:returned'], returnedBy: 'u-worker', alreadyReturned: false, flags: ['excess_already_on_hand', 'excess_returned_to_supplier'] });
+    expect(await onHandAt(h, 'p-rice')).toBe(22);
+    expect((await movementIds(h)).filter((id) => id.endsWith(':returned'))).toEqual(['grn-3:grn-3:1:returned']);
+    expect((await post(h, '/v1/inventory/goods-receipt/grn-3/excess/returned', 'u-worker', { reason: 'again' }, 'ret-3b')).body).toMatchObject({ alreadyReturned: true, quantityMinor: 2 });
+    expect(await onHandAt(h, 'p-rice')).toBe(22);
+    expect((await readGrn(h, 'grn-3')).grn).toMatchObject({ excessReturn: { quantityMinor: 2, valueMinor: 200, movementIds: ['grn-3:grn-3:1:returned'] } });
+    expect(codeOf(await post(h, '/v1/inventory/goods-receipt/grn-3/excess/returned', 'u-box', { reason: 'x' }, 'ret-3c'))).toBe('forbidden');
   });
 
   it('refusals by name, nothing changed: no scans; a malformed completion; a batch-tracked item scanned without its batch; a caller without the right; an unknown completer is recorded and flagged', async () => {

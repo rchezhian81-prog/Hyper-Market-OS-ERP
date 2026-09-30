@@ -60,6 +60,8 @@ export const RECEIPT_FLAGS = Object.freeze([
   // the held excess is already on the shelf position; a rejected excess waits for the supplier return (SP-7) to leave it; a
   // line whose checked outcome differs from what the scans posted; an expired scan whose date the handheld did not capture.
   'excess_already_on_hand', 'excess_on_hand_pending_return', 'scan_posting_disagrees', 'expiry_date_assumed',
+  // SP-7b — a rejected excess has physically gone back to the supplier (`…/excess/returned`).
+  'excess_returned_to_supplier',
 ] as const);
 export type ReceiptFlag = (typeof RECEIPT_FLAGS)[number];
 
@@ -82,6 +84,24 @@ export interface ExcessDecision {
   readonly via: 'direct' | 'relayed';
 }
 
+/**
+ * SP-7b — the physical RETURN of a rejected over-delivery to the supplier, recorded once per receipt. On a receipt assembled
+ * from the handheld's scans the excess was on-hand, so the return takes it off (`returned_to_supplier` movements); on any
+ * other receipt the held units never reached on-hand and the return moves nothing — it is recorded so the supplier's
+ * account stops showing the return as pending.
+ */
+export interface ExcessReturn {
+  readonly returnedBy: string;
+  readonly returnedAt: string;
+  readonly reason: string;
+  readonly quantityMinor: number;
+  /** The held units at the delivered cost — the figure the supplier is told went back. */
+  readonly valueMinor: number;
+  readonly currency: string;
+  readonly movementIds: readonly string[];
+  readonly via: 'direct';
+}
+
 /** A committed goods receipt — the durable GRN record, carrying the checked outcome. */
 export interface GrnRecord {
   readonly grnId: string;
@@ -97,6 +117,8 @@ export interface GrnRecord {
   readonly heldMinor: number;
   /** F03 — set once a second person has decided the held excess; absent while it waits (or when nothing is held). */
   readonly excessDecision?: ExcessDecision;
+  /** SP-7b — set once a REJECTED excess has physically gone back to the supplier; absent while the return is pending. */
+  readonly excessReturn?: ExcessReturn;
   /**
    * SP-6 (F01) — what this receipt FOLDED into its purchase order, atomically with the GRN: the received quantity per
    * product under `receiptId` (the GRN id). `null` when it folded into nothing (no order, an unknown order, an order not
@@ -197,6 +219,8 @@ export interface GoodsReceiptDeps {
    * accepted excess posted against the purchase order in the same append when the receipt folded into one (SP-6).
    */
   readonly commitExcessDecision: (tenantId: string, record: GrnRecord, movements: readonly Movement[], key: string, poReceipt?: PoReceiptPosting) => Promise<void> | void;
+  /** SP-7b — record the physical return of a rejected excess and, where the scans had put it on-hand, the movements that take it off — ONE append. */
+  readonly commitExcessReturn: (tenantId: string, record: GrnRecord, movements: readonly Movement[], key: string) => Promise<void> | void;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 }
 
@@ -423,6 +447,65 @@ export async function decideReceiptExcess(deps: GoodsReceiptDeps, input: {
   return { ok: true, record: decided, alreadyDecided: false };
 }
 
+export type ExcessReturnOutcome =
+  | { readonly ok: true; readonly record: GrnRecord; readonly alreadyReturned: boolean }
+  | { readonly ok: false; readonly refusedBecause: 'receipt_unknown' | 'excess_not_rejected'; readonly detail: string };
+
+/**
+ * SP-7b — a REJECTED over-delivery goes back to the supplier. On a receipt assembled from the handheld's scans (SP-6b) the
+ * excess is on the shelf position, so the return appends one `returned_to_supplier` movement per held line and on-hand
+ * falls by exactly what the scans put there — once; on any other receipt the held units never reached on-hand and nothing
+ * moves. Either way the return is recorded once, valued at the delivered cost, so the supplier's account (SP-7b) stops
+ * showing it as pending. Refused unless a second person REJECTED the excess first: an undecided or approved excess is not
+ * the supplier's to take back.
+ */
+export async function returnRejectedExcess(deps: GoodsReceiptDeps, input: {
+  readonly tenantId: string; readonly grnId: string; readonly returnedBy: string; readonly reason: string; readonly branchId: string | null;
+}): Promise<ExcessReturnOutcome> {
+  const rec = await deps.grn(input.tenantId, input.grnId);
+  if (rec === undefined) return { ok: false, refusedBecause: 'receipt_unknown', detail: `No goods receipt ${input.grnId} is on file here.` };
+  if (rec.excessDecision?.decision !== 'rejected' || rec.heldMinor <= 0) {
+    return {
+      ok: false, refusedBecause: 'excess_not_rejected',
+      detail: rec.excessDecision === undefined
+        ? `The excess on ${input.grnId} has not been decided — a second person must reject it before it can go back to the supplier.`
+        : `The excess on ${input.grnId} was ${rec.excessDecision.decision}; only a rejected excess goes back to the supplier.`,
+    };
+  }
+  if (rec.excessReturn !== undefined) return { ok: true, record: rec, alreadyReturned: true };
+  const returnedAt = deps.now();
+  const held = rec.captured.lines.filter((l) => l.heldMinor > 0);
+  const onHand = rec.assembledFrom !== undefined;
+  const movements: Movement[] = onHand
+    ? held.map((l) => ({
+      movementId: `${rec.grnId}:${l.lineId}:returned`,
+      productId: l.productId, locationId: rec.warehouseId, kind: 'returned_to_supplier' as const,
+      quantityMinor: l.heldMinor, uom: l.uom, occurredAt: returnedAt, enteredBy: input.returnedBy, reason: input.reason,
+      ...(l.batchId !== null ? { batchId: l.batchId } : {}),
+    }))
+    : [];
+  const excessReturn: ExcessReturn = {
+    returnedBy: input.returnedBy, returnedAt, reason: input.reason,
+    quantityMinor: held.reduce((s, l) => s + l.heldMinor, 0),
+    valueMinor: held.reduce((s, l) => s + l.heldMinor * l.unitCost.minor, 0),
+    currency: held[0]?.unitCost.currency ?? 'INR',
+    movementIds: movements.map((m) => m.movementId), via: 'direct',
+  };
+  const returned: GrnRecord = {
+    ...rec, excessReturn,
+    governanceFlags: [...(rec.governanceFlags ?? []).filter((f) => f !== 'excess_on_hand_pending_return' && f !== 'excess_returned_to_supplier'), 'excess_returned_to_supplier'],
+  };
+  await deps.commitExcessReturn(input.tenantId, returned, movements, `${rec.grnId}:excess-return`);
+  await deps.recordAudit?.(input.tenantId, {
+    actorId: input.returnedBy, action: 'receipt.excess.return', objectType: 'goods_receipt', objectId: rec.grnId,
+    at: returnedAt, origin: { tenantId: input.tenantId, branchId: input.branchId },
+    before: { heldMinor: String(rec.heldMinor), decision: rec.excessDecision.decision, onHand: String(onHand) },
+    after: { quantityMinor: String(excessReturn.quantityMinor), valueMinor: String(excessReturn.valueMinor), movementIds: excessReturn.movementIds.join(',') },
+    reason: input.reason, correlationId: rec.grnId,
+  });
+  return { ok: true, record: returned, alreadyReturned: false };
+}
+
 export type LineDispositionOutcome =
   | { readonly ok: true; readonly record: GrnRecord; readonly disposition: LineDisposition; readonly alreadyDecided: boolean }
   | { readonly ok: false; readonly refusedBecause: 'receipt_unknown' | 'line_unknown' | 'nothing_to_dispose' | 'self_approval' | 'line_already_disposed' | 'cannot_accept_refused_stock'; readonly detail: string };
@@ -617,6 +700,41 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
             grnId, decision: d?.decision, releasedMinor: d?.releasedMinor ?? 0, movementIds: d?.movementIds ?? [],
             decidedBy: d?.decidedBy, decidedAt: d?.decidedAt, availableMinor: out.record.availableMinor, heldMinor: out.record.heldMinor,
             alreadyDecided: out.alreadyDecided,
+          },
+        };
+      },
+    },
+    {
+      // SP-7b: a REJECTED excess has physically gone back to the supplier. Body: { reason }. On an assembled receipt the
+      // on-hand units come off, once; otherwise nothing moves and the return is recorded. Idempotent per receipt.
+      api: 'API-04', method: 'POST', path: '/v1/inventory/goods-receipt/:grnId/excess/returned',
+      permission: 'inventory.movement.append', idempotent: true,
+      handler: async (ctx) => {
+        const grnId = (ctx.params['grnId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (grnId === '' || !isStr(b['reason'])) {
+          throw apiError(400, {
+            code: 'not_readable_as_an_excess_return',
+            whatHappened: 'Recording a supplier return of a rejected excess needs the grnId in the path and a reason.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { reason }. Nothing was changed.',
+          });
+        }
+        const out = await returnRejectedExcess(deps, { tenantId: ctx.tenantId, grnId, returnedBy: ctx.userId, reason: b['reason'].trim(), branchId: ctx.branchId ?? null });
+        if (!out.ok) {
+          throw apiError(out.refusedBecause === 'receipt_unknown' ? 404 : 409, {
+            code: out.refusedBecause, whatHappened: out.detail, wasItSaved: 'not_saved',
+            nextSafeAction: out.refusedBecause === 'receipt_unknown'
+              ? 'Check the store has synchronised — the receipt may still be on the store computer.'
+              : 'Have a second person decide the excess first (reject it), then record the return. Nothing was changed.',
+          });
+        }
+        const r = out.record.excessReturn;
+        return {
+          status: 200,
+          body: {
+            grnId, quantityMinor: r?.quantityMinor ?? 0, valueMinor: r?.valueMinor ?? 0, movementIds: r?.movementIds ?? [],
+            returnedBy: r?.returnedBy, returnedAt: r?.returnedAt, flags: out.record.governanceFlags ?? [], alreadyReturned: out.alreadyReturned,
           },
         };
       },

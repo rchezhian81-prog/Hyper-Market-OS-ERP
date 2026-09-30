@@ -15,6 +15,7 @@
 
 export * from './posting';
 export * from './day-book';
+export * from './payables';
 export * from './credit-notes';
 export * from './inclusive-tax';
 export * from './discount';
