@@ -678,9 +678,9 @@
     {
       "type": "library",
       "name": "brace-expansion",
-      "version": "1.1.18",
+      "version": "1.1.21",
       "scope": "optional",
-      "purl": "pkg:npm/brace-expansion@1.1.18"
+      "purl": "pkg:npm/brace-expansion@1.1.21"
     },
     {
       "type": "library",

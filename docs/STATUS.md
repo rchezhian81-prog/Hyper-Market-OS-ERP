@@ -1208,6 +1208,10 @@ accounts.
   warehouse event · S2 verification and the ledger; physical-device verification PENDING. Also recorded: the cloud
   produces no `warehouse.pickLines` today (the pack section is file-loaded on the box), so pick work reaches a handheld
   only by pack file until a warehouse feed exists — a W-series follow-on to raise with the owner, not invented here.
+  **Dependency scan (same PR):** CI's `pnpm audit --audit-level=high` flagged four new `brace-expansion` advisories
+  (GHSA-qhr7-859c-m2p7, GHSA-6j4f-fj2g-mc7p — a development-only transitive dependency of eslint / typescript-eslint via
+  minimatch; nothing shipped to a till or a box). Pinned to the patched lines with two scoped `pnpm.overrides`
+  (`<1.1.20 → ^1.1.20`, `>=4.0.0 <5.0.11 → ^5.0.11`), lockfile and `docs/evidence/sbom.json` regenerated, lint green.
 - **Next — Stage G slice 2 onward (UI/UX finish across the 8 apps, consistent · modern · bilingual EN/TA):** built to the Stage 3
   design system (`docs/design/design-system.md`, §27/§27.1, QG-02, NFR-07/08, P-07) and the screen specs in
   `docs/design/screens/`, in slices: G1 one shared visual foundation — DONE above; G2 the till and manager screens to the spec's
