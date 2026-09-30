@@ -150,7 +150,7 @@ import type { DisplayContract, AssortmentEntry } from '../../../packages/merchan
 import type { DelegationDeps } from '../../identity/src/delegation';
 import type { ApprovalDecisionDeps, ApprovalDecisionRecord } from '../../identity/src/approval-decisions';
 import type { SyncedGoodsReceiptDeps } from '../../inventory/src/goods-receipt-synced';
-import type { FloorIndentsDeps } from '../../inventory/src/floor-indents';
+import type { SyncedFloorIndentsDeps } from '../../inventory/src/floor-indents-synced';
 import type { FloorIndent } from '../../../packages/warehouse/src/indents';
 import type { AssembledGoodsReceiptDeps } from '../../inventory/src/goods-receipt-assembled';
 import type { SyncedWarehouseDeps, ReceivingScanDeps, ReceivingScanRecord } from '../../inventory/src/warehouse-synced';
@@ -4645,7 +4645,7 @@ export function transfersAdapter(input: {
 export function floorIndentsAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
-}): FloorIndentsDeps {
+}): Omit<SyncedFloorIndentsDeps, 'recordAudit'> {
   const indentsStream = streamName(STREAM.warehouse, 'indents');
   const transfers = transfersAdapter(input);
   const inv = inventoryAdapter(input);
@@ -4676,6 +4676,8 @@ export function floorIndentsAdapter(input: {
     indent: async (tenantId, indentId) => (await foldIndents(tenantId)).get(indentId),
     indents: async (tenantId) => [...(await foldIndents(tenantId)).values()],
     transferOf: async (tenantId, transferId) => (await foldTransferAggregates(input.store, tenantId)).find((t) => t.transferId === transferId),
+    // SP-8b: the requester / receiver a relayed step names, re-verified from THEIR grants (record-and-flag).
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
     knownLocation: transfers.knownLocation,
     availableAt: transfers.availableAt,
     unitCostAt: transfers.unitCostAt,

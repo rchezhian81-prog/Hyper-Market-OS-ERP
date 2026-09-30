@@ -266,6 +266,7 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
   integrationHealthPolicy: known({ userId: 'u-admin', permissions: ['platform.health.read'] }),
   goodsReceiptPolicy: known({ userId: 'u-manager', permissions: ['inventory.availability.read'] }),
   suppliersPolicy: known({ userId: 'u-acct', permissions: ['supplier.view', 'purchase.supplier.approve'] }),
+  indentsPolicy: known({ userId: 'u-floor', permissions: ['inventory.indent.read', 'inventory.indent.request', 'inventory.movement.append'] }),
   dataIoPolicy: known({ userId: 'u-owner', permissions: ['export.read', 'purchase.import.read', 'purchase.import.record'], importTemplates: [{ id: 'products-basic', domain: 'products', label: 'Products', financial: false, columns: [{ name: 'sku', type: 'text' }, { name: 'name', type: 'text' }], keyColumns: ['sku'] }] }),
   workforceInboxPolicy: known({ userId: 'u-owner', permissions: ['ai.proposal.read'] }),
   // Employee self-service (M25). Who is looking + whether they hold `payroll.ess.self`; rota + payslip come live.
@@ -854,7 +855,7 @@ describe('a box that has been told nothing tells every screen so', () => {
       wasteWriteOffs: notKnown('never'), wastePolicy: notKnown('never'), writeOffCapturePolicy: notKnown('never'),
       countsQueue: notKnown('never'), countsPolicy: notKnown('never'), fleetPolicy: notKnown('never'),
       productPublishReviewPolicy: notKnown('never'),
-      dataQualityPolicy: notKnown('never'), operationsInboxPolicy: notKnown('never'), lossPreventionPolicy: notKnown('never'), substitutionExceptionPolicy: notKnown('never'), dayBookPolicy: notKnown('never'), documentTemplatePolicy: notKnown('never'), returnGovernancePolicy: notKnown('never'), cashOfficePolicy: notKnown('never'), riskAcceptancePolicy: notKnown('never'), dayReopenPolicy: notKnown('never'), stockHealthPolicy: notKnown('never'), storedValuePolicy: notKnown('never'), integrationHealthPolicy: notKnown('never'), goodsReceiptPolicy: notKnown('never'), suppliersPolicy: notKnown('never'), dataIoPolicy: notKnown('never'), workforceInboxPolicy: notKnown('never'), essPolicy: notKnown('never'), rosteringPolicy: notKnown('never'), checklistPolicy: notKnown('never'), productionPolicy: notKnown('never'), facilitiesPolicy: notKnown('never'),
+      dataQualityPolicy: notKnown('never'), operationsInboxPolicy: notKnown('never'), lossPreventionPolicy: notKnown('never'), substitutionExceptionPolicy: notKnown('never'), dayBookPolicy: notKnown('never'), documentTemplatePolicy: notKnown('never'), returnGovernancePolicy: notKnown('never'), cashOfficePolicy: notKnown('never'), riskAcceptancePolicy: notKnown('never'), dayReopenPolicy: notKnown('never'), stockHealthPolicy: notKnown('never'), storedValuePolicy: notKnown('never'), integrationHealthPolicy: notKnown('never'), goodsReceiptPolicy: notKnown('never'), suppliersPolicy: notKnown('never'), indentsPolicy: notKnown('never'), dataIoPolicy: notKnown('never'), workforceInboxPolicy: notKnown('never'), essPolicy: notKnown('never'), rosteringPolicy: notKnown('never'), checklistPolicy: notKnown('never'), productionPolicy: notKnown('never'), facilitiesPolicy: notKnown('never'),
       accounts: notKnown('never'), supportSessions: notKnown('never'),
       devices: notKnown('never'), versionPolicy: notKnown('never'),
       auditRecords: notKnown('never'), retentionPolicies: notKnown('never'),

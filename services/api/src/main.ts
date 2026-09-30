@@ -106,6 +106,7 @@ import { warehouseRoutes } from '../../inventory/src/warehouse';
 import { syncedWarehouseRoutes, receivingScanRoutes } from '../../inventory/src/warehouse-synced';
 import { transfersRoutes } from '../../inventory/src/warehouse-transfers';
 import { floorIndentRoutes } from '../../inventory/src/floor-indents';
+import { syncedFloorIndentRoutes } from '../../inventory/src/floor-indents-synced';
 import { replenishmentRoutes } from '../../inventory/src/replenishment';
 import { salesHistoryRoutes } from '../../inventory/src/sales-history';
 import { countsRoutes, decideCount } from '../../inventory/src/counts';
@@ -327,6 +328,12 @@ export function buildSurface(deps: {
   // credential lifecycle) seal into it; the stored read routes search / reconstruct / verify it. No
   // store → no durable trail, so a producer simply records nothing (its recordAudit is left unset).
   const auditTrail = store === undefined ? undefined : auditTrailAdapter({ store });
+  // SP-8 / SP-8b: one deps object for the floor indent chain — the direct routes and the relayed routes act on the same
+  // records through the same engine.
+  const floorIndentDeps = store === undefined ? {
+    indent: empty(undefined), indents: empty([]), transferOf: empty(undefined), knownLocation: empty(true), onHandAt: empty([]), availableAt: empty([]), unitCostAt: empty(undefined),
+    recordIndent: () => {}, recordIssued: () => {}, recordReceipt: () => {}, recordReturnAccepted: () => {}, permissionsOfUser: empty(undefined), now,
+  } : { ...floorIndentsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit };
   // SP-4: one deps object per count / adjustment surface, so the direct routes, the relayed routes and the manager's
   // relayed APPROVAL DECISION all act on the same records through the same decide steps.
   const countsDeps = store === undefined ? {
@@ -586,10 +593,9 @@ export function buildSurface(deps: {
     } : transfersAdapter({ store, now })),
     // The floor indent chain (SP-8 · F08): request → approval → back-store issue (a transfer, dispatched) → in transit →
     // independent floor receipt → shelf availability; cancel and floor→back-store return. Rides the transfer engine.
-    ...floorIndentRoutes(store === undefined ? {
-      indent: empty(undefined), indents: empty([]), transferOf: empty(undefined), knownLocation: empty(true), onHandAt: empty([]), availableAt: empty([]), unitCostAt: empty(undefined),
-      recordIndent: () => {}, recordIssued: () => {}, recordReceipt: () => {}, recordReturnAccepted: () => {}, now,
-    } : { ...floorIndentsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+    ...floorIndentRoutes(floorIndentDeps),
+    // SP-8b: the floor's indent and its independent receipt RELAYED from the served Indents screen through the box.
+    ...syncedFloorIndentRoutes(floorIndentDeps),
     ...replenishmentRoutes(store === undefined ? { now } : { now, soldLines: salesHistoryAdapter({ store, now }).soldLines }),
     ...salesHistoryRoutes(store === undefined ? { soldLines: empty([]), now } : salesHistoryAdapter({ store, now })),
     // Blind counts (M09-FR-04): the direct route and the RELAYED route (SP-2b · F11) share one reconcile — expected, value

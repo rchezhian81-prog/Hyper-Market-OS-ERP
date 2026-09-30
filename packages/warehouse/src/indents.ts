@@ -78,6 +78,17 @@ export interface IndentIssue {
   readonly received?: readonly ReceivedLine[];
   /** Dispatched and not arrived — a VALUED exception the ledger carries; never absorbed here. */
   readonly shortfall?: readonly ShortfallLine[];
+  /** SP-8b: what head office found when a RELAYED receipt named its receiver — a breach is flagged, never silently applied. */
+  readonly governanceFlags?: readonly string[];
+  /** SP-8b: the relay (the store box) that carried the receipt, beside — never instead of — the receiver. */
+  readonly relayed?: RelayedBy;
+}
+
+/** SP-8b: a step that arrived through the store box's device queue — who relayed it, from which surface, for which store. */
+export interface RelayedBy {
+  readonly relayedBy: string;
+  readonly source: string;
+  readonly storeId: string | null;
 }
 
 /** A floor → back-store RETURN of stock the indent brought: asked for by the floor, accepted (dispatched + received in one
@@ -131,6 +142,10 @@ export interface FloorIndent {
   readonly issues: readonly IndentIssue[];
   readonly returns: readonly IndentReturn[];
   readonly flags: readonly IndentFlag[];
+  /** SP-8b: what head office found when a RELAYED request named its requester — flagged, never silently trusted. */
+  readonly governanceFlags?: readonly string[];
+  /** SP-8b: the relay that carried the request, beside the requester. */
+  readonly relayed?: RelayedBy;
 }
 
 export type IndentRefusal =
@@ -371,9 +386,15 @@ export function applyReceipt(indent: FloorIndent, issueId: string, receipt: {
   readonly at: string;
   readonly received: readonly ReceivedLine[];
   readonly shortfall: readonly ShortfallLine[];
+  readonly governanceFlags?: readonly string[];
+  readonly relayed?: RelayedBy;
 }): FloorIndent {
   const issues = indent.issues.map((i) => (i.issueId === issueId
-    ? { ...i, state: 'received' as const, receivedBy: receipt.receivedBy, receivedAt: receipt.at, received: receipt.received, shortfall: receipt.shortfall }
+    ? {
+      ...i, state: 'received' as const, receivedBy: receipt.receivedBy, receivedAt: receipt.at, received: receipt.received, shortfall: receipt.shortfall,
+      ...(receipt.governanceFlags === undefined ? {} : { governanceFlags: receipt.governanceFlags }),
+      ...(receipt.relayed === undefined ? {} : { relayed: receipt.relayed }),
+    }
     : i));
   const next: FloorIndent = { ...indent, issues, flags: receipt.shortfall.length > 0 ? withFlag(indent.flags, 'partial_receipt') : indent.flags };
   const everyIssueReceived = issues.every((i) => i.state === 'received');

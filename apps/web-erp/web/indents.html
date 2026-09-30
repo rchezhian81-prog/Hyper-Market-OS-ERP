@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Floor indents</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      Floor indents — the sales floor's face for the indent chain (SP-8b, F08, WF-06, WF-07, M09-FR-03, M08-FR-02, §28,
+      §31, P-01, P-03, P-08). Every rule lives in the tested session model (apps/web-erp/src/indents-session.ts),
+      attached as window.indentsSession and built on the shared packages/ui primitives. The register is read live from
+      head office (GET /v1/floor/indents?open=true); Refresh re-reads it. RAISE an indent and COUNT IN an issue are
+      written to the DURABLE device queue before the screen says "saved" (the same mechanism as the manager's and the
+      buyer's screens), handed to the store computer and relayed to head office; each is listed under "Saved on this
+      screen" with the five shared state words until head office has it. APPROVE is an online write by a different
+      person; the requester is refused before anything is sent. No prompt/confirm/alert; nothing runs on a timer.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <style>
+      :root { --tap:48px; }
+      body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 var(--font); min-height:100dvh; display:flex; flex-direction:column; }
+      .sample,.stale { margin:0; padding:10px 16px; font-size:15px; font-weight:600; }
+      .sample[hidden],.stale[hidden] { display:none; }
+      main { flex:1; padding:16px; display:grid; gap:16px; align-content:start; max-width:960px; width:100%; }
+      h2 { margin:0 0 4px; font-size:20px; } p.lead { margin:0 0 4px; color:var(--muted); font-size:15px; }
+      h3 { margin:8px 0 0; font-size:16px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+      .bar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; justify-content:space-between; }
+      .asof { color:var(--muted); font-size:14px; } .summary { font-size:15px; font-weight:600; }
+      button.refresh, button.act, button.minor { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--line); color:var(--ink); }
+      button.act { background:var(--accent, var(--line)); }
+      button:focus-visible, .lang:focus-visible, input:focus-visible, select:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+      ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
+      li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); }
+      li.row.tone-ok { border-left-color:var(--ok); } li.row.tone-degraded { border-left-color:var(--degraded); }
+      li.row.tone-error { border-left-color:var(--error); } li.row.tone-idle { border-left-color:var(--idle); }
+      .row .head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+      .row .headline { font-weight:600; } .row .headline .st { color:var(--muted); font-weight:400; font-size:14px; margin-left:6px; }
+      .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
+      .status .icon { font-size:18px; width:1.4em; text-align:center; }
+      .row .facts { font-size:13px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
+      /* Seven figures a line: the table scrolls inside its own strip on a phone so the PAGE never scrolls sideways (WCAG 1.4.10). */
+      .lines-wrap { max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+      table.lines { width:100%; border-collapse:collapse; font-size:13px; font-variant-numeric:tabular-nums; }
+      table.lines th, table.lines td { white-space:nowrap; }
+      table.lines th { text-align:left; color:var(--muted); font-weight:600; padding:2px 6px 2px 0; }
+      table.lines td { padding:2px 6px 2px 0; } table.lines td.n, table.lines th.n { text-align:right; }
+      ul.issues, ul.flags { list-style:none; margin:2px 0 0; padding:0; display:grid; gap:2px; font-size:13px; }
+      ul.flags li::before { content:'•'; color:var(--muted); margin-right:6px; }
+      section.form { background:var(--panel); border-radius:12px; padding:14px; display:grid; gap:10px; }
+      section.form h3 { margin:0; }
+      section.form label { display:block; font-size:13px; color:var(--muted); margin-bottom:4px; }
+      section.form input, section.form select { width:100%; box-sizing:border-box; min-height: var(--tap); padding:0 12px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); font:inherit; }
+      section.form .grid { display:grid; gap:10px; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); }
+      ul.pending { list-style:none; margin:0; padding:0; display:grid; gap:6px; }
+      ul.pending li { display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:14px; }
+      p.note { margin:0; color:var(--muted); font-size:14px; }
+      ul.saved { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+      li.saved { background:var(--panel); border-radius:12px; padding:10px 14px; display:grid; gap:4px; }
+      li.saved .what { font-weight:600; } li.saved .detail { font-size:13px; color:var(--muted); }
+      li.saved .pill { font-size:13px; font-weight:600; } li.saved .why { font-size:13px; color:var(--danger-text, #fecaca); }
+      p.result, p.state { margin:0; padding:12px 16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
+      p.result .icon, p.state .icon { font-size:18px; }
+      p.result.tone-error, p.state.tone-error { color:var(--danger-text, #fecaca); }
+      p.result.tone-ok { color:var(--ink); }
+      [hidden] { display:none !important; }
+    </style>
+  </head>
+  <body>
+    <p class="stale" id="stale" hidden></p>
+    <p class="sample" id="sample" hidden></p>
+
+    <header>
+      <h1 class="who" id="who">Floor indents <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+
+    <main>
+      <div>
+        <h2 id="title">Floor indents</h2>
+        <p class="lead" id="lead"></p>
+      </div>
+
+      <div class="bar">
+        <span class="asof" id="asof" role="status" aria-live="polite"></span>
+        <button class="refresh" id="refresh" type="button"></button>
+      </div>
+
+      <p class="summary" id="summary" role="status" aria-live="polite" hidden></p>
+
+      <h3 id="list-heading" hidden></h3>
+      <ul class="rows" id="rows" aria-label="Floor indents — who needs a person"></ul>
+
+      <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+
+      <section class="form" id="raiser" hidden aria-label="Raise an indent">
+        <h3 id="raise-heading"></h3>
+        <div class="grid">
+          <div>
+            <label for="raise-product" id="raise-product-label"></label>
+            <input id="raise-product" type="text" list="products" autocomplete="off" />
+            <datalist id="products"></datalist>
+          </div>
+          <div>
+            <label for="raise-qty" id="raise-qty-label"></label>
+            <input id="raise-qty" type="text" inputmode="numeric" autocomplete="off" />
+          </div>
+          <div>
+            <label for="raise-uom" id="raise-uom-label"></label>
+            <input id="raise-uom" type="text" autocomplete="off" />
+          </div>
+        </div>
+        <button id="raise-add" class="minor" type="button"></button>
+        <h3 id="raise-lines-heading" hidden></h3>
+        <ul class="pending" id="raise-lines" aria-label="Lines on this indent"></ul>
+        <div>
+          <label for="raise-reason" id="raise-reason-label"></label>
+          <input id="raise-reason" type="text" autocomplete="off" />
+        </div>
+        <button id="raise" class="act" type="button"></button>
+      </section>
+      <p class="note" id="no-request" hidden></p>
+
+      <section class="form" id="approver" hidden aria-label="Approve an indent">
+        <h3 id="approve-heading"></h3>
+        <p class="note" id="approve-none" hidden></p>
+        <div class="grid" id="approve-fields">
+          <div>
+            <label for="approve-indent" id="approve-indent-label"></label>
+            <select id="approve-indent"></select>
+          </div>
+          <div>
+            <label for="approve-reason" id="approve-reason-label"></label>
+            <input id="approve-reason" type="text" autocomplete="off" />
+          </div>
+        </div>
+        <button id="approve" class="act" type="button"></button>
+      </section>
+      <p class="note" id="no-approve" hidden></p>
+
+      <section class="form" id="receiver" hidden aria-label="Count in an issue from the back store">
+        <h3 id="receive-heading"></h3>
+        <p class="note" id="receive-none" hidden></p>
+        <div id="receive-fields">
+          <div>
+            <label for="receive-issue" id="receive-issue-label"></label>
+            <select id="receive-issue"></select>
+          </div>
+          <h3 id="receive-counted-heading"></h3>
+          <ul class="pending" id="receive-lines" aria-label="Counted on the floor"></ul>
+        </div>
+        <button id="receive" class="act" type="button"></button>
+      </section>
+      <p class="note" id="no-receive" hidden></p>
+
+      <h3 id="saved-heading" hidden></h3>
+      <p class="note" id="saved-lead" hidden></p>
+      <ul class="saved" id="saved" aria-label="Saved on this screen"></ul>
+
+      <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
+    </main>
+
+    <!--SCREEN-DATA-->
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./indents.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

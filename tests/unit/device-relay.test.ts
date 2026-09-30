@@ -85,6 +85,8 @@ describe('the contract reads strictly and refuses with a reason', () => {
     expect(isRelayable('ApprovalDecided', 'picker')).toBe(false);
     // SP-2b: the manager's receipts and blind counts ride the same route; a sale never does.
     expect(RELAYABLE_DEVICE_EVENTS['GoodsReceived']?.surfaces).toEqual(['manager']);
+    expect(RELAYABLE_DEVICE_EVENTS['FloorIndentRequested']?.surfaces).toEqual(['manager']);
+    expect(RELAYABLE_DEVICE_EVENTS['FloorIndentReceived']?.surfaces).toEqual(['manager']);
     expect(RELAYABLE_DEVICE_EVENTS['StockCounted']?.surfaces).toEqual(['manager', 'warehouse']);
     expect(RELAYABLE_DEVICE_EVENTS['AdjustmentRequested']?.surfaces).toEqual(['warehouse']);
     expect(isRelayable('GoodsReceived', 'manager')).toBe(true);

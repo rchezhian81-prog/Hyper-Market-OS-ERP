@@ -150,3 +150,20 @@ with real roles (`tests/integration/floor-indents.test.ts`) and in the pure engi
 **Still recorded, not dropped (SP-8b):** the floor screen, the handheld issue against the indent, the manager's
 pending-indents / in-transit register on a screen, the refill task that raises an indent, the shelf-count save that reaches
 the cloud; physical-device verification and UAT PENDING.
+
+## Measured (SP-8b — the floor's screen for its ask, owner's Option 2 directive of 30 September 2026)
+The floor side of the chain now has a screen the store computer serves (`/indents`, Inventory group), for the floor person,
+the manager and the counter alike. It shows the register as head office keeps it — the asks awaiting a person first, then
+what is on the trolley or still owed, closed ones last; seven figures a line (asked · allocated · issued · on the trolley ·
+on the shelf · short · still owed) — and it does three things: RAISE an indent (product from the box's own catalogue, a
+whole-number quantity, an optional reason), COUNT IN an issue that somebody else sent (only what was seen; the issuer is
+never offered their own issue and is refused if they try), and APPROVE somebody else's ask with a reason (the requester is
+never offered their own and is refused before anything is sent). The ask and the count go to the SAME durable device queue
+as the manager's decisions before the screen says "saved", so they survive a reload and a dead store computer, reach head
+office once (a lost reply settles to one record), and are shown with the five shared state words — "posted" only when the
+store computer says so; a refusal comes back with head office's reason. Head office re-checks who asked or counted from
+its own records and flags a breach rather than trusting the relay. Measured in real Chromium on the REAL box
+(`tests/e2e/indents-delivery.e2e.ts`) and box → cloud on the real API (`tests/integration/floor-indents-synced.test.ts`).
+**Still recorded, not dropped (SP-8c):** the back-store ISSUE on this handheld against the indent (scan bin → scan item →
+confirm), the register on the handheld, the refill task that raises an indent, the shelf-count save that reaches the cloud,
+the "products nobody can sell" screen; physical-device verification and UAT PENDING.

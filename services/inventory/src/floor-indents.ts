@@ -65,7 +65,7 @@ const REFUSAL_STATUS: Readonly<Record<IndentRefusal, number>> = Object.freeze({
 });
 
 /** The engine's refusal, as the API says it — nothing saved, and the next safe step in words. */
-const refusedBy = (e: unknown): never => {
+export const refusedBy = (e: unknown): never => {
   if (e instanceof IndentRefusedError) {
     throw apiError(REFUSAL_STATUS[e.code], { code: e.code, whatHappened: e.why, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed. Correct the request and try again, or read the indent.' });
   }
@@ -75,7 +75,7 @@ const refusedBy = (e: unknown): never => {
   throw e;
 };
 
-function readIndentLines(v: unknown): IndentLine[] | undefined {
+export function readIndentLines(v: unknown): IndentLine[] | undefined {
   if (!Array.isArray(v) || v.length === 0) return undefined;
   const out: IndentLine[] = [];
   for (const raw of v) {
@@ -85,7 +85,7 @@ function readIndentLines(v: unknown): IndentLine[] | undefined {
   return out;
 }
 
-function readIssueLines(v: unknown): IssueLine[] | undefined {
+export function readIssueLines(v: unknown): IssueLine[] | undefined {
   if (!Array.isArray(v) || v.length === 0) return undefined;
   const out: IssueLine[] = [];
   for (const raw of v) {
@@ -95,7 +95,7 @@ function readIssueLines(v: unknown): IssueLine[] | undefined {
   return out;
 }
 
-function readCounted(v: unknown): ReceivedLine[] | undefined {
+export function readCounted(v: unknown): ReceivedLine[] | undefined {
   if (!Array.isArray(v)) return undefined;
   const out: ReceivedLine[] = [];
   for (const raw of v) {
@@ -105,10 +105,10 @@ function readCounted(v: unknown): ReceivedLine[] | undefined {
   return out;
 }
 
-const shortfallOf = (discrepancies: readonly TransferDiscrepancy[]): ShortfallLine[] =>
+export const shortfallOf = (discrepancies: readonly TransferDiscrepancy[]): ShortfallLine[] =>
   discrepancies.filter((d) => d.differenceMinor < 0).map((d) => ({ productId: d.productId, batchId: d.batchId, quantityMinor: -d.differenceMinor, valueMinor: d.value.minor }));
 
-const receivedOf = (movements: readonly StockMovement[], transfer: Transfer): ReceivedLine[] =>
+export const receivedOf = (movements: readonly StockMovement[], transfer: Transfer): ReceivedLine[] =>
   movements.filter((m) => m.from === 'in_transit' && m.to === 'on_hand' && m.locationId === transfer.toLocationId)
     .map((m) => ({ productId: m.productId, batchId: m.batchId, quantityMinor: m.quantityMinor }));
 

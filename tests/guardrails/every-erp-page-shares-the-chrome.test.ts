@@ -23,7 +23,7 @@ const code = (source: string): string => source.replace(/\/\*[\s\S]*?\*\//g, '')
 
 describe('every page carries the one chrome', () => {
   it('finds the forty-seven pages', () => {
-    expect(PAGES.length).toBe(47);
+    expect(PAGES.length).toBe(48);
   });
 
   it('loads sre-chrome.js AFTER its own script, so the page\'s words come first and the chrome finishes the frame', () => {
