@@ -29,7 +29,7 @@
       h3 { margin:8px 0 0; font-size:16px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
       .bar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; justify-content:space-between; }
       .asof { color:var(--muted); font-size:14px; }
-      button { min-height:40px; padding:0 14px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--line); color:var(--ink); }
+      button { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--line); color:var(--ink); }
       button:focus-visible, .lang:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
       p.reassure { margin:0; padding:12px 14px; background:#052e2b; color:#a7f3d0; border-radius:12px; border-left:6px solid var(--ok); font-size:15px; display:flex; gap:8px; align-items:center; }
       p.reassure.warn { background:#3f2d02; color:#fde68a; border-left-color:var(--degraded); }
@@ -54,7 +54,7 @@
     <p class="sample" id="sample" hidden></p>
 
     <header>
-      <span class="who" id="who">Integration health <small id="whoami"></small></span>
+      <h1 class="who" id="who">Integration health <small id="whoami"></small></h1>
       <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
 
@@ -84,5 +84,7 @@
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./integration-health.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
   </body>
 </html>

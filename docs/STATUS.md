@@ -1056,11 +1056,51 @@ accounts.
   adjustments on the ERP screens for the pilot and record the three rows in the spec as "on the ERP, not the
   handheld", with a named target release. **(3)** wait for the pilot's findings before deciding. Until a written
   answer the rows stay recorded as not yet on the handheld; nothing is dropped.
+- **Owner direction (30 Sep 2026, in writing) — Option 1 chosen, and the handheld program named.** Complete Stage G
+  slice 5, then build the three missing warehouse handheld workflows — **pick an order line · start and perform a
+  stock count · record an inventory adjustment request with the required supervisor approval before posting** — on the
+  existing authoritative inventory services, permissions, tenant isolation and audit trail, English/Tamil, scanner-
+  friendly; complete the **missing handheld synchronisation path** (queued scans survive restart, reach the correct
+  backend, are acknowledged, reconcile without duplicate stock movements; pending / failed / conflict / synchronised
+  shown accurately); verify the connected workflows with offline/reconnect, duplicate-retry, permission-denial and
+  browser/device tests, physical-device verification recorded as PENDING until performed; update the specification
+  and the requirement ledger — these are existing warehouse requirements, not optional scope; one focused PR at a
+  time, merged only after the required gates pass. Screenshots on request only. Tracked as W1 · W2 · W3 · S1 · S2 in
+  the session task list, after G5a · G5b · G5c.
+- **Stage G slice 5a — one shared ERP chrome on all 46 pages, audited on the rendered page (design system §1 rules
+  4 · 6 · 7 · 8, §5, §7; NFR-07/08; P-08).** `apps/web-erp/web/sre-chrome.js` (in the service-worker shell, loaded
+  after each page's own script) is now the one **sync badge** (the store computer's own account via
+  `GET /lane/sync-status` at the address the page was served from — never a guessed one; "not connected" when none
+  is named; the manager's "could not read a register" fact rides in as `window.sreBlind`), the one **"served from
+  this device's cache, at …" strip** (a page may keep sharper wording on the element — the manager's says "do not
+  close the day on it"), and the one **language toggle** label and name (the OTHER language, so the button says what
+  you get), repainted whenever `<html lang>` changes however a page changed it. Before: a badge on **1** page of 46,
+  two toggle labels, 42 copies of the strip, 44 pages with no heading. Now every page has **exactly one h1** (the
+  header line, the foundation's `h1.who`), the chrome, and none of: a `.lang` override (12 removed), a 40px control
+  (18 rules → `--tap`), a red "nobody" strip (7), white words on the signal red (7 buttons + 11 banners →
+  `--danger-surface`). **Audited in real Chromium** — `tests/e2e/the-erp-pages-meet-the-spec.e2e.ts` (3): all 46
+  pages at a desk (1280) and on a phone (360), in English and, where the page has the toggle, in Tamil: **zero
+  findings** (was 200+: 88 missing headings, 80 small targets, 18 contrast, 8 unlabelled inputs, 2 pages scrolling
+  sideways, 3 pages throwing on open); the badge's three states on a page with a stand-in store computer; the strip
+  with the time in both languages. Fixed on the way: the manager's toggle never set the document language; the
+  checklist's tick was a 22px box (now the whole labelled row); the catalogue's "›" was 19px wide; company-report
+  and day-book overflowed a phone (tables in `.sre-scroll-x`, the report's controls wrap); company-report and the
+  erasure console threw when head office could not be reached (now a stated state); the migration stand-in lacked
+  `unsent()`. The audit learned that a wrapping `<label>` names and sizes its control (WCAG's own rule).
+  `tests/guardrails/every-erp-page-shares-the-chrome.test.ts` (56): chrome after own script on all 46, in the SW
+  shell, one h1, no override survives, no page keeps its own strip or badge poll, the chrome's words complete in
+  both languages, and **bilingual completeness on every page** — every `en` key has a `ta` twin in all 43 page word
+  tables and the two payroll session models. Eight existing guardrails repointed from the per-page strip to the
+  chrome. **Findings recorded, not fixed here:** (a) `erasure-console` is English-only and `company-report` shows
+  both languages inline with no toggle — both cloud-served DPO/owner pages; bilingual words + toggle are a G5c
+  item; (b) 13 pages still lack the "nobody signed in" strip because their payloads carry no viewer — the box
+  learning the viewer is the G5b question; (c) the till and the three handhelds keep their own badge code (device
+  outbox semantics) — one implementation across app folders would need the CSS-style sync machinery, deferred.
 - **Next — Stage G slice 2 onward (UI/UX finish across the 8 apps, consistent · modern · bilingual EN/TA):** built to the Stage 3
   design system (`docs/design/design-system.md`, §27/§27.1, QG-02, NFR-07/08, P-07) and the screen specs in
   `docs/design/screens/`, in slices: G1 one shared visual foundation — DONE above; G2 the till and manager screens to the spec's
   ≤3-interaction and arm's-length rules — 2a the honest badge and 2b the measured interaction budgets both DONE
-  above; G3 the customer app to WCAG 2.2 AA — DONE above; G4 the handhelds — DONE above; **G5 next**: the ERP's 46 pages made one product (navigation, states,
+  above; G3 the customer app to WCAG 2.2 AA — DONE above; G4 the handhelds — DONE above; **G5 in progress — 5a DONE above, 5b next**: the ERP's 46 pages made one product (navigation, states,
   bilingual completeness guardrail on every page). **G5 scoped (29 Sep, measured on main):** 46 pages, 47 page
   scripts, one SW shell; a sync badge on **1** page (the manager's), none on 45; the language toggle on 44 (two
   labels in use: "EN / த" on 13, "தமிழ்" on 31; missing on company-report and erasure-console); stale/sample strips

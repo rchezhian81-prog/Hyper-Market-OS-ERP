@@ -106,18 +106,23 @@ const COLLECT_SOURCE = String.raw`(() => {
   }
 
   const controls = [...d.querySelectorAll('button, a[href], input, select, textarea, [role="button"], [role="switch"]')].filter(visible);
-  const targets = controls.filter((el) => !inactive(el)).map((el) => { const r = el.getBoundingClientRect(); return { selector: describe(el), w: r.width, h: r.height }; });
+  // A tick box or radio inside a <label> is tapped by its label: the label's box is the target (2.5.8).
+  const targetOf = (el) => (el.tagName === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio') && el.closest('label')) ? el.closest('label') : el;
+  const targets = controls.filter((el) => !inactive(el)).map((el) => { const r = targetOf(el).getBoundingClientRect(); return { selector: describe(el), w: r.width, h: r.height }; });
   const nameOf = (el) => {
     const aria = el.getAttribute('aria-label') || '';
     const by = el.getAttribute('aria-labelledby');
     const labelled = by ? ((d.getElementById(by) || {}).textContent || '') : '';
     const forLabel = el.id ? ((d.querySelector('label[for="' + el.id + '"]') || {}).textContent || '') : '';
+    // A <label> wrapped round the control names it, as a label[for] does.
+    const wrap = el.closest('label');
+    const wrapped = wrap && wrap !== el ? (wrap.textContent || '') : '';
     const own = el.tagName === 'INPUT' ? (el.getAttribute('value') || '') : (el.textContent || '');
-    return (aria || labelled || forLabel || own).trim();
+    return (aria || labelled || forLabel || wrapped || own).trim();
   };
   const unnamed = controls.filter((el) => nameOf(el) === '').map(describe);
   const unlabelled = [...d.querySelectorAll('input:not([type="hidden"]), select, textarea')].filter(visible)
-    .filter((el) => !(el.id && d.querySelector('label[for="' + el.id + '"]')) && !el.getAttribute('aria-label') && !el.getAttribute('aria-labelledby'))
+    .filter((el) => !(el.id && d.querySelector('label[for="' + el.id + '"]')) && !el.closest('label') && !el.getAttribute('aria-label') && !el.getAttribute('aria-labelledby'))
     .map(describe);
   const nonText = [...d.querySelectorAll('[role="switch"], .dot')].filter(visible).filter((el) => !inactive(el)).map((el) => {
     const s = cs(el);

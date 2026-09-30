@@ -24,14 +24,14 @@ function sampleSession() {
       notPosted: 'Nothing posted for this day yet.', postedSummary: 'journals posted', salesTotalLabel: 'Sales posted', returnsTotalLabel: 'Returns posted', coveredLabel: 'Receipts covered', openLabel: 'open exceptions',
       journalsHeading: 'Journals', accountsHeading: 'Accounts moved', exceptionsHeading: 'Exceptions', noExceptions: 'No exceptions on this day.',
       sourcesLabel: 'Receipts', periodLabel: 'Period', postedByLabel: 'Posted by', debitLabel: 'Debit', creditLabel: 'Credit', balanceLabel: 'Balance',
-      sampleData: 'Sample data — this is not your shop.', staleShell: 'No connection to the store computer. This page is what it was last told, at', nobodyNamed: '' },
+      sampleData: 'Sample data — this is not your shop.', nobodyNamed: '' },
     ta: { title: 'நாள் புத்தகம்', langName: 'English',
       lead: 'மாதிரி நாள் புத்தகம். உங்கள் நாட்களைப் பதிவு செய்ய கடை கணினியை இணைக்கவும்.',
       dayLabel: 'வர்த்தக நாள்', loadBtn: 'நாளைக் காட்டு', postBtn: 'இந்த நாளைக் கணக்குகளில் பதிவு செய்',
       notPosted: 'இந்த நாளுக்கு இன்னும் எதுவும் பதிவு செய்யப்படவில்லை.', postedSummary: 'ஜர்னல்கள் பதிவு செய்யப்பட்டன', salesTotalLabel: 'பதிவான விற்பனை', returnsTotalLabel: 'பதிவான திருப்பங்கள்', coveredLabel: 'உள்ளடக்கிய ரசீதுகள்', openLabel: 'திறந்த விதிவிலக்குகள்',
       journalsHeading: 'ஜர்னல்கள்', accountsHeading: 'நகர்ந்த கணக்குகள்', exceptionsHeading: 'விதிவிலக்குகள்', noExceptions: 'இந்த நாளில் விதிவிலக்குகள் இல்லை.',
       sourcesLabel: 'ரசீதுகள்', periodLabel: 'காலம்', postedByLabel: 'பதிவு செய்தவர்', debitLabel: 'பற்று', creditLabel: 'வரவு', balanceLabel: 'இருப்பு',
-      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', nobodyNamed: '' },
+      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', nobodyNamed: '' },
   };
   const journal = (l) => ({
     entryId: 'daybook:sample:sale:1', kind: 'sale', kindLabel: l === 'ta' ? 'விற்பனை' : 'Sales', amount: '₹1,23,456.00', amountMinor: 12345600, sources: 412,
@@ -183,7 +183,7 @@ el('post').addEventListener('click', () => {
   })();
 });
 el('load').addEventListener('click', () => { el('result').hidden = true; void refresh(); });
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 
 el('day').value = defaultDay();
 el('sample').hidden = window.dayBookSession !== undefined;
@@ -199,17 +199,6 @@ async function refresh() {
   if (data) { session = api.present(data); paint(); }
 }
 refresh();
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

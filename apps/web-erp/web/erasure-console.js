@@ -16,6 +16,7 @@ async function post(path, body) {
 }
 async function getJson(path) {
   const res = await fetch(path, { headers: { accept: 'application/json' } });
+  if (!res.ok) throw new Error(`head office answered ${res.status}`);
   return res.json();
 }
 
@@ -39,8 +40,13 @@ function renderPii(categories) {
 }
 
 async function refresh() {
-  const data = await getJson(`/pii/${CUSTOMER}`);
-  renderPii(data.categories ?? []);
+  try {
+    const data = await getJson(`/pii/${CUSTOMER}`);
+    renderPii(data.categories ?? []);
+  } catch {
+    // Said, rather than a thrown error nobody sees: this console works only with head office reachable.
+    setStatus($('status'), 'Head office cannot be reached from here — nothing shown is current.', 'err');
+  }
 }
 
 function renderTombstone(t) {

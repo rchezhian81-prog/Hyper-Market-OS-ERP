@@ -38,6 +38,7 @@
       .row .detail { font-size:13px; color:var(--muted); }
       ul.items { list-style:none; margin:0; padding:0; display:grid; gap:6px; }
       ul.items li { display:flex; align-items:center; gap:10px; font-size:15px; }
+      ul.items label { display:flex; align-items:center; gap:10px; min-height:var(--tap); flex:1; }
       ul.items input { width:22px; height:22px; }
       ul.items .blk { color:var(--danger-text); font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
       ul.items li.done { color:var(--muted); text-decoration:line-through; }
@@ -59,7 +60,7 @@
     <p class="nobody" id="nobody" hidden></p>
 
     <header>
-      <span class="who" id="who">Checklists <small id="whoami"></small></span>
+      <h1 class="who" id="who">Checklists <small id="whoami"></small></h1>
       <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
 
@@ -83,5 +84,7 @@
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./checklist.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
   </body>
 </html>

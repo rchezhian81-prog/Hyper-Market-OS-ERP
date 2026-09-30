@@ -20,8 +20,7 @@ function sampleSession() {
       attentionHeading: 'Needs a look', attentionNone: 'Every connection has worked recently — nothing has gone quiet.',
       calmHeading: 'Working / switched off',
       tillSafe: 'Your till keeps trading. No connection here can stop a sale — a connection being down is a queue to clear later, never a shop that cannot sell.',
-      sampleData: 'Sample data — this is not your shop.', staleShell: 'No connection to the store computer. This page is what it was last told, at',
-    },
+      sampleData: 'Sample data — this is not your shop.', },
     ta: {
       title: 'இணைப்பு நலன்', langName: 'English',
       lead: 'மாதிரி இணைப்பு நலன். உங்கள் கடையின் இணைப்புகளைப் பார்க்க கடை கணினியை இணைக்கவும்.',
@@ -29,8 +28,7 @@ function sampleSession() {
       attentionHeading: 'கவனிக்க வேண்டியவை', attentionNone: 'ஒவ்வொரு இணைப்பும் சமீபத்தில் வேலை செய்துள்ளது — எதுவும் அமைதியாகவில்லை.',
       calmHeading: 'வேலை செய்கிறது / அணைக்கப்பட்டது',
       tillSafe: 'உங்கள் பணப்பெட்டி தொடர்ந்து விற்பனை செய்யும். இங்குள்ள எந்த இணைப்பும் விற்பனையை நிறுத்த முடியாது.',
-      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
-    },
+      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', },
   };
   return {
     text: (l, key) => CHROME[l]?.[key] ?? CHROME.en[key] ?? key,
@@ -124,7 +122,7 @@ function paint() {
   el('calm').replaceChildren(...view.calm.map((a) => rowNode(a)));
 }
 
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 
 el('sample').hidden = window.integrationHealthSession !== undefined;
 el('sample').textContent = t('sampleData');
@@ -141,17 +139,6 @@ async function refresh() {
 el('refresh').addEventListener('click', () => { void refresh(); });
 
 refresh();
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

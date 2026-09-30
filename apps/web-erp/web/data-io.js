@@ -20,7 +20,7 @@ function sampleSession() {
       exported: 'Exported.', exportRefused: 'Could not export.', exportLostLink: 'No connection — try again.',
       validateRefused: 'Could not check.', validateLostLink: 'No connection — try again.',
       committed: 'Loaded.', commitRefused: 'Could not load — a second person (not you) must approve it.', commitLostLink: 'No connection — try again.',
-      sampleData: 'Sample data — this is not your shop.', staleShell: 'No connection to the store computer. This page is what it was last told, at', nobodyNamed: '',
+      sampleData: 'Sample data — this is not your shop.', nobodyNamed: '',
     },
     ta: {
       title: 'இறக்குமதி & ஏற்றுமதி', langName: 'English', lead: 'மாதிரிக் காட்சி. உங்கள் சொந்தத் தரவுடன் வேலை செய்ய கடை கணினியை இணைக்கவும்.',
@@ -32,7 +32,7 @@ function sampleSession() {
       exported: 'ஏற்றுமதி செய்யப்பட்டது.', exportRefused: 'ஏற்றுமதி செய்ய முடியவில்லை.', exportLostLink: 'இணைப்பு இல்லை — மீண்டும் முயற்சிக்கவும்.',
       validateRefused: 'சரிபார்க்க முடியவில்லை.', validateLostLink: 'இணைப்பு இல்லை — மீண்டும் முயற்சிக்கவும்.',
       committed: 'ஏற்றப்பட்டது.', commitRefused: 'ஏற்ற முடியவில்லை — இரண்டாம் நபர் (நீங்கள் அல்ல) அனுமதிக்க வேண்டும்.', commitLostLink: 'இணைப்பு இல்லை — மீண்டும் முயற்சிக்கவும்.',
-      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', nobodyNamed: '',
+      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', nobodyNamed: '',
     },
   };
   const tone = (r, ok) => ({ tone: r === ok ? 'ok' : r === 'lost_link' ? 'degraded' : 'error', icon: r === ok ? '✓' : r === 'lost_link' ? '⚠' : '✕', label: '', announcement: '', needsAttention: r !== ok });
@@ -184,7 +184,7 @@ el('commit').addEventListener('click', () => {
   })();
 });
 
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 
 el('sample').hidden = window.dataIoSession !== undefined;
 el('sample').textContent = t('sampleData');
@@ -198,17 +198,6 @@ async function refresh() {
   if (live) { session = api.present(live); paint(); }
 }
 refresh();
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => { /* the screen still opens; it just will not be there without a network */ });

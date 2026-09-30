@@ -64,7 +64,7 @@
     <p class="nobody" id="nobody" hidden></p>
 
     <header>
-      <span class="who" id="who">Day book <small id="whoami"></small></span>
+      <h1 class="who" id="who">Day book <small id="whoami"></small></h1>
       <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
 
@@ -94,10 +94,12 @@
       <ul class="rows" id="journals" aria-label="Journals posted for the day"></ul>
 
       <h3 id="accounts-heading" hidden></h3>
+      <div class="sre-scroll-x">
       <table class="accounts" id="accounts" aria-label="Accounts moved by the day" hidden>
         <thead><tr><th id="th-account"></th><th id="th-debit"></th><th id="th-credit"></th><th id="th-balance"></th></tr></thead>
         <tbody id="accounts-body"></tbody>
       </table>
+      </div>
 
       <h3 id="exceptions-heading" hidden></h3>
       <ul class="rows" id="exceptions" aria-label="Exceptions on the day"></ul>
@@ -109,5 +111,7 @@
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./day-book.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
   </body>
 </html>

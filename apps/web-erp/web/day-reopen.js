@@ -19,7 +19,7 @@ function sampleSession() {
       reopenHeading: 'Reopen a day', dayField: 'Which day', reasonLabel: 'Reason (required)', reasonPlaceholder: 'Why this locked day must be reopened.',
       approverLabel: 'Approved by (a different person)', approverPlaceholder: 'The authorised person who approved this reopen.', reopenBtn: 'Reopen the day',
       reopenRecorded: 'The day is reopened.', reopenRefused: 'Could not reopen — you may not have permission, or the approver is not authorised. Nothing was changed.',
-      sampleData: 'Sample data — this is not your shop.', staleShell: 'No connection to the store computer. This page is what it was last told, at', nobodyNamed: '' },
+      sampleData: 'Sample data — this is not your shop.', nobodyNamed: '' },
     ta: { title: 'மூடிய நாளை மீண்டும் திற', langName: 'English',
       lead: 'மாதிரி பூட்டிய நாட்கள். உங்கள் கடையின் நாட்களை மீண்டும் திறக்க கடை கணினியை இணைக்கவும்.',
       lockedHeading: 'பூட்டிய நாட்கள்', lockedCount: 'பூட்டியவை', allClear: 'மீண்டும் திறக்க பூட்டிய நாட்கள் இல்லை.',
@@ -27,7 +27,7 @@ function sampleSession() {
       reopenHeading: 'ஒரு நாளை மீண்டும் திற', dayField: 'எந்த நாள்', reasonLabel: 'காரணம் (தேவை)', reasonPlaceholder: 'இந்த பூட்டிய நாளை ஏன் மீண்டும் திறக்க வேண்டும்.',
       approverLabel: 'அங்கீகரித்தவர் (வேறொருவர்)', approverPlaceholder: 'இந்த மீள்திறப்பை அங்கீகரித்த அங்கீகரிக்கப்பட்ட நபர்.', reopenBtn: 'நாளை மீண்டும் திற',
       reopenRecorded: 'நாள் மீண்டும் திறக்கப்பட்டது.', reopenRefused: 'மீண்டும் திறக்க முடியவில்லை — உங்களுக்கு அனுமதி இல்லாமல் இருக்கலாம், அல்லது அங்கீகரித்தவருக்கு அதிகாரம் இல்லை. எதுவும் மாற்றப்படவில்லை.',
-      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', nobodyNamed: '' },
+      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', nobodyNamed: '' },
   };
   const sampleRow = (l) => ({
     dayCloseId: 'sample-dc-1', tradingDay: '2026-09-17', closedBy: 'manager', closedAt: '2026-09-18T02:05:00.000Z',
@@ -135,7 +135,7 @@ el('do-reopen').addEventListener('click', () => {
   })();
 });
 
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 
 el('sample').hidden = window.dayReopenSession !== undefined;
 el('sample').textContent = t('sampleData');
@@ -150,17 +150,6 @@ async function refresh() {
   if (data) { session = api.present(data); paint(); }
 }
 refresh();
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

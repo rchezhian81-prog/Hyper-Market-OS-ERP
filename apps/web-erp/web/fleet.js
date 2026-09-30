@@ -27,7 +27,7 @@ function sampleSession() {
       versionLabel: 'Version', lastSeenLabel: 'Last seen', branchLabel: 'Branch', neverSeen: 'never checked in',
       canManage: 'You can register, block or retire a device.',
       sampleData: 'Sample data — this is not your shop.',
-      staleShell: 'No connection to the store computer. This page is what it was last told, at', nobodyNamed: '' },
+      nobodyNamed: '' },
     ta: { title: 'சாதனங்கள்', langName: 'English',
       lead: 'மாதிரி கடற்படை. கடையின் சொந்த இயந்திரங்களைப் பார்க்க கடை கணினியை இணைக்கவும்.',
       tileTotal: 'சாதனங்கள்', tileTrading: 'வர்த்தகம்', tileMustUpgrade: 'புதுப்பிக்க வேண்டும்', tileBlocked: 'தடுக்கப்பட்டது', tileSilent: 'அமைதி',
@@ -35,7 +35,7 @@ function sampleSession() {
       versionLabel: 'பதிப்பு', lastSeenLabel: 'கடைசியாக பார்த்தது', branchLabel: 'கிளை', neverSeen: 'ஒருபோதும் தெரிவிக்கவில்லை',
       canManage: 'நீங்கள் ஒரு சாதனத்தை பதிவு செய்யலாம், தடுக்கலாம் அல்லது நீக்கலாம்.',
       sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
-      staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', nobodyNamed: '' },
+      nobodyNamed: '' },
   };
   const dev = (deviceId, label, kind, branchId, version, lastSeen, tone, icon, statusLabel, needsAttention, silent) => ({
     deviceId, label, kind, branchId, version, lastSeen,
@@ -246,7 +246,7 @@ function paint() {
   }
 }
 
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; if (pendingAction !== null) closeSheet(); paint(); paintStale(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; if (pendingAction !== null) closeSheet(); paint(); });
 el('filter').addEventListener('click', () => { attentionOnly = !attentionOnly; paint(); });
 el('sheet-confirm').addEventListener('click', confirmSheet);
 el('sheet-cancel').addEventListener('click', closeSheet);
@@ -273,17 +273,6 @@ el('send').addEventListener('click', async () => {
 el('sample').hidden = real !== undefined;
 el('sample').textContent = t('sampleData');
 paint();
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

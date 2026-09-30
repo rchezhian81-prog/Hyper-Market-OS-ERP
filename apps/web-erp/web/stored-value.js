@@ -22,8 +22,7 @@ function sampleSession() {
       lossHeading: 'Given away twice', lossNone: 'No cross-channel double-spends — nothing given away twice.',
       gapHeading: 'Liability vs the books', gapNeedsPosted: 'Enter the liability the books currently carry to reconcile the cards against it — nothing is assumed.',
       watchHeading: 'Draining fast', watchNone: 'No cards draining unusually fast.',
-      sampleData: 'Sample data — this is not your shop.', staleShell: 'No connection to the store computer. This page is what it was last told, at',
-    },
+      sampleData: 'Sample data — this is not your shop.', },
     ta: {
       title: 'சேமிப்பு-மதிப்பு கண்காணிப்பு', langName: 'English',
       lead: 'மாதிரி சேமிப்பு-மதிப்பு கண்காணிப்பு. உங்கள் கடையின் எண்களைப் பார்க்க கடை கணினியை இணைக்கவும்.',
@@ -32,8 +31,7 @@ function sampleSession() {
       lossHeading: 'இருமுறை கொடுக்கப்பட்டது', lossNone: 'சேனல்கள் இடையே இரட்டைச் செலவு இல்லை — இருமுறை எதுவும் கொடுக்கப்படவில்லை.',
       gapHeading: 'கடன் vs கணக்கு', gapNeedsPosted: 'அட்டைகளை ஒப்பிட, கணக்கில் தற்போது உள்ள கடன் தொகையை உள்ளிடவும் — எதுவும் ஊகிக்கப்படாது.',
       watchHeading: 'விரைவாகக் குறைகிறது', watchNone: 'வழக்கத்திற்கு மாறாக விரைவாகக் குறையும் அட்டைகள் இல்லை.',
-      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
-    },
+      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', },
   };
   return {
     text: (l, key) => CHROME[l]?.[key] ?? CHROME.en[key] ?? key,
@@ -186,7 +184,7 @@ function paint() {
   el('watch-none').textContent = t('watchNone');
 }
 
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 
 el('sample').hidden = window.storedValueSession !== undefined;
 el('sample').textContent = t('sampleData');
@@ -219,17 +217,6 @@ el('reconcile-form').addEventListener('submit', (e) => {
 });
 
 refresh();
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

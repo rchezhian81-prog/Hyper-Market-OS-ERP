@@ -94,7 +94,8 @@ describe('"not known" is never painted as a zero', () => {
   });
 
   it('says the store link is unknown when a register could not be read', () => {
-    expect(code(APP)).toContain("t('notConnected')");
+    // The words are the chrome's now; the page hands it the fact.
+    expect(code(APP)).toMatch(/window\.sreBlind = /);
   });
 });
 
@@ -236,21 +237,23 @@ describe('what the shop must be told, it is told', () => {
   });
 });
 
-describe('the sync badge is the box\'s fact when a box serves the screen (Stage G slice 2 · design system §1 rule 4)', () => {
-  it('asks the box on GET /lane/sync-status when the box named its socket, and keeps the register words when none did', () => {
-    expect(code(APP)).toContain('/lane/sync-status');
-    expect(code(APP)).toMatch(/typeof window\.laneWriteBase !== 'string'\) return/);
-    expect(code(APP)).toMatch(/lastContact/);
+describe('the sync badge is the chrome\'s (Stage G slice 5a) — this page adds the one fact only it knows', () => {
+  const CHROME = readFileSync('apps/web-erp/web/sre-chrome.js', 'utf8');
+
+  it('loads the one chrome after its own script, and no longer polls the sync status itself', () => {
+    expect(HTML).toMatch(/<script type="module" src="\.\/sre-chrome\.js"><\/script>/);
+    expect(code(APP)).not.toMatch(/lane\/sync-status/);
+    expect(CHROME).toMatch(/typeof window\.laneWriteBase === 'string' \? window\.laneWriteBase : null/);
   });
 
-  it('has words — in both languages — for box not answering, no head office, no link set up, not checked yet', () => {
-    const en = APP.slice(APP.indexOf('  en: {'), APP.indexOf('  ta: {'));
-    const ta = APP.slice(APP.indexOf('  ta: {'));
-    for (const key of ['boxNotAnswering', 'noCloud', 'cloudNotSetUp', 'cloudUnknown', 'lastContact']) {
-      expect(code(APP), `${key} is not used`).toContain(`t('${key}')`);
-      expect(en, `no English for ${key}`).toMatch(new RegExp(`\\b${key}:`));
-      expect(ta, `no Tamil for ${key}`).toMatch(new RegExp(`\\b${key}:`));
-    }
+  it('tells the chrome when a register could not be read — the same fact as "not connected to the store"', () => {
+    expect(code(APP)).toMatch(/window\.sreBlind = \[floor\.approvalsWaiting, floor\.exceptions, floor\.unsent\]\.some\(\(f\) => !f\.known\)/);
+    expect(code(APP)).toMatch(/window\.sreChrome\?\.repaint\(\)/);
+    expect(CHROME).toMatch(/window\.sreBlind === true/);
+  });
+
+  it('keeps its sharper cache-strip wording on the element: do not close the day on a cached page', () => {
+    expect(HTML).toMatch(/id="stale" hidden role="status" data-en="[^"]*do not close the day on it[^"]*" data-ta="[^"]+"/);
   });
 
   it('paints a red BUTTON with the readable red surface, never the signal red under white', () => {

@@ -27,7 +27,7 @@
       h3 { margin:8px 0 0; font-size:16px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
       .bar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; justify-content:space-between; }
       .asof { color:var(--muted); font-size:14px; } .summary { font-size:15px; font-weight:600; }
-      button.refresh { min-height:40px; padding:0 14px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--line); color:var(--ink); }
+      button.refresh { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--line); color:var(--ink); }
       button.refresh:focus-visible, .lang:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
       li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); }
@@ -51,7 +51,7 @@
     <p class="sample" id="sample" hidden></p>
 
     <header>
-      <span class="who" id="who">Goods receipt review <small id="whoami"></small></span>
+      <h1 class="who" id="who">Goods receipt review <small id="whoami"></small></h1>
       <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
 
@@ -77,5 +77,7 @@
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./goods-receipt.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
   </body>
 </html>

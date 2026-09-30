@@ -19,7 +19,7 @@ function sampleSession() {
       signHeading: 'Sign off an over/short', shiftLabel: 'Which shift', dispositionLabel: 'Your finding', noteLabel: 'Note (optional)',
       notePlaceholder: 'Anything the finding does not already say.', signBtn: 'Sign it off',
       signRecorded: 'Signed off.', signRefused: 'Could not sign off — a different person must sign it, with a finding; or you do not have permission.', signLostLink: 'No connection — not saved. Try again.',
-      sampleData: 'Sample data — this is not your shop.', staleShell: 'No connection to the store computer. This page is what it was last told, at', nobodyNamed: '' },
+      sampleData: 'Sample data — this is not your shop.', nobodyNamed: '' },
     ta: { title: 'கூடுதல் / குறைவு கையொப்பம்', langName: 'English',
       lead: 'மாதிரி கூடுதல்/குறைவுகள். உங்கள் கடையின் பணப்பெட்டிகளுக்கு விளக்கம் அளிக்க கடை கணினியை இணைக்கவும்.',
       openHeading: 'விளக்கம் அளிக்க வேண்டியவை', openCount: 'விளக்கம் அளிக்க', exposureLabel: 'நிகர கூடுதல்/குறைவு', allClear: 'விளக்கம் அளிக்க கூடுதல்/குறைவு இல்லை — எல்லா பணப்பெட்டிகளும் கையொப்பமிடப்பட்டன.',
@@ -27,7 +27,7 @@ function sampleSession() {
       signHeading: 'ஒரு கூடுதல்/குறைவைக் கையொப்பமிடு', shiftLabel: 'எந்த ஷிப்ட்', dispositionLabel: 'உங்கள் கண்டுபிடிப்பு', noteLabel: 'குறிப்பு (விருப்பம்)',
       notePlaceholder: 'கண்டுபிடிப்பு சொல்லாதது ஏதேனும் இருந்தால்.', signBtn: 'கையொப்பமிடு',
       signRecorded: 'கையொப்பமிடப்பட்டது.', signRefused: 'கையொப்பமிட முடியவில்லை — வேறொருவர் ஒரு கண்டுபிடிப்புடன் கையொப்பமிட வேண்டும்; அல்லது உங்களுக்கு அனுமதி இல்லை.', signLostLink: 'இணைப்பு இல்லை — சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
-      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', nobodyNamed: '' },
+      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', nobodyNamed: '' },
   };
   const sampleRow = (l) => ({
     shiftId: 'sample-till-3', tillId: 'till-3', cashierId: 'cashier', tradingDay: '2026-09-17',
@@ -160,7 +160,7 @@ el('sign').addEventListener('click', () => {
     if (result === 'signed') { el('sign-note').value = ''; await refresh(); }
   })();
 });
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 
 el('sample').hidden = window.cashOfficeSession !== undefined;
 el('sample').textContent = t('sampleData');
@@ -175,17 +175,6 @@ async function refresh() {
   if (data) { session = api.present(data); paint(); }
 }
 refresh();
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

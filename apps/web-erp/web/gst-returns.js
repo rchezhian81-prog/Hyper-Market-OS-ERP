@@ -13,10 +13,10 @@ function sampleSession() {
   const CHROME = {
     en: { title: 'GST returns', lead: 'Sample filing periods. Connect the store computer to see your own returns.', langName: 'தமிழ்',
       attentionCount: 'need attention', allClear: 'Every return is settled — nothing needs attention.',
-      sampleData: 'Sample data — this is not your shop.', staleShell: 'No connection to the store computer. This page is what it was last told, at', nobodyNamed: '' },
+      sampleData: 'Sample data — this is not your shop.', nobodyNamed: '' },
     ta: { title: 'GST வருமானங்கள்', lead: 'மாதிரி தாக்கல் காலங்கள். உங்கள் சொந்த வருமானங்களைப் பார்க்க கடை கணினியை இணைக்கவும்.', langName: 'English',
       attentionCount: 'கவனம் தேவை', allClear: 'ஒவ்வொரு வருமானமும் தீர்க்கப்பட்டது.',
-      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', nobodyNamed: '' },
+      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', nobodyNamed: '' },
   };
   const row = (period, tone, icon, statusLabel, actionLabel, needsAttention, arn) => ({
     period, status: { tone, icon, label: statusLabel, announcement: `${period}: ${statusLabel}`, needsAttention },
@@ -146,23 +146,12 @@ function paint() {
   }
 }
 
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 el('filter').addEventListener('click', () => { attentionOnly = !attentionOnly; paint(); });
 
 el('sample').hidden = real !== undefined;
 el('sample').textContent = t('sampleData');
 paint();
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

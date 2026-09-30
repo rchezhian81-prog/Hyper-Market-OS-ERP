@@ -123,18 +123,26 @@ describe('the page is fetched fresh, and a cached one admits it', () => {
     }
   });
 
+  /** The view that renders the strip: the ERP's one chrome for every ERP page (Stage G slice 5a), the till's own. */
+  const stripView = (screen: (typeof SCREENS)[number]): string =>
+    screen.dir === 'web-erp' ? read('apps/web-erp/web/sre-chrome.js') : read(`apps/${screen.dir}/web/${screen.view}`);
+
   it('shows the strip on every screen, in English and Tamil', () => {
     // A cached page shown as a live one is not a stale label on a screen; it is somebody acting on
     // this morning's figures believing they are this minute's.
     for (const screen of SCREENS) {
-      const view = read(`apps/${screen.dir}/web/${screen.view}`);
+      const view = stripView(screen);
       const html = read(`apps/${screen.dir}/web/${screen.page}`);
-      expect(html, `${screen.name} has no strip to show it`).toContain('id="stale"');
+      if (screen.dir === 'web-erp') {
+        expect(html, `${screen.name} does not load the chrome that draws the strip`).toContain('src="./sre-chrome.js"');
+      } else {
+        expect(html, `${screen.name} has no strip to show it`).toContain('id="stale"');
+      }
       expect(code(view), `${screen.name} never reads the stamp`).toMatch(/window\.shellCachedAt/);
       expect(code(view), `${screen.name} never renders the strip`).toMatch(/function paintStale/);
 
-      const en = view.slice(view.indexOf('  en: {'), view.indexOf('  ta: {'));
-      const ta = view.slice(view.indexOf('  ta: {'));
+      const en = view.slice(view.indexOf('en: {'), view.indexOf('ta: {'));
+      const ta = view.slice(view.indexOf('ta: {'));
       expect(en, `${screen.name} has no English for the strip`).toMatch(/staleShell:/);
       expect(ta, `${screen.name} has no Tamil for the strip`).toMatch(/staleShell:/);
     }
@@ -142,16 +150,17 @@ describe('the page is fetched fresh, and a cached one admits it', () => {
 
   it('repaints the strip when the language is switched', () => {
     for (const screen of SCREENS) {
-      expect(code(read(`apps/${screen.dir}/web/${screen.view}`)), `${screen.name} leaves it in one language`)
-        .toMatch(/el\('lang'\)\.addEventListener\('click', paintStale\)/);
+      const view = code(stripView(screen));
+      // The till repaints on its own toggle; the chrome watches the document's language, however a page changes it.
+      expect(view, `${screen.name} leaves it in one language`)
+        .toMatch(/el\('lang'\)\.addEventListener\('click', paintStale\)|MutationObserver\(repaint\)/);
     }
   });
 
   it('says the time in the reader’s own local time', () => {
     // The person reading it is standing in the shop, not in UTC.
     for (const screen of SCREENS) {
-      expect(code(read(`apps/${screen.dir}/web/${screen.view}`)))
-        .toMatch(/new Date\(at\)\.toLocaleString\(\)/);
+      expect(code(stripView(screen))).toMatch(/new Date\(at\)\.toLocaleString\(\)/);
     }
   });
 });

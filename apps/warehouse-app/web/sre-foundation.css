@@ -97,6 +97,8 @@ button:disabled { cursor: not-allowed; }
 header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; background:var(--panel); flex-wrap:wrap; }
 .who { font-weight:600; }
 .who small { display:block; color:var(--muted); font-weight:400; font-size:14px; }
+/* The page's one heading is the header line (Stage G slice 5a): an h1 styled as the line it is, not a headline. */
+h1.who { margin:0; font-size:17px; }
 /* The sync badge: connection state + unsent count + freshness. The dot is decoration; the words beside it are the badge. */
 .sync { display:flex; align-items:center; gap:8px; font-size:14px; }
 .dot { width:12px; height:12px; border-radius:50%; background:var(--ok); flex:none; }
@@ -119,6 +121,9 @@ header { display:flex; align-items:center; justify-content:space-between; gap:12
 .sre-btn-quiet { background: transparent; color: var(--muted); }
 .sre-btn:disabled { opacity: .55; }
 .sre-btn[aria-pressed="true"] { outline: 3px solid var(--accent); }
+
+/* Wide content — a table, a code block — scrolls in its own box; the page never scrolls sideways (1.4.10). */
+.sre-scroll-x { overflow-x: auto; max-width: 100%; }
 
 .sre-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--gap); }
 .sre-tile { background: var(--panel); border-radius: var(--radius-lg); padding: var(--pad); min-height: 120px; display: grid; align-content: start; gap: 4px; border-left: 6px solid var(--line); }

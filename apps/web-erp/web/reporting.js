@@ -32,7 +32,6 @@ const inr = (minor) =>
 
 const WORDS = {
   en: {
-    staleShell: 'No connection to the store computer. This page is what it was last told, at',
     title: 'Reports',
     reports: 'Reports', cannotRun: 'Cannot be run yet', whatNext: 'What to record next',
     reportsLead: 'Everything this shop can report on today. Every number says when it was true.',
@@ -56,7 +55,6 @@ const WORDS = {
     sampleData: 'Sample data — this is not your shop.',
   },
   ta: {
-    staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
     title: 'அறிக்கைகள்',
     reports: 'அறிக்கைகள்', cannotRun: 'இன்னும் இயக்க முடியாதவை', whatNext: 'அடுத்து என்ன பதிவு செய்ய வேண்டும்',
     reportsLead: 'இன்று இந்தக் கடை என்ன அறிக்கை தர முடியும். ஒவ்வொரு எண்ணும் அது எப்போது உண்மையாக இருந்தது என்று சொல்லும்.',
@@ -373,19 +371,6 @@ show('reports');
 
 // ── The shell's own honesty about where this page came from ─────────────────
 //
-// Worse here than on most screens: a page cached this morning shows figures stamped this morning
-// and a freshness strip that agreed with them at the time. The strip below is the one that says
-// the PAGE is old, which is a different fact from the numbers being old.
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

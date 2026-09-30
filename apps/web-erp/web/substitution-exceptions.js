@@ -18,14 +18,14 @@ function sampleSession() {
       orderLabel: 'Order', lineLabel: 'Line', queueLabel: 'Queue', heldByLabel: 'Held by', heldByYou: 'you', inQueue: 'in the queue', ageLabel: 'Age', minutes: 'min', proposedByLabel: 'Proposed by',
       claimBtn: 'Claim', workHeading: 'Work an exception you hold', whichLabel: 'Which exception', reasonCodeLabel: 'Reason code', reasonCodePlaceholder: 'e.g. REFUNDED / COLLECTED',
       detailLabel: 'What you did (this is the record)', detailPlaceholder: 'What was done, and why this closes it?', resolveBtn: 'Resolve', releaseBtn: 'Release back to the queue', nothingHeld: 'You hold nothing — claim an exception above to work it.',
-      sampleData: 'Sample data — this is not your shop.', staleShell: 'No connection to the store computer. This page is what it was last told, at', nobodyNamed: '' },
+      sampleData: 'Sample data — this is not your shop.', nobodyNamed: '' },
     ta: { title: 'டெலிவரி விதிவிலக்குகள்', langName: 'English',
       lead: 'மாதிரி விதிவிலக்குகள். உங்கள் கடையின் திறந்த டெலிவரி விதிவிலக்குகளைப் பார்க்க கடை கணினியை இணைக்கவும்.',
       openHeading: 'கையாள வேண்டியவை', openCount: 'கையாள வேண்டியவை', breachedCount: 'SLA கடந்தவை', atRiskLabel: 'ஆபத்தில் உள்ள தொகை', allClear: 'திறந்த டெலிவரி விதிவிலக்குகள் இல்லை — நிலுவையில் எதுவும் இல்லை.', queuesHeading: 'வரிசை வாரியாக',
       orderLabel: 'ஆர்டர்', lineLabel: 'வரி', queueLabel: 'வரிசை', heldByLabel: 'வைத்திருப்பவர்', heldByYou: 'நீங்கள்', inQueue: 'வரிசையில்', ageLabel: 'வயது', minutes: 'நிமி', proposedByLabel: 'முன்மொழிந்தவர்',
       claimBtn: 'கோரு', workHeading: 'நீங்கள் வைத்திருக்கும் விதிவிலக்கைக் கையாளுங்கள்', whichLabel: 'எந்த விதிவிலக்கு', reasonCodeLabel: 'காரணக் குறியீடு', reasonCodePlaceholder: 'எ.கா. REFUNDED / COLLECTED',
       detailLabel: 'நீங்கள் செய்தது (இதுவே பதிவு)', detailPlaceholder: 'என்ன செய்யப்பட்டது, ஏன் இது முடிகிறது?', resolveBtn: 'தீர்', releaseBtn: 'வரிசைக்குத் திருப்பி விடு', nothingHeld: 'நீங்கள் எதையும் வைத்திருக்கவில்லை — கையாள மேலே ஒரு விதிவிலக்கைக் கோருங்கள்.',
-      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', nobodyNamed: '' },
+      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', nobodyNamed: '' },
   };
   const sampleRow = (l) => ({
     exceptionId: 'sample-ord-1:line-1:refund_due', orderId: 'ORD-1', lineId: 'L1', kind: 'refund_due',
@@ -181,7 +181,7 @@ async function act(action, exceptionId) {
 }
 el('resolve').addEventListener('click', () => { void act('resolve', el('work-item').value); });
 el('release').addEventListener('click', () => { void act('release', el('work-item').value); });
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 
 el('sample').hidden = window.substitutionExceptionInboxSession !== undefined;
 el('sample').textContent = t('sampleData');
@@ -196,17 +196,6 @@ async function refresh() {
   if (data) { session = api.present(data); paint(); }
 }
 refresh();
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

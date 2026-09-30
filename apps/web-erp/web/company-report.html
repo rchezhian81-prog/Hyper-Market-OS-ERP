@@ -31,7 +31,8 @@
         font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
         background: var(--bg); color: var(--ink); min-height: 44px;
       }
-      .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+      .controls select { min-width: 0; max-width: 100%; }
       button {
         font: inherit; font-weight: 600; min-height: 44px; border-radius: 10px; border: 0;
         background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px;
@@ -90,12 +91,14 @@
       <section aria-labelledby="drill-h">
         <h2 id="drill-h">By branch <span lang="ta">/ கிளை வாரியாக</span></h2>
         <p class="lede">Drill from the total to the branches that make it up — worst first. <span lang="ta">மோசமானது முதலில்.</span></p>
+        <div class="sre-scroll-x">
         <table>
           <thead>
             <tr><th>Branch</th><th>Gross</th><th>Net</th><th>Last refreshed</th></tr>
           </thead>
           <tbody id="rows"></tbody>
         </table>
+        </div>
       </section>
 
       <section aria-labelledby="exp-h">
@@ -109,5 +112,7 @@
       </section>
     </main>
     <script type="module" src="./company-report.js"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
   </body>
 </html>

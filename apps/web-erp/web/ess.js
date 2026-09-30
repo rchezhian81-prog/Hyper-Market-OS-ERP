@@ -11,9 +11,9 @@ let lang = 'en';
 function sampleSession() {
   const CHROME = {
     en: { title: 'My self-service', lead: 'Sample view. Connect the store computer to see your own rota and payslip.', langName: 'தமிழ்',
-      sampleData: 'Sample data — this is not your record.', staleShell: 'No connection to the store computer. This page is what it was last told, at', nobodyNamed: '' },
+      sampleData: 'Sample data — this is not your record.', nobodyNamed: '' },
     ta: { title: 'எனது சுய-சேவை', lead: 'மாதிரிக் காட்சி. உங்கள் சொந்த அட்டவணை மற்றும் ஊதியச் சீட்டைப் பார்க்க கடை கணினியை இணைக்கவும்.', langName: 'English',
-      sampleData: 'மாதிரித் தகவல் — இது உங்கள் பதிவு அல்ல.', staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', nobodyNamed: '' },
+      sampleData: 'மாதிரித் தகவல் — இது உங்கள் பதிவு அல்ல.', nobodyNamed: '' },
   };
   const row = (id, section, headline, tone, icon, label, detail) => ({
     id, section, headline, detail, status: { tone, icon, label, announcement: `${headline}: ${label}`, needsAttention: false },
@@ -76,7 +76,7 @@ function paint() {
   }
 }
 
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 
 el('sample').hidden = real !== undefined;
 el('sample').textContent = t('sampleData');
@@ -87,20 +87,9 @@ async function refresh() {
   const api = window.essLive;
   if (!api || typeof api.refresh !== 'function') return;
   const data = await api.refresh();
-  if (data && (data.roster || data.payslip)) { session = api.present(data); paint(); paintStale(); }
+  if (data && (data.roster || data.payslip)) { session = api.present(data); paint(); }
 }
 refresh();
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

@@ -24,12 +24,10 @@
         font: 16px/1.5 var(--font);
         min-height: 100dvh; display: flex; flex-direction: column;
       }
-      .lang { background: transparent; color: var(--muted); min-height: 40px; font-size: 14px; border: 0; }
 
       .sample { background: var(--warn); color: #451a03; padding: 8px 16px; font-weight: 600; font-size: 15px; margin: 0; }
       .stale { background: #1e3a5f; color: #dbeafe; padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info); }
       /* Nobody named at the desk. Nothing can be committed, and it says so at the top. */
-      .nobody { background: var(--danger); color: #fff; padding: 10px 16px; font-size: 15px; margin: 0; font-weight: 600; }
 
       nav { display: flex; gap: 8px; padding: 8px 16px; background: var(--panel); overflow-x: auto; }
       nav button {
@@ -58,7 +56,7 @@
         background: var(--line); color: var(--ink);
       }
       button.primary { background: var(--good); color: #052e16; font-size: 18px; }
-      button.danger { background: var(--danger); color: #fff; }
+      button.danger { background: var(--danger-surface); color: var(--on-danger); }
       .wide { width: 100%; }
       .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
@@ -103,7 +101,7 @@
 
       .banner {
         position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 18px 16px;
-        background: var(--danger); color: #fff; display: grid; gap: 10px;
+        background: var(--danger-surface); color: var(--on-danger); display: grid; gap: 10px;
       }
       .banner[hidden] { display: none; }
       .banner.good { background: var(--good); color: #052e16; }
@@ -115,8 +113,8 @@
   </head>
   <body>
     <header>
-      <span class="who" id="who">Admin and security<small id="whoami">—</small></span>
-      <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
+      <h1 class="who" id="who">Admin and security<small id="whoami">—</small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
 
     <p class="sample" id="sample" hidden role="status">Sample data — this is not your shop.</p>
@@ -186,5 +184,7 @@
     <!--SCREEN-DATA-->
     <script type="module" src="./web-erp.bundle.js"></script>
     <script type="module" src="./admin.js"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
   </body>
 </html>

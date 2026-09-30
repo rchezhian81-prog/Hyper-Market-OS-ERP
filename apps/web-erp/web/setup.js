@@ -12,7 +12,6 @@ const el = (id) => document.getElementById(id);
 const WORDS = {
   en: {
     title: 'Store setup',
-    staleShell: 'No connection to the store computer. This page is what it was last told, at',
     sampleData: 'Sample data — this is not your shop.',
     ready: 'Setup is complete — the store can open.',
     notReady: 'Almost there — a few settings are still needed before the store can open.',
@@ -44,7 +43,6 @@ const WORDS = {
   },
   ta: {
     title: 'கடை அமைப்பு',
-    staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
     sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
     ready: 'அமைப்பு முடிந்தது — கடையைத் திறக்கலாம்.',
     notReady: 'கிட்டத்தட்ட முடிந்துவிட்டது — கடையைத் திறக்க முன் சில அமைப்புகள் தேவை.',
@@ -352,15 +350,6 @@ function render() {
   if (canEdit) for (const group of groups) for (const item of group.items) paintField(item.key);
 }
 
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-
 function paintChrome() {
   el('who').firstChild.textContent = `${t('title')} `;
   el('whoami').textContent = window.setupData?.userId ?? '';
@@ -374,7 +363,6 @@ el('lang').addEventListener('click', () => {
   paintChrome();
 });
 // The stale strip is its own concern, repainted in the reader's new language on a switch.
-el('lang').addEventListener('click', paintStale);
 
 // Nothing is lost silently: warn before leaving with an unsaved edit.
 window.addEventListener('beforeunload', (e) => {
@@ -388,7 +376,6 @@ window.addEventListener('beforeunload', (e) => {
 
 el('sample').hidden = window.setupSession !== undefined;
 paintChrome();
-paintStale();
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

@@ -35,7 +35,6 @@ function paise(text) {
 
 const WORDS = {
   en: {
-    staleShell: 'No connection to the store computer. This page is what it was last told, at',
     title: 'Service desk',
     takeBack: 'Take something back', cases: 'Complaints and enquiries',
     returnLead: "Find the bill first. The shop's own record decides what can come back and what has already been returned.",
@@ -60,7 +59,6 @@ const WORDS = {
     casesN: 'cases', resolvedN: 'resolved', breachedN: 'late', noCsat: 'nobody has rated us yet',
   },
   ta: {
-    staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
     title: 'சேவை மையம்',
     takeBack: 'பொருளைத் திரும்பப் பெறு', cases: 'புகார்களும் விசாரணைகளும்',
     returnLead: 'முதலில் ரசீதைக் கண்டறியவும். எது திரும்ப வர முடியும், எது ஏற்கனவே திரும்பியது என்பதை கடையின் சொந்தப் பதிவே தீர்மானிக்கும்.',
@@ -456,17 +454,6 @@ paintChrome();
 show('return');
 
 // ── The shell's own honesty about where this page came from ─────────────────
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

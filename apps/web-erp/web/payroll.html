@@ -22,7 +22,6 @@
       /* DEMO must be unmistakable and always visible when on — striped so it can never be mistaken for real. */
       .demo { background: repeating-linear-gradient(45deg, #7c2d12, #7c2d12 12px, #9a3412 12px, #9a3412 24px); color: #fff; letter-spacing: .04em; text-align: center; }
       .offline { background: var(--error); color: #fff; }
-      .nobody { background: #3f2d12; color: #fde68a; font-weight: 600; }
       .demo[hidden], .offline[hidden], .nobody[hidden] { display: none; }
 
       main { flex: 1; padding: 16px; display: grid; gap: 16px; align-content: start; max-width: 960px; width: 100%; }
@@ -68,7 +67,7 @@
     <p class="nobody" id="nobody" hidden></p>
 
     <header>
-      <span class="who" id="who">Payroll <small id="whoami"></small></span>
+      <h1 class="who" id="who">Payroll <small id="whoami"></small></h1>
       <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
 
@@ -138,5 +137,7 @@
 
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./payroll.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
   </body>
 </html>

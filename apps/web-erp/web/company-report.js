@@ -28,6 +28,7 @@ const named = (ids) => ids.map((id) => `${branchName(id)} (${id})`).join(', ');
 
 async function getJson(path) {
   const res = await fetch(path, { headers: { accept: 'application/json' } });
+  if (!res.ok) throw new Error(`head office answered ${res.status}`);
   return res.json();
 }
 
@@ -93,7 +94,18 @@ function query() {
 }
 
 async function load() {
-  const report = await getJson(`/consolidation?${query().toString()}`);
+  let report;
+  try {
+    report = await getJson(`/consolidation?${query().toString()}`);
+  } catch {
+    // Head office could not be reached, or did not answer with a report. Said, rather than a blank page
+    // that reads as "nothing to report" or a thrown error nobody sees (P-08).
+    const missing = $('missing');
+    missing.className = 'flag err';
+    missing.textContent = 'Head office cannot be reached from here — nothing on this page is current. / தலைமை அலுவலகத்தை அடைய முடியவில்லை — இந்தப் பக்கத்தில் எதுவும் தற்போதையது அல்ல.';
+    renderKpis({});
+    return;
+  }
   renderFreshness(report.freshness);
   renderKpis(report.measures || {});
   renderContributors(report.contributors || []);

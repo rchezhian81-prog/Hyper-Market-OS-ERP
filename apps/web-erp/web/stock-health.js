@@ -32,14 +32,12 @@ function sampleSession() {
       title: 'Stock health', langName: 'தமிழ்',
       lead: 'Sample stock health. Connect the store computer to see your own shop’s figures.',
       signalsHeading: 'What needs attention', kpisHeading: 'The numbers', asOfLabel: 'As of', refresh: 'Refresh',
-      sampleData: 'Sample data — this is not your shop.', staleShell: 'No connection to the store computer. This page is what it was last told, at',
-    },
+      sampleData: 'Sample data — this is not your shop.', },
     ta: {
       title: 'சரக்கு நலன்', langName: 'English',
       lead: 'மாதிரி சரக்கு நலன். உங்கள் கடையின் எண்களைப் பார்க்க கடை கணினியை இணைக்கவும்.',
       signalsHeading: 'கவனம் தேவைப்படுவது', kpisHeading: 'எண்கள்', asOfLabel: 'நிலவரம்', refresh: 'புதுப்பி',
-      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
-    },
+      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', },
   };
   return {
     text: (l, key) => CHROME[l]?.[key] ?? CHROME.en[key] ?? key,
@@ -143,7 +141,7 @@ function paint() {
   el('kpis').replaceChildren(...view.kpis.map((k) => kpiNode(k)));
 }
 
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 
 el('sample').hidden = window.stockHealthSession !== undefined;
 el('sample').textContent = t('sampleData');
@@ -159,17 +157,6 @@ async function refresh() {
 }
 el('refresh').addEventListener('click', () => { void refresh(); });
 refresh();
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

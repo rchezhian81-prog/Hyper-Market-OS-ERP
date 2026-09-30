@@ -25,7 +25,7 @@ function sampleSession() {
       scrReady: 'Showing the batches to release', scrEmpty: 'Nothing waiting — every finished batch has been released or held.',
       stateNotPermitted: 'You do not have permission to see production.', noRelease: 'You can see the batches, but releasing one needs quality-release permission.',
       nobodyNamed: 'This store computer has not been told who is using this screen.',
-      staleShell: 'No connection to the store computer. This page is what it was last told, at', sampleData: 'Sample data — this is not your shop.',
+      sampleData: 'Sample data — this is not your shop.',
     },
     ta: {
       title: 'விற்பனைக்கு விடுவி', langName: 'English',
@@ -40,7 +40,7 @@ function sampleSession() {
       scrReady: 'விடுவிக்க வேண்டிய தொகுதிகளைக் காட்டுகிறது', scrEmpty: 'காத்திருப்பது எதுவும் இல்லை — ஒவ்வொரு தொகுதியும் விடுவிக்கப்பட்டது அல்லது தடுத்து வைக்கப்பட்டது.',
       stateNotPermitted: 'உற்பத்தியைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.', noRelease: 'தொகுதிகளைப் பார்க்கலாம், ஆனால் விடுவிக்க தரக் கட்டுப்பாட்டு அனுமதி தேவை.',
       nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
-      staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
+      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
     },
   };
   const sampleRun = (l) => ({
@@ -171,7 +171,7 @@ el('rows').addEventListener('click', (ev) => {
     if (result === 'released' || result === 'held') { await refresh(); }
   })();
 });
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 
 el('sample').hidden = window.productionSession !== undefined;
 el('sample').textContent = t('sampleData');
@@ -186,17 +186,6 @@ async function refresh() {
   if (board) { session = api.present(board); paint(); }
 }
 refresh();
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

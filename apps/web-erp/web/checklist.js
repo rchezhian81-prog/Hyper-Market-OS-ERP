@@ -26,7 +26,7 @@ function sampleSession() {
       scrReady: 'Showing the day\'s checklists', scrEmpty: 'Every checklist is signed and nothing blocking is outstanding.',
       stateNotPermitted: 'You do not have permission to see the checklists.', noManage: 'You can see the checklists, but signing one needs manager permission.',
       nobodyNamed: 'This store computer has not been told who is using this screen.',
-      staleShell: 'No connection to the store computer. This page is what it was last told, at', sampleData: 'Sample data — this is not your shop.',
+      sampleData: 'Sample data — this is not your shop.',
     },
     ta: {
       title: 'சரிபார்ப்புப் பட்டியல்கள்', langName: 'English',
@@ -42,7 +42,7 @@ function sampleSession() {
       scrReady: 'அன்றைய சரிபார்ப்புப் பட்டியல்களைக் காட்டுகிறது', scrEmpty: 'ஒவ்வொரு பட்டியலும் கையொப்பமிடப்பட்டு, தடையான எதுவும் நிலுவையில் இல்லை.',
       stateNotPermitted: 'சரிபார்ப்புப் பட்டியல்களைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.', noManage: 'பட்டியல்களைப் பார்க்கலாம், ஆனால் கையொப்பமிட மேலாளர் அனுமதி தேவை.',
       nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
-      staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
+      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
     },
   };
   const sampleList = (l) => ({
@@ -101,8 +101,10 @@ function rowNode(c) {
     box.checked = it.done;
     box.disabled = it.done || !canSignNow; // a shift's tick is not un-done here; a non-manager cannot tick
     box.setAttribute('aria-label', it.description);
-    const label = document.createElement('span'); label.textContent = it.description;
-    row.append(box, label);
+    const words = document.createElement('span'); words.textContent = it.description;
+    // The target is the whole labelled row, not a 22px box — a thumb ticks a line, not a square (2.5.8).
+    const pick = document.createElement('label'); pick.append(box, words);
+    row.append(pick);
     if (it.blocking) { const b = document.createElement('span'); b.className = 'blk'; b.textContent = t('blockingWord'); row.append(b); }
     items.append(row);
   }
@@ -184,7 +186,7 @@ el('rows').addEventListener('click', (ev) => {
     if (result === 'recorded') { await refresh(); }
   })();
 });
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 
 el('sample').hidden = window.checklistSession !== undefined;
 el('sample').textContent = t('sampleData');
@@ -199,17 +201,6 @@ async function refresh() {
   if (data) { session = api.present(data); paint(); }
 }
 refresh();
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

@@ -24,7 +24,6 @@
         font: 16px/1.5 var(--font);
         min-height: 100dvh; display: flex; flex-direction: column;
       }
-      .lang { background: transparent; color: var(--muted); min-height: 40px; font-size: 14px; border: 0; }
       .sample { background: var(--warn); color: #451a03; padding: 8px 16px; font-weight: 600; font-size: 15px; margin: 0; }
       .sample[hidden] { display: none; }
       /* Served from this device's cache because the store box could not be reached — it says WHEN (P-08). */
@@ -61,7 +60,7 @@
       .appr .buttons { display: flex; gap: 10px; }
       .appr button { min-height: 44px; padding: 0 18px; border: 0; border-radius: 10px; font-size: 15px; font-weight: 600; }
       .appr button.approve { background: var(--good); color: #052e16; }
-      .appr button.reject { background: var(--danger); color: #fff; }
+      .appr button.reject { background: var(--danger-surface); color: var(--on-danger); }
 
       /* Reason picker — on-screen choices, never a browser prompt. */
       .sheet { position: fixed; inset: 0; background: rgba(2, 6, 23, .86); display: grid; place-items: center; z-index: 20; padding: 16px; }
@@ -81,14 +80,14 @@
       .card h3 { margin: 0; font-size: 16px; }
       .field { display: grid; gap: 4px; }
       .field label { color: var(--muted); font-size: 14px; }
-      .field input, .field select { background: #0b1220; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; min-height: 42px; padding: 0 12px; font-size: 15px; }
+      .field input, .field select { background: #0b1220; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; min-height: var(--tap); padding: 0 12px; font-size: 15px; }
       .card button.do { min-height: 46px; border: 0; border-radius: 10px; background: var(--info); color: #052e16; font-size: 15px; font-weight: 600; }
     </style>
   </head>
   <body>
     <header>
-      <span class="who" id="who">—<small id="store">—</small></span>
-      <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
+      <h1 class="who" id="who">—<small id="store">—</small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
 
     <p class="sample" id="sample" hidden role="status">Sample data — this is not the shop's own warehouse.</p>
@@ -159,5 +158,7 @@
     <!--SCREEN-DATA-->
     <script type="module" src="./web-erp.bundle.js"></script>
     <script type="module" src="./warehouse.js"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
   </body>
 </html>

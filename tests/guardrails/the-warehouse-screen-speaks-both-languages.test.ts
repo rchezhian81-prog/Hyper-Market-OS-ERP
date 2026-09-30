@@ -35,10 +35,6 @@ describe('every warehouse scan outcome has a word in both languages', () => {
     expect(missing, `Tamil is missing: ${missing.join(', ')}`).toEqual([]);
   });
 
-  it('shows the stale-shell strip in both languages, like every other screen', () => {
-    expect(en).toMatch(/staleShell:/);
-    expect(ta).toMatch(/staleShell:/);
-  });
 
   it('tripwire — the detector fires on a code that is genuinely absent', () => {
     // Otherwise a regex that silently matched everything would make the checks above vacuous.
@@ -62,10 +58,6 @@ describe('the warehouse supervisor screen names every exception in both language
     expect(missing, `Tamil is missing: ${missing.join(', ')}`).toEqual([]);
   });
 
-  it('shows the stale-shell strip in both languages', () => {
-    expect(supEn).toMatch(/staleShell:/);
-    expect(supTa).toMatch(/staleShell:/);
-  });
 
   it('has both languages for every approval decision reason code (§28 audit vocabulary)', () => {
     const codes = [...APPROVE_REASONS, ...REJECT_REASONS];

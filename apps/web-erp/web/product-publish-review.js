@@ -14,11 +14,11 @@ function sampleSession() {
     en: { title: 'Products to publish', lead: 'Sample queue. Connect the store computer to see your own products waiting to publish.', langName: 'தமிழ்',
       readyCount: 'ready to publish', attentionCount: 'need a person', allClear: 'Nothing is waiting — the catalogue is up to date.',
       deliverBtn: 'Publish the ready ones', deliverNone: 'Nothing is ready to publish',
-      sampleData: 'Sample data — this is not your shop.', staleShell: 'No connection to the store computer. This page is what it was last told, at', nobodyNamed: '' },
+      sampleData: 'Sample data — this is not your shop.', nobodyNamed: '' },
     ta: { title: 'வெளியிட வேண்டிய பொருட்கள்', lead: 'மாதிரி வரிசை. உங்கள் சொந்தப் பொருட்களைப் பார்க்க கடை கணினியை இணைக்கவும்.', langName: 'English',
       readyCount: 'வெளியிட தயார்', attentionCount: 'ஒருவர் தேவை', allClear: 'எதுவும் காத்திருக்கவில்லை — பட்டியல் புதுப்பித்த நிலையில் உள்ளது.',
       deliverBtn: 'தயாராக உள்ளவற்றை வெளியிடு', deliverNone: 'வெளியிட எதுவும் தயாராக இல்லை',
-      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', nobodyNamed: '' },
+      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', nobodyNamed: '' },
   };
   const row = (by, when, tone, icon, statusLabel, state, needsAttention, detail) => ({
     key: `${by}-${when}`, createdBy: by, createdAt: when, tenantId: 't', state, needsAttention,
@@ -129,22 +129,11 @@ el('deliver').addEventListener('click', async () => {
   }
 });
 
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 
 el('sample').hidden = real !== undefined;
 el('sample').textContent = t('sampleData');
 paint();
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

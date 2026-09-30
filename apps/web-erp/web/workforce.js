@@ -17,13 +17,13 @@ function sampleSession() {
       guidanceLabel: 'What to do', dismissedByLabel: 'Set aside by', reasonLabel: 'Reason', allClear: 'Nothing late — the day’s tasks are on track.',
       dismissBtn: 'Set aside', reopenBtn: 'Bring back', reasonPlaceholder: 'Why is this not being acted on now?',
       dismissRecorded: 'Set aside.', dismissRefused: 'Could not save — a short reason is needed.', dismissLostLink: 'No connection — not saved. Try again.',
-      sampleData: 'Sample data — this is not your shop.', staleShell: 'No connection to the store computer. This page is what it was last told, at', nobodyNamed: '' },
+      sampleData: 'Sample data — this is not your shop.', nobodyNamed: '' },
     ta: { title: 'பணியாளர்கள்', lead: 'மாதிரிப் பணிகள். உங்கள் சொந்தக் கடைக்கான வழிகாட்டுதலைப் பார்க்க கடை கணினியை இணைக்கவும்.', langName: 'English',
       openHeading: 'கவனம் தேவை', dismissedHeading: 'ஒதுக்கப்பட்டவை', openCount: 'கவனம் தேவை', dismissedCount: 'ஒதுக்கப்பட்டவை',
       guidanceLabel: 'என்ன செய்ய வேண்டும்', dismissedByLabel: 'ஒதுக்கியவர்', reasonLabel: 'காரணம்', allClear: 'தாமதம் எதுவும் இல்லை — இன்றைய பணிகள் சரியாக நடக்கின்றன.',
       dismissBtn: 'ஒதுக்கிவை', reopenBtn: 'மீண்டும் கொண்டுவா', reasonPlaceholder: 'இது ஏன் இப்போது செயல்படுத்தப்படவில்லை?',
       dismissRecorded: 'ஒதுக்கப்பட்டது.', dismissRefused: 'சேமிக்க முடியவில்லை — ஒரு சிறு காரணம் தேவை.', dismissLostLink: 'இணைப்பு இல்லை — சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
-      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', nobodyNamed: '' },
+      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', nobodyNamed: '' },
   };
   const escalatedRow = (l) => ({
     findingId: 'sample-chiller', taskId: 'T-chiller', needsAttention: true,
@@ -158,7 +158,7 @@ function paintResult(presentation) {
   result.setAttribute('aria-label', presentation.announcement || presentation.label);
 }
 
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 
 el('sample').hidden = window.workforceInboxSession !== undefined;
 el('sample').textContent = t('sampleData');
@@ -173,17 +173,6 @@ async function refresh() {
   if (data) { session = api.present(data); paint(); }
 }
 refresh();
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

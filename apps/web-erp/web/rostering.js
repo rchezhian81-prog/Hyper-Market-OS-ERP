@@ -24,7 +24,7 @@ function sampleSession() {
       scrReady: 'Showing the roster gaps', scrEmpty: 'No gaps — every required role on every shift is covered.',
       stateNotPermitted: 'You do not have permission to see the roster.', noManage: 'You can see the gaps, but changing the roster needs manager permission.',
       nobodyNamed: 'This store computer has not been told who is using this screen.',
-      staleShell: 'No connection to the store computer. This page is what it was last told, at', sampleData: 'Sample data — this is not your shop.',
+      sampleData: 'Sample data — this is not your shop.',
     },
     ta: {
       title: 'பணிப்பட்டியல் இடைவெளிகள்', langName: 'English',
@@ -39,7 +39,7 @@ function sampleSession() {
       scrReady: 'பணிப்பட்டியல் இடைவெளிகளைக் காட்டுகிறது', scrEmpty: 'இடைவெளி இல்லை — ஒவ்வொரு ஷிப்டிலும் தேவையான பணிகள் அனைத்தும் நிரப்பப்பட்டுள்ளன.',
       stateNotPermitted: 'பணிப்பட்டியலைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.', noManage: 'இடைவெளிகளைப் பார்க்கலாம், ஆனால் பணிப்பட்டியலை மாற்ற மேலாளர் அனுமதி தேவை.',
       nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
-      staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
+      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
     },
   };
   const sampleGap = (l) => ({
@@ -184,7 +184,7 @@ el('assign').addEventListener('click', () => {
   })();
 });
 el('assign-gap').addEventListener('change', paintEligible);
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 
 el('sample').hidden = window.rosteringSession !== undefined;
 el('sample').textContent = t('sampleData');
@@ -199,17 +199,6 @@ async function refresh() {
   if (data) { session = api.present(data); paint(); }
 }
 refresh();
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

@@ -36,7 +36,7 @@
       .form .hint { font-size:13px; color:var(--muted); margin:0; }
       button.quiet { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--line); color:var(--ink); }
       button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--degraded); color:#451a03; }
-      button.small { min-height:40px; padding:0 14px; border:0; border-radius:10px; font-size:14px; font-weight:700; background:var(--line); color:var(--ink); }
+      button.small { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; font-size:14px; font-weight:700; background:var(--line); color:var(--ink); }
       button.small.act { background:var(--degraded); color:#451a03; }
       button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, .lang:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
@@ -66,7 +66,7 @@
     <p class="nobody" id="nobody" hidden></p>
 
     <header>
-      <span class="who" id="who">Document templates <small id="whoami"></small></span>
+      <h1 class="who" id="who">Document templates <small id="whoami"></small></h1>
       <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
 
@@ -110,5 +110,7 @@
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./document-templates.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
   </body>
 </html>

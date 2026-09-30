@@ -285,7 +285,9 @@ describe('the desk the till has been sending people to', () => {
   it('opens with no network and says where the page came from', () => {
     expect(HTML).toMatch(/<!--SCREEN-DATA-->/);
     expect(code(VIEW)).toMatch(/navigator\.serviceWorker\.register\('\.\/sw\.js'\)/);
-    expect(code(VIEW)).toMatch(/window\.shellCachedAt/);
+    // The strip is the ERP chrome's (Stage G slice 5a): the page loads it, the chrome reads the stamp.
+    expect(HTML).toMatch(/<script type="module" src="\.\/sre-chrome\.js"><\/script>/);
+    expect(readFileSync('apps/web-erp/web/sre-chrome.js', 'utf8')).toMatch(/window\.shellCachedAt/);
     expect(HTML).toMatch(/id="stale"/);
   });
 

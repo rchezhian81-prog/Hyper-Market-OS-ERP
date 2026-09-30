@@ -28,7 +28,7 @@
       .tile.attention { border-left-color:var(--degraded); } .tile.bad { border-left-color:var(--error); } .tile.good { border-left-color:var(--ok); }
       .summary { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
       .summary .count { font-size:18px; font-weight:700; } .summary .count.attention { color:var(--degraded); }
-      .filter { min-height:40px; padding:0 14px; border:0; border-radius:10px; background:var(--line); color:var(--ink); font-size:15px; }
+      .filter { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; background:var(--line); color:var(--ink); font-size:15px; }
       .filter[aria-pressed='true'] { background:var(--ink); color:#0f172a; }
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
       li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); }
@@ -47,7 +47,7 @@
       .send:disabled { opacity:.6; } .send[hidden] { display:none; }
       #deliver-msg { color:var(--muted); font-size:14px; }
       .actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:2px; }
-      .act { min-height:40px; padding:0 16px; border:0; border-radius:10px; background:var(--line); color:var(--ink); font-size:15px; font-weight:600; }
+      .act { min-height: var(--tap); padding:0 16px; border:0; border-radius:10px; background:var(--line); color:var(--ink); font-size:15px; font-weight:600; }
       .act:disabled { opacity:.5; }
       .act-block { background:#7f1d1d; color:#fee2e2; } .act-retire { background:#3f2d12; color:#fde68a; } .act-reinstate { background:#14532d; color:#dcfce7; }
       .act-note { color:var(--muted); font-size:13px; }
@@ -74,7 +74,7 @@
     </div>
 
     <header>
-      <span class="who" id="who">Devices <small id="whoami"></small></span>
+      <h1 class="who" id="who">Devices <small id="whoami"></small></h1>
       <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
 
@@ -111,5 +111,7 @@
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./fleet.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
   </body>
 </html>
