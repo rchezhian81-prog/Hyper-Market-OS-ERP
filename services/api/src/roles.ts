@@ -60,6 +60,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'inventory.receipt.policy.set', 'inventory.receipt.policy.read',
       'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.return.threshold.set', 'pos.return.window.set', 'pos.storecredit.cap.set', 'pos.return.noreceipt.cap.set', 'pos.restricted.check',
       'cash.movement.record', 'cash.till.read', 'till.shift.close', 'till.shift.read', 'till.overshort.review',
+      // SP-4c: the till's cash movements and shift closes relayed by the store box to the synced routes.
+      'cash.movement.sync', 'till.shift.sync',
       'till.dayclose.sync', 'till.dayclose.read', 'till.dayclose.approve',
       'lp.case.manage', 'lp.case.read', 'lp.rule.manage',
       'customer.consent.read', 'customer.consent.write', 'privacy.request.manage', 'privacy.erasure.approve', 'privacy.erasure.execute', 'loyalty.points.read', 'loyalty.points.write',
@@ -225,6 +227,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'inventory.movement.sync',
       // SP-3b hop: the box relays the handheld's adjustment REQUESTS; the route records them pending — this grants no approval.
       'inventory.adjustment.sync',
+      // SP-4c hop: the box relays the till's cash movements and shift closes (F10). The routes re-verify the custodian /
+      // cashier from THEIR grants and record-and-flag — these grant no cash authority of their own.
+      'cash.movement.sync', 'till.shift.sync',
       // M01-FR-02: the box pulls the PUBLISHED document templates (the receipt header/footer in force) into the
       // lane's pack under this identity — a read of what head office put in force, never of drafts or names.
       'org.template.pull',

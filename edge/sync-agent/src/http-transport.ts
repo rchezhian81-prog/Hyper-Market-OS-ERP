@@ -162,6 +162,12 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   // → dead-lettered here by name for a person (hard rule #10); the same decision again is 200 → delivered once.
   // `id` is the decided request's own id — a plain payload field matching the path param.
   ApprovalDecided: '/v1/approvals/decisions/:id/synced',
+  // The till's cash, as the STORE BOX recorded it (SP-4c · F10 · M14-FR-01/02 · §31). A float, loan, pickup or safe drop
+  // and a shift close are durable on the box's own till-cash log and relayed HERE under the store token to the synced
+  // routes, which re-verify the custodian / cashier from their own grants, re-run the same guard and record-and-flag —
+  // never refuse money that already moved. `tillId` / `shiftId` are plain top-level payload fields matching the params.
+  CashMovement: '/v1/tills/:tillId/cash-movements/synced',
+  TillClosed: '/v1/shifts/:shiftId/close/synced',
   // The warehouse handheld's work, relayed by the box from its authenticated device socket (SP-3a · ADR-0019 · S1).
   // A put-away or pick re-runs the tested bin engine at head office with the MOVER re-verified; a receiving scan
   // becomes a `received` movement at the store with the RECEIVER re-verified. Both idempotent on the handheld's own

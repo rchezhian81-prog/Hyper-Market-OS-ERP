@@ -106,9 +106,9 @@ describe('RR-F04 — the edge enforces refund entitlement from trusted local dat
 describe('RR-F04 — the till surfaces an over-return explicitly', () => {
   it('throws RefundNotEntitledError when the edge reports over_return', async () => {
     const till = createTillSession(
-      { tillId: 'till-1', laneId: 'lane-1', cashierId: 'u-meena', tradingDay: '2026-09-11', varianceToleranceMinor: 10_000 },
-      new Ledger(new InMemoryLedgerStore()), new Ledger(new InMemoryLedgerStore()), new SyncOutbox(),
-      (async () => ({ committed: false, refusedBecause: 'over_return', detail: 'already refunded', laneMessage: 'Already refunded.' } as CommitOutcome)) as DurableReturnWrite,
+      { laneId: 'lane-1', cashierId: 'u-meena', tradingDay: '2026-09-11' },
+      new Ledger(new InMemoryLedgerStore()), new SyncOutbox(),
+      { durableReturn: (async () => ({ committed: false, refusedBecause: 'over_return', detail: 'already refunded', laneMessage: 'Already refunded.' } as CommitOutcome)) as DurableReturnWrite },
     );
     await expect(till.refund({
       id: 'R-till', number: 'RET-till', originalSaleId: 'S-1', processedAt: '2026-09-11T10:00:00Z', reasonCode: 'damaged',

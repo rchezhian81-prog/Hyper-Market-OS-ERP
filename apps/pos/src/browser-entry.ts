@@ -20,7 +20,10 @@ import { money } from '../../../packages/contracts/src/money';
 import type { TenderKind } from '../../../packages/contracts/src/enums';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
 import { PosSession, taxRateFromPercent, NoOperatorError } from './session';
-import { createTillSession } from './till-session';
+import {
+  createTillSession, TILL_CASH_WORDS_FOR_THE_LANE,
+  type CashMovementWrite, type ShiftCloseWrite, type TillCashRead, type CashMovementOutcome, type ShiftCloseOutcome, type TillCashStatus,
+} from './till-session';
 import { createPosView, type PosView } from './view-adapter';
 import {
   createRefundView, type RefundPolicy, type RefundLineChoice, type RefundScreenOutcome,
@@ -193,6 +196,59 @@ export function laneLookup(port: number = DEFAULT_LANE_PORT): LaneLookup {
   };
 }
 
+/**
+ * The till's CASH ports to its own box (SP-4c · F10 · M14-FR-01/02): a float, loan, pickup or safe drop on
+ * `/lane/cash-movements`; the shift close on `/lane/shift-close`; where the till's cash stands on `/lane/till-cash`.
+ * The box owns the record and the decision; these carry the request over the same loopback socket a sale uses. Both
+ * write routes are idempotent on the till's own id, so a lost reply is resolved by re-posting the SAME request: the box
+ * answers `alreadyRecorded` / `alreadyClosed` for a repeat, and a retry can never move the money twice. Only when the
+ * box cannot be reached at all is the outcome `lane_unreachable` — and it says so in the cashier's words, never as a
+ * refusal that invites a fresh id.
+ */
+function laneCashTo<TReq, TOut>(
+  path: '/lane/cash-movements' | '/lane/shift-close', port: number, unreachable: () => TOut,
+  opts: { readonly attempts?: number; readonly retryDelayMs?: number } = {},
+): (req: TReq) => Promise<TOut> {
+  const attempts = opts.attempts ?? 4;
+  const retryDelayMs = opts.retryDelayMs ?? 100;
+  return async (req) => {
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(req),
+        });
+        return await response.json() as TOut;
+      } catch {
+        if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, retryDelayMs * attempt));
+      }
+    }
+    return unreachable();
+  };
+}
+
+export function laneCashMovement(port: number = DEFAULT_LANE_PORT): CashMovementWrite {
+  return laneCashTo('/lane/cash-movements', port, (): CashMovementOutcome =>
+    ({ committed: false, refusedBecause: 'lane_unreachable', laneMessage: TILL_CASH_WORDS_FOR_THE_LANE.lane_unreachable }));
+}
+
+export function laneShiftClose(port: number = DEFAULT_LANE_PORT): ShiftCloseWrite {
+  return laneCashTo('/lane/shift-close', port, (): ShiftCloseOutcome =>
+    ({ closed: false, refusedBecause: 'lane_unreachable', laneMessage: TILL_CASH_WORDS_FOR_THE_LANE.lane_unreachable }));
+}
+
+/** Where the till's cash stands, read from the box — custody only, never a figure. `null` when the box did not answer. */
+export function laneTillCash(port: number = DEFAULT_LANE_PORT): TillCashRead {
+  return async () => {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/lane/till-cash`);
+      if (!response.ok) return null;
+      return await response.json() as TillCashStatus;
+    } catch {
+      return null;
+    }
+  };
+}
+
 /** What the refund screen passes back to complete a refund — display primitives + an optional
  * manager approval captured at the lane (§28: the manager's staff id, which must differ from the
  * cashier, and a reason). The edge/cloud re-verify that the approver truly holds the authority. */
@@ -242,13 +298,14 @@ export function bootPos(config?: {
   catalogue?: CatalogueSnapshot;
   /** Where this till's edge listens. Only ever loopback. */
   lanePort?: number;
-  tillId?: string;
-  /** |over/short| at or above which a cash-up variance needs a manager. Per-tenant. */
-  varianceToleranceMinor?: number;
   /** Overridable for tests. Production always goes to this till's own edge. */
   durable?: DurableWrite;
   /** The refund's durable write. Overridable for tests; production goes to this till's own edge. */
   durableReturn?: DurableWrite;
+  /** The till's cash ports to its box (SP-4c): a movement, the shift close, where the cash stands. Overridable for tests. */
+  cashMovement?: CashMovementWrite;
+  shiftClose?: ShiftCloseWrite;
+  tillCash?: TillCashRead;
   /** This lane's reserved receipt-number range (M01-FR-02), provisioned per lane. */
   receipt?: PosReceiptSeries;
   /** The receipt template in force as the box last pulled it (M01-FR-02); absent = print with defaults, stamp no version. */
@@ -310,17 +367,23 @@ export function bootPos(config?: {
   // object rather than more methods on the sale view, because it is a different job done by a
   // different person at a different time, and because keeping the expected-cash figure out of the
   // sale surface is what makes the blind count structural.
+  const lanePort = config?.lanePort ?? DEFAULT_LANE_PORT;
   const till = createTillSession(
     {
-      tillId: config?.tillId ?? 'till-1',
-      ...identity,
-      varianceToleranceMinor: config?.varianceToleranceMinor ?? 10_000,
+      ...(identity.laneId === undefined ? {} : { laneId: identity.laneId }),
+      ...(identity.cashierId === undefined ? {} : { cashierId: identity.cashierId }),
+      ...(identity.tradingDay === undefined ? {} : { tradingDay: identity.tradingDay }),
     },
     new Ledger(new InMemoryLedgerStore()),
-    new Ledger(new InMemoryLedgerStore()),
     outbox,
-    // The refund's durable write goes to this till's own edge, exactly as the sale's does.
-    config?.durableReturn ?? laneDurableReturn(config?.lanePort ?? DEFAULT_LANE_PORT),
+    {
+      // The refund's durable write goes to this till's own edge, exactly as the sale's does.
+      durableReturn: config?.durableReturn ?? laneDurableReturn(lanePort),
+      // And so does every cash movement and the close (SP-4c · F10): the box records, decides and dates them.
+      cashMovement: config?.cashMovement ?? laneCashMovement(lanePort),
+      shiftClose: config?.shiftClose ?? laneShiftClose(lanePort),
+      tillCash: config?.tillCash ?? laneTillCash(lanePort),
+    },
   );
 
   // Receipt numbering (M01-FR-02). A provisioned reserved range gives gap-free, collision-free

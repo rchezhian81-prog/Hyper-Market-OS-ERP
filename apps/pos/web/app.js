@@ -73,6 +73,20 @@ const WORDS = {
     over: 'Over by', short: 'Short by', balanced: 'The drawer balances exactly.',
     needsReason: 'This difference is large enough that a manager must be told. Do not put the money away — call the manager now.',
     countHint: 'Count what is actually in the drawer. Nothing on this screen tells you what it should be — that is on purpose.',
+    // The till's cash lives on the store computer (SP-4c · F10): a float opens the till, a pickup goes to the safe, the close is
+    // decided there. The words for each refusal are the store computer's own (English) and their Tamil twins.
+    takeFloat: 'Take float (open the till)', floatAmount: 'How much float is going into the drawer?', floatTaken: 'Float taken — the till is open',
+    cashSaved: 'Recorded on the store computer', cashNotSaved: 'NOT recorded. Do not move the money.',
+    whyOut: 'Why is the drawer out?', tillClosed: 'Till closed',
+    pendingCash: 'A cash movement from before was still waiting — it has now been recorded.',
+    cash_till_already_assigned: 'This till already has a float out. Close the till before another float is taken.',
+    cash_till_not_held_by_this_custodian: 'You do not hold this till. Take the float first, or ask the cashier who did.',
+    cash_insufficient_till_cash: 'The drawer does not hold that much. Count what is there and tell the manager before moving any cash.',
+    cash_no_open_shift: 'No float has been taken on this till, so there is no shift to close. Take the float first.',
+    cash_not_the_custodian: 'This till is held by another cashier. Only the cashier who took the float can close it.',
+    cash_lane_unreachable: 'The store computer did not answer. The cash is NOT recorded yet — do not move it. Try again in a moment.',
+    cash_no_store_box: 'This till is not connected to its store computer, so cash cannot be recorded. Tell the manager.',
+    cash_material_variance_needs_a_reason: 'The drawer is out by more than the shop allows. Say why before the till can close.',
     refundFind: 'Scan the receipt, or key the bill number',
     refundFindHint: 'Scan the barcode on the customer receipt, or type the bill number and press OK',
     refundLookupFailed: 'Could not reach the store to look up that bill. Try again, or use another lane.',
@@ -139,6 +153,18 @@ const WORDS = {
     over: 'அதிகம்', short: 'குறைவு', balanced: 'டிராயர் சரியாக உள்ளது.',
     needsReason: 'இந்த வித்தியாசம் பெரியது. மேலாளரிடம் சொல்ல வேண்டும். பணத்தை வைக்க வேண்டாம் — உடனே மேலாளரை அழைக்கவும்.',
     countHint: 'டிராயரில் உள்ளதை எண்ணவும். எவ்வளவு இருக்க வேண்டும் என்பதை இந்தத் திரை சொல்லாது — அது வேண்டுமென்றே.',
+    takeFloat: 'ஆரம்பப் பணம் எடு (டில்லைத் திற)', floatAmount: 'டிராயரில் எவ்வளவு ஆரம்பப் பணம் போகிறது?', floatTaken: 'ஆரம்பப் பணம் எடுக்கப்பட்டது — டில் திறந்துள்ளது',
+    cashSaved: 'கடை கணினியில் பதிவு செய்யப்பட்டது', cashNotSaved: 'பதிவு செய்யப்படவில்லை. பணத்தை நகர்த்த வேண்டாம்.',
+    whyOut: 'டிராயர் ஏன் வித்தியாசமாக உள்ளது?', tillClosed: 'டில் மூடப்பட்டது',
+    pendingCash: 'முன்பு காத்திருந்த பணப் பதிவு இப்போது பதிவு செய்யப்பட்டது.',
+    cash_till_already_assigned: 'இந்த டில்லில் ஏற்கனவே ஆரம்பப் பணம் உள்ளது. மற்றொன்று எடுப்பதற்கு முன் டில்லை மூடவும்.',
+    cash_till_not_held_by_this_custodian: 'இந்த டில் உங்களிடம் இல்லை. முதலில் ஆரம்பப் பணம் எடுக்கவும், அல்லது எடுத்தவரிடம் கேளுங்கள்.',
+    cash_insufficient_till_cash: 'டிராயரில் அவ்வளவு இல்லை. இருப்பதை எண்ணி, பணத்தை நகர்த்தும் முன் மேலாளரிடம் சொல்லவும்.',
+    cash_no_open_shift: 'இந்த டில்லில் ஆரம்பப் பணம் எடுக்கப்படவில்லை; மூடுவதற்கு ஷிப்ட் இல்லை. முதலில் ஆரம்பப் பணம் எடுக்கவும்.',
+    cash_not_the_custodian: 'இந்த டில் வேறு கேஷியரிடம் உள்ளது. ஆரம்பப் பணம் எடுத்தவரே மூட வேண்டும்.',
+    cash_lane_unreachable: 'கடை கணினி பதில் தரவில்லை. பணம் இன்னும் பதிவாகவில்லை — நகர்த்த வேண்டாம். சிறிது நேரத்தில் மீண்டும் முயற்சிக்கவும்.',
+    cash_no_store_box: 'இந்த டில் கடை கணினியுடன் இணைக்கப்படவில்லை; பணப் பதிவு செய்ய முடியாது. மேலாளரிடம் சொல்லவும்.',
+    cash_material_variance_needs_a_reason: 'டிராயர் வித்தியாசம் அனுமதிக்கப்பட்டதை விட அதிகம். டில் மூட முன் காரணம் சொல்லவும்.',
     refundFind: 'ரசீதை ஸ்கேன் செய்யவும், அல்லது பில் எண்ணை உள்ளிடவும்',
     refundFindHint: 'வாடிக்கையாளர் ரசீதில் உள்ள பார்கோடை ஸ்கேன் செய்யவும், அல்லது பில் எண்ணை உள்ளிட்டு சரி அழுத்தவும்',
     refundLookupFailed: 'அந்த பில்லைப் பார்க்க கடை கணினியை அணுக முடியவில்லை. மீண்டும் முயற்சிக்கவும், அல்லது வேறு லேனைப் பயன்படுத்தவும்.',
@@ -193,6 +219,15 @@ const REFUND_REASONS = [
   { code: 'other', en: 'Other', ta: 'மற்றவை' },
 ];
 
+/** Why a drawer is out at close, preset — the cash office reports on codes, never prose (M14-FR-02 · M15). */
+const CASH_REASONS = [
+  { code: 'wrong_change', en: 'Wrong change given', ta: 'தவறான சில்லறை கொடுக்கப்பட்டது' },
+  { code: 'miscount', en: 'Miscounted', ta: 'தவறாக எண்ணப்பட்டது' },
+  { code: 'float_error', en: 'The float was wrong', ta: 'ஆரம்பப் பணம் தவறு' },
+  { code: 'unrecorded_movement', en: 'Cash moved without recording', ta: 'பதிவு செய்யாமல் பணம் நகர்த்தப்பட்டது' },
+  { code: 'unexplained', en: 'Cannot explain', ta: 'விளக்க முடியவில்லை' },
+];
+
 /**
  * Stand-in with the same surface as the bundled PosSession, so the layout is runnable and
  * usability-testable before the bundler lands. Replaced at build time by the real, tested model —
@@ -231,12 +266,11 @@ function demoSession() {
     // No real bills without the bundle, so a refund lookup finds nothing — the screen says so
     // honestly rather than pretending. The real, tested surface replaces this at build time.
     lookupRefund: () => Promise.resolve(null),
+    // The demo till has no store computer, so it says so the way the real one does — it never pretends to record cash.
     till: {
-      moveCash: ({ amountMinor }) => ({ tillBalance: { minor: -amountMinor } }),
-      close: ({ countedMinor }) => ({
-        countedCash: { minor: countedMinor }, variance: { minor: 0 },
-        exceptionRaised: false, withinTolerance: true,
-      }),
+      moveCash: () => Promise.resolve({ committed: false, refusedBecause: 'no_store_box', laneMessage: WORDS.en.cash_no_store_box }),
+      close: () => Promise.resolve({ closed: false, refusedBecause: 'no_store_box', laneMessage: WORDS.en.cash_no_store_box }),
+      tillCash: () => Promise.resolve(null),
     },
   };
 }
@@ -457,8 +491,12 @@ function countDrawer() {
   el('count-ok').textContent = t('closeTillNow');
   paint();
   el('count').hidden = false;
+  // What the cashier counted, note by note (M14-FR-02): the total AND the breakdown, so the cash office sees WHAT was
+  // short rather than only how much. Cancelled → null.
   return new Promise((resolve) => {
-    countResolve = (accepted) => resolve(accepted ? total() : null);
+    countResolve = (accepted) => resolve(accepted
+      ? { totalMinor: total(), denominations: [...counts].filter(([, n]) => n > 0).map(([value, n]) => ({ denominationMinor: value, count: n })) }
+      : null);
   });
 }
 el('count-cancel').addEventListener('click', () => { el('count').hidden = true; countResolve?.(false); countResolve = null; });
@@ -715,28 +753,71 @@ async function takeCardOrUpi(kind, payable) {
 }
 
 el('more').addEventListener('click', async () => {
-  const what = await choose(t('more'), [
-    { value: 'pickup', label: t('pickup') },
+  // What the till can do next depends on whether a float is out — asked of the STORE COMPUTER, which is the only thing
+  // that knows after a reload (SP-4c). With no answer, everything is offered and the store computer says no if it must.
+  const cash = await session.till.tillCash();
+  const options = [
+    ...(cash === null || !cash.shiftOpen ? [{ value: 'float', label: t('takeFloat') }] : []),
+    ...(cash === null || cash.shiftOpen ? [{ value: 'pickup', label: t('pickup') }] : []),
     { value: 'refund', label: t('refund') },
-    { value: 'close', label: t('closeTill') },
-  ]);
+    ...(cash === null || cash.shiftOpen ? [{ value: 'close', label: t('closeTill') }] : []),
+  ];
+  const what = await choose(t('more'), options);
+  if (what === 'float') return takeFloat();
   if (what === 'pickup') return takeCashToSafe();
   if (what === 'refund') return startRefund();
   if (what === 'close') return closeTheTill();
 });
 
-async function takeCashToSafe() {
-  const amount = await ask({ title: t('amountToSafe'), mode: 'number' });
+// ── Cash on the store computer (SP-4c · F10 · M14-FR-01) ─────────────────────────────────────────────────────────────
+//
+// The till keeps NO cash figure of its own: every float, pickup and the close is recorded on the store computer, durably,
+// before the cashier is told "recorded" — a browser tab dies with a reload, and that is exactly how a float used to
+// vanish. A movement the store computer could not be asked about (it did not answer) is kept HERE, with its own id, until
+// it is acknowledged: the next cash action sends it again first, and the store computer answers "already recorded" for a
+// repeat — so the money moves once however many times the till has to ask (owner directive §2, §31.1).
+const PENDING_CASH_KEY = 'sre-pos-pending-cash';
+function pendingCash() {
+  try { const raw = window.sessionStorage.getItem(PENDING_CASH_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+function rememberPendingCash(req) {
+  try { if (req) window.sessionStorage.setItem(PENDING_CASH_KEY, JSON.stringify(req)); else window.sessionStorage.removeItem(PENDING_CASH_KEY); } catch { /* the store computer still has the record; only the retry memory is lost */ }
+}
+/** The refusal in the cashier's language where the till has words for it; otherwise the store computer's own sentence. */
+function cashWords(outcome) {
+  return (outcome.refusedBecause && WORDS[lang][`cash_${outcome.refusedBecause}`]) || outcome.laneMessage;
+}
+async function sendCash(req) {
+  const outcome = await session.till.moveCash(req);
+  rememberPendingCash(!outcome.committed && outcome.refusedBecause === 'lane_unreachable' ? req : null);
+  return outcome;
+}
+/** Anything still waiting from before goes first, under its own id. False when the store computer still does not answer. */
+async function flushPendingCash() {
+  const pending = pendingCash();
+  if (!pending) return true;
+  const outcome = await sendCash(pending);
+  if (!outcome.committed && outcome.refusedBecause === 'lane_unreachable') { tell(t('cashNotSaved'), cashWords(outcome)); return false; }
+  if (outcome.committed) tell(t('pendingCash'), `${inr(pending.amountMinor)} — ${t('cashSaved')}`);
+  return true;
+}
+async function moveCashToBox(kind, titleKey, doneKey) {
+  if (!(await flushPendingCash())) return;
+  const amount = await ask({ title: t(titleKey), mode: 'number' });
   if (amount === null) return;
   const minor = Math.round(Number(amount) * 100);
   if (minor <= 0) return;
   try {
-    session.till.moveCash({ kind: 'pickup', amountMinor: minor, at: new Date().toISOString() });
-    tell(t('movedToSafe'), inr(minor));
+    const outcome = await sendCash({ kind, amountMinor: minor, at: new Date().toISOString(), movementId: `cm-${kind}-${Date.now().toString(36)}` });
+    if (outcome.committed) tell(t(doneKey), `${inr(minor)} — ${t('cashSaved')}`);
+    else tell(t('cashNotSaved'), cashWords(outcome));
   } catch (e) {
-    tell(t('read'), String(e && e.message ? e.message : e));
+    // Nobody signed in, or no lane: the model refuses before the store computer is asked, in its own words (F09).
+    tell(t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e));
   }
 }
+const takeFloat = () => moveCashToBox('float_issue', 'floatAmount', 'floatTaken');
+const takeCashToSafe = () => moveCashToBox('pickup', 'amountToSafe', 'movedToSafe');
 
 /**
  * Ask for a receipt number or a staff code — SCANNED or keyed (the owner chose both). The receipt
@@ -917,24 +998,35 @@ function showRefundOutcome(outcome) {
  * call the manager before the money is put away.
  */
 async function closeTheTill() {
-  const counted = await countDrawer();
-  if (counted === null) return;
+  if (!(await flushPendingCash())) return;
+  const count = await countDrawer();
+  if (count === null) return;
+  const counted = count.totalMinor;
+  const shiftId = `sh-${Date.now().toString(36)}`;
+  const closedAt = new Date().toISOString();
   try {
-    const result = session.till.close({
-      shiftId: `sh-${Date.now().toString(36)}`,
-      closedAt: new Date().toISOString(),
-      countedMinor: counted,
-    });
-    const variance = result.variance.minor;
+    // Exactly what a cashier knows — which shift, when, what was counted (and in which notes). The store computer works
+    // every other figure out from what it recorded and answers with the difference (SP-4c · F10). The same shift id is
+    // sent again with a reason, so the store computer sees ONE close.
+    let result = await session.till.close({ shiftId, closedAt, countedMinor: counted, denominations: count.denominations });
+    if (!result.closed && result.refusedBecause === 'material_variance_needs_a_reason') {
+      // The count is made, so the difference can be shown; a reason is a CODE the cash office can report on, never prose.
+      const out = result.varianceMinor ?? 0;
+      const reasonCode = await ask({ title: `${out > 0 ? t('over') : t('short')} ${inr(Math.abs(out))} — ${t('whyOut')}`, mode: 'choice', choices: CASH_REASONS });
+      if (reasonCode === null) { tell(t('read'), t('needsReason')); return; }
+      result = await session.till.close({ shiftId, closedAt, countedMinor: counted, denominations: count.denominations, reasonCode });
+    }
+    if (!result.closed) { tell(t('read'), cashWords(result)); return; }
+    const variance = result.varianceMinor;
     const headline = variance === 0 ? t('balanced')
       : variance > 0 ? `${t('over')} ${inr(variance)}`
         : `${t('short')} ${inr(-variance)}`;
-    tell(headline, result.exceptionRaised ? t('needsReason') : `${t('counted')}: ${inr(counted)}`);
-  } catch {
-    // A material variance with no reason is refused by the model. The cashier is told what to DO
-    // rather than shown a validation error — the error names a missing field, and at the end of a
-    // long shift the instruction is what gets acted on.
-    tell(t('read'), t('needsReason'));
+    // A material difference is not a number to note down — it is an instruction to call the manager before the money is
+    // put away. The store computer has recorded it and the cash office will see it.
+    tell(headline, result.exceptionRaised ? t('needsReason') : `${t('tillClosed')} — ${t('counted')}: ${inr(counted)}`);
+  } catch (e) {
+    // Nobody signed in, or no lane: refused before the store computer is asked, in the model's words (F09).
+    tell(t('read'), e && e.laneMessage ? e.laneMessage : t('needsReason'));
   }
 }
 

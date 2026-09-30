@@ -78,6 +78,9 @@
       .quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px; }
       .quick button { min-height: var(--tap); font-size: 20px; border: 0; border-radius: 12px; background: var(--line-strong); color: var(--ink); font-weight: 700; }
       .quick[hidden] { display: none; }
+      /* An author `display: grid` beats the browser's own `[hidden] { display: none }`, so without these the keypad stayed
+         on screen above the reason chips and pushed OK below a 720px viewport (found by the SP-4c close e2e). */
+      .keypad[hidden], .reasons[hidden], .entry[hidden] { display: none; }
       .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
       .keypad button, .reasons button, .sheet-actions button, .refusal button {
         min-height: var(--tap); font-size: 22px; border: 0; border-radius: 12px;

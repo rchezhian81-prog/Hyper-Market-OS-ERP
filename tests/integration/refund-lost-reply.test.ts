@@ -98,9 +98,9 @@ describe('RR-F02 — the refund lane write resolves a lost reply safely', () => 
 describe('RR-F02 — the till surfaces uncertainty distinctly', () => {
   it('throws RefundUncertainError (not a plain refusal) on an unconfirmed outcome', async () => {
     const till = createTillSession(
-      { tillId: 'till-1', laneId: 'lane-1', cashierId: 'u-meena', tradingDay: '2026-09-11', varianceToleranceMinor: 10_000 },
-      new Ledger(new InMemoryLedgerStore()), new Ledger(new InMemoryLedgerStore()), new SyncOutbox(),
-      (async () => ({ committed: false, unconfirmed: true, refusedBecause: 'could_not_write_durably', detail: 'no answer', laneMessage: 'Could not confirm.' } as CommitOutcome)) as DurableReturnWrite,
+      { laneId: 'lane-1', cashierId: 'u-meena', tradingDay: '2026-09-11' },
+      new Ledger(new InMemoryLedgerStore()), new SyncOutbox(),
+      { durableReturn: (async () => ({ committed: false, unconfirmed: true, refusedBecause: 'could_not_write_durably', detail: 'no answer', laneMessage: 'Could not confirm.' } as CommitOutcome)) as DurableReturnWrite },
     );
     await expect(till.refund({
       id: 'R-till', number: 'RET-till', originalSaleId: 'S-1', processedAt: '2026-09-11T10:00:00Z', reasonCode: 'damaged',

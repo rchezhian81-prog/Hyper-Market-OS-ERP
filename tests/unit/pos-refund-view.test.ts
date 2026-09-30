@@ -24,8 +24,8 @@ const okDurable: DurableReturnWrite = async () => ({ committed: true, durable: t
 const durableReturning = (outcome: Awaited<ReturnType<DurableReturnWrite>>): DurableReturnWrite => async () => outcome;
 
 const till = (durable: DurableReturnWrite = okDurable) => createTillSession(
-  { tillId: 'till-1', laneId: 'lane-1', cashierId: 'u-meena', tradingDay: '2026-08-05', varianceToleranceMinor: 10_000 },
-  new Ledger(new InMemoryLedgerStore()), new Ledger(new InMemoryLedgerStore()), new SyncOutbox(), durable,
+  { laneId: 'lane-1', cashierId: 'u-meena', tradingDay: '2026-08-05' },
+  new Ledger(new InMemoryLedgerStore()), new SyncOutbox(), { durableReturn: durable },
 );
 
 // A ₹200 bill: two of P1, one of P2.

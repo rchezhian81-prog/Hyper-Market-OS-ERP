@@ -142,6 +142,7 @@
     "staleAfterSeconds": 300,
     "countApprovalThresholdMinor": 100000,
     "handoverToleranceMinor": 10000,
+    "cashVarianceToleranceMinor": 10000,
     "privacySlaDays": 30,
     "warehouseId": "REPLACE_WITH_WAREHOUSE_ID"
   },

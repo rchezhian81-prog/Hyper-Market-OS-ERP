@@ -26,6 +26,25 @@ Close · Offline/sync health. Each handles the §27.1 universal states.
 - **Pending (GAP-POS-LOGIN-01):** the staff code *identifies*; it does not *authenticate*. A credential-checked till login
   (PIN / badge verified against the store computer, offline-capable) is the remaining piece of the Login screen.
 
+## Cash movements and Close till (SP-4c · F10 · M14-FR-01 · M14-FR-02)
+- **The till keeps no cash figure of its own.** Every float, pickup and the close is recorded on the **store computer**,
+  durably, before the cashier is told "Recorded on the store computer". A browser reload changes nothing: the till asks the
+  store computer whether a float is out and offers only what fits — **Take float (open the till)** when nothing is out;
+  **Cash to safe** and **Close till** when a float is out.
+- **Take float** opens the shift in the signed-in cashier's name; a second float while one is out is refused in words. Only
+  the cashier who took the float can close the till or move its cash.
+- **Cash to safe** is refused in words when the drawer cannot hold it (the store computer knows the float AND the cash
+  taken in trade), and the refusal is never a figure.
+- **Close till:** count the drawer by denomination — nothing on the panel says what should be there. The store computer works
+  out float + cash sales − pickups − cash refunds from what it itself recorded, and answers with the difference. Within
+  tolerance: "The drawer balances exactly." / "Over by ₹…" / "Short by ₹…" and "Till closed". Beyond the shop's tolerance
+  the till asks **why**, from chips (wrong change given · miscounted · the float was wrong · cash moved without recording ·
+  cannot explain — never free text), then closes and tells the cashier to call the manager before the money is put away.
+- **A lost reply moves nothing twice.** A movement the store computer did not answer is kept on the till with its own id and
+  sent again first thing next time; the store computer answers "already recorded" for a repeat.
+- Head office re-verifies every relayed movement and close (the custodian, the cashier, the chain, the arithmetic) and
+  flags — never refuses — what disagrees; a material short opens a loss-prevention investigation.
+
 ## The Sale screen (home) — the one that matters most
 - **Layout:** big running **total** (largest element), scrolling line list, large number pad, one dominant **Tender** primary action, permanent **sync-state badge** (online/offline + unsent count) top corner.
 - **Primary action:** Tender. Everything else is secondary.
@@ -75,6 +94,13 @@ Migration · AI control.
 - The served till boots with the box's lane and cut-off and **no cashier**; a sale is refused until somebody signs in, then
   names the real cashier, lane and day (`tests/audit-observations/pos.test.ts` case 1, inverted from the F09 observation;
   `tests/e2e/the-served-till-takes-a-sale.e2e.ts` in real Chromium, including a reload that keeps the sign-in).
+- The till's float, pickup and blind-count close run against the real store box from the screen, and a reload mid-shift
+  still knows a float is out; a short second shift is refused until a reason chip is chosen, then closes with "call the
+  manager" (`tests/e2e/the-served-till-closes.e2e.ts`, real Chromium; `tests/integration/the-till-closes-through-the-box.test.ts`
+  on the real lane socket). The Close button's input is exactly shift, moment, count and reason — the F10 observation
+  inverted (`tests/audit-observations/pos.test.ts`). That browser test also found that the keypad stayed on screen above
+  the reason chips (an author `display: grid` beat the browser's `[hidden]`), pushing OK below a 720px viewport on every
+  reason sheet — the till's hidden panels now hide (`apps/pos/web/index.html`).
 - Signing in costs two acts (Sign in → badge scan), counted on the served screen
   (`tests/e2e/the-till-and-manager-meet-the-interaction-budget.e2e.ts`). That browser test also found that a scanner's
   closing Enter, landing on the still-focused Sign in button, re-clicked it and signed the cashier straight back out; every

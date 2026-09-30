@@ -52,7 +52,7 @@
 // the far side of a socket from the first. `/lane/returns` is the exact mirror of `/lane/sales`: the
 // refund is durable on the disk before the lane calls it done, then queued for the cloud (M13-FR-01).
 
-import { createServer, type Server, type ServerResponse } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { LaneSyncStatus } from './sync-status';
 import { returnIdOf } from './cloud-return';
 import { concessionTagIdOf } from './cloud-concession-tag';
@@ -61,6 +61,10 @@ import {
   DEVICE_OUTBOX_PATH, DEVICE_OUTBOX_STATUS_PATH, readRelayBatch,
   type BoxItemStatus, type RelayReply,
 } from '../../../packages/sync/src/device-relay';
+import type {
+  CashMovementRequest, CashMovementOutcome, ShiftCloseRequest, ShiftCloseOutcome, TillCashStatus, CountedDenomination,
+} from './till-cash';
+import type { CashMovementKind } from '../../../packages/cash/src/cash';
 
 /** The one address this may listen on. Named so the test can assert on it. */
 export const LANE_HOST = '127.0.0.1';
@@ -116,6 +120,18 @@ const LANE_SYNC_STATUS_ROUTE = '/lane/sync-status';
 const LANE_DEVICE_OUTBOX_ROUTE: string = DEVICE_OUTBOX_PATH;
 const LANE_DEVICE_OUTBOX_STATUS_ROUTE: string = DEVICE_OUTBOX_STATUS_PATH;
 
+/**
+ * The till's CASH routes (SP-4c · F10 · M14-FR-01/02). `POST /lane/cash-movements` records a float, loan, pickup or safe
+ * drop; `POST /lane/shift-close` closes the shift against the cashier's blind count; `GET /lane/till-cash` says whether a
+ * float is out and who holds it. The DECISIONS are the box's (`recordCashMovement` / `closeShift` in main.ts: the chain,
+ * the figures, the day, the durable write); this socket carries the requests under the same loopback + application/json
+ * authorization as every other write (RR-F01). None of the three ever answers a balance or an expected figure — the
+ * drawer is counted blind (M14-FR-02).
+ */
+const LANE_CASH_MOVEMENTS_ROUTE = '/lane/cash-movements';
+const LANE_SHIFT_CLOSE_ROUTE = '/lane/shift-close';
+const LANE_TILL_CASH_ROUTE = '/lane/till-cash';
+
 /** What the box does when the manager asks to close the day — the authoritative `EdgeProcess.closeDay`. */
 export type LaneDayCloseHandler = (
   req: { readonly dayCloseId: string; readonly closedBy: string },
@@ -144,6 +160,13 @@ export type LaneDayReopenHandler = (
   | { readonly reopened: true; readonly tradingDay: string }
   | { readonly reopened: false; readonly reason: string }
 >;
+
+/** What the box does when the till records cash (SP-4c) — the authoritative `EdgeProcess.recordCashMovement`. */
+export type LaneCashMovementHandler = (req: CashMovementRequest) => Promise<CashMovementOutcome>;
+/** What the box does when the till closes the shift (SP-4c) — the authoritative `EdgeProcess.closeShift`. */
+export type LaneShiftCloseHandler = (req: ShiftCloseRequest) => Promise<ShiftCloseOutcome>;
+/** Where the till's cash stands on the box — custody, never a figure (SP-4c). */
+export type LaneTillCashHandler = () => Promise<TillCashStatus>;
 
 /**
  * Is this `Origin` header another page on this same machine? `127.0.0.1`, `localhost` and IPv6
@@ -262,8 +285,48 @@ export function startLaneServer(input: {
   readonly relayDeviceEvents?: LaneDeviceRelayHandler;
   /** Where device items the box took have got to: GET /lane/outbox/status?keys=k1,k2. Absent → 404. */
   readonly deviceEventStatus?: LaneDeviceStatusHandler;
+  /**
+   * The till's cash on the box (SP-4c · F10): record a movement, close the shift, say where the cash stands. Absent on a
+   * box that keeps no till cash (e.g. a back-office box with no lane), in which case the three routes answer 404 and the
+   * till says it is not connected to its store computer.
+   */
+  readonly recordCashMovement?: LaneCashMovementHandler;
+  readonly closeShift?: LaneShiftCloseHandler;
+  readonly tillCash?: LaneTillCashHandler;
 }): Promise<LaneServer> {
   const maxBytes = input.maxBytes ?? 256 * 1024;
+
+  /**
+   * Read a bounded JSON body, or answer for the caller and resolve `undefined`: 413 when it is too large (the request
+   * is destroyed), 400 when it does not parse. The `refused` shape is the route's own — `{ committed: false, … }` for a
+   * movement, `{ closed: false, … }` for a close — so a caller always reads the answer it expects.
+   */
+  const readJsonBody = (req: IncomingMessage, res: ServerResponse, cors: Record<string, string>, refused: (reason: string) => unknown): Promise<unknown | undefined> =>
+    new Promise((resolve) => {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      let tooBig = false;
+      req.on('data', (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > maxBytes && !tooBig) {
+          tooBig = true;
+          send(res, 413, refused('the request is too large'), cors);
+          req.destroy();
+          resolve(undefined);
+          return;
+        }
+        chunks.push(chunk);
+      });
+      req.on('end', () => {
+        if (tooBig) return;
+        try {
+          resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown);
+        } catch {
+          send(res, 400, refused('the request could not be read'), cors);
+          resolve(undefined);
+        }
+      });
+    });
 
   // A refused-durable-write answer, in the words the cashier needs with a customer watching. `noun`
   // is 'sale' or 'refund' so the same shape serves both routes without either lying about the other.
@@ -530,16 +593,130 @@ export function startLaneServer(input: {
       return;
     }
 
+    // The till's CASH read route: GET /lane/till-cash (SP-4c). Custody only — whether a float is out and who holds it —
+    // never a balance (the drawer is counted blind). Refused to a foreign origin like every other read; 404 on a box
+    // that keeps no till cash; never cached, because "a shift is open" from an hour ago is exactly the guess to avoid.
+    if (req.method === 'GET' && pathname === LANE_TILL_CASH_ROUTE) {
+      if (typeof req.headers.origin === 'string' && req.headers.origin !== '' && !isLoopbackOrigin(req.headers.origin)) {
+        send(res, 403, { error: 'this request did not come from this till' }, cors);
+        return;
+      }
+      const status = input.tillCash;
+      if (status === undefined) {
+        send(res, 404, { error: 'this box keeps no till cash' }, cors);
+        return;
+      }
+      void (async () => {
+        try {
+          send(res, 200, await status(), { ...cors, 'cache-control': 'no-store' });
+        } catch (e) {
+          send(res, 500, { error: e instanceof Error ? e.message : String(e) }, cors);
+        }
+      })();
+      return;
+    }
+
+    // The till's CASH write route: POST /lane/cash-movements (SP-4c · F10 · M14-FR-01). The till hands the box a float, a
+    // loan, a pickup or a safe drop; the box judges it against the till's own chain, dates it, writes it durably and
+    // queues it for head office, and answers in the cashier's words. Same authorization as every other write, decided
+    // BEFORE the body is read (RR-F01). 200 on a refusal too: the request was understood; the answer is in the body.
+    if (req.method === 'POST' && pathname === LANE_CASH_MOVEMENTS_ROUTE) {
+      const record = input.recordCashMovement;
+      const refused = (reason: string) => ({ committed: false, refusedBecause: 'not_readable', laneMessage: reason });
+      if (record === undefined) {
+        send(res, 404, { committed: false, refusedBecause: 'no_store_box', laneMessage: 'this box keeps no till cash' }, cors);
+        req.resume();
+        return;
+      }
+      const authRefusal = laneCallRefusal(req.headers.origin, req.headers['content-type']);
+      if (authRefusal !== undefined) {
+        send(res, authRefusal.status, refused(authRefusal.reason), cors);
+        req.resume();
+        return;
+      }
+      void (async () => {
+        const body = await readJsonBody(req, res, cors, refused);
+        if (body === undefined) return;
+        const b = (body !== null && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+        const str = (k: string): string | undefined => (typeof b[k] === 'string' && (b[k] as string).trim() !== '' ? (b[k] as string) : undefined);
+        const movementId = str('movementId'); const movementKind = str('movementKind'); const at = str('at');
+        const custodianId = str('custodianId'); const performedBy = str('performedBy') ?? custodianId;
+        const amountMinor = b['amountMinor'];
+        if (movementId === undefined || movementKind === undefined || at === undefined || custodianId === undefined || performedBy === undefined
+          || typeof amountMinor !== 'number' || !Number.isSafeInteger(amountMinor) || Number.isNaN(Date.parse(at))) {
+          send(res, 400, refused('a cash movement needs a movement id, a kind, a whole amount, a moment, and who holds the till'), cors);
+          return;
+        }
+        try {
+          send(res, 200, await record({ movementId, movementKind: movementKind as CashMovementKind, amountMinor, at, custodianId, performedBy }), cors);
+        } catch (e) {
+          send(res, 200, { committed: false, refusedBecause: 'could_not_write_durably', laneMessage: e instanceof Error ? e.message : String(e) }, cors);
+        }
+      })();
+      return;
+    }
+
+    // The till's CLOSE write route: POST /lane/shift-close (SP-4c · F10 · M14-FR-02). The till hands the box exactly what
+    // a cashier knows — which shift, when, who, what was counted, and a reason once asked for one; the box works out the
+    // expected figure from its own records, decides, writes the close durably and queues it. Same authorization, same
+    // 200-on-a-refusal answer. Never a figure before the count: the count is in the request.
+    if (req.method === 'POST' && pathname === LANE_SHIFT_CLOSE_ROUTE) {
+      const close = input.closeShift;
+      const refused = (reason: string) => ({ closed: false, refusedBecause: 'not_readable', laneMessage: reason });
+      if (close === undefined) {
+        send(res, 404, { closed: false, refusedBecause: 'no_store_box', laneMessage: 'this box keeps no till cash' }, cors);
+        req.resume();
+        return;
+      }
+      const authRefusal = laneCallRefusal(req.headers.origin, req.headers['content-type']);
+      if (authRefusal !== undefined) {
+        send(res, authRefusal.status, refused(authRefusal.reason), cors);
+        req.resume();
+        return;
+      }
+      void (async () => {
+        const body = await readJsonBody(req, res, cors, refused);
+        if (body === undefined) return;
+        const b = (body !== null && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+        const str = (k: string): string | undefined => (typeof b[k] === 'string' && (b[k] as string).trim() !== '' ? (b[k] as string) : undefined);
+        const shiftId = str('shiftId'); const closedAt = str('closedAt'); const cashierId = str('cashierId'); const reasonCode = str('reasonCode');
+        const countedMinor = b['countedMinor'];
+        const denominations = Array.isArray(b['denominations'])
+          ? (b['denominations'] as unknown[]).flatMap((d): CountedDenomination[] => {
+            const x = (d ?? {}) as Record<string, unknown>;
+            return Number.isSafeInteger(x['denominationMinor']) && Number.isSafeInteger(x['count'])
+              ? [{ denominationMinor: x['denominationMinor'] as number, count: x['count'] as number }] : [];
+          })
+          : undefined;
+        if (shiftId === undefined || closedAt === undefined || cashierId === undefined
+          || typeof countedMinor !== 'number' || !Number.isSafeInteger(countedMinor) || Number.isNaN(Date.parse(closedAt))) {
+          send(res, 400, refused('closing the till needs a shift id, a moment, who is closing, and the counted cash as a whole amount'), cors);
+          return;
+        }
+        try {
+          send(res, 200, await close({
+            shiftId, closedAt, cashierId, countedMinor,
+            ...(denominations === undefined ? {} : { denominations }),
+            ...(reasonCode === undefined ? {} : { reasonCode }),
+          }), cors);
+        } catch (e) {
+          send(res, 200, { closed: false, refusedBecause: 'could_not_write_durably', laneMessage: e instanceof Error ? e.message : String(e) }, cors);
+        }
+      })();
+      return;
+    }
+
     // The browser's preflight for the cross-origin POST from the till's or manager's screen. Answered
     // only for a loopback origin; anything else gets no allow header and the browser refuses the POST.
-    if (req.method === 'OPTIONS' && (route !== undefined || pathname === LANE_DAY_CLOSE_ROUTE || pathname === LANE_DAY_REOPEN_ROUTE || pathname === LANE_SYNC_STATUS_ROUTE || pathname === LANE_DEVICE_OUTBOX_ROUTE || pathname === LANE_DEVICE_OUTBOX_STATUS_ROUTE)) {
+    if (req.method === 'OPTIONS' && (route !== undefined || pathname === LANE_DAY_CLOSE_ROUTE || pathname === LANE_DAY_REOPEN_ROUTE || pathname === LANE_SYNC_STATUS_ROUTE || pathname === LANE_DEVICE_OUTBOX_ROUTE || pathname === LANE_DEVICE_OUTBOX_STATUS_ROUTE
+      || pathname === LANE_CASH_MOVEMENTS_ROUTE || pathname === LANE_SHIFT_CLOSE_ROUTE || pathname === LANE_TILL_CASH_ROUTE)) {
       res.writeHead(isLoopbackOrigin(req.headers.origin) ? 204 : 403, { 'content-length': '0', ...cors });
       res.end();
       return;
     }
 
     if (req.method !== 'POST' || route === undefined) {
-      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `POST ${LANE_DAY_CLOSE_ROUTE}`, `POST ${LANE_DAY_REOPEN_ROUTE}`, `POST ${LANE_DEVICE_OUTBOX_ROUTE}`, `GET ${LANE_LOOKUP_ROUTE}?receipt=…`, `GET ${LANE_SYNC_STATUS_ROUTE}`, `GET ${LANE_DEVICE_OUTBOX_STATUS_ROUTE}?keys=…`].join(', ');
+      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `POST ${LANE_DAY_CLOSE_ROUTE}`, `POST ${LANE_DAY_REOPEN_ROUTE}`, `POST ${LANE_DEVICE_OUTBOX_ROUTE}`, `POST ${LANE_CASH_MOVEMENTS_ROUTE}`, `POST ${LANE_SHIFT_CLOSE_ROUTE}`, `GET ${LANE_LOOKUP_ROUTE}?receipt=…`, `GET ${LANE_SYNC_STATUS_ROUTE}`, `GET ${LANE_DEVICE_OUTBOX_STATUS_ROUTE}?keys=…`, `GET ${LANE_TILL_CASH_ROUTE}`].join(', ');
       send(res, 404, { error: `the lane socket serves: ${serves}` }, cors);
       return;
     }
