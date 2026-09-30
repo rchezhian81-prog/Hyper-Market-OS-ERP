@@ -57,6 +57,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'purchase.invoice.sync',
       // SP-7b: the owner sets the three-way-match tolerances every invoice is judged by (never the body, OC-13).
       'purchase.match.policy.set',
+      // SP-7c (M06-FR-01 · M23-FR-01): the supplier master — propose / update, approve (a different person), the list, and
+      // recording a payment a second person approved.
+      'purchase.supplier.manage', 'purchase.supplier.approve', 'purchase.supplier.pay', 'supplier.view',
       'inventory.movement.sync',
       // SP-3b: adjustment REQUESTS relayed from the warehouse handheld, and the separate person who approves them (§28).
       'inventory.adjustment.sync', 'inventory.adjustment.approve',
@@ -152,6 +155,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'purchase.order.propose', 'purchase.order.receive', 'purchase.supplier.block',
       'purchase.performance.record', 'purchase.contract.manage',
       'purchase.import.record', 'purchase.import.read',
+      // SP-7c (M06-FR-01): the purchase user PROPOSES a supplier and reads the list — never approves one, never pays one.
+      'purchase.supplier.manage', 'supplier.view',
       'export.read',
       'supplier.portal.manage', 'supplier.portal.submit', 'supplier.portal.review',
       'inventory.movement.append', 'inventory.availability.read',
@@ -306,6 +311,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'concession.contract.manage', 'concession.sale.record', 'concession.charge.read', 'concession.tag.record',
       'scrap.sale.record', 'scrap.review.read',
       'purchase.invoice.match', 'purchase.commitment.read', 'purchase.import.read',
+      // SP-7c (M06-FR-01 "Purchase Approver / Finance approve supplier + bank" · M23-FR-01): finance approves a supplier
+      // somebody else proposed, reads the list, and records / approves a payment.
+      'purchase.supplier.approve', 'purchase.supplier.pay', 'supplier.view',
       'export.read', 'audit.retention.read',
       'reporting.dashboard.read', 'reporting.report.read',
     ],

@@ -170,7 +170,8 @@ import type { GoodsReceiptDeps, GrnRecord, StoredReceiptPolicy, PoReceiptPosting
 import { weightedAverageValuation, type ValuationMovement } from '../../../packages/stock/src/valuation';
 import { agedStockLots, type DatedMovement } from '../../../packages/stock/src/ageing-source';
 import type { BankChangeRequest, PurchaseDeps, SupplierInvoiceRecord, StoredMatch, StoredMatchPolicy } from '../../purchase/src/index';
-import { foldAllSupplierAccounts, type SupplierAccountDeps } from '../../purchase/src/supplier-account';
+import { foldAllSupplierAccounts, foldSupplierAccount, type SupplierAccountDeps, type SupplierPayment, type DebitNoteIssue } from '../../purchase/src/supplier-account';
+import type { SupplierMasterDeps, SupplierRecord, SupplierBankState } from '../../purchase/src/supplier-master';
 import type { PayablesDeps, PayablesJournal, PayablesExceptionRecord } from '../../finance/src/payables';
 import type { PurchaseOrderDeps, StoredPurchaseOrder } from '../../purchase/src/purchase-orders';
 import type { SupplierScorecardDeps } from '../../purchase/src/supplier-scorecard';
@@ -1176,6 +1177,11 @@ const forExceptionOwnership = streamName(STREAM.orders, 'substitution-exception-
 const SUPPLIER_INVOICES_STREAM = streamName(STREAM.purchase, 'invoices');
 // SP-7b: the tenant's three-way-match tolerances — the owner's, latest wins, every version on the ledger.
 const MATCH_POLICY_STREAM = streamName(STREAM.purchase, 'match-policy');
+// SP-7c: the supplier MASTER (versioned records, latest wins), the payments recorded against suppliers, and the debit notes
+// issued under a number — three tenant-wide registers (a shop has hundreds of suppliers, not hundreds of thousands).
+const SUPPLIERS_STREAM = streamName(STREAM.purchase, 'suppliers');
+const SUPPLIER_PAYMENTS_STREAM = streamName(STREAM.purchase, 'supplier-payments');
+const DEBIT_NOTE_ISSUES_STREAM = streamName(STREAM.purchase, 'debit-note-issues');
 /** Each supplier partner's portal config and submissions fold one stream — one partner, not the shop. */
 const forPortalPartner = (partnerId: string): string => streamName(STREAM.purchase, 'partner', partnerId);
 // Partner-action audit is TENANT-WIDE (one stream, every partner) so `findProbing` can see a supplier
@@ -6130,6 +6136,8 @@ export function purchaseAdapter(input: {
       return all.filter((m) => m.invoiceId === invoiceId).at(-1);
     },
 
+    // SP-7c (M06-FR-01 · §28): who created the supplier's master record — they may never approve its bank details.
+    supplierCreatedBy: async (tenantId, supplierId) => (await latestSupplierRecord(input.store, tenantId, supplierId))?.createdBy,
     // SP-7b: the tenant's match tolerances — set by the owner, applied by /match, said on every verdict. Latest wins.
     matchPolicy: (tenantId) => latest<StoredMatchPolicy>(input.store, tenantId, MATCH_POLICY_STREAM, 'MatchPolicySet'),
     recordMatchPolicy: async (tenantId, policy) => {
@@ -6257,6 +6265,87 @@ export function supplierAccountAdapter(input: {
     },
     purchaseOrders: async (tenantId) => [...(await foldPurchaseOrders(input.store, tenantId)).values()],
     receipts,
+    payments: (tenantId) => allOf<SupplierPayment>(input.store, tenantId, SUPPLIER_PAYMENTS_STREAM, 'SupplierPaymentRecorded'),
+    debitNoteIssues: (tenantId) => allOf<DebitNoteIssue>(input.store, tenantId, DEBIT_NOTE_ISSUES_STREAM, 'SupplierDebitNoteIssued'),
+  };
+}
+
+/** The supplier master's latest version per supplier — append-only versions, the highest applies. */
+async function foldSupplierRecords(store: EventStore, tenantId: string): Promise<ReadonlyMap<string, SupplierRecord>> {
+  const byId = new Map<string, SupplierRecord>();
+  for (const r of await allOf<SupplierRecord>(store, tenantId, SUPPLIERS_STREAM, 'SupplierRecorded')) {
+    const cur = byId.get(r.supplierId);
+    if (cur === undefined || r.version >= cur.version) byId.set(r.supplierId, r);
+  }
+  return byId;
+}
+const latestSupplierRecord = async (store: EventStore, tenantId: string, supplierId: string): Promise<SupplierRecord | undefined> =>
+  (await foldSupplierRecords(store, tenantId)).get(supplierId);
+
+/** Each supplier's CURRENT verified bank account, folded from the append-only bank-change ledger (the last change wins). */
+async function latestBankState(store: EventStore, tenantId: string, supplierId: string): Promise<SupplierBankState | undefined> {
+  const changes = (await allOf<BankChangeRequest>(store, tenantId, STREAM.purchase, 'SupplierBankChanged')).filter((c) => c.supplierId === supplierId);
+  const last = changes.at(-1);
+  return last === undefined ? undefined : { accountRef: last.newAccount, requestedBy: last.requestedBy, verifiedBy: last.approvedBy ?? '', changedAt: last.requestedAt };
+}
+
+/**
+ * SP-7c — the supplier MASTER (M06-FR-01) over the account's registers: the versioned record, the block state, the verified
+ * bank account (the bank-change ledger), the duplicate-bank holders (the same fold the fraud-signals report reads), the
+ * payments and the issued debit notes. The debit-note number comes from the tenant's own series.
+ */
+export function supplierMasterAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly numberSeries?: NumberSeriesStore;
+}): Omit<SupplierMasterDeps, 'recordAudit'> {
+  const numberSeries = input.numberSeries ?? new InMemoryNumberSeriesStore();
+  return {
+    ...supplierAccountAdapter(input),
+    record: (tenantId, supplierId) => latestSupplierRecord(input.store, tenantId, supplierId),
+    records: async (tenantId) => [...(await foldSupplierRecords(input.store, tenantId)).values()],
+    recordSupplier: async (tenantId, record) => {
+      await input.store.append(tenantId, SUPPLIERS_STREAM, makeEvent({
+        id: `supplier-${record.supplierId}-v${record.version}`,
+        type: 'SupplierRecorded',
+        occurredAt: record.updatedAt,
+        // One event per version: a retried write of the same version collapses; the next version is a new fact.
+        idempotencyKey: `supplier-${tenantId}-${record.supplierId}-v${record.version}`,
+        source: 'api/purchase',
+        payload: record,
+      }));
+    },
+    supplierBlocked: async (tenantId, supplierId) => (await latestBlock(input.store, tenantId, supplierId))?.blocked ?? false,
+    bankState: (tenantId, supplierId) => latestBankState(input.store, tenantId, supplierId),
+    bankHolders: async (tenantId) => {
+      const changes = await allOf<BankChangeRequest>(input.store, tenantId, STREAM.purchase, 'SupplierBankChanged');
+      const currentAccount = new Map<string, string>();
+      for (const c of changes) currentAccount.set(c.supplierId, c.newAccount);
+      return [...currentAccount.entries()].map(([holderId, accountRef]) => ({ holderId, holderType: 'supplier' as const, accountRef }));
+    },
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+    recordPayment: async (tenantId, payment) => {
+      await input.store.append(tenantId, SUPPLIER_PAYMENTS_STREAM, makeEvent({
+        id: `supplier-payment-${payment.paymentId}`,
+        type: 'SupplierPaymentRecorded',
+        occurredAt: payment.recordedAt,
+        // One payment, one record — a retry never pays twice.
+        idempotencyKey: `supplier-payment-${tenantId}-${payment.paymentId}`,
+        source: 'api/purchase',
+        payload: payment,
+      }));
+    },
+    allocateNumber: (tenantId, docType) => numberSeries.allocate(tenantId, docType),
+    recordDebitNoteIssue: async (tenantId, issue) => {
+      await input.store.append(tenantId, DEBIT_NOTE_ISSUES_STREAM, makeEvent({
+        id: `dn-issue-${issue.debitNoteRef}`,
+        type: 'SupplierDebitNoteIssued',
+        occurredAt: issue.issuedAt,
+        idempotencyKey: `dn-issue-${tenantId}-${issue.supplierId}-${issue.debitNoteRef}`,
+        source: 'api/purchase',
+        payload: issue,
+      }));
+    },
   };
 }
 
@@ -6275,10 +6364,11 @@ export function payablesAdapter(input: { readonly store: EventStore; readonly no
     now: input.now,
     postingMap: (tenantId) => latest<StoredPostingMap>(input.store, tenantId, STREAM.finance, 'PostingMapDefined'),
     supplierAccounts: async (tenantId) => {
-      const [invoices, matches, orders, receipts] = await Promise.all([
+      const [invoices, matches, orders, receipts, payments, debitNoteIssues] = await Promise.all([
         registers.invoices(tenantId), registers.latestMatches(tenantId), registers.purchaseOrders(tenantId), registers.receipts(tenantId),
+        registers.payments(tenantId), registers.debitNoteIssues(tenantId),
       ]);
-      return foldAllSupplierAccounts({ invoices, matchOf: (id) => matches.get(id), orders, receipts, asAt: input.now() }).accounts;
+      return foldAllSupplierAccounts({ invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, asAt: input.now() }).accounts;
     },
     payablesJournals: async (tenantId) =>
       (await allOf<JournalEntry | PayablesJournal>(input.store, tenantId, STREAM.finance, 'JournalPosted'))
@@ -6301,6 +6391,25 @@ export function supplierPortalAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
 }): SupplierPortalDeps {
+  const registers = supplierAccountAdapter(input);
+  /** The supplier account (SP-7b) as statement lines for the partner whose id is the supplier's — nothing when it names no supplier. */
+  const accountStatementLines = async (tenantId: string, partnerId: string): Promise<readonly StatementLine[]> => {
+    const [invoices, matches, orders, receipts, payments, debitNoteIssues] = await Promise.all([
+      registers.invoices(tenantId), registers.latestMatches(tenantId), registers.purchaseOrders(tenantId), registers.receipts(tenantId),
+      registers.payments(tenantId), registers.debitNoteIssues(tenantId),
+    ]);
+    const a = foldSupplierAccount({ supplierId: partnerId, invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, asAt: input.now() });
+    const lines: StatementLine[] = [];
+    for (const i of a.invoices) {
+      if (!i.matched) continue;
+      const date = (i.matchedAt ?? i.capturedAt).slice(0, 10);
+      if (i.payableMinor > 0) lines.push({ partnerId, tenantId, documentRef: `account:invoice:${i.invoiceId}`, kind: 'invoice', date, amountMinor: i.payableMinor, status: 'open' });
+      if (i.withheldMinor > 0) lines.push({ partnerId, tenantId, documentRef: `account:invoice:${i.invoiceId}:withheld`, kind: 'invoice', date, amountMinor: i.withheldMinor, status: 'disputed' });
+    }
+    for (const d of a.debitNotes) lines.push({ partnerId, tenantId, documentRef: `account:debit-note:${d.debitNoteRef}`, kind: 'credit_note', date: d.decidedAt.slice(0, 10), amountMinor: -d.valueMinor, status: 'open' });
+    for (const p of a.payments) lines.push({ partnerId, tenantId, documentRef: `account:payment:${p.paymentId}`, kind: 'payment', date: p.paidOn, amountMinor: -p.amountMinor, status: 'settled' });
+    return lines;
+  };
   return {
     now: input.now,
 
@@ -6318,10 +6427,15 @@ export function supplierPortalAdapter(input: {
 
     // A statement line dedupes on its own document ref, so a status change (open → disputed → settled)
     // supersedes rather than recording the same invoice twice.
+    //
+    // SP-7c (P-02, one commerce truth): the lines head office's OWN registers say — the supplier account of SP-7b — ride the
+    // statement beside any manually recorded line, when the portal partner id IS the supplier id. Our debit note is the
+    // supplier's credit note (it reduces what they are owed), a payment reduces it, the withheld figure is the disputed one.
     statementLines: async (tenantId, partnerId) => {
       const all = await allOf<StatementLine>(input.store, tenantId, forPortalPartner(partnerId), 'SupplierStatementLineRecorded');
       const byRef = new Map<string, StatementLine>();
       for (const l of all) byRef.set(l.documentRef, l);
+      for (const l of await accountStatementLines(tenantId, partnerId)) byRef.set(l.documentRef, l);
       return [...byRef.values()];
     },
 

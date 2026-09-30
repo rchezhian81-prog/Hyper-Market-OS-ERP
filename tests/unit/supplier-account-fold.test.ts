@@ -42,7 +42,7 @@ describe('foldSupplierAccount — what is owed is read from the registers, never
       ['inv-1', false, 0, 5000, false], ['inv-2', true, 7000, 2000, true], ['inv-3', true, 4000, 0, false],
     ]);
     expect(a.totals).toEqual({
-      invoicedMinor: 18_000, accruedMinor: 11_000, withheldMinor: 7000, debitNotesMinor: 0, owedMinor: 11_000,
+      invoicedMinor: 18_000, accruedMinor: 11_000, withheldMinor: 7000, debitNotesMinor: 0, paidMinor: 0, owedMinor: 11_000,
       unmatchedInvoices: 1, blockedInvoices: 1, pendingReturns: 0,
     });
     expect(needsAttention(a)).toBe(true);
@@ -92,6 +92,27 @@ describe('foldSupplierAccount — what is owed is read from the registers, never
     expect(returned.pendingSupplierReturns[0]).toMatchObject({ returned: true, returnedAt: '2026-10-01T09:00:00.000Z' });
     expect(returned.totals.pendingReturns).toBe(0);
     expect(needsAttention(returned)).toBe(false);
+  });
+
+  it('SP-7c: payments recorded against THIS supplier net the balance (another supplier\'s do not); a debit note carries its number once issued; a supplier known only from a payment still has an account', () => {
+    const grn = receipt('grn-1', 'po-1', { captured: { lines: [line('L1', 'p1', 4, 0)] }, dispositions: [disposed('L1', 'p1', 'return', 4, 2000)] });
+    const pay = (paymentId: string, supplierId: string, amountMinor: number) => ({
+      paymentId, supplierId, amountMinor, currency: 'INR' as const, paidOn: '2026-10-02', method: 'bank_transfer' as const, reference: 'UTR-1',
+      recordedBy: 'u-acct', recordedAt: AT, approvedBy: 'u-owner', approvedAt: AT,
+    });
+    const a = foldSupplierAccount({
+      supplierId: 's-1', invoices: [invoice('inv-1', 's-1', 9000)], matchOf: () => match('inv-1', 9000, 9000), orders, receipts: [grn], asAt: AT,
+      payments: [pay('pay-1', 's-1', 3000), pay('pay-2', 's-1', 500), pay('pay-x', 's-9', 99_999)],
+      debitNoteIssues: [{ debitNoteRef: 'DN-grn-1-L1', supplierId: 's-1', number: 'DN-000007', seq: 7, valueMinor: 2000, issuedBy: 'u-acct', issuedAt: AT }],
+    });
+    expect(a.payments.map((p) => p.paymentId)).toEqual(['pay-1', 'pay-2']);
+    expect(a.totals).toMatchObject({ accruedMinor: 9000, debitNotesMinor: 2000, paidMinor: 3500, owedMinor: 3500 });
+    expect(a.debitNotes[0]).toMatchObject({ debitNoteRef: 'DN-grn-1-L1', number: 'DN-000007', issuedBy: 'u-acct' });
+    // Not issued → no number, said as null rather than an empty string.
+    const unissued = foldSupplierAccount({ supplierId: 's-1', invoices: [], matchOf: () => undefined, orders, receipts: [grn], asAt: AT });
+    expect(unissued.debitNotes[0]).toMatchObject({ number: null, issuedBy: null, issuedAt: null });
+    const all = foldAllSupplierAccounts({ invoices: [], matchOf: () => undefined, orders: [], receipts: [], payments: [pay('pay-x', 's-9', 100)], asAt: AT });
+    expect(all.accounts.map((x) => [x.supplierId, x.totals.paidMinor, x.totals.owedMinor])).toEqual([['s-9', 100, -100]]);
   });
 
   it('a receipt against ANOTHER supplier\'s order, or against no order head office knows, reaches this account not at all — and the latter is a named exception', () => {
