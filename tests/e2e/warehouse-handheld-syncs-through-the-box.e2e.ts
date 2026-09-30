@@ -24,7 +24,8 @@ import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enro
  *   • RECEIVES a delivery barcode and PUTS AWAY a goods-in item: each accepted scan shows in "Sent from this handheld"
  *     as saved here and, within a moment, with the store computer — because the box has it on its fsync'd log and in its
  *     queue for head office; the badge counts them by state;
- *   • RELOADS: both scans are still listed with their state (the durable device queue is the authority), the badge
+ *   • COUNTS a bin BLIND (SP-3b · W2): the quantity sheet carries no expected figure; the count rides the same socket;
+ *   • RELOADS: every scan is still listed with its state (the durable device queue is the authority), the badge
  *     agrees, and the box was sent nothing new.
  *
  * No cloud is configured: the box holds the work durably and will carry it up when one is (P-01). Head office delivery
@@ -139,7 +140,7 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     expect(await page.textContent('#queue-text')).toContain('nothing sent yet');
   });
 
-  it('receive + put away → saved here → with the store computer (durable on the box); reload → both still listed, nothing re-sent', async () => {
+  it('receive + put away + a blind count → saved here → with the store computer (durable on the box); reload → all still listed, nothing re-sent', async () => {
     const { edge, base } = await box();
     const page = await openHandheld(base);
     await page.fill('#deviceId', 'hh-01');
@@ -170,21 +171,43 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     await page.waitForSelector('#sent-work .sent[data-kind="put_away"][data-state="handed_to_box"]');
     expect(await page.textContent('#sent-work')).toContain('With the store computer');
 
-    // The BOX has both, on its fsync'd log and queued for head office — the whole scan and the applied command.
-    expect(edge.deviceEventsOutbox.pending().map((i) => i.event.type)).toEqual(['ReceivingScanned', 'WarehouseMovementApplied']);
+    // COUNT, blind (SP-3b · W2): tap Count → scan the bin → scan the item → type what was seen. Same socket, same states.
+    await page.click('#count-bin');
+    await scan(page, 'BIN-A');
+    await scan(page, 'p-good');
+    await page.waitForSelector('#qty:not([hidden])');
+    // The box put 6 in BIN-A a moment ago — nothing the counter reads says so (the keypad's own keys aside).
+    expect(await page.textContent('#qty-title')).toBe('How many did you count? — p-good');
+    expect(await page.textContent('#qty-hint')).toContain('The expected number is never shown here');
+    expect(await page.textContent('#qty-entry')).toBe('0');
+    await page.click('#qty-keypad button:has-text("5")');
+    await page.click('#qty-ok');
+    await page.waitForSelector('#banner:not([hidden])');
+    expect(await page.textContent('#banner-title')).toBe('Counted');
+    await page.click('#banner-ok');
+    await page.waitForSelector('#scan:not([hidden])');
+    await page.click('#scan-cancel'); // done counting
+    await waitHanded(page, 'count');
+    await page.waitForSelector('#sent-work .sent[data-kind="count"][data-state="handed_to_box"]');
+
+    // The BOX has all three, on its fsync'd log and queued for head office — the scan, the applied command, the blind count.
+    expect(edge.deviceEventsOutbox.pending().map((i) => i.event.type)).toEqual(['ReceivingScanned', 'WarehouseMovementApplied', 'StockCounted']);
     const records = (await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok).map((r) => JSON.parse(r.ok ? r.record : '{}') as { type: string; payload: Record<string, unknown> });
     expect(records[0]?.payload).toMatchObject({ grnId: 'grn-1', productId: 'p-rice', quantityMinor: 1, receivedBy: 'u-worker', storeId: 'store-1' });
     expect(records[1]?.payload).toMatchObject({ movedBy: 'u-worker', command: { kind: 'put_away', productId: 'p-good', toBinId: 'BIN-A', quantityMinor: 6 } });
-    expect(await sent(page)).toEqual([['put_away', 'handed_to_box'], ['receipt', 'handed_to_box']]);
+    expect(records[2]?.payload).toMatchObject({ productId: 'p-good', binId: 'BIN-A', countedMinor: 5, counterId: 'u-worker', source: 'warehouse-handheld' });
+    expect(records[2]?.payload).not.toHaveProperty('expectedMinor');
+    expect(await sent(page)).toEqual([['count', 'handed_to_box'], ['put_away', 'handed_to_box'], ['receipt', 'handed_to_box']]);
 
-    // RELOAD: the durable device queue is the authority — both listed, both with the store computer, box unchanged.
+    // RELOAD: the durable device queue is the authority — all listed, all with the store computer, box unchanged.
     await page.reload({ waitUntil: 'load' });
     await ready(page);
     await page.waitForSelector('#sent-work .sent[data-kind="receipt"][data-state="handed_to_box"]');
     await page.waitForSelector('#sent-work .sent[data-kind="put_away"][data-state="handed_to_box"]');
-    await page.waitForFunction(() => ((globalThis as unknown as HandheldWindow).document.querySelector('#queue-text')?.textContent ?? '').includes('2 with the store computer'), undefined, { timeout: 10_000 });
+    await page.waitForSelector('#sent-work .sent[data-kind="count"][data-state="handed_to_box"]');
+    await page.waitForFunction(() => ((globalThis as unknown as HandheldWindow).document.querySelector('#queue-text')?.textContent ?? '').includes('3 with the store computer'), undefined, { timeout: 10_000 });
     expect(await page.evaluate(() => (globalThis as unknown as HandheldWindow).warehouseOutbox!.unsentCount())).toBe(0);
-    expect(edge.deviceEventsOutbox.all()).toHaveLength(2);
-    expect((await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok)).toHaveLength(2);
+    expect(edge.deviceEventsOutbox.all()).toHaveLength(3);
+    expect((await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok)).toHaveLength(3);
   }, 60_000);
 });

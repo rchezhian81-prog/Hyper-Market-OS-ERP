@@ -14,6 +14,11 @@
 //     nothing is applied silently (hard rule #10). An immaterial variance is corrected at once, as the direct route does;
 //   • the counter's own authority is re-verified from their grants (flag, never silent).
 // Idempotent per countId: the same count again is 200; a re-count is a NEW count id.
+//
+// SP-3b (W2): the WAREHOUSE handheld's count is BIN-level — it names the bin it stood at. For such a count the expected
+// figure is head office's own bin contents for that bin and product (every batch), plus the corrections of prior bin
+// counts of the same bin; a store-level count never sees a bin correction and a bin count never sees a store one. A bin
+// head office does not have is flagged `bin_unknown` and the count is HELD for a person — never applied on a guess.
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
@@ -28,7 +33,7 @@ import { priorCorrections, type CountsDeps, type StoredReconciliation } from './
 export const DEFAULT_COUNT_APPROVAL_THRESHOLD_MINOR = 100_000;
 
 export const COUNT_FLAGS = Object.freeze([
-  'counter_unknown', 'counter_lacks_authority', 'value_unknown', 'default_threshold',
+  'counter_unknown', 'counter_lacks_authority', 'value_unknown', 'default_threshold', 'bin_unknown',
 ] as const);
 export type CountFlag = (typeof COUNT_FLAGS)[number];
 
@@ -47,6 +52,12 @@ export interface SyncedCountsDeps extends CountsDeps {
   readonly countPolicy: (tenantId: string) => Promise<CountPolicy | undefined> | CountPolicy | undefined;
   readonly recordCountPolicy: (tenantId: string, policy: CountPolicy) => Promise<void> | void;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /**
+   * SP-3b (W2): head office's bin contents for (bin, product) across every batch — the base a BIN-level count is
+   * reconciled against; `undefined` when the bin is not one head office has. Optional so a bare deps stub may omit it
+   * (a bin count then reads as `bin_unknown` and is held).
+   */
+  readonly binExpected?: (tenantId: string, binId: string, productId: string) => Promise<number | undefined> | number | undefined;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -66,19 +77,26 @@ interface RelayedCount {
   readonly at: string;
   readonly storeId: string | null;
   readonly source: string;
+  /** The bin counted (a warehouse handheld's count, SP-3b) — null for a store-level count. */
+  readonly binId: string | null;
 }
 
 function readRelayedCount(body: unknown): RelayedCount | undefined {
   if (!isObj(body)) return undefined;
   if (!isStr(body['countId']) || !isStr(body['productId']) || !isStr(body['locationId']) || !isStr(body['uom'])
     || !isNonNegInt(body['countedMinor']) || !isStr(body['reasonCode']) || !isStr(body['counterId']) || !isIso(body['at'])) return undefined;
+  if (body['binId'] !== undefined && body['binId'] !== null && !isStr(body['binId'])) return undefined;
   return {
     countId: body['countId'], productId: body['productId'], locationId: body['locationId'], uom: body['uom'],
     countedMinor: body['countedMinor'], reasonCode: body['reasonCode'], counterId: body['counterId'], at: body['at'],
     storeId: isStr(body['storeId']) ? body['storeId'] : null,
     source: isStr(body['source']) ? body['source'] : 'unknown',
+    binId: isStr(body['binId']) ? body['binId'] : null,
   };
 }
+
+/** Prior reconciliations of the SAME position: the same bin for a bin count, no bin for a store-level count. */
+const samePosition = (binId: string | null) => (r: StoredReconciliation): boolean => (r.binId ?? null) === binId;
 
 export function syncedCountsRoutes(deps: SyncedCountsDeps): readonly Route[] {
   return [
@@ -99,7 +117,7 @@ export function syncedCountsRoutes(deps: SyncedCountsDeps): readonly Route[] {
         // A count id is used once; the same count again is a retry after a lost reply (§31.1) — one record.
         if (await deps.countExists(ctx.tenantId, countId)) {
           const prior = (await deps.reconciliations(ctx.tenantId, c.productId, c.locationId)).find((r) => r.countId === countId);
-          return { status: 200, body: { countId, recorded: true, alreadyRecorded: true, ...(prior === undefined ? {} : { pendingApproval: prior.pendingApproval ?? false, adjusted: prior.adjusted, flags: prior.governanceFlags ?? [] }) } };
+          return { status: 200, body: { countId, recorded: true, alreadyRecorded: true, binId: prior?.binId ?? c.binId, ...(prior === undefined ? {} : { pendingApproval: prior.pendingApproval ?? false, adjusted: prior.adjusted, flags: prior.governanceFlags ?? [] }) } };
         }
 
         const flags: CountFlag[] = [];
@@ -108,9 +126,18 @@ export function syncedCountsRoutes(deps: SyncedCountsDeps): readonly Route[] {
         else if (!permissions.includes('inventory.movement.append')) flags.push('counter_lacks_authority');
 
         // The EXPECTED position — computed here, from the authoritative ledger plus prior corrections. Blind by
-        // construction: the device never sent it and never sees it.
-        const priorRecs = await deps.reconciliations(ctx.tenantId, c.productId, c.locationId);
-        const expected = (await deps.onHand(ctx.tenantId, c.productId, c.locationId)) + priorCorrections(priorRecs);
+        // construction: the device never sent it and never sees it. A BIN count (SP-3b) reads head office's bin
+        // contents for that bin instead of the store's on-hand, and only prior corrections of the same bin.
+        const priorRecs = (await deps.reconciliations(ctx.tenantId, c.productId, c.locationId)).filter(samePosition(c.binId));
+        let base: number;
+        let binUnknown = false;
+        if (c.binId === null) {
+          base = await deps.onHand(ctx.tenantId, c.productId, c.locationId);
+        } else {
+          const held = deps.binExpected === undefined ? undefined : await deps.binExpected(ctx.tenantId, c.binId, c.productId);
+          if (held === undefined) { binUnknown = true; flags.push('bin_unknown'); base = 0; } else base = held;
+        }
+        const expected = base + priorCorrections(priorRecs);
 
         // The VALUE and the THRESHOLD — the cloud's, never the body's (F07). Unknown is said, never silently zero:
         // an unvalued variance cannot be judged immaterial, so it waits for a person like a material one would.
@@ -122,7 +149,8 @@ export function syncedCountsRoutes(deps: SyncedCountsDeps): readonly Route[] {
 
         const varianceMinor = c.countedMinor - expected;
         const valueMinor = Math.abs(varianceMinor) * (unitValue ?? 0);
-        const material = varianceMinor !== 0 && (unitValue === undefined || valueMinor >= thresholdMinor);
+        // A count of a bin head office does not have cannot be judged at all — it waits for a person like a material one.
+        const material = binUnknown || (varianceMinor !== 0 && (unitValue === undefined || valueMinor >= thresholdMinor));
         const at = deps.now();
 
         let rec: StoredReconciliation;
@@ -135,7 +163,7 @@ export function syncedCountsRoutes(deps: SyncedCountsDeps): readonly Route[] {
             valueMinor, currency: 'INR', reasonCode: c.reasonCode,
             reconciled: false, adjusted: false, requiredApproval: true,
             counterId: c.counterId, approvedBy: null, at,
-            pendingApproval: true, governanceFlags: flags, relayedBy: ctx.userId, source: c.source, storeId: c.storeId,
+            pendingApproval: true, governanceFlags: flags, relayedBy: ctx.userId, source: c.source, storeId: c.storeId, binId: c.binId,
           };
         } else {
           // Immaterial (or no variance): the same tested engine as the direct route, over a ledger hydrated with the
@@ -167,7 +195,7 @@ export function syncedCountsRoutes(deps: SyncedCountsDeps): readonly Route[] {
             valueMinor: result.varianceValue.minor, currency: 'INR', reasonCode: c.reasonCode,
             reconciled: result.reconciled, adjusted: result.adjusted, requiredApproval: false,
             counterId: c.counterId, approvedBy: null, at,
-            pendingApproval: false, governanceFlags: flags, relayedBy: ctx.userId, source: c.source, storeId: c.storeId,
+            pendingApproval: false, governanceFlags: flags, relayedBy: ctx.userId, source: c.source, storeId: c.storeId, binId: c.binId,
           };
         }
         await deps.recordReconciliation(ctx.tenantId, rec);
@@ -176,7 +204,7 @@ export function syncedCountsRoutes(deps: SyncedCountsDeps): readonly Route[] {
           at, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
           before: null,
           after: {
-            productId: c.productId, locationId: c.locationId, countedMinor: String(c.countedMinor), varianceMinor: String(rec.varianceMinor),
+            productId: c.productId, locationId: c.locationId, binId: c.binId ?? '', countedMinor: String(c.countedMinor), varianceMinor: String(rec.varianceMinor),
             valueMinor: String(rec.valueMinor), adjusted: String(rec.adjusted), pendingApproval: String(rec.pendingApproval ?? false),
             relayedBy: ctx.userId, source: c.source, storeId: c.storeId ?? '', flags: flags.join(','),
           },
@@ -186,7 +214,7 @@ export function syncedCountsRoutes(deps: SyncedCountsDeps): readonly Route[] {
         // travels back only to the BOX (the device sees posted / refused) — the counter still never sees it first.
         return {
           status: 202,
-          body: { countId, recorded: true, expectedMinor: rec.expectedMinor, countedMinor: rec.countedMinor, varianceMinor: rec.varianceMinor, valueMinor: rec.valueMinor, adjusted: rec.adjusted, pendingApproval: rec.pendingApproval ?? false, flags },
+          body: { countId, recorded: true, binId: c.binId, expectedMinor: rec.expectedMinor, countedMinor: rec.countedMinor, varianceMinor: rec.varianceMinor, valueMinor: rec.valueMinor, adjusted: rec.adjusted, pendingApproval: rec.pendingApproval ?? false, flags },
         };
       },
     },

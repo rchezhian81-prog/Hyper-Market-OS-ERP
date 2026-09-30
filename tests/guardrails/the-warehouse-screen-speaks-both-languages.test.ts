@@ -4,6 +4,7 @@ import { FEEDBACK_CODES, SENT_WORK_KINDS } from '../../apps/warehouse-app/src/wa
 import { DEVICE_ITEM_STATES } from '../../packages/sync/src/device-relay';
 import { WAREHOUSE_EXCEPTION_KINDS, WAREHOUSE_TASK_KINDS } from '../../apps/web-erp/src/warehouse-supervisor-session';
 import { APPROVE_REASONS, REJECT_REASONS } from '../../packages/approvals/src/reasons';
+import { ADJUSTMENT_REASON_CODES } from '../../packages/adjustment/src/adjustment';
 
 /**
  * **The warehouse handheld says WHY a scan was refused — in English AND Tamil (OA-9).**
@@ -61,6 +62,12 @@ describe('every warehouse scan outcome has a word in both languages', () => {
     bothLanguagesFor(DEVICE_ITEM_STATES, 'STATE_SHORT');
     bothLanguagesFor(SENT_WORK_KINDS, 'KIND_WORDS');
     expect(() => bothLanguagesFor(['a_state_nobody_translated'], 'STATE_WORDS')).toThrow();
+  });
+
+  it('has words in both languages for every adjustment reason the handheld may raise (SP-3b · W3 · M08-FR-03)', () => {
+    bothLanguagesFor(ADJUSTMENT_REASON_CODES, 'REASON_WORDS');
+    // The buttons are built from the words map, so a reason with no words is a reason nobody can raise.
+    expect(VIEW).toMatch(/Object\.keys\(REASON_WORDS\)\.map/);
   });
 });
 
