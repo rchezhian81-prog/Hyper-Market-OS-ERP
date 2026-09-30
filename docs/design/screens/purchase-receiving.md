@@ -84,3 +84,20 @@ screen never sends one. Proven through the real API (`tests/integration/supplier
 record, KYC documents, risk status, verified bank state) and a Suppliers screen showing the account are SP-7c; a debit note
 has no statutory number yet; the review screen does not offer the disposition, the excess decision or the return (SP-9);
 physical-device verification and UAT PENDING.
+
+## Measured (SP-7c — the supplier has one record and one balance, and gets paid safely, owner's Option 2 directive of 30 September 2026)
+The Supplier workbench (§ above) now has its records; its screen is the next slice (SP-7d). A purchase user PROPOSES a
+supplier — name, GSTIN, contact, payment terms, compliance documents — and a DIFFERENT person with the authority makes it
+active; the proposer never can, and the person who created a supplier can never approve where its money goes (the
+bank-details route refuses them by name). A supplier whose name or GSTIN matches another is SAID as a possible duplicate,
+not refused and not silently taken. `GET /v1/purchase/suppliers` is the list a screen will render: every supplier the
+records name, those needing a person first, each with its hold, its verified bank account, its balance and every reason
+in words. A PAYMENT is a fact a second person approved, recorded once and moving no money: it is refused — nothing
+recorded — for a supplier under a hold, for a bank payment with no independently verified account, for an account another
+holder shares, for the approver being the payer, and for more than the balance owed. A second bill against the same order
+pays nothing for goods the first bill already claimed, and the pair is flagged. A debit note is issued under the shop's
+own `DN-` number series, once. The supplier's own portal statement reads the same account. Proven through the real API
+(`tests/integration/supplier-master.test.ts`, `tests/integration/duplicate-bank.test.ts`) and the pure pieces
+(`tests/unit/purchase-match-lines.test.ts`). **Still recorded, not dropped:** the Suppliers screen (SP-7d); an unapproved
+supplier can still be issued an order (only a hold refuses one); compliance documents are recorded, not yet checked at
+the order; physical-device verification and UAT PENDING.

@@ -444,12 +444,48 @@ device, human UAT and production verification separate; approved deferrals stay 
   receipt (no cumulative invoiced-to-date check); payments to suppliers are not recorded against the account; input GST on
   purchase invoices is not captured (M23-FR-02); the payables reconciliation is not yet fed to the period-close control
   totals (M23-FR-04); no screen shows the account or the journals (SP-9); no physical device or UAT.
-- **Current-work pointer:** last verified = SP-7b (this PR); next = **SP-7c** [W07 close-out] (the supplier master —
-  onboarding record, KYC documents, risk / blocked status, verified bank state (M06-FR-01) — and the Suppliers screen
-  served by the box showing each account; debit-note numbering through the documents series; the portal statement reading
-  the account; a cumulative invoiced-to-date check per order; payment recording against the account); then SP-8/8b (F08),
-  SP-9/9b; **SP-3c** (picker + driver) after the core-store chain; genuine blockers: none; external gates unchanged
-  (providers, hardware, real data, pilot GO).
+- **SP-7c — the supplier has one record and one balance, and gets paid safely (M06-FR-01 · M23-FR-01 · M23-FR-02 ·
+  M15-FR-03 · M07-FR-04 · §28 · P-02 · P-03 · hard rules #2 #4 #5).** (i) The supplier MASTER
+  (`services/purchase/src/supplier-master.ts`): `POST /v1/purchase/suppliers/:id` — a purchase user
+  (`purchase.supplier.manage`: owner, store manager) proposes or updates the record (name, GSTIN, contact, payment terms,
+  compliance documents in the portal's document shape); versioned and append-only, the latest applies; a supplier with the
+  same name or GSTIN as another is SAID as `possibleDuplicates`, never refused or silently taken;
+  `POST …/:id/approval` (`purchase.supplier.approve`: owner, accountant) makes it active — the proposer never can (422
+  `self_approval`, even the owner on their own proposal); `GET /v1/purchase/suppliers` (`supplier.view`) lists every supplier
+  the registers name — with or without a master — needing-a-person first, each with its block state, its verified bank
+  account (folded from the bank-change ledger), its SP-7b balance and every reason (`no_master_record`,
+  `awaiting_approval`, `blocked`, `possible_duplicate`, `duplicate_bank_account`, `no_verified_bank_account`,
+  `unmatched_invoices`, `blocked_invoices`, `withheld`, `pending_returns`, `over_invoiced`); `GET …/:id` the same for one
+  (404 for an id no register names). The bank-details route now refuses the supplier's CREATOR as approver (422
+  `supplier_creator_cannot_approve_bank`, M06-FR-01's acceptance). (ii) PAYMENTS: `POST …/:id/payments/:paymentId`
+  (`purchase.supplier.pay`: owner, accountant) records that money went — a fact a second person approved, once, moving no
+  money (no bank file, no gateway) — and is REFUSED, nothing recorded, when the supplier is under a hold (409
+  `supplier_blocked`), when a bank / cheque / UPI payment has no independently verified account to go to (409
+  `no_verified_bank_account` — an unverified bank change blocks payment), when another holder shares the account (409
+  `duplicate_bank_account`, M15-FR-03 through the SAME `detectDuplicateBankAccounts` the fraud-signals report runs), when
+  the approver is the payer or lacks the authority (422), or when it exceeds the matched, netted balance (422
+  `payment_exceeds_balance`). The account nets payments (`paidMinor`, owed = accrued − debit notes − paid) and the
+  payables posting carries them as `supplier_payment` (Dr `supplier_payable` / Cr `bank_clearing`, in the suggested map);
+  the reconciliation agrees. (iii) INVOICED-TO-DATE: a second bill against the same order is judged against what earlier
+  bills left (`invoicedBeforeOn` — earlier = captured before, ties by id; `matchLinesFrom` subtracts it from the order and
+  the receipts), recorded as `sources.invoicedBefore`, and the pair flagged `order_over_invoiced` — the SP-7a test that
+  paid a third bill for the same goods in full now pays it nothing. (iv) A debit note the account raised is ISSUED under
+  the tenant's own `debit_note` series (`POST …/:id/debit-notes/:ref/issue`, `purchase.invoice.match`; `DN-000001`,
+  gap-free, once; the account carries the number). (v) The supplier's PORTAL statement (M24) reads the account (P-02): the
+  matched payable as an invoice line, the withheld figure disputed, our debit note as the supplier's credit note, a payment
+  as a payment — `closingMinor` = the account's `owedMinor`, `reconciles: true`. Evidence: `tests/integration/supplier-master.test.ts`
+  (6, real API + real RBAC), `tests/unit/purchase-match-lines.test.ts` (2), `tests/unit/supplier-account-fold.test.ts`
+  (+1), `tests/unit/finance-payables.test.ts` (+1), `tests/integration/purchase-capture-match.test.ts` (the third-bill
+  expectation corrected to the control), `tests/integration/supplier-account.test.ts`. API surface +6. **Still open, honestly
+  (SP-7d):** no Suppliers SCREEN — the list is an API read; an unapproved (not blocked) supplier can still be issued a PO
+  (only a hold refuses one — the roadmap's stated acceptance); compliance documents are recorded but not checked at the PO;
+  input GST on purchase invoices is not captured; the bank statement that clears `bank_clearing` is externally gated; no
+  physical device or UAT.
+- **Current-work pointer:** last verified = SP-7c (this PR); next = **SP-7d** [W07 close-out, screen] (the Suppliers screen
+  served by the box at `/suppliers`: the list with state, verified bank, balance and reasons; propose / approve from the
+  screen where the reader holds the right; session model + guardrail + browser e2e; `served: unbuilt` → `box`); then
+  SP-8/8b (F08), SP-9/9b; **SP-3c** (picker + driver) after the core-store chain; genuine blockers: none; external gates
+  unchanged (providers, hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 

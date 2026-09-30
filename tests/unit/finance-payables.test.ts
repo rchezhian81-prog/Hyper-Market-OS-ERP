@@ -17,14 +17,16 @@ const account = (over: Partial<PayablesAccount> = {}): PayablesAccount => ({
   supplierId: 's-1',
   invoices: [{ invoiceId: 'inv-1', payableMinor: 7000, matched: true, matchedAt: '2026-09-30T10:00:00.000Z' }],
   debitNotes: [{ debitNoteRef: 'DN-grn-1-L1', valueMinor: 1500, decidedAt: '2026-09-30T11:00:00.000Z' }],
+  payments: [],
   ...over,
 });
-const posted = (kind: 'supplier_invoice' | 'supplier_invoice_reversal' | 'supplier_debit_note', sourceId: string, amount: number, supplierId = 's-1'): PostedPayablesJournal => ({
-  kind, sourceKind: kind === 'supplier_debit_note' ? 'supplier_debit_note' : 'supplier_invoice', sourceId, supplierId,
+type Kind = 'supplier_invoice' | 'supplier_invoice_reversal' | 'supplier_debit_note' | 'supplier_payment';
+const posted = (kind: Kind, sourceId: string, amount: number, supplierId = 's-1'): PostedPayablesJournal => ({
+  kind, sourceKind: kind === 'supplier_debit_note' ? 'supplier_debit_note' : kind === 'supplier_payment' ? 'supplier_payment' : 'supplier_invoice', sourceId, supplierId,
   components: kind === 'supplier_invoice' ? { payable: amount } : { amount },
   lines: kind === 'supplier_invoice'
     ? [{ accountCode: 'purchases_grni', debitMinor: amount, creditMinor: 0 }, { accountCode: 'supplier_payable', debitMinor: 0, creditMinor: amount }]
-    : [{ accountCode: 'supplier_payable', debitMinor: amount, creditMinor: 0 }, { accountCode: 'purchases_grni', debitMinor: 0, creditMinor: amount }],
+    : [{ accountCode: 'supplier_payable', debitMinor: amount, creditMinor: 0 }, { accountCode: kind === 'supplier_payment' ? 'bank_clearing' : 'purchases_grni', debitMinor: 0, creditMinor: amount }],
 });
 
 describe('planPayablesPostings — the ledger is brought level with the register, never past it', () => {
@@ -46,6 +48,22 @@ describe('planPayablesPostings — the ledger is brought level with the register
     // The ledger's view of the invoice after accrual + reversal is the net.
     expect(ledgerHolds([...level, posted('supplier_invoice_reversal', 'inv-1', 2000)], 'supplier_invoice', 'inv-1')).toBe(5000);
     expect(ledgerHolds(level, 'supplier_debit_note', 'DN-grn-1-L1')).toBe(1500);
+  });
+
+  it('SP-7c: a payment posts ONCE at its amount, dated the day the money went, settles the supplier through the bank clearing, and nets the register in the reconciliation', () => {
+    const paid = account({ payments: [{ paymentId: 'pay-1', amountMinor: 3000, paidOn: '2026-10-02' }] });
+    const level = [posted('supplier_invoice', 'inv-1', 7000), posted('supplier_debit_note', 'DN-grn-1-L1', 1500)];
+    const plan = planPayablesPostings([paid], level);
+    expect(plan).toEqual([{ kind: 'supplier_payment', sourceKind: 'supplier_payment', sourceId: 'pay-1', supplierId: 's-1', documentDate: '2026-10-02', components: { amount: 3000 } }]);
+    const out = postPayables(plan, DEFAULT_RETAIL_POSTING_MAP, 'INR');
+    expect(out.exceptions).toEqual([]);
+    expect(out.journals[0]!.entry.lines.map((l) => [l.account, l.side, l.amount.minor])).toEqual([['supplier_payable', 'debit', 3000], ['bank_clearing', 'credit', 3000]]);
+    const after = [...level, posted('supplier_payment', 'pay-1', 3000)];
+    expect(planPayablesPostings([paid], after)).toEqual([]);
+    expect(ledgerHolds(after, 'supplier_payment', 'pay-1')).toBe(3000);
+    // Register: 7000 − 1500 − 3000 = 2500; ledger: the control account nets to the same.
+    expect(reconcilePayables([paid], after, DEFAULT_RETAIL_POSTING_MAP)).toMatchObject({ registerOwedMinor: 2500, ledgerOwedMinor: 2500, agrees: true });
+    expect(reconcilePayables([paid], level, DEFAULT_RETAIL_POSTING_MAP)).toMatchObject({ registerOwedMinor: 2500, ledgerOwedMinor: 5500, differenceMinor: -3000, agrees: false });
   });
 });
 

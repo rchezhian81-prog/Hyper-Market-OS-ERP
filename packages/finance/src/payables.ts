@@ -13,8 +13,8 @@
 import { postJournal, type PostingInput, type PostingMap, type PostingRule, type JournalEntry as PostedJournal } from './posting';
 import type { CurrencyCode } from '../../contracts/src/money';
 
-export type PayablesKind = 'supplier_invoice' | 'supplier_invoice_reversal' | 'supplier_debit_note';
-export type PayablesSourceKind = 'supplier_invoice' | 'supplier_debit_note';
+export type PayablesKind = 'supplier_invoice' | 'supplier_invoice_reversal' | 'supplier_debit_note' | 'supplier_payment';
+export type PayablesSourceKind = 'supplier_invoice' | 'supplier_debit_note' | 'supplier_payment';
 
 /** The supplier account as the payables posting reads it — a structural subset of the purchase service's statement. */
 export interface PayablesAccount {
@@ -30,6 +30,12 @@ export interface PayablesAccount {
     readonly debitNoteRef: string;
     readonly valueMinor: number;
     readonly decidedAt: string;
+  }[];
+  /** SP-7c — payments a second person approved; each posts once and reduces what is owed. */
+  readonly payments: readonly {
+    readonly paymentId: string;
+    readonly amountMinor: number;
+    readonly paidOn: string;
   }[];
 }
 
@@ -80,9 +86,18 @@ export const PAYABLES_POSTING_RULES: readonly PostingRule[] = Object.freeze([
       { account: 'purchases_grni', side: 'credit', component: 'amount' },
     ],
   },
+  {
+    // SP-7c: a payment settles the supplier and leaves through the bank clearing — the bank statement (M23-FR-03) is the
+    // second source that clears it, when that reconciliation exists.
+    kind: 'supplier_payment',
+    legs: [
+      { account: 'supplier_payable', side: 'debit', component: 'amount' },
+      { account: 'bank_clearing', side: 'credit', component: 'amount' },
+    ],
+  },
 ]);
 
-/** What the ledger already holds for a source: accruals less reversals for an invoice; the note's amount for a debit note. */
+/** What the ledger already holds for a source: accruals less reversals for an invoice; the amount for a debit note or a payment. */
 export function ledgerHolds(prior: readonly PostedPayable[], sourceKind: PayablesSourceKind, sourceId: string): number {
   let held = 0;
   for (const p of prior) {
@@ -118,6 +133,14 @@ export function planPayablesPostings(accounts: readonly PayablesAccount[], prior
       out.push({
         kind: 'supplier_debit_note', sourceKind: 'supplier_debit_note', sourceId: dn.debitNoteRef, supplierId: a.supplierId,
         documentDate: dn.decidedAt.slice(0, 10), components: { amount: delta },
+      });
+    }
+    for (const pay of a.payments) {
+      const delta = pay.amountMinor - ledgerHolds(prior, 'supplier_payment', pay.paymentId);
+      if (delta <= 0) continue; // a payment is a fact recorded once, at its amount
+      out.push({
+        kind: 'supplier_payment', sourceKind: 'supplier_payment', sourceId: pay.paymentId, supplierId: a.supplierId,
+        documentDate: pay.paidOn, components: { amount: delta },
       });
     }
   }
@@ -183,7 +206,7 @@ export interface PostedPayablesJournal extends PostedPayable {
 
 export interface SupplierReconciliation {
   readonly supplierId: string;
-  /** The PURCHASE register: every matched invoice's payable less every debit note. */
+  /** The PURCHASE register: every matched invoice's payable less every debit note and every payment. */
   readonly registerOwedMinor: number;
   /** The FINANCE ledger: credits less debits on the control account across this supplier's payables journals. */
   readonly ledgerOwedMinor: number;
@@ -205,7 +228,7 @@ export interface PayablesReconciliation {
   readonly agrees: boolean;
 }
 
-export const PAYABLES_LEFT_DERIVATION = 'purchase register: every matched invoice\'s payable (the lowest of order, receipt and invoice) less every debit note a return or claim raised';
+export const PAYABLES_LEFT_DERIVATION = 'purchase register: every matched invoice\'s payable (the lowest of order, receipt and invoice) less every debit note a return or claim raised and every payment a second person approved';
 export const PAYABLES_RIGHT_DERIVATION = 'finance ledger: credits less debits on the payables control account across the posted payables journals';
 
 /**
@@ -219,7 +242,8 @@ export function reconcilePayables(
   const control = map === undefined ? undefined : payablesControlAccount(map);
   const suppliers: SupplierReconciliation[] = accounts.map((a) => {
     const registerOwedMinor = a.invoices.filter((i) => i.matched).reduce((s, i) => s + i.payableMinor, 0)
-      - a.debitNotes.reduce((s, d) => s + d.valueMinor, 0);
+      - a.debitNotes.reduce((s, d) => s + d.valueMinor, 0)
+      - a.payments.reduce((s, p) => s + p.amountMinor, 0);
     const ledgerOwedMinor = control === undefined ? 0 : journals
       .filter((j) => j.supplierId === a.supplierId)
       .flatMap((j) => j.lines)

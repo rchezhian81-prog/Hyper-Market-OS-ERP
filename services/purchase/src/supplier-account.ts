@@ -10,7 +10,9 @@
 //     Refused stock (expired at the dock) was never received against the order, so the match already withheld it and NO
 //     debit note is raised — raising one would count the same shortfall twice; it is listed as "refused, never owed";
 //   • the rejected over-delivery (SP-6b): held out of the received figure, so the match withholds it if invoiced; listed as
-//     a supplier return PENDING until the goods have physically gone back (`…/excess/returned`), then as returned.
+//     a supplier return PENDING until the goods have physically gone back (`…/excess/returned`), then as returned;
+//   • SP-7c: the PAYMENTS recorded against the supplier (a second person approving each) net the balance, and a debit note
+//     carries the statutory number it was issued under once a person issued it (supplier-master.ts).
 //
 // Nothing here is stored a second time. The account is READ from the registers, so it can never disagree with them, a
 // retry can never double it, and a correction anywhere upstream shows the next time it is read (P-02, hard rule #2).
@@ -58,6 +60,33 @@ export interface ReceiptForAccount {
   readonly excessReturn?: { readonly returnedBy: string; readonly returnedAt: string; readonly quantityMinor: number; readonly valueMinor: number };
 }
 
+/** SP-7c — a payment recorded against the supplier (supplier-master.ts): a fact a second person approved, netting the balance. */
+export interface SupplierPayment {
+  readonly paymentId: string;
+  readonly supplierId: string;
+  readonly amountMinor: number;
+  readonly currency: 'INR';
+  /** The day the money went, YYYY-MM-DD. */
+  readonly paidOn: string;
+  readonly method: 'bank_transfer' | 'cheque' | 'upi' | 'cash';
+  readonly reference: string;
+  readonly recordedBy: string;
+  readonly recordedAt: string;
+  readonly approvedBy: string;
+  readonly approvedAt: string;
+}
+
+/** SP-7c — a debit note ISSUED to the supplier under a number from the tenant's series (M23-FR-02). */
+export interface DebitNoteIssue {
+  readonly debitNoteRef: string;
+  readonly supplierId: string;
+  readonly number: string;
+  readonly seq: number;
+  readonly valueMinor: number;
+  readonly issuedBy: string;
+  readonly issuedAt: string;
+}
+
 /** A purchase order as the account needs it — which supplier a receipt against it belongs to. */
 export interface OrderForAccount {
   readonly poId: string;
@@ -97,6 +126,10 @@ export interface DebitNote {
   readonly decidedBy: string;
   readonly decidedAt: string;
   readonly reason: string;
+  /** The statutory number it was issued under, once a person issued it (SP-7c); null while it is only a figure on the account. */
+  readonly number: string | null;
+  readonly issuedBy: string | null;
+  readonly issuedAt: string | null;
 }
 
 /** Refused (expired) stock a second person returned or claimed — said, and never owed, because the match withheld it. */
@@ -131,7 +164,9 @@ export interface SupplierAccountTotals {
   /** Σ withheld — in dispute, not owed until settled. */
   readonly withheldMinor: number;
   readonly debitNotesMinor: number;
-  /** accrued − debit notes: the balance the supplier's statement should show. */
+  /** Σ payments recorded against the supplier (SP-7c). */
+  readonly paidMinor: number;
+  /** accrued − debit notes − paid: the balance the supplier's statement should show. */
   readonly owedMinor: number;
   readonly unmatchedInvoices: number;
   readonly blockedInvoices: number;
@@ -145,6 +180,7 @@ export interface SupplierAccountStatement extends PayablesAccount {
   readonly debitNotes: readonly DebitNote[];
   readonly refusedNotOwed: readonly RefusedNotOwed[];
   readonly pendingSupplierReturns: readonly PendingSupplierReturn[];
+  readonly payments: readonly SupplierPayment[];
   readonly totals: SupplierAccountTotals;
   readonly asAt: string;
 }
@@ -163,6 +199,10 @@ export interface SupplierAccountInput {
   readonly matchOf: (invoiceId: string) => StoredMatch | undefined;
   readonly orders: readonly OrderForAccount[];
   readonly receipts: readonly ReceiptForAccount[];
+  /** SP-7c — every payment recorded (all suppliers); the fold keeps this supplier's. Optional for callers that have none. */
+  readonly payments?: readonly SupplierPayment[];
+  /** SP-7c — every debit note issued under a number (all suppliers). */
+  readonly debitNoteIssues?: readonly DebitNoteIssue[];
   readonly asAt: string;
 }
 
@@ -196,10 +236,13 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
       const line = r.captured.lines.find((l) => l.lineId === d.lineId);
       if (line === undefined) continue;
       if (line.quarantinedMinor > 0) {
+        const debitNoteRef = `DN-${r.grnId}-${d.lineId}`;
+        const issued = (input.debitNoteIssues ?? []).find((i) => i.debitNoteRef === debitNoteRef && i.supplierId === input.supplierId);
         debitNotes.push({
-          debitNoteRef: `DN-${r.grnId}-${d.lineId}`, grnId: r.grnId, lineId: d.lineId, productId: d.productId, poId, disposition: d.disposition,
+          debitNoteRef, grnId: r.grnId, lineId: d.lineId, productId: d.productId, poId, disposition: d.disposition,
           quantityMinor: line.quarantinedMinor, valueMinor: line.quarantinedMinor * line.unitCost.minor, currency: d.currency,
           decidedBy: d.decidedBy, decidedAt: d.decidedAt, reason: d.reason,
+          number: issued?.number ?? null, issuedBy: issued?.issuedBy ?? null, issuedAt: issued?.issuedAt ?? null,
         });
       }
       if (line.rejectedMinor > 0) {
@@ -220,13 +263,15 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
 
   const accruedMinor = invoices.reduce((s, i) => s + i.payableMinor, 0);
   const debitNotesMinor = debitNotes.reduce((s, d) => s + d.valueMinor, 0);
+  const payments = (input.payments ?? []).filter((p) => p.supplierId === input.supplierId);
+  const paidMinor = payments.reduce((s, p) => s + p.amountMinor, 0);
   return {
     supplierId: input.supplierId, currency: 'INR',
-    invoices, debitNotes, refusedNotOwed, pendingSupplierReturns,
+    invoices, debitNotes, refusedNotOwed, pendingSupplierReturns, payments,
     totals: {
       invoicedMinor: invoices.reduce((s, i) => s + i.invoicedMinor, 0),
       accruedMinor, withheldMinor: invoices.reduce((s, i) => s + i.withheldMinor, 0),
-      debitNotesMinor, owedMinor: accruedMinor - debitNotesMinor,
+      debitNotesMinor, paidMinor, owedMinor: accruedMinor - debitNotesMinor - paidMinor,
       unmatchedInvoices: invoices.filter((i) => !i.matched).length,
       blockedInvoices: invoices.filter((i) => i.blocked).length,
       pendingReturns: pendingSupplierReturns.filter((p) => !p.returned).length,
@@ -240,7 +285,9 @@ export function foldAllSupplierAccounts(input: Omit<SupplierAccountInput, 'suppl
   readonly accounts: readonly SupplierAccountStatement[];
   readonly unattributed: readonly UnattributedReceipt[];
 } {
-  const supplierIds = [...new Set([...input.invoices.map((i) => i.supplierId), ...input.orders.map((o) => o.supplierId)])].sort();
+  const supplierIds = [...new Set([
+    ...input.invoices.map((i) => i.supplierId), ...input.orders.map((o) => o.supplierId), ...(input.payments ?? []).map((p) => p.supplierId),
+  ])].sort();
   const accounts = supplierIds.map((supplierId) => foldSupplierAccount({ ...input, supplierId }));
   const known = new Set(input.orders.map((o) => o.poId));
   const unattributed: UnattributedReceipt[] = [];
@@ -264,15 +311,21 @@ export interface SupplierAccountDeps {
   readonly latestMatches: (tenantId: string) => Promise<ReadonlyMap<string, StoredMatch>> | ReadonlyMap<string, StoredMatch>;
   readonly purchaseOrders: (tenantId: string) => Promise<readonly OrderForAccount[]> | readonly OrderForAccount[];
   readonly receipts: (tenantId: string) => Promise<readonly ReceiptForAccount[]> | readonly ReceiptForAccount[];
+  /** SP-7c — every payment recorded against any supplier, and every debit note issued under a number. */
+  readonly payments: (tenantId: string) => Promise<readonly SupplierPayment[]> | readonly SupplierPayment[];
+  readonly debitNoteIssues: (tenantId: string) => Promise<readonly DebitNoteIssue[]> | readonly DebitNoteIssue[];
   readonly now: () => string;
 }
 
-async function registers(deps: SupplierAccountDeps, tenantId: string): Promise<Omit<SupplierAccountInput, 'supplierId'>> {
-  const [invoices, matches, orders, receipts] = await Promise.all([
+/** The registers the account folds from, read once — shared by the account routes, the master (SP-7c) and finance. */
+export async function accountRegisters(deps: SupplierAccountDeps, tenantId: string): Promise<Omit<SupplierAccountInput, 'supplierId'>> {
+  const [invoices, matches, orders, receipts, payments, debitNoteIssues] = await Promise.all([
     deps.invoices(tenantId), deps.latestMatches(tenantId), deps.purchaseOrders(tenantId), deps.receipts(tenantId),
+    deps.payments(tenantId), deps.debitNoteIssues(tenantId),
   ]);
-  return { invoices, matchOf: (id) => matches.get(id), orders, receipts, asAt: deps.now() };
+  return { invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, asAt: deps.now() };
 }
+const registers = accountRegisters;
 
 export function supplierAccountRoutes(deps: SupplierAccountDeps): readonly Route[] {
   return [
@@ -305,7 +358,8 @@ export function supplierAccountRoutes(deps: SupplierAccountDeps): readonly Route
       handler: async (ctx) => {
         const supplierId = (ctx.params['supplierId'] ?? '').trim();
         const regs = await registers(deps, ctx.tenantId);
-        const known = regs.invoices.some((i) => i.supplierId === supplierId) || regs.orders.some((o) => o.supplierId === supplierId);
+        const known = regs.invoices.some((i) => i.supplierId === supplierId) || regs.orders.some((o) => o.supplierId === supplierId)
+          || (regs.payments ?? []).some((p) => p.supplierId === supplierId);
         if (!known) throw notFound(`supplier ${supplierId}`);
         return { status: 200, body: foldSupplierAccount({ ...regs, supplierId }) };
       },

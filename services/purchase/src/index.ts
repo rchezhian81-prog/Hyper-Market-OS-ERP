@@ -233,6 +233,8 @@ export interface StoredMatch extends MatchResult {
     readonly received: 'goods_receipts_folded_into_the_order' | 'none';
     /** The tolerances applied (SP-7b): the tenant's own policy, or the engine's defaults — said as `defaulted`. */
     readonly policy?: MatchTolerancePolicy & { readonly defaulted: boolean };
+    /** SP-7c — what earlier invoices against the same order had already claimed, per product, when this one was judged. */
+    readonly invoicedBefore?: Readonly<Record<string, number>>;
   };
   readonly flags: readonly string[];
 }
@@ -327,14 +329,25 @@ async function orderForInvoice(
  * skipped, so an invoiced line nobody ordered shows as exactly that. An order not yet issued counts as nothing ordered:
  * nobody committed to it, so an invoice against it cannot agree with it. Pure.
  */
-export function matchLinesFrom(order: StoredPurchaseOrder | undefined, invoice: SupplierInvoiceRecord): MatchLine[] {
+export function matchLinesFrom(
+  order: StoredPurchaseOrder | undefined, invoice: SupplierInvoiceRecord,
+  /** SP-7c — what EARLIER invoices against the same order already claimed, per product: the order and the receipts left for
+   *  THIS invoice are what remains after them, so a second bill for the same goods pays nothing twice (invoiced-to-date). */
+  invoicedBefore: Readonly<Record<string, number>> = {},
+): MatchLine[] {
   const usable = order !== undefined && order.status === 'issued' ? order : undefined;
   const ordered = new Map<string, { qty: number; unitMinor: number }>();
   for (const l of usable?.lines ?? []) {
     const cur = ordered.get(l.productId);
     ordered.set(l.productId, { qty: (cur?.qty ?? 0) + l.orderedQty, unitMinor: cur?.unitMinor ?? l.unitCost.minor });
   }
-  const received = usable?.receivedByProduct ?? {};
+  for (const [productId, prior] of Object.entries(invoicedBefore)) {
+    const cur = ordered.get(productId);
+    if (cur !== undefined) ordered.set(productId, { ...cur, qty: Math.max(0, cur.qty - prior) });
+  }
+  const receivedRaw = usable?.receivedByProduct ?? {};
+  const received: Record<string, number> = {};
+  for (const [productId, qty] of Object.entries(receivedRaw)) received[productId] = Math.max(0, qty - (invoicedBefore[productId] ?? 0));
   const invoiced = new Map<string, { qty: number; unitMinor: number }>();
   for (const l of invoice.lines) {
     const cur = invoiced.get(l.productId);
@@ -348,6 +361,22 @@ export function matchLinesFrom(order: StoredPurchaseOrder | undefined, invoice: 
     orderedUnitMinor: ordered.get(productId)?.unitMinor ?? 0,
     invoicedUnitMinor: invoiced.get(productId)?.unitMinor ?? 0,
   }));
+}
+
+/**
+ * SP-7c — the quantities EARLIER invoices against the same order already claimed, per product. Earlier = captured before this
+ * one (ties broken by invoice id), so re-matching the first invoice never sees the second, and the second is judged against
+ * what the first left. Pure.
+ */
+export function invoicedBeforeOn(poId: string, invoice: SupplierInvoiceRecord, all: readonly SupplierInvoiceRecord[]): Readonly<Record<string, number>> {
+  const out: Record<string, number> = {};
+  for (const other of all) {
+    if (other.poId !== poId || other.invoiceId === invoice.invoiceId) continue;
+    const earlier = other.capturedAt < invoice.capturedAt || (other.capturedAt === invoice.capturedAt && other.invoiceId < invoice.invoiceId);
+    if (!earlier) continue;
+    for (const l of other.lines) out[l.productId] = (out[l.productId] ?? 0) + l.quantity;
+  }
+  return out;
 }
 
 export interface PurchaseDeps {
@@ -368,6 +397,8 @@ export interface PurchaseDeps {
   readonly matchPolicy: (tenantId: string) => Promise<StoredMatchPolicy | undefined> | StoredMatchPolicy | undefined;
   readonly recordMatchPolicy: (tenantId: string, policy: StoredMatchPolicy) => Promise<void> | void;
   readonly applyBankChange: (tenantId: string, r: BankChangeRequest) => Promise<void> | void;
+  /** SP-7c (M06-FR-01 · §28): who CREATED the supplier's master record, or undefined — they may never approve its bank details. */
+  readonly supplierCreatedBy?: (tenantId: string, supplierId: string) => Promise<string | undefined> | string | undefined;
   /**
    * What is on order and not yet received.
    *
@@ -527,6 +558,7 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
         let poId: string | null = null;
         let order: StoredPurchaseOrder | undefined;
         let result: MatchResult;
+        let invoicedBefore: Readonly<Record<string, number>> = {};
         if (invoice === undefined) {
           flags.push('invoice_unknown');
           result = threeWayMatch({ lines: [], ...policy });
@@ -535,7 +567,17 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
           const orderFlags: InvoiceFlag[] = [];
           order = await orderForInvoice(deps, ctx.tenantId, poId, invoice.supplierId, orderFlags);
           flags.push(...orderFlags);
-          result = threeWayMatch({ lines: matchLinesFrom(order, invoice), ...policy });
+          // SP-7c: a second bill against the same order is judged against what the first left — and said when together they
+          // claim more than was ordered (the lowest-of-three then withholds the excess by construction).
+          invoicedBefore = poId === null ? {} : invoicedBeforeOn(poId, invoice, await deps.invoices(ctx.tenantId));
+          if (order !== undefined && order.status === 'issued') {
+            const orderedByProduct: Record<string, number> = {};
+            for (const l of order.lines) orderedByProduct[l.productId] = (orderedByProduct[l.productId] ?? 0) + l.orderedQty;
+            const claimed: Record<string, number> = { ...invoicedBefore };
+            for (const l of invoice.lines) claimed[l.productId] = (claimed[l.productId] ?? 0) + l.quantity;
+            if (Object.entries(claimed).some(([productId, qty]) => qty > (orderedByProduct[productId] ?? 0))) flags.push('order_over_invoiced');
+          }
+          result = threeWayMatch({ lines: matchLinesFrom(order, invoice, invoicedBefore), ...policy });
         }
         const stored: StoredMatch = {
           ...result, invoiceId, poId, matchedBy: ctx.userId, matchedAt,
@@ -544,6 +586,7 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
             order: order === undefined ? null : { status: order.status, supplierId: order.supplierId, lineCount: order.lines.length },
             received: order !== undefined && order.status === 'issued' ? 'goods_receipts_folded_into_the_order' : 'none',
             policy,
+            invoicedBefore,
           },
           flags,
         };
@@ -679,6 +722,17 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
             whatHappened: check.detail,
             wasItSaved: 'not_saved',
             nextSafeAction: 'The old account is unchanged and payments will still go there. Ring the supplier on a number you already had, then have a second person approve it.',
+          });
+        }
+        // SP-7c (M06-FR-01 · §28): the person who CREATED the supplier can never approve its bank details — the two halves
+        // of an invoice fraud are the same person setting up a supplier and pointing its money at an account.
+        const creator = await deps.supplierCreatedBy?.(ctx.tenantId, request.supplierId);
+        if (creator !== undefined && creator === request.approvedBy) {
+          throw apiError(422, {
+            code: 'supplier_creator_cannot_approve_bank',
+            whatHappened: `${request.approvedBy} created supplier ${request.supplierId} and cannot also approve where its money goes (§28 separation of duties).`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Have a different person with the bank-approval authority approve the change. The old account is unchanged.',
           });
         }
         await deps.applyBankChange(ctx.tenantId, request);

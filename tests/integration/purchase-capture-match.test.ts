@@ -160,8 +160,13 @@ describe('a supplier invoice is captured as the paper says it and matched agains
     const none = (await capture(h, 'inv-noorder', { ...PAPER, poId: null, approvedBy: 'u-checker' })).body as { flags: string[] };
     expect(none.flags).toEqual(['no_purchase_order']);
     expect((await match(h, 'inv-noorder')).body).toMatchObject({ blocked: true, payableMinor: 0, flags: ['no_purchase_order'], sources: { order: null, received: 'none' } });
-    // The match may name the order the invoice did not — head office's copy of it.
-    expect((await match(h, 'inv-noorder', 'u-checker', { poId: 'po-1' }, 'mat-noorder-po')).body).toMatchObject({ poId: 'po-1', payableMinor: 7000, flags: [] });
+    // The match may name the order the invoice did not — head office's copy of it. SP-7c: two earlier bills against po-1 are
+    // already on file above (inv-ghost-ok, inv-cash-ok), so this THIRD bill for the same goods is judged against what they left —
+    // nothing — and the three are said to over-claim the order (invoiced-to-date), instead of each being paid in full.
+    expect((await match(h, 'inv-noorder', 'u-checker', { poId: 'po-1' }, 'mat-noorder-po')).body).toMatchObject({
+      poId: 'po-1', payableMinor: 0, withheldMinor: 9000, blocked: true, flags: ['order_over_invoiced'],
+      sources: { order: { status: 'issued', supplierId: 's-1' }, received: 'goods_receipts_folded_into_the_order', invoicedBefore: { p1: 20, p2: 8 } },
+    });
     // An unknown order, and a supplier that differs from the order's.
     expect(((await capture(h, 'inv-unknown', { ...PAPER, poId: 'po-nope', approvedBy: 'u-checker' })).body as { flags: string[] }).flags).toEqual(['order_unknown']);
     expect(((await capture(h, 'inv-other', { ...PAPER, supplierId: 's-2', approvedBy: 'u-checker' })).body as { flags: string[] }).flags).toEqual(['supplier_differs_from_order']);

@@ -29,6 +29,8 @@ export const NUMBER_FORMATS: Readonly<Record<string, NumberFormat>> = {
   po: { prefix: 'PO', padTo: 6 },
   grn: { prefix: 'GRN', padTo: 6 },
   statement: { prefix: 'STMT', padTo: 6 },
+  // SP-7c (M23-FR-02): a debit note ISSUED to a supplier carries a number from the tenant's own series.
+  debit_note: { prefix: 'DN', padTo: 6 },
 };
 
 // Resolving a token into scope. It verifies and never issues — see the file for why.
