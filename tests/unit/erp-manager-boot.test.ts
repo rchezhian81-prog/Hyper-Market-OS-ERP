@@ -3,6 +3,7 @@ import { bootManager, openDayClosePort, portsFromData, type ManagerData } from '
 import { NobodyNamedError } from '../../apps/web-erp/src/manager-session';
 import { requestApproval } from '../../packages/approvals/src/index';
 import { money } from '../../packages/contracts/src/money';
+import { SyncOutbox } from '../../packages/sync/src/outbox';
 
 /**
  * **The composition root the manager's screen actually binds to.**
@@ -296,5 +297,96 @@ describe('who judges whether the day has ended (M14-FR-04)', () => {
     const session = bootManager({ data: clean, laneWriteBase: 'http://127.0.0.1:1' });
     expect(session.canCloseViaBox).toBe(true);
     expect(session.blockersForClose(`${today}T12:00`)).toEqual([]);
+  });
+});
+
+describe('the queue the manager screen boots on is the device\'s, not the tab\'s (SP-2a · F11)', () => {
+  /** A browser's localStorage, as far as the queue is concerned: the same key read back after a reload. */
+  const memoryStorage = () => {
+    const held = new Map<string, string>();
+    return { getItem: (k: string) => held.get(k) ?? null, setItem: (k: string, v: string) => { held.set(k, v); }, held };
+  };
+  const served: ManagerData = {
+    userId: 'u-mgr', storeId: 'store-7', branchId: 'store-7', approvalLimitMinor: 500_000, tradingDay: '2026-09-30', tradingDayCutoff: '02:00',
+    approvals: [requestApproval({ id: 'a1', subjectType: 'refund', subjectRef: 'sale-1', requestedBy: 'u-cashier', branchId: 'store-7', value: money(10_000, 'INR') })],
+    openExceptions: [], unsentItems: [], tasks: [],
+  };
+
+  it('writes a decision to the device under a per-store key, and a reboot over the same storage still holds it and no longer offers the request', () => {
+    const storage = memoryStorage();
+    const first = bootManager({ data: served, storage });
+    expect(first.floor().approvalsIcanClear).toEqual({ known: true, count: 1 });
+    expect(first.decideApproval({ requestId: 'a1', decision: 'approved', reasonCode: 'within_policy', decidedAt: AT }).ok).toBe(true);
+    expect([...storage.held.keys()]).toEqual(['sre.manager.outbox.store-7']);
+    expect(first.floor()).toMatchObject({ approvalsWaiting: { known: true, count: 0 }, heldHere: 1, unsent: { known: true, count: 1 } });
+
+    const reloaded = bootManager({ data: served, storage });
+    expect(reloaded.floor()).toMatchObject({ approvalsWaiting: { known: true, count: 0 }, approvalsIcanClear: { known: true, count: 0 }, heldHere: 1 });
+    expect(reloaded.decisions()).toMatchObject([{ requestId: 'a1', decision: 'approved', state: 'saved_here' }]);
+    expect(reloaded.decideApproval({ requestId: 'a1', decision: 'rejected', reasonCode: 'against_policy', decidedAt: AT })).toEqual({ ok: false, refusal: 'already_decided' });
+  });
+
+  it('two stores\' screens on one browser never share a queue', () => {
+    const storage = memoryStorage();
+    bootManager({ data: served, storage }).decideApproval({ requestId: 'a1', decision: 'approved', reasonCode: 'within_policy', decidedAt: AT });
+    const other = bootManager({ data: { ...served, storeId: 'store-8', branchId: 'store-8', approvals: [{ ...served.approvals![0]!, branchId: 'store-8' }] }, storage });
+    expect(other.floor().heldHere).toBe(0);
+    expect(other.floor().approvalsWaiting).toEqual({ known: true, count: 1 });
+    expect([...storage.held.keys()].sort()).toEqual(['sre.manager.outbox.store-7']);
+  });
+
+  it('an explicit outbox wins (the composition root hands the same one to the relay)', () => {
+    const outbox = new SyncOutbox();
+    const session = bootManager({ data: served, outbox });
+    session.decideApproval({ requestId: 'a1', decision: 'approved', reasonCode: 'within_policy', decidedAt: AT });
+    expect(outbox.find('approval-decision-a1')?.event.type).toBe('ApprovalDecided');
+  });
+
+  it('with no box wired there is no relay; with one, the relay hands pending decisions to the box and folds its word back in', async () => {
+    const { openManagerRelay } = await import('../../apps/web-erp/src/browser-entry');
+    const outbox = new SyncOutbox();
+    const session = bootManager({ data: served, outbox, laneWriteBase: 'http://127.0.0.1:1' });
+    expect(openManagerRelay(undefined, session, outbox)).toBeUndefined();
+    session.decideApproval({ requestId: 'a1', decision: 'approved', reasonCode: 'within_policy', decidedAt: AT });
+
+    const calls: string[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL, init?: RequestInit): Promise<Response> => {
+      const u = String(url);
+      calls.push(`${init?.method ?? 'GET'} ${new URL(u).pathname}`);
+      if (u.endsWith('/lane/outbox')) {
+        const sent = JSON.parse(String(init?.body)) as { source: string; items: { key: string }[] };
+        expect(sent.source).toBe('manager');
+        return new Response(JSON.stringify({ acks: sent.items.map((i) => ({ key: i.key, status: 'accepted' })) }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ items: [{ key: 'approval-decision-a1', state: 'posted', attempts: 0 }] }), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const relay = openManagerRelay('http://127.0.0.1:1', session, outbox)!;
+      const result = await relay.syncNow();
+      expect(result).toEqual({ handed: 1, refused: 0, failed: 0, offline: false });
+      expect(calls).toEqual(['POST /lane/outbox', 'GET /lane/outbox/status']);
+      expect(session.decisions()[0]?.state).toBe('posted');
+      expect(session.floor().heldHere).toBe(0);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it('a box that cannot be reached leaves the decision saved here, retrying — nothing lost, nothing refused', async () => {
+    const { openManagerRelay } = await import('../../apps/web-erp/src/browser-entry');
+    const outbox = new SyncOutbox();
+    const session = bootManager({ data: served, outbox, laneWriteBase: 'http://127.0.0.1:1' });
+    session.decideApproval({ requestId: 'a1', decision: 'approved', reasonCode: 'within_policy', decidedAt: AT });
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (): Promise<Response> => { throw new Error('ECONNREFUSED'); }) as typeof fetch;
+    try {
+      const result = await openManagerRelay('http://127.0.0.1:1', session, outbox)!.syncNow();
+      expect(result).toEqual({ handed: 0, refused: 0, failed: 1, offline: true });
+      expect(session.decisions()[0]).toMatchObject({ state: 'retrying', attempts: 1 });
+      expect(session.floor().heldHere).toBe(1);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 });

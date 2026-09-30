@@ -6,6 +6,7 @@ import {
   DECIDE_REFUSALS,
   REJECT_REASONS,
 } from '../../apps/web-erp/src/manager-session';
+import { DEVICE_ITEM_STATES } from '../../packages/sync/src/device-relay';
 
 /**
  * **The screen that runs the floor, guarded.**
@@ -162,6 +163,9 @@ describe('a decision reason is the model\'s, never the screen\'s', () => {
     // A manager reading `self_approval_forbidden` off a screen taps the button again, harder.
     expect(code(APP)).toMatch(/words\(REFUSAL_WORDS, outcome\.refusal\)/);
     expectWordsFor(DECIDE_REFUSALS, 'REFUSAL_WORDS');
+    // Where each decision has got to (SP-2a): one word per shared device-relay state, in both languages, so a manager
+    // reads "with the store computer" or "refused", never `handed_to_box` off a screen.
+    expectWordsFor(DEVICE_ITEM_STATES, 'STATE_WORDS');
   });
 
   it('offers a count reason as a choice, never as free text', () => {

@@ -149,6 +149,7 @@ import type { SpacePerformanceDeps } from '../../inventory/src/space-performance
 import type { AssortmentDeps } from '../../inventory/src/assortment';
 import type { DisplayContract, AssortmentEntry } from '../../../packages/merchandising/src/index';
 import type { DelegationDeps } from '../../identity/src/delegation';
+import type { ApprovalDecisionDeps, ApprovalDecisionRecord } from '../../identity/src/approval-decisions';
 import type { EmergencyAccessDeps, EmergencyGrant } from '../../identity/src/emergency-access';
 import type { Delegation } from '../../../packages/approvals/src/index';
 import type { DrillThroughDeps } from '../../reporting/src/drill-through';
@@ -3860,6 +3861,47 @@ export function delegationAdapter(input: {
         source: 'api/identity',
         payload: delegation,
       }));
+    },
+  };
+}
+
+/** The decisions register (SP-2a): every approval decided at a store and relayed here, on its own identity stream. */
+const APPROVAL_DECISIONS_STREAM = streamName(STREAM.identity, 'approval-decisions');
+
+export function approvalDecisionAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): ApprovalDecisionDeps {
+  // Folded latest-per-request by append order. The route refuses a conflicting second decision (422), so in
+  // practice there is one record per request; the fold is what keeps a replayed identical record from doubling.
+  const fold = async (tenantId: string): Promise<Map<string, ApprovalDecisionRecord>> => {
+    const all = await allOf<ApprovalDecisionRecord>(input.store, tenantId, APPROVAL_DECISIONS_STREAM, 'ApprovalDecisionRecorded');
+    const byId = new Map<string, ApprovalDecisionRecord>();
+    for (const r of all) byId.set(r.id, r);
+    return byId;
+  };
+  return {
+    now: input.now,
+    decision: async (tenantId, requestId) => (await fold(tenantId)).get(requestId),
+    decisions: async (tenantId) => [...(await fold(tenantId)).values()],
+    recordDecision: async (tenantId, record) => {
+      await input.store.append(tenantId, APPROVAL_DECISIONS_STREAM, makeEvent({
+        id: `approval-decision-${record.id}`,
+        type: 'ApprovalDecisionRecorded',
+        occurredAt: record.recordedAt,
+        // One decision per request, whichever hop re-sends it (§31.1).
+        idempotencyKey: `approval-decision-${tenantId}-${record.id}`,
+        source: 'api/identity',
+        payload: record,
+      }));
+    },
+    // The decider's REAL authority, from their grants and the role catalogue — never from the body (§28). No grant
+    // at all → undefined (an unknown name), which the route records as its own flag.
+    permissionsOfUser: async (tenantId, userId) => {
+      const grants = await allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+      const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
+      if (roleIds.size === 0) return undefined;
+      return [...new Set(ROLE_CATALOGUE.filter((r) => roleIds.has(r.id)).flatMap((r) => r.permissions))];
     },
   };
 }

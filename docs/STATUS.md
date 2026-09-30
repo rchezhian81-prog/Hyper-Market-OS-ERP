@@ -59,12 +59,39 @@ device, human UAT and production verification separate; approved deferrals stay 
   `idempotency_key_reused` is dead-lettered as a conflict on the REAL box, survives a restart with its reason, and is not
   re-sent). Every other suite driving the transport against the real kernel (sale, refund, day-close, completion,
   concession-tag, migration relays) passes unchanged: their business 409s carry a code and stay accepted.
-- **Current-work pointer:** last verified = SP-1 (this PR); next = **SP-2a** (`docs/…` plan in the session scratchpad:
-  manager screen on `DeviceOutbox`; `POST /lane/outbox` + `GET /lane/outbox/status` on the box with a sixth durable
-  pipeline; `ApprovalDecided` → `POST /v1/approvals/decisions/:requestId/synced` re-verifying the decider; states
-  saved-locally / handed-to-store-computer / posted / refused on the screen; lost-reply recovery; invert
-  `tests/audit-observations/sync.test.ts` cases 2–3); genuine blockers: none for SP-2..SP-9; external gates unchanged
-  (providers, hardware, real data, pilot GO).
+- **SP-2a — F11 PARTLY FIXED: the manager's approval decision has a complete durable journey, on ONE shared sync mechanism
+  (M02-FR-03 · §28 · §31 · hard rules #1 #4 #6 #10).** The manager screen boots on a DURABLE device queue
+  (`openManagerOutbox` → `sre.manager.outbox.<storeId>`, the handhelds' `DeviceOutbox`), never `new SyncOutbox()`: a
+  decision is queued (`ApprovalDecided`, key `approval-decision-<requestId>`) BEFORE the screen says decided, the request
+  leaves the open list, a second decision is `already_decided`, work held on the screen counts as unsent and blocks the
+  day close. The shared leg: `packages/sync/device-relay.ts` (allow-list per surface, strict reading, per-item acks
+  accepted/duplicate/refused/not_saved, five state words) + `device-drain.ts` (`drainToBox`: link down keeps everything,
+  refused dead-letters with the reason; `boxStatus`). The box: `POST /lane/outbox` + `GET /lane/outbox/status` (loopback
+  + JSON before the body) onto a SIXTH durable pipeline (`device-events.log`, own dead-letter store and cursor, dedupe
+  set rebuilt from the whole log, write-then-ack). The cloud: `EVENT_ROUTES.ApprovalDecided →
+  POST /v1/approvals/decisions/:id/synced` under the box identity's new `approvals.decision.sync`, an append-only
+  `ApprovalDecisionRecorded` register that re-verifies the DECIDER from their grants (record-and-flag: `self_approval`,
+  `decider_unknown`, `decider_lacks_authority`, `authority_unverified`), same decision again 200, a DIFFERENT decision
+  422 `decision_conflicts_with_record` (→ visible dead-letter on the box; the transport now names the error code on every
+  refusal), audit `approval.<status>` attributed to the decider with the relay named, `GET /v1/approvals/decisions`.
+  Screen: a "Decided on this screen" list with the state words EN/TA (guarded), the banner says where the decision is,
+  relay after each decision and every 10 s. Evidence: `device-relay.test.ts` 20, `lane-server-outbox.test.ts` 8,
+  `erp-manager-session.test.ts` +6, `erp-manager-boot.test.ts` +5, `approval-decision-synced-route.test.ts` 7,
+  `manager-decisions-reach-the-cloud-through-the-edge.test.ts` 7 (real box + real kernel: durable before ack, one pass
+  to the register, duplicate before/after restart, refused types, conflict dead-letter survives restart, lost reply →
+  one record, cut line, no-cloud hold + day close refused), `manager-decisions-survive-reload.e2e.ts` 2 (real Chromium +
+  real box: decide → with the store computer → reload → not offered again; box down → saved here, survives reload);
+  observation `sync.test.ts` case 2 and the receipt half of case 3 INVERTED. **Still open, honestly:** the manager's
+  receipts and counts are durable on the device and counted as unsent but do NOT reach head office yet (the box refuses
+  them by allow-list rather than fake it), and the count still reconciles against an empty in-memory ledger after a
+  reload → SP-2b. The manager screen's unsent TILE counts the box's sales outbox + this screen's held work; the sync
+  BADGE and the box's day-close gate count all six box pipelines.
+- **Current-work pointer:** last verified = SP-2a (this PR); next = **SP-2b** (receipts and counts on the same mechanism:
+  `GoodsReceived` enriched → `POST /v1/inventory/goods-receipt/:grnId/synced` posting `received` movements and
+  re-verifying `receivedBy`; the manager count captured BLIND on the device as `StockCounted` and reconciled on the
+  cloud with server-side expected and the cloud's unit value → the F07 caller-supplied value leaves the manager path;
+  invert the count half of observation case 3; then SP-3 handhelds on `/lane/outbox` via the LAN device route);
+  genuine blockers: none for SP-2b..SP-9; external gates unchanged (providers, hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 

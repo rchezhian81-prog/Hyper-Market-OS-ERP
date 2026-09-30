@@ -155,6 +155,13 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   // force is 422 → dead-lettered here by name for a person (hard rule #6); one already on the record is 409 →
   // counted delivered.
   ConcessionTagCaptured: '/v1/concession/tags/synced',
+  // An approval DECIDED on the manager's screen (SP-2a · F11 · M02-FR-03 · §28). Written to the screen's durable
+  // device queue, handed to the box over `/lane/outbox`, held on the box's fsync'd device-events log, and relayed
+  // HERE under the store token to the synced decisions register — which re-verifies the DECIDER's own authority
+  // (never the relay's) and record-and-flags a breach; a DIFFERENT decision for a request already on file is 422
+  // → dead-lettered here by name for a person (hard rule #10); the same decision again is 200 → delivered once.
+  // `id` is the decided request's own id — a plain payload field matching the path param.
+  ApprovalDecided: '/v1/approvals/decisions/:id/synced',
   MigrationExceptionResolved: '/v1/migration/exceptions/:exceptionId/resolution/synced',
   MigrationTotalSigned: '/v1/migration/control-totals/:totalId/signature/synced',
 };
@@ -257,8 +264,10 @@ export function httpTransport(options: HttpTransportOptions): SyncTransport {
           signal: controller.signal,
         });
 
-        // Only a 409 needs its body read, and only for the error CODE (see `errorCodeOf`).
-        const errorCode = response.status === 409 ? errorCodeOf(await response.json().catch(() => undefined)) : undefined;
+        // An error answer has its body read for ONE field — the error CODE (see `errorCodeOf`): it decides a 409 and it
+        // names every other refusal for the person who reads the dead-letter (`decision_conflicts_with_record` says
+        // what to compare; a bare 422 does not). Never the body itself.
+        const errorCode = response.status >= 400 ? errorCodeOf(await response.json().catch(() => undefined)) : undefined;
         const outcome = classify(response.status, errorCode);
         if (outcome === 'accepted') return { status: 'accepted' };
         if (response.status === 409 && errorCode === IDEMPOTENCY_CONFLICT_CODE) {
@@ -276,7 +285,7 @@ export function httpTransport(options: HttpTransportOptions): SyncTransport {
           // header we must never write down.
           reason: response.status === 409
             ? `the cloud answered 409 for ${event.type} with no readable reason — not assumed delivered; it will be sent again`
-            : `the cloud answered ${response.status} for ${event.type}`,
+            : `the cloud answered ${response.status} for ${event.type}${errorCode === undefined ? '' : ` (${errorCode})`}`,
         };
       } catch (e) {
         // Everything that lands here — timeout, DNS failure, refused connection, TLS problem — is

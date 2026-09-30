@@ -53,6 +53,9 @@ const WORDS = {
     biggestFirst: 'Biggest first.', approve: 'Approve', reject: 'Reject', cancel: 'Cancel', ok: 'OK',
     whyApprove: 'Why are you approving this?', whyReject: 'Why are you rejecting this?',
     decided: 'Decided', requestedBy: 'asked for by', noValue: 'no value',
+    // Where each decision this screen took has got to (SP-2a): the list under the inbox, and the tile note.
+    decidedHere: 'Decided on this screen', decisionsLead: 'Where each decision has got to. Nothing here is lost on a reload.',
+    approvedWord: 'Approved', rejectedWord: 'Rejected', heldHere: 'saved on this screen, not yet with the store computer',
     read: 'Please read this', done: 'Done',
     deliveryNote: 'Delivery note number', poNumber: 'Purchase order number (leave empty if there is none)',
     itemCode: 'Item code', howMany: 'How many', addItem: 'Add this item', noItemsYet: 'No items added yet.',
@@ -90,6 +93,8 @@ const WORDS = {
     approve: 'ஒப்புதல்', reject: 'மறு', cancel: 'ரத்து', ok: 'சரி',
     whyApprove: 'ஏன் ஒப்புதல் அளிக்கிறீர்கள்?', whyReject: 'ஏன் மறுக்கிறீர்கள்?',
     decided: 'முடிவு பதிவாகியது', requestedBy: 'கேட்டவர்', noValue: 'மதிப்பு இல்லை',
+    decidedHere: 'இந்தத் திரையில் முடிவு செய்யப்பட்டவை', decisionsLead: 'ஒவ்வொரு முடிவும் எங்கே உள்ளது. மறுபடியும் ஏற்றினாலும் இங்கு எதுவும் இழக்கப்படாது.',
+    approvedWord: 'ஒப்புதல் அளிக்கப்பட்டது', rejectedWord: 'மறுக்கப்பட்டது', heldHere: 'இந்தத் திரையில் சேமிக்கப்பட்டது, கடை கணினிக்கு இன்னும் செல்லவில்லை',
     read: 'இதைப் படிக்கவும்', done: 'முடிந்தது',
     deliveryNote: 'டெலிவரி நோட்டு எண்', poNumber: 'கொள்முதல் ஆர்டர் எண் (இல்லையென்றால் காலியாக விடவும்)',
     itemCode: 'பொருள் குறியீடு', howMany: 'எத்தனை', addItem: 'இந்தப் பொருளைச் சேர்',
@@ -167,6 +172,20 @@ const REFUSAL_WORDS = {
   request_not_found: { en: 'That request is no longer waiting. Somebody else may have decided it.', ta: 'அந்தக் கோரிக்கை இனி காத்திருக்கவில்லை. வேறு ஒருவர் முடிவு செய்திருக்கலாம்.' },
   unknown_reason_code: { en: 'That reason cannot be used for this decision.', ta: 'இந்த முடிவுக்கு அந்தக் காரணத்தைப் பயன்படுத்த முடியாது.' },
   nobody_named: { en: 'Nobody is named on this screen, so no decision can be recorded against a person.', ta: 'இந்தத் திரையில் யாரும் பெயரிடப்படவில்லை, எனவே எந்த முடிவையும் ஒருவரின் பெயரில் பதிவு செய்ய முடியாது.' },
+  already_decided: { en: 'This screen has already decided that request. Its decision is in the list below.', ta: 'இந்தத் திரை அந்தக் கோரிக்கையை ஏற்கனவே முடிவு செய்துவிட்டது. அதன் முடிவு கீழே உள்ள பட்டியலில் உள்ளது.' },
+};
+
+/**
+ * Where a piece of work this screen saved has got to — one entry per state in the shared device-relay
+ * contract (`packages/sync/device-relay` DEVICE_ITEM_STATES), guarded the same way the refusals are. These
+ * are the owner's words: saved here · retrying · with the store computer · posted · refused.
+ */
+const STATE_WORDS = {
+  saved_here: { en: 'Saved on this screen — not yet with the store computer', ta: 'இந்தத் திரையில் சேமிக்கப்பட்டது — கடை கணினிக்கு இன்னும் செல்லவில்லை' },
+  retrying: { en: 'Saved on this screen — the store computer could not be reached, trying again', ta: 'இந்தத் திரையில் சேமிக்கப்பட்டது — கடை கணினியை அடைய முடியவில்லை, மீண்டும் முயற்சிக்கிறது' },
+  handed_to_box: { en: 'With the store computer — it will send this to head office', ta: 'கடை கணினியிடம் உள்ளது — அது இதை தலைமை அலுவலகத்திற்கு அனுப்பும்' },
+  posted: { en: 'Posted at head office', ta: 'தலைமை அலுவலகத்தில் பதிவாகியது' },
+  refused: { en: 'Refused — a person must look at this', ta: 'மறுக்கப்பட்டது — ஒருவர் இதைப் பார்க்க வேண்டும்' },
 };
 
 /** Why a queued request is not this manager's to decide (the workbench's `blockedReason`). */
@@ -248,6 +267,7 @@ function demoSession() {
       approvalsIcanClear: { known: true, count: requests.filter((r) => r.requestedBy !== 'you').length },
       exceptions: { known: true, count: open().length },
       unsent: { known: true, count: unsent.length },
+      heldHere: 0,
       tasks: { known: false, why: 'this is sample data' },
     }),
     approvalQueue: () => ({
@@ -258,6 +278,10 @@ function demoSession() {
         blockedReason: request.requestedBy === 'you' ? 'own_request' : undefined,
       })),
     }),
+    // Sample data decides nothing durable: no device queue, so nothing to list (the real session reads its queue).
+    decisions: () => [],
+    handedDecisionKeys: () => [],
+    noteBoxStatus: () => {},
     decideApproval: ({ requestId }) => {
       const i = requests.findIndex((r) => r.id === requestId);
       if (i < 0) return { ok: false, refusal: 'request_not_found' };
@@ -433,7 +457,11 @@ function renderHome() {
       attentionWhen: (n) => n > 0,
     }),
     tile({ figure: floor.exceptions, label: t('exceptionsLabel'), goTo: 'close', attentionWhen: (n) => n > 0 }),
-    tile({ figure: floor.unsent, label: t('unsentLabel'), goTo: 'close', attentionWhen: (n) => n > 0 }),
+    tile({
+      figure: floor.unsent, label: t('unsentLabel'), goTo: 'close', attentionWhen: (n) => n > 0,
+      // How many of those are still only on this screen (SP-2a) — a fact the store computer cannot show.
+      ...(floor.heldHere > 0 ? { note: `${floor.heldHere} ${t('heldHere')}` } : {}),
+    }),
     tile({ figure: floor.tasks, label: t('tasksLabel') }),
   );
   // The one primary action on the home screen (store-manager.md: "clear the next approval or exception"). Shown
@@ -513,6 +541,59 @@ function renderApprovals() {
     }
     return box;
   }));
+  renderDecisions();
+}
+
+/**
+ * The decisions this screen has taken and where each has got to (SP-2a · F11). Read from the DURABLE device
+ * queue, so the list is the same after a reload — the proof the decision was not lost with the tab. Each row
+ * carries one of the five state words; a refusal carries its reason, because a person has to act on it.
+ */
+function renderDecisions() {
+  const decisions = typeof session.decisions === 'function' ? session.decisions() : [];
+  el('decisions-title').hidden = decisions.length === 0;
+  el('decisions-lead').hidden = decisions.length === 0;
+  el('decision-rows').replaceChildren(...decisions.map((d) => {
+    const box = document.createElement('div');
+    box.className = 'row decision';
+    box.dataset.state = d.state;
+    box.dataset.requestId = d.requestId;
+
+    const what = document.createElement('div');
+    what.className = 'what';
+    what.textContent = `${words(SUBJECT_WORDS, d.subjectType)} · ${d.subjectRef} — ${d.decision === 'approved' ? t('approvedWord') : t('rejectedWord')}`;
+
+    const state = document.createElement('div');
+    state.className = `pill ${d.state}`;
+    state.textContent = words(STATE_WORDS, d.state);
+
+    box.append(what, state);
+    if (d.reason) {
+      const why = document.createElement('div');
+      why.className = 'blocked';
+      why.textContent = d.reason;
+      box.appendChild(why);
+    }
+    return box;
+  }));
+}
+
+/**
+ * Hand this screen's saved work to the store computer and learn where it has got to (SP-2a). The relay is the
+ * composition root's (`window.managerRelay`), present only when the box told this screen where its socket is.
+ * Called after every decision and on a slow timer; never blocks a tap, and a box that cannot be reached leaves
+ * everything saved here and says so through the state words.
+ */
+async function syncToBox() {
+  const relay = window.managerRelay;
+  if (!relay) return;
+  try {
+    await relay.syncNow();
+  } catch {
+    /* the queue is untouched; the state words say "saved here" */
+  }
+  if (view === 'approvals') renderDecisions();
+  if (view === 'home') renderHome();
 }
 
 /**
@@ -534,7 +615,12 @@ async function decide(request, decision) {
     requestId: request.id, decision, reasonCode, decidedAt: new Date().toISOString(),
   });
   if (outcome.ok) {
-    tell(t('decided'), `${words(SUBJECT_WORDS, request.subjectType)} · ${request.subjectRef}`, true);
+    // Said only once it is in the durable queue (the session enqueues BEFORE it answers ok), with WHERE it is —
+    // "saved on this screen" until the store computer takes it, never a bare "decided" (P-08).
+    const queued = session.decisions().find((d) => d.requestId === request.id);
+    const where = queued === undefined ? '' : ` — ${words(STATE_WORDS, queued.state)}`;
+    tell(t('decided'), `${words(SUBJECT_WORDS, request.subjectType)} · ${request.subjectRef}${where}`, true);
+    void syncToBox();
   } else {
     // The refusal names a rule, so it is shown in words rather than swallowed or printed as a
     // code — a screen that quietly did nothing would have a manager tapping the button harder.
@@ -793,6 +879,8 @@ function paintChrome() {
   el('home-lead').textContent = t('tapAFigure');
   el('approvals-title').textContent = t('approvals');
   el('approvals-lead').textContent = t('biggestFirst');
+  el('decisions-title').textContent = t('decidedHere');
+  el('decisions-lead').textContent = t('decisionsLead');
   el('receive-title').textContent = t('receive');
   el('grn-number-label').textContent = t('deliveryNote');
   el('grn-po-label').textContent = t('poNumber');
@@ -830,6 +918,16 @@ el('sample').hidden = real !== undefined;
 paintChrome();
 renderLines();
 show('home');
+
+// The device queue's own honesty (SP-2a · P-08): if this browser's storage refused, the manager is told so
+// before deciding anything — a decision that will not survive a reload is not "saved".
+if (typeof window.managerStorageProblem === 'string' && window.managerStorageProblem !== '') {
+  tell(t('read'), window.managerStorageProblem);
+}
+// Hand saved work to the store computer now and every ten seconds while the page is open; a box that is
+// down leaves everything saved here, and the state words say exactly that.
+void syncToBox();
+if (window.managerRelay) setInterval(() => { void syncToBox(); }, 10_000);
 
 // ── The shell's own honesty about where this page came from ─────────────────
 //
