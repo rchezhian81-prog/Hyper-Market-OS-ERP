@@ -15,11 +15,11 @@ function sampleSession() {
     en: { title: 'GST reconciliation', lead: 'Sample queue. Connect the store computer to see your own documents.', langName: 'தமிழ்',
       attentionCount: 'need attention', allClear: 'Everything is settled — nothing needs attention.',
       filterAll: 'Show all', filterAttention: 'Only the ones needing attention', sampleData: 'Sample data — this is not your shop.',
-      staleShell: 'No connection to the store computer. This page is what it was last told, at', nobodyNamed: '' },
+      nobodyNamed: '' },
     ta: { title: 'GST சரிபார்ப்பு', lead: 'மாதிரி வரிசை. உங்கள் சொந்த ஆவணங்களைப் பார்க்க கடை கணினியை இணைக்கவும்.', langName: 'English',
       attentionCount: 'கவனம் தேவை', allClear: 'அனைத்தும் தீர்க்கப்பட்டன — எதற்கும் கவனம் தேவையில்லை.',
       filterAll: 'அனைத்தையும் காட்டு', filterAttention: 'கவனம் தேவைப்படுபவை மட்டும்', sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
-      staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', nobodyNamed: '' },
+      nobodyNamed: '' },
   };
   const row = (documentLabel, id, num, tone, icon, statusLabel, actionLabel, needsAttention, mismatchNote) => ({
     documentLabel, id, number: num, status: { tone, icon, label: statusLabel, announcement: statusLabel, needsAttention },
@@ -183,7 +183,6 @@ el('lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ta' : 'en';
   document.documentElement.lang = lang;
   paint();
-  paintStale();
 });
 el('filter').addEventListener('click', () => { attentionOnly = !attentionOnly; paint(); });
 
@@ -192,17 +191,7 @@ el('sample').hidden = real !== undefined;
 el('sample').textContent = session.text(lang, 'sampleData');
 paint();
 
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${session.text(lang, 'staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
 // Repaint the stale strip in the newly chosen language too (the strip carries its own copy).
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

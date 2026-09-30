@@ -34,7 +34,6 @@ const toMinor = (text) => Math.round(Number(String(text).replace(/[^0-9.-]/g, ''
 
 const WORDS = {
   en: {
-    staleShell: 'No connection to the store computer. This page is what it was last told, at',
     title: 'Products and prices', items: 'Items', changePrice: 'Change a price', offer: 'Offer',
     shelves: 'Shelves',
     shelfLead: "Where each item sits. This is what puts the picker's list in the order they walk the shop.",
@@ -87,7 +86,6 @@ const WORDS = {
     reasonNeeded: 'Write why, in a sentence somebody can read next year.',
   },
   ta: {
-    staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
     title: 'பொருட்களும் விலைகளும்', items: 'பொருட்கள்', changePrice: 'விலையை மாற்று', offer: 'சலுகை',
     shelves: 'அலமாரிகள்',
     shelfLead: 'ஒவ்வொரு பொருளும் எங்கே இருக்கிறது. இதுவே பிக்கரின் பட்டியலை அவர் கடையை நடக்கும் வரிசையில் அமைக்கிறது.',
@@ -1016,22 +1014,6 @@ show(TABS.includes(wantedTab) ? wantedTab : 'items');
 
 // ── The shell's own honesty about where this page came from ─────────────────
 //
-// The service worker keeps a copy of the last page the store box actually served, so this screen
-// still opens when the box cannot be reached. That copy carries the time it was taken, and this
-// says so. **A cached page shown as a live one is the fault this product exists to refuse** — it
-// is not a stale label on a screen, it is somebody acting on figures from this morning believing
-// they are from this minute (P-08).
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  // The device's own local time, because the person reading it is standing in the shop.
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 // The shell existed and nothing ever registered it, so nothing was ever cached and every one of
 // these screens fell back to its sample data the moment the box was unreachable.

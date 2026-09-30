@@ -25,7 +25,6 @@
         /* Flex, not a fixed row template: the strips above `main` come and go. */
         min-height: 100dvh; display: flex; flex-direction: column;
       }
-      .lang { background: transparent; color: var(--muted); min-height: 40px; font-size: 14px; border: 0; }
 
       .sample { background: var(--warn); color: #451a03; padding: 8px 16px; font-weight: 600; font-size: 15px; margin: 0; }
       .sample[hidden] { display: none; }
@@ -63,7 +62,7 @@
         background: var(--line); color: var(--ink);
       }
       button.primary { background: var(--good); color: #052e16; font-size: 18px; }
-      button.danger { background: var(--danger); color: #fff; }
+      button.danger { background: var(--danger-surface); color: var(--on-danger); }
       button:disabled { opacity: .45; }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
         outline: 3px solid #93c5fd; outline-offset: 2px;
@@ -114,6 +113,7 @@
       .row .what { display: grid; gap: 2px; }
       .row .what small { color: var(--muted); font-size: 14px; }
       .row .pct { font-variant-numeric: tabular-nums; font-weight: 700; }
+      .row > button { min-width: var(--tap); }
       .row.stopped { border-left: 5px solid var(--danger); }
       .empty { color: var(--muted); padding: 20px 4px; }
 
@@ -132,7 +132,7 @@
 
       .banner {
         position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 18px 16px;
-        background: var(--danger); color: #fff; display: grid; gap: 10px;
+        background: var(--danger-surface); color: var(--on-danger); display: grid; gap: 10px;
       }
       .banner[hidden] { display: none; }
       .banner.good { background: var(--good); color: #052e16; }
@@ -144,8 +144,8 @@
   </head>
   <body>
     <header>
-      <span class="who" id="who">Products and prices<small id="whoami">—</small></span>
-      <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
+      <h1 class="who" id="who">Products and prices<small id="whoami">—</small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
 
     <p class="sample" id="sample" hidden role="status">Sample data — this is not your shop.</p>
@@ -345,5 +345,7 @@
     <!--SCREEN-DATA-->
     <script type="module" src="./web-erp.bundle.js"></script>
     <script type="module" src="./catalogue.js"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
   </body>
 </html>

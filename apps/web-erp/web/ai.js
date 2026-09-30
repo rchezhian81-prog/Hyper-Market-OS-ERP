@@ -28,7 +28,6 @@ const money = (minor) =>
 
 const WORDS = {
   en: {
-    staleShell: 'No connection to the store computer. This page is what it was last told, at',
     title: 'AI control',
     switch: 'Stop the AI', agents: 'The assistants', queue: 'Waiting for you', cost: 'What it costs',
     switchLead: 'Stopping an assistant takes effect immediately. It needs your name and a reason so it can be reviewed afterwards, but it never waits for anybody’s approval. Beside each one is what the shop does without it.',
@@ -63,7 +62,6 @@ const WORDS = {
     sampleData: 'Sample data — this is not your shop.',
   },
   ta: {
-    staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
     title: 'AI கட்டுப்பாடு',
     switch: 'AI-ஐ நிறுத்து', agents: 'உதவியாளர்கள்', queue: 'உங்களுக்காகக் காத்திருப்பவை', cost: 'செலவு எவ்வளவு',
     switchLead: 'ஒரு உதவியாளரை நிறுத்தினால் உடனே நிற்கும். உங்கள் பெயரும் காரணமும் தேவை, ஆனால் யாருடைய அனுமதிக்கும் காத்திருக்காது. ஒவ்வொன்றின் அருகிலும், அது இல்லாமல் கடை என்ன செய்யும் என்பது எழுதப்பட்டுள்ளது.',
@@ -523,17 +521,6 @@ el('lang').addEventListener('click', () => {
 el('sample').hidden = real !== undefined;
 paintChrome();
 show('switch');
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

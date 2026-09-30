@@ -29,7 +29,6 @@ const inr = (minor) =>
 
 const WORDS = {
   en: {
-    staleShell: 'No connection to the store computer. This page is what it was last told, at',
     title: 'Shelves and space',
     countTab: 'Count a shelf', refillTab: 'Refills', rangeTab: 'Range', spaceTab: 'Space',
     countLead: 'Count what is actually on the facing. You will not be shown what it should be — that is the point.',
@@ -67,7 +66,6 @@ const WORDS = {
     gapsTitle: 'This screen has not been told everything',
   },
   ta: {
-    staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
     title: 'அலமாரிகளும் இடமும்',
     countTab: 'அலமாரியை எண்ணு', refillTab: 'நிரப்புதல்', rangeTab: 'வரிசை', spaceTab: 'இடம்',
     countLead: 'அலமாரியில் உண்மையில் உள்ளதை எண்ணுங்கள். எவ்வளவு இருக்க வேண்டும் என்று காட்டப்படாது — அதுவே நோக்கம்.',
@@ -585,19 +583,6 @@ show('count');
 
 // ── The shell's own honesty about where this page came from ─────────────────
 //
-// A cached page shown as a live one is the fault this product exists to refuse — and on this screen
-// it is worse than most: a shelf count from this morning presented as this minute's is exactly the
-// mistake the whole freshness window is built to prevent.
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

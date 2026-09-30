@@ -34,7 +34,7 @@
       .row2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
       button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--info); color:#042f2e; }
       button.act.primary { background:var(--good,#22c55e); color:#052e16; }
-      button.act.small { min-height:40px; font-size:14px; background:var(--info); color:#042f2e; }
+      button.act.small { min-height: var(--tap); font-size:14px; background:var(--info); color:#042f2e; }
       button.act:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, .lang:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
       .preview { background:var(--bg); border-radius:12px; padding:12px 14px; font-size:14px; display:grid; gap:6px; }
       .preview.ready { border-left:5px solid var(--ok); } .preview.notready { border-left:5px solid var(--error); }
@@ -51,7 +51,7 @@
     <p class="nobody" id="nobody" hidden></p>
 
     <header>
-      <span class="who" id="who">Import &amp; export <small id="whoami"></small></span>
+      <h1 class="who" id="who">Import &amp; export <small id="whoami"></small></h1>
       <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
 
@@ -98,5 +98,7 @@
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./data-io.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
   </body>
 </html>

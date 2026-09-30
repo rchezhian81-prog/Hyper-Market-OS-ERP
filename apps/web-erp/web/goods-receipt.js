@@ -32,8 +32,7 @@ function sampleSession() {
       receivedByLabel: 'Received by', warehouseLabel: 'Store/warehouse', noPo: 'No purchase order',
       sellableLabel: 'Became sellable', quarantinedLabel: 'Held back', rejectedLabel: 'Refused',
       discrepancyValueLabel: 'Value of the difference', unitsWord: 'units',
-      sampleData: 'Sample data — this is not your shop.', staleShell: 'No connection to the store computer. This page is what it was last told, at',
-    },
+      sampleData: 'Sample data — this is not your shop.', },
     ta: {
       title: 'சரக்கு பெறுதல் மதிப்பாய்வு', langName: 'English',
       lead: 'மாதிரி டெலிவரிகள். உங்கள் கடையின் பெறுதல்களைப் பார்க்க கடை கணினியை இணைக்கவும்.',
@@ -42,8 +41,7 @@ function sampleSession() {
       receivedByLabel: 'பெற்றவர்', warehouseLabel: 'கடை/கிடங்கு', noPo: 'கொள்முதல் ஆர்டர் இல்லை',
       sellableLabel: 'விற்பனைக்கு ஆனது', quarantinedLabel: 'தடுத்து வைக்கப்பட்டது', rejectedLabel: 'மறுக்கப்பட்டது',
       discrepancyValueLabel: 'வேறுபாட்டின் மதிப்பு', unitsWord: 'அலகுகள்',
-      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
-    },
+      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', },
   };
   return {
     text: (l, key) => CHROME[l]?.[key] ?? CHROME.en[key] ?? key,
@@ -148,7 +146,7 @@ function paint() {
   el('rows').replaceChildren(...view.receipts.map((r) => receiptNode(r)));
 }
 
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 
 el('sample').hidden = window.goodsReceiptSession !== undefined;
 el('sample').textContent = t('sampleData');
@@ -164,17 +162,6 @@ async function refresh() {
 }
 el('refresh').addEventListener('click', () => { void refresh(); });
 refresh();
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

@@ -43,7 +43,7 @@
       .row .facts { font-size:13px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
       .row .facts .mine { color:#bbf7d0; font-weight:600; }
       .row .acts { display:flex; gap:10px; flex-wrap:wrap; }
-      button.claim { min-height:40px; padding:0 14px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--info); color:#082f49; }
+      button.claim { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--info); color:#082f49; }
       .worker { background:var(--panel); border-radius:12px; padding:14px; display:grid; gap:10px; }
       .worker label { font-size:14px; color:var(--muted); }
       .worker select, .worker input { width:100%; min-height:var(--tap); padding:0 12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); }
@@ -66,7 +66,7 @@
     <p class="nobody" id="nobody" hidden></p>
 
     <header>
-      <span class="who" id="who">Delivery exceptions <small id="whoami"></small></span>
+      <h1 class="who" id="who">Delivery exceptions <small id="whoami"></small></h1>
       <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
 
@@ -116,5 +116,7 @@
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./substitution-exceptions.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
   </body>
 </html>

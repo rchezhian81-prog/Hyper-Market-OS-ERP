@@ -31,8 +31,8 @@
       .asof { color:var(--muted); font-size:14px; }
       form.ask { display:flex; gap:8px; flex-wrap:wrap; align-items:end; background:var(--panel); border-radius:12px; padding:12px 14px; }
       form.ask label { display:grid; gap:4px; font-size:13px; color:var(--muted); }
-      form.ask input { min-height:40px; padding:0 12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:#0b1220; color:var(--ink); font-variant-numeric:tabular-nums; }
-      button { min-height:40px; padding:0 14px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--line); color:var(--ink); }
+      form.ask input { min-height: var(--tap); padding:0 12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:#0b1220; color:var(--ink); font-variant-numeric:tabular-nums; }
+      button { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--line); color:var(--ink); }
       button:focus-visible, .lang:focus-visible, input:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
       li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); }
@@ -58,7 +58,7 @@
     <p class="sample" id="sample" hidden></p>
 
     <header>
-      <span class="who" id="who">Stored-value oversight <small id="whoami"></small></span>
+      <h1 class="who" id="who">Stored-value oversight <small id="whoami"></small></h1>
       <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
 
@@ -105,5 +105,7 @@
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./stored-value.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
   </body>
 </html>

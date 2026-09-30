@@ -28,7 +28,6 @@ const money = (minor) =>
 
 const WORDS = {
   en: {
-    staleShell: 'No connection to the store computer. This page is what it was last told, at',
     title: 'Moving from the old system',
     where: 'Can we switch over', figures: 'The figures', data: 'Problems in the old data',
     both: 'Running both', old: 'The old system',
@@ -79,7 +78,6 @@ const WORDS = {
     unsent: 'decision(s) made here and not yet sent to the store computer — they are saved and will be sent when the connection is back',
   },
   ta: {
-    staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
     title: 'பழைய அமைப்பிலிருந்து மாறுதல்',
     where: 'மாற முடியுமா', figures: 'கணக்குகள்', data: 'பழைய தகவலில் உள்ள பிரச்சினைகள்',
     both: 'இரண்டையும் இயக்குதல்', old: 'பழைய அமைப்பு',
@@ -243,6 +241,7 @@ function sampleSession() {
     reconciliation: () => undefined,
     parallel: () => undefined,
     unowned: () => [],
+    unsent: () => 0,
     exclusions: () => undefined,
     retirement: () => undefined,
     resolve: () => refused,
@@ -667,17 +666,6 @@ el('lang').addEventListener('click', () => {
 el('sample').hidden = real !== undefined;
 paintChrome();
 show('where');
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

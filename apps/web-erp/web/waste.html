@@ -23,7 +23,7 @@
       .summary { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
       .summary .count { font-size:18px; font-weight:700; } .summary .count.attention { color:var(--degraded); }
       .summary .total { color:var(--muted); font-size:15px; } .summary .total b { color:var(--ink); font-variant-numeric:tabular-nums; }
-      .filter { min-height:40px; padding:0 14px; border:0; border-radius:10px; background:var(--line); color:var(--ink); font-size:15px; }
+      .filter { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; background:var(--line); color:var(--ink); font-size:15px; }
       .filter[aria-pressed='true'] { background:var(--ink); color:#0f172a; }
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
       li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); }
@@ -47,7 +47,7 @@
     <p class="nobody" id="nobody" hidden></p>
 
     <header>
-      <span class="who" id="who">Waste &amp; write-off <small id="whoami"></small></span>
+      <h1 class="who" id="who">Waste &amp; write-off <small id="whoami"></small></h1>
       <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
 
@@ -70,5 +70,7 @@
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./waste.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
   </body>
 </html>

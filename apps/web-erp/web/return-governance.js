@@ -18,7 +18,7 @@ function sampleSession() {
       processedByLabel: 'Given by', approvedByLabel: 'Approved by', noneNamed: 'Nobody named', customerLabel: 'Customer', noCustomer: 'No customer captured',
       reasonLabel: 'Reason', whenLabel: 'When', flagsLabel: 'What broke',
       flagStoreCreditOverCap: 'Store credit above your cap (or no cap set)',
-      sampleData: 'Sample data — this is not your shop.', staleShell: 'No connection to the store computer. This page is what it was last told, at', nobodyNamed: '' },
+      sampleData: 'Sample data — this is not your shop.', nobodyNamed: '' },
     ta: { title: 'திருப்பிப்பணம் விதிமீறல்கள்', langName: 'English',
       lead: 'மாதிரி விதிமீறல்கள். உங்கள் கடையின் கொடியிடப்பட்ட திருப்பிப்பணங்களைப் பார்க்க கடை கணினியை இணைக்கவும்.',
       listHeading: 'பரிசீலிக்க வேண்டியவை', exceptionCount: 'பரிசீலிக்க வேண்டியவை', exposureLabel: 'மொத்தத் திருப்பிப்பணம்', allClear: 'திருப்பிப்பண விதிமீறல்கள் இல்லை — ஒவ்வொரு திருப்பிப்பணமும் விதிகளைப் பின்பற்றியது.',
@@ -26,7 +26,7 @@ function sampleSession() {
       processedByLabel: 'வழங்கியவர்', approvedByLabel: 'அனுமதித்தவர்', noneNamed: 'யாரும் குறிப்பிடப்படவில்லை', customerLabel: 'வாடிக்கையாளர்', noCustomer: 'வாடிக்கையாளர் பதிவு இல்லை',
       reasonLabel: 'காரணம்', whenLabel: 'எப்போது', flagsLabel: 'என்ன மீறப்பட்டது',
       flagStoreCreditOverCap: 'உங்கள் வரம்பை மீறிய கடைக்கடன் (அல்லது வரம்பு இல்லை)',
-      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', nobodyNamed: '' },
+      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', nobodyNamed: '' },
   };
   const sampleRow = (l) => ({
     returnId: 'sample-RT-9', originalSaleId: 'S-9', laneId: 'lane-1', amount: '₹500.00', amountMinor: 50000,
@@ -117,7 +117,7 @@ function paint() {
   }
 }
 
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 
 el('sample').hidden = window.returnGovernanceSession !== undefined;
 el('sample').textContent = t('sampleData');
@@ -132,17 +132,6 @@ async function refresh() {
   if (data) { session = api.present(data); paint(); }
 }
 refresh();
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

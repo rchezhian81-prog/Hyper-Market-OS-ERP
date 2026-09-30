@@ -17,14 +17,14 @@ function sampleSession() {
       inForce: 'in force', versionsCount: 'versions', headerLabel: 'Header lines (the store name first)', footerLabel: 'Footer lines', termsLabel: 'Standing terms (optional)',
       languageLabel: 'Language', paperLabel: 'Paper (receipts only)', noteLabel: 'What changed and why', limitsHint: 'At most 8 header lines, 6 footer lines, 20 terms lines; 64 characters a line.',
       draftBtn: 'Save as a draft', approveBtn: 'Approve', publishBtn: 'Publish', authoredByLabel: 'Drafted by', approvedByLabel: 'Approved by', publishedByLabel: 'Published by', noteHeading: 'Note', noVersions: 'No versions yet for this kind.',
-      sampleData: 'Sample data — this is not your shop.', staleShell: 'No connection to the store computer. This page is what it was last told, at', nobodyNamed: '' },
+      sampleData: 'Sample data — this is not your shop.', nobodyNamed: '' },
     ta: { title: 'ஆவண வார்ப்புருக்கள்', langName: 'English',
       lead: 'மாதிரி வார்ப்புருக்கள். உங்களுடையதைப் பார்க்கவும் மாற்றவும் கடை கணினியை இணைக்கவும்.',
       kindLabel: 'ஆவண வகை', loadBtn: 'பதிப்புகளைக் காட்டு', registerHeading: 'இப்போது நடைமுறையில்', versionsHeading: 'பதிப்புகள்', draftHeading: 'அடுத்த பதிப்பை வரைவு செய்',
       inForce: 'நடைமுறையில்', versionsCount: 'பதிப்புகள்', headerLabel: 'தலைப்பு வரிகள்', footerLabel: 'அடிக்குறிப்பு வரிகள்', termsLabel: 'நிலையான நிபந்தனைகள்',
       languageLabel: 'மொழி', paperLabel: 'காகிதம்', noteLabel: 'என்ன மாறியது, ஏன்', limitsHint: 'அதிகபட்சம் 8 தலைப்பு வரிகள், 6 அடிக்குறிப்பு வரிகள், 20 நிபந்தனை வரிகள்; ஒரு வரிக்கு 64 எழுத்துகள்.',
       draftBtn: 'வரைவாகச் சேமி', approveBtn: 'ஒப்புதல்', publishBtn: 'வெளியிடு', authoredByLabel: 'வரைவு செய்தவர்', approvedByLabel: 'ஒப்புதல் அளித்தவர்', publishedByLabel: 'வெளியிட்டவர்', noteHeading: 'குறிப்பு', noVersions: 'இந்த வகைக்கு இன்னும் பதிப்புகள் இல்லை.',
-      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', nobodyNamed: '' },
+      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', nobodyNamed: '' },
   };
   const ok = (label) => ({ tone: 'ok', icon: '✓', label, announcement: label, needsAttention: false });
   const version = (l) => ({
@@ -207,7 +207,7 @@ el('versions').addEventListener('click', (event) => {
   })();
 });
 el('load').addEventListener('click', () => { el('result').hidden = true; void refreshKind(); });
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 
 el('sample').hidden = window.documentTemplatesSession !== undefined;
 el('sample').textContent = t('sampleData');
@@ -229,17 +229,6 @@ async function refreshAll() {
   await refreshKind();
 }
 refreshAll();
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

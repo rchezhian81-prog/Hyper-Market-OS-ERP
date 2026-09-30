@@ -24,7 +24,6 @@ const el = (id) => document.getElementById(id);
 
 const WORDS = {
   en: {
-    staleShell: 'No connection to the store computer. This page is what it was last told, at',
     title: 'Admin and security',
     support: 'Outside access', people: 'Who can get in', fleet: 'Tills and devices', records: 'Records kept',
     supportLead: 'Anybody outside this business who has been let into your live data. Access is granted for a set time and for named things only — never everything, and never open-ended.',
@@ -52,7 +51,6 @@ const WORDS = {
     sampleData: 'Sample data — this is not your shop.',
   },
   ta: {
-    staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
     title: 'நிர்வாகமும் பாதுகாப்பும்',
     support: 'வெளியாட்கள் அணுகல்', people: 'யார் உள்ளே வர முடியும்', fleet: 'பில்லிங் இயந்திரங்கள்', records: 'வைத்திருக்கும் பதிவுகள்',
     supportLead: 'உங்கள் நேரடித் தகவலுக்குள் அனுமதிக்கப்பட்ட, இந்த வணிகத்திற்கு வெளியே உள்ள எவரும். அணுகல் ஒரு குறிப்பிட்ட நேரத்திற்கும் குறிப்பிட்ட விஷயங்களுக்கும் மட்டுமே — எல்லாவற்றுக்கும் அல்ல, முடிவில்லாமலும் அல்ல.',
@@ -336,17 +334,6 @@ el('lang').addEventListener('click', () => {
 el('sample').hidden = real !== undefined;
 paintChrome();
 show('support');
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

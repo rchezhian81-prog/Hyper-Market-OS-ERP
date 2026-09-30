@@ -31,7 +31,6 @@ const inr = (minor) =>
 
 const WORDS = {
   en: {
-    staleShell: 'No connection to the store computer. This page is what it was last told, at',
     title: 'Finance',
     month: 'The month', queue: 'What the accounts have not taken',
     totalsLead: "Every figure is stated twice: what this shop's own record says, and what the accounts actually received. They are worked out separately and must agree exactly.",
@@ -56,7 +55,6 @@ const WORDS = {
     sampleData: 'Sample data — this is not your shop.',
   },
   ta: {
-    staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
     title: 'நிதி',
     month: 'இந்த மாதம்', queue: 'கணக்கு எடுத்துக் கொள்ளாதவை',
     totalsLead: 'ஒவ்வொரு எண்ணும் இரண்டு முறை சொல்லப்படுகிறது: கடையின் சொந்தப் பதிவு என்ன சொல்கிறது, கணக்குகள் உண்மையில் என்ன பெற்றன. இவை தனித்தனியாகக் கணக்கிடப்பட்டு சரியாகப் பொருந்த வேண்டும்.',
@@ -397,17 +395,6 @@ el('lang').addEventListener('click', () => {
 el('sample').hidden = real !== undefined;
 paintChrome();
 show('totals');
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

@@ -1,0 +1,147 @@
+// The one chrome every ERP page carries (Stage G slice 5a · design system §1 rules 4 and 6, §7 · P-08).
+//
+// Forty-six pages, one product. Before this each page drew its own header line, its own "served from cache"
+// strip, its own language toggle with one of two labels — and forty-five of them had no sync badge at all,
+// so a manager could work a page for an hour with no word on whether the store computer was even reachable
+// (design system §1 rule 4: EVERY screen shows connection state and last-sync freshness). This file is that
+// badge, that strip and that toggle, once, loaded after each page's own script so the page's words come first
+// and the chrome finishes the frame.
+//
+// What it owns:
+//   • the sync badge — the store computer's own account of itself (`GET /lane/sync-status` at the address the
+//     page was served from; never a guessed one), in words as well as a dot, every ten seconds;
+//   • the "served from this device's cache, at …" strip (the service worker stamps `window.shellCachedAt`);
+//   • the language toggle's label and name — the OTHER language, so the button says what you get;
+//   • repainting all three whenever `<html lang>` changes, however the page changed it.
+// What it does not own: the page's words. A page keeps its own `en` / `ta` tables and its own toggle handler.
+//
+// Framework-free and static (§19), like every shell in this folder: it opens with the shop's wifi down.
+
+(() => {
+  const WORDS = {
+    en: {
+      staleShell: 'No connection to the store computer. This page is what it was last told, at',
+      notConnected: 'Not connected to the store computer', checkingBox: 'Checking the store computer…',
+      connected: 'Connected', boxNotAnswering: 'Store computer not answering',
+      noCloud: 'Head office cannot be reached — working from the store computer',
+      cloudNotSetUp: 'No head office link on this store computer', cloudUnknown: 'Head office not checked yet',
+      lastContact: 'last contact', switchLanguage: 'Switch language', otherLanguage: 'தமிழ்',
+    },
+    ta: {
+      staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
+      notConnected: 'கடை கணினியுடன் இணைப்பு இல்லை', checkingBox: 'கடை கணினியைச் சரிபார்க்கிறது…',
+      connected: 'இணைப்பில்', boxNotAnswering: 'கடை கணினி பதிலளிக்கவில்லை',
+      noCloud: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — கடை கணினியிலிருந்து வேலை',
+      cloudNotSetUp: 'இந்தக் கடை கணினியில் தலைமை அலுவலக இணைப்பு இல்லை', cloudUnknown: 'தலைமை அலுவலகம் இன்னும் சரிபார்க்கப்படவில்லை',
+      lastContact: 'கடைசித் தொடர்பு', switchLanguage: 'மொழியை மாற்று', otherLanguage: 'English',
+    },
+  };
+  const lang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
+  const t = (key) => WORDS[lang()][key] ?? WORDS.en[key];
+  const byId = (id) => document.getElementById(id);
+
+  // ── The badge's place in the header: reuse what a page already has, create what it lacks ──────────
+  function badgeElements() {
+    const header = document.querySelector('header');
+    if (!header) return null;
+    let sync = header.querySelector('.sync');
+    if (!sync) {
+      sync = document.createElement('span');
+      sync.className = 'sync';
+      header.append(sync);
+    }
+    let dot = byId('conn-dot');
+    if (!dot) {
+      dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.id = 'conn-dot';
+      dot.title = 'Store link';
+      sync.prepend(dot);
+    }
+    let text = byId('conn-text');
+    if (!text) {
+      text = document.createElement('span');
+      text.id = 'conn-text';
+      dot.after(text);
+    }
+    // The toggle belongs beside the badge, as it does on the till and the handhelds.
+    const toggle = byId('lang');
+    if (toggle && toggle.parentElement !== sync) sync.append(toggle);
+    return { dot, text };
+  }
+
+  // ── The sync badge — connection · freshness, from the store computer (rule 4) ──────────────────────
+  let box = { asked: false, reachable: false, status: null };
+  const laneBase = () => (typeof window.laneWriteBase === 'string' ? window.laneWriteBase : null);
+  const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  function paintBadge() {
+    const els = badgeElements();
+    if (!els) return;
+    const { dot, text } = els;
+    dot.classList.remove('unknown', 'degraded', 'error', 'idle');
+    // A page that could not read its own registers says so first — the link to the store is one fact.
+    if (window.sreBlind === true) { dot.classList.add('unknown'); text.textContent = t('notConnected'); return; }
+    if (laneBase() === null) { dot.classList.add('idle'); text.textContent = t('notConnected'); return; }
+    if (!box.asked) { dot.classList.add('idle'); text.textContent = t('checkingBox'); return; }
+    if (!box.reachable) { dot.classList.add('error'); text.textContent = t('boxNotAnswering'); return; }
+    const s = box.status;
+    const when = s.lastContactAt ? ` · ${t('lastContact')} ${clock(s.lastContactAt)}` : '';
+    if (s.cloud === 'online') { text.textContent = `${t('connected')}${when}`; return; }
+    dot.classList.add(s.cloud === 'unknown' || s.cloud === 'starting' ? 'idle' : 'degraded');
+    text.textContent = `${s.cloud === 'offline' ? t('noCloud') : s.cloud === 'not_configured' ? t('cloudNotSetUp') : t('cloudUnknown')}${when}`;
+  }
+
+  async function refreshBadge() {
+    const base = laneBase();
+    if (base === null) { paintBadge(); return; }
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 3000);
+    try {
+      const res = await fetch(`${base}/lane/sync-status`, { cache: 'no-store', signal: ctl.signal });
+      box = res.ok ? { asked: true, reachable: true, status: await res.json() } : { asked: true, reachable: false, status: null };
+    } catch {
+      box = { asked: true, reachable: false, status: null };
+    } finally {
+      clearTimeout(timer);
+    }
+    paintBadge();
+  }
+
+  // ── The "served from this device's cache" strip (P-08) ──────────────────────────────────────────
+  // A page may carry its own sharper wording on the element (`data-en` / `data-ta`) — the manager's says
+  // "do not close the day on it". Otherwise the one wording. The time is the reader's own local clock.
+  function paintStale() {
+    let strip = byId('stale');
+    if (!strip) {
+      strip = document.createElement('p');
+      strip.className = 'stale';
+      strip.id = 'stale';
+      strip.hidden = true;
+      strip.setAttribute('role', 'status');
+      document.body.prepend(strip);
+    }
+    const at = window.shellCachedAt;
+    strip.hidden = at === undefined;
+    if (at === undefined) return;
+    const own = strip.dataset[lang()];
+    strip.textContent = `${own ?? t('staleShell')} ${new Date(at).toLocaleString()}`;
+  }
+
+  // ── The toggle says what you get ─────────────────────────────────────────────────────────────────
+  function paintToggle() {
+    const toggle = byId('lang');
+    if (!toggle) return;
+    toggle.textContent = t('otherLanguage');
+    toggle.setAttribute('aria-label', t('switchLanguage'));
+  }
+
+  function repaint() { paintToggle(); paintStale(); paintBadge(); }
+
+  new MutationObserver(repaint).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+  repaint();
+  void refreshBadge();
+  setInterval(() => { void refreshBadge(); }, 10_000);
+
+  window.sreChrome = { repaint, badge: { refresh: refreshBadge, state: () => box } };
+})();

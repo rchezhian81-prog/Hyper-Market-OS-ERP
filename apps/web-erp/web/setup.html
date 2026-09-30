@@ -22,7 +22,6 @@
         font: 16px/1.5 var(--font);
         min-height: 100dvh; display: flex; flex-direction: column;
       }
-      .lang { background: transparent; color: var(--muted); min-height: 40px; font-size: 14px; border: 0; }
 
       .sample { background: var(--warn); color: #451a03; padding: 8px 16px; font-weight: 600; font-size: 15px; margin: 0; }
       .sample[hidden], .stale[hidden], .blocking[hidden] { display: none; }
@@ -63,14 +62,14 @@
       .edit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
       .edit input[type="text"], .edit input[type="number"], .edit input[type="time"],
       .edit select, .edit textarea {
-        min-height: 40px; border-radius: 10px; border: 2px solid var(--line);
+        min-height: var(--tap); border-radius: 10px; border: 2px solid var(--line);
         background: #0b1220; color: var(--ink); font-size: 16px; padding: 4px 10px;
         flex: 1; min-width: 140px;
       }
       .edit textarea { font-family: inherit; }
       .edit input.toggle { width: 26px; height: 26px; flex: 0 0 auto; min-width: 0; }
       .edit button {
-        min-height: 40px; border-radius: 10px; border: 0; font-weight: 600; padding: 0 14px;
+        min-height: var(--tap); border-radius: 10px; border: 0; font-weight: 600; padding: 0 14px;
         background: var(--line); color: var(--ink);
       }
       .edit button.primary { background: var(--good); color: #052e16; }
@@ -86,8 +85,8 @@
   </head>
   <body>
     <header>
-      <span class="who" id="who">Store setup<small id="whoami">—</small></span>
-      <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
+      <h1 class="who" id="who">Store setup<small id="whoami">—</small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
 
     <p class="sample" id="sample" hidden role="status">Sample data — this is not your shop.</p>
@@ -112,5 +111,7 @@
     <!--SCREEN-DATA-->
     <script type="module" src="./web-erp.bundle.js"></script>
     <script type="module" src="./setup.js"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
   </body>
 </html>

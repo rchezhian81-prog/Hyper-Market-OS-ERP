@@ -27,7 +27,6 @@ const el = (id) => document.getElementById(id);
 
 const WORDS = {
   en: {
-    staleShell: 'No connection to the store computer. This page is what it was last told, at',
     title: 'Expiry and recall',
     goingOut: 'Going out of date', recalls: 'Recalls',
     expiryLead: 'Earliest first. Expired stock is thrown away; stock close to its date is marked down while it can still sell.',
@@ -52,7 +51,6 @@ const WORDS = {
     sampleData: 'Sample data — this is not your shop.',
   },
   ta: {
-    staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
     title: 'காலாவதி மற்றும் திரும்பப் பெறுதல்',
     goingOut: 'காலாவதி ஆகப் போகிறவை', recalls: 'திரும்பப் பெறுதல்கள்',
     expiryLead: 'முதலில் அவசரமானவை. காலாவதி ஆனவை தூக்கி எறியப்படும்; தேதி நெருங்குபவை விற்கும் வரை விலை குறைக்கப்படும்.',
@@ -369,17 +367,6 @@ el('lang').addEventListener('click', () => {
 el('sample').hidden = real !== undefined;
 paintChrome();
 show('expiry');
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

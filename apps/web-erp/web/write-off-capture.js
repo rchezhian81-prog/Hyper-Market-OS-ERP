@@ -35,8 +35,7 @@ const CHROME = {
     lostLink: 'No connection — not saved. Try again.',
     stateNotPermitted: 'You do not have permission to record a loss.',
     nobodyNamed: 'This store computer has not been told who is using this screen.',
-    sampleData: 'Sample data — this is not your shop.', staleShell: 'No connection to the store computer. This page is what it was last told, at',
-  },
+    sampleData: 'Sample data — this is not your shop.', },
   ta: {
     title: 'இழப்பைப் பதிவு செய்', langName: 'English',
     lead: 'மாதிரி படிவம். உண்மையான இழப்பைப் பதிவு செய்ய கடை கணினியை இணைக்கவும்.',
@@ -56,8 +55,7 @@ const CHROME = {
     lostLink: 'இணைப்பு இல்லை — சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
     stateNotPermitted: 'இழப்பைப் பதிவு செய்ய உங்களுக்கு அனுமதி இல்லை.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
-    sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
-  },
+    sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', },
 };
 
 const LOSS_LABEL = { wastage: 'lossWastage', damage: 'lossDamage', expiry: 'lossExpiry', donation: 'lossDonation', destruction: 'lossDestruction' };
@@ -221,22 +219,11 @@ el('record').addEventListener('click', () => {
 
 el('wo-value').addEventListener('input', () => paintMaterialHint());
 
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 
 el('sample').hidden = window.writeOffCaptureSession !== undefined;
 el('sample').textContent = chrome('sampleData');
 paint();
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${chrome('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

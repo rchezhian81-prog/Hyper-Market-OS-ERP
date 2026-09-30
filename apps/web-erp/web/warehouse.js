@@ -18,7 +18,6 @@ const el = (id) => document.getElementById(id);
 
 const WORDS = {
   en: {
-    staleShell: 'No connection to the store computer. This page is what it was last told, at',
     sample: "Sample data — this is not the shop's own warehouse.",
     who: 'Warehouse supervisor',
     binsHeading: 'Bins', binsLead: 'Configuration and how full each bin is.',
@@ -53,7 +52,6 @@ const WORDS = {
     transferQueued: 'Transfer proposed and queued to sync', taskQueued: 'Task assigned and queued to sync', actionRefused: 'Could not do that',
   },
   ta: {
-    staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
     sample: 'மாதிரி தரவு — இது கடையின் சொந்தக் கிடங்கு அல்ல.',
     who: 'கிடங்கு மேற்பார்வையாளர்',
     binsHeading: 'இடங்கள்', binsLead: 'அமைப்பு மற்றும் ஒவ்வொரு இடமும் எவ்வளவு நிரம்பியுள்ளது.',
@@ -330,18 +328,6 @@ el('lang').addEventListener('click', () => {
   el('sample').textContent = t('sample');
   render();
 });
-
-// ── The shell's own honesty about where this page came from (P-08) ───────────
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

@@ -18,7 +18,7 @@ function sampleSession() {
       acceptHeading: 'Accept a risk', riskChoiceLabel: 'Which risk', rationaleLabel: 'Why you are accepting it (this is the record)',
       rationalePlaceholder: 'Why is the business knowingly carrying this risk?', acceptBtn: 'Accept the risk',
       acceptRecorded: 'Risk accepted.', acceptRefused: 'Could not accept — check the reason and your permission.', acceptLostLink: 'No connection — not saved. Try again.',
-      sampleData: 'Sample data — this is not your shop.', staleShell: 'No connection to the store computer. This page is what it was last told, at', nobodyNamed: '' },
+      sampleData: 'Sample data — this is not your shop.', nobodyNamed: '' },
     ta: { title: 'இடர் ஏற்பு', langName: 'English',
       lead: 'மாதிரி தடுக்கப்பட்ட வாயில்கள். உங்கள் இணக்க வாயில்களைப் பார்க்க கடை கணினியை இணைக்கவும்.',
       openHeading: 'ஒரு வாயிலைத் தடுக்கிறது', blockedCount: 'வாயில்கள் தடுக்கப்பட்டன', gatesLabel: 'தடுக்கப்பட்ட வாயில்கள்', allClear: 'தடுக்கப்பட்ட வாயில்கள் இல்லை — எல்லா வாயில்களும் கடக்கலாம்.',
@@ -26,7 +26,7 @@ function sampleSession() {
       acceptHeading: 'ஒரு இடரை ஏற்று', riskChoiceLabel: 'எந்த இடர்', rationaleLabel: 'நீங்கள் ஏன் ஏற்கிறீர்கள் (இதுவே பதிவு)',
       rationalePlaceholder: 'இந்த இடரை வணிகம் ஏன் அறிந்தே சுமக்கிறது?', acceptBtn: 'இடரை ஏற்று',
       acceptRecorded: 'இடர் ஏற்கப்பட்டது.', acceptRefused: 'ஏற்க முடியவில்லை — காரணத்தையும் அனுமதியையும் சரிபார்க்கவும்.', acceptLostLink: 'இணைப்பு இல்லை — சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
-      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', nobodyNamed: '' },
+      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', nobodyNamed: '' },
   };
   const sampleRow = (l) => ({
     gate: 'QG-04', riskId: 'sample-risk-1', title: l === 'ta' ? 'குறியாக்கம் இல்லாத காப்புப்பிரதிகள்' : 'Unencrypted backups',
@@ -143,7 +143,7 @@ el('accept').addEventListener('click', () => {
     if (result === 'accepted') { el('accept-rationale').value = ''; await refresh(); }
   })();
 });
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 
 el('sample').hidden = window.riskAcceptanceSession !== undefined;
 el('sample').textContent = t('sampleData');
@@ -158,17 +158,6 @@ async function refresh() {
   if (data) { session = api.present(data); paint(); }
 }
 refresh();
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

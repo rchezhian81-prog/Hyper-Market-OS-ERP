@@ -13,10 +13,10 @@ function sampleSession() {
   const CHROME = {
     en: { title: 'Stock counts', lead: 'Sample counts. Connect the store computer to see your own.', langName: 'தமிழ்',
       attentionCount: 'needed approval', allClear: 'No material variances — nothing needed a second approval.', totalVariance: 'Value at variance today',
-      sampleData: 'Sample data — this is not your shop.', staleShell: 'No connection to the store computer. This page is what it was last told, at', nobodyNamed: '' },
+      sampleData: 'Sample data — this is not your shop.', nobodyNamed: '' },
     ta: { title: 'சரக்கு எண்ணிக்கை', lead: 'மாதிரி எண்ணிக்கைகள். உங்கள் சொந்தவற்றைப் பார்க்க கடை கணினியை இணைக்கவும்.', langName: 'English',
       attentionCount: 'ஒப்புதல் தேவைப்பட்டது', allClear: 'பெரிய வேறுபாடுகள் இல்லை.', totalVariance: 'இன்று வேறுபட்ட மதிப்பு',
-      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', nobodyNamed: '' },
+      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', nobodyNamed: '' },
   };
   const row = (productId, tone, icon, statusLabel, variance, value, counted, expected, needsAttention) => ({
     id: productId, productId, status: { tone, icon, label: statusLabel, announcement: `${productId}: ${statusLabel}`, needsAttention },
@@ -115,23 +115,12 @@ function paint() {
   }
 }
 
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 el('filter').addEventListener('click', () => { attentionOnly = !attentionOnly; paint(); });
 
 el('sample').hidden = real !== undefined;
 el('sample').textContent = t('sampleData');
 paint();
-
-function paintStale() {
-  const at = window.shellCachedAt;
-  const strip = el('stale');
-  if (!strip) return;
-  strip.hidden = at === undefined;
-  if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
-}
-paintStale();
-el('lang').addEventListener('click', paintStale);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

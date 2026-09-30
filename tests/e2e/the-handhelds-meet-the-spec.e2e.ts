@@ -107,7 +107,7 @@ async function serve(shell: Shell, laneWriteBase?: string): Promise<{ base: stri
     server.listen(0, '127.0.0.1', () => {
       const addr = server.address();
       const port = typeof addr === 'object' && addr !== null ? addr.port : 0;
-      resolve({ base: `http://127.0.0.1:${port}`, stop: () => new Promise((done) => { server.close(() => { done(); }); }) });
+      resolve({ base: `http://127.0.0.1:${port}`, stop: () => new Promise((done) => { server.close(() => { done(); }); server.closeAllConnections(); }) });
     });
   });
 }
@@ -123,7 +123,7 @@ async function laneStub(): Promise<{ base: string; stop: () => Promise<void> }> 
     server.listen(0, '127.0.0.1', () => {
       const addr = server.address();
       const port = typeof addr === 'object' && addr !== null ? addr.port : 0;
-      resolve({ base: `http://127.0.0.1:${port}`, stop: () => new Promise((done) => { server.close(() => { done(); }); }) });
+      resolve({ base: `http://127.0.0.1:${port}`, stop: () => new Promise((done) => { server.close(() => { done(); }); server.closeAllConnections(); }) });
     });
   });
 }
@@ -139,7 +139,10 @@ describe.skipIf(!HAVE_BROWSER)('the handhelds on a low-spec phone: audited, and 
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
   }, 180_000);
   afterAll(async () => { await browser?.close(); });
-  afterEach(async () => { for (const stop of stops.splice(0)) await stop(); });
+  // Torn down in REVERSE order: the browser context first, then the servers it was talking to. A stub server
+  // closed while Chromium still holds a keep-alive connection to it waits for that connection — once, in a full
+  // gate, for longer than the hook timeout — so the client goes first and any lingering socket is closed outright.
+  afterEach(async () => { for (const stop of stops.splice(0).reverse()) await stop(); });
 
   async function open(shell: Shell, laneWriteBase?: string): Promise<Page> {
     const srv = await serve(shell, laneWriteBase);
