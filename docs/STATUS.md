@@ -176,16 +176,34 @@ device, human UAT and production verification separate; approved deferrals stay 
   against real stock, recalled batch, held batch), `warehouse-counts.test.ts` (rewritten 6: held → self 422 → approve
   → applied → again no-op → contradict 409; rejected; uncosted held; claims refused), `warehouse-durability.test.ts`,
   observation `warehouse.test.ts` cases 1, 2, 4 inverted (F05/F06 halves still marked observed); api surface +1
-  (`counts/:countId/decide`). **Still open, honestly:** F03 — the goods receipt still takes product rules and tolerance
-  policy from the body and sells an unapproved excess (SP-4 (ii), next); F05/F06 (SP-5/5b); pending counts and requests
+  (`counts/:countId/decide`). **Still open, honestly:** F03 — fixed in SP-4 (ii), the next entry; F05/F06 (SP-5/5b); pending counts and requests
   reach the manager's screen only when the pack carries them (SP-9); the transfer's lot states are batch-level only
   (a batchless line is `on_hand` unless recalled/held by batch).
-- **Current-work pointer:** last verified = SP-4 (i) (this PR); next = **SP-4 (ii)** [F03] (product tracking rules
-  from the cloud's product master and the tolerance policy from a tenant receipt policy on `POST /v1/inventory/goods-receipt/:grnId`
-  — never the body; the over-tolerance EXCESS held out of the sellable figure until a separate person approves, with
-  the disposition write path; observation `procurement.test.ts` F03 case inverted); then SP-4b (F09), SP-4c (F10),
-  SP-5/5b (F05/F06), SP-6 (F01), SP-7 (F02/F04), SP-8/8b (F08), SP-9/9b; **SP-3c** (picker + driver) after the
-  core-store chain; genuine blockers: none; external gates unchanged (providers, hardware, real data, pilot GO).
+- **SP-4 (ii) — the goods receipt trusts no client rule and HOLDS an unapproved excess (F03 · W03 · M07-FR-02 ·
+  M07-FR-03 · §28 · hard rules #2 #5 #10).** `POST /v1/inventory/goods-receipt/:grnId` refuses a body that names `rules`
+  or `policy` (`receipt_carries_caller_claims`); the batch-tracking rule comes from the PUBLISHED CATALOGUE and the
+  tolerances from the tenant's own receipt policy (`POST/GET /v1/inventory/receipt-policy`, owner-only
+  `inventory.receipt.policy.set/read`, `ReceiptPolicySet` stream) through the same `rulesFromMaster` / `policyInForce`
+  helpers the relayed route runs; what head office cannot verify is SAID (`product_rules_unverified`, `default_policy`)
+  and never refuses goods in the building. The engine holds the over-tolerance excess (`heldMinor` per checked line,
+  `heldFromReceipt`): the ordered quantity becomes stock, the excess is counted, valued, on the GRN and NOT on hand.
+  `POST /v1/inventory/goods-receipt/:grnId/excess/decide` (`inventory.adjustment.approve`, decider ≠ receiver, one
+  decision per receipt) releases it as its own inbound movement per line (`<grnId>:<lineId>:excess`, atomic with the
+  `GoodsReceiptExcessDecided` event) or refuses it for the supplier claim; the manager's relayed decision for
+  `goods_receipt_excess` reaches the same `decideReceiptExcess` through `applyDecision`. The review list surfaces waiting
+  receipts first (`awaitsDecision`, `heldExcessCount`). Evidence: `receipt-excess-held.test.ts` 8,
+  `goods-receipt.test.ts` rewritten 8 (rules from the catalogue), `goods-in.test.ts` (held excess; damaged / expired
+  excess quarantined / rejected whole), observation `procurement.test.ts` case 2 inverted (F01 / F02 still observed);
+  every seed test that sent `rules` / `policy` now sends the counted lines only; api surface +3
+  (`excess/decide`, `receipt-policy` GET/POST). **Still open, honestly:** the ERP goods-receipt review screen is pack-fed
+  and does not yet show the held quantity, the governance flags or offer the decision (SP-9); the disposition write path
+  for damaged / expired / rejected stock (accept / return / claim) is SP-6; a receipt does not reduce the PO remainder
+  (F01, SP-6).
+- **Current-work pointer:** last verified = SP-4 (ii) (this PR); next = **SP-4b** [W02, F09] (the served till carries
+  the real cashier, lane and trading day into disk, cloud, audit and day reports; observation `pos.test.ts` F09 case
+  inverted); then SP-4c (F10), SP-5/5b (F05/F06), SP-6 (F01), SP-7 (F02/F04), SP-8/8b (F08), SP-9/9b; **SP-3c** (picker
+  + driver) after the core-store chain; genuine blockers: none; external gates unchanged (providers, hardware, real
+  data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 

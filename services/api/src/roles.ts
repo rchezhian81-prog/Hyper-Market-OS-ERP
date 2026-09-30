@@ -56,6 +56,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'inventory.movement.sync',
       // SP-3b: adjustment REQUESTS relayed from the warehouse handheld, and the separate person who approves them (§28).
       'inventory.adjustment.sync', 'inventory.adjustment.approve',
+      // SP-4 (ii): the owner sets the receiving tolerances the cloud applies to every delivery (never the body, F03).
+      'inventory.receipt.policy.set', 'inventory.receipt.policy.read',
       'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.return.threshold.set', 'pos.return.window.set', 'pos.storecredit.cap.set', 'pos.return.noreceipt.cap.set', 'pos.restricted.check',
       'cash.movement.record', 'cash.till.read', 'till.shift.close', 'till.shift.read', 'till.overshort.review',
       'till.dayclose.sync', 'till.dayclose.read', 'till.dayclose.approve',

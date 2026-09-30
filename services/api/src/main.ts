@@ -95,7 +95,7 @@ import { weighingVerificationRoutes } from '../../platform/src/facilities-metrol
 import { complianceRoutes } from '../../compliance/src/index';
 import { riskRegisterRoutes } from '../../compliance/src/risk';
 import { inventoryRoutes } from '../../inventory/src/index';
-import { goodsReceiptRoutes } from '../../inventory/src/goods-receipt';
+import { goodsReceiptRoutes, decideReceiptExcess } from '../../inventory/src/goods-receipt';
 import { asnRoutes } from '../../inventory/src/asn';
 import { shelfCountRoutes } from '../../inventory/src/shelf-count';
 import { planogramComplianceRoutes } from '../../inventory/src/planogram-compliance';
@@ -335,8 +335,18 @@ export function buildSurface(deps: {
     permissionsOfUser: empty(undefined), unitValueMinor: empty(undefined), request: empty(undefined), requests: empty([]),
     recordRequest: () => {}, recordDecision: () => {}, appendMovement: () => {}, now,
   } : { ...adjustmentRequestAdapter({ store, now }), recordAudit: auditTrail?.recordAudit };
-  // Approve-then-apply (SP-4): a CLEAN decision relayed from the manager's screen reaches its subject — a held blind count
-  // or a pending adjustment request — through that subject's own decide step (the same code the direct routes run).
+  // Goods receipt / GRN capture (M07-FR-01/02/03 · D03-FR-02) — the durable cloud receiving record; since SP-4 (ii) the
+  // product rules and tolerance policy are head office's own and a held excess is decided here (F03).
+  const goodsReceiptDeps = store === undefined ? {
+    grn: empty(undefined), all: empty([]), commit: () => {}, now,
+    productRule: empty(undefined), receiptPolicy: empty(undefined), recordReceiptPolicy: () => {}, commitExcessDecision: () => {},
+  } : { ...goodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit };
+  const syncedGoodsReceiptDeps = store === undefined ? {
+    ...goodsReceiptDeps, permissionsOfUser: empty(undefined), unitCostMinor: empty(undefined), orderedByProduct: empty(undefined),
+  } : { ...syncedGoodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit };
+  // Approve-then-apply (SP-4): a CLEAN decision relayed from the manager's screen reaches its subject — a held blind count,
+  // a pending adjustment request or a held receipt excess — through that subject's own decide step (the same code the
+  // direct routes run).
   const applyDecision = async (tenantId: string, record: ApprovalDecisionRecord): Promise<AppliedDecision> => {
     const base = { subjectType: record.subjectType, subjectRef: record.subjectRef };
     if (record.subjectType === 'stock_count') {
@@ -349,6 +359,12 @@ export function buildSurface(deps: {
       const out = await decideAdjustmentRequest(adjustmentDeps, { tenantId, requestId: record.subjectRef, decidedBy: record.decidedBy, decision: record.status, reason: record.reason, branchId: record.branchId, via: 'relayed' });
       return out.ok
         ? { ...base, applied: true, detail: out.alreadyDecided ? `request ${record.subjectRef} was already ${out.record.status}` : `request ${record.subjectRef} ${out.record.status}${out.record.movementId === null ? '' : ` — movement ${out.record.movementId}`}` }
+        : { ...base, applied: false, refusedBecause: out.refusedBecause, detail: out.detail };
+    }
+    if (record.subjectType === 'goods_receipt_excess') {
+      const out = await decideReceiptExcess(goodsReceiptDeps, { tenantId, grnId: record.subjectRef, decidedBy: record.decidedBy, decision: record.status, reason: record.reason, branchId: record.branchId, via: 'relayed' });
+      return out.ok
+        ? { ...base, applied: true, detail: out.alreadyDecided ? `excess on ${record.subjectRef} was already ${out.record.excessDecision?.decision ?? 'decided'}` : `excess on ${record.subjectRef} ${out.record.excessDecision?.decision ?? 'decided'}${(out.record.excessDecision?.releasedMinor ?? 0) > 0 ? ` — ${out.record.excessDecision?.releasedMinor} released to stock` : ''}` }
         : { ...base, applied: false, refusedBecause: out.refusedBecause, detail: out.detail };
     }
     return { ...base, applied: false, refusedBecause: 'no_handler', detail: `recorded; a ${record.subjectType} decision is not applied by head office yet` };
@@ -493,18 +509,12 @@ export function buildSurface(deps: {
       ageing: empty({ lots: [], unvaluedMinor: 0 }),
       performance: empty({ from: '', to: '', periodDays: 0, total: { cogs: { minor: 0, currency: 'INR' }, averageInventory: { minor: 0, currency: 'INR' } }, byProduct: [] }), now,
     } : inventoryAdapter({ store, now })),
-    // Goods receipt / GRN capture (M07-FR-01/02/03 · D03-FR-02) — the durable cloud receiving record.
-    ...goodsReceiptRoutes(store === undefined
-      ? { grn: empty(undefined), all: empty([]), commit: () => {}, now }
-      : goodsReceiptAdapter({ store, now })),
+    // Goods receipt / GRN capture (M07-FR-01/02/03 · D03-FR-02) — the durable cloud receiving record, the tenant's
+    // receipt policy and the held-excess decision (F03).
+    ...goodsReceiptRoutes(goodsReceiptDeps),
     // Deliveries booked in on the manager's screen and RELAYED through the box (SP-2b · F11 · M07-FR-01): the same GRN
     // register and atomic commit, with the receiver re-verified and the rules/cost/order read from head office's own records.
-    ...syncedGoodsReceiptRoutes(store === undefined
-      ? {
-        grn: empty(undefined), all: empty([]), commit: () => {}, now,
-        permissionsOfUser: empty(undefined), productRule: empty(undefined), unitCostMinor: empty(undefined), orderedByProduct: empty(undefined), receiptPolicy: empty(undefined),
-      }
-      : { ...syncedGoodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+    ...syncedGoodsReceiptRoutes(syncedGoodsReceiptDeps),
     // Back-door dock scheduling + ASN comparison (M07-FR-01) — two lorries on one door is refused, and the
     // advice note is compared against what actually arrived (a promise, not a receipt). Stateless decisions.
     ...asnRoutes(),

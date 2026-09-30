@@ -10,7 +10,6 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const INR = 'INR';
-const POLICY = { excessToleranceBp: 500, shortageToleranceBp: 200, nearExpiryDays: 7 };
 const cost = (minor: number) => ({ minor, currency: INR });
 
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
@@ -21,10 +20,12 @@ interface NEBody { readonly items: readonly NEItem[]; readonly count: number; re
 const grnLine = (extra: Record<string, unknown> = {}) =>
   ({ lineId: 'L1', productId: 'milk-1l', orderedMinor: 100, countedMinor: 100, uom: 'each', unitCost: cost(5000), condition: 'good', ...extra });
 
-const receive = (h: ApiHarness, u: string, grnId: string, lines: unknown[], rules: unknown[], key: string, receivedOnDate = '2026-09-05') =>
+// Since SP-4 (ii) the product rules and tolerances are head office's own (F03); the `_rules` the scenario names are
+// what the product master WOULD say — kept for the reader, never sent.
+const receive = (h: ApiHarness, u: string, grnId: string, lines: unknown[], _rules: unknown[], key: string, receivedOnDate = '2026-09-05') =>
   h.request({
     method: 'POST', path: `/v1/inventory/goods-receipt/${grnId}`, userId: u, tenantId: A, idempotencyKey: key,
-    body: { warehouseId: 'wh1', receivedOnDate, currency: INR, lines, rules, policy: POLICY },
+    body: { warehouseId: 'wh1', receivedOnDate, currency: INR, lines },
   });
 
 // A banked sale whose line carries the batch — the OUTBOUND the near-expiry read nets against on-hand.

@@ -126,7 +126,11 @@ export interface LoadRequest {
   /** YYYY-MM-DD — the physical-count date the opening stock is true at. */
   readonly receivedOnDate: string;
   readonly currency: string;
-  /** Receiving policy for the opening goods receipt. Defaults: no tolerance (ordered = counted), nothing near expiry. */
+  /**
+   * The tenant's receiving tolerances, SET before the opening receipt when given (`POST /v1/inventory/receipt-policy`,
+   * an owner-level step). Since SP-4 (ii) the receipt route takes no policy from the body (F03): the opening stock is
+   * measured against the tenant's own policy, or head office's default when none has been set (said on the record).
+   */
   readonly receivingPolicy?: { readonly excessToleranceBp: number; readonly shortageToleranceBp: number; readonly nearExpiryDays: number };
 }
 
@@ -400,6 +404,16 @@ export function planLoad(bundle: ExtractBundle, req: LoadRequest): LoadPlan {
         }
       }
     }
+    if (req.receivingPolicy !== undefined) {
+      steps.push({
+        group: 'stock', what: 'receiving tolerance policy',
+        path: '/v1/inventory/receipt-policy',
+        body: { ...req.receivingPolicy },
+        idempotencyKey: key('receipt-policy'),
+      });
+    }
+    // The product rules (what is batch-tracked) and the tolerances are head office's own (F03, SP-4 (ii)) — the body
+    // carries the counted lines only; the gate reads the rule from the published product master.
     steps.push({
       group: 'stock', what: `opening stock (${bundle.openingStock.length} line(s)) at ${req.stockLocationId}`,
       path: `/v1/inventory/goods-receipt/${encodeURIComponent(`opening-${req.loadId}`)}`,
@@ -407,8 +421,6 @@ export function planLoad(bundle: ExtractBundle, req: LoadRequest): LoadPlan {
         warehouseId: req.stockLocationId,
         receivedOnDate: req.receivedOnDate,
         currency: req.currency,
-        rules: [...batchTracked].map(([productId, tracked]) => ({ productId, batchTracked: tracked })),
-        policy: req.receivingPolicy ?? { excessToleranceBp: 0, shortageToleranceBp: 0, nearExpiryDays: 0 },
         lines: bundle.openingStock.map((r, i) => ({
           lineId: `L${i + 1}`, productId: r.productId, orderedMinor: r.quantityMinor, countedMinor: r.quantityMinor,
           uom: r.uom, unitCost: { minor: r.unitCostMinor, currency: req.currency }, condition: 'good',

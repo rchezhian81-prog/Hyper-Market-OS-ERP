@@ -146,24 +146,35 @@ describe('planLoad — the ordered steps', () => {
     expect((steps[0]!.body as { evidence: string }).evidence).toContain('no consent on record');
     expect(steps[1]!.body).toMatchObject({ kind: 'earn', points: 120, movementId: 'load-2026-10-01-opening-C-1' });
   });
-  it('the opening receipt goes through the real receiving gate: batch-tracked only where batch AND expiry are present', () => {
+  it('the opening receipt goes through the real receiving gate with the counted lines ONLY — batch + expiry where both are present; no rules, no policy in the body (F03)', () => {
     const plan = okPlan();
     const stock = plan.steps.find((s) => s.group === 'stock')!;
     expect(stock.path).toBe('/v1/inventory/goods-receipt/opening-load-2026-10-01');
-    const body = stock.body as { warehouseId: string; rules: { productId: string; batchTracked: boolean }[]; lines: Record<string, unknown>[]; policy: unknown };
+    const body = stock.body as { warehouseId: string; lines: Record<string, unknown>[] };
     expect(body.warehouseId).toBe('STORE-MAIN');
-    expect(body.rules).toEqual([{ productId: 'P-RICE', batchTracked: true }, { productId: 'P-SOAP', batchTracked: false }]);
+    // Since SP-4 (ii) the gate refuses a body that names its own rules or tolerances: what is batch-tracked is the
+    // product master's word, the tolerances the tenant's policy.
+    expect(body).not.toHaveProperty('rules');
+    expect(body).not.toHaveProperty('policy');
     expect(body.lines[0]).toMatchObject({ lineId: 'L1', productId: 'P-RICE', orderedMinor: 40, countedMinor: 40, batchId: 'B1', expiry: '2027-03-31', condition: 'good', unitCost: { minor: 36_000, currency: 'INR' } });
     expect(body.lines[1]).not.toHaveProperty('batchId');
-    expect(body.policy).toEqual({ excessToleranceBp: 0, shortageToleranceBp: 0, nearExpiryDays: 0 });
     expect(plan.warnings).toEqual([]);
+  });
+  it('a receiving policy on the request is SET first, as its own step, then the receipt follows — never carried on the receipt', () => {
+    const plan = okPlan({ ...req, receivingPolicy: { excessToleranceBp: 500, shortageToleranceBp: 200, nearExpiryDays: 7 } });
+    const stock = plan.steps.filter((s) => s.group === 'stock');
+    expect(stock.map((s) => s.path)).toEqual(['/v1/inventory/receipt-policy', '/v1/inventory/goods-receipt/opening-load-2026-10-01']);
+    expect(stock[0]!.body).toEqual({ excessToleranceBp: 500, shortageToleranceBp: 200, nearExpiryDays: 7 });
+    expect(stock[1]!.body).not.toHaveProperty('policy');
+    expect(plan.counts.stock).toBe(2);
+    expect(new Set(plan.steps.map((s) => s.idempotencyKey)).size).toBe(plan.steps.length);
   });
   it('a batch without an expiry is loaded unbatched and SAID, never silently (P-08)', () => {
     const plan = okPlan(req, { ...bundle, openingStock: [{ productId: 'P-SOAP', quantityMinor: 10, uom: 'each', unitCostMinor: 1_800, batchId: 'LOT-9' }] });
     expect(plan.warnings).toEqual([expect.stringContaining('batch "LOT-9": loaded WITHOUT its batch')]);
-    const body = plan.steps.find((s) => s.group === 'stock')!.body as { rules: unknown[]; lines: Record<string, unknown>[] };
-    expect(body.rules).toEqual([{ productId: 'P-SOAP', batchTracked: false }]);
+    const body = plan.steps.find((s) => s.group === 'stock')!.body as { lines: Record<string, unknown>[] };
     expect(body.lines[0]).not.toHaveProperty('batchId');
+    expect(body.lines[0]).not.toHaveProperty('expiry');
   });
   it('no opening stock → no receipt step', () => {
     expect(okPlan(req, { ...bundle, openingStock: [] }).counts.stock).toBe(0);

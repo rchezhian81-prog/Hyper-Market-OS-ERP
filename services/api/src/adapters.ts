@@ -166,7 +166,7 @@ import { attachEvidence, type Investigation } from '../../../packages/settlement
 import { project, EFFECT_ON_HAND } from '../../inventory/src/index';
 import type { Movement, Availability, InventoryDeps, StockOwnership } from '../../inventory/src/index';
 import { splitStoreValuation, type OwnedStockValue, tagsAsConcessionSales, latestTagVersions, type ConcessionTag } from '../../../packages/concession/src/index';
-import type { GoodsReceiptDeps, GrnRecord } from '../../inventory/src/goods-receipt';
+import type { GoodsReceiptDeps, GrnRecord, StoredReceiptPolicy } from '../../inventory/src/goods-receipt';
 import { weightedAverageValuation, type ValuationMovement } from '../../../packages/stock/src/valuation';
 import { agedStockLots, type DatedMovement } from '../../../packages/stock/src/ageing-source';
 import type { MatchResult, BankChangeRequest, PurchaseDeps } from '../../purchase/src/index';
@@ -3917,11 +3917,9 @@ async function unitCostHeldFor(store: EventStore, tenantId: string, productId: s
 }
 
 /**
- * Deliveries booked in on a store screen and relayed through the box (SP-2b · F11): the same GRN register and atomic
- * commit as the direct route, plus what head office knows that the screen does not — product rules from the published
- * catalogue, unit cost from its own valuation, ordered quantities from the purchase order, who the receiver really is.
- * No tenant receiving-tolerance register exists yet (F03 → SP-4), so `receiptPolicy` is honestly `undefined` and the
- * route applies and FLAGS the default.
+ * Deliveries booked in on a store screen and relayed through the box (SP-2b · F11): the same GRN register, product
+ * master, tolerance policy and atomic commit as the direct route, plus what head office knows that the screen does not —
+ * unit cost from its own valuation, ordered quantities from the purchase order, who the receiver really is.
  */
 export function syncedGoodsReceiptAdapter(input: {
   readonly store: EventStore;
@@ -3930,11 +3928,6 @@ export function syncedGoodsReceiptAdapter(input: {
   return {
     ...goodsReceiptAdapter(input),
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
-    productRule: async (tenantId, productId): Promise<ProductReceiptRules | undefined> => {
-      const pack = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
-      const product = pack?.snapshot.products.find((p) => p.productId === productId);
-      return product === undefined ? undefined : { productId, batchTracked: product.batchTracked ?? false };
-    },
     unitCostMinor: (tenantId, productId) => unitCostHeldFor(input.store, tenantId, productId),
     orderedByProduct: async (tenantId, poId) => {
       const po = (await foldPurchaseOrders(input.store, tenantId)).get(poId);
@@ -3943,7 +3936,6 @@ export function syncedGoodsReceiptAdapter(input: {
       for (const line of po.lines) ordered[line.productId] = (ordered[line.productId] ?? 0) + line.orderedQty;
       return ordered;
     },
-    receiptPolicy: () => undefined,
   };
 }
 
@@ -5037,23 +5029,49 @@ interface StockSnapshot {
   readonly balances: readonly Availability[];
 }
 
+const RECEIPT_POLICY_STREAM = streamName(STREAM.inventory, 'receipt-policy');
+
+/** One inbound movement in the SAME format the inventory adapter uses, so the availability projection folds it as any other (mv-<movementId>). */
+const movementEvent = (tenantId: string, m: Movement) => ({
+  stream: STREAM.inventory,
+  event: makeEvent({
+    id: `mv-${m.movementId}`,
+    type: 'InventoryMoved',
+    occurredAt: m.occurredAt,
+    idempotencyKey: `mv-${tenantId}-${m.movementId}`,
+    source: 'api/inventory',
+    payload: m,
+  }),
+});
+
 /**
  * The goods-receipt (GRN) store (M07-FR-01/02/03 · D03-FR-02) — the durable cloud record of every delivery
  * received. A GRN is a `GoodsReceived` event on the tenant's GRN stream; its SELLABLE lines are inbound
  * `received` movements on the shared inventory stream (so availability learns about the receipt, M08) — and
  * the two are ONE atomic append (FND-01), so a GRN never lands with its movements missing. Idempotent on the
  * GRN id, so a re-scan / re-sync is one effect (§31.1).
+ *
+ * SP-4 (ii) / F03: the product's tracking rule is read from the PUBLISHED CATALOGUE (the product master the tills
+ * run on) and the tolerances from the tenant's own receipt-policy stream — never the body. A held over-tolerance
+ * excess is decided by a second event, `GoodsReceiptExcessDecided`, appended atomically with the movements it
+ * releases; the fold takes the latest per GRN id (append-only, hard rule #2).
  */
 export function goodsReceiptAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
-}): GoodsReceiptDeps {
+}): Omit<GoodsReceiptDeps, 'recordAudit'> {
   const grnStream = streamName(STREAM.purchase, 'grn');
+  // Two event types, one register: the receipt as recorded, then (SP-4 (ii)) its excess decision, latest per GRN id.
+  const fold = async (tenantId: string): Promise<readonly GrnRecord[]> => {
+    const byId = new Map<string, GrnRecord>();
+    for (const g of await allOf<GrnRecord>(input.store, tenantId, grnStream, 'GoodsReceived')) byId.set(g.grnId, g);
+    for (const d of await allOf<GrnRecord>(input.store, tenantId, grnStream, 'GoodsReceiptExcessDecided')) byId.set(d.grnId, d);
+    return [...byId.values()];
+  };
   return {
     now: input.now,
-    grn: async (tenantId, grnId) =>
-      (await allOf<GrnRecord>(input.store, tenantId, grnStream, 'GoodsReceived')).find((g) => g.grnId === grnId),
-    all: (tenantId) => allOf<GrnRecord>(input.store, tenantId, grnStream, 'GoodsReceived'),
+    grn: async (tenantId, grnId) => (await fold(tenantId)).find((g) => g.grnId === grnId),
+    all: fold,
     commit: async (tenantId, record, movements, key) => {
       await input.store.appendBatch(tenantId, [
         {
@@ -5067,19 +5085,43 @@ export function goodsReceiptAdapter(input: {
             payload: record,
           }),
         },
-        // One inbound movement per sellable line, in the SAME format the inventory adapter uses, so the
-        // availability projection folds them exactly as any other movement (mv-<movementId>).
-        ...movements.map((m) => ({
-          stream: STREAM.inventory,
+        ...movements.map((m) => movementEvent(tenantId, m)),
+      ]);
+    },
+    // The product master's word on tracking (F03): the published catalogue is the master the whole estate runs on.
+    productRule: async (tenantId, productId): Promise<ProductReceiptRules | undefined> => {
+      const pack = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
+      const product = pack?.snapshot.products.find((p) => p.productId === productId);
+      return product === undefined ? undefined : { productId, batchTracked: product.batchTracked ?? false };
+    },
+    receiptPolicy: (tenantId) => latest<StoredReceiptPolicy>(input.store, tenantId, RECEIPT_POLICY_STREAM, 'ReceiptPolicySet'),
+    recordReceiptPolicy: async (tenantId, policy) => {
+      await input.store.append(tenantId, RECEIPT_POLICY_STREAM, makeEvent({
+        id: `receipt-policy-${tenantId}-${policy.setAt}`,
+        type: 'ReceiptPolicySet',
+        occurredAt: policy.setAt,
+        idempotencyKey: `receipt-policy-${tenantId}-${policy.setAt}-${policy.setBy}`,
+        source: 'api/inventory',
+        payload: policy,
+      }));
+    },
+    // The decision and the movements it releases are ONE append (FND-01): the excess never reaches stock twice, and never
+    // reaches it without the decision that allowed it.
+    commitExcessDecision: async (tenantId, record, movements, key) => {
+      await input.store.appendBatch(tenantId, [
+        {
+          stream: grnStream,
           event: makeEvent({
-            id: `mv-${m.movementId}`,
-            type: 'InventoryMoved',
-            occurredAt: m.occurredAt,
-            idempotencyKey: `mv-${tenantId}-${m.movementId}`,
+            id: `grn-excess-${record.grnId}-${key}`,
+            type: 'GoodsReceiptExcessDecided',
+            occurredAt: record.excessDecision?.decidedAt ?? input.now(),
+            // One decision per receipt: the decide step refuses a conflicting second one before it gets here.
+            idempotencyKey: `grn-excess-${tenantId}-${record.grnId}`,
             source: 'api/inventory',
-            payload: m,
+            payload: record,
           }),
-        })),
+        },
+        ...movements.map((m) => movementEvent(tenantId, m)),
       ]);
     },
   };

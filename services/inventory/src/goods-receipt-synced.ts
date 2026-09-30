@@ -22,34 +22,25 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  captureReceipt, availableFromReceipt, IncompleteCaptureError,
-  type CapturedLine, type ProductReceiptRules, type ReceiptPolicy, type CapturedReceipt,
+  captureReceipt, availableFromReceipt, heldFromReceipt, IncompleteCaptureError,
+  type CapturedLine, type CapturedReceipt,
 } from '../../../packages/receiving/src/index';
-import type { AuditEntry } from '../../../packages/audit/src/index';
-import type { Movement } from './index';
-import type { GoodsReceiptDeps, GrnRecord } from './goods-receipt';
+import {
+  DEFAULT_RECEIPT_POLICY, RECEIPT_FLAGS, rulesFromMaster, policyInForce, inboundMovements,
+  type GoodsReceiptDeps, type GrnRecord, type ReceiptFlag,
+} from './goods-receipt';
 
-/** The tolerance policy applied when the tenant has set none — and the record says so (`default_policy`). */
-export const DEFAULT_RECEIPT_POLICY: ReceiptPolicy = Object.freeze({ excessToleranceBp: 0, shortageToleranceBp: 0, nearExpiryDays: 30 });
-
-export const RECEIPT_FLAGS = Object.freeze([
-  'receiver_unknown', 'receiver_lacks_authority', 'product_rules_unverified', 'cost_unknown',
-  'no_purchase_order', 'order_unknown', 'default_policy',
-] as const);
-export type ReceiptFlag = (typeof RECEIPT_FLAGS)[number];
+// The flag vocabulary and the default policy live with the direct route since SP-4 (ii) (both routes read the same
+// master and policy); re-exported here for the readers that learned them on this module.
+export { DEFAULT_RECEIPT_POLICY, RECEIPT_FLAGS, type ReceiptFlag };
 
 export interface SyncedGoodsReceiptDeps extends GoodsReceiptDeps {
   /** The permissions the named user holds through their grants; `undefined` when they hold none (an unknown name). */
   readonly permissionsOfUser: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
-  /** The product's receiving rules from the product master; `undefined` when the product is not on the master. */
-  readonly productRule: (tenantId: string, productId: string) => Promise<ProductReceiptRules | undefined> | ProductReceiptRules | undefined;
   /** The cloud's own unit cost for the product (weighted average of what it cost to buy); `undefined` when never costed. */
   readonly unitCostMinor: (tenantId: string, productId: string) => Promise<number | undefined> | number | undefined;
   /** Ordered quantity per product on a purchase order; `undefined` when the PO is unknown to head office. */
   readonly orderedByProduct: (tenantId: string, poId: string) => Promise<Readonly<Record<string, number>> | undefined> | Readonly<Record<string, number>> | undefined;
-  /** The tenant's receiving tolerance policy, or `undefined` when none has been set (the default applies, flagged). */
-  readonly receiptPolicy: (tenantId: string) => Promise<ReceiptPolicy | undefined> | ReceiptPolicy | undefined;
-  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -130,21 +121,20 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
           if (ordered === undefined) flags.push('order_unknown');
         }
 
-        // The product master's rules and the cloud's own cost — never the body (F03/F07). Unknown is SAID, then the
-        // safe fallback: untracked, unvalued (the valuation reports the units as unvalued rather than folding at ₹0).
-        const rules: ProductReceiptRules[] = [];
+        // The product master's rules, the tenant's policy and the cloud's own cost — never the body (F03/F07). Unknown
+        // is SAID, then the safe fallback: untracked, the default policy, unvalued (the valuation reports the units as
+        // unvalued rather than folding at ₹0). The same helpers the direct route runs.
+        const master = await rulesFromMaster(deps, ctx.tenantId, r.lines.map((l) => l.productId));
+        if (master.unverified) flags.push('product_rules_unverified');
         const costByProduct = new Map<string, number>();
-        let rulesUnverified = false;
         let costUnknown = false;
         for (const productId of new Set(r.lines.map((l) => l.productId))) {
-          const rule = await deps.productRule(ctx.tenantId, productId);
-          if (rule === undefined) { rulesUnverified = true; rules.push({ productId, batchTracked: false }); } else rules.push(rule);
           const cost = await deps.unitCostMinor(ctx.tenantId, productId);
           if (cost === undefined) costUnknown = true; else costByProduct.set(productId, cost);
         }
-        if (rulesUnverified) flags.push('product_rules_unverified');
         if (costUnknown) flags.push('cost_unknown');
-        const policy = (await deps.receiptPolicy(ctx.tenantId)) ?? ((): ReceiptPolicy => { flags.push('default_policy'); return DEFAULT_RECEIPT_POLICY; })();
+        const inForce = await policyInForce(deps, ctx.tenantId);
+        if (inForce.defaulted) flags.push('default_policy');
 
         const captureLines: CapturedLine[] = r.lines.map((l, i) => ({
           lineId: `${grnId}:${i + 1}`,
@@ -164,7 +154,7 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
         let captured: CapturedReceipt;
         try {
           captured = captureReceipt({
-            receiptId: grnId, lines: captureLines, rules, policy,
+            receiptId: grnId, lines: captureLines, rules: master.rules, policy: inForce.policy,
             receivedOnDate: r.receivedAt.slice(0, 10), currency: 'INR',
           });
         } catch (err) {
@@ -183,25 +173,14 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
           grnId, number: r.number, poId: r.poId, warehouseId: r.warehouseId,
           receivedBy: r.receivedBy, // the RELAYED receiver — the person who booked it in at the store
           receivedAt: r.receivedAt,
-          captured, availableMinor: availableFromReceipt(captured),
+          captured, availableMinor: availableFromReceipt(captured), heldMinor: heldFromReceipt(captured),
           governanceFlags: flags, relayedBy: ctx.userId, source: r.source, storeId: r.storeId,
         };
-        // Only the SELLABLE quantity becomes availability; quarantine/rejected are on the GRN but not on-hand.
-        const movements: Movement[] = captured.lines
-          .filter((l) => l.sellableMinor > 0)
-          .map((l) => ({
-            movementId: `${grnId}:${l.lineId}`,
-            productId: l.productId,
-            locationId: record.warehouseId,
-            kind: 'received' as const,
-            quantityMinor: l.sellableMinor,
-            uom: l.uom,
-            occurredAt: r.receivedAt,
-            enteredBy: r.receivedBy,
-            ...(l.batchId !== null ? { batchId: l.batchId } : {}),
-            ...(l.expiry !== null && l.expiry !== undefined ? { expiry: l.expiry } : {}),
-            ...(costByProduct.has(l.productId) ? { unitCostMinor: costByProduct.get(l.productId) } : {}),
-          }));
+        // Only the SELLABLE quantity becomes availability; quarantine / rejected / held excess are on the GRN but not on-hand.
+        const movements = inboundMovements({
+          grnId, locationId: record.warehouseId, lines: captured.lines, quantityOf: (l) => l.sellableMinor,
+          occurredAt: r.receivedAt, enteredBy: r.receivedBy, unitCostMinorOf: (l) => costByProduct.get(l.productId),
+        });
         await deps.commit(ctx.tenantId, record, movements, ctx.idempotencyKey ?? grnId);
         await deps.recordAudit?.(ctx.tenantId, {
           actorId: r.receivedBy, action: 'receipt.record', objectType: 'goods_receipt', objectId: grnId,
@@ -209,7 +188,7 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
           before: null,
           after: {
             number: r.number, poId: r.poId ?? '', warehouseId: r.warehouseId, lines: String(r.lines.length),
-            availableMinor: String(record.availableMinor), relayedBy: ctx.userId, source: r.source, storeId: r.storeId ?? '',
+            availableMinor: String(record.availableMinor), heldMinor: String(record.heldMinor), relayedBy: ctx.userId, source: r.source, storeId: r.storeId ?? '',
             flags: flags.join(','),
           },
           correlationId: grnId,

@@ -48,6 +48,8 @@ export const SUBJECT_AUTHORITY: Readonly<Record<string, string>> = Object.freeze
   // SP-4: deciding a stock correction is the supervisor's authority (SP-3b's permission), not the mover's.
   stock_adjustment: 'inventory.adjustment.approve',
   stock_count: 'inventory.adjustment.approve',
+  // SP-4 (ii): accepting an over-tolerance delivery excess is the same supervisor's call (F03).
+  goods_receipt_excess: 'inventory.adjustment.approve',
   day_close_reopen: 'till.dayclose.approve',
   day_reopen: 'till.dayclose.approve',
   write_off: 'inventory.writeoff.threshold.set',

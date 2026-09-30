@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   captureReceipt,
   availableFromReceipt,
+  heldFromReceipt,
   IncompleteCaptureError,
   matchInvoice,
   InvalidMatchApprovalError,
@@ -115,15 +116,33 @@ describe('captureReceipt — short, excess, damage and quarantine (M07-FR-03)', 
     expect(short?.detail).toContain('credit note');
   });
 
-  it('accepts a small over-delivery, but needs approval beyond tolerance', () => {
+  it('accepts a small over-delivery, but HOLDS the excess beyond tolerance until a second person approves it (F03)', () => {
     const small = capture([line({ countedMinor: 101 })]); // 1% — within 2%
     expect(small.discrepancies[0]?.kind).toBe('excess');
     expect(small.discrepancies[0]?.requiresApproval).toBe(false);
     expect(small.requiresApproval).toBe(false);
+    expect(small.lines[0]).toMatchObject({ sellableMinor: 101, heldMinor: 0 }); // within tolerance: all of it sells
+    expect(availableFromReceipt(small)).toBe(101);
+    expect(heldFromReceipt(small)).toBe(0);
 
     const large = capture([line({ countedMinor: 130 })]); // 30% — beyond tolerance
     expect(large.discrepancies[0]?.requiresApproval).toBe(true);
+    expect(large.discrepancies[0]?.detail).toContain('held');
     expect(large.requiresApproval).toBe(true);
+    // The ORDERED 100 sell now; the 30 over the order are counted, on the receipt, and NOT sellable until approved.
+    expect(large.lines[0]).toMatchObject({ sellableMinor: 100, heldMinor: 30, quarantinedMinor: 0, rejectedMinor: 0, disposition: 'sellable' });
+    expect(availableFromReceipt(large)).toBe(100);
+    expect(heldFromReceipt(large)).toBe(30);
+    // The unit cost rides on the checked line, so the later release is valued at what the goods cost.
+    expect(large.lines[0]?.unitCost).toEqual(money(5000, INR));
+  });
+
+  it('a damaged or expired over-delivery is quarantined or rejected whole — nothing is separately held', () => {
+    const damaged = capture([line({ countedMinor: 130, condition: 'damaged' })]);
+    expect(damaged.lines[0]).toMatchObject({ sellableMinor: 0, heldMinor: 0, quarantinedMinor: 130, disposition: 'quarantine' });
+    expect(heldFromReceipt(damaged)).toBe(0);
+    const expired = capture([line({ countedMinor: 130, expiry: '2026-07-01' })]);
+    expect(expired.lines[0]).toMatchObject({ sellableMinor: 0, heldMinor: 0, rejectedMinor: 130, disposition: 'rejected' });
   });
 
   it('quarantines damaged stock — counted, present, and not available to sell', () => {

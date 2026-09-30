@@ -119,7 +119,6 @@ async function cloud(): Promise<{
     body: {
       warehouseId: WH, receivedOnDate: '2026-09-01', currency: 'INR',
       lines: [{ lineId: 'L1', productId: 'p1', orderedMinor: 100, countedMinor: 100, uom: 'ea', unitCost: { minor: 5000, currency: 'INR' }, condition: 'good' }],
-      rules: [{ productId: 'p1', batchTracked: false }], policy: { excessToleranceBp: 0, shortageToleranceBp: 0, nearExpiryDays: 30 },
     },
   })).status).toBe(201);
   expect((await h.request({

@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 762 | 463 | 463 | 59 | 256 |
+| 13 | 765 | 465 | 465 | 59 | 258 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -181,10 +181,13 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/inventory/goods-receipt` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/goods-receipt/:grnId` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/goods-receipt/:grnId` | `inventory.movement.append` | core | yes |
+| POST | `/v1/inventory/goods-receipt/:grnId/excess/decide` | `inventory.adjustment.approve` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/synced` | `inventory.receipt.sync` | core | yes |
 | POST | `/v1/inventory/movements` | `inventory.movement.append` | core | yes |
 | GET | `/v1/inventory/near-expiry` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/performance` | `inventory.availability.read` | core | — |
+| GET | `/v1/inventory/receipt-policy` | `inventory.receipt.policy.read` | core | — |
+| POST | `/v1/inventory/receipt-policy` | `inventory.receipt.policy.set` | core | yes |
 | GET | `/v1/inventory/receiving-scans` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/receiving-scans/:commandId/synced` | `inventory.receipt.sync` | core | yes |
 | GET | `/v1/inventory/sales-history` | `inventory.availability.read` | core | — |
