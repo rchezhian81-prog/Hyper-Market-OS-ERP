@@ -38,8 +38,8 @@ device, human UAT and production verification separate; approved deferrals stay 
   recovery) → SP-3 handhelds on the same route with a device credential + W2 blind count + W3 adjustment request +
   accurate badge states → SP-4 trusted approvals/policies (F03, F07), SP-4b real cashier/lane/day (F09), SP-4c till
   close + cash (F10) → SP-5/5b one stock truth for transfers and counts (F05, F06) → SP-6 GRN↔PO commitment +
-  disposition (F01) → SP-7 invoice → payable + supplier master + claims (F02, F04) → SP-8 floor indent through
-  independent receipt (F08) → SP-9 connected E2E suite on real services + real PostgreSQL → SP-10 physical device +
+  disposition (F01) → SP-7 invoice → payable + supplier master + claims (F02, F04) → SP-8/8b floor indent through
+  independent receipt, on the served screen (F08) → SP-9 connected E2E suite on real services + real PostgreSQL → SP-10 physical device +
   staff UAT (separate gates, PENDING until performed). The W2/W3/S1/S2 program of 30 Sep is folded into SP-3 in this
   order by the owner's Option 2; nothing is dropped.
 - **SP-1 — F12 FIXED: a rejected sync conflict is a visible exception, never a delivery (M31 · QG-04 · §31.1 · hard
@@ -548,12 +548,53 @@ device, human UAT and production verification separate; approved deferrals stay 
   warehouse handheld over the shared device queue; the manager's pending-indents / in-transit register on a served
   screen); the merchandising refill task does not yet raise an indent; the shelf-count save is still page-only; the
   "products nobody can sell" screen; physical device + UAT PENDING.
-- **Current-work pointer:** last verified = SP-8 (this PR); next = **SP-8b** [W08, screens] (the floor indent screen
-  served by the box — raise, see where it is, receive independently — on the shared device queue; the back-store issue
-  on the warehouse handheld against the indent; the manager's register; the merchandising refill task raising an indent
-  and the shelf-count save reaching the cloud; the "products nobody can sell" screen), then SP-9/9b; **SP-3c** (picker +
-  driver) after the core-store chain; genuine blockers: none; external gates unchanged (providers, hardware, real data,
-  pilot GO).
+- **SP-8b — the floor has a face for its ask: the Floor indents screen on the shared durable queue (F08 screen half ·
+  WF-06 · WF-07 · M09-FR-03 · M08-FR-02 · §28 · §31 · P-01 · P-03 · P-08 · hard rules #1 #2 #4 #10).** The box now
+  serves `/indents` (Inventory group, `inventory.indent.read`): the register read LIVE from head office
+  (`GET /v1/floor/indents?open=true` — the undecided asks first, then what needs a person, closed last; requested ·
+  allocated · issued · on the trolley · on the shelf · short · still owed per line; every state and flag in words, EN/TA;
+  the tenant's on-the-trolley and still-owed totals). (i) RAISE (`inventory.indent.request`): the floor names products
+  from the box's own catalogue and whole-number quantities; the session validates (no lines, a bad line, a repeated
+  product, a nameless reader, a box that named no places — each refused in words) and writes a `FloorIndentRequested` to
+  the SAME durable device queue the manager's decisions use (`sre.indents.outbox.<storeId>`, SP-2) BEFORE it says saved;
+  the shared relay hands it to the box's `/lane/outbox` after every save and whenever the page comes back (online ·
+  focus · pageshow · visible — never a timer), the box relays it to the new `POST /v1/floor/indents/:id/synced`
+  (`inventory.indent.sync`: owner + the store's cashier identity) which re-runs the indent engine (unknown place,
+  repeated product refused 4xx → a visible dead-letter on the box) and RE-VERIFIES the named requester from their own
+  grants — `requester_unknown` / `requester_lacks_authority` flagged on the record, the relay recorded beside them, never
+  as the actor. (ii) COUNT IN (`inventory.movement.append`): only issues on the trolley that somebody ELSE issued are
+  offered; the counted figures (only what was seen) go the same way as a `FloorIndentReceived` to
+  `POST …/issues/:issueId/receipt/synced`, which posts `transferred_in` ONCE at the cost it left with, values a
+  shortfall, refuses the issuer and a wrong item, flags a receiver without authority; an issue counted here is offered
+  no second time. (iii) APPROVE (`inventory.indent.approve`): an online write under the approver's OWN session —
+  `{ reason }` only, a fresh idempotency key per attempt, never an approver in the body; the reader's own ask is never
+  offered and is refused before the wire; head office's refusal is shown verbatim. (iv) "Saved on this screen" lists
+  every ask and count with the five shared state words (saved on this device · trying again · with the store computer ·
+  posted · refused + the box's reason) — "posted" only on the box's word, held in ONE box-word store shared by the boot
+  session and every live re-present (found by the e2e: the first cut noted the word into the boot session while the view
+  had moved to the live one, so the screen never said "posted"). Roles: `inventory.indent.sync` on owner + cashier; pack
+  section `indentsPolicy` (userId, permissions) + `policies.warehouseId` as the back store; API surface +2. Evidence:
+  `tests/e2e/indents-delivery.e2e.ts` (7, real Chromium — on the REAL box: raise → saved here → with the store computer
+  on its fsync'd log in the requester's name → reload → still listed, sent once; socket gone → trying again, survives
+  reload, nothing on the box; against a stub cloud on one origin: the register, Approve only for another's ask, the
+  POST body and key, self-approval refused with nothing sent, a 422 verbatim, Count in handed to the box socket as a
+  `FloorIndentReceived` in the counter's name and "posted" only on its word (EN + TA), no-rights states),
+  `tests/integration/floor-indents-synced.test.ts` (4, real API + REAL box + real cloud behind a controllable fetch:
+  relayed ask once with requester + relay named, authority flagged, tenants apart, engine refusals; relayed receipt on
+  the shelf once with a valued shortfall, issuer / wrong item refused, receiver flagged, 200 the second time; box path:
+  duplicate before and after a restart, a lost reply settles to ONE posting, the issuer's own count a dead-letter with
+  the code in its reason surviving a restart and moving nothing, a cut line holds), `tests/unit/erp-indents-session.test.ts`
+  (15), `tests/guardrails/the-indents-screen-is-usable.test.ts` (17; STATE_WORDS bound to `DEVICE_ITEM_STATES`),
+  `tests/unit/device-relay.test.ts` (+2 allow-list). No rung change (M08 / M09 already E2E_VERIFIED); the matrix rows for
+  the chain and the register move to E2E_VERIFIED; F08 cloud ✔ + screen ✔, remainder → SP-8c. **Still open, honestly
+  (SP-8c):** the back-store ISSUE on the warehouse handheld against the indent; the merchandising refill task raising an
+  indent; the shelf-count save reaching the cloud; the register on the handheld; the "products nobody can sell" screen;
+  physical device + UAT PENDING.
+- **Current-work pointer:** last verified = SP-8b (this PR); next = **SP-8c** [W08, remainder] (the back-store issue on
+  the warehouse handheld — scan bin → scan item → confirm against the indent — on the shared device queue; the
+  merchandising refill task raising an indent and the shelf-count save reaching the cloud; the register on the handheld;
+  the "products nobody can sell" screen), then SP-9/9b; **SP-3c** (picker + driver) after the core-store chain; genuine
+  blockers: none; external gates unchanged (providers, hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 

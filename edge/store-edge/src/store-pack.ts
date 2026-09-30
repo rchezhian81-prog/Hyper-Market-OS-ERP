@@ -650,6 +650,14 @@ export interface PackSuppliersPolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the Floor indents screen and what they hold (SP-8b · F08 · §28): `inventory.indent.read` to see the register,
+ *  `inventory.indent.request` to raise, `inventory.indent.approve` to approve (never their own), `inventory.movement.append`
+ *  to count an issue in. Only who is looking and what they hold — the register is read live; the cloud re-checks everything. */
+export interface PackIndentsPolicy {
+  readonly userId?: string;
+  readonly permissions: readonly string[];
+}
+
 /** One import template the box ships to the data import/export screen (M30-FR-01) — the store's configured
  *  loads. The full column spec travels because the validate/commit routes take the template in the body; there
  *  is no proprietary "list templates" route. */
@@ -1194,6 +1202,8 @@ export interface StorePack {
   readonly goodsReceiptPolicy: Register<PackGoodsReceiptPolicy>;
   /** Who is on the Suppliers screen and what they hold (M06-FR-01 · §28). */
   readonly suppliersPolicy: Register<PackSuppliersPolicy>;
+  /** Who is on the Floor indents screen and what they hold (SP-8b · §28). */
+  readonly indentsPolicy: Register<PackIndentsPolicy>;
   /** Who is on the data import/export console, what they may do, and the store's import templates (M30). */
   readonly dataIoPolicy: Register<PackDataIoPolicy>;
   /** Who is on the Workforce guidance inbox screen and what they may do there (A10). */
@@ -1367,6 +1377,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     integrationHealthPolicy: notKnown(why),
     goodsReceiptPolicy: notKnown(why),
     suppliersPolicy: notKnown(why),
+    indentsPolicy: notKnown(why),
     dataIoPolicy: notKnown(why),
     workforceInboxPolicy: notKnown(why),
     essPolicy: notKnown(why),
@@ -1501,6 +1512,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     integrationHealthPolicy: section<PackIntegrationHealthPolicy>('integrationHealthPolicy'),
     goodsReceiptPolicy: section<PackGoodsReceiptPolicy>('goodsReceiptPolicy'),
     suppliersPolicy: section<PackSuppliersPolicy>('suppliersPolicy'),
+    indentsPolicy: section<PackIndentsPolicy>('indentsPolicy'),
     dataIoPolicy: section<PackDataIoPolicy>('dataIoPolicy'),
     workforceInboxPolicy: section<PackWorkforceInboxPolicy>('workforceInboxPolicy'),
     essPolicy: section<PackEssPolicy>('essPolicy'),

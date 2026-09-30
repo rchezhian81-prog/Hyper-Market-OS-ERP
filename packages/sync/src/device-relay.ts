@@ -57,6 +57,11 @@ export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surface
   // SP-6b: the worker's "delivery complete" — ONE per GRN, behind its scans in the queue; head office assembles the goods
   // receipt from the scans it already holds and folds it into the purchase order. Nothing in it moves stock.
   ReceivingCompleted: { surfaces: ['warehouse'] },
+  // SP-8b (F08): the floor's INDENT and its independent RECEIPT, captured on the served Indents screen (the ERP surface the
+  // box serves, so they ride as `manager`). Head office re-verifies the requester / receiver from their grants and runs the
+  // same indent engine the direct routes run; a refusal (unknown place, wrong item, issuer receiving) dead-letters visibly.
+  FloorIndentRequested: { surfaces: ['manager'] },
+  FloorIndentReceived: { surfaces: ['manager'] },
 });
 
 /**

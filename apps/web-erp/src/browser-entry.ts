@@ -200,6 +200,11 @@ import {
   type SupplierApprovePort, type SupplierProposePort, type ApprovePostResult, type ProposePostResult,
 } from './suppliers-session';
 import {
+  createIndentsSession,
+  type IndentsPorts, type IndentsSession, type IndentsData, type IndentRowView, type IndentLineView, type IndentIssueView, type IndentProductOption,
+  type IndentApprovePort, type ApprovePostResult as IndentApprovePostResult, type IndentBoxWords,
+} from './indents-session';
+import {
   createDataIoSession,
   type DataIoPorts, type DataIoSession, type ExportDomainView, type ExportAuditView,
   type ExportResult, type ValidateResult, type CommitResult, type ImportPreviewView,
@@ -2487,6 +2492,144 @@ export function openSupplierProposePort(): SupplierProposePort {
   };
 }
 
+// ── Floor indents (SP-8b · F08 · M09-FR-03 · §28 · §31) ────────────────────────────────────────────────────────
+
+const INDENT_READ_PERMISSION = 'inventory.indent.read';
+const INDENT_REQUEST_PERMISSION = 'inventory.indent.request';
+const INDENT_APPROVE_PERMISSION = 'inventory.indent.approve';
+
+/** What the box tells the Floor indents screen: who is looking, what they hold, the floor and back store, the products the
+ *  floor may ask for, and (optionally) a snapshot of the register. The register is a LIVE cloud read
+ *  (`GET /v1/floor/indents?open=true`); the ask and the count-in are queued on the DURABLE device queue and relayed through
+ *  the box; the approval is an online write under the reader's session. */
+export interface IndentsScreenData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+  readonly storeId?: string;
+  readonly backStoreId?: string;
+  readonly products?: readonly IndentProductOption[];
+  readonly snapshot?: IndentsData;
+}
+
+const EMPTY_INDENTS: IndentsData = Object.freeze({});
+
+/** The last problem the indents screen's device queue hit with this device's storage — shown, never silent (P-08). */
+export let indentsStorageProblem: string | undefined;
+
+/** Open the Floor indents screen's durable device queue (SP-8b), keyed per store like the manager's and the buyer's. */
+export function openIndentsOutbox(storeId: string, storage?: DeviceStorage): SyncOutbox {
+  const store = storage ?? (globalThis as { localStorage?: DeviceStorage }).localStorage;
+  const onProblem = (why: string): void => { indentsStorageProblem = why; };
+  return openDeviceOutbox(guardedStore(`sre.indents.outbox.${storeId}`, store, onProblem), onProblem);
+}
+
+export function indentsPortsFromData(data: IndentsScreenData | undefined, snapshot?: IndentsData, approvePort?: IndentApprovePort): IndentsPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    snapshot: () => snapshot ?? data?.snapshot ?? EMPTY_INDENTS,
+    // Default-deny: an absent permission list can read / write nothing (the server would refuse it anyway).
+    mayRead: () => held.has(INDENT_READ_PERMISSION),
+    mayRequest: () => held.has(INDENT_REQUEST_PERMISSION),
+    mayApprove: () => held.has(INDENT_APPROVE_PERMISSION),
+    mayReceive: () => held.has(WRITE_OFF_APPEND_PERMISSION),
+    approvePort: () => approvePort ?? null,
+  };
+}
+
+const indentsConfigFrom = (data: IndentsScreenData | undefined) => ({
+  userId: data?.userId === undefined ? null : data.userId,
+  storeId: data?.storeId ?? null,
+  backStoreId: data?.backStoreId ?? null,
+  products: data?.products ?? [],
+  now: () => new Date().toISOString(),
+});
+
+/** Build the Floor indents session, or `null` when the box carried no payload (shell shows the sample). */
+export function bootIndents(data: IndentsScreenData | undefined, outbox: SyncOutbox, snapshot?: IndentsData, approvePort?: IndentApprovePort, boxWords?: IndentBoxWords): IndentsSession | null {
+  if (data === undefined) return null;
+  return createIndentsSession(indentsConfigFrom(data), indentsPortsFromData(data, snapshot, approvePort), outbox, boxWords);
+}
+
+/** What the shell calls to move this screen's saved asks and counts along and learn where each has got to. */
+export type IndentsRelay = ManagerRelay;
+
+/** The indents screen's leg of the shared sync path: the same cross-port call to the box's lane socket the manager and
+ *  buyer screens make, as the same ERP surface. `undefined` when no box is wired: the queue still fills and survives. */
+export function openIndentsRelay(laneWriteBase: string | undefined, session: IndentsSession, outbox: SyncOutbox): IndentsRelay | undefined {
+  if (laneWriteBase === undefined) return undefined;
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return undefined;
+  return {
+    syncNow: async () => {
+      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'manager', fetch: fetchFn });
+      const statuses = await boxStatus({ boxBase: laneWriteBase, keys: session.handedKeys(), fetch: fetchFn });
+      if (statuses !== undefined) session.noteBoxStatus(statuses);
+      return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };
+    },
+  };
+}
+
+/** Read the live register — one GET, read-only — and fold it into the screen's snapshot. The figures are head office's;
+ *  nothing is recomputed here (P-02). Returns null when nothing could be read, so the shell keeps what it was showing. */
+export async function fetchIndents(): Promise<IndentsData | null> {
+  const body = await getInventory('/v1/floor/indents?open=true');
+  if (body === null || !Array.isArray(body['indents'])) return null;
+  const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const str = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
+  const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+  const indents: IndentRowView[] = (body['indents'] as Record<string, unknown>[]).map((r) => {
+    const totals = (r['totals'] ?? {}) as Record<string, unknown>;
+    const lines: IndentLineView[] = (Array.isArray(totals['lines']) ? totals['lines'] as Record<string, unknown>[] : []).map((l) => ({
+      productId: String(l['productId'] ?? ''), uom: String(l['uom'] ?? ''),
+      requestedMinor: num(l['requestedMinor']), allocatedMinor: num(l['allocatedMinor']), issuedMinor: num(l['issuedMinor']), receivedMinor: num(l['receivedMinor']),
+      inTransitMinor: num(l['inTransitMinor']), shortfallMinor: num(l['shortfallMinor']), outstandingMinor: num(l['outstandingMinor']),
+    }));
+    const issues: IndentIssueView[] = (Array.isArray(r['issues']) ? r['issues'] as Record<string, unknown>[] : []).map((i) => ({
+      issueId: String(i['issueId'] ?? ''), issuedBy: String(i['issuedBy'] ?? ''), issuedAt: String(i['issuedAt'] ?? ''),
+      state: i['state'] === 'received' ? 'received' : 'in_transit',
+      lines: (Array.isArray(i['lines']) ? i['lines'] as Record<string, unknown>[] : []).map((l) => ({ productId: String(l['productId'] ?? ''), batchId: str(l['batchId']), quantityMinor: num(l['quantityMinor']) })),
+    }));
+    return {
+      indentId: String(r['indentId'] ?? ''), state: String(r['state'] ?? 'requested'), requestedBy: String(r['requestedBy'] ?? ''), requestedAt: String(r['requestedAt'] ?? ''),
+      approvedBy: str(r['approvedBy']), fromLocationId: String(r['fromLocationId'] ?? ''), toLocationId: String(r['toLocationId'] ?? ''), reason: str(r['reason']),
+      flags: strs(r['flags']), attention: strs(r['attention']), needsAttention: r['needsAttention'] === true, lines, issues,
+    };
+  });
+  return {
+    indents,
+    ...(typeof body['asAt'] === 'string' ? { asAt: body['asAt'] } : {}),
+    ...(typeof body['inTransitMinor'] === 'number' ? { inTransitMinor: body['inTransitMinor'] } : {}),
+    ...(typeof body['outstandingMinor'] === 'number' ? { outstandingMinor: body['outstandingMinor'] } : {}),
+  };
+}
+
+/** The authenticated POST of an indent APPROVAL — the approver's OWN session, never a service token; the server attributes
+ *  the approval to the caller and refuses the requester (§28). A fresh key per attempt: approval is idempotent by STATE on
+ *  the server, and one person's refusal must never replay onto another person's click. */
+export function openIndentApprovePort(): IndentApprovePort {
+  return {
+    post: async ({ indentId, reason }): Promise<IndentApprovePostResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return { result: 'lost_link' };
+      const key = globalThis.crypto?.randomUUID?.() ?? `indent-approval-${indentId}-${reason.length}`;
+      try {
+        const res = await fetchFn(`/v1/floor/indents/${encodeURIComponent(indentId)}/approval`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          // Only the note rides along: the approver is the authenticated caller, never a body field; the allocation is head office's.
+          body: JSON.stringify(reason === '' ? {} : { reason }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { alreadyApproved?: boolean; whatHappened?: string };
+        if (res.status >= 200 && res.status < 300) return { result: body.alreadyApproved === true ? 'already_approved' : 'approved' };
+        return { result: 'refused', reason: body.whatHappened ?? 'head office did not approve the indent' };
+      } catch {
+        return { result: 'lost_link' };
+      }
+    },
+  };
+}
+
 // ── Goods-receipt review (M07-FR-02/03 — read-only) ──────────────────────────────────────────────────────────
 
 /** What the box tells the goods-receipt review screen: who is looking, what they may read, and (optionally) a
@@ -3744,6 +3887,16 @@ interface ManagerWindow {
   goodsReceiptSession?: GoodsReceiptSession;
   suppliersData?: SuppliersScreenData;
   suppliersSession?: SuppliersSession;
+  indentsData?: IndentsScreenData;
+  indentsSession?: IndentsSession;
+  indentsOutbox?: SyncOutbox;
+  indentsRelay?: IndentsRelay;
+  indentsStorageProblem?: string;
+  /** The shell reads the live register through this and re-presents it over the SAME durable queue — a GET, never a write. */
+  indents?: {
+    refresh(): Promise<IndentsData | null>;
+    present(snapshot: IndentsData): IndentsSession;
+  };
   /** The shell reads the live supplier list through this and re-presents it — a GET read, never a write. */
   suppliers?: {
     refresh(): Promise<SuppliersData | null>;
@@ -4965,6 +5118,30 @@ if (browserWindow !== undefined) {
         suppliersPortsFromData(suppliersData, snapshot, supplierApprovePort, supplierProposePort),
       ),
     };
+  }
+  // The Floor indents screen (SP-8b · F08 · §28 · §31): boots from the box's policy (who + what they hold + the floor and
+  // back store + the products), over the DURABLE device queue opened per store — an ask or a count-in is on the device
+  // before the screen says "saved" and survives a reload; the relay hands the queue to the box; the approval is an online
+  // write the session refuses for the requester before any POST.
+  const indentsData = browserWindow.indentsData;
+  if (indentsData !== undefined) {
+    const indentsOutbox = openIndentsOutbox(indentsData.storeId ?? 'store-1');
+    const indentApprovePort = openIndentApprovePort();
+    // ONE box-word store for every session over this queue: the relay notes "posted" / "refused" once, and the live
+    // session the view builds after each register read shows the same word (P-08 — never lost in a re-read).
+    const indentBoxWords: IndentBoxWords = new Map();
+    const indentsScreen = bootIndents(indentsData, indentsOutbox, undefined, indentApprovePort, indentBoxWords);
+    if (indentsScreen !== null) {
+      browserWindow.indentsSession = indentsScreen;
+      browserWindow.indentsOutbox = indentsOutbox;
+      browserWindow.indents = {
+        refresh: fetchIndents,
+        present: (snapshot) => createIndentsSession(indentsConfigFrom(indentsData), indentsPortsFromData(indentsData, snapshot, indentApprovePort), indentsOutbox, indentBoxWords),
+      };
+      const indentsRelay = openIndentsRelay(browserWindow.laneWriteBase, indentsScreen, indentsOutbox);
+      if (indentsRelay !== undefined) browserWindow.indentsRelay = indentsRelay;
+      if (indentsStorageProblem !== undefined) browserWindow.indentsStorageProblem = indentsStorageProblem;
+    }
   }
   // The goods-receipt review screen (M07 — read-only): boots from the box's policy (who + whether they hold
   // inventory.availability.read), then the shell refreshes the GRN list with a live GET. It changes nothing —

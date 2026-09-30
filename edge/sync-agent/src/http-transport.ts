@@ -189,6 +189,12 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   // who checked it. The synced route re-verifies both from their grants and records the invoice; the match joins it to
   // the stored order and receipts later. `invoiceId` is a plain payload field matching the path param.
   SupplierInvoiceCaptured: '/v1/purchase/invoices/:invoiceId/synced',
+  // SP-8b (F08): the floor's indent and its independent receipt from the served Indents screen. The synced routes
+  // re-verify the REQUESTER / RECEIVER from their own grants (record-and-flag) and run the same indent engine; a
+  // refusal (unknown place, wrong item, the issuer receiving their own issue) is 422 → dead-lettered here by name.
+  // `indentId` / `issueId` are plain top-level payload fields matching the path params.
+  FloorIndentRequested: '/v1/floor/indents/:indentId/synced',
+  FloorIndentReceived: '/v1/floor/indents/:indentId/issues/:issueId/receipt/synced',
   MigrationExceptionResolved: '/v1/migration/exceptions/:exceptionId/resolution/synced',
   MigrationTotalSigned: '/v1/migration/control-totals/:totalId/signature/synced',
 };

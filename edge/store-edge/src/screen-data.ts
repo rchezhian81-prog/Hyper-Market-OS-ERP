@@ -50,14 +50,14 @@ import {
   basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
-import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackSubstitutionExceptionPolicy, PackDayBookPolicy, PackDocumentTemplatePolicy, PackReturnGovernancePolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackStoredValuePolicy, PackIntegrationHealthPolicy, PackGoodsReceiptPolicy, PackSuppliersPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy, PackRosteringPolicy, PackChecklistPolicy, PackProductionPolicy, PackFacilitiesPolicy } from './store-pack';
+import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackSubstitutionExceptionPolicy, PackDayBookPolicy, PackDocumentTemplatePolicy, PackReturnGovernancePolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackStoredValuePolicy, PackIntegrationHealthPolicy, PackGoodsReceiptPolicy, PackSuppliersPolicy, PackIndentsPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy, PackRosteringPolicy, PackChecklistPolicy, PackProductionPolicy, PackFacilitiesPolicy } from './store-pack';
 import { DEFAULT_WRITE_OFF_THRESHOLD_MINOR } from '../../../packages/waste/src/waste';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'write-off-capture', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'substitution-exceptions', 'day-book', 'document-templates', 'return-governance', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'stored-value', 'integration-health', 'goods-receipt', 'suppliers', 'data-io', 'workforce', 'ess', 'rostering', 'checklist', 'production', 'facilities', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
+  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'write-off-capture', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'substitution-exceptions', 'day-book', 'document-templates', 'return-governance', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'stored-value', 'integration-health', 'goods-receipt', 'suppliers', 'indents', 'data-io', 'workforce', 'ess', 'rostering', 'checklist', 'production', 'facilities', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1708,6 +1708,30 @@ export function suppliersPayload(input: ScreenInput): Record<string, unknown> | 
 }
 
 /**
+ * The floor indents payload (SP-8b · F08 · M09-FR-03 · §28). Who is looking and what they hold — `inventory.indent.read` to
+ * see the register, `inventory.indent.request` to raise, `inventory.indent.approve` to approve, `inventory.movement.append`
+ * to count an issue in — plus the two places the ask runs between (the floor = the store's location, the back store = the
+ * pack's warehouse) and the products the floor may ask for (the box's own catalogue, so an ask names a product head office
+ * knows). The register itself is read live from the cloud, never shipped in the pack; the cloud re-checks every authority.
+ */
+export function indentsPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.indentsPolicy.known) return null;
+  const policy: PackIndentsPolicy = input.pack.indentsPolicy.value;
+
+  const payload: Record<string, unknown> = { permissions: policy.permissions };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+  if (input.pack.policies.known) {
+    payload['storeId'] = input.pack.policies.value.storeId;
+    payload['backStoreId'] = input.pack.policies.value.warehouseId;
+  }
+  if (input.pack.products.known) {
+    payload['products'] = input.pack.products.value.map((p) => ({ productId: p.productId, name: p.name, ...(p.nameTa === undefined ? {} : { nameTa: p.nameTa }), uom: p.uom }));
+  }
+
+  return payload;
+}
+
+/**
  * The data import/export console payload (M30-FR-01/02/03 · P-06).
  *
  * `null` when the box has not been told who is on the screen. The exportable domains and the export log are read
@@ -1988,6 +2012,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   'integration-health': 'integrationHealthData',
   'goods-receipt': 'goodsReceiptData',
   suppliers: 'suppliersData',
+  indents: 'indentsData',
   'data-io': 'dataIoData',
   workforce: 'workforceInboxData',
   ess: 'essData',
@@ -2039,6 +2064,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   'integration-health': integrationHealthPayload,
   'goods-receipt': goodsReceiptPayload,
   suppliers: suppliersPayload,
+  indents: indentsPayload,
   'data-io': dataIoPayload,
   workforce: workforcePayload,
   ess: essPayload,

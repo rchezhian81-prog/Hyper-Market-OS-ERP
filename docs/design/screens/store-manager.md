@@ -76,3 +76,16 @@ Incidents · Staff tasks · Close · Exceptions. All handle the §27.1 states.
   still listed, nothing held on the screen.
 - Still open: a held material count variance is approved-then-applied in SP-4; the counts review screen does not yet
   list relayed counts (SP-9); the handhelds join the same path in SP-3.
+
+## Measured (SP-8b, 30 September 2026 — audit finding F08, the floor indent register and approval)
+- The manager's pending-indents / in-transit register is the served **Floor indents** screen (`/indents`, Inventory
+  group, `inventory.indent.read`) — not a tile on this screen, on purpose: one register for the floor, the counter and the
+  manager, read live from head office. The manager APPROVES there with a reason (`inventory.indent.approve`), only an ask
+  somebody else raised; their own ask is never offered and is refused before anything is sent (§28). The approval is an
+  online write under the manager's own session — never a body field naming the approver — and head office's refusal is
+  shown verbatim.
+- Measured in a real browser (`tests/e2e/indents-delivery.e2e.ts`): the register ordered asks-first with the figures head
+  office holds; Approve offered only for the floor's ask; the POST carries `{ reason }` and an idempotency key and nothing
+  else; the ask no longer waits after the re-read; the manager's own ask refused with nothing sent.
+- Still open: the back-store issue against the indent on the handheld (SP-8c); the manager's home tile counting open
+  indents is not built (P-03 says the register is where the work is, not a second count on this screen).

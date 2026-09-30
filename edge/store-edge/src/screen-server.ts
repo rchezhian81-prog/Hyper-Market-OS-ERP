@@ -92,6 +92,7 @@ export const APP_SHELL: Readonly<Record<ScreenName, AppShell>> = Object.freeze({
   'integration-health': { dir: 'web-erp', file: 'integration-health.html' },
   'goods-receipt': { dir: 'web-erp', file: 'goods-receipt.html' },
   suppliers: { dir: 'web-erp', file: 'suppliers.html' },
+  indents: { dir: 'web-erp', file: 'indents.html' },
   'data-io': { dir: 'web-erp', file: 'data-io.html' },
   'workforce': { dir: 'web-erp', file: 'workforce.html' },
   ess: { dir: 'web-erp', file: 'ess.html' },
