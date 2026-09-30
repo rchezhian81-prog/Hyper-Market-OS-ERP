@@ -1096,11 +1096,61 @@ accounts.
   item; (b) 13 pages still lack the "nobody signed in" strip because their payloads carry no viewer — the box
   learning the viewer is the G5b question; (c) the till and the three handhelds keep their own badge code (device
   outbox semantics) — one implementation across app folders would need the CSS-style sync machinery, deferred.
+- **Stage G slice 5b — the one menu on every ERP page, drawn from each person's real permissions (§27 role
+  surfaces · P-07 · P-04 · P-08 · NFR-08).** Before: no ERP page linked to any other (zero cross-page links on 46
+  pages); the role-scoped catalogue `apps/web-erp/src/navigation.ts` existed and NOTHING rendered it; 18 of its 43
+  items gated on a permission no route checked and no role granted (`erp.dashboard.view`, `cash.view`, `sales.view`,
+  `admin.users.manage` … — a menu drawn from it would have shown nobody the Overview, Catalogue, Purchasing or
+  Trading sections); 17 of the 41 screens the store computer serves had no item at all; 20 items pointed at paths the
+  box does not serve. Now: **the box works the menu out per request** (`edge/store-edge/src/screen-navigation.ts`) from
+  the pack's `roles` + `roleAssignments` registers (the same tables `packages/rbac` guards every action with) and the
+  viewer the screen's own payload names, through `navigationFor` filtered to the screens THIS box serves, and injects
+  it as `window.sreNavigation` on every ERP page (the till, handhelds and apps get none — one job each). Default deny,
+  said out loud: no named viewer → no sections and the reason; no role register → no sections and that reason; a
+  malformed register row grants nothing. **The chrome draws it** (`sre-chrome.js`): a "☰ Screens / திரைகள்" button at
+  the touch target, a `<nav>` landmark named differently from the in-page "Sections" tabs, groups and links in the
+  reader's language, the served screen `aria-current`, Escape closes and returns focus; a menu link may name a tab
+  (`/admin/?tab=people`) and the chrome opens it on arrival; a page opened off the box draws no menu at all. **The
+  catalogue reconciled** (59 items): every screen the box serves has a door; every door's path resolves through the
+  box's own router; every door is gated on the permission the screen itself checks (its browser-entry gate) or its own
+  cloud route checks, AND one the role catalogue (`services/api/src/roles.ts`) grants — proven by
+  `tests/unit/erp-navigation-catalogue.test.ts` reading the routes' own source; 16 items added (buying, shelves & space,
+  expiry & recalls, production, warehouse, reports, service desk, store credit, outside access, tills & devices,
+  connections, facilities, AI control, migration, rota, checklists); 7 permissions corrected on items that stayed
+  (dashboard → `till.dayclose.read`, products → `catalogue.pack.read`, pricing → `price.change.propose`, promotions →
+  `promotion.launch`, finance → `finance.period.read`, users → `identity.role.read`, audit → `audit.retention.read`);
+  **8 items retired on the record** (`RETIRED_NAV_ITEMS`, each with its reason and the item that covers it): approvals,
+  exceptions and cash are tabs of the manager's screen; purchase-orders a tab of buying; receiving = goods receipt;
+  stock = stock health; sales = the first report; returns = the service desk. Six items stay in the catalogue but are
+  **kept off the box's menu** and named: `unserved` (the page exists, nothing serves it — payroll, my-payslip, store
+  setup) and `unbuilt` (no page — suppliers, reconciliation, settings). Every label has a Tamil twin; group headings
+  too (a new Staff group holds rota, checklists, workforce). Evidence: `tests/unit/screen-navigation.test.ts` (11),
+  `tests/unit/erp-navigation-catalogue.test.ts` (10), `tests/unit/screen-router.test.ts` (+3 `screenOfPath`),
+  `tests/unit/web-erp-shell.test.ts` (fixtures moved onto real permissions), `tests/integration/the-screens-are-fed.test.ts`
+  (+6 over the real screen socket: a floor manager's exact menu with counts current; every door answers 200 with the
+  target's own menu; the manager's page names nobody → `no_user`; no register → `no_roles`; a named stranger → an
+  empty list; the till and handhelds carry none), `tests/guardrails/every-erp-page-shares-the-chrome.test.ts` (+6: the
+  chrome hard-codes no path; no page draws its own cross-page link; keyboard rules; the foundation styles it),
+  `tests/e2e/the-erp-pages-meet-the-spec.e2e.ts` (+4 in real Chromium: the menu at 1280 and 360 audited OPEN to zero
+  findings in English and Tamil, Escape/focus, the reasons when empty, the `?tab=` opener and single current item, and
+  on the REAL store computer with a real pack: the box's menu, a link opening a served screen whose own menu marks it
+  current). **Findings recorded, not fixed here:** (a) the manager's page names no viewer, so its menu says "nobody is
+  named" — the pack carries no manager identity (the G5c finding, next); (b) five pages are served by NOTHING in the
+  product — `payroll.html`, `payroll-payslip.html`, `setup.html`, `company-report.html`, `erasure-console.html` only
+  ever open under a test's static server; the first three are `unserved` items, the last two have no item — an owner
+  decision on where they are served (box or head office) is needed before they can join the menu; (c) `count.view` is
+  the one gate the counts screen applies that no cloud route checks (the counts read route checks
+  `inventory.availability.read`) — kept because the screen itself enforces it and the role catalogue grants it; (d)
+  the manager's approvals, the service desk's returns/cases, the warehouse supervisor's decisions and the migration
+  desk's decisions are queued to in-browser outboxes nothing drains (the agent's route survey) — S1's scope names the
+  handheld outboxes; these desk outboxes are recorded for the same treatment; (e) `products` is gated on
+  `catalogue.pack.read`, which a cashier also holds (the till reads the pack) — a cashier named on an ERP page (the
+  self-service screen) would see Products; recorded as P-07 noise, not a refusal the server would make.
 - **Next — Stage G slice 2 onward (UI/UX finish across the 8 apps, consistent · modern · bilingual EN/TA):** built to the Stage 3
   design system (`docs/design/design-system.md`, §27/§27.1, QG-02, NFR-07/08, P-07) and the screen specs in
   `docs/design/screens/`, in slices: G1 one shared visual foundation — DONE above; G2 the till and manager screens to the spec's
   ≤3-interaction and arm's-length rules — 2a the honest badge and 2b the measured interaction budgets both DONE
-  above; G3 the customer app to WCAG 2.2 AA — DONE above; G4 the handhelds — DONE above; **G5 in progress — 5a DONE above, 5b next**: the ERP's 46 pages made one product (navigation, states,
+  above; G3 the customer app to WCAG 2.2 AA — DONE above; G4 the handhelds — DONE above; **G5 in progress — 5a and 5b DONE above, 5c next**: the ERP's 46 pages made one product (navigation, states,
   bilingual completeness guardrail on every page). **G5 scoped (29 Sep, measured on main):** 46 pages, 47 page
   scripts, one SW shell; a sync badge on **1** page (the manager's), none on 45; the language toggle on 44 (two
   labels in use: "EN / த" on 13, "தமிழ்" on 31; missing on company-report and erasure-console); stale/sample strips

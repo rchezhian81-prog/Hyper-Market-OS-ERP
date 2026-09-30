@@ -29,6 +29,7 @@ import { createServer, type Server, type ServerResponse, type IncomingMessage } 
 import { readFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
 import { GLOBAL_FOR, SCREENS, payloadFor, catalogueFreshness, posReceiptTemplate, type ScreenInput, type ScreenName } from './screen-data';
+import { navigationPayload } from './screen-navigation';
 
 /**
  * The address this listens on unless told otherwise — loopback, so on a shop PC nothing on the shop network
@@ -223,6 +224,15 @@ export function redirectFor(url: string): string | null {
   return `/${name}/${query === undefined ? '' : `?${query}`}`;
 }
 
+/** Which screen a menu path opens on this box — through its redirects — or null when it opens nothing here. */
+export function screenOfPath(path: string): ScreenName | null {
+  const target = redirectFor(path) ?? path;
+  const route = routeOf(target);
+  // Only a screen's own door counts: `/admin/users` would name the admin screen and a file that does not exist.
+  if (route === null || route.file !== APP_SHELL[route.screen].file) return null;
+  return route.screen;
+}
+
 /**
  * Refuse anything that tries to climb out of the screen's own folder.
  *
@@ -313,11 +323,18 @@ export function startScreenServer(input: {
       // (M01-FR-02): its own global beside the catalogue, so a bill printed offline carries the words and the
       // version. Absent when none has reached this box — the till prints with its defaults and stamps nothing.
       const receiptTemplate = route.screen === 'pos' ? posReceiptTemplate(snap) : undefined;
+      // Every ERP page also gets its menu — the screens THIS viewer may open on THIS box, worked out per request
+      // from the pack's role register and the screen's named viewer (Stage G slice 5b · §27 · P-07). Only the ERP:
+      // the till, the handhelds and the apps are one job each and have no menu to draw.
+      const navigation = APP_SHELL[route.screen].dir === 'web-erp'
+        ? navigationPayload({ screen: route.screen, pack: snap.pack, payload, screenOf: screenOfPath })
+        : undefined;
       send(res, 200, type, injectPayload(
         body.toString('utf8'), GLOBAL_FOR[route.screen], payload,
         {
           catalogueFreshness: catalogueFreshness(snap),
           ...(receiptTemplate === undefined ? {} : { posReceiptTemplate: receiptTemplate }),
+          ...(navigation === undefined ? {} : { sreNavigation: navigation }),
           // The one write a screen makes back to the box: the manager's day close (M14-FR-04). Only
           // present when this box serves a lane socket to post to; the screen falls back to read-only
           // (a local preview) when it is absent.

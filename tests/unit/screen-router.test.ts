@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { redirectFor, routeOf, SCREEN_ALIASES } from '../../edge/store-edge/src/screen-server';
+import { redirectFor, routeOf, screenOfPath, SCREEN_ALIASES } from '../../edge/store-edge/src/screen-server';
 import { SCREENS } from '../../edge/store-edge/src/screen-data';
 
 // The store box's screen router (P-07). The ERP menu carries "Products", "Pricing" and "Promotions" as
@@ -44,5 +44,25 @@ describe('menu-alias redirects open the catalogue screen on the right tab (M05 Â
     for (const name of Object.keys(SCREEN_ALIASES)) {
       expect((SCREENS as readonly string[]).includes(name), `${name} both an alias and a real screen`).toBe(false);
     }
+  });
+});
+
+describe('the menu resolves each of its paths to the screen it opens on this box (Stage G slice 5b)', () => {
+  it('a bare route, a slashed route and a tab deep-link all name their screen', () => {
+    expect(screenOfPath('/counts')).toBe('counts');
+    expect(screenOfPath('/counts/')).toBe('counts');
+    expect(screenOfPath('/manager/?tab=approvals')).toBe('manager');
+    expect(screenOfPath('/admin/?tab=people')).toBe('admin');
+  });
+
+  it('an alias names the screen it redirects to', () => {
+    expect(screenOfPath('/pricing')).toBe('catalogue');
+    expect(screenOfPath('/products')).toBe('catalogue');
+  });
+
+  it('a path this box does not serve names nothing â€” never a guessed screen', () => {
+    expect(screenOfPath('/payroll')).toBeNull();
+    expect(screenOfPath('/admin/users')).toBeNull();
+    expect(screenOfPath('/')).toBeNull();
   });
 });
