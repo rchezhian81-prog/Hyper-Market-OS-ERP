@@ -32,3 +32,9 @@ Incidents · Staff tasks · Close · Exceptions. All handle the §27.1 states.
 - A manager clears an approval in ≤3 taps with a reason recorded.
 - Day close is blocked with a clear list when exceptions remain.
 - Tasks route to the right staff and complete offline.
+
+## Measured (Stage G slice 5c)
+- The served screen runs as the person the store pack names (`managerPolicy.userId`), in the pack's branch, on the
+  shop's trading day, up to the pack's approval limit. It shows "Running as <id>" in the header.
+- When the pack names nobody, the screen says so (the nobody strip) and lists what is waiting but refuses every
+  decision, receipt, count and close with that reason — never a stand-in identity (§28, hard rule #4).

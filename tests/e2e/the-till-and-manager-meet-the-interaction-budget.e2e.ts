@@ -41,13 +41,14 @@ const TILL_PACK = JSON.stringify({
 });
 
 /**
- * A store pack with one approval the served manager may clear. The served manager boots as user `manager` with the
- * default branch scope `store-1` and no approval limit (bootManager's defaults — the box does not yet pass the pack's
- * branch through; recorded in STATUS as a follow-on), so the request is one routed to THIS store from somebody else.
+ * A store pack with one approval the served manager may clear. The served manager is the person the pack NAMES
+ * (`managerPolicy`, Stage G slice 5c), in the pack's own branch; the request is one routed to that branch from
+ * somebody else, within the named limit.
  */
 const MANAGER_PACK = JSON.stringify({
   version: 1,
-  policies: { tradingDayCutoff: '02:00', storeId: 'store-1' },
+  policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1' },
+  managerPolicy: { userId: 'u-mgr', approvalLimitMinor: 500_000 },
   lossPreventionRules: [],
   approvals: [{ id: 'a1', subjectType: 'price_change', subjectRef: 'Toor dal 1kg', requestedBy: 'u-buyer', branchId: 'store-1', valueMinor: 45_000 }],
 });

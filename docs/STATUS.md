@@ -1146,11 +1146,47 @@ accounts.
   handheld outboxes; these desk outboxes are recorded for the same treatment; (e) `products` is gated on
   `catalogue.pack.read`, which a cashier also holds (the till reads the pack) — a cashier named on an ERP page (the
   self-service screen) would see Products; recorded as P-07 noise, not a refusal the server would make.
+- **Stage G slice 5c — the served manager is the person the store NAMES; an unknown unit never prices as ₹NaN; the
+  last two English-only pages join the toggle (§28 · hard rule #4 · P-08 · NFR-08).** (a) **Identity.** The served
+  manager screen booted as a user called `manager` in branch `store-1` with no approval limit and trading day
+  `1970-01-01`, whatever the pack said — a shared identity deciding §28 approvals and locking days under a name no
+  person holds. Now the store pack carries `managerPolicy` (`userId`, `approvalLimitMinor`; sample JSON updated), the
+  box's manager payload passes it through with the pack's `storeId`, `branchId` (null = company-wide, kept as null),
+  `tradingDayCutoff`, `countApprovalThresholdMinor`, `warehouseId` and the shop's own `tradingDay`, and `bootManager`
+  reads them (an explicit configuration still wins, for tests and standalone shells). **Nobody named means nobody**:
+  the session's `manager` is null, the registers still show, and every decision (`nobody_named` refusal), receipt
+  (`NobodyNamedError`), count (`nobody_named` refusal), day close (a `nobody_named` blocker) and box close refuses with
+  the reason; the queue lists every request as not actionable with `nobody_named`. The page shows "Running as <id>" in
+  the header and the nobody strip when the store named nobody, in both languages; the old default is gone
+  (`bootManager()` with nothing names nobody). The 5b menu now appears on the manager's page (the viewer is named).
+  Passing the real trading day exposed a second accident: the served screen's local "day has not ended" pre-check
+  had only ever been vacuous (day 1970); on the running day it would block every close. Now that check is the
+  screen's own only when NO store computer is wired (the browser preview close); with a box wired the BOX is the
+  authority — it closes the most recently ended trading day and refuses one that has not (M14-FR-04) — and the
+  screen lists only the two registers and the named-manager gate before the tap.
+  (b) **Unknown unit.** `"each"` where the engine knows `ea` reached the till and priced as ₹NaN. The box now excludes
+  such a product from the till payload and names it (`unknown unit of measure "each" on the catalogue`, the same
+  register as a missing tax rate; a recalled product still ships WITH its block), and the catalogue engine refuses the
+  scan by name (`UnknownUnitError`: "Cannot sell Odd Item: its unit "each" is not one this till knows.") so the basket
+  stays empty and finite. (c) **Bilingual.** `company-report` (both languages inline, no toggle) and `erasure-console`
+  (English only) now carry a word table in both languages, the one toggle in a header like every other page, and
+  repaint their last answer on a language change without asking head office again; the chrome guardrail's English-only
+  exemption is gone. Evidence: `tests/unit/erp-manager-boot.test.ts` (+6), `tests/unit/edge-feeds-the-screens.test.ts`
+  (+5), `tests/unit/catalogue.test.ts` (+2), `tests/unit/pos-view-adapter.test.ts` (+2 — the refusal by name, the
+  basket empty and finite), `tests/integration/the-screens-are-fed.test.ts` (+6 over the real socket: identity from
+  the served payload alone; a pack naming nobody serves a screen that refuses; the unit exclusion; the till's refusal),
+  `tests/guardrails/the-manager-screen-is-usable.test.ts` (+4, and the blocked/refusal/blocker word tripwires now cover
+  `nobody_named`), `tests/guardrails/every-erp-page-shares-the-chrome.test.ts` (bilingual completeness on all 45 page
+  scripts), `tests/e2e/the-erp-pages-meet-the-spec.e2e.ts` (the two pages audited in Tamil too), the till/manager
+  budget e2e (the manager pack names its manager). **Recorded, not fixed here:** the till's payload names excluded
+  products (`excludedProducts`) but no screen shows them yet — the manager or owner should see "products nobody can
+  sell" (P-08); the manager's approvals, receipts and counts still queue to an in-browser outbox nothing drains (5b
+  finding d).
 - **Next — Stage G slice 2 onward (UI/UX finish across the 8 apps, consistent · modern · bilingual EN/TA):** built to the Stage 3
   design system (`docs/design/design-system.md`, §27/§27.1, QG-02, NFR-07/08, P-07) and the screen specs in
   `docs/design/screens/`, in slices: G1 one shared visual foundation — DONE above; G2 the till and manager screens to the spec's
   ≤3-interaction and arm's-length rules — 2a the honest badge and 2b the measured interaction budgets both DONE
-  above; G3 the customer app to WCAG 2.2 AA — DONE above; G4 the handhelds — DONE above; **G5 in progress — 5a and 5b DONE above, 5c next**: the ERP's 46 pages made one product (navigation, states,
+  above; G3 the customer app to WCAG 2.2 AA — DONE above; G4 the handhelds — DONE above; **G5 DONE — 5a · 5b · 5c above**: the ERP's 46 pages made one product (navigation, states,
   bilingual completeness guardrail on every page). **G5 scoped (29 Sep, measured on main):** 46 pages, 47 page
   scripts, one SW shell; a sync badge on **1** page (the manager's), none on 45; the language toggle on 44 (two
   labels in use: "EN / த" on 13, "தமிழ்" on 31; missing on company-report and erasure-console); stale/sample strips

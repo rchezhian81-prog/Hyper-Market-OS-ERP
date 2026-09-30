@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { bootManager, openDayClosePort, portsFromData, type ManagerData } from '../../apps/web-erp/src/browser-entry';
+import { NobodyNamedError } from '../../apps/web-erp/src/manager-session';
 import { requestApproval } from '../../packages/approvals/src/index';
 import { money } from '../../packages/contracts/src/money';
 
@@ -200,5 +201,100 @@ describe('the day close reaches the store computer only when the box injected it
     const port = openDayClosePort('http://127.0.0.1:8899');
     const outcome = await port!({ dayCloseId: 'dc-b4', closedBy: 'u-mgr' });
     expect(outcome).toEqual({ closed: false, reason: 'the box fell over' });
+  });
+});
+
+describe('the served manager is the person the store NAMED — never a stand-in (Stage G slice 5c · §28 · hard rule #4)', () => {
+  const served: ManagerData = {
+    userId: 'u-meena', approvalLimitMinor: 250_000, storeId: 'store-7', branchId: 'b7',
+    tradingDay: '2026-09-29', tradingDayCutoff: '02:00', countApprovalThresholdMinor: 50_000, warehouseId: 'wh-7',
+    approvals: [
+      requestApproval({ id: 'a1', subjectType: 'refund', subjectRef: 'r1', requestedBy: 'u-cashier', branchId: 'b7', value: money(100_000, 'INR') }),
+      requestApproval({ id: 'a2', subjectType: 'refund', subjectRef: 'r2', requestedBy: 'u-cashier', branchId: 'store-1', value: money(100_000, 'INR') }),
+      requestApproval({ id: 'a3', subjectType: 'po', subjectRef: 'r3', requestedBy: 'u-buyer', branchId: 'b7', value: money(300_000, 'INR') }),
+    ],
+    openExceptions: [], unsentItems: [], tasks: [],
+  };
+
+  it('boots as the named manager, in the pack\'s branch, on the pack\'s trading day, with the pack\'s limit', () => {
+    const session = bootManager({ data: served });
+    expect(session.floor().manager).toBe('u-meena');
+    expect(session.floor().tradingDay).toBe('2026-09-29');
+    const queue = session.approvalQueue();
+    if (!queue.known) throw new Error('queue unknown');
+    const by = (id: string) => queue.rows.find((r) => r.request.id === id);
+    expect(by('a1')?.actionable).toBe(true);
+    expect(by('a2')?.blockedReason).toBe('out_of_scope'); // the OLD default branch, now another branch
+    expect(by('a3')?.blockedReason).toBe('exceeds_authority'); // ₹3,000 over the pack's ₹2,500 limit
+  });
+
+  it('a company-wide manager the pack names with branch null keeps the "all" scope', () => {
+    const session = bootManager({ data: { ...served, branchId: null, approvalLimitMinor: null } });
+    const queue = session.approvalQueue();
+    if (!queue.known) throw new Error('queue unknown');
+    expect(queue.rows.every((r) => r.actionable)).toBe(true);
+  });
+
+  it('an explicit configuration still wins over the payload — a test or a standalone shell may name its own', () => {
+    const session = bootManager({ managerId: 'u-owner', branchId: null, approvalLimitMinor: null, data: served });
+    expect(session.floor().manager).toBe('u-owner');
+  });
+
+  it('a payload that names nobody boots NOBODY: the registers show, and every action refuses with the reason', () => {
+    const { userId: _drop, ...unnamed } = served;
+    void _drop;
+    const session = bootManager({ data: unnamed });
+    expect(session.floor().manager).toBeNull();
+    expect(session.floor().approvalsWaiting).toEqual({ known: true, count: 3 });
+    expect(session.floor().approvalsIcanClear).toEqual({ known: true, count: 0 });
+
+    const queue = session.approvalQueue();
+    if (!queue.known) throw new Error('queue unknown');
+    expect(queue.rows.map((r) => r.blockedReason)).toEqual(['nobody_named', 'nobody_named', 'nobody_named']);
+
+    expect(session.decideApproval({ requestId: 'a1', decision: 'approved', reasonCode: 'within_policy', decidedAt: AT }))
+      .toEqual({ ok: false, refusal: 'nobody_named' });
+
+    const close = session.closeTheDay({ dayCloseId: 'dc-9', closedAtLocal: '2026-09-30T02:30', closedAt: '2026-09-30T02:30:00Z' });
+    expect(close.closed).toBe(false);
+    if (close.closed) return;
+    expect(close.blockers.map((b) => b.kind)).toEqual(['nobody_named']);
+
+    expect(() => session.receive({ grnId: 'g1', number: 'GRN-1', poId: null, receivedAt: AT, lines: [{ productId: 'p1', quantityMinor: 1, uom: 'ea' }] }))
+      .toThrow(NobodyNamedError);
+
+    const count = session.countStock({ countId: 'c1', productId: 'p1', locationId: 'wh-7', uom: 'ea', countedMinor: 1, reasonCode: 'shrinkage', at: AT });
+    expect(count.counted).toBe(false);
+    if (count.counted) return;
+    expect(count.refusal).toBe('nobody_named');
+  });
+
+  it('nobody named cannot close the day through the box either — the refusal names the reason, not a lock', async () => {
+    const { userId: _drop, ...unnamed } = served;
+    void _drop;
+    const session = bootManager({ data: unnamed, laneWriteBase: 'http://127.0.0.1:1' });
+    const outcome = await session.closeViaBox({ dayCloseId: 'dc-10', closedAtLocal: '2026-09-30T02:30', closedAt: '2026-09-30T02:30:00Z' });
+    expect(outcome).toEqual({ closed: false, reason: 'nobody is named on this screen, so it cannot close the day' });
+  });
+
+  it('the old default identity is gone: with no configuration and no payload there is no manager, not `manager`', () => {
+    expect(bootManager().floor().manager).toBeNull();
+  });
+});
+
+describe('who judges whether the day has ended (M14-FR-04)', () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const clean: ManagerData = { userId: 'u-mgr', tradingDay: today, tradingDayCutoff: '02:00', openExceptions: [], unsentItems: [], tasks: [] };
+
+  it('with no store computer wired, this screen judges it: the running day has not ended, so the preview close is blocked', () => {
+    const session = bootManager({ data: clean });
+    const blockers = session.blockersForClose(`${today}T12:00`);
+    expect(blockers.map((b) => b.kind)).toEqual(['day_not_ended']);
+  });
+
+  it('with a store computer wired, the BOX judges it — the screen lists only the registers, and the box closes the last ended day', () => {
+    const session = bootManager({ data: clean, laneWriteBase: 'http://127.0.0.1:1' });
+    expect(session.canCloseViaBox).toBe(true);
+    expect(session.blockersForClose(`${today}T12:00`)).toEqual([]);
   });
 });

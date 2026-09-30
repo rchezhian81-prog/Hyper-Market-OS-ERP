@@ -37,9 +37,10 @@ const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-brows
 const HAVE_BROWSER = existsSync(CHROMIUM);
 const KEY = ['manager', 'day', 'close', 'e2e', 'pack', 'signing', 'key'].join('-').padEnd(48, '0');
 
-/** A store pack the box loads from disk: a CHECKED (empty) loss-prevention register + a 02:00 cut-off. Its
- *  presence is what lets a clean day close — an absent register is a hard block by design (M14-FR-04). */
-const PACK_JSON = JSON.stringify({ version: 1, policies: { tradingDayCutoff: '02:00' }, lossPreventionRules: [] });
+/** A store pack the box loads from disk: a CHECKED (empty) loss-prevention register + a 02:00 cut-off, and the
+ *  manager the store NAMES for this screen (Stage G slice 5c — a screen naming nobody refuses to close, by design).
+ *  The register's presence is what lets a clean day close — an absent register is a hard block (M14-FR-04). */
+const PACK_JSON = JSON.stringify({ version: 1, policies: { tradingDayCutoff: '02:00' }, managerPolicy: { userId: 'u-mgr' }, lossPreventionRules: [] });
 
 /** An edge-committed sale, in the disk shape the lane writes — used to make the box's outbox non-empty. */
 const saleRecord = (saleId: string) => JSON.stringify({
@@ -129,7 +130,7 @@ describe.skipIf(!HAVE_BROWSER)('the store manager closes the day and it reaches 
     const closed = records.filter((r) => r.ok === true).map((r) => JSON.parse(r.record) as { dayCloseId: string; closedBy: string; locked: boolean });
     expect(closed).toHaveLength(1);
     expect(closed[0]?.locked).toBe(true);
-    expect(closed[0]?.closedBy).toBe('manager'); // the served session's manager id travels with the ask
+    expect(closed[0]?.closedBy).toBe('u-mgr'); // the manager the PACK names travels with the ask — never a stand-in
     expect(closed[0]?.dayCloseId).toMatch(/^dc-/); // the screen minted it
   });
 

@@ -15,10 +15,10 @@
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
     <style>
-      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; padding: 16px; display: grid; place-items: start center; }
-      main { width: min(680px, 100%); display: grid; gap: 16px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(680px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
       section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: grid; gap: 12px; }
-      h1 { margin: 0; font-size: 22px; } h2 { margin: 0; font-size: 17px; }
+      h2 { margin: 0; font-size: 17px; }
       p.lede { margin: 0; color: var(--muted); font-size: 14px; }
       .legal { font-size: 12px; color: var(--warn); font-weight: 600; }
       label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; }
@@ -37,51 +37,52 @@
     </style>
   </head>
   <body>
+    <header>
+      <h1 class="who" id="title">Erasure console</h1>
+      <span class="sync">
+        <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+      </span>
+    </header>
     <main>
       <section>
-        <h1>Erasure console <span lang="ta">/ அழிப்பு பலகை</span></h1>
-        <p class="lede">Carry out a verified "delete my data" request under the two-person rule. <span lang="ta">இரு-நபர் விதியின் கீழ்.</span></p>
-        <p class="legal">Development workflow — legal confirmation required before go-live. / சட்ட உறுதிப்பாடு தேவை.</p>
-        <label for="actor">Acting as (staff id) <span lang="ta">/ பணியாளர்</span>
+        <p class="lede" id="lede">Carry out a verified "delete my data" request under the two-person rule.</p>
+        <p class="legal" id="legal">Development workflow — legal confirmation required before go-live.</p>
+        <label for="actor"><span id="actor-label">Acting as (staff id)</span>
           <input id="actor" value="dpo-ravi" />
         </label>
-        <p class="foot">The person who approves an erasure cannot be the one who runs it. Change this id between approving and executing.</p>
+        <p class="foot" id="acting-foot">The person who approves an erasure cannot be the one who runs it. Change this id between approving and executing.</p>
       </section>
-
       <section aria-labelledby="pii-h">
-        <h2 id="pii-h">Personal data we hold <span lang="ta">/ நாங்கள் வைத்துள்ள தரவு</span></h2>
+        <h2 id="pii-h">Personal data we hold</h2>
         <table>
-          <thead><tr><th>Category</th><th>Records</th><th>Status</th></tr></thead>
+          <thead><tr><th id="th-category">Category</th><th id="th-records">Records</th><th id="th-status">Status</th></tr></thead>
           <tbody id="rows"></tbody>
         </table>
-        <button id="locate" class="secondary" type="button">Refresh <span lang="ta">/ புதுப்பி</span></button>
+        <button id="locate" class="secondary" type="button">Refresh</button>
       </section>
-
       <section aria-labelledby="act-h">
-        <h2 id="act-h">Two-person erasure <span lang="ta">/ இரு-நபர் அழிப்பு</span></h2>
+        <h2 id="act-h">Two-person erasure</h2>
         <div class="row">
-          <button id="approve" type="button">Approve as checker <span lang="ta">/ ஒப்புதல்</span></button>
-          <button id="execute" type="button">Execute as maker <span lang="ta">/ செயல்படுத்து</span></button>
+          <button id="approve" type="button">Approve as checker</button>
+          <button id="execute" type="button">Execute as maker</button>
         </div>
         <p class="status" id="status" role="status" aria-live="polite"></p>
       </section>
-
       <section aria-labelledby="tomb-h">
-        <h2 id="tomb-h">Erasure record (tombstone) <span lang="ta">/ அழிப்புப் பதிவு</span></h2>
+        <h2 id="tomb-h">Erasure record (tombstone)</h2>
         <p class="lede" id="tomb-empty">No erasure has been carried out yet.</p>
         <dl id="tomb" hidden>
-          <dt>Deleted</dt><dd id="t-erased"></dd>
-          <dt>Kept but anonymised</dt><dd id="t-minimised"></dd>
-          <dt>Kept in full (required by law)</dt><dd id="t-retained"></dd>
-          <dt>Approved by / carried out by</dt><dd id="t-people"></dd>
+          <dt id="dt-erased">Deleted</dt><dd id="t-erased"></dd>
+          <dt id="dt-minimised">Kept but anonymised</dt><dd id="t-minimised"></dd>
+          <dt id="dt-retained">Kept in full (required by law)</dt><dd id="t-retained"></dd>
+          <dt id="dt-people">Approved by / carried out by</dt><dd id="t-people"></dd>
         </dl>
-        <p class="foot">The tombstone holds no name, phone or address — only what was done. It is how we prove the erasure happened without keeping the person.</p>
+        <p class="foot" id="tomb-foot">The tombstone holds no name, phone or address — only what was done. It is how we prove the erasure happened without keeping the person.</p>
       </section>
-
       <section aria-labelledby="restore-h">
-        <h2 id="restore-h">Prevent restore <span lang="ta">/ மீட்பைத் தடு</span></h2>
-        <p class="lede">A late import must not quietly bring an erased person back.</p>
-        <button id="restore" class="secondary" type="button">Try to re-add marketing data <span lang="ta">/ மீண்டும் சேர்</span></button>
+        <h2 id="restore-h">Prevent restore</h2>
+        <p class="lede" id="restore-lede">A late import must not quietly bring an erased person back.</p>
+        <button id="restore" class="secondary" type="button">Try to re-add marketing data</button>
         <p class="status" id="restore-status" role="status" aria-live="polite"></p>
       </section>
     </main>

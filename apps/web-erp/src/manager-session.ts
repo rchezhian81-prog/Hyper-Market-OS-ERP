@@ -190,6 +190,8 @@ export const BLOCKER_KINDS = Object.freeze([
   'items_unsent',
   'cannot_see',
   'rules_refused',
+  /** Nobody is named on this screen, so nobody can lock the day (hard rule #4). */
+  'nobody_named',
 ] as const);
 
 export type BlockerKind = (typeof BLOCKER_KINDS)[number];
@@ -231,6 +233,8 @@ export function blockerSentence(blocker: Blocker): string {
       return `The ${blocker.source} register could not be read: ${blocker.why ?? 'no reason given'}.`;
     case 'rules_refused':
       return `The day-close rules refused: ${blocker.why ?? 'no reason given'}.`;
+    case 'nobody_named':
+      return 'Nobody is named on this screen, so nobody can close the day.';
   }
 }
 
@@ -276,13 +280,16 @@ export type DecideRefusal =
   /** No pending request with that id — a stale screen, not a rule breach. */
   | 'request_not_found'
   /** A reason outside the catalogue for this decision. Refused rather than recorded. */
-  | 'unknown_reason_code';
+  | 'unknown_reason_code'
+  /** The screen names nobody, so no decision can be attributed (hard rule #4). */
+  | 'nobody_named';
 
 /** The full refusal vocabulary the screen must have words for, in every language it offers. */
 export const DECIDE_REFUSALS: readonly DecideRefusal[] = Object.freeze([
   ...(Object.keys(ENGINE_REFUSALS) as RefusalReason[]),
   'request_not_found',
   'unknown_reason_code',
+  'nobody_named',
 ]);
 
 export type ManagerDecisionOutcome =
@@ -299,8 +306,12 @@ export interface ManagerConfig {
   readonly tradingDay: string;
   /** Where this store's trading day ends (M01-FR-02). Per-tenant. */
   readonly tradingDayRule: TradingDayRule;
-  /** The manager: who they are, where they may approve, and up to what value. */
-  readonly manager: Approver;
+  /**
+   * The manager: who they are, where they may approve, and up to what value. **Null when the screen was told
+   * nobody** (Stage G slice 5c · hard rule #4): the registers still show, and every decision, receipt, count and
+   * close refuses with `nobody_named` rather than run under a stand-in identity.
+   */
+  readonly manager: Approver | null;
   readonly currency: CurrencyCode;
   /** Where received goods land. Per-tenant. */
   readonly warehouseId: string;
@@ -351,7 +362,7 @@ export interface CountInput {
  */
 export type CountAttempt =
   | { readonly counted: true; readonly result: CountReconciliation }
-  | { readonly counted: false; readonly refusal: 'value_not_known'; readonly why: string };
+  | { readonly counted: false; readonly refusal: 'value_not_known' | 'nobody_named'; readonly why: string };
 
 export interface CloseInput {
   readonly dayCloseId: string;
@@ -370,6 +381,8 @@ export type ApprovalQueue =
   | { readonly known: false; readonly why: string };
 
 export interface FloorSummary {
+  /** Who this screen is running as, or null when the store named nobody (the page then says so). */
+  readonly manager: string | null;
   readonly tradingDay: string;
   /** Everything waiting, including what this manager may not decide themselves. */
   readonly approvalsWaiting: Tally;
@@ -427,6 +440,14 @@ function tally(register: Register): Tally {
   return register.known ? { known: true, count: register.items.length } : register;
 }
 
+/** Thrown by an action that has no refusal shape of its own when the screen names nobody (hard rule #4). */
+export class NobodyNamedError extends Error {
+  constructor(action: string) {
+    super(`Nobody is named on this screen, so it cannot ${action}.`);
+    this.name = 'NobodyNamedError';
+  }
+}
+
 export function createManagerSession(
   config: ManagerConfig,
   ports: ManagerPorts,
@@ -445,22 +466,33 @@ export function createManagerSession(
   const blockersForClose = (closedAtLocal: string): readonly Blocker[] => {
     const blockers: Blocker[] = [];
 
-    // 1. Has the day this manager is closing actually ended? The engine checks this too; checking
-    //    it here is what lets the screen say so alongside everything else rather than one at a time.
-    try {
-      const currentTradingDate = tradingDate(closedAtLocal, config.tradingDayRule);
-      if (!(currentTradingDate > config.tradingDay)) {
-        blockers.push({ kind: 'day_not_ended', count: 0, items: [], source: 'trading-day' });
+    // 0. Is anybody here? A day locked by nobody is a day nobody can be asked about (hard rule #4).
+    if (config.manager === null) {
+      blockers.push({ kind: 'nobody_named', count: 0, items: [], source: 'manager' });
+    }
+
+    // 1. Has the day this manager is closing actually ended? Judged HERE only when this screen is the closer
+    //    (no store computer wired): the local preview close locks `config.tradingDay`, so it must have ended.
+    //    With a store computer wired, the BOX is the authority (M14-FR-04): it closes the most recently ENDED
+    //    trading day itself and refuses one that has not, while this screen's `tradingDay` is the RUNNING day
+    //    for the floor's registers — judging that day here would block every close. (Before Stage G slice 5c
+    //    the served screen ran on day 1970-01-01, which made this check vacuous by accident, not by design.)
+    if (ports.requestDayClose === undefined) {
+      try {
+        const currentTradingDate = tradingDate(closedAtLocal, config.tradingDayRule);
+        if (!(currentTradingDate > config.tradingDay)) {
+          blockers.push({ kind: 'day_not_ended', count: 0, items: [], source: 'trading-day' });
+        }
+      } catch (error) {
+        // A clock this screen cannot read is not a reason to close the day anyway.
+        blockers.push({
+          kind: 'cannot_see',
+          count: 0,
+          items: [],
+          source: 'trading-day',
+          why: error instanceof Error ? error.message : String(error),
+        });
       }
-    } catch (error) {
-      // A clock this screen cannot read is not a reason to close the day anyway.
-      blockers.push({
-        kind: 'cannot_see',
-        count: 0,
-        items: [],
-        source: 'trading-day',
-        why: error instanceof Error ? error.message : String(error),
-      });
     }
 
     // 2 and 3. The two gates M14-FR-04 names. Each register gets the same treatment, and *not
@@ -495,6 +527,7 @@ export function createManagerSession(
       const approvals = ports.approvals();
       const queue = approvalQueue();
       return {
+        manager: config.manager === null ? null : config.manager.userId,
         tradingDay: config.tradingDay,
         approvalsWaiting: approvals.known ? { known: true, count: approvals.requests.length } : approvals,
         approvalsIcanClear: queue.known
@@ -509,6 +542,7 @@ export function createManagerSession(
     approvalQueue,
 
     decideApproval: (input) => {
+      if (config.manager === null) return { ok: false, refusal: 'nobody_named' };
       const register = ports.approvals();
       if (!register.known) return { ok: false, refusal: 'request_not_found' };
       const request = register.requests.find((r) => r.id === input.requestId);
@@ -525,7 +559,9 @@ export function createManagerSession(
       return submitDecision(request, config.manager, input.decision, input.reasonCode, input.decidedAt);
     },
 
-    receive: (input) => ({
+    receive: (input) => {
+      if (config.manager === null) throw new NobodyNamedError('book a delivery in');
+      return {
       receipt: commitReceipt(
         {
           id: input.grnId,
@@ -540,11 +576,15 @@ export function createManagerSession(
         outbox,
       ),
       unmatched: input.poId === null,
-    }),
+      };
+    },
 
     // The manager is the counter here, so a material variance needs somebody else's approval — the
     // adjustment engine enforces that and this session does not get to soften it.
     countStock: (input) => {
+      if (config.manager === null) {
+        return { counted: false, refusal: 'nobody_named', why: 'nobody is named on this screen, so no count can be attributed' };
+      }
       // Asked BEFORE anything is committed. An unknown cost is not zero: valued at nothing, a
       // shrinkage of any size sits below the approval threshold and posts with nobody's approval.
       const value = ports.productValue(input.productId);
@@ -590,7 +630,8 @@ export function createManagerSession(
               id: input.dayCloseId,
               storeId: config.storeId,
               tradingDay: config.tradingDay,
-              closedBy: config.manager.userId,
+              // Unreachable with a null manager: `nobody_named` is a blocker above. Named here for the compiler.
+              closedBy: config.manager?.userId ?? 'nobody',
               closedAtLocal: input.closedAtLocal,
               closedAt: input.closedAt,
               tradingDayRule: config.tradingDayRule,
@@ -630,6 +671,9 @@ export function createManagerSession(
       // The box is the authority. It is sent the day-close id and WHO is closing (the manager's own
       // id), and it decides — reading the real outbox, not this browser's last-synced snapshot. The
       // screen renders whatever comes back and invents nothing.
+      if (config.manager === null) {
+        return { closed: false, reason: 'nobody is named on this screen, so it cannot close the day' };
+      }
       return post({ dayCloseId: input.dayCloseId, closedBy: config.manager.userId });
     },
 

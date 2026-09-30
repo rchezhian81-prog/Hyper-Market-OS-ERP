@@ -40,6 +40,7 @@
 //                      backwards trace both work with the cable out
 
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
+import { isUom } from '../../../packages/contracts/src/quantity';
 import { assessChecklist } from '../../../packages/workforce/src/index';
 import type { LpRule } from '../../../packages/loss-prevention/src/index';
 import { planDispatch, type DispatchPlan } from '../../../packages/fulfilment/src/routing';
@@ -140,11 +141,18 @@ export function posPayload(input: ScreenInput): Record<string, unknown> | null {
     // A recalled product is the exception: it is shipped WITH its block rather than excluded, so
     // the lane refuses the scan by name — *this is under recall* — instead of by absence. "Unknown
     // barcode" on a recalled tin is a cashier keying it in by hand.
-    if ((p.taxBps === undefined || status === undefined) && !recallBlock) {
+    //
+    // A unit of measure the pricing maths cannot make a Quantity in gets the same treatment (Stage G slice 5c):
+    // `"each"` where the engine knows `ea` reached the till and priced as ₹NaN on the line. Excluded, counted, and
+    // the till refuses it by name too should one ever arrive another way.
+    const unitKnown = isUom(p.uom);
+    if ((p.taxBps === undefined || status === undefined || !unitKnown) && !recallBlock) {
       excluded.push({
         productId: p.productId,
         name: p.name,
-        why: p.taxBps === undefined ? 'no tax rate on the catalogue' : 'no status on the catalogue',
+        why: p.taxBps === undefined ? 'no tax rate on the catalogue'
+          : status === undefined ? 'no status on the catalogue'
+            : `unknown unit of measure "${p.uom}" on the catalogue`,
       });
       continue;
     }
@@ -199,6 +207,25 @@ export function posPayload(input: ScreenInput): Record<string, unknown> | null {
  */
 export function managerPayload(input: ScreenInput): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
+
+  // Who runs this screen, where, and which day (Stage G slice 5c · §28 · hard rule #4). Only what the pack says:
+  // no manager named means the screen names nobody and refuses to decide, receive, count or close — never a
+  // stand-in identity. The branch may be null (company-wide) and is passed through as null, not dropped.
+  if (input.pack.managerPolicy.known) {
+    const who = input.pack.managerPolicy.value;
+    payload['userId'] = who.userId;
+    payload['approvalLimitMinor'] = who.approvalLimitMinor ?? null;
+  }
+  if (input.pack.policies.known) {
+    const policies = input.pack.policies.value;
+    payload['storeId'] = policies.storeId;
+    payload['branchId'] = policies.branchId;
+    payload['tradingDayCutoff'] = policies.tradingDayCutoff;
+    payload['countApprovalThresholdMinor'] = policies.countApprovalThresholdMinor;
+    payload['warehouseId'] = policies.warehouseId;
+  }
+  // The shop's own trading day, not the browser's clock (the same rule the catalogue screen follows).
+  payload['tradingDay'] = input.tradingDay;
 
   // Every pending item, whatever it is. The manager's screen lists them, so a sale and a stock
   // adjustment both belong here — "3 things have not reached the cloud" is the honest count.

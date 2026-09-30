@@ -15,6 +15,8 @@
 // barcode carries the item code and the weight/price in its digits, per rules that
 // are per-tenant configuration — never hard-coded.
 
+import { isUom } from '../../contracts/src/quantity';
+
 export type ProductStatus = 'draft' | 'active' | 'discontinued' | 'clearance';
 export type BarcodeKind = 'standard' | 'weight_embedded' | 'price_embedded' | 'alternate';
 
@@ -140,6 +142,21 @@ export class ItemNotSellableError extends Error {
   }
 }
 
+/**
+ * A product whose unit of measure this till does not know (Stage G slice 5c · P-08).
+ *
+ * Every price on a line is unit price × a Quantity in that unit, and a Quantity can only be made in a unit the
+ * system knows (`packages/contracts` UOM_PRECISION). Before this a product carrying `"each"` where the engine
+ * knows `ea` scanned fine and then priced as ₹NaN on the line with a total of ₹0.00 — a sale nobody could take
+ * money for and nothing said why. Refused at the scan, by name, like a recall.
+ */
+export class UnknownUnitError extends Error {
+  constructor(name: string, uom: string) {
+    super(`Cannot sell ${name}: its unit "${uom}" is not one this till knows.`);
+    this.name = 'UnknownUnitError';
+  }
+}
+
 export class RecalledItemError extends Error {
   constructor(name: string) {
     super(`"${name}" is under recall and cannot be sold (M10-FR-04) — even offline.`);
@@ -252,6 +269,10 @@ export class CatalogueCache {
     }
     if (!SELLABLE.includes(product.status)) {
       throw new ItemNotSellableError(product.name, product.status);
+    }
+    // A unit the pricing maths cannot make a Quantity in would become ₹NaN on the bill. Refused here, by name.
+    if (!isUom(product.baseUom)) {
+      throw new UnknownUnitError(product.name, product.baseUom);
     }
   }
 
