@@ -44,6 +44,7 @@ const WORDS = {
     noWorkBody: 'Nothing is wrong. When work is assigned to you it will appear here on its own.',
     sample: 'Sample assignment — this is not real work.',
     receive: 'Receive a delivery', putAway: 'Put away — scan the bin',
+    doneReceiving: 'Delivery complete — send the receipt',
     scanBarcode: 'Scan the delivery barcode', scanBin: 'Scan the bin to put it in',
     pointAndPull: 'Point the scanner and pull the trigger.',
     cancel: 'Cancel', ok: 'OK', units: 'units',
@@ -61,6 +62,8 @@ const WORDS = {
     stepScanItem: 'Now scan the item', stepConfirm: 'Check the quantity, then confirm',
     // scan feedback, keyed by the session's outcome codes
     received: 'Received', unknown_barcode: 'Unknown barcode — set aside for someone to sort out',
+    receiving_done: 'Receipt sent — head office will match the delivery to the order',
+    nothing_received: 'Nothing has been received on this handheld for this delivery yet',
     over_delivery_needs_approval: 'More than ordered — a second person must approve it',
     dsd_needs_approval: 'No purchase order — a second person must approve it',
     price_change_refused: 'The price cannot be changed at the door',
@@ -103,6 +106,7 @@ const WORDS = {
     noWorkBody: 'எந்தப் பிரச்சனையும் இல்லை. உங்களுக்கு வேலை ஒதுக்கப்பட்டால் அது தானாகவே இங்கே தோன்றும்.',
     sample: 'மாதிரி வேலை — இது உண்மையான வேலை அல்ல.',
     receive: 'பொருள் வரவு பெறு', putAway: 'அடுக்கு — இடத்தை ஸ்கேன் செய்',
+    doneReceiving: 'வரவு முடிந்தது — ரசீதை அனுப்பு',
     scanBarcode: 'வரவின் பார்கோடை ஸ்கேன் செய்யவும்', scanBin: 'வைக்கும் இடத்தை ஸ்கேன் செய்யவும்',
     pointAndPull: 'ஸ்கேனரை நோக்கி டிரிக்கரை அழுத்தவும்.',
     cancel: 'ரத்து', ok: 'சரி', units: 'அலகுகள்',
@@ -118,6 +122,8 @@ const WORDS = {
     stepPickScanBin: 'எடு — வரியில் காட்டப்பட்ட இடத்தை ஸ்கேன் செய்யவும்',
     stepScanItem: 'இப்போது பொருளை ஸ்கேன் செய்யவும்', stepConfirm: 'அளவைச் சரிபார்த்து உறுதிப்படுத்தவும்',
     received: 'பெறப்பட்டது', unknown_barcode: 'தெரியாத பார்கோடு — சரிபார்க்க ஒதுக்கி வைக்கப்பட்டது',
+    receiving_done: 'ரசீது அனுப்பப்பட்டது — தலைமை அலுவலகம் வரவை ஆர்டருடன் ஒப்பிடும்',
+    nothing_received: 'இந்த வரவுக்கு இந்தக் கருவியில் இன்னும் எதுவும் பெறப்படவில்லை',
     over_delivery_needs_approval: 'ஆர்டரை விட அதிகம் — இரண்டாவது நபர் ஒப்புதல் அளிக்க வேண்டும்',
     dsd_needs_approval: 'கொள்முதல் ஆர்டர் இல்லை — இரண்டாவது நபர் ஒப்புதல் அளிக்க வேண்டும்',
     price_change_refused: 'வாசலில் விலையை மாற்ற முடியாது',
@@ -175,6 +181,7 @@ const STATE_SHORT = {
 /** The kinds of work this handheld sends (the session's `SENT_WORK_KINDS`). */
 const KIND_WORDS = {
   receipt: { en: 'Received', ta: 'பெறப்பட்டது' },
+  receipt_done: { en: 'Receipt sent', ta: 'ரசீது அனுப்பப்பட்டது' },
   put_away: { en: 'Put away', ta: 'அடுக்கப்பட்டது' },
   pick: { en: 'Picked', ta: 'எடுக்கப்பட்டது' },
   count: { en: 'Counted', ta: 'எண்ணப்பட்டது' },
@@ -352,6 +359,9 @@ function render() {
 
   el('goods-in-heading').textContent = t('goodsIn');
   el('receive').textContent = t('receive');
+  // SP-6b: "Delivery complete" appears once something has been received here for this delivery and not yet sent as one receipt.
+  el('done-receiving').textContent = t('doneReceiving');
+  el('done-receiving').hidden = !(real !== undefined && typeof real.receivingOpen === 'function' && real.receivingOpen(grnId));
   el('put-away').textContent = t('putAway');
   el('put-away').disabled = selected === null;
   el('pick-heading').textContent = t('toPick');
@@ -493,6 +503,19 @@ el('receive').addEventListener('click', async () => {
   const code = await awaitScan(t('scanBarcode'));
   if (code === null || real === undefined) return;
   const out = real.receive({ commandId: nextId('recv'), grnId, barcode: code, scannedQuantity: 1, source: 'po' });
+  feltResult(out.signal);
+  render();
+  if (out.signal.feedback === 'accept') void syncToBox();
+});
+
+/**
+ * Delivery complete (SP-6b · "the handheld delivery is one receipt, not a pile of scans"): one tap. The session queues ONE
+ * completion behind the scans; head office assembles the goods receipt from the scans it already holds and matches it to
+ * the order. No quantity is typed or sent here — the scans are the truth, this only says they are all in.
+ */
+el('done-receiving').addEventListener('click', () => {
+  if (real === undefined) return;
+  const out = real.completeReceiving({ grnId });
   feltResult(out.signal);
   render();
   if (out.signal.feedback === 'accept') void syncToBox();

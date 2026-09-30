@@ -325,10 +325,50 @@ device, human UAT and production verification separate; approved deferrals stay 
   does not yet show the held quantity or offer the excess decision or the disposition (SP-9); a relayed disposition
   (the approval-decision relay carries approve / reject only) — SP-9; the manual `…/receipts` route remains for receipts
   outside the GRN path and collapses with the GRN when it uses the GRN id; no physical device or UAT.
-- **Current-work pointer:** last verified = SP-6 (this PR); next = **SP-6b** [W06 remainder] (the handheld's receiving
-  scans assembled into ONE GRN against the order — no second stock posting, folded into the PO like any other); then
-  SP-7 (F02/F04), SP-8/8b (F08), SP-9/9b; **SP-3c** (picker + driver) after the core-store chain; genuine blockers:
-  none; external gates unchanged (providers, hardware, real data, pilot GO).
+- **SP-6b — the warehouse handheld's delivery is ONE goods receipt against the order, not a pile of scans (W06 remainder ·
+  M07-FR-01 · M06-FR-04 · §28 · §31 · hard rules #2 #4 #10).** Since SP-3a every scan at the back door reached head office
+  as its own `received` movement and a row on the delivery's scan register — and stopped there: no GRN, nothing folded
+  into the purchase order, no line a second person could dispose of. Now (i) the handheld has **"Delivery complete"** — a
+  button that appears only once something has been received here for the delivery and goes away once it is sent: one
+  tap queues ONE `ReceivingCompleted` keyed on the GRN id (`recv-done:<grnId>`) BEHIND the scans on the same durable
+  device queue → box device socket → box fsync'd pipeline → sync path (allow-listed for `warehouse` only, routed to
+  `POST /v1/inventory/goods-receipt/:grnId/assembled`); no quantity is typed or sent — the scans are the truth, the
+  completion only says they are all in; the pack may carry the order (`warehouse.poId`) so the completion names it;
+  listed under "Sent from this handheld" as its own kind with the five state words, EN/TA, bound by the guardrails;
+  (ii) head office (`services/inventory/src/goods-receipt-assembled.ts`) builds the receipt from ITS scan register, never
+  the body: one line per product + batch + posture (good · damaged · expired · held), the ISSUED order's quantity spread
+  across a product's lines so an excess or shortage shows on one line and the lines together claim exactly the order,
+  then the SAME `captureReceipt` the direct and relayed receipts run (master rules, tenant tolerances, cloud cost — the
+  completer re-verified from their grants), and records the GRN with **NO `received` movement of its own** — the scans
+  posted every on-hand unit (`recv:<grnId>:<commandId>`), a second posting would count the delivery twice (hard rule #2)
+  — folded into the PO in the same append (SP-6) exactly like any other receipt; the record carries `assembledFrom`
+  (the scans, who scanned, what they posted per line, any disagreement between the checked outcome and what the scans
+  posted — `scan_posting_disagrees`, a visible exception never a silent fix); a person at head office has `…/assemble`;
+  (iii) the two second-person decisions respect what the scans posted: an over-tolerance EXCESS is already on the shelf,
+  so the GRN holds it and SAYS so (`excess_already_on_hand`) — approval accepts it where it is (no movement, the order
+  told of the over-receipt), rejection moves nothing and flags `excess_on_hand_pending_return` for the SP-7 supplier
+  return (no movement kind is invented); an ACCEPT disposition releases only what the scans held out (damaged / expired /
+  quarantine scans posted nothing → the whole line; a line the scans had posted → nothing again); (iv) a scan that
+  arrives AFTER assembly is still posted (goods in the building) and flagged `after_assembly`; a line the master cannot
+  identify (batch-tracked, no batch) refuses the assembly by name (`receipt_line_incomplete`) and leaves the scans for a
+  person; a completion with no scans is `no_scans_for_receipt`; the same completion again — relayed or asked for — is the
+  same receipt. Evidence: `goods-receipt-assembled.test.ts` (4, new); `warehouse-handheld-reaches-the-cloud-through-the-edge.test.ts`
+  (+1: the completion through the REAL box + real kernel → one GRN, on-hand once, PO 10 → 8 open, duplicate at the box,
+  direct ask returns the same receipt, late scan flagged); `goods-receipt-assembly.test.ts` (10, new: postures, grouping,
+  the spread, expired-without-date said, cost unknown; approve/reject on an assembled receipt vs an ordinary one; accept
+  net of what the scans posted); `warehouse-handheld-sent-work.test.ts` (+1); `device-relay.test.ts` (allow-list);
+  `warehouse-handheld-syncs-through-the-box.e2e.ts` (real Chromium: the button appears after the receive, one tap → with
+  the store computer, gone after, still gone after reload; the box's log holds the completion behind the scan, no
+  quantity on it). API surface +2 (`…/assembled`, `…/assemble`). **Still open, honestly:** a rejected excess that the
+  scans already posted leaves stock only through the SP-7 supplier return (flagged until then); the review screen does
+  not yet show an assembled receipt's scans, its disagreements or a late scan (SP-9); the handheld's receiving engine does
+  not know the master's batch rule (a tracked item scanned without a batch is caught at assembly, not at the door) —
+  recorded for SP-9's connected run; no physical device or UAT.
+- **Current-work pointer:** last verified = SP-6b (this PR); next = **SP-7** [W07] (F02/F04: the supplier invoice saved
+  and read back after restart; the match over the STORED PO + GRN + invoice; supplier liability, statement and journals
+  reconciling; the supplier master screen; the GRN's return / claim value reaching the supplier account and taking the
+  rejected excess out of stock); then SP-8/8b (F08), SP-9/9b; **SP-3c** (picker + driver) after the core-store chain;
+  genuine blockers: none; external gates unchanged (providers, hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 

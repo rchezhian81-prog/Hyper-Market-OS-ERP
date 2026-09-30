@@ -56,6 +56,10 @@ export const DEFAULT_RECEIPT_POLICY: ReceiptPolicy = Object.freeze({ excessToler
 export const RECEIPT_FLAGS = Object.freeze([
   'receiver_unknown', 'receiver_lacks_authority', 'product_rules_unverified', 'cost_unknown',
   'no_purchase_order', 'order_unknown', 'order_not_issued', 'ordered_quantity_disagrees', 'product_not_on_order', 'default_policy',
+  // SP-6b — a receipt ASSEMBLED from the handheld's scans, whose on-hand stock the scans already posted (goods-receipt-assembled.ts):
+  // the held excess is already on the shelf position; a rejected excess waits for the supplier return (SP-7) to leave it; a
+  // line whose checked outcome differs from what the scans posted; an expired scan whose date the handheld did not capture.
+  'excess_already_on_hand', 'excess_on_hand_pending_return', 'scan_posting_disagrees', 'expiry_date_assumed',
 ] as const);
 export type ReceiptFlag = (typeof RECEIPT_FLAGS)[number];
 
@@ -101,6 +105,12 @@ export interface GrnRecord {
   readonly poReceipt?: { readonly receiptId: string; readonly receivedByProduct: Readonly<Record<string, number>> } | null;
   /** SP-6 (M07-FR-03) — the disposition a second person gave each quarantined / refused line; absent while none has one. */
   readonly dispositions?: readonly LineDisposition[];
+  /**
+   * SP-6b — set when this GRN was ASSEMBLED from the warehouse handheld's receiving scans (the SP-3a register). Those scans
+   * had already posted every on-hand unit (`recv:<grnId>:<commandId>`), so this receipt appended NO `received` movement of
+   * its own (hard rule #2) — and a later excess approval / accept disposition releases only what the scans did not post.
+   */
+  readonly assembledFrom?: AssembledFromScans;
   /** What head office's own records could not confirm about this receipt (a `ReceiptFlag` each). */
   readonly governanceFlags?: readonly string[];
   /** SP-2b — the identity that relayed it (the store box), the surface, and the store, when relayed. */
@@ -129,6 +139,22 @@ export interface LineDisposition {
   /** The inbound movement an `accept` released — empty for return / claim. */
   readonly movementIds: readonly string[];
   readonly via: 'direct' | 'relayed';
+}
+
+/** SP-6b — how a GRN assembled from handheld scans came to be, and what the scans had already posted (see `GrnRecord.assembledFrom`). */
+export interface AssembledFromScans {
+  readonly scanCount: number;
+  /** The handheld's own command ids — the identity every hop deduped each scan on. */
+  readonly commandIds: readonly string[];
+  /** Everyone whose scans made up the delivery (the record's `receivedBy` is the person who declared it complete). */
+  readonly scannedBy: readonly string[];
+  readonly completedBy: string;
+  readonly completedAt: string;
+  /** The on-hand quantity the scans had ALREADY posted, per assembled line — the reason this GRN appends no `received` movement. */
+  readonly onHandByLine: Readonly<Record<string, number>>;
+  readonly onHandMovementIds: readonly string[];
+  /** Lines whose checked outcome (sellable + held) differs from what the scans posted on-hand — a visible exception, never a silent fix. */
+  readonly disagreements: readonly { readonly lineId: string; readonly scannedOnHandMinor: number; readonly sellableMinor: number; readonly heldMinor: number }[];
 }
 
 /** What a receipt posts against its purchase order (SP-6 · F01): the received quantity per product, keyed on the receipt. */
@@ -350,7 +376,11 @@ export async function decideReceiptExcess(deps: GoodsReceiptDeps, input: {
     return { ok: false, refusedBecause: 'excess_already_decided', detail: `The excess on ${input.grnId} was already ${rec.excessDecision.decision} by ${rec.excessDecision.decidedBy} at ${rec.excessDecision.decidedAt}; a different decision now would be a second truth.` };
   }
   const decidedAt = deps.now();
-  const movements: Movement[] = input.decision === 'approved'
+  // SP-6b: on a receipt ASSEMBLED from the handheld's scans the excess is already on the shelf position — the scans posted
+  // every on-hand unit. Approval accepts it where it is (NO movement, or the delivery would count twice, hard rule #2); a
+  // rejection records the refusal and flags the units for the supplier return (SP-7) — nothing is invented to move them.
+  const postedByScans = rec.assembledFrom !== undefined;
+  const movements: Movement[] = input.decision === 'approved' && !postedByScans
     ? inboundMovements({
       grnId: rec.grnId, locationId: rec.warehouseId, lines: rec.captured.lines, quantityOf: (l) => l.heldMinor, suffix: ':excess',
       occurredAt: decidedAt, enteredBy: rec.receivedBy, approvedBy: input.decidedBy,
@@ -358,7 +388,9 @@ export async function decideReceiptExcess(deps: GoodsReceiptDeps, input: {
       unitCostMinorOf: (l) => (l.unitCost.minor > 0 ? l.unitCost.minor : undefined),
     })
     : [];
-  const releasedMinor = movements.reduce((s, m) => s + m.quantityMinor, 0);
+  const heldByProduct: Record<string, number> = {};
+  for (const l of rec.captured.lines) if (l.heldMinor > 0) heldByProduct[l.productId] = (heldByProduct[l.productId] ?? 0) + l.heldMinor;
+  const releasedMinor = input.decision === 'approved' ? rec.captured.lines.reduce((s, l) => s + l.heldMinor, 0) : 0;
   const decided: GrnRecord = {
     ...rec,
     availableMinor: rec.availableMinor + releasedMinor,
@@ -366,14 +398,15 @@ export async function decideReceiptExcess(deps: GoodsReceiptDeps, input: {
       decision: input.decision, decidedBy: input.decidedBy, decidedAt, reason: input.reason,
       releasedMinor, movementIds: movements.map((m) => m.movementId), via: input.via,
     },
+    ...(postedByScans && input.decision === 'rejected'
+      ? { governanceFlags: [...(rec.governanceFlags ?? []).filter((f) => f !== 'excess_on_hand_pending_return'), 'excess_on_hand_pending_return'] }
+      : {}),
   };
   // SP-6 (F01): an ACCEPTED excess is now received against the order too — the over-receipt shows as a negative open
   // quantity on the PO (a signal, never hidden) — in the same append, when the receipt folded into an order at all.
   let poReceipt: PoReceiptPosting | undefined;
   if (releasedMinor > 0 && rec.poId !== null && (rec.poReceipt ?? null) !== null) {
-    const receivedByProduct: Record<string, number> = {};
-    for (const m of movements) receivedByProduct[m.productId] = (receivedByProduct[m.productId] ?? 0) + m.quantityMinor;
-    poReceipt = { poId: rec.poId, receiptId: `${rec.grnId}:excess`, receivedByProduct, by: input.decidedBy, at: decidedAt };
+    poReceipt = { poId: rec.poId, receiptId: `${rec.grnId}:excess`, receivedByProduct: heldByProduct, by: input.decidedBy, at: decidedAt };
   }
   await deps.commitExcessDecision(input.tenantId, decided, movements, `${rec.grnId}:excess`, poReceipt);
   await deps.recordAudit?.(input.tenantId, {
@@ -421,9 +454,11 @@ export async function decideLineDisposition(deps: GoodsReceiptDeps, input: {
     return { ok: false, refusedBecause: 'cannot_accept_refused_stock', detail: `Line ${input.lineId} was refused at the dock (expired) — expired stock is never sellable, whoever asks (M07-FR-02 / M10). Return it or claim it.` };
   }
   const decidedAt = deps.now();
+  // SP-6b: on a receipt assembled from the handheld's scans, units the scans already posted on-hand are never released again.
+  const alreadyOnHand = rec.assembledFrom?.onHandByLine[line.lineId] ?? 0;
   const movements: Movement[] = input.disposition === 'accept'
     ? inboundMovements({
-      grnId: rec.grnId, locationId: rec.warehouseId, lines: [line], quantityOf: (l) => l.quarantinedMinor, suffix: ':accepted',
+      grnId: rec.grnId, locationId: rec.warehouseId, lines: [line], quantityOf: (l) => Math.max(0, l.quarantinedMinor - alreadyOnHand), suffix: ':accepted',
       occurredAt: decidedAt, enteredBy: rec.receivedBy, approvedBy: input.decidedBy,
       unitCostMinorOf: (l) => (l.unitCost.minor > 0 ? l.unitCost.minor : undefined),
     })

@@ -978,6 +978,8 @@ export interface PackWarehouse {
   readonly barcodes?: readonly PackWarehouseBarcode[];
   readonly ordered?: readonly PackWarehouseOrdered[];
   readonly grnId?: string;
+  /** SP-6b: the purchase order the delivery is against — named on the handheld's "delivery complete" so head office folds the GRN into it. */
+  readonly poId?: string;
   readonly recalledProductIds?: readonly string[];
   readonly recalledBatchIds?: readonly string[];
   /** Order lines to pick from the racking, each naming its bin (M09-FR-01 pick). Absent = no pick work sent. */

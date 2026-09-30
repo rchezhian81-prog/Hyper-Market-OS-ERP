@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { WarehouseSession, RECEIVING_SCANNED, WAREHOUSE_MOVEMENT_APPLIED, SENT_WORK_KINDS, type WarehouseAssignment } from '../../apps/warehouse-app/src/warehouse-session';
+import { WarehouseSession, RECEIVING_SCANNED, RECEIVING_COMPLETED, WAREHOUSE_MOVEMENT_APPLIED, SENT_WORK_KINDS, type WarehouseAssignment } from '../../apps/warehouse-app/src/warehouse-session';
 import { openWarehouseRelay } from '../../apps/warehouse-app/src/browser-entry';
 import { SyncOutbox } from '../../packages/sync/src/outbox';
 import { openDeviceOutbox, noDeviceStore } from '../../packages/sync/src/device-outbox';
@@ -20,7 +20,7 @@ const AT = '2026-09-30T10:00:00.000Z';
 const ASSIGNMENT: WarehouseAssignment = {
   assignmentId: 'A-1', workerId: 'u-worker', storeId: 'store-1',
   bins: [{ binId: 'BIN-A', storeId: 'store-1', capacityMinor: 1000, pickable: true, zone: 'ambient' }],
-  grnId: 'grn-1',
+  grnId: 'grn-1', poId: 'po-1',
   ordered: [{ productId: 'p-rice', quantityMinor: 100, unitCost: { minor: 4000, currency: 'INR' } }],
   barcodes: [{ barcode: '890RICE', productId: 'p-rice', level: 'unit' }],
   packs: [{ productId: 'p-rice', baseUom: 'ea', levels: [{ level: 'unit', containsMinor: 1, barcode: '890RICE' }] }],
@@ -45,6 +45,40 @@ describe('the handheld\'s events fit the shared route', () => {
     expect(isRelayable(RECEIVING_SCANNED, 'warehouse')).toBe(true);
     expect(isRelayable(RECEIVING_SCANNED, 'manager')).toBe(false);
     expect(pathFor(item.event)).toBe('/v1/inventory/receiving-scans/recv-1/synced');
+  });
+
+  it('"delivery complete" (SP-6b) queues ONE completion behind the scans, keyed on the GRN, naming the order — and nothing when nothing was received', () => {
+    const { s, outbox } = session();
+    // Nothing received here yet → refused, nothing queued, the button has no reason to show.
+    expect(s.receivingOpen('grn-1')).toBe(false);
+    const early = s.completeReceiving({ grnId: 'grn-1', at: AT });
+    expect(early).toMatchObject({ accepted: false, scanCount: 0, signal: { feedback: 'reject', code: 'nothing_received' } });
+    expect(outbox.all()).toHaveLength(0);
+
+    s.receive({ commandId: 'recv-1', grnId: 'grn-1', barcode: '890RICE', scannedQuantity: 1, source: 'po' });
+    s.receive({ commandId: 'recv-2', grnId: 'grn-1', barcode: '890RICE', scannedQuantity: 1, source: 'po' });
+    expect(s.receivingOpen('grn-1')).toBe(true);
+    const done = s.completeReceiving({ grnId: 'grn-1', at: AT });
+    expect(done).toMatchObject({ accepted: true, grnId: 'grn-1', scanCount: 2, signal: { feedback: 'accept', code: 'receiving_done' } });
+    const item = outbox.find('recv-done:grn-1')!;
+    expect(item.event.type).toBe(RECEIVING_COMPLETED);
+    // Behind the scans in the queue — head office has them before it is asked to assemble them. No quantity travels.
+    expect(outbox.all().map((i) => i.key)).toEqual(['recv:grn-1:recv-1', 'recv:grn-1:recv-2', 'recv-done:grn-1']);
+    expect(item.event.payload).toEqual({ grnId: 'grn-1', poId: 'po-1', completedBy: 'u-worker', storeId: 'store-1', at: AT, scanCount: 2, commandIds: ['recv-1', 'recv-2'], source: 'warehouse-handheld' });
+    expect(isRelayable(RECEIVING_COMPLETED, 'warehouse')).toBe(true);
+    expect(isRelayable(RECEIVING_COMPLETED, 'manager')).toBe(false);
+    expect(pathFor(item.event)).toBe('/v1/inventory/goods-receipt/grn-1/assembled');
+    // Once is enough: the same delivery again is a harmless warning, the queue unchanged; the button goes away.
+    expect(s.receivingOpen('grn-1')).toBe(false);
+    expect(s.completeReceiving({ grnId: 'grn-1', at: AT })).toMatchObject({ accepted: false, signal: { feedback: 'warn', code: 'duplicate_ignored' } });
+    expect(outbox.all()).toHaveLength(3);
+    // The completion is listed as its own kind of sent work, newest first, with the same state words.
+    expect(s.sentWork().map((w) => [w.kind, w.id, w.what, w.detail, w.state])).toEqual([
+      ['receipt_done', 'grn-1', 'grn-1', '2 scans · po-1', 'saved_here'],
+      ['receipt', 'recv-2', 'p-rice', '1 EA · grn-1', 'saved_here'],
+      ['receipt', 'recv-1', 'p-rice', '1 EA · grn-1', 'saved_here'],
+    ]);
+    for (const w of s.sentWork()) expect(SENT_WORK_KINDS).toContain(w.kind);
   });
 
   it('a put-away and a pick carry their command id at the top, and resolve to the synced movement route', () => {

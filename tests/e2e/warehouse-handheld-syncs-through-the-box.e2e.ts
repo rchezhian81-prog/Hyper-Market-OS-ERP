@@ -21,7 +21,8 @@ import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enro
  *   • asks for the shell with no credential and is sent to the enrolment page; types the wrong code and is refused with
  *     a reason and no shell; types the one-time code head office issued and is enrolled — the shell opens as the named
  *     worker with the assignment;
- *   • RECEIVES a delivery barcode and PUTS AWAY a goods-in item: each accepted scan shows in "Sent from this handheld"
+ *   • RECEIVES a delivery barcode, declares the DELIVERY COMPLETE (SP-6b — one tap, one completion behind the scan; the
+ *     button is there only once something was received and gone once sent) and PUTS AWAY a goods-in item: each accepted scan shows in "Sent from this handheld"
  *     as saved here and, within a moment, with the store computer — because the box has it on its fsync'd log and in its
  *     queue for head office; the badge counts them by state;
  *   • COUNTS a bin BLIND (SP-3b · W2): the quantity sheet carries no expected figure; the count rides the same socket;
@@ -47,7 +48,7 @@ const PACK_JSON = JSON.stringify({
   warehouse: {
     assignmentId: 'A-1', workerId: 'u-worker', storeId: 'store-1',
     bins: [{ binId: 'BIN-A', storeId: 'store-1', capacityMinor: 1000, pickable: true, zone: 'ambient' }],
-    grnId: 'grn-1',
+    grnId: 'grn-1', poId: 'po-1',
     ordered: [{ productId: 'p-rice', quantityMinor: 100, unitCostMinor: 4000, currency: 'INR' }],
     barcodes: [{ barcode: '890RICE', productId: 'p-rice', level: 'unit' }],
     goodsIn: [{ productId: 'p-good', batchId: null, quantityMinor: 6, uom: 'EA', state: 'on_hand', expiry: null }],
@@ -140,7 +141,7 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     expect(await page.textContent('#queue-text')).toContain('nothing sent yet');
   });
 
-  it('receive + put away + a blind count → saved here → with the store computer (durable on the box); reload → all still listed, nothing re-sent', async () => {
+  it('receive + delivery complete + put away + a blind count → saved here → with the store computer (durable on the box); reload → all still listed, nothing re-sent', async () => {
     const { edge, base } = await box();
     const page = await openHandheld(base);
     await page.fill('#deviceId', 'hh-01');
@@ -159,6 +160,17 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     // The list and the badge follow the relay's render (the state moves before the paint).
     await page.waitForSelector('#sent-work .sent[data-kind="receipt"][data-state="handed_to_box"]');
     await page.waitForFunction(() => ((globalThis as unknown as HandheldWindow).document.querySelector('#queue-text')?.textContent ?? '').includes('with the store computer'), undefined, { timeout: 10_000 });
+
+    // DELIVERY COMPLETE (SP-6b): the button appears only once something was received here; one tap queues ONE completion
+    // behind the scan, naming the pack's order — no quantity is typed or sent. Then the button is gone.
+    await page.waitForSelector('#done-receiving:not([hidden])');
+    await page.click('#done-receiving');
+    await page.waitForSelector('#banner:not([hidden])');
+    expect(await page.textContent('#banner-title')).toBe('Receipt sent — head office will match the delivery to the order');
+    await page.click('#banner-ok');
+    await waitHanded(page, 'receipt_done');
+    await page.waitForSelector('#sent-work .sent[data-kind="receipt_done"][data-state="handed_to_box"]');
+    expect(await page.evaluate(() => (globalThis as unknown as HandheldWindow).document.querySelector('#done-receiving')?.hidden)).toBe(true);
 
     // PUT AWAY: the good goods-in item into the pickable bin.
     await page.locator('.item', { hasText: 'p-good' }).click();
@@ -190,24 +202,30 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     await waitHanded(page, 'count');
     await page.waitForSelector('#sent-work .sent[data-kind="count"][data-state="handed_to_box"]');
 
-    // The BOX has all three, on its fsync'd log and queued for head office — the scan, the applied command, the blind count.
-    expect(edge.deviceEventsOutbox.pending().map((i) => i.event.type)).toEqual(['ReceivingScanned', 'WarehouseMovementApplied', 'StockCounted']);
+    // The BOX has all four, on its fsync'd log and queued for head office — the scan, the delivery's completion behind it,
+    // the applied command, the blind count.
+    expect(edge.deviceEventsOutbox.pending().map((i) => i.event.type)).toEqual(['ReceivingScanned', 'ReceivingCompleted', 'WarehouseMovementApplied', 'StockCounted']);
     const records = (await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok).map((r) => JSON.parse(r.ok ? r.record : '{}') as { type: string; payload: Record<string, unknown> });
     expect(records[0]?.payload).toMatchObject({ grnId: 'grn-1', productId: 'p-rice', quantityMinor: 1, receivedBy: 'u-worker', storeId: 'store-1' });
-    expect(records[1]?.payload).toMatchObject({ movedBy: 'u-worker', command: { kind: 'put_away', productId: 'p-good', toBinId: 'BIN-A', quantityMinor: 6 } });
-    expect(records[2]?.payload).toMatchObject({ productId: 'p-good', binId: 'BIN-A', countedMinor: 5, counterId: 'u-worker', source: 'warehouse-handheld' });
-    expect(records[2]?.payload).not.toHaveProperty('expectedMinor');
-    expect(await sent(page)).toEqual([['count', 'handed_to_box'], ['put_away', 'handed_to_box'], ['receipt', 'handed_to_box']]);
+    expect(records[1]?.payload).toMatchObject({ grnId: 'grn-1', poId: 'po-1', completedBy: 'u-worker', storeId: 'store-1', scanCount: 1, source: 'warehouse-handheld' });
+    expect(records[1]?.payload).not.toHaveProperty('quantityMinor');
+    expect(records[2]?.payload).toMatchObject({ movedBy: 'u-worker', command: { kind: 'put_away', productId: 'p-good', toBinId: 'BIN-A', quantityMinor: 6 } });
+    expect(records[3]?.payload).toMatchObject({ productId: 'p-good', binId: 'BIN-A', countedMinor: 5, counterId: 'u-worker', source: 'warehouse-handheld' });
+    expect(records[3]?.payload).not.toHaveProperty('expectedMinor');
+    expect(await sent(page)).toEqual([['count', 'handed_to_box'], ['put_away', 'handed_to_box'], ['receipt_done', 'handed_to_box'], ['receipt', 'handed_to_box']]);
 
     // RELOAD: the durable device queue is the authority — all listed, all with the store computer, box unchanged.
     await page.reload({ waitUntil: 'load' });
     await ready(page);
     await page.waitForSelector('#sent-work .sent[data-kind="receipt"][data-state="handed_to_box"]');
+    await page.waitForSelector('#sent-work .sent[data-kind="receipt_done"][data-state="handed_to_box"]');
     await page.waitForSelector('#sent-work .sent[data-kind="put_away"][data-state="handed_to_box"]');
     await page.waitForSelector('#sent-work .sent[data-kind="count"][data-state="handed_to_box"]');
-    await page.waitForFunction(() => ((globalThis as unknown as HandheldWindow).document.querySelector('#queue-text')?.textContent ?? '').includes('3 with the store computer'), undefined, { timeout: 10_000 });
+    await page.waitForFunction(() => ((globalThis as unknown as HandheldWindow).document.querySelector('#queue-text')?.textContent ?? '').includes('4 with the store computer'), undefined, { timeout: 10_000 });
     expect(await page.evaluate(() => (globalThis as unknown as HandheldWindow).warehouseOutbox!.unsentCount())).toBe(0);
-    expect(edge.deviceEventsOutbox.all()).toHaveLength(3);
-    expect((await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok)).toHaveLength(3);
+    // The completed delivery stays completed across the reload — the durable queue remembers, so the button stays away.
+    expect(await page.evaluate(() => (globalThis as unknown as HandheldWindow).document.querySelector('#done-receiving')?.hidden)).toBe(true);
+    expect(edge.deviceEventsOutbox.all()).toHaveLength(4);
+    expect((await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok)).toHaveLength(4);
   }, 60_000);
 });

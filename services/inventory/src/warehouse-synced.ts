@@ -29,6 +29,9 @@ import type { Movement } from './index';
 
 export const WAREHOUSE_SYNC_FLAGS = Object.freeze([
   'mover_unknown', 'mover_lacks_authority', 'receiver_unknown', 'receiver_lacks_authority', 'held_out_of_stock',
+  // SP-6b: a scan that reached head office AFTER the delivery was assembled into its GRN — recorded and posted (the goods
+  // are in the building), said so the review screen shows a receipt that no longer matches its scans.
+  'after_assembly',
 ] as const);
 export type WarehouseSyncFlag = (typeof WAREHOUSE_SYNC_FLAGS)[number];
 
@@ -186,6 +189,8 @@ export interface ReceivingScanDeps {
   readonly scanExists: (tenantId: string, commandId: string) => Promise<boolean> | boolean;
   readonly recordScan: (tenantId: string, scan: ReceivingScanRecord) => Promise<void> | void;
   readonly scansOf: (tenantId: string, grnId: string) => Promise<readonly ReceivingScanRecord[]> | readonly ReceivingScanRecord[];
+  /** SP-6b: whether the delivery has already been assembled into its GRN — a later scan is flagged `after_assembly`. */
+  readonly receiptExists?: (tenantId: string, grnId: string) => Promise<boolean> | boolean;
   readonly now: () => string;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 }
@@ -233,6 +238,9 @@ export function receivingScanRoutes(deps: ReceivingScanDeps): readonly Route[] {
           return { status: 200, body: { commandId, grnId: s.grnId, recorded: true, alreadyRecorded: true, onHand: prior?.onHandMovementId !== null, flags: prior?.governanceFlags ?? [] } };
         }
         const flags = await verifyWorker(deps.permissionsOfUser, ctx.tenantId, s.receivedBy, 'receiver_unknown', 'receiver_lacks_authority');
+        // SP-6b: the delivery was already assembled into its GRN — this scan is still the truth about goods in the building,
+        // so it is recorded and posted exactly as before, and SAID, so the receipt is reviewed against its late scans.
+        if (deps.receiptExists !== undefined && (await deps.receiptExists(ctx.tenantId, s.grnId))) flags.push('after_assembly');
 
         // Good stock rises the store's on-hand position at once (M08-FR-01); anything else is recorded and HELD.
         let onHandMovementId: string | null = null;

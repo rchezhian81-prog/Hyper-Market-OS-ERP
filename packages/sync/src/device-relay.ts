@@ -51,6 +51,9 @@ export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surface
   // is its own type (per scan, not a whole GRN like the manager's `GoodsReceived`) so each rides its own cloud route.
   WarehouseMovementApplied: { surfaces: ['warehouse'] },
   ReceivingScanned: { surfaces: ['warehouse'] },
+  // SP-6b: the worker's "delivery complete" — ONE per GRN, behind its scans in the queue; head office assembles the goods
+  // receipt from the scans it already holds and folds it into the purchase order. Nothing in it moves stock.
+  ReceivingCompleted: { surfaces: ['warehouse'] },
 });
 
 /**

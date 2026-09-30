@@ -162,6 +162,9 @@
       <div class="actions">
         <button id="receive" type="button">Receive a delivery</button>
         <button id="put-away" class="primary" type="button" disabled>Put away — scan the bin</button>
+        <!-- SP-6b: shown once this handheld has received something for the delivery. Sends it as ONE receipt for head office
+             to assemble against the order — no quantity travels, the scans already did. -->
+        <button id="done-receiving" class="wide" type="button" hidden>Delivery complete — send the receipt</button>
         <!-- Shown only when the handheld holds pick work. Scanning a line's bin from the list starts the pick without it. -->
         <button id="pick" class="primary wide" type="button" disabled hidden>Pick — scan the bin</button>
         <!-- SP-3b: a BLIND bin count (W2) and an adjustment REQUEST with a reason (W3). Neither moves stock on this handheld. -->

@@ -504,6 +504,7 @@ export function warehousePayload(input: ScreenInput): Record<string, unknown> | 
     ...(w.goodsIn === undefined ? {} : { goodsIn: w.goodsIn.map((g) => ({ ...g, recalled: g.recalled === true })) }),
     ...(w.barcodes === undefined ? {} : { barcodes: w.barcodes }),
     ...(w.grnId === undefined ? {} : { grnId: w.grnId }),
+    ...(w.poId === undefined ? {} : { poId: w.poId }),
     ...(w.ordered === undefined ? {} : { ordered: w.ordered.map((o) => ({ productId: o.productId, quantityMinor: o.quantityMinor, unitCost: { minor: o.unitCostMinor, currency: o.currency } })) }),
     ...(w.recalledProductIds === undefined ? {} : { recalledProductIds: w.recalledProductIds }),
     ...(w.recalledBatchIds === undefined ? {} : { recalledBatchIds: w.recalledBatchIds }),

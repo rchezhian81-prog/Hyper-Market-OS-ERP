@@ -11,7 +11,7 @@ Adjustment · Expiry · Quarantine · Recall · Wastage. All handle §27.1 state
 
 ## Core handheld flows
 - **Put-away / move / pick:** scan item → scan bin → confirm; each is one appended ledger movement (M08-FR-01); bin capacity respected.
-- **Interaction budget (≤3):** put away a line (≤3) · pick a line (≤3) · start a count (≤2) · record an adjustment with reason (≤3).
+- **Interaction budget (≤3):** put away a line (≤3) · pick a line (≤3) · start a count (≤2) · record an adjustment with reason (≤3) · delivery complete (≤1, SP-6b).
 
 ## Blind count (M09-FR-04)
 - Counter **cannot see the expected quantity**; enter counted qty → recount variances → variance goes to reason-coded, approved adjustment (M08-FR-03). Counter ≠ sole approver (§28).
@@ -116,3 +116,21 @@ recorded before this slice, which posted no movement, still layer exactly as the
 **Still recorded, not dropped:** no screen drives dispatch / receive — the floor-indent chain (SP-8) will; the counts
 review screen and the stock-health screen do not yet show posted corrections or in-transit stock (SP-9); the picker and
 driver handhelds — SP-3c; TLS on the shop-network leg — Stage E; physical-device verification and staff UAT — PENDING.
+
+## Measured (SP-6b — the delivery is one receipt, owner's Option 2 directive of 30 September 2026)
+Since SP-3a the handheld's receiving scans reached head office one by one — each a `received` movement and a row on the
+delivery's scan register — and stopped there: the delivery was a pile of scans, not a goods receipt, and nothing folded
+into the purchase order. Now the footer carries **"Delivery complete — send the receipt"** (`#done-receiving`, EN/TA),
+shown only once something has been received on this handheld for the delivery and gone once it has been sent (the
+durable queue remembers across a reload). One tap queues ONE `ReceivingCompleted`, keyed on the GRN id, BEHIND the scans
+on the same device queue → box → sync path; it carries no quantity — the scans are the truth, this only says they are all
+in — and names the order the pack gave the handheld (`warehouse.poId`). It is listed under "Sent from this handheld" as
+its own kind ("Receipt sent") with the same five state words. Head office assembles ONE receipt from the scans it already
+holds, against the issued order, posts no stock twice, and folds it into the order — the rest is `docs/STATUS.md` SP-6b.
+Refusals on the handheld: nothing received here yet (`nothing_received`), already sent (`duplicate_ignored`, a warning).
+Measured in real Chromium on the real box (`tests/e2e/warehouse-handheld-syncs-through-the-box.e2e.ts`): receive → the
+button appears → one tap → *with the store computer* within a moment → the button is gone → reload → still listed, still
+gone; the box's log holds the completion behind the scan with no quantity on it. Head office delivery is proven on the
+real box against the real kernel (`tests/integration/warehouse-handheld-reaches-the-cloud-through-the-edge.test.ts`).
+**Still recorded, not dropped:** the review screen does not yet show an assembled receipt's scans or a late scan (SP-9);
+physical-device verification PENDING.
