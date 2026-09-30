@@ -35,8 +35,9 @@ const readTransfer = (h: ApiHarness, u: string, id: string) =>
 // FR-04 blind cycle counts (layered on the M08 ledger)
 const seedOnHand = (h: ApiHarness, u: string, productId: string, locationId: string, qty: number) => {
   const movementId = `seed-${productId}-${locationId}`;
+  // Received at ₹1.00 a unit — the cloud's own value for any variance (SP-4: the body carries none).
   return h.request({ method: 'POST', path: '/v1/inventory/movements', userId: u, tenantId: A, idempotencyKey: movementId,
-    body: { movementId, productId, locationId, kind: 'received', quantityMinor: qty, uom: 'EA', occurredAt: '2026-08-01T00:00:00.000Z', enteredBy: u } });
+    body: { movementId, productId, locationId, kind: 'received', quantityMinor: qty, uom: 'EA', occurredAt: '2026-08-01T00:00:00.000Z', enteredBy: u, unitCostMinor: 100 } });
 };
 const count = (h: ApiHarness, u: string, countId: string, body: Record<string, unknown>) =>
   h.request({ method: 'POST', path: `/v1/inventory/counts/${countId}`, userId: u, tenantId: A, idempotencyKey: `ct-${countId}`, body });
@@ -50,18 +51,21 @@ describe('warehouse durability: bins, in-transit transfers and count corrections
   it('replays a bin, a transfer held in-transit and a cycle-count correction to the same truth, and keeps appending', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-boss', 'store_manager'); // the separate person who dispatches (§28)
 
     // FR-01: register a bin and put 30 away.
     expect((await bin(h, 'u-owner', 'B1', { storeId: 'S1', capacityMinor: 100, pickable: true })).status).toBe(201);
     expect((await move(h, 'u-owner', 'm1', putAway('B1', 'P1', 30))).status).toBe(201);
 
-    // FR-03: propose a transfer and dispatch it with a SEPARATE approver → held in-transit.
+    // FR-03: propose a transfer and a SEPARATE person dispatches it over head office's own 20 at WH → held in-transit.
+    await seedOnHand(h, 'u-owner', 'P1', 'WH', 20);
     expect((await propose(h, 'u-owner', 't1', { fromLocationId: 'WH', toLocationId: 'S1', lines: [{ productId: 'P1', batchId: null, quantityMinor: 10, uom: 'EA', unitCost: { minor: 5_000, currency: 'INR' } }] })).status).toBe(201);
-    expect((await dispatch(h, 'u-owner', 't1', { approvedBy: 'u-boss', available: [{ productId: 'P1', batchId: null, quantityMinor: 20, state: 'on_hand' }] })).status).toBe(200);
+    expect((await dispatch(h, 'u-boss', 't1', {})).status).toBe(200);
 
-    // FR-04: a blind count 2 short of the ledger commits an immaterial compensating adjustment (layered on M08).
+    // FR-04: a blind count 2 short of the ledger commits an immaterial compensating adjustment (layered on M08) —
+    // valued by head office (₹2.00, under the default ₹1 000 threshold), never by the body.
     await seedOnHand(h, 'u-owner', 'PC', 'LOC1', 100);
-    expect((await count(h, 'u-owner', 'c1', { productId: 'PC', locationId: 'LOC1', uom: 'EA', countedMinor: 98, reasonCode: 'cycle_count', valuePerUnitMinor: 100, thresholdMinor: 100_000 })).status).toBe(201);
+    expect((await count(h, 'u-owner', 'c1', { productId: 'PC', locationId: 'LOC1', uom: 'EA', countedMinor: 98, reasonCode: 'cycle_count' })).status).toBe(201);
 
     // Restart: a NEW surface over the SAME persisted event store — every read must rebuild from the log.
     const restarted = apiHarness({ store: h.store });

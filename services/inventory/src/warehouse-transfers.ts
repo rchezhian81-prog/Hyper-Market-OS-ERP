@@ -9,6 +9,12 @@
 //
 // The rules are the pure `dispatchTransfer` / `receiveTransfer` / `proposeAllocation` engines in
 // `packages/warehouse`. This surface gives them the transfer aggregate lifecycle and the reads.
+//
+// SP-4 (audit finding F07): until this slice the dispatch took `approvedBy` and the `available` lots FROM THE BODY — a
+// never-provisioned name could approve, and a fictitious quantity could permit an over-draw. Now the approver is the
+// AUTHENTICATED dispatcher (who must not be the proposer, §28 — the engine's own check) and the available stock is head
+// office's own position at the source, with recalled batches and quality holds read from their registers. A body that
+// still carries either claim is refused by name, never quietly ignored (P-08).
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
@@ -24,10 +30,14 @@ const isInt = (v: unknown): v is number => Number.isInteger(v);
 const isPosInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) > 0;
 const rec = (v: unknown): Record<string, unknown> | null => (v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
 const isMoney = (v: unknown): v is Money => { const r = rec(v); return r !== null && Number.isInteger(r['minor']) && isCurrencyCode(r['currency'] as string); };
-const LOT_STATES = ['on_hand', 'quarantine', 'expired', 'damaged'] as const;
 
 export interface TransfersDeps {
   readonly transfer: (tenantId: string, transferId: string) => Promise<Transfer | undefined> | Transfer | undefined;
+  /**
+   * SP-4 (F07): head office's OWN stock at the source for the transfer's lines — the on-hand position per product, the
+   * batch's recall and quality-hold state read from their registers. Never the body's word.
+   */
+  readonly availableAt: (tenantId: string, fromLocationId: string, lines: readonly TransferLine[]) => Promise<readonly AvailableLot[]> | readonly AvailableLot[];
   readonly recordProposed: (tenantId: string, transfer: Transfer) => Promise<void> | void;
   readonly recordDispatched: (tenantId: string, transfer: Transfer, movements: readonly StockMovement[]) => Promise<void> | void;
   readonly recordReceived: (tenantId: string, transfer: Transfer, movements: readonly StockMovement[], discrepancies: unknown) => Promise<void> | void;
@@ -44,18 +54,6 @@ function readLines(v: unknown): TransferLine[] | null {
     lines.push({ productId: l['productId'] as string, batchId: isStr(l['batchId']) ? (l['batchId'] as string) : null, quantityMinor: l['quantityMinor'] as number, uom: l['uom'] as string, unitCost: l['unitCost'] as Money });
   }
   return lines;
-}
-
-function readLots(v: unknown): AvailableLot[] | null {
-  if (!Array.isArray(v)) return null;
-  const lots: AvailableLot[] = [];
-  for (const raw of v) {
-    const l = rec(raw);
-    if (l === null || !isStr(l['productId']) || !isInt(l['quantityMinor']) || typeof l['state'] !== 'string' || !(LOT_STATES as readonly string[]).includes(l['state'])
-      || (l['batchId'] !== null && !isStr(l['batchId'])) || (l['recalled'] !== undefined && typeof l['recalled'] !== 'boolean')) return null;
-    lots.push({ productId: l['productId'] as string, batchId: isStr(l['batchId']) ? (l['batchId'] as string) : null, quantityMinor: l['quantityMinor'] as number, state: l['state'] as AvailableLot['state'], ...(l['recalled'] === true ? { recalled: true } : {}) });
-  }
-  return lots;
 }
 
 const refused = (why: string): never => {
@@ -84,24 +82,30 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
       },
     },
     {
-      // Dispatch: stock leaves the source and becomes in-transit AT THE DESTINATION. Needs a separate
-      // approver, and refuses recalled/quarantined/expired/damaged stock and an over-draw.
+      // Dispatch: stock leaves the source and becomes in-transit AT THE DESTINATION. The AUTHENTICATED dispatcher is
+      // the approver — the engine refuses the proposer approving their own (§28) — and the available stock is head
+      // office's own (SP-4, F07); recalled/quarantined/expired/damaged stock and an over-draw are refused.
       api: 'API-04', method: 'POST', path: '/v1/warehouse/transfers/:transferId/dispatch',
       permission: 'inventory.movement.append', idempotent: true,
       handler: async (ctx) => {
         const transferId = ctx.params['transferId'] ?? '';
         const b = (ctx.body ?? {}) as { approvedBy?: unknown; available?: unknown };
-        const available = readLots(b.available);
-        if (!isStr(b.approvedBy) || available === null) {
-          throw apiError(400, { code: 'not_readable_as_a_dispatch', whatHappened: 'A dispatch needs an approvedBy and the available lots (productId, whole quantityMinor, state).', wasItSaved: 'not_saved', nextSafeAction: 'Send the approver and available stock. Nothing was moved.' });
+        if (b.approvedBy !== undefined || b.available !== undefined) {
+          throw apiError(400, {
+            code: 'dispatch_carries_caller_claims',
+            whatHappened: 'A dispatch names no approver and no stock: the approver is the person dispatching (who cannot be the person who proposed it, §28) and the available stock is head office\'s own position at the source.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the dispatch with an empty body, as the person approving it. Nothing was moved.',
+          });
         }
         const transfer = await deps.transfer(ctx.tenantId, transferId);
         if (transfer === undefined) throw notFound(`transfer ${transferId}`);
-        const approval: TransferApproval = { subjectRef: transferId, status: 'approved', decidedBy: b.approvedBy };
+        const approval: TransferApproval = { subjectRef: transferId, status: 'approved', decidedBy: ctx.userId };
+        const available = await deps.availableAt(ctx.tenantId, transfer.fromLocationId, transfer.lines);
         try {
           const result = dispatchTransfer({ transfer, approval, available, at: deps.now() });
           await deps.recordDispatched(ctx.tenantId, result.transfer, result.movements);
-          return { status: 200, body: { transferId, state: result.transfer.state, approvedBy: result.transfer.approvedBy, movements: result.movements.length } };
+          return { status: 200, body: { transferId, state: result.transfer.state, approvedBy: result.transfer.approvedBy, movements: result.movements.length, availableChecked: available.map((l) => ({ productId: l.productId, batchId: l.batchId, quantityMinor: l.quantityMinor, state: l.state, recalled: l.recalled === true })) } };
         } catch (e) {
           if (e instanceof TransferRefusedError) refused(e.why);
           throw e;

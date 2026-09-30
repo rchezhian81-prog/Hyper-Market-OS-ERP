@@ -11,16 +11,38 @@
 // M08 movement model (a kind + a positive quantity) cannot express a signed count correction, this
 // module keeps its OWN append-only count-correction ledger LAYERED on M08 — expected = M08 on-hand + the
 // sum of prior count corrections — so repeated counts converge even as real movements happen between them.
+//
+// SP-4 (audit finding F07): until this slice the DIRECT route took the unit value, the approval threshold and the
+// approver's name FROM THE BODY — a counter could price a variance at nothing, set the threshold to one, or name
+// anyone as approver. Now every judgement is head office's own, on the direct and the relayed route alike
+// (`reconcileBlindCount`): the value is the cloud's weighted-average cost, the threshold the tenant's count policy,
+// and a MATERIAL (or unvalued) variance is RECORDED and HELD — never applied on the counter's say-so, never refused
+// into the void (hard rule #10) — until a separate person with approval authority decides it (`decideCount`), by the
+// direct decide route or by the manager's relayed decision. A body that still carries a claim is refused by name.
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { reconcileCount, InvalidCountError, type CountReconciliation } from '../../../packages/counts/src/counts';
-import { ApprovalRequiredError, MissingReasonError } from '../../../packages/adjustment/src/adjustment';
 import { Ledger, InMemoryLedgerStore } from '../../../packages/ledger/src/ledger';
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { makeEvent } from '../../../packages/contracts/src/event';
-import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
-import { isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
+import type { AuditEntry } from '../../../packages/audit/src/index';
+import type { CurrencyCode } from '../../../packages/contracts/src/money';
+
+/** The count-approval threshold applied when the tenant has set none — and the record says so (`default_threshold`). */
+export const DEFAULT_COUNT_APPROVAL_THRESHOLD_MINOR = 100_000;
+
+export const COUNT_FLAGS = Object.freeze([
+  'counter_unknown', 'counter_lacks_authority', 'value_unknown', 'default_threshold', 'bin_unknown',
+] as const);
+export type CountFlag = (typeof COUNT_FLAGS)[number];
+
+export interface CountPolicy {
+  /** Variance value at/above which a separate person must approve the correction (§28), in minor units. */
+  readonly approvalThresholdMinor: number;
+  readonly setBy: string;
+  readonly setAt: string;
+}
 
 export interface StoredReconciliation {
   readonly countId: string;
@@ -39,11 +61,11 @@ export interface StoredReconciliation {
   readonly approvedBy: string | null;
   readonly at: string;
   /**
-   * SP-2b — a count relayed from a store device whose material variance has NO approver yet: recorded, valued and
-   * visible, the correction NOT applied until a separate person approves (§28). Absent on a direct-route count.
+   * A count whose material (or unvalued) variance has NO approver yet: recorded, valued and visible, the correction
+   * NOT applied until a separate person approves (§28). Since SP-4 on the direct route as well as the relayed one.
    */
   readonly pendingApproval?: boolean;
-  /** SP-2b — what head office's re-verification found about a relayed count (empty = nothing to flag). */
+  /** What head office's own judgement found about the count (empty = nothing to flag). */
   readonly governanceFlags?: readonly string[];
   /** SP-2b — the identity that relayed it (the store box), the surface, and the store, when relayed. */
   readonly relayedBy?: string;
@@ -54,6 +76,10 @@ export interface StoredReconciliation {
    * office's bin contents for that bin, and the correction layers on that bin only. Absent/null on a store-level count.
    */
   readonly binId?: string | null;
+  /** SP-4 — how a HELD variance was decided, by whom and when; absent while it waits. */
+  readonly decision?: 'approved' | 'rejected';
+  readonly decidedAt?: string;
+  readonly decisionReason?: string;
 }
 
 export interface CountsDeps {
@@ -64,37 +90,182 @@ export interface CountsDeps {
   /** Whether a count id has already been reconciled (idempotency — a count id is used once). */
   readonly countExists: (tenantId: string, countId: string) => Promise<boolean> | boolean;
   readonly recordReconciliation: (tenantId: string, rec: StoredReconciliation) => Promise<void> | void;
+  /** SP-4: the count by id, whatever position it is for — the decide step needs it (latest state). */
+  readonly reconciliation: (tenantId: string, countId: string) => Promise<StoredReconciliation | undefined> | StoredReconciliation | undefined;
+  /** SP-4: append the decided state of a held count (a second event, never an edit — hard rule #2). */
+  readonly recordDecision: (tenantId: string, rec: StoredReconciliation) => Promise<void> | void;
+  /** SP-4 (F07): the cloud's own unit value for the product (weighted-average cost); `undefined` when never costed. */
+  readonly unitValueMinor: (tenantId: string, productId: string) => Promise<number | undefined> | number | undefined;
+  /** SP-4 (F07): the tenant's count policy, or `undefined` when never set (the default applies, flagged). */
+  readonly countPolicy: (tenantId: string) => Promise<CountPolicy | undefined> | CountPolicy | undefined;
+  /**
+   * SP-3b (W2): head office's bin contents for (bin, product) across every batch — the base a BIN-level count is
+   * reconciled against; `undefined` when the bin is not one head office has. Optional so a bare deps stub may omit it.
+   */
+  readonly binExpected?: (tenantId: string, binId: string, productId: string) => Promise<number | undefined> | number | undefined;
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   readonly now: () => string;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isNonNegInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0;
 
-/** The count corrections applied so far for this key — the layer on top of the M08 base position. */
 /** The corrections already layered on M08 for a position — only counts that were actually ADJUSTED count. */
 export const priorCorrections = (recs: readonly StoredReconciliation[]): number =>
   recs.filter((r) => r.adjusted).reduce((s, r) => s + r.varianceMinor, 0);
 /** The STORE-level reconciliations only: a bin count's correction (SP-3b) layers on that bin, never on the store position. */
 export const storeLevel = (recs: readonly StoredReconciliation[]): readonly StoredReconciliation[] =>
   recs.filter((r) => (r.binId ?? null) === null);
+/** Prior reconciliations of the SAME position: the same bin for a bin count, no bin for a store-level count. */
+const samePosition = (binId: string | null) => (r: StoredReconciliation): boolean => (r.binId ?? null) === binId;
+
+/** What a blind count is, wherever it was entered: only what the counter saw, and who saw it. */
+export interface BlindCountInput {
+  readonly countId: string;
+  readonly productId: string;
+  readonly locationId: string;
+  readonly binId: string | null;
+  readonly uom: string;
+  readonly countedMinor: number;
+  readonly reasonCode: string;
+  readonly counterId: string;
+  /** Flags the caller already established about the counter (a relayed count re-verifies them; a direct one has none). */
+  readonly counterFlags: readonly CountFlag[];
+  /** Who carried it and from where, when relayed; absent on the direct route. */
+  readonly relayed?: { readonly relayedBy: string; readonly source: string; readonly storeId: string | null };
+}
+
+/**
+ * Reconcile a blind count on head office's own figures — the ONE path both the direct and the relayed route take
+ * (SP-4). Expected: the M08 position (or the bin's contents, SP-3b) plus prior corrections of the same position.
+ * Value: the cloud's cost. Threshold: the tenant's policy. Immaterial → corrected at once through the tested engine.
+ * Material, unvalued or unknown-bin → recorded and HELD for a separate person. Throws `InvalidCountError` for a
+ * count that is not a non-negative whole quantity. Idempotency is the caller's (a count id is used once).
+ */
+export async function reconcileBlindCount(deps: CountsDeps, tenantId: string, c: BlindCountInput): Promise<StoredReconciliation> {
+  const flags: CountFlag[] = [...c.counterFlags];
+  const priorRecs = (await deps.reconciliations(tenantId, c.productId, c.locationId)).filter(samePosition(c.binId));
+  let base: number;
+  let binUnknown = false;
+  if (c.binId === null) {
+    base = await deps.onHand(tenantId, c.productId, c.locationId);
+  } else {
+    const held = deps.binExpected === undefined ? undefined : await deps.binExpected(tenantId, c.binId, c.productId);
+    if (held === undefined) { binUnknown = true; flags.push('bin_unknown'); base = 0; } else base = held;
+  }
+  const expected = base + priorCorrections(priorRecs);
+
+  // The VALUE and the THRESHOLD — the cloud's, never the body's (F07). Unknown is said, never silently zero:
+  // an unvalued variance cannot be judged immaterial, so it waits for a person like a material one would.
+  const unitValue = await deps.unitValueMinor(tenantId, c.productId);
+  if (unitValue === undefined) flags.push('value_unknown');
+  const policy = await deps.countPolicy(tenantId);
+  if (policy === undefined) flags.push('default_threshold');
+  const thresholdMinor = policy?.approvalThresholdMinor ?? DEFAULT_COUNT_APPROVAL_THRESHOLD_MINOR;
+
+  const varianceMinor = c.countedMinor - expected;
+  const valueMinor = Math.abs(varianceMinor) * (unitValue ?? 0);
+  // A count of a bin head office does not have cannot be judged at all — it waits for a person like a material one.
+  const material = binUnknown || (varianceMinor !== 0 && (unitValue === undefined || valueMinor >= thresholdMinor));
+  const at = deps.now();
+  const relayed = c.relayed === undefined ? {} : { relayedBy: c.relayed.relayedBy, source: c.relayed.source, storeId: c.relayed.storeId };
+  const common = {
+    countId: c.countId, productId: c.productId, locationId: c.locationId, binId: c.binId,
+    countedMinor: c.countedMinor, currency: 'INR' as const, reasonCode: c.reasonCode,
+    counterId: c.counterId, approvedBy: null, at, governanceFlags: flags, ...relayed,
+  };
+  if (material) {
+    // Recorded, valued, visible — and NOT applied. The correction waits for a separate person (§28); the review
+    // screen lists it first. The count happened; this records it honestly, never refuses it into the void (#10).
+    if (!Number.isInteger(c.countedMinor) || c.countedMinor < 0) throw new InvalidCountError(c.countId);
+    return { ...common, expectedMinor: expected, varianceMinor, valueMinor, reconciled: false, adjusted: false, requiredApproval: true, pendingApproval: true };
+  }
+  // Immaterial (or no variance): the same tested engine as ever, over a ledger hydrated with the expected position,
+  // corrects at once. Threshold above the value by construction, so it never throws for approval.
+  const store = new InMemoryLedgerStore();
+  const ledger = new Ledger(store);
+  ledger.append(makeEvent({
+    id: `count-open-${c.countId}`, type: 'CountOpeningPosition', occurredAt: at,
+    idempotencyKey: `count-open-${tenantId}-${c.countId}`, source: 'api/inventory',
+    payload: { productId: c.productId, deltaMinor: expected },
+  }));
+  const result: CountReconciliation = reconcileCount({
+    id: c.countId, productId: c.productId, locationId: c.locationId, uom: c.uom,
+    countedMinor: c.countedMinor, counterId: c.counterId, at, reasonCode: c.reasonCode,
+    valuePerUnit: { minor: unitValue ?? 0, currency: 'INR' }, thresholdMinor: valueMinor + 1,
+  }, ledger, new SyncOutbox());
+  return { ...common, expectedMinor: result.expectedMinor, varianceMinor: result.varianceMinor, valueMinor: result.varianceValue.minor, reconciled: result.reconciled, adjusted: result.adjusted, requiredApproval: false, pendingApproval: false };
+}
+
+/** What deciding a held count came to — for the direct route and for the manager's relayed decision alike. */
+export type CountDecisionOutcome =
+  | { readonly ok: true; readonly record: StoredReconciliation; readonly alreadyDecided: boolean }
+  | { readonly ok: false; readonly refusedBecause: 'count_unknown' | 'count_not_pending' | 'self_approval' | 'count_already_decided'; readonly detail: string; readonly record?: StoredReconciliation };
+
+/**
+ * Decide a HELD count (SP-4 · §28): a person who is NOT the counter approves — the correction then layers on the
+ * position (`adjusted`) — or rejects it (the variance stands recorded, nothing applied). One decision per count: the
+ * same again is a no-op with `alreadyDecided`, a different one is refused. Appends the decided state; never edits.
+ */
+export async function decideCount(deps: CountsDeps, input: {
+  readonly tenantId: string; readonly countId: string; readonly decidedBy: string;
+  readonly decision: 'approved' | 'rejected'; readonly reason: string; readonly branchId: string | null;
+  /** How the decision arrived — for the audit line. */
+  readonly via: 'direct' | 'relayed';
+}): Promise<CountDecisionOutcome> {
+  const rec = await deps.reconciliation(input.tenantId, input.countId);
+  if (rec === undefined) return { ok: false, refusedBecause: 'count_unknown', detail: `No count ${input.countId} is on file here.` };
+  if (rec.decision !== undefined) {
+    if (rec.decision === input.decision) return { ok: true, record: rec, alreadyDecided: true };
+    return { ok: false, refusedBecause: 'count_already_decided', detail: `Count ${input.countId} was already ${rec.decision} by ${rec.approvedBy ?? 'someone'} at ${rec.decidedAt ?? '?'}; a different decision now would be a second truth.`, record: rec };
+  }
+  if (rec.pendingApproval !== true) return { ok: false, refusedBecause: 'count_not_pending', detail: `Count ${input.countId} is not waiting for a decision (it ${rec.adjusted ? 'was corrected at once' : 'matched'}).`, record: rec };
+  if (rec.counterId === input.decidedBy) return { ok: false, refusedBecause: 'self_approval', detail: `${input.decidedBy} counted this and cannot decide it (§28 separation of duties).`, record: rec };
+
+  const decidedAt = deps.now();
+  const decided: StoredReconciliation = {
+    ...rec,
+    adjusted: input.decision === 'approved', pendingApproval: false,
+    approvedBy: input.decision === 'approved' ? input.decidedBy : null,
+    decision: input.decision, decidedAt, decisionReason: input.reason,
+  };
+  await deps.recordDecision(input.tenantId, decided);
+  await deps.recordAudit?.(input.tenantId, {
+    actorId: input.decidedBy, action: input.decision === 'approved' ? 'count.approve' : 'count.reject', objectType: 'stock_count', objectId: input.countId,
+    at: decidedAt, origin: { tenantId: input.tenantId, branchId: input.branchId },
+    before: { status: 'pending_approval' },
+    after: { status: input.decision, counterId: rec.counterId, varianceMinor: String(rec.varianceMinor), valueMinor: String(rec.valueMinor), binId: rec.binId ?? '', via: input.via },
+    reason: input.reason, correlationId: input.countId,
+  });
+  return { ok: true, record: decided, alreadyDecided: false };
+}
+
+const refusalStatus: Record<Exclude<CountDecisionOutcome, { ok: true }>['refusedBecause'], number> = {
+  count_unknown: 404, count_not_pending: 409, self_approval: 422, count_already_decided: 409,
+};
 
 export function countsRoutes(deps: CountsDeps): readonly Route[] {
   return [
     {
-      // Reconcile a blind count. The expected quantity is computed here, never supplied. A variance
-      // commits a reason-coded compensating adjustment; a material one needs a separate approver (§28).
+      // Reconcile a blind count. The expected quantity is computed here, never supplied — and since SP-4 so are the
+      // value and the threshold; a material variance is HELD for a separate person, never applied on a body claim.
       api: 'API-04', method: 'POST', path: '/v1/inventory/counts/:countId',
       permission: 'inventory.movement.append', idempotent: true,
       handler: async (ctx) => {
         const countId = ctx.params['countId'] ?? '';
-        const b = (ctx.body ?? {}) as { productId?: unknown; locationId?: unknown; uom?: unknown; countedMinor?: unknown; reasonCode?: unknown; valuePerUnitMinor?: unknown; currency?: unknown; thresholdMinor?: unknown; approvedBy?: unknown };
-        if (!isStr(b.productId) || !isStr(b.locationId) || !isStr(b.uom) || !isNonNegInt(b.countedMinor) || !isStr(b.reasonCode)
-          || !isNonNegInt(b.valuePerUnitMinor) || !isNonNegInt(b.thresholdMinor)
-          || (b.currency !== undefined && !isCurrencyCode(b.currency as string))
-          || (b.approvedBy !== undefined && !isStr(b.approvedBy))) {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (b['valuePerUnitMinor'] !== undefined || b['thresholdMinor'] !== undefined || b['approvedBy'] !== undefined) {
+          throw apiError(400, {
+            code: 'count_carries_caller_claims',
+            whatHappened: 'A count carries no value, no threshold and no approver: the value is head office\'s own cost, the threshold is the tenant\'s count policy, and a material variance waits for a separate person to decide it.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send only the blind count (productId, locationId, uom, countedMinor, reasonCode). Nothing was recorded.',
+          });
+        }
+        if (!isStr(b['productId']) || !isStr(b['locationId']) || !isStr(b['uom']) || !isNonNegInt(b['countedMinor']) || !isStr(b['reasonCode'])) {
           throw apiError(400, {
             code: 'not_readable_as_a_count',
-            whatHappened: 'A count needs a productId, locationId, uom, whole countedMinor, a reasonCode, a whole valuePerUnitMinor and thresholdMinor.',
+            whatHappened: 'A count needs a productId, locationId, uom, whole countedMinor and a reasonCode.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send the blind count. Nothing was recorded. The expected quantity is computed by the system, never sent.',
           });
@@ -107,53 +278,52 @@ export function countsRoutes(deps: CountsDeps): readonly Route[] {
             nextSafeAction: 'Use a new count id. Nothing was changed.',
           });
         }
-
-        const currency = (b.currency as CurrencyCode) ?? 'INR';
-        const at = deps.now();
-        const priorRecs = storeLevel(await deps.reconciliations(ctx.tenantId, b.productId, b.locationId));
-        const expected = (await deps.onHand(ctx.tenantId, b.productId, b.locationId)) + priorCorrections(priorRecs);
-
-        // Hydrate a ledger with the expected position so the engine projects it as on-hand (blind).
-        const store = new InMemoryLedgerStore();
-        const ledger = new Ledger(store);
-        ledger.append(makeEvent({
-          id: `count-open-${countId}`, type: 'CountOpeningPosition', occurredAt: at,
-          idempotencyKey: `count-open-${ctx.tenantId}-${countId}`, source: 'api/inventory',
-          payload: { productId: b.productId, deltaMinor: expected },
-        }));
-        const outbox = new SyncOutbox();
-
-        const approval: DecidedRequest | undefined = isStr(b.approvedBy)
-          ? { id: countId, subjectType: 'stock_adjustment', subjectRef: countId, requestedBy: ctx.userId, branchId: ctx.branchId, value: null, status: 'approved', decidedBy: b.approvedBy, reason: b.reasonCode, decidedAt: at }
-          : undefined;
-
-        let result: CountReconciliation;
+        let rec: StoredReconciliation;
         try {
-          result = reconcileCount({
-            id: countId, productId: b.productId, locationId: b.locationId, uom: b.uom,
-            countedMinor: b.countedMinor, counterId: ctx.userId, at, reasonCode: b.reasonCode,
-            valuePerUnit: { minor: b.valuePerUnitMinor, currency }, thresholdMinor: b.thresholdMinor,
-            ...(approval === undefined ? {} : { approval }),
-          }, ledger, outbox);
+          rec = await reconcileBlindCount(deps, ctx.tenantId, {
+            countId, productId: b['productId'], locationId: b['locationId'], binId: null, uom: b['uom'],
+            countedMinor: b['countedMinor'], reasonCode: b['reasonCode'], counterId: ctx.userId, counterFlags: [],
+          });
         } catch (e) {
-          if (e instanceof ApprovalRequiredError) {
-            throw apiError(422, { code: 'count_needs_approval', whatHappened: `${e.message} The counter cannot approve their own variance (§28).`, wasItSaved: 'not_saved', nextSafeAction: 'Have a separate person approve the variance with a reason, then re-send. Nothing was recorded.' });
-          }
-          if (e instanceof InvalidCountError || e instanceof MissingReasonError) {
+          if (e instanceof InvalidCountError) {
             throw apiError(400, { code: 'invalid_count', whatHappened: e.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the count and re-send. Nothing was recorded.' });
           }
           throw e;
         }
-
-        const rec: StoredReconciliation = {
-          countId, productId: b.productId, locationId: b.locationId,
-          expectedMinor: result.expectedMinor, countedMinor: b.countedMinor, varianceMinor: result.varianceMinor,
-          valueMinor: result.varianceValue.minor, currency, reasonCode: b.reasonCode,
-          reconciled: result.reconciled, adjusted: result.adjusted, requiredApproval: result.requiredApproval,
-          counterId: ctx.userId, approvedBy: isStr(b.approvedBy) ? b.approvedBy : null, at,
-        };
         await deps.recordReconciliation(ctx.tenantId, rec);
-        return { status: 201, body: { countId, expectedMinor: rec.expectedMinor, countedMinor: rec.countedMinor, varianceMinor: rec.varianceMinor, valueMinor: rec.valueMinor, reconciled: rec.reconciled, adjusted: rec.adjusted, requiredApproval: rec.requiredApproval } };
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: 'count.record', objectType: 'stock_count', objectId: countId,
+          at: rec.at, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+          before: null,
+          after: { productId: rec.productId, locationId: rec.locationId, countedMinor: String(rec.countedMinor), varianceMinor: String(rec.varianceMinor), valueMinor: String(rec.valueMinor), adjusted: String(rec.adjusted), pendingApproval: String(rec.pendingApproval ?? false), flags: (rec.governanceFlags ?? []).join(',') },
+          reason: rec.reasonCode, correlationId: countId,
+        });
+        return {
+          status: 201,
+          body: { countId, expectedMinor: rec.expectedMinor, countedMinor: rec.countedMinor, varianceMinor: rec.varianceMinor, valueMinor: rec.valueMinor, reconciled: rec.reconciled, adjusted: rec.adjusted, requiredApproval: rec.requiredApproval, pendingApproval: rec.pendingApproval ?? false, flags: rec.governanceFlags ?? [] },
+        };
+      },
+    },
+    {
+      // SP-4: decide a HELD count — approve (the correction layers on the position) or reject — by a separate person.
+      api: 'API-04', method: 'POST', path: '/v1/inventory/counts/:countId/decide',
+      permission: 'inventory.adjustment.approve', idempotent: true,
+      handler: async (ctx) => {
+        const countId = (ctx.params['countId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const decision = b['decision'];
+        if ((decision !== 'approved' && decision !== 'rejected') || !isStr(b['reason'])) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_count_decision',
+            whatHappened: 'A decision needs { decision: "approved" | "rejected", reason } — the reason is the audit line a person reads later.',
+            wasItSaved: 'not_saved', nextSafeAction: 'Send the decision with a reason. Nothing was changed.',
+          });
+        }
+        const out = await decideCount(deps, { tenantId: ctx.tenantId, countId, decidedBy: ctx.userId, decision, reason: b['reason'].trim(), branchId: ctx.branchId ?? null, via: 'direct' });
+        if (!out.ok) {
+          throw apiError(refusalStatus[out.refusedBecause], { code: out.refusedBecause, whatHappened: out.detail, wasItSaved: 'not_saved', nextSafeAction: out.refusedBecause === 'self_approval' ? 'A different person with approval authority must decide it. Nothing was changed.' : 'Nothing was changed.' });
+        }
+        return { status: 200, body: { countId, decision: out.record.decision, adjusted: out.record.adjusted, approvedBy: out.record.approvedBy, decidedAt: out.record.decidedAt, alreadyDecided: out.alreadyDecided } };
       },
     },
     {
@@ -178,7 +348,7 @@ export function countsRoutes(deps: CountsDeps): readonly Route[] {
         const countCorrectionMinor = priorCorrections(storeLevel(recs));
         return {
           status: 200,
-          body: { productId, locationId, systemOnHandMinor, countCorrectionMinor, correctedOnHandMinor: systemOnHandMinor + countCorrectionMinor, counts: recs, asAt: deps.now() },
+          body: { productId, locationId, systemOnHandMinor, countCorrectionMinor, correctedOnHandMinor: systemOnHandMinor + countCorrectionMinor, counts: recs, pending: recs.filter((r) => r.pendingApproval === true).length, asAt: deps.now() },
         };
       },
     },

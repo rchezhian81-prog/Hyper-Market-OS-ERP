@@ -129,6 +129,60 @@ function readRelayedRequest(body: unknown): RelayedRequest | undefined {
 /** The M08 movement id an approved request posts under — one per request, so a repeated approval is one movement. */
 export const adjustmentMovementId = (requestId: string): string => `adj-req:${requestId}`;
 
+/** What deciding a request came to — for the direct route and for the manager's relayed decision alike (SP-4). */
+export type AdjustmentDecisionOutcome =
+  | { readonly ok: true; readonly record: AdjustmentRequestRecord; readonly alreadyDecided: boolean }
+  | { readonly ok: false; readonly refusedBecause: 'adjustment_request_unknown' | 'self_approval' | 'adjustment_request_already_decided' | `movement_${string}`; readonly detail: string };
+
+/**
+ * Decide a pending request (§28): a person who is NOT the raiser approves — ONE compensating M08 movement posts, keyed
+ * on the request — or rejects it (nothing posts). One decision per request: the same again is a no-op with
+ * `alreadyDecided`, a different one is refused. Appends the decided state; never edits.
+ */
+export async function decideAdjustmentRequest(deps: AdjustmentRequestDeps, input: {
+  readonly tenantId: string; readonly requestId: string; readonly decidedBy: string;
+  readonly decision: 'approved' | 'rejected'; readonly reason: string; readonly branchId: string | null;
+  /** How the decision arrived — for the audit line. */
+  readonly via: 'direct' | 'relayed';
+}): Promise<AdjustmentDecisionOutcome> {
+  const rec = await deps.request(input.tenantId, input.requestId);
+  if (rec === undefined) return { ok: false, refusedBecause: 'adjustment_request_unknown', detail: `No adjustment request ${input.requestId} is on file here.` };
+  if (rec.requestedBy === input.decidedBy) return { ok: false, refusedBecause: 'self_approval', detail: `${input.decidedBy} raised this request and cannot decide it (§28 separation of duties).` };
+  if (rec.status !== 'pending') {
+    const same = (input.decision === 'approved') === (rec.status === 'posted');
+    if (same) return { ok: true, record: rec, alreadyDecided: true };
+    return { ok: false, refusedBecause: 'adjustment_request_already_decided', detail: `Request ${input.requestId} was already ${rec.status} by ${rec.decidedBy ?? 'someone'} at ${rec.decidedAt ?? '?'}; a different decision now would be a second truth.` };
+  }
+  const decidedAt = deps.now();
+  let movementId: string | null = null;
+  if (input.decision === 'approved') {
+    // One compensating M08 movement, by kind: found → adjusted (+), missing/damaged → wasted (−). Both people on it.
+    const m: Movement = {
+      movementId: adjustmentMovementId(input.requestId), productId: rec.productId, locationId: rec.locationId,
+      kind: rec.deltaMinor > 0 ? 'adjusted' : 'wasted', quantityMinor: Math.abs(rec.deltaMinor), uom: rec.uom,
+      occurredAt: decidedAt, reason: `${rec.reasonCode}${rec.note === null ? '' : `: ${rec.note}`}`,
+      approvedBy: input.decidedBy, enteredBy: rec.requestedBy,
+    };
+    const check = checkMovement(m);
+    if (!check.ok) return { ok: false, refusedBecause: `movement_${check.refusedBecause ?? 'refused'}`, detail: check.detail };
+    await deps.appendMovement(input.tenantId, m);
+    movementId = m.movementId;
+  }
+  const decided: AdjustmentRequestRecord = {
+    ...rec, status: input.decision === 'approved' ? 'posted' : 'rejected',
+    decidedBy: input.decidedBy, decidedAt, decisionReason: input.reason, movementId,
+  };
+  await deps.recordDecision(input.tenantId, decided);
+  await deps.recordAudit?.(input.tenantId, {
+    actorId: input.decidedBy, action: input.decision === 'approved' ? 'adjustment.approve' : 'adjustment.reject', objectType: 'stock_adjustment_request', objectId: input.requestId,
+    at: decidedAt, origin: { tenantId: input.tenantId, branchId: input.branchId },
+    before: { status: 'pending' },
+    after: { status: decided.status, requestedBy: rec.requestedBy, deltaMinor: String(rec.deltaMinor), valueMinor: String(rec.valueMinor), movementId: movementId ?? '', via: input.via },
+    reason: input.reason, correlationId: input.requestId,
+  });
+  return { ok: true, record: decided, alreadyDecided: false };
+}
+
 export function adjustmentRequestRoutes(deps: AdjustmentRequestDeps): readonly Route[] {
   return [
     {
@@ -197,61 +251,18 @@ export function adjustmentRequestRoutes(deps: AdjustmentRequestDeps): readonly R
             wasItSaved: 'not_saved', nextSafeAction: 'Send the decision with a reason. Nothing was changed.',
           });
         }
-        const rec = await deps.request(ctx.tenantId, requestId);
-        if (rec === undefined) {
-          throw apiError(404, {
-            code: 'adjustment_request_unknown',
-            whatHappened: `No adjustment request ${requestId} is on file here.`,
-            wasItSaved: 'not_saved', nextSafeAction: 'Check the store has synchronised — the request may still be on the store computer.',
+        const out = await decideAdjustmentRequest(deps, { tenantId: ctx.tenantId, requestId, decidedBy: ctx.userId, decision, reason: b['reason'].trim(), branchId: ctx.branchId ?? null, via: 'direct' });
+        if (!out.ok) {
+          const status = out.refusedBecause === 'adjustment_request_unknown' ? 404 : out.refusedBecause === 'adjustment_request_already_decided' ? 409 : 422;
+          throw apiError(status, {
+            code: out.refusedBecause, whatHappened: out.detail, wasItSaved: 'not_saved',
+            nextSafeAction: out.refusedBecause === 'self_approval' ? 'A different person with approval authority must decide it. Nothing was changed.'
+              : out.refusedBecause === 'adjustment_request_unknown' ? 'Check the store has synchronised — the request may still be on the store computer.'
+                : out.refusedBecause === 'adjustment_request_already_decided' ? 'Raise a new request if the position is still wrong. Nothing was changed.' : 'Nothing was posted. Raise it with the store.',
           });
         }
-        if (rec.requestedBy === ctx.userId) {
-          throw apiError(422, {
-            code: 'self_approval',
-            whatHappened: `${ctx.userId} raised this request and cannot decide it (§28 separation of duties).`,
-            wasItSaved: 'not_saved', nextSafeAction: 'A different person with approval authority must decide it. Nothing was changed.',
-          });
-        }
-        if (rec.status !== 'pending') {
-          const same = (decision === 'approved') === (rec.status === 'posted');
-          if (same) return { status: 200, body: { requestId, status: rec.status, alreadyDecided: true, movementId: rec.movementId, decidedBy: rec.decidedBy } };
-          throw apiError(409, {
-            code: 'adjustment_request_already_decided',
-            whatHappened: `Request ${requestId} was already ${rec.status} by ${rec.decidedBy ?? 'someone'} at ${rec.decidedAt ?? '?'}; a different decision now would be a second truth.`,
-            wasItSaved: 'not_saved', nextSafeAction: 'Raise a new request if the position is still wrong. Nothing was changed.',
-          });
-        }
-
-        const decidedAt = deps.now();
-        let movementId: string | null = null;
-        if (decision === 'approved') {
-          // One compensating M08 movement, by kind: found → adjusted (+), missing/damaged → wasted (−). Both people on it.
-          const m: Movement = {
-            movementId: adjustmentMovementId(requestId), productId: rec.productId, locationId: rec.locationId,
-            kind: rec.deltaMinor > 0 ? 'adjusted' : 'wasted', quantityMinor: Math.abs(rec.deltaMinor), uom: rec.uom,
-            occurredAt: decidedAt, reason: `${rec.reasonCode}${rec.note === null ? '' : `: ${rec.note}`}`,
-            approvedBy: ctx.userId, enteredBy: rec.requestedBy,
-          };
-          const check = checkMovement(m);
-          if (!check.ok) {
-            throw apiError(422, { code: `movement_${check.refusedBecause ?? 'refused'}`, whatHappened: check.detail, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was posted. Raise it with the store.' });
-          }
-          await deps.appendMovement(ctx.tenantId, m);
-          movementId = m.movementId;
-        }
-        const decided: AdjustmentRequestRecord = {
-          ...rec, status: decision === 'approved' ? 'posted' : 'rejected',
-          decidedBy: ctx.userId, decidedAt, decisionReason: b['reason'].trim(), movementId,
-        };
-        await deps.recordDecision(ctx.tenantId, decided);
-        await deps.recordAudit?.(ctx.tenantId, {
-          actorId: ctx.userId, action: decision === 'approved' ? 'adjustment.approve' : 'adjustment.reject', objectType: 'stock_adjustment_request', objectId: requestId,
-          at: decidedAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
-          before: { status: 'pending' },
-          after: { status: decided.status, requestedBy: rec.requestedBy, deltaMinor: String(rec.deltaMinor), valueMinor: String(rec.valueMinor), movementId: movementId ?? '' },
-          reason: decided.decisionReason ?? '', correlationId: requestId,
-        });
-        return { status: 200, body: { requestId, status: decided.status, movementId, decidedBy: ctx.userId, decidedAt } };
+        const r = out.record;
+        return { status: 200, body: { requestId, status: r.status, movementId: r.movementId, decidedBy: r.decidedBy, decidedAt: r.decidedAt, alreadyDecided: out.alreadyDecided } };
       },
     },
     {

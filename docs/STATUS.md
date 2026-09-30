@@ -160,13 +160,32 @@ device, human UAT and production verification separate; approved deferrals stay 
   SP-4; pending requests and held counts reach the manager's screen only when the pack carries them (SP-9); a bin
   correction is on the counts register, not on the warehouse projection's occupancy (F06 → SP-5b); picker/driver
   handhelds (SP-3c) stay behind the core-store slices; no physical device; no TLS on the LAN leg (OA-16).
-- **Current-work pointer:** last verified = SP-3b (this PR); next = **SP-4** [W03, F03, F07] (trusted approvals and
-  policies: approver, available stock, value and tolerance from authoritative records — never the request body — on
-  the direct transfer / count / write-off routes; approve-then-apply for a HELD count and a PENDING adjustment request
-  from the manager's relayed `ApprovalDecided`, the decider re-verified; observation `warehouse.test.ts` F07 case
-  inverted into a regression); then SP-4b (F09), SP-4c (F10), SP-5/5b (F05/F06), SP-6 (F01), SP-7 (F02/F04), SP-8/8b
-  (F08), SP-9/9b; **SP-3c** (picker + driver on the device socket) after the core-store chain; genuine blockers: none;
-  external gates unchanged (providers, hardware, real data, pilot GO).
+- **SP-4 (i) — trusted approvals: no approver, stock, value or threshold from a request body; approve-then-apply for
+  held counts and pending adjustment requests (F07 · W03 · M02-FR-03 · M08-FR-03 · M09-FR-03 · M09-FR-04 · §28 · hard
+  rules #2 #5 #10).** Transfers: `POST /v1/warehouse/transfers/:id/dispatch` takes its approver from the AUTHENTICATED
+  dispatcher (the proposer is refused, §28) and its lots from head office's own position at the source (`availableAt`:
+  M08 on-hand + the batch's recall / quality-hold state); a body naming an approver or claiming stock is refused
+  (`dispatch_carries_caller_claims`). Counts: the direct route runs the same `reconcileBlindCount` as the relayed one —
+  value from the cloud's cost, threshold from the tenant's policy, a material / unvalued variance HELD (`pendingApproval`)
+  — and refuses a body with value / threshold / approver (`count_carries_caller_claims`); `POST /v1/inventory/counts/:countId/decide`
+  (`inventory.adjustment.approve`, decider ≠ counter, one decision per count, `CountDecided` folded latest) applies or
+  rejects it. Approve-then-apply: `applyDecision` on the relayed `ApprovalDecided` route reaches `decideCount` /
+  `decideAdjustmentRequest` for a CLEAN decision; a flagged one is recorded and applies nothing (`applied: false,
+  notAppliedBecause`); `SUBJECT_AUTHORITY` for `stock_count` / `stock_adjustment` = `inventory.adjustment.approve`.
+  Evidence: `trusted-approvals.test.ts` 5, `warehouse-transfers.test.ts` (rewritten: authenticated approver, over-draw
+  against real stock, recalled batch, held batch), `warehouse-counts.test.ts` (rewritten 6: held → self 422 → approve
+  → applied → again no-op → contradict 409; rejected; uncosted held; claims refused), `warehouse-durability.test.ts`,
+  observation `warehouse.test.ts` cases 1, 2, 4 inverted (F05/F06 halves still marked observed); api surface +1
+  (`counts/:countId/decide`). **Still open, honestly:** F03 — the goods receipt still takes product rules and tolerance
+  policy from the body and sells an unapproved excess (SP-4 (ii), next); F05/F06 (SP-5/5b); pending counts and requests
+  reach the manager's screen only when the pack carries them (SP-9); the transfer's lot states are batch-level only
+  (a batchless line is `on_hand` unless recalled/held by batch).
+- **Current-work pointer:** last verified = SP-4 (i) (this PR); next = **SP-4 (ii)** [F03] (product tracking rules
+  from the cloud's product master and the tolerance policy from a tenant receipt policy on `POST /v1/inventory/goods-receipt/:grnId`
+  — never the body; the over-tolerance EXCESS held out of the sellable figure until a separate person approves, with
+  the disposition write path; observation `procurement.test.ts` F03 case inverted); then SP-4b (F09), SP-4c (F10),
+  SP-5/5b (F05/F06), SP-6 (F01), SP-7 (F02/F04), SP-8/8b (F08), SP-9/9b; **SP-3c** (picker + driver) after the
+  core-store chain; genuine blockers: none; external gates unchanged (providers, hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 

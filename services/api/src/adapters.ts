@@ -86,7 +86,7 @@ import { binKey } from '../../../packages/warehouse/src/movements';
 import type { StockMovement } from '../../../packages/stock/src/position';
 import type { TransfersDeps } from '../../inventory/src/warehouse-transfers';
 import type { Transfer } from '../../../packages/warehouse/src/transfers';
-import type { CountsDeps, StoredReconciliation } from '../../inventory/src/counts';
+import type { CountsDeps, StoredReconciliation, CountPolicy } from '../../inventory/src/counts';
 import type { WriteOffDeps, StoredWriteOff } from '../../inventory/src/write-off';
 import type { ProductionDeps, StoredRun, StoredRelease } from '../../inventory/src/production';
 import type { WeighedCostingDeps, StoredWeighedRun } from '../../inventory/src/weighed-costing';
@@ -152,7 +152,7 @@ import type { DelegationDeps } from '../../identity/src/delegation';
 import type { ApprovalDecisionDeps, ApprovalDecisionRecord } from '../../identity/src/approval-decisions';
 import type { SyncedGoodsReceiptDeps } from '../../inventory/src/goods-receipt-synced';
 import type { SyncedWarehouseDeps, ReceivingScanDeps, ReceivingScanRecord } from '../../inventory/src/warehouse-synced';
-import type { SyncedCountsDeps, CountPolicy } from '../../inventory/src/counts-synced';
+import type { SyncedCountsDeps } from '../../inventory/src/counts-synced';
 import type { AdjustmentRequestDeps, AdjustmentRequestRecord } from '../../inventory/src/adjustment-requests';
 import type { ProductReceiptRules } from '../../../packages/receiving/src/index';
 import type { EmergencyAccessDeps, EmergencyGrant } from '../../identity/src/emergency-access';
@@ -3993,8 +3993,6 @@ export function receivingScanAdapter(input: {
   };
 }
 
-/** The tenant's count-approval policy — one per tenant, latest wins, on its own inventory stream (SP-2b). */
-const COUNT_POLICY_STREAM = streamName(STREAM.inventory, 'count-policy');
 
 /**
  * Blind counts relayed from a store device (SP-2b · F11 · W2's path): the same count register as the direct route,
@@ -4005,20 +4003,9 @@ export function syncedCountsAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
 }): Omit<SyncedCountsDeps, 'recordAudit'> {
-  const wh = warehouseAdapter(input);
   return {
     ...countsAdapter(input),
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
-    unitValueMinor: (tenantId, productId) => unitCostHeldFor(input.store, tenantId, productId),
-    countPolicy: (tenantId) => latest<CountPolicy>(input.store, tenantId, COUNT_POLICY_STREAM, 'CountPolicySet'),
-    // SP-3b (W2): a BIN-level count from the warehouse handheld is reconciled against head office's own bin contents —
-    // the warehouse projection, every batch of the product in that bin. A bin head office never registered is `undefined`.
-    binExpected: async (tenantId, binId, productId) => {
-      const bins = await wh.bins(tenantId);
-      if (!bins.some((b) => b.binId === binId)) return undefined;
-      const prefix = binKey(binId, productId, null); // `bin|product|` — every batch of the product in this bin
-      return Object.entries(await wh.contents(tenantId)).filter(([k]) => k.startsWith(prefix)).reduce((s, [, q]) => s + q, 0);
-    },
     recordCountPolicy: async (tenantId, policy) => {
       await input.store.append(tenantId, COUNT_POLICY_STREAM, makeEvent({
         id: `count-policy-${tenantId}-${policy.setAt}`,
@@ -4525,10 +4512,31 @@ export function transfersAdapter(input: {
     return byId;
   };
 
+  const inv = inventoryAdapter({ store: input.store, now: input.now });
+  const recalls = recallAdapter({ store: input.store, now: input.now });
+  const holds = qualityHoldAdapter({ store: input.store, now: input.now });
+
   return {
     now: input.now,
 
     transfer: async (tenantId, transferId) => (await foldTransfers(tenantId)).get(transferId),
+
+    // SP-4 (F07): what head office itself holds at the source for each line — the M08 on-hand for the product there,
+    // the line's batch marked recalled from the recall register or quarantined from the quality-hold register. The
+    // engine then refuses an over-draw and never sends a problem to another branch. Never the body's word.
+    availableAt: async (tenantId, fromLocationId, lines) => {
+      const registry = await recalls.registry(tenantId);
+      const lots = [];
+      for (const line of lines) {
+        const rows = await inv.availability(tenantId, line.productId);
+        const onHand = rows.filter((r) => r.locationId === fromLocationId).reduce((s, r) => s + r.onHandMinor, 0);
+        const hold = line.batchId === null ? undefined : await holds.hold(tenantId, line.batchId);
+        const quarantined = hold !== undefined && hold.status !== 'passed' && hold.status !== 'released';
+        const recalled = line.batchId !== null && registry.isRecalled(line.batchId);
+        lots.push({ productId: line.productId, batchId: line.batchId, quantityMinor: Math.max(0, onHand), state: quarantined ? 'quarantine' as const : 'on_hand' as const, ...(recalled ? { recalled: true } : {}) });
+      }
+      return lots;
+    },
 
     recordProposed: async (tenantId, transfer) => {
       await input.store.append(tenantId, transfersStream, makeEvent({
@@ -4565,6 +4573,9 @@ export function transfersAdapter(input: {
   };
 }
 
+/** The tenant's count-approval policy — one per tenant, latest wins, on its own inventory stream (SP-2b). */
+const COUNT_POLICY_STREAM = streamName(STREAM.inventory, 'count-policy');
+
 export function countsAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -4575,12 +4586,45 @@ export function countsAdapter(input: {
   // base plus the sum of the corrections here. `recordReconciliation` is idempotent on the count id.
   const countsStream = streamName(STREAM.inventory, 'counts');
   const inv = inventoryAdapter({ store: input.store, now: input.now });
+  const wh = warehouseAdapter({ store: input.store, now: input.now });
 
-  const foldReconciliations = async (tenantId: string): Promise<readonly StoredReconciliation[]> =>
-    allOf<StoredReconciliation>(input.store, tenantId, countsStream, 'CountReconciled');
+  // Two event types, one register: the reconciliation as recorded, then (SP-4) its decided state, latest per count id.
+  const foldReconciliations = async (tenantId: string): Promise<readonly StoredReconciliation[]> => {
+    const byId = new Map<string, StoredReconciliation>();
+    for (const r of await allOf<StoredReconciliation>(input.store, tenantId, countsStream, 'CountReconciled')) byId.set(r.countId, r);
+    for (const d of await allOf<StoredReconciliation>(input.store, tenantId, countsStream, 'CountDecided')) byId.set(d.countId, d);
+    return [...byId.values()];
+  };
 
   return {
     now: input.now,
+
+    // SP-4 (F07): the value and the threshold are head office's — never the body's — on every count route.
+    unitValueMinor: (tenantId, productId) => unitCostHeldFor(input.store, tenantId, productId),
+    countPolicy: (tenantId) => latest<CountPolicy>(input.store, tenantId, COUNT_POLICY_STREAM, 'CountPolicySet'),
+    // SP-3b (W2): a BIN-level count from the warehouse handheld is reconciled against head office's own bin contents —
+    // the warehouse projection, every batch of the product in that bin. A bin head office never registered is `undefined`.
+    binExpected: async (tenantId, binId, productId) => {
+      const bins = await wh.bins(tenantId);
+      if (!bins.some((b) => b.binId === binId)) return undefined;
+      const prefix = binKey(binId, productId, null); // `bin|product|` — every batch of the product in this bin
+      return Object.entries(await wh.contents(tenantId)).filter(([k]) => k.startsWith(prefix)).reduce((s, [, q]) => s + q, 0);
+    },
+
+    reconciliation: async (tenantId, countId) => (await foldReconciliations(tenantId)).find((r) => r.countId === countId),
+
+    // SP-4: the decided state of a held count — a second event; the fold takes the latest (append-only, #2).
+    recordDecision: async (tenantId, rec) => {
+      await input.store.append(tenantId, countsStream, makeEvent({
+        id: `count-decided-${rec.countId}`,
+        type: 'CountDecided',
+        occurredAt: rec.decidedAt ?? input.now(),
+        // One decision per count: the route refuses a conflicting second one before it gets here.
+        idempotencyKey: `count-decided-${tenantId}-${rec.countId}`,
+        source: 'api/inventory',
+        payload: rec,
+      }));
+    },
 
     // The authoritative M08 on-hand for this product at this location (0 if the position is unknown).
     onHand: async (tenantId, productId, locationId) => {

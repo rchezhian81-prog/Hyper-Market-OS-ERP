@@ -17,7 +17,7 @@ Rules (from the handover and `docs/traceability.md` § "Store audit findings F01
 
 | File | Findings | Fix slice |
 |---|---|---|
-| `procurement.test.ts` | F01 PO remainder · F02 invoice saved banner · F03 excess sellable | SP-6 · SP-7 · SP-4 |
-| `warehouse.test.ts` | F05 transfer not in inventory · F06 count view only · F07 caller-supplied approver/stock/value | SP-5 · SP-5b · SP-4 |
+| `procurement.test.ts` | F01 PO remainder · F02 invoice saved banner · F03 excess sellable | SP-6 · SP-7 · SP-4 (ii) |
+| `warehouse.test.ts` | F05 transfer not in inventory · F06 count view only · F07 caller-supplied approver/stock/value — **F07 FIXED (SP-4): cases 1, 2 and 4 are regressions (a body naming an approver or stock / a value, threshold or approver is refused by name; the authenticated dispatcher is the approver and cannot be the proposer; the stock checked is head office's; a material count is HELD and decided by a second person)**; the F05 / F06 assertions inside the same cases are still marked OBSERVED DEFECT | SP-5 · SP-5b · SP-4 ✔ |
 | `pos.test.ts` | F09 placeholder cashier/lane/day · F10 till close throws | SP-4b · SP-4c |
 | `sync.test.ts` | F12 409 conflict acknowledged — **FIXED, case 1 is now the regression** · F11 manager decision/receipt/count not durable — **FIXED for the manager screen (SP-2a + SP-2b): cases 2 and 3 are regressions (decision, receipt and blind count durable and queued; the count captured blind, no expected figure on the screen)**; **the WAREHOUSE handheld half FIXED in SP-3a** (the authenticated device socket, ADR-0019 — regressions live in `tests/integration/warehouse-handheld-reaches-the-cloud-through-the-edge.test.ts` and `tests/e2e/warehouse-handheld-syncs-through-the-box.e2e.ts`); picker and driver → SP-3c | SP-1 ✔ · SP-2a ✔ · SP-2b ✔ · SP-3a ✔ · SP-3c |
