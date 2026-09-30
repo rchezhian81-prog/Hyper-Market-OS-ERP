@@ -48,6 +48,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'inventory.movement.append', 'inventory.availability.read', 'inventory.writeoff.threshold.set',
       'production.recipe.manage', 'production.plan.commit', 'production.release', 'production.read',
       'concession.tag.sync',
+      // SP-2a: an approval decided on the manager's screen reaches the cloud's decisions register through the box.
+      'approvals.decision.sync',
       'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.return.threshold.set', 'pos.return.window.set', 'pos.storecredit.cap.set', 'pos.return.noreceipt.cap.set', 'pos.restricted.check',
       'cash.movement.record', 'cash.till.read', 'till.shift.close', 'till.shift.read', 'till.overshort.review',
       'till.dayclose.sync', 'till.dayclose.read', 'till.dayclose.approve',
@@ -203,6 +205,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'pos.sale.sync', 'pos.return.sync', 'migration.decision.sync', 'pos.sale.read', 'pos.return.record', 'pos.restricted.check',
       // M27-FR-03 hop: the box relays the till's concession docket lines to the synced route under this identity.
       'concession.tag.sync',
+      // SP-2a hop: the box relays approvals DECIDED on the manager's screen to the cloud's decisions register under
+      // this identity. The route re-verifies the DECIDER's own authority from their grants — this grants no decision.
+      'approvals.decision.sync',
       // M01-FR-02: the box pulls the PUBLISHED document templates (the receipt header/footer in force) into the
       // lane's pack under this identity — a read of what head office put in force, never of drafts or names.
       'org.template.pull',

@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 748 | 453 | 453 | 59 | 248 |
+| 13 | 750 | 454 | 454 | 59 | 249 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -33,6 +33,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/access/emergency/:grantId` | `identity.role.grant` | core | yes |
 | POST | `/v1/access/emergency/:grantId/revoke` | `identity.role.grant` | core | yes |
 | POST | `/v1/access/lifecycle/:requestId` | `identity.role.grant` | core | yes |
+| GET | `/v1/approvals/decisions` | `approvals.delegation.read` | core | — |
+| POST | `/v1/approvals/decisions/:id/synced` | `approvals.decision.sync` | core | yes |
 | POST | `/v1/identity/grants` | `identity.role.grant` | core | yes |
 | GET | `/v1/identity/me` | `identity.self.read` | core | — |
 | POST | `/v1/identity/number-series/:docType` | `documents.number.allocate` | core | yes |

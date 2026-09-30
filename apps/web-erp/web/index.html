@@ -70,6 +70,12 @@
       .row-actions button { min-height: var(--tap); min-width: 130px; padding: 0 18px; }
       /* A row this manager may not decide shows the REASON, never a button that will fail. */
       .blocked { color: var(--warn); font-size: 15px; font-weight: 600; }
+      /* Where a decision has got to (SP-2a): one pill per state word; refused is loud, posted is calm. */
+      .pill { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 14px; font-weight: 600; background: var(--line); color: var(--ink); justify-self: start; }
+      .pill.posted { background: var(--ok); color: var(--bg); }
+      .pill.refused { background: var(--danger); color: var(--bg); }
+      .pill.retrying { background: var(--warn); color: var(--bg); }
+      h3 { font-size: 18px; margin: 20px 0 4px; }
       .empty { color: var(--muted); padding: 24px 4px; }
 
       button {
@@ -194,6 +200,10 @@
         <p class="lead" id="approvals-lead">Biggest first.</p>
         <div class="rows" id="approval-rows"></div>
         <p class="empty" id="approvals-empty" hidden>Nothing is waiting.</p>
+        <!-- Decisions this screen took, from its DURABLE device queue, each with where it has got to (SP-2a). -->
+        <h3 id="decisions-title" hidden>Decided on this screen</h3>
+        <p class="lead" id="decisions-lead" hidden>Where each decision has got to.</p>
+        <div class="rows" id="decision-rows"></div>
       </section>
 
       <!-- Receiving: goods in. A delivery with no purchase order is SAID to be unmatched. -->

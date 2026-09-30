@@ -8,6 +8,7 @@ import {
   reasonsFor,
   APPROVE_REASONS,
   REJECT_REASONS,
+  DECIDE_REFUSALS,
   type ManagerConfig,
   type ManagerPorts,
   type ManagerSession,
@@ -565,5 +566,102 @@ describe('a blocker can be written down in plain English', () => {
     expect(sentences.every((s) => s.length > 10)).toBe(true);
     expect(sentences[1]).toContain('2');
     expect(sentences[3]).toContain('no reply');
+  });
+});
+
+describe('a decision is queued before it is called decided, and the screen knows where it is (SP-2a · F11)', () => {
+  const REQUESTS: ApprovalRequest[] = [
+    requestApproval({ id: 'd1', subjectType: 'refund', subjectRef: 'r-1', requestedBy: 'u-cashier', branchId: 'b1', value: money(20_000, 'INR') }),
+    requestApproval({ id: 'd2', subjectType: 'price_change', subjectRef: 'p-1', requestedBy: 'u-buyer', branchId: 'b1', value: money(5_000, 'INR') }),
+  ];
+  const withRequests = () => newSession(clearPorts({ approvals: () => ({ known: true, requests: REQUESTS }) }));
+  const decideD1 = (session: ManagerSession) =>
+    session.decideApproval({ requestId: 'd1', decision: 'approved', reasonCode: 'within_policy', decidedAt: AT });
+
+  it('enqueues an ApprovalDecided event under the decision\'s one key, carrying the decided request, before answering ok', () => {
+    const { session, outbox } = withRequests();
+    const outcome = decideD1(session);
+    expect(outcome.ok).toBe(true);
+    const item = outbox.find('approval-decision-d1');
+    expect(item).toBeDefined();
+    expect(item?.event.type).toBe('ApprovalDecided');
+    expect(item?.event.idempotencyKey).toBe('approval-decision-d1');
+    expect(item?.state).toBe('pending');
+    expect(item?.event.payload).toMatchObject({
+      id: 'd1', subjectType: 'refund', subjectRef: 'r-1', requestedBy: 'u-cashier', branchId: 'b1',
+      value: { minor: 20_000, currency: 'INR' }, status: 'approved', decidedBy: 'u-mgr', reason: 'within_policy',
+      decidedAt: AT, storeId: 'store-1', source: 'manager-screen',
+    });
+  });
+
+  it('a refused decision queues NOTHING', () => {
+    const { session, outbox } = withRequests();
+    expect(session.decideApproval({ requestId: 'd1', decision: 'approved', reasonCode: 'against_policy', decidedAt: AT }).ok).toBe(false);
+    expect(session.decideApproval({ requestId: 'nope', decision: 'approved', reasonCode: 'within_policy', decidedAt: AT }).ok).toBe(false);
+    expect(outbox.all()).toHaveLength(0);
+  });
+
+  it('a decided request leaves the open list and the home figures, and a second decision is refused as already_decided', () => {
+    const { session } = withRequests();
+    expect(session.floor().approvalsWaiting).toEqual({ known: true, count: 2 });
+    decideD1(session);
+    expect(session.floor().approvalsWaiting).toEqual({ known: true, count: 1 });
+    const queue = session.approvalQueue();
+    if (!queue.known) return;
+    expect(queue.rows.map((r) => r.request.id)).toEqual(['d2']);
+    expect(session.decideApproval({ requestId: 'd1', decision: 'rejected', reasonCode: 'against_policy', decidedAt: AT })).toEqual({ ok: false, refusal: 'already_decided' });
+    expect(DECIDE_REFUSALS).toContain('already_decided');
+  });
+
+  it('lists its decisions newest first with the five state words, from the device item and the box\'s word', () => {
+    const { session, outbox } = withRequests();
+    decideD1(session);
+    session.decideApproval({ requestId: 'd2', decision: 'rejected', reasonCode: 'price_looks_wrong', decidedAt: '2026-08-05T02:31:00Z' });
+    expect(session.decisions().map((d) => [d.requestId, d.decision, d.state])).toEqual([['d2', 'rejected', 'saved_here'], ['d1', 'approved', 'saved_here']]);
+
+    outbox.recordFailure('approval-decision-d1');
+    expect(session.decisions().find((d) => d.requestId === 'd1')).toMatchObject({ state: 'retrying', attempts: 1 });
+
+    outbox.acknowledge('approval-decision-d1');
+    expect(session.decisions().find((d) => d.requestId === 'd1')?.state).toBe('handed_to_box');
+    expect(session.handedDecisionKeys()).toEqual(['approval-decision-d1']);
+
+    // Never "posted" on the device's say-so: only the box's word makes it so.
+    session.noteBoxStatus([{ key: 'approval-decision-d1', state: 'pending', attempts: 0 }]);
+    expect(session.decisions().find((d) => d.requestId === 'd1')?.state).toBe('handed_to_box');
+    session.noteBoxStatus([{ key: 'approval-decision-d1', state: 'posted', attempts: 0 }]);
+    expect(session.decisions().find((d) => d.requestId === 'd1')?.state).toBe('posted');
+
+    outbox.deadLetter('approval-decision-d2', 'refused by the store computer: not a record this box relays');
+    expect(session.decisions().find((d) => d.requestId === 'd2')).toMatchObject({ state: 'refused', reason: expect.stringContaining('not a record this box relays') as string });
+
+    session.noteBoxStatus([{ key: 'approval-decision-d1', state: 'refused', attempts: 3, reason: 'conflict: head office already holds a different record' }]);
+    expect(session.decisions().find((d) => d.requestId === 'd1')).toMatchObject({ state: 'refused', reason: expect.stringContaining('conflict') as string });
+  });
+
+  it('counts work held on this screen as unsent, and it blocks the day close until the store computer has taken it', () => {
+    const { session, outbox } = withRequests();
+    decideD1(session);
+    expect(session.floor().heldHere).toBe(1);
+    expect(session.floor().unsent).toEqual({ known: true, count: 1 });
+    const blockers = session.blockersForClose(AFTER_CUTOFF);
+    expect(blockers.map((b) => b.kind)).toEqual(['items_unsent']);
+    expect(blockers[0]?.items.map((i) => i.what)).toEqual(['ApprovalDecided (saved on this screen)']);
+    expect(session.closeTheDay({ dayCloseId: 'dc-9', closedAtLocal: AFTER_CUTOFF, closedAt: AT }).closed).toBe(false);
+
+    outbox.acknowledge('approval-decision-d1');
+    expect(session.floor().heldHere).toBe(0);
+    expect(session.floor().unsent).toEqual({ known: true, count: 0 });
+    expect(session.blockersForClose(AFTER_CUTOFF)).toEqual([]);
+  });
+
+  it('an unsent register the store could not read stays unknown — this screen\'s own queue cannot vouch for the box\'s', () => {
+    const { session } = newSession(clearPorts({
+      approvals: () => ({ known: true, requests: REQUESTS }),
+      unsentItems: () => notKnown('the edge did not answer'),
+    }));
+    decideD1(session);
+    expect(session.floor().unsent).toEqual({ known: false, why: 'the edge did not answer' });
+    expect(session.floor().heldHere).toBe(1);
   });
 });

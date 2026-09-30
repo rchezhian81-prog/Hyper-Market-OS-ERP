@@ -1,8 +1,11 @@
 // Audit observations from the 30 Sep 2026 store-workflow audit (see README.md in this folder).
 //
 // F12 is FIXED (SP-1): its case below is now the intended-behaviour REGRESSION — a kernel conflict is a
-// visible rejected exception, never acknowledged as delivered. F11's two cases still assert the DEFECT
-// (a pass confirms it) until SP-2 inverts them.
+// visible rejected exception, never acknowledged as delivered. F11 is PARTLY FIXED (SP-2a): case 2 (the
+// approval decision) and the receipt half of case 3 are now regressions — the decision and the receipt are in
+// the durable device queue before the screen says so, and survive a reboot of the screen over the same device
+// storage. The COUNT half of case 3 still asserts the DEFECT (the manager count reconciles against an in-memory
+// ledger that is empty after a reload) until SP-2b moves counts onto the same path.
 import { describe, expect, it } from 'vitest';
 import { apiHarness } from '../support/api-harness';
 import { httpTransport } from '../../edge/sync-agent/src/http-transport';
@@ -61,7 +64,7 @@ describe('audit observations: current sync and manager defects', () => {
     expect(observed[1]).toMatchObject({ status: 202 });
   });
 
-  it('returns approved without changing the register, appending an audit record, or queuing any decision', () => {
+  it('F11 FIXED (SP-2a) — a decision is QUEUED before the screen says decided, leaves the open list, and cannot be decided twice', () => {
     const request = requestApproval({ id: 'a1', subjectType: 'refund', subjectRef: 'r1', requestedBy: 'cashier', branchId: 'b1', value: { minor: 100, currency: 'INR' } });
     const ledger = new Ledger(new InMemoryLedgerStore());
     const outbox = new SyncOutbox();
@@ -73,21 +76,43 @@ describe('audit observations: current sync and manager defects', () => {
       productValue: () => ({ known: true, valuePerUnitMinor: 100 }),
     }, ledger, outbox);
     expect(session.decideApproval({ requestId: 'a1', decision: 'approved', reasonCode: 'within_policy', decidedAt: AT })).toMatchObject({ ok: true, request: { status: 'approved' } });
+    // The repaired behaviour: the decision is in the queue (an `ApprovalDecided` event under the decision's own key),
+    // the request is no longer waiting, this screen holds one item the store computer has not yet taken, and a
+    // second decision for the same request is refused rather than queued beside the first.
+    expect(outbox.all().map((i) => [i.event.type, i.key, i.state])).toEqual([['ApprovalDecided', 'approval-decision-a1', 'pending']]);
+    expect((outbox.all()[0]?.event.payload as { status: string; decidedBy: string; reason: string }).status).toBe('approved');
+    expect((outbox.all()[0]?.event.payload as { decidedBy: string }).decidedBy).toBe('manager');
+    expect(session.floor().approvalsWaiting).toEqual({ known: true, count: 0 });
+    expect(session.floor().heldHere).toBe(1);
+    expect(session.floor().unsent).toEqual({ known: true, count: 1 });
+    expect(session.decisions()).toMatchObject([{ requestId: 'a1', decision: 'approved', state: 'saved_here' }]);
+    expect(session.decideApproval({ requestId: 'a1', decision: 'rejected', reasonCode: 'against_policy', decidedAt: AT })).toEqual({ ok: false, refusal: 'already_decided' });
+    expect(outbox.all()).toHaveLength(1);
+    // Still true, and by design: the stock ledger is not the register of decisions; the request object is immutable.
     expect(ledger.entries()).toHaveLength(0);
-    expect(outbox.all()).toHaveLength(0);
     expect(request.status).toBe('pending');
-    expect(session.floor().approvalsWaiting).toEqual({ known: true, count: 1 });
-    expect(session.decideApproval({ requestId: 'a1', decision: 'rejected', reasonCode: 'against_policy', decidedAt: AT }).ok).toBe(true);
   });
 
-  it('loses a manager receipt across browser boots and reports zero unsent even before the reboot', () => {
-    const config = { managerId: 'manager', data: { products: [{ id: 'P1', valuePerUnitMinor: 100 }], unsentItems: [], openExceptions: [] } };
+  it('F11 PARTLY FIXED (SP-2a) — a manager receipt survives a reboot of the screen and counts as unsent; the COUNT still reconciles against an empty ledger (SP-2b)', () => {
+    // The device's storage, as a browser's localStorage behaves: the same key read back after a reload.
+    const held = new Map<string, string>();
+    const storage = { getItem: (k: string) => held.get(k) ?? null, setItem: (k: string, v: string) => { held.set(k, v); } };
+    const config = { managerId: 'manager', storage, data: { products: [{ id: 'P1', valuePerUnitMinor: 100 }], unsentItems: [], openExceptions: [] } };
     const first = bootManager(config);
     first.receive({ grnId: 'grn-1', number: 'GRN-1', poId: null, receivedAt: AT, lines: [{ productId: 'P1', quantityMinor: 10, uom: 'EA' }] });
-    expect(first.floor().unsent).toEqual({ known: true, count: 0 });
+    // Repaired: the receipt is on the device and counted as not yet sent — never "0 unsent" (P-08).
+    expect(first.floor().unsent).toEqual({ known: true, count: 1 });
+    expect(first.floor().heldHere).toBe(1);
     const count = { countId: 'c1', productId: 'P1', locationId: 's1', uom: 'EA', countedMinor: 10, reasonCode: 'cycle_count', at: AT };
     expect(first.countStock(count)).toMatchObject({ counted: true, result: { expectedMinor: 10, varianceMinor: 0 } });
+
     const reloaded = bootManager(config);
+    // Repaired: the queue is rebuilt from the device — the receipt is still there (a zero-variance count queues
+    // nothing, by the counts engine's own rule), and still counted as not yet sent.
+    expect(reloaded.floor().unsent).toEqual({ known: true, count: 1 });
+    expect(reloaded.floor().heldHere).toBe(1);
+    // STILL THE DEFECT (SP-2b): the count reconciles against this browser's in-memory ledger, which is empty after
+    // the reload, so the expected quantity is 0 and a 10-unit "variance" is invented. A pass here confirms it.
     expect(reloaded.countStock({ ...count, countId: 'c2' })).toMatchObject({ counted: true, result: { expectedMinor: 0, varianceMinor: 10, adjusted: true } });
   });
 });

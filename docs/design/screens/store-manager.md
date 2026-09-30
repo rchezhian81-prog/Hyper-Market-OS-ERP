@@ -38,3 +38,18 @@ Incidents · Staff tasks · Close · Exceptions. All handle the §27.1 states.
   shop's trading day, up to the pack's approval limit. It shows "Running as <id>" in the header.
 - When the pack names nobody, the screen says so (the nobody strip) and lists what is waiting but refuses every
   decision, receipt, count and close with that reason — never a stand-in identity (§28, hard rule #4).
+
+## Measured (SP-2a, 30 September 2026 — audit finding F11)
+- A decision is on THIS DEVICE before the screen says "Decided" (a durable device queue per store,
+  `sre.manager.outbox.<storeId>`), and the banner says where it is: *Saved on this screen* until the store computer takes
+  it. It survives a reload and a browser restart; the decided request is no longer offered; deciding it again is refused
+  ("This screen has already decided that request").
+- "Decided on this screen" lists every decision with one of five states, in English and Tamil: saved on this screen ·
+  saved on this screen, trying again · with the store computer · posted at head office · refused (with the reason). The
+  store computer is asked after each decision and every ten seconds; "posted" is only ever the store computer's word.
+- Work held on this screen counts on the "Not yet sent to cloud" tile ("N saved on this screen") and blocks the day close
+  until the store computer has taken it (M14-FR-04).
+- Measured in a real browser against a real box (`tests/e2e/manager-decisions-survive-reload.e2e.ts`): decide (3 taps,
+  unchanged) → with the store computer within a moment → reload → still decided, not offered again; with the box's socket
+  gone → saved here, trying again, survives a reload, never shown as sent or refused.
+- Still open: receipts and counts are saved on the device and counted as unsent but do not yet reach head office (SP-2b).

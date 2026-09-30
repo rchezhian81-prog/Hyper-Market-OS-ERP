@@ -55,7 +55,9 @@ import { ReturnEntitlement, type EntitlementLine } from './entitlement';
 import { buildReceiptLookup } from './receipt-lookup';
 import { returnIdOf } from './cloud-return';
 import { createEdgeNode, type EdgeNode } from './index';
-import { startLaneServer, LANE_HOST, type LaneServer, type LaneDayCloseHandler, type LaneDayReopenHandler } from './lane-server';
+import { startLaneServer, LANE_HOST, type LaneServer, type LaneDayCloseHandler, type LaneDayReopenHandler, type LaneDeviceRelayHandler, type LaneDeviceStatusHandler } from './lane-server';
+import { commitLocally } from './durability';
+import { readRelayItem, isRelayable, type BoxItemStatus, type DeviceAck } from '../../../packages/sync/src/device-relay';
 import { laneSyncStatus, type LaneSyncStatus, type QueueHealth } from './sync-status';
 import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-server';
 import { readSales } from './read-model';
@@ -81,6 +83,8 @@ const CONCESSION_TAGS_CURSOR = 'sync-cursor-concession-tags';
 
 /** The store/day-close pipeline's own cursor file (M14-FR-04), so the fourth log advances independently. */
 const DAYCLOSE_CURSOR = 'sync-cursor-day-close';
+/** The device-events pipeline's own cursor file (SP-2a · F11), so the sixth log advances independently too. */
+const DEVICE_EVENTS_CURSOR = 'sync-cursor-device-events';
 
 /**
  * Mint the cloud event from a day-close log record — used BOTH by the pipeline's restart re-queue and
@@ -184,6 +188,13 @@ export interface EdgeProcess {
    */
   readonly dayCloseLog: OpenFileLog;
   /**
+   * The DEVICE EVENTS' own durable log (SP-2a · F11) — work a screen or handheld did on its own device and handed
+   * to this box over `/lane/outbox` (an approval decided on the manager's screen first). Durable here before the
+   * device is told "accepted", kept out of every other log for the same reason the others are, and carried to
+   * head office by its own agent over the shared transport's routes.
+   */
+  readonly deviceEventsLog: OpenFileLog;
+  /**
    * The loopback socket the lane's screen posts a sale to, or null when this edge has no lane —
    * the back-office box runs the same process and does the shop-wide work (ADR-0004).
    */
@@ -197,6 +208,8 @@ export interface EdgeProcess {
   readonly concessionTagsOutbox: SyncOutbox;
   /** The day-close pipeline's own outbox — drained by `dayCloseAgent`, cursored separately again. */
   readonly dayCloseOutbox: SyncOutbox;
+  /** The device-events pipeline's own outbox — drained by `deviceEventsAgent`, cursored separately again (SP-2a). */
+  readonly deviceEventsOutbox: SyncOutbox;
   /** What a lane talks to: price a scan, commit a sale, commit a refund, take a new pack. */
   readonly node: EdgeNode;
   /** Null when no cloud is configured — which is a supported way to run, not a fault. */
@@ -209,6 +222,8 @@ export interface EdgeProcess {
   readonly concessionTagsAgent: SyncAgent | null;
   /** The day-close pipeline's own sync agent (same transport, own outbox). Null when no cloud. */
   readonly dayCloseAgent: SyncAgent | null;
+  /** The device-events pipeline's own sync agent (same transport, own outbox). Null when no cloud (SP-2a). */
+  readonly deviceEventsAgent: SyncAgent | null;
   /**
    * Close and LOCK the store's trading day on the box (M14-FR-04) — the authoritative close, because
    * the "no unsent items" gate can only be evaluated where the outbox lives. Reads the box's LIVE state
@@ -369,6 +384,21 @@ export async function startEdge(
     dataDir: settings['EDGE_DATA_DIR']!,
     capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
     fileName: 'dead-letters-day-close',
+  });
+
+  // The DEVICE EVENTS' own durable log and failed-sync store (SP-2a · F11) — work done on a screen or handheld
+  // and handed to this box over `/lane/outbox`. Durable here BEFORE the device is told "accepted" (the device
+  // then drops its own copy of the pending state), so the box holds the only copy that matters — and it is
+  // fsync'd. Its own file, like the other five, so no restart re-queue ever reads one kind as another.
+  const deviceEventsLog = await openFileLog({
+    dataDir: settings['EDGE_DATA_DIR']!,
+    capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
+    fileName: 'device-events.log',
+  });
+  const deviceEventsDeadLetterLog = await openFileLog({
+    dataDir: settings['EDGE_DATA_DIR']!,
+    capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
+    fileName: 'dead-letters-device-events',
   });
 
   // Report what was found on the disk, including anything a power cut left half-written. It is
@@ -548,16 +578,101 @@ export async function startEdge(
     },
   });
 
+  // The DEVICE EVENTS pipeline (SP-2a · F11) — the same machine over a sixth file. Each record IS the event the
+  // device minted, stored whole (id, type, key, payload, …), so `eventFor` re-mints exactly what was queued and
+  // a restart re-sends exactly what had not reached head office — deduped there by the device's own key (§31.1).
+  // A record that does not read back as a relayable event is the pipeline's malformed case (visible, durable,
+  // never skipped). Never shares a file with the others.
+  const deviceEventsPipeline = new SyncPipeline({
+    dataDir: settings['EDGE_DATA_DIR']!, log: deviceEventsLog, deadLetterLog: deviceEventsDeadLetterLog,
+    cursorFile: DEVICE_EVENTS_CURSOR, noun: 'screen record', say,
+    eventFor: (record) => {
+      let parsed: unknown;
+      try { parsed = JSON.parse(record) as unknown; } catch { return undefined; }
+      const key = (parsed as { idempotencyKey?: unknown } | null)?.idempotencyKey;
+      const read = readRelayItem({ key, event: parsed });
+      return read.ok ? read.item.event : undefined;
+    },
+  });
+
   const salesRestore = await salesPipeline.restore();
   const returnsRestore = await returnsPipeline.restore();
   const completionsRestore = await completionsPipeline.restore();
   const dayCloseRestore = await dayClosePipeline.restore();
   const concessionTagsRestore = await concessionTagsPipeline.restore();
+  const deviceEventsRestore = await deviceEventsPipeline.restore();
   const outbox = salesPipeline.outbox;
   const returnsOutbox = returnsPipeline.outbox;
   const completionsOutbox = completionsPipeline.outbox;
   const dayCloseOutbox = dayClosePipeline.outbox;
   const concessionTagsOutbox = concessionTagsPipeline.outbox;
+  const deviceEventsOutbox = deviceEventsPipeline.outbox;
+
+  // Every device-event key this box has EVER taken, rebuilt from the whole durable log — not from the outbox,
+  // which after a restart holds only the unfinished tail. A device that lost the box's reply and retries a key
+  // the box acknowledged and cursored past weeks ago must still hear `duplicate`, never `accepted` twice (§31.1).
+  const deviceEventKeys = new Set<string>();
+  for (const entry of await readLog(deviceEventsLog.path)) {
+    if (!entry.ok) continue;
+    try {
+      const key = (JSON.parse(entry.record) as { idempotencyKey?: unknown }).idempotencyKey;
+      if (typeof key === 'string' && key !== '') deviceEventKeys.add(key);
+    } catch { /* the pipeline already surfaced it as malformed */ }
+  }
+
+  /**
+   * Take a batch of work a screen or handheld did on its own device (SP-2a · F11): the box's `/lane/outbox`
+   * decision. Per item, in order: read it strictly (a malformed item is REFUSED with the reason — the device
+   * dead-letters it for a person, never repairs it); check the allow-list for this source (a type nobody reviewed
+   * must not ride the store's credential to head office → refused); dedupe by key (a retry after a lost reply →
+   * `duplicate`, one effect); write it durably (fsync'd, with the capacity reserve) and only THEN queue it and say
+   * `accepted`. A write the disk refused is `not_saved` — the device keeps the item; nothing was lost anywhere.
+   * The key is reserved before the write so two batches carrying the same key cannot both be accepted.
+   */
+  const relayDeviceEvents: LaneDeviceRelayHandler = async (batch) => {
+    const acks: DeviceAck[] = [];
+    for (const raw of batch.items) {
+      const read = readRelayItem(raw);
+      if (!read.ok) {
+        acks.push({ key: read.key ?? '', status: 'refused', reason: read.reason });
+        continue;
+      }
+      const { key, event } = read.item;
+      if (!isRelayable(event.type, batch.source)) {
+        acks.push({ key, status: 'refused', reason: `${event.type} is not a record this box relays for ${batch.source}` });
+        continue;
+      }
+      if (deviceEventKeys.has(key)) {
+        acks.push({ key, status: 'duplicate' });
+        continue;
+      }
+      deviceEventKeys.add(key);
+      const outcome = await commitLocally({ saleId: key, record: JSON.stringify(event), log: deviceEventsLog });
+      if (!outcome.committed) {
+        deviceEventKeys.delete(key);
+        acks.push({ key, status: 'not_saved', reason: outcome.detail });
+        continue;
+      }
+      deviceEventsOutbox.enqueue(event);
+      acks.push({ key, status: 'accepted' });
+    }
+    return { acks };
+  };
+
+  /**
+   * Where the device items this box took have got to (SP-2a): `posted` once head office acknowledged, `refused`
+   * with the reason when it is in the visible dead-letter queue, `pending` while still to send, `unknown` for a
+   * key this box never took. A key below the cursor and not in the outbox was acknowledged in an earlier run.
+   */
+  const deviceEventStatus: LaneDeviceStatusHandler = (keys) => keys.map((key): BoxItemStatus => {
+    const item = deviceEventsOutbox.find(key);
+    if (item !== undefined) {
+      if (item.state === 'acknowledged') return { key, state: 'posted', attempts: item.attempts };
+      if (item.state === 'dead_letter') return { key, state: 'refused', attempts: item.attempts, reason: item.reason ?? 'refused' };
+      return { key, state: 'pending', attempts: item.attempts };
+    }
+    return deviceEventKeys.has(key) ? { key, state: 'posted', attempts: 0 } : { key, state: 'unknown', attempts: 0 };
+  });
 
   if (salesRestore.resendCount > 0) say(`${salesRestore.resendCount} sale(s) from before are still to send.`);
   if (salesRestore.restoredDeadLetters > 0) {
@@ -590,6 +705,13 @@ export async function startEdge(
   if (concessionTagsRestore.resendCount > 0) say(`${concessionTagsRestore.resendCount} partner-counter line(s) from before are still to send.`);
   if (concessionTagsRestore.restoredDeadLetters > 0) {
     say(`  ${concessionTagsRestore.restoredDeadLetters} partner-counter line(s) the cloud refused earlier are still waiting for a person — kept, with their history.`);
+  }
+  if (deviceEventsRestore.brokenCount > 0) {
+    say(`  ${deviceEventsRestore.brokenCount} screen record(s) could not be read whole — kept, not repaired. Raise this.`);
+  }
+  if (deviceEventsRestore.resendCount > 0) say(`${deviceEventsRestore.resendCount} screen record(s) from before are still to send.`);
+  if (deviceEventsRestore.restoredDeadLetters > 0) {
+    say(`  ${deviceEventsRestore.restoredDeadLetters} screen record(s) head office refused earlier are still waiting for a person — kept, with their history.`);
   }
 
   // The refund operation-identity guard (RR-F03), rebuilt from the durable returns log so the rule
@@ -700,7 +822,7 @@ export async function startEdge(
   // §1 rule 4). Late-bound like the day close: the agents that know when something last got through are created
   // further down, so the socket is wired now and the answer is filled in once they exist — until then it says
   // "starting", never a guess.
-  const queuesNow = (): QueueHealth[] => [outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox]
+  const queuesNow = (): QueueHealth[] => [outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox, deviceEventsOutbox]
     .map((q) => ({ unsentCount: q.unsentCount(), deadLetterCount: q.deadLetters().length, lastSuccessAt: null }));
   const syncStatusRelay: { current?: () => LaneSyncStatus } = {};
   const syncStatus = (): LaneSyncStatus => syncStatusRelay.current?.()
@@ -711,6 +833,10 @@ export async function startEdge(
     node,
     port: Number(lanePort),
     syncStatus,
+    // The shared device → box leg (SP-2a): the manager screen's decisions arrive here, durably, before anything
+    // is told "accepted"; the handhelds join on the same route in SP-3.
+    relayDeviceEvents,
+    deviceEventStatus,
     closeDay: (req) => {
       const fn = dayCloseRelay.current;
       return fn !== undefined ? fn(req) : Promise.resolve({ closed: false as const, reason: 'the box is still starting up — try the day close again in a moment' });
@@ -811,7 +937,8 @@ export async function startEdge(
     // LIVE unsent across ALL pipelines — not the manager screen's `unsentItems`, which counts only the
     // sales outbox. A day must not lock while any refund or completion is still unsent (hard rule #10).
     const unsentSyncItems = outbox.pending().length + returnsOutbox.pending().length
-      + completionsOutbox.pending().length + dayCloseOutbox.pending().length + concessionTagsOutbox.pending().length;
+      + completionsOutbox.pending().length + dayCloseOutbox.pending().length + concessionTagsOutbox.pending().length
+      + deviceEventsOutbox.pending().length;
     // The exception register EXACTLY as the manager screen computes it (so the box and the screen agree).
     // ABSENT (no loss-prevention rules → nobody is watching) is a hard block, never treated as zero.
     const openExceptions = managerPayload(input)['openExceptions'];
@@ -921,8 +1048,8 @@ export async function startEdge(
     // The badge on every screen says exactly that, from the box's own mouth (design system §1 rule 4).
     syncStatusRelay.current = () => laneSyncStatus({ configured: false, queues: queuesNow(), lastPackStatus: undefined, lastContactAt: null, now: new Date().toISOString() });
     return {
-      log, returnsLog, completionsLog, dayCloseLog, concessionTagsLog, outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox, node, lane, screens, syncStatus,
-      agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, refreshPack: null, refreshMigrationFeed: null, refreshPublishedTemplates: null, syncOnce: null,
+      log, returnsLog, completionsLog, dayCloseLog, concessionTagsLog, deviceEventsLog, outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox, deviceEventsOutbox, node, lane, screens, syncStatus,
+      agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, deviceEventsAgent: null, refreshPack: null, refreshMigrationFeed: null, refreshPublishedTemplates: null, syncOnce: null,
       // The day still locks with no cloud — that is the point of P-01. It queues durably and goes up when
       // a cloud is configured and reachable; nothing is told a lie in the meantime. Reopen is the same.
       closeDay,
@@ -940,6 +1067,8 @@ export async function startEdge(
         await dayCloseDeadLetterLog.close();
         await concessionTagsLog.close();
         await concessionTagsDeadLetterLog.close();
+        await deviceEventsLog.close();
+        await deviceEventsDeadLetterLog.close();
       },
     };
   }
@@ -972,6 +1101,13 @@ export async function startEdge(
   const concessionTagsAgent = new SyncAgent(concessionTagsOutbox, httpTransport({
     baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch,
   }));
+  // The device-events pipeline's own agent (SP-2a · F11) — same transport, its own outbox, for the same reason each
+  // of the others has its own: a decision head office refuses never holds a sale, and none of the six can ever be
+  // re-queued as another. The transport's route table addresses each device event type to its re-verifying synced
+  // route; a type with no route is dead-lettered by name (visible on the manager's screen as refused, hard rule #6).
+  const deviceEventsAgent = new SyncAgent(deviceEventsOutbox, httpTransport({
+    baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch,
+  }));
 
   // The INBOUND mirror of the agent: the same cloud, the other direction (SYNC-01). It fetches the
   // signed catalogue pack; the lane decides whether to trust it (via `node.takePack`); a newer,
@@ -983,7 +1119,7 @@ export async function startEdge(
   // The agents exist now, so the badge's answer is the real one: every queue's health, the last pull's verdict.
   syncStatusRelay.current = () => laneSyncStatus({
     configured: true,
-    queues: [agent, returnsAgent, completionsAgent, dayCloseAgent, concessionTagsAgent].map((a) => a.health()),
+    queues: [agent, returnsAgent, completionsAgent, dayCloseAgent, concessionTagsAgent, deviceEventsAgent].map((a) => a.health()),
     lastPackStatus,
     lastContactAt,
     now: new Date().toISOString(),
@@ -1110,6 +1246,10 @@ export async function startEdge(
     await concessionTagsPipeline.persistNewDeadLetters(at);
     await concessionTagsPipeline.advanceCursor();
   };
+  const settleDeviceEvents = async (at: string): Promise<void> => {
+    await deviceEventsPipeline.persistNewDeadLetters(at);
+    await deviceEventsPipeline.advanceCursor();
+  };
 
   /**
    * One drain of both queues, each settled straight after: sales drain, sales settle (persist any
@@ -1139,10 +1279,14 @@ export async function startEdge(
     // drain, its own cursor.
     const concessionTagsResult = await concessionTagsAgent.drain({ at, ...(opts?.limit === undefined ? {} : { limit: opts.limit }) });
     await settleConcessionTags(at);
+    // The device-events queue drains last (SP-2a), on the same loop and just as far from the sale path — its own
+    // drain, its own cursor.
+    const deviceEventsResult = await deviceEventsAgent.drain({ at, ...(opts?.limit === undefined ? {} : { limit: opts.limit }) });
+    await settleDeviceEvents(at);
     return {
-      sent: result.acknowledged + returnsResult.acknowledged + completionsResult.acknowledged + dayCloseResult.acknowledged + concessionTagsResult.acknowledged,
-      dead: result.deadLettered + returnsResult.deadLettered + completionsResult.deadLettered + dayCloseResult.deadLettered + concessionTagsResult.deadLettered,
-      remaining: result.remaining + returnsResult.remaining + completionsResult.remaining + dayCloseResult.remaining + concessionTagsResult.remaining,
+      sent: result.acknowledged + returnsResult.acknowledged + completionsResult.acknowledged + dayCloseResult.acknowledged + concessionTagsResult.acknowledged + deviceEventsResult.acknowledged,
+      dead: result.deadLettered + returnsResult.deadLettered + completionsResult.deadLettered + dayCloseResult.deadLettered + concessionTagsResult.deadLettered + deviceEventsResult.deadLettered,
+      remaining: result.remaining + returnsResult.remaining + completionsResult.remaining + dayCloseResult.remaining + concessionTagsResult.remaining + deviceEventsResult.remaining,
     };
   };
 
@@ -1193,11 +1337,13 @@ export async function startEdge(
     completionsLog,
     dayCloseLog,
     concessionTagsLog,
+    deviceEventsLog,
     outbox,
     returnsOutbox,
     completionsOutbox,
     dayCloseOutbox,
     concessionTagsOutbox,
+    deviceEventsOutbox,
     node,
     lane,
     screens,
@@ -1206,6 +1352,7 @@ export async function startEdge(
     completionsAgent,
     dayCloseAgent,
     concessionTagsAgent,
+    deviceEventsAgent,
     closeDay,
     reopenDay,
     refreshPack,
@@ -1240,6 +1387,14 @@ export async function startEdge(
         await concessionTagsAgent.drain({ at, limit: 20 });
         await settleConcessionTags(at);
       } catch { /* still queued, and the concession-tags cursor stays where it is */ }
+      try {
+        await deviceEventsAgent.drain({ at, limit: 20 });
+        await settleDeviceEvents(at);
+      } catch { /* still queued, and the device-events cursor stays where it is */ }
+      const deviceEventsBadge = deviceEventsAgent.health();
+      if (deviceEventsBadge.unsentCount > 0) {
+        say(`stopping with ${deviceEventsBadge.unsentCount} screen record(s) still to send. They are on the disk and will go when this starts again.`);
+      }
       const badge = agent.health();
       const returnsBadge = returnsAgent.health();
       const completionsBadge = completionsAgent.health();
@@ -1272,6 +1427,8 @@ export async function startEdge(
       await dayCloseDeadLetterLog.close();
       await concessionTagsLog.close();
       await concessionTagsDeadLetterLog.close();
+      await deviceEventsLog.close();
+      await deviceEventsDeadLetterLog.close();
     },
   };
 }

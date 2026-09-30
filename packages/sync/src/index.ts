@@ -4,3 +4,7 @@
 
 export * from './outbox';
 export * from './device-outbox';
+// The shared device → store-computer contract and drain (SP-2a): what a screen or handheld may hand to
+// the box, how the box answers per item, and the five states a person sees for each piece of work.
+export * from './device-relay';
+export * from './device-drain';

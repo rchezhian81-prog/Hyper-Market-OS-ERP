@@ -57,6 +57,10 @@ import type { LaneSyncStatus } from './sync-status';
 import { returnIdOf } from './cloud-return';
 import { concessionTagIdOf } from './cloud-concession-tag';
 import type { EdgeNode } from './index';
+import {
+  DEVICE_OUTBOX_PATH, DEVICE_OUTBOX_STATUS_PATH, readRelayBatch,
+  type BoxItemStatus, type RelayReply,
+} from '../../../packages/sync/src/device-relay';
 
 /** The one address this may listen on. Named so the test can assert on it. */
 export const LANE_HOST = '127.0.0.1';
@@ -98,6 +102,20 @@ const LANE_DAY_REOPEN_ROUTE = '/lane/day-reopen';
  */
 const LANE_SYNC_STATUS_ROUTE = '/lane/sync-status';
 
+/**
+ * The DEVICE OUTBOX write route: POST /lane/outbox (SP-2a · F11 · §31). A screen or handheld hands the box a
+ * batch of work it did on its own device — an approval decided on the manager's screen first — and the box
+ * answers PER ITEM: accepted (durable on the box's disk and queued for head office), duplicate (already held —
+ * a retry after a lost reply lands here, one effect), refused (not a record this box relays; a person must
+ * look), or not_saved (the box could not write it; the device keeps it). The same loopback + application/json
+ * authorization as every other write, decided BEFORE the body is read (RR-F01). The DECISION of what to accept
+ * is the box's (`relayDeviceEvents` — the allow-list, the dedupe set and the fsync'd log live there); this
+ * socket carries the batch. Its companion GET /lane/outbox/status?keys= answers where accepted items have got
+ * to (pending on the box · posted at head office · refused), so a screen can say so instead of guessing.
+ */
+const LANE_DEVICE_OUTBOX_ROUTE: string = DEVICE_OUTBOX_PATH;
+const LANE_DEVICE_OUTBOX_STATUS_ROUTE: string = DEVICE_OUTBOX_STATUS_PATH;
+
 /** What the box does when the manager asks to close the day — the authoritative `EdgeProcess.closeDay`. */
 export type LaneDayCloseHandler = (
   req: { readonly dayCloseId: string; readonly closedBy: string },
@@ -105,6 +123,18 @@ export type LaneDayCloseHandler = (
   | { readonly closed: true; readonly tradingDay: string; readonly locked: true }
   | { readonly closed: false; readonly reason: string }
 >;
+
+/**
+ * What the box does with a batch of device work (SP-2a): validate each item against the allow-list, dedupe by
+ * key, write it durably, queue it for head office, and answer per item. The items arrive unread — the box reads
+ * each strictly itself, so the socket never decides what a valid record is.
+ */
+export type LaneDeviceRelayHandler = (
+  batch: { readonly source: string; readonly items: readonly unknown[] },
+) => Promise<RelayReply>;
+
+/** Where the items a device handed over have got to, by key — from the box's own pipeline (SP-2a). */
+export type LaneDeviceStatusHandler = (keys: readonly string[]) => readonly BoxItemStatus[];
 
 /** What the box does when an authority asks to reopen a locked day — the authoritative `EdgeProcess.reopenDay`. */
 export type LaneDayReopenHandler = (
@@ -224,6 +254,13 @@ export function startLaneServer(input: {
    * one, in which case the route answers 404 and the screen says it could not ask.
    */
   readonly syncStatus?: () => LaneSyncStatus;
+  /**
+   * Take a batch of work a screen or handheld did on its own device (SP-2a): POST /lane/outbox. Absent on a
+   * box that relays no device work, in which case the route answers 404 and the device keeps everything.
+   */
+  readonly relayDeviceEvents?: LaneDeviceRelayHandler;
+  /** Where device items the box took have got to: GET /lane/outbox/status?keys=k1,k2. Absent → 404. */
+  readonly deviceEventStatus?: LaneDeviceStatusHandler;
 }): Promise<LaneServer> {
   const maxBytes = input.maxBytes ?? 256 * 1024;
 
@@ -287,6 +324,85 @@ export function startLaneServer(input: {
       }
       // Never cached: a badge showing this morning's "online" is the fault the badge exists to prevent (P-08).
       send(res, 200, input.syncStatus(), { ...cors, 'cache-control': 'no-store' });
+      return;
+    }
+
+    // The DEVICE-OUTBOX STATUS read route: GET /lane/outbox/status?keys=k1,k2 (SP-2a). Per-key state of items
+    // a device handed over — counts and states, never a record — refused to a foreign origin like the sync status.
+    if (req.method === 'GET' && pathname === LANE_DEVICE_OUTBOX_STATUS_ROUTE) {
+      if (typeof req.headers.origin === 'string' && req.headers.origin !== '' && !isLoopbackOrigin(req.headers.origin)) {
+        send(res, 403, { error: 'this request did not come from this till' }, cors);
+        return;
+      }
+      const status = input.deviceEventStatus;
+      if (status === undefined) {
+        send(res, 404, { error: 'this box does not relay device work' }, cors);
+        return;
+      }
+      const keys = ((): string[] => {
+        try {
+          return (new URL(req.url ?? '', 'http://lane').searchParams.get('keys') ?? '').split(',').map((k) => k.trim()).filter((k) => k !== '');
+        } catch { return []; }
+      })();
+      // Never cached: a stale "pending" is exactly the guess this route exists to replace (P-08).
+      send(res, 200, { items: status(keys) }, { ...cors, 'cache-control': 'no-store' });
+      return;
+    }
+
+    // The DEVICE-OUTBOX write route: POST /lane/outbox (SP-2a · F11). A screen or handheld hands over a batch of
+    // work done on its device; the box answers per item. Same loopback + application/json authorization as every
+    // other write, decided BEFORE the body is read (RR-F01). 404 on a box that relays no device work. 200 with
+    // the acks on a batch that was understood; 400 on one that was not (the device keeps every item).
+    if (req.method === 'POST' && pathname === LANE_DEVICE_OUTBOX_ROUTE) {
+      const relay = input.relayDeviceEvents;
+      if (relay === undefined) {
+        send(res, 404, { acks: [], reason: 'this box does not relay device work' }, cors);
+        req.resume();
+        return;
+      }
+      const authRefusal = laneCallRefusal(req.headers.origin, req.headers['content-type']);
+      if (authRefusal !== undefined) {
+        send(res, authRefusal.status, { acks: [], reason: authRefusal.reason }, cors);
+        req.resume();
+        return;
+      }
+      const chunks: Buffer[] = [];
+      let size = 0;
+      let tooBig = false;
+      req.on('data', (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > maxBytes && !tooBig) {
+          tooBig = true;
+          send(res, 413, { acks: [], reason: 'the device batch is too large — send fewer items at a time' }, cors);
+          req.destroy();
+          return;
+        }
+        chunks.push(chunk);
+      });
+      req.on('end', () => {
+        if (tooBig) return;
+        void (async () => {
+          let body: unknown;
+          try {
+            body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+          } catch {
+            send(res, 400, { acks: [], reason: 'the device batch could not be read' }, cors);
+            return;
+          }
+          const batch = readRelayBatch(body);
+          if (!batch.ok) {
+            send(res, 400, { acks: [], reason: batch.reason }, cors);
+            return;
+          }
+          try {
+            send(res, 200, await relay({ source: batch.source, items: batch.items }), cors);
+          } catch (e) {
+            // The box itself failed mid-batch: no verdict on any item. The device keeps them all (a 5xx is a
+            // failed attempt, never a refusal) and tries again.
+            send(res, 500, { acks: [], reason: e instanceof Error ? e.message : String(e) }, cors);
+          }
+        })();
+      });
       return;
     }
 
@@ -415,14 +531,14 @@ export function startLaneServer(input: {
 
     // The browser's preflight for the cross-origin POST from the till's or manager's screen. Answered
     // only for a loopback origin; anything else gets no allow header and the browser refuses the POST.
-    if (req.method === 'OPTIONS' && (route !== undefined || pathname === LANE_DAY_CLOSE_ROUTE || pathname === LANE_DAY_REOPEN_ROUTE || pathname === LANE_SYNC_STATUS_ROUTE)) {
+    if (req.method === 'OPTIONS' && (route !== undefined || pathname === LANE_DAY_CLOSE_ROUTE || pathname === LANE_DAY_REOPEN_ROUTE || pathname === LANE_SYNC_STATUS_ROUTE || pathname === LANE_DEVICE_OUTBOX_ROUTE || pathname === LANE_DEVICE_OUTBOX_STATUS_ROUTE)) {
       res.writeHead(isLoopbackOrigin(req.headers.origin) ? 204 : 403, { 'content-length': '0', ...cors });
       res.end();
       return;
     }
 
     if (req.method !== 'POST' || route === undefined) {
-      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `POST ${LANE_DAY_CLOSE_ROUTE}`, `POST ${LANE_DAY_REOPEN_ROUTE}`, `GET ${LANE_LOOKUP_ROUTE}?receipt=…`, `GET ${LANE_SYNC_STATUS_ROUTE}`].join(', ');
+      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `POST ${LANE_DAY_CLOSE_ROUTE}`, `POST ${LANE_DAY_REOPEN_ROUTE}`, `POST ${LANE_DEVICE_OUTBOX_ROUTE}`, `GET ${LANE_LOOKUP_ROUTE}?receipt=…`, `GET ${LANE_SYNC_STATUS_ROUTE}`, `GET ${LANE_DEVICE_OUTBOX_STATUS_ROUTE}?keys=…`].join(', ');
       send(res, 404, { error: `the lane socket serves: ${serves}` }, cors);
       return;
     }

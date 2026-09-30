@@ -20,6 +20,7 @@
 import { InMemoryLedgerStore, Ledger } from '../../../packages/ledger/src/ledger';
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { openDeviceOutbox, guardedStore } from '../../../packages/sync/src/device-outbox';
+import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
 import { makeTradingDayRule } from '../../../packages/calendar/src/trading-day';
 import {
   APPROVE_REASONS,
@@ -3410,6 +3411,15 @@ interface ManagerWindow {
    * box: the screen falls back to a local preview close that only touches this browser.
    */
   laneWriteBase?: string;
+  /**
+   * The manager screen's DURABLE device queue (SP-2a · F11): approvals decided here are written to it before
+   * the screen says "decided", and it survives a reload. The shared device → box → cloud path drains it.
+   */
+  managerOutbox?: SyncOutbox;
+  /** Hands the queue to the store computer and asks where each item has got to. Absent when no box is wired. */
+  managerRelay?: ManagerRelay;
+  /** Anything that went wrong with this device's own storage, for the shell to show (P-08). */
+  managerStorageProblem?: string;
   buyingSession?: BuyingSession;
   buyingData?: BuyingData;
   /** What the box did not tell the buyer's screen, so the screen can say it rather than guess. */
@@ -3737,6 +3747,15 @@ export function bootManager(config?: {
   data?: ManagerData;
   /** The box's lane write address (M14-FR-04). Present = the day close goes to the store computer. */
   laneWriteBase?: string;
+  /**
+   * The screen's durable device queue (SP-2a). Absent, one is opened on this device's storage under
+   * `sre.manager.outbox.<storeId>` — a decision, receipt or count is then written to the device before the
+   * screen calls it saved, and is still there after a reload (F11). Passed explicitly by the composition
+   * root (so it can also hand the same queue to the relay) and by tests.
+   */
+  outbox?: SyncOutbox;
+  /** The device storage to open that queue on when `outbox` is absent; defaults to this browser's `localStorage`. */
+  storage?: DeviceStorage;
 }): ManagerSession {
   // What the box served rides in `data` (Stage G slice 5c); an explicit config value still wins, so a test or a
   // standalone shell can name its own. Before this the served screen booted as user `manager` in branch
@@ -3750,9 +3769,10 @@ export function bootManager(config?: {
   // Nobody named means nobody: no stand-in identity, and the session refuses every decision with the reason.
   const managerId = config?.managerId ?? data?.userId;
   const requestDayClose = openDayClosePort(config?.laneWriteBase);
+  const storeId = config?.storeId ?? data?.storeId ?? 'store-1';
   return createManagerSession(
     {
-      storeId: config?.storeId ?? data?.storeId ?? 'store-1',
+      storeId,
       branchId,
       tradingDay: config?.tradingDay ?? data?.tradingDay ?? '1970-01-01',
       tradingDayRule: makeTradingDayRule(config?.tradingDayCutoff ?? data?.tradingDayCutoff ?? '00:00'),
@@ -3769,8 +3789,61 @@ export function bootManager(config?: {
     // only when this box serves a lane to post to. `??` on the whole port keeps a missing box honest.
     { ...portsFromData(config?.data), ...(requestDayClose === undefined ? {} : { requestDayClose }) },
     new Ledger(new InMemoryLedgerStore()),
-    new SyncOutbox(),
+    // The DURABLE device queue, never `new SyncOutbox()` (F11): what this screen decides, receives or counts is
+    // on the device before the screen says so, and is still there after a reload or a restart of the browser.
+    config?.outbox ?? openManagerOutbox(storeId, config?.storage),
   );
+}
+
+/** The slice of a browser's storage the device queue needs, so a test can hand in a Map-backed one. */
+export type DeviceStorage = { getItem(k: string): string | null; setItem(k: string, v: string): void };
+
+/** The last problem the manager's device queue hit with this device's storage — shown, never silent (P-08). */
+export let managerStorageProblem: string | undefined;
+
+/**
+ * Open the manager screen's durable device queue (SP-2a · F11), keyed per store so two stores' screens on one
+ * browser never share a queue. Same mechanism as the handhelds' (`packages/sync/device-outbox`): written to the
+ * device after every change, restored at boot, a storage fault reported rather than swallowed.
+ */
+export function openManagerOutbox(storeId: string, storage?: DeviceStorage): SyncOutbox {
+  const store = storage ?? (globalThis as { localStorage?: DeviceStorage }).localStorage;
+  const onProblem = (why: string): void => { managerStorageProblem = why; };
+  return openDeviceOutbox(guardedStore(`sre.manager.outbox.${storeId}`, store, onProblem), onProblem);
+}
+
+/** What the shell calls to move this screen's saved work along and learn where it has got to. */
+export interface ManagerRelay {
+  /**
+   * One pass of the shared device → store-computer leg: hand pending, relayable items to the box (accepted or
+   * duplicate → handed; refused → a visible refusal; link down → kept, nothing lost), then ask the box where
+   * the items it holds have got to (pending · posted · refused) and fold that into the session's decision list.
+   */
+  syncNow(): Promise<{ readonly handed: number; readonly refused: number; readonly failed: number; readonly offline: boolean }>;
+}
+
+/**
+ * The manager screen's leg of the shared sync path (SP-2a). A CROSS-PORT call to the box's lane socket, like
+ * the day close — the box owns the disk and the credential to head office; this screen owns only its device
+ * queue. `undefined` when no box is wired: the queue still fills and survives, the screen says "saved here",
+ * and nothing pretends to have been sent.
+ */
+export function openManagerRelay(
+  laneWriteBase: string | undefined,
+  session: ManagerSession,
+  outbox: SyncOutbox,
+): ManagerRelay | undefined {
+  if (laneWriteBase === undefined) return undefined;
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return undefined;
+  return {
+    syncNow: async () => {
+      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'manager', fetch: fetchFn });
+      const statuses = await boxStatus({ boxBase: laneWriteBase, keys: session.handedDecisionKeys(), fetch: fetchFn });
+      if (statuses !== undefined) session.noteBoxStatus(statuses);
+      return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };
+    },
+  };
 }
 
 /**
@@ -4288,10 +4361,19 @@ const browserWindow = (globalThis as { window?: ManagerWindow }).window;
 if (browserWindow !== undefined) {
   // The day close (M14-FR-04) reaches the store computer when the box injected its lane address;
   // without it the manager screen falls back to a local preview close that only touches this browser.
+  // The manager's DURABLE device queue (SP-2a · F11): opened here so the session writes into it and the relay
+  // drains the same one. Per store, on this device's storage; a storage fault is surfaced for the shell to show.
+  const managerOutbox = openManagerOutbox(browserWindow.managerData?.storeId ?? 'store-1');
+  browserWindow.managerOutbox = managerOutbox;
   browserWindow.managerSession = bootManager({
     data: browserWindow.managerData,
     laneWriteBase: browserWindow.laneWriteBase,
+    outbox: managerOutbox,
   });
+  // The shared device → store-computer leg. Present only when the box told this screen where its socket is.
+  const managerRelay = openManagerRelay(browserWindow.laneWriteBase, browserWindow.managerSession, managerOutbox);
+  if (managerRelay !== undefined) browserWindow.managerRelay = managerRelay;
+  if (managerStorageProblem !== undefined) browserWindow.managerStorageProblem = managerStorageProblem;
   // The buyer's shell shares this bundle: one build, two screens, and each boots only what it was
   // given. A shell that was told nothing gets `undefined` and says so rather than showing zeros.
   const buying = bootBuying(browserWindow.buyingData, openProposePurchaseOrderPort());

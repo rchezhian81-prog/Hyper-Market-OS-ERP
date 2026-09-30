@@ -51,6 +51,10 @@ import { reconcileCount, type CountReconciliation } from '../../../packages/coun
 import { closeDay, type DayCloseResult } from '../../../packages/day-close/src/day-close';
 import type { Ledger } from '../../../packages/ledger/src/ledger';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
+import { makeEvent } from '../../../packages/contracts/src/event';
+import {
+  deviceItemReason, deviceItemState, type BoxItemStatus, type DeviceItemState,
+} from '../../../packages/sync/src/device-relay';
 import { buildQueue, submitDecision, type QueueRow } from './approvals-workbench';
 
 // ── Registers ───────────────────────────────────────────────────────────────
@@ -282,7 +286,13 @@ export type DecideRefusal =
   /** A reason outside the catalogue for this decision. Refused rather than recorded. */
   | 'unknown_reason_code'
   /** The screen names nobody, so no decision can be attributed (hard rule #4). */
-  | 'nobody_named';
+  | 'nobody_named'
+  /**
+   * This screen has ALREADY decided that request and the decision is in its queue (SP-2a). A second
+   * decision is refused rather than queued beside the first — one request, one decision, however many
+   * times a stale list is tapped.
+   */
+  | 'already_decided';
 
 /** The full refusal vocabulary the screen must have words for, in every language it offers. */
 export const DECIDE_REFUSALS: readonly DecideRefusal[] = Object.freeze([
@@ -290,11 +300,50 @@ export const DECIDE_REFUSALS: readonly DecideRefusal[] = Object.freeze([
   'request_not_found',
   'unknown_reason_code',
   'nobody_named',
+  'already_decided',
 ]);
 
 export type ManagerDecisionOutcome =
   | { readonly ok: true; readonly request: DecidedRequest }
   | { readonly ok: false; readonly refusal: DecideRefusal };
+
+// ── The decision as it leaves this screen (SP-2a · F11) ─────────────────────
+
+/** The event type a decided approval travels under: device queue → store computer → head office. */
+export const APPROVAL_DECIDED = 'ApprovalDecided';
+
+/**
+ * One identity for one decision, everywhere it goes: the device outbox key, the box's dedupe key and
+ * the cloud's idempotency key are all this. A request id is unique within the tenant, so a retry of
+ * the same decision from any hop collapses to one record (§31.1); a DIFFERENT decision for the same
+ * request is a conflict head office refuses (422) and a person sees, never a silent overwrite (#10).
+ */
+export function decisionKeyFor(requestId: string): string {
+  return `approval-decision-${requestId}`;
+}
+
+/** What head office receives: the decided request, plus where it was decided. */
+export interface ApprovalDecidedPayload extends DecidedRequest {
+  readonly storeId: string;
+  readonly source: 'manager-screen';
+}
+
+/**
+ * A decision this screen has taken and where it has got to — the five states the owner asked for,
+ * read from this device's queue and, once the store computer has been asked, from the box's own word.
+ */
+export interface QueuedDecision {
+  readonly requestId: string;
+  readonly subjectType: string;
+  readonly subjectRef: string;
+  readonly decision: Decision;
+  readonly decidedAt: string;
+  readonly state: DeviceItemState;
+  /** How many times this device tried to hand it to the store computer and could not. */
+  readonly attempts: number;
+  /** The reason a person should read, when it was refused anywhere along the way. */
+  readonly reason?: string;
+}
 
 // ── The session ─────────────────────────────────────────────────────────────
 
@@ -389,7 +438,15 @@ export interface FloorSummary {
   /** What this manager can actually clear right now (§28 removes their own requests). */
   readonly approvalsIcanClear: Tally;
   readonly exceptions: Tally;
+  /**
+   * Everything not yet at head office that this screen knows of: the store's register, PLUS the work
+   * saved on this device that the store computer has not yet taken (`heldHere`). A decision that lives
+   * only on this screen is exactly as unsent as a sale in the box's outbox, and the day must not close
+   * over either (M14-FR-04, hard rule #10).
+   */
   readonly unsent: Tally;
+  /** Work saved on this device and not yet handed to the store computer — a subset of `unsent`. */
+  readonly heldHere: number;
   readonly tasks: Tally;
 }
 
@@ -405,6 +462,16 @@ export interface ManagerSession {
     readonly reasonCode: string;
     readonly decidedAt: string;
   }): ManagerDecisionOutcome;
+  /**
+   * Every decision this screen has taken, newest first, with where it has got to (SP-2a). Read from the
+   * durable device queue, so it is the same list after a reload — and it is what keeps a decided request
+   * out of `approvalQueue()` until head office's register catches up.
+   */
+  decisions(): readonly QueuedDecision[];
+  /** The queue keys of decisions the store computer has taken, to ask it where they have got to. */
+  handedDecisionKeys(): readonly string[];
+  /** Fold in the store computer's word on items it took (posted · still pending · refused), from a status query. */
+  noteBoxStatus(statuses: readonly BoxItemStatus[]): void;
   /** Book a delivery in. Stock rises locally; a GoodsReceived event queues for sync (M07). */
   receive(input: ReceiveInput): ReceivedGoods;
   /** Reconcile a blind count against the ledger (M09-FR-04). Nothing here reveals the expected. */
@@ -457,10 +524,45 @@ export function createManagerSession(
 ): ManagerSession {
   const inr = (minor: number): Money => money(minor, config.currency);
 
-  const approvalQueue = (): ApprovalQueue => {
+  // The store computer's word on each decision it has taken, keyed by the decision's queue key. Filled by
+  // `noteBoxStatus` from a status query; empty until the box has been asked (then "handed to the store
+  // computer" is all this screen claims — never "posted" on its own say-so, P-08).
+  const boxWord = new Map<string, BoxItemStatus>();
+
+  /** Has THIS screen already decided the request? Its decision is in the durable queue, whatever state it reached. */
+  const decidedHere = (requestId: string): boolean => outbox.find(decisionKeyFor(requestId)) !== undefined;
+
+  /**
+   * The requests still open for this screen: the store's register MINUS anything this screen has already
+   * decided. The register is the box's last-synced snapshot (the pack), which cannot yet know about a decision
+   * made a moment ago on this device — so the durable queue is the authority for "decided", and it survives
+   * a reload exactly as the queue does (F11: before this, the same request was offered again on every reload).
+   */
+  const openRequests = (): ApprovalRegister => {
     const register = ports.approvals();
     if (!register.known) return register;
+    return { known: true, requests: register.requests.filter((r) => !decidedHere(r.id)) };
+  };
+
+  const approvalQueue = (): ApprovalQueue => {
+    const register = openRequests();
+    if (!register.known) return register;
     return { known: true, rows: buildQueue(register.requests, config.manager) };
+  };
+
+  /** Work saved on this device that the store computer has not yet taken. */
+  const heldHere = (): number => outbox.pending().length;
+
+  /**
+   * The store's unsent register with this device's own held work added — one honest count of "not yet at
+   * head office", for the home tile and for the day-close gate alike. Unknown stays unknown: this device's
+   * queue cannot vouch for the box's.
+   */
+  const unsentIncludingHeldHere = (): Register => {
+    const register = ports.unsentItems(config.tradingDay);
+    if (!register.known) return register;
+    const held: RegisterItem[] = outbox.pending().map((item) => ({ id: item.key, what: `${item.event.type} (saved on this screen)` }));
+    return { known: true, items: [...register.items, ...held] };
   };
 
   const blockersForClose = (closedAtLocal: string): readonly Blocker[] => {
@@ -499,7 +601,7 @@ export function createManagerSession(
     //    knowing* produces a blocker exactly as an open item does.
     const gates: readonly { readonly source: string; readonly kind: BlockerKind; readonly register: Register }[] = [
       { source: 'exceptions', kind: 'exceptions_open', register: ports.openExceptions(config.tradingDay) },
-      { source: 'unsent', kind: 'items_unsent', register: ports.unsentItems(config.tradingDay) },
+      { source: 'unsent', kind: 'items_unsent', register: unsentIncludingHeldHere() },
     ];
     for (const gate of gates) {
       if (!gate.register.known) {
@@ -524,7 +626,7 @@ export function createManagerSession(
 
   return {
     floor: () => {
-      const approvals = ports.approvals();
+      const approvals = openRequests();
       const queue = approvalQueue();
       return {
         manager: config.manager === null ? null : config.manager.userId,
@@ -534,7 +636,8 @@ export function createManagerSession(
           ? { known: true, count: queue.rows.filter((row) => row.actionable).length }
           : queue,
         exceptions: tally(ports.openExceptions(config.tradingDay)),
-        unsent: tally(ports.unsentItems(config.tradingDay)),
+        unsent: tally(unsentIncludingHeldHere()),
+        heldHere: heldHere(),
         tasks: tally(ports.tasks(config.tradingDay)),
       };
     },
@@ -547,6 +650,9 @@ export function createManagerSession(
       if (!register.known) return { ok: false, refusal: 'request_not_found' };
       const request = register.requests.find((r) => r.id === input.requestId);
       if (request === undefined) return { ok: false, refusal: 'request_not_found' };
+      // Already in this screen's durable queue: one request, one decision (SP-2a). Refused BEFORE the engine,
+      // so a stale list tapped twice never queues a second decision for head office to find conflicting.
+      if (decidedHere(request.id)) return { ok: false, refusal: 'already_decided' };
 
       // The catalogue is checked before the engine, so an invented reason never reaches the audit
       // trail — and approving "against_policy" is refused rather than recorded.
@@ -556,7 +662,45 @@ export function createManagerSession(
 
       // The CODE is what gets recorded, not a sentence. A code can be reported on a year later;
       // "ok fine" cannot.
-      return submitDecision(request, config.manager, input.decision, input.reasonCode, input.decidedAt);
+      const outcome = submitDecision(request, config.manager, input.decision, input.reasonCode, input.decidedAt);
+      if (!outcome.ok) return outcome;
+
+      // The decision is QUEUED before it is called decided (F11 — before this, `ok: true` was returned and the
+      // decision existed nowhere). The outbox is the durable device queue `bootManager` opens; enqueue writes
+      // it to the device before returning, and the shared device → box → cloud path carries it from there.
+      // The key is the decision's one identity at every hop (`decisionKeyFor`).
+      const payload: ApprovalDecidedPayload = { ...outcome.request, storeId: config.storeId, source: 'manager-screen' };
+      outbox.enqueue(makeEvent({
+        id: decisionKeyFor(request.id),
+        type: APPROVAL_DECIDED,
+        occurredAt: input.decidedAt,
+        idempotencyKey: decisionKeyFor(request.id),
+        source: 'web-erp/manager',
+        payload,
+      }));
+      return outcome;
+    },
+
+    decisions: () => outbox.all()
+      .filter((item) => item.event.type === APPROVAL_DECIDED)
+      .map((item) => {
+        const p = item.event.payload as ApprovalDecidedPayload;
+        const box = boxWord.get(item.key);
+        const reason = deviceItemReason(item, box);
+        return {
+          requestId: p.id, subjectType: p.subjectType, subjectRef: p.subjectRef, decision: p.status,
+          decidedAt: p.decidedAt, state: deviceItemState(item, box), attempts: item.attempts,
+          ...(reason === undefined ? {} : { reason }),
+        };
+      })
+      .reverse(),
+
+    handedDecisionKeys: () => outbox.all()
+      .filter((item) => item.event.type === APPROVAL_DECIDED && item.state === 'acknowledged')
+      .map((item) => item.key),
+
+    noteBoxStatus: (statuses) => {
+      for (const s of statuses) boxWord.set(s.key, s);
     },
 
     receive: (input) => {
@@ -621,7 +765,7 @@ export function createManagerSession(
       // The engine is still the authority, and it is still given the real numbers rather than a
       // literal zero — a literal here would be the assumption this whole file exists to refuse.
       const exceptions = ports.openExceptions(config.tradingDay);
-      const unsent = ports.unsentItems(config.tradingDay);
+      const unsent = unsentIncludingHeldHere();
       try {
         return {
           closed: true,
