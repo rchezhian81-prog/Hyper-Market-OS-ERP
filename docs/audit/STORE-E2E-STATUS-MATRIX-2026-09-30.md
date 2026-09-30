@@ -140,7 +140,7 @@ serve; "real box" = the test starts the store-edge screen server.
 | Component | State at 8f4f6c5 | Gap | Next action |
 |---|---|---|---|
 | Store box pipelines (sales, returns, completions, day close, concession tags) | durable fsync'd logs, cursor, durable dead-letter store; restart recovery proven (RR-F05/06) | — | reuse for the manager/handheld leg |
-| Box → cloud transport (`edge/sync-agent/src/http-transport.ts`) | routes by event type; **every 409 classified `accepted` (F12)** — a kernel `409 idempotency_key_reused` / `wasItSaved: not_saved` (changed body under a reused key) is acknowledged as delivered | conflict swallowed | **SP-1 (first repair PR)** |
+| Box → cloud transport (`edge/sync-agent/src/http-transport.ts`) | routes by event type; **SP-1 (30 Sep):** a 409 naming a record already on file is accepted; a kernel `idempotency_key_reused` 409 is REJECTED as a named conflict to the visible, restart-surviving dead-letter queue; an unreadable 409 is retryable | — (F12 fixed) | — |
 | Device queues (`packages/sync/src/device-outbox.ts`) — picker, driver, warehouse | durable in localStorage, survive restart | **no sender**; states only pending / acknowledged / dead-letter | SP-2 (shared drain) + SP-3 (LAN device auth) |
 | Manager screen queue | `new SyncOutbox()` in memory (F11) | lost on reload | SP-2 |
 | Lane socket (`/lane/*`) | loopback-origin only (RR-F01), JSON only, body validated, fsync before ack | no device-events route; handhelds on wifi cannot reach it | SP-2 adds `/lane/outbox`; SP-3 adds the authenticated LAN device route |
@@ -160,7 +160,7 @@ serve; "real box" = the test starts the store-edge screen server.
 | F09 | Served POS uses placeholder cashier / lane / 1970 day | M12-FR-02, M02 | `tests/audit-observations/pos.test.ts` | SP-4b |
 | F10 | Till close missing required cash fields | M14-FR-01/02 | pos.test.ts | SP-4c |
 | F11 | Manager and handheld commands lack a durable complete journey | M02-FR-03, M07-FR-01, M09-FR-01 | `tests/audit-observations/sync.test.ts` | SP-2, SP-3 |
-| F12 | Sync acknowledges a rejected 409 conflict as delivered | M31, QG-04 | sync.test.ts | SP-1 |
+| F12 | Sync acknowledges a rejected 409 conflict as delivered — **FIXED in SP-1 (30 Sep 2026)** | M31, QG-04 | sync.test.ts (case 1 inverted) | SP-1 ✔ |
 
 ## 4. Delivery order (owner: matrix → shared sync + manager data loss → handheld sync, counts, adjustments → store gaps)
 

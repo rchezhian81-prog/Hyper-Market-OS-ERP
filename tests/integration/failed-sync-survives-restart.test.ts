@@ -29,6 +29,7 @@ let online = true;
 let banked: Map<string, unknown>;        // idempotency-key -> payload, deduped (banked once)
 let deliveredKeys: string[];             // every POST's key, in order (to count re-sends)
 let rejectKeys: Set<string>;             // keys the cloud permanently refuses (-> 400 -> dead-letter)
+let conflictKeys: Set<string>;           // keys the cloud already holds a DIFFERENT record under (-> 409 idempotency_key_reused)
 let failWith5xx: Set<string>;            // keys the cloud fails transiently (-> 500 -> retry)
 
 const cloudFetch = (async (_url: string, init: RequestInit): Promise<Response> => {
@@ -37,6 +38,7 @@ const cloudFetch = (async (_url: string, init: RequestInit): Promise<Response> =
   const key = headers['idempotency-key'] ?? '';  // the transport always mints one; default keeps tsc happy
   deliveredKeys.push(key);
   if (rejectKeys.has(key)) return new Response(JSON.stringify({ error: 'permanently bad' }), { status: 400 });
+  if (conflictKeys.has(key)) return new Response(JSON.stringify({ error: { code: 'idempotency_key_reused', wasItSaved: 'not_saved' } }), { status: 409 });
   if (failWith5xx.has(key)) return new Response(JSON.stringify({ error: 'bad minute' }), { status: 500 });
   banked.set(key, JSON.parse(String(init.body)));
   return new Response(JSON.stringify({ ok: true }), { status: 200 });
@@ -50,6 +52,7 @@ beforeEach(() => {
   banked = new Map();
   deliveredKeys = [];
   rejectKeys = new Set();
+  conflictKeys = new Set();
   failWith5xx = new Set();
   realFetch = globalThis.fetch;
   globalThis.fetch = cloudFetch;
@@ -178,6 +181,32 @@ describe('RR-F06 — a dead-lettered record survives a restart, visible and with
 });
 
 // ── RR-F05: the checkpoint tracks real positions; recovery is correct ────────
+
+describe('F12 (SP-1) — a conflict the cloud refused is a visible exception that survives a restart, never a delivery', () => {
+  it('a sale the cloud answers 409 idempotency_key_reused is dead-lettered as a conflict, and is still there after a restart', async () => {
+    const dir = await tempDir();
+    conflictKeys.add(saleKey('S-C1'));
+
+    const edge = await start(dir);
+    await edge.node.commit('S-C1', saleRecord('S-C1'));
+    await edge.syncOnce!();
+    // Not acknowledged, not silently replaced: one visible exception with the conflict named.
+    expect(edge.agent!.health().unsentCount).toBe(0);
+    expect(edge.agent!.health().deadLetterCount).toBe(1);
+    expect(edge.outbox.deadLetters()[0]?.reason).toMatch(/^conflict: .*idempotency_key_reused/);
+    await edge.stop();
+
+    // After a restart the conflict is recovered with its reason — and NOT re-sent (one attempt, then a person).
+    const back = await start(dir);
+    expect(back.agent!.health().deadLetterCount).toBe(1);
+    expect(back.agent!.health().unsentCount).toBe(0);
+    expect(back.outbox.deadLetters()[0]?.key).toBe(saleKey('S-C1'));
+    expect(back.outbox.deadLetters()[0]?.reason).toContain('idempotency_key_reused');
+    await back.syncOnce!();
+    expect(countDelivered(saleKey('S-C1'))).toBe(1);
+    await back.stop();
+  });
+});
 
 describe('RR-F05 — restart recovery and the checkpoint', () => {
   it('an unsynced sale (outage) is re-sent after a restart and banked exactly once', async () => {

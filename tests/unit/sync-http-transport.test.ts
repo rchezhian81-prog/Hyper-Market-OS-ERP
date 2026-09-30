@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { httpTransport, classify, EVENT_ROUTES } from '../../edge/sync-agent/src/http-transport';
+import { httpTransport, classify, errorCodeOf, EVENT_ROUTES } from '../../edge/sync-agent/src/http-transport';
 import { makeEvent } from '../../packages/contracts/src/event';
 import type { DomainEvent } from '../../packages/contracts/src/event';
 
@@ -291,8 +291,42 @@ describe('retryable versus rejected — the distinction that decides whether a s
     for (const status of [400, 404, 422]) expect(classify(status)).toBe('rejected');
   });
 
-  it('treats 409 as ACCEPTED — the receiver already had it, which is what idempotency is for', () => {
-    expect(classify(409)).toBe('accepted');
+  it('treats a 409 that names a record ALREADY ON FILE as accepted — a duplicate delivery is what idempotency is for', () => {
+    // A count already reconciled, a concession line already recorded: the receiver has THIS record.
+    expect(classify(409, 'count_already_reconciled')).toBe('accepted');
+    expect(classify(409, 'already_recorded')).toBe('accepted');
+  });
+
+  it('treats a 409 `idempotency_key_reused` as a CONFLICT — rejected to the visible queue, never acknowledged (F12)', async () => {
+    // The kernel's answer when a DIFFERENT payload arrives under a key it already holds: nothing was saved,
+    // and the two cannot both be right. Acknowledging it would report delivery for a record the cloud does
+    // not hold (hard rule #10 — a conflict is an exception, never last-write-wins).
+    expect(classify(409, 'idempotency_key_reused')).toBe('rejected');
+    const conflict = (() => Promise.resolve(new Response(JSON.stringify({
+      error: { code: 'idempotency_key_reused', whatHappened: 'This Idempotency-Key was already used for a different request, so the two cannot both be right.', wasItSaved: 'not_saved', nextSafeAction: 'Check what was saved under this key.' },
+    }), { status: 409 }))) as unknown as typeof globalThis.fetch;
+    const r = await transportOn(conflict).send(sale());
+    expect(r.status).toBe('rejected');
+    expect(r.status === 'rejected' && r.reason).toMatch(/^conflict: /);
+    expect(r.status === 'rejected' && r.reason).toContain('idempotency_key_reused');
+    expect(r.status === 'rejected' && r.reason).toContain('nothing saved');
+    // The code, not the body: the cloud's sentences are not echoed into a queue a screenshot can reach.
+    expect(r.status === 'rejected' && r.reason).not.toContain('cannot both be right');
+  });
+
+  it('treats a 409 with NO readable reason as retryable — ambiguous is never assumed delivered', async () => {
+    expect(classify(409)).toBe('retryable');
+    const r = await transportOn(fakeFetch(409).fn).send(sale()); // body '{}' carries no error code
+    expect(r.status).toBe('retryable');
+    expect(r.status === 'retryable' && r.reason).toContain('not assumed delivered');
+  });
+
+  it('reads the ONE field it needs from a refusal body, and nothing from a malformed one', () => {
+    expect(errorCodeOf({ error: { code: 'x' } })).toBe('x');
+    expect(errorCodeOf({ error: { code: '' } })).toBeUndefined();
+    expect(errorCodeOf({ error: 'permanently bad' })).toBeUndefined();
+    expect(errorCodeOf('not json')).toBeUndefined();
+    expect(errorCodeOf(undefined)).toBeUndefined();
   });
 
   it('never answers "accepted" on an outcome it did not see', () => {

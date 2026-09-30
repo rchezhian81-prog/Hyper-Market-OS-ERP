@@ -35,6 +35,14 @@
 //   • **401 is retryable, 403 is rejected.** An expired token is renewed by the next deployment
 //     restart or token refresh, so the sale should still be waiting when it is. A permission the
 //     till does not hold will not appear by itself, and that needs a person.
+//   • **409 is TWO different answers, and only the body tells them apart (F12, 30 Sep 2026).** A route
+//     answering 409 because the record is *already on file* (a count already reconciled, a tag already
+//     recorded) is a duplicate delivery — accepted, that is what idempotency is for. The KERNEL answering
+//     `409 idempotency_key_reused` / `wasItSaved: not_saved` means a DIFFERENT payload was sent under a key
+//     it already holds: nothing was saved, and the two cannot both be right. That is a CONFLICT — rejected
+//     to the visible dead-letter queue with its reason (hard rule #10, never last-write-wins; hard rule #6,
+//     never dropped), and never acknowledged as delivered. A 409 whose body cannot be read is ambiguous,
+//     and an ambiguous outcome is retryable, never accepted; the attempt budget bounds it.
 //
 // ── Two things this must never do ───────────────────────────────────────────
 //
@@ -169,10 +177,35 @@ function pathFor(event: DomainEvent): string | undefined {
 /** Statuses that are 4xx by number and transient by meaning. */
 const TRANSIENT_4XX = new Set([401, 408, 425, 429]);
 
-export function classify(status: number): SendOutcome['status'] {
+/** The kernel's own code for "a different request under a key I already hold" (`services/kernel/src/errors.ts`). */
+export const IDEMPOTENCY_CONFLICT_CODE = 'idempotency_key_reused';
+
+/**
+ * Read the error code out of a refusal body — the ONE field the transport reads from any response. The body
+ * of a 409 decides duplicate-versus-conflict; nothing else of it is kept (a body can echo the request, and the
+ * request carries the header this file must never write down, hard rule #4).
+ */
+export function errorCodeOf(body: unknown): string | undefined {
+  if (body === null || typeof body !== 'object') return undefined;
+  const error = (body as { error?: unknown }).error;
+  if (error === null || typeof error !== 'object') return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' && code !== '' ? code : undefined;
+}
+
+/**
+ * Classify a response. `errorCode` is the refusal body's code and matters for ONE status: a 409 is
+ * accepted when the receiver says the record is already on file under some business code, REJECTED as a
+ * conflict when the kernel says a different payload reused the key (`idempotency_key_reused` — nothing
+ * saved), and retryable when no code could be read (ambiguous, so never assumed delivered).
+ */
+export function classify(status: number, errorCode?: string): SendOutcome['status'] {
   if (status >= 200 && status < 300) return 'accepted';
-  // The receiver already had it. That is what an idempotent send is for, and it is a success.
-  if (status === 409) return 'accepted';
+  if (status === 409) {
+    if (errorCode === IDEMPOTENCY_CONFLICT_CODE) return 'rejected';
+    if (errorCode !== undefined) return 'accepted';
+    return 'retryable';
+  }
   if (status >= 500) return 'retryable';
   if (TRANSIENT_4XX.has(status)) return 'retryable';
   if (status >= 400) return 'rejected';
@@ -224,13 +257,26 @@ export function httpTransport(options: HttpTransportOptions): SyncTransport {
           signal: controller.signal,
         });
 
-        const outcome = classify(response.status);
+        // Only a 409 needs its body read, and only for the error CODE (see `errorCodeOf`).
+        const errorCode = response.status === 409 ? errorCodeOf(await response.json().catch(() => undefined)) : undefined;
+        const outcome = classify(response.status, errorCode);
         if (outcome === 'accepted') return { status: 'accepted' };
+        if (response.status === 409 && errorCode === IDEMPOTENCY_CONFLICT_CODE) {
+          return {
+            status: 'rejected',
+            // A conflict, named as one: the cloud already holds a DIFFERENT record under this key and saved
+            // nothing. The item is kept for a person to compare and resolve — never acknowledged, never
+            // silently replaced (hard rules #6, #10). The code, not the body.
+            reason: `conflict: head office already holds a different record under this key for ${event.type} (${IDEMPOTENCY_CONFLICT_CODE}, nothing saved) — kept for a person to compare and resolve`,
+          };
+        }
         return {
           status: outcome,
           // The status, not the body. A body can echo the request, and the request carries the
           // header we must never write down.
-          reason: `the cloud answered ${response.status} for ${event.type}`,
+          reason: response.status === 409
+            ? `the cloud answered 409 for ${event.type} with no readable reason — not assumed delivered; it will be sent again`
+            : `the cloud answered ${response.status} for ${event.type}`,
         };
       } catch (e) {
         // Everything that lands here — timeout, DNS failure, refused connection, TLS problem — is
