@@ -53,6 +53,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // SP-2b: a delivery booked in and a blind count captured on the manager's screen reach head office through the
       // box; the owner sets the count-approval threshold policy the cloud reconciles against (never the body, F07).
       'inventory.receipt.sync', 'inventory.count.sync', 'inventory.count.policy.set', 'inventory.count.policy.read',
+      // SP-7a: the owner holds the box's invoice-sync hop too, so a maker-checker grant of the box identity can be approved.
+      'purchase.invoice.sync',
       'inventory.movement.sync',
       // SP-3b: adjustment REQUESTS relayed from the warehouse handheld, and the separate person who approves them (§28).
       'inventory.adjustment.sync', 'inventory.adjustment.approve',
@@ -230,6 +232,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // SP-4c hop: the box relays the till's cash movements and shift closes (F10). The routes re-verify the custodian /
       // cashier from THEIR grants and record-and-flag — these grant no cash authority of their own.
       'cash.movement.sync', 'till.shift.sync',
+      // SP-7a hop: the box relays supplier invoices captured on the buyer's screen. The route re-verifies the CAPTURER and
+      // the APPROVER from THEIR grants and record-and-flags — this grants no capture or approval of its own.
+      'purchase.invoice.sync',
       // M01-FR-02: the box pulls the PUBLISHED document templates (the receipt header/footer in force) into the
       // lane's pack under this identity — a read of what head office put in force, never of drafts or names.
       'org.template.pull',

@@ -456,10 +456,11 @@ export function buildSurface(deps: {
     ...promotionCatalogueRoutes(store === undefined
       ? { promotion: empty(undefined), promotions: empty([]), recordDefined: () => {}, recordStatus: () => {}, now }
       : promotionCatalogueAdapter({ store, now })),
+    // Supplier invoices (SP-7a · F02 · F04): the invoice is a durable record; the match joins it to the STORED order and receipts.
     ...purchaseRoutes(store === undefined ? {
-      matchLines: empty([]), recordCapture: () => {}, recordMatch: () => {}, applyBankChange: () => {},
-      openCommitments: empty(undefined), now,
-    } : purchaseAdapter({ store, now })),
+      invoice: empty(undefined), invoices: empty([]), recordInvoice: () => {}, purchaseOrder: empty(undefined), permissionsOfUser: empty(undefined),
+      latestMatch: empty(undefined), recordMatch: () => {}, applyBankChange: () => {}, openCommitments: empty(undefined), now,
+    } : { ...purchaseAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     // Purchase-order lifecycle (M06-FR-01/02/04) — propose, approve+issue under §28, supplier holds.
     ...purchaseOrderRoutes(store === undefined ? {
       order: empty(undefined), all: empty([]), supplierBlocked: empty(false),

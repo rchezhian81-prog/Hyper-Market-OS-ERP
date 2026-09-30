@@ -50,6 +50,9 @@ import {
 // From the package, not the service: the service imports the HTTP kernel, and a browser bundle
 // cannot contain `node:http`. Same rule, one implementation — see `three-way-match.ts`.
 import { threeWayMatch, type MatchLine, type MatchResult } from '../../../packages/purchasing/src/three-way-match';
+import { makeEvent } from '../../../packages/contracts/src/event';
+import type { SyncOutbox } from '../../../packages/sync/src/outbox';
+import { deviceItemReason, deviceItemState, type BoxItemStatus, type DeviceItemState } from '../../../packages/sync/src/device-relay';
 
 /**
  * The shape a supplier invoice file must have.
@@ -142,6 +145,47 @@ export interface BuyingConfig {
   readonly priceToleranceBps: number;
   /** A difference below this is not worth a person's time. Per-tenant. */
   readonly immaterialMinor: number;
+  /** The store this screen serves — stamped on what it queues so head office knows where the paper is. */
+  readonly storeId?: string;
+  /** Injected clock; the device's own by default. */
+  readonly now?: () => string;
+}
+
+/**
+ * The event a captured supplier invoice travels under (SP-7a · F02): the invoice's OWN lines as the paper says them, who
+ * captured it and who checked it — queued on the durable device queue BEFORE the screen says "saved", relayed through
+ * the store box to head office's synced invoice route, where both people are re-verified. Nothing about the order or the
+ * delivery rides with it: those are head office's own records (F04).
+ */
+export const SUPPLIER_INVOICE_CAPTURED = 'SupplierInvoiceCaptured';
+/** The invoice's one identity at every hop (device queue → box → cloud). */
+export const invoiceKeyFor = (invoiceId: string): string => `invoice:${invoiceId}`;
+
+export interface SupplierInvoiceCapturedPayload {
+  readonly invoiceId: string;
+  readonly supplierId: string;
+  readonly poId: string | null;
+  readonly lines: readonly InvoiceLine[];
+  readonly declaredTotalMinor: number;
+  readonly capturedBy: string;
+  readonly capturedAt: string;
+  readonly approvedBy: string;
+  readonly approvedAt: string;
+  readonly storeId: string | null;
+  readonly source: 'buyer-screen';
+}
+
+/** One invoice this screen saved, and where it has got to (the five shared state words, SP-2a). */
+export interface SavedInvoice {
+  readonly invoiceId: string;
+  readonly supplierId: string;
+  readonly poId: string | null;
+  readonly lineCount: number;
+  readonly totalMinor: number;
+  readonly at: string;
+  readonly state: DeviceItemState;
+  readonly attempts: number;
+  readonly reason?: string;
 }
 
 /** What this surface can see about the shop, and what it honestly cannot. */
@@ -269,20 +313,54 @@ export interface BuyingSession {
     readonly delimiter?: string;
   }): CapturePreview;
 
-  /** Commit a previewed, approved invoice — all of it or none of it. */
+  /**
+   * Commit a previewed, approved invoice — all of it or none of it — onto the DURABLE device queue (SP-7a · F02): the
+   * invoice is on the device before this returns `ok`, the match on this very screen finds it at once, a second capture
+   * of it is refused, and the shared device → box → cloud path carries it to head office.
+   */
   captureInvoice(input: {
     readonly invoiceId: string;
     readonly supplierId: string;
+    /** The purchase order the invoice is for, when the buyer knows it — head office matches against ITS copy. */
+    readonly poId?: string | null;
     readonly preview: CapturePreview;
     readonly approval?: DecidedRequest;
   }): CaptureOutcome;
 
   /** Compare the order, the delivery and the invoice (M07-FR-04). */
   match(input: { readonly poId: string; readonly invoiceId: string }): MatchResult;
+
+  /** Every invoice this screen saved, newest first, each with where it has got to — from the durable queue, so the same after a reload. */
+  savedInvoices(): readonly SavedInvoice[];
+  /** The queue keys of invoices the store computer has taken, to ask it where they have got to. */
+  handedKeys(): readonly string[];
+  /** Fold in the store computer's word on items it took — "posted" is only ever its say-so. */
+  noteBoxStatus(statuses: readonly BoxItemStatus[]): void;
 }
 
-export function createBuyingSession(config: BuyingConfig, ports: BuyingPorts): BuyingSession {
+/**
+ * @param outbox the DURABLE device queue this screen's captures are written to (required, as on the manager screen and the
+ *   handhelds — F02 was exactly the forgotten queue: `ok: true` returned and the invoice existed nowhere).
+ */
+export function createBuyingSession(config: BuyingConfig, ports: BuyingPorts, outbox: SyncOutbox): BuyingSession {
   const inr = (minor: number): Money => money(minor, config.currency);
+  const now = config.now ?? (() => new Date().toISOString());
+  /** The store computer's word on each queued invoice, keyed by queue key — filled by `noteBoxStatus`. */
+  const boxWord = new Map<string, BoxItemStatus>();
+  /** Invoices captured on THIS device and still on its queue — the plain boot's own memory (F02). */
+  const queuedCaptures = (): readonly SupplierInvoiceCapturedPayload[] => outbox.all()
+    .filter((item) => item.event.type === SUPPLIER_INVOICE_CAPTURED)
+    .map((item) => item.event.payload as SupplierInvoiceCapturedPayload);
+  /**
+   * What is captured for an invoice: what the box last told this screen (the pack) — and, failing that, what this very
+   * device queued. Before SP-7a only the first was read, so an invoice captured a moment ago was invisible to the match
+   * and to the duplicate check on the same screen (F02).
+   */
+  const linesCaptured = (invoiceId: string): readonly InvoiceLine[] => {
+    const known = ports.capturedLines(invoiceId);
+    if (known.length > 0) return known;
+    return queuedCaptures().filter((c) => c.invoiceId === invoiceId).flatMap((c) => c.lines);
+  };
 
   const previewInvoice: BuyingSession['previewInvoice'] = (input) => {
     let parsed;
@@ -378,7 +456,7 @@ export function createBuyingSession(config: BuyingConfig, ports: BuyingPorts): B
     previewInvoice,
 
     captureInvoice: (input) => {
-      if (ports.capturedLines(input.invoiceId).length > 0) {
+      if (linesCaptured(input.invoiceId).length > 0) {
         return {
           ok: false,
           refusal: 'already_captured',
@@ -431,12 +509,52 @@ export function createBuyingSession(config: BuyingConfig, ports: BuyingPorts): B
         };
       }
 
+      // QUEUED before it is called saved (F02 — before this, `ok: true` was returned and the invoice existed nowhere). The
+      // outbox is the durable device queue `bootBuying` opens; enqueue writes it to the device before returning, and the
+      // shared device → box → cloud path carries it from there. The key is the invoice's one identity at every hop.
+      const capturedAt = now();
+      const payload: SupplierInvoiceCapturedPayload = {
+        invoiceId: input.invoiceId, supplierId: input.supplierId, poId: input.poId ?? null, lines: captured,
+        declaredTotalMinor: input.preview.declaredTotalMinor, capturedBy: config.buyerId, capturedAt,
+        // `commitImport` accepted the capture, so the approval is present, approved, and not the buyer's own.
+        approvedBy: input.approval?.decidedBy ?? '', approvedAt: input.approval?.decidedAt ?? capturedAt,
+        storeId: config.storeId ?? null, source: 'buyer-screen',
+      };
+      outbox.enqueue(makeEvent({
+        id: invoiceKeyFor(input.invoiceId),
+        type: SUPPLIER_INVOICE_CAPTURED,
+        occurredAt: capturedAt,
+        idempotencyKey: invoiceKeyFor(input.invoiceId),
+        source: 'web-erp/buying',
+        payload,
+      }));
+
       return {
         ok: true,
         invoiceId: input.invoiceId,
         lines: captured,
         totalMinor: input.preview.declaredTotalMinor,
       };
+    },
+
+    savedInvoices: () => outbox.all()
+      .filter((item) => item.event.type === SUPPLIER_INVOICE_CAPTURED)
+      .map((item): SavedInvoice => {
+        const p = item.event.payload as SupplierInvoiceCapturedPayload;
+        const box = boxWord.get(item.key);
+        const reason = deviceItemReason(item, box);
+        return {
+          invoiceId: p.invoiceId, supplierId: p.supplierId, poId: p.poId, lineCount: p.lines.length, totalMinor: p.declaredTotalMinor,
+          at: item.event.occurredAt, state: deviceItemState(item, box), attempts: item.attempts,
+          ...(reason === undefined ? {} : { reason }),
+        };
+      })
+      .reverse(),
+
+    handedKeys: () => outbox.all().filter((item) => item.state === 'acknowledged').map((item) => item.key),
+
+    noteBoxStatus: (statuses) => {
+      for (const st of statuses) boxWord.set(st.key, st);
     },
 
     /**
@@ -450,7 +568,7 @@ export function createBuyingSession(config: BuyingConfig, ports: BuyingPorts): B
     match: (input) => {
       const ordered = ports.orderedLines(input.poId);
       const received = ports.receivedLines(input.poId);
-      const invoiced = ports.capturedLines(input.invoiceId);
+      const invoiced = linesCaptured(input.invoiceId);
 
       // **No invoice means no match, and it must reach the engine as no lines.**
       //

@@ -278,6 +278,8 @@ export interface ManagerData {
 /** What the buyer's screen was last told. Absent means this box knows nothing about buying. */
 export interface BuyingData {
   readonly buyerId?: string;
+  /** The store this screen serves (SP-7a) — the buyer's durable queue is keyed per store, like the manager's. */
+  readonly storeId?: string;
   /** Who may check this buyer's work. The box has already removed the buyer from it (§28). */
   readonly approvers?: readonly string[];
   readonly productIds?: readonly string[];
@@ -3414,6 +3416,11 @@ interface ManagerWindow {
   buyingData?: BuyingData;
   /** What the box did not tell the buyer's screen, so the screen can say it rather than guess. */
   buyingGaps?: readonly BuyingGap[];
+  /** The buyer screen's DURABLE device queue (SP-7a · F02): an invoice captured here is on it before the screen says "saved". */
+  buyingOutbox?: SyncOutbox;
+  /** Hands the buyer's queue to the store computer and asks where each invoice has got to. Absent when no box is wired. */
+  buyingRelay?: BuyingRelay;
+  buyingStorageProblem?: string;
   catalogueSession?: CatalogueSession;
   catalogueData?: CatalogueData;
   catalogueGaps?: readonly CatalogueGap[];
@@ -3924,8 +3931,47 @@ export function buyingPortsFromData(data: BuyingData | undefined, proposeOrder?:
   };
 }
 
-/** Build the buyer's session, or `null` when this box was told nothing about buying. */
-export function bootBuying(data: BuyingData | undefined, proposeOrder?: ProposePurchaseOrderPort): BuyingSession | null {
+/** The last problem the buyer's device queue hit with this device's storage — shown, never silent (P-08). */
+export let buyingStorageProblem: string | undefined;
+
+/**
+ * Open the buyer screen's durable device queue (SP-7a · F02), keyed per store like the manager's. Same mechanism as the
+ * handhelds' and the manager's (`packages/sync/device-outbox`): written to the device after every change, restored at
+ * boot, a storage fault reported rather than swallowed.
+ */
+export function openBuyingOutbox(storeId: string, storage?: DeviceStorage): SyncOutbox {
+  const store = storage ?? (globalThis as { localStorage?: DeviceStorage }).localStorage;
+  const onProblem = (why: string): void => { buyingStorageProblem = why; };
+  return openDeviceOutbox(guardedStore(`sre.buying.outbox.${storeId}`, store, onProblem), onProblem);
+}
+
+/** What the buyer's shell calls to move its saved invoices along and learn where each has got to (the manager relay's shape). */
+export type BuyingRelay = ManagerRelay;
+
+/**
+ * The buyer screen's leg of the shared sync path (SP-7a): the same cross-port call to the box's lane socket the manager
+ * screen makes, as the same ERP surface. `undefined` when no box is wired: the queue still fills and survives, the screen
+ * says "saved on this device", and nothing pretends to have been sent.
+ */
+export function openBuyingRelay(laneWriteBase: string | undefined, session: BuyingSession, outbox: SyncOutbox): BuyingRelay | undefined {
+  if (laneWriteBase === undefined) return undefined;
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return undefined;
+  return {
+    syncNow: async () => {
+      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'manager', fetch: fetchFn });
+      const statuses = await boxStatus({ boxBase: laneWriteBase, keys: session.handedKeys(), fetch: fetchFn });
+      if (statuses !== undefined) session.noteBoxStatus(statuses);
+      return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };
+    },
+  };
+}
+
+/**
+ * Build the buyer's session, or `null` when this box was told nothing about buying. The session writes its captures
+ * to `outbox` — the DURABLE device queue (SP-7a · F02) — opened here per store when the caller passes none.
+ */
+export function bootBuying(data: BuyingData | undefined, proposeOrder?: ProposePurchaseOrderPort, outbox?: SyncOutbox): BuyingSession | null {
   if (data === undefined) return null;
   return createBuyingSession(
     {
@@ -3936,8 +3982,10 @@ export function bootBuying(data: BuyingData | undefined, proposeOrder?: ProposeP
       quantityToleranceBps: data.quantityToleranceBps ?? 0,
       priceToleranceBps: data.priceToleranceBps ?? 100,
       immaterialMinor: data.immaterialMinor ?? 100,
+      ...(data.storeId === undefined ? {} : { storeId: data.storeId }),
     },
     buyingPortsFromData(data, proposeOrder),
+    outbox ?? openBuyingOutbox(data.storeId ?? 'store-1'),
   );
 }
 
@@ -4355,10 +4403,17 @@ if (browserWindow !== undefined) {
   if (managerStorageProblem !== undefined) browserWindow.managerStorageProblem = managerStorageProblem;
   // The buyer's shell shares this bundle: one build, two screens, and each boots only what it was
   // given. A shell that was told nothing gets `undefined` and says so rather than showing zeros.
-  const buying = bootBuying(browserWindow.buyingData, openProposePurchaseOrderPort());
-  if (buying !== null) {
+  // The buyer's DURABLE device queue (SP-7a · F02): opened per store so the session writes into it and the relay drains
+  // the same one; an invoice captured here is on the device before the screen says "saved", and survives a reload.
+  const buyingOutbox = browserWindow.buyingData === undefined ? undefined : openBuyingOutbox(browserWindow.buyingData.storeId ?? 'store-1');
+  const buying = bootBuying(browserWindow.buyingData, openProposePurchaseOrderPort(), buyingOutbox);
+  if (buying !== null && buyingOutbox !== undefined) {
     browserWindow.buyingSession = buying;
     browserWindow.buyingGaps = buyingGaps(browserWindow.buyingData);
+    browserWindow.buyingOutbox = buyingOutbox;
+    const buyingRelay = openBuyingRelay(browserWindow.laneWriteBase, buying, buyingOutbox);
+    if (buyingRelay !== undefined) browserWindow.buyingRelay = buyingRelay;
+    if (buyingStorageProblem !== undefined) browserWindow.buyingStorageProblem = buyingStorageProblem;
   }
   // The product publish this screen commits queues in a DEVICE-backed outbox, so a Save made while the link is
   // down survives the operator closing and reopening the tab before it syncs (P-01, §31).

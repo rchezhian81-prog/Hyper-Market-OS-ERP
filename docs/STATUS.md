@@ -364,10 +364,45 @@ device, human UAT and production verification separate; approved deferrals stay 
   not yet show an assembled receipt's scans, its disagreements or a late scan (SP-9); the handheld's receiving engine does
   not know the master's batch rule (a tracked item scanned without a batch is caught at assembly, not at the door) —
   recorded for SP-9's connected run; no physical device or UAT.
-- **Current-work pointer:** last verified = SP-6b (this PR); next = **SP-7** [W07] (F02/F04: the supplier invoice saved
-  and read back after restart; the match over the STORED PO + GRN + invoice; supplier liability, statement and journals
-  reconciling; the supplier master screen; the GRN's return / claim value reaching the supplier account and taking the
-  rejected excess out of stock); then SP-8/8b (F08), SP-9/9b; **SP-3c** (picker + driver) after the core-store chain;
+- **SP-7a — the supplier invoice is a record, and the three-way match joins it to what head office holds (F02 · F04's
+  match half · M07-FR-04 · M06-FR-04 · §28 · §31 · hard rules #1 #4 #10).** Until this PR the buyer's screen wrote
+  nothing when it said "Invoice saved" (F02) and `/capture` took a caller-typed snapshot of what was ordered and received
+  beside what was invoiced, so the "three-way" match compared three figures one person typed and passed with no order
+  and no receipt anywhere (F04). Now (i) the buyer's session takes the DURABLE device queue as a required argument (as
+  the manager screen and the handhelds do) and `captureInvoice` enqueues ONE `SupplierInvoiceCaptured` keyed
+  `invoice:<invoiceId>` — the invoice's own lines as the paper says them, who captured it, who checked it, the order it
+  names — BEFORE it returns ok; the same screen's match finds it at once and a second capture is `already_captured`;
+  `bootBuying` opens `openBuyingOutbox(storeId)` (`sre.buying.outbox.<storeId>`) so the plain boot is durable; a reload
+  over the same queue still knows it; the page lists every saved invoice with the five shared state words (EN/TA) and
+  hands the queue to the box (`openBuyingRelay`, the ERP surface) after every capture and on `online` / `focus` /
+  `pageshow` / visibility — no timer, the honesty guardrail forbids one; (ii) head office keeps the invoice as a RECORD
+  on its own register (`SupplierInvoiceRecord`, idempotent per invoice): `POST /v1/purchase/invoices/:id/capture` takes
+  the invoice AS THE PAPER SAYS IT ({ supplierId, poId?, declaredTotalMinor, lines[{ productId, quantity, unitPriceMinor,
+  lineTotalMinor }], approvedBy? }) — a body naming what was ordered or received is refused by name
+  (`invoice_carries_caller_claims`), the screen's arithmetic is re-run (`invoice_line_does_not_multiply`,
+  `does_not_add_up_to_the_invoice_total`), the capturer is the authenticated user and cannot be the checker
+  (`self_approval`), and an absent / unknown / unauthorised checker, a missing / unknown / unissued order or a differing
+  supplier are SAID as flags; `POST …/synced` (`purchase.invoice.sync`, the box identity — allow-listed as `manager`,
+  routed by `EVENT_ROUTES`) takes the relayed record and re-verifies BOTH people from their grants (`capturer_unknown` /
+  `capturer_lacks_authority` / `self_approved` / `approver_unknown` / `approver_lacks_authority` / `no_approval`),
+  record-and-flag; (iii) `POST …/match` ({ poId? } only) joins the STORED invoice to the STORED issued order — its lines
+  and its `receivedByProduct`, the goods receipts folded into it in SP-6 — through the ONE shared `threeWayMatch`
+  (`matchLinesFrom`: a product missing from a side contributes zero; an unissued order counts as nothing ordered) and
+  records a `StoredMatch` with its SOURCES; `GET …/invoices/:id` and `GET …/invoices` read them back. Evidence:
+  observation `procurement.test.ts` case 3 INVERTED; `purchase-capture-match.test.ts` REWRITTEN (6); NEW
+  `buyer-invoice-reaches-the-cloud-through-the-edge.test.ts` (3, real box + real kernel: durable before accepted, one
+  record with both people re-verified, matched over the stored order and receipt — 10 ordered, 8 received, 10 invoiced →
+  pay 8, hold 2 — duplicate across a restart, lost reply → one record, a non-adding invoice a visible dead-letter, the
+  no-cloud hold, a handheld refused); `erp-buying-session.test.ts` (+4); `the-buying-screen-is-honest.test.ts` (+3);
+  `device-relay.test.ts`. API surface +3 (`…/synced`, `GET …/invoices/:id`, `GET …/invoices`). **Still open, honestly
+  (SP-7b):** the matched payable does not yet post a supplier liability, statement line or journal; the GRN's return /
+  claim value and the SP-6b rejected excess do not yet reach the supplier's account; no supplier master screen; match
+  tolerances are the engine's defaults, not a tenant policy; the buyer's durable queue is not yet browser-verified on a
+  box-served page (SP-9's connected run); no physical device or UAT.
+- **Current-work pointer:** last verified = SP-7a (this PR); next = **SP-7b** [W07 remainder] (supplier liability from
+  the matched payable; statement lines and debit notes from the GRN's return / claim dispositions and the rejected
+  excess; journals through the accountant's mapping reconciling to the supplier balance; the supplier master screen; a
+  tenant match-tolerance policy); then SP-8/8b (F08), SP-9/9b; **SP-3c** (picker + driver) after the core-store chain;
   genuine blockers: none; external gates unchanged (providers, hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)

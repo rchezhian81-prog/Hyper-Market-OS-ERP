@@ -124,6 +124,14 @@
       .banner p { margin: 0; font-size: 16px; }
       .banner button { background: #7f1d1d; color: #fff; }
       .banner.good button { background: #052e16; color: #ecfdf5; }
+      /* SP-7a: where each saved invoice has got to — the five shared state words as pills, the foundation's colours. */
+      .saved { display: grid; gap: 6px; padding: 12px 14px; margin-bottom: 10px; background: var(--panel); border-radius: 12px; }
+      .saved .what { font-size: 16px; }
+      .saved .why { color: var(--danger-text); font-size: 14px; }
+      .pill { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 14px; font-weight: 600; background: var(--line); color: var(--ink); justify-self: start; }
+      .pill.posted { background: var(--ok); color: var(--bg); }
+      .pill.refused { background: var(--danger); color: var(--bg); }
+      .pill.retrying { background: var(--warn); color: var(--bg); }
     </style>
   </head>
   <body>
@@ -170,6 +178,11 @@
           <input id="supplier-id" type="text" autocomplete="off" />
         </div>
         <div class="field">
+          <!-- SP-7a: the order the invoice is for, when the buyer knows it. Head office matches against ITS copy of the order. -->
+          <label for="invoice-po" id="invoice-po-label">Purchase order number (if you have it)</label>
+          <input id="invoice-po" type="text" autocomplete="off" />
+        </div>
+        <div class="field">
           <!--
             The control total. Typed off the bottom of the supplier's own document —
             it is the only thing in this flow that does not come from the file, which
@@ -189,6 +202,11 @@
         <div class="problems" id="problems"></div>
         <div id="lines-preview"></div>
         <button id="capture" class="primary wide" type="button" hidden>Send for approval and save</button>
+
+        <!-- SP-7a (F02): every invoice saved on this screen, from the DURABLE device queue, with where each has got to. -->
+        <h3 id="saved-title" hidden>Invoices saved on this screen</h3>
+        <p class="lead" id="saved-lead" hidden>Each is saved on this device first, then with the store computer, then posted at head office.</p>
+        <div id="saved-invoices"></div>
       </section>
 
       <!-- The three-way match: order, delivery, invoice. -->

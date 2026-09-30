@@ -46,3 +46,24 @@ only be returned or claimed. **Still recorded, not dropped:** the handheld's rec
 GRN (SP-6b); the supplier return / claim does not yet reach the supplier's account, statement or a debit note (SP-7); the
 review screen does not yet show the held quantity, offer the excess decision or the disposition (SP-9); physical-device
 verification and staff UAT — PENDING.
+
+## Measured (SP-7a — the invoice exists, and the match compares three records, owner's Option 2 directive of 30 September 2026)
+The buyer's screen said "Invoice saved" and saved nothing (audit finding F02): the capture committed into a callback that
+kept the lines in a local variable, so the same screen's match found no invoice and a second capture went through. Now the
+session takes the **durable device queue** as a required argument — the same mechanism the manager screen and the
+handhelds use — and a capture is on the device BEFORE the screen says saved: the banner now says *Invoice saved on this
+device*, the new **Invoices saved on this screen** list shows each one with the five shared state words (saved on this
+device · trying again · with the store computer · posted at head office · refused, with the reason), in English and
+Tamil, and the list is the same after a reload. The queue is handed to the store computer after every capture and when
+the page regains the network or the buyer's attention (no timer: nothing on this page runs on a clock). A new
+**Purchase order number (if you have it)** field lets the buyer name the order; head office matches against ITS copy.
+At head office the invoice is a record captured as the paper says it, both people are re-verified, and the three-way
+match compares the STORED invoice with the STORED order and the receipts folded into it (F04's match half) — the screen's
+own match still runs the same shared rule over what the box served plus what this device queued. Proven in the session
+model (`tests/unit/erp-buying-session.test.ts`), the inverted observation (`tests/audit-observations/procurement.test.ts`),
+the honesty guardrail, and the real box against the real kernel
+(`tests/integration/buyer-invoice-reaches-the-cloud-through-the-edge.test.ts`). **Still recorded, not dropped:** the
+matched payable does not reach a supplier account, statement or journal (SP-7b); the supplier workbench (§ above) is not
+built; the box-served buyer page with its relay is not yet browser-verified (SP-9); physical-device verification and UAT
+PENDING.
+
