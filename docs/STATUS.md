@@ -1182,6 +1182,32 @@ accounts.
   products (`excludedProducts`) but no screen shows them yet — the manager or owner should see "products nobody can
   sell" (P-08); the manager's approvals, receipts and counts still queue to an in-browser outbox nothing drains (5b
   finding d).
+- **W1 — the warehouse handheld picks an order line from the bin the pick list names (owner Option 1 of 30 Sep ·
+  M09-FR-01 · inventory-warehouse.md · §31.1 · hard rules #1 #2).** The store pack's `warehouse` section now carries
+  `pickLines` (`PackWarehousePickLine`: line, order reference, product, batch, **the bin the stock is in**, quantity,
+  unit); the box passes them through the handheld payload as sent (absent stays absent — a handheld given no pick work
+  shows none, never an empty list that reads as "all picked"). `WarehouseSession` gains `pickLines()` (what remains on
+  each line), `checkPick` (the two facts only the pick list knows — right bin, right item — checked at each scan so the
+  worker is refused at the racking or the shelf, never after confirming) and `pick` (the authoritative `applyMovement`
+  kind `pick`, out of the named bin to nowhere: unknown bin, a draw the bin cannot cover and a repeated command are the
+  ENGINE's refusals; the local bin projection falls; ONE `WarehouseMovementApplied` keyed `wh-move:<commandId>` for the
+  cloud's idempotent movement ledger, naming the order and the line in the reason; a refusal queues nothing). Five new
+  feedback codes (`picked` · `wrong_bin` · `wrong_item` · `not_on_pick_list` · `line_done`) with words in both
+  languages, bound by the bilingual guardrail. The shell: a "To pick" section above goods-in, the bin the biggest thing
+  on each row; **a bin label scanned from the list IS step 1** (it chooses the line, as on the picker) → scan the item
+  → confirm the model's remaining quantity with one tap (no typed number); tap-the-line + *Pick — scan the bin* is the
+  same flow at 4; the footer names the next step throughout; service-worker cache v3. **Measured in real Chromium:
+  pick a line 3**; the pick list, item panel, confirm step, green banner and Tamil list audited with zero findings;
+  the wrong bin and the wrong item refused in red before anything is confirmed, nothing queued. Evidence:
+  `tests/integration/warehouse-screen-fed.test.ts` (+9), `tests/integration/warehouse-fed-from-pack.test.ts` (+2),
+  `tests/integration/the-screens-are-fed.test.ts` (+1, the served handheld picks over the socket),
+  `tests/guardrails/the-handheld-screens-are-usable.test.ts` (+5), `tests/e2e/the-handhelds-meet-the-spec.e2e.ts`
+  (+2, and the warehouse view audit extended). **Recorded, not done here (the owner's program, in order):** W2 the
+  blind count on the handheld · W3 the adjustment request with supervisor approval · S1 the sync path — the picked
+  movement still waits in the device's outbox, which nothing drains yet, and the box's relay deliberately routes no
+  warehouse event · S2 verification and the ledger; physical-device verification PENDING. Also recorded: the cloud
+  produces no `warehouse.pickLines` today (the pack section is file-loaded on the box), so pick work reaches a handheld
+  only by pack file until a warehouse feed exists — a W-series follow-on to raise with the owner, not invented here.
 - **Next — Stage G slice 2 onward (UI/UX finish across the 8 apps, consistent · modern · bilingual EN/TA):** built to the Stage 3
   design system (`docs/design/design-system.md`, §27/§27.1, QG-02, NFR-07/08, P-07) and the screen specs in
   `docs/design/screens/`, in slices: G1 one shared visual foundation — DONE above; G2 the till and manager screens to the spec's

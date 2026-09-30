@@ -18,6 +18,13 @@ import { money } from '../../packages/contracts/src/money';
  *
  * The visual shell (bilingual strings, service worker, socket wiring) is the next work package; this
  * is the honest data-path-first half.
+ *
+ * **Picking an order line (W1, owner Option 1 of 30 Sep · M09-FR-01 · inventory-warehouse.md):** the pick
+ * list names the bin; the worker scans that bin, then the item, then confirms. The movement is the
+ * authoritative `applyMovement` kind `pick` (out of the bin, to nowhere), so an unknown bin, a draw the bin
+ * cannot cover and a repeated command are refused by the ENGINE; the pick list's own two facts — right
+ * bin, right item — are the session's, and refused at the scan. One `WarehouseMovementApplied` per pick,
+ * keyed on the command id; a refusal queues nothing.
  */
 
 const GRN = 'GRN-1';
@@ -171,5 +178,114 @@ describe('warehouse PWA is fed its assignment and executes receiving + put-away 
     expect(again.result.outcome).toBe('duplicate_ignored');
     expect(s.binContents()['B-PICK|P1|']).toBe(50); // not doubled
     expect(box.pending().filter((i) => i.event.type === 'WarehouseMovementApplied')).toHaveLength(1);
+  });
+});
+
+describe('the warehouse handheld picks an order line from the bin the pick list names (W1 · M09-FR-01 · inventory-warehouse.md)', () => {
+  const LINES = [
+    { lineId: 'pl-1', orderRef: 'ORD-77', productId: 'P1', batchId: null, binId: 'B-PICK', quantityMinor: 12, uom: 'EA' },
+    { lineId: 'pl-2', orderRef: 'ORD-77', productId: 'P2', batchId: 'B-22', binId: 'B-SMALL', quantityMinor: 2, uom: 'EA' },
+  ];
+  const picking = (contents: Record<string, number> = { 'B-PICK|P1|': 40, 'B-SMALL|P2|B-22': 2 }) =>
+    session({ ordered: undefined, pickLines: LINES, contents });
+  const at = NOW;
+
+  it('lists the pick work the box sent, with what remains on each line, and nothing when none was sent', () => {
+    const { s } = picking();
+    expect(s.pickLines().map((l) => [l.lineId, l.binId, l.remainingMinor, l.pickedMinor])).toEqual([['pl-1', 'B-PICK', 12, 0], ['pl-2', 'B-SMALL', 2, 0]]);
+    expect(session().s.pickLines()).toEqual([]);
+  });
+
+  it('scan the bin → scan the item → confirm: one `pick` movement out of the named bin, queued once, keyed on the command', () => {
+    const { s, box } = picking();
+    const out = s.pick({ commandId: 'pk-1', lineId: 'pl-1', scannedBinId: 'B-PICK', scannedItem: '111', at });
+    expect(out.result.accepted).toBe(true);
+    expect(out.signal).toMatchObject({ feedback: 'accept', code: 'picked', sound: 'ok' });
+    expect(out.result.detail).toBe('12 picked for ORD-77 from B-PICK');
+    // The engine's movement: out of the bin the pick list named, to nowhere — the goods leave the racking for the order.
+    expect(out.result.movements).toHaveLength(1);
+    expect(out.result.movements[0]).toMatchObject({ movementId: 'pk-1-out', productId: 'P1', locationId: 'B-PICK', quantityMinor: 12, from: 'on_hand', to: null, reason: 'pick by u-wh' });
+    // The local projection falls, the line is done and leaves the worklist.
+    expect(s.binContents()['B-PICK|P1|']).toBe(28);
+    expect(s.pickLines().map((l) => l.lineId)).toEqual(['pl-2']);
+    // Queued exactly once, on the command id the cloud keys its ledger on, naming the order and the line.
+    const queued = box.pending();
+    expect(queued).toHaveLength(1);
+    expect(queued[0]!.event).toMatchObject({ type: 'WarehouseMovementApplied', idempotencyKey: 'wh-move:pk-1' });
+    expect(queued[0]!.event.payload).toMatchObject({ movedBy: WORKER, orderRef: 'ORD-77', lineId: 'pl-1', command: { kind: 'pick', fromBinId: 'B-PICK', toBinId: null, quantityMinor: 12, reason: 'ORD-77/pl-1' } });
+  });
+
+  it('refuses the wrong bin at the racking — a different bin is different stock — and queues nothing', () => {
+    const { s, box } = picking();
+    // The check the screen makes as soon as the bin is scanned, before the item is asked for.
+    const check = s.checkPick({ lineId: 'pl-1', scannedBinId: 'B-HOLD' });
+    expect(check.ok).toBe(false);
+    if (!check.ok) expect(check.signal).toMatchObject({ feedback: 'reject', code: 'wrong_bin' });
+    // And the commit refuses the same way if the screen were bypassed.
+    const out = s.pick({ commandId: 'pk-w', lineId: 'pl-1', scannedBinId: 'B-HOLD', scannedItem: '111', at });
+    expect(out.result).toMatchObject({ accepted: false, outcome: 'invalid_command', movements: [] });
+    expect(out.signal.code).toBe('wrong_bin');
+    expect(box.unsentCount()).toBe(0);
+    expect(s.binContents()['B-PICK|P1|']).toBe(40);
+  });
+
+  it('refuses the wrong item at the shelf, and an unknown barcode goes to resolution', () => {
+    const { s, box } = picking();
+    const wrong = s.checkPick({ lineId: 'pl-1', scannedBinId: 'B-PICK', scannedItem: '222' }); // P2's barcode on P1's line
+    expect(wrong.ok).toBe(false);
+    if (!wrong.ok) expect(wrong.signal).toMatchObject({ feedback: 'reject', code: 'wrong_item' });
+    const unknown = s.pick({ commandId: 'pk-u', lineId: 'pl-1', scannedBinId: 'B-PICK', scannedItem: '999', at });
+    expect(unknown.signal).toMatchObject({ feedback: 'reject', code: 'unknown_barcode', resolutionRequired: true });
+    expect(box.unsentCount()).toBe(0);
+  });
+
+  it('accepts the product code itself from an internal label, as well as the catalogue barcode', () => {
+    const { s } = picking();
+    const check = s.checkPick({ lineId: 'pl-1', scannedBinId: 'B-PICK', scannedItem: 'P1' });
+    expect(check.ok).toBe(true);
+    if (check.ok) expect(check.line).toMatchObject({ lineId: 'pl-1', remainingMinor: 12 });
+  });
+
+  it('refuses a line that is not on this pick list, and warns when a line is already picked', () => {
+    const { s, box } = picking();
+    expect(s.pick({ commandId: 'pk-x', lineId: 'pl-9', scannedBinId: 'B-PICK', scannedItem: '111', at }).signal).toMatchObject({ feedback: 'reject', code: 'not_on_pick_list' });
+    s.pick({ commandId: 'pk-1', lineId: 'pl-1', scannedBinId: 'B-PICK', scannedItem: '111', at });
+    const again = s.pick({ commandId: 'pk-2', lineId: 'pl-1', scannedBinId: 'B-PICK', scannedItem: '111', at });
+    expect(again.signal).toMatchObject({ feedback: 'warn', code: 'line_done' });
+    expect(again.result.accepted).toBe(false);
+    expect(box.pending()).toHaveLength(1);
+  });
+
+  it('never draws a bin negative: a bin holding less than the line wants is refused by the engine, not picked short', () => {
+    const { s, box } = picking({ 'B-PICK|P1|': 5 });
+    const out = s.pick({ commandId: 'pk-s', lineId: 'pl-1', scannedBinId: 'B-PICK', scannedItem: '111', at });
+    expect(out.result.outcome).toBe('insufficient_in_bin');
+    expect(out.signal).toMatchObject({ feedback: 'reject', code: 'insufficient_in_bin' });
+    expect(box.unsentCount()).toBe(0);
+    // A part pick of what IS there is allowed when asked for, and the line stays on the list for the rest.
+    const part = s.pick({ commandId: 'pk-p', lineId: 'pl-1', scannedBinId: 'B-PICK', scannedItem: '111', quantityMinor: 5, at });
+    expect(part.result.accepted).toBe(true);
+    expect(part.result.detail).toBe('5 picked for ORD-77 from B-PICK — 7 still to pick on this line');
+    expect(s.pickLines()[0]).toMatchObject({ lineId: 'pl-1', pickedMinor: 5, remainingMinor: 7 });
+    expect(s.binContents()['B-PICK|P1|']).toBe(0);
+    // More than remains is refused before the engine sees it.
+    expect(s.pick({ commandId: 'pk-o', lineId: 'pl-1', scannedBinId: 'B-PICK', scannedItem: '111', quantityMinor: 8, at }).signal.code).toBe('invalid_command');
+  });
+
+  it('treats a repeated pick command as a harmless no-op — one movement, one queued event', () => {
+    const { s, box } = picking();
+    s.pick({ commandId: 'pk-1', lineId: 'pl-2', scannedBinId: 'B-SMALL', scannedItem: '222', at });
+    const again = s.pick({ commandId: 'pk-1', lineId: 'pl-2', scannedBinId: 'B-SMALL', scannedItem: '222', at });
+    expect(again.signal.feedback).toBe('warn');
+    expect(again.result.outcome).toBe('duplicate_ignored');
+    expect(s.binContents()['B-SMALL|P2|B-22']).toBe(0); // not drawn twice
+    expect(box.pending()).toHaveLength(1);
+  });
+
+  it('a pick and a put-away share one command register — the same id cannot move stock twice under two names', () => {
+    const { s } = picking();
+    s.putAway({ commandId: 'shared', scannedProductId: 'P1', scannedBinId: 'B-PICK', quantityMinor: 1, uom: 'EA', at }); // refused: not in goods-in, still not applied
+    s.pick({ commandId: 'shared', lineId: 'pl-1', scannedBinId: 'B-PICK', scannedItem: '111', at });
+    expect(s.putAway({ commandId: 'shared', scannedProductId: 'P1', scannedBinId: 'B-PICK', quantityMinor: 1, uom: 'EA', at }).result.outcome).toBe('duplicate_ignored');
   });
 });

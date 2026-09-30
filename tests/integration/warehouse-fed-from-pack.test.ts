@@ -30,6 +30,8 @@ const CLOUD_PACK = {
     ordered: [{ productId: 'P1', quantityMinor: 100, unitCostMinor: 90_00, currency: 'INR' }],
     grnId: 'GRN-9',
     recalledBatchIds: ['B-RECALL'],
+    contents: { 'B-PICK|P1|': 40 },
+    pickLines: [{ lineId: 'pl-1', orderRef: 'ORD-77', productId: 'P1', binId: 'B-PICK', quantityMinor: 12, uom: 'EA' }],
   },
 };
 
@@ -58,7 +60,30 @@ describe('the box feeds the warehouse handheld from the cloud pack (M09 / OA-9)'
     expect(recv.result.accepted).toBe(true);
     const put = session.putAway({ commandId: 'm1', scannedProductId: 'P1', scannedBinId: 'B-PICK', quantityMinor: 40, uom: 'EA', at: NOW });
     expect(put.result.accepted).toBe(true);
-    expect(session.binContents()['B-PICK|P1|']).toBe(40);
+    expect(session.binContents()['B-PICK|P1|']).toBe(80); // the 40 the pack said were there, plus the 40 put away
+  });
+
+  it('passes the pick list through as sent — each line naming its bin — and the session picks from exactly that bin (W1)', () => {
+    const pack = readPack(CLOUD_PACK, NOW);
+    const payload = warehousePayload(screenInput(pack)) as { pickLines: unknown[] };
+    // The pack may omit batchId; the handheld's shape always has it, as null.
+    expect(payload.pickLines).toEqual([{ lineId: 'pl-1', orderRef: 'ORD-77', productId: 'P1', batchId: null, binId: 'B-PICK', quantityMinor: 12, uom: 'EA' }]);
+
+    const session = bootWarehouse(payload as unknown as WarehouseAssignment, new DeviceOutbox(noDeviceStore()), () => NOW)!;
+    expect(session.pickLines()).toHaveLength(1);
+    expect(session.checkPick({ lineId: 'pl-1', scannedBinId: 'B-HOLD' })).toMatchObject({ ok: false, signal: { code: 'wrong_bin' } });
+    const pick = session.pick({ commandId: 'pk-1', lineId: 'pl-1', scannedBinId: 'B-PICK', scannedItem: '111', at: NOW });
+    expect(pick.result.accepted).toBe(true);
+    expect(session.binContents()['B-PICK|P1|']).toBe(28);
+    expect(session.pickLines()).toEqual([]);
+  });
+
+  it('a pack with no pick list serves no pick list — absent stays absent, never an empty list that reads as "all picked"', () => {
+    const withoutPicks: Record<string, unknown> = { ...CLOUD_PACK.warehouse };
+    delete withoutPicks['pickLines'];
+    const payload = warehousePayload(screenInput(readPack({ version: 3, warehouse: withoutPicks }, NOW)))!;
+    expect('pickLines' in payload).toBe(false);
+    expect(bootWarehouse(payload as unknown as WarehouseAssignment, new DeviceOutbox(noDeviceStore()), () => NOW)!.pickLines()).toEqual([]);
   });
 
   it('serves NOTHING when the cloud pack carries no warehouse section — the box invents no work', () => {

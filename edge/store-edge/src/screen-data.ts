@@ -507,6 +507,12 @@ export function warehousePayload(input: ScreenInput): Record<string, unknown> | 
     ...(w.ordered === undefined ? {} : { ordered: w.ordered.map((o) => ({ productId: o.productId, quantityMinor: o.quantityMinor, unitCost: { minor: o.unitCostMinor, currency: o.currency } })) }),
     ...(w.recalledProductIds === undefined ? {} : { recalledProductIds: w.recalledProductIds }),
     ...(w.recalledBatchIds === undefined ? {} : { recalledBatchIds: w.recalledBatchIds }),
+    // The pick list, line by line, each naming its bin. Passed through as sent — absent stays absent, so a
+    // handheld given no pick work shows none rather than an empty list that reads as "all picked".
+    ...(w.pickLines === undefined ? {} : { pickLines: w.pickLines.map((l) => ({
+      lineId: l.lineId, orderRef: l.orderRef, productId: l.productId, batchId: l.batchId ?? null,
+      binId: l.binId, quantityMinor: l.quantityMinor, uom: l.uom,
+    })) }),
   };
 }
 

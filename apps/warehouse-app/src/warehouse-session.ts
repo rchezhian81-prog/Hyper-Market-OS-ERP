@@ -9,11 +9,14 @@
 // Both interfaces (this PWA and the Web ERP) must use the SAME warehouse rules (OA-9). So receiving
 // is `packages/receiving` (`receiveScan`: barcode resolution, case conversion, DSD and over-delivery
 // approval by a SEPARATE person §28, price-change refusal, duplicate-scan no-op, unknown-barcode to a
-// resolution queue); put-away and bin capacity are `packages/warehouse` (`applyMovement` /
-// `suggestPutAway`: unknown-bin queued not invented, full-bin and over-draw refused, bad stock kept
-// out of pickable bins); and expiry/recall are `packages/fefo` (`isExpired`). This file adds NO stock
-// rule of its own — it wires the scans to the engines, keeps the local projection, queues the sync
-// events, and turns each outcome into scan feedback (visual/sound/vibration hints, OA-9).
+// resolution queue); put-away, bin capacity AND the pick from a bin are `packages/warehouse`
+// (`applyMovement` / `suggestPutAway`: unknown-bin queued not invented, full-bin and over-draw refused,
+// bad stock kept out of pickable bins, a pick never draws a bin negative); and expiry/recall are
+// `packages/fefo` (`isExpired`). This file adds NO stock rule of its own — it wires the scans to the
+// engines, keeps the local projection, queues the sync events, and turns each outcome into scan
+// feedback (visual/sound/vibration hints, OA-9). The one check that is this file's own is the pick
+// list's: the bin scanned must be the bin the line names, and the item scanned must be the line's
+// item — those are facts about the ASSIGNMENT, not stock rules, and the engine cannot know them.
 //
 // ── The outbox is a required constructor argument ────────────────────────────
 //
@@ -31,7 +34,7 @@ import {
 import type { PackHierarchy } from '../../../packages/product/src/pack';
 import {
   applyMovement, suggestPutAway, binKey,
-  type Bin, type BinContents, type MovementCommand, type MovementResult, type PutAwaySuggestion,
+  type Bin, type BinContents, type MovementCommand, type MovementOutcome, type MovementResult, type PutAwaySuggestion,
 } from '../../../packages/warehouse/src/movements';
 import { isExpired } from '../../../packages/fefo/src/fefo';
 import type { StockState } from '../../../packages/stock/src/position';
@@ -54,6 +57,8 @@ export const FEEDBACK_CODES = Object.freeze([
   'moved', 'duplicate_ignored', 'wrong_sku', 'unknown_bin', 'bin_full',
   'insufficient_goods_in', 'insufficient_in_bin', 'not_pickable_state',
   'recalled_into_pickable', 'expired_into_pickable', 'invalid_command',
+  // picking an order line (packages/warehouse `pick` + this session's pick-list checks)
+  'picked', 'wrong_bin', 'wrong_item', 'not_on_pick_list', 'line_done',
 ] as const);
 export type FeedbackCode = (typeof FEEDBACK_CODES)[number];
 
@@ -132,6 +137,54 @@ export interface PutAwayActionResult {
   readonly signal: FeedbackSignal;
 }
 
+/** One order line to pick, as the box assigned it: which bin the stock is in and how much is wanted. */
+export interface AssignedPickLine {
+  readonly lineId: string;
+  /** The order or replenishment this line belongs to — named in the movement's reason for the audit trail. */
+  readonly orderRef: string;
+  readonly productId: string;
+  readonly batchId: string | null;
+  /** The bin the pick list says the stock is in. A different bin is different stock. */
+  readonly binId: string;
+  readonly quantityMinor: number;
+  readonly uom: string;
+}
+
+/** A pick-list line as the worklist shows it: the assignment plus what has been picked against it here. */
+export interface PickLine extends AssignedPickLine {
+  readonly pickedMinor: number;
+  readonly remainingMinor: number;
+}
+
+/**
+ * The three scans of a pick: the line (chosen by scanning its bin from the list, or tapped), the bin,
+ * the item. `quantityMinor` defaults to what remains on the line — a full pick is the normal case, and
+ * the confirm step shows the number before it is committed.
+ */
+export interface PickInput {
+  readonly commandId: string;
+  readonly lineId: string;
+  readonly scannedBinId: string;
+  /** The item's barcode from the catalogue, or its own product code from an internal label. */
+  readonly scannedItem: string;
+  readonly quantityMinor?: number;
+  readonly at: string;
+}
+
+export interface PickActionResult {
+  readonly result: MovementResult;
+  readonly signal: FeedbackSignal;
+}
+
+/**
+ * What the screen asks between scans: is this the right bin — and, once the item is scanned, the right
+ * item — for this line? The same checks `pick` makes, so the worker is told at the shelf, not after
+ * confirming. Nothing is committed and nothing is queued by a check.
+ */
+export type PickCheck =
+  | { readonly ok: true; readonly line: PickLine }
+  | { readonly ok: false; readonly signal: FeedbackSignal };
+
 /** What the box served the handheld — the assignment it caches and works offline. */
 export interface WarehouseAssignment {
   readonly assignmentId: string;
@@ -148,6 +201,8 @@ export interface WarehouseAssignment {
   readonly ordered?: readonly OrderedProduct[];
   /** Goods already received and awaiting put-away when the assignment was served. */
   readonly goodsIn?: readonly GoodsInItem[];
+  /** Order lines to pick from the racking, each naming its bin (M09-FR-01 pick). Absent = no pick work. */
+  readonly pickLines?: readonly AssignedPickLine[];
   /** Products / batches under recall — never put into a pickable bin, even offline (M10-FR-04). */
   readonly recalledProductIds?: readonly string[];
   readonly recalledBatchIds?: readonly string[];
@@ -171,6 +226,8 @@ export class WarehouseSession {
   private readonly policy: ReceivingPolicy;
 
   private readonly goods = new Map<string, GoodsInItem>();
+  /** The pick list by line id, with what has been picked against each line this session. */
+  private readonly picks = new Map<string, { readonly line: AssignedPickLine; pickedMinor: number }>();
   private readonly appliedCommandIds: string[] = [];
   private readonly receivedSoFar: Record<string, number> = {};
 
@@ -194,11 +251,19 @@ export class WarehouseSession {
     this.currency = options.currency ?? 'INR';
     this.at = options.now ?? (() => new Date().toISOString());
     for (const item of assignment.goodsIn ?? []) this.goods.set(gKey(item.productId, item.batchId), { ...item });
+    for (const line of assignment.pickLines ?? []) this.picks.set(line.lineId, { line: { ...line, batchId: line.batchId ?? null }, pickedMinor: 0 });
   }
 
   /** The put-away worklist: goods received and not yet binned. */
   goodsIn(): readonly GoodsInItem[] {
     return [...this.goods.values()];
+  }
+
+  /** The pick worklist: every assigned line with something left to pick, in the order the box sent them. */
+  pickLines(): readonly PickLine[] {
+    return [...this.picks.values()]
+      .map(({ line, pickedMinor }) => ({ ...line, pickedMinor, remainingMinor: line.quantityMinor - pickedMinor }))
+      .filter((line) => line.remainingMinor > 0);
   }
 
   /** The current local bin projection — the base contents plus every put-away accepted this session. */
@@ -368,5 +433,108 @@ export class WarehouseSession {
     }));
 
     return { result, signal: signalFor('accept', 'moved', result.detail) };
+  }
+
+  /** The product a scanned item code names: a catalogue barcode, or the product's own code on an internal label. */
+  private productOfScan(code: string): string | null {
+    const scanned = code.trim();
+    const byBarcode = this.barcodes.find((b) => b.barcode === scanned);
+    if (byBarcode !== undefined) return byBarcode.productId;
+    const isKnownProduct = [...this.picks.values()].some((p) => p.line.productId === scanned)
+      || this.barcodes.some((b) => b.productId === scanned);
+    return isKnownProduct ? scanned : null;
+  }
+
+  /**
+   * Is this the right bin — and, when an item has been scanned, the right item — for this line? The
+   * pick list is the authority on WHERE the stock is; a worker who found the item in another bin has
+   * found different stock, and the count of the named bin would be wrong from then on. Refusals are
+   * the same codes `pick` returns, so the screen shows one vocabulary. Commits nothing.
+   */
+  checkPick(input: { readonly lineId: string; readonly scannedBinId: string; readonly scannedItem?: string }): PickCheck {
+    const entry = this.picks.get(input.lineId);
+    if (entry === undefined) {
+      return { ok: false, signal: signalFor('reject', 'not_on_pick_list', `line ${input.lineId} is not on this handheld's pick list`) };
+    }
+    const remaining = entry.line.quantityMinor - entry.pickedMinor;
+    const line: PickLine = { ...entry.line, pickedMinor: entry.pickedMinor, remainingMinor: remaining };
+    if (remaining <= 0) {
+      return { ok: false, signal: signalFor('warn', 'line_done', `${line.orderRef} line ${line.lineId} is already picked — nothing left to take`) };
+    }
+    if (input.scannedBinId.trim() !== line.binId) {
+      return { ok: false, signal: signalFor('reject', 'wrong_bin', `the pick list says bin ${line.binId}, not ${input.scannedBinId.trim()} — a different bin is different stock`) };
+    }
+    if (input.scannedItem !== undefined) {
+      const productId = this.productOfScan(input.scannedItem);
+      if (productId === null) {
+        return { ok: false, signal: signalFor('reject', 'unknown_barcode', `"${input.scannedItem.trim()}" is not a barcode this handheld knows`, true) };
+      }
+      if (productId !== line.productId) {
+        return { ok: false, signal: signalFor('reject', 'wrong_item', `${productId} is not ${line.productId}, the item on this line`) };
+      }
+    }
+    return { ok: true, line };
+  }
+
+  /**
+   * Pick one order line from its bin (M09-FR-01 pick · inventory-warehouse.md "pick a line ≤3"): the bin
+   * scanned must be the line's bin, the item scanned must be the line's item, and the movement itself
+   * is the authoritative `applyMovement` kind `pick` — out of the named bin, to nowhere (the goods leave
+   * the racking for the order), which refuses an unknown bin, a draw the bin cannot cover (no negative
+   * bins) and a repeated command. An accepted pick lowers the local bin projection, advances the line
+   * and queues ONE `WarehouseMovementApplied` keyed on the command id, so a re-sent scan reconciles to
+   * one movement (hard rule #1 / §31.1). A refusal changes nothing and queues nothing (hard rule #2).
+   */
+  pick(input: PickInput): PickActionResult {
+    const refused = (outcome: MovementOutcome, code: string, detail: string, feedback: ScanFeedback = 'reject', resolutionRequired = false): PickActionResult => ({
+      result: { commandId: input.commandId, outcome, accepted: false, detail, movements: [], ...(resolutionRequired ? { resolutionRequired } : {}) },
+      signal: signalFor(feedback, code, detail, resolutionRequired),
+    });
+    if (this.appliedCommandIds.includes(input.commandId)) {
+      return refused('duplicate_ignored', 'duplicate_ignored', 'this movement has already been recorded — scanning again changes nothing', 'warn');
+    }
+    const check = this.checkPick({ lineId: input.lineId, scannedBinId: input.scannedBinId, scannedItem: input.scannedItem });
+    if (!check.ok) {
+      // A pick-list refusal is not a stock-engine outcome; the movement shape says "invalid" and the signal says why.
+      return refused('invalid_command', check.signal.code, check.signal.detail, check.signal.feedback, check.signal.resolutionRequired ?? false);
+    }
+    const line = check.line;
+    const quantity = input.quantityMinor ?? line.remainingMinor;
+    if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > line.remainingMinor) {
+      return refused('invalid_command', 'invalid_command', `this line has ${line.remainingMinor} left to pick, not ${quantity}`);
+    }
+
+    const command: MovementCommand = {
+      commandId: input.commandId, kind: 'pick', storeId: this.assignment.storeId,
+      productId: line.productId, batchId: line.batchId, quantityMinor: quantity, uom: line.uom,
+      fromBinId: line.binId, toBinId: null, movedBy: this.assignment.workerId, at: input.at,
+      reason: `${line.orderRef}/${line.lineId}`,
+    };
+    const result = applyMovement({ command, appliedCommandIds: this.appliedCommandIds, bins: this.bins, contents: this.contents });
+    if (!result.accepted) {
+      const feedback: ScanFeedback = result.outcome === 'duplicate_ignored' ? 'warn' : 'reject';
+      return { result, signal: signalFor(feedback, result.outcome, result.detail, result.resolutionRequired ?? false) };
+    }
+
+    // Accepted. Lower the bin projection, advance the line, queue the one movement for sync.
+    this.appliedCommandIds.push(result.commandId);
+    const fromKey = binKey(line.binId, line.productId, line.batchId);
+    this.contents[fromKey] = (this.contents[fromKey] ?? 0) - quantity;
+    const entry = this.picks.get(line.lineId)!;
+    entry.pickedMinor += quantity;
+
+    this.outbox.enqueue(makeEvent({
+      id: `wh-move-${result.commandId}`,
+      type: 'WarehouseMovementApplied',
+      occurredAt: input.at,
+      // The command's own id — the cloud keys its movement ledger on it, so a re-sent pick is one movement.
+      idempotencyKey: `wh-move:${result.commandId}`,
+      source: this.assignment.assignmentId,
+      payload: { command, movements: result.movements, movedBy: this.assignment.workerId, orderRef: line.orderRef, lineId: line.lineId },
+    }));
+
+    const left = line.remainingMinor - quantity;
+    const detail = `${quantity} picked for ${line.orderRef} from ${line.binId}` + (left > 0 ? ` — ${left} still to pick on this line` : '');
+    return { result: { ...result, detail }, signal: signalFor('accept', 'picked', detail) };
   }
 }

@@ -36,3 +36,21 @@ Counted in a real browser at a handheld's size (`tests/e2e/the-handhelds-meet-th
 start a count · record an adjustment with reason — the blind count is reconciled on the ERP `counts` review screen
 over `packages/counts` and the adjustment through the M08-FR-03 approval path; a replenishment pick has no handheld
 surface. Giving the handheld those flows is M09 functional scope and awaits the owner's written call (docs/STATUS.md).
+
+## Measured (W1 — pick a line, owner's written call of 30 Sep 2026)
+Pick a line **3**: scan the bin → scan the item → confirm. The pick list (`warehouse.pickLines` in the store pack:
+line, order reference, product, batch, **the bin the stock is in**, quantity, unit) is the top section of the handheld,
+the bin the biggest thing on each row because the bin is where the worker walks to. **A bin label scanned from the list
+is step 1** — it chooses the line that names that bin, exactly as on the picker handheld — then the item is scanned, then
+the model's remaining quantity is confirmed with one tap (no typed number: a short pick is the supervisor's call on the
+ERP, never a figure adjusted up a ladder). Tapping a line and pressing *Pick — scan the bin* is the same flow at 4.
+The tested session (`WarehouseSession.checkPick` / `pick`) refuses the **wrong bin at the racking** and the **wrong
+item at the shelf**, before the confirm step; the movement itself is the authoritative `applyMovement` kind `pick`
+(out of the named bin, to nowhere), so an unknown bin, a draw the bin cannot cover (no negative bins) and a repeated
+command are the engine's refusals. One `WarehouseMovementApplied` per pick, keyed `wh-move:<commandId>` for the cloud's
+idempotent movement ledger (`POST /v1/warehouse/movements/:commandId`, `inventory.movement.append`); a refusal queues
+nothing. Words in both languages for every outcome (`picked` · `wrong_bin` · `wrong_item` · `not_on_pick_list` ·
+`line_done`), bound by the bilingual guardrail. Audited in real Chromium: the pick list, the item panel, the confirm
+step, the green banner, and the list in Tamil — zero findings. **Still recorded, not dropped:** start a count (W2) ·
+record an adjustment with reason (W3) · the device's queue drains to nothing yet (S1) · physical-device verification
+PENDING.

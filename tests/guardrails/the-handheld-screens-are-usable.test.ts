@@ -181,6 +181,69 @@ describe('the picker’s three steps start at the bin, as the spec says (picker-
   });
 });
 
+describe('the warehouse pick starts at the bin the pick list names, as the spec says (inventory-warehouse.md · W1)', () => {
+  it('a bin label scanned from the list IS step 1 — the scan chooses the line that names that bin', () => {
+    // "pick a line (≤3): scan bin → scan item → confirm" begins with a scan, not a tap — the same rule as the picker.
+    // Counted in the browser by the-handhelds-meet-the-spec.e2e.ts: 3.
+    const handler = code(WAREHOUSE).slice(code(WAREHOUSE).indexOf("window.addEventListener('keydown'"));
+    expect(handler).toMatch(/real\.pickLines\(\)\.find\(\(l\) => l\.binId === code\)/);
+    expect(handler).toMatch(/void startPick\(line, code\)/);
+    expect(code(WAREHOUSE)).toMatch(/async function startPick\(line, binCode = null\)/);
+    // Only when nothing else is asking for a scan — a bin scanned INTO the put-away panel is the put-away's bin.
+    expect(handler).toMatch(/if \(scanResolve !== null\) \{[\s\S]*?resolve\(code\);\s*return;/);
+  });
+
+  it('asks for the bin, then the item, then a confirm — and the MODEL checks each scan before the next is asked for', () => {
+    const start = code(WAREHOUSE).slice(code(WAREHOUSE).indexOf('async function startPick'), code(WAREHOUSE).indexOf("el('pick').addEventListener"));
+    const bin = start.indexOf("t('scanPickBin')");
+    const item = start.indexOf("t('scanItem')");
+    const confirm = start.indexOf('awaitConfirm(');
+    expect(bin, 'the bin scan is missing').toBeGreaterThan(-1);
+    expect(item, 'the item scan is missing').toBeGreaterThan(-1);
+    expect(confirm, 'the confirm step is missing').toBeGreaterThan(-1);
+    expect(bin).toBeLessThan(item);
+    expect(item).toBeLessThan(confirm);
+    // A wrong bin is refused at the racking and a wrong item at the shelf — by the tested session, never the view.
+    expect(start).toMatch(/real\.checkPick\(\{ lineId: line\.lineId, scannedBinId: bin \}\)/);
+    expect(start).toMatch(/real\.checkPick\(\{ lineId: line\.lineId, scannedBinId: bin, scannedItem: item \}\)/);
+    expect(start).toMatch(/real\.pick\(\{/);
+    expect(start).not.toMatch(/binId ===|productId ===/); // no re-deciding in the view
+  });
+
+  it('confirms the model’s remaining quantity with one tap and no typed number', () => {
+    // A pick of fewer than the line wants is a short pick and the supervisor's call on the ERP, not a number a
+    // worker adjusts up a ladder. So the confirm step shows the model's figure and offers Confirm or Cancel.
+    expect(WAREHOUSE_HTML).toContain('id="confirm"');
+    expect(WAREHOUSE_HTML).toContain('id="confirm-ok"');
+    expect(WAREHOUSE_HTML).toContain('id="confirm-cancel"');
+    expect(WAREHOUSE_HTML).not.toMatch(/<input/i);
+    const confirm = code(WAREHOUSE).slice(code(WAREHOUSE).indexOf('function awaitConfirm'), code(WAREHOUSE).indexOf('function settleConfirm'));
+    expect(confirm).toMatch(/line\.remainingMinor/);
+    expect(confirm).not.toMatch(/quantityMinor\s*[-+*]/);
+  });
+
+  it('spells out which of the three steps comes next, and names every pick outcome in both languages', () => {
+    for (const key of ['stepPick', 'stepPickScanBin', 'stepScanItem', 'stepConfirm']) expect(code(WAREHOUSE)).toContain(`t('${key}')`);
+    // The pick outcomes join the session's FEEDBACK_CODES, which the-warehouse-screen-speaks-both-languages binds to
+    // the words; this pins the five here so the two guardrails cannot drift apart.
+    const en = WAREHOUSE.slice(WAREHOUSE.indexOf('  en: {'), WAREHOUSE.indexOf('  ta: {'));
+    const ta = WAREHOUSE.slice(WAREHOUSE.indexOf('  ta: {'));
+    for (const c of ['picked', 'wrong_bin', 'wrong_item', 'not_on_pick_list', 'line_done']) {
+      expect(en, `English missing ${c}`).toMatch(new RegExp(`\\b${c}:`));
+      expect(ta, `Tamil missing ${c}`).toMatch(new RegExp(`\\b${c}:`));
+    }
+  });
+
+  it('shows the pick list with the BIN as the biggest thing on the row — the bin is where the worker walks to', () => {
+    expect(WAREHOUSE_HTML).toContain('id="pick-lines"');
+    expect(WAREHOUSE_HTML).toMatch(/\.item \.where \{[^}]*font-size: 22px/);
+    const render = code(WAREHOUSE).slice(code(WAREHOUSE).indexOf('function render'), code(WAREHOUSE).indexOf("el('receive').addEventListener"));
+    expect(render).toMatch(/where\.textContent = line\.binId/);
+    // The Pick button exists only while there is pick work; the bin scan from the list needs it not at all.
+    expect(render).toMatch(/el\('pick'\)\.hidden = lines\.length === 0/);
+  });
+});
+
 describe('the driver’s buttons act on the stop the driver is at (delivery.md)', () => {
   it('selects the first unfinished stop on the driver’s behalf, and keeps a stop they chose until it is finished', () => {
     // capture proof ≤3 · record COD ≤3 · mark failed with reason ≤3 are counted from the doorstep, so a tap to

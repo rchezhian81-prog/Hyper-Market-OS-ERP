@@ -920,6 +920,22 @@ export interface PackWarehouseOrdered {
   readonly currency: string;
 }
 
+/**
+ * One order line the handheld must pick from the racking (M09-FR-01 pick · inventory-warehouse.md). The pick
+ * list says WHICH bin the stock is in; the worker's scan proves they are at it — a different bin is different
+ * stock, so the handheld refuses it rather than picking from wherever the item happened to be found.
+ */
+export interface PackWarehousePickLine {
+  readonly lineId: string;
+  /** The order or replenishment this line belongs to — what the movement's reason names. */
+  readonly orderRef: string;
+  readonly productId: string;
+  readonly batchId?: string | null;
+  readonly binId: string;
+  readonly quantityMinor: number;
+  readonly uom: string;
+}
+
 /** A pending warehouse approval the supervisor may decide (§28) — a stock-adjustment, count variance,
  *  or over-delivery raised by the floor. The maker is `requestedBy`; the supervisor cannot be them. */
 export interface PackWarehouseApproval {
@@ -958,6 +974,8 @@ export interface PackWarehouse {
   readonly grnId?: string;
   readonly recalledProductIds?: readonly string[];
   readonly recalledBatchIds?: readonly string[];
+  /** Order lines to pick from the racking, each naming its bin (M09-FR-01 pick). Absent = no pick work sent. */
+  readonly pickLines?: readonly PackWarehousePickLine[];
   /** Pending §28 approvals the supervisor may decide, and who the supervisor is. */
   readonly approvals?: readonly PackWarehouseApproval[];
   readonly supervisor?: PackWarehouseSupervisor;
