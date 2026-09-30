@@ -172,6 +172,21 @@ h1.who { margin:0; font-size:17px; }
 .sre-banner[data-tone="ok"] { background: var(--accent); color: var(--on-accent); }
 .sre-banner[data-tone="ok"] .sre-btn { background: var(--on-accent); color: #ecfdf5; }
 
+/* ── The ERP's one menu (Stage G slice 5b · §27 role surfaces · P-07) ─────────────────────────────── */
+/* Rendered by sre-chrome.js from what the store computer says this person may open — never a hand-kept list. The
+   button sits first in the header; the panel drops below it, full width, and stacks on a phone. */
+.sre-menu-button { min-height: var(--tap); min-width: var(--tap); padding: 0 14px; border: 0; border-radius: 10px; background: var(--line); color: var(--ink); font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; }
+.sre-menu-button[aria-expanded="true"] { background: var(--ink); color: var(--bg); }
+.sre-menu { background: var(--panel); border-bottom: 2px solid var(--line); padding: 8px 16px 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 24px; }
+.sre-menu[hidden] { display: none; }
+.sre-menu .group { margin: 0; padding: 12px 0 4px; color: var(--muted); font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.sre-menu ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.sre-menu a { display: flex; align-items: center; min-height: var(--tap); padding: 0 12px; border-radius: 10px; color: var(--ink); text-decoration: none; font-size: 16px; }
+.sre-menu a:hover { background: var(--panel-2); }
+.sre-menu a[aria-current="page"] { background: var(--panel-2); font-weight: 700; box-shadow: inset 4px 0 0 var(--accent); }
+.sre-menu .who-can { margin: 0; padding: 12px 0 0; color: var(--muted); font-size: 15px; grid-column: 1 / -1; }
+.sre-menu .who-can b { color: var(--ink); }
+
 /* ── What the browser tells us about the person ──────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }

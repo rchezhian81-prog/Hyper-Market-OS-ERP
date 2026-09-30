@@ -12,7 +12,11 @@
 //     page was served from; never a guessed one), in words as well as a dot, every ten seconds;
 //   • the "served from this device's cache, at …" strip (the service worker stamps `window.shellCachedAt`);
 //   • the language toggle's label and name — the OTHER language, so the button says what you get;
-//   • repainting all three whenever `<html lang>` changes, however the page changed it.
+//   • the menu — the screens THIS person may open on THIS store computer, as the box worked them out from its
+//     role register (`window.sreNavigation`, Stage G slice 5b · §27 role surfaces · P-07); nothing when a page
+//     was opened off the box, and a stated reason when the box could name nobody or holds no register;
+//   • opening the tab a menu link asked for (`?tab=…`) on a page that has that tab;
+//   • repainting all of it whenever `<html lang>` changes, however the page changed it.
 // What it does not own: the page's words. A page keeps its own `en` / `ta` tables and its own toggle handler.
 //
 // Framework-free and static (§19), like every shell in this folder: it opens with the shop's wifi down.
@@ -26,6 +30,9 @@
       noCloud: 'Head office cannot be reached — working from the store computer',
       cloudNotSetUp: 'No head office link on this store computer', cloudUnknown: 'Head office not checked yet',
       lastContact: 'last contact', switchLanguage: 'Switch language', otherLanguage: 'தமிழ்',
+      screens: 'Screens', screensFor: 'Screens for',
+      noUser: 'Nobody is named on this screen, so no other screens can be offered.',
+      noRoles: 'This store computer has no role register, so no screens can be offered.',
     },
     ta: {
       staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
@@ -34,6 +41,9 @@
       noCloud: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — கடை கணினியிலிருந்து வேலை',
       cloudNotSetUp: 'இந்தக் கடை கணினியில் தலைமை அலுவலக இணைப்பு இல்லை', cloudUnknown: 'தலைமை அலுவலகம் இன்னும் சரிபார்க்கப்படவில்லை',
       lastContact: 'கடைசித் தொடர்பு', switchLanguage: 'மொழியை மாற்று', otherLanguage: 'English',
+      screens: 'திரைகள்', screensFor: 'இவருக்கான திரைகள்',
+      noUser: 'இந்தத் திரையில் யாரும் பெயரிடப்படவில்லை, எனவே வேறு திரைகள் வழங்க முடியாது.',
+      noRoles: 'இந்தக் கடை கணினியில் பங்கு பதிவேடு இல்லை, எனவே திரைகள் வழங்க முடியாது.',
     },
   };
   const lang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
@@ -136,12 +146,123 @@
     toggle.setAttribute('aria-label', t('switchLanguage'));
   }
 
-  function repaint() { paintToggle(); paintStale(); paintBadge(); }
+  // ── The menu: what THIS person may open on THIS store computer (§27 role surfaces · P-07) ──────────
+  // The box works the list out per request from its role register and the screen's named viewer, and injects it as
+  // `window.sreNavigation` — this file only draws it. No injection means the page was opened off the box (a cached
+  // shell, a test's static server): then there is no menu, because there is nothing honest to offer. An empty list
+  // comes with its reason, and the reason is shown instead of a blank panel (P-08).
+  const navigation = () => (window.sreNavigation && typeof window.sreNavigation === 'object' ? window.sreNavigation : null);
+  const word = (pair) => (pair && typeof pair === 'object' ? (pair[lang()] ?? pair.en ?? '') : String(pair ?? ''));
+
+  function menuElements() {
+    const header = document.querySelector('header');
+    if (!header) return null;
+    let button = byId('sre-menu-button');
+    let panel = byId('sre-menu');
+    if (!button) {
+      button = document.createElement('button');
+      button.type = 'button';
+      button.id = 'sre-menu-button';
+      button.className = 'sre-menu-button';
+      button.setAttribute('aria-expanded', 'false');
+      button.setAttribute('aria-controls', 'sre-menu');
+      header.prepend(button);
+    }
+    if (!panel) {
+      panel = document.createElement('nav');
+      panel.id = 'sre-menu';
+      panel.className = 'sre-menu';
+      panel.hidden = true;
+      header.after(panel);
+      button.addEventListener('click', () => toggleMenu());
+      panel.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') { toggleMenu(false); button.focus(); }
+      });
+    }
+    return { button, panel };
+  }
+
+  function toggleMenu(open) {
+    const els = menuElements();
+    if (!els) return;
+    const next = open === undefined ? els.panel.hidden : open;
+    els.panel.hidden = !next;
+    els.button.setAttribute('aria-expanded', String(next));
+    if (next) {
+      const first = els.panel.querySelector('a[aria-current="page"]') ?? els.panel.querySelector('a');
+      if (first) first.focus();
+    }
+  }
+
+  // The box says which items open the screen being served. Where several do — the admin screen has an item per
+  // tab — the one whose `?tab=` matches the address is current, or the plain one when no tab was asked for.
+  function isCurrent(item) {
+    if (item.current !== true) return false;
+    const asked = new URLSearchParams(window.location.search).get('tab');
+    const own = new URLSearchParams(String(item.path).split('?')[1] ?? '').get('tab');
+    return asked === own;
+  }
+
+  function paintMenu() {
+    const nav = navigation();
+    if (!nav) return;
+    const els = menuElements();
+    if (!els) return;
+    const { button, panel } = els;
+    button.textContent = `☰ ${t('screens')}`;
+    panel.setAttribute('aria-label', t('screens'));
+    panel.replaceChildren();
+    const groups = Array.isArray(nav.groups) ? nav.groups : [];
+    if (groups.length === 0) {
+      const why = document.createElement('p');
+      why.className = 'who-can';
+      why.textContent = nav.why === 'no_roles' ? t('noRoles') : t('noUser');
+      panel.append(why);
+      return;
+    }
+    const who = document.createElement('p');
+    who.className = 'who-can';
+    who.textContent = `${t('screensFor')} `;
+    const name = document.createElement('b');
+    name.textContent = String(nav.userId ?? '');
+    who.append(name);
+    panel.append(who);
+    for (const group of groups) {
+      const section = document.createElement('div');
+      const title = document.createElement('p');
+      title.className = 'group';
+      title.textContent = word(group.group);
+      const list = document.createElement('ul');
+      for (const item of group.items ?? []) {
+        const li = document.createElement('li');
+        const link = document.createElement('a');
+        link.href = item.path;
+        link.textContent = word(item.label);
+        if (isCurrent(item)) link.setAttribute('aria-current', 'page');
+        li.append(link);
+        list.append(li);
+      }
+      section.append(title, list);
+      panel.append(section);
+    }
+  }
+
+  // ── A menu link may name a tab: /manager/?tab=approvals opens the manager on Approvals ─────────────
+  // Only on a page that has that tab, and only if the page has not already opened it itself.
+  function openAskedTab() {
+    const wanted = new URLSearchParams(window.location.search).get('tab');
+    if (!wanted) return;
+    const tab = byId(`tab-${wanted}`);
+    if (tab && tab.getAttribute('aria-current') !== 'page') tab.click();
+  }
+
+  function repaint() { paintToggle(); paintStale(); paintBadge(); paintMenu(); }
 
   new MutationObserver(repaint).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
   repaint();
+  openAskedTab();
   void refreshBadge();
   setInterval(() => { void refreshBadge(); }, 10_000);
 
-  window.sreChrome = { repaint, badge: { refresh: refreshBadge, state: () => box } };
+  window.sreChrome = { repaint, badge: { refresh: refreshBadge, state: () => box }, menu: { toggle: toggleMenu } };
 })();

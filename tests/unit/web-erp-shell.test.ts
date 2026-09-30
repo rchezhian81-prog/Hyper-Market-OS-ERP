@@ -16,14 +16,16 @@ import { money } from '../../packages/contracts/src/money';
 // The ERP shows each role only its own work (P-07 / P-04) and makes separation of
 // duties visible in the approvals queue rather than a surprise at submit (§28).
 
+// Real words only (Stage G slice 5b): every permission here is one a cloud route checks and the role catalogue
+// grants — the menu is gated on what the server enforces, never on a word nobody checks.
 const ROLES: Role[] = [
-  { id: 'cashoffice', name: 'Cash office', permissions: ['erp.dashboard.view', 'cash.view', 'sales.view'] },
+  { id: 'cashoffice', name: 'Cash office', permissions: ['till.dayclose.read', 'till.shift.read', 'reporting.report.read'] },
   {
     id: 'manager',
     name: 'Store manager',
-    permissions: ['erp.dashboard.view', 'approval.decide', 'exception.view', 'stock.view', 'sales.view', 'cash.view'],
+    permissions: ['till.dayclose.read', 'count.view', 'inventory.availability.read', 'reporting.report.read', 'service.case.read'],
   },
-  { id: 'admin', name: 'Administrator', permissions: ['admin.users.manage', 'admin.settings.manage', 'audit.view'] },
+  { id: 'admin', name: 'Administrator', permissions: ['identity.role.read', 'platform.support.read', 'audit.retention.read'] },
 ];
 
 const ASSIGNMENTS: RoleAssignment[] = [
@@ -38,15 +40,17 @@ describe('role-scoped navigation', () => {
   it('shows a role only the sections it holds permissions for', () => {
     const nav = navigationFor(access, { userId: 'cash-1', branchId: 'b1' });
     const labels = nav.flatMap((g) => g.items.map((i) => i.label));
-    expect(labels).toEqual(['Dashboard', 'Sales', 'Cash & day close']);
+    // The day-close read also opens "Reopen a locked day" — same permission, same people (accountant / owner).
+    expect(labels).toEqual(['Dashboard', 'Reports', 'Over / short sign-off', 'Reopen a locked day']);
     expect(labels).not.toContain('Users & roles'); // not their job
-    expect(labels).not.toContain('Approvals');
+    expect(labels).not.toContain('Stock counts');
   });
 
   it('gives a manager their wider menu, grouped for the sidebar', () => {
     const nav = navigationFor(access, { userId: 'mgr-1', branchId: 'b1' });
-    expect(nav.map((g) => g.group)).toEqual(['Overview', 'Inventory', 'Trading']);
-    expect(nav[0]?.items.map((i) => i.id)).toEqual(['dashboard', 'approvals', 'exceptions']);
+    expect(nav.map((g) => g.group)).toEqual(['Overview', 'Purchasing', 'Inventory', 'Trading', 'Administration']);
+    expect(nav[0]?.items.map((i) => i.id)).toEqual(['dashboard']);
+    expect(nav[2]?.items.map((i) => i.id)).toEqual(['counts', 'stock-health', 'warehouse-supervisor']);
   });
 
   it('shows nothing to an unknown user (default-deny)', () => {
@@ -60,14 +64,16 @@ describe('role-scoped navigation', () => {
   });
 
   it('agrees with the server on what may be opened, and denies unknown paths', () => {
-    expect(canOpen(access, { userId: 'cash-1', branchId: 'b1' }, '/cash')).toBe(true);
-    expect(canOpen(access, { userId: 'cash-1', branchId: 'b1' }, '/admin/users')).toBe(false);
+    // Paths are the store computer's own routes (Stage G slice 5b): the cash office's day close is the manager's
+    // screen on its "Close the day" tab; users and roles are the admin screen on its "Who can get in" tab.
+    expect(canOpen(access, { userId: 'cash-1', branchId: 'b1' }, '/manager/')).toBe(true);
+    expect(canOpen(access, { userId: 'cash-1', branchId: 'b1' }, '/admin/?tab=people')).toBe(false);
     expect(canOpen(access, { userId: 'admin-1', branchId: 'b1' }, '/nope')).toBe(false); // never a blank allow
   });
 
   it('lands each user on their first permitted page', () => {
-    expect(landingPath(access, { userId: 'cash-1', branchId: 'b1' })).toBe('/');
-    expect(landingPath(access, { userId: 'admin-1', branchId: null })).toBe('/admin/users');
+    expect(landingPath(access, { userId: 'cash-1', branchId: 'b1' })).toBe('/manager/');
+    expect(landingPath(access, { userId: 'admin-1', branchId: null })).toBe('/admin/?tab=people');
   });
 
   it('every navigation item declares the permission it needs', () => {

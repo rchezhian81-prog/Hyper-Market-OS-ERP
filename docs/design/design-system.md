@@ -43,7 +43,14 @@ content sits in `.sre-scroll-x` so a page never scrolls sideways. **The ERP's on
 `apps/web-erp/web/sre-chrome.js`, loaded after each ERP page's own script, is the sync badge, the served-from-cache
 strip and the language toggle for all 46 pages — a page keeps its own words and its own toggle handler, and may put
 sharper strip wording on the element (`data-en` / `data-ta`). The till and the handhelds keep their own badges,
-because theirs report a device outbox. Every text pair is proven AA in
+because theirs report a device outbox. **The ERP's one menu (Stage G slice 5b):** the store computer works out,
+per request, which screens the viewer a page names may open — `navigationFor` over the pack's `roles` /
+`roleAssignments`, filtered to the screens the box serves — and injects it as `window.sreNavigation`; the chrome draws
+it as a "☰ Screens / திரைகள்" button and a `<nav>` landmark (groups and links in the reader's language, the served
+screen `aria-current`, Escape closes). No named viewer or no register → the reason, not a blank; a page opened off the
+box → no menu. Every item in `apps/web-erp/src/navigation.ts` is gated on the permission the screen itself or its
+route checks, has a Tamil label, and says where it is served (`box` / `unserved` / `unbuilt`); retired items keep their
+reason on the record. Every text pair is proven AA in
 `tests/unit/ui-foundation.test.ts`; `tests/guardrails/every-screen-shares-the-foundation.test.ts` keeps every page on
 the one file. Components (§4) ship namespaced as `.sre-*` and the screens move onto them slice by slice (G2–G5).
 
@@ -59,6 +66,7 @@ the one file. Components (§4) ship namespaced as `.sre-*` and the screens move 
 | Dialog | Consequence + authorization + confirm for destructive/financial actions. |
 | Toast / error banner | States what happened, whether data was saved, next safe action. |
 | Language toggle | Per-user English/Tamil switch, persistent. |
+| **Menu (ERP)** | One per page, from the person's real permissions and the screens this box serves; empty says why; never a link the box would 404 (Stage G slice 5b). |
 | Approval inbox item | Shows request, value, requester, and one-tap approve/reject with reason. |
 
 ## 5. Accessibility (NFR-07)

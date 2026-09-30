@@ -103,6 +103,54 @@ describe('the chrome itself', () => {
   });
 });
 
+describe('the one menu (Stage G slice 5b · §27 role surfaces · P-07 · P-04)', () => {
+  it('is drawn ONLY from what the store computer injected — the chrome hard-codes no path and no screen name', () => {
+    expect(CHROME).toMatch(/window\.sreNavigation && typeof window\.sreNavigation === 'object'/);
+    expect(CHROME).not.toMatch(/href\s*=\s*['"`]\//);
+    expect(CHROME).not.toMatch(/['"`]\/(?:manager|counts|catalogue|admin|finance|reporting|buying)\//);
+    expect(CHROME).toMatch(/link\.href = item\.path/);
+  });
+
+  it('draws nothing when the page was opened off the box, and the stated reason when the box could offer nothing', () => {
+    expect(CHROME).toMatch(/const nav = navigation\(\);\n\s+if \(!nav\) return;/);
+    expect(CHROME).toMatch(/nav\.why === 'no_roles' \? t\('noRoles'\) : t\('noUser'\)/);
+  });
+
+  it('is a real menu: a button that says what it opens, a nav landmark named differently from the in-page tabs, Escape to close, focus returned', () => {
+    expect(CHROME).toMatch(/button\.setAttribute\('aria-expanded', 'false'\)/);
+    expect(CHROME).toMatch(/button\.setAttribute\('aria-controls', 'sre-menu'\)/);
+    expect(CHROME).toMatch(/document\.createElement\('nav'\)/);
+    expect(CHROME).toMatch(/panel\.setAttribute\('aria-label', t\('screens'\)\)/);
+    expect(CHROME).not.toMatch(/'Sections'/); // the in-page tabs' label; two landmarks with one name would be a lie
+    expect(CHROME).toMatch(/event\.key === 'Escape'/);
+    expect(CHROME).toMatch(/button\.focus\(\)/);
+    expect(CHROME).toMatch(/link\.setAttribute\('aria-current', 'page'\)/);
+  });
+
+  it('opens the tab a menu link asked for, on a page that has it, without fighting a page that already did', () => {
+    expect(CHROME).toMatch(/new URLSearchParams\(window\.location\.search\)\.get\('tab'\)/);
+    expect(CHROME).toMatch(/byId\(`tab-\$\{wanted\}`\)/);
+    expect(CHROME).toMatch(/tab\.getAttribute\('aria-current'\) !== 'page'\) tab\.click\(\)/);
+  });
+
+  it('no page draws a cross-page link of its own — the menu is the one way between screens', () => {
+    for (const page of PAGES) {
+      expect(read(page), `${page} links to another page itself`).not.toMatch(/href="(?:\.\/[a-z-]+\.html|\/[a-z])/);
+    }
+    for (const script of SCRIPTS) {
+      expect(code(read(script)), `${script} builds a cross-page link itself`).not.toMatch(/\.href = ['"`]\.?\/[a-z-]+(?:\.html|\/)/);
+    }
+  });
+
+  it('the foundation styles the menu at the touch target, and the copies agree', () => {
+    const css = readFileSync('packages/ui/web/sre-foundation.css', 'utf8');
+    expect(css).toMatch(/\.sre-menu-button \{ min-height: var\(--tap\); min-width: var\(--tap\);/);
+    expect(css).toMatch(/\.sre-menu a \{ display: flex; align-items: center; min-height: var\(--tap\);/);
+    expect(css).toMatch(/\.sre-menu a\[aria-current="page"\]/);
+    expect(read('sre-foundation.css')).toBe(css);
+  });
+});
+
 /** Every `en: {` block in a source, paired with the `ta: {` block that follows it, as key lists. */
 function bilingualBlocks(source: string): { en: string[]; ta: string[]; at: number }[] {
   const blocks: { en: string[]; ta: string[]; at: number }[] = [];

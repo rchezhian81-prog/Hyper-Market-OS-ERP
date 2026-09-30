@@ -2628,3 +2628,78 @@ describe('admin and security, fed by the box', () => {
     expect(bootAdmin(undefined)).toBeNull();
   });
 });
+
+/** Pull the menu (`window.sreNavigation`) the box injected out of a screen's HTML — null when it carries none. */
+async function menuFromScreen(base: string, path: string): Promise<Record<string, unknown> | null> {
+  const response = await fetch(`${base}${path}`);
+  expect(response.status, `${path} did not serve`).toBe(200);
+  const html = await response.text();
+  const match = /<script>window\.sreNavigation = ([\s\S]*?);<\/script>/.exec(html);
+  return match === null ? null : JSON.parse(match[1]!) as Record<string, unknown>;
+}
+
+describe('every ERP page carries its menu — the screens THIS viewer may open on THIS box (Stage G slice 5b · §27 · P-07)', () => {
+  // A floor manager named on the counts screen, with the grants the role catalogue really gives such a person.
+  const FLOOR = {
+    roles: known([{ id: 'floor', name: 'Floor manager', permissions: ['count.view', 'inventory.availability.read', 'till.dayclose.read'] }]),
+    roleAssignments: known([{ userId: 'u-mgr', roleId: 'floor', branchScope: ['b1'] }]),
+  };
+
+  it('the counts screen names its viewer, and the menu is exactly what they hold — the served screen marked current', async () => {
+    const base = await serve(snapshotOf({ pack: pack(FLOOR) }));
+    const menu = await menuFromScreen(base, '/counts/');
+    expect(menu).not.toBeNull();
+    expect(menu!['userId']).toBe('u-mgr');
+    expect(menu!['branchId']).toBe('b1');
+    expect(menu!['why']).toBeNull();
+    const groups = menu!['groups'] as { group: { en: string; ta: string }; items: { id: string; path: string; current: boolean; label: { en: string; ta: string } }[] }[];
+    expect(groups.map((g) => g.group.en)).toEqual(['Overview', 'Purchasing', 'Inventory', 'Administration']);
+    const items = groups.flatMap((g) => g.items);
+    expect(items.map((i) => i.id)).toEqual(['dashboard', 'goods-receipt', 'counts', 'stock-health', 'warehouse-supervisor', 'day-reopen']);
+    expect(items.filter((i) => i.current).map((i) => i.id)).toEqual(['counts']);
+    // Both languages ride along, so the chrome never draws half a menu.
+    for (const i of items) expect(i.label.ta, `${i.id} has no Tamil label`).toMatch(/[஀-௿]/);
+    // Nothing they do not hold: no finance, no admin, no AI.
+    expect(items.map((i) => i.id)).not.toContain('finance');
+    expect(items.map((i) => i.id)).not.toContain('users');
+  });
+
+  it('every door the menu offers opens — each path answers 200 from this box with the target screen\'s own payload global', async () => {
+    const base = await serve(snapshotOf({ pack: pack(FLOOR) }));
+    const menu = await menuFromScreen(base, '/counts/');
+    const items = (menu!['groups'] as { items: { id: string; path: string }[] }[]).flatMap((g) => g.items);
+    expect(items.length).toBeGreaterThan(3);
+    for (const item of items) {
+      const response = await fetch(`${base}${item.path}`, { redirect: 'follow' });
+      expect(response.status, `${item.id} → ${item.path}`).toBe(200);
+      const html = await response.text();
+      expect(html, `${item.id}: the page it opens carries no menu of its own`).toContain('window.sreNavigation = ');
+    }
+  });
+
+  it('a screen whose payload names nobody gets no sections and the reason — the manager\'s, today (a recorded G5c gap)', async () => {
+    const base = await serve(snapshotOf({ pack: pack(FLOOR) }));
+    const menu = await menuFromScreen(base, '/manager/');
+    expect(menu).toEqual({ userId: null, branchId: 'b1', why: 'no_user', groups: [] });
+  });
+
+  it('a box with no role register gets no sections and THAT reason — never a guessed menu', async () => {
+    const base = await serve(snapshotOf({ pack: pack({ roles: notKnown('never pulled'), roleAssignments: notKnown('never pulled') }) }));
+    const menu = await menuFromScreen(base, '/counts/');
+    expect(menu).toEqual({ userId: 'u-mgr', branchId: 'b1', why: 'no_roles', groups: [] });
+  });
+
+  it('a named viewer with no grants gets an empty list and no reason — there is nothing wrong, they may open nothing', async () => {
+    const base = await serve(snapshotOf({ pack: pack(FLOOR) }));
+    // The service desk names u-desk, who holds no role on this box.
+    const menu = await menuFromScreen(base, '/service/');
+    expect(menu).toEqual({ userId: 'u-desk', branchId: 'b1', why: null, groups: [] });
+  });
+
+  it('the till, the handhelds and the apps carry no menu — one job each', async () => {
+    const base = await serve(snapshotOf({ pack: pack(FLOOR) }));
+    for (const path of ['/pos/', '/picker/', '/warehouse/', '/customer/', '/owner/']) {
+      expect(await menuFromScreen(base, path), `${path} carries a menu`).toBeNull();
+    }
+  });
+});
